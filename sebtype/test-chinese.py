@@ -189,7 +189,8 @@ def tap_candidate(word):
 
 
 def logcat():
-    return adb("logcat", "-d", "-s", "ChineseIME (rime):I")
+    """The app's rime log lines; logcat's -s splits the filter on spaces, so it can't match the tag."""
+    return adb("shell", "logcat -d | grep -F 'ChineseIME (rime)' || true")
 
 
 def wait_deployed(timeout=240):
@@ -308,7 +309,17 @@ def learned_survives_restart():
 def update_over_itself():
     adb("logcat", "-c")
     adb("install", "-r", bumped_apk, timeout=300)
-    open_field()
+    # Android drops the keyboard's binding on an update and, on the emulator, may not rebind it on the
+    # first selection; a second one brings it up.
+    wait_for(
+        "SebType to be listed again",
+        lambda: IME in adb("shell", "ime", "list", "-s"),
+        30,
+    )
+    try:
+        open_field()
+    except Fail:
+        open_field()
     deploy, install = wait_deployed()
     if install is None:
         raise Fail("the update didn't reinstall the bundled rime-ice")
@@ -363,7 +374,8 @@ check(
     expect_first("lh", "厉害"),
     needs=["update-redeploys", "learn-picked-word"],
 )
-check("failure-visible", failure_is_visible, needs=["first-install"])
+# Runs on the updated install: before it, the pending bundle reinstall would heal the broken files.
+check("failure-visible", failure_is_visible, needs=["update-redeploys"])
 check("failure-recovers", failure_recovers, needs=["failure-visible"])
 check(
     "recovery-keeps-learned",
