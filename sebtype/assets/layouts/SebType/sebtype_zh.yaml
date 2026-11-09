@@ -1,3 +1,4 @@
+# Adapted from FUTO's Chinese/zh_qwerty.yaml in java/assets/layouts (Apache-2.0, see its LICENSE).
 # SebType: the same grid as English QWERTY; only the two bottom-row punctuation keys differ.
 name: SebType Chinese QWERTY
 languages: zh
