@@ -31,7 +31,9 @@ echo "$manifest" > "$out/test-privacy-manifest.txt"
 check no-backup grep -Eq 'allowBackup.*=false' "$out/test-privacy-manifest.txt"
 check transfer-rules grep -q 'dataExtractionRules' "$out/test-privacy-manifest.txt"
 # Every <exclude> domain for cloud backup and device transfer, nothing included.
-check rules-exclude-all bash -c "x=\$('$bt/aapt2' dump xmltree --file res/xml/data_extraction_rules.xml '$apk'); \
+# Resource shrinking renames the file, so resolve its path in the APK by name.
+rules=$("$bt/aapt2" dump resources "$apk" | awk '/xml\/data_extraction_rules$/ {getline; print $3}')
+check rules-exclude-all bash -c "x=\$('$bt/aapt2' dump xmltree --file '$rules' '$apk'); \
   ! grep -q 'E: include' <<<\"\$x\" && [[ \$(grep -c 'E: exclude' <<<\"\$x\") -eq 18 ]]"
 check popup-not-exported bash -c "grep -A3 'TextEditPopupActivity' '$out/test-privacy-manifest.txt' | grep -Eq 'exported.*=false'"
 
@@ -40,9 +42,11 @@ dexdir=$out/test-privacy-dex; rm -rf "$dexdir"; mkdir -p "$dexdir"
 unzip -q -o "$apk" 'classes*.dex' -d "$dexdir"
 strings_in_dex() { cat "$dexdir"/*.dex | strings -n 6; }
 export -f strings_in_dex; export dexdir
-for s in 'processX11Code' 'Cannot add unigram entry. word' 'reweighted, from'; do
-  check "dex-no-${s%% *}" bash -c "! strings_in_dex | grep -qF '$s'"
-done
+# Log message text, not method names: the keystroke log was Log.d("Rime", "processX11Code: (...)").
+check_dex_absent() { check "$1" bash -c "! strings_in_dex | grep -qF '$2'"; }
+check_dex_absent dex-no-keystroke-log 'processX11Code: ('
+check_dex_absent dex-no-unigram-word 'Cannot add unigram entry. word'
+check_dex_absent dex-no-reweighted 'reweighted, from'
 
 # Installed app: Android must not report it as backup-enabled.
 serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
