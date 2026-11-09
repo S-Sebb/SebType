@@ -92,19 +92,19 @@ row(
     "Keyboard open, first after install",
     f"{fo.get('open_ms', '–')} ms",
     "first-open",
-    "show request → shown",
+    "field's first frame → keyboard's first frame",
 )
 row(
     "Keyboard open, warm, median / p95",
     f"{wo.get('p50_ms', '–')} / {wo.get('p95_ms', '–')} ms",
     "warm-open",
-    f"hide, tap the field; n={wo.get('n', 0)}",
+    f"hide, tap the field → keyboard's first frame; n={wo.get('n', 0)}",
 )
 row(
     "Keyboard open, cold, median / p95",
     f"{co.get('p50_ms', '–')} / {co.get('p95_ms', '–')} ms",
     "cold-open",
-    f"switch back from another keyboard, process start → shown; n={co.get('n', 0)}",
+    f"switch back from another keyboard, process start → keyboard's first frame; n={co.get('n', 0)}",
 )
 row(
     "Rime first deploy (rime-ice)",
@@ -127,9 +127,15 @@ for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
         )
     row(
         f"{name} key → candidates drawn, median / p95",
+        p(column(lang, "cand_ms")),
+        lang,
+        "frame that last redrew the candidate bar before the next key",
+    )
+    row(
+        f"{name} key → keyboard idle, median / p95",
         p(column(lang, "settle_ms")),
         lang,
-        "last keyboard frame before the next key (700 ms apart)",
+        "last keyboard frame before the next key (700 ms apart), incl. key preview animation",
     )
 row(
     "EN transformer CPU per key it ran on, median / p95",
@@ -167,7 +173,7 @@ row(
     "Keyboard crashes while typing",
     ", ".join(f"{name} {d.get('crashes', '–')}" for name, d in phases),
     None,
-    "keyboard process deaths during each typing trace",
+    "keyboard process restarts during each typing trace",
 )
 
 print("\nBiggest APK entries (compressed):\n")
