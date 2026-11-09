@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType's name where FUTO's Japanese strings name the app; see values/strings-sebtype-overrides.xml. -->
+<resources>
+    <string name="english_ime_name">SebType</string>
+    <string name="english_ime_settings">SebType 設定</string>
+    <string name="setup_welcome_text">SebType（FUTO キーボードの改変版）へようこそ。\n\n使い始めるには、SebType を入力方法で有効にしてください。</string>
+    <string name="setup_active_input_method">入力方法に SebType を選択してください。</string>
+</resources>
