@@ -155,7 +155,12 @@ for name, d, ph, note in (
         f"{jank:.0f} of {frames:.0f}",
         ph,
     )
-    row(f"{name}: key → text on screen, median / p95", p(column(ph, "text_ms")), ph)
+    row(
+        f"{name}: key → text on screen, median / p95",
+        p(column(ph, "text_ms")),
+        ph,
+        f"{d.get('typed', '–')} of {d.get('taps', '–')} characters arrived within 5 s",
+    )
 
 print("\nBiggest APK entries (compressed):\n")
 for line in read(work / "apk-top.txt").splitlines():

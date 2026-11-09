@@ -17,7 +17,8 @@ ev as (
       or s.name like 'dispatchInputEvent MotionEvent ACTION_UP%')
 ),
 taps as (
-  select ts, coalesce(lead(ts) over (order by ts), ts + 1000000000) as next_ts
+  -- until the next tap, at most 1 s: the last tap of a run must not take in the next field's start
+  select ts, min(coalesce(lead(ts) over (order by ts), ts + 1000000000), ts + 1000000000) as next_ts
   from ev where down
 ),
 len as (

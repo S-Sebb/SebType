@@ -100,25 +100,39 @@ ime_logs() { # trace -> CSV of ImeTracker events and keyboard process starts
     or (tag = 'ActivityManager' and msg like 'Start proc %:$pkg/%') order by ts;" > "$work/logs.sql"
   query "$1" "$work/logs.sql"
 }
-text_len() { # trace -> last length of the test field's text
-  echo "select cast(value as int) from counter c join process_counter_track t on c.track_id = t.id
-    where t.name = 'sebperf_len' order by c.ts desc limit 1;" > "$work/len.sql"
-  query "$1" "$work/len.sql" | tail -1
+typed() { # trace -> characters each test field gained (last length - starting length), one per line
+  echo "select (select cast(value as int) from counter where track_id = t.id order by ts desc limit 1)
+      - (select cast(value as int) from counter where track_id = t.id order by ts limit 1)
+    from process_counter_track t where t.name = 'sebperf_len'
+    order by (select min(ts) from counter where track_id = t.id);" > "$work/len.sql"
+  query "$1" "$work/len.sql" | grep -E '^-?[0-9]+$'
 }
-typing() { # trace gap text: types under a trace, then writes the per-key CSV
-  trace_start "$1"
-  taps "$2" "$3"
-  sleep 2
-  trace_stop "$1"
+per_key() { # trace: the per-key CSV, and the characters typed into each field
   query "$1" "$keys_sql" > "$work/$1.csv"
   echo "keys=$(( $(wc -l < "$work/$1.csv") - 1 ))"
-  echo "text_len=$(text_len "$1")"
+  echo "typed=$(typed "$1" | paste -sd, -)"
 }
-landed() { # phase taps min% max%: the field's final length shows that the taps hit the keys and in
-  # which language (pinyin and romaji turn into fewer characters than were typed)
-  local len; len=$(sed -n 's/^text_len=//p' "$work/$1.part")
-  (( ${len:-0} * 100 >= $2 * $3 && ${len:-0} * 100 <= $2 * $4 )) ||
-    { echo "$1: field has ${len:-no} characters after $2 taps: wrong language or taps missed the keys" >&2; return 1; }
+typing() { # trace gap text: under one trace, types the text RUNS times, each into a fresh test field
+  local r
+  trace_start "$1"
+  for (( r = 0; r < runs; r++ )); do open_field; taps "$2" "$3"; sleep 5; done
+  trace_stop "$1"
+  per_key "$1"
+}
+landed() { # phase taps min% max%: each field's length shows that the taps hit the keys and in which
+  # language (pinyin and romaji turn into fewer characters than were typed)
+  local n=0 len
+  for len in $(sed -n 's/^typed=//p' "$work/$1.part" | tr ',' ' '); do
+    (( len * 100 >= $2 * $3 && len * 100 <= $2 * $4 )) ||
+      { echo "$1: a field got $len characters from $2 taps: wrong language or taps missed the keys" >&2; return 1; }
+    (( ++n ))
+  done
+  (( n == runs )) || { echo "$1: $n of $runs fields got text" >&2; return 1; }
+}
+restart_keyboard() { # stop SebType while another keyboard is active, then switch back to it
+  sh ime set "$(cat "$work/other-ime")" > /dev/null; sleep 2
+  sh am force-stop "$pkg"; sleep 1
+  sh ime set "$ime_id" > /dev/null
 }
 rime_dir=/sdcard/Android/data/$pkg/files/rime
 
@@ -144,7 +158,10 @@ phase_first-open() { # the first keyboard open after install
 }
 phase_en() {
   . "$work/geometry"
-  local text=$(for (( i = 0; i < runs; i++ )); do printf 'the quick brown fox jumps over the lazy dog '; done)
+  # In the first process after install the transformer can stay off (no LanguageModel thread in the
+  # trace), so EN types into a second process, as a user would after the first day.
+  [[ -s $work/other-ime ]] && restart_keyboard
+  local text='the quick brown fox jumps over the lazy dog '
   typing en 700 "$text" | tee "$work/en.part"
   landed en "${#text}" 80 101
   echo "pss_kb=$(pss_kb)"
@@ -155,12 +172,13 @@ phase_zh-deploy() { # switch to 中: the first-run Rime deploy (rime-ice), with 
   if [[ ! -f $work/rime-bundled ]]; then
     # main doesn't bundle rime-ice yet (#8): FUTO clears rime/shared on the first 中 start, so let
     # that happen, push rime-ice, then restart the keyboard so its next 中 start deploys it.
+    [[ -s $work/other-ime ]] || { echo "needs another keyboard to restart SebType" >&2; return 1; }
     taps 0 G; sleep 5
+    # Fresh times: librime only rebuilds what changed since its last deploy.
+    find "$work/shared" -exec touch {} +
     "$adb" push "$work/shared" "$rime_dir/" > /dev/null || { echo "push failed" >&2; return 1; }
-    sh ime set "$(cat "$work/other-ime")" > /dev/null; sleep 2
-    sh am force-stop "$pkg"; sleep 1
     start=$(date +%s.%N)
-    sh ime set "$ime_id" > /dev/null
+    restart_keyboard
     open_field # the deploy starts when 中 gets a text field
   else
     start=$(date +%s.%N)
@@ -183,7 +201,7 @@ phase_zh-deploy() { # switch to 中: the first-run Rime deploy (rime-ice), with 
 }
 phase_zh() {
   . "$work/geometry"
-  local text=$(for (( i = 0; i < runs; i++ )); do printf 'nihao women jintiantianqihenhao ranhou zhongguo '; done)
+  local text='nihao women jintiantianqihenhao ranhou zhongguo '
   typing zh 700 "$text" | tee "$work/zh.part"
   landed zh "${#text}" 10 60
   echo "pss_kb=$(pss_kb)"
@@ -191,7 +209,7 @@ phase_zh() {
 phase_ja() {
   . "$work/geometry"
   taps 0 G; sleep 5 # 中 → 日; Mozc starts
-  local text=$(for (( i = 0; i < runs; i++ )); do printf 'nihongo konnichiha arigatou toukyou E'; done)
+  local text='nihongo konnichiha arigatou toukyou E'
   typing ja 700 "$text" | tee "$work/ja.part"
   landed ja "${#text}" 10 80
   echo "pss_kb=$(pss_kb)"
@@ -204,11 +222,17 @@ gfx() { # package -> janky frames and frame-time percentiles since the last rese
     /^95th percentile/ && !q++ {sub(/ms/, "", $3); print p "_p95_ms=" $3}'
 }
 fast() { # name field-extra...: fast typing (100 ms per key) with gfxinfo jank for both apps
-  local name=$1; shift
+  local name=$1 text="the quick brown fox jumps over the lazy dog the quick brown fox jumps over the lazy dog "
+  shift
   . "$work/geometry"
   open_field "$@"
   sh dumpsys gfxinfo "$pkg" reset > /dev/null; sh dumpsys gfxinfo "$field" reset > /dev/null
-  typing "$name" 100 "the quick brown fox jumps over the lazy dog the quick brown fox jumps over the lazy dog "
+  trace_start "$name"
+  taps 100 "$text"
+  sleep 5 # the keyboard may still be catching up
+  trace_stop "$name"
+  per_key "$name"
+  echo "taps=${#text}"
   gfx "$pkg" ime; gfx "$field" field
 }
 phase_fast() { fast fast; }

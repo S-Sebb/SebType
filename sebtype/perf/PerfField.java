@@ -30,6 +30,7 @@ public class PerfField extends Activity {
         while (text.length() < chars) text.append("The quick brown fox jumps over the lazy dog. ");
         field.setText(text);
         field.setSelection(field.length());
+        Trace.setCounter("sebperf_len", field.length()); // the starting length, so typed = last - first
         field.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {}

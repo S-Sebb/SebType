@@ -30,8 +30,9 @@ What it measures:
 | Rime first deploy | time until rime-ice's compiled tables stop changing after the first switch to 中 |
 
 English runs with FUTO's transformer on (the default), Chinese with Rime and rime-ice, Japanese with
-Mozc. Each typing set runs `RUNS` times (default 3); the table gives the median and the 95th
-percentile.
+Mozc. Each typing set runs `RUNS` times (default 3), each time in a fresh test field; the table
+gives the median and the 95th percentile over all keys. English types after one keyboard restart,
+because the transformer can stay off in the first process after install.
 
 Results: `/tmp/sebtype/perf.md` (the table), `/tmp/sebtype/perf-results.txt` (one line per check),
 and traces and logs in `/tmp/sebtype/perf/`. Open a `.pftrace` in https://ui.perfetto.dev to see where
