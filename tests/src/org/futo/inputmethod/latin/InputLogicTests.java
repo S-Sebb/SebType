@@ -386,23 +386,6 @@ public class InputLogicTests extends InputTestsBase {
         assertEquals("manual pick then separator", EXPECTED_RESULT, mEditText.getText().toString());
     }
 
-    // SebType (#39): a "." typed after a space the user pressed stays there, and the file
-    // extension after it is neither capitalised nor autocorrected.
-    public void testSpaceThenPeriodStaysPut() {
-        final String STRING_TO_TYPE = "open main .py see notebook .ipynb ";
-        type(STRING_TO_TYPE);
-        assertEquals("space then period stays put", STRING_TO_TYPE,
-                mEditText.getText().toString());
-    }
-
-    // SebType (#39): after a tapped suggestion, a "." still joins the word.
-    public void testManualPickThenPeriod() {
-        type("this");
-        pickSuggestionManually("this");
-        type(".");
-        assertEquals("manual pick then period", "this. ", mEditText.getText().toString());
-    }
-
     // This test matches testClusteringPunctuationForFrench.
     // In some non-English languages, ! and ? are clustering punctuation signs.
     public void testClusteringPunctuation() {

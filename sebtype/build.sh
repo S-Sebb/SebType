@@ -3,6 +3,7 @@
 # capped and no Gradle daemon is left running: the PC has 15 GB shared with the emulator and other builds.
 #   sebtype/build.sh release       signed arm64-v8a release APK (keystore in ~/.config/sebtype)
 #   sebtype/build.sh debug-x86_64  debug APK for an x86_64 emulator
+#   sebtype/build.sh test-x86_64   debug APK, then its instrumented-test APK, for an x86_64 emulator
 # BUILD_PRIORITY (default 1) is the devq rank for the build lock.
 # Prints the APK path last. Version: <FUTO release>-sebtype.<first-parent commit count>.
 set -euo pipefail
@@ -36,6 +37,9 @@ case $kind in
       "$keydir/sebtype-release.jks" "$pw" "$pw" > keystore.properties ;;
   debug-x86_64)
     task=assembleStableDebug abis=x86_64 out=build/outputs/apk/stable/debug ;;
+  test-x86_64)
+    task="assembleStableDebug assembleStableDebugAndroidTest" abis=x86_64 out=build/outputs/apk/stable/debug
+    rm -rf build/outputs/apk/androidTest ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
 
@@ -43,8 +47,9 @@ rm -rf "$out"
 start=$(date +%s)
 devq -P "${BUILD_PRIORITY:-1}" -m 30 -n "sebtype build ($kind)" /tmp/agent-locks/sebtype/build.lock \
   ./gradlew --no-daemon --max-workers=4 -Dorg.gradle.jvmargs=-Xmx3g \
-    -Pkotlin.compiler.execution.strategy=in-process --console=plain -q "$task" -PsebtypeAbis="$abis" >&2
+    -Pkotlin.compiler.execution.strategy=in-process --console=plain -q $task -PsebtypeAbis="$abis" >&2
 # The APK is named after the checkout's folder (no rootProject.name), so take the only one there.
 apk=$(ls "$out"/*.apk)
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - start ))s, $(du -h "$apk" | cut -f1)" >&2
 echo "$apk"
+[[ $kind != test-x86_64 ]] || ls build/outputs/apk/androidTest/stable/debug/*.apk

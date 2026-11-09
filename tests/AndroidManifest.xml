@@ -24,6 +24,9 @@
         android:icon="@drawable/ic_app">
         <uses-library android:name="android.test.runner" />
         <!-- meta-data android:name="com.android.contacts.iconset" android:resource="@xml/iconset" /-->
+        <!-- SebType: the text field LiveSpacingTests types into -->
+        <activity android:name="org.futo.inputmethod.latin.EditorActivity"
+            android:exported="true" android:windowSoftInputMode="stateAlwaysVisible" />
     </application>
 
     <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner"
