@@ -137,23 +137,27 @@ fi
 # enumerate-forward key: a trigger key would only toggle English and the last language. Fcitx5's other
 # switchers are cleared: Shift_L (AltTriggerKeys), Control+Shift+Shift_L, and the group switch, which
 # defaults to Super+Space too. Rime still handles its own Shift tap for English inside Chinese.
+# ShareInputState=All: one language for every window, as on Windows (#42), not one per window.
 fcitx_conf=$config/fcitx5/config
-hotkeys() { # prints the config with those hotkeys set, keeping everything else
+fcitx_global() { # prints the config with those settings, keeping everything else
   awk -v cleared='TriggerKeys AltTriggerKeys EnumerateBackwardKeys EnumerateGroupForwardKeys EnumerateGroupBackwardKeys' '
     BEGIN { n = split(cleared " EnumerateForwardKeys", keys, " ")
       for (i = 1; i <= n; i++) { own["[Hotkey/" keys[i] "]"] = 1; own[keys[i]] = 1 } }
     /^\[/ { sec = $0; skip = (sec in own) }
     skip || (sec == "[Hotkey]" && (substr($0, 1, index($0, "=") - 1) in own)) { next }
+    sec == "[Behavior]" && /^ShareInputState=/ { next }
     { print }
     $0 == "[Hotkey]" { hotkey = 1; gsub(" ", "=\n", cleared); print cleared "=" }
+    $0 == "[Behavior]" { behavior = 1; print "ShareInputState=All" }
     END { if (!hotkey) { gsub(" ", "=\n", cleared); print "[Hotkey]\n" cleared "=" }
+      if (!behavior) print "\n[Behavior]\nShareInputState=All"
       print "\n[Hotkey/EnumerateForwardKeys]\n0=Super+space" }' "$@"
 }
 canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
 src=$fcitx_conf; [[ -f $src ]] || src=/dev/null
-want=$(hotkeys "$src")
+want=$(fcitx_global "$src")
 if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
-  change "make Super+Space the only language switch in $fcitx_conf (backup in $backup)"; then
+  change "make Super+Space the only language switch, shared by all windows, in $fcitx_conf (backup in $backup)"; then
   [[ -f $fcitx_conf ]] && save "$fcitx_conf"
   mkdir -p "${fcitx_conf%/*}"; printf '%s\n' "$want" > "$fcitx_conf"
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true

@@ -63,7 +63,7 @@ echo 'export QT_IM_MODULE=fcitx' > "$h/.profile"
 # Fcitx5's own switchers as an older setup left them, and a Mozc config with settings to keep:
 # general_config (1), session_keymap (41) = MSIME, custom_roman_table (43).
 mkdir -p "$h/.config/fcitx5" "$h/.config/mozc"
-printf '[Hotkey]\nEnumerateWithTriggerKeys=True\n\n[Hotkey/TriggerKeys]\n0=Super+space\n\n[Hotkey/AltTriggerKeys]\n0=Shift_L\n\n[Hotkey/EnumerateForwardKeys]\n0=Control+Shift+Shift_L\n\n[Behavior]\nActiveByDefault=False\n' > "$h/.config/fcitx5/config"
+printf '[Hotkey]\nEnumerateWithTriggerKeys=True\n\n[Hotkey/TriggerKeys]\n0=Super+space\n\n[Hotkey/AltTriggerKeys]\n0=Shift_L\n\n[Hotkey/EnumerateForwardKeys]\n0=Control+Shift+Shift_L\n\n[Behavior]\nActiveByDefault=False\nShareInputState=No\n' > "$h/.config/fcitx5/config"
 printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db"
 fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
@@ -86,12 +86,13 @@ fresh_apply() {
     grep -q 'Default us 3 keyboard-us  rime  mozc' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
     fcitx_hotkeys && mozc_keymap && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log"
 }
-# Super+Space is the only switch, the other settings stay, and Fcitx5 reloaded it.
+# Super+Space is the only switch, all windows share one state, the other settings stay, and Fcitx5 reloaded it.
 fcitx_hotkeys() {
   local c=$h/.config/fcitx5/config
   [[ $(sed -n '/^\[Hotkey\/EnumerateForwardKeys\]/,/^$/p' "$c") == $'[Hotkey/EnumerateForwardKeys]\n0=Super+space' ]] &&
     ! grep -qE 'Shift_L|^\[Hotkey/(Trigger|AltTrigger)Keys' "$c" && grep -qx 'AltTriggerKeys=' "$c" &&
     grep -qx 'EnumerateGroupForwardKeys=' "$c" && grep -qx 'ActiveByDefault=False' "$c" &&
+    [[ $(grep -c '^ShareInputState=' "$c") == 1 ]] && grep -qx 'ShareInputState=All' "$c" &&
     ls "$h"/.local/share/sebtype/backup/*/config && [[ -e $fake/reload.log ]]
 }
 # The keymap replaces fields 41 and 42 in place; fields 1 and 43 are kept.
