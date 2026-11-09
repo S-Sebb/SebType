@@ -40,6 +40,10 @@ check signed-sebtype bash -c "'$bt/apksigner' verify --print-certs '$apk' | grep
 # Japanese works with nothing imported only if Mozc's dictionary is in the APK, stored uncompressed (Mozc maps it).
 mozc_dict=$(grep -A3 'raw/builtin_mozc_data$' <<<"$("$bt/aapt2" dump resources "$apk")" | awk '$1 == "(ja)" {print $3}')
 check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_dict' | grep -q ' stor '"
+# SebType's uniform zh/ja layouts ship beside FUTO's, which stay (Russian must remain addable).
+assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
+check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty Cyrillic/east_slavic; do
+  grep -qx "assets/layouts/$f.yaml" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets"
 
 # Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
 device_checks() {

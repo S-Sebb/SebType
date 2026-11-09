@@ -343,7 +343,7 @@ android {
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
-            assets.srcDirs = ['java/assets']
+            assets.srcDirs = ['java/assets', 'sebtype/assets'] // SebType's layouts, outside FUTO's layouts submodule
         }
 
         playstore {

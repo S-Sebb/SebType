@@ -118,22 +118,8 @@ object Subtypes {
             return
         }
 
-        val locales = context.resources.configuration.locales
-        if(locales.size() == 0) return
-
-        var numAdded = 0
-        for(i in 0 until locales.size()) {
-            val locale = locales.get(i).stripExtensionsIfNeeded()
-            val layout = findClosestLocaleLayouts(context, locale).firstOrNull() ?: continue
-
-            addLanguage(context, locale, layout)
-            numAdded += 1
-        }
-
-        if(numAdded == 0) {
-            // We need to have something...
-            addLanguage(context, Locale.forLanguageTag("zz"), "qwerty")
-        }
+        // SebType: always EN, 中, 日 in globe order, whatever the system languages are
+        SebTypeLanguages.forEach { (locale, layout) -> addLanguage(context, locale.toLocale(), layout) }
 
         context.setSettingBlocking(ActiveSubtype.key, context.getSettingBlocking(SubtypesSetting).firstOrNull() ?: return)
     }
