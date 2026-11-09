@@ -1,0 +1,63 @@
+diff --git a/src/unix/fcitx5/mozc_engine.cc b/src/unix/fcitx5/mozc_engine.cc
+index 1ed28be..c326e4e 100644
+--- a/src/unix/fcitx5/mozc_engine.cc
++++ b/src/unix/fcitx5/mozc_engine.cc
+@@ -224,6 +224,26 @@ MozcEngine::MozcEngine(Instance *instance)
+                               return true;
+                             });
+ 
++  // SebType: redraw the tray when Caps Lock toggles, so English mode can show
++  // its Caps Lock icon (as fcitx5-rime does for fcitx_rime_latin_upper).
++  xkbStateChangedConnection_ = instance_->connect<Instance::XkbStateMaskChanged>(
++      [this](const std::string &display, auto oldMask, auto newMask) {
++        auto capsLock = [](const auto &mask) {
++          return mask && KeyStates(std::get<2>(*mask)).test(KeyState::CapsLock);
++        };
++        if (capsLock(oldMask) == capsLock(newMask)) {
++          return;
++        }
++        instance_->inputContextManager().foreachFocused(
++            [this, &display](InputContext *ic) {
++              if (ic->display() == display &&
++                  instance_->inputMethod(ic) == "mozc") {
++                ic->updateUserInterface(UserInterfaceComponent::StatusArea);
++              }
++              return true;
++            });
++      });
++
+   reloadConfig();
+ }
+ 
+@@ -297,7 +317,18 @@ std::string MozcEngine::subMode(const fcitx::InputMethodEntry & /*entry*/,
+ std::string MozcEngine::subModeIconImpl(
+     const fcitx::InputMethodEntry & /*unused*/, fcitx::InputContext &ic) {
+   auto *mozc_state = mozcState(&ic);
+-  return _(kPropCompositionModes[mozc_state->GetCompositionMode()].icon);
++  const auto mode = mozc_state->GetCompositionMode();
++  std::string icon = _(kPropCompositionModes[mode].icon);
++  // SebType: the English modes have a Caps Lock icon, e.g.
++  // fcitx_mozc_direct_upper.
++  if (mode == mozc::commands::DIRECT || mode == mozc::commands::HALF_ASCII ||
++      mode == mozc::commands::FULL_ASCII) {
++    if (auto mask = instance_->xkbStateMask(ic.display());
++        mask && KeyStates(std::get<2>(*mask)).test(KeyState::CapsLock)) {
++      icon += "_upper";
++    }
++  }
++  return icon;
+ }
+ 
+ MozcState *MozcEngine::mozcState(InputContext *ic) {
+diff --git a/src/unix/fcitx5/mozc_engine.h b/src/unix/fcitx5/mozc_engine.h
+index 1f06934..beff429 100644
+--- a/src/unix/fcitx5/mozc_engine.h
++++ b/src/unix/fcitx5/mozc_engine.h
+@@ -164,6 +164,7 @@ class MozcEngine final : public InputMethodEngineV2 {
+   SimpleAction toolAction_;
+   std::vector<std::unique_ptr<MozcModeSubAction>> modeActions_;
+   std::unique_ptr<HandlerTableEntry<EventHandler>> globalConfigReloadHandle_;
++  ScopedConnection xkbStateChangedConnection_;
+ 
+   SimpleAction configToolAction_, dictionaryToolAction_, addWordAction_,
+       aboutAction_;

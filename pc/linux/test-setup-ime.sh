@@ -20,14 +20,15 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
 
-check shellcheck uvx --from shellcheck-py shellcheck setup-ime.sh test-setup-ime.sh
+check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh
 
-# Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain.
+# Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (and
+# SebType's fcitx5-mozc, until the user says yes to its sudo install).
 live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
-  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v 'unused Flatpak override' && return 1
+  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
@@ -39,8 +40,16 @@ fake=$(mktemp -d /tmp/sebtype/setup-ime-fake.XXXX)
 trap 'rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
-stub rpm '[[ $2 != fcitx5-mozc ]]'
-stub sudo 'echo "sudo $*" >> "$FAKE/sudo.log"'
+# shellcheck source=mozc/versions.sh
+source mozc/versions.sh
+# fcitx5-mozc is installed only when $FAKE/mozc holds its version-release; the fake sudo logs and
+# applies dnf's install of SebType's RPM and its distro-sync back to Fedora's.
+stub rpm '[[ ${*: -1} != fcitx5-mozc ]] && exit; [[ -f $FAKE/mozc ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/mozc"; true'
+stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
+case \"\$*\" in
+  'dnf install -y '*/$MOZC_RPM) echo -n '$MOZC_VERSION-$SEBTYPE_RELEASE' > \"\$FAKE/mozc\" ;;
+  'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_VERSION-$MOZC_FEDORA_RELEASE' > \"\$FAKE/mozc\" ;;
+esac"
 stub systemctl 'cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
 stub pgrep 'exit 1'  # never finds (and stops) the real mozc_server
@@ -113,7 +122,7 @@ tray_icons() {
     grep -qx 'Inherits=Fluent-dark' "$t/index.theme" && grep -q iconChanged "$fake/emit.log" || return 1
   for d in 16 20 22 24 32 scalable; do
     for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A fcitx_mozc_hiragana:hira \
-      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a; do
+      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a fcitx_mozc_direct_upper:ja-A; do
       cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
     done
   done
@@ -131,7 +140,9 @@ undo_icons() {
 
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
 # can't see it) running Mozc on a second fake account set up by setup-ime.sh: Shift tap toggles
-# あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` still does. Its fcitx5 and
+# あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` still does; the tray (a stand-in
+# for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
+# checked on the desktop (pc/linux/README.md). Its fcitx5 and
 # mozc_server are found by the fake HOME in their environment and stopped afterwards.
 mozc_keys() {
   local h=$fake/jp
@@ -141,18 +152,23 @@ mozc_keys() {
     > "$h/.config/fcitx5/profile"
   env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
     XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 60 dbus-run-session -- python3 - "$fake/fcitx5.log" <<'PY'
-import subprocess, sys, time
+import re, subprocess, sys, time
 from gi.repository import Gio, GLib
 
 SHIFT, CTRL, ALT = 1, 4, 8
 KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'Alt_L': (0xffe9, 64), 'Escape': (0xff1b, 9),
         'Return': (0xff0d, 36), 'Tab': (0xff09, 23), 'space': (0x20, 65), 'a': (0x61, 38), 'k': (0x6b, 45),
-        'K': (0x4b, 45), 'grave': (0x60, 49)}
+        'K': (0x4b, 45), 'grave': (0x60, 49), 'Katakana': (0xff26, 101), 'Hiragana': (0xff25, 102)}
 MODS = {'Shift_L': SHIFT, 'Control_L': CTRL, 'Alt_L': ALT}
 
-fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,mozc'],
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,mozc,kimpanel'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+Gio.bus_own_name_on_connection(bus, 'org.kde.impanel', 0, None, None)
+tray = ['']
+def on_tray(_c, _s, _p, _i, name, params):
+    if name == 'UpdateProperty': tray[0] = (re.findall(r'fcitx_mozc_\w+', str(params.unpack())) or tray)[0]
+bus.signal_subscribe(None, None, 'UpdateProperty', None, None, 0, on_tray)
 def call(path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
     return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
                          None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
@@ -197,6 +213,10 @@ def check(name, got, want):
     print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
 
 check('starts in あ', mode(), 'あ')
+check('tray icon in あ', tray[0], 'fcitx_mozc_hiragana')
+tap('Shift_L'); check('tray icon in English', tray[0], 'fcitx_mozc_direct'); tap('Shift_L')
+tap('Katakana'); check('tray icon in ア', tray[0], 'fcitx_mozc_katakana_full'); tap('Hiragana')
+check('tray icon back in あ', tray[0], 'fcitx_mozc_hiragana')
 for state, keys in [('composing', 'ka'), ('converting', ['k', 'a', 'space']), ('predicting', ['k', 'a', 'Tab']),
                     ('after a commit', ['k', 'a', 'Return'])]:
     for k in keys: tap(k)
@@ -314,6 +334,27 @@ rerun() {
   grep -q '^done: 1 change(s)' <<<"$o" && grep -q 'install packages fcitx5-mozc' <<<"$o"
 }
 check rerun-only-asks-for-missing-package rerun
+
+# SebType's fcitx5-mozc (#66) replaces Fedora's after a yes, a rerun leaves it, --undo-mozc brings back
+# Fedora's once, and an fcitx5-mozc of another version is left alone with a warning. The RPM is a
+# placeholder, so nothing is built.
+mozc_swap() {
+  local o rpm=$h/.cache/sebtype/mozc/rpms/$MOZC_RPM
+  mkdir -p "${rpm%/*}"; : > "$rpm"; rm -f "$fake/sudo.log"
+  echo -n "$MOZC_VERSION-$MOZC_FEDORA_RELEASE" > "$fake/mozc"
+  o=$(echo y | fake_run) || return 1; echo "$o"
+  grep -q "^change: replace fcitx5-mozc .* with SebType's build" <<<"$o" &&
+    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $rpm" && $(cat "$fake/mozc") == *.sebtype* ]] || return 1
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  ! grep -q 'fcitx5-mozc' <<<"$o" || return 1
+  o=$(fake_run --undo-mozc < /dev/null) || return 1; echo "$o"
+  [[ $(tail -1 "$fake/sudo.log") == 'sudo dnf distro-sync -y fcitx5-mozc' && $(cat "$fake/mozc") == "$MOZC_VERSION-$MOZC_FEDORA_RELEASE" ]] &&
+    o=$(fake_run --undo-mozc < /dev/null) && [[ -z $o ]] || return 1
+  echo -n 2.31.0-1.fc45 > "$fake/mozc"
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  grep -q "^warning: fcitx5-mozc 2.31.0-1.fc45 isn't the version" <<<"$o" && [[ $(wc -l < "$fake/sudo.log") == 2 ]]
+}
+check mozc-install-and-undo mozc_swap
 check undo-icons-and-reinstall undo_icons
 
 ! grep -q '^FAIL' "$results"

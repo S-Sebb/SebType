@@ -18,6 +18,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Step | Change | Fixes |
 |---|---|---|
 | Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `fcitx5-rime`, `fcitx5-mozc`, `kcm-fcitx5` | The engines, and the modules XWayland and older apps load |
+| SebType's fcitx5-mozc | Replaces Fedora's `fcitx5-mozc` with SebType's build of the same version (`mozc/`), after asking, with sudo | Japanese's English mode shows **A** while Caps Lock is on, like Chinese's |
 | KWin input method | `kwinrc` `[Wayland] InputMethod` = Fcitx 5 (System Settings → Keyboard → Virtual Keyboard) | Every native Wayland app (GTK, Qt, Electron) through text-input, with no environment variables. Takes effect at the next login if Fcitx5 isn't already running under KWin |
 | XWayland | `XMODIFIERS=@im=fcitx` in `~/.config/environment.d/90-sebtype-im.conf`, only if the session doesn't already have it | XIM apps on XWayland: Steam, WINE/Proton, Java, Xlib/SDL games |
 | Global IM modules | Warns about any global `*_IM_MODULE` (`/etc/environment`, `environment.d`, Plasma env scripts, shell profiles) and doesn't edit it | A global `GTK_IM_MODULE`/`QT_IM_MODULE` overrides Wayland text-input and makes candidate windows flicker |
@@ -53,23 +54,46 @@ fcitx5-mozc keep it. If Mozc's settings are ever reset, rerun `setup-ime.sh`. To
 | Japanese hiragana | あ | `fcitx_mozc_hiragana` |
 | Japanese katakana (full and half width) | ア | `fcitx_mozc_katakana_full`, `fcitx_mozc_katakana_half` |
 | Japanese, English mode (direct, half and full ASCII) | a | `fcitx_mozc_direct`, `fcitx_mozc_alpha_half`, `fcitx_mozc_alpha_full` |
+| Japanese, English mode with Caps Lock | A | the same names with `_upper` (SebType's fcitx5-mozc) |
 
 `input-keyboard` and `fcitx-rime` come from the active icon theme, so only a theme of SebType's own
 replaces them, and other apps that show `input-keyboard` get the EN key too. Every other icon still
-comes from the theme SebType's inherits. Japanese's English mode stays **a** with Caps Lock on, because
-fcitx5-mozc has no Caps Lock icon (#66). If you pick another icon theme in System Settings, rerun
+comes from the theme SebType's inherits. If you pick another icon theme in System Settings, rerun
 `setup-ime.sh` to put SebType's on top of it.
 
 To undo: `pc/linux/setup-ime.sh --undo-icons`. It makes the inherited theme active again and removes
 `~/.local/share/icons/SebType`.
+
+### SebType's fcitx5-mozc
+
+Fedora's fcitx5-mozc picks the tray icon from the input mode alone, so Japanese's English mode can't show
+**A** for Caps Lock. `mozc/caps-lock-icon.patch` (about 30 lines in `mozc_engine.cc`) asks for
+`<icon>_upper` in the English modes while Caps Lock is on, and redraws the tray when Caps Lock changes,
+the way fcitx5-rime does. Nothing else changes: the same Mozc, keymap, dictionary and learned words.
+
+`mozc/build.sh` builds it from Fedora's own source package (`mozc/versions.sh` pins its version and
+checksum, and the Fedora container image), with Fedora's spec, flags and bundled protobuf and abseil.
+It runs under the shared build lock with 4 compile jobs in a container capped at 6 GB. The build tree
+stays in `~/.cache/sebtype/mozc/work`, so a rebuild compiles only what changed. `setup-ime.sh` runs it
+when the RPM isn't built yet, installs the RPM with `sudo dnf install` and asks first. Its release,
+`6.sebtype1.fc44`, sorts above Fedora's `6.fc44`, so `dnf upgrade` keeps it until Fedora ships a newer
+fcitx5-mozc. That update replaces it: Japanese then shows **a** with Caps Lock on, and `setup-ime.sh`
+warns until `mozc/versions.sh` follows the new version.
+
+Fcitx5 loads the new fcitx5-mozc when it restarts: turn System Settings → Keyboard → Virtual Keyboard
+off and back on, or log in again.
+
+To undo: `pc/linux/setup-ime.sh --undo-mozc` (`sudo dnf distro-sync fcitx5-mozc`, back to Fedora's
+package), then restart Fcitx5 the same way.
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
 restarts. At the end it checks that Fcitx5 runs under KWin and that the session has `XMODIFIERS`, and
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the icon theme's install and undo, the Japanese keys typed into a private Fcitx5 with its own D-Bus
-session, and the Chinese popup text read from a private Fcitx5 running Rime). It doesn't touch the session.
+rerun run on a fake fresh account including the icon theme's and SebType's fcitx5-mozc's install and undo,
+the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, and the Chinese popup
+text read from a private Fcitx5 running Rime). It doesn't touch the session.
 
 ## App checklist
 

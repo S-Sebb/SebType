@@ -3,17 +3,20 @@
 # on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
-# from SebType's tray icon theme to the one it inherits from, and removes it.
+# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc puts Fedora's
+# fcitx5-mozc back in place of SebType's build.
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0
+dry=0 undo_icons=0 undo_mozc=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
+  --undo-mozc) undo_mozc=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc]" >&2; exit 2 ;;
 esac
+here=$(dirname "$0")
 
 config=${XDG_CONFIG_HOME:-$HOME/.config}
 data=${XDG_DATA_HOME:-$HOME/.local/share}
@@ -51,6 +54,21 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
+# SebType's fcitx5-mozc (#66): Fedora's package rebuilt with a patch that gives Japanese's English mode
+# a Caps Lock icon. The undo goes back to the Fedora release in the repositories.
+# shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
+source "$here/mozc/versions.sh"
+mozc_installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}' fcitx5-mozc 2>/dev/null) || mozc_installed=
+restart_note="Fcitx5 loads the new fcitx5-mozc once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"
+if ((undo_mozc)); then
+  if [[ $mozc_installed == *.sebtype* ]]; then
+    echo "change: replace SebType's fcitx5-mozc $mozc_installed with Fedora's"
+    sudo dnf distro-sync -y fcitx5-mozc
+    echo "$restart_note"
+  fi
+  exit 0
+fi
+
 # 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; fcitx5-mozc is the Japanese engine.
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
   fcitx5-rime fcitx5-mozc kcm-fcitx5)
@@ -62,7 +80,27 @@ if ((${#missing[@]})); then
     if [[ $answer == [yY]* ]]; then sudo dnf install -y "${missing[@]}"
     else warn "packages not installed: ${missing[*]}"; fi
   fi
+  mozc_installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}' fcitx5-mozc 2>/dev/null) || mozc_installed=
 fi
+
+# 1b. SebType's fcitx5-mozc in place of Fedora's (#66), so Japanese's English mode shows A with Caps Lock
+# on. Built from Fedora's source package by mozc/build.sh (about an hour the first time, in a container).
+# A Fedora update to another version replaces it; then Japanese shows a with Caps Lock on until
+# mozc/versions.sh follows that version.
+built_rpm=$MOZC_CACHE/rpms/$MOZC_RPM
+case $mozc_installed in
+  "$MOZC_VERSION-$SEBTYPE_RELEASE" | '') ;;
+  "$MOZC_VERSION-$MOZC_FEDORA_RELEASE" | "$MOZC_VERSION-"*.sebtype*)
+    if change "replace fcitx5-mozc $mozc_installed with SebType's build $SEBTYPE_RELEASE, Fedora's plus a Caps Lock icon (asks before using sudo; undo: $0 --undo-mozc)"; then
+      read -rp "Build SebType's fcitx5-mozc if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
+      if [[ $answer == [yY]* ]]; then
+        [[ -f $built_rpm ]] || "$here/mozc/build.sh" >/dev/null
+        sudo dnf install -y "$built_rpm"
+        busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$restart_note"
+      else warn "fcitx5-mozc stays Fedora's: Japanese shows a, not A, with Caps Lock on"; fi
+    fi ;;
+  *) warn "fcitx5-mozc $mozc_installed isn't the version SebType's build is for ($MOZC_VERSION): Japanese shows a, not A, with Caps Lock on until pc/linux/mozc/versions.sh follows it" ;;
+esac
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
@@ -192,7 +230,7 @@ fi
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
 # kept. Mozc reads it at start, so a running mozc_server is stopped; fcitx5-mozc restarts it on the next key.
 mozc_db=$config/mozc/config1.db
-mozc_want=$(python3 - "$mozc_db" "$(dirname "$0")/mozc-keymap.tsv" <<'PY' | base64 -w0
+mozc_want=$(python3 - "$mozc_db" "$here/mozc-keymap.tsv" <<'PY' | base64 -w0
 import sys
 
 def varint(b, i):
@@ -247,11 +285,12 @@ fi
 # 11. Tray icons: SebType's Set E keycaps for EN, 中, あ, ア, and a / A (Caps Lock) in the English modes.
 # Fcitx5 asks for these names; input-keyboard (EN) and fcitx-rime come from the active theme, so only a
 # theme of our own set as active overrides them. fcitx_rime_latin_upper is what fcitx5-rime asks for in
-# English with Caps Lock on. fcitx5-mozc has no Caps Lock icon (#66), so Japanese English stays a.
-icons=$(dirname "$0")/../icons
+# English with Caps Lock on; SebType's fcitx5-mozc build (step 1b) asks for <English mode icon>_upper.
+icons=$here/../icons
 icon_names=(input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A
   fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
-  fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a)
+  fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a
+  fcitx_mozc_direct_upper:ja-A fcitx_mozc_alpha_half_upper:ja-A fcitx_mozc_alpha_full_upper:ja-A)
 want_theme=$(mktemp -d)
 dirs=(16 20 22 24 32 scalable)
 {
