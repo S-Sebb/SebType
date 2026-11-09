@@ -208,7 +208,7 @@ if [[ $(base64 -w0 "$mozc_db" 2>/dev/null) != "$mozc_want" ]] &&
   ((${#pids[@]})) && kill "${pids[@]}"
   # fcitx5-mozc reads the keys that work in direct English mode once, when Fcitx5 starts.
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-    warn "Alt+\` from English back to あ works after the next login (fcitx5-mozc reads it when Fcitx5 starts)"
+    warn "Alt+\` from English back to あ works once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
 fi
 
 # 10. Plasma binds Alt+` (and Meta+`) to "Walk Through Windows of Current Application", so Mozc would
