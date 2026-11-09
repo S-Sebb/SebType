@@ -205,6 +205,18 @@ tasks.register('sebtypeResLarge', Sync) {
 }
 preBuild.dependsOn 'sebtypeResLarge'
 
+// Workaround (#62): the APK ships the NDK's libc++_shared.so, though nothing loads it. On the Nothing A001
+// (Dimensity 7300, Android 16), without an extra native library the phone schedules SebType on its little cores,
+// and English prediction takes 99 ms per key instead of 21 ms (sebtype/perf.sh, #59).
+final def sebtypeJniLibs = layout.buildDirectory.dir('generated/sebtype-jniLibs')
+tasks.register('sebtypeJniLibs', Sync) {
+    from(fileTree("${android.ndkDirectory}/toolchains/llvm/prebuilt").matching {
+        include '*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'
+    }.files)
+    into sebtypeJniLibs.map { it.dir('arm64-v8a') }
+}
+preBuild.dependsOn 'sebtypeJniLibs'
+
 android {
     namespace 'org.futo.inputmethod.latin'
 
@@ -369,6 +381,7 @@ android {
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
+            jniLibs.srcDirs = [sebtypeJniLibs] // the unused libc++_shared.so (#62)
             // SebType's layouts (outside FUTO's layouts submodule) and the bundled rime-ice
             assets.srcDirs = ['java/assets', 'sebtype/assets', layout.buildDirectory.dir('sebtype-assets')]
         }
