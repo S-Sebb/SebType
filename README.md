@@ -2,20 +2,22 @@
 
 # SebType
 
-SebType is a personal Android keyboard for Chinese (pinyin), Japanese (romaji) and English, with one
-layout for all three. It is a modified fork of [FUTO Keyboard](https://github.com/futo-org/android-keyboard),
-built for one person's own, non-commercial use, and is not affiliated with or endorsed by FUTO.
+SebType is a **modified version of [FUTO Keyboard](https://github.com/futo-org/android-keyboard)**: a
+personal Android keyboard for Chinese (pinyin), Japanese (romaji) and English, with one layout for all
+three. It is not made, endorsed or supported by FUTO; please don't report SebType problems to FUTO.
+
+**Licence:** SebType is FUTO's code with changes, under FUTO's [FUTO Source First License 1.1](LICENSE.md)
+(see also [NOTICE](NOTICE)). That licence makes it source-available, not open source: anyone may use it, but it may
+be modified only for non-commercial purposes and shared only free of charge and non-commercially, with
+FUTO's payment features and notices left in. SebType's changes are under the same licence.
 
 - What it must do: [Requirements (#1)](https://github.com/S-Sebb/sebtype/issues/1)
 - Settled choices: [Decisions (#2)](https://github.com/S-Sebb/sebtype/issues/2)
-
-SebType installs next to stock FUTO Keyboard (application id `dev.sebb.sebtype`).
-
-- Install on a phone: [docs/install.md](docs/install.md)
+- Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 
-The code is FUTO's, licensed under the [FUTO Source First License 1.1](LICENSE.md); see also [NOTICE](NOTICE).
-SebType's changes are made under the same licence. FUTO's own README follows unchanged.
+SebType's application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard.
+FUTO's own README follows unchanged.
 
 ---
 

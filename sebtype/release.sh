@@ -21,5 +21,5 @@ apksigner=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/apksigner |
 "$apksigner" verify --print-certs "$asset" | grep -q 'CN=SebType' || { echo "release: APK not signed with the SebType key" >&2; exit 1; }
 
 gh release create "$tag" "$asset" --target "$(git rev-parse HEAD)" --title "SebType $version" \
-  --notes "SebType $version, based on FUTO Keyboard $(cat sebtype/upstream-version). arm64-v8a, $(du -h "$asset" | cut -f1)."
+  --notes "SebType $version: a modified FUTO Keyboard $(cat sebtype/upstream-version), not made or supported by FUTO. arm64-v8a, $(du -h "$asset" | cut -f1). Licence: FUTO Source First License 1.1 (LICENSE.md), non-commercial."
 echo "release: published $tag"

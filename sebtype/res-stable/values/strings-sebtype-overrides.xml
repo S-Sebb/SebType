@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType's name where FUTO's English strings name the app (system keyboard list, settings, setup).
+     Payment, credits and other FUTO notices keep FUTO's wording. -->
+<resources>
+    <string name="english_ime_name">SebType</string>
+    <string name="english_ime_settings">SebType Settings</string>
+    <string name="setup_welcome_text">Welcome to SebType, a modified FUTO Keyboard.\n\nTo get started, enable SebType as an input method.</string>
+    <string name="setup_active_input_method">Please select SebType as your active input method.</string>
+</resources>
