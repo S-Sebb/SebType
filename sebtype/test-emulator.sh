@@ -64,12 +64,17 @@ rm -f "$rime_data"
 # Chinese data looks like to the app.
 bumped=$out/bumped.apk
 make_bumped() {
-  local d; d=$(mktemp -d); mkdir -p "$d/assets/rime"
-  unzip -p "$apk" assets/rime/bundle-version | sed 's/$/ test-bump/' > "$d/assets/rime/bundle-version"
-  cp "$apk" "$d/in.apk" && (cd "$d" && zip -q -X in.apk assets/rime/bundle-version) &&
-    "$bt/zipalign" -p -f 4 "$d/in.apk" "$bumped" &&
+  # A copy plus the re-zipped APK are 2 × 180 MB: scratch goes beside the build, and the last run's
+  # copy, which a nearly-full /tmp can't hold next to this run's, is dropped first.
+  local d; d=$(mktemp -d "$(dirname "$apk")/bumped.XXXXXX") || return 1
+  rm -f "$bumped" "$bumped.idsig"
+  mkdir -p "$d/assets/rime" &&
+    unzip -p "$apk" assets/rime/bundle-version | sed 's/$/ test-bump/' > "$d/assets/rime/bundle-version" &&
+    cp "$apk" "$d/in.apk" && (cd "$d" && zip -q -X in.apk assets/rime/bundle-version) &&
+    "$bt/zipalign" -p -f 4 "$d/in.apk" "$d/bumped.apk" &&
     "$bt/apksigner" sign --ks "${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/sebtype-release.jks" --ks-key-alias sebtype \
-      --ks-pass "file:${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/keystore.password" "$bumped"
+      --ks-pass "file:${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/keystore.password" "$d/bumped.apk" &&
+    mv "$d/bumped.apk" "$bumped"
   local rc=$?; rm -rf "$d"; return $rc
 }
 # timeout execs its command, so the function and what it reads go through the environment.
