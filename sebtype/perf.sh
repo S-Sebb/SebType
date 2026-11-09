@@ -72,9 +72,10 @@ taps() { # gap_ms text: types the text with monkey (G = globe, E = enter), one t
 trace_start() { # name: Perfetto with frame timelines, input/view slices and scheduling
   sh rm -f "/data/misc/perfetto-traces/sebtype-$1.pftrace"
   "$adb" shell 'cat > /data/misc/perfetto-configs/sebtype-perf.pbtxt' <<EOF
-buffers { size_kb: 32768 fill_policy: DISCARD }
+buffers { size_kb: 65536 fill_policy: RING_BUFFER }
 write_into_file: true
 file_write_period_ms: 1000
+flush_period_ms: 2000
 duration_ms: 600000
 data_sources { config { name: "linux.ftrace" ftrace_config {
   atrace_categories: "input" atrace_categories: "view" atrace_categories: "gfx" atrace_categories: "am"
@@ -133,6 +134,14 @@ restart_keyboard() { # stop SebType while another keyboard is active, then switc
   sh ime set "$(cat "$work/other-ime")" > /dev/null; sleep 2
   sh am force-stop "$pkg"; sleep 1
   sh ime set "$ime_id" > /dev/null
+}
+probe_len() { # length of what "ka " types into a fresh test field: 3 in EN, 1 or 2 in 中 and 日
+  open_field; taps 300 "ka "; sleep 2
+  sh uiautomator dump /data/local/tmp/sebtype-ui.xml > /dev/null
+  local text; text=$(sh cat /data/local/tmp/sebtype-ui.xml |
+    grep -o '<node [^>]*class="android.widget.EditText"' | sed -n 's/.* text="\([^"]*\)".*/\1/p')
+  sh rm -f /data/local/tmp/sebtype-ui.xml
+  echo "${#text}"
 }
 rime_dir=/sdcard/Android/data/$pkg/files/rime
 
@@ -215,7 +224,14 @@ phase_ja() {
   typing ja 700 "$text" | tee "$work/ja.part"
   landed ja "${#text}" 10 80
   echo "pss_kb=$(pss_kb)"
-  taps 0 G; sleep 2 # back to EN for the next phases
+  # Back to EN for the next phases. A single globe tap after 日 didn't always switch on the phone,
+  # so check with a probe and tap again (the globe cycles EN → 中 → 日).
+  local n
+  for n in 1 2 3; do
+    taps 0 G; sleep 3
+    [[ $(probe_len) == 3 ]] && { echo "globe_taps_to_en=$n"; return; }
+  done
+  echo "keyboard didn't switch back to EN after 3 globe taps" >&2; return 1
 }
 gfx() { # package -> janky frames and frame-time percentiles since the last reset
   sh dumpsys gfxinfo "$1" | awk -v p="$2" '
@@ -227,9 +243,9 @@ fast() { # name field-extra...: fast typing (100 ms per key) with gfxinfo jank f
   local name=$1 text="the quick brown fox jumps over the lazy dog the quick brown fox jumps over the lazy dog "
   shift
   . "$work/geometry"
-  open_field "$@"
-  sh dumpsys gfxinfo "$pkg" reset > /dev/null; sh dumpsys gfxinfo "$field" reset > /dev/null
   trace_start "$name"
+  open_field "$@" # inside the trace, so the field's starting length is in it
+  sh dumpsys gfxinfo "$pkg" reset > /dev/null; sh dumpsys gfxinfo "$field" reset > /dev/null
   taps 100 "$text"
   sleep 5 # the keyboard may still be catching up
   trace_stop "$name"
@@ -272,7 +288,8 @@ phase_sizes() { # needs a root shell (emulator): app code, internal data, extern
 
 device_steps() { # under the device lock
   trap 'sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
-    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt' EXIT
+    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
+    /data/local/tmp/sebtype-ui.xml' EXIT
   check install 600 || return 1
   grep -q '^PASS install' "$results" || return 1
   check first-open 120
