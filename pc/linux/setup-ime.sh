@@ -273,6 +273,27 @@ if { ! diff -rq "$want_theme" "$theme" >/dev/null 2>&1 || [[ $(icon_theme) != Se
 fi
 rm -r "$want_theme"
 
+# 12. Chinese reads 中文 in the switch popup and the tray text (#69). fcitx5-rime's label is the first
+# character of the schema name (雾 from 雾凇拼音), unless the name starts with "."; then Fcitx5 shows the
+# input method's own label. So the schema name becomes ".中文" (its id stays rime_ice, so learned words
+# stay) and this account's copy of Rime's input method entry is named and labelled 中文.
+rime_dir=$data/fcitx5/rime rime_custom=$data/fcitx5/rime/rime_ice.custom.yaml
+rime_im=$data/fcitx5/inputmethod/rime.conf
+want_im=$'[InputMethod]\nName=中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True'
+name_line='  schema/name: ".中文"  # SebType: Fcitx5 shows rime.conf'\''s label 中文 instead of 雾 (#69)'
+src=$rime_custom; [[ -f $src ]] || src=/dev/null
+want_custom=$(awk -v line="$name_line" '/^  schema\/name:/ { next } { print } /^patch:/ && !done { print line; done = 1 }
+  END { if (!done) print "patch:\n" line }' "$src")
+if { [[ $(cat "$rime_im" 2>/dev/null) != "$want_im" ]] || [[ $(cat "$src") != "$want_custom" ]]; } &&
+  change "label Chinese 中文 instead of 雾 in $rime_im and $rime_custom (backup in $backup)"; then
+  for f in "$rime_im" "$rime_custom"; do [[ -f $f ]] && save "$f"; done
+  mkdir -p "${rime_im%/*}" "$rime_dir"
+  printf '%s\n' "$want_im" > "$rime_im"; printf '%s\n' "$want_custom" > "$rime_custom"
+  # Fcitx5 reads input method entries when it starts, and Rime redeploys then too.
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
+    warn "Chinese reads 中文 once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+fi
+
 # Self-check of the live session.
 parent=$(ps -o ppid= -C fcitx5 | head -1 | tr -d ' ')
 [[ -n $parent && $(ps -o comm= -p "$parent") == kwin_wayland ]] ||

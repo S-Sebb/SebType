@@ -26,10 +26,10 @@ check shellcheck uvx --from shellcheck-py shellcheck setup-ime.sh test-setup-ime
 live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
-    ~/.local/share/icons/SebType ~/.local/share/sebtype -type f -exec md5sum {} + 2>/dev/null | sort)
+    ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v 'unused Flatpak override' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
-    ~/.local/share/icons/SebType ~/.local/share/sebtype -type f -exec md5sum {} + 2>/dev/null | sort)
+    ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
 }
 check live-dry-run live_dry
@@ -72,7 +72,7 @@ fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOM
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 10 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 11 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -86,7 +86,8 @@ fresh_apply() {
     [[ ! -e $h/.local/share/flatpak/overrides/com.qq.QQ ]] &&
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
     grep -q 'Default us 3 keyboard-us  rime  mozc' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
-    fcitx_hotkeys && mozc_keymap && tray_icons && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log"
+    fcitx_hotkeys && mozc_keymap && tray_icons && grep -qx 'Label=中文' "$h/.local/share/fcitx5/inputmethod/rime.conf" &&
+    grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log"
 }
 # Super+Space is the only switch, all windows share one state, the other settings stay, and Fcitx5 reloaded it.
 fcitx_hotkeys() {
@@ -224,6 +225,87 @@ if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addo
   python3 -c 'from gi.repository import Gio' 2>/dev/null; then
   check mozc-shift-tap-and-alt-grave mozc_keys
 else result SKIP mozc-shift-tap-and-alt-grave "needs fcitx5, fcitx5-mozc, dbus-run-session and python3-gobject"
+fi
+
+# Chinese label (#69): a private Fcitx5 (as above) running Rime with a tiny schema that has rime-ice's id
+# and name, on a third fake account set up by setup-ime.sh. Switching to it must show 中文 in the popup,
+# both the long one and the compact one (the reference PC's setting; it shows the label the tray text
+# uses), and the schema id must stay rime_ice.
+rime_label() {
+  local h=$fake/zh r
+  r=$h/.local/share/fcitx5/rime
+  mkdir -p "$h/.config/fcitx5" "$r"
+  printf 'schema:\n  schema_id: rime_ice\n  name: 雾凇拼音\nengine:\n  processors: [ascii_composer, speller, express_editor]\n  segmentors: [abc_segmentor]\n  translators: [echo_translator]\n' \
+    > "$r/rime_ice.schema.yaml"
+  printf 'patch:\n  schema_list: [{schema: rime_ice}]\n' > "$r/default.custom.yaml"
+  printf 'patch:\n  menu/page_size: 6\n' > "$r/rime_ice.custom.yaml"
+  fake_run < /dev/null > /dev/null || return 1
+  grep -qx '  menu/page_size: 6' "$r/rime_ice.custom.yaml" || { echo "rime_ice.custom.yaml lost its patch"; return 1; }
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 90 dbus-run-session -- python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
+import os, subprocess, sys, time
+from gi.repository import Gio, GLib
+
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,rime'],
+                         stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+CONTROLLER, IC = ('/controller', 'org.fcitx.Fcitx.Controller1'), 'org.fcitx.Fcitx.InputContext1'
+def wait(cond, secs):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        GLib.MainContext.default().iteration(False); time.sleep(0.02)
+    return cond()
+def up():
+    try: call(*CONTROLLER, 'CurrentInputMethod'); return True
+    except GLib.Error: return False
+wait(up, 10)
+ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+             '(a(ss))', [('program', 'sebtype-test')])
+popups = []
+def on_signal(_c, _s, _p, _i, name, params):
+    if name == 'UpdateClientSideUI':
+        text = ''.join(s for s, _ in params.unpack()[2])
+        if text: popups.append(text)
+bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+call(ic, IC, 'FocusIn')
+
+def switch():  # the popup text shown when switching from English to Chinese
+    call(*CONTROLLER, 'SetCurrentIM', '(s)', 'keyboard-us'); wait(lambda: False, 0.2)
+    popups.clear(); call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+    wait(lambda: popups, 2); wait(lambda: False, 0.2)
+    return popups[-1] if popups else None
+
+ok = True
+def check(name, got, want):
+    global ok
+    ok &= got == want
+    print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
+
+switch()  # loads Rime, which deploys the schema
+check('Rime deployed', wait(lambda: os.path.exists(f'{sys.argv[2]}/build/rime_ice.schema.yaml'), 30), True)
+wait(lambda: False, 1)
+check('long popup reads 中文', switch(), '中文')
+with open(sys.argv[3], 'a') as f: f.write('\n[Behavior]\nCompactInputMethodInformation=True\n')
+call(*CONTROLLER, 'ReloadConfig')
+check('compact popup reads 中文', switch(), '中文')
+check('schema id stays rime_ice', call('/rime', 'org.fcitx.Fcitx.Rime1', 'GetCurrentSchema')[0], 'rime_ice')
+fcitx.terminate(); fcitx.wait(10)
+sys.exit(0 if ok else 1)
+PY
+  local rc=$? p
+  for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  return $rc
+}
+if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/rime.conf ]] &&
+  python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+  check rime-label-reads-zhongwen rime_label
+else result SKIP rime-label-reads-zhongwen "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
 fi
 
 rerun() {
