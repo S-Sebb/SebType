@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -86,6 +88,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -111,6 +117,7 @@ import androidx.core.net.toUri
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
+import org.futo.inputmethod.engine.ModeChip
 import org.futo.inputmethod.latin.DisplayTop4Setting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SuggestedWords
@@ -741,6 +748,46 @@ fun ExpandActionsButton(isActionsOpen: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** SebType (#38): the input-mode chip, e.g. あ|ア; the current mode is filled, a tap goes to the next. */
+@Composable
+fun ModeChipButton(chip: ModeChip) {
+    val view = LocalView.current
+    val manager = LocalManager.current
+    val scheme = LocalKeyboardScheme.current
+    Box(Modifier.fillMaxHeight().padding(start = 6.dp, end = 2.dp), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier
+                .height(32.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(scheme.keyboardContainer)
+                .clickable {
+                    chip.onTap()
+                    manager.performHapticAndAudioFeedback(Constants.CODE_TAB, view)
+                }
+                .clearAndSetSemantics {
+                    contentDescription = chip.labels[chip.current]
+                    role = Role.Button
+                }
+        ) {
+            chip.labels.forEachIndexed { i, label ->
+                val on = i == chip.current
+                Box(
+                    Modifier.fillMaxHeight()
+                        .background(if(on) scheme.primary else Color.Transparent)
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        fontSize = 15.sp,
+                        color = if(on) scheme.onPrimary else scheme.onKeyboardContainer.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun ImportantNoticeView(
     importantNotice: ImportantNotice
@@ -825,6 +872,7 @@ fun ActionBar(
     onQuickClipDismiss: () -> Unit = {},
     needToUseExpandableSuggestionUi: Boolean = false,
     loading: Boolean = false,
+    modeChip: ModeChip? = null,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -869,6 +917,7 @@ fun ActionBar(
                 .weight(1.0f), color = actionBarColor()
         ) {
             Row(Modifier.safeKeyboardPadding()) {
+                modeChip?.let { ModeChipButton(it) }
                 ExpandActionsButton(isActionsExpanded) {
                     toggleActionsExpanded()
 
@@ -1323,6 +1372,7 @@ fun BoxScope.ActionBarWithExpandableCandidates(
     keyboardOffset: MutableIntState? = null,
     keyboardHeight: Int = 1000,
     expandableSuggestionCfg: ExpandableSuggestionBarConfiguration,
+    modeChip: ModeChip? = null,
 ) {
     val wordList = remember(words) {
         words?.mSuggestedWordInfoList?.toList()?.filter {
@@ -1414,6 +1464,8 @@ fun BoxScope.ActionBarWithExpandableCandidates(
                 .weight(1.0f), color = actionBarColor()
         ) {
             Row(Modifier.safeKeyboardPadding()) {
+                // Pinned: it stays put while the candidates scroll.
+                modeChip?.let { ModeChipButton(it) }
                 if (wordList.isNotEmpty()) {
                     InlineCandidates(
                         suggestionsExpansion,

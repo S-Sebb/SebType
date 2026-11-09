@@ -15,6 +15,7 @@ import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import androidx.compose.runtime.mutableStateOf
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import com.google.android.apps.inputmethod.libs.mozc.session.MozcJNI
 import com.google.common.base.Optional
@@ -26,6 +27,7 @@ import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEHelper
 import org.futo.inputmethod.engine.IMEInterface
 import org.futo.inputmethod.engine.IMEMessage
+import org.futo.inputmethod.engine.ModeChip
 import org.futo.inputmethod.engine.StateHint
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.keyboard.KeyboardId
@@ -379,6 +381,33 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     var configId: KeyboardId? = null
     var configSpec: Keyboard.KeyboardSpecification? = null
 
+    // SebType (#38): the bar's あ ⇄ ア chip turns hiragana composition into full-width katakana.
+    // Katakana forms also come as candidates in あ. Each new field starts in あ.
+    private val katakana = mutableStateOf(false)
+
+    override fun getModeChip() = ModeChip(listOf("あ", "ア"), if(katakana.value) 1 else 0) {
+        setKatakana(!katakana.value)
+    }
+
+    private fun setKatakana(on: Boolean) {
+        katakana.value = on
+        helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(if(on) "ア" else null)
+        configSpec?.let { switchCompositionMode(it) }
+    }
+
+    private fun switchCompositionMode(spec: Keyboard.KeyboardSpecification) {
+        val mode = when {
+            katakana.value && spec.compositionMode == ProtoCommands.CompositionMode.HIRAGANA ->
+                ProtoCommands.CompositionMode.FULL_KATAKANA
+            else -> spec.compositionMode
+        }
+        executor.switchInputMode(
+            Optional.of(KeycodeConverter.getKeyEventInterface(0)),
+            mode,
+            resettableEvaluationCallback
+        )
+    }
+
     private fun getCurrentConfigSpec(): Keyboard.KeyboardSpecification {
         val useFlickOnly = helper.context.getSetting(JapaneseIMESettings.FlickOnly)
         val id = helper.keyboardSwitcher.keyboard?.mId
@@ -456,11 +485,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             keyboardRequest,
             emptyList()
         )
-        executor.switchInputMode(
-            Optional.of(KeycodeConverter.getKeyEventInterface(0)),
-            keyboardSpecification.compositionMode,
-            resettableEvaluationCallback
-        )
+        switchCompositionMode(keyboardSpecification)
 
         if(resetSelectionTracker) selectionTracker.onConfigurationChanged()
     }
@@ -553,6 +578,8 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         executor.removePendingEvaluations()
         executor.resetContext()
         setNeutralSuggestionStrip()
+        katakana.value = false
+        helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(null)
         updateConfig()
         initSelectionTracker()
 
@@ -564,6 +591,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     override fun onFinishInput() {
+        helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(null)
         executor.syncData()
         selectionTracker.onFinishInput()
         resetContextAndCommitText()

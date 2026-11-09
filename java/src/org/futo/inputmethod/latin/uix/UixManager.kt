@@ -737,7 +737,8 @@ class UixManager(private val latinIME: LatinIME) {
                     },
                     onQuickClipDismiss = { quickClipState.value = null },
                     needToUseExpandableSuggestionUi = needToUseExpandableSuggestionUi,
-                    loading = latinIME.imeManager.isImeLoading()
+                    loading = latinIME.imeManager.isImeLoading(),
+                    modeChip = latinIME.imeManager.modeChip()
                 )
             }
         }
@@ -1322,7 +1323,8 @@ class UixManager(private val latinIME: LatinIME) {
                                 closeActionWindow = currWindowActionWindow.value?.let {{ closeActionWindow() }},
                                 keyboardOffset = keyboardViewOffset,
                                 keyboardHeight = (latinIME.size.value?.height ?: kbHeight.intValue) + with(LocalDensity.current) { navBarHeight().toPx().toInt() },
-                                expandableSuggestionCfg = expandableSuggestionCfg.value
+                                expandableSuggestionCfg = expandableSuggestionCfg.value,
+                                modeChip = latinIME.imeManager.modeChip()
                             )
                         }
                         latinIME.LegacyKeyboardView(modifier = Modifier

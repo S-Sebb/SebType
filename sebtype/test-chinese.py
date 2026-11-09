@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Chinese (rime-ice) checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock.
+"""Chinese (rime-ice) checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock,
+then Japanese's あ ⇄ ア mode chip (#38).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR
 
@@ -465,4 +466,103 @@ check(
     expect_first("lh", "厉害"),
     needs=["update-redeploys", "learn-picked-word"],
 )
+
+
+def chip(ns):
+    """(label, x, y) of the Japanese mode chip in the suggestion bar, or None (English and 中 have none)."""
+    row = bar_row(ns)
+    return next(
+        (
+            (label, x, y)
+            for label, x, y, top, cls in ns
+            if row
+            and row[0] < y < row[1]
+            and label in ("あ", "ア")
+            and cls == "android.widget.Button"
+        ),
+        None,
+    )
+
+
+def tap_chip(expect):
+    adb("shell", "input", "tap", *map(str, chip(nodes())[1:]))
+    wait_for(
+        f"the chip to show {expect}", lambda: (chip(nodes()) or "")[:1] == (expect,), 10
+    )
+
+
+def field_text():
+    return next((n[0] for n in nodes() if n[4] == "android.widget.EditText"), "")
+
+
+def screenshot(name):
+    adb("shell", "screencap -p /sdcard/sebtype-shot.png")
+    adb("pull", "/sdcard/sebtype-shot.png", os.path.join(logdir, name))
+
+
+def to_japanese():
+    # Mozc's native code can crash a few times in a row when Japanese starts on the emulator (#35); a
+    # field opened while the keyboard is down never gets it back, so the app is restarted and the field
+    # reopened.
+    restarts = 0
+    for _ in range(6):
+        try:
+            open_field()
+        except Fail:
+            adb("shell", "am", "force-stop", PKG)
+            restarts += 1
+            continue
+        if c := chip(nodes()):
+            break
+        tap_globe()
+        time.sleep(2)
+        if c := chip(nodes()):
+            break
+    else:
+        raise Fail("no あ|ア chip after cycling the globe")
+    if c[0] != "あ":
+        raise Fail(f"日 opened with the chip on {c[0]}")
+    return f"日 shows the chip on あ ({restarts} restarts after the keyboard didn't come up)"
+
+
+def katakana_candidate():
+    got = candidates_for("nihongo")
+    screenshot("japanese-hiragana.png")
+    if "ニホンゴ" not in got or got[0] != "日本語":
+        raise Fail(f"nihongo in あ -> {got[:6]}")
+    if (chip(nodes()) or "?")[0] != "あ":
+        raise Fail("the chip isn't on あ beside the candidates")
+    return f"nihongo in あ -> {got[:6]}; the chip stays beside them"
+
+
+def katakana_mode():
+    open_field()
+    tap_chip("ア")
+    type_keys("nihongo")
+    text = field_text()
+    screenshot("japanese-katakana.png")
+    if text != "ニホンゴ":
+        raise Fail(f"typed nihongo in ア; the field shows {text!r}")
+    tap_chip("あ")
+    type_keys("a")
+    text = field_text()
+    if not text.endswith("あ"):
+        raise Fail(f"back in あ, typed a; the field shows {text!r}")
+    return f"ア: nihongo -> ニホンゴ; back in あ: a -> {text!r}"
+
+
+def new_field_resets():
+    open_field()
+    tap_chip("ア")
+    open_field()
+    c = wait_for("the chip", lambda: chip(nodes()), 10)
+    if c[0] != "あ":
+        raise Fail(f"a new field opened with the chip on {c[0]}")
+    return "ア in one field, あ in the next"
+
+
+check("ja-chip", to_japanese, needs=["first-install"])
+check("ja-katakana-candidate", katakana_candidate, needs=["ja-chip"])
+check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
+check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
