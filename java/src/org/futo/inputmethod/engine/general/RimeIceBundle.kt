@@ -58,7 +58,9 @@ object RimeIceBundle {
                 if(line == "  timestamps:") inTimestamps = true
                 else if(inTimestamps) {
                     val (name, seconds) = timestamp.find(line)?.destructured ?: run { inTimestamps = false; return@forEachLine }
-                    if(seconds != "0") File(shared, "$name.yaml").setLastModified(seconds.toLong() * 1000)
+                    // Mid-second: Rime reads a file's time through the clocks' current difference,
+                    // which can round an exact second down to the one before.
+                    if(seconds != "0") File(shared, "$name.yaml").setLastModified(seconds.toLong() * 1000 + 500)
                 }
             }
         }

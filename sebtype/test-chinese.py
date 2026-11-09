@@ -165,7 +165,9 @@ def open_field():
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
-    adb("shell", "am", "start", "-W", "-n", FIELD)
+    # A new popup each time (new task, clear task): one left open would get the intent without showing
+    # the keyboard again.
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
     wait_for("the keyboard", lambda: keys(nodes()), 30)
 
 
