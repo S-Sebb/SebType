@@ -14,10 +14,11 @@ import android.view.inputmethod.InputConnection;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.runner.AndroidJUnit4;
 
-import org.futo.inputmethod.event.Event;
+import org.futo.inputmethod.keyboard.Key;
+import org.futo.inputmethod.keyboard.Keyboard;
 import org.futo.inputmethod.keyboard.KeyboardSwitcher;
+import org.futo.inputmethod.keyboard.MainKeyboardView;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
-import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.settings.Settings;
 import org.junit.Before;
 import org.junit.Test;
@@ -28,8 +29,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 /**
- * SebType: spacing tests against the live keyboard in an editor, with default settings. FUTO's
- * InputTestsBase builds LatinIME without a real input window, which no longer starts.
+ * SebType: spacing tests that tap the live keyboard in an editor, with default settings. FUTO's
+ * InputTestsBase builds LatinIME without a real input window, which no longer starts, and keys
+ * sent straight to the input logic miss the bug in #39 that real taps show.
  */
 @RunWith(AndroidJUnit4.class)
 public class LiveSpacingTests {
@@ -46,21 +48,31 @@ public class LiveSpacingTests {
         // Wait until the keyboard is typing into a new, empty editor. After the instrumentation
         // restarts SebType's process, the system can take a while to bind the keyboard again, so
         // the editor is reopened until it does.
-        for (int i = 0; i < 120 && !TextUtils.equals("", textInEditor()); i++) {
+        for (int i = 0; i < 120 && !(TextUtils.equals("", textInEditor()) && keyboardShown()); i++) {
             if (i % 25 == 0) shell("am start -W --activity-clear-task -n "
                     + "org.futo.inputmethod.latin.tests/" + EditorActivity.class.getName());
             Thread.sleep(200);
         }
         assertEquals("editor ready", "", textInEditor());
+        assertEquals("keyboard shown", true, keyboardShown());
+        Thread.sleep(2000); // the keyboard slides in and sets its shift state after it shows
+    }
+
+    private boolean keyboardShown() {
+        final boolean[] shown = new boolean[1];
+        mInstrumentation.runOnMainSync(() -> {
+            final MainKeyboardView view = KeyboardSwitcher.getInstance().getMainKeyboardView();
+            shown[0] = view != null && view.isShown() && view.getKeyboard() != null;
+        });
+        return shown[0];
     }
 
     // #39: a "." typed after a space the user pressed stays put, and the file extension after it
     // is neither moved, capitalised nor autocorrected.
     @Test
     public void spaceThenPeriodStaysPut() throws Exception {
-        final String text = "open main .py see notebook .ipynb ";
-        type(text);
-        assertEquals(text, textInEditor());
+        type("open main .py see notebook .ipynb ");
+        assertEquals("Open main .py see notebook .ipynb ", textInEditor());
     }
 
     // #39: after a tapped suggestion, a "." still joins the word.
@@ -68,29 +80,18 @@ public class LiveSpacingTests {
     public void pickedSuggestionThenPeriod() throws Exception {
         type("this");
         mInstrumentation.runOnMainSync(() -> mIme.pickSuggestionManually(new SuggestedWordInfo(
-                "this", "", 1, SuggestedWordInfo.KIND_CORRECTION, Dictionary.DICTIONARY_USER_TYPED,
+                "This", "", 1, SuggestedWordInfo.KIND_CORRECTION, Dictionary.DICTIONARY_USER_TYPED,
                 SuggestedWordInfo.NOT_AN_INDEX, SuggestedWordInfo.NOT_A_CONFIDENCE)));
         Thread.sleep(300);
         type(".");
-        assertEquals("this. ", textInEditor());
+        assertEquals("This. ", textInEditor());
     }
 
     // #39: a sentence still ends with ". " and the next word starts with a capital.
     @Test
     public void sentenceThenCapital() throws Exception {
-        type("Hello. ");
-        assertEquals("Hello. ", textInEditor());
-        final Method caps = LatinIMELegacy.class.getDeclaredMethod("getCurrentAutoCapsState");
-        caps.setAccessible(true);
-        final int[] state = new int[1];
-        mInstrumentation.runOnMainSync(() -> {
-            try {
-                state[0] = (int) caps.invoke(mIme);
-            } catch (ReflectiveOperationException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        assertEquals("auto-caps after \". \"", true, state[0] != Constants.TextUtils.CAP_MODE_OFF);
+        type("hello. how");
+        assertEquals("Hello. How", textInEditor());
     }
 
     // #39: an install that stored FUTO's default moves to SebType's once; a later choice stays.
@@ -110,12 +111,22 @@ public class LiveSpacingTests {
         prefs.edit().clear().commit();
     }
 
-    private void type(final String text) throws InterruptedException {
+    // Taps each key on the keyboard on screen, so input takes the same path as a finger's.
+    private void type(final String text) throws Exception {
         for (final int codePoint : text.codePoints().toArray()) {
-            mInstrumentation.runOnMainSync(() -> mIme.onEvent(Event.createSoftwareKeypressEvent(
-                    codePoint, Event.NOT_A_KEY_CODE, Constants.NOT_A_COORDINATE,
-                    Constants.NOT_A_COORDINATE, false)));
-            Thread.sleep(150); // about typing speed; suggestions update in between
+            final int[] xy = new int[2];
+            mInstrumentation.runOnMainSync(() -> {
+                final MainKeyboardView view = KeyboardSwitcher.getInstance().getMainKeyboardView();
+                final Keyboard keyboard = view.getKeyboard();
+                Key key = keyboard.getKey(codePoint);
+                if (key == null) key = keyboard.getKey(Character.toUpperCase(codePoint)); // shifted
+                assertNotNull("key " + new String(Character.toChars(codePoint)), key);
+                view.getLocationOnScreen(xy);
+                xy[0] += view.getPaddingLeft() + key.getX() + key.getWidth() / 2;
+                xy[1] += view.getPaddingTop() + key.getY() + key.getHeight() / 2;
+            });
+            shell("input tap " + xy[0] + " " + xy[1]);
+            Thread.sleep(250); // let suggestions and the shift state catch up, as between taps
         }
     }
 
