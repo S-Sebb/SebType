@@ -191,6 +191,33 @@ tasks.register('fetchRimeIce', Exec) {
 }
 preBuild.dependsOn fetchRimeIce
 
+// SebType ships English, Chinese and Japanese only (#6): the other languages' dictionaries and layouts
+// stay in FUTO's submodules but out of the APK. Russian comes back by deleting its entries here.
+final def sebtypeDroppedDicts = ['de', 'es', 'fr', 'it', 'pt_br', 'ru'].collect { "raw/main_${it}.dict" }
+final def sebtypeDroppedLayoutDirs = ['Amazigh', 'ArabicScript', 'Armenian', 'Bengali', 'ConstructedScripts',
+    'Cyrillic', 'Devanagari', 'Georgian', 'Greek', 'Gurmukhi', 'Hebrew', 'InternationalPhoneticAlphabet',
+    'Kannada', 'Khmer', 'KoashurKhat', 'Korean', 'Lao', 'LatinScript', 'Legacy', 'Malayalam', 'MyanmarScript',
+    'Newa', 'Sinhala', 'Tamil', 'Telugu', 'Thai', 'Tibetan']
+final def sebtypeResLarge = layout.buildDirectory.dir('generated/sebtype-res-large')
+tasks.register('sebtypeResLarge', Sync) {
+    from('java/res-large') { exclude sebtypeDroppedDicts + ['README.md'] }
+    into sebtypeResLarge
+}
+preBuild.dependsOn 'sebtypeResLarge'
+
+// Workaround (#62): the APK ships the NDK's libc++_shared.so, though nothing loads it. On the Nothing A001
+// (Dimensity 7300, Android 16), the phone schedules SebType on its little cores without an extra native library,
+// and English prediction takes 99 ms per key instead of 21 ms. With one, it usually uses the big cores: 7 of 8
+// sebtype/perf.sh runs, against 0 of 3 without (#59).
+final def sebtypeJniLibs = layout.buildDirectory.dir('generated/sebtype-jniLibs')
+tasks.register('sebtypeJniLibs', Sync) {
+    from(fileTree("${android.ndkDirectory}/toolchains/llvm/prebuilt").matching {
+        include '*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'
+    }.files)
+    into sebtypeJniLibs.map { it.dir('arm64-v8a') }
+}
+preBuild.dependsOn 'sebtypeJniLibs'
+
 android {
     namespace 'org.futo.inputmethod.latin'
 
@@ -221,6 +248,8 @@ android {
         ndk {
             abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
         }
+        // SebType speaks English, Chinese and Japanese only (#6); add 'ru' back with Russian.
+        resConfigs 'en', 'ja', 'zh-rCN'
     }
 
     bundle {
@@ -315,7 +344,7 @@ android {
         stable {
             dimension "buildType"
             buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
-            buildConfigField "boolean", "UPDATE_CHECKING", "true"
+            buildConfigField "boolean", "UPDATE_CHECKING", "false" // SebType: updates come from GitHub releases
             buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
             buildConfigField "String", "BRANCH", "\"${getBranch()}\""
 
@@ -348,11 +377,12 @@ android {
                     'java/res',
                     translationsWithoutEngValues('translations/core'),
                     translationsWithoutEngValues('translations/core-ign'),
-                    'java/res-large',
+                    sebtypeResLarge, // java/res-large without the dropped languages' dictionaries
                     'sebtype/res' // SebType's own strings (new names only, so nothing clashes)
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
+            jniLibs.srcDirs = [sebtypeJniLibs] // the unused libc++_shared.so (#62)
             // SebType's layouts (outside FUTO's layouts submodule) and the bundled rime-ice
             assets.srcDirs = ['java/assets', 'sebtype/assets', layout.buildDirectory.dir('sebtype-assets')]
         }
@@ -364,8 +394,10 @@ android {
         }
 
         stable {
-            java.srcDirs = ['common/src', 'java/src', 'java/stable/java']
-            manifest.srcFile 'java/stable/AndroidManifest.xml'
+            // SebType: the Play Store flavor's app class and manifest: no crash dialog mailing FUTO (ACRA),
+            // no update checker service
+            java.srcDirs = ['common/src', 'java/src', 'java/playstore/java']
+            manifest.srcFile 'java/playstore/AndroidManifest.xml'
             res.srcDirs = ['sebtype/res-stable', 'java/res-bundle'] // SebType launcher icon and English dictionary, overriding FUTO's; bundled Mozc dictionary
         }
 
@@ -392,6 +424,9 @@ android {
 
     aaptOptions {
         noCompress 'dict', 'zip'
+        // aapt's default ignore list, plus the dropped languages' layout folders (FUTO's layouts submodule)
+        ignoreAssetsPattern(['!.svn', '!.git', '!.ds_store', '!*.scc', '.*', '!CVS', '!thumbs.db', '!picasa.ini',
+                             '!*~', *sebtypeDroppedLayoutDirs.collect { "!<dir>$it" }].join(':'))
     }
 
     packagingOptions {
@@ -447,8 +482,6 @@ dependencies {
     implementation 'androidx.autofill:autofill:1.1.0'
     implementation 'androidx.window:window:1.3.0'
 
-    stableImplementation 'ch.acra:acra-mail:5.11.1'
-    stableImplementation 'ch.acra:acra-dialog:5.11.1'
     unstableImplementation 'ch.acra:acra-mail:5.11.1'
     unstableImplementation 'ch.acra:acra-dialog:5.11.1'
 
@@ -464,8 +497,6 @@ dependencies {
     //implementation "androidx.work:work-runtime-ktx:$work_version"
     //implementation "androidx.work:work-runtime:$work_version"
 
-    implementation project(":voiceinput-shared")
-
     implementation "com.charleskorn.kaml:kaml:0.61.0"
 
     // For MOZC
@@ -477,8 +508,6 @@ dependencies {
     // For RIME
     implementation files('rime-android/out/rime-release.aar').builtBy('fetchRimeAar')
     // End for RIME
-
-    implementation files('libs/futo-swipe-release.aar')
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 

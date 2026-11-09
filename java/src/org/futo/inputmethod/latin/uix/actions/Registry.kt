@@ -12,7 +12,6 @@ import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.SettingsKey
-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryAction
 import org.futo.inputmethod.latin.uix.actions.fonttyper.FontTyperAction
 import org.futo.inputmethod.latin.uix.getSetting
@@ -27,8 +26,6 @@ val AllActionsMap = mapOf(
     "themes" to ThemeAction,
     "undo" to UndoAction,
     "redo" to RedoAction,
-    "voice_input" to VoiceInputAction,
-    "system_voice_input" to SystemVoiceInputAction,
     "switch_language" to SwitchLanguageAction,
     "clipboard_history" to ClipboardHistoryAction,
     "mem_dbg" to MemoryDebugAction,
@@ -68,18 +65,7 @@ private fun List<Action>.verifyNamesAreUnique(): List<Action> {
 }
 
 object ActionRegistry {
-    suspend fun getActionOverride(context: Context, action: Action): Action {
-        return if(action == VoiceInputAction || action == SystemVoiceInputAction) {
-            val useSystemVoiceInput = context.getSetting(USE_SYSTEM_VOICE_INPUT)
-            if(useSystemVoiceInput) {
-                SystemVoiceInputAction
-            } else {
-                VoiceInputAction
-            }
-        } else {
-            action
-        }
-    }
+    suspend fun getActionOverride(context: Context, action: Action): Action = action // SebType: no voice input
 
     fun parseAction(actionString: String): Int {
         val action = if(actionString.startsWith(KeyboardCodesSet.ACTION_CODE_PREFIX)) {
@@ -264,10 +250,10 @@ fun String.toActionList(): List<Action> = split(",").mapNotNull { AllActionsMap[
 val DefaultActionSettings = mapOf(
     // SebType: the globe sits beside the space bar; emoji moves to the action bar
     ActionCategory.ActionKey to listOf(SwitchLanguageAction),
-    ActionCategory.PinnedKey to listOf(VoiceInputAction),
+    ActionCategory.PinnedKey to listOf(), // SebType: voice input, FUTO's pinned key, is gone (#6)
     ActionCategory.Favorites to listOfNotNull(if(IsDebug) MemoryDebugAction else null, EmojiAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, ThemeAction, KeyboardModeAction),
     ActionCategory.More to listOf(), // Remaining actions get populated automatically by ensureWellFormed
-    ActionCategory.Disabled to listOf(MemoryDebugAction, SystemVoiceInputAction, BugViewerAction)
+    ActionCategory.Disabled to listOf(MemoryDebugAction, BugViewerAction)
 )
 
 val DefaultActionKey = DefaultActionSettings[ActionCategory.ActionKey]!!.firstOrNull()?.let {

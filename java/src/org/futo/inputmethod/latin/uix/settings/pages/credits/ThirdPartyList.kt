@@ -21,13 +21,6 @@ val ThirdPartyList: List<ThirdPartyItem> = listOf(
         License.Apache2
     ),
     TP(
-        "OpenAI Whisper",
-        "Voice Input powered by OpenAI Whisper",
-        "https://github.com/openai/whisper",
-        "Copyright (c) 2022 OpenAI",
-        License.Apache2
-    ),
-    TP(
         "ggml projects",
         "whisper.cpp, llama.cpp, ggml",
         "https://ggml.ai",
@@ -47,20 +40,6 @@ val ThirdPartyList: List<ThirdPartyItem> = listOf(
         "https://feathericons.com",
         "Copyright (c) 2013-2017 Cole Bemis",
         License.MIT,
-    ),
-    TP(
-        "WebRTC VAD",
-        "WebRTC VAD",
-        "https://webrtc.org",
-        "Copyright (c) 2011 The WebRTC project authors",
-        License.BSD3
-    ),
-    TP(
-        "android-vad",
-        "android-vad",
-        "https://github.com/gkonovalov/android-vad",
-        "Copyright (c) 2023 Georgiy Konovalov",
-        License.MIT
     ),
     TP(
         "LineageOS LatinIME",

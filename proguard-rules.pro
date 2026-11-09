@@ -65,8 +65,6 @@
 }
 -keep class org.mozc.android.inputmethod.japanese.protobuf.** { *; }
 
-# Keep swipe
--keep class org.futo.ml.inference.** { *; }
 # SebType: no debug, verbose or info logs in release, so typed text can't reach logcat through them
 # (this also strips them from the bundled aars, e.g. RimeJni's per-key log).
 -assumenosideeffects class android.util.Log {

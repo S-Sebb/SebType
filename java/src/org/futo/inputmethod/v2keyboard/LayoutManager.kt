@@ -59,6 +59,8 @@ object LayoutManager {
                 val key = localeFromString(locale)
                 this[key] = (listOf(layout) + (this[key] ?: listOf())).distinct()
             }
+            // SebType offers only its own languages (#6)
+            keys.retainAll(SebTypeLanguages.map { localeFromString(it.first) }.toSet())
         }
 
         localeNames = parseNames(context, "layouts/names.yaml").mapKeys {
@@ -72,6 +74,11 @@ object LayoutManager {
         layoutsById = layoutPaths.filter { it != "layouts/names.yaml" }.associate { path ->
             val keyboard = LazyKeyboard(path)
             keyboard.filename to keyboard
+        }
+
+        // SebType: layouts of dropped languages aren't in the APK (build.gradle), so don't offer them
+        localeToLayoutsMappings = localeToLayoutsMappings!!.mapValues { (_, layouts) ->
+            layouts.filter { it in layoutsById!! }
         }
     }
 

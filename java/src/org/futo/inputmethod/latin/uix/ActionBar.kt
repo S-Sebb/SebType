@@ -118,7 +118,6 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
 import org.futo.inputmethod.engine.ModeChip
-import org.futo.inputmethod.latin.DisplayTop4Setting
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SuggestedWords
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo
@@ -488,7 +487,7 @@ fun RowScope.SuggestionItems(words: SuggestedWords, onClick: (i: Int) -> Unit, o
     val layout = makeSuggestionLayout(
         words = words,
         blacklist = null,
-        swipeTailRemovePrimarySuggestion = useDataStoreValue(DisplayTop4Setting)
+        swipeTailRemovePrimarySuggestion = false // SebType: no glide typing (#6)
     )
 
     val suggestionItem = @Composable { suggestion: SuggestedWordInfo? ->

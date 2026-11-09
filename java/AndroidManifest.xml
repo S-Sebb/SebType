@@ -22,7 +22,6 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WRITE_USER_DICTIONARY"/>
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
@@ -167,14 +166,6 @@
                 <data android:scheme="futo-keyboard" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".MicPermissionActivity"
-            android:clearTaskOnLaunch="false"
-            android:launchMode="standard"
-            android:noHistory="true"
-            android:configChanges="orientation|screenLayout|screenSize|keyboardHidden|keyboard|uiMode|density"
-            android:theme="@style/Theme.TextEditPopup" />
 
         <activity
             android:name=".uix.TextEditPopupActivity"

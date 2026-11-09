@@ -87,15 +87,5 @@ fun ModelListScreen(navController: NavHostController = rememberNavController()) 
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(32.dp))
-        ScreenTitle("Actions")
-        NavigationItem(
-            title = "Import from file",
-            style = NavigationItemStyle.Misc,
-            navigate = {
-                openModelImporter(context)
-            }
-        )
     }
 }

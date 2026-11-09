@@ -17,7 +17,6 @@ export JAVA_HOME=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/de
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 [[ -x $JAVA_HOME/bin/javac ]] || { echo "build: JDK 21 not found (set JAVA_HOME_21)" >&2; exit 1; }
 [[ -d $ANDROID_HOME/ndk/28.2.13676358 ]] || { echo "build: NDK 28.2.13676358 missing in $ANDROID_HOME" >&2; exit 1; }
-command -v git-lfs >/dev/null || { echo "build: git-lfs missing (the swipe models are LFS files)" >&2; exit 1; }
 
 git submodule update --init --depth 1 >&2
 # Mozc's Japanese dictionary (pinned URL and sha256 in FUTO's script), bundled like FUTO's Play Store build.

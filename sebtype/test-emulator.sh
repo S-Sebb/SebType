@@ -47,9 +47,9 @@ check signed-sebtype bash -c "'$bt/apksigner' verify --print-certs '$apk' | grep
 # Japanese works with nothing imported only if Mozc's dictionary is in the APK, stored uncompressed (Mozc maps it).
 mozc_dict=$(grep -A3 'raw/builtin_mozc_data$' <<<"$("$bt/aapt2" dump resources "$apk")" | awk '$1 == "(ja)" {print $3}')
 check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_dict' | grep -q ' stor '"
-# SebType's uniform zh/ja layouts ship beside FUTO's, which stay (Russian must remain addable).
+# SebType's uniform zh/ja layouts ship beside FUTO's English ones.
 assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
-check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty Cyrillic/east_slavic; do
+check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty; do
   grep -qx "assets/layouts/$f.yaml" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets"
 check rime-ice-bundled bash -c "unzip -p '$apk' assets/rime/rime-ice.zip | sha256sum | grep -q \$(grep -o '^RIME_ICE_SHA256=.*' sebtype/fetch-rime-ice.sh | cut -d= -f2)"
 
@@ -68,6 +68,15 @@ make_bumped() {
 # timeout execs its command, so the function and what it reads go through the environment.
 export -f make_bumped; export apk bt bumped out
 check bumped-apk bash -c make_bumped
+
+# The trim (#6): no voice input, glide typing or other languages; only English, Japanese and Chinese
+# translations. Russian's sources stay in FUTO's submodules (build.gradle drops them from the APK).
+dicts=$("$bt/aapt2" dump resources "$apk" | grep -o 'raw/main_[a-z_]*' | sort -u | tr '\n' ' ')
+check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -E "tiny_en_acft|futo-swipe|libswipe_jni|assets/layouts/(Cyrillic|LatinScript)/")
+  [[ -z $bad ]] || { echo "still in the APK: $bad"; exit 1; }
+  ! grep -q RECORD_AUDIO <<<"$2" || { echo "RECORD_AUDIO permission"; exit 1; }
+  grep -qx "locales: .--_--. .ja. .zh-CN." <<<"$2" || { grep "^locales" <<<"$2"; exit 1; }
+  [[ $3 == "raw/main_en " ]] || { echo "dictionaries: $3"; exit 1; }' _ "$apk" "$badging" "$dicts"
 
 # Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
 device_checks() {

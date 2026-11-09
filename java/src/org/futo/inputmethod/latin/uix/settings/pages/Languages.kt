@@ -64,7 +64,6 @@ import org.futo.inputmethod.latin.uix.settings.Route
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.Tip
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.pages.modelmanager.openModelImporter
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
@@ -248,11 +247,6 @@ fun LanguageSurface(
                 }
 
                 LanguageConfigurable(
-                    kind = FileKind.VoiceInput,
-                    selection = item.options.voiceInputModel
-                        ?: stringResource(R.string.language_settings_resource_none)
-                ) { onConfigurableSelected(FileKind.VoiceInput) }
-                LanguageConfigurable(
                     kind = FileKind.Dictionary,
                     selection = item.options.dictionary
                         ?: stringResource(R.string.language_settings_resource_none)
@@ -340,7 +334,6 @@ fun LanguageSurfacePreview() {
                 languageName = "Language Name",
                 options = LanguageOptions(
                     "Model Name",
-                    "Model Name",
                     "Model Name"
                 ),
                 layouts = listOf(
@@ -355,104 +348,9 @@ fun LanguageSurfacePreview() {
 }
 
 data class LanguageOptions(
-    val voiceInputModel: String?,
     val dictionary: String?,
     val transformerModel: String?
 )
-
-@Composable
-fun ConfirmResourceActionDialog(
-    onDismissRequest: () -> Unit,
-
-    onExplore: () -> Unit,
-    onDelete: () -> Unit,
-    onImport: () -> Unit,
-
-    resourceKind: FileKind,
-    isCurrentlySet: Boolean,
-    locale: Locale
-) {
-    val hasBuiltInFallback = if (resourceKind == FileKind.VoiceInput) {
-        ResourceHelper.BuiltInVoiceInputFallbacks[locale.language] != null
-    } else if (resourceKind == FileKind.Dictionary) {
-        Dictionaries.getDictionaryIfExists(LocalContext.current, locale, Dictionaries.DictionaryKind.Any) != null
-    } else {
-        true
-    }
-
-    AlertDialog(
-        icon = {
-            Icon(painterResource(id = resourceKind.icon()), contentDescription = null)
-        },
-        title = {
-            Text(text = "${locale.displayLanguage} - ${resourceKind.kindTitle(LocalResources.current)}")
-        },
-        text = {
-            if (isCurrentlySet) {
-                Text(
-                    text = when (resourceKind) {
-                        FileKind.VoiceInput -> stringResource(R.string.language_settings_resource_voice_input_selected)
-                        FileKind.Transformer -> stringResource(R.string.language_settings_resource_transformer_selected)
-                        FileKind.Dictionary -> stringResource(R.string.language_settings_resource_dictionary_selected)
-                        FileKind.Invalid -> ""
-                    } + if (!hasBuiltInFallback) {
-                        "\n\n" +
-                                when (resourceKind) {
-                                    FileKind.VoiceInput -> stringResource(R.string.language_settings_resource_voice_input_selected_no_default_warning)
-                                    FileKind.Transformer -> stringResource(R.string.language_settings_resource_transformer_selected_no_default_warning)
-                                    FileKind.Dictionary -> stringResource(R.string.language_settings_resource_dictionary_selected_no_default_warning)
-                                    FileKind.Invalid -> ""
-                                }
-                    } else {
-                        ""
-                    }
-                )
-            } else {
-                Text(
-                    text = when (resourceKind) {
-                        FileKind.VoiceInput -> stringResource(R.string.language_settings_resource_voice_input_selected_unset)
-                        FileKind.Transformer -> stringResource(R.string.language_settings_resource_transformer_selected_unset)
-                        FileKind.Dictionary -> stringResource(R.string.language_settings_resource_dictionary_selected_unset)
-                        FileKind.Invalid -> ""
-                    }
-                )
-            }
-        },
-        onDismissRequest = {
-            onDismissRequest()
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onImport()
-            }) {
-                Text(
-                    if (isCurrentlySet) {
-                        stringResource(R.string.language_settings_resource_replace_button)
-                    } else {
-                        stringResource(R.string.language_settings_resource_import_file_button)
-                    }
-                )
-            }
-        },
-        dismissButton = {
-            if (isCurrentlySet) {
-                TextButton(onClick = { onDelete() }) {
-                    if (hasBuiltInFallback) {
-                        Text(stringResource(R.string.language_settings_resource_revert_to_default_button))
-                    } else {
-                        Text(stringResource(R.string.language_settings_resource_remove_button))
-                    }
-
-                }
-            } else {
-                TextButton(onClick = { onExplore() }) {
-                    Text(stringResource(R.string.language_settings_resource_explore_online_button))
-                }
-            }
-        }
-    )
-}
-
 
 @Composable
 fun ConfirmDeleteLanguageDialog(
@@ -497,11 +395,6 @@ fun ConfirmDeleteLanguageDialog(
 }
 
 
-data class DeleteInfo(
-    val locale: Locale,
-    val kind: FileKind
-)
-
 val LanguageSettingsTop = listOf(
     userSettingNavigationItem(
         title = R.string.language_settings_add_language_button,
@@ -509,46 +402,6 @@ val LanguageSettingsTop = listOf(
         navigateTo = "addLanguage",
     )
 )
-val LanguageSettingsBottom = listOf(
-    userSettingNavigationItem(
-        title = R.string.language_settings_import_resource_from_file,
-        style = NavigationItemStyle.Misc,
-        navigate = { nav ->
-            openModelImporter(nav.context)
-        },
-    ),
-    userSettingNavigationItem(
-        title = R.string.language_settings_explore_voice_input_models_online,
-        style = NavigationItemStyle.Misc,
-        navigate = { nav ->
-            nav.context.openURI(
-                FileKind.VoiceInput.getAddonUrlForLocale(null),
-                true
-            )
-        },
-    ),
-    userSettingNavigationItem(
-        title = R.string.language_settings_explore_dictionaries_online,
-        style = NavigationItemStyle.Misc,
-        navigate = { nav ->
-            nav.context.openURI(
-                FileKind.Dictionary.getAddonUrlForLocale(null),
-                true
-            )
-        },
-    ),
-    userSettingNavigationItem(
-        title = R.string.language_settings_explore_transformers_online,
-        style = NavigationItemStyle.Misc,
-        navigate = { nav ->
-            nav.context.openURI(
-                FileKind.Transformer.getAddonUrlForLocale(null),
-                true
-            )
-        },
-    )
-)
-
 val LanguageSettingsLite = UserSettingsMenu(
     title = R.string.language_settings_title,
     navPath = "languages", registerNavPath = false,
@@ -559,7 +412,7 @@ val LanguageSettingsLite = UserSettingsMenu(
             navigateTo = "languages",
             style = NavigationItemStyle.Misc
         )
-    ) + LanguageSettingsBottom
+    )
 )
 
 @Preview(showBackground = true)
@@ -567,7 +420,6 @@ val LanguageSettingsLite = UserSettingsMenu(
 fun LanguagesScreen(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
     val resources = LocalResources.current
-    val deleteDialogInfo: MutableState<DeleteInfo?> = remember { mutableStateOf(null) }
     val languageDeleteInfo: MutableState<Locale?> = remember { mutableStateOf(null) }
 
     val inputMethods = useDataStoreValue(SubtypesSetting)
@@ -579,34 +431,7 @@ fun LanguagesScreen(navController: NavHostController = rememberNavController()) 
 
     val inputMethodKeys = remember(inputMethodList) { inputMethodList.keys.toList().sorted() }
 
-    if (deleteDialogInfo.value != null) {
-        val info = deleteDialogInfo.value!!
-        ConfirmResourceActionDialog(
-            onDismissRequest = { deleteDialogInfo.value = null },
-            onExplore = {
-                context.openURI(info.kind.getAddonUrlForLocale(info.locale), true)
-                deleteDialogInfo.value = null
-            },
-            onDelete = {
-                ResourceHelper.deleteResourceForLanguage(context, info.kind, info.locale)
-                deleteDialogInfo.value = null
-            },
-            onImport = {
-                openModelImporter(context)
-                deleteDialogInfo.value = null
-            },
-
-            resourceKind = info.kind,
-            locale = info.locale,
-            isCurrentlySet = runBlocking {
-                ResourceHelper.findFileForKind(
-                    context,
-                    info.locale,
-                    info.kind
-                )?.exists() == true
-            }
-        )
-    } else if (languageDeleteInfo.value != null) {
+    if (languageDeleteInfo.value != null) {
         val info = languageDeleteInfo.value!!
         ConfirmDeleteLanguageDialog(
             locale = info,
@@ -654,10 +479,6 @@ fun LanguagesScreen(navController: NavHostController = rememberNavController()) 
 
             val name = Subtypes.getName(subtypes.first())
 
-            val voiceInputModelName = ResourceHelper.tryFindingVoiceInputModelForLocale(
-                context,
-                locale
-            )?.name?.let { stringResource(it) }
             val dictionaryName = runBlocking {
                 ResourceHelper.findKeyForLocaleAndKind(
                     context,
@@ -687,7 +508,6 @@ fun LanguagesScreen(navController: NavHostController = rememberNavController()) 
                 }
 
             val options = LanguageOptions(
-                voiceInputModel = voiceInputModelName,
                 dictionary = dictionaryName,
                 transformerModel = transformerName
             )
@@ -722,10 +542,9 @@ fun LanguagesScreen(navController: NavHostController = rememberNavController()) 
                     }
                 },
                 onConfigurableSelected = { kind ->
+                    // SebType: dictionaries and models are built in, nothing to import or remove (#6)
                     if (kind == FileKind.Transformer && transformerName != null) {
                         navController.navigate("models")
-                    } else {
-                        deleteDialogInfo.value = DeleteInfo(locale, kind)
                     }
                 },
                 onLayoutAdditionRequested = {
@@ -744,14 +563,6 @@ fun LanguagesScreen(navController: NavHostController = rememberNavController()) 
             )
 
             Spacer(modifier = Modifier.height(12.dp))
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(32.dp))
-            ScreenTitle(stringResource(R.string.language_settings_other_options))
-        }
-        items(LanguageSettingsBottom) {
-            it.component()
         }
     }
 }

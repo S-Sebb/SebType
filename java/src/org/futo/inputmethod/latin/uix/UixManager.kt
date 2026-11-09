@@ -390,15 +390,6 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
         uixManager.toggleExpandAction(to)
     }
 
-    override fun triggerSystemVoiceInput() {
-        latinIME.latinIMELegacy.onCodeInput(
-            Constants.CODE_SHORTCUT,
-            Constants.SUGGESTION_STRIP_COORDINATE,
-            Constants.SUGGESTION_STRIP_COORDINATE,
-            false
-        )
-    }
-
     override fun getThemeProvider(): DynamicThemeProvider {
         return latinIME.getDrawableProvider()
     }

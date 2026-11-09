@@ -40,5 +40,5 @@ It builds the signed arm64 release APK under the shared build lock
 (`/tmp/agent-locks/sebtype/build.lock`) and runs `gh release create` with tag
 `v<FUTO version>-sebtype.<n>`, where `<n>` is the number of commits on main (also the version code,
 so every release from main upgrades the previous one). Needs JDK 21 in `~/.local/share/jdks/` (or
-`JAVA_HOME_21`), the Android SDK with NDK 28.2 in `~/Android/Sdk` (or `ANDROID_HOME`), `git-lfs`
+`JAVA_HOME_21`), the Android SDK with NDK 28.2 in `~/Android/Sdk` (or `ANDROID_HOME`)
 and a logged-in `gh`.
