@@ -132,10 +132,12 @@ for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
         "last keyboard frame before the next key (700 ms apart)",
     )
 row(
-    "EN transformer CPU per key, median / p95",
-    p(lm),
+    "EN transformer CPU per key it ran on, median / p95",
+    p([x for x in lm if x > 0]),
     "en",
-    f"{sum(x > 350 for x in lm)} of {len(lm)} keys over FUTO's 350 ms limit",
+    # FUTO waits 350 ms for the transformer and turns it off after 6 misses in a row.
+    f"ran on {sum(x > 0 for x in lm)} of {len(lm)} keys, {sum(x > 350 for x in lm)} over FUTO's "
+    "350 ms limit; after 6 misses in a row FUTO turns it off until the next text field",
 )
 for name, d, ph, note in (
     ("Fast typing", fast, "fast", "100 ms per key"),

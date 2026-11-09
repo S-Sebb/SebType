@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Measures SebType's size, memory and speed on an Android device (#45); docs/perf.md says how to read it.
-#   sebtype/perf.sh          builds the release APK, then measures on the first adb device
-# APK=<path> skips the build; ANDROID_SERIAL picks the device; RUNS (default 3) repeats each typing set.
+#   sebtype/perf.sh          builds the release APK, then measures on the running emulator
+# APK=<path> skips the build; ANDROID_SERIAL=<serial> measures on that device instead (the only way to
+# pick a phone); RUNS (default 3) repeats each typing set.
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in /tmp/sebtype/perf-results.txt, the table in /tmp/sebtype/perf.md, traces and
 # logs in /tmp/sebtype/perf/. Exit 0 only if every check passes. Timing comes from Perfetto traces of
@@ -160,12 +161,14 @@ phase_zh-deploy() { # switch to 中: the first-run Rime deploy (rime-ice), with 
     sh am force-stop "$pkg"; sleep 1
     start=$(date +%s.%N)
     sh ime set "$ime_id" > /dev/null
+    open_field # the deploy starts when 中 gets a text field
   else
     start=$(date +%s.%N)
     taps 0 G
   fi
   # Done when the compiled tables exist and the Rime folder hasn't changed for 5 s.
-  for (( t = 0; t < 900; t++ )); do
+  local deadline=$(( SECONDS + 900 ))
+  while (( SECONDS < deadline )); do
     p=$(pss_kb); (( ${p:-0} > peak )) && peak=$p
     cur=$(sh "du -s $rime_dir; ls $rime_dir/user/build 2>/dev/null" | tr '\n' ' ')
     if [[ $cur == "$prev" && $cur == *.table.bin* && $cur == *.prism.bin* ]]; then
@@ -244,6 +247,8 @@ phase_sizes() { # needs a root shell (emulator): app code, internal data, extern
 }
 
 device_steps() { # under the device lock
+  trap 'sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
+    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt' EXIT
   check install 600 || return 1
   grep -q '^PASS install' "$results" || return 1
   check first-open 120
@@ -256,7 +261,6 @@ device_steps() { # under the device lock
   check warm-open 300
   check cold-open 300
   check sizes 120
-  sh ime set "$(cat "$work/prev-ime")" > /dev/null # give the device back with its keyboard
 }
 
 if [[ ${1:-} == --phase ]]; then set -e; "phase_$2"; exit; fi
@@ -265,8 +269,10 @@ if [[ ${1:-} == --device ]]; then device_steps; exit; fi
 # ---- Preflight ----
 mkdir -p "$out"; rm -rf "$work"; mkdir -p "$work"; : > "$results"
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
-export ANDROID_SERIAL=${ANDROID_SERIAL:-$("$adb" devices | awk 'NR > 1 && $2 == "device" {print $1; exit}')}
-[[ -n $ANDROID_SERIAL ]] || { echo "preflight: no adb device (start AVD guide35 or connect the phone)"; exit 1; }
+# A phone only when named: the run reinstalls SebType, which wipes what it learned there.
+export ANDROID_SERIAL=${ANDROID_SERIAL:-$("$adb" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')}
+[[ -n $ANDROID_SERIAL ]] || { echo "preflight: no emulator running (start AVD guide35; for a phone set ANDROID_SERIAL)"; exit 1; }
+[[ $("$adb" -s "$ANDROID_SERIAL" get-state 2>/dev/null) == device ]] || { echo "preflight: $ANDROID_SERIAL not connected"; exit 1; }
 [[ $(sh getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "preflight: $ANDROID_SERIAL can't run arm64 apps"; exit 1; }
 (( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "preflight: needs Android 14+ (ImeTracker logs)"; exit 1; }
 for x in python3 curl unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
@@ -290,7 +296,9 @@ else # rime-ice packed as for #4, without personal words
     unzip -q "$work/rime-ice.dict" -d "$work/shared" || { echo "preflight: can't pack rime-ice, see $work/rime-ice.log"; exit 1; }
 fi
 # Another keyboard to switch from for the cold open (the phone keeps Gboard for banking apps).
-sh ime list -s | grep -E '^(com.google.android.inputmethod.latin|org.futo.inputmethod.latin)/' | head -1 > "$work/other-ime"
+# Gboard first: stock FUTO crashes in Mozc on the emulator.
+{ sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
+  sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
 case $ANDROID_SERIAL in emulator-*) lock=/tmp/agent-locks/sebtype/emulator.lock ;; *) lock=/tmp/agent-locks/sebtype/phone.lock ;; esac
 echo "measuring $APK on $ANDROID_SERIAL ($(sh getprop ro.product.model), Android $(sh getprop ro.build.version.release))"
 
