@@ -137,7 +137,6 @@ def tap_globe():
         str(int(left + 3 * (right - left) / 10)),
         str(int(top + 3.5 * (bottom - top) / 4)),
     )
-    time.sleep(1.5)
 
 
 def bar_row(ns):
@@ -277,6 +276,7 @@ def check(name, fn, needs=()):
 
 
 def fresh_install():
+    global keyboard_frame
     adb("uninstall", PKG, check=False)
     adb("install", apk, timeout=300)
     wait_for(
@@ -287,19 +287,30 @@ def fresh_install():
     adb("shell", "ime", "enable", IME)
     adb("logcat", "-c")
     # What a new user does: the setup screen (which starts setting up Chinese in the background), then
-    # the keyboard right away.
+    # the keyboard right away. The keyboard comes up once first, in English, so the test knows where
+    # its keys are and can look at 中 at once (a dump takes a couple of seconds on a phone).
+    open_field()
     adb(
         "shell",
         "am",
         "start",
+        "-W",
         "-n",
         f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
     )
-    open_field()
+    adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
     adb("shell", "input", "text", "hi")  # English works meanwhile
+    time.sleep(1)  # taps while the keyboard slides back in are dropped
     tap_globe()  # a fresh install starts in EN; the globe turns it into 中
-    ns = nodes()
-    notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
+    # Look until setup ends; the keyboard must be on screen all along.
+    while True:
+        keyboard_frame = None
+        ns = nodes()
+        if not keyboard_frame:
+            raise Fail("no keyboard on screen during setup")
+        notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
+        if notice or re.search(SET_UP, logcat()):
+            break
     if notice:
         # Keys while Chinese isn't ready type plain letters; tapped at once, before setup ends.
         q = keys(ns)["q"]
@@ -312,8 +323,6 @@ def fresh_install():
         )
     field = [n[0] for n in nodes() if n[4] == "android.widget.EditText"]
     setup, install, deployed, runs = wait_set_up()
-    if not keyboard_frame:
-        raise Fail("no keyboard on screen during setup")
     if not notice:
         raise Fail(f"setup took {setup} ms, but 中 showed no setup notice")
     if field != ["hiq"]:
