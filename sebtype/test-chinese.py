@@ -27,6 +27,7 @@ FAILURE_NOTICES = (
     "中文输入启动失败，点此重试",
     "Chinese input failed to start. Tap to retry",
 )
+PREPARING = ("正在准备中文", "Preparing Chinese")
 log_path = os.path.join(logdir, "test-chinese.log")
 
 
@@ -39,7 +40,7 @@ def adb(*args, timeout=120, check=True):
         check=False,
     )
     with open(log_path, "a", encoding="utf-8") as log:
-        log.write(f"$ adb {' '.join(args)}\n{p.stdout[-2000:]}{p.stderr[-2000:]}")
+        log.write(f"$ adb {' '.join(args)}\n{p.stdout[-2000:]}{p.stderr[-2000:]}\n")
     if check and p.returncode != 0:
         raise RuntimeError(
             f"adb {' '.join(args)} failed: {p.stderr.strip() or p.stdout.strip()}"
@@ -156,6 +157,7 @@ def candidates(ns):
         and cls == "android.widget.TextView"
         and label
         and label not in FAILURE_NOTICES
+        and not label.startswith(PREPARING)
     ]
     return [label for x, label in sorted(bar)]
 
@@ -221,20 +223,26 @@ def logcat():
     return adb("shell", "logcat -d | grep -F 'ChineseIME (rime)' || true")
 
 
-def wait_deployed(timeout=240):
-    """Waits for the app's deploy log line; returns (deploy ms, install ms or None). Clears logcat."""
+SET_UP = r"Set up rime_ice in (\d+) ms \(deployed: (yes|no)\), self-test (\w+)"
+
+
+def wait_set_up(timeout=240):
+    """Waits for the app's setup log line; returns (setup ms, install ms or None, deployed, setup
+    lines logged). Clears logcat."""
     line = wait_for(
-        "the deploy to finish",
-        lambda: re.search(r"Deployed rime_ice in (\d+) ms, self-test (\w+)", logcat()),
-        timeout,
-        2,
+        "Chinese to be set up", lambda: re.search(SET_UP, logcat()), timeout, 2
     )
     text = logcat()
     install = re.search(r"Installed the bundled rime-ice in (\d+) ms", text)
     adb("logcat", "-c")
-    if line.group(2) != "passed":
-        raise Fail(f"self-test {line.group(2)} after deploy")
-    return int(line.group(1)), int(install.group(1)) if install else None
+    if line.group(3) != "passed":
+        raise Fail(f"self-test {line.group(3)} after setup")
+    return (
+        int(line.group(1)),
+        int(install.group(1)) if install else None,
+        line.group(2) == "yes",
+        len(re.findall(SET_UP, text)),
+    )
 
 
 def restart_app():
@@ -278,15 +286,51 @@ def fresh_install():
     )
     adb("shell", "ime", "enable", IME)
     adb("logcat", "-c")
+    # What a new user does: the setup screen (which starts setting up Chinese in the background), then
+    # the keyboard right away.
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
+    )
     open_field()
-    tap_globe()  # a fresh install starts in EN; the globe turns it into 中, which deploys rime-ice
-    deploy, install = wait_deployed()
+    adb("shell", "input", "text", "hi")  # English works meanwhile
+    tap_globe()  # a fresh install starts in EN; the globe turns it into 中
+    ns = nodes()
+    notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
+    if notice:
+        # Keys while Chinese isn't ready type plain letters; tapped at once, before setup ends.
+        q = keys(ns)["q"]
+        adb("shell", "input", "tap", str(q[0]), str(q[1]))
+        adb("shell", "screencap -p /sdcard/sebtype-indicator.png")
+        adb(
+            "pull",
+            "/sdcard/sebtype-indicator.png",
+            os.path.join(logdir, "chinese-indicator.png"),
+        )
+    field = [n[0] for n in nodes() if n[4] == "android.widget.EditText"]
+    setup, install, deployed, runs = wait_set_up()
+    if not keyboard_frame:
+        raise Fail("no keyboard on screen during setup")
+    if not notice:
+        raise Fail(f"setup took {setup} ms, but 中 showed no setup notice")
+    if field != ["hiq"]:
+        raise Fail(f"typed hi in English and q during setup; the field shows {field}")
+    if runs != 1 or not deployed:
+        raise Fail(
+            f"{runs} setups logged, deployed: {deployed}; expected one, deploying"
+        )
     built = adb("shell", "ls", f"{RIME}/user/build")
     # rime-ice's prebuilt tables and the English prism (the slow part) must be used, not rebuilt.
     rebuilt = [f for f in ("rime_ice.table.bin", "melt_eng.prism.bin") if f in built]
     if rebuilt:
-        raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (deploy {deploy} ms)")
-    return f"first run: install {install} ms + deploy and self-test {deploy} ms, prebuilt tables used"
+        raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (setup {setup} ms)")
+    return (
+        f"first run from the setup screen: install {install} ms, set up in {setup} ms all told; "
+        f"中 showed {notice[0]!r} meanwhile, keys typed plain letters, prebuilt tables used"
+    )
 
 
 def expect_first(text, word):
@@ -331,13 +375,19 @@ def learn_lower_candidate():
 
 def learned_survives_restart():
     restart_app()
-    wait_deployed()
+    setup, _, deployed, _ = wait_set_up()
+    if deployed:
+        raise Fail(f"a restart deployed again ({setup} ms)")
     return expect_first("lh", "厉害")()
 
 
 def update_over_itself():
     adb("logcat", "-c")
     adb("install", "-r", bumped_apk, timeout=300)
+    # The update itself starts setting up Chinese, before any keyboard shows.
+    setup, install, _, _ = wait_set_up()
+    if install is None:
+        raise Fail("the update didn't reinstall the bundled rime-ice")
     # Android drops the keyboard's binding on an update and, on the emulator, may not rebind it on the
     # first selection; a second one brings it up.
     wait_for(
@@ -349,10 +399,7 @@ def update_over_itself():
         open_field()
     except Fail:
         open_field()
-    deploy, install = wait_deployed()
-    if install is None:
-        raise Fail("the update didn't reinstall the bundled rime-ice")
-    return f"reinstalled rime-ice in {install} ms, deploy and self-test {deploy} ms"
+    return f"the update alone reinstalled rime-ice in {install} ms and set it up in {setup} ms"
 
 
 def failure_is_visible():
@@ -368,7 +415,7 @@ def failure_is_visible():
     )
     adb("logcat", "-c")
     open_field()
-    wait_for("the deploy to finish", lambda: "Deployed rime_ice" in logcat(), 240, 2)
+    wait_for("the setup to finish", lambda: re.search(SET_UP, logcat()), 240, 2)
     notice = wait_for(
         "the failure notice",
         lambda: [n[0] for n in nodes() if n[0] in FAILURE_NOTICES],
@@ -380,13 +427,11 @@ def failure_is_visible():
 def failure_recovers():
     adb("logcat", "-c")
     tap_candidate(next(n[0] for n in nodes() if n[0] in FAILURE_NOTICES))
-    deploy, install = wait_deployed()
+    setup, install, _, _ = wait_set_up()
     got = candidates_for("ranh")
     if not got or got[0] != "然后":
         raise Fail(f"after the retry ranh -> {got[:6]}")
-    return (
-        f"tap reinstalled ({install} ms) and deployed ({deploy} ms); ranh -> {got[:3]}"
-    )
+    return f"tap reinstalled ({install} ms) and set up ({setup} ms); ranh -> {got[:3]}"
 
 
 check("first-install", fresh_install)

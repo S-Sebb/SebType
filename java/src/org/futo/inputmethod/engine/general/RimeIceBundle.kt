@@ -3,6 +3,8 @@ package org.futo.inputmethod.engine.general
 import android.content.Context
 import org.futo.inputmethod.latin.utils.ZipFileHelper
 import java.io.File
+import java.io.FilterInputStream
+import java.io.InputStream
 
 /**
  * SebType's Chinese data: rime-ice's own release zip (GPL-3.0, unmodified, with its prebuilt build/),
@@ -19,7 +21,9 @@ object RimeIceBundle {
 
     private const val INSTALLED_VERSION = ".sebtype-bundle-version"
 
-    private fun bundledVersion(context: Context) =
+    private const val ZIP = "rime/rime-ice.zip"
+
+    fun bundledVersion(context: Context) =
         context.assets.open("rime/bundle-version").bufferedReader().use { it.readText().trim() }
 
     private fun marker(context: Context) = File(ChineseIME.getShared(context), INSTALLED_VERSION)
@@ -32,10 +36,13 @@ object RimeIceBundle {
         marker(context).delete()
     }
 
-    fun install(context: Context) {
+    /** Installs the bundled rime-ice; [onProgress] gets the percentage of the zip extracted so far. */
+    fun install(context: Context, onProgress: (Int) -> Unit = {}) {
         val shared = ChineseIME.getShared(context)
         shared.deleteRecursively()
-        context.assets.open("rime/rime-ice.zip").use { ZipFileHelper.extract(it, shared) }
+        // Stored uncompressed in the APK (noCompress), so its asset length is the zip's size.
+        val size = context.assets.openFd(ZIP).use { it.length }
+        context.assets.open(ZIP).use { ZipFileHelper.extract(Progress(it, size, onProgress), shared) }
         restoreSourceTimes(shared)
         // Rime's own compiled copies from the previous version would be rebuilt on the phone (about a
         // minute) instead of using the bundled prebuilt ones.
@@ -63,6 +70,21 @@ object RimeIceBundle {
                     if(seconds != "0") File(shared, "$name.yaml").setLastModified(seconds.toLong() * 1000 + 500)
                 }
             }
+        }
+    }
+
+    private class Progress(input: InputStream, val size: Long, val onProgress: (Int) -> Unit) : FilterInputStream(input) {
+        private var read = 0L
+        private var percent = -1
+
+        override fun read(b: ByteArray, off: Int, len: Int) = super.read(b, off, len).also { count(it) }
+        override fun read() = super.read().also { if(it >= 0) count(1) }
+
+        private fun count(n: Int) {
+            if(n <= 0) return
+            read += n
+            val now = (read * 100 / size).toInt().coerceAtMost(100)
+            if(now != percent) { percent = now; onProgress(now) }
         }
     }
 }

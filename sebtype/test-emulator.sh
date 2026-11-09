@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks the SebType release APK, installs it on the local emulator next to stock FUTO Keyboard, then
-# types Chinese with it (sebtype/test-chinese.py): rime-ice after a fresh install, learning, an update
-# over itself and recovery from a broken install. It uninstalls SebType first, so its data is lost.
+# types Chinese with it (sebtype/test-chinese.py): rime-ice set up in the background from the setup
+# screen after a fresh install (with its notice when 中 comes up first), learning, an update over itself
+# and recovery from a broken install. It uninstalls SebType first, so its data is lost.
 # One line per check in /tmp/sebtype/test-emulator-results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/.."

@@ -4,6 +4,9 @@
     <string name="sebtype_app_name" translatable="false">SebType</string>
     <!-- Theme named after SebChat's look; not translated, like the app name. -->
     <string name="sebtype_theme_picnic" translatable="false">Picnic</string>
+    <!-- Suggestion bar notice while Chinese (rime-ice) is set up; the percentage is how much of it is installed. -->
+    <string name="sebtype_chinese_preparing">Preparing Chinese…</string>
+    <string name="sebtype_chinese_preparing_percent">Preparing Chinese… %d%%</string>
     <!-- Suggestion bar notice when Chinese (rime-ice) failed to set up; tapping it sets Chinese up again. -->
     <string name="sebtype_chinese_engine_failed">Chinese input failed to start. Tap to retry</string>
 </resources>
