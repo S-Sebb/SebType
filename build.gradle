@@ -355,7 +355,7 @@ android {
         stable {
             java.srcDirs = ['common/src', 'java/src', 'java/stable/java']
             manifest.srcFile 'java/stable/AndroidManifest.xml'
-            res.srcDirs = ['sebtype/res-stable'] // SebType launcher icon, overriding FUTO's
+            res.srcDirs = ['sebtype/res-stable', 'java/res-bundle'] // SebType launcher icon, overriding FUTO's; bundled Mozc dictionary
         }
 
         unstable {

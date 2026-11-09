@@ -13,3 +13,4 @@ java/res/raw/mozc.data
 java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
 # SebType
 out/
+java/res-bundle/raw*/
