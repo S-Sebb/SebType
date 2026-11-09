@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Chinese (rime-ice) checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock.
 
-    test-chinese.py SERIAL APK BUMPED_APK RESULTS LOGDIR
+    test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR
 
 APK is the release build; BUMPED_APK is the same APK with a different bundled rime-ice version marker,
-installed over it as an update. Types by tapping SebType's own keys (found with `uiautomator dump
---windows`) into FUTO's "try typing" popup and reads the candidate bar. One line per
-check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
+installed over it as an update; FIELD_APK is sebtype/perf/build-field.sh's text field app, which only
+supplies the box that gets typed into (the app's own "try typing" popup isn't exported). Types by
+tapping SebType's own keys (found with `uiautomator dump --windows`) and reads the candidate bar. One
+line per check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
 """
 
 import datetime
@@ -17,10 +18,10 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-serial, apk, bumped_apk, results_path, logdir = sys.argv[1:6]
+serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
-FIELD = f"{PKG}/org.futo.inputmethod.latin.uix.TextEditPopupActivity"
+FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 RIME = f"/storage/emulated/0/Android/data/{PKG}/files/rime"
 FAILURE_NOTICES = (
     "中文输入启动失败，点此重试",
@@ -46,6 +47,10 @@ def adb(*args, timeout=120, check=True):
     return p.stdout
 
 
+# The field app just supplies an exported text box; it stays installed, like the keyboards.
+adb("install", "-r", field_apk, timeout=300)
+
+
 def result(status, name, detail=""):
     line = f"{status} {name}" + (f": {detail}" if detail else "")
     print(line, flush=True)
@@ -68,8 +73,12 @@ def wait_for(what, fn, timeout, interval=1.0):
         time.sleep(interval)
 
 
+keyboard_frame = None  # the keyboard's bounds, from the last nodes()
+
+
 def nodes():
     """(label, x, y, top, class) of every node in all windows, keyboard included."""
+    global keyboard_frame
     adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
     xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
     out, frame = [], None
@@ -80,7 +89,7 @@ def nodes():
             x1, y1, x2, y2 = map(int, m.groups())
             out.append((label, (x1 + x2) // 2, (y1 + y2) // 2, y1, n.get("class")))
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
-                frame = x1, y1, x2, y2
+                frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
         out += letter_keys(*frame)
     return out
@@ -111,6 +120,23 @@ def keys(ns):
         for label, x, y, top, cls in ns
         if re.fullmatch(r"[a-z]", label)
     }
+
+
+def tap_globe():
+    """The globe key beside the space bar: the bottom row's third column, over the last nodes().
+
+    A fresh install sets up EN, 中, 日 in that order (#35), so one tap turns the English from the
+    install into 中; the globe then cycles back to EN after 日.
+    """
+    left, top, right, bottom = keyboard_frame
+    adb(
+        "shell",
+        "input",
+        "tap",
+        str(int(left + 3 * (right - left) / 10)),
+        str(int(top + 3.5 * (bottom - top) / 4)),
+    )
+    time.sleep(1.5)
 
 
 def bar_row(ns):
@@ -253,6 +279,7 @@ def fresh_install():
     adb("shell", "ime", "enable", IME)
     adb("logcat", "-c")
     open_field()
+    tap_globe()  # a fresh install starts in EN; the globe turns it into 中, which deploys rime-ice
     deploy, install = wait_deployed()
     built = adb("shell", "ls", f"{RIME}/user/build")
     # rime-ice's prebuilt tables and the English prism (the slow part) must be used, not rebuilt.

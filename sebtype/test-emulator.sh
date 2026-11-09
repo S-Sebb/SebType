@@ -29,6 +29,10 @@ serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
   { echo "preflight: emulator $serial can't run arm64 apps"; exit 1; }
 apk=$(sebtype/build.sh release 2> "$out/test-emulator-build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/test-emulator-build.log"; exit 1; }
+# The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.
+field_apk=$out/test-emulator-field.apk
+sebtype/perf/build-field.sh "$field_apk" > "$out/test-emulator-field.log" 2>&1 && [[ -f $field_apk ]] ||
+  { echo "preflight: test field build failed, see $out/test-emulator-field.log"; exit 1; }
 [[ -f $futo_apk ]] || gh release download 0.1.30 -R futo-org/android-keyboard -p keyboard-0.1.30.apk -O "$futo_apk" ||
   { echo "preflight: can't download stock FUTO 0.1.30"; exit 1; }
 echo "testing $apk on $serial"
@@ -84,7 +88,7 @@ T=2000 check install-beside-futo devq -P 1 -w 1800 -m 5 -n "sebtype #5 test-emul
 if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
   # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
   PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run devq -P 1 -w 1800 -m 15 -n "sebtype #8 test-chinese" "$lock" \
-    python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$results" "$out"
+    python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out"
 else
   result SKIP chinese "needs install-beside-futo and bumped-apk"
 fi
