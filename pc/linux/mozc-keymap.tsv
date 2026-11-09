@@ -161,3 +161,10 @@ Composition	Alt `	IMEOff
 Conversion	Alt `	IMEOff
 DirectInput	Alt `	IMEOn
 Precomposition	Alt `	IMEOff
+Composition	Shift	IMEOff
+Conversion	Shift	IMEOff
+DirectInput	Shift	IMEOn
+Precomposition	Shift	IMEOff
+Prediction	Shift	IMEOff
+Suggestion	Shift	IMEOff
+ZeroQuerySuggestion	Shift	IMEOff

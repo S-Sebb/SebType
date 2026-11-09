@@ -163,9 +163,11 @@ if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true
 fi
 
-# 9. Japanese: Alt+` toggles あ and direct English (Decisions #2). Mozc keeps a custom keymap only as a
-# whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus four Alt+` lines (Shift+letter, F6–F10
-# and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
+# 9. Japanese: a Shift tap and Alt+` toggle あ and direct English (Decisions #2), in Mozc's own keymap,
+# so no addon or patch is needed. fcitx5-mozc sends Mozc a bare Shift only when it is released with no
+# other key pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it.
+# Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
+# Alt+` and Shift lines for each state (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
 # kept. Mozc reads it at start, so a running mozc_server is stopped; fcitx5-mozc restarts it on the next key.
 mozc_db=$config/mozc/config1.db
@@ -201,14 +203,14 @@ sys.stdout.buffer.write(before + enc(41 << 3) + enc(0) + enc(42 << 3 | 2) + enc(
 PY
 )
 if [[ $(base64 -w0 "$mozc_db" 2>/dev/null) != "$mozc_want" ]] &&
-  change "set Mozc's keymap to MS-IME plus Alt+\` for あ ⇄ English in $mozc_db (backup in $backup)"; then
+  change "set Mozc's keymap to MS-IME plus Shift tap and Alt+\` for あ ⇄ English in $mozc_db (backup in $backup)"; then
   [[ -f $mozc_db ]] && save "$mozc_db"
   mkdir -p "${mozc_db%/*}"; base64 -d <<<"$mozc_want" > "$mozc_db"
   mapfile -t pids < <(pgrep -u "$(id -u)" -x mozc_server)
   ((${#pids[@]})) && kill "${pids[@]}"
   # fcitx5-mozc reads the keys that work in direct English mode once, when Fcitx5 starts.
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-    warn "Alt+\` from English back to あ works once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+    warn "Shift tap and Alt+\` from English back to あ work once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
 fi
 
 # 10. Plasma binds Alt+` (and Meta+`) to "Walk Through Windows of Current Application", so Mozc would
