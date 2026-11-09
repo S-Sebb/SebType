@@ -501,12 +501,17 @@ def screenshot(name):
 
 
 def to_japanese():
-    # Mozc sometimes crashes once on its first start on the emulator (#35), so the field is reopened.
-    for _ in range(4):
+    # Mozc's native code can crash a few times in a row when Japanese starts on the emulator (#35); a
+    # field opened while the keyboard is down never gets it back, so the app is restarted and the field
+    # reopened.
+    restarts = 0
+    for _ in range(6):
         try:
             open_field()
         except Fail:
-            open_field()
+            adb("shell", "am", "force-stop", PKG)
+            restarts += 1
+            continue
         if c := chip(nodes()):
             break
         tap_globe()
@@ -517,7 +522,7 @@ def to_japanese():
         raise Fail("no あ|ア chip after cycling the globe")
     if c[0] != "あ":
         raise Fail(f"日 opened with the chip on {c[0]}")
-    return "日 shows the chip on あ"
+    return f"日 shows the chip on あ ({restarts} restarts after the keyboard didn't come up)"
 
 
 def katakana_candidate():
