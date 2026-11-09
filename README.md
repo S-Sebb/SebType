@@ -19,6 +19,13 @@ and its added words were checked against [SCOWL](https://wordlist.aspell.net); c
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 
+**Chinese** is [rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice), bundled in the APK as a separate,
+unmodified component: its release `full_compiled.zip`, version 2026.06.30, licensed under the
+[GNU GPL v3](https://github.com/iDvel/rime-ice/blob/6810e8916d160498620a16fef2135956fecbd485/LICENSE) (the
+licence is inside the bundled zip), source at
+[6810e891](https://github.com/iDvel/rime-ice/tree/6810e8916d160498620a16fef2135956fecbd485).
+`sebtype/fetch-rime-ice.sh` pins and fetches it. It runs on librime with Lua from [rime-android/](rime-android/README.md).
+
 SebType's application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard.
 FUTO's own README follows unchanged.
 

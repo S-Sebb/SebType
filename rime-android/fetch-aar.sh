@@ -3,7 +3,6 @@
 #
 #   ./fetch-aar.sh [DEST]   # default: out/rime-release.aar next to this script
 #
-# The repo is private, so this uses gh (logged in, or GH_TOKEN set).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -19,8 +18,8 @@ fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-gh release download "rime-android-$RIME_ANDROID_VERSION" --repo S-Sebb/sebtype \
-  --pattern "$ASSET" --dir "$TMP"
+curl -fsSL -o "$TMP/$ASSET" \
+  "https://github.com/S-Sebb/SebType/releases/download/rime-android-$RIME_ANDROID_VERSION/$ASSET"
 if ! echo "$SHA256  $TMP/$ASSET" | sha256sum --check --status; then
   echo "checksum mismatch for $ASSET (expected $SHA256)" >&2
   exit 1

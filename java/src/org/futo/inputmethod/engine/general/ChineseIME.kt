@@ -21,16 +21,19 @@ import icu.astronot233.rime.X11Keys.XK_BackSpace
 import icu.astronot233.rime.X11Keys.XK_Linefeed
 import icu.astronot233.rime.X11Keys.XK_Return
 import icu.astronot233.rime.X11Keys.XK_Tab
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
 import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEHelper
@@ -278,6 +281,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
         @JvmStatic
         fun getUser(context: Context) = File(getRimeDir(context), "user")
+
+        // How long a deploy may take before the failure notice shows. The tables come prebuilt, so
+        // this is far more than a deploy needs.
+        private const val DEPLOY_TIMEOUT_MS = 5 * 60_000L
 
         val PreviouslyExtractedDictionaryName = SettingsKey(
             stringPreferencesKey("ChineseDictionaryExtractedValue"),
@@ -530,10 +537,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }
 
     override fun onStartInput() {
-        if(resetSharedFromResources(helper.context, helper.lifecycleScope)) {
-            prevConfiguration = null
-            coroScope.launch { rime.deploy() }
-        }
+        if(engineFailed) showEngineFailure()
         updateConfig()
     }
 
@@ -582,9 +586,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             appendLine("          states: [ 漢字, 汉字 ]")
             appendLine("    simplifier/option_name: futo_zh_simp")
 
-            // Fuzzy pinyin only added to pinyin layouts
-            if(schema.startsWith("luna_pinyin")) {
-                appendLine("    speller/algebra:")
+            // Fuzzy pinyin only added to pinyin layouts. Appended (FUTO 68ead9599): a bare
+            // `speller/algebra:` would replace rime-ice's own rules, which give abbreviated pinyin.
+            if(schema == RimeIceBundle.SCHEMA && cfg.fuzzyMode.isNotEmpty()) {
+                appendLine("    speller/algebra/+:")
                 cfg.fuzzyMode.forEach {
                     it.schemePatch.forEach {
                         appendLine("        - $it")
@@ -605,6 +610,14 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             if(!configSemaphore.tryAcquire()) return@launch
 
             try {
+                if(!withContext(Dispatchers.IO) { RimeIceBundle.isInstalled(helper.context) }) {
+                    rimeLoading.value = true
+                    val started = SystemClock.elapsedRealtime()
+                    withContext(Dispatchers.IO) { RimeIceBundle.install(helper.context) }
+                    Log.i(TAG, "Installed the bundled rime-ice in ${SystemClock.elapsedRealtime() - started} ms")
+                    prevConfiguration = null
+                }
+
                 val settings = Settings.getInstance().current
                 val locale = settings.mLocale
 
@@ -616,10 +629,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 val schema = when (layoutHint) {
                     "qwerty" -> {
                         when {
-                            pinyinScheme == ChineseIMESettings.PinyinScheme.FullPinyin -> when {
-                                simplified -> "luna_pinyin_simp"
-                                else -> "luna_pinyin"
-                            }
+                            pinyinScheme == ChineseIMESettings.PinyinScheme.FullPinyin -> RimeIceBundle.SCHEMA
 
                             else -> pinyinScheme.rimeId
                         }
@@ -652,29 +662,82 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 if (config != prevConfiguration) {
                     rimeLoading.value = true
                     writeCustomizationFile(config)
+                    val started = SystemClock.elapsedRealtime()
                     rime.deploy()
 
+                    // Deploying runs in the background; the schema is selectable once it is done.
                     var result = false
-                    for(i in 0..10) {
+                    while(SystemClock.elapsedRealtime() - started < DEPLOY_TIMEOUT_MS) {
                         if(rime.selectSchema(config.schema)) {
                             result = true
                             break
                         }
-                        Thread.sleep(300L)
+                        delay(300L)
                     }
+                    val deployMs = SystemClock.elapsedRealtime() - started
+                    if(result && config.schema == RimeIceBundle.SCHEMA) result = selfTest()
+                    Log.i(TAG, "Deployed ${config.schema} in $deployMs ms, self-test ${if(result) "passed" else "failed"}")
 
-                    if(!result) {
-                        Log.e(TAG, "Failed to select schema 3s after deployment!")
+                    engineFailed = !result
+                    if(result) {
+                        rime.setOption("simplification", simplified)
+                        rime.setOption("traditional", !simplified)
+                        prevConfiguration = config
+                        setNeutralSuggestionStrip()
+                    } else {
+                        showEngineFailure()
                     }
-
-                    rime.setOption("simplification", simplified)
-                    rime.setOption("traditional", !simplified)
-                    prevConfiguration = config
                 }
+            } catch(e: CancellationException) {
+                throw e
+            } catch(e: Exception) {
+                Log.e(TAG, "Setting up Rime failed", e)
+                engineFailed = true
+                showEngineFailure()
             } finally {
                 configSemaphore.release()
                 rimeLoading.value = false
             }
+        }
+    }
+
+    private suspend fun selfTest(): Boolean {
+        rime.clearComposition()
+        rime.simulateKeySequence(RimeIceBundle.SELF_TEST_INPUT)
+        val passed = rime.getCandidates().any { it.text == RimeIceBundle.SELF_TEST_WORD }
+        rime.clearComposition()
+        return passed
+    }
+
+    // A failed deploy or self-test shows a notice in the suggestion bar instead of a silently dead
+    // engine; keys still type plain letters (Rime passes them by). Tapping the notice reinstalls the
+    // bundled rime-ice and deploys again. Learned words are kept.
+    private var engineFailed = false
+
+    private fun showEngineFailure() = showSuggestionStrip(SuggestedWords(
+        arrayListOf(SuggestedWordInfo(
+            helper.context.getString(R.string.sebtype_chinese_engine_failed),
+            "",
+            Int.MAX_VALUE,
+            SuggestedWordInfo.KIND_HARDCODED,
+            null,
+            SuggestedWordInfo.NOT_AN_INDEX,
+            SuggestedWordInfo.NOT_A_CONFIDENCE
+        )),
+        null,
+        null,
+        false,
+        false,
+        false,
+        0,
+        0
+    ))
+
+    private fun retryAfterFailure() {
+        coroScope.launch {
+            withContext(Dispatchers.IO) { RimeIceBundle.forget(helper.context) }
+            prevConfiguration = null
+            updateConfig()
         }
     }
 
@@ -775,7 +838,9 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
             Event.EVENT_TYPE_SUGGESTION_PICKED -> {
                 val suggestion = event.mSuggestedWordInfo ?: return
-                if (suggestion.isKindOf(SuggestedWordInfo.KIND_UNDO)) {
+                if (engineFailed) {
+                    retryAfterFailure()
+                } else if (suggestion.isKindOf(SuggestedWordInfo.KIND_UNDO)) {
                     connect?.commitText(suggestion.word, 1)
                 } else {
                     coroScope.launch {

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sebtype_chinese_engine_failed">中文输入启动失败，点此重试</string>
+</resources>

@@ -40,12 +40,16 @@ object ZipFileHelper {
 
     fun extract(file: File, outputDir: File) {
         require(file.isFile) { "ZIP file must be a regular file" }
+        extract(file.inputStream(), outputDir)
+    }
+
+    fun extract(input: InputStream, outputDir: File) {
         require(outputDir.mkdirs() || outputDir.isDirectory) { "Cannot create output directory" }
 
         val canonicalOutputDir = outputDir.canonicalFile
         val outputDirPathWithSeparator = canonicalOutputDir.path + File.separator
 
-        file.inputStream().buffered().use { fis ->
+        input.buffered().use { fis ->
             ZipInputStream(fis).use { zipIn ->
                 var entry = zipIn.nextEntry
                 while (entry != null) {

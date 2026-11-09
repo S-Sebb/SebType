@@ -181,6 +181,16 @@ tasks.register('updateContributors') {
 
 preBuild.dependsOn updateLocales
 
+// SebType: the Rime aar with Lua (rime-android/) and the bundled rime-ice, both downloaded and
+// checksum-checked; neither is committed.
+tasks.register('fetchRimeAar', Exec) {
+    commandLine 'bash', file('rime-android/fetch-aar.sh').absolutePath, file('rime-android/out/rime-release.aar').absolutePath
+}
+tasks.register('fetchRimeIce', Exec) {
+    commandLine 'bash', file('sebtype/fetch-rime-ice.sh').absolutePath, layout.buildDirectory.dir('sebtype-assets').get().asFile.absolutePath
+}
+preBuild.dependsOn fetchRimeIce
+
 android {
     namespace 'org.futo.inputmethod.latin'
 
@@ -343,7 +353,8 @@ android {
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
-            assets.srcDirs = ['java/assets', 'sebtype/assets'] // SebType's layouts, outside FUTO's layouts submodule
+            // SebType's layouts (outside FUTO's layouts submodule) and the bundled rime-ice
+            assets.srcDirs = ['java/assets', 'sebtype/assets', layout.buildDirectory.dir('sebtype-assets')]
         }
 
         playstore {
@@ -380,7 +391,7 @@ android {
     }
 
     aaptOptions {
-        noCompress 'dict'
+        noCompress 'dict', 'zip'
     }
 
     packagingOptions {
@@ -464,7 +475,7 @@ dependencies {
     // End for MOZC
 
     // For RIME
-    implementation files('libs/rime-release.aar')
+    implementation files('rime-android/out/rime-release.aar').builtBy('fetchRimeAar')
     // End for RIME
 
     implementation files('libs/futo-swipe-release.aar')
