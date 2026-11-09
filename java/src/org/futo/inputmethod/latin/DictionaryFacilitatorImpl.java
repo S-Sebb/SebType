@@ -94,16 +94,11 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     private static final Class<?>[] DICT_FACTORY_METHOD_ARG_TYPES =
             new Class[] { Context.class, Locale.class, File.class, String.class, String.class };
 
-
-    public static SwipeDecoderDictionary swipeDecoderDictionary = null;
-
     private LruCache<String, Boolean> mValidSpellingWordReadCache;
     private LruCache<String, Boolean> mValidSpellingWordWriteCache;
 
-    private static boolean sTriesAreInvalid = false;
     public static void onAnyBinaryDictionaryClosed() {
-        sTriesAreInvalid = true;
-        swipeDecoderDictionary.invalidateTries();
+        // SebType: nothing to do, the glide typing decoder that kept dictionary tries is gone (#6)
     }
 
     @Override
@@ -367,11 +362,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             final String dictNamePrefix,
             @Nullable final DictionaryInitializationListener listener) {
 
-        mPrevKeyboard = null;
-        if(DictionaryFacilitatorImpl.swipeDecoderDictionary == null) {
-            DictionaryFacilitatorImpl.swipeDecoderDictionary = new SwipeDecoderDictionary(context, Locale.ENGLISH);
-        }
-
         final HashMap<Locale, ArrayList<String>> existingDictionariesToCleanup = new HashMap<>();
         // TODO: Make subDictTypesToUse configurable by resource or a static final list.
         final HashSet<String> subDictTypesToUse = new HashSet<>();
@@ -409,7 +399,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             }
         }
 
-        mTrieCorrespondingGroups = null;
         ArrayList<DictionaryGroup> newDictionaryGroups = new ArrayList<>();
         for(Locale newLocale : newLocales) {
             final DictionaryGroup dictionaryGroupForLocale =
@@ -877,29 +866,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             }
         }
 
-        if(DictionaryFacilitatorImpl.swipeDecoderDictionary != null) {
-            SwipeDecoderDictionary.updateKeyboard(keyboard);
-            updateSwipeLayoutAndDictsIfNeeded(Settings.getInstance().getCurrent(), keyboard);
-
-            if(SwipeDecoderDictionary.canBeUsed()) {
-                final ArrayList<SuggestedWordInfo> dictionarySuggestions =
-                        DictionaryFacilitatorImpl.swipeDecoderDictionary.getSuggestions(composedData, ngramContext,
-                            inputStyle == SuggestedWords.INPUT_STYLE_TAIL_BATCH, getTrieWeights());
-
-                if (dictionarySuggestions != null) {
-                    suggestionResults.addAll(dictionarySuggestions);
-                    if (null != suggestionResults.mRawSuggestions) {
-                        suggestionResults.mRawSuggestions.addAll(dictionarySuggestions);
-                    }
-
-                    if(!dictionarySuggestions.isEmpty())
-                        addEmojiSuggestionsForSwipe(suggestionResults, dictionarySuggestions.get(0));
-
-                    return suggestionResults;
-                }
-            }
-        }
-
         for(DictionaryGroup dictionaryGroup : mDictionaryGroups) {
             for (final String dictType : ALL_DICTIONARY_TYPES) {
                 final Dictionary dictionary = dictionaryGroup.getDict(dictType);
@@ -919,22 +885,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             }
         }
         return suggestionResults;
-    }
-
-    private void addEmojiSuggestionsForSwipe(SuggestionResults results, SuggestedWordInfo topWord) {
-        for (DictionaryGroup dictionaryGroup : mDictionaryGroups) {
-            final Dictionary emojiDict = dictionaryGroup.getDict(Dictionary.TYPE_EMOJI);
-
-            if (emojiDict == null) continue;
-            if (!(emojiDict instanceof EmojiDictionary)) continue;
-
-            final ArrayList<SuggestedWordInfo> emojiSuggestions = ((EmojiDictionary)emojiDict)
-                    .lookupEmoji(topWord.mWord, null, null);
-
-            if (emojiSuggestions == null) continue;
-
-            results.addAll(emojiSuggestions);
-        }
     }
 
     public boolean isValidSpellingWord(final String word) {
@@ -1058,99 +1008,9 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         }
     }
 
-    private void addDictionaryTries(List<Dictionary> dictList, String letters, ArrayList<Long> tries,
-                                    boolean allowBadWords) {
-        for(Dictionary dict : dictList) {
-            long handle = 0;
-            if(dict instanceof BinaryDictionary) {
-                handle = ((BinaryDictionary) dict).getITrie(letters, allowBadWords);
-            } else if(dict instanceof ReadOnlyBinaryDictionary) {
-                handle = ((ReadOnlyBinaryDictionary) dict).getITrie(letters, allowBadWords);
-            }else if(dict instanceof ExpandableBinaryDictionary) {
-                handle = ((ExpandableBinaryDictionary) dict).getITrie(letters, allowBadWords);
-            }else if(dict instanceof DictionaryCollection) {
-                addDictionaryTries(((DictionaryCollection) dict).getDictionaries(), letters, tries, allowBadWords);
-            }
-
-            if(handle == 0) continue;
-            tries.add(handle);
-        }
-    }
-
-    private boolean mPrevBadWordsAllowed = false;
-    private Keyboard mPrevKeyboard = null;
-    private ArrayList<DictionaryGroup> mTrieCorrespondingGroups;
-
-    private float[] getTrieWeights() {
-        if(mTrieCorrespondingGroups == null) return new float[0];
-
-        int size = mTrieCorrespondingGroups.size();
-        float[] result = new float[size];
-
-        for(int i=0; i<size; i++) {
-            result[i] = mTrieCorrespondingGroups.get(i).mWeightForGesturingInLocale;
-        }
-
-        return result;
-    }
-
-    private boolean areBadWordsAllowed() {
-        return !Settings.getInstance().getCurrent().mBlockPotentiallyOffensive;
-    }
-
     @Override
     public void updateSwipeLayoutAndDictsIfNeeded(SettingsValues values, Keyboard keyboard) {
-        if(swipeDecoderDictionary == null) return;
-
-        // TODO: This could be more optimized by avoiding unnecessary recreations when
-        //  isMultiLine is changed, or something else trivial has changed. Maybe also cache the
-        //  resulting LayoutInfos
-        boolean needsToRecreate = keyboard != mPrevKeyboard;
-        if(sTriesAreInvalid) {
-            needsToRecreate = true;
-        }
-
-        boolean allowBadWords = areBadWordsAllowed();
-        if(mPrevBadWordsAllowed != allowBadWords) {
-            needsToRecreate = true;
-        }
-
-        if(!needsToRecreate) return;
-
-        if(!hasAtLeastOneInitializedMainDictionary()) return;
-        if(keyboard == null) return;
-        KeyboardLayout layout = keyboard.getKeyboardLayout();
-        if(layout == null) return;
-
-        mPrevKeyboard = keyboard;
-        final LayoutInfoForModel info = LayoutInfoForModel.buildLayoutInfo(swipeDecoderDictionary.getContext(), keyboard, values);
-        // Log.d("DictionaryFacilitatorImpl", "Keyboard updated... New info: " + info);
-
-        if(info != null) {
-            // Make sure to update tries
-            ArrayList<Long> trieArray = new ArrayList<>();
-
-            mTrieCorrespondingGroups = new ArrayList<>();
-
-            for(DictionaryGroup group : mDictionaryGroups) {
-                int prevLength = trieArray.size();
-                ArrayList<Dictionary> dicts = new ArrayList<Dictionary>();
-                dicts.add(group.getDict(Dictionary.TYPE_MAIN));
-                dicts.add(group.getDict(Dictionary.TYPE_USER));
-                dicts.add(group.getDict(Dictionary.TYPE_USER_HISTORY));
-
-                addDictionaryTries(dicts, info.getLetters(), trieArray, allowBadWords);
-                int newLength = trieArray.size();
-
-                for(int i=0; i<(newLength - prevLength); i++) {
-                    mTrieCorrespondingGroups.add(group);
-                }
-            }
-
-            mPrevBadWordsAllowed = allowBadWords;
-            swipeDecoderDictionary.updateKeyboard(new SwipeDecoderDictionary.PendingLayoutInfo(info, trieArray));
-            sTriesAreInvalid = trieArray.isEmpty();
-        }
+        // SebType: no glide typing decoder to update (#6)
     }
 
     @Override

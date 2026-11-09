@@ -24,10 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
-import org.futo.inputmethod.latin.uix.findActivity
 import org.futo.inputmethod.latin.uix.findSettingsActivity
 import org.futo.inputmethod.latin.uix.settings.EXPORT_GGUF_MODEL_REQUEST
-import org.futo.inputmethod.latin.uix.settings.IMPORT_RESOURCE_FILE_REQUEST
 import org.futo.inputmethod.latin.xlm.ModelInfo
 import org.futo.inputmethod.latin.xlm.ModelInfoLoader
 import java.io.File
@@ -131,14 +129,4 @@ fun ModelPicker(
             }
         }
     }
-}
-
-
-fun openModelImporter(context: Context) {
-    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-        addCategory(Intent.CATEGORY_OPENABLE)
-        type = "application/octet-stream"
-    }
-
-    findActivity(context)!!.startActivityForResult(intent, IMPORT_RESOURCE_FILE_REQUEST)
 }

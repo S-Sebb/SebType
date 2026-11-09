@@ -70,12 +70,8 @@ import org.futo.inputmethod.latin.uix.theme.getThemeOption
 import org.futo.inputmethod.latin.uix.theme.orDefault
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.SubtypeLocaleUtils
-import org.futo.inputmethod.latin.utils.ZipFileHelper
 import org.futo.inputmethod.latin.xlm.ModelPaths
 import org.futo.inputmethod.updates.openURI
-import org.futo.voiceinput.shared.BUILTIN_ENGLISH_MODEL
-import org.futo.voiceinput.shared.types.ModelFileFile
-import org.futo.voiceinput.shared.types.ModelLoader
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStream
@@ -535,10 +531,6 @@ fun determineFileKind(inputStream: InputStream): FileKindAndInfo {
 }
 
 object ResourceHelper {
-    val BuiltInVoiceInputFallbacks = mapOf(
-        "en" to BUILTIN_ENGLISH_MODEL
-    )
-
     fun findKeyForLocaleAndKind(context: Context, locale: Locale, kind: FileKind): String? {
         val keysToTry = listOf(
             locale.toString(),
@@ -566,13 +558,6 @@ object ResourceHelper {
         }
 
         return file
-    }
-
-    fun tryFindingVoiceInputModelForLocale(context: Context, locale: Locale): ModelLoader? {
-        val file = runBlocking { findFileForKind(context, locale, FileKind.VoiceInput) }
-            ?: return BuiltInVoiceInputFallbacks[locale.language]
-
-        return ModelFileFile(R.string.settings_external_model_name, file)
     }
 
     fun tryOpeningCustomMainDictionaryForLocale(context: Context, locale: Locale): ReadOnlyBinaryDictionary? {
@@ -909,33 +894,8 @@ class ImportResourceActivity : ComponentActivity() {
         null
     }
 
-    private fun detectChineseDict(input: InputStream): String? {
-        var name: String? = null
-        var version: Int? = null
-
-        val success = ZipFileHelper.parseSafe(input,
-            "FUTOKeyboard_ChineseDictionary_Name" to {
-                name = it.decodeToString().trim()
-            },
-            "FUTOKeyboard_ChineseDictionary_Version" to {
-                version = it.decodeToString().trim().toInt()
-            }
-        )
-
-        if(name == null || version == null || !success) return null
-
-        return name
-    }
-
     private fun detectItemBeingImported(): ItemBeingImported? {
-        val languageResource = getInputStream()?.use { determineFileKind(it) }
-        if(languageResource != null && languageResource.kind != FileKind.Invalid) return ItemBeingImported.LanguageResource(languageResource)
-
-        val chineseDictionary = getInputStream()?.use { detectChineseDict(it) }
-        if(chineseDictionary != null) return ItemBeingImported.LanguageResource(FileKindAndInfo(
-            FileKind.Dictionary, name=chineseDictionary, locale="zh", forceLocale = "zh"
-        ))
-
+        // SebType: dictionaries and models are built in, so they can't be imported (#6)
         val settingsBackup = getInputStream()?.use { SettingsExporter.getCfgFileMetadata(it) }
         if(settingsBackup != null) return ItemBeingImported.SettingsBackup(settingsBackup)
 

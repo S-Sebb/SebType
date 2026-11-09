@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -31,30 +30,18 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.R
-import org.futo.inputmethod.latin.uix.LocalNavController
 import org.futo.inputmethod.latin.uix.TextEditPopupActivity
-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
-import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
-import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.render
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
 import org.futo.inputmethod.latin.uix.theme.Typography
-import org.futo.inputmethod.updates.ConditionalMigrateUpdateNotice
-import org.futo.inputmethod.updates.openManualUpdateCheck
 
 val HomeScreenLite = UserSettingsMenu(
     title = R.string.settings_home_title,
     navPath = "home", registerNavPath = false,
     settings = listOf(
-        userSettingNavigationItem(
-            title = R.string.settings_check_for_updates_manually,
-            style = NavigationItemStyle.Misc,
-            navigate = { nav -> nav.context.openManualUpdateCheck() }
-        ),
-
         userSettingNavigationItem(
             title = R.string.language_settings_title,
             style = NavigationItemStyle.HomePrimary,
@@ -70,33 +57,11 @@ val HomeScreenLite = UserSettingsMenu(
         ),
 
         userSettingNavigationItem(
-            title = SwipeMenu.title,
-            style = NavigationItemStyle.HomePrimary,
-            navigateTo = SwipeMenu.navPath,
-            icon = R.drawable.swipe_icon
-        ),
-
-        userSettingNavigationItem(
             title = R.string.prediction_settings_title,
             style = NavigationItemStyle.HomeTertiary,
             navigateTo = PredictiveTextMenu.navPath,
             icon = R.drawable.text_prediction
         ),
-
-        UserSetting(
-            name = R.string.voice_input_settings_title
-        ) {
-            val navController = LocalNavController.current
-            NavigationItem(
-                title = stringResource(R.string.voice_input_settings_title),
-                style = NavigationItemStyle.HomePrimary,
-                subtitle = if(useDataStoreValue(USE_SYSTEM_VOICE_INPUT)) {
-                    stringResource(R.string.voice_input_settings_builtin_disabled_notice)
-                } else { null },
-                navigate = { navController!!.navigate(VoiceInputMenu.navPath) },
-                icon = painterResource(R.drawable.mic_fill)
-            )
-        },
 
         userSettingNavigationItem(
             title = R.string.action_settings_title,
@@ -187,7 +152,6 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                 }
             }
 
-            ConditionalMigrateUpdateNotice()
             ConditionalUnpaidNoticeWithNav(navController)
 
             HomeScreenLite.render(showTitle = false)

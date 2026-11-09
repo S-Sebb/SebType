@@ -16,4 +16,3 @@ dependencyResolutionManagement {
         }
     }
 }
-include ':voiceinput-shared'

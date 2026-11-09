@@ -67,8 +67,6 @@ interface KeyboardManagerForAction {
     fun closeActionWindow()
     fun forceActionWindowAboveKeyboard(to: Boolean)
 
-    fun triggerSystemVoiceInput()
-
     fun getThemeProvider(): DynamicThemeProvider
 
     fun sendCodePointEvent(codePoint: Int)

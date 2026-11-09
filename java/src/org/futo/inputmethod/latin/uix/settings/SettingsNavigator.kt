@@ -39,7 +39,6 @@ import org.futo.inputmethod.latin.uix.settings.pages.DeveloperScreen
 import org.futo.inputmethod.latin.uix.settings.pages.HelpMenu
 import org.futo.inputmethod.latin.uix.settings.pages.HomeScreen
 import org.futo.inputmethod.latin.uix.settings.pages.HomeScreenLite
-import org.futo.inputmethod.latin.uix.settings.pages.KASROZMenu
 import org.futo.inputmethod.latin.uix.settings.pages.KeyboardAndTypingScreen
 import org.futo.inputmethod.latin.uix.settings.pages.KeyboardSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.pages.LanguageSettingsLite
@@ -56,9 +55,7 @@ import org.futo.inputmethod.latin.uix.settings.pages.ResizeScreen
 import org.futo.inputmethod.latin.uix.settings.pages.SearchScreen
 import org.futo.inputmethod.latin.uix.settings.pages.SelectLanguageScreen
 import org.futo.inputmethod.latin.uix.settings.pages.SelectLayoutsScreen
-import org.futo.inputmethod.latin.uix.settings.pages.SwipeMenu
 import org.futo.inputmethod.latin.uix.settings.pages.TypingSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.pages.VoiceInputMenu
 import org.futo.inputmethod.latin.uix.settings.pages.addModelManagerNavigation
 import org.futo.inputmethod.latin.uix.settings.pages.buggyeditors.BuggyTextEditVariations
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.ConfirmDeleteExtraDictFileDialog
@@ -102,10 +99,8 @@ val SettingsMenus = listOf(
     TypingSettingsMenu,
     ResizeMenuLite,
     LongPressMenu,
-    SwipeMenu,
     PredictiveTextMenu,
     BlacklistScreenLite,
-    VoiceInputMenu,
     ActionsScreen,
     HelpMenu,
     MiscMenu,
@@ -185,7 +180,6 @@ fun SettingsNavigator(
             composable("paid") { PaymentThankYouScreen { navController.navigateUp() } }
             composable("credits") { CreditsScreen(navController) }
             composable("exportingcfg") { ExportingMenu(navController) }
-            composable("kasroz") { KASROZMenu() }
             dialog("update") {
                 UpdateDialog(navController = navController)
             }
