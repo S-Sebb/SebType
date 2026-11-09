@@ -614,7 +614,8 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     rimeLoading.value = true
                     val started = SystemClock.elapsedRealtime()
                     withContext(Dispatchers.IO) { RimeIceBundle.install(helper.context) }
-                    Log.i(TAG, "Installed the bundled rime-ice in ${SystemClock.elapsedRealtime() - started} ms")
+                    // Log.w: release builds strip Log.i (#29); timings only, no typed text
+                    Log.w(TAG, "Installed the bundled rime-ice in ${SystemClock.elapsedRealtime() - started} ms")
                     prevConfiguration = null
                 }
 
@@ -676,7 +677,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     }
                     val deployMs = SystemClock.elapsedRealtime() - started
                     if(result && config.schema == RimeIceBundle.SCHEMA) result = selfTest()
-                    Log.i(TAG, "Deployed ${config.schema} in $deployMs ms, self-test ${if(result) "passed" else "failed"}")
+                    Log.w(TAG, "Deployed ${config.schema} in $deployMs ms, self-test ${if(result) "passed" else "failed"}")
 
                     engineFailed = !result
                     if(result) {
