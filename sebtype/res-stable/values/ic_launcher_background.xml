@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The art's black backdrop (assets/icon.png) -->
-    <color name="ic_launcher_background">#000000</color>
+    <!-- SebChat's launcher background, cream (Decisions #2) -->
+    <color name="ic_launcher_background">#FFE4EC</color>
 </resources>

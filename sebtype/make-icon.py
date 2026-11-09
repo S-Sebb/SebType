@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Builds SebType's launcher icon resources in sebtype/res-stable from assets/icon.png (needs Pillow, NumPy).
 
-- Adaptive foreground (mipmap-*/ic_launcher_pig.png, 108dp): the art "unblended" from its black backdrop into
-  colour plus alpha, so it looks the same over the black background layer but the glow is see-through.
-  It is scaled and centred so every part of the subject sits inside the 66dp safe circle.
+- Adaptive foreground (mipmap-*/ic_launcher_pig.png, 108dp): the pig, keyboard and heart cut out of the art's
+  black backdrop and glow onto transparency, over SebChat's cream background colour. It is scaled and centred so every part of the subject sits inside the 66dp safe circle.
 - Monochrome (drawable/ic_launcher_foreground.xml): the bright parts of the pig and keyboard as a pixel-grid
   vector. FUTO's code also uses this drawable as a tinted silhouette (setup screen, notifications).
 - Legacy icons (mipmap-*/ic_launcher.png and ic_launcher_round.png, 48dp): the visible 72dp of the adaptive
@@ -19,25 +18,53 @@ root = Path(__file__).resolve().parent.parent
 res = root / "sebtype/res-stable"
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
 SAFE_RADIUS = 32  # dp of the 108dp canvas; the mask-safe circle is 33dp, one dp spare
+BACKGROUND = "#FFE4EC"  # SebChat's launcher background, cream (Decisions #2)
 GRID = 144  # monochrome cells across the canvas (0.75dp each)
 
 art = np.asarray(Image.open(root / "assets/icon.png").convert("RGB")).astype(np.float64)
 lum = art @ [0.299, 0.587, 0.114]
 
-# Subject = everything brighter than the glow (glow < 30, plum outlines ~55). Centre on its bounding box and
-# scale so its farthest pixel lands on SAFE_RADIUS.
-ys, xs = np.nonzero(lum > 40)
+# Cut the subject out of its black backdrop and dark purple glow. The outline is near-black (darker than the
+# glow), so brightness alone can't tell them apart; connectivity can: the backdrop is the dark region joined to
+# the corner, the glow is the purple (low green) region joined to that, and dark specks in the glow that touch
+# nothing bright are backdrop too. What remains (outline, enclosed shading) is the subject, with a hard edge.
+DARK, GLOW, BRIGHT, OUTLINE, BG = 0, 1, 2, 3, 9
+glow = (art[..., 1] < 45) & (lum < 80)
+cls = np.where(lum < 22, DARK, np.where(glow, GLOW, BRIGHT)).astype(np.uint8)
+
+
+def fill(cls, kind, touching, value):
+    """Set every 4-connected `kind` region next to a `touching` pixel to `value`."""
+    img = Image.fromarray(cls).copy()
+    while True:
+        arr = np.asarray(img)
+        t = arr == touching
+        near = np.zeros_like(t)
+        near[1:] |= t[:-1]
+        near[:-1] |= t[1:]
+        near[:, 1:] |= t[:, :-1]
+        near[:, :-1] |= t[:, 1:]
+        seeds = np.argwhere(near & (arr == kind))
+        if not len(seeds):
+            return arr.copy()
+        ImageDraw.floodfill(img, (int(seeds[0][1]), int(seeds[0][0])), value)
+
+
+img = Image.fromarray(cls).copy()
+ImageDraw.floodfill(img, (0, 0), BG)
+cls = fill(np.asarray(img), GLOW, BG, BG)
+cls = fill(cls, DARK, BRIGHT, OUTLINE)
+cls[cls == DARK] = BG
+cls = fill(cls, GLOW, BG, BG)
+subject = cls != BG
+
+# Centre on the subject's bounding box and scale so its farthest pixel lands on SAFE_RADIUS.
+ys, xs = np.nonzero(subject)
 cx, cy = (xs.min() + xs.max()) / 2, (ys.min() + ys.max()) / 2
 radius = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2).max()
 scale = SAFE_RADIUS / radius  # dp per source pixel
 
-# Unblend from black: art = alpha * colour, with alpha the brightest channel.
-alpha = art.max(axis=2) / 255
-alpha[alpha < 4 / 255] = 0  # the backdrop's noise
-colour = np.where(alpha[..., None] > 0, art / np.maximum(alpha, 1e-9)[..., None], 0)
-rgba = Image.fromarray(
-    np.dstack([colour, alpha * 255]).round().clip(0, 255).astype(np.uint8), "RGBA"
-)
+rgba = Image.fromarray(np.dstack([art, subject * 255.0]).astype(np.uint8), "RGBA")
 
 
 def canvas(px_per_dp, image, size_dp=108):
@@ -58,7 +85,7 @@ for name, d in DENSITIES.items():
     canvas(d, rgba).save(folder / "ic_launcher_pig.png", optimize=True)
     # Legacy: 48dp icon showing the 72dp viewport, so render the canvas at 48/72 scale and crop the middle.
     big = canvas(d * 48 / 72 * 4, rgba)  # 4x supersampled
-    full = Image.new("RGBA", big.size, "black")
+    full = Image.new("RGBA", big.size, BACKGROUND)
     full.alpha_composite(big)
     side = round(48 * d * 4)
     off = (full.width - side) // 2
@@ -76,8 +103,8 @@ for name, d in DENSITIES.items():
             folder / file, optimize=True
         )
 
-# Monochrome: bright parts (pink, keycaps, keyboard body ~70) without the plum outlines (~55) or the glow.
-bright = Image.fromarray(((lum > 62) * 255).astype(np.uint8), "L")
+# Monochrome: bright parts of the subject (pink, keycaps, keyboard body ~70) without the outline.
+bright = Image.fromarray(((subject & (lum > 62)) * 255).astype(np.uint8), "L")
 cells = np.asarray(canvas(GRID / 108, bright).resize((GRID, GRID), Image.BOX)) >= 128
 cell = 108 / GRID
 paths = []
