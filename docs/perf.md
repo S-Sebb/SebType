@@ -25,7 +25,7 @@ What it measures:
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
 | Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, peak during the Rime deploy |
 | Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
-| Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the keyboard's last frame before the next key (key → candidates), and the transformer thread's CPU time |
+| Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle), and the transformer thread's CPU time |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
 | Rime first deploy | time until rime-ice's compiled tables stop changing after the first switch to 中 |
 

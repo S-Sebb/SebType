@@ -127,9 +127,15 @@ for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
         )
     row(
         f"{name} key → candidates drawn, median / p95",
+        p(column(lang, "cand_ms")),
+        lang,
+        "frame that last redrew the candidate bar before the next key",
+    )
+    row(
+        f"{name} key → keyboard idle, median / p95",
         p(column(lang, "settle_ms")),
         lang,
-        "last keyboard frame before the next key (700 ms apart)",
+        "last keyboard frame before the next key (700 ms apart), incl. key preview animation",
     )
 row(
     "EN transformer CPU per key it ran on, median / p95",
