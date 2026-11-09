@@ -142,7 +142,7 @@ rime_dir=/sdcard/Android/data/$pkg/files/rime
 phase_install() {
   sh settings get secure default_input_method > "$work/prev-ime"
   sh input keyevent KEYCODE_WAKEUP; sh wm dismiss-keyguard
-  "$adb" uninstall "$pkg" > /dev/null # fresh: the first-run costs are part of the baseline
+  "$adb" uninstall "$pkg" > /dev/null || true # fresh: the first-run costs are part of the baseline
   "$adb" install "$APK" > /dev/null || { echo "install failed" >&2; return 1; }
   "$adb" install -r "$work/perf-field.apk" > /dev/null || { echo "field install failed" >&2; return 1; }
   sh ime enable "$ime_id" > /dev/null && sh ime set "$ime_id" > /dev/null
@@ -292,7 +292,12 @@ device_steps() { # under the device lock
   check sizes 120
 }
 
-if [[ ${1:-} == --phase ]]; then set -e; "phase_$2"; exit; fi
+if [[ ${1:-} == --phase ]]; then
+  # Names the innermost failing command in the FAIL line; failing functions have said why already.
+  set -eE; trap 'declare -F "${BASH_COMMAND%% *}" > /dev/null || [[ $BASH_COMMAND == return* || $BASH_COMMAND == *phase_* ]] ||
+    echo "line ${BASH_LINENO[0]} in ${FUNCNAME[1]:-main}: ${FUNCNAME[0]:-} $BASH_COMMAND failed" >&2' ERR
+  "phase_$2"; exit
+fi
 if [[ ${1:-} == --device ]]; then device_steps; exit; fi
 
 # ---- Preflight ----
