@@ -59,7 +59,9 @@ make_bumped() {
       --ks-pass "file:${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/keystore.password" "$bumped"
   local rc=$?; rm -rf "$d"; return $rc
 }
-check bumped-apk make_bumped
+# timeout execs its command, so the function and what it reads go through the environment.
+export -f make_bumped; export apk bt bumped out
+check bumped-apk bash -c make_bumped
 
 # Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
 device_checks() {

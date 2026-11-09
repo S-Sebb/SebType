@@ -4,8 +4,8 @@
     test-chinese.py SERIAL APK BUMPED_APK RESULTS LOGDIR
 
 APK is the release build; BUMPED_APK is the same APK with a different bundled rime-ice version marker,
-installed over it as an update. Types through SebType's own keys (taps found in the accessibility tree,
-`uiautomator dump --windows`) into FUTO's "try typing" popup and reads the candidate bar. One line per
+installed over it as an update. Types by tapping SebType's own keys (found with `uiautomator dump
+--windows`) into FUTO's "try typing" popup and reads the candidate bar. One line per
 check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
 """
 
@@ -72,14 +72,36 @@ def nodes():
     """(label, x, y, top, class) of every node in all windows, keyboard included."""
     adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
     xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
-    out = []
+    out, frame = [], None
     for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
         label = n.get("text") or n.get("content-desc") or ""
         m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n.get("bounds", ""))
         if m:
             x1, y1, x2, y2 = map(int, m.groups())
             out.append((label, (x1 + x2) // 2, (y1 + y2) // 2, y1, n.get("class")))
+            if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
+                frame = x1, y1, x2, y2
+    if frame and not keys(out):
+        out += letter_keys(*frame)
     return out
+
+
+def letter_keys(left, top, right, bottom):
+    """SebType's letter keys aren't in the tree unless an accessibility service is on; their places
+    on its QWERTY: three letter rows over a bottom row, ten keys across, rows 2 and 3 indented."""
+    w, h = (right - left) / 10, (bottom - top) / 4
+    rows = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
+    return [
+        (
+            ch,
+            int(left + (i + indent) * w),
+            int(top + (r + 0.5) * h),
+            int(top + r * h),
+            "key",
+        )
+        for r, (letters, indent) in enumerate(rows)
+        for i, ch in enumerate(letters)
+    ]
 
 
 def keys(ns):
