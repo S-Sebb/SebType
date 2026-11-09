@@ -12,7 +12,7 @@ built for one person's own, non-commercial use, and is not affiliated with or en
 SebType installs next to stock FUTO Keyboard (application id `dev.sebb.sebtype`).
 
 - Install on a phone: [docs/install.md](docs/install.md)
-- Build and publish a release: `tools/sebtype-release.sh` (see [docs/install.md](docs/install.md))
+- Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 
 The code is FUTO's, licensed under the [FUTO Source First License 1.1](LICENSE.md); see also [NOTICE](NOTICE).
 SebType's changes are made under the same licence. FUTO's own README follows unchanged.

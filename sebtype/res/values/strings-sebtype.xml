@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App and keyboard name; not translated, so it reads SebType in every locale. -->
+    <string name="sebtype_app_name" translatable="false">SebType</string>
+</resources>

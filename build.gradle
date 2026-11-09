@@ -201,10 +201,16 @@ android {
         versionName getVersionName()
         versionCode getVersionCode()
 
-        applicationId 'org.futo.inputmethod.latin'
+        // SebType: own application id so it installs next to stock FUTO; the Kotlin/Java package stays FUTO's.
+        applicationId 'dev.sebb.sebtype'
         testApplicationId 'org.futo.inputmethod.latin.tests'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = false
+
+        // SebType ships arm64 only; -PsebtypeAbis=x86_64 builds for an emulator.
+        ndk {
+            abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
+        }
     }
 
     bundle {
@@ -332,7 +338,8 @@ android {
                     'java/res',
                     translationsWithoutEngValues('translations/core'),
                     translationsWithoutEngValues('translations/core-ign'),
-                    'java/res-large'
+                    'java/res-large',
+                    'sebtype/res' // SebType's own strings (new names only, so nothing clashes)
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
@@ -348,6 +355,7 @@ android {
         stable {
             java.srcDirs = ['common/src', 'java/src', 'java/stable/java']
             manifest.srcFile 'java/stable/AndroidManifest.xml'
+            res.srcDirs = ['sebtype/res-stable'] // SebType launcher icon, overriding FUTO's
         }
 
         unstable {

@@ -35,7 +35,7 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
 
-    <application android:label="@string/english_ime_name"
+    <application android:label="@string/sebtype_app_name"
          android:icon="@mipmap/ic_launcher"
          android:roundIcon="@mipmap/ic_launcher_round"
          android:supportsRtl="true"
@@ -46,7 +46,7 @@
 
         <!-- Services -->
         <service android:name=".LatinIME"
-             android:label="@string/english_ime_name"
+             android:label="@string/sebtype_app_name"
              android:permission="android.permission.BIND_INPUT_METHOD"
              android:directBootAware="true"
              android:exported="true">
