@@ -23,19 +23,19 @@ What it measures:
 |---|---|
 | APK size, biggest entries | the APK file; shrunk resource names mapped back with `aapt2` |
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
-| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, peak during the Rime deploy |
+| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, peak during the first Chinese setup |
 | Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
 | Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle), and the transformer thread's CPU time |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
-| Rime first deploy | time until rime-ice's compiled tables stop changing after the first switch to 中 |
+| Chinese first-run setup | the app's own timing of installing the bundled data and Rime's check, after the first switch to 中, and how many tables or prisms were compiled on the device (should be 0) |
 
-English runs with FUTO's transformer on (the default), Chinese with Rime and rime-ice, Japanese with
+English runs with FUTO's transformer on (the default), Chinese with Rime and the bundled data (rime-ice's schema, 白霜's dictionary), Japanese with
 Mozc. Each typing set runs `RUNS` times (default 3), each time in a fresh test field; the table
 gives the median and the 95th percentile over all keys. English types after one keyboard restart,
 because the transformer can stay off in the first process after install.
 
-Results: `/tmp/sebtype/perf.md` (the table), `/tmp/sebtype/perf-results.txt` (one line per check),
-and traces and logs in `/tmp/sebtype/perf/`. Open a `.pftrace` in https://ui.perfetto.dev to see where
+Results, in `/tmp/sebtype/perf-<checkout>/` (or `PERF_OUT`): `perf.md` (the table), `results.txt`
+(one line per check), and traces and logs in `run/`. Open a `.pftrace` in https://ui.perfetto.dev to see where
 the time goes.
 
 No typed text is recorded: the test field logs only its text length, and timing comes from
@@ -47,8 +47,6 @@ Notes:
   and renders in software. Compare an emulator run with another emulator run, never with the phone.
 - **Key positions** come from SebType's uniform layout at the default keyboard height. Each typing
   check verifies the text length afterwards and fails with "taps missed the keys" if they didn't land.
-- **rime-ice:** while the APK doesn't bundle rime-ice (#8), the script packs it with
-  `tools/pack-rime-ice.sh` (no personal words) and pushes it into SebType's Rime folder.
 
 ### On the phone
 

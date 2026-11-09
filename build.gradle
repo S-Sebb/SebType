@@ -181,15 +181,15 @@ tasks.register('updateContributors') {
 
 preBuild.dependsOn updateLocales
 
-// SebType: the Rime aar with Lua (rime-android/) and the bundled rime-ice, both downloaded and
-// checksum-checked; neither is committed.
+// SebType: the Rime aar with Lua (rime-android/), downloaded and checksum-checked, and the Chinese data,
+// compiled from pinned sources (cached); neither is committed.
 tasks.register('fetchRimeAar', Exec) {
     commandLine 'bash', file('rime-android/fetch-aar.sh').absolutePath, file('rime-android/out/rime-release.aar').absolutePath
 }
-tasks.register('fetchRimeIce', Exec) {
-    commandLine 'bash', file('sebtype/fetch-rime-ice.sh').absolutePath, layout.buildDirectory.dir('sebtype-assets').get().asFile.absolutePath
+tasks.register('buildRimeData', Exec) {
+    commandLine 'bash', file('tools/rime-data/build.sh').absolutePath, layout.buildDirectory.dir('sebtype-assets').get().asFile.absolutePath
 }
-preBuild.dependsOn fetchRimeIce
+preBuild.dependsOn buildRimeData
 
 // SebType ships English, Chinese and Japanese only (#6): the other languages' dictionaries and layouts
 // stay in FUTO's submodules but out of the APK. Russian comes back by deleting its entries here.
@@ -383,7 +383,7 @@ android {
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
             jniLibs.srcDirs = [sebtypeJniLibs] // the unused libc++_shared.so (#62)
-            // SebType's layouts (outside FUTO's layouts submodule) and the bundled rime-ice
+            // SebType's layouts (outside FUTO's layouts submodule) and the bundled Chinese data
             assets.srcDirs = ['java/assets', 'sebtype/assets', layout.buildDirectory.dir('sebtype-assets')]
         }
 

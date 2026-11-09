@@ -182,5 +182,19 @@ SKK Development Team <skk@ring.gr.jp>""",
         "https://wordlist.aspell.net",
         "Copyright 2000-2026 by Kevin Atkinson",
         License.SCOWL
+    ),
+    TP(
+        "rime-ice",
+        "Chinese schemas, Lua and settings - rime-ice (雾凇拼音) 2026.06.30, source: https://github.com/iDvel/rime-ice/tree/6810e8916d160498620a16fef2135956fecbd485",
+        "https://github.com/iDvel/rime-ice",
+        "Copyright (c) Dvel",
+        License.GPL_V3
+    ),
+    TP(
+        "rime-frost",
+        "Chinese dictionary and zh-moqi grammar - rime-frost (白霜拼音) 1.0.4, source: https://github.com/gaboolic/rime-frost/tree/89ad92e450f9a5f4dcc2de67ba28004f9af0cc1e",
+        "https://github.com/gaboolic/rime-frost",
+        "Copyright (c) gaboolic",
+        License.GPL_V3
     )
 )

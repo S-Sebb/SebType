@@ -4,14 +4,15 @@
 # APK=<path> skips the build; ANDROID_SERIAL=<serial> measures on that device instead (the only way to
 # pick a phone); RUNS (default 3) repeats each typing set.
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
-# One line per check in /tmp/sebtype/perf-results.txt, the table in /tmp/sebtype/perf.md, traces and
-# logs in /tmp/sebtype/perf/. Exit 0 unless a check fails. Timing comes from Perfetto traces of
-# framework slices and frame timelines: nothing typed is recorded.
+# One line per check in results.txt, the table in perf.md, traces and logs in run/, all in
+# /tmp/sebtype/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
+# so runs from parallel worktrees don't overwrite each other. Exit 0 unless a check fails. Timing comes
+# from Perfetto traces of framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 self=$PWD/sebtype/perf.sh
 
-export out=/tmp/sebtype work=/tmp/sebtype/perf
+export out=${PERF_OUT:-/tmp/sebtype/perf-$(basename "$PWD")}; export work=$out/run
 export sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 export adb=$sdk/platform-tools/adb
 export runs=${RUNS:-3}
@@ -20,7 +21,7 @@ export ime_id=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
 export field_act=dev.sebb.sebtype.perffield/.PerfField
 export tp=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/trace_processor_shell-v59.1
 export keys_sql=$PWD/sebtype/perf/keys.sql opens_sql=$PWD/sebtype/perf/opens.sql
-results=$out/perf-results.txt
+results=$out/results.txt
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 # A check runs one phase of this script with a timeout. The phase prints key=value lines; a phase
@@ -174,41 +175,24 @@ phase_en() {
   landed en "${#text}" 80 101
   echo "pss_kb=$(pss_kb)"
 }
-phase_zh-deploy() { # switch to 中: the first-run Rime deploy (rime-ice), with peak memory
+phase_zh-deploy() { # switch to 中: the first-run Chinese setup (install and check), with peak memory
   . "$work/geometry"
-  local start peak=0 p prev="" same=0 cpu prev_cpu=0 busy
-  if [[ ! -f $work/rime-bundled ]]; then
-    # main doesn't bundle rime-ice yet (#8): FUTO clears rime/shared on the first 中 start, so let
-    # that happen, push rime-ice, then restart the keyboard so its next 中 start deploys it.
-    [[ -s $work/other-ime ]] || { echo "needs another keyboard to restart SebType" >&2; return 1; }
-    taps 0 G; sleep 5
-    # Fresh times: librime only rebuilds what changed since its last deploy.
-    find "$work/shared" -exec touch {} +
-    "$adb" push "$work/shared" "$rime_dir/" > /dev/null || { echo "push failed" >&2; return 1; }
-    start=$(date +%s.%N)
-    restart_keyboard
-    open_field # the deploy starts when 中 gets a text field
-  else
-    start=$(date +%s.%N)
-    taps 0 G
-  fi
-  # Done when the compiled tables exist, the Rime folder hasn't changed and the keyboard has been
-  # idle (under a quarter of a core) for 5 polls: librime still works for a while after its last write.
-  local deadline=$(( SECONDS + 900 ))
+  local peak=0 p log
+  "$adb" logcat -c
+  taps 0 G
+  # Done when the app logs its setup; it times the install and Rime's check itself.
+  local deadline=$(( SECONDS + 600 ))
   while (( SECONDS < deadline )); do
     p=$(pss_kb); (( ${p:-0} > peak )) && peak=$p
-    cpu=$(sh "cat /proc/\$(pidof $pkg)/stat" | awk '{print $14 + $15}') # in 1/100 s
-    busy=$(( ${cpu:-0} - prev_cpu > 50 )); prev_cpu=${cpu:-0} # a poll takes about 2 s
-    cur=$(sh "du -s $rime_dir; ls $rime_dir/user/build 2>/dev/null" | tr '\n' ' ')
-    if [[ $cur == "$prev" && $cur == *.table.bin* && $cur == *.prism.bin* ]] && (( !busy )); then
-      (( ++same >= 5 )) && break
-    else same=0; last=$(date +%s.%N); fi
-    prev=$cur; sleep 1
+    log=$("$adb" logcat -d | grep -F 'ChineseIME (rime)' | tr -d '\r')
+    [[ $log == *"Set up rime_ice in"* ]] && break
+    sleep 1
   done
-  (( same >= 5 )) || { echo "deploy didn't finish in 15 min" >&2; return 1; }
-  echo "deploy_s=$(awk -v a="$start" -v b="$last" 'BEGIN {printf "%.0f", b - a}')"
+  [[ $log == *"self-test passed"* ]] || { echo "Chinese setup didn't pass in 10 min: ${log:-no log}" >&2; return 1; }
+  echo "setup_ms=$(sed -n 's/.*Set up rime_ice in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
+  echo "install_ms=$(sed -n 's/.*Installed the bundled Chinese data in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
   echo "pss_peak_kb=$peak"
-  echo "build_mb=$(sh du -sm "$rime_dir/user/build" | cut -f1)"
+  echo "built_on_device=$(sh "ls $rime_dir/user/build" | grep -c '\.bin$')" # tables or prisms compiled here
 }
 phase_zh() {
   . "$work/geometry"
@@ -336,11 +320,6 @@ if [[ -z ${APK:-} ]]; then
 fi
 export APK=$(realpath "$APK")
 [[ -f $APK ]] || { echo "preflight: no APK at $APK"; exit 1; }
-if unzip -Z1 "$APK" | grep -q 'rime_ice.schema.yaml'; then touch "$work/rime-bundled"
-else # rime-ice packed as for #4, without personal words
-  tools/pack-rime-ice.sh "" "$work/rime-ice.dict" > "$work/rime-ice.log" 2>&1 &&
-    unzip -q "$work/rime-ice.dict" -d "$work/shared" || { echo "preflight: can't pack rime-ice, see $work/rime-ice.log"; exit 1; }
-fi
 # Another keyboard to switch from for the cold open (the phone keeps Gboard for banking apps).
 # Gboard first: stock FUTO crashes in Mozc on the emulator.
 { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||

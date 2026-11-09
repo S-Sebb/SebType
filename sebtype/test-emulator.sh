@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
 # Checks the SebType release APK, installs it on the local emulator next to stock FUTO Keyboard, then
-# types Chinese with it (sebtype/test-chinese.py): rime-ice set up in the background from the setup
-# screen after a fresh install (with its notice when 中 comes up first), learning, an update over itself
-# and recovery from a broken install; then Japanese's あ ⇄ ア mode chip (#38). It uninstalls SebType first,
-# so its data is lost.
-# One line per check in /tmp/sebtype/test-emulator-results.txt; logs next to it. Exit 0 only if all pass.
+# types Chinese with it (sebtype/test-chinese.py): the bundled Chinese data set up in the background from
+# the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
+# over itself and recovery from a broken install; then Japanese's あ ⇄ ア mode chip (#38); with MAIN_APK
+# (main's release APK), last an update from main that keeps a word learned there. It uninstalls SebType
+# first, so its data is lost.
+# One line per check in /tmp/sebtype/test-emulator-<checkout>/results.txt; logs next to it (one directory
+# per checkout, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-out=/tmp/sebtype; mkdir -p "$out"
-results=$out/test-emulator-results.txt; : > "$results"
+out=/tmp/sebtype/test-emulator-$(basename "$PWD"); mkdir -p "$out"
+results=$out/results.txt; : > "$results"
 sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
-futo_apk=$out/futo-keyboard-0.1.30.apk
+futo_apk=/tmp/sebtype/futo-keyboard-0.1.30.apk
 lock=/tmp/agent-locks/sebtype/emulator.lock
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, command...; timeout T seconds (default 180)
   local name=$1; shift
-  if timeout "${T:-180}" "$@" > "$out/test-emulator-$name.log" 2>&1; then result PASS "$name"
-  else result FAIL "$name" "see $out/test-emulator-$name.log"; fi
+  if timeout "${T:-180}" "$@" > "$out/$name.log" 2>&1; then result PASS "$name"
+  else result FAIL "$name" "see $out/$name.log"; fi
 }
 
 # Preflight
@@ -29,12 +31,12 @@ serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
 [[ -n $serial ]] || { echo "preflight: no running emulator (start AVD guide35 or lossbench)"; exit 1; }
 [[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] ||
   { echo "preflight: emulator $serial can't run arm64 apps"; exit 1; }
-apk=$(sebtype/build.sh release 2> "$out/test-emulator-build.log" | tail -1)
-[[ -f $apk ]] || { echo "preflight: release build failed, see $out/test-emulator-build.log"; exit 1; }
+apk=$(sebtype/build.sh release 2> "$out/build.log" | tail -1)
+[[ -f $apk ]] || { echo "preflight: release build failed, see $out/build.log"; exit 1; }
 # The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.
-field_apk=$out/test-emulator-field.apk
-sebtype/perf/build-field.sh "$field_apk" > "$out/test-emulator-field.log" 2>&1 && [[ -f $field_apk ]] ||
-  { echo "preflight: test field build failed, see $out/test-emulator-field.log"; exit 1; }
+field_apk=$out/field.apk
+sebtype/perf/build-field.sh "$field_apk" > "$out/field.log" 2>&1 && [[ -f $field_apk ]] ||
+  { echo "preflight: test field build failed, see $out/field.log"; exit 1; }
 [[ -f $futo_apk ]] || gh release download 0.1.30 -R futo-org/android-keyboard -p keyboard-0.1.30.apk -O "$futo_apk" ||
   { echo "preflight: can't download stock FUTO 0.1.30"; exit 1; }
 echo "testing $apk on $serial"
@@ -51,11 +53,16 @@ check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_
 assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
 check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty; do
   grep -qx "assets/layouts/$f.yaml" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets"
-check rime-ice-bundled bash -c "unzip -p '$apk' assets/rime/rime-ice.zip | sha256sum | grep -q \$(grep -o '^RIME_ICE_SHA256=.*' sebtype/fetch-rime-ice.sh | cut -d= -f2)"
+# The Chinese data comes compiled (tables and 白霜's grammar), without the dictionary sources.
+rime_data=$out/rime-data.zip
+unzip -p "$apk" assets/rime/rime-data.zip > "$rime_data"
+check rime-data-bundled bash -c 'l=$(unzip -Z1 "$1") && grep -qx build/rime_ice.table.bin <<<"$l" &&
+  grep -qx zh-moqi.gram <<<"$l" && ! grep -q "\.dict\.yaml$" <<<"$l"' _ "$rime_data"
+rm -f "$rime_data"
 
-# The same APK with another bundled rime-ice version marker, re-signed: what an update that changes
-# rime-ice looks like to the app.
-bumped=$out/test-emulator-bumped.apk
+# The same APK with another bundled data version marker, re-signed: what an update that changes the
+# Chinese data looks like to the app.
+bumped=$out/bumped.apk
 make_bumped() {
   local d; d=$(mktemp -d); mkdir -p "$d/assets/rime"
   unzip -p "$apk" assets/rime/bundle-version | sed 's/$/ test-bump/' > "$d/assets/rime/bundle-version"
@@ -99,7 +106,7 @@ T=2000 check install-beside-futo devq -P 1 -w 1800 -m 5 -n "sebtype #5 test-emul
 if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
   # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
   PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run devq -P 1 -w 1800 -m 15 -n "sebtype #8 test-chinese" "$lock" \
-    python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out"
+    python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
 else
   result SKIP chinese "needs install-beside-futo and bumped-apk"
 fi

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Chinese (rime-ice) checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock,
-then Japanese's あ ⇄ ア mode chip (#38).
+"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock, then
+Japanese's あ ⇄ ア mode chip (#38).
 
-    test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR
+    test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
-APK is the release build; BUMPED_APK is the same APK with a different bundled rime-ice version marker,
-installed over it as an update; FIELD_APK is sebtype/perf/build-field.sh's text field app, which only
+APK is the release build; BUMPED_APK is the same APK with a different bundled data version marker,
+installed over it as an update; MAIN_APK (optional) is main's release build, which learns a word before
+APK is installed over it; FIELD_APK is sebtype/perf/build-field.sh's text field app, which only
 supplies the box that gets typed into (the app's own "try typing" popup isn't exported). Types by
 tapping SebType's own keys (found with `uiautomator dump --windows`) and reads the candidate bar. One
 line per check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
@@ -20,6 +21,7 @@ import time
 import xml.etree.ElementTree as ET
 
 serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
+main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
@@ -233,7 +235,10 @@ def wait_set_up(timeout=240):
         "Chinese to be set up", lambda: re.search(SET_UP, logcat()), timeout, 2
     )
     text = logcat()
-    install = re.search(r"Installed the bundled rime-ice in (\d+) ms", text)
+    # "rime-ice" in builds from before #40
+    install = re.search(
+        r"Installed the bundled (?:rime-ice|Chinese data) in (\d+) ms", text
+    )
     adb("logcat", "-c")
     if line.group(3) != "passed":
         raise Fail(f"self-test {line.group(3)} after setup")
@@ -289,8 +294,10 @@ def fresh_install():
     adb("logcat", "-c")
     # What a new user does: the setup screen (which starts setting up Chinese in the background), then
     # the keyboard right away. The keyboard comes up once first, in English, so the test knows where
-    # its keys are and can look at 中 at once (a dump takes a couple of seconds on a phone).
+    # its keys are (the same in 中) and can type at 中 at once: setup takes only a few seconds now.
     open_field()
+    q = keys(nodes())["q"]
+    adb("shell", "input", "text", "hi")  # English works meanwhile
     adb(
         "shell",
         "am",
@@ -300,46 +307,50 @@ def fresh_install():
         f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
     )
     adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
-    adb("shell", "input", "text", "hi")  # English works meanwhile
     time.sleep(1)  # taps while the keyboard slides back in are dropped
     tap_globe()  # a fresh install starts in EN; the globe turns it into 中
-    # Look until setup ends; the keyboard must be on screen all along.
-    while True:
-        keyboard_frame = None
-        ns = nodes()
-        if not keyboard_frame:
-            raise Fail("no keyboard on screen during setup")
-        notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
-        if notice or re.search(SET_UP, logcat()):
-            break
+    time.sleep(0.3)
+    ready_first = bool(re.search(SET_UP, logcat()))
+    # Keys while Chinese isn't ready type plain letters.
+    adb("shell", "input", "tap", str(q[0]), str(q[1]))
+    keyboard_frame = None
+    ns = nodes()
+    if not keyboard_frame:
+        raise Fail("no keyboard on screen during setup")
+    notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
     if notice:
-        # Keys while Chinese isn't ready type plain letters; tapped at once, before setup ends.
-        q = keys(ns)["q"]
-        adb("shell", "input", "tap", str(q[0]), str(q[1]))
         adb("shell", "screencap -p /sdcard/sebtype-indicator.png")
         adb(
             "pull",
             "/sdcard/sebtype-indicator.png",
             os.path.join(logdir, "chinese-indicator.png"),
         )
-    field = [n[0] for n in nodes() if n[4] == "android.widget.EditText"]
+    field = [n[0] for n in ns if n[4] == "android.widget.EditText"]
     setup, install, deployed, runs = wait_set_up()
-    if not notice:
-        raise Fail(f"setup took {setup} ms, but 中 showed no setup notice")
-    if field != ["hiq"]:
+    if ready_first:
+        meanwhile = "Chinese was ready before 中 came up"
+    elif field != ["hiq"]:
         raise Fail(f"typed hi in English and q during setup; the field shows {field}")
+    else:
+        # A dump takes a couple of seconds, so a quick setup can end before it reads the notice.
+        seen = (
+            f"中 showed {notice[0]!r} meanwhile"
+            if notice
+            else "setup ended before the bar was read"
+        )
+        meanwhile = f"{seen}, keys typed plain letters"
     if runs != 1 or not deployed:
         raise Fail(
             f"{runs} setups logged, deployed: {deployed}; expected one, deploying"
         )
-    built = adb("shell", "ls", f"{RIME}/user/build")
-    # rime-ice's prebuilt tables and the English prism (the slow part) must be used, not rebuilt.
-    rebuilt = [f for f in ("rime_ice.table.bin", "melt_eng.prism.bin") if f in built]
+    built = adb("shell", "ls", f"{RIME}/user/build").split()
+    # The bundle comes compiled: no table, prism or reverse db may be built on the phone.
+    rebuilt = [f for f in built if f.endswith(".bin")]
     if rebuilt:
         raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (setup {setup} ms)")
     return (
         f"first run from the setup screen: install {install} ms, set up in {setup} ms all told; "
-        f"中 showed {notice[0]!r} meanwhile, keys typed plain letters, prebuilt tables used"
+        f"{meanwhile}; prebuilt tables used"
     )
 
 
@@ -354,8 +365,8 @@ def expect_first(text, word):
 
 
 def lh_in_top():
-    # rime-ice ranks 厉害 about 8th on a fresh install, past the bar's first screen (#4); it must be
-    # among the first ten candidates, and comes first once picked (learn-picked-word).
+    # 白霜 ranks 厉害 4th on a fresh install (rime-ice: 8th, #4); it must be among the first ten
+    # candidates, and comes first once picked (learn-picked-word).
     got = candidates_for("lh", expand=True)
     if "厉害" not in got[:10]:
         raise Fail(f"lh -> {got[:12]} (厉害 not in the first ten)")
@@ -397,7 +408,7 @@ def update_over_itself():
     # The update itself starts setting up Chinese, before any keyboard shows.
     setup, install, _, _ = wait_set_up()
     if install is None:
-        raise Fail("the update didn't reinstall the bundled rime-ice")
+        raise Fail("the update didn't reinstall the bundled data")
     # Android drops the keyboard's binding on an update and, on the emulator, may not rebind it on the
     # first selection; a second one brings it up.
     wait_for(
@@ -409,11 +420,11 @@ def update_over_itself():
         open_field()
     except Fail:
         open_field()
-    return f"the update alone reinstalled rime-ice in {install} ms and set it up in {setup} ms"
+    return f"the update alone reinstalled the data in {install} ms and set it up in {setup} ms"
 
 
 def failure_is_visible():
-    # Break the installed rime-ice behind the app's back: its dictionary source and prebuilt table go.
+    # Break the installed data behind the app's back: its compiled dictionary goes.
     adb("shell", "am", "force-stop", PKG)
     adb(
         "shell",
@@ -565,4 +576,56 @@ check("ja-chip", to_japanese, needs=["first-install"])
 check("ja-katakana-candidate", katakana_candidate, needs=["ja-chip"])
 check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
 check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
+
+
+def main_learns():
+    """main's build, fresh, learns 厉害 (rime-ice's dictionary, same schema id rime_ice)."""
+    adb("uninstall", PKG, check=False)
+    adb("install", main_apk, timeout=300)
+    wait_for(
+        "SebType to be listed",
+        lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+        30,
+    )
+    adb("shell", "ime", "enable", IME)
+    adb("logcat", "-c")
+    open_field()
+    tap_globe()  # a fresh install starts in EN
+    wait_set_up()
+    return learn_lower_candidate()
+
+
+def update_from_main():
+    adb("logcat", "-c")
+    adb("install", "-r", apk, timeout=300)
+    setup, install, _, _ = wait_set_up()
+    if install is None:
+        raise Fail("the update from main didn't install the bundled data")
+    wait_for(
+        "SebType to be listed again",
+        lambda: IME in adb("shell", "ime", "list", "-s"),
+        30,
+    )
+    try:
+        open_field()
+    except Fail:
+        open_field()
+    return f"main -> this build: data installed in {install} ms, set up in {setup} ms"
+
+
+if main_apk:
+    check("main-learns", main_learns)
+    check("update-from-main", update_from_main, needs=["main-learns"])
+    check(
+        "update-from-main-keeps-learned",
+        expect_first("lh", "厉害"),
+        needs=["update-from-main"],
+    )
+    check(
+        "update-from-main-chinese",
+        expect_first("ranh", "然后"),
+        needs=["update-from-main"],
+    )
+else:
+    result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

@@ -84,7 +84,7 @@ row(
 )
 row("Memory (PSS) idle, first open, EN", mb(fo.get("pss_idle_kb")), "first-open")
 row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "transformer loaded")
-row("Memory (PSS) peak during Rime deploy", mb(zd.get("pss_peak_kb")), "zh-deploy")
+row("Memory (PSS) peak during Chinese setup", mb(zd.get("pss_peak_kb")), "zh-deploy")
 row("Memory (PSS) after typing 中", mb(zh.get("pss_kb")), "zh")
 row("Memory (PSS) after typing 日", mb(ja.get("pss_kb")), "ja")
 row("Memory (PSS) idle, fresh process, EN", mb(co.get("pss_idle_kb")), "cold-open")
@@ -107,8 +107,9 @@ row(
     f"switch back from another keyboard, process start → keyboard's first frame; n={co.get('n', 0)}",
 )
 row(
-    "Rime first deploy (rime-ice)",
-    f"{zd.get('deploy_s', '–')} s, build/ {zd.get('build_mb', '–')} MB",
+    "Chinese first-run setup (install + Rime check)",
+    f"{zd.get('setup_ms', '–')} ms (install {zd.get('install_ms', '–')} ms), "
+    f"{zd.get('built_on_device', '–')} files compiled on the device",
     "zh-deploy",
 )
 for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):

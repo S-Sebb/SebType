@@ -7,10 +7,11 @@ import java.io.FilterInputStream
 import java.io.InputStream
 
 /**
- * SebType's Chinese data: rime-ice's own release zip (GPL-3.0, unmodified, with its prebuilt build/),
- * bundled in the APK's assets/rime/ by sebtype/fetch-rime-ice.sh. It is installed into Rime's shared
- * dir whenever the bundled version differs from the installed one, so Chinese works right after install
- * and after every update with no import step. Learned words stay in the user dir.
+ * SebType's Chinese data: rime-ice's schemas and Lua with 白霜 (rime-frost) core's dictionary and grammar
+ * (both GPL-3.0), compiled by tools/rime-data/build.sh and bundled in the APK's assets/rime/. It is
+ * installed into Rime's shared dir whenever the bundled version differs from the installed one, so
+ * Chinese works right after install and after every update with no import step. It comes compiled, so
+ * Rime only checks it. Learned words stay in the user dir.
  */
 object RimeIceBundle {
     const val SCHEMA = "rime_ice"
@@ -21,7 +22,7 @@ object RimeIceBundle {
 
     private const val INSTALLED_VERSION = ".sebtype-bundle-version"
 
-    private const val ZIP = "rime/rime-ice.zip"
+    private const val ZIP = "rime/rime-data.zip"
 
     fun bundledVersion(context: Context) =
         context.assets.open("rime/bundle-version").bufferedReader().use { it.readText().trim() }
@@ -36,7 +37,7 @@ object RimeIceBundle {
         marker(context).delete()
     }
 
-    /** Installs the bundled rime-ice; [onProgress] gets the percentage of the zip extracted so far. */
+    /** Installs the bundled data; [onProgress] gets the percentage of the zip extracted so far. */
     fun install(context: Context, onProgress: (Int) -> Unit = {}) {
         val shared = ChineseIME.getShared(context)
         shared.deleteRecursively()
@@ -44,8 +45,7 @@ object RimeIceBundle {
         val size = context.assets.openFd(ZIP).use { it.length }
         context.assets.open(ZIP).use { ZipFileHelper.extract(Progress(it, size, onProgress), shared) }
         restoreSourceTimes(shared)
-        // Rime's own compiled copies from the previous version would be rebuilt on the phone (about a
-        // minute) instead of using the bundled prebuilt ones.
+        // Rime's own compiled copies from the previous version would be used instead of the bundled ones.
         File(ChineseIME.getUser(context), "build").deleteRecursively()
         // Written last, so an interrupted install is redone.
         marker(context).writeText(bundledVersion(context))
@@ -53,9 +53,8 @@ object RimeIceBundle {
 
     /**
      * Rime keeps a compiled file only while its sources have the modification times recorded in it
-     * (`__build_info/timestamps`). Extracting sets them to now, so Rime would rebuild all of rime-ice's
-     * prebuilt build/ on the phone (the English prism alone takes about 25 s); this puts the recorded
-     * times back. The files themselves stay as rime-ice ships them.
+     * (`__build_info/timestamps`). Extracting sets them to now, so Rime would recompile the bundled
+     * schemas and their prisms on the phone; this puts the recorded times back.
      */
     private fun restoreSourceTimes(shared: File) {
         val timestamp = Regex("""^    ([\w.]+): (\d+)$""")
