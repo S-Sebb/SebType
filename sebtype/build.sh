@@ -3,6 +3,7 @@
 # capped and no Gradle daemon is left running: the PC has 15 GB shared with the emulator and other builds.
 #   sebtype/build.sh release       signed arm64-v8a release APK (keystore in ~/.config/sebtype)
 #   sebtype/build.sh debug-x86_64  debug APK for an x86_64 emulator
+# BUILD_PRIORITY (default 1) is the devq rank for the build lock.
 # Prints the APK path last. Version: <FUTO release>-sebtype.<first-parent commit count>.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -40,7 +41,7 @@ esac
 
 rm -rf "$out"
 start=$(date +%s)
-devq -P 1 -m 30 -n "sebtype build ($kind)" /tmp/agent-locks/sebtype/build.lock \
+devq -P "${BUILD_PRIORITY:-1}" -m 30 -n "sebtype build ($kind)" /tmp/agent-locks/sebtype/build.lock \
   ./gradlew --no-daemon --max-workers=4 -Dorg.gradle.jvmargs=-Xmx3g \
     -Pkotlin.compiler.execution.strategy=in-process --console=plain -q "$task" -PsebtypeAbis="$abis" >&2
 # The APK is named after the checkout's folder (no rootProject.name), so take the only one there.
