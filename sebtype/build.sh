@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds a SebType APK on nobara-pc under the shared build lock (one heavy Gradle/NDK build at a time).
+# Builds a SebType APK under the shared build lock (one heavy Gradle/NDK build at a time). Memory stays
+# capped and no Gradle daemon is left running: the PC has 15 GB shared with the emulator and other builds.
 #   sebtype/build.sh release       signed arm64-v8a release APK (keystore in ~/.config/sebtype)
 #   sebtype/build.sh debug-x86_64  debug APK for an x86_64 emulator
 # Prints the APK path last. Version: <FUTO release>-sebtype.<first-parent commit count>.
@@ -38,7 +39,8 @@ esac
 rm -rf "$out"
 start=$(date +%s)
 devq -P 1 -m 30 -n "sebtype build ($kind)" /tmp/agent-locks/sebtype/build.lock \
-  ./gradlew --console=plain -q "$task" -PsebtypeAbis="$abis" >&2
+  ./gradlew --no-daemon --max-workers=4 -Dorg.gradle.jvmargs=-Xmx3g \
+    -Pkotlin.compiler.execution.strategy=in-process --console=plain -q "$task" -PsebtypeAbis="$abis" >&2
 # The APK is named after the checkout's folder (no rootProject.name), so take the only one there.
 apk=$(ls "$out"/*.apk)
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - start ))s, $(du -h "$apk" | cut -f1)" >&2
