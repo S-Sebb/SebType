@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType's name where FUTO's Simplified Chinese strings name the app; see values/strings-sebtype-overrides.xml. -->
+<resources>
+    <string name="english_ime_name">SebType</string>
+    <string name="english_ime_settings">SebType 设置</string>
+</resources>

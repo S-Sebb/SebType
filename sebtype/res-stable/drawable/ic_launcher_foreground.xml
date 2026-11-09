@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType "S" from assets/icon.svg, text converted to a path, 108dp adaptive-icon canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="m 53.44201,66.959999 c 5.904,0 9.576,-2.952 9.576,-7.524 0,-8.964 -13.428,-5.724 -13.428,-11.232 0,-2.16 1.872,-3.348 5.22,-3.348 2.088,0 4.356,0.432 6.156,1.116 l 1.188,-3.24 c -2.124,-0.936 -4.68,-1.44 -7.092,-1.44 -5.832,0 -9.72,2.952 -9.72,7.56 0,8.532 13.392,5.616 13.392,11.124 0,2.052 -1.8,3.348 -5.112,3.348 -2.268,0 -5.04,-0.576 -7.488,-1.584 l -1.188,3.276 c 2.7,1.224 5.688,1.944 8.496,1.944 z" />
+</vector>
