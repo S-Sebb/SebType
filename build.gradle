@@ -206,8 +206,9 @@ tasks.register('sebtypeResLarge', Sync) {
 preBuild.dependsOn 'sebtypeResLarge'
 
 // Workaround (#62): the APK ships the NDK's libc++_shared.so, though nothing loads it. On the Nothing A001
-// (Dimensity 7300, Android 16), without an extra native library the phone schedules SebType on its little cores,
-// and English prediction takes 99 ms per key instead of 21 ms (sebtype/perf.sh, #59).
+// (Dimensity 7300, Android 16), the phone schedules SebType on its little cores without an extra native library,
+// and English prediction takes 99 ms per key instead of 21 ms. With one, it usually uses the big cores: 7 of 8
+// sebtype/perf.sh runs, against 0 of 3 without (#59).
 final def sebtypeJniLibs = layout.buildDirectory.dir('generated/sebtype-jniLibs')
 tasks.register('sebtypeJniLibs', Sync) {
     from(fileTree("${android.ndkDirectory}/toolchains/llvm/prebuilt").matching {
