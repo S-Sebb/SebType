@@ -111,6 +111,8 @@ per_key() { # trace: the per-key CSV, and the characters typed into each field
   query "$1" "$keys_sql" > "$work/$1.csv"
   echo "keys=$(( $(wc -l < "$work/$1.csv") - 1 ))"
   echo "typed=$(typed "$1" | paste -sd, -)"
+  echo "select count(*) from android_logs where msg like 'Process $pkg (pid %) has died%';" > "$work/died.sql"
+  echo "crashes=$(query "$1" "$work/died.sql" | tail -1)"
 }
 typing() { # trace gap text: under one trace, types the text RUNS times, each into a fresh test field
   local r
@@ -168,7 +170,7 @@ phase_en() {
 }
 phase_zh-deploy() { # switch to 中: the first-run Rime deploy (rime-ice), with peak memory
   . "$work/geometry"
-  local start peak=0 p prev="" same=0 t
+  local start peak=0 p prev="" same=0 cpu prev_cpu=0 busy
   if [[ ! -f $work/rime-bundled ]]; then
     # main doesn't bundle rime-ice yet (#8): FUTO clears rime/shared on the first 中 start, so let
     # that happen, push rime-ice, then restart the keyboard so its next 中 start deploys it.
@@ -184,12 +186,15 @@ phase_zh-deploy() { # switch to 中: the first-run Rime deploy (rime-ice), with 
     start=$(date +%s.%N)
     taps 0 G
   fi
-  # Done when the compiled tables exist and the Rime folder hasn't changed for 5 s.
+  # Done when the compiled tables exist, the Rime folder hasn't changed and the keyboard has been
+  # idle (under a quarter of a core) for 5 polls: librime still works for a while after its last write.
   local deadline=$(( SECONDS + 900 ))
   while (( SECONDS < deadline )); do
     p=$(pss_kb); (( ${p:-0} > peak )) && peak=$p
+    cpu=$(sh "cat /proc/\$(pidof $pkg)/stat" | awk '{print $14 + $15}') # in 1/100 s
+    busy=$(( ${cpu:-0} - prev_cpu > 50 )); prev_cpu=${cpu:-0} # a poll takes about 2 s
     cur=$(sh "du -s $rime_dir; ls $rime_dir/user/build 2>/dev/null" | tr '\n' ' ')
-    if [[ $cur == "$prev" && $cur == *.table.bin* && $cur == *.prism.bin* ]]; then
+    if [[ $cur == "$prev" && $cur == *.table.bin* && $cur == *.prism.bin* ]] && (( !busy )); then
       (( ++same >= 5 )) && break
     else same=0; last=$(date +%s.%N); fi
     prev=$cur; sleep 1

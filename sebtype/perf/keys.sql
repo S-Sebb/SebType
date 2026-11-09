@@ -7,8 +7,12 @@
 --   app_jank   the field's or the keyboard's frames in the window that missed their deadline
 --              because of the app itself (SurfaceFlinger-side misses are left out)
 with
-ime as (select upid, pid from process where name = 'dev.sebb.sebtype'),
-field as (select upid from process where name = 'dev.sebb.sebtype.perffield'),
+-- A process forked during the trace can keep zygote64's name; its main thread has the app's name
+-- (the last 15 characters).
+ime as (select p.upid, p.pid from process p left join thread t on t.upid = p.upid and t.tid = p.pid
+  where p.name = 'dev.sebb.sebtype' or t.name = 'ev.sebb.sebtype'),
+field as (select p.upid from process p left join thread t on t.upid = p.upid and t.tid = p.pid
+  where p.name = 'dev.sebb.sebtype.perffield' or t.name = 'btype.perffield'),
 ev as (
   select s.ts, s.dur, s.name like '%ACTION_DOWN%' as down
   from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid) join ime using (upid)

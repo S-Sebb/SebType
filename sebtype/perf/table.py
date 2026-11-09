@@ -162,6 +162,14 @@ for name, d, ph, note in (
         f"{d.get('typed', '–')} of {d.get('taps', '–')} characters arrived within 5 s",
     )
 
+phases = (("EN", en), ("中", zh), ("日", ja), ("fast", fast), ("long", long_))
+row(
+    "Keyboard crashes while typing",
+    ", ".join(f"{name} {d.get('crashes', '–')}" for name, d in phases),
+    None,
+    "keyboard process deaths during each typing trace",
+)
+
 print("\nBiggest APK entries (compressed):\n")
 for line in read(work / "apk-top.txt").splitlines():
     print(f"- {line.strip()}")
