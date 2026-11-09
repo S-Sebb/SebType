@@ -1007,12 +1007,12 @@ object MissingDictionaryHelper {
             "lt", "lb", "mai", "ml", "mr", "nb", "or", "pl", "pt", "pa", "ro", "ru", "sa", "sat", "sr",
             "sd", "sl", "es", "sv", "ta", "te", "tok", "tcy", "tr", "uk", "ur", "af", "ar", "bn", "bg",
             "cs", "fr", "de", "he", "id", "it", "kab", "kk", "pms", "ru", "sk", "es", "uk", "vi",
-            "ja", "zh"
+            "ja" // SebType: no "zh", its Chinese dictionary (rime-ice) is bundled
         )
 
         // Typing is severely broken in these languages without the dictionary, it is vital that this message
         // is shown every time until the user downloads the dictionary
-        val undismissableLanguages = setOf("ja", "zh")
+        val undismissableLanguages = setOf("ja")
 
         val dismissalSetting = SettingsKey(
             intPreferencesKey("dictionary_notice_dismiss_${locale.language}"),

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Checks the SebType release APK and installs it on the local emulator next to stock FUTO Keyboard.
+# Checks the SebType release APK, installs it on the local emulator next to stock FUTO Keyboard, then
+# types Chinese with it (sebtype/test-chinese.py): rime-ice set up in the background from the setup
+# screen after a fresh install (with its notice when 中 comes up first), learning, an update over itself
+# and recovery from a broken install. It uninstalls SebType first, so its data is lost.
 # One line per check in /tmp/sebtype/test-emulator-results.txt; logs next to it. Exit 0 only if all pass.
-# Typing with SebType is checked by hand through T3's device tools (see the #5 PR).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,6 +30,10 @@ serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
   { echo "preflight: emulator $serial can't run arm64 apps"; exit 1; }
 apk=$(sebtype/build.sh release 2> "$out/test-emulator-build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/test-emulator-build.log"; exit 1; }
+# The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.
+field_apk=$out/test-emulator-field.apk
+sebtype/perf/build-field.sh "$field_apk" > "$out/test-emulator-field.log" 2>&1 && [[ -f $field_apk ]] ||
+  { echo "preflight: test field build failed, see $out/test-emulator-field.log"; exit 1; }
 [[ -f $futo_apk ]] || gh release download 0.1.30 -R futo-org/android-keyboard -p keyboard-0.1.30.apk -O "$futo_apk" ||
   { echo "preflight: can't download stock FUTO 0.1.30"; exit 1; }
 echo "testing $apk on $serial"
@@ -44,6 +50,23 @@ check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_
 assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
 check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty Cyrillic/east_slavic; do
   grep -qx "assets/layouts/$f.yaml" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets"
+check rime-ice-bundled bash -c "unzip -p '$apk' assets/rime/rime-ice.zip | sha256sum | grep -q \$(grep -o '^RIME_ICE_SHA256=.*' sebtype/fetch-rime-ice.sh | cut -d= -f2)"
+
+# The same APK with another bundled rime-ice version marker, re-signed: what an update that changes
+# rime-ice looks like to the app.
+bumped=$out/test-emulator-bumped.apk
+make_bumped() {
+  local d; d=$(mktemp -d); mkdir -p "$d/assets/rime"
+  unzip -p "$apk" assets/rime/bundle-version | sed 's/$/ test-bump/' > "$d/assets/rime/bundle-version"
+  cp "$apk" "$d/in.apk" && (cd "$d" && zip -q -X in.apk assets/rime/bundle-version) &&
+    "$bt/zipalign" -p -f 4 "$d/in.apk" "$bumped" &&
+    "$bt/apksigner" sign --ks "${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/sebtype-release.jks" --ks-key-alias sebtype \
+      --ks-pass "file:${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/keystore.password" "$bumped"
+  local rc=$?; rm -rf "$d"; return $rc
+}
+# timeout execs its command, so the function and what it reads go through the environment.
+export -f make_bumped; export apk bt bumped out
+check bumped-apk bash -c make_bumped
 
 # Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
 device_checks() {
@@ -62,5 +85,13 @@ device_checks() {
 }
 export -f device_checks; export adb serial apk futo_apk
 T=2000 check install-beside-futo devq -P 1 -w 1800 -m 5 -n "sebtype #5 test-emulator" "$lock" bash -c device_checks
+
+if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
+  # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
+  PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run devq -P 1 -w 1800 -m 15 -n "sebtype #8 test-chinese" "$lock" \
+    python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out"
+else
+  result SKIP chinese "needs install-beside-futo and bumped-apk"
+fi
 
 ! grep -qv '^PASS' "$results"

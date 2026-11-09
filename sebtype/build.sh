@@ -4,12 +4,14 @@
 #   sebtype/build.sh release       signed arm64-v8a release APK (keystore in ~/.config/sebtype)
 #   sebtype/build.sh debug-x86_64  debug APK for an x86_64 emulator
 #   sebtype/build.sh test-x86_64   debug APK, then its instrumented-test APK, for an x86_64 emulator
+#   sebtype/build.sh debug         debug arm64-v8a APK; the x86_64 ones have no Rime (its aar is arm64
+#                                  only), an x86_64 emulator runs this one through its ARM translation
 # BUILD_PRIORITY (default 1) is the devq rank for the build lock.
 # Prints the APK path last. Version: <FUTO release>-sebtype.<first-parent commit count>.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-kind=${1:?usage: sebtype/build.sh release|debug-x86_64}
+kind=${1:?usage: sebtype/build.sh release|debug|debug-x86_64|test-x86_64}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
 export JAVA_HOME=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1)}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
@@ -40,6 +42,8 @@ case $kind in
   test-x86_64)
     task="assembleStableDebug assembleStableDebugAndroidTest" abis=x86_64 out=build/outputs/apk/stable/debug
     rm -rf build/outputs/apk/androidTest ;;
+  debug)
+    task=assembleStableDebug abis=arm64-v8a out=build/outputs/apk/stable/debug ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
 

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import org.futo.inputmethod.engine.general.RimeIceSetup
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
@@ -216,6 +217,9 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
         super.onCreate(savedInstanceState)
 
         LayoutManager.init(this)
+
+        // SebType: set Chinese up while the user enables the keyboard, so it is ready when first typed.
+        RimeIceSetup.prepareInBackground(this)
 
         enableEdgeToEdge()
 

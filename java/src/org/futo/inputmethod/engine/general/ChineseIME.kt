@@ -5,8 +5,6 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -21,6 +19,7 @@ import icu.astronot233.rime.X11Keys.XK_BackSpace
 import icu.astronot233.rime.X11Keys.XK_Linefeed
 import icu.astronot233.rime.X11Keys.XK_Return
 import icu.astronot233.rime.X11Keys.XK_Tab
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +30,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
 import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEHelper
@@ -236,17 +236,14 @@ class InputKeeper() {
 class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAccessor, PreEditListener {
     private val TAG = "ChineseIME (rime)"
 
-    private val rime: Rime
+    // The process's Rime, shared with the background setup (RimeIceSetup)
+    private val rime: Rime get() = RimeIceSetup.rime(helper.context)
     private val connect get() = helper.getCurrentInputConnection()
     private val coroScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val expandableUiCfg = ExpandableSuggestionBarConfiguration(true, false)
     private val maxBufferLength = 0x100000
     private var layoutHint: String? = null
     private val rawInput = InputKeeper()
-    private val rimeLoading = mutableStateOf(false)
-
-    override fun getLoadingState(): MutableState<Boolean>? = rimeLoading
-
     private val currentTransformation get() = when(layoutHint) {
         "stroke" -> StrokeTransformation
         else -> emptyMap()
@@ -322,18 +319,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         }
     }
 
-    init {
-        val shared = getShared(helper.context)
-        val user = getUser(helper.context)
-
-        if(!shared.exists() || !user.exists()) {
-            shared.mkdirs()
-            user.mkdirs()
-        }
-
-        rime = Rime(shared.path, user.path, helper.context.packageName)
-    }
-
     private fun handlePassByMessage(x11Code: Int, mask: Int) {
         when (x11Code) {
             XK_BackSpace -> sendDownUpKeyEvent(KeyEvent.KEYCODE_DEL, 0)
@@ -341,7 +326,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             XK_Linefeed  -> sendDownUpKeyEvent(KeyEvent.KEYCODE_ENTER, 0)
             XK_Return    -> sendDownUpKeyEvent(KeyEvent.KEYCODE_ENTER, 0)
             else -> {
-                if (rime.preeditFlow.value.isEmpty() || editingState.active) {
+                if (!ready || rime.preeditFlow.value.isEmpty() || editingState.active) {
                     connect?.commitText(String(Character.toChars(x11Code)), 1)
                 } else {
                     coroScope.launch {
@@ -386,6 +371,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }}.launchIn(coroScope)
 
     private fun subscribeToRimePreedit() = rime.preeditFlow.onEach { ped ->
+        if(!ready) return@onEach
         val notEditing = editingState == EditingState.NotEditing
         if(ped.isEmpty() && notEditing) { rawInput.clear() }
 
@@ -458,6 +444,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }
 
     private fun subscribeToRimeCandidates() = rime.candidatesFlow.onEach { cdd ->
+        if(!ready) return@onEach
         waitingToSelect?.let { sel ->
             if(cdd.getOrNull(sel.second)?.text == sel.first) {
                 if(rime.selectCandidate(sel.second)) {
@@ -502,18 +489,20 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }.launchIn(coroScope)
 
     override fun onCreate() {
-        if (!rime.startup(false))
-            Log.e(TAG, "Error occurred!")
-        subscribeToRimeMessage()
-        subscribeToRimePreedit()
-        subscribeToRimeCandidates()
+        // Creating the Rime starts librime: off the main thread, so the keyboard draws at once.
+        coroScope.launch {
+            withContext(Dispatchers.IO) { RimeIceSetup.rime(helper.context) }
+            subscribeToRimeMessage()
+            subscribeToRimePreedit()
+            subscribeToRimeCandidates()
+        }
+        RimeIceSetup.state.onEach { if(helper.isImeActive(this)) showSetupState(it) }.launchIn(coroScope)
 
         helper.lifecycleScope.launch {
             GlobalIMEMessage.collect { message ->
                 when(message) {
                     IMEMessage.ReloadResources -> coroScope.launch {
-                        rime.shutdown()
-                        rime.startup(false)
+                        RimeIceSetup.whileStopped(helper.context) {}
                         prevConfiguration = null
                     }
                     else -> {}
@@ -526,77 +515,18 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     override fun onDestroy() {
         helper.lifecycleScope.cancel()
         coroScope.cancel()
-        rime.shutdown()
+        // The shared Rime keeps running for the next Chinese keyboard.
     }
 
     override fun onStartInput() {
-        if(resetSharedFromResources(helper.context, helper.lifecycleScope)) {
-            prevConfiguration = null
-            coroScope.launch { rime.deploy() }
-        }
+        showSetupState(RimeIceSetup.state.value)
         updateConfig()
     }
 
-    private fun isSimplifiedChinese(locale: Locale): Boolean {
-        if (locale.language != "zh") return false
-        val setting = helper.context.getSetting(ChineseIMESettings.SimplificationSetting).toEnumOrNull<ChineseIMESettings.ChineseSimplificationMode>()
-        return when(setting) {
-            ChineseIMESettings.ChineseSimplificationMode.Simplified -> true
-            ChineseIMESettings.ChineseSimplificationMode.Traditional -> false
-            else -> {
-                locale.script.takeIf { it.isNotEmpty() }?.let {
-                    return it.equals("Hans", ignoreCase = true)
-                }
+    private var prevConfiguration: RimeIceSetup.Configuration? = null
 
-                return when (locale.country.uppercase()) {
-                    "TW", "HK", "MO" -> false
-                    else -> true
-                }
-            }
-        }
-    }
-
-
-
-    private data class Configuration(
-        val schema: String,
-        val learning: Boolean,
-        val simplification: Boolean,
-        val autocorrect: Boolean,
-        val fuzzyMode: Set<ChineseIMESettings.FuzzyPinyinModes>
-    )
-    private var prevConfiguration: Configuration? = null
-
-    private fun writeCustomizationFile(cfg: Configuration) {
-        val schema = cfg.schema
-        val file = File(getUser(helper.context), "${schema}.custom.yaml")
-        val content = buildString {
-            appendLine("patch:")
-
-            appendLine("    translator/enable_correction: ${cfg.autocorrect}")
-            appendLine("    translator/enable_user_dict: ${cfg.learning}")
-
-            appendLine("    switches/+:")
-            appendLine("        - name: futo_zh_simp")
-            appendLine("          reset: ${if(cfg.simplification) 1 else 0}")
-            appendLine("          states: [ 漢字, 汉字 ]")
-            appendLine("    simplifier/option_name: futo_zh_simp")
-
-            // Fuzzy pinyin only added to pinyin layouts
-            if(schema.startsWith("luna_pinyin")) {
-                appendLine("    speller/algebra:")
-                cfg.fuzzyMode.forEach {
-                    it.schemePatch.forEach {
-                        appendLine("        - $it")
-                    }
-                }
-            }
-        }
-
-        if(file.parentFile?.isDirectory == true) {
-            file.writeText(content)
-        }
-    }
+    // Rime takes keys and its candidates show only once it is set up for this keyboard's configuration.
+    private val ready get() = prevConfiguration != null && RimeIceSetup.state.value == RimeIceSetup.State.Ready
 
     private var configSemaphore = Semaphore(1)
     private fun updateConfig() {
@@ -606,75 +536,78 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
             try {
                 val settings = Settings.getInstance().current
-                val locale = settings.mLocale
-
-                val simplified = isSimplifiedChinese(locale)
-
                 val pinyinScheme = helper.context.getSetting(ChineseIMESettings.PinyinSchemeSetting)
                     .toEnumOrNull<ChineseIMESettings.PinyinScheme>()
                     ?: ChineseIMESettings.PinyinScheme.FullPinyin
-                val schema = when (layoutHint) {
-                    "qwerty" -> {
-                        when {
-                            pinyinScheme == ChineseIMESettings.PinyinScheme.FullPinyin -> when {
-                                simplified -> "luna_pinyin_simp"
-                                else -> "luna_pinyin"
-                            }
+                val schema = RimeIceSetup.schemaFor(layoutHint, pinyinScheme) ?: return@launch
+                val simplified = RimeIceSetup.isSimplifiedChinese(helper.context, settings.mLocale)
 
-                            else -> pinyinScheme.rimeId
-                        }
-                    }
-
-                    "stroke" -> {
-                        "stroke"
-                    }
-
-                    null -> {
-                        return@launch
-                    }
-
-                    else -> {
-                        throwIfDebug(IllegalStateException("Invalid layout hint '${layoutHint}'"))
-                        "luna_pinyin"
-                    }
-                }
-
-                val fuzzy = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
-                    helper.context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
+                val config = RimeIceSetup.Configuration(
+                    schema,
+                    learning = settings.isPersonalizationEnabled,
+                    simplification = simplified,
+                    autocorrect = settings.mAutoCorrectionEnabledPerUserSettings
+                            || settings.isSuggestionsEnabledPerUserSettings,
+                    fuzzyMode = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
+                        helper.context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
+                    )
                 )
+                if(config == prevConfiguration && ready) return@launch
 
-                val autocorrect = settings.mAutoCorrectionEnabledPerUserSettings
-                        || settings.isSuggestionsEnabledPerUserSettings
-
-                val learning = settings.isPersonalizationEnabled
-
-                val config = Configuration(schema, learning, simplified, autocorrect, fuzzy)
-                if (config != prevConfiguration) {
-                    rimeLoading.value = true
-                    writeCustomizationFile(config)
-                    rime.deploy()
-
-                    var result = false
-                    for(i in 0..10) {
-                        if(rime.selectSchema(config.schema)) {
-                            result = true
-                            break
-                        }
-                        Thread.sleep(300L)
-                    }
-
-                    if(!result) {
-                        Log.e(TAG, "Failed to select schema 3s after deployment!")
-                    }
-
+                prevConfiguration = null
+                // Joins a setup already running in the background (setup screen, app update).
+                if(RimeIceSetup.ensure(helper.context, config)) {
                     rime.setOption("simplification", simplified)
                     rime.setOption("traditional", !simplified)
                     prevConfiguration = config
+                    if(helper.isImeActive(this@ChineseIME)) setNeutralSuggestionStrip()
                 }
+            } catch(e: CancellationException) {
+                throw e
+            } catch(e: Exception) {
+                Log.e(TAG, "Setting up Rime failed", e)
+                if(helper.isImeActive(this@ChineseIME)) showNotice(R.string.sebtype_chinese_engine_failed)
             } finally {
                 configSemaphore.release()
-                rimeLoading.value = false
             }
+        }
+    }
+
+    // While Chinese is set up the suggestion bar says so (the keys type plain letters meanwhile). A
+    // failed deploy or self-test shows a notice instead of a silently dead engine; tapping it
+    // reinstalls the bundled rime-ice and deploys again. Learned words are kept.
+    private fun showSetupState(state: RimeIceSetup.State) = when(state) {
+        is RimeIceSetup.State.Preparing ->
+            if(state.percent == null) showNotice(R.string.sebtype_chinese_preparing)
+            else showNotice(R.string.sebtype_chinese_preparing_percent, state.percent)
+        RimeIceSetup.State.Failed -> showNotice(R.string.sebtype_chinese_engine_failed)
+        RimeIceSetup.State.Ready -> {}
+    }
+
+    private fun showNotice(text: Int, vararg args: Any) = showSuggestionStrip(SuggestedWords(
+        arrayListOf(SuggestedWordInfo(
+            helper.context.getString(text, *args),
+            "",
+            Int.MAX_VALUE,
+            SuggestedWordInfo.KIND_HARDCODED,
+            null,
+            SuggestedWordInfo.NOT_AN_INDEX,
+            SuggestedWordInfo.NOT_A_CONFIDENCE
+        )),
+        null,
+        null,
+        false,
+        false,
+        false,
+        0,
+        0
+    ))
+
+    private fun retryAfterFailure() {
+        coroScope.launch {
+            withContext(Dispatchers.IO) { RimeIceBundle.forget(helper.context) }
+            prevConfiguration = null
+            updateConfig()
         }
     }
 
@@ -684,7 +617,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }
 
     override fun onFinishInput() {
-        if(editingState.active) return
+        if(editingState.active || !ready) return
         coroScope.launch {
             waitingToSelect = null
             rawInput.clear()
@@ -696,7 +629,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }
 
     private fun interruptInput(text: CharSequence? = null) {
-        coroScope.launch {
+        if(ready) coroScope.launch {
             rawInput.clear()
             rime.clearComposition()
         }
@@ -756,7 +689,9 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     else -> it
                 } }
 
-                if(!editingState.active) {
+                if(!ready) {
+                    handlePassByMessage(x11Code, 0)
+                } else if(!editingState.active) {
                     // Only update outside editing state. We cannot update inside editing state,
                     // because the cursor position is unknown and we assume it's always at the end
                     if(x11Code == XK_BackSpace) {
@@ -775,7 +710,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
             Event.EVENT_TYPE_SUGGESTION_PICKED -> {
                 val suggestion = event.mSuggestedWordInfo ?: return
-                if (suggestion.isKindOf(SuggestedWordInfo.KIND_UNDO)) {
+                if (!ready) {
+                    // The setup notice; only the failure notice does something.
+                    if (RimeIceSetup.state.value == RimeIceSetup.State.Failed) retryAfterFailure()
+                } else if (suggestion.isKindOf(SuggestedWordInfo.KIND_UNDO)) {
                     connect?.commitText(suggestion.word, 1)
                 } else {
                     coroScope.launch {
@@ -926,13 +864,14 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         Log.d(TAG, "Clearing Chinese dictionary...")
 
         coroScope.launch {
-            rime.shutdown()
-            getUser(helper.context).let {
-                it.deleteRecursively()
-                it.mkdirs()
+            RimeIceSetup.whileStopped(helper.context) {
+                getUser(helper.context).let {
+                    it.deleteRecursively()
+                    it.mkdirs()
+                }
             }
-            rime.startup(false)
             prevConfiguration = null
+            if(helper.isImeActive(this@ChineseIME)) updateConfig()
         }
     }
 
@@ -950,5 +889,5 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 // Non-behavior methods }}
 
     val debugInfo: String
-        get() = "configuration=${prevConfiguration}\nlayoutHint=${layoutHint}\nlocale=${Settings.getInstance().current.mLocale}\nisSimplified=${isSimplifiedChinese(Settings.getInstance().current.mLocale)}\nrawInput=${rawInput.text}"
+        get() = "configuration=${prevConfiguration}\nlayoutHint=${layoutHint}\nlocale=${Settings.getInstance().current.mLocale}\nisSimplified=${RimeIceSetup.isSimplifiedChinese(helper.context, Settings.getInstance().current.mLocale)}\nrawInput=${rawInput.text}"
 }
