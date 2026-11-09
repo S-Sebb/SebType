@@ -155,7 +155,9 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
 
     public static final String PREF_USE_WESTERN_NUMERALS = "pref_use_western_numerals";
 
-    public static final int DEFAULT_ALT_SPACES_MODE = SPACES_MODE_ALL;
+    // SebType (#39): a "." typed after a space stays put; it only joins a tapped suggestion.
+    public static final int DEFAULT_ALT_SPACES_MODE = SPACES_MODE_SUGGESTIONS;
+    private static final String PREF_SEBTYPE_ALT_SPACES_MIGRATED = "pref_sebtype_alt_spaces_migrated";
 
     // Emoji
     public static final String PREF_EMOJI_RECENT_KEYS = "emoji_recent_keys";
@@ -201,6 +203,17 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
         mPrefs = PreferenceUtils.INSTANCE.getDefaultSharedPreferences(context);
         mPrefs.registerOnSharedPreferenceChangeListener(this);
         upgradeAutocorrectionSettings(mPrefs, mRes);
+        upgradeAltSpacesMode(mPrefs);
+    }
+
+    // SebType (#39): once, move a stored FUTO default ("auto" for everything) to SebType's default.
+    static void upgradeAltSpacesMode(final SharedPreferences prefs) {
+        if (prefs.getBoolean(PREF_SEBTYPE_ALT_SPACES_MIGRATED, false)) return;
+        final SharedPreferences.Editor editor = prefs.edit();
+        if (prefs.getInt(PREF_ALT_SPACES_MODE, DEFAULT_ALT_SPACES_MODE) == SPACES_MODE_ALL) {
+            editor.putInt(PREF_ALT_SPACES_MODE, DEFAULT_ALT_SPACES_MODE);
+        }
+        editor.putBoolean(PREF_SEBTYPE_ALT_SPACES_MIGRATED, true).apply();
     }
 
     public void onDestroy() {
