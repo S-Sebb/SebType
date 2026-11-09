@@ -222,7 +222,6 @@ class LanguageModel(
         )
 
         return@withContext suggestedWords.mSuggestedWordInfoList.mapIndexed { index, suggestedWordInfo ->
-            Log.i("LanguageModel", "Suggestion [${suggestedWordInfo.word}] reweighted, from ${suggestedWordInfo.mScore} to ${wordScoresOutput[index]}")
             SuggestedWordInfo(
                 suggestedWordInfo.word,
                 suggestedWordInfo.mPrevWordsContext,

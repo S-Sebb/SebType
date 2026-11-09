@@ -307,6 +307,27 @@ object SettingsExporter {
 
     private fun String.splitSlash(): String = split("/", limit = 2)[1]
 
+    /** Writes the current entry `<folder>/<path>` to `<path>` inside [baseDir]; skips it if it would land outside. */
+    private fun ZipInputStream.extractTo(baseDir: File, entryName: String) {
+        val target = resolveInside(baseDir, entryName.splitSlash())
+        if (target == null) {
+            Log.w("SettingsExporter", "Skipping backup entry outside its folder: $entryName")
+            return
+        }
+        target.parentFile!!.mkdirs()
+        target.outputStream().use { copyTo(it) }
+    }
+
+    /**
+     * [relative] resolved inside [baseDir], or null if it leaves it (`../`, symlinks):
+     * a crafted backup file must not overwrite other files of the app (zip-slip).
+     */
+    internal fun resolveInside(baseDir: File, relative: String): File? {
+        val base = baseDir.canonicalFile
+        val target = File(base, relative).canonicalFile
+        return target.takeIf { it.path.startsWith(base.path + File.separator) }
+    }
+
     suspend fun loadSettings(
         context: Context,
         inputStream: InputStream,
@@ -377,76 +398,20 @@ object SettingsExporter {
                     onClipboardImportedFlow.emit(clipboardFile)
                 }
 
-                entry.name.startsWith("ext/") -> {
-                    File(extFilesDir, entry.name.splitSlash()).outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
+                entry.name.startsWith("ext/") -> zipIn.extractTo(extFilesDir, entry.name)
 
-                entry.name.startsWith("transformers/") -> {
-                    File(transformersDir, entry.name.splitSlash()).outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
+                entry.name.startsWith("transformers/") -> zipIn.extractTo(transformersDir, entry.name)
 
-                entry.name.startsWith("userdict/") -> {
-                    val names = entry.name.split("/")
-                    assert(names.size == 3)
+                // userdict/<UserHistoryDictionary dir>/<file>, only into those dirs of filesDir
+                entry.name.startsWith("userdict/UserHistoryDictionary") ->zipIn.extractTo(context.filesDir, entry.name)
 
-                    val subdirName = names[1]
-                    val fileName = names[2]
+                entry.name.startsWith("clipboard/") -> zipIn.extractTo(context.clipboardDir, entry.name)
 
-                    val subdir = File(context.filesDir, subdirName)
-                    subdir.mkdirs()
+                entry.name.startsWith("mozc/") -> zipIn.extractTo(mozcUserProfileDir(context), entry.name)
 
-                    File(subdir, fileName).outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
+                entry.name.startsWith("rime/") -> zipIn.extractTo(ChineseIME.getRimeDir(context), entry.name)
 
-                entry.name.startsWith("clipboard/") -> {
-                    val relDir = entry.name.splitSlash()
-                    assert(!relDir.contains('/'))
-
-                    val clipboardDir = context.clipboardDir
-                    clipboardDir.mkdirs()
-                    File(clipboardDir, relDir).outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
-
-
-                entry.name.startsWith("mozc/") -> {
-                    val relDir = entry.name.splitSlash()
-
-                    assert(!relDir.contains('/'))
-
-                    val userProfileDir = mozcUserProfileDir(context)
-                    userProfileDir.mkdirs()
-                    File(userProfileDir, relDir).outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
-
-                entry.name.startsWith("rime/") -> {
-                    val relDir = entry.name.splitSlash()
-                    val rimeDir = ChineseIME.getRimeDir(context)
-
-                    val targetFile = File(rimeDir, relDir)
-                    targetFile.parentFile!!.mkdirs()
-
-                    targetFile.outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
-
-                entry.name.startsWith("themes/") -> {
-                    themesDir.mkdirs()
-
-                    File(themesDir, entry.name.splitSlash()).outputStream().use {
-                        zipIn.copyTo(it)
-                    }
-                }
+                entry.name.startsWith("themes/") -> zipIn.extractTo(themesDir, entry.name)
 
                 else -> {
                     Log.w(
