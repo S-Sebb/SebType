@@ -5,7 +5,7 @@
 # pick a phone); RUNS (default 3) repeats each typing set.
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in /tmp/sebtype/perf-results.txt, the table in /tmp/sebtype/perf.md, traces and
-# logs in /tmp/sebtype/perf/. Exit 0 only if every check passes. Timing comes from Perfetto traces of
+# logs in /tmp/sebtype/perf/. Exit 0 unless a check fails. Timing comes from Perfetto traces of
 # framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -365,4 +365,4 @@ devq -P "${PERF_PRIORITY:-5}" -w 1800 -m "$T" -n "sebtype perf.sh" "$lock" "$sel
 
 python3 -I sebtype/perf/table.py "$work" "$results" > "$out/perf.md"
 cat "$out/perf.md"
-! grep -qv '^PASS' "$results"
+! grep -q '^FAIL' "$results" # a SKIP (e.g. sizes without root on a phone) doesn't fail the run
