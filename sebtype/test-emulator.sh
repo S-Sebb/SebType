@@ -41,10 +41,15 @@ check signed-sebtype bash -c "'$bt/apksigner' verify --print-certs '$apk' | grep
 # Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
 device_checks() {
   "$adb" -s "$serial" shell pm path org.futo.inputmethod.latin >/dev/null || "$adb" -s "$serial" install "$futo_apk"
-  "$adb" -s "$serial" install -r "$apk" &&
-    "$adb" -s "$serial" shell pm path org.futo.inputmethod.latin >/dev/null &&
-    "$adb" -s "$serial" shell ime list -a -s | grep -q '^dev.sebb.sebtype/' &&
-    "$adb" -s "$serial" shell ime list -a -s | grep -q '^org.futo.inputmethod.latin/'
+  "$adb" -s "$serial" install -r "$apk" || return 1
+  # The system lists a newly installed keyboard a few seconds after the install returns.
+  local imes i
+  for i in {1..15}; do
+    imes=$("$adb" -s "$serial" shell ime list -a -s)
+    grep -q '^dev.sebb.sebtype/' <<<"$imes" && grep -q '^org.futo.inputmethod.latin/' <<<"$imes" && return 0
+    sleep 2
+  done
+  echo "keyboards listed: $imes"; return 1
 }
 export -f device_checks; export adb serial apk futo_apk
 T=2000 check install-beside-futo devq -P 1 -w 1800 -m 5 -n "sebtype #5 test-emulator" "$lock" bash -c device_checks
