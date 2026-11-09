@@ -2,4 +2,6 @@
 <resources>
     <!-- App and keyboard name; not translated, so it reads SebType in every locale. -->
     <string name="sebtype_app_name" translatable="false">SebType</string>
+    <!-- Theme named after SebChat's look; not translated, like the app name. -->
+    <string name="sebtype_theme_picnic" translatable="false">Picnic</string>
 </resources>
