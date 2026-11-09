@@ -104,6 +104,104 @@ mozc_keymap() {
 }
 check fresh-apply fresh_apply
 
+# Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
+# can't see it) running Mozc on a second fake account set up by setup-ime.sh: Shift tap toggles
+# あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` still does. Its fcitx5 and
+# mozc_server are found by the fake HOME in their environment and stopped afterwards.
+mozc_keys() {
+  local h=$fake/jp
+  mkdir -p "$h/.config/fcitx5"
+  fake_run < /dev/null > /dev/null || return 1
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=mozc\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 60 dbus-run-session -- python3 - "$fake/fcitx5.log" <<'PY'
+import subprocess, sys, time
+from gi.repository import Gio, GLib
+
+SHIFT, CTRL, ALT = 1, 4, 8
+KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'Alt_L': (0xffe9, 64), 'Escape': (0xff1b, 9),
+        'Return': (0xff0d, 36), 'Tab': (0xff09, 23), 'space': (0x20, 65), 'a': (0x61, 38), 'k': (0x6b, 45),
+        'K': (0x4b, 45), 'grave': (0x60, 49)}
+MODS = {'Shift_L': SHIFT, 'Control_L': CTRL, 'Alt_L': ALT}
+
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,mozc'],
+                         stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+CONTROLLER, IC = ('/controller', 'org.fcitx.Fcitx.Controller1'), 'org.fcitx.Fcitx.InputContext1'
+for _ in range(100):
+    try: call(*CONTROLLER, 'CurrentInputMethod'); break
+    except GLib.Error: time.sleep(0.1)
+ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+             '(a(ss))', [('program', 'sebtype-test')])
+committed, preedit = [], ['']
+def on_signal(_c, _s, _p, _i, name, params):
+    if name == 'CommitString': committed.append(params.unpack()[0])
+    elif name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)  # preedit, formatted, client-side panel
+call(ic, IC, 'FocusIn')
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'mozc')
+
+def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
+    sym, code = KEYS[name]
+    taken = call(ic, IC, 'ProcessKeyEvent', '(uuubu)', sym, code, state, release, 0)[0]
+    end = time.time() + 0.05
+    while time.time() < end: GLib.MainContext.default().iteration(False)
+    return taken
+def tap(name, state=0):
+    taken = key(name, state); key(name, state | MODS.get(name, 0), True); return taken
+def chord(mod, name):
+    key(mod); tap(name, MODS[mod]); key(mod, MODS[mod], True)
+def shift_tap(): tap('Shift_L')
+def mode():  # 'あ' when "a" starts a kana preedit (then cleared), 'A' when it goes to the app
+    if tap('a'):
+        got = 'あ' if preedit[0] == 'あ' else f'preedit {preedit[0]!r}'
+        tap('Escape')
+    else: got = 'A'
+    im = call(*CONTROLLER, 'CurrentInputMethod')[0]
+    return got if im == 'mozc' else f'Fcitx5 switched to {im}'
+
+ok = True
+def check(name, got, want):
+    global ok
+    ok &= got == want
+    print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
+
+check('starts in あ', mode(), 'あ')
+for state, keys in [('composing', 'ka'), ('converting', ['k', 'a', 'space']), ('predicting', ['k', 'a', 'Tab']),
+                    ('after a commit', ['k', 'a', 'Return'])]:
+    for k in keys: tap(k)
+    pending, before = preedit[0], len(committed)
+    shift_tap()
+    check(f'Shift tap {state} commits the preedit', bool(committed[before:]), bool(pending))
+    check(f'Shift tap {state} turns English on', mode(), 'A')
+    shift_tap(); check(f'Shift tap in English {state} is あ again', mode(), 'あ')
+key('Shift_L'); tap('K', SHIFT); key('Shift_L', SHIFT, True)
+check('Shift+K starts an English run', preedit[0], 'K')
+tap('Escape'); check('Shift+K stays in あ', mode(), 'あ')
+key('Control_L'); key('Shift_L', CTRL); key('Shift_L', CTRL | SHIFT, True); key('Control_L', CTRL, True)
+check('Ctrl+Shift stays in あ', mode(), 'あ')
+chord('Alt_L', 'grave'); check('Alt+` turns English on', mode(), 'A')
+chord('Alt_L', 'grave'); check('Alt+` is あ again', mode(), 'あ')
+fcitx.terminate(); fcitx.wait(10)
+sys.exit(0 if ok else 1)
+PY
+  local rc=$? p
+  for p in $(pgrep -x fcitx5) $(pgrep -x mozc_server); do
+    grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"
+  done
+  return $rc
+}
+if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/mozc.conf ]] &&
+  python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+  check mozc-shift-tap-and-alt-grave mozc_keys
+else result SKIP mozc-shift-tap-and-alt-grave "needs fcitx5, fcitx5-mozc, dbus-run-session and python3-gobject"
+fi
+
 rerun() {
   echo 'XMODIFIERS=@im=fcitx' > "$fake/session-env"
   local o; o=$(fake_run < /dev/null) || return 1; echo "$o"
