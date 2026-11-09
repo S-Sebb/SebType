@@ -25,11 +25,11 @@ check shellcheck uvx --from shellcheck-py shellcheck setup-ime.sh test-setup-ime
 # Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain.
 live_dry() {
   local before after
-  before=$(find ~/.config/kwinrc ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
-    ~/.local/share/sebtype -type f -exec md5sum {} + 2>/dev/null | sort)
+  before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
+    ~/.local/share/icons/SebType ~/.local/share/sebtype -type f -exec md5sum {} + 2>/dev/null | sort)
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v 'unused Flatpak override' && return 1
-  after=$(find ~/.config/kwinrc ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
-    ~/.local/share/sebtype -type f -exec md5sum {} + 2>/dev/null | sort)
+  after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
+    ~/.local/share/icons/SebType ~/.local/share/sebtype -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
 }
 check live-dry-run live_dry
@@ -46,6 +46,7 @@ stub flatpak 'exit 1'
 stub pgrep 'exit 1'  # never finds (and stops) the real mozc_server
 stub qdbus6 'echo "qdbus $*" >> "$FAKE/qdbus.log"'
 stub busctl 'case "$*" in
+  *" emit "*) echo "$*" >> "$FAKE/emit.log" ;;
   *status*) ;;
   *setForeignShortcutKeys*) echo "$*" > "$FAKE/kga.log" ;;
   *shortcutKeys*) if [[ -e $FAKE/kga.log ]]; then echo "a(ai) 1 4 268435552 0 0 0"
@@ -65,12 +66,13 @@ echo 'export QT_IM_MODULE=fcitx' > "$h/.profile"
 mkdir -p "$h/.config/fcitx5" "$h/.config/mozc"
 printf '[Hotkey]\nEnumerateWithTriggerKeys=True\n\n[Hotkey/TriggerKeys]\n0=Super+space\n\n[Hotkey/AltTriggerKeys]\n0=Shift_L\n\n[Hotkey/EnumerateForwardKeys]\n0=Control+Shift+Shift_L\n\n[Behavior]\nActiveByDefault=False\nShareInputState=No\n' > "$h/.config/fcitx5/config"
 printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db"
+printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 9 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 10 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -84,7 +86,7 @@ fresh_apply() {
     [[ ! -e $h/.local/share/flatpak/overrides/com.qq.QQ ]] &&
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
     grep -q 'Default us 3 keyboard-us  rime  mozc' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
-    fcitx_hotkeys && mozc_keymap && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log"
+    fcitx_hotkeys && mozc_keymap && tray_icons && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log"
 }
 # Super+Space is the only switch, all windows share one state, the other settings stay, and Fcitx5 reloaded it.
 fcitx_hotkeys() {
@@ -102,7 +104,29 @@ mozc_keymap() {
     cmp <(tail -c 4 "$db") <(printf '\xda\x02\x01x') && grep -qF $'DirectInput\tAlt `\tIMEOn' "$db" &&
     ls "$h"/.local/share/sebtype/backup/*/config1.db
 }
+# SebType's icon theme inherits the theme that was active, holds every Fcitx5 status name at each size,
+# is active, and the running apps were told.
+tray_icons() {
+  local t=$h/.local/share/icons/SebType d n
+  [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == SebType ]] &&
+    grep -qx 'Inherits=Fluent-dark' "$t/index.theme" && grep -q iconChanged "$fake/emit.log" || return 1
+  for d in 16 20 22 24 32 scalable; do
+    for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A fcitx_mozc_hiragana:hira \
+      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a; do
+      cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
+    done
+  done
+}
 check fresh-apply fresh_apply
+
+# --undo-icons brings back the inherited theme and removes SebType's; a second undo changes nothing.
+undo_icons() {
+  local o; o=$(fake_run --undo-icons < /dev/null) || return 1; echo "$o"
+  [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == Fluent-dark &&
+    ! -e $h/.local/share/icons/SebType && $(grep -c '^change:' <<<"$o") == 2 ]] &&
+    o=$(fake_run --undo-icons < /dev/null) && [[ -z $o ]] &&
+    o=$(fake_run < /dev/null) && grep -q '^change: install SebType.s tray icons .* over Fluent-dark' <<<"$o" && tray_icons
+}
 
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
 # can't see it) running Mozc on a second fake account set up by setup-ime.sh: Shift tap toggles
@@ -208,5 +232,6 @@ rerun() {
   grep -q '^done: 1 change(s)' <<<"$o" && grep -q 'install packages fcitx5-mozc' <<<"$o"
 }
 check rerun-only-asks-for-missing-package rerun
+check undo-icons-and-reinstall undo_icons
 
 ! grep -q '^FAIL' "$results"

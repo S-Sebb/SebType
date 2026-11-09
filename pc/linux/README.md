@@ -28,6 +28,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Language switch | In `~/.config/fcitx5/config`: `ShareInputState=All`, so every window shares one language, as on Windows. Super+Space is the "enumerate forward" key, and the trigger, Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L and group-switch keys are cleared. Fcitx5 reloads its config | Super+Space is the only language switch and cycles EN → 中 → 日 (a trigger key would only toggle English and the last language). Rime's own Shift tap still switches English inside Chinese |
 | Japanese あ ⇄ English | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus a Shift tap and Alt+` (both あ ⇄ direct English). Other Mozc settings are kept. A running `mozc_server` is stopped; fcitx5-mozc starts it again on the next key. Shift tap and Alt+` from English back to あ work once Fcitx5 restarts (fcitx5-mozc reads the keys that work in direct mode only then): log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on, which makes KWin restart Fcitx5 | A Shift tap switches Japanese like Rime's Shift tap in Chinese, and Alt+` like on Windows. Shift+letter, F6–F10 and Space work as in Mozc's default keymap |
 | Alt+` in Plasma | Removes Alt+` from KWin's "Walk Through Windows of Current Application", which keeps Meta+` | Plasma would otherwise take Alt+` before Mozc sees it |
+| Tray icons | Installs `~/.local/share/icons/SebType`, an icon theme that holds only SebType's tray icons (`pc/icons`) and inherits the theme that was active, then makes it the active icon theme. Plasma reloads icons at once | The tray shows SebType's keycaps instead of the icon theme's keyboard, Rime logo and Mozc squares |
 
 `mozc-keymap.tsv` is Mozc's `src/data/keymap/ms-ime.tsv` (BSD-3-Clause, Google) with Alt+` and Shift
 lines added at the end.
@@ -40,12 +41,33 @@ does for every key anyway. The keymap lives in this account's Mozc config, so Fe
 fcitx5-mozc keep it. If Mozc's settings are ever reset, rerun `setup-ime.sh`. To undo: copy `config` and `config1.db` back from the backup folder, then run
 `fcitx5-remote -r` and stop `mozc_server`. To bring back Alt+` for the KWin action, use System Settings → Shortcuts.
 
+### Tray icons
+
+| State | Icon | Fcitx5 asks for |
+|---|---|---|
+| English (US layout) | EN | `input-keyboard` |
+| Chinese | 中 | `fcitx-rime` |
+| Chinese, English mode | a | `fcitx_rime_latin` |
+| Chinese, English mode with Caps Lock | A | `fcitx_rime_latin_upper` |
+| Japanese hiragana | あ | `fcitx_mozc_hiragana` |
+| Japanese katakana (full and half width) | ア | `fcitx_mozc_katakana_full`, `fcitx_mozc_katakana_half` |
+| Japanese, English mode (direct, half and full ASCII) | a | `fcitx_mozc_direct`, `fcitx_mozc_alpha_half`, `fcitx_mozc_alpha_full` |
+
+`input-keyboard` and `fcitx-rime` come from the active icon theme, so only a theme of SebType's own
+replaces them, and other apps that show `input-keyboard` get the EN key too. Every other icon still
+comes from the theme SebType's inherits. Japanese's English mode stays **a** with Caps Lock on, because
+fcitx5-mozc has no Caps Lock icon (#66). If you pick another icon theme in System Settings, rerun
+`setup-ime.sh` to put SebType's on top of it.
+
+To undo: `pc/linux/setup-ime.sh --undo-icons`. It makes the inherited theme active again and removes
+`~/.local/share/icons/SebType`.
+
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
 restarts. At the end it checks that Fcitx5 runs under KWin and that the session has `XMODIFIERS`, and
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account, and the Japanese keys typed into a private Fcitx5 with its own D-Bus
+rerun run on a fake fresh account including the icon theme's install and undo, and the Japanese keys typed into a private Fcitx5 with its own D-Bus
 session). It doesn't touch the session.
 
 ## App checklist
