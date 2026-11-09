@@ -1163,9 +1163,7 @@ public final class InputLogic {
             // have touch coordinates for it.
             resetComposingState(false /* alsoResetLastComposedWord */);
             // If we are touching a number, mark it as attached to a non-word
-            // SebType (#39): also after a "." with no space, as in ".py", so it isn't autocorrected
-            if(mConnection.isCursorTouchingNumber()
-                    || mConnection.getCodePointBeforeCursor() == Constants.CODE_PERIOD) {
+            if(mConnection.isCursorTouchingNumber()) {
                 mWordComposer.markAttachedToNonWord();
             }
         }
