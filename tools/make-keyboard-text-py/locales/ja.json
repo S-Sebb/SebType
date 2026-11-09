@@ -5,9 +5,7 @@
     "currency": "¥"
   },
   "label": {},
-  "keylabel": {
-    "to_alpha": "←"
-  },
+  "keylabel": {},
   "keyhintlabel": {},
   "additional_morekeys": {},
   "other": {}
