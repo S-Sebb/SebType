@@ -51,7 +51,8 @@ if [[ $stamp != "$(cat /work/top/prep.stamp 2>/dev/null)" ]]; then
   rpmbuild -bp --nodeps --define '_topdir /work/fresh' /work/fresh/fcitx5-mozc.spec >/work/prep.log 2>&1 ||
     { tail -30 /work/prep.log; exit 1; }
   mkdir -p /work/top/BUILD
-  rsync -rlc --delete /work/fresh/BUILD/ /work/top/BUILD/
+  rsync -rlc --delete --exclude=out_linux --exclude=mozc_version.txt \
+    /work/fresh/BUILD/ /work/top/BUILD/  # keeps the build output and gyp's version file
   rsync -a --delete /work/fresh/SOURCES/ /work/top/SOURCES/
   cp /work/fresh/fcitx5-mozc.spec /work/top/fcitx5-mozc.spec
   echo "$stamp" > /work/top/prep.stamp
