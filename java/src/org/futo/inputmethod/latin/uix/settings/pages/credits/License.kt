@@ -12,7 +12,8 @@ enum class License {
     GPL_V2,
     Proprietary,
     PublicDomain,
-    PublicDomainClearflow
+    PublicDomainClearflow,
+    SCOWL
 }
 
 @Suppress("HardCodedStringLiteral")
@@ -1153,4 +1154,8 @@ In jurisdictions where this is not legally possible, the copyright holder grants
 No copyright is claimed. This work may be freely reproduced, distributed, transmitted, modified, built upon, or otherwise used by anyone for any lawful purpose."""
 
     License.PublicDomainClearflow -> """The ClearFlow layout is public information and not subject to any intellectual property restrictions. Please feel free to implement it."""
+
+    License.SCOWL -> """Copyright 2000-2026 by Kevin Atkinson
+
+Permission to use, copy, modify, distribute, and sell any part of SCOWLv2, or word lists created from it, is hereby granted without fee, provided that the above copyright notice appears in all copies and that both the above copyright notice and this notice appear in supporting documentation.  Kevin Atkinson makes no representations about the suitability of this database for any purpose.  It is provided "as is" without express or implied warranty."""
 }

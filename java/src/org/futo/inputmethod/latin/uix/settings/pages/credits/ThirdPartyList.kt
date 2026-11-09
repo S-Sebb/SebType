@@ -189,5 +189,19 @@ SKK Development Team <skk@ring.gr.jp>""",
         "https://clearflowkeyboard.github.io/",
         "Copyright (c) 2024-2026 ClearFlow Authors (Xiaojun Bi et al.)",
         License.PublicDomainClearflow
+    ),
+    TP(
+        "wordfreq",
+        "English word frequencies - wordfreq, with data from Google Books Ngrams, the Leeds Internet Corpus, Wikipedia, ParaCrawl, OpenSubtitles, Twitter and the SUBTLEX word lists by Marc Brysbaert et al. (SUBTLEX is freely available data)",
+        "https://github.com/rspeer/wordfreq",
+        "Copyright (c) Robyn Speer",
+        License.CC_BY_SA_4_0
+    ),
+    TP(
+        "SCOWL",
+        "English modern words checked against SCOWL's en_US-large word list",
+        "https://wordlist.aspell.net",
+        "Copyright 2000-2026 by Kevin Atkinson",
+        License.SCOWL
     )
 )
