@@ -1,0 +1,3 @@
+# FUTO's upstream Python: never lint or reformat it, so upstream merges stay clean.
+force-exclude = true
+extend-exclude = ["java", "tools/contributors.py", "tools/make-keyboard-text-py"]
