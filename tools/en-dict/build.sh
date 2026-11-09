@@ -41,5 +41,5 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 wordfreq=$(fetch "$WORDFREQ_URL" "$WORDFREQ_SHA256")
 unzip -q "$(fetch "$SCOWL_URL" "$SCOWL_SHA256")" -d "$stage"
-python3 -I tools/en-dict/make_dict.py "$FUTO_DICT" "$wordfreq" "$stage" "$out" out/en_wordlist.combined.gz
+python3 -I -B tools/en-dict/make_dict.py "$FUTO_DICT" "$wordfreq" "$stage" "$out" out/en_wordlist.combined.gz
 echo "$out"

@@ -41,7 +41,7 @@ mkdir -p "$cache"
 chat=$(fetch "$CHAT_URL" "$CHAT_SHA256" oasst1-prompts.jsonl.gz) || { echo "preflight: can't download $CHAT_URL"; exit 1; }
 typos=$(fetch "$TYPOS_URL" "$TYPOS_SHA256" misspellings-1199637275.txt) || { echo "preflight: can't download misspellings"; exit 1; }
 
-check codec-roundtrip python3 -I -c "
+check codec-roundtrip python3 -I -B -c "
 import sys; sys.path.insert(0, 'tools/en-dict'); import v202
 d = open('$futo', 'rb').read(); a, w = v202.decode(d)
 assert v202.encode(a, w) == d, 'FUTO main_en.dict does not re-encode to the same bytes'"
@@ -50,8 +50,8 @@ rebuilt=$out/test-en-dict-rebuilt.dict
 check reproducible bash -c "tools/en-dict/build.sh '$rebuilt' && cmp '$rebuilt' '$dict'"
 
 # The study's numbers: FUTO 26.3 % top-1 after 2 letters; the new list 32.2 %, accepting 0.4 % of misspellings.
-python3 -I tools/en-dict/bench.py "$chat" "$typos" "$futo" "$dict" > "$out/test-en-dict-bench.txt" 2>&1
-check benchmark python3 -I -c "
+python3 -I -B tools/en-dict/bench.py "$chat" "$typos" "$futo" "$dict" > "$out/test-en-dict-bench.txt" 2>&1
+check benchmark python3 -I -B -c "
 rows = [l.split() for l in open('$out/test-en-dict-bench.txt')][1:]
 new = dict(zip(['cover', 'p2top1', 'p2top3', 'p3top1', 'p3top3', 'typos_ok'], map(float, rows[1][2:])))
 print(open('$out/test-en-dict-bench.txt').read())
