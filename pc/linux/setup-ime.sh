@@ -133,6 +133,94 @@ else
   warn "Fcitx5 isn't running; log out and in again, then rerun to set up its input methods"
 fi
 
+# 8. Super+Space is the only language switch, and it cycles EN → 中 → 日. It is Fcitx5's
+# enumerate-forward key: a trigger key would only toggle English and the last language. Fcitx5's other
+# switchers are cleared: Shift_L (AltTriggerKeys), Control+Shift+Shift_L, and the group switch, which
+# defaults to Super+Space too. Rime still handles its own Shift tap for English inside Chinese.
+# ShareInputState=All: one language for every window, as on Windows (#42), not one per window.
+fcitx_conf=$config/fcitx5/config
+fcitx_global() { # prints the config with those settings, keeping everything else
+  awk -v cleared='TriggerKeys AltTriggerKeys EnumerateBackwardKeys EnumerateGroupForwardKeys EnumerateGroupBackwardKeys' '
+    BEGIN { n = split(cleared " EnumerateForwardKeys", keys, " ")
+      for (i = 1; i <= n; i++) { own["[Hotkey/" keys[i] "]"] = 1; own[keys[i]] = 1 } }
+    /^\[/ { sec = $0; skip = (sec in own) }
+    skip || (sec == "[Hotkey]" && (substr($0, 1, index($0, "=") - 1) in own)) { next }
+    sec == "[Behavior]" && /^ShareInputState=/ { next }
+    { print }
+    $0 == "[Hotkey]" { hotkey = 1; gsub(" ", "=\n", cleared); print cleared "=" }
+    $0 == "[Behavior]" { behavior = 1; print "ShareInputState=All" }
+    END { if (!hotkey) { gsub(" ", "=\n", cleared); print "[Hotkey]\n" cleared "=" }
+      if (!behavior) print "\n[Behavior]\nShareInputState=All"
+      print "\n[Hotkey/EnumerateForwardKeys]\n0=Super+space" }' "$@"
+}
+canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
+src=$fcitx_conf; [[ -f $src ]] || src=/dev/null
+want=$(fcitx_global "$src")
+if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
+  change "make Super+Space the only language switch, shared by all windows, in $fcitx_conf (backup in $backup)"; then
+  [[ -f $fcitx_conf ]] && save "$fcitx_conf"
+  mkdir -p "${fcitx_conf%/*}"; printf '%s\n' "$want" > "$fcitx_conf"
+  busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true
+fi
+
+# 9. Japanese: Alt+` toggles あ and direct English (Decisions #2). Mozc keeps a custom keymap only as a
+# whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus four Alt+` lines (Shift+letter, F6–F10
+# and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
+# protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
+# kept. Mozc reads it at start, so a running mozc_server is stopped; fcitx5-mozc restarts it on the next key.
+mozc_db=$config/mozc/config1.db
+mozc_want=$(python3 - "$mozc_db" "$(dirname "$0")/mozc-keymap.tsv" <<'PY' | base64 -w0
+import sys
+
+def varint(b, i):
+    n = shift = 0
+    while True:
+        c = b[i]; i += 1; n |= (c & 0x7F) << shift; shift += 7
+        if c < 0x80: return n, i
+
+def enc(n):
+    out = bytearray()
+    while True:
+        out.append(n & 0x7F | (0x80 if n > 0x7F else 0)); n >>= 7
+        if not n: return bytes(out)
+
+try: data = open(sys.argv[1], 'rb').read()
+except FileNotFoundError: data = b''
+table = open(sys.argv[2], 'rb').read()
+before, after, i = b'', b'', 0
+while i < len(data):  # copy every field but 41 and 42, in place
+    start = i; key, i = varint(data, i); wire = key & 7
+    if wire == 0: _, i = varint(data, i)
+    elif wire == 1: i += 8
+    elif wire == 2: n, i = varint(data, i); i += n
+    elif wire == 5: i += 4
+    else: sys.exit(f'{sys.argv[1]}: unexpected protobuf wire type {wire}')
+    if key >> 3 < 41: before += data[start:i]
+    elif key >> 3 > 42: after += data[start:i]
+sys.stdout.buffer.write(before + enc(41 << 3) + enc(0) + enc(42 << 3 | 2) + enc(len(table)) + table + after)
+PY
+)
+if [[ $(base64 -w0 "$mozc_db" 2>/dev/null) != "$mozc_want" ]] &&
+  change "set Mozc's keymap to MS-IME plus Alt+\` for あ ⇄ English in $mozc_db (backup in $backup)"; then
+  [[ -f $mozc_db ]] && save "$mozc_db"
+  mkdir -p "${mozc_db%/*}"; base64 -d <<<"$mozc_want" > "$mozc_db"
+  mapfile -t pids < <(pgrep -u "$(id -u)" -x mozc_server)
+  ((${#pids[@]})) && kill "${pids[@]}"
+  # fcitx5-mozc reads the keys that work in direct English mode once, when Fcitx5 starts.
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
+    warn "Alt+\` from English back to あ works once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+fi
+
+# 10. Plasma binds Alt+` (and Meta+`) to "Walk Through Windows of Current Application", so Mozc would
+# never see Alt+`. The action keeps Meta+`.
+kga() { busctl --user call org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel "$@"; }
+walk=(kwin "Walk Through Windows of Current Application" KWin "Walk Through Windows of Current Application")
+alt_grave=$((0x08000000 | 0x60)) meta_grave=$((0x10000000 | 0x60))  # Qt::AltModifier/MetaModifier | Qt::Key_QuoteLeft
+if [[ " $(kga shortcutKeys as 4 "${walk[@]}" 2>/dev/null) " == *" $alt_grave "* ]] &&
+  change "free Alt+\` from Plasma's \"${walk[1]}\" shortcut, which keeps Meta+\`"; then
+  kga setForeignShortcutKeys 'asa(ai)' 4 "${walk[@]}" 1 4 "$meta_grave" 0 0 0
+fi
+
 # Self-check of the live session.
 parent=$(ps -o ppid= -C fcitx5 | head -1 | tr -d ' ')
 [[ -n $parent && $(ps -o comm= -p "$parent") == kwin_wayland ]] ||
