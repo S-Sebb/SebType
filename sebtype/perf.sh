@@ -184,13 +184,13 @@ phase_zh-deploy() { # switch to 中: the first-run Chinese setup (install and ch
   local deadline=$(( SECONDS + 600 ))
   while (( SECONDS < deadline )); do
     p=$(pss_kb); (( ${p:-0} > peak )) && peak=$p
-    log=$("$adb" logcat -d | grep -F 'ChineseIME (rime)' | tr -d '\r')
+    log=$("$adb" logcat -d | grep -F 'ChineseIME (rime)' | tr -d '\r' || true) # nothing until setup logs
     [[ $log == *"Set up rime_ice in"* ]] && break
     sleep 1
   done
   [[ $log == *"self-test passed"* ]] || { echo "Chinese setup didn't pass in 10 min: ${log:-no log}" >&2; return 1; }
   echo "setup_ms=$(sed -n 's/.*Set up rime_ice in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
-  echo "install_ms=$(sed -n 's/.*Installed the bundled Chinese data in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
+  echo "install_ms=$(sed -n 's/.*Installed the bundled [^0-9]* in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
   echo "pss_peak_kb=$peak"
   echo "built_on_device=$(sh "ls $rime_dir/user/build" | grep -c '\.bin$')" # tables or prisms compiled here
 }
