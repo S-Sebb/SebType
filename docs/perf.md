@@ -24,7 +24,7 @@ What it measures:
 | APK size, biggest entries | the APK file; shrunk resource names mapped back with `aapt2` |
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
 | Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, peak during the Rime deploy |
-| Keyboard open | ImeTracker log lines in the trace: first open after install, warm (hide and tap the field), cold (switch back from Gboard or FUTO with SebType stopped) |
+| Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
 | Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the keyboard's last frame before the next key (key → candidates), and the transformer thread's CPU time |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
 | Rime first deploy | time until rime-ice's compiled tables stop changing after the first switch to 中 |
@@ -39,7 +39,7 @@ and traces and logs in `/tmp/sebtype/perf/`. Open a `.pftrace` in https://ui.per
 the time goes.
 
 No typed text is recorded: the test field logs only its text length, and timing comes from
-framework trace slices, frame timelines and ImeTracker's log lines.
+framework trace slices and frame timelines; the trace records no logs.
 
 Notes:
 

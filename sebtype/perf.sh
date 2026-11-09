@@ -6,7 +6,7 @@
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in /tmp/sebtype/perf-results.txt, the table in /tmp/sebtype/perf.md, traces and
 # logs in /tmp/sebtype/perf/. Exit 0 only if every check passes. Timing comes from Perfetto traces of
-# framework slices, frame timelines and ImeTracker logs: nothing typed is recorded.
+# framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 self=$PWD/sebtype/perf.sh
@@ -19,7 +19,7 @@ export pkg=dev.sebb.sebtype field=dev.sebb.sebtype.perffield
 export ime_id=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
 export field_act=dev.sebb.sebtype.perffield/.PerfField
 export tp=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/trace_processor_shell-v59.1
-export keys_sql=$PWD/sebtype/perf/keys.sql
+export keys_sql=$PWD/sebtype/perf/keys.sql opens_sql=$PWD/sebtype/perf/opens.sql
 results=$out/perf-results.txt
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
@@ -69,7 +69,7 @@ taps() { # gap_ms text: types the text with monkey (G = globe, E = enter), one t
   "$adb" push "$work/taps.txt" /data/local/tmp/sebtype-perf-taps.txt > /dev/null
   sh monkey -f /data/local/tmp/sebtype-perf-taps.txt 1 > /dev/null 2>&1
 }
-trace_start() { # name: Perfetto with frame timelines, input/view slices, scheduling and logcat
+trace_start() { # name: Perfetto with frame timelines, input/view slices and scheduling
   sh rm -f "/data/misc/perfetto-traces/sebtype-$1.pftrace"
   "$adb" shell 'cat > /data/misc/perfetto-configs/sebtype-perf.pbtxt' <<EOF
 buffers { size_kb: 32768 fill_policy: DISCARD }
@@ -83,7 +83,6 @@ data_sources { config { name: "linux.ftrace" ftrace_config {
   ftrace_events: "sched/sched_switch" } } }
 data_sources { config { name: "linux.process_stats" } }
 data_sources { config { name: "android.surfaceflinger.frametimeline" } }
-data_sources { config { name: "android.log" android_log_config { log_ids: LID_DEFAULT log_ids: LID_SYSTEM } } }
 EOF
   tracer=$(sh perfetto --txt -c /data/misc/perfetto-configs/sebtype-perf.pbtxt \
     -o "/data/misc/perfetto-traces/sebtype-$1.pftrace" --background)
@@ -95,10 +94,9 @@ trace_stop() { # name -> $work/name.pftrace
   "$adb" pull "/data/misc/perfetto-traces/sebtype-$1.pftrace" "$work/$1.pftrace" > /dev/null
 }
 query() { "$tp" -q "$2" "$work/$1.pftrace" 2> /dev/null | grep -v '^Query executed' ; } # trace sql-file
-ime_logs() { # trace -> CSV of ImeTracker events and keyboard process starts
-  echo "select ts, msg from android_logs where tag = 'ImeTracker' and msg like '$field:%'
-    or (tag = 'ActivityManager' and msg like 'Start proc %:$pkg/%') order by ts;" > "$work/logs.sql"
-  query "$1" "$work/logs.sql"
+opens() { # trace kind: keyboard open times (opens.sql), summarised by opens.py
+  query "$1" "$opens_sql" > "$work/$1.opens.csv"
+  python3 -I "$PWD/sebtype/perf/opens.py" "$2" "$work/$1.opens.csv"
 }
 typed() { # trace -> characters each test field gained (last length - starting length), one per line
   echo "select (select cast(value as int) from counter where track_id = t.id order by ts desc limit 1)
@@ -111,8 +109,8 @@ per_key() { # trace: the per-key CSV, and the characters typed into each field
   query "$1" "$keys_sql" > "$work/$1.csv"
   echo "keys=$(( $(wc -l < "$work/$1.csv") - 1 ))"
   echo "typed=$(typed "$1" | paste -sd, -)"
-  echo "select count(*) from android_logs where msg like 'Process $pkg (pid %) has died%';" > "$work/died.sql"
-  echo "crashes=$(query "$1" "$work/died.sql" | tail -1)"
+  # Nothing in a typing trace restarts the keyboard, so each keyboard process started in it means one died.
+  echo "crashes=$(query "$1" "$opens_sql" | grep -c '^"cold"' || true)"
 }
 typing() { # trace gap text: under one trace, types the text RUNS times, each into a fresh test field
   local r
@@ -153,9 +151,8 @@ phase_first-open() { # the first keyboard open after install
   open_field
   sleep 5
   trace_stop first-open
-  ime_logs first-open > "$work/first-open.logs"
-  python3 -I "$PWD/sebtype/perf/opens.py" first "$work/first-open.logs"
   geometry && declare -p W dpi top > "$work/geometry"
+  opens first-open first
   echo "pss_idle_kb=$(pss_kb)"
 }
 phase_en() {
@@ -251,8 +248,7 @@ phase_warm-open() { # hide the keyboard and tap the field again, 5 times
     sh input tap $(( W / 2 )) $(( top / 2 )); sleep 2.5
   done
   trace_stop warm-open
-  ime_logs warm-open > "$work/warm-open.logs"
-  python3 -I "$PWD/sebtype/perf/opens.py" warm "$work/warm-open.logs"
+  opens warm-open warm
 }
 phase_cold-open() { # switch to another keyboard and back with SebType's process stopped, 3 times
   [[ -s $work/other-ime ]] || { echo "skip=no other keyboard enabled to switch from"; return; }
@@ -264,8 +260,7 @@ phase_cold-open() { # switch to another keyboard and back with SebType's process
     sh ime set "$ime_id" > /dev/null; sleep 8
   done
   trace_stop cold-open
-  ime_logs cold-open > "$work/cold-open.logs"
-  python3 -I "$PWD/sebtype/perf/opens.py" cold "$work/cold-open.logs"
+  opens cold-open cold
   sleep 5; echo "pss_idle_kb=$(pss_kb)" # a fresh process, EN, idle
 }
 phase_sizes() { # needs a root shell (emulator): app code, internal data, external data
@@ -308,7 +303,7 @@ export ANDROID_SERIAL=${ANDROID_SERIAL:-$("$adb" devices | awk '$1 ~ /^emulator-
 [[ -n $ANDROID_SERIAL ]] || { echo "preflight: no emulator running (start AVD guide35; for a phone set ANDROID_SERIAL)"; exit 1; }
 [[ $("$adb" -s "$ANDROID_SERIAL" get-state 2>/dev/null) == device ]] || { echo "preflight: $ANDROID_SERIAL not connected"; exit 1; }
 [[ $(sh getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "preflight: $ANDROID_SERIAL can't run arm64 apps"; exit 1; }
-(( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "preflight: needs Android 14+ (ImeTracker logs)"; exit 1; }
+(( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "preflight: needs Android 14+ (older trace formats are untested)"; exit 1; }
 for x in python3 curl unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 if [[ ! -x $tp ]]; then # Perfetto's trace processor, pinned
   mkdir -p "$(dirname "$tp")"
