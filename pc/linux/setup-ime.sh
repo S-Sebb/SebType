@@ -105,6 +105,7 @@ launcher() {
 launcher wechat.desktop QT_IM_MODULE=fcitx '/QT_IM_MODULE=fcitx/!s/^Exec=/Exec=env QT_IM_MODULE=fcitx /' \
   "set QT_IM_MODULE=fcitx for WeChat"
 # Chromium/Electron apps on native Wayland that the live test showed get no IME without the flag.
+# None so far: Discord (Chromium 152) and Chrome 157 work without it (pc/linux/README.md).
 wayland_ime_apps=()  # entries: <desktop id>:<binary path>
 for app in "${wayland_ime_apps[@]}"; do
   id=${app%%:*} bin=${app#*:}

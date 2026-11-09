@@ -23,7 +23,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Global IM modules | Warns about any global `*_IM_MODULE` (`/etc/environment`, `environment.d`, Plasma env scripts, shell profiles) and doesn't edit it | A global `GTK_IM_MODULE`/`QT_IM_MODULE` overrides Wayland text-input and makes candidate windows flicker |
 | Dead Flatpak overrides | Removes `~/.local/share/flatpak/overrides/com.qq.QQ` and `com.tencent.WeChat` when those Flatpaks aren't installed | Leftovers of older QQ/WeChat input fixes |
 | WeChat | `env QT_IM_MODULE=fcitx` in the user's WeChat launcher | WeChat bundles its own Qt on X11 and only finds Fcitx when named |
-| Chromium/Electron | `--enable-wayland-ime` in the user's launcher, only for apps the checklist below shows need it | Apps on native Wayland that don't turn on text-input by themselves |
+| Chromium/Electron | `--enable-wayland-ime` in the user's launcher, only for apps the checklist below shows need it. None do today | Apps on native Wayland that don't turn on text-input by themselves |
 | Input methods | Adds `keyboard-us`, `rime`, `mozc` (EN → 中 → 日) to the first Fcitx5 group, keeping any others | Chinese and Japanese ready to switch to |
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
@@ -56,4 +56,31 @@ each app's input context and the frontend it uses.
 
 ### Results on the reference PC (Nobara 44, Plasma 6.7.5, Fcitx5 5.1.23)
 
-Not run yet.
+Tested on 2026-11-09 after running `setup-ime.sh`, with no app flags or global IM variables.
+Typed through `ydotool` while the desk was unattended. Each test used a field the test opened and
+had checked was empty, and everything typed was cleared afterwards. In every row but the password one, Rime showed its
+candidate window next to the text, committed 然后, plain English went in as typed, and Mozc converted
+`nihongo` to 日本語.
+
+| App | Field | Frontend | Result |
+|---|---|---|---|
+| KRunner | search | wayland | PASS |
+| Dolphin | rename | wayland | PASS |
+| Konsole | terminal (running `cat`, not a shell) | wayland | PASS |
+| Betterbird (GTK3 Flatpak) | compose To | wayland | PASS |
+| Bazaar (GTK4 Flatpak) | search | wayland | PASS |
+| Haruna (Qt Flatpak) | Open URL | wayland | PASS |
+| OnlyOffice (Flatpak, X11) | new document | ibus | PASS |
+| Discord (Electron, Chromium 152, Wayland) | Ctrl+K switcher | wayland | PASS, no flag needed |
+| Google Chrome 157 (Wayland) | textarea, address bar | wayland | PASS, no flag needed |
+| QQ (Electron on XWayland) | search | ibus | PASS |
+| WeChat (bundled Qt, X11) | search | fcitx4 | PASS (launcher keeps `QT_IM_MODULE=fcitx`) |
+| Wine Notepad (fresh prefix) | text | xim | PASS. The candidate window sits at the window's top-left. The fresh prefix has no CJK font, so committed Chinese shows as boxes |
+| Java Swing | text field | xim | PASS |
+| Chrome password field | password | (IME off) | PASS: Fcitx5 stayed on English, no candidates |
+
+Not typed: Steam (its window needs mouse clicks; its 11 `steamwebhelper` input contexts run on
+xim, like Wine and Java above), T3 Code (Escape in its composer can stop a running thread; its
+input context runs on wayland), Exiled Exchange 2 and Proton game chat (need a running game), and
+WeChat without its launcher variable (would mean restarting WeChat). Discord had no input context
+in the earlier study only because its window was hidden in the tray.
