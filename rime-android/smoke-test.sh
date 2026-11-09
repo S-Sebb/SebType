@@ -8,6 +8,11 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/versions.sh"
+# javap comes from the JDK build.sh uses; it need not be on PATH.
+if [[ -z "${JAVA_HOME:-}" ]]; then
+  JAVA_HOME="$(ls -d "$HOME"/.local/share/jdks/jdk-21* /usr/lib/jvm/java-21-openjdk 2>/dev/null | head -1)"
+fi
+export JAVA_HOME
 LOGS=/tmp/sebtype/7-smoke
 RESULTS="$LOGS/results.txt"
 RIME_ICE_COMMIT=da1fbe602e38f26db846fa10120ee64c2b0324c0  # rime-ice release the PC setup uses
@@ -24,7 +29,7 @@ result() { echo "$1 $2${3:+ - $3}" | tee -a "$RESULTS"; }
 finish() { grep -qv '^PASS\|^INFO' "$RESULTS" && exit 1; exit 0; }
 
 # --- preflight ---------------------------------------------------------------
-for tool in devq gh git javap unzip rsync "$ADB" "$NDK_BIN/llvm-nm"; do
+for tool in devq gh git "$JAVA_HOME/bin/javap" unzip rsync "$ADB" "$NDK_BIN/llvm-nm"; do
   command -v "$tool" >/dev/null || { echo "preflight: missing $tool"; exit 2; }
 done
 SERIAL=""
@@ -55,7 +60,7 @@ if (cd "$HERE" && ./build.sh) > "$LOGS/build-arm64.log" 2>&1; then
     api() { # public Kotlin/JVM API of an aar's classes.jar
       local d="$LOGS/api-$1"; mkdir -p "$d"; unzip -o -q "$2" classes.jar -d "$d"
       unzip -Z1 "$d/classes.jar" | grep '\.class$' | sed 's/\.class$//; s#/#.#g' | sort \
-        | xargs javap -cp "$d/classes.jar" -public | grep -v '^Compiled from' > "$d/api.txt"
+        | xargs "$JAVA_HOME/bin/javap" -cp "$d/classes.jar" -public | grep -v '^Compiled from' > "$d/api.txt"
     }
     api ours "$ARM_AAR"; api futo "$FUTO_AAR"
     if diff "$LOGS/api-futo/api.txt" "$LOGS/api-ours/api.txt" > "$LOGS/api.diff"; then
