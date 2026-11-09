@@ -145,8 +145,10 @@ private fun keyBackgrounds(context: Context): KeyedBitmaps<KeyBackground> {
     val berry = PixelFrame(Picnic.key, Picnic.keyHigh, Picnic.keyLow, w, true)
     val popup = PixelFrame(Picnic.surface, Picnic.white, Picnic.line, w + maxOf(1, density.roundToInt()), true)
 
+    // Keeps the number hints inside the frame and clear of its shadow.
+    val hintPadding = Rect(0, 3 * w, 4 * w, 0)
     fun entry(background: Drawable, foreground: Int?, vararg q: KeyQualifier) =
-        KeyedBitmap(q.toSet(), KeyBackground(foregroundColor = foreground, outlineColor = null, background = background))
+        KeyedBitmap(q.toSet(), KeyBackground(foregroundColor = foreground, outlineColor = null, padding = hintPadding, background = background))
     fun style(s: KeyVisualStyle) = KeyQualifier.VisualStyle(s)
     val pressed = KeyQualifier.Pressed
 
@@ -225,6 +227,8 @@ val PicnicTheme = ThemeOption(
                 thumbnailImage = image,
                 actionBarOpacity = 0f,
                 keyBorders = true,
+                // Nunito's letters are wide; this brings them to the size of FUTO's default font.
+                textSizeMultiplier = 0.85f,
                 keyBackgrounds = keyBackgrounds(context),
                 font = ResourcesCompat.getFont(context, R.font.sebtype_nunito_extrabold),
             )
