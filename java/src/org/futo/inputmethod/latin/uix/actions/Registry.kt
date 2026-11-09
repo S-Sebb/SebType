@@ -262,9 +262,10 @@ fun List<Action>.serializeActionListToString(): String = joinToString(separator 
 fun String.toActionList(): List<Action> = split(",").mapNotNull { AllActionsMap[it.trim()] }
 
 val DefaultActionSettings = mapOf(
-    ActionCategory.ActionKey to listOf(EmojiAction),
+    // SebType: the globe sits beside the space bar; emoji moves to the action bar
+    ActionCategory.ActionKey to listOf(SwitchLanguageAction),
     ActionCategory.PinnedKey to listOf(VoiceInputAction),
-    ActionCategory.Favorites to listOfNotNull(if(IsDebug) MemoryDebugAction else null, SwitchLanguageAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, ThemeAction, KeyboardModeAction),
+    ActionCategory.Favorites to listOfNotNull(if(IsDebug) MemoryDebugAction else null, EmojiAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, ThemeAction, KeyboardModeAction),
     ActionCategory.More to listOf(), // Remaining actions get populated automatically by ensureWellFormed
     ActionCategory.Disabled to listOf(MemoryDebugAction, SystemVoiceInputAction, BugViewerAction)
 )

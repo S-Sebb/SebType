@@ -12,6 +12,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
+import org.futo.inputmethod.latin.SebTypeLanguages
 import org.futo.inputmethod.latin.localeFromString
 import org.futo.inputmethod.latin.uix.actions.BugInfo
 import org.futo.inputmethod.latin.uix.actions.BugViewerState
@@ -52,6 +53,12 @@ object LayoutManager {
 
         localeToLayoutsMappings = parseMappings(context, "layouts/mapping.yaml").languages.mapKeys {
             localeFromString(it.key)
+        }.toMutableMap().apply {
+            // SebType's uniform layouts are offered first for their languages
+            SebTypeLanguages.forEach { (locale, layout) ->
+                val key = localeFromString(locale)
+                this[key] = (listOf(layout) + (this[key] ?: listOf())).distinct()
+            }
         }
 
         localeNames = parseNames(context, "layouts/names.yaml").mapKeys {
