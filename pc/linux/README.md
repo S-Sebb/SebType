@@ -25,6 +25,13 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | WeChat | `env QT_IM_MODULE=fcitx` in the user's WeChat launcher | WeChat bundles its own Qt on X11 and only finds Fcitx when named |
 | Chromium/Electron | `--enable-wayland-ime` in the user's launcher, only for apps the checklist below shows need it. None do today | Apps on native Wayland that don't turn on text-input by themselves |
 | Input methods | Adds `keyboard-us`, `rime`, `mozc` (EN → 中 → 日) to the first Fcitx5 group, keeping any others | Chinese and Japanese ready to switch to |
+| Language switch | In `~/.config/fcitx5/config`: Super+Space is the "enumerate forward" key, and the trigger, Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L and group-switch keys are cleared. Fcitx5 reloads its config | Super+Space is the only language switch and cycles EN → 中 → 日 (a trigger key would only toggle English and the last language). Rime's own Shift tap still switches English inside Chinese |
+| Japanese あ ⇄ English | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus Alt+` (あ ⇄ direct English). Other Mozc settings are kept. A running `mozc_server` is stopped; fcitx5-mozc starts it again on the next key | Alt+` switches Japanese like on Windows. Shift+letter, F6–F10 and Space work as in Mozc's default keymap |
+| Alt+` in Plasma | Removes Alt+` from KWin's "Walk Through Windows of Current Application", which keeps Meta+` | Plasma would otherwise take Alt+` before Mozc sees it |
+
+`mozc-keymap.tsv` is Mozc's `src/data/keymap/ms-ime.tsv` (BSD-3-Clause, Google) with four Alt+` lines
+added at the end. To undo: copy `config` and `config1.db` back from the backup folder, then run
+`fcitx5-remote -r` and stop `mozc_server`. To bring back Alt+` for the KWin action, use System Settings → Shortcuts.
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
 restarts. At the end it checks that Fcitx5 runs under KWin and that the session has `XMODIFIERS`, and
