@@ -193,3 +193,24 @@ up to commit d847619a2b48945465f840b8d81644fa455cc115.
 
 
 Includes Dictionaries © Lexiteria LLC.  Used by permission.
+
+
+SebType's English dictionary (sebtype/res-stable/raw/main_en.dict, built by tools/en-dict/build.sh)
+takes its word frequencies from wordfreq by Robyn Speer (https://github.com/rspeer/wordfreq), whose
+data is under the Creative Commons Attribution-ShareAlike 4.0 licence
+(https://creativecommons.org/licenses/by-sa/4.0/); the dictionary's frequencies are shared under the
+same licence. wordfreq contains data from Google Books Ngrams (http://books.google.com/ngrams), the
+Leeds Internet Corpus, Wikipedia, ParaCrawl, OPUS OpenSubtitles 2018 (originally from the OpenSubtitles
+project, http://www.opensubtitles.org/), Twitter, and the SUBTLEX word lists by Marc Brysbaert et al.
+(http://crr.ugent.be/programs-data/subtitle-frequencies), which are freely available data.
+
+Its added words were checked against SCOWL's en_US-large word list (https://wordlist.aspell.net):
+
+  Copyright 2000-2026 by Kevin Atkinson
+
+  Permission to use, copy, modify, distribute, and sell any part of SCOWLv2, or
+  word lists created from it, is hereby granted without fee, provided that the
+  above copyright notice appears in all copies and that both the above
+  copyright notice and this notice appear in supporting documentation.  Kevin
+  Atkinson makes no representations about the suitability of this database for
+  any purpose.  It is provided "as is" without express or implied warranty.

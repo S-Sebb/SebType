@@ -11,6 +11,8 @@ three. It is not made, endorsed or supported by FUTO; please don't report SebTyp
 be modified only for non-commercial purposes and shared only free of charge and non-commercially, with
 FUTO's payment features and notices left in. SebType's changes are under the same licence.
 The Picnic theme's font, Nunito, is under the SIL Open Font License 1.1 ([sebtype/fonts/OFL-Nunito.txt](sebtype/fonts/OFL-Nunito.txt)).
+The English dictionary's word frequencies come from [wordfreq](https://github.com/rspeer/wordfreq) (CC BY-SA 4.0)
+and its added words were checked against [SCOWL](https://wordlist.aspell.net); credits are in [NOTICE](NOTICE).
 
 - What it must do: [Requirements (#1)](https://github.com/S-Sebb/sebtype/issues/1)
 - Settled choices: [Decisions (#2)](https://github.com/S-Sebb/sebtype/issues/2)
