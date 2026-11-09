@@ -364,6 +364,10 @@ android {
             res.srcDirs = ['java/unstable/res', translationsWithoutEngValues('translations/devbuild')]
         }
 
+        test {
+            java.srcDirs = ['tests/unit'] // JVM unit tests
+        }
+
         androidTest {
             res.srcDirs = ['tests/res']
             java.srcDirs = ['tests/src']
