@@ -37,11 +37,16 @@ check package-id grep -q "package: name='dev.sebb.sebtype'" <<<"$badging"
 check app-label grep -q "application-label:'SebType'" <<<"$badging"
 check arm64-only bash -c "[[ \$(unzip -Z1 '$apk' 'lib/*' | cut -d/ -f2 | sort -u) == arm64-v8a ]]"
 check signed-sebtype bash -c "'$bt/apksigner' verify --print-certs '$apk' | grep -q 'CN=SebType'"
+# Japanese works with nothing imported only if Mozc's dictionary is in the APK, stored uncompressed (Mozc maps it).
+mozc_dict=$(grep -A3 'raw/builtin_mozc_data$' <<<"$("$bt/aapt2" dump resources "$apk")" | awk '$1 == "(ja)" {print $3}')
+check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_dict' | grep -q ' stor '"
 
 # Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
 device_checks() {
   "$adb" -s "$serial" shell pm path org.futo.inputmethod.latin >/dev/null || "$adb" -s "$serial" install "$futo_apk"
-  "$adb" -s "$serial" install -r "$apk" || return 1
+  # A fresh install, so nothing imported earlier (a dictionary, settings) hides what the APK ships with.
+  "$adb" -s "$serial" uninstall dev.sebb.sebtype >/dev/null
+  "$adb" -s "$serial" install "$apk" || return 1
   # The system lists a newly installed keyboard a few seconds after the install returns.
   local imes i
   for i in {1..15}; do

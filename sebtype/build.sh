@@ -16,6 +16,8 @@ export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 command -v git-lfs >/dev/null || { echo "build: git-lfs missing (the swipe models are LFS files)" >&2; exit 1; }
 
 git submodule update --init --depth 1 >&2
+# Mozc's Japanese dictionary (pinned URL and sha256 in FUTO's script), bundled like FUTO's Play Store build.
+python3 java/res-bundle/download-bundles.py "$PWD/java/res-bundle" >&2
 
 export VERSION_CODE=$(git rev-list --first-parent --count HEAD)
 export VERSION_NAME="$(cat sebtype/upstream-version)-sebtype.$VERSION_CODE"
