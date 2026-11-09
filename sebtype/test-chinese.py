@@ -369,19 +369,19 @@ check("rq-date", rq_date, needs=["first-install"])
 check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
+# Before the update: a restart after it has once switched the keyboard to English (not rime-ice's doing).
+check("failure-visible", failure_is_visible, needs=["first-install"])
+check("failure-recovers", failure_recovers, needs=["failure-visible"])
+check(
+    "recovery-keeps-learned",
+    expect_first("lh", "厉害"),
+    needs=["failure-recovers", "learn-picked-word"],
+)
 check("update-redeploys", update_over_itself, needs=["first-install"])
 check("update-keeps-chinese", expect_first("ranh", "然后"), needs=["update-redeploys"])
 check(
     "update-keeps-learned",
     expect_first("lh", "厉害"),
     needs=["update-redeploys", "learn-picked-word"],
-)
-# Runs on the updated install: before it, the pending bundle reinstall would heal the broken files.
-check("failure-visible", failure_is_visible, needs=["update-redeploys"])
-check("failure-recovers", failure_recovers, needs=["failure-visible"])
-check(
-    "recovery-keeps-learned",
-    expect_first("lh", "厉害"),
-    needs=["failure-recovers", "learn-picked-word"],
 )
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
