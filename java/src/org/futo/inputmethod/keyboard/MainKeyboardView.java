@@ -66,6 +66,7 @@ import org.futo.inputmethod.v2keyboard.LayoutManager;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.WeakHashMap;
 
 import javax.annotation.Nonnull;
@@ -840,6 +841,15 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
         return TypefaceUtils.getStringWidth(text, paint) < maxTextWidth;
     }
 
+    // SebType (#38): an input mode shown after the language name ("日本語 · ア"), or null for none.
+    private String mSpacebarMode = null;
+
+    public void setSpacebarMode(final String mode) {
+        if (Objects.equals(mode, mSpacebarMode)) return;
+        mSpacebarMode = mode;
+        invalidateKey(mSpaceKey);
+    }
+
     // Layout language name on spacebar.
     private String layoutLanguageOnSpacebar(final Paint paint,
                                             final Locale locale, final int width, final int horizontalWidth) {
@@ -848,7 +858,8 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
         }
 
         paint.setTextScaleX(1.0f);
-        final String name = Subtypes.getLanguageOnSpaceBar(locale, horizontalWidth / paint.measureText("Q"));
+        final String language = Subtypes.getLanguageOnSpaceBar(locale, horizontalWidth / paint.measureText("Q"));
+        final String name = mSpacebarMode == null ? language : language + " · " + mSpacebarMode;
         if (fitsTextIntoWidth(width, name, paint)) {
             return name;
         }

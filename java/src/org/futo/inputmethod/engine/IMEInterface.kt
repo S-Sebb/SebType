@@ -16,6 +16,9 @@ data class StateHint(
 )
 val DefaultStateHint = StateHint()
 
+/** SebType: the input-mode chip at the left of the suggestion bar; one tap goes to the next mode. */
+data class ModeChip(val labels: List<String>, val current: Int, val onTap: () -> Unit)
+
 interface IMEInterface {
     // Basic lifecycle
     fun onCreate()
@@ -37,6 +40,9 @@ interface IMEInterface {
 
     /** Optionally return a state to indicate the IME is loading and no input can be processed */
     fun getLoadingState(): MutableState<Boolean>? = null
+
+    /** SebType: the mode chip to show, read while composing (so backed by Compose state), or null for none */
+    fun getModeChip(): ModeChip? = null
 
     /** Optional hint for how the keyboard state should behave */
     fun getStateHint(imeHint: String?) = DefaultStateHint
