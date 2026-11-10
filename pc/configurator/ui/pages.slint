@@ -31,7 +31,9 @@ component LanguagesPage inherits Page {
     property <int> dragging: -1;
     property <int> target: -1;
 
-    Info { text: "按 Win+Space 在已开启的语言之间按此顺序切换。拖动 ≡ 可调整顺序。"; }
+    // Linux: Win+Space is Fcitx5's trigger key, English ⇄ the last other language (#93).
+    Info { text: State.system == "Windows" ? "按 Win+Space 在已开启的语言之间按此顺序切换。拖动 ≡ 可调整顺序。"
+        : "按 Win+Space 在第一个语言和上次用的另一种语言之间切换，其他语言从托盘菜单选。拖动 ≡ 可调整顺序。"; }
     Card {
         for l[i] in State.langs: Rectangle {
             height: root.lang-row;
@@ -340,7 +342,7 @@ component KeyboardPage inherits Page {
     }
     SectionTitle { text: "快捷键"; }
     Card {
-        Row { title: "切换语言 EN → 中 → 日"; VerticalLayout { alignment: center; Kbd { text: "Win+Space"; } } }
+        Row { title: State.system == "Windows" ? "切换语言 EN → 中 → 日" : "切换语言 EN ⇄ 上次的 中 或 日"; VerticalLayout { alignment: center; Kbd { text: "Win+Space"; } } }
         Divider { }
         Row { title: "中文或日本語里临时输入英文"; VerticalLayout { alignment: center; Kbd { text: "Shift"; } } }
         Divider { }

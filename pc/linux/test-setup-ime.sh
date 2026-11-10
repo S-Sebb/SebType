@@ -26,12 +26,14 @@ cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
 check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh
 
 # Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (and
-# SebType's fcitx5-mozc, until the user says yes to its sudo install; the typo keyboard line, #46).
+# SebType's fcitx5-mozc, until the user says yes to its sudo install; the typo keyboard line, #46; and
+# #92/#93's Win+Space toggle, 日本語 and English names and Japanese's menu icon until setup reruns).
 live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
-  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' && return 1
+  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
+    -e 'English ⇄ the last other language' -e 'install SebType.s tray icons' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
@@ -84,7 +86,7 @@ fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOM
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 13 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 15 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -99,6 +101,8 @@ fresh_apply() {
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
     grep -q 'Default us 3 keyboard-us  rime  mozc' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
     fcitx_hotkeys && mozc_keymap && tray_icons && grep -qx 'Label=中文' "$h/.local/share/fcitx5/inputmethod/rime.conf" &&
+    grep -qx 'Name=日本語' "$h/.local/share/fcitx5/inputmethod/mozc.conf" &&
+    grep -qx 'Name=English' "$h/.local/share/fcitx5/inputmethod/keyboard-us.conf" &&
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator
 }
@@ -110,11 +114,14 @@ configurator() {
     desktop-file-validate "$d/applications/sebtype-configurator.desktop" &&
     [[ -f $d/icons/hicolor/192x192/apps/sebtype-configurator.png ]]
 }
-# Super+Space is the only switch, all windows share one state, the other settings stay, and Fcitx5 reloaded it.
+# Super+Space is the only switch (the trigger key, no enumerating), all windows share one state, the
+# other settings stay, and Fcitx5 reloaded it.
 fcitx_hotkeys() {
   local c=$h/.config/fcitx5/config
-  [[ $(sed -n '/^\[Hotkey\/EnumerateForwardKeys\]/,/^$/p' "$c") == $'[Hotkey/EnumerateForwardKeys]\n0=Super+space' ]] &&
-    ! grep -qE 'Shift_L|^\[Hotkey/(Trigger|AltTrigger)Keys' "$c" && grep -qx 'AltTriggerKeys=' "$c" &&
+  [[ $(sed -n '/^\[Hotkey\/TriggerKeys\]/,/^$/p' "$c") == $'[Hotkey/TriggerKeys]\n0=Super+space' ]] &&
+    ! grep -qE 'Shift_L|^\[Hotkey/(EnumerateForward|AltTrigger)Keys' "$c" && grep -qx 'AltTriggerKeys=' "$c" &&
+    grep -qx 'EnumerateForwardKeys=' "$c" && [[ $(grep -c '^EnumerateWithTriggerKeys=' "$c") == 1 ]] &&
+    grep -qx 'EnumerateWithTriggerKeys=False' "$c" &&
     grep -qx 'EnumerateGroupForwardKeys=' "$c" && grep -qx 'ActiveByDefault=False' "$c" &&
     [[ $(grep -c '^ShareInputState=' "$c") == 1 ]] && grep -qx 'ShareInputState=All' "$c" &&
     ls "$h"/.local/share/sebtype/backup/*/config && [[ -e $fake/reload.log ]]
@@ -133,7 +140,7 @@ tray_icons() {
   [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == SebType ]] &&
     grep -qx 'Inherits=Fluent-dark' "$t/index.theme" && grep -q iconChanged "$fake/emit.log" || return 1
   for d in 16 20 22 24 32 scalable; do
-    for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A fcitx_mozc_hiragana:hira \
+    for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A fcitx_mozc:hira fcitx_mozc_hiragana:hira \
       fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a fcitx_mozc_direct_upper:ja-A; do
       cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
     done
@@ -148,6 +155,19 @@ undo_icons() {
     ! -e $h/.local/share/icons/SebType && $(grep -c '^change:' <<<"$o") == 2 ]] &&
     o=$(fake_run --undo-icons < /dev/null) && [[ -z $o ]] &&
     o=$(fake_run < /dev/null) && grep -q '^change: install SebType.s tray icons .* over Fluent-dark' <<<"$o" && tray_icons
+}
+
+# --undo-names removes the three renamed input method entries and the 中文 schema name, keeping the
+# typo keyboard line; a second undo changes nothing, and setup names them again.
+undo_names() {
+  local d=$h/.local/share/fcitx5 o
+  o=$(fake_run --undo-names < /dev/null) || return 1; echo "$o"
+  [[ $(grep -c '^change:' <<<"$o") == 4 && ! -e $d/inputmethod/rime.conf && ! -e $d/inputmethod/mozc.conf &&
+    ! -e $d/inputmethod/keyboard-us.conf ]] && ! grep -q 'schema/name' "$d/rime/rime_ice.custom.yaml" &&
+    grep -q '^  sebtype_typo/keyboard: pc' "$d/rime/rime_ice.custom.yaml" &&
+    o=$(fake_run --undo-names < /dev/null) && [[ -z $o ]] &&
+    o=$(fake_run < /dev/null) && [[ $(grep -c '^change: \(label Chinese\|name mozc 日本語\|name keyboard-us English\)' <<<"$o") == 3 ]] &&
+    grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml"
 }
 
 # --undo-configurator removes the app and puts back the candidate window theme Picnic replaced; a second
@@ -400,6 +420,132 @@ if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addo
 else result SKIP rime-label-and-zh-hant-key "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
 fi
 
+# Win+Space and the tray menu (#92, #93): a private Fcitx5 (as above) with English, Rime (Fedora's
+# rime-data) and Mozc on a fourth fake account set up by setup-ime.sh, and a stand-in for Plasma's tray
+# (a StatusNotifierWatcher on that bus) that reads and clicks Fcitx5's menu. The menu reads English ·
+# 中文 · 日本語 with SebType's icon names; Win+Space toggles English and the last other language, also
+# while Super stays held; a menu pick becomes the one Win+Space returns to; Rime's Shift tap still
+# switches its English mode, and a Shift tap in English switches nothing.
+win_space() {
+  local h=$fake/menu
+  mkdir -p "$h/.config/fcitx5"
+  fake_run < /dev/null > /dev/null || return 1
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[Groups/0/Items/2]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 120 dbus-run-session -- python3 -W ignore - "$fake/fcitx5-menu.log" <<'PY'
+import subprocess, sys, time
+from gi.repository import Gio, GLib
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+WATCHER = Gio.DBusNodeInfo.new_for_xml("""<node><interface name="org.kde.StatusNotifierWatcher">
+  <method name="RegisterStatusNotifierItem"><arg type="s" direction="in"/></method>
+  <property name="IsStatusNotifierHostRegistered" type="b" access="read"/>
+  <property name="ProtocolVersion" type="i" access="read"/></interface></node>""").interfaces[0]
+items = []
+def on_method(_c, sender, _p, _i, _name, _params, inv):
+    items.append(sender); inv.return_value(None)
+def on_prop(_c, _s, _p, _i, name):
+    return GLib.Variant('b', True) if name == 'IsStatusNotifierHostRegistered' else GLib.Variant('i', 0)
+bus.register_object('/StatusNotifierWatcher', WATCHER, on_method, on_prop, None)
+Gio.bus_own_name_on_connection(bus, 'org.kde.StatusNotifierWatcher', 0, None, None)
+# classicui is what turns the tray item (notificationitem) on.
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,rime,mozc,classicui,notificationitem'],
+                         stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
+def wait(cond, secs):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        GLib.MainContext.default().iteration(False); time.sleep(0.01)
+    return cond()
+def call(dest, path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
+    return bus.call_sync(dest, path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+FCITX, IC, MENU = 'org.fcitx.Fcitx5', 'org.fcitx.Fcitx.InputContext1', 'com.canonical.dbusmenu'
+CONTROLLER = (FCITX, '/controller', 'org.fcitx.Fcitx.Controller1')
+def up():
+    try: call(*CONTROLLER, 'CurrentInputMethod'); return True
+    except GLib.Error: return False
+wait(up, 10)
+ic, _ = call(FCITX, '/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+             '(a(ss))', [('program', 'sebtype-test')])
+preedit = ['']
+def on_preedit(_c, _s, _p, _i, name, params):
+    if name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+bus.signal_subscribe(None, IC, None, ic, None, 0, on_preedit)
+call(FCITX, ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+call(FCITX, ic, IC, 'FocusIn')
+SUPER, SHIFT = 0x40, 1
+im = lambda: call(*CONTROLLER, 'CurrentInputMethod')[0]
+def key(sym, code, state=0, release=False):
+    call(FCITX, ic, IC, 'ProcessKeyEvent', '(uuubu)', sym, code, state, release, 0)
+    wait(lambda: False, 0.05)
+def win_space(taps=1):  # Super held, Space tapped
+    key(0xffeb, 133)
+    for _ in range(taps): key(0x20, 65, SUPER); key(0x20, 65, SUPER, True)
+    key(0xffeb, 133, SUPER, True)
+    return im()
+def shift_tap():
+    key(0xffe1, 50); key(0xffe1, 50, SHIFT, True)
+NAMES = {'keyboard-us': 'English', 'rime': '中文', 'mozc': '日本語'}
+
+ok = True
+def check(name, got, want):
+    global ok
+    ok &= got == want
+    print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
+
+check('tray item registered', bool(wait(lambda: items, 10)), True)
+sni = items[0]
+menu = call(sni, '/StatusNotifierItem', 'org.freedesktop.DBus.Properties', 'Get', '(ss)', 'org.kde.StatusNotifierItem', 'Menu')[0]
+def entries():  # (id, label, icon) of the menu's input methods: the items with a radio mark
+    call(sni, menu, MENU, 'AboutToShow', '(i)', 0); wait(lambda: False, 0.2)
+    kids = call(sni, menu, MENU, 'GetLayout', '(iias)', 0, 1, [])[1][2]
+    return [(i, p.get('label'), p.get('icon-name')) for i, p, _ in kids if 'toggle-state' in p]
+def pick(name):  # clicks the input method in the tray menu
+    i = next(i for i, label, _ in entries() if label == NAMES[name])
+    call(sni, menu, MENU, 'Event', '(isvu)', i, 'clicked', GLib.Variant('i', 0), 0)
+    wait(lambda: im() == name, 2)
+    return im()
+
+check('menu reads English · 中文 · 日本語 with SebType icon names', [e[1:] for e in entries()],
+      [('English', 'input-keyboard'), ('中文', 'fcitx-rime'), ('日本語', 'fcitx_mozc')])
+check('starts in English', im(), 'keyboard-us')
+shift_tap(); check('Shift tap in English switches nothing', im(), 'keyboard-us')
+check('Win+Space goes to 中文', win_space(), 'rime')
+check('Win+Space is English again', win_space(), 'keyboard-us')
+check('Win+Space twice with Super held toggles there and back', win_space(2), 'keyboard-us')
+check('menu picks 日本語', pick('mozc'), 'mozc')
+check('Win+Space from 日本語 is English', win_space(), 'keyboard-us')
+check('Win+Space returns to 日本語', win_space(), 'mozc')
+check('menu picks 中文', pick('rime'), 'rime')
+check('Win+Space from 中文 is English', win_space(), 'keyboard-us')
+check('Win+Space returns to 中文', win_space(), 'rime')
+pick('mozc'); pick('keyboard-us')
+check('after picking 日本語 then English, Win+Space returns to 日本語', win_space(), 'mozc')
+pick('rime')
+def rime_ready():  # Rime deploys on first use and takes no keys until then: n shows a preedit once it does
+    key(0x6e, 57); key(0x6e, 57, 0, True)
+    return wait(lambda: preedit[0] == 'n', 0.5)
+check('Rime deployed', wait(rime_ready, 60), True)
+key(0xff1b, 9); key(0xff1b, 9, 0, True)
+ascii_mode = lambda: call(FCITX, '/rime', 'org.fcitx.Fcitx.Rime1', 'IsAsciiMode')[0]
+shift_tap(); check('Shift tap in 中文 turns its English mode on', (ascii_mode(), im()), (True, 'rime'))
+shift_tap(); check('Shift tap again turns it off', (ascii_mode(), im()), (False, 'rime'))
+fcitx.terminate(); fcitx.wait(10)
+sys.exit(0 if ok else 1)
+PY
+  local rc=$? p
+  for p in $(pgrep -x fcitx5) $(pgrep -x mozc_server); do
+    grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"
+  done
+  return $rc
+}
+if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/rime.conf && -f /usr/share/fcitx5/addon/mozc.conf ]] &&
+  python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+  check win-space-and-tray-menu win_space
+else result SKIP win-space-and-tray-menu "needs fcitx5, fcitx5-rime, fcitx5-mozc, dbus-run-session and python3-gobject"
+fi
+
 rerun() {
   echo 'XMODIFIERS=@im=fcitx' > "$fake/session-env"
   local o; o=$(fake_run < /dev/null) || return 1; echo "$o"
@@ -429,5 +575,6 @@ mozc_swap() {
 check mozc-install-and-undo mozc_swap
 check undo-icons-and-reinstall undo_icons
 check undo-configurator-and-reinstall undo_configurator
+check undo-names-and-rename undo_names
 
 ! grep -q '^FAIL' "$results"
