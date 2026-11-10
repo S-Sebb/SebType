@@ -6,6 +6,7 @@ import android.util.Log
 import icu.astronot233.rime.Rime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.engine.ENGINE_IDLE_MS
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.actions.throwIfDebug
@@ -96,6 +98,7 @@ object RimeIceSetup {
             } catch(e: Exception) {
                 Log.e(TAG, "Setting up Rime in the background failed", e)
             } finally {
+                stopWhenIdle(app)
                 onDone?.run()
             }
         }
@@ -198,6 +201,28 @@ object RimeIceSetup {
             if(ok) readyFor = key
             mutableState.value = if(ok) State.Ready else State.Failed
             ok
+        }
+    }
+
+    // SebType (#56): Rime (its tables and engine) stops ENGINE_IDLE_MS after the Chinese keyboard was
+    // last in use; the next ensure starts it again.
+    private var inUse = false
+    private var idleStop: Job? = null
+
+    /** The Chinese keyboard is in use, or (false) left for another language or closed */
+    @Synchronized
+    fun setInUse(context: Context, used: Boolean) {
+        inUse = used
+        if(used) { idleStop?.cancel(); idleStop = null } else stopWhenIdle(context)
+    }
+
+    @Synchronized
+    private fun stopWhenIdle(context: Context) {
+        if(inUse) return
+        idleStop?.cancel()
+        idleStop = scope.launch {
+            delay(ENGINE_IDLE_MS)
+            whileStopped(context) {}
         }
     }
 

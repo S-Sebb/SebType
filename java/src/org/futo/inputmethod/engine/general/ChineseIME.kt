@@ -520,10 +520,14 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     override fun onDestroy() {
         helper.lifecycleScope.cancel()
         coroScope.cancel()
-        // The shared Rime keeps running for the next Chinese keyboard.
+        // The shared Rime keeps running for the next Chinese keyboard, until it is idle too long.
+        RimeIceSetup.setInUse(helper.context, false)
     }
 
+    override fun onLanguageLeft() = RimeIceSetup.setInUse(helper.context, false)
+
     override fun onStartInput() {
+        RimeIceSetup.setInUse(helper.context, true)
         showSetupState(RimeIceSetup.state.value)
         updateConfig()
     }

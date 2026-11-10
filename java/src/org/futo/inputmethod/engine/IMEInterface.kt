@@ -28,6 +28,9 @@ interface IMEInterface {
     fun onDestroy()
     fun onDeviceUnlocked()
 
+    /** SebType (#56): another language took over; free the engine's memory (it loads again when next used) */
+    fun onLanguageLeft() {}
+
     // State
     fun onStartInput()
     fun onLayoutUpdated(layout: KeyboardLayoutSetV2)

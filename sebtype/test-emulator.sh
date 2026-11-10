@@ -16,7 +16,6 @@ sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
 futo_apk=/tmp/sebtype/futo-keyboard-0.1.30.apk
-lock=/tmp/agent-locks/sebtype/emulator.lock
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, command...; timeout T seconds (default 180)
@@ -29,6 +28,7 @@ check() { # name, command...; timeout T seconds (default 180)
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
 serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
 [[ -n $serial ]] || { echo "preflight: no running emulator (start AVD guide35 or lossbench)"; exit 1; }
+lock=/tmp/agent-locks/devices/emulator-$("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r').lock # shared by all projects
 [[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] ||
   { echo "preflight: emulator $serial can't run arm64 apps"; exit 1; }
 apk=$(sebtype/build.sh release 2> "$out/build.log" | tail -1)

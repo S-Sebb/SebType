@@ -37,7 +37,10 @@ val() { sed -n "s/^$2=//p" "$work/$1.out" 2>/dev/null | tail -1; } # phase key -
 
 # ---- Device helpers (run inside phases) ----
 sh() { "$adb" shell "$@" | tr -d '\r'; }
-pss_kb() { sh dumpsys meminfo "$pkg" | awk '/TOTAL PSS:/ {print $3; exit}'; }
+pss_kb() { # [label]: total PSS; the full breakdown stays in run/meminfo-<label>.txt
+  local f=$work/meminfo-${1:-last}.txt
+  sh dumpsys meminfo "$pkg" > "$f"; awk '/TOTAL PSS:/ {print $3; exit}' "$f"
+}
 open_field() { sh am start -W -S -n "$field_act" "$@" > /dev/null; sleep 3; }
 geometry() { # keyboard grid from the screen width and the keyboard window's top, in px
   W=$(sh wm size | awk -F'[ x]' '/Physical/ {print $3}' | tail -1)
@@ -134,7 +137,7 @@ landed() { # phase taps min% max%: each field's length shows that the taps hit t
 restart_keyboard() { # stop SebType while another keyboard is active, then switch back to it
   sh ime set "$(cat "$work/other-ime")" > /dev/null; sleep 2
   sh am force-stop "$pkg"; sleep 1
-  sh ime set "$ime_id" > /dev/null
+  sh ime set "$ime_id" > /dev/null; sleep 5 # the emulator's cold open takes up to 2 s
 }
 probe_len() { # length of what "ka " types into a fresh test field: 3 in EN, 1 or 2 in 中 and 日
   open_field; taps 300 "ka "; sleep 2
@@ -163,7 +166,7 @@ phase_first-open() { # the first keyboard open after install
   trace_stop first-open
   geometry && declare -p W dpi top > "$work/geometry"
   opens first-open first
-  echo "pss_idle_kb=$(pss_kb)"
+  echo "pss_idle_kb=$(pss_kb idle)"
 }
 phase_en() {
   . "$work/geometry"
@@ -173,7 +176,7 @@ phase_en() {
   local text='the quick brown fox jumps over the lazy dog '
   typing en 700 "$text" | tee "$work/en.part"
   landed en "${#text}" 80 101
-  echo "pss_kb=$(pss_kb)"
+  echo "pss_kb=$(pss_kb en)"
 }
 phase_zh-deploy() { # switch to 中: the first-run Chinese setup (install and check), with peak memory
   . "$work/geometry"
@@ -199,7 +202,7 @@ phase_zh() {
   local text='nihao women jintiantianqihenhao ranhou zhongguo '
   typing zh 700 "$text" | tee "$work/zh.part"
   landed zh "${#text}" 10 60
-  echo "pss_kb=$(pss_kb)"
+  echo "pss_kb=$(pss_kb zh)"
 }
 phase_ja() {
   . "$work/geometry"
@@ -207,7 +210,7 @@ phase_ja() {
   local text='nihongo konnichiha arigatou toukyou E'
   typing ja 700 "$text" | tee "$work/ja.part"
   landed ja "${#text}" 10 80
-  echo "pss_kb=$(pss_kb)"
+  echo "pss_kb=$(pss_kb ja)"
   # Back to EN for the next phases. A single globe tap after 日 didn't always switch on the phone,
   # so check with a probe and tap again (the globe cycles EN → 中 → 日).
   local n
@@ -237,8 +240,15 @@ fast() { # name field-extra...: fast typing (100 ms per key) with gfxinfo jank f
   echo "taps=${#text}"
   gfx "$pkg" ime; gfx "$field" field
 }
-phase_fast() { fast fast; }
+phase_fast() { # right after 中 and 日: all three engines are loaded
+  fast fast
+  echo "pss_kb=$(pss_kb all)"
+}
 phase_long() { fast long --ei chars 20000; }
+phase_unload() { # idle in EN: the engines unload after IDLE_UNLOAD_S (the app's ENGINE_IDLE_MS)
+  sleep "${IDLE_UNLOAD_S:-200}"
+  echo "pss_kb=$(pss_kb unloaded)"
+}
 phase_warm-open() { # hide the keyboard and tap the field again, 5 times
   . "$work/geometry"
   open_field
@@ -261,7 +271,7 @@ phase_cold-open() { # switch to another keyboard and back with SebType's process
   done
   trace_stop cold-open
   opens cold-open cold
-  sleep 5; echo "pss_idle_kb=$(pss_kb)" # a fresh process, EN, idle
+  sleep 5; echo "pss_idle_kb=$(pss_kb fresh)" # a fresh process, EN, idle
 }
 phase_sizes() { # needs a root shell (emulator): app code, internal data, external data
   [[ $(sh id -u) == 0 ]] || { echo "skip=needs a root adb shell to read app data (emulator: adb root)"; return; }
@@ -283,6 +293,7 @@ device_steps() { # under the device lock
   check ja 600
   check fast 300
   check long 300
+  check unload 400
   check warm-open 300
   check cold-open 300
   check sizes 120
@@ -324,7 +335,11 @@ export APK=$(realpath "$APK")
 # Gboard first: stock FUTO crashes in Mozc on the emulator.
 { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
   sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
-case $ANDROID_SERIAL in emulator-*) lock=/tmp/agent-locks/sebtype/emulator.lock ;; *) lock=/tmp/agent-locks/sebtype/phone.lock ;; esac
+# Device locks are shared by all projects: one per device, named after the AVD or the phone's model.
+case $ANDROID_SERIAL in
+  emulator-*) lock=/tmp/agent-locks/devices/emulator-$("$adb" emu avd name | head -1 | tr -d '\r').lock ;;
+  *) lock=/tmp/agent-locks/devices/$(sh getprop ro.product.manufacturer | tr 'A-Z' 'a-z')-$(sh getprop ro.product.model | tr 'A-Z' 'a-z').lock ;;
+esac
 echo "measuring $APK on $ANDROID_SERIAL ($(sh getprop ro.product.model), Android $(sh getprop ro.build.version.release))"
 
 # ---- Static: the APK ----

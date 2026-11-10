@@ -240,6 +240,11 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         languageModelFacilitator.loadHistoryLog()
     }
 
+    // The transformer reloads on the first key back in English
+    override fun onLanguageLeft() {
+        helper.lifecycleScope.launch { languageModelFacilitator.destroyModel() }
+    }
+
     private val expandableExpandableCfg = ExpandableSuggestionBarConfiguration(true, false)
     private var expandableCfg: ExpandableSuggestionBarConfiguration = NonExpandableSuggestionBar
     override fun onStartInput() {

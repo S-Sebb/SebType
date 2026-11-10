@@ -21,7 +21,6 @@ FUTO_AAR="$HOME/src/sebtype-upstream/futo-keyboard/libs/rime-release.aar"
 SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
 ADB="$SDK/platform-tools/adb"
 NDK_BIN="$SDK/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin"
-LOCK=/tmp/agent-locks/sebtype/emulator.lock
 
 rm -rf "$LOGS" && mkdir -p "$LOGS"
 : > "$RESULTS"
@@ -38,6 +37,7 @@ for s in $("$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1}'
   [[ "$avd" == guide35 || "$avd" == lossbench ]] && SERIAL="$s" && break
 done
 [[ -n "$SERIAL" ]] || { echo "preflight: no running emulator guide35 or lossbench (open one with device_open)"; exit 2; }
+LOCK=/tmp/agent-locks/devices/emulator-$avd.lock # shared by all projects
 
 # --- arm64 aar: build, symbols, API, size --------------------------------------
 if (cd "$HERE" && ./build.sh) > "$LOGS/build-arm64.log" 2>&1; then

@@ -87,6 +87,18 @@ row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "transformer loa
 row("Memory (PSS) peak during Chinese setup", mb(zd.get("pss_peak_kb")), "zh-deploy")
 row("Memory (PSS) after typing 中", mb(zh.get("pss_kb")), "zh")
 row("Memory (PSS) after typing 日", mb(ja.get("pss_kb")), "ja")
+row(
+    "Memory (PSS) after fast typing EN",
+    mb(out("fast").get("pss_kb")),
+    "fast",
+    "right after 中 and 日",
+)
+row(
+    "Memory (PSS) idle in EN after that",
+    mb(out("unload").get("pss_kb")),
+    "unload",
+    "idle engines unloaded",
+)
 row("Memory (PSS) idle, fresh process, EN", mb(co.get("pss_idle_kb")), "cold-open")
 row(
     "Keyboard open, first after install",

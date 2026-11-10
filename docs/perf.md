@@ -14,8 +14,8 @@ ANDROID_SERIAL=<serial> sebtype/perf.sh   # any other device; the only way to ru
 It reinstalls SebType, so everything SebType learned on that device is lost. It then types into its
 own small test field (`sebtype/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
 back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 15
-minutes. While it runs it holds the devq lock `/tmp/agent-locks/sebtype/emulator.lock`, or
-`phone.lock` on a phone.
+minutes. While it runs it holds the device's devq lock, shared by all projects:
+`/tmp/agent-locks/devices/emulator-<AVD>.lock`, or `<maker>-<model>.lock` on a phone (`nothing-a001.lock`).
 
 What it measures:
 
@@ -23,7 +23,7 @@ What it measures:
 |---|---|
 | APK size, biggest entries | the APK file; shrunk resource names mapped back with `aapt2` |
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
-| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, peak during the first Chinese setup |
+| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, with all three engines loaded (fast typing right after 中 and 日), idle again once unused engines unloaded (`IDLE_UNLOAD_S`, default 200 s, just over the app's 3 minutes), peak during the first Chinese setup. Each breakdown is kept in `run/meminfo-<point>.txt` |
 | Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
 | Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle), and the transformer thread's CPU time |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
@@ -43,6 +43,13 @@ framework trace slices and frame timelines; the trace records no logs.
 
 Notes:
 
+- **Engines load on demand (#56).** English's transformer loads on the first prediction and unloads
+  when the language switches or after 3 minutes without a prediction (`ENGINE_IDLE_MS`). Rime stops 3
+  minutes after 中 was last in use, or after a background setup nobody types into. Mozc stays loaded
+  once 日 was used: its JNI has no way to free it. So "after typing 中" has no transformer in it, and
+  "after fast typing EN" (right after 中 and 日) is the most that is ever loaded at once.
+- **Idle right after the first open settles.** It reads about 25 MB higher for the first seconds
+  (Java garbage not yet collected): on the emulator 103 MB at the first open, 74 MB a minute later.
 - **The emulator gives relative numbers only.** It runs SebType's arm64 code through translation
   and renders in software. Compare an emulator run with another emulator run, never with the phone.
 - **Key positions** come from SebType's uniform layout at the default keyboard height. Each typing
