@@ -10,11 +10,13 @@ cd "$(dirname "$0")/.." || exit 1
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-build-results.txt; : > "$results"
 wt=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/test-build-wt
+# Checks run under `timeout` in a subshell: the functions and what they read must be exported.
+export out wt
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
-check() { # name, command...; timeout T seconds (default 3600: builds may wait for the build lock)
+check() { # name, function...; run it under timeout T seconds (default 3600: builds may wait for the build lock)
   local name=$1; shift
-  if timeout "${T:-3600}" "$@" > "$out/test-build-$name.log" 2>&1; then result PASS "$name"
+  if timeout "${T:-3600}" bash -c "$*" > "$out/test-build-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-build-$name.log"; fi
 }
 cleanup() { rm -rf "$wt"; git worktree prune; }
@@ -39,6 +41,7 @@ debug_from_cache() {
   (cd "$wt" && sebtype/build.sh debug) || return 1
   local s; s=$(built_in "$out/test-build-new-worktree-debug.log"); echo "built in ${s}s, budget 60s"; (( s <= 60 ))
 }
+export -f built_in debug_from_cache
 check new-worktree-debug debug_from_cache
 
 # One changed Kotlin file: Kotlin's build report says whether it compiled incrementally.
@@ -52,6 +55,7 @@ kotlin_incremental() {
   grep -h 'compilation:\|REBUILD_REASON' "$wt"/build/reports/kotlin-build/*
   ! grep -q 'Non incremental\|REBUILD_REASON' "$wt"/build/reports/kotlin-build/*
 }
+export -f kotlin_incremental
 check kotlin-incremental kotlin_incremental
 
 entries() { # name and CRC of every APK entry outside the signature
@@ -71,6 +75,7 @@ same_release() {
   rm -rf "$nosc"; git -C "$wt" checkout -q -- gradle.properties
   ((rc == 0)) && diff <(entries "$a") <(entries "$wt/$b") && echo "same entries: $a and $wt/$b"
 }
+export -f entries same_release
 check release-same-in-two-checkouts same_release
 
 ! grep -qv '^PASS' "$results"
