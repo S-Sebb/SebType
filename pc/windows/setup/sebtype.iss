@@ -72,7 +72,7 @@ Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
 [Messages]
 en.WelcomeLabel1=Hi! Let's set up SebType
 zh.WelcomeLabel1=你好！来装 SebType 吧
-ja.WelcomeLabel1=こんにちは！SebType をセットアップしましょう
+ja.WelcomeLabel1=こんにちは！SebType をはじめよう
 en.WelcomeLabel2=SebType types Chinese, Japanese and English on this PC, just like on your phone.%n%nIt sets up Chinese (Weasel with SebType's dictionary), Japanese (SebType's Mozc) and the SebType Configurator, and makes Win+Space the one key that switches language.%n%nAlready have SebType? This updates it and keeps every word it has learned.
 zh.WelcomeLabel2=SebType 让这台电脑像你的手机一样输入中文、日本語和英文。%n%n它会装好中文（小狼毫和 SebType 的词库）、日本語（SebType 的 Mozc）和 SebType 设置，并让 Win+Space 成为切换语言的唯一按键。%n%n已经装过 SebType？这次会更新它，并保留它学会的每一个词。
 ja.WelcomeLabel2=SebType で、この PC でもスマホと同じように中国語・日本語・英語を入力できます。%n%n中国語（小狼毫と SebType の辞書）、日本語（SebType の Mozc）と SebType 設定をインストールし、言語の切り替えを Win+Space ひとつにします。%n%nSebType をもうお使いですか？アップデートしても、覚えた言葉はそのまま残ります。
