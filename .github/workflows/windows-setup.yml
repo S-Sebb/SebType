@@ -77,7 +77,8 @@ jobs:
             fsutil.exe file setCaseSensitiveInfo $_.FullName enable
             if ($LASTEXITCODE) { throw "setCaseSensitiveInfo failed for $($_.FullName)" }
           }
-          git checkout -- pc/icons
+          git archive -o "$env:RUNNER_TEMP\icons.tar" HEAD pc/icons
+          tar -xf "$env:RUNNER_TEMP\icons.tar"
           if (-not (Test-Path pc/icons/32/ja-A.svg) -or -not (Test-Path pc/icons/32/ja-a.svg)) { throw 'ja-a and ja-A did not both check out' }
       # The MSI depends only on these; a run with the same ones reuses it.
       - uses: actions/cache@v4

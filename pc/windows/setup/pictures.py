@@ -142,10 +142,10 @@ for s in (1, 2):
             )
         else:
             font = ImageFont.truetype(cjk, 14 * s, index=0)
-            if (
-                font.get_variation_names()
-            ):  # the variable Noto Sans CJK: its Bold, as the static file
+            try:  # the variable Noto Sans CJK (Fedora): its Bold, as Ubuntu's static file
                 font.set_variation_by_name("Bold")
+            except OSError:
+                pass
             for i, line in enumerate(("中文", "日本語", "English")):
                 d.text(
                     (middle, (216 + i * 22) * s), line, font=font, fill=INK, anchor="mm"
