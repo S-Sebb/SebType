@@ -1,3 +1,30 @@
+SebType is a modified version of FUTO Keyboard. Which licence covers which part (README.md, "Licences",
+has the details):
+
+- FUTO Keyboard's code, including SebType's edits inside FUTO's files: the FUTO Source First License 1.1
+  (LICENSE.md).
+- The original AOSP keyboard code: the Apache License 2.0 below.
+- Code from other projects that FUTO vendored: each project's own licence, in its folder.
+- SebType's own code in pc/, rime-android/, sebtype/, tools/rime-data/, tools/en-dict/ and docs/: the MIT
+  licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb. These files in those folders are not SebType's own
+  and keep their licence (each folder's LICENSE file lists them):
+  - sebtype/assets/layouts/: adapted from FUTO's layouts, Apache-2.0.
+  - sebtype/res-stable/raw/emoji_i18n.jsondlgz and sebtype/res-stable/values*/*-sebtype-overrides.xml:
+    FUTO's, the FUTO Source First License 1.1.
+  - sebtype/res-stable/raw/main_en.dict: FUTO's dictionary, the FUTO Source First License 1.1, with
+    wordfreq's frequencies under CC BY-SA 4.0 (credits at the end).
+  - sebtype/res/font/sebtype_nunito_extrabold.ttf, and the glyph outlines in pc/icons/ (Noto Sans CJK and
+    Nunito): the SIL Open Font License 1.1.
+  - The patches to Mozc in pc/linux/mozc/ and pc/windows/mozc/, and pc/linux/mozc-keymap.tsv: Mozc's
+    BSD-3-Clause licence.
+  - pc/windows/weasel/sebtype.patch, a patch to Weasel: Weasel's GPL-3.0.
+  - rime-android/patches/, patches to RimeJni: RimeJni's MIT licence.
+- Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
+  librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0.
+
+FUTO's NOTICE follows unchanged, then the credits for SebType's English dictionary.
+
+
 The license below applies only to the original AOSP keyboard code, which is
 up to commit d847619a2b48945465f840b8d81644fa455cc115.
 

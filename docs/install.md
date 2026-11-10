@@ -4,8 +4,8 @@ SebType is published as GitHub releases of `S-Sebb/sebtype`, one arm64-v8a APK p
 Obtainium installs and updates it straight from those releases; no token is needed. SebType's
 application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard and Gboard.
 
-SebType is a modified FUTO Keyboard under the FUTO Source First License (see the README); it is not
-made or supported by FUTO.
+SebType is a modified FUTO Keyboard: the app is under the FUTO Source First License, and SebType's own
+code outside FUTO's files is MIT (see the README's licences). It is not made or supported by FUTO.
 
 ## Install with Obtainium
 

@@ -6,13 +6,27 @@ SebType is a **modified version of [FUTO Keyboard](https://github.com/futo-org/a
 personal Android keyboard for Chinese (pinyin), Japanese (romaji) and English, with one layout for all
 three. It is not made, endorsed or supported by FUTO; please don't report SebType problems to FUTO.
 
-**Licence:** SebType is FUTO's code with changes, under FUTO's [FUTO Source First License 1.1](LICENSE.md)
-(see also [NOTICE](NOTICE)). That licence makes it source-available, not open source: anyone may use it, but it may
-be modified only for non-commercial purposes and shared only free of charge and non-commercially, with
-FUTO's payment features and notices left in. SebType's changes are under the same licence.
-The Picnic theme's font, Nunito, is under the SIL Open Font License 1.1 ([sebtype/fonts/OFL-Nunito.txt](sebtype/fonts/OFL-Nunito.txt)).
-The English dictionary's word frequencies come from [wordfreq](https://github.com/rspeer/wordfreq) (CC BY-SA 4.0)
-and its added words were checked against [SCOWL](https://wordlist.aspell.net); credits are in [NOTICE](NOTICE).
+**Licences:** the Android app is FUTO's code with SebType's changes, under FUTO's
+[FUTO Source First License 1.1](LICENSE.md) (see also [NOTICE](NOTICE)). That licence makes it source-available, not
+open source: anyone may use it, but it may be modified only for non-commercial purposes and shared only free of
+charge and non-commercially, with FUTO's payment features and notices left in. SebType's own code outside FUTO's
+files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence of the project it came from:
+
+| Part | Licence |
+|---|---|
+| FUTO Keyboard's code: `java/`, `native/`, `common/`, `tests/`, `tools/` other than `tools/rime-data/` and `tools/en-dict/`, the root build files and the submodules. SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
+| The original AOSP keyboard code in those folders, up to commit `d847619a` | Apache-2.0 ([NOTICE](NOTICE)) |
+| Code from other projects that FUTO vendored (sentencepiece, protobuf, ggml, llama.cpp, gemoji and others) | each project's own, in its folder |
+| SebType's own code: `pc/`, `rime-android/`, `sebtype/`, `tools/rime-data/`, `tools/en-dict/`, `docs/`, with the exceptions below. Each folder's `LICENSE` file lists its exceptions | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
+| `sebtype/assets/layouts/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
+| `sebtype/res-stable/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) and `sebtype/res-stable/values*/*-sebtype-overrides.xml` (changed copies of FUTO's resources) | FUTO Source First License 1.1 |
+| `sebtype/res-stable/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
+| The Picnic theme's font Nunito, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([sebtype/fonts/OFL-Nunito.txt](sebtype/fonts/OFL-Nunito.txt)) |
+| SebType's patches to Mozc (`pc/linux/mozc/`, `pc/windows/mozc/`) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys); Mozc itself | BSD-3-Clause, like Mozc |
+| SebType's patch to Weasel (`pc/windows/weasel/sebtype.patch`); Weasel itself | GPL-3.0, like Weasel |
+| SebType's patches to RimeJni (`rime-android/patches/`); RimeJni itself | MIT, like RimeJni |
+| librime | BSD-3-Clause |
+| The rime-ice and 白霜 data in the APK and on the PCs (see Chinese below) | GPL-3.0 |
 
 - What it must do: [Requirements (#1)](https://github.com/S-Sebb/sebtype/issues/1)
 - Settled choices: [Decisions (#2)](https://github.com/S-Sebb/sebtype/issues/2)

@@ -1,0 +1,5 @@
+SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
+- linux/mozc/*.patch and windows/mozc/*.patch: patches to Mozc, under Mozc's licence (BSD-3-Clause, Google).
+- linux/mozc-keymap.tsv: Mozc's src/data/keymap/ms-ime.tsv with SebType's keys added, under Mozc's licence (BSD-3-Clause).
+- windows/weasel/sebtype.patch: a patch to Weasel, under Weasel's licence (GPL-3.0).
+- icons/: the glyph outlines are from Noto Sans CJK and Nunito, under the SIL Open Font License 1.1.
