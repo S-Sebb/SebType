@@ -112,21 +112,21 @@ def nodes():
     return out
 
 
-def letter_keys(left, top, right, bottom, rows=4):
+def letter_keys(left, top, right, bottom, n_rows=4):
     """SebType's letter keys aren't in the tree unless an accessibility service is on; their places
-    on its QWERTY: three letter rows over a bottom row (under a number row if rows is 5), ten keys
+    on its QWERTY: three letter rows over a bottom row (under a number row if n_rows is 5), ten keys
     across, rows 2 and 3 indented."""
-    w, h = (right - left) / 10, (bottom - top) / rows
-    rows = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
+    w, h = (right - left) / 10, (bottom - top) / n_rows
+    layout = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
     return [
         (
             ch,
             int(left + (i + indent) * w),
-            int(top + (r + rows - 3.5) * h),
-            int(top + (r + rows - 4) * h),
+            int(top + (r + n_rows - 3.5) * h),
+            int(top + (r + n_rows - 4) * h),
             "key",
         )
-        for r, (letters, indent) in enumerate(rows)
+        for r, (letters, indent) in enumerate(layout)
         for i, ch in enumerate(letters)
     ]
 
