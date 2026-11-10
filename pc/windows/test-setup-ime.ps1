@@ -88,7 +88,7 @@ function Check-AsBefore([string]$prefix, $snap, [string[]]$skip = @()) {
 
 # Preflight
 if (-not $IsWindows) { Write-Output 'preflight: run this on Windows'; exit 1 }
-foreach ($f in 'setup-ime.ps1', 'TypingTest.cs', 'perf-rime.exe', 'perf-rime.ps1', 'rime-ice.zip') {
+foreach ($f in 'setup-ime.ps1', 'TypingTest.cs', 'perf-rime.exe', 'perf-rime.ps1', 'rime-data.zip') {
   if (-not (Test-Path (Join-Path $here $f))) { Write-Output "preflight: $f missing next to this script (pc/windows/stage.sh)"; exit 1 }
 }
 $weasel = Get-ItemProperty $uninstallKey -ErrorAction SilentlyContinue

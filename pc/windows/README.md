@@ -1,7 +1,7 @@
 # SebType on Windows
 
-On Windows, SebType's Chinese is Weasel (小狼毫) with rime-ice, the same Chinese data, schema and Lua as on
-Linux and the phone. English is Windows' plain US layout. Japanese stays whatever the PC has until
+On Windows, SebType's Chinese is Weasel (小狼毫) with the phone's Chinese data: rime-ice's schema and Lua
+with 白霜's dictionary. English is Windows' plain US layout. Japanese stays whatever the PC has until
 SebType's own Mozc (#65) replaces it. `setup-ime.ps1` sets it up for this account with nothing done by
 hand. `pc/windows/stage.sh` (on Linux) gathers what it needs into one folder.
 
@@ -36,7 +36,7 @@ Weasel only if no Weasel was there before.
 | Step | Change | Why |
 |---|---|---|
 | SebType's Weasel | Installs `sebtype-weasel-<version>-installer.exe` silently, as admin (UAC), when it isn't already the installed one. It replaces any other Weasel | Upstream Weasel 0.17.4 with SebType's patch and icons, see below |
-| Chinese data | Unzips `rime-ice.zip` into `%APPDATA%\Rime`. The rime-ice files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The same rime-ice release the phone bundles (`sebtype/fetch-rime-ice.sh`), Lua included: Weasel's librime has librime-lua built in |
+| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`tools/rime-data/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. Weasel's librime has librime-lua built in |
 | Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
 | Input methods | Language list EN (US layout first) → 中文 (Weasel only) → 日本語 (as it was) → any others. Other Chinese IMEs are taken off the list, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |

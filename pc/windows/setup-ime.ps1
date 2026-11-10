@@ -3,7 +3,7 @@
 SebType Windows setup: Chinese with SebType's Weasel (小狼毫) and rime-ice, English as the plain US
 layout, and Win+Space as the only language switch (EN → 中 → 日). Why each step exists: README.md here.
 
-  setup-ime.ps1 [-DryRun] [-NoAdmin] [-Weasel <installer.exe>] [-RimeData <rime-ice.zip>]
+  setup-ime.ps1 [-DryRun] [-NoAdmin] [-Weasel <installer.exe>] [-RimeData <rime-data.zip>]
   setup-ime.ps1 -Undo [-NoAdmin]
 
 Safe to rerun. Changes this account's settings only, except installing or removing Weasel, which asks for
@@ -11,7 +11,7 @@ admin (UAC). -NoAdmin prints that admin command instead of running it. -DryRun c
 The first run saves what it changes to %LOCALAPPDATA%\SebType\windows-setup.json and backs up the Rime
 folder; -Undo puts all of it back and removes SebType's Weasel if it wasn't there before.
 -Weasel defaults to the newest sebtype-weasel-*-installer.exe next to this script and -RimeData to
-rime-ice.zip next to it (pc/windows/stage.sh puts them there).
+rime-data.zip next to it (pc/windows/stage.sh puts them there).
 Saved as UTF-8 with a BOM: Windows PowerShell 5.1 reads a file without one in the ANSI code page.
 #>
 [CmdletBinding()]
@@ -186,7 +186,7 @@ if (-not $Weasel) {
 }
 if (-not $Weasel -or -not (Test-Path $Weasel)) { throw "SebType's Weasel installer not found (-Weasel)" }
 # Defaults here, not in param(): Windows PowerShell leaves $PSScriptRoot empty there under -File.
-if (-not $RimeData) { $RimeData = Join-Path $PSScriptRoot 'rime-ice.zip' }
+if (-not $RimeData) { $RimeData = Join-Path $PSScriptRoot 'rime-data.zip' }
 if (-not (Test-Path $RimeData)) { throw "Chinese data not found: $RimeData (-RimeData)" }
 $Weasel = (Resolve-Path $Weasel).Path
 $RimeData = (Resolve-Path $RimeData).Path
@@ -229,8 +229,10 @@ if (-not $w -or $w.SebType -ne $wantWeasel) {
   if (-not $DryRun) { Warn "SebType's Weasel isn't installed yet; the rest still applies once it is" }
 }
 
-# 2. Chinese data: rime-ice, the same files Linux and the phone use (pc/windows/stage.sh). It goes
-# into Weasel's user folder; learned words, *.custom.yaml and the user's custom_phrase.txt stay.
+# 2. Chinese data: the zip the phone bundles (tools/rime-data/build.sh): rime-ice's schemas and Lua with
+# 白霜's dictionary, its tables prebuilt. It goes into Weasel's user folder, where librime uses the prebuilt
+# tables as they are because their sources aren't there; learned words, *.custom.yaml and the user's
+# custom_phrase.txt stay.
 # The marker names the data and the Weasel it was deployed with, so a new Weasel redeploys it too and
 # restarts WeaselServer as this user (the installer starts it as administrator).
 $marker = Join-Path $RimeUser 'sebtype-data.txt'
@@ -242,6 +244,9 @@ if ((Get-Content $marker -ErrorAction SilentlyContinue) -ne $dataId -and
   if (Test-Path (Join-Path $RimeUser 'custom_phrase.txt')) { Remove-Item (Join-Path $tmp 'custom_phrase.txt') -ErrorAction SilentlyContinue }
   New-Item -ItemType Directory -Force $RimeUser | Out-Null
   Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force
+  # An older dictionary source (the user's own rime-ice) would be compiled instead of the prebuilt table.
+  Get-ChildItem (Join-Path $tmp 'build\*.table.bin') | ForEach-Object {
+    Remove-Item (Join-Path $RimeUser "$($_.BaseName -replace '\.table$').dict.yaml") -ErrorAction SilentlyContinue }
   Remove-Item $tmp -Recurse -Force
   Set-Content $marker $dataId
   $redeploy = $true
