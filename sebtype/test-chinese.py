@@ -90,12 +90,12 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
-keyboard_rows = 4  # 5 in password fields, which have a number row on top
+row_height = None  # of the first keyboard seen, a plain field's four rows
 
 
 def nodes():
     """(label, x, y, top, class) of every node in all windows, keyboard included."""
-    global keyboard_frame
+    global keyboard_frame, row_height
     adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
     xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
     out, frame = [], None
@@ -108,7 +108,9 @@ def nodes():
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
-        out += letter_keys(*frame, keyboard_rows)
+        # Some fields' keyboards (password) add a number row on top: a taller keyboard.
+        row_height = row_height or (frame[3] - frame[1]) / 4
+        out += letter_keys(*frame, round((frame[3] - frame[1]) / row_height))
     return out
 
 
@@ -428,14 +430,9 @@ def password_plain(kind):
     its text) the letters themselves, not a composition."""
 
     def run():
-        global keyboard_rows
-        keyboard_rows = 5
-        try:
-            open_field(kind)
-            type_keys("lh")
-            ns = nodes()
-        finally:
-            keyboard_rows = 4
+        open_field(kind)
+        type_keys("lh")
+        ns = nodes()
         got = candidates(ns)
         field = [n[0] for n in ns if n[4] == "android.widget.EditText"]
         if got or (kind == "visible-password" and field != ["lh"]):
@@ -451,7 +448,9 @@ def no_learning_in(kind, code):
     def run():
         before = candidates_for(code)
         word = before[2]
-        candidates_for(code, kind=kind)
+        got = candidates_for(code, kind=kind)
+        if word not in got:
+            raise Fail(f"{code} -> {before[:6]}, but in a {kind} field -> {got[:6]}")
         tap_candidate(word)
         after = candidates_for(code)
         if word in after[:2]:
