@@ -1,305 +1,235 @@
 ﻿<#
-Tests SebType's Mozc for Windows (#65) on a real desktop: speed, dictionary, install, typing in a test
-window of its own, tray icons, and undo. One command, no arguments, run elevated (install.ps1 needs admin):
+Tests SebType's Mozc for Windows (#65) in the background: speed, dictionary, install, typing, the name
+and tray icons, and undo. One command, no arguments, run elevated (the MSI installs for the machine):
 
     powershell -File pc/windows/mozc/test.ps1
 
-Needs build.ps1's MSI (newest SebType-Mozc-*.msi in C:\ or D:\sebtype-mozc\out) and Python. It sends
-keys only while its own test window is in front (the typing runs in a copy of the script that isn't
-elevated, as apps run), and puts back what it found: the language list,
-default input method, hotkeys, this user's text service settings, Caps Lock, the input language in
-use, Mozc's profile, and whether Mozc is installed. On a shared
-PC the caller holds the device lock (on YukaROG: devices/yukarog-power.lock, taken from nobara-pc).
-One line per check in %LOCALAPPDATA%\SebType\test\mozc-results.txt, logs next to it; exit 0 only if
-every check passes.
+Needs build.ps1's MSI (newest SebType-Mozc-*.msi in C:\ or D:\sebtype-mozc\out) and Python. Nothing
+shows on the screen and nothing reads or sends real keys: the typing runs as a local user the test
+creates and removes (sebtype-test, a standard account), on a desktop of its own that no screen
+shows, and types through TSF (TsfHost.cs) instead of the keyboard. So the person at the PC keeps their
+input method, Caps Lock and focus, and their own input settings are never changed: the run checks they
+end as they began (language list, default input method, hotkeys, text service settings, Caps Lock),
+and that Mozc, the test user and its profile are gone again. On a shared PC the caller holds the device
+lock (on YukaROG: devices/yukarog-power.lock, taken from nobara-pc). One line per check in
+%LOCALAPPDATA%\SebType\test\mozc-results.txt, logs next to it; exit 0 only if every check passes.
 #>
-param([switch]$Typing)  # internal: the typing checks only, started by the elevated run
+param([string]$Typing)  # internal: the folder for the typing checks' results, set by the elevated run
 $ErrorActionPreference = 'Stop'
-$out = "$env:LOCALAPPDATA\SebType\test"
+$out = if ($Typing) { $Typing } else { "$env:LOCALAPPDATA\SebType\test" }
 New-Item -ItemType Directory -Force $out | Out-Null
-$results = "$out\mozc-results.txt"
-if (-not $Typing) { Set-Content -Encoding utf8 $results '' }
-$failed = 0
+$results = if ($Typing) { "$out\typing-results.txt" } else { "$out\mozc-results.txt" }
+Set-Content -Encoding utf8 $results ''
 function Result($name, $status, $why = '') {
     $line = "$status $name$(if ($why) { ": $why" })"
     Add-Content -Encoding utf8 $results $line; Write-Host $line
-    if ($status -eq 'FAIL') { $script:failed++ }
 }
 function Check($name, [scriptblock]$body) {
     try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
+}
+$clsid = [Guid]'{10A67BC8-22FA-4A59-90DC-2546652C56BF}'  # Mozc's OSS text service and its profile
+$profileId = [Guid]'{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
+$mozcTip = '0411:{10A67BC8-22FA-4A59-90DC-2546652C56BF}{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
+$typingChecks = 'test-user', 'install-for-user', 'languages-en-zh-ja', 'tsf-started', 'name-nihongo', 'mozc-active', 'kana-input',
+    'tray-hiragana', 'katakana-and-back', 'shift-tap-toggles-english', 'shift-letter-stays-japanese', 'alt-grave-toggles-english',
+    'caps-lock-icon', 'undo-for-user'
+
+# The typing runs as another user, on a desktop that no screen shows (SwitchDesktop is never called),
+# so the input method's windows (candidates, mode indicator) open there too. Not in session 0, which
+# Mozc refuses. What each step needs, all seen on Server 2022:
+# - the user logs on through LogonUser, not CreateProcessWithLogonW: Mozc's server takes the latter's
+#   token (source "seclogo") for RunAs and runs restricted, and its text service then shows an error
+#   and passes every key through (base/run_level.cc, IsDifferentUser);
+# - the desktop is in WinSta0, as TSF refuses other window stations (E_ACCESSDENIED); the user gets
+#   access to WinSta0 only while it runs;
+# - the desktop has medium integrity: one made by this elevated process is high by default, and a
+#   process of the user then hangs as it starts, whatever the access list says.
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class HiddenDesktop {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct STARTUPINFO {
+        public int cb; public string reserved, desktop, title; public int x, y, w, h, xChars, yChars, fill, flags;
+        public short show, reserved2; public IntPtr reserved3, stdIn, stdOut, stdErr;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct PROCESS_INFORMATION { public IntPtr process, thread; public int pid, tid; }
+    [StructLayout(LayoutKind.Sequential)] struct SECURITY_ATTRIBUTES { public int length; public IntPtr sd; public bool inherit; }
+    [StructLayout(LayoutKind.Sequential)] struct EXPLICIT_ACCESS {
+        public int permissions, mode, inheritance; public IntPtr multipleTrustee; public int multipleOp, form, type; public IntPtr sid;
+    }
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool LogonUserW(string user, string domain, string password, int type, int provider, out IntPtr token);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateProcessWithTokenW(IntPtr token, int logonFlags, string app, string cmd, int creationFlags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, int rev, out IntPtr sd, IntPtr size);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool ConvertStringSidToSidW(string s, out IntPtr sid);
+    [DllImport("advapi32.dll")] static extern int GetSecurityInfo(IntPtr h, int type, int info, IntPtr owner, IntPtr group, out IntPtr dacl, IntPtr sacl, out IntPtr sd);
+    [DllImport("advapi32.dll")] static extern int SetSecurityInfo(IntPtr h, int type, int info, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)] static extern int SetEntriesInAclW(int n, ref EXPLICIT_ACCESS ea, IntPtr old, out IntPtr acl);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateDesktopW(string name, IntPtr device, IntPtr mode, int flags, int access, ref SECURITY_ATTRIBUTES sa);
+    [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
+    [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr d);
+    [DllImport("kernel32.dll")] static extern int WaitForSingleObject(IntPtr h, int ms);
+    [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr h, out int code);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr p);
+    const int SE_WINDOW_OBJECT = 7, DACL_SECURITY_INFORMATION = 4;
+
+    // Runs cmd as a local user with its profile, on a hidden desktop in this session; its exit code,
+    // or -1 after ms.
+    public static int Run(string user, string password, string sid, string cmd, string cwd, int ms) {
+        IntPtr token, binarySid, oldDacl, oldSd, newDacl, sd, desk = IntPtr.Zero;
+        if (!LogonUserW(user, ".", password, 2 /* LOGON32_LOGON_INTERACTIVE */, 0, out token)) throw new Win32Exception();
+        if (!ConvertStringSidToSidW(sid, out binarySid)) throw new Win32Exception();
+        IntPtr ws = GetProcessWindowStation();
+        int e = GetSecurityInfo(ws, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, out oldDacl, IntPtr.Zero, out oldSd);
+        if (e != 0) throw new Win32Exception(e);
+        var ea = new EXPLICIT_ACCESS { permissions = 0x37F /* WINSTA_ALL_ACCESS */, mode = 1 /* GRANT_ACCESS */, type = 1 /* user */, sid = binarySid };
+        e = SetEntriesInAclW(1, ref ea, oldDacl, out newDacl);
+        if (e != 0) throw new Win32Exception(e);
+        e = SetSecurityInfo(ws, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, newDacl, IntPtr.Zero);
+        if (e != 0) throw new Win32Exception(e);
+        try {
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptorW("D:(A;;GA;;;" + sid + ")(A;;GA;;;SY)(A;;GA;;;BA)S:(ML;;NW;;;ME)", 1, out sd, IntPtr.Zero)) throw new Win32Exception();
+            var sa = new SECURITY_ATTRIBUTES { length = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)), sd = sd };
+            desk = CreateDesktopW("SebTypeTest", IntPtr.Zero, IntPtr.Zero, 0, 0x10000000 /* GENERIC_ALL */, ref sa);
+            LocalFree(sd);
+            if (desk == IntPtr.Zero) throw new Win32Exception();
+            var si = new STARTUPINFO { cb = Marshal.SizeOf(typeof(STARTUPINFO)), desktop = @"WinSta0\SebTypeTest" };
+            PROCESS_INFORMATION pi;
+            // LOGON_WITH_PROFILE; CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT
+            if (!CreateProcessWithTokenW(token, 1, null, cmd, 0x08000400, IntPtr.Zero, cwd, ref si, out pi)) throw new Win32Exception();
+            try {
+                if (WaitForSingleObject(pi.process, ms) != 0) return -1;
+                int code; GetExitCodeProcess(pi.process, out code); return code;
+            } finally { CloseHandle(pi.process); CloseHandle(pi.thread); }
+        } finally {
+            SetSecurityInfo(ws, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION, IntPtr.Zero, IntPtr.Zero, oldDacl, IntPtr.Zero);  // WinSta0 as it was
+            if (desk != IntPtr.Zero) CloseDesktop(desk);
+            LocalFree(newDacl); LocalFree(oldSd); LocalFree(binarySid); CloseHandle(token);
+        }
+    }
+}
+'@
+
+if ($Typing) {  # the typing checks, as the test user: not elevated, with a profile of its own
+    Check 'test-user' {
+        $level = (whoami.exe /groups | Select-String 'S-1-16-\d+').Matches.Value
+        if ($level -ne 'S-1-16-8192') { throw "integrity level $level, not medium (S-1-16-8192)" }
+        "$env:USERNAME, not elevated, session $((Get-Process -Id $PID).SessionId)"
+    }
+    # A new user's languages follow the machine's; start from English and Chinese, as on YukaROG.
+    $ll = New-WinUserLanguageList en-US
+    $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage zh-Hans-CN))
+    Set-WinUserLanguageList $ll -Force
+    $langsBefore = ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; '
+    Check 'install-for-user' { & "$PSScriptRoot\install.ps1" | Out-String | ForEach-Object Trim }
+    Check 'languages-en-zh-ja' {
+        $langs = @((Get-WinUserLanguageList) | ForEach-Object { $_ })
+        $order = ($langs | ForEach-Object { $_.LanguageTag.Substring(0, 2) }) -join ','
+        $ja = ($langs | Where-Object LanguageTag -Like 'ja*').InputMethodTips -join ','
+        if ($order -ne 'en,zh,ja' -or $ja -ne $mozcTip) { throw "languages $order, Japanese: $ja" }
+        'Win+Space goes EN → 中 → 日; Japanese is Mozc only'
+    }
+    $started = $false
+    Check 'tsf-started' { Add-Type -Path "$PSScriptRoot\TsfHost.cs"; [SebType.TsfHost]::Start(); $script:started = $true; 'a text field of its own, focused in TSF' }
+    if ($started) {
+        $tsf = [SebType.TsfHost]
+        Check 'name-nihongo' { $d = $tsf::Description(0x411, $clsid, $profileId); if ($d -ne '日本語') { throw "Windows shows '$d'" }; "Win+Space shows $d" }
+        Check 'mozc-active' {
+            $tsf::Activate(0x411, $clsid, $profileId); Start-Sleep -Milliseconds 500
+            $a = $tsf::Active(); if ($a -ne "0411 $($clsid.ToString('B').ToUpper())") { throw "active: $a" }; 'Mozc'
+        }
+        $VK = @{ Enter = 0x0D; Esc = 0x1B; Shift = 0x10; Alt = 0x12; Grave = 0xC0; Caps = 0x14; Katakana = 0xF1; Hiragana = 0xF2 }
+        $ICON = @{ a = 112; hira = 104; kata = 114; caps = 124 }  # caps: A, Caps Lock on (keys and -eq ignore case)
+        function Tray {
+            $id = $tsf::TrayIcon(@($ICON.Values))
+            $name = ($ICON.GetEnumerator() | Where-Object Value -EQ $id).Key
+            if ($name) { $name } else { "icon $id" }
+        }
+        function Press { $tsf::Press([uint16[]]$args); Start-Sleep -Milliseconds 300 }
+        function Typed($keys) { $tsf::Clear(); $tsf::Type($keys); Press $VK.Enter; $tsf::Text().Trim() }
+        # Japanese starts in English or あ; a typed "a" says which.
+        function To-Hiragana { if ((Typed 'a') -eq 'a') { Press $VK.Alt $VK.Grave } }
+
+        Check 'kana-input' {
+            To-Hiragana
+            $t = Typed 'nihongo '
+            if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
+            $t
+        }
+        Check 'tray-hiragana' { $t = Tray; if ($t -ne 'hira') { throw "tray shows $t" }; 'あ' }
+        Check 'katakana-and-back' {
+            Press $VK.Katakana
+            $t = Tray; $k = Typed 'a'
+            Press $VK.Hiragana
+            $back = Tray
+            if ($t -ne 'kata' -or $k -ne 'ア' -or $back -ne 'hira') { throw "ア mode: tray $t, typed '$k'; back: tray $back" }
+            'あ → ア (typed ア) → あ'
+        }
+        Check 'shift-tap-toggles-english' {
+            Press $VK.Shift
+            $t = Tray; $e = Typed 'a'
+            Press $VK.Shift
+            $back = Tray
+            if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Shift: tray $t, typed '$e'; after a second Shift: tray $back" }
+            'あ → a → あ'
+        }
+        Check 'shift-letter-stays-japanese' {
+            $tsf::Clear(); Press $VK.Shift 0x4B; Press $VK.Esc; Press $VK.Esc
+            $t = Tray
+            if ($t -ne 'hira') { throw "Shift+K left the tray at $t" }
+            'Shift+K is no Shift tap'
+        }
+        Check 'alt-grave-toggles-english' {
+            Press $VK.Alt $VK.Grave
+            $t = Tray; $e = Typed 'a'
+            Press $VK.Alt $VK.Grave
+            $back = Tray
+            if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Alt+``: tray $t, typed '$e'; after a second Alt+``: tray $back" }
+            'あ → a → あ'
+        }
+        # Caps Lock here is this thread's own key state, not the keyboard's.
+        Check 'caps-lock-icon' {
+            if ($tsf::CapsLock()) { Press $VK.Caps }
+            Press $VK.Alt $VK.Grave; $off = Tray
+            Press $VK.Caps; $on = Tray
+            Press $VK.Alt $VK.Grave; $hiraCaps = Tray
+            Press $VK.Caps; Press $VK.Alt $VK.Grave; $offAgain = Tray
+            Press $VK.Alt $VK.Grave
+            if ($off -ne 'a' -or $on -ne 'caps' -or $hiraCaps -ne 'hira' -or $offAgain -ne 'a') {
+                throw "English: $off, with Caps Lock: $on, あ with Caps Lock: $hiraCaps, English after: $offAgain"
+            }
+            'a → A with Caps Lock → a; あ stays あ'
+        }
+        # DIAG (#65, remove): what ran and what Mozc wrote
+        @("processes: $((Get-Process | Where-Object Name -Like 'mozc*' | ForEach-Object { "$($_.Name) $($_.Id) s$($_.SessionId)" }) -join ', ')"
+          "LocalLow\Mozc: $((Get-ChildItem "$env:USERPROFILE\AppData\LocalLow\Mozc" -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) $($_.Length)" }) -join ', ')"
+          "keydown a: $($tsf::Diag(0x41))") | Set-Content -Encoding utf8 "$out\typing-diag.txt"
+        Get-ChildItem "$env:USERPROFILE\AppData\LocalLow\Mozc" -Filter *.log -ErrorAction SilentlyContinue | Copy-Item -Destination $out
+        $tsf::Stop()
+    }
+    Check 'undo-for-user' {
+        & "$PSScriptRoot\install.ps1" -Undo | Out-Null
+        $after = ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; '
+        if ($after -ne $langsBefore) { throw "languages $after, were $langsBefore" }
+        'languages back to English and Chinese'
+    }
+    exit
 }
 
 # Preflight: one line saying what is missing.
 $msi = Get-ChildItem 'C:\sebtype-mozc\out\SebType-Mozc-*.msi', 'D:\sebtype-mozc\out\SebType-Mozc-*.msi' -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime | Select-Object -Last 1
 $python = Get-Command python -ErrorAction SilentlyContinue | Where-Object Source -NotLike '*WindowsApps*'
-$preflight = if ($Typing) { $null } elseif ($env:OS -ne 'Windows_NT') { 'not Windows' }
+$user = 'sebtype-test'
+$preflight = if ($env:OS -ne 'Windows_NT') { 'not Windows' }
 elseif (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { 'not elevated (admin)' }
 elseif (-not $msi) { 'no SebType-Mozc-*.msi: run build.ps1 first' } elseif (-not $python) { 'no Python on PATH' }
-elseif (Get-Process explorer -ErrorAction SilentlyContinue | Where-Object SessionId -NE (Get-Process -Id $PID).SessionId) { 'not in the desktop session' }
+elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'in session 0 (services), where Mozc refuses to run: start it from a logged-on session' }
+elseif (Get-LocalUser $user -ErrorAction SilentlyContinue) { "a local user $user exists already" }
 if ($preflight) { Write-Host "preflight: $preflight"; Add-Content -Encoding utf8 $results "BLOCKED preflight: $preflight"; exit 1 }
-$install = "$PSScriptRoot\install.ps1"
-if (-not $Typing -and (Test-Path "$env:LOCALAPPDATA\SebType\mozc-install.json")) { & $install -Undo | Out-Null }  # a run that died midway
+$mozcBefore = Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\{$clsid}"
 
-Add-Type -TypeDefinition @'
-using System;
-using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
-
-[ComImport, Guid("BA468C55-9956-4FB1-A59D-52A7DD7F3E6E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface ITfLangBarItemMgr {
-    void EnumItems(out IntPtr e);
-    [PreserveSig] int GetItem(ref Guid guid, [MarshalAs(UnmanagedType.IUnknown)] out object item);
-}
-[ComImport, Guid("28C7F1D0-DE25-11D2-AFDD-00105A2799B5"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface ITfLangBarItemButton {  // ITfLangBarItem's four methods, then the button's
-    void GetInfo(IntPtr info); void GetStatus(out uint status); void Show(int show); void GetTooltipString(IntPtr s);
-    void OnClick(int click, long pt, IntPtr area); void InitMenu(IntPtr menu); void OnMenuSelect(uint id);
-    [PreserveSig] int GetIcon(out IntPtr icon);
-}
-
-// A plain Win32 edit window on its own thread, which loads the input method like any app.
-public static class TestWindow {
-    [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
-    [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort vk, scan; public uint flags, time; public IntPtr extra; }
-    [StructLayout(LayoutKind.Explicit, Size = 40)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KEYBDINPUT ki; }
-    [StructLayout(LayoutKind.Sequential)] struct ICONINFO { public bool fIcon; public int x, y; public IntPtr mask, color; }
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateWindowExW(uint ex, string cls, string name, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
-    [DllImport("user32.dll")] static extern bool GetMessageW(out MSG m, IntPtr h, uint a, uint b);
-    [DllImport("user32.dll")] static extern bool TranslateMessage(ref MSG m);
-    [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
-    [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
-    [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetWindowTextW(IntPtr h, string s);
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
-    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
-    [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr h);
-    [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
-    [DllImport("user32.dll")] static extern short GetKeyState(int vk);
-    [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] inputs, int size);
-    [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
-    [DllImport("user32.dll")] static extern IntPtr LoadImageW(IntPtr inst, IntPtr name, uint type, int cx, int cy, uint flags);
-    [DllImport("user32.dll")] static extern bool GetIconInfo(IntPtr icon, out ICONINFO info);
-    [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
-    [DllImport("gdi32.dll")] static extern int GetBitmapBits(IntPtr bmp, int n, byte[] bits);
-    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
-    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
-    [DllImport("msctf.dll")] static extern int TF_CreateLangBarItemMgr(out ITfLangBarItemMgr mgr);
-    const uint WM_APP = 0x8000, WM_CLOSE = 0x10;
-
-    public static IntPtr Hwnd;
-    static uint threadId;
-    static readonly BlockingCollection<Action> queue = new BlockingCollection<Action>();
-
-    public static void Start() {
-        var ready = new ManualResetEvent(false);
-        var t = new Thread(() => {
-            threadId = GetCurrentThreadId();
-            // EDIT as a top-level window: WS_OVERLAPPEDWINDOW | WS_VISIBLE, ES_MULTILINE | ES_AUTOVSCROLL
-            Hwnd = CreateWindowExW(0x8 /* WS_EX_TOPMOST */, "EDIT", "", 0x10CF0000 | 0x44, 200, 200, 640, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-            SetWindowTextW(Hwnd, "");
-            ready.Set();
-            MSG m;
-            while (GetMessageW(out m, IntPtr.Zero, 0, 0)) {
-                if (m.hwnd == IntPtr.Zero && m.message == WM_APP) { Action a; while (queue.TryTake(out a)) a(); continue; }
-                TranslateMessage(ref m); DispatchMessageW(ref m);
-                if (m.hwnd == Hwnd && m.message == WM_CLOSE) break;
-            }
-        });
-        t.SetApartmentState(ApartmentState.STA);
-        t.IsBackground = true;
-        t.Start();
-        ready.WaitOne(10000);
-    }
-    public static void Stop() { PostMessageW(Hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero); }
-
-    static T OnUi<T>(Func<T> f) {
-        T r = default(T); Exception err = null; var done = new ManualResetEvent(false);
-        queue.Add(() => { try { r = f(); } catch (Exception e) { err = e; } done.Set(); });
-        PostThreadMessageW(threadId, WM_APP, IntPtr.Zero, IntPtr.Zero);
-        if (!done.WaitOne(5000)) throw new TimeoutException("test window didn't answer");
-        if (err != null) throw err;
-        return r;
-    }
-
-    public static bool Focus() {
-        if (GetForegroundWindow() != Hwnd) {
-            uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero), me = GetCurrentThreadId();
-            AttachThreadInput(me, fg, true);
-            Key(0x12, false); Key(0x12, true);  // an Alt tap lets this process take the foreground
-            SetForegroundWindow(Hwnd);
-            AttachThreadInput(me, fg, false);
-            Thread.Sleep(200);
-        }
-        OnUi(() => SetFocus(Hwnd));
-        return GetForegroundWindow() == Hwnd;
-    }
-    public static string Text() { var s = new StringBuilder(4096); GetWindowTextW(Hwnd, s, s.Capacity); return s.ToString(); }
-    public static void Clear() { SetWindowTextW(Hwnd, ""); }
-    public static int Lang() { return (int)((long)GetKeyboardLayout(threadId) & 0xFFFF); }
-    public static bool CapsLock() { return (GetKeyState(0x14) & 1) != 0; }
-
-    static void Key(ushort vk, bool up) {
-        var i = new INPUT { type = 1 };
-        i.ki.vk = vk; i.ki.flags = up ? 2u : 0u;
-        // Win and the arrow-type keys are extended keys
-        if (vk == 0x5B) i.ki.flags |= 1;
-        SendInput(1, new[] { i }, Marshal.SizeOf(typeof(INPUT)));
-    }
-    // Presses keys in order and releases them in reverse, e.g. Press(0x5B, 0x20) for Win+Space.
-    public static void Press(params ushort[] vks) {
-        if (GetForegroundWindow() != Hwnd) throw new InvalidOperationException("the test window lost the focus");
-        foreach (var vk in vks) Key(vk, false);
-        for (int i = vks.Length - 1; i >= 0; i--) Key(vks[i], true);
-        Thread.Sleep(60);
-    }
-    public static void Type(string s) {  // a-z, '-' and space
-        foreach (var c in s) Press(c == '-' ? (ushort)0xBD : c == ' ' ? (ushort)0x20 : (ushort)char.ToUpperInvariant(c));
-    }
-
-    // Which of Mozc's icon resources the input mode button (the tray's あ/a) shows now, or -1.
-    public static int TrayIcon(int[] ids) {
-        return OnUi(() => {
-            ITfLangBarItemMgr mgr;
-            Marshal.ThrowExceptionForHR(TF_CreateLangBarItemMgr(out mgr));
-            var guid = new Guid("2C77A81E-41CC-4178-A3A7-5F8A987568E6");  // GUID_LBI_INPUTMODE
-            object item;
-            Marshal.ThrowExceptionForHR(mgr.GetItem(ref guid, out item));
-            IntPtr icon;
-            Marshal.ThrowExceptionForHR(((ITfLangBarItemButton)item).GetIcon(out icon));
-            var shown = Pixels(icon);
-            DestroyIcon(icon);
-            IntPtr dll = GetModuleHandleW("mozc_tip64.dll");
-            int size = GetSystemMetrics(50);  // SM_CYSMICON, as Mozc loads it
-            foreach (var id in ids) {
-                IntPtr res = LoadImageW(dll, (IntPtr)id, 1, size, size, 0x2000);  // IMAGE_ICON, LR_CREATEDIBSECTION
-                if (res == IntPtr.Zero) continue;
-                var px = Pixels(res);
-                DestroyIcon(res);
-                if (px == shown) return id;
-            }
-            return -1;
-        });
-    }
-    static string Pixels(IntPtr icon) {
-        ICONINFO info;
-        if (!GetIconInfo(icon, out info)) return "";
-        var bits = new byte[1 << 16];
-        int n = GetBitmapBits(info.color, bits.Length, bits);
-        DeleteObject(info.color); DeleteObject(info.mask);
-        return Convert.ToBase64String(bits, 0, n);
-    }
-}
-'@
-
-if ($Typing) {  # the typing checks, in a process that isn't elevated
-    $level = (whoami.exe /groups | Select-String 'S-1-16-\d+').Matches.Value  # the integrity label
-    Result 'typing-not-elevated' $(if ($level -eq 'S-1-16-8192') { 'PASS' } else { 'FAIL' }) "integrity level $level (medium is S-1-16-8192)"
-$mozcOk = @((Get-WinUserLanguageList) | ForEach-Object { $_.InputMethodTips }) -contains '0411:{10A67BC8-22FA-4A59-90DC-2546652C56BF}{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
-$langNames = @{ 0x0409 = 'EN'; 0x0804 = '中'; 0x0411 = '日' }
-$startLang = $null
-if ($mozcOk) {
-    [TestWindow]::Start()
-    $focused = [TestWindow]::Focus()
-    Result 'test-window-focused' $(if ($focused) { 'PASS' } else { 'FAIL' }) $(if (-not $focused) { 'another window kept the foreground; no keys sent' })
-}
-if ($mozcOk -and $focused) {
-    $startLang = [TestWindow]::Lang()
-    $VK = @{ Win = 0x5B; Space = 0x20; Enter = 0x0D; Esc = 0x1B; Shift = 0x10; Alt = 0x12; Grave = 0xC0; Caps = 0x14; Katakana = 0xF1; Hiragana = 0xF2 }
-    $ICON = @{ a = 112; hira = 104; kata = 114; caps = 124 }  # caps: A, Caps Lock on (keys and -eq ignore case)
-    function Lang-Name { $l = [TestWindow]::Lang(); if ($langNames[$l]) { $langNames[$l] } else { '{0:x4}' -f $l } }
-    function Win-Space { [TestWindow]::Press($VK.Win, $VK.Space); Start-Sleep -Milliseconds 600; Lang-Name }
-    function Tray {
-        $id = [TestWindow]::TrayIcon(@($ICON.Values))
-        $name = ($ICON.GetEnumerator() | Where-Object Value -EQ $id).Key
-        if ($name) { $name } else { "icon $id" }
-    }
-    function Typed($keys) { [TestWindow]::Clear(); [TestWindow]::Type($keys); [TestWindow]::Press($VK.Enter); Start-Sleep -Milliseconds 300; [TestWindow]::Text().Trim() }
-    # Japanese starts in English or あ; a typed "a" says which.
-    function To-Hiragana { if ((Typed 'a') -eq 'a') { [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300 } }
-
-    Check 'win-space-cycles-en-zh-ja' {
-        $seen = @(Lang-Name) + (1..3 | ForEach-Object { Win-Space })
-        $cycle = $seen -join ' → '
-        if (($seen + $seen) -join ',' -notmatch 'EN,中,日,EN') { throw "Win+Space went $cycle" }
-        $cycle
-    }
-    for ($i = 0; $i -lt 4 -and (Lang-Name) -ne '日'; $i++) { Win-Space | Out-Null }
-    Check 'kana-input' {
-        if ((Lang-Name) -ne '日') { throw "can't reach Japanese: $(Lang-Name)" }
-        To-Hiragana
-        $t = Typed 'nihongo '
-        if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
-        $t
-    }
-    Check 'tray-hiragana' { $t = Tray; if ($t -ne 'hira') { throw "tray shows $t" }; 'あ' }
-    Check 'katakana-and-back' {
-        [TestWindow]::Press($VK.Katakana); Start-Sleep -Milliseconds 300
-        $t = Tray; $k = Typed 'a'
-        [TestWindow]::Press($VK.Hiragana); Start-Sleep -Milliseconds 300
-        $back = Tray
-        if ($t -ne 'kata' -or $k -ne 'ア' -or $back -ne 'hira') { throw "ア mode: tray $t, typed '$k'; back: tray $back" }
-        'あ → ア (typed ア) → あ'
-    }
-    Check 'shift-tap-toggles-english' {
-        [TestWindow]::Press($VK.Shift); Start-Sleep -Milliseconds 300
-        $t = Tray; $e = Typed 'a'
-        [TestWindow]::Press($VK.Shift); Start-Sleep -Milliseconds 300
-        $back = Tray
-        if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Shift: tray $t, typed '$e'; after a second Shift: tray $back" }
-        'あ → a → あ'
-    }
-    Check 'shift-letter-stays-japanese' {
-        [TestWindow]::Clear(); [TestWindow]::Press($VK.Shift, 0x4B); Start-Sleep -Milliseconds 200; [TestWindow]::Press($VK.Esc)
-        [TestWindow]::Press($VK.Esc); $t = Tray
-        if ($t -ne 'hira') { throw "Shift+K left the tray at $t" }
-        'Shift+K is no Shift tap'
-    }
-    Check 'alt-grave-toggles-english' {
-        [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300
-        $t = Tray; $e = Typed 'a'
-        [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300
-        $back = Tray
-        if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Alt+``: tray $t, typed '$e'; after a second Alt+``: tray $back" }
-        'あ → a → あ'
-    }
-    Check 'caps-lock-icon' {
-        $caps = [TestWindow]::CapsLock()
-        try {
-            if ($caps) { [TestWindow]::Press($VK.Caps); Start-Sleep -Milliseconds 300 }  # start with Caps Lock off
-            [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300
-            $off = Tray
-            [TestWindow]::Press($VK.Caps); Start-Sleep -Milliseconds 300
-            $on = Tray
-            [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300
-            $hiraCaps = Tray
-            [TestWindow]::Press($VK.Caps); Start-Sleep -Milliseconds 300
-            [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300
-            $offAgain = Tray
-            [TestWindow]::Press($VK.Alt, $VK.Grave); Start-Sleep -Milliseconds 300
-            if ($off -ne 'a' -or $on -ne 'caps' -or $hiraCaps -ne 'hira' -or $offAgain -ne 'a') {
-                throw "English: $off, with Caps Lock: $on, あ with Caps Lock: $hiraCaps, English after: $offAgain"
-            }
-            'a → A with Caps Lock → a; あ stays あ'
-        } finally {
-            # a check that throws midway still leaves Caps Lock as it found it
-            if ($caps -ne [TestWindow]::CapsLock()) { [TestWindow]::Press($VK.Caps) }
-        }
-    }
-    # Back to the input language the run started in.
-    for ($i = 0; $i -lt 4 -and [TestWindow]::Lang() -ne $startLang; $i++) { Win-Space | Out-Null }
-}
-$endLang = if ($mozcOk) { [TestWindow]::Lang() }
-if ($mozcOk) { [TestWindow]::Stop() }
-    "$startLang $endLang" | Set-Content "$out\typing-langs.txt"
-    exit
-}
 
 # What the input method setup looks like now; the run must end with the same.
 function Snapshot {
@@ -310,10 +240,12 @@ function Snapshot {
         default = "$(Get-WinDefaultInputMethodOverride | ForEach-Object InputMethodTip)"
         hotkeys = ($hot + $toggle) -join "`n"
         tips = (reg.exe query 'HKCU\Software\Microsoft\CTF\TIP' /s 2>$null) -join "`n"
-        mozcRegistered = Test-Path 'HKLM:\SOFTWARE\Microsoft\CTF\TIP\{10A67BC8-22FA-4A59-90DC-2546652C56BF}'
+        mozcRegistered = Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\{$clsid}"
         mozcProfile = Test-Path "$env:USERPROFILE\AppData\LocalLow\Mozc"
         hkcuSoftware = (Get-ChildItem HKCU:\Software).PSChildName -join ','
         capsLock = [Console]::CapsLock
+        localUsers = (Get-LocalUser).Name -join ','
+        profiles = (Get-CimInstance Win32_UserProfile).LocalPath -join ','
     }
 }
 $before = Snapshot
@@ -347,31 +279,65 @@ Check 'mozc-speed-and-dictionary' {
     "key p50/p95 $($v.key_p50_ms)/$($v.key_p95_ms) ms, Space p95 $($v.convert_p95_ms) ms, RSS $([int]$v.rss_kb / 1024) MB, dictionary top-1 $($v.top1)"
 }
 
-Check 'install' { & $install $msi.FullName | Out-String | ForEach-Object Trim }
-
-# Typing runs as apps do, not elevated: a scheduled task with RunLevel Limited starts this script
-# again with the desktop user's normal (medium integrity) token. Built-in Administrator accounts have
-# no such token; the child then fails 'typing-not-elevated'.
-Remove-Item "$out\typing-langs.txt" -ErrorAction SilentlyContinue
-$action = New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Typing"
-$user = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName sebtype-mozc-typing -Action $action -Principal $user -Force | Out-Null
-Start-ScheduledTask sebtype-mozc-typing
-for ($i = 0; $i -lt 300 -and -not (Test-Path "$out\typing-langs.txt"); $i++) { Start-Sleep 2 }
-Unregister-ScheduledTask sebtype-mozc-typing -Confirm:$false
-$startLang, $endLang = if (Test-Path "$out\typing-langs.txt") { (Get-Content "$out\typing-langs.txt") -split ' ' | ForEach-Object { if ($_) { [int]$_ } } }
-foreach ($c in 'typing-not-elevated', 'test-window-focused', 'win-space-cycles-en-zh-ja', 'kana-input', 'tray-hiragana', 'katakana-and-back', 'shift-tap-toggles-english',
-    'shift-letter-stays-japanese', 'alt-grave-toggles-english', 'caps-lock-icon') {
-    if (-not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'Mozc not installed or no focus' }
+Check 'install' {
+    $log = "$out\mozc-msi.log"
+    msiexec /i $msi.FullName /qn /norestart /l*v $log | Out-Null
+    if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\{$clsid}")) { throw "Mozc isn't registered after the MSI (log: $log)" }
+    "$($msi.Name) for the machine"
 }
 
-Check 'undo' { & $install -Undo | Out-String | ForEach-Object Trim }
+# The typing checks, as a standard user of the test's own (see the top): a copy of this folder it can
+# read, a password only this run knows, and the account and its profile removed afterwards.
+$share = "$env:ProgramData\SebType-mozc-test"
+Remove-Item -Recurse -Force $share -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force "$share\windows\mozc", "$share\linux" | Out-Null
+Copy-Item "$PSScriptRoot\*" "$share\windows\mozc"
+Copy-Item "$PSScriptRoot\..\..\linux\mozc-keymap.tsv" "$share\linux"
+$password = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ }) + '-a1A'
+try {
+    $account = New-LocalUser $user -Password (ConvertTo-SecureString $password -AsPlainText -Force) -AccountNeverExpires -PasswordNeverExpires `
+        -Description 'SebType Mozc test (#65); test.ps1 removes it'
+    Add-LocalGroupMember -SID S-1-5-32-545 -Member $user -ErrorAction SilentlyContinue  # Users, if Windows didn't add it
+    & icacls.exe $share /grant "${user}:(OI)(CI)M" | Out-Null
+    $cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$share\windows\mozc\test.ps1`" -Typing `"$share\out`""
+    if ([HiddenDesktop]::Run($user, $password, $account.SID.Value, $cmd, $share, 600000) -eq -1) { Result typing-run FAIL 'the typing checks took over 10 minutes' }
+} catch {
+    Result typing-run FAIL $_.Exception.Message
+} finally {
+    # Mozc's server and renderer keep running as the test user; they go first, then its profile.
+    Get-Process -IncludeUserName | Where-Object UserName -Like "*\$user" | Stop-Process -Force -ErrorAction SilentlyContinue
+    if ($account) {
+        for ($i = 0; $i -lt 30; $i++) {
+            $p = Get-CimInstance Win32_UserProfile | Where-Object SID -EQ $account.SID.Value
+            if (-not $p) { break }
+            try { $p | Remove-CimInstance; break } catch { Start-Sleep 2 }  # its registry hive unloads a moment after logoff
+        }
+        Remove-LocalUser $user
+    }
+}
+Get-Content -Encoding utf8 "$share\out\typing-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Add-Content -Encoding utf8 $results $_; Write-Host $_ }
+Copy-Item "$share\out\*" $out -Exclude typing-results.txt -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $share
+foreach ($c in $typingChecks) {
+    if (-not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
+}
+
+Check 'undo' {
+    if ($mozcBefore) { return 'Mozc was installed before: kept' }
+    Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\Mozc\*' } | Stop-Process -Force
+    msiexec /x $msi.FullName /qn /norestart | Out-Null
+    if (Test-Path "HKLM:\SOFTWARE\Microsoft\CTF\TIP\{$clsid}") { throw 'Mozc is still registered' }
+    # Windows gives every logged-on user a (disabled) profile entry for a new text service, and Mozc an
+    # empty LocalLow\Mozc folder; neither was there before.
+    Remove-Item -Recurse -Force "HKCU:\Software\Microsoft\CTF\TIP\{$clsid}" -ErrorAction SilentlyContinue
+    if (-not $before.mozcProfile) { Remove-Item -Recurse -Force "$env:USERPROFILE\AppData\LocalLow\Mozc" -ErrorAction SilentlyContinue }
+    'Mozc uninstalled'
+}
 Check 'everything-as-found' {
-    if ($startLang -and $endLang -ne $startLang) { throw "input language is $('{0:x4}' -f $endLang), was $('{0:x4}' -f $startLang)" }
     $after = Snapshot
     $after | ConvertTo-Json | Set-Content "$out\mozc-after.json"
     $diff = $before.Keys | Where-Object { "$($before[$_])" -ne "$($after[$_])" }
     if ($diff) { throw "changed: $($diff -join ', ') (see $out\mozc-before.json, mozc-after.json)" }
-    'language list, default input method, hotkeys, text service settings, Mozc installed or not, Mozc profile, Caps Lock'
+    'your language list, default input method, hotkeys, text service settings, Caps Lock; Mozc, the test user and its profile gone'
 }
 exit [int][bool](Select-String -Quiet '^FAIL ' $results)

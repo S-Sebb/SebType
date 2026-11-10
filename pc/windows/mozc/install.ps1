@@ -1,25 +1,25 @@
 ﻿<#
-Installs SebType's Mozc (#65) on Windows, or undoes it. Run it elevated (admin): Windows only loads
-text services registered for the whole machine; it deletes a per-user registration.
+Installs SebType's Mozc (#65) on Windows, or undoes it. Installing the MSI needs admin: Windows only
+loads text services registered for the whole machine; it deletes a per-user registration.
 
-    powershell -File pc/windows/mozc/install.ps1 <SebType-Mozc-...msi>   # install or update, safe to rerun
+    powershell -File pc/windows/mozc/install.ps1 <SebType-Mozc-...msi>   # elevated: install or update, safe to rerun
+    powershell -File pc/windows/mozc/install.ps1                       # no admin: set up this user, Mozc installed
     powershell -File pc/windows/mozc/install.ps1 -Undo                 # remove it, put back what was there
 
 Installing: build.ps1's MSI installs Mozc for the machine, then, for the user running this, Mozc's
 keymap gets Alt+` and a Shift tap for あ ⇄ English (pc/linux/mozc-keymap.tsv, Decisions #2), and
 Japanese in the language list gets only Mozc, after Chinese, so Win+Space cycles EN → 中 → 日.
 Before the first install it saves the language list, the default input method, the input hotkeys,
-this user's text service settings and Mozc's config1.db; -Undo puts them back and uninstalls Mozc,
-unless it was installed before. Apps opened before an install see the new keymap once restarted.
+this user's text service settings and Mozc's config1.db; -Undo puts them back and uninstalls Mozc
+(elevated), unless it was installed before. Apps opened before an install see the new keymap once restarted.
 #>
 param([string]$Msi, [switch]$Undo)
 # Runs in Windows PowerShell 5.1, which every Windows has; PowerShell 7's language list cmdlets
 # fail on some Windows versions (PowerShell issue #14102, seen on Server 2022).
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw 'run install.ps1 elevated (admin): Mozc installs for the whole machine'
-}
+$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($Msi -and -not $admin) { throw 'run install.ps1 <msi> elevated (admin): Mozc installs for the whole machine' }
 
 $clsid = '{10A67BC8-22FA-4A59-90DC-2546652C56BF}'    # Mozc's OSS text service
 $profileId = '{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
@@ -45,7 +45,11 @@ function Set-Languages($list) {
     }
     Set-WinUserLanguageList $ll -Force
 }
-function Export-Key($key, $file) { reg.exe export $key $file /y 2>$null | Out-Null; if ($LASTEXITCODE) { $null } else { $file } }
+# A missing key is no error (a new user has no hotkeys); reg.exe's stderr needs a Continue scope (see -Undo).
+function Export-Key($key, $file) {
+    & { $ErrorActionPreference = 'Continue'; reg.exe export $key $file /y 2>&1 | Out-Null }
+    if ($LASTEXITCODE) { $null } else { $file }
+}
 
 # Mozc's config is a mozc.config.Config protobuf. Sets session_keymap (41) = CUSTOM (0) and
 # custom_keymap_table (42) = the TSV, keeping every other field, as pc/linux/setup-ime.sh does.
@@ -81,9 +85,10 @@ function Set-Keymap([byte[]]$data, [byte[]]$table) {
 if ($Undo) {
     if (-not (Test-Path $state)) { throw "nothing to undo: $state is missing" }
     $s = Get-Content $state -Raw | ConvertFrom-Json
+    if (-not $s.MozcBefore -and -not $admin) { throw 'run install.ps1 -Undo elevated (admin): it uninstalls Mozc' }
     # Mozc's running server and renderer hold its text service: the language list change below
-    # waits on them, and the uninstall can't remove their files.
-    Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\Mozc\*' } | Stop-Process -Force
+    # waits on them, and the uninstall can't remove their files. Without admin, only this user's own.
+    Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\Mozc\*' } | Stop-Process -Force -ErrorAction SilentlyContinue
     Set-Languages $s.Languages
     if ($s.DefaultInputMethod) { Set-WinDefaultInputMethodOverride -InputTip $s.DefaultInputMethod }
     # reg.exe import prints its result on stderr, which 5.1 turns into a terminating error under
@@ -101,8 +106,8 @@ if ($Undo) {
     exit
 }
 
-if (-not $Msi) { throw 'usage: install.ps1 <msi> | -Undo' }
-$Msi = (Resolve-Path $Msi).Path
+if ($Msi) { $Msi = (Resolve-Path $Msi).Path }
+elseif (-not (Get-MozcProduct)) { throw 'Mozc is not installed: run install.ps1 <msi> elevated first' }
 
 # Save the state from before SebType's Mozc, once, so reruns keep it.
 if (-not (Test-Path $state)) {
@@ -123,9 +128,11 @@ if (-not (Test-Path $state)) {
 }
 
 # Mozc itself, for the machine; its installer registers the text service and starts nothing.
-$log = "$env:TEMP\sebtype-mozc-msi.log"
-msiexec /i $Msi /qn /norestart /l*v $log | Out-Null
-if (-not (Get-MozcProduct)) { throw "the MSI didn't install Mozc (log: $log)" }
+if ($Msi) {
+    $log = "$env:TEMP\sebtype-mozc-msi.log"
+    msiexec /i $Msi /qn /norestart /l*v $log | Out-Null
+    if (-not (Get-MozcProduct)) { throw "the MSI didn't install Mozc (log: $log)" }
+}
 
 # Keymap: Mozc's text service reads it once per app, when the app first loads it.
 $table = [IO.File]::ReadAllBytes("$PSScriptRoot\..\..\linux\mozc-keymap.tsv")
@@ -153,4 +160,4 @@ for ($i = 0; $i -lt 20 -and -not (@((Get-WinUserLanguageList) | ForEach-Object {
     Start-Sleep -Milliseconds 500
 }
 if ($i -eq 20) { throw "Windows didn't take Mozc into the language list" }
-Write-Host "installed: $(Split-Path -Leaf $Msi); Japanese is Mozc for $env:USERNAME (undo: $PSCommandPath -Undo)"
+Write-Host "installed: $(if ($Msi) { Split-Path -Leaf $Msi } else { 'for this user' }); Japanese is Mozc for $env:USERNAME (undo: $PSCommandPath -Undo)"

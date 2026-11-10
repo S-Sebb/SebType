@@ -144,6 +144,7 @@ each size folder, no admin needed), or the English icons all come out as **A** (
 | Patch | Change |
 |---|---|
 | `caps-lock-icon.patch` | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
+| `japanese-name.patch` | Japanese reads **日本語** in Win+Space and the language settings, not "Mozc" (Decisions #2, #92), as Chinese reads 中文 (`win32/tip/tip_resource.rc`, `win32/base/tsf_registrar.cc`) |
 
 `make_icons.py` replaces Mozc's mode icons with `.ico` files holding a PNG for each tray size from
 100 % to 400 % scaling: pc/icons' hand-drawn 16, 20, 24 and 32 px drawings, and the 48 px drawing for
@@ -152,18 +153,21 @@ each size folder, no admin needed), or the English icons all come out as **A** (
 ### Install
 
 ```powershell
-powershell -File pc/windows/mozc/install.ps1 D:\sebtype-mozc\out\SebType-Mozc-....msi   # install or update
+powershell -File pc/windows/mozc/install.ps1 D:\sebtype-mozc\out\SebType-Mozc-....msi   # elevated: install or update
+powershell -File pc/windows/mozc/install.ps1                                     # no admin: set up this user too
 powershell -File pc/windows/mozc/install.ps1 -Undo                               # remove, put back what was there
 ```
 
-`install.ps1` runs elevated (admin): it installs the MSI for the whole machine, then, for the user
-running it, writes the keymap into Mozc's settings (`%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`,
+With the MSI, `install.ps1` runs elevated (admin): it installs the MSI for the whole machine, then,
+for the user running it, writes the keymap into Mozc's settings (`%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`,
 other settings kept) and makes Mozc Japanese's only input method, after Chinese in the language list.
 Before the first install it saves the language list, the default input method, the input hotkeys, the
-user's text service settings and Mozc's settings; `-Undo` puts them back and uninstalls Mozc. Apps
+user's text service settings and Mozc's settings; `-Undo` puts them back and uninstalls Mozc (elevated).
+Without the MSI it sets up only the user running it, with no admin, once Mozc is installed; its
+`-Undo` keeps Mozc. Apps
 opened before an install pick up the keymap once restarted. SebType's installer (#73) will pack it.
 
-A no-admin install doesn't work: Windows deletes a text service registered only for the user (under
+A no-admin install of Mozc itself doesn't work: Windows deletes a text service registered only for the user (under
 HKEY_CURRENT_USER) as soon as the language list changes, and leaves Japanese with no input method
 (tried on YukaROG). Changing the language list also drops other input methods' per-user settings,
 which is why `install.ps1` saves and restores them.
@@ -177,18 +181,27 @@ which one Japanese uses.
 powershell -File pc/windows/mozc/test.ps1
 ```
 
-On the desktop, elevated: Mozc's key and conversion times through its own server
-(`pc/linux/perf-mozc.py`; Decisions #2: p95 ≤ 5 ms), the dictionary check below, `install.ps1`, then
-typing in a test window of its own (Win+Space EN → 中 → 日, `nihongo` → 日本語, あ ⇄ ア, Shift tap and
-Alt+` for English, Shift+letter staying Japanese, the tray icon in each mode and with Caps Lock), then
-`install.ps1 -Undo`, and a check that the language list, default input method, hotkeys, registrations,
-Mozc's settings, Caps Lock and the input language are as they were. It sends keys only while its window
-is in front. One line per check in `%LOCALAPPDATA%\SebType\test\mozc-results.txt`.
+Elevated, in the background: nothing shows on the screen and no real key is read or sent. It checks
+Mozc's key and conversion times through its own server (`pc/linux/perf-mozc.py`; Decisions #2:
+p95 ≤ 5 ms) and the dictionary (below), installs the MSI for the machine, then runs the typing checks as
+a local standard user it creates for the run (`sebtype-test`):
 
-The typing checks run in a copy of the script that isn't elevated (a scheduled task with the desktop
-user's normal token), as apps run. A built-in Administrator account has no such token, so on
-TCSBackEnd (Windows Server 2022) only the speed, install, Win+Space, undo and as-found checks can pass;
-there `typing-not-elevated` fails and the typing checks with it.
+- `install.ps1` for that user, with the language order EN → 中 → 日 that Win+Space cycles through;
+- the name Windows shows for Japanese, 日本語;
+- typing: `nihongo` → 日本語, あ ⇄ ア, Shift tap and Alt+` for English, Shift+letter staying Japanese,
+  and the tray icon in each mode and with Caps Lock;
+- `install.ps1 -Undo` for that user.
+
+After that it removes the user, its profile and Mozc. Last, it checks that your own language list,
+default input method, hotkeys, text service settings and Caps Lock are as they were, and that no test
+user or profile is left. One line per check goes to `%LOCALAPPDATA%\SebType\test\mozc-results.txt`.
+
+The typing happens in a text field of the test's own (`mozc/TsfHost.cs`). It talks to Windows' Text
+Services Framework directly: keys go to Mozc through `ITfKeystrokeMgr`, and Shift, Alt and Caps Lock
+are that thread's own key state (`SetKeyboardState`), not the keyboard's. It runs on a desktop of
+its own that no screen shows, so Mozc's candidate window opens there too. Running it as a separate
+user keeps the input settings of the person at the PC untouched. It needs a logged-on session (any
+non-zero session, even a disconnected one): Mozc refuses to run in session 0, where services run.
 
 Windows deletes Mozc's per-user profile key when the language list changes later (for example when
 a language is added in Settings), which leaves Japanese without a working input method (seen on
