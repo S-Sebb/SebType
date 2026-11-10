@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Checks the SebType release APK, installs it on the local emulator next to stock FUTO Keyboard, then
+# Checks the SebType release APK, installs it on one of SebType's two emulators (sebtype/emulator.sh, or
+# the device ANDROID_SERIAL names) next to stock FUTO Keyboard, then
 # types Chinese with it (sebtype/test-chinese.py): the bundled Chinese data set up in the background from
 # the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
@@ -27,14 +28,6 @@ check() { # name, command...; timeout T seconds (default 180)
 
 # Preflight
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
-serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
-[[ -n $serial ]] || { echo "preflight: no running emulator (start AVD guide35 or lossbench)"; exit 1; }
-lock=/tmp/agent-locks/devices/emulator-$("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r').lock # shared by all projects
-[[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] ||
-  { echo "preflight: emulator $serial can't run arm64 apps"; exit 1; }
-# Rime's data is in the app's private storage (#32), which the checks read as root.
-[[ $("$adb" -s "$serial" shell su 0 id -u | tr -d '\r') == 0 ]] ||
-  { echo "preflight: emulator $serial has no root shell (su), needed to read the app's Rime data"; exit 1; }
 apk=$(sebtype/build.sh release 2> "$out/build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/build.log"; exit 1; }
 # The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.
@@ -43,7 +36,6 @@ sebtype/perf/build-field.sh "$field_apk" > "$out/field.log" 2>&1 && [[ -f $field
   { echo "preflight: test field build failed, see $out/field.log"; exit 1; }
 [[ -f $futo_apk ]] || gh release download 0.1.30 -R futo-org/android-keyboard -p keyboard-0.1.30.apk -O "$futo_apk" ||
   { echo "preflight: can't download stock FUTO 0.1.30"; exit 1; }
-echo "testing $apk on $serial"
 
 badging=$("$bt/aapt2" dump badging "$apk")
 check package-id grep -q "package: name='dev.sebb.sebtype'" <<<"$badging"
@@ -94,7 +86,8 @@ check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -E "tiny_en_acft|futo-swipe|l
   grep -qx "locales: .--_--. .ja. .zh-CN." <<<"$2" || { grep "^locales" <<<"$2"; exit 1; }
   [[ $3 == "raw/main_en " ]] || { echo "dictionaries: $3"; exit 1; }' _ "$apk" "$badging" "$dicts"
 
-# Device checks hold the emulator lock; they leave both keyboards installed for the manual typing check.
+# The device steps hold one emulator's lock from the install to the last check, so no other run
+# reinstalls SebType in between. They leave both keyboards installed for the manual typing check.
 device_checks() {
   "$adb" -s "$serial" shell pm path org.futo.inputmethod.latin >/dev/null || "$adb" -s "$serial" install "$futo_apk"
   # A fresh install, so nothing imported earlier (a dictionary, settings) hides what the APK ships with.
@@ -109,18 +102,28 @@ device_checks() {
   done
   echo "keyboards listed: $imes"; return 1
 }
-export -f device_checks; export adb serial apk futo_apk
-T=2000 check install-beside-futo devq -P 1 -w 1800 -m 5 -n "sebtype #5 test-emulator" "$lock" bash -c device_checks
-
-if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
-  # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
-  PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run devq -P 1 -w 1800 -m 15 -n "sebtype #8 test-chinese" "$lock" \
-    python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
-  # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
-  PATH=$(dirname "$adb"):$PATH T=2400 check settings-run devq -P 1 -w 1800 -m 15 -n "sebtype #41 test-settings" "$lock" \
-    python3 -I sebtype/test-settings.py "$serial" "$results" "$out"
-else
-  result SKIP chinese "needs install-beside-futo and bumped-apk"
-fi
+device_suite() {
+  export serial=$ANDROID_SERIAL
+  echo "testing $apk on $serial ($("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r'))"
+  [[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] ||
+    { result FAIL emulator "$serial can't run arm64 apps"; return 1; }
+  # Rime's data is in the app's private storage (#32), which the checks read as root.
+  [[ $("$adb" -s "$serial" shell su 0 id -u | tr -d '\r') == 0 ]] ||
+    { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
+  T=300 check install-beside-futo device_checks
+  if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
+    # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
+    PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run \
+      python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
+    # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
+    PATH=$(dirname "$adb"):$PATH T=2400 check settings-run python3 -I sebtype/test-settings.py "$serial" "$results" "$out"
+  else
+    result SKIP chinese "needs install-beside-futo and bumped-apk"
+  fi
+}
+export -f result check device_checks device_suite; export adb apk futo_apk field_apk results
+sebtype/emulator.sh -P 1 -w 1800 -m 35 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
+  2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
+  result FAIL emulator "$(head -1 "$out/emulator.log")"
 
 ! grep -qv '^PASS' "$results"

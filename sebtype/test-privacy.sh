@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Privacy checks for #29 on the release APK: no typed-text logs compiled in, no backup or device transfer,
-# the "try typing here" popup not exported, and (on the local emulator) the installed app's backup flags.
+# the "try typing here" popup not exported, and (on a free emulator, sebtype/emulator.sh) the installed app's backup flags.
 # One line per check in /tmp/sebtype/test-privacy-results.txt; logs next to it. Exit 0 only if all pass.
 # Typing in all three languages while watching logcat is checked by hand through T3's device tools.
 set -uo pipefail
@@ -48,21 +48,14 @@ check_dex_absent dex-no-unigram-word 'Cannot add unigram entry. word'
 check_dex_absent dex-no-reweighted 'reweighted, from'
 
 # Installed app: Android must not report it as backup-enabled.
-serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
-if [[ -z $serial ]]; then
-  result SKIP installed-no-backup "no running emulator"
-elif [[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) != *arm64-v8a* ]]; then
-  result SKIP installed-no-backup "emulator $serial can't run arm64 apps"
-else
-  device_check() {
-    "$adb" -s "$serial" uninstall dev.sebb.sebtype >/dev/null
-    "$adb" -s "$serial" install "$apk" >/dev/null || return 1
-    flags=$("$adb" -s "$serial" shell dumpsys package dev.sebb.sebtype | grep -m1 ' flags=\[')
-    echo "$flags"; [[ -n $flags && $flags != *ALLOW_BACKUP* ]]
-  }
-  export -f device_check; export adb serial apk
-  lock=/tmp/agent-locks/devices/emulator-$("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r').lock # shared by all projects
-  T=2000 check installed-no-backup devq -P 4 -w 1800 -m 5 -n "sebtype #29 test-privacy" "$lock" bash -c device_check
-fi
+device_check() {
+  [[ $("$adb" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "$ANDROID_SERIAL can't run arm64 apps"; return 1; }
+  "$adb" uninstall dev.sebb.sebtype >/dev/null
+  "$adb" install "$apk" >/dev/null || return 1
+  flags=$("$adb" shell dumpsys package dev.sebb.sebtype | grep -m1 ' flags=\[')
+  echo "$flags"; [[ -n $flags && $flags != *ALLOW_BACKUP* ]]
+}
+export -f device_check; export adb apk
+T=2000 check installed-no-backup sebtype/emulator.sh -P 4 -w 1800 -m 5 -n "sebtype #29 test-privacy" -- bash -c device_check
 
 ! grep -qv '^PASS' "$results"

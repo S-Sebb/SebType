@@ -17,7 +17,7 @@ and URL fields).
 |---|---|
 | `build.sh` | Builds `out/rime-android-<version>-arm64-v8a.aar` (`RIME_ABIS=x86_64` for the emulator). Takes the build lock. |
 | `fetch-aar.sh [DEST]` | Downloads the released aar and checks it against `rime-android.sha256`. For the app build. |
-| `smoke-test.sh` | Checks symbols, Kotlin API and size of the arm64 aar, then deploys rime-ice on a running emulator and types `ranh`, `rq`, `hm`. Results in `/tmp/sebtype/7-smoke/results.txt`. |
+| `smoke-test.sh` | Checks symbols, Kotlin API and size of the arm64 aar, then deploys rime-ice on a free emulator (`sebtype/emulator.sh`) and types `ranh`, `rq`, `hm`. Results in `/tmp/sebtype/7-smoke/results.txt`. |
 
 The aar is not committed. A release is the GitHub release `rime-android-<version>` with
 the arm64 aar as its asset; bump `RIME_ANDROID_VERSION` and `rime-android.sha256` with it:

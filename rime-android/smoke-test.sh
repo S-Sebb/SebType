@@ -2,7 +2,7 @@
 # Smoke test for the Rime aar with Lua. One command, no arguments:
 #   - builds the arm64-v8a aar and checks its exported symbols, Kotlin API and size;
 #   - builds an x86_64 variant with an instrumented test that deploys rime-ice and
-#     types ranh / rq / hm on a running emulator (AVD guide35 or lossbench).
+#     types ranh / rq / hm on a free emulator (../sebtype/emulator.sh).
 # Results: one line per check in $RESULTS; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
 
@@ -31,13 +31,6 @@ finish() { grep -qv '^PASS\|^INFO' "$RESULTS" && exit 1; exit 0; }
 for tool in devq gh git "$JAVA_HOME/bin/javap" unzip rsync "$ADB" "$NDK_BIN/llvm-nm"; do
   command -v "$tool" >/dev/null || { echo "preflight: missing $tool"; exit 2; }
 done
-SERIAL=""
-for s in $("$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1}'); do
-  avd="$("$ADB" -s "$s" emu avd name 2>/dev/null | head -1 | tr -d '\r')"
-  [[ "$avd" == guide35 || "$avd" == lossbench ]] && SERIAL="$s" && break
-done
-[[ -n "$SERIAL" ]] || { echo "preflight: no running emulator guide35 or lossbench (open one with device_open)"; exit 2; }
-LOCK=/tmp/agent-locks/devices/emulator-$avd.lock # shared by all projects
 
 # --- arm64 aar: build, symbols, API, size --------------------------------------
 if (cd "$HERE" && ./build.sh) > "$LOGS/build-arm64.log" 2>&1; then
@@ -102,8 +95,8 @@ fi
 TEST_APK="$HERE/work/RimeJni/rime/build/outputs/apk/androidTest/release/rime-release-androidTest.apk"
 
 # --- emulator, under the emulator lock -----------------------------------------
-devq -w 1800 -m 15 -P "${DEVQ_RANK:-2}" -n "rime-android smoke test" "$LOCK" bash -c '
-  adb=$1 s=$2 apk=$3 logs=$4
+"$HERE/../sebtype/emulator.sh" -w 1800 -m 15 -P "${DEVQ_RANK:-2}" -n "rime-android smoke test" -- bash -c '
+  adb=$1 s=$ANDROID_SERIAL apk=$2 logs=$3
   $adb -s $s logcat -c
   $adb -s $s install -r -t "$apk" > "$logs/install.log" 2>&1 || exit 3
   timeout 1500 $adb -s $s shell am instrument -w -r \
@@ -112,11 +105,11 @@ devq -w 1800 -m 15 -P "${DEVQ_RANK:-2}" -n "rime-android smoke test" "$LOCK" bas
   $adb -s $s logcat -d -s RimeIceSmokeTest RimeJNI librime > "$logs/logcat.txt"
   $adb -s $s uninstall icu.astronot233.rime.test > /dev/null 2>&1
   exit 0
-' _ "$ADB" "$SERIAL" "$TEST_APK" "$LOGS"
+' _ "$ADB" "$TEST_APK" "$LOGS" 2> "$LOGS/emulator.log"
 case $? in
   0) ;;
   3) result FAIL install "see $LOGS/install.log"; finish ;;
-  *) result FAIL emulator-lock "$(devq status "$LOCK" | head -1)"; finish ;;
+  *) result FAIL emulator "$(head -1 "$LOGS/emulator.log")"; finish ;;
 esac
 
 # am instrument -r: status code 1 = started, 0 = passed, -2 = failed, -1 = error.
