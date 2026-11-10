@@ -109,10 +109,11 @@ if ($Typing) {
       }
       Check "japanese-$Typing" {
         To-Language '0411'
-        if ((Typed 'a') -eq 'a') { Keys 'Alt_L+grave' }  # Japanese starts in English or あ
-        $t = Typed 'nihongo '
-        Keys Return
-        if ($t -ne '日本語') { throw "nihongo + Space gave '$t'" }
+        # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
+        function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
+        if ((Committed 'a') -eq 'a') { Keys 'Alt_L+grave' }
+        $t = Committed 'nihongo '
+        if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
         $t
       }
     } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue }
@@ -175,6 +176,9 @@ namespace SebTypeSetupTest {
           return true;
         }
       }
+      // A task dialog's buttons aren't windows: TDM_CLICK_BUTTON with the button's id (IDOK 1, IDYES 6).
+      int id = caption == "OK" ? 1 : caption == "Yes" ? 6 : 0;
+      if (id != 0 && Cls(p) == "#32770") { PostMessage(p, 0x0466, (IntPtr)id, IntPtr.Zero); return true; }
       return false;
     }
     public static void Shot(IntPtr h, string path) {
@@ -221,6 +225,9 @@ namespace SebTypeSetupTest {
     if (-not (Wait-Until 300 { Test-Path "$out\typing-$phase-done" })) { Result "typing-$phase" FAIL 'the typing checks took over 5 minutes' }
     Get-Content -Encoding utf8 "$out\typing-$phase-results.txt" | Where-Object { $_ } | ForEach-Object { Add-Content -Encoding utf8 $results $_; Write-Host $_ }
   }
+
+  # Windows Server opens Server Manager at an admin's logon, in front of whatever the test shows.
+  if (Wait-Until 45 { Get-Process ServerManager -ErrorAction SilentlyContinue }) { Start-Sleep 5; Get-Process ServerManager | Stop-Process -Force }
 
   # How this account is before SebType: English and Chinese (Microsoft Pinyin), as on a Chinese PC.
   $ll = New-WinUserLanguageList en-US
@@ -353,7 +360,8 @@ namespace SebTypeSetupTest {
       Page $h 'Putting your old keyboards back'; $null = Shot TUninstallProgressForm '6-uninstalling'
       $h = Window '#32770' 600
       $win::Shot($h, "$out\73-7-uninstalled.png")
-      if ($win::Texts($h) -notlike '*was removed*') { throw "the uninstaller says: $($win::Texts($h))" }
+      $said = $win::Texts($h)  # empty for a task dialog, whose text isn't in windows: the picture shows it
+      if ($said -and $said -notlike '*was removed*') { throw "the uninstaller says: $said" }
       Click $h 'OK'
       if (-not (Wait-Until 120 { Uninstalled })) { throw 'the uninstaller did not finish' }
       'confirm, removing, removed'

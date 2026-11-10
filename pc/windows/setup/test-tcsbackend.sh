@@ -2,8 +2,8 @@
 # Tests SebType's installer (#73) on TCSBackEnd (Windows Server 2022) from nobara-pc, in the background,
 # and puts TCSBackEnd back as found. One command, no arguments:
 #   pc/windows/setup/test-tcsbackend.sh
-# It takes SebType-setup-*.exe from this branch's newest successful "Windows setup" run (gh), runs
-# test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
+# It takes SebType-setup-*.exe from the "Windows setup" CI run of this commit (gh), or else from build/,
+# runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
 # (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
@@ -24,13 +24,19 @@ mkdir -p "$out"; rm -rf "${out:?}"/*
 missing=
 command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v magick >/dev/null && python3 -c 'import Xlib' 2>/dev/null ||
   missing='needs gamescope, xfreerdp, ImageMagick and python3-xlib'
-run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$branch" --status success -L 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)
-[ -n "$run" ] || missing=${missing:-"no successful Windows setup run on $branch yet"}
-if [ -z "$missing" ]; then
-  gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing="downloading sebtype-setup from run $run failed"
+# The setup CI built from this commit, else one built here into build/ (ISCC under Wine, from CI's other
+# artifacts) while CI's Mozc build still runs.
+head=$(git -C "$repo" rev-parse HEAD)
+run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$branch" --status success --json databaseId,headSha \
+  -q "map(select(.headSha == \"$head\"))[0].databaseId // empty" 2>/dev/null)
+if [ -n "$run" ]; then
+  gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
+  exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
+else
+  exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
 fi
-exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
-[ -n "$exe" ] || missing=${missing:-"run $run has no SebType-setup-*.exe"}
+[ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
+echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 [ -n "$missing" ] && { echo "BLOCKED preflight: $missing"; exit 1; }
 

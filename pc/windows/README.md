@@ -111,7 +111,7 @@ can't show SebType's EN key there.
 ### Test
 
 ```sh
-pc/windows/setup/test-tcsbackend.sh   # from nobara-pc; the newest sebtype-setup artifact of this branch
+pc/windows/setup/test-tcsbackend.sh   # from nobara-pc; this commit's sebtype-setup artifact, or build/SebType-setup-*.exe
 ```
 
 Like Mozc's test (below), it runs on TCSBackEnd under its device lock, in the background, and puts
