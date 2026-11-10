@@ -144,7 +144,7 @@ each size folder, no admin needed), or the English icons all come out as **A** (
 | Patch | Change |
 |---|---|
 | `caps-lock-icon.patch` | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
-| `shift-tap.patch` | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't, which would toggle back on the release (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |
+| `shift-tap.patch` | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |
 | `japanese-name.patch` | Japanese reads **日本語** in Win+Space and the language settings, not "Mozc" (Decisions #2, #92), as Chinese reads 中文 (`win32/tip/tip_resource.rc`, `win32/base/tsf_registrar.cc`) |
 
 `make_icons.py` replaces Mozc's mode icons with `.ico` files holding a PNG for each tray size from
