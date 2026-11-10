@@ -41,7 +41,10 @@ pss_kb() { # [label]: total PSS; the full breakdown stays in run/meminfo-<label>
   local f=$work/meminfo-${1:-last}.txt
   sh dumpsys meminfo "$pkg" > "$f"; awk '/TOTAL PSS:/ {print $3; exit}' "$f"
 }
-open_field() { sh am start -W -S -n "$field_act" "$@" > /dev/null; sleep 3; }
+open_field() {
+  local o; o=$(sh am start -W -S -n "$field_act" "$@") || { echo "test field didn't open: $(tail -2 <<<"$o" | tr '\n' ' ')" >&2; return 1; }
+  sleep 3
+}
 geometry() { # keyboard grid from the screen width and the keyboard window's top, in px
   W=$(sh wm size | awk -F'[ x]' '/Physical/ {print $3}' | tail -1)
   dpi=$(sh wm density | awk '/Physical/ {print $3}' | tail -1)
@@ -72,6 +75,11 @@ taps() { # gap_ms text: types the text with monkey (G = globe, E = enter), one t
   } > "$work/taps.txt"
   "$adb" push "$work/taps.txt" /data/local/tmp/sebtype-perf-taps.txt > /dev/null
   sh monkey -f /data/local/tmp/sebtype-perf-taps.txt 1 > /dev/null 2>&1
+  on_field
+}
+on_field() { # the taps went to the test field; another app on top means something else drives the device (#76)
+  local focus; focus=$(sh dumpsys window | grep -m1 mCurrentFocus | sed 's/.* u0 //; s/}.*//')
+  [[ $focus == "$field"/* ]] || { echo "${focus:-another window} took the screen while typing: is something else using this device without its lock?" >&2; return 1; }
 }
 trace_start() { # name: Perfetto with frame timelines, input/view slices and scheduling
   sh rm -f "/data/misc/perfetto-traces/sebtype-$1.pftrace"
@@ -338,10 +346,12 @@ export APK=$(realpath "$APK")
 # Gboard first: stock FUTO crashes in Mozc on the emulator.
 { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
   sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
-# Device locks are shared by all projects: one per device, named after the AVD or the phone's model.
+# Device locks are shared by all projects. An emulator's is named after its AVD; a phone shares the
+# lock of the PC it's plugged into, which other projects (SebChat) take for the phone. A lock of its
+# own let two agents tap the phone at once (#76).
 case $ANDROID_SERIAL in
   emulator-*) lock=/tmp/agent-locks/devices/emulator-$("$adb" emu avd name | head -1 | tr -d '\r').lock ;;
-  *) lock=/tmp/agent-locks/devices/$(sh getprop ro.product.manufacturer | tr 'A-Z' 'a-z')-$(sh getprop ro.product.model | tr 'A-Z' 'a-z').lock ;;
+  *) lock=/tmp/agent-locks/devices/$(hostname -s).lock ;;
 esac
 echo "measuring $APK on $ANDROID_SERIAL ($(sh getprop ro.product.model), Android $(sh getprop ro.build.version.release))"
 
