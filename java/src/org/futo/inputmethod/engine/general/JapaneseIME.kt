@@ -78,6 +78,7 @@ import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.SessionComma
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoConfig
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoUserDictionaryStorage
 import java.io.File
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -206,11 +207,26 @@ fun initJniDictLocations(context: Context) {
 }
 
 private const val MOZC_DICT_NAME = "FUTO_UserDict"
+private fun sha256(text: String) =
+    MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 typealias MozcStatus = ProtoUserDictionaryStorage.UserDictionaryCommandStatus.Status
-fun refreshMozcDictionaries(context: Context, executor: SessionExecutor) {
+fun refreshMozcDictionaries(context: Context, executor: SessionExecutor, onlyIfChanged: Boolean = false) {
     val necessaryDictionaries = getImportedUserDictFilesForLocale(context, Locale.JAPANESE)
     val missingDictionaries = necessaryDictionaries.toMutableList()
-    val userDictionaryIO = UserDictionaryIO(context)
+    val words = UserDictionaryIO(context).get()
+        .filter { it.locale?.let { localeFromString(it) }?.language == "ja" }
+        .mapNotNull { decodeJapanesePersonalWord(it) }
+
+    // SebType (#97): Mozc keeps the user dictionaries it was given, so its start re-sends them only when
+    // the imported dictionaries or the personal words changed. Re-sending them at every start crashed the
+    // keyboard on the emulator (a corrupt protobuf in this command burst; the cause is unknown). A
+    // missing stamp means nothing was given yet.
+    val stamp = File(mozcUserProfileDir(context), "sebtype-user-dictionaries.sha256")
+    val source = sha256(
+        (necessaryDictionaries.map { (file, _) -> "${file.name}\t${file.length()}\t${file.lastModified()}" } +
+            words.map { "${it.furigana}\t${it.output}\t${it.pos.id}" }).joinToString("\n")
+    )
+    if(onlyIfChanged && source == (stamp.takeIf { it.exists() }?.readText() ?: sha256(""))) return
 
     val sessionResult = executor.sendUserDictionaryCommand(
         ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
@@ -306,10 +322,6 @@ fun refreshMozcDictionaries(context: Context, executor: SessionExecutor) {
         val dictId = result.dictionaryId
 
         // Add every word from personal dictionary
-        val words = userDictionaryIO.get()
-            .filter { it.locale?.let { localeFromString(it) }?.language == "ja" }
-            .mapNotNull { decodeJapanesePersonalWord(it) }
-
         words.forEach {
             executor.sendUserDictionaryCommand(
                 ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
@@ -339,6 +351,7 @@ fun refreshMozcDictionaries(context: Context, executor: SessionExecutor) {
             if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS)
                 throw Exception("Saving user dict failed! [${it.status}]")
         }
+        stamp.writeText(source)
     } finally {
         executor.sendUserDictionaryCommand(
             ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
@@ -491,7 +504,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
 
         if(helper.context.isDirectBootUnlocked) {
             executor.syncData()
-            refreshMozcDictionaries(helper.context, executor)
+            refreshMozcDictionaries(helper.context, executor, onlyIfChanged = true)
         }
     }
 

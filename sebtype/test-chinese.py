@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock: password,
-private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
+private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38) and its cold starts (#97).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -783,6 +783,68 @@ def no_switch_in_japanese():
 
 
 check("ja-menu-has-no-zh-switch", no_switch_in_japanese, needs=["ja-chip"])
+
+
+def sebtype_crashes():
+    log = adb("logcat", "-b", "crash", "-d")
+    # A native crash names the process by its last 15 characters.
+    return len(
+        re.findall(
+            r"Fatal signal .*\(ev\.sebb\.sebtype\)|Process: dev\.sebb\.sebtype,", log
+        )
+    )
+
+
+def stop_keyboard():
+    other = next(
+        i for i in adb("shell", "ime", "list", "-s").split() if not i.startswith(PKG)
+    )
+    adb("shell", "ime", "set", other)
+    adb("shell", "am", "force-stop", PKG)
+
+
+def cold_starts_in_japanese(n=10):
+    """Each new keyboard process starts Mozc again in 日 without crashing. Re-sending Mozc's user
+    dictionaries at every start crashed it in most starts on the emulator (#97)."""
+    adb("logcat", "-b", "crash", "-c")
+    for i in range(n):
+        stop_keyboard()
+        try:
+            open_field()
+            type_keys("ka")
+        except Fail as e:
+            raise Fail(f"start {i + 1}: {e}; {sebtype_crashes()} crashes so far") from e
+        if (text := field_text()) != "か":
+            raise Fail(f"start {i + 1}: typed ka, the field shows {text!r}")
+    if crashes := sebtype_crashes():
+        raise Fail(f"{crashes} crashes in {n} starts")
+    return f"{n} starts in 日, no crash; ka -> か each time"
+
+
+check("ja-cold-starts", cold_starts_in_japanese, needs=["ja-chip"])
+
+WORDS = "content://user_dictionary/words"
+
+
+def personal_word_after_restart():
+    """A Japanese personal word added while the keyboard is stopped reaches Mozc at its next start (#97:
+    the start re-sends the user dictionaries only when they changed)."""
+    stop_keyboard()
+    adb(
+        "shell",
+        f"content insert --uri {WORDS} --bind word:s:SebType語 --bind 'shortcut:s:てすとご\t1'"
+        " --bind locale:s:ja --bind frequency:i:250 --bind appid:i:0",
+    )
+    try:
+        got = candidates_for("tesutogo")
+    finally:
+        adb("shell", f"content delete --uri {WORDS} --where \"word='SebType語'\"")
+    if "SebType語" not in got:
+        raise Fail(f"tesutogo -> {got[:6]}, without the personal word SebType語")
+    return f"tesutogo -> {got[:6]}"
+
+
+check("ja-personal-word-after-restart", personal_word_after_restart, needs=["ja-chip"])
 
 
 def main_learns():
