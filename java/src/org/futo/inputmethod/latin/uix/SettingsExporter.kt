@@ -409,7 +409,8 @@ object SettingsExporter {
 
                 entry.name.startsWith("mozc/") -> zipIn.extractTo(mozcUserProfileDir(context), entry.name)
 
-                entry.name.startsWith("rime/") -> zipIn.extractTo(ChineseIME.getRimeDir(context), entry.name)
+                // Older exports also carry rime/shared/, the bundled data, which installs itself
+                entry.name.startsWith("rime/user/") -> zipIn.extractTo(ChineseIME.getRimeDir(context), entry.name)
 
                 entry.name.startsWith("themes/") -> zipIn.extractTo(themesDir, entry.name)
 
