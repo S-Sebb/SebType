@@ -101,4 +101,4 @@ Results go to `results.txt` next to it.
 Caps Lock and the input method are put back as the test found them.
 
 The checks reach Chinese by asking Windows for it directly, so only `win-space-cycle` sends Win+Space.
-Windows Server 2022 (TCSBackEnd) ignored synthetic Win+Space there; a desktop PC is where that check counts.
+Windows Server 2022 (TCSBackEnd) ignores synthetic Win+Space in some runs; a desktop PC is where that check counts.
