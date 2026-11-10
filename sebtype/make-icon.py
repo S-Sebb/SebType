@@ -7,8 +7,12 @@
   vector. FUTO's code also uses this drawable as a tinted silhouette (setup screen, notifications).
 - Legacy icons (mipmap-*/ic_launcher.png and ic_launcher_round.png, 48dp): the visible 72dp of the adaptive
   icon, in a rounded square and a circle.
+
+`make-icon.py --windows DIR` writes DIR/sebtype.ico (the legacy icon at every Windows size, 16-256 px) and
+DIR/pig.png (the cut-out pig) for the Windows installer and Configurator (#73) instead.
 """
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -79,29 +83,45 @@ def canvas(px_per_dp, image, size_dp=108):
     return out
 
 
+def legacy(px, shape="square"):
+    """The 48dp legacy icon at px pixels: the visible 72dp of the adaptive icon, rounded square or circle."""
+    side = px * 4  # 4x supersampled
+    big = canvas(side / 72, rgba)
+    full = Image.new("RGBA", big.size, BACKGROUND)
+    full.alpha_composite(big)
+    off = (full.width - side) // 2
+    view = full.crop((off, off, off + side, off + side))
+    box = (0, 0, side - 1, side - 1)
+    mask = Image.new("L", view.size)
+    if shape == "square":
+        ImageDraw.Draw(mask).rounded_rectangle(box, side * 0.18, 255)
+    else:
+        ImageDraw.Draw(mask).ellipse(box, 255)
+    icon = Image.new("RGBA", view.size)
+    icon.paste(view, mask=mask)
+    return icon.resize((px, px), Image.LANCZOS)
+
+
+if len(sys.argv) == 3 and sys.argv[1] == "--windows":
+    # Windows (#73): the phone's icon at every size Windows asks for, each drawn from the art, in one .ico
+    # (the installer's and the Configurator's), and the cut-out pig for the installer's pictures.
+    out = Path(sys.argv[2])
+    out.mkdir(parents=True, exist_ok=True)
+    sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256]
+    icons = [legacy(px) for px in sizes]
+    icons[-1].save(
+        out / "sebtype.ico", sizes=[(px, px) for px in sizes], append_images=icons[:-1]
+    )
+    pig = canvas(512 / 108, rgba)
+    pig.crop(pig.getbbox()).save(out / "pig.png", optimize=True)
+    sys.exit()
+
 for name, d in DENSITIES.items():
     folder = res / f"mipmap-{name}"
     folder.mkdir(exist_ok=True)
     canvas(d, rgba).save(folder / "ic_launcher_pig.png", optimize=True)
-    # Legacy: 48dp icon showing the 72dp viewport, so render the canvas at 48/72 scale and crop the middle.
-    big = canvas(d * 48 / 72 * 4, rgba)  # 4x supersampled
-    full = Image.new("RGBA", big.size, BACKGROUND)
-    full.alpha_composite(big)
-    side = round(48 * d * 4)
-    off = (full.width - side) // 2
-    view = full.crop((off, off, off + side, off + side))
-    box = (0, 0, side - 1, side - 1)
-    for file in ("ic_launcher.png", "ic_launcher_round.png"):
-        mask = Image.new("L", view.size)
-        if file == "ic_launcher.png":
-            ImageDraw.Draw(mask).rounded_rectangle(box, side * 0.18, 255)
-        else:
-            ImageDraw.Draw(mask).ellipse(box, 255)
-        icon = Image.new("RGBA", view.size)
-        icon.paste(view, mask=mask)
-        icon.resize((round(48 * d),) * 2, Image.LANCZOS).save(
-            folder / file, optimize=True
-        )
+    legacy(round(48 * d)).save(folder / "ic_launcher.png", optimize=True)
+    legacy(round(48 * d), "round").save(folder / "ic_launcher_round.png", optimize=True)
 
 # Monochrome: bright parts of the subject (pink, keycaps, keyboard body ~70) without the outline.
 bright = Image.fromarray(((subject & (lum > 62)) * 255).astype(np.uint8), "L")

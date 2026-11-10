@@ -1,10 +1,11 @@
 # SebType's Weasel (小狼毫) installer for Windows Chinese (#13): pc/windows/weasel/build.ps1 on a
 # Windows runner, with the tray icons made from pc/icons. The installer and perf-rime.exe are the run's
-# artifact "sebtype-weasel"; pc/windows/stage.sh downloads it.
+# artifact "sebtype-weasel"; windows-setup.yml packs the installer into SebType-setup.exe (#73).
 name: Weasel
 
 on:
   workflow_dispatch:
+  workflow_call:  # windows-setup.yml packs the installer into SebType's setup
   push:
     paths:
       - pc/windows/weasel/**

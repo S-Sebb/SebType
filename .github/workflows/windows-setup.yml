@@ -1,0 +1,129 @@
+# SebType's Windows installer (#73): SebType-setup-<version>.exe, built with Inno Setup from
+# pc/windows/setup/sebtype.iss. It packs SebType's Weasel (weasel.yml), the Chinese data
+# (tools/rime-data/build.sh), SebType's Mozc (pc/windows/mozc/build.ps1), the Configurator
+# (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
+# run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
+name: Windows setup
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: &paths
+      - pc/windows/**
+      - pc/icons/**
+      - pc/configurator/**
+      - pc/linux/mozc-keymap.tsv
+      - pc/linux/perf-rime.c
+      - tools/rime-data/**
+      - rime-android/versions.sh
+      - sebtype/make-icon.py
+      - sebtype/fonts/**
+      - assets/icon.png
+      - .github/workflows/windows-setup.yml
+      - .github/workflows/weasel.yml
+      - .github/workflows/configurator.yml
+  push:
+    branches: [main]
+    paths: *paths
+
+permissions:
+  contents: read
+
+jobs:
+  weasel:
+    uses: ./.github/workflows/weasel.yml
+
+  configurator:
+    uses: ./.github/workflows/configurator.yml
+
+  rime-data:
+    runs-on: ubuntu-24.04
+    # Fedora has librime 1.16.1, the version Weasel and the phone run, so they take the tables as built.
+    container: fedora:44
+    steps:
+      - run: dnf install -q -y git librime librime-lua opencc gcc gcc-c++ curl unzip zip python3 diffutils findutils
+      - uses: actions/checkout@v4
+      - run: tools/rime-data/build.sh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rime-data
+          path: out/rime/rime-data.zip
+          if-no-files-found: error
+
+  pictures:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y librsvg2-bin python3-pil python3-numpy fonts-noto-cjk
+      - run: python3 pc/windows/setup/pictures.py out/pictures
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-pictures
+          path: out/pictures
+          if-no-files-found: error
+
+  mozc:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      # pc/icons has names that differ only by case (ja-a, ja-A): its folders must be case-sensitive (#77).
+      - name: Case-sensitive icons
+        run: |
+          Get-ChildItem pc/icons -Directory | ForEach-Object {
+            Remove-Item "$($_.FullName)\*" -Force
+            fsutil.exe file setCaseSensitiveInfo $_.FullName enable
+            if ($LASTEXITCODE) { throw "setCaseSensitiveInfo failed for $($_.FullName)" }
+          }
+          git checkout -- pc/icons
+          if (-not (Test-Path pc/icons/32/ja-A.svg) -or -not (Test-Path pc/icons/32/ja-a.svg)) { throw 'ja-a and ja-A did not both check out' }
+      # The MSI depends only on these; a run with the same ones reuses it.
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: out/mozc
+          key: mozc-msi-${{ hashFiles('pc/windows/mozc/versions.psd1', 'pc/windows/mozc/*.patch', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/windows/mozc/apply_patch.py', 'pc/icons/**') }}
+      - uses: actions/setup-python@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.13'
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          $msi = pc/windows/mozc/build.ps1 -WorkDir D:\m | Select-Object -Last 1
+          New-Item -ItemType Directory -Force out/mozc | Out-Null
+          Copy-Item $msi out/mozc/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-mozc
+          path: out/mozc/*.msi
+          if-no-files-found: error
+
+  setup:
+    needs: [weasel, configurator, rime-data, pictures, mozc]
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: in
+      - name: Inno Setup
+        run: |
+          $exe = "$env:RUNNER_TEMP\innosetup.exe"
+          curl.exe -sSfL -o $exe https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
+          if ((Get-FileHash $exe).Hash -ne 'a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c') { throw 'Inno Setup: checksum mismatch' }
+          Start-Process -Wait $exe '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$env:RUNNER_TEMP\inno"
+      - name: Build
+        run: |
+          & "$env:RUNNER_TEMP\inno\ISCC.exe" /Qp "/DBuild=${{ github.run_number }}" "/DIn=$PWD\in" pc/windows/setup/sebtype.iss
+          if ($LASTEXITCODE) { throw "ISCC failed ($LASTEXITCODE)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-setup
+          path: pc/windows/setup/out/*.exe
+          if-no-files-found: error
