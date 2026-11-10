@@ -26,11 +26,12 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | WeChat | `env QT_IM_MODULE=fcitx` in the user's WeChat launcher | WeChat bundles its own Qt on X11 and only finds Fcitx when named |
 | Chromium/Electron | `--enable-wayland-ime` in the user's launcher, only for apps the checklist below shows need it. None do today | Apps on native Wayland that don't turn on text-input by themselves |
 | Input methods | Adds `keyboard-us`, `rime`, `mozc` (EN → 中 → 日) to the first Fcitx5 group, keeping any others | Chinese and Japanese ready to switch to |
-| Language switch | In `~/.config/fcitx5/config`: `ShareInputState=All`, so every window shares one language, as on Windows. Super+Space is the "enumerate forward" key, and the trigger, Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L and group-switch keys are cleared. Fcitx5 reloads its config | Super+Space is the only language switch and cycles EN → 中 → 日 (a trigger key would only toggle English and the last language). Rime's own Shift tap still switches English inside Chinese |
+| Language switch | In `~/.config/fcitx5/config`: `ShareInputState=All`, so every window shares one language, as on Windows. Super+Space is the trigger key with `EnumerateWithTriggerKeys=False`, and Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L (enumerate) and the group-switch keys are cleared. Fcitx5 reloads its config | Super+Space is the only language switch and toggles English ⇄ the last other language (中文 or 日本語), also while Super stays held; the other one is picked from the tray menu, and then it is the one Super+Space returns to (#93). Rime's own Shift tap still switches English inside Chinese |
 | Japanese あ ⇄ English | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus a Shift tap and Alt+` (both あ ⇄ direct English). Other Mozc settings are kept. A running `mozc_server` is stopped; fcitx5-mozc starts it again on the next key. Shift tap and Alt+` from English back to あ work once Fcitx5 restarts (fcitx5-mozc reads the keys that work in direct mode only then): log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on, which makes KWin restart Fcitx5 | A Shift tap switches Japanese like Rime's Shift tap in Chinese, and Alt+` like on Windows. Shift+letter, F6–F10 and Space work as in Mozc's default keymap |
 | Alt+` in Plasma | Removes Alt+` from KWin's "Walk Through Windows of Current Application", which keeps Meta+` | Plasma would otherwise take Alt+` before Mozc sees it |
 | Tray icons | Installs `~/.local/share/icons/SebType`, an icon theme that holds only SebType's tray icons (`pc/icons`) and inherits the theme that was active, then makes it the active icon theme. Plasma reloads icons at once | The tray shows SebType's keycaps instead of the icon theme's keyboard, Rime logo and Mozc squares |
-| Chinese label | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. Rime's own schema menu (F4) lists the schema as `.中文` |
+| Chinese name | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. Rime's own schema menu (F4) lists the schema as `.中文` |
+| Japanese and English names | `mozc.conf` named 日本語 and `keyboard-us.conf` named English in the same `inputmethod` folder. Show once Fcitx5 restarts | The tray menu and the Super+Space popup read English · 中文 · 日本語 instead of Keyboard - English (US) · Rime · Mozc (#92). An entry there also renames the keyboard addon's built-in `keyboard-us`; its layout still comes from the id |
 | Typo correction | `sebtype_typo/keyboard: pc` in the same `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid. It takes effect with SebType's Chinese data (`tools/rime-data/build.sh`) |
 | 简/繁 key | Ctrl+Shift+F toggles rime-ice's `traditionalization` option at any time, added to `key_binder/bindings` in `~/.local/share/fcitx5/rime/default.custom.yaml`, keeping the file's other patches. Works once Rime redeploys (tray icon → Deploy, or a Fcitx5 restart) | Chinese switches between simplified and traditional output, as with Weasel on Windows. Only the output changes, so learned words stay shared; Ctrl+F alone stays Find in apps |
 | SebType Configurator | Builds `pc/configurator` with Rust's `cargo` when its sources changed, and installs it in `~/.local/share/sebtype/configurator` with the app-menu entry **SebType Configurator** (`sebtype-configurator.desktop`) and the phone's pig as its icon. Without Rust it only warns | SebType's settings without editing YAML: see [SebType Configurator](#sebtype-configurator) |
@@ -54,7 +55,7 @@ fcitx5-mozc keep it. If Mozc's settings are ever reset, rerun `setup-ime.sh`. To
 | Chinese | 中 | `fcitx-rime` |
 | Chinese, English mode | a | `fcitx_rime_latin` |
 | Chinese, English mode with Caps Lock | A | `fcitx_rime_latin_upper` |
-| Japanese hiragana | あ | `fcitx_mozc_hiragana` |
+| Japanese hiragana, and Japanese in the tray menu | あ | `fcitx_mozc_hiragana`, `fcitx_mozc` |
 | Japanese katakana (full and half width) | ア | `fcitx_mozc_katakana_full`, `fcitx_mozc_katakana_half` |
 | Japanese, English mode (direct, half and full ASCII) | a | `fcitx_mozc_direct`, `fcitx_mozc_alpha_half`, `fcitx_mozc_alpha_full` |
 | Japanese, English mode with Caps Lock | A | the same names with `_upper` (SebType's fcitx5-mozc) |
@@ -67,10 +68,18 @@ comes from the theme SebType's inherits. If you pick another icon theme in Syste
 To undo: `pc/linux/setup-ime.sh --undo-icons`. It makes the inherited theme active again and removes
 `~/.local/share/icons/SebType`.
 
+### Names
+
+To undo the names English · 中文 · 日本語: `pc/linux/setup-ime.sh --undo-names`. It removes the three
+input method entries from `~/.local/share/fcitx5/inputmethod` and the `.中文` schema name from
+`rime_ice.custom.yaml`, so Fcitx5 shows Keyboard - English (US), Rime (雾 in the popup) and Mozc again once
+it restarts.
+
 ### SebType Configurator
 
 SebType's settings app (`pc/configurator`, Rust with Slint), the PC counterpart of the phone's settings
-with the same groups and wording: 语言 (which languages Super+Space cycles and their order; Chinese's
+with the same groups and wording: 语言 (which languages are on and their order in the tray menu; Super+Space toggles the first one and the
+last other one; Chinese's
 简/繁 start, punctuation, emoji, fuzzy pinyin and own words; Japanese's half-width space and own words),
 键盘 (candidates per page, row or column, text size; the shortcuts), 主题 (the candidate window in
 SebType's Picnic look or the system's), 隐私 (learning, and forgetting what Rime or Mozc learned), 同步与备份
@@ -116,8 +125,9 @@ says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
 rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc and the Configurator,
-the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, and the Chinese popup
-text read from a private Fcitx5 running Rime). It doesn't touch the session.
+the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
+text read from a private Fcitx5 running Rime, and Super+Space, Rime's Shift tap and the tray menu's names,
+icons and picks in a private Fcitx5 with a stand-in for Plasma's tray). It doesn't touch the session.
 
 ## App checklist
 

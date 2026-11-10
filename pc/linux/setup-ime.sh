@@ -6,17 +6,19 @@
 # from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc puts Fedora's
 # fcitx5-mozc back in place of SebType's build. --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
+# --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0 undo_configurator=0
+dry=0 undo_icons=0 undo_mozc=0 undo_configurator=0 undo_names=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
   --undo-mozc) undo_mozc=1 ;;
   --undo-configurator) undo_configurator=1 ;;
+  --undo-names) undo_names=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-configurator]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-configurator | --undo-names]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -71,6 +73,20 @@ if ((undo_configurator)); then
     busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadAddonConfig s classicui 2>/dev/null || true
   fi
   [[ -d $picnic_theme ]] && { echo "change: remove $picnic_theme"; rm -r "$picnic_theme"; }
+  exit 0
+fi
+
+# Input method names (steps 12 and 12b): this account's copies of Fcitx5's input method entries, and the
+# Rime schema name that makes Chinese read 中文.
+im_dir=$data/fcitx5/inputmethod rime_dir=$data/fcitx5/rime rime_custom=$data/fcitx5/rime/rime_ice.custom.yaml
+names_note="Fcitx5 shows the new names once it restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+if ((undo_names)); then
+  for f in "$im_dir"/{rime,mozc,keyboard-us}.conf; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; changes=1; }; done
+  if grep -q '^  schema/name: ".中文"' "$rime_custom" 2>/dev/null; then
+    echo "change: drop the 中文 schema name from $rime_custom"
+    sed -i '/^  schema\/name: ".中文"/d' "$rime_custom"; changes=1
+  fi
+  ((changes)) && busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && echo "$names_note"
   exit 0
 fi
 
@@ -214,31 +230,34 @@ else
   warn "Fcitx5 isn't running; log out and in again, then rerun to set up its input methods"
 fi
 
-# 8. Super+Space is the only language switch, and it cycles EN → 中 → 日. It is Fcitx5's
-# enumerate-forward key: a trigger key would only toggle English and the last language. Fcitx5's other
-# switchers are cleared: Shift_L (AltTriggerKeys), Control+Shift+Shift_L, and the group switch, which
-# defaults to Super+Space too. Rime still handles its own Shift tap for English inside Chinese.
+# 8. Super+Space is the only language switch, and it toggles English and the last other language (#93):
+# it is Fcitx5's trigger key, which switches between the group's first input method (English) and the
+# one used last, and a pick from the tray menu becomes that one. EnumerateWithTriggerKeys=False keeps
+# it a toggle while Super stays held. Fcitx5's other switchers are cleared: Shift_L (AltTriggerKeys),
+# Control+Shift+Shift_L (EnumerateForwardKeys), and the group switch, which defaults to Super+Space too.
+# Rime still handles its own Shift tap for English inside Chinese.
 # ShareInputState=All: one language for every window, as on Windows (#42), not one per window.
 fcitx_conf=$config/fcitx5/config
 fcitx_global() { # prints the config with those settings, keeping everything else
-  awk -v cleared='TriggerKeys AltTriggerKeys EnumerateBackwardKeys EnumerateGroupForwardKeys EnumerateGroupBackwardKeys' '
-    BEGIN { n = split(cleared " EnumerateForwardKeys", keys, " ")
-      for (i = 1; i <= n; i++) { own["[Hotkey/" keys[i] "]"] = 1; own[keys[i]] = 1 } }
+  awk -v cleared='AltTriggerKeys EnumerateForwardKeys EnumerateBackwardKeys EnumerateGroupForwardKeys EnumerateGroupBackwardKeys' '
+    BEGIN { n = split(cleared " TriggerKeys EnumerateWithTriggerKeys", keys, " ")
+      for (i = 1; i <= n; i++) { own["[Hotkey/" keys[i] "]"] = 1; own[keys[i]] = 1 }
+      gsub(" ", "=\n", cleared); cleared = cleared "=\nEnumerateWithTriggerKeys=False" }
     /^\[/ { sec = $0; skip = (sec in own) }
     skip || (sec == "[Hotkey]" && (substr($0, 1, index($0, "=") - 1) in own)) { next }
     sec == "[Behavior]" && /^ShareInputState=/ { next }
     { print }
-    $0 == "[Hotkey]" { hotkey = 1; gsub(" ", "=\n", cleared); print cleared "=" }
+    $0 == "[Hotkey]" { hotkey = 1; print cleared }
     $0 == "[Behavior]" { behavior = 1; print "ShareInputState=All" }
-    END { if (!hotkey) { gsub(" ", "=\n", cleared); print "[Hotkey]\n" cleared "=" }
+    END { if (!hotkey) print "[Hotkey]\n" cleared
       if (!behavior) print "\n[Behavior]\nShareInputState=All"
-      print "\n[Hotkey/EnumerateForwardKeys]\n0=Super+space" }' "$@"
+      print "\n[Hotkey/TriggerKeys]\n0=Super+space" }' "$@"
 }
 canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
 src=$fcitx_conf; [[ -f $src ]] || src=/dev/null
 want=$(fcitx_global "$src")
 if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
-  change "make Super+Space the only language switch, shared by all windows, in $fcitx_conf (backup in $backup)"; then
+  change "make Super+Space the only language switch (English ⇄ the last other language), shared by all windows, in $fcitx_conf (backup in $backup)"; then
   [[ -f $fcitx_conf ]] && save "$fcitx_conf"
   mkdir -p "${fcitx_conf%/*}"; printf '%s\n' "$want" > "$fcitx_conf"
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true
@@ -305,12 +324,13 @@ if [[ " $(kga shortcutKeys as 4 "${walk[@]}" 2>/dev/null) " == *" $alt_grave "* 
 fi
 
 # 11. Tray icons: SebType's Set E keycaps for EN, 中, あ, ア, and a / A (Caps Lock) in the English modes.
-# Fcitx5 asks for these names; input-keyboard (EN) and fcitx-rime come from the active theme, so only a
+# Fcitx5 asks for these names (fcitx_mozc is Japanese's entry in the tray menu); input-keyboard (EN) and
+# fcitx-rime come from the active theme, so only a
 # theme of our own set as active overrides them. fcitx_rime_latin_upper is what fcitx5-rime asks for in
 # English with Caps Lock on; SebType's fcitx5-mozc build (step 1b) asks for <English mode icon>_upper.
 icons=$here/../icons
 icon_names=(input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A
-  fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
+  fcitx_mozc:hira fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
   fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a
   fcitx_mozc_direct_upper:ja-A fcitx_mozc_alpha_half_upper:ja-A fcitx_mozc_alpha_full_upper:ja-A)
 want_theme=$(mktemp -d)
@@ -339,8 +359,7 @@ rm -r "$want_theme"
 # input method's own label. So the schema name becomes ".中文" (its id stays rime_ice, so learned words
 # stay) and this account's copy of Rime's input method entry is named and labelled 中文. The same patch
 # sets typo correction (#46, in SebType's Chinese data) to a PC keyboard's neighbour keys.
-rime_dir=$data/fcitx5/rime rime_custom=$data/fcitx5/rime/rime_ice.custom.yaml
-rime_im=$data/fcitx5/inputmethod/rime.conf
+rime_im=$im_dir/rime.conf
 want_im=$'[InputMethod]\nName=中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True'
 lines='  schema/name: ".中文"  # SebType: Fcitx5 shows rime.conf'\''s label 中文 instead of 雾 (#69)
   sebtype_typo/keyboard: pc  # SebType: typo correction for a PC keyboard (#46)'
@@ -348,14 +367,33 @@ src=$rime_custom; [[ -f $src ]] || src=/dev/null
 want_custom=$(awk -v lines="$lines" '/^  (schema\/name|sebtype_typo\/keyboard):/ { next } { print } /^patch:/ && !done { print lines; done = 1 }
   END { if (!done) print "patch:\n" lines }' "$src")
 if { [[ $(cat "$rime_im" 2>/dev/null) != "$want_im" ]] || [[ $(cat "$src") != "$want_custom" ]]; } &&
-  change "label Chinese 中文 instead of 雾 and set typo correction to a PC keyboard in $rime_im and $rime_custom (backup in $backup)"; then
+  change "label Chinese 中文 instead of 雾 and set typo correction to a PC keyboard in $rime_im and $rime_custom (backup in $backup; undo: $0 --undo-names)"; then
   for f in "$rime_im" "$rime_custom"; do [[ -f $f ]] && save "$f"; done
   mkdir -p "${rime_im%/*}" "$rime_dir"
   printf '%s\n' "$want_im" > "$rime_im"; printf '%s\n' "$want_custom" > "$rime_custom"
   # Fcitx5 reads input method entries when it starts, and Rime redeploys then too.
-  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-    warn "Chinese reads 中文 once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$names_note"
 fi
+
+# 12b. Japanese reads 日本語 and English reads English in the tray menu and the switch popup (#92), not
+# Mozc and Keyboard - English (US): this account's copies of their input method entries, renamed. An
+# entry here also names the keyboard addon's built-in keyboard-us; the layout still comes from its id.
+for im in 'mozc 日本語 fcitx_mozc あ ja mozc' 'keyboard-us English input-keyboard en en keyboard'; do
+  read -r id name icon label lang addon <<<"$im"
+  f=$im_dir/$id.conf
+  want_im="[InputMethod]
+Name=$name
+Icon=$icon
+Label=$label
+LangCode=$lang
+Addon=$addon
+Configurable=True"
+  if [[ $(cat "$f" 2>/dev/null) != "$want_im" ]] && change "name $id $name in $f (undo: $0 --undo-names)"; then
+    [[ -f $f ]] && save "$f"
+    mkdir -p "$im_dir"; printf '%s\n' "$want_im" > "$f"
+    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$names_note"
+  fi
+done
 
 # 13. Ctrl+Shift+F switches Chinese between simplified and traditional output at any time (#36), as on
 # Windows; Ctrl+F alone stays Find. It toggles rime-ice's traditionalization option, which converts only
