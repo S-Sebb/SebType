@@ -36,7 +36,7 @@ try {
   Invoke-Checked 'apply sebtype.patch' { git apply (Join-Path $PSScriptRoot 'sebtype.patch') }
   foreach ($icon in 'zh.ico', 'en.ico', 'en_caps.ico') { Copy-Item (Join-Path $Icons $icon) resource\ -Force }
   # The resource script is UTF-16, so it is edited here rather than in the patch.
-  $rc = 'WeaselTSF\WeaselTSF.rc'
+  $rc = Join-Path $Work 'WeaselTSF\WeaselTSF.rc'  # .NET resolves relative paths against the process folder
   $text = [IO.File]::ReadAllText($rc, [Text.Encoding]::Unicode)
   $line = 'IDI_EN                  ICON                    "..\\resource\\en.ico"'
   if (-not $text.Contains($line)) { throw "$rc has no IDI_EN icon line" }
