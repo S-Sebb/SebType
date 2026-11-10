@@ -557,6 +557,8 @@ check("ranh", expect_first("ranh", "然后"), needs=["first-install"])
 check("lh-in-bar", lh_in_top, needs=["first-install"])
 check("rq-date", rq_date, needs=["first-install"])
 check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
+# Typo correction (#46): o for i, its neighbour on the phone grid, still gives 小时 first.
+check("typo-corrected", expect_first("xoaoshi", "小时"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
 check("password-plain", password_plain("password"), needs=["first-install"])

@@ -274,6 +274,10 @@ function Set-RimePatch([string]$file, [string]$drop, [string[]]$lines, [string]$
 Set-RimePatch 'rime_ice.custom.yaml' '^  schema/name:' `
   @('  schema/name: 中文  # SebType: Chinese reads 中文, not 雾凇拼音 (#69)') 'name the Chinese schema 中文'
 
+# Typo correction (#46) weighs a PC keyboard's neighbour keys, not the phone's touch grid.
+Set-RimePatch 'rime_ice.custom.yaml' '^  sebtype_typo/keyboard:' `
+  @('  sebtype_typo/keyboard: pc  # SebType: typo correction for a PC keyboard (#46)') 'set typo correction to a PC keyboard'
+
 # 4. Ctrl+Shift+F switches 简/繁 at any time (Decisions #2, #36). Both keysyms, as Shift may send either.
 Set-RimePatch 'default.custom.yaml' '^  (# SebType: Ctrl\+Shift\+F|key_binder/bindings/\+:$|  - \{ when: always, toggle: traditionalization, accept: Control\+Shift\+[fF] \})' @(
   '  # SebType: Ctrl+Shift+F switches 简/繁 (#36)'
