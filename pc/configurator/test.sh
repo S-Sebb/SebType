@@ -29,7 +29,13 @@ bin=$PWD/target/release/sebtype-configurator
 
 # A sandbox account: copies of this account's engine settings, without Rime's and Mozc's learned words.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
-trap 'rm -rf "$sb"' EXIT
+# The nested sessions' portal and ksecretd outlive their D-Bus: stop whatever still runs in the sandbox.
+cleanup() {
+  local p
+  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/data" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  sleep 1; rm -rf "$sb"
+}
+trap cleanup EXIT
 sandbox() {
   mkdir -p "$sb/config" "$sb/data/fcitx5"
   cp -r ~/.config/fcitx5 "$sb/config/"
