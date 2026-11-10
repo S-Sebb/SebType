@@ -4,9 +4,9 @@
 #   pc/windows/mozc/test-tcsbackend.sh
 # test.ps1 runs elevated in the Administrator session (disconnected; the live game backend there is
 # never touched). Its typing checks need a Remote Desktop session for its test user: this opens it with
-# FreeRDP inside headless gamescope (no window here, no sound) through an SSH tunnel, and test.ps1
-# logs it off. Needs the newest SebType-Mozc-*.msi from build.ps1 in build/ or ~/Downloads/xfer,
-# gamescope, xfreerdp and `ssh TCSBackEnd`. Output: one line per check; logs in $out. Takes the
+# FreeRDP inside headless gamescope (no window here, no sound) through an SSH tunnel, and types the
+# typing checks' keys into FreeRDP (rdp-keys.py), so they arrive as a keyboard's; test.ps1 logs it off. Needs the newest SebType-Mozc-*.msi from build.ps1 in build/ or ~/Downloads/xfer,
+# gamescope, xfreerdp, python3-xlib and `ssh TCSBackEnd`. Output: one line per check; logs in $out. Takes the
 # device lock; exit 0 only if every check passes and TCSBackEnd ends as found.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -24,7 +24,8 @@ python_sha=9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38
 python_zip=~/.cache/sebtype/python-3.13.17-embed-amd64.zip
 missing=
 [ -n "$msi" ] || missing='no SebType-Mozc-*.msi in build/ or ~/Downloads/xfer: run build.ps1 and xfer it here'
-command -v gamescope >/dev/null && command -v xfreerdp >/dev/null || missing=${missing:-'needs gamescope and xfreerdp'}
+command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && python3 -c 'import Xlib' 2>/dev/null ||
+  missing=${missing:-'needs gamescope, xfreerdp and python3-xlib'}
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 if [ -z "$missing" ] && ! echo "$python_sha  $python_zip" | sha256sum -c --status 2>/dev/null; then
   mkdir -p ~/.cache/sebtype
@@ -89,7 +90,7 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-test, C:\sebtype-mozc\out | Out-Null' | tps
-if ! { scp -q "$out/pc.tar" "$python_zip" "$out/run.ps1" TCSBackEnd:C:/sebtype-test/ && scp -q "$msi" TCSBackEnd:C:/sebtype-mozc/out/; } ||
+if ! { scp -q "$out/pc.tar" "$python_zip" "$out/run.ps1" TCSBackEnd:C:/sebtype-test/ && scp -q "$msi" "TCSBackEnd:C:/sebtype-mozc/out/SebType-Mozc-${msi##*SebType-Mozc-}"; } ||
    ! T=300 tps <<'EOF' | tee "$out/prepare.txt" | grep -q '^ready'
 $d = 'C:\sebtype-test'
 tar -xf "$d\pc.tar" -C $d; Expand-Archive "$d\python-3.13.17-embed-amd64.zip" "$d\python"
@@ -115,10 +116,13 @@ for i in $(seq 1 120); do
   sleep 5
 done
 if [ -n "${logon:-}" ]; then
-  ssh -N -o ExitOnForwardFailure=yes -L 13389:127.0.0.1:3389 TCSBackEnd & tunnel=$!
+  # Remote Desktop one way; the other way, test.ps1's typing checks reach rdp-keys.py, which types into
+  # FreeRDP on gamescope's display, so the keys reach Windows as a keyboard's scancodes.
+  ssh -N -o ExitOnForwardFailure=yes -L 13389:127.0.0.1:3389 -R 127.0.0.1:47812:127.0.0.1:47812 TCSBackEnd & tunnel=$!
   sleep 3
   # The password is this run's own, for a user test.ps1 removes when it ends.
-  gamescope --backend headless -W 1280 -H 800 -- xfreerdp /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \
+  gamescope --backend headless -W 1280 -H 800 -- bash -c 'python3 "$1" 47812 >"$2" 2>&1 & shift 2; exec xfreerdp "$@"' \
+    _ "$here/rdp-keys.py" "$out/rdp-keys.log" /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \
     /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /audio-mode:none -clipboard \
     >"$out/freerdp.log" 2>&1 & rdp=$!
 fi
@@ -127,7 +131,7 @@ for i in $(seq 1 180); do
   [ "$(echo 'Test-Path C:\sebtype-test\done' | tps | tr -d '\r')" = True ] && { finished=1; break; }
   sleep 10
 done
-[ -n "$rdp" ] && { pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
+[ -n "$rdp" ] && { pkill -f "$here/rdp-keys.py"; pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
 [ -n "$tunnel" ] && kill "$tunnel" 2>/dev/null
 
 tps > "$out/results.txt" <<'EOF'

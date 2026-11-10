@@ -5,9 +5,9 @@ and tray icons, and undo. One command, no arguments, run elevated (the MSI insta
     powershell -File pc/windows/mozc/test.ps1
 
 Needs build.ps1's MSI (newest SebType-Mozc-*.msi in C:\ or D:\sebtype-mozc\out) and Python. Nothing
-shows on the screen and nothing reads or sends real keys: the typing runs as a local user the test
+shows on the screen and no real keyboard is read or used: the typing runs as a local user the test
 creates and removes (sebtype-test, a standard account), in a Remote Desktop session of its own that no
-screen shows, and types through TSF (TsfHost.cs) instead of the keyboard. So the person at the PC keeps
+screen shows, whose RDP client types the keys (rdp-keys.py, reached on port 47812). So the person at the PC keeps
 their input method, Caps Lock and focus, and their own input settings are never changed: the run checks
 they end as they began (language list, default input method, hotkeys, text service settings, Caps
 Lock), and that Mozc, the test user and its profile are gone again. The session needs Windows Server
@@ -31,8 +31,8 @@ function Check($name, [scriptblock]$body) {
 $clsid = [Guid]'{10A67BC8-22FA-4A59-90DC-2546652C56BF}'  # Mozc's OSS text service and its profile
 $profileId = [Guid]'{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
 $mozcTip = '0411:{10A67BC8-22FA-4A59-90DC-2546652C56BF}{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
-$typingChecks = 'test-user', 'install-for-user', 'languages-en-zh-ja', 'tsf-started', 'window-focused', 'name-nihongo', 'mozc-active', 'kana-input',
-    'tray-hiragana', 'katakana-and-back', 'shift-tap-toggles-english', 'shift-letter-stays-japanese', 'alt-grave-toggles-english',
+$typingChecks = 'test-user', 'install-for-user', 'languages-en-zh-ja', 'rdp-keys', 'notepad-japanese', 'notepad-shift-tap', 'tsf-started', 'window-focused', 'name-nihongo', 'mozc-active', 'kana-input',
+    'tray-hiragana', 'katakana-and-back', 'shift-tap-toggles-english', 'shift-letter-stays-japanese', 'alt-grave-toggles-english', 'shift-letter-stays-english',
     'caps-lock-icon', 'undo-for-user'
 
 if ($Typing) {  # the typing checks, as the test user: not elevated, with a profile of its own
@@ -55,27 +55,74 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
             if ($order -ne 'en,zh,ja' -or $ja -ne $mozcTip) { throw "languages $order, Japanese: $ja" }
             'Win+Space goes EN → 中 → 日; Japanese is Mozc only'
         }
-        $started = $false
-        Check 'tsf-started' { Add-Type -Path "$PSScriptRoot\TsfHost.cs"; [SebType.TsfHost]::Start(); $script:started = $true; 'a text field of its own, focused in TSF' }
+        # The keys come from the Remote Desktop client, as a person's would: rdp-keys.py on its side, which
+        # test-tcsbackend.sh tunnels to this port. They go to the window in front of this session.
+        Add-Type -Path "$PSScriptRoot\TsfHost.cs"
+        $tsf = [SebType.TsfHost]
+        $keys = $null
+        Check 'rdp-keys' {
+            for ($i = 0; $i -lt 30 -and -not $script:keys; $i++) {
+                try { $script:keys = New-Object Net.Sockets.TcpClient '127.0.0.1', 47812 } catch { Start-Sleep 1 }
+            }
+            if (-not $script:keys) { throw 'no key server at 127.0.0.1:47812 (rdp-keys.py, through the SSH tunnel)' }
+            'the Remote Desktop client types the keys'
+        }
+        if ($keys) {
+            $kw = New-Object IO.StreamWriter $keys.GetStream(); $kw.AutoFlush = $true
+            $kr = New-Object IO.StreamReader $keys.GetStream()
+            # Keys 'Shift_L' 'Alt_L+grave': X keysym names, pressed in order; then time for them to arrive.
+            function Keys {
+                $line = ($args | ForEach-Object { $_ }) -join ' '
+                $kw.WriteLine($line); $r = $kr.ReadLine()
+                if ($r -ne 'ok') { throw "keys $line`: $r" }
+                Start-Sleep -Milliseconds 500
+            }
+            function TypeText($s) { Keys ($s.ToCharArray() | ForEach-Object { if ($_ -eq ' ') { 'space' } else { "$_" } }) }
+
+            # Notepad first, the plainest real app: Win+Space to 日本語, then what a person types.
+            $np = Start-Process notepad -PassThru
+            try {
+                $null = $np.WaitForInputIdle(10000)
+                $h = $np.MainWindowHandle
+                function NotepadTyped($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; $tsf::EditText($h).Trim() }
+                Check 'notepad-japanese' {
+                    if (-not $tsf::Foreground($h)) { throw 'Notepad did not come to the front' }
+                    for ($i = 0; $i -lt 3 -and $tsf::Language($h) -ne 0x411; $i++) { Keys 'Super_L+space'; Start-Sleep 1 }
+                    if ($tsf::Language($h) -ne 0x411) { throw "Win+Space three times left Notepad in language $('{0:x4}' -f $tsf::Language($h))" }
+                    if ((NotepadTyped 'a') -eq 'a') { Keys 'Alt_L+grave' }  # Japanese starts in English or あ
+                    $t = NotepadTyped 'nihongo '
+                    if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
+                    "Win+Space to 日本語, typed $t"
+                }
+                Check 'notepad-shift-tap' {
+                    Keys 'Control_L+a' BackSpace
+                    Keys Shift_L; TypeText 'a'; $e = $tsf::EditText($h)
+                    Keys Shift_L; TypeText 'a'; Keys Return; $j = $tsf::EditText($h).Trim()
+                    if ($e -ne 'a' -or $j -ne 'aあ') { throw "after a Shift tap 'a' gave '$e'; after a second '$j'" }
+                    'あ → a → あ'
+                }
+            } finally { $np | Stop-Process -Force }
+
+            # Then the test's own text field, where Mozc's tray button can be read.
+            $started = $false
+            Check 'tsf-started' { $tsf::Start(); $script:started = $true; 'a text field of its own, focused in TSF' }
+        }
         if ($started) {
-            $tsf = [SebType.TsfHost]
             Check 'window-focused' { if (-not $tsf::Focus()) { throw 'another window kept the foreground of the test session' }; 'the text field has the keyboard focus in TSF' }
             Check 'name-nihongo' { $d = $tsf::Description(0x411, $clsid, $profileId); if ($d -ne '日本語') { throw "Windows shows '$d'" }; "Win+Space shows $d" }
             Check 'mozc-active' {
                 $tsf::Activate(0x411, $clsid, $profileId); Start-Sleep -Milliseconds 500
                 $a = $tsf::Active(); if ($a -ne "0411 $($clsid.ToString('B').ToUpper())") { throw "active: $a" }; 'Mozc'
             }
-            $VK = @{ Enter = 0x0D; Esc = 0x1B; Shift = 0x10; Alt = 0x12; Grave = 0xC0; Caps = 0x14; Katakana = 0xF1; Hiragana = 0xF2 }
             $ICON = @{ a = 112; hira = 104; kata = 114; caps = 124 }  # caps: A, Caps Lock on (keys and -eq ignore case)
             function Tray {
                 $id = $tsf::TrayIcon(@($ICON.Values))
                 $name = ($ICON.GetEnumerator() | Where-Object Value -EQ $id).Key
                 if ($name) { $name } else { "icon $id" }
             }
-            function Press { $tsf::Press([uint16[]]$args); Start-Sleep -Milliseconds 300 }
-            function Typed($keys) { $tsf::Clear(); $tsf::Type($keys); Press $VK.Enter; $tsf::Text().Trim() }
+            function Typed($s) { $tsf::Clear(); TypeText $s; Keys Return; $tsf::Text().Trim() }
             # Japanese starts in English or あ; a typed "a" says which.
-            function To-Hiragana { if ((Typed 'a') -eq 'a') { Press $VK.Alt $VK.Grave } }
+            function To-Hiragana { if ((Typed 'a') -eq 'a') { Keys 'Alt_L+grave' } }
 
             Check 'kana-input' {
                 To-Hiragana
@@ -85,43 +132,50 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
             }
             Check 'tray-hiragana' { $t = Tray; if ($t -ne 'hira') { throw "tray shows $t" }; 'あ' }
             Check 'katakana-and-back' {
-                Press $VK.Katakana
+                $tsf::TrayMenu(1)
                 $t = Tray; $k = Typed 'a'
-                Press $VK.Hiragana
+                $tsf::TrayMenu(0)
                 $back = Tray
                 if ($t -ne 'kata' -or $k -ne 'ア' -or $back -ne 'hira') { throw "ア mode: tray $t, typed '$k'; back: tray $back" }
                 'あ → ア (typed ア) → あ'
             }
             Check 'shift-tap-toggles-english' {
-                Press $VK.Shift
+                Keys Shift_L
                 $t = Tray; $e = Typed 'a'
-                Press $VK.Shift
+                Keys Shift_L
                 $back = Tray
                 if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Shift: tray $t, typed '$e'; after a second Shift: tray $back" }
                 'あ → a → あ'
             }
             Check 'shift-letter-stays-japanese' {
-                $tsf::Clear(); Press $VK.Shift 0x4B; Press $VK.Esc; Press $VK.Esc
+                $tsf::Clear(); Keys 'Shift_L+k'; Keys Escape Escape
                 $t = Tray
                 if ($t -ne 'hira') { throw "Shift+K left the tray at $t" }
                 'Shift+K is no Shift tap'
             }
             Check 'alt-grave-toggles-english' {
-                Press $VK.Alt $VK.Grave
+                Keys 'Alt_L+grave'
                 $t = Tray; $e = Typed 'a'
-                Press $VK.Alt $VK.Grave
+                Keys 'Alt_L+grave'
                 $back = Tray
                 if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Alt+``: tray $t, typed '$e'; after a second Alt+``: tray $back" }
                 'あ → a → あ'
             }
-            # Caps Lock here is this thread's own key state, not the keyboard's.
+            Check 'shift-letter-stays-english' {
+                Keys 'Alt_L+grave'
+                $tsf::Clear(); Keys 'Shift_L+k'; $k = $tsf::Text(); $t = Tray
+                Keys 'Alt_L+grave'
+                if ($k -ne 'K' -or $t -ne 'a') { throw "Shift+K in English typed '$k', tray $t" }
+                'Shift+K types K and stays English'
+            }
+            # Caps Lock is this session's own: the test user's, not anyone's keyboard.
             Check 'caps-lock-icon' {
-                if ($tsf::CapsLock()) { Press $VK.Caps }
-                Press $VK.Alt $VK.Grave; $off = Tray
-                Press $VK.Caps; $on = Tray
-                Press $VK.Alt $VK.Grave; $hiraCaps = Tray
-                Press $VK.Caps; Press $VK.Alt $VK.Grave; $offAgain = Tray
-                Press $VK.Alt $VK.Grave
+                if ($tsf::CapsLock()) { Keys Caps_Lock }
+                Keys 'Alt_L+grave'; $off = Tray
+                Keys Caps_Lock; $on = Tray
+                Keys 'Alt_L+grave'; $hiraCaps = Tray
+                Keys Caps_Lock; Keys 'Alt_L+grave'; $offAgain = Tray
+                Keys 'Alt_L+grave'
                 if ($off -ne 'a' -or $on -ne 'caps' -or $hiraCaps -ne 'hira' -or $offAgain -ne 'a') {
                     throw "English: $off, with Caps Lock: $on, あ with Caps Lock: $hiraCaps, English after: $offAgain"
                 }

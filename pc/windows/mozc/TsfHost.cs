@@ -1,9 +1,9 @@
-﻿// Typing harness for test.ps1 (#65): a text field of the test's own that talks to Windows' Text Services
-// Framework (TSF) directly, so it types into Mozc without the real keyboard. TSF passes keys on only
-// while its window has the keyboard focus, so it takes the foreground of the test user's own Remote
-// Desktop session, which no one sees. Keys go to the input method through ITfKeystrokeMgr, with this
-// thread's key state (Shift, Alt, Caps Lock) set by SetKeyboardState, so the real Caps Lock is never touched. Everything runs
-// on one STA thread with a message loop, as TSF and Mozc expect. C# 5: Windows PowerShell 5.1 compiles it.
+﻿// Text field for test.ps1's typing checks (#65): a window of the test's own with a text store that talks
+// to Windows' Text Services Framework (TSF), so the checks can read what Mozc composed and committed and
+// which mode icon its tray button shows. The keys themselves are real input: test-tcsbackend.sh's
+// Remote Desktop client types them, and they reach Mozc through this thread's message loop and TSF's
+// keystroke manager, as in any app. Everything runs on one STA thread with a message loop, as TSF and
+// Mozc expect. C# 5: Windows PowerShell 5.1 compiles it.
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -15,7 +15,6 @@ namespace SebType {
   [StructLayout(LayoutKind.Sequential)] public struct TS_SELECTION_ACP { public int start, end, activeEnd, interimChar; }
   [StructLayout(LayoutKind.Sequential)] public struct TS_TEXTCHANGE { public int start, oldEnd, newEnd; }
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left, top, right, bottom; }
-  [StructLayout(LayoutKind.Sequential)] public struct TF_PRESERVEDKEY { public uint vk, modifiers; }
   [StructLayout(LayoutKind.Sequential)] public struct TF_INPUTPROCESSORPROFILE {
     public uint profileType; public ushort langid; public Guid clsid, profile, catid;
     public IntPtr hklSubstitute; public uint caps; public IntPtr hkl; public uint flags;
@@ -80,24 +79,6 @@ namespace SebType {
     void CreateContext(uint clientId, uint flags, [MarshalAs(UnmanagedType.IUnknown)] object store, out IntPtr context, out uint ecTextStore);
     void Push(IntPtr context);
     void Pop(uint flags);
-  }
-
-  [ComImport, Guid("aa80e7f0-2021-11d2-93e0-0060b067b86e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface ITfKeystrokeMgr {
-    void AdviseKeyEventSink(uint clientId, IntPtr sink, int foreground);
-    void UnadviseKeyEventSink(uint clientId);
-    void GetForeground(out Guid clsid);
-    void TestKeyDown(IntPtr w, IntPtr l, out int eaten);
-    void TestKeyUp(IntPtr w, IntPtr l, out int eaten);
-    void KeyDown(IntPtr w, IntPtr l, out int eaten);
-    void KeyUp(IntPtr w, IntPtr l, out int eaten);
-    [PreserveSig] int GetPreservedKey(IntPtr context, ref TF_PRESERVEDKEY key, out Guid guid);
-    void IsPreservedKey(ref Guid guid, ref TF_PRESERVEDKEY key, out int registered);
-    void PreserveKey(uint clientId, ref Guid guid, ref TF_PRESERVEDKEY key, IntPtr desc, uint cch);
-    void UnpreserveKey(ref Guid guid, ref TF_PRESERVEDKEY key);
-    void SetPreservedKeyDescription(ref Guid guid, IntPtr desc, uint cch);
-    void GetPreservedKeyDescription(ref Guid guid, out IntPtr desc);
-    void SimulatePreservedKey(IntPtr context, ref Guid guid, out int eaten);
   }
 
   [ComImport, Guid("71c6e74c-0f28-11d8-a82a-00065b84435c"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -268,9 +249,10 @@ namespace SebType {
     [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
     [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
-    [DllImport("user32.dll")] static extern bool SetKeyboardState(byte[] state);
-    [DllImport("user32.dll")] static extern uint MapVirtualKeyW(uint code, uint type);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ToUnicode(uint vk, uint scan, byte[] state, StringBuilder buf, int n, uint flags);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+    [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageW(IntPtr h, uint msg, IntPtr w, StringBuilder l);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
     [DllImport("user32.dll")] static extern IntPtr LoadImageW(IntPtr inst, IntPtr name, uint type, int cx, int cy, uint flags);
     [DllImport("user32.dll")] static extern bool GetIconInfo(IntPtr icon, out ICONINFO info);
@@ -283,7 +265,7 @@ namespace SebType {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll", EntryPoint = "SetFocus")] static extern IntPtr SetWindowFocus(IntPtr h);
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
-    const uint WM_APP = 0x8000, WM_QUIT = 0x12;
+    const uint WM_APP = 0x8000, WM_QUIT = 0x12, WM_CHAR = 0x102, WM_GETTEXT = 0xD;
     static readonly Guid CLSID_TF_ThreadMgr = new Guid("529a9e6b-6587-4f23-ab9e-9c7d683e3c50");
     static readonly Guid CLSID_TF_InputProcessorProfiles = new Guid("33c53a50-f456-4884-b049-85fd643ecfed");
     static readonly Guid GUID_TFCAT_TIP_KEYBOARD = new Guid("34745c63-b2f0-4784-8b67-5e12c8701a31");
@@ -303,7 +285,6 @@ namespace SebType {
       var t = new Thread(() => {
         threadId = GetCurrentThreadId();
         try {
-          SetKeyboardState(new byte[256]);  // a new thread's key state isn't empty (Caps Lock was on, seen on Server 2022)
           store = new TextStore();
           // WS_OVERLAPPEDWINDOW | WS_VISIBLE: TSF passes keys on only while this thread has the keyboard focus
           store.Hwnd = CreateWindowExW(0, "STATIC", "SebType Mozc test", 0x10CF0000, 0, 0, 640, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
@@ -321,6 +302,8 @@ namespace SebType {
         MSG m;
         while (GetMessageW(out m, IntPtr.Zero, 0, 0)) {
           if (m.hwnd == IntPtr.Zero && m.message == WM_APP) { Action a; while (queue.TryTake(out a)) a(); continue; }
+          // A character the input method let through goes into the field, as an edit control would take it.
+          if (m.message == WM_CHAR && (char)m.wParam >= ' ') { store.AppEdit(store.SelStart, store.SelEnd, ((char)m.wParam).ToString()); continue; }
           TranslateMessage(ref m); DispatchMessageW(ref m);
         }
       });
@@ -330,15 +313,28 @@ namespace SebType {
       if (!ready.WaitOne(20000)) throw new TimeoutException("the TSF thread didn't start");
       if (err != null) throw err;
     }
-    // Gives the window the keyboard focus in this session (the test user's own, which no screen shows).
-    // Windows lets a process take the foreground right after it sent input: an Alt tap first.
-    public static bool Focus() {
-      for (int i = 0; i < 5 && GetForegroundWindow() != store.Hwnd; i++) {
+    // Brings a window to the front of this session (the test user's own, which no screen shows), where
+    // the Remote Desktop client's keys go. Windows lets a process take the foreground right after it sent
+    // input: an Alt tap first.
+    public static bool Foreground(IntPtr h) {
+      for (int i = 0; i < 5 && GetForegroundWindow() != h; i++) {
         keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero);
-        SetForegroundWindow(store.Hwnd);
+        SetForegroundWindow(h);
         Thread.Sleep(300);
       }
-      return OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; }) && GetForegroundWindow() == store.Hwnd;
+      return GetForegroundWindow() == h;
+    }
+    // The text field's window in front, with the keyboard focus, and TSF's focus on its document.
+    public static bool Focus() {
+      return Foreground(store.Hwnd) && OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; });
+    }
+    // The language of the keyboard input method active in a window's thread, e.g. 0x0411 for Japanese.
+    public static int Language(IntPtr h) { return (int)GetKeyboardLayout(GetWindowThreadProcessId(h, IntPtr.Zero)) & 0xFFFF; }
+    // The text of a window's edit control (Notepad's).
+    public static string EditText(IntPtr h) {
+      var buf = new StringBuilder(4096);
+      SendMessageW(FindWindowExW(h, IntPtr.Zero, "Edit", null), WM_GETTEXT, (IntPtr)buf.Capacity, buf);
+      return buf.ToString();
     }
     public static void Stop() {
       try { OnUi(() => { docMgr.Pop(1 /* TF_POPF_ALL */); threadMgr.Deactivate(); DestroyWindow(store.Hwnd); return 0; }); } catch { }
@@ -388,54 +384,19 @@ namespace SebType {
     public static void Clear() { OnUi(() => { store.AppEdit(0, store.Text.Length, ""); return 0; }); }
     public static bool CapsLock() { return OnUi(() => { var s = new byte[256]; GetKeyboardState(s); return (s[0x14] & 1) != 0; }); }
 
-    // One key event, as an app's message loop hands it to TSF: preserved keys (Mozc's Alt+`) through
-    // SimulatePreservedKey, the rest through TestKeyDown/KeyDown. A character the input method doesn't
-    // take is typed into the field, as WM_CHAR would.
-    public static void Key(ushort vk, bool down) {
+    // Picks an item of the menu of Mozc's input mode button (the tray's あ/a), as a click there does:
+    // 0 あ, 1 ア. A US keyboard has no key for katakana mode.
+    public static void TrayMenu(uint item) {
       OnUi(() => {
-        var s = new byte[256];
-        GetKeyboardState(s);
-        Action<int> set = k => { s[k] = (byte)(down ? s[k] | 0x80 : s[k] & 0x7F); };
-        set(vk);
-        if (vk == 0x10) set(0xA0); else if (vk == 0x11) set(0xA2); else if (vk == 0x12) set(0xA4);
-        if (vk == 0x14 && down) s[0x14] ^= 1;
-        SetKeyboardState(s);
-        bool alt = (s[0x12] & 0x80) != 0;
-        uint scan = MapVirtualKeyW(vk, 0);
-        var lp = (IntPtr)(long)(1u | (scan << 16) | (alt ? 1u << 29 : 0) | (down ? 0 : 3u << 30));
-        var keys = (ITfKeystrokeMgr)threadMgr;
-        int eaten;
-        if (down) {
-          var pk = new TF_PRESERVEDKEY { vk = vk, modifiers = (alt ? 1u : 0) | ((s[0x11] & 0x80) != 0 ? 2u : 0) | ((s[0x10] & 0x80) != 0 ? 4u : 0) };
-          Guid g;
-          if (keys.GetPreservedKey(context, ref pk, out g) == 0 && g != Guid.Empty) {
-            keys.SimulatePreservedKey(context, ref g, out eaten);
-            if (eaten != 0) return 0;
-          }
-          keys.TestKeyDown((IntPtr)vk, lp, out eaten);
-          if (eaten != 0) keys.KeyDown((IntPtr)vk, lp, out eaten);
-          if (eaten == 0 && !alt) {
-            var buf = new StringBuilder(8);
-            int n = ToUnicode(vk, scan, s, buf, buf.Capacity, 0);
-            if (n > 0 && buf[0] >= ' ') store.AppEdit(store.SelStart, store.SelEnd, buf.ToString(0, n));
-          }
-        } else {
-          keys.TestKeyUp((IntPtr)vk, lp, out eaten);
-          if (eaten != 0) keys.KeyUp((IntPtr)vk, lp, out eaten);
-        }
+        var mgr = (ITfLangBarItemMgr)threadMgr;
+        var guid = GUID_LBI_INPUTMODE;
+        object button;
+        Marshal.ThrowExceptionForHR(mgr.GetItem(ref guid, out button));
+        ((ITfLangBarItemButton)button).OnMenuSelect(item);
         return 0;
       });
+      Settle(300);
     }
-    // Presses keys in order and releases them in reverse, e.g. Press(0x12, 0xC0) for Alt+`.
-    public static void Press(params ushort[] vks) {
-      foreach (var vk in vks) Key(vk, true);
-      for (int i = vks.Length - 1; i >= 0; i--) Key(vks[i], false);
-      Settle(60);
-    }
-    public static void Type(string s) {  // a-z, '-' and space
-      foreach (var c in s) Press(c == '-' ? (ushort)0xBD : c == ' ' ? (ushort)0x20 : (ushort)char.ToUpperInvariant(c));
-    }
-
     // Which of Mozc's icon resources its input mode button (the tray's あ/a) shows now, or -1.
     public static int TrayIcon(int[] ids) {
       return OnUi(() => {

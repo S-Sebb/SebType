@@ -144,7 +144,7 @@ each size folder, no admin needed), or the English icons all come out as **A** (
 | Patch | Change |
 |---|---|
 | `caps-lock-icon.patch` | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
-| `shift-tap.patch` | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ (`win32/base/keyevent_handler.cc`, 6 lines). Not yet confirmed: the test's Shift tap fails earlier, from あ (#65) |
+| `shift-tap.patch` | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't, which would toggle back on the release (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |
 | `japanese-name.patch` | Japanese reads **日本語** in Win+Space and the language settings, not "Mozc" (Decisions #2, #92), as Chinese reads 中文 (`win32/tip/tip_resource.rc`, `win32/base/tsf_registrar.cc`) |
 
 `make_icons.py` replaces Mozc's mode icons with `.ico` files holding a PNG for each tray size from
@@ -186,28 +186,33 @@ The typing needs a Windows Server, which allows a second Remote Desktop session,
 `test.ps1` on TCSBackEnd under its device lock and puts TCSBackEnd back as it found it. It copies the
 repo, the MSI and an embeddable Python there, starts `test.ps1` elevated, in the background, and logs
 the test user on over Remote Desktop from nobara-pc (FreeRDP in a headless gamescope, through an SSH
-tunnel), so nothing shows on any screen and no real key is read or sent. `test.ps1` checks
+tunnel), so nothing shows on any screen and no key on any real keyboard is read or sent. `test.ps1` checks
 Mozc's key and conversion times through its own server (`pc/linux/perf-mozc.py`; Decisions #2:
 p95 ≤ 5 ms) and the dictionary (below), installs the MSI for the machine, then runs the typing checks as
 a local standard user it creates for the run (`sebtype-test`):
 
 - `install.ps1` for that user, with the language order EN → 中 → 日 that Win+Space cycles through;
 - the name Windows shows for Japanese, 日本語;
-- typing: `nihongo` → 日本語, あ ⇄ ア, Shift tap and Alt+` for English, Shift+letter staying Japanese,
-  and the tray icon in each mode and with Caps Lock;
+- typing in Notepad: Win+Space to 日本語, `nihongo` → 日本語, and the Shift tap there and back;
+- typing in its own text field: `nihongo` → 日本語, あ ⇄ ア (from the tray menu: a US keyboard has no
+  katakana key), Shift tap and Alt+` for English, Shift+letter staying Japanese in あ and English in
+  English, and the tray icon in each mode and with Caps Lock;
 - `install.ps1 -Undo` for that user.
 
 After that it removes the user, its profile and Mozc. Last, it checks that your own language list,
 default input method, hotkeys, text service settings and Caps Lock are as they were, and that no test
 user or profile is left. One line per check goes to `%LOCALAPPDATA%\SebType\test\mozc-results.txt`.
 
-The typing happens in a text field of the test's own (`mozc/TsfHost.cs`). It talks to Windows' Text
-Services Framework directly: keys go to Mozc through `ITfKeystrokeMgr`, and Shift, Alt and Caps Lock
-are that thread's own key state (`SetKeyboardState`), not the keyboard's. TSF passes keys to the input
-method only while the text field's window has the keyboard focus, so the field runs in the test user's
-own Remote Desktop session, started by a logon task, and takes that session's foreground. A process
-started as another user inside someone else's session fails to start (0xC0000142), and one that isn't
-in the foreground gets every key passed through untouched. Running it as a separate user keeps the
+The keys are real input: `mozc/rdp-keys.py` presses them through XTEST in the gamescope display that
+FreeRDP runs in, FreeRDP sends their scancodes to the test user's session like any keyboard, and the
+typing checks ask for them through a reverse SSH tunnel. So they reach Mozc the way a person's keys do,
+through the session's input queue, the window's message loop and TSF's keystroke manager. Feeding keys
+to TSF directly (`ITfKeystrokeMgr` with a faked key state, the first version of this test) made the
+Shift tap fail where real keys work. The window in front gets the keys: first Notepad, read back
+through its edit control, then a text field of the test's own (`mozc/TsfHost.cs`), whose text store
+shows what Mozc composed and committed and whose language bar item shows Mozc's tray icon. Both run in
+the test user's own Remote Desktop session, started by a logon task: a process started as another user
+inside someone else's session fails to start (0xC0000142). Running it as a separate user keeps the
 input settings of the person at the PC untouched. After the run the script logs the test user off,
 waits for its profile to unload, then removes the profile and the user.
 
