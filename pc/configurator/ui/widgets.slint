@@ -1,0 +1,258 @@
+import { Theme } from "theme.slint";
+
+export component Switch inherits Rectangle {
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    in property <string> label;
+    callback toggled(bool);
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    background: checked ? Theme.key : Theme.off-track;
+    border-width: checked ? 0 : 2px;
+    border-color: Theme.outline;
+    opacity: enabled ? 1 : 0.45;
+    accessible-role: checkbox;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-label: label;
+    accessible-action-default => { if enabled { checked = !checked; toggled(checked); } }
+    Rectangle {
+        width: root.checked ? 20px : 14px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.checked ? white : Theme.outline;
+        x: root.checked ? parent.width - self.width - 3px : 5px;
+        y: (parent.height - self.height) / 2;
+        animate x, width { duration: 120ms; }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.checked = !root.checked; root.toggled(root.checked); }
+    }
+}
+
+export component Segmented inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> current;
+    in property <bool> enabled: true;
+    callback selected(int);
+    height: 30px;
+    border-width: 2px;
+    border-color: Theme.outline;
+    border-radius: 15px;
+    opacity: enabled ? 1 : 0.45;
+    HorizontalLayout {
+        padding: 2px;
+        for o[i] in root.options: Rectangle {
+            border-radius: 12px;
+            background: i == root.current ? Theme.key : transparent;
+            min-width: 40px;
+            accessible-role: button;
+            accessible-label: o;
+            accessible-checked: i == root.current;
+            accessible-action-default => { if root.enabled { root.current = i; root.selected(i); } }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                Text {
+                    text: o;
+                    color: i == root.current ? white : Theme.ink;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+            TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => { root.current = i; root.selected(i); }
+            }
+        }
+    }
+}
+
+// One item: a group of rows on the item background.
+export component Card inherits Rectangle {
+    background: Theme.card;
+    border-radius: Theme.card-radius;
+    border-width: Theme.card-border-width;
+    border-color: Theme.card-border;
+    VerticalLayout {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        @children
+    }
+}
+
+export component Row inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> enabled: true;
+    in property <bool> arrow;
+    callback clicked;
+    min-height: Theme.row-min-height;
+    opacity: enabled ? 1 : 0.5;
+    if root.arrow: Rectangle {
+        accessible-role: button;
+        accessible-label: root.title;
+        accessible-description: root.detail;
+        accessible-enabled: root.enabled;
+        accessible-action-default => { if root.enabled { root.clicked(); } }
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.row-padding-x;
+        padding-right: Theme.row-padding-x;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text { text: root.title; color: Theme.ink; font-size: Theme.body-size; wrap: word-wrap; }
+            if root.detail != "": Text { text: root.detail; color: Theme.muted; font-size: Theme.detail-size; wrap: word-wrap; }
+        }
+        @children
+        if root.arrow: Text { text: "→"; color: Theme.ink; font-size: 18px; vertical-alignment: center; }
+    }
+}
+
+export component Divider inherits Rectangle {
+    height: 1px;
+    Rectangle {
+        x: Theme.row-padding-x;
+        width: parent.width - 2 * Theme.row-padding-x;
+        background: Theme.line;
+    }
+}
+
+export component SectionTitle inherits Text {
+    color: Theme.ink;
+    font-size: Theme.section-size;
+    font-weight: 700;
+}
+
+export component PageTitle inherits Text {
+    color: Theme.ink;
+    font-family: Theme.title-font;
+    font-size: Theme.title-size;
+    font-weight: 800;
+}
+
+export component Info inherits Rectangle {
+    in property <string> text;
+    background: Theme.pink;
+    border-radius: 10px;
+    HorizontalLayout {
+        padding: 10px;
+        Text { text: root.text; color: Theme.ink; font-size: Theme.detail-size; wrap: word-wrap; }
+    }
+}
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 32px;
+    border-radius: 16px;
+    background: !enabled ? Theme.off-track : primary ? (touch.has-hover ? Theme.key-high : Theme.key) : danger ? Theme.danger : (touch.has-hover ? Theme.pink : Theme.card);
+    border-width: primary || danger ? 0 : 2px;
+    border-color: Theme.outline;
+    opacity: enabled ? 1 : 0.6;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { if enabled { clicked(); } }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Text {
+            text: root.text;
+            color: root.primary || root.danger ? white : Theme.ink;
+            font-size: 13.5px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Kbd inherits Rectangle {
+    in property <string> text;
+    background: white;
+    border-radius: 6px;
+    border-width: 1.5px;
+    border-color: Theme.outline;
+    height: 26px;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Text { text: root.text; color: Theme.ink; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+    }
+    // The key's lower edge, as on the phone's keys.
+    Rectangle { y: parent.height - 3px; height: 3px; border-radius: 2px; background: Theme.outline; }
+}
+
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    callback accepted;
+    height: 34px;
+    background: white;
+    border-radius: 8px;
+    border-width: input.has-focus ? 2px : 1.5px;
+    border-color: input.has-focus ? Theme.key : Theme.outline;
+    accessible-role: text-input;
+    accessible-label: placeholder;
+    accessible-value: text;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        input := TextInput {
+            text <=> root.text;
+            color: Theme.ink;
+            font-size: 14px;
+            vertical-alignment: center;
+            single-line: true;
+            accepted => { root.accepted(); }
+        }
+    }
+    if root.text == "": Text {
+        x: 11px;
+        text: root.placeholder;
+        color: Theme.muted;
+        font-size: 13px;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+}
+
+export component BackTitle inherits HorizontalLayout {
+    in property <string> text;
+    callback back;
+    spacing: 10px;
+    Rectangle {
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        background: back-touch.has-hover ? Theme.pink : transparent;
+        accessible-role: button;
+        accessible-label: "返回";
+        accessible-action-default => { root.back(); }
+        Text { text: "←"; color: Theme.ink; font-size: 20px; }
+        back-touch := TouchArea { mouse-cursor: pointer; clicked => { root.back(); } }
+    }
+    PageTitle { text: root.text; vertical-alignment: center; }
+}

@@ -1,0 +1,52 @@
+// Every setting the window shows, and the callbacks that apply a change. src/main.rs fills and handles them.
+export struct Lang { id: string, name: string, detail: string, on: bool }
+export struct Fuzzy { label: string, on: bool }
+export struct ZhWord { word: string, code: string }
+export struct JaWord { reading: string, word: string, pos: int }
+
+export global State {
+    in property <string> version;
+    in property <string> system;          // "Linux" or "Windows"
+    in property <string> ui-font;
+    in property <bool> zh-available: true;   // the engine's config folder exists
+    in property <bool> ja-available: true;
+    in property <bool> langs-ready;          // the language list has been read
+
+    in-out property <[Lang]> langs;
+    in property <int> langs-on;              // how many are on (one must stay on)
+    in property <string> fuzzy-summary;
+    in-out property <int> zh-script;          // 0 简体, 1 繁體
+    in-out property <bool> zh-full-punct: true;
+    in-out property <bool> zh-emoji: true;
+    in-out property <[Fuzzy]> fuzzy;
+    in-out property <[ZhWord]> zh-words;
+    in-out property <bool> ja-half-space;
+    in-out property <[JaWord]> ja-words;
+    out property <[string]> ja-pos: ["名詞", "固有名詞", "人名", "地名", "組織", "顔文字"];
+
+    in-out property <int> page-size: 5;
+    in-out property <bool> vertical;
+    in-out property <int> font-size: 14;
+    in-out property <bool> picnic: true;
+    in-out property <bool> learn: true;
+
+    in-out property <string> toast;
+
+    callback set-lang(int, bool);
+    callback move-lang(int, int);
+    callback zh-changed();
+    callback fuzzy-changed(int, bool);
+    callback add-zh-word(string, string) -> bool;
+    callback remove-zh-word(int);
+    callback ja-changed();
+    callback add-ja-word(string, string, int) -> bool;
+    callback remove-ja-word(int);
+    callback candidates-changed();
+    callback theme-changed();
+    callback learn-changed();
+    callback forget(string);   // "zh" or "ja"
+    callback export-settings();
+    callback import-settings();
+    callback redeploy();
+    callback open-help();
+}

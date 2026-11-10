@@ -19,6 +19,9 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 # Preflight
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
+# The fake account has no Rust: setup-ime.sh copies the Configurator built here.
+cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
+  { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
 
 check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh
 
@@ -28,7 +31,7 @@ live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
-  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" && return 1
+  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
@@ -81,7 +84,7 @@ fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOM
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 12 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 13 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -96,7 +99,15 @@ fresh_apply() {
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
     grep -q 'Default us 3 keyboard-us  rime  mozc' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
     fcitx_hotkeys && mozc_keymap && tray_icons && grep -qx 'Label=中文' "$h/.local/share/fcitx5/inputmethod/rime.conf" &&
-    grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log"
+    grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator
+}
+# The Configurator is in the app menu, starts this account's copy of the build, and has the pig icon.
+configurator() {
+  local d=$h/.local/share
+  cmp ../configurator/target/release/sebtype-configurator "$d/sebtype/configurator/sebtype-configurator" &&
+    grep -qx "Exec=$d/sebtype/configurator/sebtype-configurator" "$d/applications/sebtype-configurator.desktop" &&
+    desktop-file-validate "$d/applications/sebtype-configurator.desktop" &&
+    [[ -f $d/icons/hicolor/192x192/apps/sebtype-configurator.png ]]
 }
 # Super+Space is the only switch, all windows share one state, the other settings stay, and Fcitx5 reloaded it.
 fcitx_hotkeys() {
@@ -136,6 +147,21 @@ undo_icons() {
     ! -e $h/.local/share/icons/SebType && $(grep -c '^change:' <<<"$o") == 2 ]] &&
     o=$(fake_run --undo-icons < /dev/null) && [[ -z $o ]] &&
     o=$(fake_run < /dev/null) && grep -q '^change: install SebType.s tray icons .* over Fluent-dark' <<<"$o" && tray_icons
+}
+
+# --undo-configurator removes the app and puts back the candidate window theme Picnic replaced; a second
+# undo changes nothing, and setup installs it again.
+undo_configurator() {
+  local d=$h/.local/share c=$h/.config/fcitx5/conf/classicui.conf o
+  mkdir -p "$d/fcitx5/themes/sebtype-picnic" "${c%/*}"
+  printf 'Theme=Nord\nDarkTheme=default-dark\n' > "$d/fcitx5/themes/sebtype-picnic/previous"
+  printf 'Vertical Candidate List=False\nTheme=sebtype-picnic\nDarkTheme=sebtype-picnic\n' > "$c"
+  o=$(fake_run --undo-configurator < /dev/null) || return 1; echo "$o"
+  [[ $(grep -c '^change:' <<<"$o") == 5 && ! -e $d/sebtype/configurator && ! -e $d/applications/sebtype-configurator.desktop &&
+    ! -e $d/icons/hicolor/192x192/apps/sebtype-configurator.png && ! -e $d/fcitx5/themes/sebtype-picnic ]] &&
+    [[ $(cat "$c") == $'Vertical Candidate List=False\nTheme=Nord\nDarkTheme=default-dark' ]] &&
+    o=$(fake_run --undo-configurator < /dev/null) && [[ -z $o ]] &&
+    o=$(fake_run < /dev/null) && grep -q '^change: install SebType Configurator' <<<"$o" && configurator
 }
 
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
@@ -401,5 +427,6 @@ mozc_swap() {
 }
 check mozc-install-and-undo mozc_swap
 check undo-icons-and-reinstall undo_icons
+check undo-configurator-and-reinstall undo_configurator
 
 ! grep -q '^FAIL' "$results"
