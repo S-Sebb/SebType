@@ -1,0 +1,19 @@
+diff --git a/win32/base/keyevent_handler.cc b/win32/base/keyevent_handler.cc
+--- a/win32/base/keyevent_handler.cc
++++ b/win32/base/keyevent_handler.cc
+@@ -679,8 +679,14 @@
+   // keys.
+   if (!ime_state.open) {
+     // TODO(yukawa): Treat VK_PACKET as a direct mode key.
++    // SebType: a bare Shift turns Japanese on when it is released, as it turns
++    // it off, so Shift+letter in English stays English. On its press, the
++    // release would turn Japanese off again.
++    const bool is_shift = virtual_key.virtual_key() == VK_SHIFT;
+     const bool is_direct_mode_command =
+-        is_key_down &&
++        (is_shift ? !is_key_down && ime_state.last_down_key.virtual_key() ==
++                                        VK_SHIFT
++                  : is_key_down) &&
+         KeyInfoUtil::ContainsKey(behavior.direct_mode_keys, *key);
+     if (!is_direct_mode_command) {
+       result.succeeded = true;

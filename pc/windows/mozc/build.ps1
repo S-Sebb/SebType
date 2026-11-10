@@ -1,6 +1,7 @@
-<#
+﻿<#
 Builds SebType's Mozc for Windows (#65): upstream Mozc at the tag in versions.psd1, plus
-caps-lock-icon.patch (the Caps Lock icon), japanese-name.patch (the name 日本語) and the Set E tray
+caps-lock-icon.patch (the Caps Lock icon), japanese-name.patch (the name 日本語), shift-tap.patch
+(Shift tap from English back to あ) and the Set E tray
 icons from pc/icons. Prints the
 installer's path.
 

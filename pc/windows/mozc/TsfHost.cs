@@ -1,7 +1,8 @@
-// Typing harness for test.ps1 (#65): a text field of the test's own that talks to Windows' Text Services
-// Framework (TSF) directly, so it types into Mozc without the screen, the keyboard or the foreground.
-// Keys go to the input method through ITfKeystrokeMgr, with this thread's key state (Shift, Alt, Caps
-// Lock) set by SetKeyboardState, so the real keyboard and Caps Lock are never touched. Everything runs
+﻿// Typing harness for test.ps1 (#65): a text field of the test's own that talks to Windows' Text Services
+// Framework (TSF) directly, so it types into Mozc without the real keyboard. TSF passes keys on only
+// while its window has the keyboard focus, so it takes the foreground of the test user's own Remote
+// Desktop session, which no one sees. Keys go to the input method through ITfKeystrokeMgr, with this
+// thread's key state (Shift, Alt, Caps Lock) set by SetKeyboardState, so the real Caps Lock is never touched. Everything runs
 // on one STA thread with a message loop, as TSF and Mozc expect. C# 5: Windows PowerShell 5.1 compiles it.
 using System;
 using System.Collections.Concurrent;
@@ -70,6 +71,8 @@ namespace SebType {
     void EnumDocumentMgrs(out IntPtr e);
     void GetFocus(out IntPtr mgr);
     void SetFocus(ITfDocumentMgr mgr);
+    void AssociateFocus(IntPtr hwnd, ITfDocumentMgr newMgr, out IntPtr prevMgr);
+    void IsThreadFocus(out bool focus);
   }
 
   [ComImport, Guid("aa80e7f4-2021-11d2-93e0-0060b067b86e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -276,6 +279,10 @@ namespace SebType {
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll", EntryPoint = "SetFocus")] static extern IntPtr SetWindowFocus(IntPtr h);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     const uint WM_APP = 0x8000, WM_QUIT = 0x12;
     static readonly Guid CLSID_TF_ThreadMgr = new Guid("529a9e6b-6587-4f23-ab9e-9c7d683e3c50");
     static readonly Guid CLSID_TF_InputProcessorProfiles = new Guid("33c53a50-f456-4884-b049-85fd643ecfed");
@@ -298,13 +305,16 @@ namespace SebType {
         try {
           SetKeyboardState(new byte[256]);  // a new thread's key state isn't empty (Caps Lock was on, seen on Server 2022)
           store = new TextStore();
-          store.Hwnd = CreateWindowExW(0, "STATIC", "SebType Mozc test", 0, 0, 0, 640, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+          // WS_OVERLAPPEDWINDOW | WS_VISIBLE: TSF passes keys on only while this thread has the keyboard focus
+          store.Hwnd = CreateWindowExW(0, "STATIC", "SebType Mozc test", 0x10CF0000, 0, 0, 640, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
           threadMgr = (ITfThreadMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_ThreadMgr));
           uint clientId, ec;
           threadMgr.Activate(out clientId);
           threadMgr.CreateDocumentMgr(out docMgr);
           docMgr.CreateContext(clientId, 0, store, out context, out ec);
           docMgr.Push(context);
+          IntPtr prev;
+          threadMgr.AssociateFocus(store.Hwnd, docMgr, out prev);
           threadMgr.SetFocus(docMgr);
         } catch (Exception e) { err = e; }
         ready.Set();
@@ -319,6 +329,16 @@ namespace SebType {
       t.Start();
       if (!ready.WaitOne(20000)) throw new TimeoutException("the TSF thread didn't start");
       if (err != null) throw err;
+    }
+    // Gives the window the keyboard focus in this session (the test user's own, which no screen shows).
+    // Windows lets a process take the foreground right after it sent input: an Alt tap first.
+    public static bool Focus() {
+      for (int i = 0; i < 5 && GetForegroundWindow() != store.Hwnd; i++) {
+        keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero);
+        SetForegroundWindow(store.Hwnd);
+        Thread.Sleep(300);
+      }
+      return OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; }) && GetForegroundWindow() == store.Hwnd;
     }
     public static void Stop() {
       try { OnUi(() => { docMgr.Pop(1 /* TF_POPF_ALL */); threadMgr.Deactivate(); DestroyWindow(store.Hwnd); return 0; }); } catch { }
@@ -404,15 +424,6 @@ namespace SebType {
           if (eaten != 0) keys.KeyUp((IntPtr)vk, lp, out eaten);
         }
         return 0;
-      });
-    }
-    // DIAG (#65, remove)
-    public static string Diag(ushort vk) {
-      return OnUi(() => {
-        var keys = (ITfKeystrokeMgr)threadMgr; int eaten; Guid fg;
-        keys.GetForeground(out fg);
-        keys.TestKeyDown((IntPtr)vk, (IntPtr)1, out eaten);
-        return "foreground " + fg.ToString("B") + ", TestKeyDown eaten " + eaten;
       });
     }
     // Presses keys in order and releases them in reverse, e.g. Press(0x12, 0xC0) for Alt+`.
