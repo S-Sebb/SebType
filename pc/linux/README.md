@@ -32,6 +32,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Tray icons | Installs `~/.local/share/icons/SebType`, an icon theme that holds only SebType's tray icons (`pc/icons`) and inherits the theme that was active, then makes it the active icon theme. Plasma reloads icons at once | The tray shows SebType's keycaps instead of the icon theme's keyboard, Rime logo and Mozc squares |
 | Chinese label | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. Rime's own schema menu (F4) lists the schema as `.中文` |
 | 简/繁 key | Ctrl+Shift+F toggles rime-ice's `traditionalization` option at any time, added to `key_binder/bindings` in `~/.local/share/fcitx5/rime/default.custom.yaml`, keeping the file's other patches. Works once Rime redeploys (tray icon → Deploy, or a Fcitx5 restart) | Chinese switches between simplified and traditional output, as with Weasel on Windows. Only the output changes, so learned words stay shared; Ctrl+F alone stays Find in apps |
+| SebType Configurator | Builds `pc/configurator` with Rust's `cargo` when its sources changed, and installs it in `~/.local/share/sebtype/configurator` with the app-menu entry **SebType Configurator** (`sebtype-configurator.desktop`) and the phone's pig as its icon. Without Rust it only warns | SebType's settings without editing YAML: see [SebType Configurator](#sebtype-configurator) |
 
 `mozc-keymap.tsv` is Mozc's `src/data/keymap/ms-ime.tsv` (BSD-3-Clause, Google) with Alt+` and Shift
 lines added at the end.
@@ -65,6 +66,27 @@ comes from the theme SebType's inherits. If you pick another icon theme in Syste
 To undo: `pc/linux/setup-ime.sh --undo-icons`. It makes the inherited theme active again and removes
 `~/.local/share/icons/SebType`.
 
+### SebType Configurator
+
+SebType's settings app (`pc/configurator`, Rust with Slint), the PC counterpart of the phone's settings
+with the same groups and wording: 语言 (which languages Super+Space cycles and their order; Chinese's
+简/繁 start, punctuation, emoji, fuzzy pinyin and own words; Japanese's half-width space and own words),
+键盘 (candidates per page, row or column, text size; the shortcuts), 主题 (the candidate window in
+SebType's Picnic look or the system's), 隐私 (learning, and forgetting what Rime or Mozc learned), 同步与备份
+(export and import of the settings and own words; sync is #12) and 关于. It writes the same files the
+engines read (`rime_ice.custom.yaml`, `default.custom.yaml`, `custom_phrase.txt`, Mozc's `config1.db` and
+`user_dictionary.db`, Fcitx5's `classicui.conf` and group) and tells a running Fcitx5 over D-Bus, so a
+change shows at the next key; Chinese changes redeploy Rime.
+
+To undo: `pc/linux/setup-ime.sh --undo-configurator`. It removes the app and its entry, and puts back the
+candidate window look that Picnic replaced. Settings made with it stay.
+
+`pc/configurator/test.sh` checks it without touching the session: unit tests, every screen opened in a
+nested virtual KWin (screenshots in `/tmp/sebtype/configurator-shots`), a private Fcitx5 and Rime on
+a copy of this account's rime-ice taking the languages and Chinese settings the app writes, and
+`test-setup-ime.sh`. The Windows build is the `sebtype-configurator` artifact of the Configurator
+workflow.
+
 ### SebType's fcitx5-mozc
 
 Fedora's fcitx5-mozc picks the tray icon from the input mode alone, so Japanese's English mode can't show
@@ -92,7 +114,7 @@ restarts. At the end it checks that Fcitx5 runs under KWin and that the session 
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the icon theme's and SebType's fcitx5-mozc's install and undo,
+rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, and the Chinese popup
 text read from a private Fcitx5 running Rime). It doesn't touch the session.
 

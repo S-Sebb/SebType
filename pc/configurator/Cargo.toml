@@ -1,0 +1,26 @@
+[package]
+name = "sebtype-configurator"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "SebType Configurator: SebType's settings on Linux and Windows (#72)"
+
+[dependencies]
+# Only the winit backend with the OpenGL renderer: no Qt, one small binary on both systems.
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "accessibility"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+
+[build-dependencies]
+slint-build = "1.18"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

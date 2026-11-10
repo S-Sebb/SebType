@@ -4,17 +4,19 @@
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
 # from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc puts Fedora's
-# fcitx5-mozc back in place of SebType's build.
+# fcitx5-mozc back in place of SebType's build. --undo-configurator removes the SebType Configurator app
+# and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0
+dry=0 undo_icons=0 undo_mozc=0 undo_configurator=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
   --undo-mozc) undo_mozc=1 ;;
+  --undo-configurator) undo_configurator=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-configurator]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -49,6 +51,26 @@ inherited=${inherited:-breeze}  # Plasma's default when kdeglobals names none
 if ((undo_icons)); then
   if [[ $(icon_theme) == SebType ]]; then echo "change: icon theme back to $inherited"; set_icon_theme "$inherited"; fi
   if [[ -d $theme ]]; then echo "change: remove $theme"; rm -r "$theme"; fi
+  exit 0
+fi
+
+# SebType Configurator (#72, step 14): the app, its launcher and icon, and the Picnic candidate window
+# theme it installs when 主题 → 候选窗 is Picnic. The theme remembers the look it replaced.
+app_dir=$data/sebtype/configurator app_bin=$data/sebtype/configurator/sebtype-configurator
+app_desktop=$data/applications/sebtype-configurator.desktop
+app_icon=$data/icons/hicolor/192x192/apps/sebtype-configurator.png
+picnic_theme=$data/fcitx5/themes/sebtype-picnic classicui=$config/fcitx5/conf/classicui.conf
+if ((undo_configurator)); then
+  for f in "$app_desktop" "$app_icon"; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }; done
+  [[ -d $app_dir ]] && { echo "change: remove $app_dir"; rm -r "$app_dir"; }
+  if [[ -f $classicui ]] && grep -q '^Theme=sebtype-picnic$' "$classicui"; then
+    prev=$picnic_theme/previous
+    t=$(sed -n 's/^Theme=//p' "$prev" 2>/dev/null); d=$(sed -n 's/^DarkTheme=//p' "$prev" 2>/dev/null)
+    echo "change: candidate window theme back to ${t:-default}"
+    sed -i "s/^Theme=sebtype-picnic\$/Theme=${t:-default}/; s/^DarkTheme=sebtype-picnic\$/DarkTheme=${d:-default}/" "$classicui"
+    busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadAddonConfig s classicui 2>/dev/null || true
+  fi
+  [[ -d $picnic_theme ]] && { echo "change: remove $picnic_theme"; rm -r "$picnic_theme"; }
   exit 0
 fi
 
@@ -352,6 +374,41 @@ if ! grep -q 'toggle: traditionalization, accept: Control+Shift+f }' "$src" ||
     mkdir -p "$rime_dir"; printf '%s\n' "$want_custom" > "$default_custom"
     busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
       warn "Ctrl+Shift+F switches 简/繁 once Rime redeploys: right-click the tray icon → Deploy"
+  fi
+fi
+
+# 14. SebType Configurator (#72): SebType's settings app, "SebType Configurator" in the app menu. Built
+# from pc/configurator with Rust's cargo (a few minutes the first time) whenever its sources are newer
+# than the build, then copied into this account with its launcher and the phone's icon.
+src_app=$here/../configurator built=$src_app/target/release/sebtype-configurator
+want_desktop="[Desktop Entry]
+Type=Application
+Name=SebType Configurator
+Name[zh_CN]=SebType 设置
+Comment=SebType's settings: languages, candidate window, privacy and backup
+Comment[zh_CN]=SebType 输入法设置：语言、候选窗、隐私和备份
+Exec=$app_bin
+Icon=sebtype-configurator
+Categories=Settings;
+Keywords=SebType;IME;input method;Rime;Mozc;Fcitx;输入法;
+StartupWMClass=sebtype-configurator"
+stale=$( [[ -x $built ]] && find "$src_app" -path "$src_app/target" -prune -o -type f -newer "$built" -print -quit)
+if [[ ! -x $built || -n $stale ]] || ! cmp -s "$built" "$app_bin" || [[ $(cat "$app_desktop" 2>/dev/null) != "$want_desktop" ]] ||
+  ! cmp -s "$here/../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"; then
+  if change "install SebType Configurator in $app_dir with its app-menu entry (undo: $0 --undo-configurator)"; then
+    if [[ ! -x $built || -n $stale ]]; then
+      if command -v cargo >/dev/null; then
+        cargo build --release --quiet --manifest-path "$src_app/Cargo.toml"
+      else
+        warn "SebType Configurator needs Rust to build: install it from https://rustup.rs, then run this again"
+      fi
+    fi
+    if [[ -x $built ]]; then
+      mkdir -p "$app_dir" "${app_desktop%/*}" "${app_icon%/*}"
+      cp "$built" "$app_bin.new" && mv "$app_bin.new" "$app_bin"
+      cp "$here/../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"
+      printf '%s\n' "$want_desktop" > "$app_desktop"
+    fi
   fi
 fi
 

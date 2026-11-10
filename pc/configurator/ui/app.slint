@@ -1,0 +1,126 @@
+// SebType Configurator (#72): layout "B, sidebar" (Decisions #2), groups and wording from the phone's
+// settings (#41).
+import "../../../sebtype/res/font/sebtype_nunito_extrabold.ttf";
+import { Theme } from "theme.slint";
+import { State, Lang, Fuzzy, ZhWord, JaWord } from "state.slint";
+import { Button, PageTitle } from "widgets.slint";
+import { Nav, Pages } from "pages.slint";
+
+export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord }
+
+component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> dark;   // the phone alternates light and dark icon circles
+    in property <int> index;
+    property <bool> selected: Nav.page == index;
+    height: 46px;
+    border-radius: 12px;
+    background: selected ? Theme.pink : touch.has-hover ? Theme.card : transparent;
+    accessible-role: tab;
+    accessible-label: text;
+    accessible-item-selected: selected;
+    accessible-action-default => { Nav.page = index; Nav.sub = 0; }
+    HorizontalLayout {
+        padding-left: 8px;
+        spacing: 12px;
+        Rectangle {
+            width: 34px;
+            height: 34px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 17px;
+            background: root.dark ? Theme.key-low : Theme.pink;
+            border-width: root.selected && !root.dark ? 1px : 0;
+            border-color: Theme.card-border;
+            Image { source: root.icon; width: 20px; height: 20px; colorize: root.dark ? white : Theme.ink; }
+        }
+        Text { text: root.text; color: Theme.ink; font-size: 15px; vertical-alignment: center; font-weight: root.selected ? 700 : 400; }
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { Nav.page = root.index; Nav.sub = 0; } }
+}
+
+export component AppWindow inherits Window {
+    title: "SebType 设置";
+    icon: @image-url("../../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png");
+    preferred-width: 780px;
+    preferred-height: 600px;
+    min-width: 640px;
+    min-height: 440px;
+    background: Theme.page;
+    default-font-family: State.ui-font;
+    default-font-size: 14px;
+
+    HorizontalLayout {
+        Rectangle {
+            width: 210px;
+            background: Theme.nav;
+            VerticalLayout {
+                padding: 12px;
+                spacing: 4px;
+                alignment: start;
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-bottom: 12px;
+                    spacing: 10px;
+                    Rectangle {
+                        width: 42px; height: 42px; border-radius: 21px; background: #FFE4EC; clip: true;
+                        Image { source: @image-url("../../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png"); width: 42px; height: 42px; }
+                    }
+                    PageTitle { text: "SebType"; font-size: 19px; vertical-alignment: center; }
+                }
+                NavItem { index: 0; text: "语言"; icon: @image-url("icons/globe.svg"); }
+                NavItem { index: 1; text: "键盘"; icon: @image-url("icons/keyboard.svg"); dark: true; }
+                NavItem { index: 2; text: "主题"; icon: @image-url("icons/palette.svg"); }
+                NavItem { index: 3; text: "隐私"; icon: @image-url("icons/lock.svg"); }
+                NavItem { index: 4; text: "同步与备份"; icon: @image-url("icons/sync.svg"); dark: true; }
+                NavItem { index: 5; text: "关于"; icon: @image-url("icons/info.svg"); }
+            }
+            Rectangle { x: parent.width - 1px; width: 1px; background: Theme.line; }
+        }
+        Pages { horizontal-stretch: 1; }
+    }
+
+    if State.toast != "": Rectangle {
+        x: 210px + (parent.width - 210px - self.width) / 2;
+        y: parent.height - self.height - 18px;
+        width: toast-text.preferred-width + 32px;
+        height: 34px;
+        border-radius: 17px;
+        background: Theme.ink;
+        accessible-role: text;
+        accessible-label: State.toast;
+        toast-text := Text { text: State.toast; color: Theme.card; font-size: 13px; }
+    }
+
+    if Nav.confirm-lang != "": Rectangle {
+        background: #4A2F2266;
+        TouchArea { }   // keeps clicks off the page behind
+        Rectangle {
+            width: 380px;
+            height: 190px;
+            border-radius: Theme.card-radius;
+            background: Theme.card;
+            border-width: 2px;
+            border-color: Theme.outline;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                PageTitle { text: Nav.confirm-lang == "zh" ? "忘记中文已学的词？" : "忘记日本語的输入历史？"; font-size: 18px; }
+                Text {
+                    text: Nav.confirm-lang == "zh"
+                        ? "Rime 学到的词和顺序会被删除，无法恢复。你自己的词保留。"
+                        : "Mozc 学到的词和顺序会被删除，无法恢复。用户词典保留。";
+                    color: Theme.ink;
+                    wrap: word-wrap;
+                    vertical-stretch: 1;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 10px;
+                    Button { text: "取消"; clicked => { Nav.confirm-lang = ""; } }
+                    Button { text: "忘记"; danger: true; clicked => { State.forget(Nav.confirm-lang); Nav.confirm-lang = ""; } }
+                }
+            }
+        }
+    }
+}
