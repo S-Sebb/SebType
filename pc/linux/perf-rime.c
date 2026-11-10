@@ -3,12 +3,30 @@
 // Prints key=value lines: deploy_ms (maintenance at start-up; a full deploy when USER_DIR has no
 // build/), session_ms, first_key_us, key_p50_us, key_p95_us, key_max_us, keys, rss_kb, peak_rss_kb.
 // Built by perf.sh against librime's public headers; nothing is committed, so nothing is learned.
-#include <dlfcn.h>
+// On Windows (pc/windows/stage.sh, MinGW) it loads Weasel's rime.dll from PATH.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include "rime_api.h"
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+
+static double now_us(void) {
+  LARGE_INTEGER t, f;
+  QueryPerformanceCounter(&t);
+  QueryPerformanceFrequency(&f);
+  return (double)t.QuadPart * 1e6 / f.QuadPart;
+}
+
+static long status_kb(const char *key) { // the Linux names, from the working set
+  PROCESS_MEMORY_COUNTERS m;
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &m, sizeof m)) return 0;
+  return (long)((strcmp(key, "VmHWM:") ? m.WorkingSetSize : m.PeakWorkingSetSize) / 1024);
+}
+#else
+#include <dlfcn.h>
+#include <time.h>
 
 static double now_us(void) {
   struct timespec t;
@@ -25,6 +43,7 @@ static long status_kb(const char *key) {
   if (f) fclose(f);
   return v;
 }
+#endif
 
 static int cmp(const void *a, const void *b) {
   double x = *(const double *)a, y = *(const double *)b;
@@ -33,11 +52,17 @@ static int cmp(const void *a, const void *b) {
 
 int main(int argc, char **argv) {
   if (argc != 5) { fprintf(stderr, "usage: perf-rime SHARED USER SCHEMA RUNS < inputs\n"); return 2; }
-  // rime-ice needs librime-lua, which Fcitx5's Rime also loads.
+  // rime-ice needs librime-lua, which Fcitx5's Rime also loads; Weasel's rime.dll has it built in.
   const char *modules[] = {"default", "plugins", "lua", NULL};
+#ifdef _WIN32
+  HMODULE rime = LoadLibraryA("rime.dll");
+  RimeApi *(*get_api)(void) = rime ? (RimeApi * (*)(void)) GetProcAddress(rime, "rime_get_api") : NULL;
+  if (!get_api) { fprintf(stderr, "rime.dll not found on PATH\n"); return 1; }
+  RimeApi *api = get_api();
+#else
   if (!dlopen("/usr/lib64/rime-plugins/librime-lua.so", RTLD_NOW | RTLD_GLOBAL)) modules[2] = NULL;
-
   RimeApi *api = rime_get_api();
+#endif
   RIME_STRUCT(RimeTraits, traits);
   traits.shared_data_dir = argv[1];
   traits.user_data_dir = argv[2];
