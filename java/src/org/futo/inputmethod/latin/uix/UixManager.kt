@@ -520,6 +520,8 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     override fun getCurrentIME(): IMEInterface {
         return latinIME.imeManager.getActiveIME(Settings.getInstance().current)
     }
+
+    @Composable override fun menuSwitch() = latinIME.imeManager.menuSwitch()
 }
 
 data class ActiveDialogRequest(
