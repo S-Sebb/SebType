@@ -1,182 +1,126 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
-import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.R
+import org.futo.inputmethod.latin.settings.Settings
+import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.TextEditPopupActivity
+import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryEnabled
+import org.futo.inputmethod.latin.uix.settings.BottomSpacer
+import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
-import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.render
+import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
-import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
+import org.futo.inputmethod.latin.uix.settings.useSharedPrefsBool
+import org.futo.inputmethod.latin.uix.theme.ThemeOptions
 import org.futo.inputmethod.latin.uix.theme.Typography
+import org.futo.inputmethod.latin.uix.theme.defaultThemeOption
 
-val HomeScreenLite = UserSettingsMenu(
-    title = R.string.settings_home_title,
-    navPath = "home", registerNavPath = false,
-    settings = listOf(
-        userSettingNavigationItem(
-            title = R.string.language_settings_title,
-            style = NavigationItemStyle.HomePrimary,
-            navigateTo = "languages",
-            icon = R.drawable.globe
-        ),
+// SebType's home (#41): six groups, each line showing its current state, at most two taps from any
+// option. FUTO's payment reminder still appears here when it is due; the payment screen is in About.
+@Composable
+private fun HomeGroups(navController: NavHostController) {
+    val context = LocalContext.current
+    val subtypes = useSubtypesInOrder()
+    val autocorrect = useSharedPrefsBool(Settings.PREF_AUTO_CORRECTION, true).value
+    val learning = useSharedPrefsBool(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true).value
+    val clipboard = useDataStoreValue(ClipboardHistoryEnabled)
+    val themeKey = useDataStoreValue(THEME_KEY)
+    val theme = ThemeOptions[themeKey]?.name?.let { stringResource(it) }
+        ?: if(themeKey.isEmpty()) stringResource(defaultThemeOption(context).name)
+        else stringResource(R.string.sebtype_settings_custom_theme)
 
-        userSettingNavigationItem(
-            title = R.string.settings_keyboard_typing_title,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "keyboardAndTyping",
-            icon = R.drawable.keyboard
-        ),
-
-        userSettingNavigationItem(
-            title = R.string.prediction_settings_title,
-            style = NavigationItemStyle.HomeTertiary,
-            navigateTo = PredictiveTextMenu.navPath,
-            icon = R.drawable.text_prediction
-        ),
-
-        userSettingNavigationItem(
-            title = R.string.action_settings_title,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "actions",
-            icon = R.drawable.smile
-        ),
-
-        userSettingNavigationItem(
-            title = R.string.theme_settings_title,
-            style = NavigationItemStyle.HomeTertiary,
-            navigateTo = "themes",
-            icon = R.drawable.themes
-        ),
-
-        //if(!isPaid) {
-        userSettingNavigationItem(
-            title = R.string.payment_screen_short_title,
-            style = NavigationItemStyle.HomePrimary,
-            navigateTo = "payment",
-            icon = R.drawable.dollar_sign,
-        ).copy(visibilityCheck = {
-            useDataStoreValue(IS_ALREADY_PAID) == false
-        }, appearInSearchIfVisibilityCheckFailed = false),
-        //}
-
-        userSettingNavigationItem(
-            title = R.string.help_menu_title,
-            style = NavigationItemStyle.HomeSecondary,
-            navigateTo = "help",
-            icon = R.drawable.help_circle
-        ),
-
-        //if(isDeveloper || LocalInspectionMode.current) {
-        userSettingNavigationItem(
-            title = R.string.dev_settings_title,
-            style = NavigationItemStyle.HomeTertiary,
-            navigateTo = "developer",
-            icon = R.drawable.code
-        ).copy(visibilityCheck = {
-            useDataStoreValue(IS_DEVELOPER) == true || LocalInspectionMode.current
-        }),
-        //}
-
-        userSettingNavigationItem(
-            title = R.string.misc_settings_title,
-            style = NavigationItemStyle.MiscNoArrow,
-            navigateTo = "misc",
-        ),
-
-        userSettingNavigationItem(
-            title = R.string.credits_menu_title,
-            style = NavigationItemStyle.MiscNoArrow,
-            navigateTo = "credits",
-        ),
+    NavigationItem(
+        title = stringResource(R.string.sebtype_settings_languages),
+        subtitle = globeOrderSummary(subtypes) + " · " + stringResource(
+            if(autocorrect) R.string.sebtype_settings_autocorrect_on else R.string.sebtype_settings_autocorrect_off),
+        style = NavigationItemStyle.HomePrimary,
+        icon = painterResource(R.drawable.globe),
+        navigate = { navController.navigate("languages") }
     )
-)
+    NavigationItem(
+        title = stringResource(R.string.keyboard_settings_title),
+        subtitle = stringResource(R.string.sebtype_settings_keyboard_subtitle),
+        style = NavigationItemStyle.HomeSecondary,
+        icon = painterResource(R.drawable.keyboard),
+        navigate = { navController.navigate("keyboard") }
+    )
+    NavigationItem(
+        title = stringResource(R.string.theme_settings_title),
+        subtitle = theme,
+        style = NavigationItemStyle.HomeTertiary,
+        icon = painterResource(R.drawable.themes),
+        navigate = { navController.navigate("themes") }
+    )
+    NavigationItem(
+        title = stringResource(R.string.sebtype_settings_privacy),
+        subtitle = stringResource(if(learning) R.string.sebtype_settings_learning_on else R.string.sebtype_settings_learning_off) +
+            " · " + stringResource(if(clipboard) R.string.sebtype_settings_clipboard_on else R.string.sebtype_settings_clipboard_off),
+        style = NavigationItemStyle.HomePrimary,
+        icon = rememberVectorPainter(Icons.Default.Lock),
+        navigate = { navController.navigate("privacy") }
+    )
+    NavigationItem(
+        title = stringResource(R.string.sebtype_settings_backup),
+        subtitle = stringResource(R.string.sebtype_settings_backup_subtitle),
+        style = NavigationItemStyle.HomeSecondary,
+        icon = rememberVectorPainter(Icons.Default.Refresh),
+        navigate = { navController.navigate("backup") }
+    )
+    NavigationItem(
+        title = stringResource(R.string.sebtype_settings_about),
+        subtitle = stringResource(R.string.sebtype_settings_about_subtitle),
+        style = NavigationItemStyle.HomeTertiary,
+        icon = rememberVectorPainter(Icons.Default.Info),
+        navigate = { navController.navigate("about") }
+    )
+}
 
-@Preview(showBackground = true)
 @Composable
 fun HomeScreen(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
-    val isDeveloper = useDataStoreValue(IS_DEVELOPER)
-    val isPaid = useDataStoreValue(IS_ALREADY_PAID)
+    val icon = remember { context.packageManager.getApplicationIcon(context.packageName).toBitmap().asImageBitmap() }
 
-    Column {
-        Column(
-            modifier = Modifier
-                .weight(1.0f)
-                .fillMaxWidth()
-                .verticalScroll(scrollState)
-        ) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.english_ime_settings), style = Typography.Heading.Medium, modifier = Modifier
-                    .align(CenterVertically)
-                    .weight(1.0f))
-
-                Spacer(Modifier.width(4.dp))
-
-                IconButton(onClick = {
-                    navController.navigate("search")
-                }) {
-                    Icon(Icons.Default.Search, contentDescription = stringResource(
-                        R.string.settings_search_menu_title
-                    ))
-                }
+    ScrollableList {
+        Spacer(modifier = Modifier.height(24.dp))
+        Row(Modifier.padding(16.dp), verticalAlignment = CenterVertically) {
+            Image(icon, contentDescription = null, modifier = Modifier.size(56.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(stringResource(R.string.sebtype_app_name), style = Typography.Heading.Medium)
+                Text(stringResource(R.string.sebtype_settings_subtitle), style = Typography.Small)
             }
-
-            ConditionalUnpaidNoticeWithNav(navController)
-
-            HomeScreenLite.render(showTitle = false)
-
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if(isPaid || LocalInspectionMode.current) {
-                Text(
-                    stringResource(R.string.payment_paid_version_indicator),
-                    style = Typography.SmallMl,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            Text(
-                "v${BuildConfig.VERSION_NAME}",
-                style = Typography.Small,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(32.dp))
         }
+
         TextButton(onClick = {
             val intent = Intent()
             intent.setClass(context, TextEditPopupActivity::class.java)
@@ -184,8 +128,13 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             )
             context.startActivity(intent)
-        }, modifier = Modifier.fillMaxWidth()) {
+        }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             Text(stringResource(R.string.settings_try_typing_here), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f), modifier = Modifier.fillMaxWidth())
         }
+
+        ConditionalUnpaidNoticeWithNav(navController)
+
+        HomeGroups(navController)
+        BottomSpacer()
     }
 }

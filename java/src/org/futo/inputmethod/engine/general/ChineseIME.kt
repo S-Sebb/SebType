@@ -6,10 +6,6 @@ import android.util.Log
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.stringResource
 import androidx.datastore.preferences.core.stringPreferencesKey
 import icu.astronot233.rime.DeployStage
 import icu.astronot233.rime.Rime
@@ -57,12 +53,6 @@ import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.namePreferenceKeyFor
 import org.futo.inputmethod.latin.uix.preferenceKeyFor
 import org.futo.inputmethod.latin.uix.setSetting
-import org.futo.inputmethod.latin.uix.settings.CollapsibleSection
-import org.futo.inputmethod.latin.uix.settings.DropDownPickerSettingItem
-import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
-import org.futo.inputmethod.latin.uix.settings.UserSetting
-import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.utils.ZipFileHelper
 import org.futo.inputmethod.latin.utils.toEnumOrNull
 import org.futo.inputmethod.v2keyboard.KeyboardLayoutSetV2
@@ -149,69 +139,6 @@ object ChineseIMESettings {
     )
 
     var schemaList: List<RimeSchema> = emptyList()
-    val menu = UserSettingsMenu(
-        title = R.string.chinese_settings_title,
-        searchTags = R.string.chinese_setting_search_tags,
-        navPath = "ime/zh", registerNavPath = true,
-        settings = listOf(
-            UserSetting(R.string.chinese_setting_simplification) {
-                val resources = LocalResources.current
-                val (setting, setSetting) = useDataStore(SimplificationSetting)
-                DropDownPickerSettingItem<ChineseSimplificationMode>(
-                    stringResource(R.string.chinese_setting_simplification),
-                    ChineseSimplificationMode.entries,
-                    setting.toEnumOrNull<ChineseSimplificationMode>() ?: ChineseSimplificationMode.ByLanguage,
-                    { setSetting(it.name) },
-                    { resources.getString(it.stringResource) }
-                )
-            },
-
-            UserSetting(R.string.chinese_setting_pinyin_scheme) {
-                val context = LocalContext.current
-                val resources = LocalResources.current
-                val (setting, setSetting) = useDataStore(PinyinSchemeSetting)
-
-                val availableEntries = remember {
-                    val sharedDir = ChineseIME.getShared(context)
-                    val files = (sharedDir.listFiles() ?: emptyArray()).map { it.name.split('.').first() }.toSet()
-                    PinyinScheme.entries.filter {
-                        files.contains(it.rimeId) || it == PinyinScheme.FullPinyin
-                    }
-                }
-                DropDownPickerSettingItem<PinyinScheme>(
-                    stringResource(R.string.chinese_setting_pinyin_scheme),
-                    availableEntries,
-                    setting.toEnumOrNull<PinyinScheme>() ?: PinyinScheme.FullPinyin,
-                    { setSetting(it.name) },
-                    { when(resources.configuration.locale.language) {
-                        "zh" -> it.displayNameZH
-                        else -> it.displayNameEN
-                    } }
-                )
-            },
-
-            UserSetting(R.string.chinese_setting_fuzzy_pinyin) {
-                val (setting, setSetting) = useDataStore(FuzzyPinyinSetting)
-                val set = remember(setting) { FuzzyPinyinModes.fromCommaString(setting) }
-
-                CollapsibleSection(stringResource(R.string.chinese_setting_fuzzy_pinyin)) {
-                    FuzzyPinyinModes.entries.forEach { mode ->
-                        SettingToggleRaw(mode.displayName, set.contains(mode), { enabled ->
-                            val newSet = if (enabled) {
-                                set + setOf(mode)
-                            } else {
-                                set - setOf(mode)
-                            }
-
-                            setSetting(FuzzyPinyinModes.toCommaString(newSet))
-                        })
-                    }
-                }
-
-            },
-
-        )
-    )
 }
 
 class InputKeeper() {
@@ -530,6 +457,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         RimeIceSetup.setInUse(helper.context, true)
         showSetupState(RimeIceSetup.state.value)
         updateConfig()
+        if(ready) coroScope.launch { ChineseOptions.apply(helper.context, rime) }
     }
 
     private var prevConfiguration: RimeIceSetup.Configuration? = null
@@ -582,6 +510,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 // Joins a setup already running in the background (setup screen, app update).
                 if(RimeIceSetup.ensure(helper.context, config)) {
                     rime.setOption(TRADITIONAL, traditional.value)
+                    ChineseOptions.apply(helper.context, rime)
                     prevConfiguration = config
                     if(helper.isImeActive(this@ChineseIME)) setNeutralSuggestionStrip()
                 }
@@ -702,7 +631,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     return
                 val x11Code = when (event.mKeyCode) {
                     Constants.CODE_DELETE -> '\b'.code
-                    Event.NOT_A_KEY_CODE -> event.mCodePoint
+                    Event.NOT_A_KEY_CODE -> ChineseOptions.punctuation(event.mCodePoint)
                     else -> return
                 }.let { when (it) {
                     '\b'.code -> XK_BackSpace
@@ -887,12 +816,8 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         Log.d(TAG, "Clearing Chinese dictionary...")
 
         coroScope.launch {
-            RimeIceSetup.whileStopped(helper.context) {
-                getUser(helper.context).let {
-                    it.deleteRecursively()
-                    it.mkdirs()
-                }
-            }
+            // Keeps the user's own words and Rime's deployed build (#41)
+            ChineseLearnedWords.forget(helper.context)
             prevConfiguration = null
             if(helper.isImeActive(this@ChineseIME)) updateConfig()
         }

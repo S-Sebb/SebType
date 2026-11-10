@@ -36,49 +36,8 @@
     <!-- Units abbreviation for the duration (milliseconds) [CHAR LIMIT=10] -->
     <string name="abbreviation_unit_milliseconds"><xliff:g id="MILLISECONDS">%s</xliff:g>ms</string>
 
-    <!-- Option name for enabling the use by the keyboards of sent/received messages, e-mail and typing history to improve suggestion accuracy [CHAR LIMIT=25] -->
-    <string name="use_personalized_dicts">Personalized suggestions</string>
-
-    <!-- Option name for enabling or disabling the double-space period feature that lets double tap on spacebar insert a period followed by a space [CHAR LIMIT=30] -->
-    <string name="use_double_space_period">Double-space period</string>
-    <!-- Description for option enabling or disabling the double-space period feature that lets double tap on spacebar insert a period followed by a space [CHAR LIMIT=65] -->
-    <string name="use_double_space_period_summary">Double tap on spacebar inserts a period followed by a space</string>
-
-    <!-- Option to enable auto capitalization of sentences -->
-    <string name="auto_cap">Auto-capitalization</string>
-    <!-- Description for option to enable auto capitalization of sentences -->
-    <string name="auto_cap_summary">Capitalize the first word of each sentence</string>
-
     <!-- Option to edit personal dictionary. [CHAR_LIMIT=30]-->
     <string name="edit_personal_dictionary">Personal dictionary</string>
-
-    <!-- Option to enable showing suggestions -->
-    <string name="prefs_show_suggestions">Show correction suggestions</string>
-    <!-- Description for show suggestions -->
-    <string name="prefs_show_suggestions_summary">Display suggested words while typing</string>
-
-    <!-- Option to block potentially offensive words to be shown [CHAR_LIMIT=30] -->
-    <string name="prefs_block_potentially_offensive_title">Block offensive words</string>
-    <!-- Summary for option to block potentially offensive words to be shown [CHAR_LIMIT=80 (two lines) or 40 (fits on one line, preferable)] -->
-    <string name="prefs_block_potentially_offensive_summary">Do not suggest potentially offensive words</string>
-    <!-- Search tags for the setting (these are not displayed to the user, the bad words will allow this option to appear when they search those words) -->
-    <string name="prefs_block_potentially_offensive_tags">bad words, swear words, swears, curse words, blacklist, filtering, fuck, shit</string>
-
-    <string name="prefs_block_slurs_title">Block slurs</string>
-    <string name="prefs_block_slurs_summary">Currently only affects English</string>
-
-    <!-- Option to decide the auto correction threshold score -->
-    <!-- Option to enable auto correction [CHAR LIMIT=20]-->
-    <string name="auto_correction">Auto-correction</string>
-    <!-- Description for auto correction [CHAR LIMIT=65 (two lines) or 30 (fits on one line, preferable)] -->
-    <string name="auto_correction_summary">Spacebar and punctuation automatically correct mistyped words</string>
-    <!-- Search tags for the setting -->
-    <string name="auto_correction_tags">autocorrect</string>
-
-    <!-- Option to enable using next word suggestions. After the user types a space, with this option on, the keyboard will try to predict the next word. -->
-    <string name="bigram_prediction">Next-word suggestions</string>
-    <!-- Description for "next word suggestion" option. This displays suggestions even when there is no input, based on the previous word. -->
-    <string name="bigram_prediction_summary">Use the previous word in making suggestions</string>
 
     <!-- Title for input language selection screen -->
     <string name="language_selection_title">Languages</string>

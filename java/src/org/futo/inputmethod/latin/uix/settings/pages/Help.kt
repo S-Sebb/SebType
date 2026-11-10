@@ -17,10 +17,9 @@ import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
-import org.futo.inputmethod.latin.uix.settings.Tip
 import org.futo.inputmethod.latin.uix.settings.UserSetting
 import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.userSettingDecorationOnly
+import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
 import org.futo.inputmethod.updates.openURI
 
@@ -30,33 +29,24 @@ internal fun Context.copyToClipboard(text: CharSequence, label: String = "Copied
     clipboardManager.setPrimaryClip(clipData)
 }
 
-val HelpMenu = UserSettingsMenu(
-    title = R.string.help_menu_title,
-    navPath = "help", registerNavPath = true,
+// SebType: FUTO's Help & Feedback is now About: the version (tapping it eight times turns on developer
+// mode, as before), help through SebType's own issues, FUTO's payment and licence screens.
+val AboutMenu = UserSettingsMenu(
+    title = R.string.sebtype_settings_about,
+    navPath = "about", registerNavPath = true,
     settings = listOf(
         UserSetting(
-            name = R.string.help_menu_version_name
-        ) {
-            val context = LocalContext.current
-            NavigationItem(
-                title = stringResource(R.string.help_menu_version_name, BuildConfig.VERSION_NAME),
-                style = NavigationItemStyle.MiscNoArrow,
-                navigate = {
-                    context.copyToClipboard(BuildConfig.VERSION_NAME)
-                }
-            )
-        },
-        UserSetting(
-            name = R.string.help_menu_version_code,
-            searchTags = R.string.dev_settings_title
+            name = R.string.sebtype_settings_version
         ) {
             val context = LocalContext.current
             val numPresses = remember { mutableIntStateOf(0) }
             var lastToast: MutableState<Toast?> = remember { mutableStateOf(null) }
             NavigationItem(
-                title = stringResource(R.string.help_menu_version_code, BuildConfig.VERSION_CODE),
+                title = stringResource(R.string.sebtype_settings_version),
+                subtitle = BuildConfig.VERSION_NAME,
                 style = NavigationItemStyle.MiscNoArrow,
                 navigate = {
+                    context.copyToClipboard(BuildConfig.VERSION_NAME)
                     val makeToast: (String) -> Unit = { text ->
                         Toast.makeText(context, text, Toast.LENGTH_SHORT).let {
                             lastToast.value?.cancel()
@@ -81,61 +71,31 @@ val HelpMenu = UserSettingsMenu(
                 }
             )
         },
-        userSettingDecorationOnly {
-            Tip(stringResource(
-                    R.string.help_menu_version_tip,
-                    BuildConfig.VERSION_NAME
-                ))
-        },
 
         userSettingNavigationItem(
-            title = R.string.help_menu_website,
-            subtitle = R.string.help_menu_website_subtitle,
+            title = R.string.sebtype_settings_help,
+            subtitle = R.string.sebtype_settings_help_subtitle,
             style = NavigationItemStyle.Misc,
             navigate = { nav ->
-                nav.context.openURI("https://futo.tech/")
-            }
-        ).copy(searchTags = R.string.help_menu_website_tags),
-
-        userSettingNavigationItem(
-            title = R.string.help_menu_documentation,
-            subtitle = R.string.help_menu_documentation_subtitle,
-            style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://docs.keyboard.futo.tech/")
+                nav.context.openURI("https://github.com/S-Sebb/SebType/issues")
             }
         ),
         userSettingNavigationItem(
-            title = R.string.help_menu_discord,
-            subtitle = R.string.help_menu_discord_subtitle,
+            title = R.string.sebtype_settings_support_futo,
+            subtitle = R.string.sebtype_settings_support_futo_subtitle,
             style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://keyboard.futo.tech/discord")
-            }
+            navigateTo = "payment"
         ),
         userSettingNavigationItem(
-            title = R.string.help_menu_futo_chat,
-            subtitle = R.string.help_menu_futo_chat_subtitle,
+            title = R.string.sebtype_settings_credits,
+            subtitle = R.string.sebtype_settings_credits_subtitle,
             style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://chat.futo.org/")
-            }
+            navigateTo = "credits"
         ),
         userSettingNavigationItem(
-            title = R.string.help_menu_github,
-            subtitle = R.string.help_menu_github_subtitle,
+            title = R.string.dev_settings_title,
             style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://github.com/futo-org/android-keyboard/issues")
-            }
-        ),
-        userSettingNavigationItem(
-            title = R.string.help_menu_email,
-            subtitle = R.string.help_menu_email_subtitle,
-            style = NavigationItemStyle.Mail,
-            navigate = { nav ->
-                nav.context.openURI("mailto:keyboard@futo.org")
-            }
-        ).copy(searchTags = R.string.help_menu_email_tags),
+            navigateTo = "developer"
+        ).copy(visibilityCheck = { useDataStoreValue(IS_DEVELOPER) }),
     )
 )

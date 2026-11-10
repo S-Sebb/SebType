@@ -34,7 +34,6 @@ import org.futo.inputmethod.keyboard.KeyboardId
 import org.futo.inputmethod.keyboard.internal.KeyboardLayoutKind
 import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.InputConnectionUtil
-import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.Subtypes
 import org.futo.inputmethod.latin.SubtypesSetting
 import org.futo.inputmethod.latin.SuggestedWords
@@ -58,9 +57,7 @@ import org.futo.inputmethod.latin.uix.actions.keyCode
 import org.futo.inputmethod.latin.uix.getImportedUserDictFilesForLocale
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
-import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.decodeJapanesePersonalWord
-import org.futo.inputmethod.latin.uix.settings.userSettingToggleDataStore
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.InputTypeUtils
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter
@@ -95,23 +92,6 @@ object JapaneseIMESettings {
         false
     )
 
-    val menu = UserSettingsMenu(
-        title = R.string.japanese_settings_title,
-        navPath = "ime/ja", registerNavPath = true,
-        settings = listOf(
-            userSettingToggleDataStore(
-                title = R.string.japanese_settings_toggle_flick_only,
-                subtitle = R.string.japanese_settings_toggle_flick_only_subtitle,
-                setting = FlickOnly
-            ),
-
-            userSettingToggleDataStore(
-                title = R.string.japanese_settings_toggle_halfwidth_space,
-                subtitle = R.string.japanese_settings_toggle_halfwidth_space_subtitle,
-                setting = HalfWidthSpace
-            )
-        )
-    )
 }
 
 // Focused segment's attribute.

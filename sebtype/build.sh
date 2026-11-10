@@ -30,17 +30,13 @@ else VERSION_CODE=1 build=dev BRANCH_NAME=dev; fi
 VERSION_NAME="$(cat sebtype/upstream-version)-sebtype.$build"
 export VERSION_CODE VERSION_NAME BRANCH_NAME
 locked=$(mktemp) # when the build lock was taken
-trap 'rm -f keystore.properties "$locked"' EXIT
+trap 'rm -f "$locked"' EXIT
 
 case $kind in
   release)
     [[ -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ]] ||
       { echo "build: keystore missing in $keydir" >&2; exit 1; }
-    task=assembleStableRelease abis=arm64-v8a out=build/outputs/apk/stable/release
-    # Gradle reads signing from keystore.properties (gitignored); it exists only during the build.
-    pw=$(cat "$keydir/keystore.password")
-    printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=sebtype\nkeyPassword=%s\n' \
-      "$keydir/sebtype-release.jks" "$pw" "$pw" > keystore.properties ;;
+    task=assembleStableRelease abis=arm64-v8a out=build/outputs/apk/stable/release ;;
   debug-x86_64)
     task=assembleStableDebug abis=x86_64 out=build/outputs/apk/stable/debug ;;
   test-x86_64)
@@ -58,18 +54,33 @@ if command -v sccache >/dev/null; then
   export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=$PWD \
     SCCACHE_SERVER_UDS=$locked.sccache
   sccache --start-server >/dev/null
-  trap 'sccache --stop-server >/dev/null; rm -f keystore.properties "$locked" "$SCCACHE_SERVER_UDS"' EXIT
+  trap 'sccache --stop-server >/dev/null; rm -f "$locked" "$SCCACHE_SERVER_UDS"' EXIT
 fi
 
-rm -rf "$out"
 start=$(date +%s)
+# Gradle reads signing from keystore.properties (gitignored). It is written and removed under the lock:
+# a release build in the same checkout that ends while another waits would otherwise remove it first,
+# and Gradle would quietly sign that one with the debug key.
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
-devq -P "${BUILD_PRIORITY:-1}" -m 30 -n "sebtype build ($kind)" /tmp/agent-locks/sebtype/build.lock \
-  bash -c 'date +%s > "$0"; exec "$@"' "$locked" ./gradlew --no-daemon --max-workers=4 -Dorg.gradle.jvmargs=-Xmx3g \
-    -Pkotlin.compiler.execution.strategy=daemon -Pkotlin.daemon.jvmargs=-Xmx2g --console=plain -q $task \
-    -PsebtypeAbis="$abis" >&2
+export SEBTYPE_KEY_DIR=$keydir KIND=$kind OUT=$out LOCKED=$locked
+devq -P "${BUILD_PRIORITY:-1}" -m 30 -n "sebtype build ($kind)" /tmp/agent-locks/sebtype/build.lock bash -c '
+  date +%s > "$LOCKED"
+  rm -rf "$OUT"
+  if [[ $KIND == release ]]; then
+    trap "rm -f keystore.properties" EXIT
+    pw=$(cat "$SEBTYPE_KEY_DIR/keystore.password")
+    printf "storeFile=%s\nstorePassword=%s\nkeyAlias=sebtype\nkeyPassword=%s\n" \
+      "$SEBTYPE_KEY_DIR/sebtype-release.jks" "$pw" "$pw" > keystore.properties
+  fi
+  ./gradlew --no-daemon --max-workers=4 -Dorg.gradle.jvmargs=-Xmx3g \
+    -Pkotlin.compiler.execution.strategy=daemon -Pkotlin.daemon.jvmargs=-Xmx2g --console=plain -q "$@" >&2
+' build $task -PsebtypeAbis="$abis"
 apk=$(ls "$out"/*.apk)
+if [[ $kind == release ]]; then
+  "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner verify --print-certs "$apk" 2>/dev/null | grep -q 'CN=SebType' ||
+    { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
+fi
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - $(cat "$locked") ))s after $(( $(cat "$locked") - start ))s in the lock queue, $(du -h "$apk" | cut -f1)" >&2
 echo "$apk"
 [[ $kind != test-x86_64 ]] || ls build/outputs/apk/androidTest/stable/debug/*.apk

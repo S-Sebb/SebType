@@ -12,22 +12,19 @@ import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import kotlinx.serialization.Serializable
-import org.futo.inputmethod.engine.IMESettingsMenu
-import org.futo.inputmethod.engine.SettingsByLanguage
 import org.futo.inputmethod.latin.toLocale
 import org.futo.inputmethod.latin.uix.ErrorDialog
 import org.futo.inputmethod.latin.uix.InfoDialog
 import org.futo.inputmethod.latin.uix.LocalNavController
 import org.futo.inputmethod.latin.uix.SettingsExporter.ExportingMenu
-import org.futo.inputmethod.latin.uix.actions.AllActions
 import org.futo.inputmethod.latin.uix.settings.pages.ActionEditorScreen
-import org.futo.inputmethod.latin.uix.settings.pages.ActionsScreen
-import org.futo.inputmethod.latin.uix.settings.pages.AdvancedParametersScreen
+import org.futo.inputmethod.latin.uix.settings.pages.PrivacyScreen
+import org.futo.inputmethod.latin.uix.settings.pages.FuzzyPinyinScreen
+import org.futo.inputmethod.latin.uix.settings.pages.ForgetLearnedDialog
+import org.futo.inputmethod.latin.uix.settings.pages.BackupScreen
+import org.futo.inputmethod.latin.uix.settings.pages.AboutMenu
 import org.futo.inputmethod.latin.uix.settings.pages.AlreadyPaidDialog
-import org.futo.inputmethod.latin.uix.settings.pages.BlacklistScreen
-import org.futo.inputmethod.latin.uix.settings.pages.BlacklistScreenLite
 import org.futo.inputmethod.latin.uix.settings.pages.CreditsScreen
-import org.futo.inputmethod.latin.uix.settings.pages.CreditsScreenLite
 import org.futo.inputmethod.latin.uix.settings.pages.DevEditTextVariationsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevKeyboardScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEdit
@@ -36,30 +33,16 @@ import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutList
 import org.futo.inputmethod.latin.uix.settings.pages.DevPaletteScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevThemeImportScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DeveloperScreen
-import org.futo.inputmethod.latin.uix.settings.pages.HelpMenu
 import org.futo.inputmethod.latin.uix.settings.pages.HomeScreen
-import org.futo.inputmethod.latin.uix.settings.pages.HomeScreenLite
-import org.futo.inputmethod.latin.uix.settings.pages.KeyboardAndTypingScreen
 import org.futo.inputmethod.latin.uix.settings.pages.KeyboardSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.pages.LanguageSettingsLite
 import org.futo.inputmethod.latin.uix.settings.pages.LanguagesScreen
-import org.futo.inputmethod.latin.uix.settings.pages.LongPressMenu
-import org.futo.inputmethod.latin.uix.settings.pages.MiscMenu
-import org.futo.inputmethod.latin.uix.settings.pages.NumberRowSettingMenu
 import org.futo.inputmethod.latin.uix.settings.pages.PaymentScreen
 import org.futo.inputmethod.latin.uix.settings.pages.PaymentThankYouScreen
-import org.futo.inputmethod.latin.uix.settings.pages.PredictiveTextMenu
 import org.futo.inputmethod.latin.uix.settings.pages.ProjectInfoView
-import org.futo.inputmethod.latin.uix.settings.pages.ResizeMenuLite
 import org.futo.inputmethod.latin.uix.settings.pages.ResizeScreen
-import org.futo.inputmethod.latin.uix.settings.pages.SearchScreen
-import org.futo.inputmethod.latin.uix.settings.pages.SelectLanguageScreen
-import org.futo.inputmethod.latin.uix.settings.pages.SelectLayoutsScreen
-import org.futo.inputmethod.latin.uix.settings.pages.TypingSettingsMenu
-import org.futo.inputmethod.latin.uix.settings.pages.addModelManagerNavigation
 import org.futo.inputmethod.latin.uix.settings.pages.buggyeditors.BuggyTextEditVariations
+import org.futo.inputmethod.latin.uix.settings.pages.pdict.ChineseWordsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.ConfirmDeleteExtraDictFileDialog
-import org.futo.inputmethod.latin.uix.settings.pages.pdict.PersonalDictionaryLanguageList
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.PersonalDictionaryLanguageListForLocale
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.WordPopupDialogF
 import org.futo.inputmethod.latin.uix.settings.pages.themes.CustomThemeDialog
@@ -80,7 +63,6 @@ fun NavHostController.navigateToInfo(title: String, body: String) {
 object Route {
     @Serializable data class Error(val title: String, val body: String)
     @Serializable data class Info(val title: String, val body: String)
-    @Serializable data class AddLayout(val lang: String)
     @Serializable data class PersonalDictList(val lang: String?)
     @Serializable data class PersonalDictWord(val lang: String?, val word: String?)
     @Serializable data class PersonalDictDelete(val dict: String)
@@ -92,21 +74,9 @@ object Route {
 
 
 val SettingsMenus = listOf(
-    HomeScreenLite,
-    LanguageSettingsLite,
     KeyboardSettingsMenu,
-    NumberRowSettingMenu,
-    TypingSettingsMenu,
-    ResizeMenuLite,
-    LongPressMenu,
-    PredictiveTextMenu,
-    BlacklistScreenLite,
-    ActionsScreen,
-    HelpMenu,
-    MiscMenu,
-    CreditsScreenLite,
-    IMESettingsMenu
-) + AllActions.mapNotNull { it.settingsMenu } + SettingsByLanguage.values
+    AboutMenu,
+)
 
 
 // Improves the semantics so that we don't have to deal with NavBackStackEntry when we don't need it
@@ -133,8 +103,6 @@ fun SettingsNavigator(
             popExitTransition = { ExitTransition.None }
         ) {
             with(NavGraphBuilderWrapper(this)) {
-                composable<Route.AddLayout> { SelectLayoutsScreen(nav, it.lang.toLocale()) }
-
                 parent.composable<Route.PersonalDictList> {
                     val route = it.toRoute<Route.PersonalDictList>()
                     PersonalDictionaryLanguageListForLocale(nav, it, route.lang?.toLocale())
@@ -153,18 +121,16 @@ fun SettingsNavigator(
                 dialog<Route.Info> { InfoDialog(it.title, it.body, nav) }
             }
             composable("home") { HomeScreen(navController) }
-            composable("search") { SearchScreen(navController) }
             composable("languages") { LanguagesScreen(navController) }
-            composable("addLanguage") { SelectLanguageScreen(navController) }
-            composable("pdict") {
-                PersonalDictionaryLanguageList()
-            }
-            composable("advancedparams") { AdvancedParametersScreen(navController) }
+            composable("zhFuzzy") { FuzzyPinyinScreen(navController) }
+            composable("zhWords") { ChineseWordsScreen(navController) }
+            composable("privacy") { PrivacyScreen(navController) }
+            dialog("forgetLearned") { ForgetLearnedDialog(navController) }
+            composable("backup") { BackupScreen(navController) }
             composable("actionEdit") { ActionEditorScreen(navController) }
             SettingsMenus.forEach { menu ->
                 if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }
             }
-            composable("keyboardAndTyping") { KeyboardAndTypingScreen(navController) }
             composable("resize") { ResizeScreen(navController) }
             composable("themes") { ThemeScreen(navController) }
             composable("developer") { DeveloperScreen(navController) }
@@ -175,7 +141,6 @@ fun SettingsNavigator(
             composable("devtheme") { DevThemeImportScreen(navController) }
             composable("dynamicpalette") { DevPaletteScreen(navController) }
             composable("devkeyboard") { DevKeyboardScreen(navController) }
-            composable("blacklist") { BlacklistScreen(navController) }
             composable("payment") { PaymentScreen(navController) { navController.navigateUp() } }
             composable("paid") { PaymentThankYouScreen { navController.navigateUp() } }
             composable("credits") { CreditsScreen(navController) }
@@ -189,7 +154,6 @@ fun SettingsNavigator(
             dialog("customThemeDialog") {
                 CustomThemeDialog(navController = navController)
             }
-            addModelManagerNavigation(navController)
         }
     }
 }

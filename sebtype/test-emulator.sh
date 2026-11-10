@@ -4,7 +4,8 @@
 # the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
 # mode chip (#38); with MAIN_APK (main's release APK), last an update from main that keeps a word
-# learned there. It uninstalls SebType first, so its data is lost.
+# learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41).
+# It uninstalls SebType first, so its data is lost.
 # One line per check in /tmp/sebtype/test-emulator-<checkout>/results.txt; logs next to it (one directory
 # per checkout, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
 set -uo pipefail
@@ -112,6 +113,9 @@ if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' 
   # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
   PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run devq -P 1 -w 1800 -m 15 -n "sebtype #8 test-chinese" "$lock" \
     python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
+  # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
+  PATH=$(dirname "$adb"):$PATH T=2400 check settings-run devq -P 1 -w 1800 -m 15 -n "sebtype #41 test-settings" "$lock" \
+    python3 -I sebtype/test-settings.py "$serial" "$results" "$out"
 else
   result SKIP chinese "needs install-beside-futo and bumped-apk"
 fi

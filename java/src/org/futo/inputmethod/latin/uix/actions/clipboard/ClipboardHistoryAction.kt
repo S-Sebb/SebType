@@ -3,12 +3,9 @@ package org.futo.inputmethod.latin.uix.actions.clipboard
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.collection.LruCache
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -63,7 +60,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.util.AtomicFile
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -111,17 +107,11 @@ import org.futo.inputmethod.latin.uix.getUnlockedSetting
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
-import org.futo.inputmethod.latin.uix.settings.SettingSlider
-import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
-import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
-import org.futo.inputmethod.latin.uix.settings.UserSetting
-import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.pages.ParagraphText
 import org.futo.inputmethod.latin.uix.settings.pages.PaymentSurface
 import org.futo.inputmethod.latin.uix.settings.pages.PaymentSurfaceHeading
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
-import org.futo.inputmethod.latin.uix.settings.userSettingToggleDataStore
 import org.futo.inputmethod.latin.uix.theme.Typography
 import java.io.File
 import java.security.MessageDigest
@@ -1314,121 +1304,4 @@ val ClipboardHistoryAction = Action(
             }
         }
     },
-
-    settingsMenu = UserSettingsMenu(
-        title = R.string.action_clipboard_manager_settings_title,
-        navPath = "actions/clipboard_history",
-        registerNavPath = true,
-        settings = listOf(
-            userSettingToggleDataStore(
-                title = R.string.action_clipboard_manager_settings_show_quick_clips,
-                setting = ClipboardQuickClipsEnabled
-            ),
-
-            userSettingToggleDataStore(
-                title = R.string.typing_settings_enable_clipboard_history,
-                setting = ClipboardHistoryEnabled
-            ).copy(searchTags = R.string.typing_settings_enable_clipboard_history_tags),
-
-            userSettingToggleDataStore(
-                title = R.string.action_clipboard_manager_settings_save_images,
-                setting = ClipboardSaveImages
-            ).copy(visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }),
-
-            UserSetting(
-                name = R.string.action_clipboard_manager_settings_save_screenshots,
-                component = {
-                    val context = LocalContext.current
-                    val (enabled, setEnabled) = useDataStore(ClipboardSaveScreenshots)
-
-                    val permission = ScreenshotHelper.permission
-
-                    val launcher = rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestPermission()
-                    ) { isGranted: Boolean ->
-                        if (isGranted) {
-                            setEnabled(true)
-                        } else {
-                            setEnabled(false)
-                        }
-                    }
-
-                    SettingToggleRaw(
-                        title = stringResource(R.string.action_clipboard_manager_settings_save_screenshots),
-                        subtitle = if(enabled) null else stringResource(R.string.action_clipboard_manager_settings_save_screenshots_subtitle),
-                        enabled = enabled,
-                        setValue = {
-                            if(!it) setEnabled(false) else {
-                                if (ContextCompat.checkSelfPermission(
-                                        context,
-                                        permission
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    setEnabled(true)
-                                } else {
-                                    launcher.launch(permission)
-                                }
-                            }
-                        }
-                    )
-                },
-                visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }
-            ),
-            UserSetting(
-                name = R.string.action_clipboard_manager_settings_maximum_clips,
-                component = {
-                    SettingSlider(
-                        stringResource(R.string.action_clipboard_manager_settings_maximum_clips),
-                        ClipboardHistoryItemsToKeep,
-                        range = 0.0f..100.0f,
-                        hardRange = 0.0f..Float.POSITIVE_INFINITY,
-                        transform = { it.toInt() },
-                    )
-                },
-                visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }
-            ),
-
-            UserSetting(
-                name = R.string.action_clipboard_manager_settings_hours_to_keep_clips,
-                component = {
-                    SettingSlider(
-                        stringResource(R.string.action_clipboard_manager_settings_hours_to_keep_clips),
-                        ClipboardHistoryTimeToKeep,
-                        range = 1.0f..336.0f,
-                        hardRange = 0.0f..Float.POSITIVE_INFINITY,
-                        transform = { it.toInt() },
-                    )
-                },
-                visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }
-            ),
-
-            UserSetting(
-                name = R.string.action_clipboard_manager_settings_save_sensitive_clips,
-                subtitle = R.string.action_clipboard_manager_settings_save_sensitive_clips_subtitle,
-                component = {
-                    SettingToggleDataStore(
-                        title = stringResource(R.string.action_clipboard_manager_settings_save_sensitive_clips),
-                        subtitle = stringResource(R.string.action_clipboard_manager_settings_save_sensitive_clips_subtitle),
-                        setting = ClipboardHistorySaveSensitive
-                    )
-                },
-                visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }
-            ),
-
-            userSettingToggleDataStore(
-                title = R.string.action_clipboard_manager_settings_show_pinned_above_others,
-                setting = ClipboardShowPinnedOnTop
-            ).copy(visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }),
-
-            userSettingToggleDataStore(
-                title = R.string.action_clipboard_manager_settings_list_layout,
-                setting = ClipboardSingleColumn
-            ).copy(visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }),
-
-            userSettingToggleDataStore(
-                title = R.string.action_clipboard_manager_settings_skip_delete_confirmation,
-                setting = ClipboardSkipDeleteConfirmation
-            ).copy(visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }),
-        )
-    )
 )
