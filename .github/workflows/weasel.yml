@@ -1,0 +1,54 @@
+# SebType's Weasel (小狼毫) installer for Windows Chinese (#13): pc/windows/weasel/build.ps1 on a
+# Windows runner, with the tray icons made from pc/icons. The installer is the run's artifact
+# "sebtype-weasel"; pc/windows/stage.sh downloads it.
+name: Weasel
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - pc/windows/weasel/**
+      - pc/icons/**
+      - .github/workflows/weasel.yml
+
+permissions:
+  contents: read
+
+jobs:
+  icons:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y librsvg2-bin python3-pil
+      - run: python3 pc/windows/weasel/make-icons.py out/icons
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weasel-icons
+          path: out/icons
+          if-no-files-found: error
+
+  build:
+    needs: icons
+    runs-on: windows-2022
+    env:
+      BOOST_ROOT: ${{ github.workspace }}\deps\boost_1_84_0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: weasel-icons
+          path: out/icons
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.BOOST_ROOT }}
+          key: boost-1.84.0-msvc-14.3-weasel-0.17.4
+      - name: Build
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pc/windows/weasel/build.ps1 -Icons out/icons -Out out/weasel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-weasel
+          path: out/weasel/*.exe
+          if-no-files-found: error
