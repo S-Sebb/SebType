@@ -16,3 +16,4 @@ dependencyResolutionManagement {
         }
     }
 }
+rootProject.name = 'SebType' // fixed, so the build cache matches across worktrees (#58)

@@ -84,3 +84,75 @@ It never touches the running Fcitx5 session:
 It needs gcc, python3, librime with librime-lua, and fcitx5-mozc. It fetches librime's public headers
 (pinned, checked by sha256) into `~/.cache/sebtype/`. Results: `/tmp/sebtype/pc-perf.md` and
 `/tmp/sebtype/pc-perf-results.txt`.
+
+## Build and test times (#58)
+
+Measured on nobara-pc (16 threads, 15 GB) on 2026-11-10, with other agents' work running beside, so
+numbers vary by about ±30 %. "Build" is `sebtype/build.sh`'s own time, which it now prints apart from
+the wait for the build lock; "peak" is the summed memory of the build's processes (Gradle, the Kotlin
+daemon, clang, aapt2, R8). `sebtype/test-build.sh` checks the cache and reproducibility parts.
+
+| `sebtype/build.sh …` | Before | After |
+|---|---|---|
+| debug, first build in a new worktree (same sources built elsewhere before) | 116 s | 14–15 s |
+| debug, clean rebuild in the same worktree | 110–140 s | 18 s |
+| debug, nothing in the build cache (sources nobody built yet) | 110–140 s | 73 s |
+| debug, nothing changed | 12–22 s | 7–8 s |
+| debug, one Kotlin file changed | 54–61 s | 17–31 s |
+| debug, one string resource changed | 58 s | 8–10 s |
+| debug, one C++ file changed | 11–16 s | 9–10 s |
+| release, nothing cached | 175 s | 170 s |
+| release, first build in a new worktree | about 175 s (a clean build) | 16–22 s |
+| release, nothing changed | 12 s | 8–17 s |
+| release, one Kotlin file changed | 163 s | 91–101 s (R8 shrinking the whole app is ~80 s of it) |
+| test-x86_64, clean | 130 s | 46 s |
+| test-x86_64, one Kotlin file changed | 65 s | 27–29 s |
+| peak memory, debug / release | 4.5 GB / 3.8 GB | 4.2 GB / 4.3–5.5 GB |
+
+| Other builds and tests | Before | After |
+|---|---|---|
+| `rime-android/build.sh` (arm64 aar), rebuild in the same checkout | 130 s | 27–31 s, the same aar |
+| `pc/linux/mozc/build.sh`, nothing changed / after a patch change / first build | 11 s / 323 s / 490 s | unchanged |
+| `pc/linux/test-setup-ime.sh` | 15 s | unchanged (mostly Fcitx5 and a Rime deploy starting) |
+| `sebtype/test-privacy.sh` (release rebuild + checks) | 13 s | 8 s |
+| `sebtype/test-typing.sh` (test APKs + 4 tests on the emulator) | 22 s build + about 55 s device | 7 s build, 58 s in all |
+| `sebtype/test-emulator.sh` | 12 s build + about 7 min device | 7 s build, 338 s in all |
+
+The device steps are unchanged: they install fresh on purpose. A test's wall time is often mostly the
+queue for the emulator's lock (`devq status /tmp/agent-locks/devices/emulator-<AVD>.lock`).
+
+What made the difference, each measured on its own:
+
+- **Kotlin compiles incrementally.** The in-process compiler recompiled all of the app's Kotlin on every
+  change (its build report: "Non incremental … REBUILD_REASON: In-process execution"); the Kotlin daemon
+  recompiles only what changed (one file: 54 → 21 s). It is capped at 2 GB and ends with the build.
+- **Gradle's build cache** (`org.gradle.caching`, in `~/.gradle`, shared by every worktree) restores
+  compiled Kotlin, dex and resources: a clean rebuild 103 → 41 s. To make the cache match across
+  worktrees, `rootProject.name` is fixed (the project was named after the checkout's folder, which also
+  went into Kotlin's internal names in the dex), and debug builds have a fixed version (code 1,
+  `…-sebtype.dev`, branch `dev`): they compiled the commit count and branch into `BuildConfig`, so every
+  commit missed the cache. Release builds keep the real version.
+- **sccache for the app's C++** (when installed): a clean rebuild 41 → 17 s, a new worktree 41 → 15 s.
+  Each build starts its own sccache server with `SCCACHE_BASEDIRS` set to the checkout, and
+  `-ffile-prefix-map` keeps the checkout's path out of the objects, so objects are shared between
+  worktrees without one worktree's paths ending up in another's library.
+- **Configuration cache**: Gradle reuses the configured build (nothing changed 11 → 6 s, one Kotlin file
+  24 → 17 s). `build.gradle`'s git calls go through `providers.exec`, which it allows.
+
+Release builds stay reproducible: a release built with no build cache and no sccache in one worktree and
+one built from the caches in another have the same APK entries (outside the signature). Before, they
+differed between checkouts (folder name in the dex, checkout path in `libjni_latinime.so`).
+
+Tried and not kept:
+
+- **A Gradle daemon kept warm between builds** (10-minute idle timeout): one Kotlin file 17 → 7 s, a
+  resource 8 → 3 s, nothing changed 7 → 2 s, but the idle Gradle and Kotlin daemons hold 3.5 GB until
+  the timeout (`-XX:G1PeriodicGCInterval` doesn't shrink them), on a PC whose builds are capped because
+  of an out-of-memory crash. Builds still end with no daemon left.
+- **Gradle heap 2 GB instead of 3 GB**: no lower peak, no faster.
+- **Kotlin out-of-process**: as non-incremental as in-process (60 s for one file).
+- **One ABI, no minify, no lint for dev builds**: already so (each kind builds one ABI, debug doesn't
+  minify, `assemble` doesn't lint).
+- **ccache in the Mozc container**: a rebuild already recompiles only what changed (11 s with no change);
+  ccache would only help the rare first build after a version bump.
+- The PC librime build (#46) isn't on main yet, so it has no numbers here.

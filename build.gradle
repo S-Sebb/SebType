@@ -20,12 +20,9 @@ def getVersionCode = { ->
     }
 
     try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-            commandLine 'git', 'rev-list', '--first-parent', '--count', 'master'
-            standardOutput = stdout
-        }
-        return Integer.parseInt(stdout.toString().trim())
+        // SebType (#58): providers.exec, which the configuration cache allows at configuration time
+        final def stdout = providers.exec { commandLine 'git', 'rev-list', '--first-parent', '--count', 'master' }.standardOutput.asText.get()
+        return Integer.parseInt(stdout.trim())
     } catch (ignored) {
         project.logger.lifecycle("Failed to get rev-list count from git!")
         return -1
@@ -41,12 +38,9 @@ def getVersionName = { ->
     }
 
     try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-            commandLine 'git', 'describe', '--tags'
-            standardOutput = stdout
-        }
-        return stdout.toString().trim()
+        // SebType (#58): providers.exec, which the configuration cache allows at configuration time
+        final def stdout = providers.exec { commandLine 'git', 'describe', '--tags' }.standardOutput.asText.get()
+        return stdout.trim()
     } catch (ignored) {
         project.logger.lifecycle("Failed to get version name tag from git!")
         return "0.0.0"
@@ -62,12 +56,9 @@ def getBranch = { ->
     }
 
     try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-            commandLine 'git', 'branch', '--show-current'
-            standardOutput = stdout
-        }
-        return stdout.toString().trim()
+        // SebType (#58): providers.exec, which the configuration cache allows at configuration time
+        final def stdout = providers.exec { commandLine 'git', 'branch', '--show-current' }.standardOutput.asText.get()
+        return stdout.trim()
     } catch (ignored) {
         project.logger.lifecycle("Failed to get branch from git!")
         return "master"
@@ -247,6 +238,12 @@ android {
         // SebType ships arm64 only; -PsebtypeAbis=x86_64 builds for an emulator.
         ndk {
             abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
+        }
+        // SebType (#58): native code names its source files relative to the checkout, so the libraries are
+        // the same in every worktree and sccache (sebtype/build.sh) can share objects between them.
+        externalNativeBuild.cmake {
+            cFlags "-ffile-prefix-map=${rootDir}/="
+            cppFlags "-ffile-prefix-map=${rootDir}/="
         }
         // SebType speaks English, Chinese and Japanese only (#6); add 'ru' back with Russian.
         resConfigs 'en', 'ja', 'zh-rCN'
