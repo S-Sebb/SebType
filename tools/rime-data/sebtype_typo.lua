@@ -1,8 +1,9 @@
--- SebType's typo correction (#46): ranks the candidates of the correction translator (corr, librime's
--- correction on, its comments marked 〔…〕) by how likely the typo is on this keyboard. A correction's
--- score is its dictionary log weight with librime's flat correction penalty swapped for
--- log P(typed | intended) from a keyboard model: phone taps scatter as a Gaussian of 0.55 key widths
--- (Gboard's spatial model, Sivek & Riley 2022) on SebType's grid; a PC hits ANSI neighbour keys.
+-- SebType's typo correction (#46): when librime's own best candidate looks like a typo, asks the
+-- correction translator (corr: librime's correction on, sentences off) and ranks its candidates by how
+-- likely the typo is on this keyboard. A correction's score is its dictionary log weight with
+-- librime's flat correction penalty swapped for log P(typed | intended) from a keyboard model: phone
+-- taps scatter as a Gaussian of 0.55 key widths (Gboard's spatial model, Sivek & Riley 2022) on
+-- SebType's grid; a PC hits ANSI neighbour keys.
 -- A correction never goes before an exact candidate that reads the input as full pinyin, or one that
 -- covers more of the input; before any other exact candidate of the same length it goes when it is
 -- more likely. Corrections that turn out exact are librime's own candidates again and are dropped.
@@ -11,7 +12,7 @@ local M = {}
 
 local CORRECTION = -4.605170185988091 -- librime's credibility of a corrected syllable, log(0.01)
 local ROWS = { "qwertyuiop", "asdfghjkl", "zxcvbnm" }
-local BUFFER = 10 -- candidates re-ranked; after them only exact ones pass, as they come
+local BUFFER = 10 -- exact candidates re-ranked with the corrections; the rest pass as they come
 
 -- Per-letter error rates: phone after Palin et al. 2019, PC after Dhakal et al. 2018.
 local RATES = {
@@ -53,6 +54,7 @@ function M.init(env)
   env.sub = substitution_costs(keyboard)
   env.c_sub, env.c_omit = -math.log(r.sub), -math.log(r.omit)
   env.c_insert, env.c_swap = -math.log(r.insert), -math.log(r.swap)
+  env.corr = Component.Translator(env.engine, "corr", "script_translator")
 end
 
 -- -log P(typed | meant) for one syllable: weighted Damerau-Levenshtein from typed to any prefix of
@@ -93,7 +95,7 @@ end
 
 -- For a corr candidate: its score, or nil when it is exact after all (or can't be read).
 local function score(env, cand, input)
-  local meant = cand.comment:match("^〔(.*)〕$")
+  local meant = cand.comment:match("^［(.*)］$")
   local w = weight(cand)
   if not meant or not w then return nil end
   local typed = input:sub(cand.start + 1, cand._end):gsub("'", "")
@@ -126,10 +128,38 @@ local function complete(cand)
   return meant:gsub("[v']", { v = "u", ["'"] = "" }) == cand.preedit:gsub("[v']", { v = "u", ["'"] = "" })
 end
 
+-- Whether the best exact candidate may hide a typo: it leaves input over, or reads part of it as a lone
+-- letter before the end, a typo breaking a syllable. Clean typing reads as full syllables (the last one
+-- maybe unfinished) or as initials only; not asking corr then keeps those keys as fast as without it.
+-- Typos that read as other full pinyin go uncorrected: such a correction couldn't come first anyway.
+local function suspect(top, seg)
+  if not top or top._end < seg._end then return true end
+  local lone, full, last = false, false, nil
+  for t in top.preedit:gmatch("[^ ']+") do
+    if last then lone = lone or #last == 1; full = full or #last > 1 end
+    last = t
+  end
+  return lone and (full or #last > 1)
+end
+
 function M.func(input, env)
   local text = env.engine.context.input
-  local exact, corr, seen = {}, {}, 0
+  local seg = env.engine.context.composition:back()
+  local exact, corr = {}, {}
+  local function correct()
+    if not suspect(exact[1], seg) then return end
+    local t = env.corr:query(text:sub(seg.start + 1, seg._end), seg)
+    if not t then return end
+    local pulled = 0
+    for cand in t:iter() do
+      pulled = pulled + 1
+      if pulled > BUFFER then break end
+      local s = score(env, cand, text)
+      if s then corr[#corr + 1] = { cand = cand, score = s } end
+    end
+  end
   local function flush()
+    correct()
     table.sort(corr, function(a, b)
       if a.cand._end ~= b.cand._end then return a.cand._end > b.cand._end end
       return a.score > b.score
@@ -146,22 +176,14 @@ function M.func(input, env)
     end
   end
   for cand in input:iter() do
-    seen = seen + 1
-    local marked = cand.comment:find("^〔")
-    if seen > BUFFER then
-      if not marked then yield(cand) end
-    elseif marked then
-      local s = score(env, cand, text)
-      if s then
-        cand.comment = cand.comment:gsub("^〔(.*)〕$", "［%1］") -- as the main translator's, for corrector.lua
-        corr[#corr + 1] = { cand = cand, score = s }
-      end
-    else
+    if #exact < BUFFER then
       exact[#exact + 1] = cand
+      if #exact == BUFFER then flush() end
+    else
+      yield(cand)
     end
-    if seen == BUFFER then flush() end
   end
-  if seen < BUFFER then flush() end
+  if #exact < BUFFER then flush() end
 end
 
 return M

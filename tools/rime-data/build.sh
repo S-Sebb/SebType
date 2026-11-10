@@ -126,32 +126,31 @@ for schema in schemas:
     open(p, "w", encoding="utf-8").write(s)
 
 # Typo correction (#46), full pinyin only (a double-pinyin key isn't a letter of the spelling):
-# librime's correction in a second translator over the same dictionary, ranked by sebtype_typo.lua.
+# librime's correction in a second translator over the same dictionary, asked and ranked by sebtype_typo.lua.
 # The main translator stays exact; without its own user dictionary the second one neither learns
 # twice nor shows learned words corrected. Its comments carry the corrected spelling for the filter.
 p = f"{shared}/rime_ice.schema.yaml"
 s = open(p, encoding="utf-8").read()
-# Last among the translators: right after the main one, it stopped rime-ice's date translator (rq).
-for pattern, line in ((r"^  translators:\n(?:    - .*\n)+", "    - script_translator@corr  # SebType: typo corrections (#46)\n"),
-                      (r"^  filters:\n", "    - lua_filter@*sebtype_typo  # SebType: ranks typo corrections (#46)\n")):
-    s, n = re.subn(pattern, lambda m: m.group(0) + line, s, count=1, flags=re.M)
-    assert n == 1, f"{pattern} not found in {p}"
+s, n = re.subn(r"^  filters:\n", lambda m: m.group(0) + "    - lua_filter@*sebtype_typo  # SebType: typo corrections (#46)\n",
+               s, count=1, flags=re.M)
+assert n == 1, f"filters not found in {p}"
 preedit = re.search(r"^  preedit_format:.*\n((?:    .*\n)+)", s, re.M)
 assert preedit and "\ncorr:" not in s, p
 s += f"""
-# SebType: typo corrections (#46)
+# SebType: typo corrections (#46). Not among the translators: lua/sebtype_typo.lua asks it only when
+# the best exact candidate looks like a typo.
 corr:
   dictionary: rime_ice
   enable_correction: true
+  enable_sentence: false
   enable_user_dict: false
   enable_word_completion: false
   contextual_suggestions: false
-  initial_quality: -1
   spelling_hints: 100
   always_show_comments: true
   comment_format:
-    - xform/^/〔/
-    - xform/$/〕/
+    - xform/^/［/
+    - xform/$/］/
   preedit_format:
 {preedit.group(1)}sebtype_typo:
   keyboard: phone  # pc on Linux and Windows (their setup scripts)
