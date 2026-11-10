@@ -43,7 +43,7 @@ timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=
 tps() {  # Windows PowerShell 5.1 on TCSBackEnd, script on stdin; output as text (not CLIXML), UTF-8
   local enc
   enc=$( (echo '[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference="SilentlyContinue"'; cat) | iconv -t UTF-16LE | base64 -w0)
-  timeout "${T:-120}" ssh TCSBackEnd "powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $enc" 2>&1 | grep -av '^#< CLIXML\|^<Objs'
+  timeout "${T:-120}" ssh TCSBackEnd "powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $enc" 2>&1 | grep -av '^#< CLIXML\|^<Objs' | tr -d '\r'
 }
 state() {
   tps <<'EOF'
@@ -86,7 +86,7 @@ EOF
 state > "$out/before.txt"
 grep -q '^installed: .' "$out/before.txt" && { echo "BLOCKED preflight: SebType, Weasel or Mozc is installed on TCSBackEnd already ($(grep '^installed:' "$out/before.txt"))"; exit 1; }
 grep -q '^folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a SebType or test folder exists on TCSBackEnd already ($(grep '^folders:' "$out/before.txt"))"; exit 1; }
-grep -q 'sebtype-test' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
+grep -qE '^users: \S*\bsebtype-test\b' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
 
 cat > "$out/run.ps1" <<'EOF'
 $d = 'C:\sebtype-setup-test'
