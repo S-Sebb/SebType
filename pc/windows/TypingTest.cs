@@ -2,6 +2,7 @@
 // SendInput only while that window is in the foreground, and read-back of its text, its active input
 // method and Weasel's language bar icon (through TSF on the window's own thread).
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -57,12 +58,18 @@ namespace SebType {
     [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr h);
     [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] inputs, int size);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll")] static extern int GetKeyboardLayoutList(int n, IntPtr[] list);
+    [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] static extern short GetKeyState(int vk);
+    [DllImport("user32.dll")] static extern uint MapVirtualKeyW(uint code, uint type);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetWindowTextW(IntPtr h, string s);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int l, t, r, b; }
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern bool GetIconInfo(IntPtr icon, out ICONINFO info);
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
@@ -131,7 +138,8 @@ namespace SebType {
       if (!IsForeground) throw new InvalidOperationException("the test window lost the focus; no keys sent");
       uint flags = up ? KEYUP : 0;
       if (vk == 0x5B) flags |= EXTENDED;
-      var input = new INPUT { type = 1, ki = new KEYBDINPUT { wVk = vk, dwFlags = flags } };
+      // With the scan code a real keyboard sends: Windows' language switcher ignores keys without one.
+      var input = new INPUT { type = 1, ki = new KEYBDINPUT { wVk = vk, wScan = (ushort)MapVirtualKeyW(vk, 0), dwFlags = flags } };
       SendInput(1, new[] { input }, Marshal.SizeOf(typeof(INPUT)));
       Thread.Sleep(30);
     }
@@ -141,7 +149,22 @@ namespace SebType {
       SendInput(2, new[] { down, up }, Marshal.SizeOf(typeof(INPUT)));
     }
 
+    // Asks for the language's input method directly, as the language bar does; the checks get there this way
+    // so that only win-space-cycle depends on Win+Space.
+    public bool SelectLanguage(int lang) {
+      var list = new IntPtr[GetKeyboardLayoutList(0, null)];
+      GetKeyboardLayoutList(list.Length, list);
+      foreach (var hkl in list)
+        if (((long)hkl & 0xFFFF) == lang) return PostMessageW(hwnd, 0x50 /* WM_INPUTLANGCHANGEREQUEST */, IntPtr.Zero, hkl);
+      return false;
+    }
+
     public void Tap(ushort vk) { Send(vk, false); Send(vk, true); }
+    // Win+Space at a person's pace: Windows' switcher can miss a faster chord.
+    public void WinSpace() {
+      Send(0x5B, false); Thread.Sleep(80); Send(0x20, false); Thread.Sleep(80);
+      Send(0x20, true); Thread.Sleep(80); Send(0x5B, true);
+    }
     public void Chord(ushort mod1, ushort mod2, ushort vk) {
       Send(mod1, false); if (mod2 != 0) Send(mod2, false);
       Tap(vk);
@@ -157,19 +180,30 @@ namespace SebType {
       set { SetWindowTextW(hwnd, value); }
     }
     public int LanguageId { get { return (int)((long)GetKeyboardLayout(thread) & 0xFFFF); } }
-    public static bool CapsLock { get { return (GetKeyState(0x14) & 1) != 0; } }
+    // Read on the window's thread: GetKeyState is that thread's view of the keyboard, current only on a
+    // thread that handles input.
+    public bool CapsLock { get { return OnWindowThread(() => (GetKeyState(0x14) & 1) != 0); } }
 
-    // True while a WeaselServer window (the candidate window) is visible.
-    public static bool CandidatesVisible() {
-      bool seen = false;
+    // The class names of the visible windows Weasel's candidate panel can be: WeaselServer's, or one of this
+    // process's other than the test window (Weasel's TSF dll draws the panel in the typing app's process).
+    // With all, every such window with its visibility and place, for a failure's details.
+    public string WeaselWindows(bool all = false) {
+      var seen = new List<string>();
+      var self = (uint)Process.GetCurrentProcess().Id;
       EnumWindows((h, l) => {
         uint pid;
-        if (!IsWindowVisible(h)) return true;
+        if (h == hwnd || (!all && !IsWindowVisible(h))) return true;
         GetWindowThreadProcessId(h, out pid);
-        try { if (Process.GetProcessById((int)pid).ProcessName == "WeaselServer") seen = true; } catch (ArgumentException) { }
-        return !seen;
+        try {
+          var name = Process.GetProcessById((int)pid).ProcessName;
+          if (name != "WeaselServer" && pid != self) return true;
+          var c = new StringBuilder(128); GetClassNameW(h, c, c.Capacity);
+          RECT r; GetWindowRect(h, out r);
+          seen.Add(all ? string.Format("{0}/{6} visible={1} {2},{3},{4},{5}", c, IsWindowVisible(h), r.l, r.t, r.r, r.b, name) : c.ToString());
+        } catch (ArgumentException) { }
+        return true;
       }, IntPtr.Zero);
-      return seen;
+      return string.Join(",", seen);
     }
 
     static string IconHash(IntPtr icon) {

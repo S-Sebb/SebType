@@ -20,6 +20,11 @@ xfer pull <id>; tar -xf <path>.tar; cd sebtype-windows
 `-NoAdmin` prints the admin command instead of asking for UAC. `-Weasel` and `-RimeData` take other paths
 for the installer and the Chinese data (the installer, #73, can pass its own).
 
+Installing Weasel needs admin: Windows' text services read their registration only from HKLM, so a
+per-user Weasel isn't offered as an input method. Everything else is per user. The script runs in
+Windows PowerShell 5.1 (started from PowerShell 7 it reruns itself there), whose language list cmdlets
+PowerShell 7 can't load on every Windows.
+
 The first run saves what it changes to `%LOCALAPPDATA%\SebType\windows-setup.json`: the input method list,
 the switch keys, the per-window setting, whether Weasel was installed, and a copy of the Rime folder
 `%APPDATA%\Rime` in `%LOCALAPPDATA%\SebType\backup\<time>\`. `-Undo` puts all of these back. It moves the
@@ -79,7 +84,7 @@ can't show SebType's EN key there.
 `test-setup-ime.ps1`, in the staged folder on the PC, is run three times with the admin step it prints
 between runs: before setup, after SebType's Weasel is installed, and after it is removed. It checks the
 settings, types in a text window of its own (keys go only to that window, checked before each key), and
-measures Rime with `perf-rime.exe` (`pc/linux/perf-rime.c` built with MinGW) on a copy of the Rime folder.
+measures Rime with `perf-rime.exe` (`pc/linux/perf-rime.c`, built 32-bit with Weasel as its rime.dll is) on a copy of the Rime folder.
 Results go to `results.txt` next to it.
 
 | Check | What passes |
@@ -94,3 +99,6 @@ Results go to `results.txt` next to it.
 | `undo-*` | Input methods, switch keys, per-window setting and the Rime folder are as before setup; Weasel is gone |
 
 Caps Lock and the input method are put back as the test found them.
+
+The checks reach Chinese by asking Windows for it directly, so only `win-space-cycle` sends Win+Space.
+Windows Server 2022 (TCSBackEnd) ignored synthetic Win+Space there; a desktop PC is where that check counts.

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 SebType Windows setup: Chinese with SebType's Weasel (小狼毫) and rime-ice, English as the plain US
 layout, and Win+Space as the only language switch (EN → 中 → 日). Why each step exists: README.md here.
@@ -12,6 +12,7 @@ The first run saves what it changes to %LOCALAPPDATA%\SebType\windows-setup.json
 folder; -Undo puts all of it back and removes SebType's Weasel if it wasn't there before.
 -Weasel defaults to the newest sebtype-weasel-*-installer.exe next to this script and -RimeData to
 rime-ice.zip next to it (pc/windows/stage.sh puts them there).
+Saved as UTF-8 with a BOM: Windows PowerShell 5.1 reads a file without one in the ANSI code page.
 #>
 [CmdletBinding()]
 param(
@@ -19,15 +20,29 @@ param(
   [switch]$Undo,
   [switch]$NoAdmin,
   [string]$Weasel,
-  [string]$RimeData = (Join-Path $PSScriptRoot 'rime-ice.zip')
+  [string]$RimeData
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# The language list cmdlets are Windows PowerShell's; PowerShell 7 reaches them only through a
+# compatibility session that can't change the list. Run in Windows PowerShell, which every Windows has.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+  if (-not $IsWindows) { throw 'setup-ime.ps1 runs on Windows only.' }
+  $arguments = foreach ($p in $PSBoundParameters.GetEnumerator()) {
+    if ($p.Value -is [switch]) { if ($p.Value) { "-$($p.Key)" } } else { "-$($p.Key)"; $p.Value }
+  }
+  # Without PowerShell 7's module path, which would hide Windows PowerShell's own modules (Get-FileHash).
+  Remove-Item Env:PSModulePath
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath @arguments
+  exit $LASTEXITCODE
+}
+
 # Weasel's TSF ids (WeaselTSF/Globals.cpp) for Simplified Chinese.
-$WeaselTip = '0804:{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}{3D02CAB6-2B8E-4781-BA20-1C9267529467}'
+$WeaselClsid = '{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}'
+$WeaselTip = "0804:${WeaselClsid}{3D02CAB6-2B8E-4781-BA20-1C9267529467}"
 $UsTip = '0409:00000409'
-$UninstallKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Weasel'
+$UninstallKey = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Weasel'  # Weasel's installer is 32-bit
 $RimeUser = Join-Path $env:APPDATA 'Rime'
 $StateDir = Join-Path $env:LOCALAPPDATA 'SebType'
 $StateFile = Join-Path $StateDir 'windows-setup.json'
@@ -49,27 +64,36 @@ function Warn([string]$what) { Write-Host "warning: $what"; $script:todo++ }
 function Invoke-Admin([string]$code) {
   if ($NoAdmin) { Warn "needs admin; run this as administrator, then rerun:`n$code"; return $false }
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
-  $p = Start-Process (Get-Process -Id $PID).Path -Verb RunAs -Wait -PassThru `
-    -ArgumentList '-NoProfile', '-EncodedCommand', $encoded
+  # WaitForExit, not -Wait: -Wait also waits for the WeaselServer the installer leaves running.
+  $p = Start-Process (Get-Process -Id $PID).Path -Verb RunAs -PassThru -ArgumentList '-NoProfile', '-EncodedCommand', $encoded
+  $p.WaitForExit()
   return $p.ExitCode -eq 0
 }
 
 # The installed Weasel: its folder, version and SebType build mark (null when not installed).
 function Get-Weasel {
-  $root = (Get-ItemProperty 'HKLM:\SOFTWARE\Rime\Weasel' -ErrorAction SilentlyContinue).WeaselRoot
+  $root = Get-RegValue 'HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel' WeaselRoot
   $uninst = Get-ItemProperty $UninstallKey -ErrorAction SilentlyContinue
   if (-not $root -or -not $uninst) { return $null }
   [pscustomobject]@{
     Root = $root
     Version = $uninst.DisplayVersion
-    SebType = $uninst.PSObject.Properties['SebType'] | ForEach-Object Value
+    SebType = Get-RegValue $UninstallKey SebType
     Uninstaller = ($uninst.UninstallString -replace '"', '')
   }
 }
 
+# One registry value, or null when the key or value is missing.
+function Get-RegValue([string]$key, [string]$name) {
+  $item = Get-Item $key -ErrorAction SilentlyContinue
+  if ($item) { $item.GetValue($name) }
+}
+function Get-Toggle([string]$name) { Get-RegValue $ToggleKey $name }
+
 function Get-Languages {
-  @(Get-WinUserLanguageList | ForEach-Object {
-      [pscustomobject]@{ Tag = $_.LanguageTag; Tips = @($_.InputMethodTips) } })
+  # Indexed: the cmdlet writes the whole list as one object, which the pipeline doesn't always unroll.
+  $list = Get-WinUserLanguageList
+  @(for ($i = 0; $i -lt $list.Count; $i++) { [pscustomobject]@{ Tag = $list[$i].LanguageTag; Tips = @($list[$i].InputMethodTips) } })
 }
 function Set-Languages($languages) {
   $list = New-WinUserLanguageList $languages[0].Tag
@@ -91,11 +115,12 @@ function Update-ToggleKeys { [void][SebType.User32]::SystemParametersInfo(0x5B, 
 function Stop-WeaselServer($w) {
   if (Get-Process WeaselServer -ErrorAction SilentlyContinue) {
     & (Join-Path $w.Root 'WeaselServer.exe') /quit
-    Start-Sleep -Seconds 1
+    # Wait until it has let go of the Rime folder.
+    Wait-Process -Name WeaselServer -Timeout 10 -ErrorAction SilentlyContinue
+    Stop-Process -Name WeaselServer -Force -ErrorAction SilentlyContinue
   }
 }
 
-if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { throw 'setup-ime.ps1 runs on Windows only.' }
 
 # ------------------------------------------------------------------------------------------- undo
 if ($Undo) {
@@ -109,9 +134,7 @@ if ($Undo) {
     $bar = Get-WinLanguageBarOption
     Set-WinLanguageBarOption -UseLegacySwitchMode:$state.LegacySwitchingMode -UseLegacyLanguageBar:$bar.IsLegacyLanguageBar
   }
-  $now = Get-ItemProperty $ToggleKey -ErrorAction SilentlyContinue
-  $differs = $ToggleNames | Where-Object {
-    "$(if ($now) { $now.PSObject.Properties[$_] | ForEach-Object Value })" -ne "$($state.Toggle.$_)" }
+  $differs = $ToggleNames | Where-Object { "$(Get-Toggle $_)" -ne "$($state.Toggle.$_)" }
   if ($differs -and (Change 'language switch keys (Alt+Shift, Ctrl+Shift) back as they were')) {
     New-Item $ToggleKey -Force | Out-Null
     foreach ($name in $ToggleNames) {
@@ -130,14 +153,24 @@ if ($Undo) {
     }
   }
   if ($w -and -not $state.WeaselBefore -and (Change "uninstall SebType's Weasel $($w.SebType) (admin)")) {
+    # -Wait here: the uninstaller reruns itself from %TEMP%, and -Wait waits for that copy too.
     $code = "Start-Process -Wait -FilePath '$($w.Uninstaller)' -ArgumentList '/S'; " +
-    "`$t = 0; while ((Test-Path '$UninstallKey') -and `$t++ -lt 60) { Start-Sleep 1 }; exit [int](Test-Path '$UninstallKey')"
+    "`$t = 0; while ((Test-Path '$UninstallKey') -and `$t++ -lt 60) { Start-Sleep 1 }; " +
+    # Weasel's uninstaller leaves its text service's COM class, TSF categories and the empty Rime folder.
+    "if (-not (Test-Path '$UninstallKey')) { Remove-Item 'HKLM:\SOFTWARE\Classes\CLSID\$WeaselClsid', 'HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid' -Recurse -ErrorAction SilentlyContinue; " +
+    "Get-Item '$(Split-Path $w.Root)' -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem `$_.FullName -Force) } | Remove-Item }; " +
+    "exit [int](Test-Path '$UninstallKey')"
     if (Invoke-Admin $code) { Write-Output "removed SebType's Weasel" }
   } elseif ($w -and $state.WeaselBefore) {
     Warn "Weasel $($state.WeaselBefore) was installed before; SebType's build stays until you reinstall that one"
   }
   # The record stays until Weasel is gone too, so a rerun after the admin step finishes the undo.
   if (-not $DryRun -and ($state.WeaselBefore -or -not (Get-Weasel))) {
+    if (-not $state.WeaselBefore) {
+      # Weasel's per-user leftovers: its settings key and Windows' record of its input method.
+      Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid" -Recurse -ErrorAction SilentlyContinue
+      if (-not $state.RimeSettingsExisted) { Remove-Item 'HKCU:\Software\Rime' -Recurse -ErrorAction SilentlyContinue }
+    }
     Remove-Item $StateFile
     Write-Output "undone; backups stay in $($state.Backup)"
   }
@@ -152,6 +185,8 @@ if (-not $Weasel) {
     Sort-Object LastWriteTime | Select-Object -Last 1 | ForEach-Object FullName
 }
 if (-not $Weasel -or -not (Test-Path $Weasel)) { throw "SebType's Weasel installer not found (-Weasel)" }
+# Defaults here, not in param(): Windows PowerShell leaves $PSScriptRoot empty there under -File.
+if (-not $RimeData) { $RimeData = Join-Path $PSScriptRoot 'rime-ice.zip' }
 if (-not (Test-Path $RimeData)) { throw "Chinese data not found: $RimeData (-RimeData)" }
 $Weasel = (Resolve-Path $Weasel).Path
 $RimeData = (Resolve-Path $RimeData).Path
@@ -162,7 +197,6 @@ $wantWeasel = $Matches[1]
 if (-not (Test-Path $StateFile) -and -not $DryRun) {
   $backup = Join-Path $StateDir "backup\$(Get-Date -Format yyyyMMdd-HHmmss)"
   New-Item -ItemType Directory -Force $backup | Out-Null
-  $toggle = Get-ItemProperty $ToggleKey -ErrorAction SilentlyContinue
   $before = Get-Weasel
   $state = [ordered]@{
     Backup = $backup
@@ -170,9 +204,10 @@ if (-not (Test-Path $StateFile) -and -not $DryRun) {
     LegacySwitchingMode = (Get-WinLanguageBarOption).IsLegacySwitchingMode
     Toggle = [ordered]@{}
     RimeExisted = Test-Path $RimeUser
+    RimeSettingsExisted = Test-Path 'HKCU:\Software\Rime'
     WeaselBefore = if ($before) { $before.Version } else { $null }
   }
-  foreach ($name in $ToggleNames) { $state.Toggle[$name] = if ($toggle) { $toggle.PSObject.Properties[$name] | ForEach-Object Value } }
+  foreach ($name in $ToggleNames) { $state.Toggle[$name] = Get-Toggle $name }
   if ($state.RimeExisted) { Copy-Item $RimeUser (Join-Path $backup 'rime') -Recurse }
   $state | ConvertTo-Json -Depth 5 | Set-Content $StateFile -Encoding utf8
   Write-Output "saved the current settings to $StateFile (undo: $PSCommandPath -Undo)"
@@ -184,7 +219,7 @@ $w = Get-Weasel
 if (-not $w -or $w.SebType -ne $wantWeasel) {
   $what = if ($w) { "replace Weasel $($w.Version) with SebType's $wantWeasel" } else { "install SebType's Weasel $wantWeasel" }
   if (Change "$what (admin)") {
-    if (-not (Invoke-Admin "Start-Process -Wait -FilePath '$Weasel' -ArgumentList '/S'")) {
+    if (-not (Invoke-Admin "(Start-Process -PassThru -FilePath '$Weasel' -ArgumentList '/S').WaitForExit()")) {
       if (-not $NoAdmin) { throw "Weasel's installer failed" }
     }
     $w = Get-Weasel
@@ -256,8 +291,7 @@ if ($w -and (Format-Languages $now) -ne (Format-Languages $want) -and
 
 # 6. Win+Space is the only language switch: no Alt+Shift / Ctrl+Shift switch keys (3 = none), and
 # one language for every window, not one per window.
-$toggle = Get-ItemProperty $ToggleKey -ErrorAction SilentlyContinue
-if (($ToggleNames | Where-Object { -not $toggle -or "$($toggle.PSObject.Properties[$_] | ForEach-Object Value)" -ne '3' }) -and
+if (($ToggleNames | Where-Object { "$(Get-Toggle $_)" -ne '3' }) -and
   (Change 'turn off the Alt+Shift and Ctrl+Shift language switch keys')) {
   New-Item $ToggleKey -Force | Out-Null
   foreach ($name in $ToggleNames) { Set-ItemProperty $ToggleKey $name '3' }
@@ -277,8 +311,14 @@ if ($w -and $w.SebType -eq $wantWeasel -and -not $DryRun) {
   }
   if ($redeploy) {
     $t = [Diagnostics.Stopwatch]::StartNew()
-    Start-Process (Join-Path $w.Root 'WeaselDeployer.exe') -ArgumentList '/deploy' -Wait
-    Write-Output "change: Weasel redeployed in $([int]$t.Elapsed.TotalSeconds) s"
+    # Not Start-Process: it passes '/deploy ' with a trailing space, and the deployer then opens its
+    # settings window instead of deploying (it compares the argument exactly).
+    $p = [Diagnostics.Process]::Start((Join-Path $w.Root 'WeaselDeployer.exe'), '/deploy')
+    $finished = $p.WaitForExit(300000)
+    if (-not $finished) { Stop-Process -Id $p.Id -Force }
+    if (-not $finished -or $p.ExitCode) {
+      Warn "Weasel's redeploy $(if ($finished) { "failed ($($p.ExitCode))" } else { 'took over 5 min' }); redeploy from Weasel's menu (重新部署)"
+    } else { Write-Output "change: Weasel redeployed in $([int]$t.Elapsed.TotalSeconds) s" }
   }
 }
 
