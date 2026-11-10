@@ -39,6 +39,7 @@ import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryTimeToKe
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardSaveImages
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardSaveScreenshots
 import org.futo.inputmethod.latin.uix.actions.clipboard.ScreenshotHelper
+import org.futo.inputmethod.latin.uix.settings.SettingsCard
 import org.futo.inputmethod.latin.uix.settings.BottomSpacer
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
@@ -92,50 +93,54 @@ fun PrivacyScreen(navController: NavHostController) {
     var keepExpanded by remember { mutableStateOf(false) }
     ScrollableList {
         ScreenTitle(stringResource(R.string.sebtype_settings_privacy), showBack = true, navController)
-        SettingToggleSharedPrefs(
-            title = stringResource(R.string.sebtype_settings_learn),
-            subtitle = stringResource(R.string.sebtype_settings_learn_subtitle),
-            key = Settings.PREF_KEY_USE_PERSONALIZED_DICTS,
-            default = true
-        )
-
-        ScreenTitle(stringResource(R.string.sebtype_settings_clipboard))
-        SettingToggleDataStore(
-            title = stringResource(R.string.sebtype_settings_clipboard_keep_history),
-            setting = ClipboardHistoryEnabled
-        )
-        if(useDataStoreValue(ClipboardHistoryEnabled)) {
-            SettingItem(
-                title = stringResource(R.string.sebtype_settings_clipboard_keep),
-                onClick = { keepExpanded = !keepExpanded }
-            ) {
-                Text(clipboardKeepSummary())
-            }
-            if(keepExpanded) {
-                SettingSlider(
-                    stringResource(R.string.action_clipboard_manager_settings_maximum_clips),
-                    ClipboardHistoryItemsToKeep,
-                    range = 0.0f..100.0f,
-                    hardRange = 0.0f..Float.POSITIVE_INFINITY,
-                    transform = { it.toInt() },
-                )
-                SettingSlider(
-                    stringResource(R.string.action_clipboard_manager_settings_hours_to_keep_clips),
-                    ClipboardHistoryTimeToKeep,
-                    range = 1.0f..336.0f,
-                    hardRange = 0.0f..Float.POSITIVE_INFINITY,
-                    transform = { it.toInt() },
-                )
-            }
-            SaveImagesToggle()
+        SettingsCard {
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.sebtype_settings_learn),
+                subtitle = stringResource(R.string.sebtype_settings_learn_subtitle),
+                key = Settings.PREF_KEY_USE_PERSONALIZED_DICTS,
+                default = true
+            )
         }
 
-        NavigationItem(
-            title = stringResource(R.string.sebtype_settings_forget),
-            subtitle = stringResource(R.string.sebtype_settings_forget_subtitle),
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("forgetLearned") }
-        )
+        ScreenTitle(stringResource(R.string.sebtype_settings_clipboard))
+        SettingsCard {
+            SettingToggleDataStore(
+                title = stringResource(R.string.sebtype_settings_clipboard_keep_history),
+                setting = ClipboardHistoryEnabled
+            )
+            if(useDataStoreValue(ClipboardHistoryEnabled)) {
+                SettingItem(
+                    title = stringResource(R.string.sebtype_settings_clipboard_keep),
+                    onClick = { keepExpanded = !keepExpanded }
+                ) {
+                    Text(clipboardKeepSummary())
+                }
+                if(keepExpanded) {
+                    SettingSlider(
+                        stringResource(R.string.action_clipboard_manager_settings_maximum_clips),
+                        ClipboardHistoryItemsToKeep,
+                        range = 0.0f..100.0f,
+                        hardRange = 0.0f..Float.POSITIVE_INFINITY,
+                        transform = { it.toInt() },
+                    )
+                    SettingSlider(
+                        stringResource(R.string.action_clipboard_manager_settings_hours_to_keep_clips),
+                        ClipboardHistoryTimeToKeep,
+                        range = 1.0f..336.0f,
+                        hardRange = 0.0f..Float.POSITIVE_INFINITY,
+                        transform = { it.toInt() },
+                    )
+                }
+                SaveImagesToggle()
+            }
+
+            NavigationItem(
+                title = stringResource(R.string.sebtype_settings_forget),
+                subtitle = stringResource(R.string.sebtype_settings_forget_subtitle),
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("forgetLearned") }
+            )
+        }
         BottomSpacer()
     }
 }
@@ -208,18 +213,20 @@ fun BackupScreen(navController: NavHostController) {
     ScrollableList {
         ScreenTitle(stringResource(R.string.sebtype_settings_backup), showBack = true, navController)
         ScreenTitle(stringResource(R.string.sebtype_settings_settings_file))
-        NavigationItem(
-            title = stringResource(R.string.sebtype_settings_export),
-            subtitle = stringResource(R.string.settings_export_configuration_subtitle),
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("exportingcfg") }
-        )
-        NavigationItem(
-            title = stringResource(R.string.sebtype_settings_import),
-            subtitle = stringResource(R.string.settings_import_configuration_subtitle),
-            style = NavigationItemStyle.Misc,
-            navigate = { SettingsExporter.triggerImportSettings(context) }
-        )
+        SettingsCard {
+            NavigationItem(
+                title = stringResource(R.string.sebtype_settings_export),
+                subtitle = stringResource(R.string.settings_export_configuration_subtitle),
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("exportingcfg") }
+            )
+            NavigationItem(
+                title = stringResource(R.string.sebtype_settings_import),
+                subtitle = stringResource(R.string.settings_import_configuration_subtitle),
+                style = NavigationItemStyle.Misc,
+                navigate = { SettingsExporter.triggerImportSettings(context) }
+            )
+        }
         BottomSpacer()
     }
 }

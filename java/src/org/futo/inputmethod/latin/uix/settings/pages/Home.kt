@@ -35,6 +35,7 @@ import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.TextEditPopupActivity
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryEnabled
+import org.futo.inputmethod.latin.uix.settings.SettingsCard
 import org.futo.inputmethod.latin.uix.settings.BottomSpacer
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
@@ -59,50 +60,56 @@ private fun HomeGroups(navController: NavHostController) {
         ?: if(themeKey.isEmpty()) stringResource(defaultThemeOption(context).name)
         else stringResource(R.string.sebtype_settings_custom_theme)
 
-    NavigationItem(
-        title = stringResource(R.string.sebtype_settings_languages),
-        subtitle = globeOrderSummary(subtypes) + " · " + stringResource(
-            if(autocorrect) R.string.sebtype_settings_autocorrect_on else R.string.sebtype_settings_autocorrect_off),
-        style = NavigationItemStyle.HomePrimary,
-        icon = painterResource(R.drawable.globe),
-        navigate = { navController.navigate("languages") }
-    )
-    NavigationItem(
-        title = stringResource(R.string.keyboard_settings_title),
-        subtitle = stringResource(R.string.sebtype_settings_keyboard_subtitle),
-        style = NavigationItemStyle.HomeSecondary,
-        icon = painterResource(R.drawable.keyboard),
-        navigate = { navController.navigate("keyboard") }
-    )
-    NavigationItem(
-        title = stringResource(R.string.theme_settings_title),
-        subtitle = theme,
-        style = NavigationItemStyle.HomeTertiary,
-        icon = painterResource(R.drawable.themes),
-        navigate = { navController.navigate("themes") }
-    )
-    NavigationItem(
-        title = stringResource(R.string.sebtype_settings_privacy),
-        subtitle = stringResource(if(learning) R.string.sebtype_settings_learning_on else R.string.sebtype_settings_learning_off) +
-            " · " + stringResource(if(clipboard) R.string.sebtype_settings_clipboard_on else R.string.sebtype_settings_clipboard_off),
-        style = NavigationItemStyle.HomePrimary,
-        icon = rememberVectorPainter(Icons.Default.Lock),
-        navigate = { navController.navigate("privacy") }
-    )
-    NavigationItem(
-        title = stringResource(R.string.sebtype_settings_backup),
-        subtitle = stringResource(R.string.sebtype_settings_backup_subtitle),
-        style = NavigationItemStyle.HomeSecondary,
-        icon = rememberVectorPainter(Icons.Default.Refresh),
-        navigate = { navController.navigate("backup") }
-    )
-    NavigationItem(
-        title = stringResource(R.string.sebtype_settings_about),
-        subtitle = stringResource(R.string.sebtype_settings_about_subtitle),
-        style = NavigationItemStyle.HomeTertiary,
-        icon = rememberVectorPainter(Icons.Default.Info),
-        navigate = { navController.navigate("about") }
-    )
+    SettingsCard {
+        NavigationItem(
+            title = stringResource(R.string.sebtype_settings_languages),
+            subtitle = globeOrderSummary(subtypes) + " · " + stringResource(
+                if(autocorrect) R.string.sebtype_settings_autocorrect_on else R.string.sebtype_settings_autocorrect_off),
+            style = NavigationItemStyle.HomePrimary,
+            icon = painterResource(R.drawable.globe),
+            navigate = { navController.navigate("languages") }
+        )
+        NavigationItem(
+            title = stringResource(R.string.keyboard_settings_title),
+            subtitle = stringResource(R.string.sebtype_settings_keyboard_subtitle),
+            style = NavigationItemStyle.HomeSecondary,
+            icon = painterResource(R.drawable.keyboard),
+            navigate = { navController.navigate("keyboard") }
+        )
+        NavigationItem(
+            title = stringResource(R.string.theme_settings_title),
+            subtitle = theme,
+            style = NavigationItemStyle.HomeTertiary,
+            icon = painterResource(R.drawable.themes),
+            navigate = { navController.navigate("themes") }
+        )
+    }
+    SettingsCard {
+        NavigationItem(
+            title = stringResource(R.string.sebtype_settings_privacy),
+            subtitle = stringResource(if(learning) R.string.sebtype_settings_learning_on else R.string.sebtype_settings_learning_off) +
+                " · " + stringResource(if(clipboard) R.string.sebtype_settings_clipboard_on else R.string.sebtype_settings_clipboard_off),
+            style = NavigationItemStyle.HomePrimary,
+            icon = rememberVectorPainter(Icons.Default.Lock),
+            navigate = { navController.navigate("privacy") }
+        )
+        NavigationItem(
+            title = stringResource(R.string.sebtype_settings_backup),
+            subtitle = stringResource(R.string.sebtype_settings_backup_subtitle),
+            style = NavigationItemStyle.HomeSecondary,
+            icon = rememberVectorPainter(Icons.Default.Refresh),
+            navigate = { navController.navigate("backup") }
+        )
+    }
+    SettingsCard {
+        NavigationItem(
+            title = stringResource(R.string.sebtype_settings_about),
+            subtitle = stringResource(R.string.sebtype_settings_about_subtitle),
+            style = NavigationItemStyle.HomeTertiary,
+            icon = rememberVectorPainter(Icons.Default.Info),
+            navigate = { navController.navigate("about") }
+        )
+    }
 }
 
 @Composable
@@ -121,15 +128,17 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
             }
         }
 
-        TextButton(onClick = {
-            val intent = Intent()
-            intent.setClass(context, TextEditPopupActivity::class.java)
-            intent.setFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            )
-            context.startActivity(intent)
-        }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            Text(stringResource(R.string.settings_try_typing_here), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f), modifier = Modifier.fillMaxWidth())
+        SettingsCard {
+            TextButton(onClick = {
+                val intent = Intent()
+                intent.setClass(context, TextEditPopupActivity::class.java)
+                intent.setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                )
+                context.startActivity(intent)
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_try_typing_here), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f), modifier = Modifier.fillMaxWidth())
+            }
         }
 
         ConditionalUnpaidNoticeWithNav(navController)

@@ -109,22 +109,20 @@ import kotlin.math.pow
 
 @Composable
 fun ScreenTitle(title: String, showBack: Boolean = false, navController: NavHostController? = LocalNavController.current ?: rememberNavController()) {
-    val rowModifier = if(showBack) {
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClickLabel = "Navigate back") {
-                navController!!.navigateUp()
-            }
-    } else {
-        Modifier.fillMaxWidth()
+    // Without a back arrow it heads a section: a tag on the page, plain text inside a card (#87).
+    if(!showBack) {
+        if(!LocalInCard.current) return SectionTag(title)
+        Text(title, style = Typography.Heading.Medium, modifier = Modifier.padding(16.dp))
+        return
     }
-    Row(modifier = rowModifier) {
+    Row(modifier = Modifier
+        .titleBar()
+        .clickable(onClickLabel = "Navigate back") {
+            navController!!.navigateUp()
+        }) {
         Spacer(modifier = Modifier.width(16.dp))
-
-        if(showBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.align(CenterVertically))
-            Spacer(modifier = Modifier.width(18.dp))
-        }
+        Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.align(CenterVertically))
+        Spacer(modifier = Modifier.width(18.dp))
         Text(title, style = Typography.Heading.Medium, modifier = Modifier
             .align(CenterVertically)
             .padding(0.dp, 16.dp))
@@ -147,11 +145,7 @@ fun ScreenTitleWithIcon(title: String, painter: Painter) {
 @Composable
 @Preview
 fun Tip(text: String = "This is an example tip") {
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp), shape = RoundedCornerShape(4.dp)
-    ) {
+    Box(Modifier.tipFrame()) {
         Text(
             text,
             modifier = Modifier.padding(8.dp),
@@ -164,11 +158,7 @@ fun Tip(text: String = "This is an example tip") {
 @Composable
 @Preview
 fun WarningTip(text: String = "This is an example tip") {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp), shape = RoundedCornerShape(4.dp)
-    ) {
+    Box(Modifier.tipFrame(warning = true)) {
 
         Text(
             buildAnnotatedString {
@@ -255,21 +245,21 @@ fun SettingItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(Modifier.weight(1.0f).fillMaxHeight().padding(0.dp, 4.dp)) {
-            Spacer(Modifier.width(4.dp))
-            Spacer(Modifier.width(16.dp))
-            Column(
-                modifier = Modifier
-                    .width(48.dp)
-                    .align(Alignment.CenterVertically)
-            ) {
-                Box(modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                    if (icon != null) {
-                        icon()
-                    }
+            if(icon != null) {
+                Spacer(Modifier.width(20.dp))
+                Box(
+                    modifier = Modifier
+                        .width(48.dp)
+                        .align(Alignment.CenterVertically),
+                    contentAlignment = Alignment.Center
+                ) {
+                    icon()
                 }
+                Spacer(Modifier.width(12.dp))
+            } else {
+                // Rows without an icon start their text at the card's edge (#87).
+                Spacer(Modifier.width(16.dp))
             }
-
-            Spacer(Modifier.width(12.dp))
 
             Row(
                 modifier = Modifier
@@ -675,43 +665,41 @@ fun NavigationItem(title: String, style: NavigationItemStyle, navigate: () -> Un
         subtitle = subtitle,
         onClick = navigate,
         compact = compact,
-        icon = {
-            icon?.let {
-                val circleColor = when(style) {
-                    NavigationItemStyle.HomePrimary -> MaterialTheme.colorScheme.primaryContainer
-                    NavigationItemStyle.HomeSecondary -> MaterialTheme.colorScheme.secondaryContainer
-                    NavigationItemStyle.HomeTertiary -> MaterialTheme.colorScheme.tertiaryContainer
+        icon = icon?.let {{
+            val circleColor = when(style) {
+                NavigationItemStyle.HomePrimary -> MaterialTheme.colorScheme.primaryContainer
+                NavigationItemStyle.HomeSecondary -> MaterialTheme.colorScheme.secondaryContainer
+                NavigationItemStyle.HomeTertiary -> MaterialTheme.colorScheme.tertiaryContainer
 
-                    NavigationItemStyle.MiscNoArrow,
-                    NavigationItemStyle.Misc,
-                    NavigationItemStyle.ExternalLink,
-                    NavigationItemStyle.Mail -> Color.Transparent
-                }
+                NavigationItemStyle.MiscNoArrow,
+                NavigationItemStyle.Misc,
+                NavigationItemStyle.ExternalLink,
+                NavigationItemStyle.Mail -> Color.Transparent
+            }
 
-                val iconColor = when(style) {
-                    NavigationItemStyle.HomePrimary -> MaterialTheme.colorScheme.onPrimaryContainer
-                    NavigationItemStyle.HomeSecondary -> MaterialTheme.colorScheme.onSecondaryContainer
-                    NavigationItemStyle.HomeTertiary -> MaterialTheme.colorScheme.onTertiaryContainer
+            val iconColor = when(style) {
+                NavigationItemStyle.HomePrimary -> MaterialTheme.colorScheme.onPrimaryContainer
+                NavigationItemStyle.HomeSecondary -> MaterialTheme.colorScheme.onSecondaryContainer
+                NavigationItemStyle.HomeTertiary -> MaterialTheme.colorScheme.onTertiaryContainer
 
-                    NavigationItemStyle.MiscNoArrow,
-                    NavigationItemStyle.Mail,
-                    NavigationItemStyle.ExternalLink,
-                    NavigationItemStyle.Misc -> LocalContentColor.current.copy(alpha = 0.75f)
-                }
+                NavigationItemStyle.MiscNoArrow,
+                NavigationItemStyle.Mail,
+                NavigationItemStyle.ExternalLink,
+                NavigationItemStyle.Misc -> LocalContentColor.current.copy(alpha = 0.75f)
+            }
 
-                Canvas(modifier = Modifier.size(48.dp)) {
-                    drawCircle(circleColor, this.size.maxDimension / 2.4f)
-                    translate(
-                        left = this.size.width / 2.0f - icon.intrinsicSize.width / 2.0f,
-                        top = this.size.height / 2.0f - icon.intrinsicSize.height / 2.0f
-                    ) {
-                        with(icon) {
-                            draw(icon.intrinsicSize, colorFilter = ColorFilter.tint(iconColor))
-                        }
+            Canvas(modifier = Modifier.size(48.dp)) {
+                drawCircle(circleColor, this.size.maxDimension / 2.4f)
+                translate(
+                    left = this.size.width / 2.0f - icon.intrinsicSize.width / 2.0f,
+                    top = this.size.height / 2.0f - icon.intrinsicSize.height / 2.0f
+                ) {
+                    with(icon) {
+                        draw(icon.intrinsicSize, colorFilter = ColorFilter.tint(iconColor))
                     }
                 }
             }
-        }
+        }}
     ) {
         when(style) {
             NavigationItemStyle.Misc -> Icon(Icons.Default.ArrowForward, contentDescription = null)

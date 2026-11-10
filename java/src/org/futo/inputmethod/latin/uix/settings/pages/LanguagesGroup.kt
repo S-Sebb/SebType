@@ -1,7 +1,6 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -42,6 +41,7 @@ import org.futo.inputmethod.latin.toLocale
 import org.futo.inputmethod.latin.uix.SHOW_EMOJI_SUGGESTIONS
 import org.futo.inputmethod.latin.uix.dataStore
 import org.futo.inputmethod.latin.uix.setSettingBlocking
+import org.futo.inputmethod.latin.uix.settings.SettingsCard
 import org.futo.inputmethod.latin.uix.settings.BottomSpacer
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
@@ -126,7 +126,7 @@ private fun GlobeOrder() {
         save(on)
     }
 
-    Column {
+    SettingsCard {
         rows.forEach { row ->
             key(row.language) {
                 val on = row.subtype != null
@@ -197,68 +197,74 @@ fun LanguagesScreen(navController: NavHostController) {
         GlobeOrder()
 
         ScreenTitle("English")
-        SettingToggleSharedPrefs(
-            title = stringResource(R.string.sebtype_settings_autocorrect),
-            key = Settings.PREF_AUTO_CORRECTION,
-            default = true
-        )
-        SettingToggleSharedPrefs(
-            title = stringResource(R.string.sebtype_settings_capitalise),
-            key = Settings.PREF_AUTO_CAP,
-            default = true
-        )
-        SettingToggleSharedPrefs(
-            title = stringResource(R.string.sebtype_settings_double_space),
-            key = Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD,
-            default = true
-        )
-        SettingToggleDataStore(
-            title = stringResource(R.string.sebtype_settings_emoji_suggestions),
-            setting = SHOW_EMOJI_SUGGESTIONS
-        )
-        NavigationItem(
-            title = stringResource(R.string.sebtype_settings_my_words),
-            subtitle = stringResource(R.string.sebtype_settings_my_words_en),
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate(Route.PersonalDictList("en-US")) }
-        )
+        SettingsCard {
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.sebtype_settings_autocorrect),
+                key = Settings.PREF_AUTO_CORRECTION,
+                default = true
+            )
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.sebtype_settings_capitalise),
+                key = Settings.PREF_AUTO_CAP,
+                default = true
+            )
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.sebtype_settings_double_space),
+                key = Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD,
+                default = true
+            )
+            SettingToggleDataStore(
+                title = stringResource(R.string.sebtype_settings_emoji_suggestions),
+                setting = SHOW_EMOJI_SUGGESTIONS
+            )
+            NavigationItem(
+                title = stringResource(R.string.sebtype_settings_my_words),
+                subtitle = stringResource(R.string.sebtype_settings_my_words_en),
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate(Route.PersonalDictList("en-US")) }
+            )
+        }
 
         ScreenTitle("中文")
-        NavigationItem(
-            title = stringResource(R.string.chinese_setting_fuzzy_pinyin),
-            subtitle = FuzzyPinyinSummary(),
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("zhFuzzy") }
-        )
-        SettingToggleDataStore(
-            title = stringResource(R.string.sebtype_settings_zh_emoji),
-            subtitle = stringResource(R.string.sebtype_settings_zh_emoji_subtitle),
-            setting = ChineseOptions.EmojiInCandidates
-        )
-        SettingToggleDataStore(
-            title = stringResource(R.string.sebtype_settings_zh_punctuation),
-            subtitle = stringResource(R.string.sebtype_settings_zh_punctuation_subtitle),
-            setting = ChineseOptions.FullWidthPunctuation
-        )
-        NavigationItem(
-            title = stringResource(R.string.sebtype_settings_my_words),
-            subtitle = stringResource(R.string.sebtype_settings_my_words_zh),
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("zhWords") }
-        )
+        SettingsCard {
+            NavigationItem(
+                title = stringResource(R.string.chinese_setting_fuzzy_pinyin),
+                subtitle = FuzzyPinyinSummary(),
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("zhFuzzy") }
+            )
+            SettingToggleDataStore(
+                title = stringResource(R.string.sebtype_settings_zh_emoji),
+                subtitle = stringResource(R.string.sebtype_settings_zh_emoji_subtitle),
+                setting = ChineseOptions.EmojiInCandidates
+            )
+            SettingToggleDataStore(
+                title = stringResource(R.string.sebtype_settings_zh_punctuation),
+                subtitle = stringResource(R.string.sebtype_settings_zh_punctuation_subtitle),
+                setting = ChineseOptions.FullWidthPunctuation
+            )
+            NavigationItem(
+                title = stringResource(R.string.sebtype_settings_my_words),
+                subtitle = stringResource(R.string.sebtype_settings_my_words_zh),
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate("zhWords") }
+            )
+        }
 
         ScreenTitle("日本語")
-        SettingToggleDataStore(
-            title = stringResource(R.string.japanese_settings_toggle_halfwidth_space),
-            subtitle = stringResource(R.string.japanese_settings_toggle_halfwidth_space_subtitle),
-            setting = JapaneseIMESettings.HalfWidthSpace
-        )
-        NavigationItem(
-            title = stringResource(R.string.sebtype_settings_my_words),
-            subtitle = stringResource(R.string.sebtype_settings_my_words_ja),
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate(Route.PersonalDictList("ja")) }
-        )
+        SettingsCard {
+            SettingToggleDataStore(
+                title = stringResource(R.string.japanese_settings_toggle_halfwidth_space),
+                subtitle = stringResource(R.string.japanese_settings_toggle_halfwidth_space_subtitle),
+                setting = JapaneseIMESettings.HalfWidthSpace
+            )
+            NavigationItem(
+                title = stringResource(R.string.sebtype_settings_my_words),
+                subtitle = stringResource(R.string.sebtype_settings_my_words_ja),
+                style = NavigationItemStyle.Misc,
+                navigate = { navController.navigate(Route.PersonalDictList("ja")) }
+            )
+        }
 
         BottomSpacer()
     }
@@ -271,10 +277,12 @@ fun FuzzyPinyinScreen(navController: NavHostController) {
     val set = remember(setting) { ChineseIMESettings.FuzzyPinyinModes.fromCommaString(setting) }
     ScrollableList {
         ScreenTitle(stringResource(R.string.chinese_setting_fuzzy_pinyin), showBack = true, navController)
-        ChineseIMESettings.FuzzyPinyinModes.entries.forEach { mode ->
-            SettingToggleRaw(mode.displayName, mode in set, { enabled ->
-                setSetting(ChineseIMESettings.FuzzyPinyinModes.toCommaString(if(enabled) set + mode else set - mode))
-            })
+        SettingsCard {
+            ChineseIMESettings.FuzzyPinyinModes.entries.forEach { mode ->
+                SettingToggleRaw(mode.displayName, mode in set, { enabled ->
+                    setSetting(ChineseIMESettings.FuzzyPinyinModes.toCommaString(if(enabled) set + mode else set - mode))
+                })
+            }
         }
         BottomSpacer()
     }

@@ -3,12 +3,13 @@ package org.futo.inputmethod.latin.uix.settings.pages.pdict
 import android.app.Activity
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -47,7 +48,9 @@ import org.futo.inputmethod.latin.uix.getImportedUserDictFilesForLocale
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.Route
+import org.futo.inputmethod.latin.uix.settings.SettingsCard
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
+import org.futo.inputmethod.latin.uix.settings.settingsCardItem
 import java.util.Locale
 import kotlin.collections.get
 
@@ -226,55 +229,63 @@ fun PersonalDictionaryLanguageListForLocale(
         }
 
         if(localeSupportsFileImport(locale) || files.isNotEmpty()) {
+            item { ScreenTitle(stringResource(R.string.personal_dictionary_imported_additional_files_list_header)) }
             item {
-                ScreenTitle(stringResource(R.string.personal_dictionary_imported_additional_files_list_header))
-                NavigationItem(
-                    title = stringResource(R.string.personal_dictionary_import_additional_file),
-                    style = NavigationItemStyle.HomePrimary,
-                    navigate = {
-                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "text/plain"
-                        }
-                        findActivity(context)!!.startActivityForResult(intent, IMPORT_SETTINGS_REQUEST)
-                    },
-                    icon = painterResource(R.drawable.plus_circle)
-                )
+                Box(Modifier.settingsCardItem(first = true, last = files.isEmpty())) {
+                    NavigationItem(
+                        title = stringResource(R.string.personal_dictionary_import_additional_file),
+                        style = NavigationItemStyle.HomePrimary,
+                        navigate = {
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "text/plain"
+                            }
+                            findActivity(context)!!.startActivityForResult(intent, IMPORT_SETTINGS_REQUEST)
+                        },
+                        icon = painterResource(R.drawable.plus_circle)
+                    )
+                }
             }
-            items(files) {
-                NavigationItem(
-                    title = it.second,
-                    style = NavigationItemStyle.MiscNoArrow,
-                    navigate = {
-                        navController.navigate(Route.PersonalDictDelete(it.first.name))
-                    },
-                    icon = painterResource(R.drawable.file_text)
-                )
+            itemsIndexed(files) { i, it ->
+                Box(Modifier.settingsCardItem(first = false, last = i == files.lastIndex)) {
+                    NavigationItem(
+                        title = it.second,
+                        style = NavigationItemStyle.MiscNoArrow,
+                        navigate = {
+                            navController.navigate(Route.PersonalDictDelete(it.first.name))
+                        },
+                        icon = painterResource(R.drawable.file_text)
+                    )
+                }
             }
 
             item { ScreenTitle(stringResource(R.string.personal_dictionary_words_list_header)) }
         }
 
         item {
-            NavigationItem(
-                title = stringResource(R.string.user_dict_settings_add_menu_title),
-                style = NavigationItemStyle.HomePrimary,
-                navigate = {
-                    navController.navigate(Route.PersonalDictWord(locale?.toLanguageTag(), null))
-                },
-                icon = painterResource(R.drawable.plus_circle)
-            )
+            SettingsCard {
+                NavigationItem(
+                    title = stringResource(R.string.user_dict_settings_add_menu_title),
+                    style = NavigationItemStyle.HomePrimary,
+                    navigate = {
+                        navController.navigate(Route.PersonalDictWord(locale?.toLanguageTag(), null))
+                    },
+                    icon = painterResource(R.drawable.plus_circle)
+                )
+            }
         }
-        items(words) {
+        itemsIndexed(words) { i, it ->
             val transformed = ExceptionalPersonalDictionaryLanguages[locale?.language]?.transformNavWord(it) ?: it
-            NavigationItem(
-                title = transformed.word,
-                subtitle = transformed.shortcut,
-                style = NavigationItemStyle.MiscNoArrow,
-                navigate = {
-                    navController.navigate(Route.PersonalDictWord(locale?.toLanguageTag(), Json.encodeToString(it)))
-                }
-            )
+            Box(Modifier.settingsCardItem(first = i == 0, last = i == words.lastIndex)) {
+                NavigationItem(
+                    title = transformed.word,
+                    subtitle = transformed.shortcut,
+                    style = NavigationItemStyle.MiscNoArrow,
+                    navigate = {
+                        navController.navigate(Route.PersonalDictWord(locale?.toLanguageTag(), Json.encodeToString(it)))
+                    }
+                )
+            }
         }
     }
 }

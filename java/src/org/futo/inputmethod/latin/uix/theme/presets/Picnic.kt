@@ -2,11 +2,13 @@ package org.futo.inputmethod.latin.uix.theme.presets
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -48,18 +50,21 @@ private object Picnic {
 }
 
 /** SebChat's PixelBorder as a drawable: an outline with square corners cut away, a highlight
- *  top-left and lowlight bottom-right inside, and a hard shadow in the last [w] pixels right and below. */
-private class PixelFrame(
+ *  top-left and lowlight bottom-right inside, and a hard shadow in the last [w] pixels right and below.
+ *  The settings' cards use it too (settings/PixelLook.kt), in the current theme's colours. */
+internal class PixelFrame(
     private val fill: Int,
     private val highlight: Int?,
     private val lowlight: Int?,
     private val w: Int,
     private val shadow: Boolean,
+    private val outline: Int = Picnic.outline,
+    private val drop: Int = Picnic.drop,
 ) : Drawable() {
     private val paint = Paint().apply { isAntiAlias = false }
 
     /** Pushed in: the bevel flips and the shadow goes, as SebChat's buttons do. */
-    fun pressed() = PixelFrame(fill, lowlight, highlight, w, false)
+    fun pressed() = PixelFrame(fill, lowlight, highlight, w, false, outline, drop)
 
     override fun draw(canvas: Canvas) {
         val b = bounds
@@ -70,8 +75,8 @@ private class PixelFrame(
             canvas.drawRect(x0, y0, x1, y1, paint)
         }
         if (shadow) {
-            rect(r, t + 3 * w, r + w, btm + w, Picnic.drop)
-            rect(l + 3 * w, btm, r, btm + w, Picnic.drop)
+            rect(r, t + 3 * w, r + w, btm + w, drop)
+            rect(l + 3 * w, btm, r, btm + w, drop)
         }
         rect(l + w, t + w, r - w, btm - w, fill)
         lowlight?.let {
@@ -82,10 +87,10 @@ private class PixelFrame(
             rect(l + w, t + w, r - w, t + 2 * w, it)
             rect(l + w, t + w, l + 2 * w, btm - w, it)
         }
-        rect(l + w, t, r - w, t + w, Picnic.outline)
-        rect(l + w, btm - w, r - w, btm, Picnic.outline)
-        rect(l, t + w, l + w, btm - w, Picnic.outline)
-        rect(r - w, t + w, r, btm - w, Picnic.outline)
+        rect(l + w, t, r - w, t + w, outline)
+        rect(l + w, btm - w, r - w, btm, outline)
+        rect(l, t + w, l + w, btm - w, outline)
+        rect(r - w, t + w, r, btm - w, outline)
     }
 
     override fun getPadding(padding: Rect): Boolean { padding.setEmpty(); return false }
@@ -103,37 +108,41 @@ private class Clear : Drawable() {
     override fun getOpacity() = PixelFormat.TRANSPARENT
 }
 
-/** SebChat's cloth: a 64-pixel tile checkered in two halves with three tiny flowers, one pixel being
- *  1.5 dp rounded to whole device pixels. Sized to the screen so FUTO draws it unscaled. */
-private fun cloth(context: Context): Bitmap {
-    val metrics = context.resources.displayMetrics
-    val px = maxOf(1, (1.5f * metrics.density).roundToInt())
-    val tile = 64 * px
-    val bitmap = Bitmap.createBitmap(metrics.widthPixels, (metrics.heightPixels * 0.6f).roundToInt(), Bitmap.Config.RGB_565)
+/** SebChat's cloth tile: 64 pixels checkered in two halves with three tiny flowers, one pixel being
+ *  1.5 dp rounded to whole device pixels. The settings page repeats it too, in the theme's colours. */
+internal fun clothTile(density: Float, background: Int, check: Int): Bitmap {
+    val px = maxOf(1, (1.5f * density).roundToInt())
+    val half = 32f * px
+    val bitmap = Bitmap.createBitmap(64 * px, 64 * px, Bitmap.Config.RGB_565)
     val canvas = Canvas(bitmap)
     val paint = Paint().apply { isAntiAlias = false }
-    canvas.drawColor(Picnic.background)
+    canvas.drawColor(background)
+    paint.color = check
+    canvas.drawRect(0f, 0f, half, half, paint)
+    canvas.drawRect(half, half, 2 * half, 2 * half, paint)
+    fun dot(x: Int, y: Int, color: Int) {
+        paint.color = color
+        canvas.drawRect((x * px).toFloat(), (y * px).toFloat(), ((x + 1) * px).toFloat(), ((y + 1) * px).toFloat(), paint)
+    }
     val flowers = listOf(
         Triple(10 to 12, 0xFFF4B6C2.toInt(), Picnic.warm),
         Triple(44 to 50, 0xFFC9B6EF.toInt(), Picnic.warm),
         Triple(50 to 16, 0xFFF4B6C2.toInt(), Picnic.white),
     )
-    fun dot(x: Int, y: Int, color: Int) {
-        paint.color = color
-        canvas.drawRect((x * px).toFloat(), (y * px).toFloat(), ((x + 1) * px).toFloat(), ((y + 1) * px).toFloat(), paint)
+    for ((at, petals, middle) in flowers) {
+        val (x, y) = at
+        for ((dx, dy) in listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)) dot(x + dx, y + dy, petals)
+        dot(x, y, middle)
     }
-    for (top in 0 until bitmap.height step tile) for (left in 0 until bitmap.width step tile) {
-        val half = tile / 2f
-        paint.color = Picnic.check
-        canvas.drawRect(left.toFloat(), top.toFloat(), left + half, top + half, paint)
-        canvas.drawRect(left + half, top + half, left + 2 * half, top + 2 * half, paint)
-        val tx = left / px; val ty = top / px
-        for ((at, petals, middle) in flowers) {
-            val (x, y) = at
-            for ((dx, dy) in listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)) dot(tx + x + dx, ty + y + dy, petals)
-            dot(tx + x, ty + y, middle)
-        }
-    }
+    return bitmap
+}
+
+/** The cloth for the keyboard, sized to the screen so FUTO draws it unscaled. */
+private fun cloth(context: Context): Bitmap {
+    val metrics = context.resources.displayMetrics
+    val bitmap = Bitmap.createBitmap(metrics.widthPixels, (metrics.heightPixels * 0.6f).roundToInt(), Bitmap.Config.RGB_565)
+    val tile = clothTile(metrics.density, Picnic.background, Picnic.check)
+    Canvas(bitmap).drawPaint(Paint().apply { shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) })
     return bitmap
 }
 
