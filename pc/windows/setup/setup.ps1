@@ -377,19 +377,18 @@ if (-not $Undo) {
   $bar = Get-WinLanguageBarOption
   if ($bar.IsLegacySwitchingMode) { Set-WinLanguageBarOption -UseLegacySwitchMode:$false -UseLegacyLanguageBar:$bar.IsLegacyLanguageBar }
 
-  # Weasel builds the data and patches when it redeploys. WeaselServer runs as this user.
-  if ('zh' -in $want) {
-    if ($redeploy) { Stop-WeaselServer $w }
-    if (-not (Get-Process WeaselServer -ErrorAction SilentlyContinue)) { Start-Process (Join-Path $w.Root 'WeaselServer.exe'); Start-Sleep 1 }
-    if ($redeploy) {
-      $t = [Diagnostics.Stopwatch]::StartNew()
-      # Not Start-Process: it passes '/deploy ' with a trailing space, and the deployer then opens its
-      # settings window instead of deploying (it compares the argument exactly).
-      $p = [Diagnostics.Process]::Start((Join-Path $w.Root 'WeaselDeployer.exe'), '/deploy')
-      if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's redeploy took over 5 minutes" }
-      if ($p.ExitCode) { throw "Weasel's redeploy failed ($($p.ExitCode))" }
-      Write-Output "user: Weasel redeployed in $([int]$t.Elapsed.TotalSeconds) s"
-    }
+  # Weasel builds the data and patches when it redeploys. WeaselServer isn't started here: Weasel's text
+  # service starts it at the first key, as the app's own user and level. Started from Setup it would run
+  # elevated, where apps can't reach it.
+  if ($redeploy) {
+    Stop-WeaselServer $w
+    $t = [Diagnostics.Stopwatch]::StartNew()
+    # Not Start-Process: it passes '/deploy ' with a trailing space, and the deployer then opens its
+    # settings window instead of deploying (it compares the argument exactly).
+    $p = [Diagnostics.Process]::Start((Join-Path $w.Root 'WeaselDeployer.exe'), '/deploy')
+    if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's redeploy took over 5 minutes" }
+    if ($p.ExitCode) { throw "Weasel's redeploy failed ($($p.ExitCode))" }
+    Write-Output "user: Weasel redeployed in $([int]$t.Elapsed.TotalSeconds) s"
   }
   $state.Chosen = $want
   Save-State

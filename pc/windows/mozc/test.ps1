@@ -31,7 +31,7 @@ function Check($name, [scriptblock]$body) {
 $clsid = [Guid]'{10A67BC8-22FA-4A59-90DC-2546652C56BF}'  # Mozc's OSS text service and its profile
 $profileId = [Guid]'{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
 $mozcTip = '0411:{10A67BC8-22FA-4A59-90DC-2546652C56BF}{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
-$typingChecks = 'test-user', 'install-for-user', 'languages-en-zh-ja', 'rdp-keys', 'notepad-japanese', 'notepad-shift-tap', 'tsf-started', 'window-focused', 'name-nihongo', 'mozc-active', 'kana-input',
+$typingChecks = 'test-user', 'install-for-user', 'languages-en-ja-zh', 'rdp-keys', 'notepad-japanese', 'notepad-shift-tap', 'tsf-started', 'window-focused', 'name-nihongo', 'mozc-active', 'kana-input',
     'tray-hiragana', 'katakana-and-back', 'shift-tap-toggles-english', 'shift-letter-stays-japanese', 'alt-grave-toggles-english', 'shift-letter-stays-english',
     'caps-lock-icon', 'undo-for-user'
 
@@ -47,13 +47,14 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
         $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage zh-Hans-CN))
         Set-WinUserLanguageList $ll -Force
         $langsBefore = ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; '
-        Check 'install-for-user' { & "$PSScriptRoot\install.ps1" | Out-String | ForEach-Object Trim }
-        Check 'languages-en-zh-ja' {
+        $setup = "$PSScriptRoot\..\setup\setup.ps1"  # what SebType's installer runs for the user (#73)
+        Check 'install-for-user' { & $setup -User -Languages en,ja | Out-String | ForEach-Object Trim }
+        Check 'languages-en-ja-zh' {
             $langs = @((Get-WinUserLanguageList) | ForEach-Object { $_ })
             $order = ($langs | ForEach-Object { $_.LanguageTag.Substring(0, 2) }) -join ','
             $ja = ($langs | Where-Object LanguageTag -Like 'ja*').InputMethodTips -join ','
-            if ($order -ne 'en,zh,ja' -or $ja -ne $mozcTip) { throw "languages $order, Japanese: $ja" }
-            'Win+Space goes EN → 中 → 日; Japanese is Mozc only'
+            if ($order -ne 'en,ja,zh' -or $ja -ne $mozcTip) { throw "languages $order, Japanese: $ja" }
+            'SebType''s languages first (EN → 日), then Chinese as it was; Japanese is Mozc only'
         }
         # The keys come from the Remote Desktop client, as a person's would: rdp-keys.py on its side, which
         # test-tcsbackend.sh tunnels to this port. They go to the window in front of this session.
@@ -184,7 +185,7 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
             $tsf::Stop()
         }
         Check 'undo-for-user' {
-            & "$PSScriptRoot\install.ps1" -Undo | Out-Null
+            & $setup -User -Undo | Out-Null
             $after = ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; '
             if ($after -ne $langsBefore) { throw "languages $after, were $langsBefore" }
             'languages back to English and Chinese'
@@ -274,9 +275,9 @@ Check 'install' {
 # logon this run writes to $rdp (Windows Server ignores an RDP client's own start program).
 $share = "$env:ProgramData\SebType-mozc-test"
 Remove-Item -Recurse -Force $share -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force "$share\windows\mozc", "$share\linux", "$share\out" | Out-Null
+New-Item -ItemType Directory -Force "$share\windows\mozc", "$share\windows\setup", "$share\out" | Out-Null
 Copy-Item "$PSScriptRoot\*" "$share\windows\mozc"
-Copy-Item "$PSScriptRoot\..\..\linux\mozc-keymap.tsv" "$share\linux"
+Copy-Item "$PSScriptRoot\..\setup\setup.ps1", "$PSScriptRoot\..\..\linux\mozc-keymap.tsv" "$share\windows\setup"
 $password = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ }) + '-a1A'
 $rdp = "$out\rdp-logon.txt"  # in the elevated user's own profile, which the test user can't read
 $task = 'SebType-mozc-typing'

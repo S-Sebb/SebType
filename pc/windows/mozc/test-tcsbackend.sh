@@ -76,7 +76,7 @@ grep -q 'mozc installed: True' "$out/before.txt" && { echo "BLOCKED preflight: M
 grep -q 'folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a test folder exists on TCSBackEnd already ($(grep folders: "$out/before.txt"))"; exit 1; }
 
 # Inputs over scp (an -EncodedCommand this long passes cmd.exe's 8191-character limit).
-tar -cf "$out/pc.tar" -C "$repo" pc/windows/mozc pc/linux
+tar -cf "$out/pc.tar" -C "$repo" pc/windows/mozc pc/windows/setup/setup.ps1 pc/linux
 cat > "$out/run.ps1" <<'EOF'
 $d = 'C:\sebtype-test'
 Start-Transcript "$d\run.log" | Out-Null

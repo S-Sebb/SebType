@@ -1,7 +1,7 @@
 #Requires -Version 7
 <#
 Times Rime per key (key, then read the candidates) on Windows with perf-rime.exe (pc/linux/perf-rime.c,
-built by stage.sh), against Weasel's rime.dll and on a private copy of the Chinese data, so nothing is
+built by weasel/build.ps1, in the CI artifact sebtype-weasel), against Weasel's rime.dll and on a private copy of the Chinese data, so nothing is
 learned. Budget: p95 ≤ 10 ms (Decisions #2).
 
   perf-rime.ps1 -Root <Weasel folder: rime.dll, data\> -Rime <a Rime user folder, or rime-data.zip>
