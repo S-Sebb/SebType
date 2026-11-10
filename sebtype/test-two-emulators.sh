@@ -43,8 +43,10 @@ started() { awk '$2 == "testing" {print $1; exit}' "$out/$1.log"; }
 serial() { awk '$2 == "testing" {print $5; exit}' "$out/$1.log"; }
 
 suite "$PWD" single
-if [[ -z $(started single) ]]; then
-  result FAIL single-run "never reached the emulator, see $out/single.log"; exit 1
+# Compared outcomes mean something only if the suite ran to its last phase.
+if ! grep -q '^PASS install-beside-futo' "$out/single-results.txt" 2> /dev/null ||
+  ! grep -q '^[A-Z]* settings-run' "$out/single-results.txt"; then
+  result FAIL single-run "didn't run to the settings checks, see $out/single.log"; exit 1
 fi
 result PASS single-run "$(serial single), $(grep -c '^PASS' "$out/single-results.txt") checks passed, $(grep -vc '^PASS' "$out/single-results.txt") not"
 

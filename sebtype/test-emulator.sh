@@ -102,6 +102,15 @@ device_checks() {
   done
   echo "keyboards listed: $imes"; return 1
 }
+set_locale() { # to en-US; the framework restarts (about 15 s) to apply it
+  local was; was=$("$adb" -s "$serial" shell getprop persist.sys.locale | tr -d '\r')
+  was=${was:-$("$adb" -s "$serial" shell getprop ro.product.locale | tr -d '\r')}
+  echo "locale was $was"
+  [[ $was == en-US ]] && return
+  "$adb" -s "$serial" shell "su 0 setprop persist.sys.locale en-US && su 0 stop && su 0 setprop sys.boot_completed 0 && su 0 start"
+  until [[ $("$adb" -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]] &&
+    "$adb" -s "$serial" shell cmd activity get-config | grep -q '^config:.*-en-rUS-'; do sleep 2; done
+}
 device_suite() {
   export serial=$ANDROID_SERIAL
   echo "testing $apk on $serial ($("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r'))"
@@ -110,7 +119,10 @@ device_suite() {
   # Rime's data is in the app's private storage (#32), which the checks read as root.
   [[ $("$adb" -s "$serial" shell su 0 id -u | tr -d '\r') == 0 ]] ||
     { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
-  T=300 check install-beside-futo device_checks
+  # The system language decides which of SebType's languages a fresh install starts with, and another
+  # task can leave the emulator in Chinese (#106's second run: 13 checks failed for that alone).
+  T=120 check locale bash -c set_locale && echo "locale en-US, $(head -1 "$out/locale.log")"
+  T=300 check install-beside-futo bash -c device_checks
   if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
     # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
     PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run \
@@ -121,7 +133,7 @@ device_suite() {
     result SKIP chinese "needs install-beside-futo and bumped-apk"
   fi
 }
-export -f result check device_checks device_suite; export adb apk futo_apk field_apk results
+export -f result check set_locale device_checks device_suite; export adb apk futo_apk field_apk results
 sebtype/emulator.sh -P 1 -w 1800 -m 35 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "$(head -1 "$out/emulator.log")"
