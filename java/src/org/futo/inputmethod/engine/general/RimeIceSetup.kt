@@ -50,8 +50,6 @@ object RimeIceSetup {
     data class Configuration(
         val schema: String,
         val learning: Boolean,
-        // Applied as Rime options by the keyboard, not by the patch.
-        val simplification: Boolean,
         val fuzzyMode: Set<ChineseIMESettings.FuzzyPinyinModes>
     ) {
         /**
@@ -111,7 +109,6 @@ object RimeIceSetup {
         return Configuration(
             schema = schemaFor("qwerty", pinyinScheme)!!,
             learning = prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true),
-            simplification = isSimplifiedChinese(context, Locale.forLanguageTag("zh")),
             fuzzyMode = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
                 context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
             )

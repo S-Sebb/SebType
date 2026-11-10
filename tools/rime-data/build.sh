@@ -27,14 +27,23 @@ RIME_FROST_SHA256=4f4998ae83f63d757c0a4ace192f69d48265bddfabe231642b73e3739ed0f2
 FROST_CORE=(8105 41448 base ext others corrections)
 # The pinyin schemes SebType offers (ChineseIMESettings.PinyinScheme), all on the same dictionary.
 SCHEMAS=(rime_ice double_pinyin double_pinyin_abc double_pinyin_flypy double_pinyin_mspy)
+# OpenCC's simplified → traditional conversion, which rime-ice's 简/繁 switch (traditionalization, #36)
+# runs: its s2t config and the two dictionaries that config reads, compiled to OpenCC's binary format
+# with the host's libopencc (the format is the same in every OpenCC since 1.0).
+OPENCC_VERSION=1.1.9
+OPENCC_URL=https://raw.githubusercontent.com/BYVoid/OpenCC/ver.$OPENCC_VERSION/data
+OPENCC_S2T_SHA256=710bb970e406d9c0a3dd33c609248686cf1c5578d064b7b7fc89e70fbb9ea75d
+OPENCC_PHRASES_SHA256=17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b
+OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41
 # Must equal the librime that rime-android builds, so the phone takes the compiled files as they are.
 . rime-android/versions.sh
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=2
+BUNDLE_REVISION=3
 
 out=${1:-build/sebtype-assets}/rime
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
 librime=/usr/lib64/librime.so.1
+libopencc=/usr/lib64/libopencc.so.1.1
 headers=$cache/librime-$LIBRIME_VERSION-headers
 mkdir -p "$cache" "$out"
 
@@ -53,8 +62,8 @@ fetch() { # url sha256 -> prints cached path
 }
 
 if [[ ! -f $zip ]]; then
-  [[ -f $librime ]] && command -v gcc >/dev/null ||
-    { echo "rime-data: needs gcc and librime $LIBRIME_VERSION ($librime) to compile the tables" >&2; exit 1; }
+  [[ -f $librime && -f $libopencc ]] && command -v gcc g++ >/dev/null ||
+    { echo "rime-data: needs gcc, g++, librime $LIBRIME_VERSION ($librime) and OpenCC ($libopencc) to compile the tables" >&2; exit 1; }
   mkdir -p "$headers"
   while read -r sum f; do # librime's public headers, pinned; Fedora ships them only in librime-devel
     echo "$sum  $headers/$f" | sha256sum -c --status 2>/dev/null && continue
@@ -82,6 +91,14 @@ EOF
   mkdir "$s/cn_dicts"
   for d in "${FROST_CORE[@]}"; do mv "$work/frost/cn_dicts/$d.dict.yaml" "$s/cn_dicts/"; done
   mv "$work/frost/zh-moqi.gram" "$s/"
+  # rime-ice ships only its emoji table in opencc/; the 简/繁 switch needs OpenCC's s2t.
+  printf '%s\n' '#include <string>' \
+    'namespace opencc { void ConvertDictionary(const std::string &, const std::string &, const std::string &, const std::string &); }' \
+    'int main(int, char **argv) { opencc::ConvertDictionary(argv[1], argv[2], "text", "ocd2"); }' > "$work/opencc-dict.cc"
+  g++ -O2 -o "$work/opencc-dict" "$work/opencc-dict.cc" "$libopencc"
+  cp "$(fetch "$OPENCC_URL/config/s2t.json" "$OPENCC_S2T_SHA256")" "$s/opencc/s2t.json"
+  "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STPhrases.txt" "$OPENCC_PHRASES_SHA256")" "$s/opencc/STPhrases.ocd2"
+  "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STCharacters.txt" "$OPENCC_CHARACTERS_SHA256")" "$s/opencc/STCharacters.ocd2"
   python3 -I - "$work/frost/rime_frost.dict.yaml" "$s" "${FROST_CORE[*]}" "${SCHEMAS[*]}" <<'EOF'
 import re, sys
 frost, shared, core, schemas = sys.argv[1], sys.argv[2], sys.argv[3].split(), sys.argv[4].split()
@@ -132,6 +149,9 @@ EOF
   grep -qx 'first=然后' "$work/phone.out" || { echo "rime-data: shipped data fails ranh: $(cat "$work/phone.out")" >&2; exit 1; }
   rebuilt=$(cd "$work/phone/build" && ls | grep -v '\.yaml$' || true) # compiled tables, prisms or reverse dbs
   [[ -z $rebuilt ]] || { echo "rime-data: a deploy on the shipped data rebuilt: $rebuilt" >&2; exit 1; }
+  # The 简/繁 switch on: traditional output from the shipped OpenCC data.
+  "$work/deploy" "$s" "$work/hant" rime_ice houlai traditionalization > "$work/hant.out" 2> "$work/hant.log"
+  grep -qx 'first=後來' "$work/hant.out" || { echo "rime-data: 繁 doesn't convert: houlai -> $(cat "$work/hant.out")" >&2; exit 1; }
   # The app's settings patch (here fuzzy z = zh, as RimeIceSetup writes it) still applies without the sources.
   mkdir "$work/fuzzy"
   printf 'patch:\n    speller/algebra/+:\n        - derive/^z/zh/\n        - derive/^zh/z/\n' > "$work/fuzzy/rime_ice.custom.yaml"
@@ -154,6 +174,10 @@ cn_dicts_cell imports); the schemas ${SCHEMAS[*]} get rime-frost's zh-moqi gramm
 (non_collocation_penalty -4, contextual_suggestions off); default.yaml lists only those schemas;
 weasel.yaml, squirrel.yaml and the other schemas are left out. The dictionary sources are compiled
 into build/ with librime $LIBRIME_VERSION and not included here: they are at the source links above.
+
+opencc/s2t.json, STPhrases.ocd2 and STCharacters.ocd2 are OpenCC $OPENCC_VERSION's (Apache License 2.0,
+https://github.com/BYVoid/OpenCC/tree/ver.$OPENCC_VERSION/data): s2t.json as it is, the two dictionaries
+compiled from their .txt sources to OpenCC's binary format.
 EOF
   rm -f "$zip.part"
   (cd "$s" && zip -qr -X -9 "$zip.part" .)

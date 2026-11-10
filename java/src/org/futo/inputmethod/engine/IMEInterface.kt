@@ -19,6 +19,9 @@ val DefaultStateHint = StateHint()
 /** SebType: the input-mode chip at the left of the suggestion bar; one tap goes to the next mode. */
 data class ModeChip(val labels: List<String>, val current: Int, val onTap: () -> Unit)
 
+/** SebType: a switch at the top of the keyboard menu (the action bar's more-actions window), between two labels. */
+data class MenuSwitch(val offLabel: String, val onLabel: String, val checked: Boolean, val onToggle: (Boolean) -> Unit)
+
 interface IMEInterface {
     // Basic lifecycle
     fun onCreate()
@@ -43,6 +46,9 @@ interface IMEInterface {
 
     /** SebType: the mode chip to show, read while composing (so backed by Compose state), or null for none */
     fun getModeChip(): ModeChip? = null
+
+    /** SebType: the menu switch to show while this IME is active (backed by Compose state), or null for none */
+    fun getMenuSwitch(): MenuSwitch? = null
 
     /** Optional hint for how the keyboard state should behave */
     fun getStateHint(imeHint: String?) = DefaultStateHint

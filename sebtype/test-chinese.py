@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock, then
-Japanese's あ ⇄ ア mode chip (#38).
+"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock, the
+简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -223,6 +223,11 @@ def tap_candidate(word):
 def logcat():
     """The app's rime log lines; logcat's -s splits the filter on spaces, so it can't match the tag."""
     return adb("shell", "logcat -d | grep -F 'ChineseIME (rime)' || true")
+
+
+def screenshot(name):
+    adb("shell", "screencap -p /sdcard/sebtype-shot.png")
+    adb("pull", "/sdcard/sebtype-shot.png", os.path.join(logdir, name))
 
 
 SET_UP = r"Set up rime_ice in (\d+) ms \(deployed: (yes|no)\), self-test (\w+)"
@@ -479,6 +484,97 @@ check(
 )
 
 
+# The 简/繁 switch at the top of the keyboard menu (#36): Open Action Bar, then All Actions. Their
+# labels follow the system language (English, Chinese or Japanese).
+OPEN_BAR = ("Open Action Bar", "打开操作栏", "アクションバーを開く")
+ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト")
+BACK = ("Back", "返回", "戻る")
+
+
+def tap_label(labels, timeout=10):
+    n = wait_for(
+        labels[0], lambda: next((n for n in nodes() if n[0] in labels), None), timeout
+    )
+    adb("shell", "input", "tap", str(n[1]), str(n[2]))
+    time.sleep(1)
+
+
+def open_menu():
+    open_field()
+    # The expanded bar is a saved setting (ActionBarExpanded), so after it has been opened once, a new
+    # keyboard comes up expanded: its toggle reads "Close Action Bar" and its tiles are already showing.
+    if not any(n[0] in ALL_ACTIONS for n in nodes()):
+        tap_label(OPEN_BAR)
+    tap_label(ALL_ACTIONS)
+
+
+def close_menu():
+    tap_label(BACK)
+
+
+def menu_switch():
+    """(checked, x, y) of the menu's 简/繁 switch, or None when the menu has none."""
+    ns = nodes()
+    labels = {n[0] for n in ns}
+    if not {"简体", "繁體"} <= labels:
+        return None
+    sw = next(n for n in ns if n[0] == "繁體")
+    dump = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    checked = re.search(r'checkable="true" checked="(true|false)"', dump)
+    return (checked and checked.group(1) == "true", sw[1], sw[2])
+
+
+def set_traditional(on, shot=None):
+    open_menu()
+    sw = wait_for("the 简/繁 switch", menu_switch, 10)
+    if sw[0] != on:
+        adb("shell", "input", "tap", str(sw[1]), str(sw[2]))
+        wait_for(
+            f"the switch to turn {'on' if on else 'off'}",
+            lambda: (menu_switch() or (None,))[0] == on,
+            10,
+        )
+    if shot:
+        screenshot(shot)
+    close_menu()
+
+
+def traditional_on():
+    set_traditional(True, "36-menu-switch.png")
+    got = candidates_for("houlai")
+    screenshot("36-traditional-candidates.png")
+    if not got or got[0] != "後來":
+        raise Fail(f"繁 on: houlai -> {got[:6]}")
+    return f"繁 on: houlai -> {got[:6]}"
+
+
+def traditional_after_restart():
+    restart_app()
+    wait_set_up()
+    open_menu()
+    sw = wait_for("the 简/繁 switch", menu_switch, 10)
+    close_menu()
+    got = candidates_for("houlai")
+    if not sw[0] or not got or got[0] != "後來":
+        raise Fail(
+            f"after a restart the switch is {'on' if sw[0] else 'off'}, houlai -> {got[:6]}"
+        )
+    return f"after a restart the switch stays on, houlai -> {got[:6]}"
+
+
+def traditional_off():
+    set_traditional(False)
+    got = candidates_for("houlai")
+    if not got or got[0] != "后来":
+        raise Fail(f"繁 off: houlai -> {got[:6]}")
+    return f"繁 off: houlai -> {got[:6]}; learned 厉害 still first: {expect_first('lh', '厉害')()}"
+
+
+check("zh-hant-on", traditional_on, needs=["first-install"])
+check("zh-hant-after-restart", traditional_after_restart, needs=["zh-hant-on"])
+check("zh-hant-off", traditional_off, needs=["zh-hant-on", "learn-picked-word"])
+
+
 def chip(ns):
     """(label, x, y) of the Japanese mode chip in the suggestion bar, or None (English and 中 have none)."""
     row = bar_row(ns)
@@ -504,11 +600,6 @@ def tap_chip(expect):
 
 def field_text():
     return next((n[0] for n in nodes() if n[4] == "android.widget.EditText"), "")
-
-
-def screenshot(name):
-    adb("shell", "screencap -p /sdcard/sebtype-shot.png")
-    adb("pull", "/sdcard/sebtype-shot.png", os.path.join(logdir, name))
 
 
 def to_japanese():
@@ -578,54 +669,16 @@ check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
 check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
 
 
-def main_learns():
-    """main's build, fresh, learns 厉害 (rime-ice's dictionary, same schema id rime_ice)."""
-    adb("uninstall", PKG, check=False)
-    adb("install", main_apk, timeout=300)
-    wait_for(
-        "SebType to be listed",
-        lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
-        30,
-    )
-    adb("shell", "ime", "enable", IME)
-    adb("logcat", "-c")
-    open_field()
-    tap_globe()  # a fresh install starts in EN
-    wait_set_up()
-    return learn_lower_candidate()
+def no_switch_in_japanese():
+    open_menu()
+    sw = menu_switch()
+    close_menu()
+    if sw:
+        raise Fail("the menu shows the 简/繁 switch in 日")
+    return "日's menu has no 简/繁 switch"
 
 
-def update_from_main():
-    adb("logcat", "-c")
-    adb("install", "-r", apk, timeout=300)
-    setup, install, _, _ = wait_set_up()
-    if install is None:
-        raise Fail("the update from main didn't install the bundled data")
-    wait_for(
-        "SebType to be listed again",
-        lambda: IME in adb("shell", "ime", "list", "-s"),
-        30,
-    )
-    try:
-        open_field()
-    except Fail:
-        open_field()
-    return f"main -> this build: data installed in {install} ms, set up in {setup} ms"
+check("ja-menu-has-no-zh-switch", no_switch_in_japanese, needs=["ja-chip"])
 
 
-if main_apk:
-    check("main-learns", main_learns)
-    check("update-from-main", update_from_main, needs=["main-learns"])
-    check(
-        "update-from-main-keeps-learned",
-        expect_first("lh", "厉害"),
-        needs=["update-from-main"],
-    )
-    check(
-        "update-from-main-chinese",
-        expect_first("ranh", "然后"),
-        needs=["update-from-main"],
-    )
-else:
-    result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

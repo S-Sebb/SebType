@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.navigation.NavHostController
 import org.futo.inputmethod.engine.IMEInterface
+import org.futo.inputmethod.engine.MenuSwitch
 import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.SuggestionBlacklist
@@ -107,6 +108,9 @@ interface KeyboardManagerForAction {
     // Returns null if the current IME is not of this kind.
     // TODO: In the future make an IMEActionInterface for correctness
     fun getCurrentIME(): IMEInterface
+
+    /** SebType: the active IME's switch for the top of the keyboard menu, or null for none */
+    @Composable fun menuSwitch(): MenuSwitch?
 }
 
 enum class CloseResult {

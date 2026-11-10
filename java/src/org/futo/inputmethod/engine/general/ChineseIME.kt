@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -36,6 +37,7 @@ import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEHelper
 import org.futo.inputmethod.engine.IMEInterface
 import org.futo.inputmethod.engine.IMEMessage
+import org.futo.inputmethod.engine.MenuSwitch
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.Subtypes.switchToNextLanguage
@@ -257,6 +259,9 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     private var editingState = EditingState.NotEditing
 
     companion object {
+        /** rime-ice's 简/繁 switch, the one Ctrl+Shift+F toggles on the PCs */
+        private const val TRADITIONAL = "traditionalization"
+
         @JvmStatic
         private val StrokeTransformation = mapOf(
             'h' to '⼀',
@@ -525,6 +530,21 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
     private var prevConfiguration: RimeIceSetup.Configuration? = null
 
+    // SebType (#36): the menu's 简/繁 switch. It saves the choice as the simplification setting and turns
+    // rime-ice's traditionalization option on or off at once, with no new deploy. The option converts
+    // only what Rime outputs, so learned words stay the same in both.
+    private val traditional = mutableStateOf(false)
+
+    override fun getMenuSwitch() = MenuSwitch("简体", "繁體", traditional.value) { on ->
+        traditional.value = on
+        coroScope.launch {
+            helper.context.setSetting(ChineseIMESettings.SimplificationSetting,
+                if(on) ChineseIMESettings.ChineseSimplificationMode.Traditional.name
+                else ChineseIMESettings.ChineseSimplificationMode.Simplified.name)
+            if(ready) rime.setOption(TRADITIONAL, on)
+        }
+    }
+
     // Rime takes keys and its candidates show only once it is set up for this keyboard's configuration.
     private val ready get() = prevConfiguration != null && RimeIceSetup.state.value == RimeIceSetup.State.Ready
 
@@ -540,23 +560,24 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     .toEnumOrNull<ChineseIMESettings.PinyinScheme>()
                     ?: ChineseIMESettings.PinyinScheme.FullPinyin
                 val schema = RimeIceSetup.schemaFor(layoutHint, pinyinScheme) ?: return@launch
-                val simplified = RimeIceSetup.isSimplifiedChinese(helper.context, settings.mLocale)
+                traditional.value = !RimeIceSetup.isSimplifiedChinese(helper.context, settings.mLocale)
 
                 val config = RimeIceSetup.Configuration(
                     schema,
                     learning = settings.isPersonalizationEnabled,
-                    simplification = simplified,
                     fuzzyMode = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
                         helper.context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
                     )
                 )
-                if(config == prevConfiguration && ready) return@launch
+                if(config == prevConfiguration && ready) {
+                    rime.setOption(TRADITIONAL, traditional.value)
+                    return@launch
+                }
 
                 prevConfiguration = null
                 // Joins a setup already running in the background (setup screen, app update).
                 if(RimeIceSetup.ensure(helper.context, config)) {
-                    rime.setOption("simplification", simplified)
-                    rime.setOption("traditional", !simplified)
+                    rime.setOption(TRADITIONAL, traditional.value)
                     prevConfiguration = config
                     if(helper.isImeActive(this@ChineseIME)) setNeutralSuggestionStrip()
                 }

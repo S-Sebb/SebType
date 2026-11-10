@@ -333,6 +333,28 @@ if { [[ $(cat "$rime_im" 2>/dev/null) != "$want_im" ]] || [[ $(cat "$src") != "$
     warn "Chinese reads 中文 once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
 fi
 
+# 13. Ctrl+Shift+F switches Chinese between simplified and traditional output at any time (#36), as on
+# Windows; Ctrl+F alone stays Find. It toggles rime-ice's traditionalization option, which converts only
+# what Rime outputs, so learned words stay shared. Both keysyms, because Shift may send either. The
+# bindings are appended to default.yaml's, keeping the file's other patches.
+default_custom=$rime_dir/default.custom.yaml
+src=$default_custom; [[ -f $src ]] || src=/dev/null
+if ! grep -q 'toggle: traditionalization, accept: Control+Shift+f }' "$src" ||
+  ! grep -q 'toggle: traditionalization, accept: Control+Shift+F }' "$src"; then
+  want_custom=$(awk '
+    function binds() { for (k = 1; k <= 2; k++) print "    - { when: always, toggle: traditionalization, accept: Control+Shift+" substr("fF", k, 1) " }" }
+    /toggle: traditionalization, accept: Control\+Shift\+[fF] }/ { next }
+    { print } /^  key_binder\/bindings\/\+:/ && !done { binds(); done = 1 }
+    END { if (!done) { print (NR ? "" : "patch:") "\n  # SebType: Ctrl+Shift+F switches 简/繁 (#36)\n  key_binder/bindings/+:"; binds() } }' "$src")
+  # A file without key_binder/bindings/+ gets it at its end, which is inside its patch: block.
+  if change "Ctrl+Shift+F switches Chinese 简/繁 in $default_custom (backup in $backup)"; then
+    [[ -f $default_custom ]] && save "$default_custom"
+    mkdir -p "$rime_dir"; printf '%s\n' "$want_custom" > "$default_custom"
+    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
+      warn "Ctrl+Shift+F switches 简/繁 once Rime redeploys: right-click the tray icon → Deploy"
+  fi
+fi
+
 # Self-check of the live session.
 parent=$(ps -o ppid= -C fcitx5 | head -1 | tr -d ' ')
 [[ -n $parent && $(ps -o comm= -p "$parent") == kwin_wayland ]] ||

@@ -3,9 +3,11 @@ package org.futo.inputmethod.latin.uix.actions
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,10 +44,13 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.futo.inputmethod.engine.MenuSwitch
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionWindow
@@ -116,6 +122,27 @@ fun ActionItem(action: Action, modifier: Modifier = Modifier, dragIcon: Boolean 
 }
 
 
+// SebType (#36): the active IME's switch, a row as wide as the grid with the label of each side.
+@Composable
+fun MenuSwitchItem(switch: MenuSwitch) {
+    Surface(color = LocalKeyboardScheme.current.keyboardContainer,
+        modifier = Modifier.fillMaxWidth().height(56.dp)
+            .toggleable(switch.checked, role = Role.Switch, onValueChange = switch.onToggle),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        CompositionLocalProvider(LocalContentColor provides LocalKeyboardScheme.current.onKeyboardContainer) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp, CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(switch.offLabel, style = Typography.Body.Medium,
+                    fontWeight = if(switch.checked) null else FontWeight.Bold)
+                Switch(checked = switch.checked, onCheckedChange = null)
+                Text(switch.onLabel, style = Typography.Body.Medium,
+                    fontWeight = if(switch.checked) FontWeight.Bold else null)
+            }
+        }
+    }
+}
+
 @Composable
 @Preview(showBackground = true)
 fun MoreActionsView() {
@@ -139,6 +166,8 @@ fun MoreActionsView() {
                 (map[ActionCategory.More]      ?: listOf())
     }
 
+    val menuSwitch = manager?.menuSwitch()
+
     if(actions.isEmpty()) {
         ScreenTitle(stringResource(R.string.action_editor_warning_no_actions))
     }
@@ -151,6 +180,9 @@ fun MoreActionsView() {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        menuSwitch?.let {
+            item(key = "menu-switch", span = { GridItemSpan(maxLineSpan) }) { MenuSwitchItem(it) }
+        }
         items(actions, key = { it.name }) {
             ActionItem(it, Modifier.clickable {
                 manager!!.activateAction(it)

@@ -81,7 +81,7 @@ fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOM
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 11 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 12 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -250,13 +250,27 @@ fi
 # Chinese label (#69): a private Fcitx5 (as above) running Rime with a tiny schema that has rime-ice's id
 # and name, on a third fake account set up by setup-ime.sh. Switching to it must show 中文 in the popup,
 # both the long one and the compact one (the reference PC's setting; it shows the label the tray text
-# uses), and the schema id must stay rime_ice.
+# uses), and the schema id must stay rime_ice. The schema also has rime-ice's 简/繁 switch, so the same
+# Fcitx5 checks the Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app.
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
   mkdir -p "$h/.config/fcitx5" "$r"
-  printf 'schema:\n  schema_id: rime_ice\n  name: 雾凇拼音\nengine:\n  processors: [ascii_composer, speller, express_editor]\n  segmentors: [abc_segmentor]\n  translators: [echo_translator]\n' \
-    > "$r/rime_ice.schema.yaml"
+  cat > "$r/rime_ice.schema.yaml" <<'YAML'
+schema: { schema_id: rime_ice, name: 雾凇拼音 }
+switches: [{ name: traditionalization, states: [简, 繁] }]
+engine:
+  processors: [ascii_composer, key_binder, speller, selector, express_editor]
+  segmentors: [abc_segmentor]
+  translators: [table_translator]
+  filters: [simplifier@traditionalize]
+speller: { alphabet: abcdefghijklmnopqrstuvwxyz, delimiter: " '" }
+translator: { dictionary: sebtest }
+traditionalize: { option_name: traditionalization, opencc_config: s2t.json }
+key_binder: { import_preset: default }
+YAML
+  printf -- '---\nname: sebtest\nversion: "1"\nsort: by_weight\n...\n后来\thou lai\t100\n后\thou\t10\n来\tlai\t10\n' > "$r/sebtest.dict.yaml"
+  mkdir -p "$r/opencc"; cp /usr/share/opencc/{s2t.json,STPhrases.ocd2,STCharacters.ocd2} "$r/opencc/"
   printf 'patch:\n  schema_list: [{schema: rime_ice}]\n' > "$r/default.custom.yaml"
   printf 'patch:\n  menu/page_size: 6\n' > "$r/rime_ice.custom.yaml"
   fake_run < /dev/null > /dev/null || return 1
@@ -291,9 +305,34 @@ def on_signal(_c, _s, _p, _i, name, params):
     if name == 'UpdateClientSideUI':
         text = ''.join(s for s, _ in params.unpack()[2])
         if text: popups.append(text)
+committed = []
+def on_commit(_c, _s, _p, _i, name, params):
+    if name == 'CommitString': committed.append(params.unpack()[0])
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+bus.signal_subscribe(None, IC, None, ic, None, 0, on_commit)
 call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
 call(ic, IC, 'FocusIn')
+
+SHIFT, CTRL = 1, 4
+KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'space': (0x20, 65), 'f': (0x66, 41), 'F': (0x46, 41),
+        **{c: (ord(c), code) for c, code in zip('houlai', (43, 32, 30, 46, 38, 31))}}
+def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
+    taken = call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], state, release, 0)[0]
+    wait(lambda: False, 0.03)
+    return taken
+def tap(name, state=0):
+    taken = key(name, state); key(name, state, True); return taken
+def ctrl(name, shift=False):  # Ctrl(+Shift)+name, pressed in order and released in reverse
+    key('Control_L'); shift and key('Shift_L', CTRL)
+    mods = CTRL | (SHIFT if shift else 0)
+    taken = tap(name, mods)
+    shift and key('Shift_L', mods, True); key('Control_L', CTRL, True)
+    return taken
+def houlai():  # types houlai, picks the first candidate, returns what was committed
+    committed.clear()
+    for c in 'houlai': tap(c)
+    tap('space'); wait(lambda: committed, 2)
+    return ''.join(committed)
 
 def switch():  # the popup text shown when switching from English to Chinese
     call(*CONTROLLER, 'SetCurrentIM', '(s)', 'keyboard-us'); wait(lambda: False, 0.2)
@@ -315,6 +354,12 @@ with open(sys.argv[3], 'a') as f: f.write('\n[Behavior]\nCompactInputMethodInfor
 call(*CONTROLLER, 'ReloadConfig')
 check('compact popup reads 中文', switch(), '中文')
 check('schema id stays rime_ice', call('/rime', 'org.fcitx.Fcitx.Rime1', 'GetCurrentSchema')[0], 'rime_ice')
+check('simplified at first', houlai(), '后来')
+check('Ctrl+Shift+F is taken', ctrl('F', shift=True), True)
+check('traditional after Ctrl+Shift+F', houlai(), '後來')
+ctrl('f', shift=True)  # Shift may send the lowercase keysym
+check('simplified after the second Ctrl+Shift+F', houlai(), '后来')
+check('Ctrl+F reaches the app', ctrl('f'), False)
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
@@ -324,8 +369,8 @@ PY
 }
 if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/rime.conf ]] &&
   python3 -c 'from gi.repository import Gio' 2>/dev/null; then
-  check rime-label-reads-zhongwen rime_label
-else result SKIP rime-label-reads-zhongwen "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
+  check rime-label-and-zh-hant-key rime_label
+else result SKIP rime-label-and-zh-hant-key "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
 fi
 
 rerun() {

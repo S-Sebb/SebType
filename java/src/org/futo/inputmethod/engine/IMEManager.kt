@@ -61,6 +61,7 @@ class IMEManager(
 
     @Composable fun isImeLoading(): Boolean = activeIme?.getLoadingState()?.value == true
     @Composable fun modeChip(): ModeChip? = activeIme?.getModeChip()
+    @Composable fun menuSwitch(): MenuSwitch? = activeIme?.getMenuSwitch()
 
     private fun getActiveIMEKind(settingsValues: SettingsValues): IMEKind =
         when(settingsValues.mLocale.language) {
