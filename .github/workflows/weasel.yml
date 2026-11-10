@@ -1,6 +1,6 @@
 # SebType's Weasel (小狼毫) installer for Windows Chinese (#13): pc/windows/weasel/build.ps1 on a
-# Windows runner, with the tray icons made from pc/icons. The installer is the run's artifact
-# "sebtype-weasel"; pc/windows/stage.sh downloads it.
+# Windows runner, with the tray icons made from pc/icons. The installer and perf-rime.exe are the run's
+# artifact "sebtype-weasel"; pc/windows/stage.sh downloads it.
 name: Weasel
 
 on:
@@ -9,6 +9,7 @@ on:
     paths:
       - pc/windows/weasel/**
       - pc/icons/**
+      - pc/linux/perf-rime.c
       - .github/workflows/weasel.yml
 
 permissions:

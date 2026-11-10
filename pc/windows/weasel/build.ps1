@@ -3,7 +3,8 @@
 #   pc/windows/weasel/build.ps1 -Icons <dir with zh.ico en.ico en_caps.ico> [-Out <dir>]
 # Needs Visual Studio 2022 with C++ and ATL, git, 7z, NSIS and Git's bash (GitHub's windows-2022
 # runner has them all; .github/workflows/weasel.yml runs this). Boost is downloaded into
-# $env:BOOST_ROOT when it isn't there yet. Writes sebtype-weasel-<version>-installer.exe to -Out.
+# $env:BOOST_ROOT when it isn't there yet. Writes sebtype-weasel-<version>-installer.exe to -Out, and
+# perf-rime.exe (pc/linux/perf-rime.c) for pc/windows/perf-rime.ps1.
 param(
   [Parameter(Mandatory = $true)][string]$Icons,
   [string]$Out = (Join-Path $PSScriptRoot '..\..\..\build\weasel'),
@@ -73,6 +74,13 @@ try {
   Invoke-Checked 'build weasel and installer' { cmd /c build.bat installer }
   $installer = "output\archives\weasel-$WeaselTag.$SebTypeBuild-installer.exe"
   Copy-Item $installer (Join-Path $Out "sebtype-weasel-$WeaselTag.$SebTypeBuild-installer.exe") -Force
+
+  # 32-bit, like the rime.dll it loads: Weasel ships only a 32-bit one.
+  $vcvars = & $vswhere -latest -find 'VC\Auxiliary\Build\vcvarsall.bat' | Select-Object -First 1
+  $perf = (Resolve-Path (Join-Path $PSScriptRoot '..\..\linux\perf-rime.c')).Path
+  # A batch file, so cmd gets the quotes as written.
+  Set-Content perf-rime.bat "@call `"$vcvars`" x86 >nul && cl /nologo /O2 /MT /Iinclude /Fe`"$Out\perf-rime.exe`" `"$perf`" psapi.lib"
+  Invoke-Checked 'build perf-rime' { cmd /c perf-rime.bat }
 } finally {
   Pop-Location
   Remove-Item "$HOME\.get-rime.conf.ps1" -ErrorAction SilentlyContinue

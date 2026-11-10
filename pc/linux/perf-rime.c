@@ -3,7 +3,7 @@
 // Prints key=value lines: deploy_ms (maintenance at start-up; a full deploy when USER_DIR has no
 // build/), session_ms, first_key_us, key_p50_us, key_p95_us, key_max_us, keys, rss_kb, peak_rss_kb.
 // Built by perf.sh against librime's public headers; nothing is committed, so nothing is learned.
-// On Windows (pc/windows/stage.sh, MinGW) it loads Weasel's rime.dll from PATH.
+// On Windows (built 32-bit with Weasel, pc/windows/weasel/build.ps1) it loads Weasel's rime.dll from PATH.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
