@@ -327,7 +327,9 @@ if ('zh' -in $want) {
 if ('ja' -in $want) {
   if (-not (Get-MozcProduct)) { throw "SebType's Mozc isn't installed (setup.ps1 -Machine first)" }
   $db = Join-Path $MozcUser 'config1.db'
-  $data = if (Test-Path $db) { [IO.File]::ReadAllBytes($db) } else { [byte[]]@() }
+  # A new account has no config1.db yet. (An empty array from an if would arrive as $null.)
+  $data = [byte[]]::new(0)
+  if (Test-Path $db) { $data = [IO.File]::ReadAllBytes($db) }
   $new = Set-Keymap $data ([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'mozc-keymap.tsv')))
   if ([Convert]::ToBase64String($data) -ne [Convert]::ToBase64String($new)) {
     New-Item -ItemType Directory -Force $MozcUser | Out-Null

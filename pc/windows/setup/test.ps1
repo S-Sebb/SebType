@@ -207,16 +207,21 @@ namespace SebTypeSetupTest {
   }
   function Shot($cls, $name, $seconds = 60) { $h = Window $cls $seconds; $win::Shot($h, "$out\73-$name.png"); $h }
   function Click($h, $caption) { if (-not $win::Click($h, $caption)) { throw "no '$caption' button in: $($win::Texts($h))" } }
-  # Waits for a page by a text on it (Inno's labels are windows of their own).
+  # Waits for a page by a text on it (Inno's labels are windows of their own); a message box Setup shows
+  # instead (a failed step) ends the wait.
   function Page($h, $text, $seconds = 60) {
-    if (-not (Wait-Until $seconds { $win::Texts($h) -like "*$text*" })) { throw "no '$text' in $seconds s; window shows: $($win::Texts($h))" }
+    $r = Wait-Until $seconds { if ($win::Texts($h) -like "*$text*") { 'page' } elseif (($m = $win::Find('#32770')) -ne [IntPtr]::Zero) { $m } }
+    if ($r -is [IntPtr]) { $win::Shot($r, "$out\failed-$(Get-Date -Format HHmmss).png"); throw "Setup says: $($win::Texts($r))" }
+    if (-not $r) { throw "no '$text' in $seconds s; window shows: $($win::Texts($h))" }
   }
+  function Save-MachineLog($what) { Copy-Item "$App\setup.log" "$out\machine-$what.log" -ErrorAction SilentlyContinue }
   # A Setup or uninstaller started here and left showing is stopped, with the temporary copy it runs.
   function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" -or $_.Path -like "$env:TEMP\_iu*" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
   function Silent($what, [string[]]$arguments) {
     $p = Start-Process $setup -PassThru -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\setup-$what.log`"") + $arguments)
     if (-not $p.WaitForExit(900000)) { throw "Setup ($what) ran over 15 minutes" }
-    if ($p.ExitCode) { throw "Setup ($what) exited with $($p.ExitCode) (log: out\setup-$what.log, %LOCALAPPDATA%\SebType\setup.log)" }
+    Save-MachineLog $what
+    if ($p.ExitCode) { throw "Setup ($what) exited with $($p.ExitCode) (logs: out\setup-$what.log, out\machine-$what.log, out\user-setup.log)" }
   }
   function Uninstalled { -not (Test-Path $AppKey) -and -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\_iu*" }) }
   function Typing($phase) {
@@ -335,6 +340,7 @@ namespace SebTypeSetupTest {
       Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
       'welcome, languages, installing, finish'
     }
+    Save-MachineLog round1-install; Stop-Setup
     Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
     Typing all
     # What it learned stays through an upgrade: a mark in each learned-words folder.
@@ -366,6 +372,7 @@ namespace SebTypeSetupTest {
       if (-not (Wait-Until 120 { Uninstalled })) { throw 'the uninstaller did not finish' }
       'confirm, removing, removed'
     }
+    Stop-Setup
     Check 'round1-uninstall-deletes-learned-words' {
       $kept = @($learned | Where-Object { Test-Path $_ })
       if ($kept) { throw "kept: $($kept -join ', ')" }
@@ -413,7 +420,7 @@ $rdp = "$env:LOCALAPPDATA\SebType-setup-test\rdp-logon.txt"  # in this admin's p
 $account = $null
 try {
   $account = New-LocalUser $user -Password (ConvertTo-SecureString $password -AsPlainText -Force) -AccountNeverExpires -PasswordNeverExpires `
-    -Description 'SebType installer test (#73); test.ps1 removes it'
+    -Description 'SebType installer test (#73); deleted on exit'
   # An administrator, as the person installing SebType is; Setup runs elevated as they would after UAC.
   Add-LocalGroupMember -SID S-1-5-32-544 -Member $user
   Add-LocalGroupMember -SID S-1-5-32-555 -Member $user  # Remote Desktop Users

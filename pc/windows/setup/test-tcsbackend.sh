@@ -62,7 +62,8 @@ $u = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\SOFTWAR
 EOF
 }
 cleanup() {  # what a run that died may leave: its session, user, profile, SebType, Weasel, Mozc, tasks and files
-  T=900 tps <<'EOF'
+  # Uninstalling a text service late can change the Administrator's language list: it goes back as found.
+  { echo "\$adminLanguages = '$(sed -n 's/^languages: //p' "$out/before.txt")'"; cat; } <<'EOF' | T=900 tps
 Get-ScheduledTask -TaskName SebType-setup* -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'sebtype-setup-test' -or $_.ExecutablePath -match '\\(is-[^\\]+\.tmp|_iu[^\\]+)\\' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -79,7 +80,18 @@ if ($u = Get-LocalUser sebtype-test -ErrorAction SilentlyContinue) {
     Get-CimInstance Win32_UserProfile | Where-Object SID -EQ $u.SID.Value | Remove-CimInstance
     Remove-LocalUser sebtype-test
 }
+if (-not (Test-Path $app)) { Remove-Item -Recurse -Force "$env:ProgramFiles\SebType" -ErrorAction SilentlyContinue }
 Remove-Item -Recurse -Force C:\sebtype-setup-test, "$env:LOCALAPPDATA\SebType-setup-test" -ErrorAction SilentlyContinue
+if ((((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; ') -ne $adminLanguages) {
+    $list = $null
+    foreach ($e in $adminLanguages -split '; ') {
+        $tag, $tips = $e -split '=', 2
+        if ($list) { $list.Add($tag) } else { $list = New-WinUserLanguageList $tag }
+        $l = $list[$list.Count - 1]; $l.InputMethodTips.Clear(); $tips -split ',' | Where-Object { $_ } | ForEach-Object { $l.InputMethodTips.Add($_) }
+    }
+    Set-WinUserLanguageList $list -Force -WarningAction SilentlyContinue
+    "Administrator's languages put back: $adminLanguages"
+}
 EOF
 }
 
