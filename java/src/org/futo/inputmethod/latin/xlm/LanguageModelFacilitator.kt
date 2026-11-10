@@ -9,9 +9,12 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.engine.ENGINE_IDLE_MS
 import org.futo.inputmethod.engine.general.OnGetSuggestedWordsCallbackWithInputStyle
 import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.KeyboardSwitcher
@@ -227,6 +230,11 @@ public class LanguageModelFacilitator(
             return null
 
         val lmSuggestions = runLanguageModel(values)
+        idleUnload?.cancel()
+        if(languageModel != null) idleUnload = lifecycleScope.launch(languageModelScope) {
+            delay(ENGINE_IDLE_MS)
+            destroyModel()
+        }
         return lmSuggestions
     }
 
@@ -401,11 +409,16 @@ public class LanguageModelFacilitator(
         return suggestedWords
     }
 
-    public suspend fun destroyModel() {
+    // On the model's thread, so no prediction loads the model again between closing it and dropping it
+    public suspend fun destroyModel() = withContext(languageModelScope) {
         if(BuildConfig.DEBUG) Log.d(TAG, "destroyModel called")
         languageModel?.closeInternalLocked()
         languageModel = null
     }
+
+    // SebType (#56): the transformer (about 110 MB) unloads after ENGINE_IDLE_MS without a prediction.
+    // Touched only on the model's thread.
+    private var idleUnload: Job? = null
 
     public fun close() {
         userDictionary.unregister()

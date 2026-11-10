@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-typing-results.txt; : > "$results"
 adb=${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb
-lock=/tmp/agent-locks/sebtype/emulator.lock
+lock=/tmp/agent-locks/devices/emulator-guide35.lock
 tests=( # LiveSpacingTests methods
   spaceThenPeriodStaysPut pickedSuggestionThenPeriod sentenceThenCapital storedFutoDefaultMigratesOnce # #39
 )

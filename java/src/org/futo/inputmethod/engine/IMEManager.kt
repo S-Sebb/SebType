@@ -45,6 +45,9 @@ private val ImesEverUsedWithDictionaryPersonalization = SettingsKey(
     emptySet()
 )
 
+/** SebType (#56): an engine unused this long unloads (Rime in another language, the transformer in any) */
+const val ENGINE_IDLE_MS = 3 * 60_000L
+
 enum class IMEKind(val factory: (IMEHelper) -> IMEInterface) {
     General({ GeneralIME(it) }),
     Chinese({ ChineseIME(it) }),
@@ -108,6 +111,7 @@ class IMEManager(
             }
         }.also {
             if(activeIme != it) {
+                activeIme?.onLanguageLeft()
                 onImeChanged(activeIme, it)
             }
             activeIme = it

@@ -11,7 +11,6 @@ results=$out/test-privacy-results.txt; : > "$results"
 sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
-lock=/tmp/agent-locks/sebtype/emulator.lock
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, command...; timeout T seconds (default 180)
@@ -62,6 +61,7 @@ else
     echo "$flags"; [[ -n $flags && $flags != *ALLOW_BACKUP* ]]
   }
   export -f device_check; export adb serial apk
+  lock=/tmp/agent-locks/devices/emulator-$("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r').lock # shared by all projects
   T=2000 check installed-no-backup devq -P 4 -w 1800 -m 5 -n "sebtype #29 test-privacy" "$lock" bash -c device_check
 fi
 
