@@ -546,8 +546,6 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     schema,
                     learning = settings.isPersonalizationEnabled,
                     simplification = simplified,
-                    autocorrect = settings.mAutoCorrectionEnabledPerUserSettings
-                            || settings.isSuggestionsEnabledPerUserSettings,
                     fuzzyMode = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
                         helper.context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
                     )

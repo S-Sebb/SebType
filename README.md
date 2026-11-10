@@ -19,12 +19,14 @@ and its added words were checked against [SCOWL](https://wordlist.aspell.net); c
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 
-**Chinese** is [rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice), bundled in the APK as a separate,
-unmodified component: its release `full_compiled.zip`, version 2026.06.30, licensed under the
-[GNU GPL v3](https://github.com/iDvel/rime-ice/blob/6810e8916d160498620a16fef2135956fecbd485/LICENSE) (the
-licence is inside the bundled zip), source at
-[6810e891](https://github.com/iDvel/rime-ice/tree/6810e8916d160498620a16fef2135956fecbd485).
-`sebtype/fetch-rime-ice.sh` pins and fetches it. It runs on librime with Lua from [rime-android/](rime-android/README.md).
+**Chinese** is [rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)'s schemas, Lua and settings with the
+core dictionary and zh-moqi grammar of [白霜拼音 (rime-frost)](https://github.com/gaboolic/rime-frost), compiled
+and bundled in the APK. Both are under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.html); the licence
+and a note of what was changed travel inside the bundle. Sources: rime-ice 2026.06.30 at
+[6810e891](https://github.com/iDvel/rime-ice/tree/6810e8916d160498620a16fef2135956fecbd485) and rime-frost 1.0.4 at
+[89ad92e4](https://github.com/gaboolic/rime-frost/tree/89ad92e450f9a5f4dcc2de67ba28004f9af0cc1e).
+[`tools/rime-data/build.sh`](tools/rime-data/build.sh) builds the bundle from those pinned releases, and
+`tools/rime-data/bench/bench.sh` measures its accuracy. It runs on librime with Lua from [rime-android/](rime-android/README.md).
 
 SebType's application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard.
 FUTO's own README follows unchanged.

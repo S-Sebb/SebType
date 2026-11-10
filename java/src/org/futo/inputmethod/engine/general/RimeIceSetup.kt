@@ -23,10 +23,11 @@ import java.io.File
 import java.util.Locale
 
 /**
- * Gets Chinese ready: installs the bundled rime-ice when needed ([RimeIceBundle]), deploys it with
- * SebType's settings patch and self-tests it. One run at a time on a background thread, shared by the
- * keyboard and the background triggers (the setup screen and app updates), so Chinese is usually ready
- * before it is first typed. librime is one per process, so its [Rime] is too.
+ * Gets Chinese ready: installs the bundled data when needed ([RimeIceBundle]), lets Rime check it with
+ * SebType's settings patch (a deploy that finds everything compiled already) and self-tests it. One run
+ * at a time on a background thread, shared by the keyboard and the background triggers (the setup
+ * screen and app updates), so Chinese is usually ready before it is first typed. librime is one per
+ * process, so its [Rime] is too.
  */
 object RimeIceSetup {
     private const val TAG = "ChineseIME (rime)"
@@ -36,7 +37,7 @@ object RimeIceSetup {
     private const val DEPLOY_TIMEOUT_MS = 5 * 60_000L
 
     sealed interface State {
-        /** Installing ([percent] of rime-ice extracted) or deploying ([percent] null). */
+        /** Installing ([percent] of the bundle extracted) or deploying ([percent] null). */
         data class Preparing(val percent: Int?) : State
         data object Ready : State
         data object Failed : State
@@ -49,21 +50,17 @@ object RimeIceSetup {
     data class Configuration(
         val schema: String,
         val learning: Boolean,
+        // Applied as Rime options by the keyboard, not by the patch.
         val simplification: Boolean,
-        val autocorrect: Boolean,
         val fuzzyMode: Set<ChineseIMESettings.FuzzyPinyinModes>
     ) {
+        /**
+         * Only what differs from the bundled schemas, so the default settings have no patch at all and
+         * Rime uses the bundled compiled files as they are; any patch recompiles the schema and its
+         * prism on the phone (a few seconds). Rime's own typo correction stays off (Decisions #2, #46).
+         */
         fun patch() = buildString {
-            appendLine("patch:")
-
-            appendLine("    translator/enable_correction: $autocorrect")
-            appendLine("    translator/enable_user_dict: $learning")
-
-            appendLine("    switches/+:")
-            appendLine("        - name: futo_zh_simp")
-            appendLine("          reset: ${if(simplification) 1 else 0}")
-            appendLine("          states: [ 漢字, 汉字 ]")
-            appendLine("    simplifier/option_name: futo_zh_simp")
+            if(!learning) appendLine("    translator/enable_user_dict: false")
 
             // Fuzzy pinyin only added to pinyin layouts. Appended (FUTO 68ead9599): a bare
             // `speller/algebra:` would replace rime-ice's own rules, which give abbreviated pinyin.
@@ -73,7 +70,7 @@ object RimeIceSetup {
                     mode.schemePatch.forEach { appendLine("        - $it") }
                 }
             }
-        }
+        }.let { if(it.isEmpty()) "" else "patch:\n$it" }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -115,8 +112,6 @@ object RimeIceSetup {
             schema = schemaFor("qwerty", pinyinScheme)!!,
             learning = prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true),
             simplification = isSimplifiedChinese(context, Locale.forLanguageTag("zh")),
-            autocorrect = prefs.getBoolean(Settings.PREF_AUTO_CORRECTION, true)
-                    || prefs.getBoolean(Settings.PREF_SHOW_SUGGESTIONS, true),
             fuzzyMode = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
                 context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
             )
@@ -168,7 +163,7 @@ object RimeIceSetup {
                 stop(rime)
                 RimeIceBundle.install(context) { mutableState.value = State.Preparing(it) }
                 // Log.w: release builds strip Log.i (#29); timings only, no typed text
-                Log.w(TAG, "Installed the bundled rime-ice in ${SystemClock.elapsedRealtime() - t0} ms")
+                Log.w(TAG, "Installed the bundled Chinese data in ${SystemClock.elapsedRealtime() - t0} ms")
             }
             mutableState.value = State.Preparing(null)
 
@@ -183,7 +178,8 @@ object RimeIceSetup {
                 }
                 if(deploy) {
                     val custom = File(ChineseIME.getUser(context), "${config.schema}.custom.yaml")
-                    if(!custom.isFile || custom.readText() != patch) custom.writeText(patch)
+                    if(patch.isEmpty()) custom.delete()
+                    else if(!custom.isFile || custom.readText() != patch) custom.writeText(patch)
                     deployed.delete()
                     rime.deploy()
                 }
