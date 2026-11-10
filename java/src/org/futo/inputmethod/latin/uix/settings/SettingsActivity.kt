@@ -171,8 +171,10 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
                     UixThemeAuto {
                         Surface(
                             modifier = Modifier
-                                .fillMaxSize(),
-                            color = MaterialTheme.colorScheme.background
+                                .fillMaxSize()
+                                .settingsCloth(),
+                            color = androidx.compose.ui.graphics.Color.Transparent,
+                            contentColor = MaterialTheme.colorScheme.onBackground
                         ) {
                             Box(Modifier.safeDrawingPadding()) {
                                 SetupOrMain(

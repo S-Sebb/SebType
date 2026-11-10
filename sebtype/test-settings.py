@@ -7,7 +7,8 @@ test-chinese.py, which leaves SebType installed, chosen as the keyboard and Chin
 Opens every settings screen from the home screen (one screenshot each, settings-<screen>.png in
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
-words in Chinese and Japanese. Labels match the emulator's Chinese UI or English. One line per check
+words in Chinese and Japanese. Last, that long lists (300 of My words, the credits) scroll smoothly
+in their pixel-framed cards on the cloth (#87). Labels match the emulator's Chinese UI or English. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
 stop the next.
 """
@@ -567,6 +568,80 @@ def forget_japanese():
     return f"kaku -> {fresh[:3]}, {learned} after picking {pick}, {after} after forgetting 日本語"
 
 
+WORDS_FILE = f"/data/data/{PKG}/files/rime/user/custom_phrase.txt"
+# Most janky %, slowest p90 (ms) per list, from the plain one-colour look on guide35, which renders
+# in software (2026-11-10): My words 1.6 %, 16 ms; credits, laid out whole, 30-39 %, 48-57 ms. The
+# limits leave room for the cloth and frames, not for a drawing cost per row: a rect per dash in
+# the dividers made My words 27.5 %, 53 ms. System Settings is 53-70 % janky on this emulator.
+SMOOTH_LIMITS = {"zh-words-300": (10, 45), "credits": (45, 70)}
+
+
+def root(cmd):
+    return adb("shell", f"su 0 sh -c '{cmd}'")
+
+
+def fling_stats(name, path):
+    """Opens path, flings down through it, and returns the app's frame stats for the flings."""
+    go(*path)
+    size = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size"))
+    w, h = int(size[1]), int(size[2])
+    adb("shell", "dumpsys", "gfxinfo", PKG, "reset")
+    for _ in range(8):
+        adb(
+            "shell",
+            "input",
+            "swipe",
+            str(w // 2),
+            str(h * 4 // 5),
+            str(w // 2),
+            str(h // 5),
+            "150",
+        )
+        time.sleep(1)
+    info = adb("shell", "dumpsys", "gfxinfo", PKG)
+    frames = int(re.search(r"Total frames rendered: (\d+)", info)[1])
+    janky = float(re.search(r"Janky frames: \d+ \(([\d.]+)%\)", info)[1])
+    p90 = int(re.search(r"90th percentile: (\d+)ms", info)[1])
+    screenshot(f"{name}-scrolled")
+    return name, frames, janky, p90
+
+
+def smooth_scrolling():
+    # 300 of My words, which it reads after its marker; the file goes back as it was afterwards.
+    local = os.path.join(logdir, "my-words-300.txt")
+    with open(local, "w", encoding="utf-8") as f:
+        f.write(
+            "# SebType: My words\n"
+            + "".join(f"测试词{i}\tceshici{i}\n" for i in range(300))
+        )
+    adb("push", local, "/data/local/tmp/sebtype-words.txt")
+    had = root(f"test -f {WORDS_FILE} && echo yes || true").strip() == "yes"
+    if had:
+        root(f"cp -p {WORDS_FILE} {WORDS_FILE}.bak")
+    owner = root(f"stat -c %u:%g /data/data/{PKG}/files").strip()
+    try:
+        root(
+            f"mkdir -p $(dirname {WORDS_FILE}) && cp /data/local/tmp/sebtype-words.txt {WORDS_FILE} && chown -R {owner} $(dirname {WORDS_FILE}) && restorecon -R $(dirname {WORDS_FILE})"
+        )
+        stats = [
+            fling_stats("zh-words-300", (LANG, (MY_WORDS, 1))),
+            fling_stats(
+                "credits", (HOME["about"], labels("许可与致谢", "Licence and credits"))
+            ),
+        ]
+    finally:
+        root(f"mv {WORDS_FILE}.bak {WORDS_FILE}" if had else f"rm -f {WORDS_FILE}")
+    summary = ", ".join(
+        f"{n}: {f} frames, {j}% janky, p90 {p} ms" for n, f, j, p in stats
+    )
+    if any(
+        f < 30 or j > SMOOTH_LIMITS[n][0] or p > SMOOTH_LIMITS[n][1]
+        for n, f, j, p in stats
+    ):
+        raise Fail(summary)
+    return summary
+
+
 adb("logcat", "-c")
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
@@ -575,4 +650,5 @@ check("settings-zh-emoji", emoji_candidates)
 check("settings-zh-my-words", my_words)
 check("settings-zh-forget", forget_chinese)
 check("settings-ja-forget", forget_japanese)
+check("settings-smooth-scrolling", smooth_scrolling)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

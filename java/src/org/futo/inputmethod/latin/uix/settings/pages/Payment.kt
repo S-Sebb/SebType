@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -71,6 +69,7 @@ import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
+import org.futo.inputmethod.latin.uix.settings.framed
 import org.futo.inputmethod.latin.uix.settings.DropDownPicker
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
@@ -394,11 +393,9 @@ fun PaymentSurface(isPrimary: Boolean, onClick: (() -> Unit)? = null, content: @
     Box(modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = 32.dp), contentAlignment = Center) {
-        Surface(
-            color = containerColor,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shape = RoundedCornerShape(16.dp),
+        Box(
             modifier = Modifier
+                .widthIn(Dp.Unspecified, 400.dp)
                 .let {
                     if (onClick != null) {
                         it.clickable { onClick() }
@@ -406,8 +403,7 @@ fun PaymentSurface(isPrimary: Boolean, onClick: (() -> Unit)? = null, content: @
                         it
                     }
                 }
-                .widthIn(Dp.Unspecified, 400.dp)
-
+                .framed(containerColor)
         ) {
             CompositionLocalProvider(LocalContentColor provides contentColor) {
                 Column(

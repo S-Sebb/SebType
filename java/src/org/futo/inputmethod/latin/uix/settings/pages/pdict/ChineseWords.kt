@@ -1,7 +1,10 @@
 package org.futo.inputmethod.latin.uix.settings.pages.pdict
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -31,8 +34,9 @@ import org.futo.inputmethod.latin.uix.settings.BottomSpacer
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
-import org.futo.inputmethod.latin.uix.settings.ScrollableList
+import org.futo.inputmethod.latin.uix.settings.SettingsCard
 import org.futo.inputmethod.latin.uix.settings.Tip
+import org.futo.inputmethod.latin.uix.settings.settingsCardItem
 
 /** Chinese "My words" (#41): words with the pinyin that types them, kept in rime-ice's custom_phrase. */
 @Composable
@@ -50,25 +54,32 @@ fun ChineseWordsScreen(navController: NavHostController) {
         scope.launch { ChineseMyWords.write(context, newWords) }
     }
 
-    ScrollableList {
-        ScreenTitle(stringResource(R.string.sebtype_settings_my_words), showBack = true, navController)
-        NavigationItem(
-            title = stringResource(R.string.user_dict_settings_add_menu_title),
-            style = NavigationItemStyle.HomePrimary,
-            navigate = { editing = ChineseWord("", "") },
-            icon = painterResource(R.drawable.plus_circle)
-        )
-        val list = words ?: return@ScrollableList
-        if(list.isEmpty()) Tip(stringResource(R.string.sebtype_settings_no_words))
-        list.forEach { word ->
-            NavigationItem(
-                title = word.word,
-                subtitle = word.pinyin,
-                style = NavigationItemStyle.MiscNoArrow,
-                navigate = { editing = word }
-            )
+    // Lazy, with each word drawing its slice of the card, so long lists open and scroll smoothly (#87).
+    LazyColumn {
+        item { ScreenTitle(stringResource(R.string.sebtype_settings_my_words), showBack = true, navController) }
+        item {
+            SettingsCard {
+                NavigationItem(
+                    title = stringResource(R.string.user_dict_settings_add_menu_title),
+                    style = NavigationItemStyle.HomePrimary,
+                    navigate = { editing = ChineseWord("", "") },
+                    icon = painterResource(R.drawable.plus_circle)
+                )
+            }
         }
-        BottomSpacer()
+        val list = words ?: return@LazyColumn
+        if(list.isEmpty()) item { Tip(stringResource(R.string.sebtype_settings_no_words)) }
+        itemsIndexed(list) { i, word ->
+            Box(Modifier.settingsCardItem(first = i == 0, last = i == list.lastIndex)) {
+                NavigationItem(
+                    title = word.word,
+                    subtitle = word.pinyin,
+                    style = NavigationItemStyle.MiscNoArrow,
+                    navigate = { editing = word }
+                )
+            }
+        }
+        item { BottomSpacer() }
     }
 
     editing?.let { original ->

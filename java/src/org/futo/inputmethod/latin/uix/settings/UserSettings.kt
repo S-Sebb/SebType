@@ -122,10 +122,19 @@ fun UserSettingsMenu.render(showBack: Boolean = true, showTitle: Boolean = true)
     if(showTitle) {
         ScreenTitle(stringResource(title), showBack = showBack, navController)
     }
-    settings.forEach {
-        if(it.visibilityCheck?.invoke() != false) {
-            it.component()
+    // Section titles (decorations, the only settings without a name) sit on the page; the settings
+    // between them share a card (#87).
+    val visible = settings.filter { it.visibilityCheck?.invoke() != false }
+    var start = 0
+    while(start < visible.size) {
+        if(visible[start].name == 0) {
+            visible[start++].component()
+            continue
         }
+        val end = (start until visible.size).firstOrNull { visible[it].name == 0 } ?: visible.size
+        val group = visible.subList(start, end)
+        SettingsCard { group.forEach { it.component() } }
+        start = end
     }
 }
 
