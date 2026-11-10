@@ -1,8 +1,8 @@
 # SebType on Windows
 
 On Windows, SebType's Chinese is Weasel (小狼毫) with the phone's Chinese data: rime-ice's schema and Lua
-with 白霜's dictionary. English is Windows' plain US layout. Japanese stays whatever the PC has until
-SebType's own Mozc (#65) replaces it. `setup-ime.ps1` sets it up for this account with nothing done by
+with 白霜's dictionary. English is Windows' plain US layout. Japanese is SebType's own
+Mozc, set up by `mozc/install.ps1` (see Japanese below). `setup-ime.ps1` sets it up for this account with nothing done by
 hand. `pc/windows/stage.sh` (on Linux) gathers what it needs into one folder.
 
 ```sh
@@ -103,3 +103,108 @@ Caps Lock and the input method are put back as the test found them.
 
 The checks reach Chinese by asking Windows for it directly, so only `win-space-cycle` sends Win+Space.
 Windows Server 2022 (TCSBackEnd) ignores synthetic Win+Space in some runs; a desktop PC is where that check counts.
+
+## Japanese: SebType's Mozc (#65)
+
+Windows Japanese is open-source [Mozc](https://github.com/google/mozc), built by SebType, instead of
+Google 日本語入力, whose tray icons are fixed in its signed program (#63). It is the same engine as on
+Linux and the phone, with SebType's changes:
+
+- **Tray icons:** the Set E keycaps from `pc/icons`: あ (hiragana), ア (katakana, full and half
+  width), **a** in English (direct input, half and full width alphanumeric) and **A** in English while
+  Caps Lock is on (Decisions #2, "Everywhere").
+- **Keys:** a Shift tap and Alt+` toggle あ ⇄ English, as Shift does in Chinese; Win+Space is the only
+  language switch and cycles EN → 中 → 日. The keymap is Linux's, `pc/linux/mozc-keymap.tsv`.
+
+### Build
+
+```powershell
+pwsh pc/windows/mozc/build.ps1 -WorkDir D:\sebtype-mozc   # -> D:\sebtype-mozc\out\SebType-Mozc-<version>-sebtype<n>.msi
+```
+
+It builds on Windows, because Mozc's Windows build needs MSVC's headers and libraries, ATL and the
+Windows SDK, which don't cross-build from Linux. The build machine needs Visual Studio 2022 or its Build
+Tools (C++ x64 tools, ATL, a Windows 11 SDK), Python 3.12+ and a .NET 8+ SDK; the preflight says which is
+missing and prints the `winget` line to install it (as admin). Everything else is fetched and pinned:
+`mozc/versions.psd1` pins Mozc's release tag with the checksum of its source, Bazelisk, resvg (the
+SVG renderer for the icons) and a portable CMake (for Qt; the Build Tools lack it). Mozc's
+`update_deps.py` pins LLVM, MSYS2, Ninja, Qt and WiX. The build itself needs no admin rights and no
+Developer Mode (Bazel runs without symlinks).
+
+The script unpacks Mozc's source over the kept tree in `-WorkDir`, applies SebType's patches with
+`apply_patch.py` (exact match, no fuzz; YukaROG has no git), writes the icons with `make_icons.py`,
+builds Qt once, then Mozc's installer with Bazel (8 jobs). A rebuild compiles only what changed. On
+YukaROG the first build took about 40 minutes (update_deps 4, Qt 14, Bazel 22) and 9 GB, after about
+40 minutes for the Build Tools install.
+
+`pc/icons` has states whose names differ only by case (`ja-a`, `ja-A`), so on Windows the folder must
+be case-sensitive before the repo's files go in (`fsutil file setCaseSensitiveInfo <dir> enable` for
+each size folder, no admin needed), or the English icons all come out as **A** (#77).
+
+| Patch | Change |
+|---|---|
+| `caps-lock-icon.patch` | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
+
+`make_icons.py` replaces Mozc's mode icons with `.ico` files holding a PNG for each tray size from
+100 % to 400 % scaling: pc/icons' hand-drawn 16, 20, 24 and 32 px drawings, and the 48 px drawing for
+40, 48 and 64 px.
+
+### Install
+
+```powershell
+powershell -File pc/windows/mozc/install.ps1 D:\sebtype-mozc\out\SebType-Mozc-....msi   # install or update
+powershell -File pc/windows/mozc/install.ps1 -Undo                               # remove, put back what was there
+```
+
+`install.ps1` runs elevated (admin): it installs the MSI for the whole machine, then, for the user
+running it, writes the keymap into Mozc's settings (`%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`,
+other settings kept) and makes Mozc Japanese's only input method, after Chinese in the language list.
+Before the first install it saves the language list, the default input method, the input hotkeys, the
+user's text service settings and Mozc's settings; `-Undo` puts them back and uninstalls Mozc. Apps
+opened before an install pick up the keymap once restarted. SebType's installer (#73) will pack it.
+
+A no-admin install doesn't work: Windows deletes a text service registered only for the user (under
+HKEY_CURRENT_USER) as soon as the language list changes, and leaves Japanese with no input method
+(tried on YukaROG). Changing the language list also drops other input methods' per-user settings,
+which is why `install.ps1` saves and restores them.
+
+Google 日本語入力, if installed, is left alone: both can be installed, and the language list decides
+which one Japanese uses.
+
+### Test
+
+```powershell
+powershell -File pc/windows/mozc/test.ps1
+```
+
+On the desktop, elevated: Mozc's key and conversion times through its own server
+(`pc/linux/perf-mozc.py`; Decisions #2: p95 ≤ 5 ms), the dictionary check below, `install.ps1`, then
+typing in a test window of its own (Win+Space EN → 中 → 日, `nihongo` → 日本語, あ ⇄ ア, Shift tap and
+Alt+` for English, Shift+letter staying Japanese, the tray icon in each mode and with Caps Lock), then
+`install.ps1 -Undo`, and a check that the language list, default input method, hotkeys, registrations,
+Mozc's settings, Caps Lock and the input language are as they were. It sends keys only while its window
+is in front. One line per check in `%LOCALAPPDATA%\SebType\test\mozc-results.txt`.
+
+The typing checks run in a copy of the script that isn't elevated (a scheduled task with the desktop
+user's normal token), as apps run. A built-in Administrator account has no such token, so on
+TCSBackEnd (Windows Server 2022) only the speed, install, Win+Space, undo and as-found checks can pass;
+there `typing-not-elevated` fails and the typing checks with it.
+
+Windows deletes Mozc's per-user profile key when the language list changes later (for example when
+a language is added in Settings), which leaves Japanese without a working input method (seen on
+TCSBackEnd); rerunning `install.ps1` sets the key again (not yet tested). SebType's installer (#73)
+should handle this.
+
+### Dictionary
+
+`mozc/dict-words.tsv` holds 104 common words and phrases (everyday words, place and family names,
+verbs and adjectives, loanwords, recent words, a classic homophone sentence) with the conversion
+they should give. The test types each and counts how often Mozc's first candidate is that one.
+
+On YukaROG (Mozc 3.35.6354, 2026-11-10): key p50/p95/max 0.39/1.38/3.34 ms, Space 0.42/0.73/2.25 ms,
+server start 124 ms, 31 MB RAM; top-1 97/104. The misses are reasonable first guesses that need one
+more Space: kodomo → 子ども (子供), kinou → 機能 (昨日), satou → 砂糖 (佐藤), suzuki → スズキ (鈴木),
+yamada → ヤマダ (山田), takahashi → 高梁 (高橋), and the homophone sentence
+(記者の記者が記者で帰社した for 貴社の記者が汽車で帰社した). Linux's fcitx5-mozc 2.30 got 100/104 with
+the same list (it missed kinou, satou, suzuki and the sentence). Google 日本語入力 wasn't compared:
+the test commits each word, which would teach it to the user's own Google 日本語入力 profile.
