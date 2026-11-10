@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock, the
-简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
+"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock: password,
+private, URL and email fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -202,20 +202,22 @@ def type_keys(text):
     time.sleep(1.5)
 
 
-def open_field():
-    """A fresh, empty text field with SebType up (any composition from before is dropped)."""
+def open_field(kind=None):
+    """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
+    a password, private, url or email field (#30)."""
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
     # A new popup each time (new task, clear task): one left open would get the intent without showing
     # the keyboard again.
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
+    extra = ["--es", "kind", kind] if kind else []
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
     wait_for("the keyboard", lambda: keys(nodes()), 30)
 
 
-def candidates_for(text, expand=False):
+def candidates_for(text, expand=False, kind=None):
     """The bar's candidates for typing text; with expand, followed by those of the expanded view."""
-    open_field()
+    open_field(kind)
     type_keys(text)
     got = wait_for(f"candidates for {text}", lambda: candidates(nodes()), 10)
     if expand:
@@ -419,6 +421,51 @@ def learned_survives_restart():
     return expect_first("lh", "厉害")()
 
 
+def password_plain():
+    # #30: Rime never sees keys typed into a password field: they go in as letters, with no candidates.
+    open_field("password")
+    type_keys("lh")
+    ns = nodes()
+    got, field = candidates(ns), [n[0] for n in ns if n[4] == "android.widget.EditText"]
+    if got or field not in (["lh"], ["••"]):
+        raise Fail(
+            f"typed lh into a password field: bar {got[:6]}, field shows {field}"
+        )
+    return f"typed lh into a password field: no candidates, field shows {field}"
+
+
+def no_learning_in(kind, code):
+    """#30: a lower candidate picked in a kind field isn't learned: it stays where it was in a normal one."""
+
+    def run():
+        before = candidates_for(code)
+        word = before[2]
+        candidates_for(code, kind=kind)
+        tap_candidate(word)
+        after = candidates_for(code)
+        if word in after[:2]:
+            raise Fail(
+                f"picked {word} for {code} in a {kind} field; next {code} -> {after[:6]}"
+            )
+        return f"picked {word} (3rd) for {code} in a {kind} field; next {code} -> {after[:6]}"
+
+    return run
+
+
+def normal_still_learns(code):
+    """The same pick in a normal field is learned: the control for no_learning_in."""
+
+    def run():
+        word = candidates_for(code)[2]
+        tap_candidate(word)
+        after = candidates_for(code)
+        if after[0] != word:
+            raise Fail(f"picked {word} for {code}; next {code} -> {after[:6]}")
+        return f"picked {word} (3rd) for {code}; next {code} -> {after[:6]}"
+
+    return run
+
+
 def update_over_itself():
     adb("logcat", "-c")
     adb("install", "-r", bumped_apk, timeout=300)
@@ -485,6 +532,11 @@ check("rq-date", rq_date, needs=["first-install"])
 check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
+check("password-plain", password_plain, needs=["first-install"])
+check("private-no-learning", no_learning_in("private", "sj"), needs=["first-install"])
+check("url-no-learning", no_learning_in("url", "sj"), needs=["first-install"])
+check("email-no-learning", no_learning_in("email", "sj"), needs=["first-install"])
+check("normal-still-learns", normal_still_learns("sj"), needs=["first-install"])
 # Before the update: a restart after it has once switched the keyboard to English (not rime-ice's doing).
 check("failure-visible", failure_is_visible, needs=["first-install"])
 check("failure-recovers", failure_recovers, needs=["failure-visible"])

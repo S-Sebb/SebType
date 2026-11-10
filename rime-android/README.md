@@ -9,7 +9,9 @@ It is [RimeJni](https://gitlab.futo.org/keyboard/RimeJni) (librime 1.16.1) at th
 pinned in `versions.sh`, plus `patches/`: pinned librime-lua, Lua 5.4.7,
 librime-octagram and librime-predict sources, an ABI switch (arm64-v8a by default) and
 NDK 28.2. `0002-no-keystroke-log.patch` drops RimeJni's per-key log line, which wrote
-every typed key to logcat.
+every typed key to logcat. `0003-no-learning-option.patch` adds the option `no_learning`:
+while it is on, librime learns nothing from what is committed (SebType sets it in private, password
+and URL fields).
 
 | Script | What it does |
 |---|---|
