@@ -35,6 +35,7 @@ import org.futo.inputmethod.engine.IMEInterface
 import org.futo.inputmethod.engine.IMEMessage
 import org.futo.inputmethod.engine.MenuSwitch
 import org.futo.inputmethod.event.Event
+import org.futo.inputmethod.latin.InputAttributes
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.Subtypes.switchToNextLanguage
 import org.futo.inputmethod.latin.SuggestedWords
@@ -189,6 +190,8 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     companion object {
         /** rime-ice's 简/繁 switch, the one Ctrl+Shift+F toggles on the PCs */
         private const val TRADITIONAL = "traditionalization"
+        /** SebType's librime patch (rime-android/patches/0003): learns nothing from commits while on */
+        private const val NO_LEARNING = "no_learning"
 
         @JvmStatic
         private val StrokeTransformation = mapOf(
@@ -481,7 +484,17 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
     override fun onLanguageLeft() = RimeIceSetup.setInUse(helper.context, false)
 
+    // SebType (#30): password and PIN fields, and fields that ask for no suggestions, get plain letters:
+    // Rime never sees the keys, so there is no preedit, no candidates and nothing to learn. Private
+    // (no personalised learning), URL and email fields keep pinyin but learn nothing.
+    private var plainField = false
+    private var noLearning = false
+
     override fun onStartInput() {
+        // From the field itself: the settings still hold the previous field's attributes at this point.
+        val attrs = InputAttributes(helper.getCurrentEditorInfo(), false, helper.context.packageName)
+        plainField = attrs.mIsPasswordField || !attrs.mShouldShowSuggestions
+        noLearning = attrs.mNoLearning || attrs.mIsUriField || attrs.mIsEmailField
         RimeIceSetup.setInUse(helper.context, true)
         showSetupState(RimeIceSetup.state.value)
         updateConfig()
@@ -508,6 +521,11 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     // Rime takes keys and its candidates show only once it is set up for this keyboard's configuration.
     private val ready get() = prevConfiguration != null && RimeIceSetup.state.value == RimeIceSetup.State.Ready
 
+    private suspend fun setOptions() {
+        rime.setOption(TRADITIONAL, traditional.value)
+        rime.setOption(NO_LEARNING, noLearning)
+    }
+
     private var configSemaphore = Semaphore(1)
     private fun updateConfig() {
         coroScope.launch {
@@ -530,14 +548,14 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     )
                 )
                 if(config == prevConfiguration && ready) {
-                    rime.setOption(TRADITIONAL, traditional.value)
+                    setOptions()
                     return@launch
                 }
 
                 prevConfiguration = null
                 // Joins a setup already running in the background (setup screen, app update).
                 if(RimeIceSetup.ensure(helper.context, config)) {
-                    rime.setOption(TRADITIONAL, traditional.value)
+                    setOptions()
                     ChineseOptions.apply(helper.context, rime)
                     prevConfiguration = config
                     if(helper.isImeActive(this@ChineseIME)) setNeutralSuggestionStrip()
@@ -669,7 +687,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     else -> it
                 } }
 
-                if(!ready) {
+                if(!ready || plainField) {
                     handlePassByMessage(x11Code, 0)
                 } else if(!editingState.active) {
                     // Only update outside editing state. We cannot update inside editing state,

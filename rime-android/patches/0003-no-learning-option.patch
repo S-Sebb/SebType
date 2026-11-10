@@ -1,0 +1,24 @@
+diff --git a/rime/src/main/jni/cmake/librime.cmake b/rime/src/main/jni/cmake/librime.cmake
+index 8af3024..b723a80 100644
+--- a/rime/src/main/jni/cmake/librime.cmake
++++ b/rime/src/main/jni/cmake/librime.cmake
+@@ -9,6 +9,19 @@ download_and_extract(
+     "944909b5d9fb81171b044b7f2ea89922bd73457fcc5105798a259173288cd2d9"
+ )
+ 
++# SebType (#30): with the option "no_learning" on, nothing committed goes into the user dictionary
++# (private, password and URL fields). librime has no switch for it; the app sets it with setOption.
++set(memory_cc "${LIBRIME_SOURCE_DIR}/src/rime/gear/memory.cc")
++file(READ "${memory_cc}" memory_src)
++set(learns "  if (!user_dict_ || user_dict_->readonly())\n    return;\n  StartSession();")
++set(no_learning "  if (!user_dict_ || user_dict_->readonly() || ctx->get_option(\"no_learning\"))\n    return;\n  StartSession();")
++string(REPLACE "${learns}" "${no_learning}" memory_src "${memory_src}")
++string(FIND "${memory_src}" "${no_learning}" at)
++if(at EQUAL -1)
++    message(FATAL_ERROR "librime's Memory::OnCommit changed: update the no_learning patch")
++endif()
++file(WRITE "${memory_cc}" "${memory_src}")
++
+ include(librime-plugins)
+ 
+ # Do not use add_subdirectory(${LIBRIME_SOURCE_DIR}),

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock, the
-简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
+"""Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock: password,
+private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -90,6 +90,8 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
+# Password and email fields get a number row on top, in a keyboard of the same height (SettingsValues).
+keyboard_rows = 4
 
 
 def nodes():
@@ -107,24 +109,25 @@ def nodes():
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
-        out += letter_keys(*frame)
+        out += letter_keys(*frame, keyboard_rows)
     return out
 
 
-def letter_keys(left, top, right, bottom):
+def letter_keys(left, top, right, bottom, n_rows=4):
     """SebType's letter keys aren't in the tree unless an accessibility service is on; their places
-    on its QWERTY: three letter rows over a bottom row, ten keys across, rows 2 and 3 indented."""
-    w, h = (right - left) / 10, (bottom - top) / 4
-    rows = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
+    on its QWERTY: three letter rows over a bottom row (under a number row if n_rows is 5), ten keys
+    across, rows 2 and 3 indented."""
+    w, h = (right - left) / 10, (bottom - top) / n_rows
+    layout = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
     return [
         (
             ch,
             int(left + (i + indent) * w),
-            int(top + (r + 0.5) * h),
-            int(top + r * h),
+            int(top + (r + n_rows - 3.5) * h),
+            int(top + (r + n_rows - 4) * h),
             "key",
         )
-        for r, (letters, indent) in enumerate(rows)
+        for r, (letters, indent) in enumerate(layout)
         for i, ch in enumerate(letters)
     ]
 
@@ -202,20 +205,24 @@ def type_keys(text):
     time.sleep(1.5)
 
 
-def open_field():
-    """A fresh, empty text field with SebType up (any composition from before is dropped)."""
+def open_field(kind=None):
+    """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
+    a password, pin, private, url or email field (#30)."""
+    global keyboard_rows
+    keyboard_rows = 5 if kind in ("password", "visible-password", "email") else 4
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
     # A new popup each time (new task, clear task): one left open would get the intent without showing
     # the keyboard again.
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
+    extra = ["--es", "kind", kind] if kind else []
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
     wait_for("the keyboard", lambda: keys(nodes()), 30)
 
 
-def candidates_for(text, expand=False):
+def candidates_for(text, expand=False, kind=None):
     """The bar's candidates for typing text; with expand, followed by those of the expanded view."""
-    open_field()
+    open_field(kind)
     type_keys(text)
     got = wait_for(f"candidates for {text}", lambda: candidates(nodes()), 10)
     if expand:
@@ -419,6 +426,73 @@ def learned_survives_restart():
     return expect_first("lh", "厉害")()
 
 
+def password_plain(kind):
+    """#30: Rime never sees keys typed into a password field: no candidates, and (where the field shows
+    its text) the letters themselves, not a composition."""
+
+    def run():
+        open_field(kind)
+        type_keys("lh")
+        ns = nodes()
+        got = candidates(ns)
+        field = [n[0] for n in ns if n[4] == "android.widget.EditText"]
+        if got or (kind == "visible-password" and field != ["lh"]):
+            raise Fail(f"typed lh into a {kind} field: bar {got[:6]}, field {field}")
+        return f"typed lh into a {kind} field: no candidates, field {field}"
+
+    return run
+
+
+def pin_plain():
+    """#30: a PIN field's keypad types digits in 中, with no candidates: its left column's top three keys."""
+    open_field("pin")
+    left, top, right, bottom = keyboard_frame
+    for row in range(3):
+        y = top + (row + 0.5) * (bottom - top) / 4
+        adb("shell", "input", "tap", str(int(left + (right - left) / 8)), str(int(y)))
+    time.sleep(1.5)
+    ns = nodes()
+    got = candidates(ns)
+    field = [n[0] for n in ns if n[4] == "android.widget.EditText"]
+    if got or len(field) != 1 or len(field[0]) != 3:
+        raise Fail(f"tapped 3 keypad keys in a PIN field: bar {got[:6]}, field {field}")
+    return f"tapped 3 keypad keys in a PIN field: no candidates, field {field}"
+
+
+def no_learning_in(kind, code):
+    """#30: a lower candidate picked in a kind field isn't learned: it stays where it was in a normal one."""
+
+    def run():
+        before = candidates_for(code)
+        word = before[2]
+        got = candidates_for(code, kind=kind)
+        if word not in got:
+            raise Fail(f"{code} -> {before[:6]}, but in a {kind} field -> {got[:6]}")
+        tap_candidate(word)
+        after = candidates_for(code)
+        if word in after[:2]:
+            raise Fail(
+                f"picked {word} for {code} in a {kind} field; next {code} -> {after[:6]}"
+            )
+        return f"picked {word} (3rd) for {code} in a {kind} field; next {code} -> {after[:6]}"
+
+    return run
+
+
+def normal_still_learns(code):
+    """The same pick in a normal field is learned: the control for no_learning_in."""
+
+    def run():
+        word = candidates_for(code)[2]
+        tap_candidate(word)
+        after = candidates_for(code)
+        if after[0] != word:
+            raise Fail(f"picked {word} for {code}; next {code} -> {after[:6]}")
+        return f"picked {word} (3rd) for {code}; next {code} -> {after[:6]}"
+
+    return run
+
+
 def update_over_itself():
     adb("logcat", "-c")
     adb("install", "-r", bumped_apk, timeout=300)
@@ -485,6 +559,16 @@ check("rq-date", rq_date, needs=["first-install"])
 check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
+check("password-plain", password_plain("password"), needs=["first-install"])
+check("pin-plain", pin_plain, needs=["first-install"])
+check(
+    "visible-password-plain",
+    password_plain("visible-password"),
+    needs=["first-install"],
+)
+check("private-no-learning", no_learning_in("private", "wm"), needs=["first-install"])
+check("url-no-learning", no_learning_in("url", "wm"), needs=["first-install"])
+check("normal-still-learns", normal_still_learns("wm"), needs=["first-install"])
 # Before the update: a restart after it has once switched the keyboard to English (not rime-ice's doing).
 check("failure-visible", failure_is_visible, needs=["first-install"])
 check("failure-recovers", failure_recovers, needs=["failure-visible"])

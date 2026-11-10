@@ -8,11 +8,13 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 
 /**
  * A plain text field for sebtype/perf.sh: it opens with the keyboard up, and with the extra
- * "chars" it starts with that much filler text, cursor at the end (the long-field case).
+ * "chars" it starts with that much filler text, cursor at the end (the long-field case); the extra
+ * "kind" makes it a password, PIN, visible-password, private, URL or email field.
  * It records only the text length, as the Perfetto counter "sebperf_len", never the text.
  */
 public class PerfField extends Activity {
@@ -23,6 +25,21 @@ public class PerfField extends Activity {
         field.setGravity(Gravity.TOP | Gravity.START);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        // The field kinds sebtype/test-chinese.py types into (#30).
+        String kind = getIntent().getStringExtra("kind");
+        if ("password".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        } else if ("pin".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        } else if ("visible-password".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        } else if ("private".equals(kind)) {
+            field.setImeOptions(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING);
+        } else if ("url".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        } else if ("email".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        }
         // No blinking cursor: every frame this app draws then comes from a text change.
         field.setCursorVisible(false);
         int chars = getIntent().getIntExtra("chars", 0);
