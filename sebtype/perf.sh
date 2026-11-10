@@ -78,7 +78,8 @@ taps() { # gap_ms text: types the text with monkey (G = globe, E = enter), one t
   on_field
 }
 on_field() { # the taps went to the test field; another app on top means something else drives the device (#76)
-  local focus; focus=$(sh dumpsys window | grep -m1 mCurrentFocus | sed 's/.* u0 //; s/}.*//')
+  local focus # awk reads it all: dumpsys fails when its pipe closes early
+  focus=$(sh dumpsys window | awk '/mCurrentFocus/ && !f++ {sub(/.* u0 /, ""); sub(/}.*/, ""); print}')
   [[ $focus == "$field"/* ]] || { echo "${focus:-another window} took the screen while typing: is something else using this device without its lock?" >&2; return 1; }
 }
 trace_start() { # name: Perfetto with frame timelines, input/view slices and scheduling
