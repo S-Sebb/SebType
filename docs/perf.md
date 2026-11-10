@@ -15,7 +15,8 @@ It reinstalls SebType, so everything SebType learned on that device is lost. It 
 own small test field (`sebtype/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
 back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 15
 minutes. While it runs it holds the device's devq lock, shared by all projects:
-`/tmp/agent-locks/devices/emulator-<AVD>.lock`, or `<maker>-<model>.lock` on a phone (`nothing-a001.lock`).
+`/tmp/agent-locks/devices/emulator-<AVD>.lock`, or on a phone the lock of the PC it is plugged
+into (`nobara-pc.lock`), which other projects take for the phone too.
 
 What it measures:
 
@@ -62,7 +63,31 @@ idle. Turn on USB or wireless debugging, check that `adb devices` lists it, then
 `ANDROID_SERIAL=<serial> sebtype/perf.sh`. SebType is reinstalled, so anything it learned on the phone
 is lost; export its settings first if that matters. Gboard must be enabled for the cold-open check.
 The installed-size row needs root, so on the phone it is SKIP; Settings → Apps → SebType → Storage
-shows the same numbers.
+shows the same numbers. Without root, the phone can't count what Rime compiled during setup either;
+the emulator run shows it.
+
+The phone's screen must stay on the test field for the whole run. Each set of taps checks that
+it does, and fails naming the window that came to the front. In #76, another project's agent opened
+its app on the phone during a run (it took a different lock), and the rest of the taps went into that
+app. The failure looked like SebType had come back in the wrong language.
+
+#### Phone results (Nothing A001, Android 16, main 8565c7161, 2026-11-10)
+
+Against the budgets in Decisions #2. All phases passed; the full table is on #56.
+
+| Budget | Phone | Met |
+|---|---|---|
+| APK ≤ 150 MB | 105 MB | yes |
+| PSS idle ≤ 100 MB | 140 MB at first open, 132 MB in a fresh process, 187 MB idle after using all three | no |
+| PSS in one language ≤ 150 MB | EN 232 MB, 中 143 MB, 日 163 MB | 中 only |
+| PSS with all three ≤ 200 MB | 308 MB | no |
+| No Rime deploy on the phone | Chinese set up in 1954 ms (install 701 ms); files compiled not readable without root | emulator: 0 compiled |
+| Key handling p95 ≤ 8 ms | EN 10, 中 10, 日 7 ms | 日 only |
+| Key → text p95 ≤ 50 ms (日 ≤ 60) | EN 24, 日 41 ms | yes |
+| Key → candidates p95 ≤ 100 ms | EN 77, 中 67, 日 57 ms | yes |
+| Warm open ≤ 150 ms, cold ≤ 1 s | warm 62 / 78 ms, cold 428 / 614 ms (median / p95) | yes |
+| 10 keys a second: no late frames from the app, every character arrives | 88 of 88 arrived; 24 of 845 frames late from the app (20,000-character field: 69 of 843) | no |
+| 0 crashes | 0 | yes |
 
 ## PC (Linux): `pc/linux/perf.sh`
 

@@ -80,7 +80,7 @@ row(
     "Installed: code / internal data / external data",
     f"{sz.get('code_mb', '–')} / {sz.get('data_mb', '–')} / {sz.get('external_mb', '–')} MB",
     "sizes",
-    "after the whole run: Rime's build/ is in external data",
+    "after the whole run; Rime's files are internal data since #32 (root shell only: emulator)",
 )
 row("Memory (PSS) idle, first open, EN", mb(fo.get("pss_idle_kb")), "first-open")
 row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "transformer loaded")
@@ -123,6 +123,7 @@ row(
     f"{zd.get('setup_ms', '–')} ms (install {zd.get('install_ms', '–')} ms), "
     f"{zd.get('built_on_device', '–')} files compiled on the device",
     "zh-deploy",
+    "" if "built_on_device" in zd else "files compiled: root shell only (emulator)",
 )
 for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
     n = f"{d.get('keys', 0)} keys"
