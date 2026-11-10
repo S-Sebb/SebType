@@ -452,11 +452,12 @@ Gio.bus_own_name_on_connection(bus, 'org.kde.StatusNotifierWatcher', 0, None, No
 # classicui is what turns the tray item (notificationitem) on.
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,rime,mozc,classicui,notificationitem'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
-def wait(cond, secs):
+def wait(cond, secs):  # cond may type a key, so it runs once per try: asking again after a hit would undo it
     end = time.time() + secs
-    while time.time() < end and not cond():
+    while True:
+        if cond(): return True
+        if time.time() >= end: return False
         GLib.MainContext.default().iteration(False); time.sleep(0.01)
-    return cond()
 def call(dest, path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
     return bus.call_sync(dest, path, iface, method, GLib.Variant(sig, args) if sig else None,
                          None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
