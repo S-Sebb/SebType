@@ -90,12 +90,13 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
-row_height = None  # of the first keyboard seen, a plain field's four rows
+# Password and email fields get a number row on top, in a keyboard of the same height (SettingsValues).
+keyboard_rows = 4
 
 
 def nodes():
     """(label, x, y, top, class) of every node in all windows, keyboard included."""
-    global keyboard_frame, row_height
+    global keyboard_frame
     adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
     xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
     out, frame = [], None
@@ -108,9 +109,7 @@ def nodes():
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
-        # Some fields' keyboards (password) add a number row on top: a taller keyboard.
-        row_height = row_height or (frame[3] - frame[1]) / 4
-        out += letter_keys(*frame, round((frame[3] - frame[1]) / row_height))
+        out += letter_keys(*frame, keyboard_rows)
     return out
 
 
@@ -209,6 +208,8 @@ def type_keys(text):
 def open_field(kind=None):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
     a password, private, url or email field (#30)."""
+    global keyboard_rows
+    keyboard_rows = 5 if kind in ("password", "visible-password", "email") else 4
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
