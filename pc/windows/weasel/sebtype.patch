@@ -1,0 +1,92 @@
+diff --git a/WeaselTSF/KeyEventSink.cpp b/WeaselTSF/KeyEventSink.cpp
+index c885ddd..15e58ba 100644
+--- a/WeaselTSF/KeyEventSink.cpp
++++ b/WeaselTSF/KeyEventSink.cpp
+@@ -55,6 +55,8 @@ void WeaselTSF::_ProcessKeyEvent(WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+       }
+       if (keyCountToSimulate)
+         keyCountToSimulate--;
++      // SebType: redraw the language bar icon for the new Caps Lock state.
++      _UpdateLanguageBar(_status);
+     }
+ 
+     prevfEaten = *pfEaten;
+diff --git a/WeaselTSF/LanguageBar.cpp b/WeaselTSF/LanguageBar.cpp
+index a03b615..d01d576 100644
+--- a/WeaselTSF/LanguageBar.cpp
++++ b/WeaselTSF/LanguageBar.cpp
+@@ -203,8 +203,13 @@ STDAPI CLangBarItemButton::OnMenuSelect(UINT wID) {
+ 
+ STDAPI CLangBarItemButton::GetIcon(HICON* phIcon) {
+   if (ascii_mode) {
++    // SebType: English mode shows A while Caps Lock is on (#13).
+     if (_style.current_ascii_icon.empty())
+-      *phIcon = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_EN), IMAGE_ICON,
++      *phIcon = (HICON)LoadImageW(
++          g_hInst,
++          MAKEINTRESOURCEW((GetKeyState(VK_CAPITAL) & 0x01) ? IDI_EN_CAPS
++                                                            : IDI_EN),
++          IMAGE_ICON,
+                                   GetSystemMetrics(SM_CXSMICON),
+                                   GetSystemMetrics(SM_CYSMICON), LR_SHARED);
+     else
+diff --git a/include/WeaselUtility.h b/include/WeaselUtility.h
+index 54f840f..651f60c 100755
+--- a/include/WeaselUtility.h
++++ b/include/WeaselUtility.h
+@@ -186,18 +186,9 @@ inline std::basic_string<CharT> unescape_string(
+ // resource
+ std::string GetCustomResource(const char* name, const char* type);
+ 
++// SebType: the input method reads 中文 in Windows' Win+Space switcher (#13).
+ inline std::wstring get_weasel_ime_name() {
+-  LANGID langId = GetUserDefaultUILanguage();
+-
+-  if (langId == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL) ||
+-      langId == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED) ||
+-      langId == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_HONGKONG) ||
+-      langId == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE) ||
+-      langId == MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_MACAU)) {
+-    return L"小狼毫";
+-  } else {
+-    return L"Weasel";
+-  }
++  return L"中文";
+ }
+ 
+ inline LONG RegGetStringValue(HKEY key,
+diff --git a/include/resource.h b/include/resource.h
+index 3a40f51..996db53 100644
+--- a/include/resource.h
++++ b/include/resource.h
+@@ -9,6 +9,7 @@
+ #define IDR_MENU_POPUP                  105
+ #define IDI_FULL_SHAPE                  106
+ #define IDI_HALF_SHAPE                  107
++#define IDI_EN_CAPS                     110
+ #define IDR_MENU_POPUP_HANT             108
+ #define IDR_MENU_POPUP_HANS             109
+ #define IDS_STR_UNDER_MAINTENANCE       302
+diff --git a/output/install.nsi b/output/install.nsi
+index 3d5130c..8239b37 100644
+--- a/output/install.nsi
++++ b/output/install.nsi
+@@ -326,6 +326,8 @@ program_files:
+   WriteRegStr HKLM "${REG_UNINST_KEY}" "HelpLink" "https://rime.im/docs/"
+   WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoModify" 1
+   WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoRepair" 1
++  ; SebType: marks SebType's build, which pc/windows/setup-ime.ps1 checks
++  WriteRegStr HKLM "${REG_UNINST_KEY}" "SebType" "${PRODUCT_VERSION}"
+   WriteUninstaller "$INSTDIR\uninstall.exe"
+ 
+   ; run as user...
+@@ -349,7 +351,8 @@ program_files:
+   Exec "$INSTDIR\WeaselServer.exe"
+ 
+   ; option CheckForUpdates
+-  IfSilent DisableAutoCheckUpdate
++  ; SebType: never update to upstream Weasel, which would drop SebType's patch
++  Goto DisableAutoCheckUpdate
+   MessageBox MB_YESNO|MB_ICONINFORMATION "$(AUTOCHKUPDATE)" IDYES EnableAutoCheckUpdate
+   DisableAutoCheckUpdate:
+   WriteRegStr HKCU "Software\Rime\Weasel\Updates" "CheckForUpdates" "0"

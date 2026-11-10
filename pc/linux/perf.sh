@@ -16,7 +16,6 @@ runs=${RUNS:-5}
 rime_dir=${RIME_DIR:-$HOME/.local/share/fcitx5/rime}
 mozc_server=/usr/libexec/fcitx5-mozc/mozc_server
 librime=/usr/lib64/librime.so.1
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/librime-1.16.1-headers
 # The copy holds the user's learned words: it stays in a private temp dir, removed on exit.
 work=$(mktemp -d "$out/pc-perf.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -37,17 +36,7 @@ for x in gcc python3 curl sha256sum; do command -v $x >/dev/null || { echo "pref
 [[ -f $librime ]] || { echo "preflight: $librime missing (install librime)"; exit 1; }
 [[ -f $rime_dir/rime_ice.schema.yaml ]] || { echo "preflight: no rime-ice in $rime_dir (set RIME_DIR)"; exit 1; }
 [[ -x $mozc_server ]] || { echo "preflight: $mozc_server missing (install fcitx5-mozc)"; exit 1; }
-# librime's public headers, pinned; Fedora ships them only in librime-devel.
-mkdir -p "$cache"
-while read -r sum f; do
-  echo "$sum  $cache/$f" | sha256sum -c --status 2>/dev/null && continue
-  curl -fsSL -o "$cache/$f" "https://raw.githubusercontent.com/rime/librime/1.16.1/src/$f" &&
-    echo "$sum  $cache/$f" | sha256sum -c --status || { echo "preflight: can't fetch librime header $f"; exit 1; }
-done <<'EOF'
-6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424 rime_api.h
-21625c4e16480a4540939299a002f21b11150bb10b69f5331e1580875ac63341 rime_api_deprecated.h
-f5a64254e98c1c12ce6628f5d540bcd4e4b542ec287b4873c0b0ce4ed1bece99 rime_api_stdbool.h
-EOF
+cache=$("$here/../fetch-rime-headers.sh") || { echo "preflight: can't fetch librime's headers"; exit 1; }
 gcc -O2 -I"$cache" -o "$work/perf-rime" "$here/perf-rime.c" "$librime" -ldl 2> "$out/pc-perf-build.log" ||
   { echo "preflight: perf-rime.c doesn't build, see $out/pc-perf-build.log"; exit 1; }
 
