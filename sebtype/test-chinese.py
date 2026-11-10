@@ -702,8 +702,9 @@ def update_from_main():
     adb("logcat", "-c")
     adb("install", "-r", apk, timeout=300)
     setup, install, _, _ = wait_set_up()
-    if install is None:
-        raise Fail("the update from main didn't install the bundled data")
+    # main and this build ship the same bundled data version, which RimeIceBundle leaves installed;
+    # only a release that changes the data reinstalls it here (as BUMPED_APK does above).
+    data = f"data reinstalled in {install} ms" if install else "installed data kept"
     wait_for(
         "SebType to be listed again",
         lambda: IME in adb("shell", "ime", "list", "-s"),
@@ -713,7 +714,7 @@ def update_from_main():
         open_field()
     except Fail:
         open_field()
-    return f"main -> this build: data installed in {install} ms, set up in {setup} ms"
+    return f"main -> this build: {data}, set up in {setup} ms"
 
 
 if main_apk:
