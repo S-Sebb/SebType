@@ -140,6 +140,7 @@ namespace SebTypeSetupTest {
     [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
     [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr h);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr dc, uint f);
@@ -149,12 +150,28 @@ namespace SebTypeSetupTest {
     static string Cls(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
     // WM_GETTEXT, not GetWindowText, which doesn't ask another process's controls (a combo box's choice).
     public static string Text(IntPtr h) { var s = new StringBuilder(1024); IntPtr r; SendMessageTimeout(h, 0x000D, (IntPtr)1024, s, 2, 2000, out r); return s.ToString(); }
-    // The first visible top-level window of a class: TSelectLanguageForm, TWizardForm,
-    // TUninstallProgressForm, #32770 (a message box).
+    // The first visible top-level window of a class: TSelectLanguageForm, TWizardForm, TUninstallProgressForm.
     public static IntPtr Find(string cls) {
       IntPtr found = IntPtr.Zero;
       EnumWindows((h, l) => { if (IsWindowVisible(h) && Cls(h) == cls) { found = h; return false; } return true; }, IntPtr.Zero);
       return found;
+    }
+    // A message box: a visible top-level window of these processes that isn't one of their forms. Inno 6.7's
+    // message boxes aren't all Windows' own #32770 dialog.
+    public static IntPtr Owned(int[] pids, string[] forms) {
+      IntPtr found = IntPtr.Zero;
+      EnumWindows((h, l) => {
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        if (IsWindowVisible(h) && Array.IndexOf(pids, (int)pid) >= 0 && Array.IndexOf(forms, Cls(h)) < 0) { found = h; return false; }
+        return true;
+      }, IntPtr.Zero);
+      return found;
+    }
+    // Every visible top-level window, for a failure's message.
+    public static string Visible() {
+      var t = new List<string>();
+      EnumWindows((h, l) => { if (IsWindowVisible(h)) { uint pid; GetWindowThreadProcessId(h, out pid); t.Add(Cls(h) + " '" + Text(h) + "' pid " + pid); } return true; }, IntPtr.Zero);
+      return string.Join("; ", t);
     }
     static List<IntPtr> Children(IntPtr p) {
       var list = new List<IntPtr>();
@@ -176,18 +193,24 @@ namespace SebTypeSetupTest {
           return true;
         }
       }
-      // A task dialog's buttons aren't windows: TDM_CLICK_BUTTON with the button's id (IDOK 1, IDYES 6).
+      // Buttons that aren't windows: a task dialog's take TDM_CLICK_BUTTON with the id (IDOK 1, IDYES 6);
+      // any other message box takes Enter, for its default button (Yes in the confirm, OK in the last one).
       int id = caption == "OK" ? 1 : caption == "Yes" ? 6 : 0;
-      if (id != 0 && Cls(p) == "#32770") { PostMessage(p, 0x0466, (IntPtr)id, IntPtr.Zero); return true; }
-      return false;
+      if (id == 0) return false;
+      if (Cls(p) == "#32770") PostMessage(p, 0x0466, (IntPtr)id, IntPtr.Zero);
+      else { Front(p); keybd_event(0x0D, 0, 0, UIntPtr.Zero); keybd_event(0x0D, 0, 2, UIntPtr.Zero); }
+      return true;
     }
-    public static void Shot(IntPtr h, string path) {
-      // Windows lets a process take the foreground right after it sent input: an Alt tap first.
+    // Windows lets a process take the foreground right after it sent input: an Alt tap first.
+    static void Front(IntPtr h) {
       for (int i = 0; i < 5 && GetForegroundWindow() != h; i++) {
         keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero);
         SetForegroundWindow(h);
         System.Threading.Thread.Sleep(300);
       }
+    }
+    public static void Shot(IntPtr h, string path) {
+      Front(h);
       System.Threading.Thread.Sleep(700);
       RECT r; GetWindowRect(h, out r);
       using (var bmp = new Bitmap(r.R - r.L, r.B - r.T)) {
@@ -202,7 +225,18 @@ namespace SebTypeSetupTest {
   $setup = (Get-ChildItem "$root\SebType-setup-*.exe" | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
   function Window($cls, $seconds = 60) {
     $h = Wait-Until $seconds { $x = $win::Find($cls); if ($x -ne [IntPtr]::Zero) { $x } }
-    if (-not $h) { throw "no $cls window in $seconds s" }
+    if (-not $h) { throw "no $cls window in $seconds s; windows: $($win::Visible())" }
+    $h
+  }
+  # Setup's processes (the stub, its copy in %TEMP%) and the uninstaller's (unins000, its copy in %TEMP%).
+  $forms = [string[]]('TWizardForm', 'TSelectLanguageForm', 'TUninstallProgressForm', 'TApplication')
+  function Find-Message {
+    $pids = @(Get-Process | Where-Object { $_.Path -like "$env:TEMP\*" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins*' } | ForEach-Object Id)
+    if ($pids) { $m = $win::Owned([int[]]$pids, $forms); if ($m -ne [IntPtr]::Zero) { $m } }
+  }
+  function Message($seconds = 60) {
+    $h = Wait-Until $seconds { Find-Message }
+    if (-not $h) { throw "no message box from Setup or its uninstaller in $seconds s; windows: $($win::Visible())" }
     $h
   }
   function Shot($cls, $name, $seconds = 60) { $h = Window $cls $seconds; $win::Shot($h, "$out\73-$name.png"); $h }
@@ -210,7 +244,7 @@ namespace SebTypeSetupTest {
   # Waits for a page by a text on it (Inno's labels are windows of their own); a message box Setup shows
   # instead (a failed step) ends the wait.
   function Page($h, $text, $seconds = 60) {
-    $r = Wait-Until $seconds { if ($win::Texts($h) -like "*$text*") { 'page' } elseif (($m = $win::Find('#32770')) -ne [IntPtr]::Zero) { $m } }
+    $r = Wait-Until $seconds { if ($win::Texts($h) -like "*$text*") { 'page' } else { Find-Message } }
     if ($r -is [IntPtr]) { $win::Shot($r, "$out\failed-$(Get-Date -Format HHmmss).png"); throw "Setup says: $($win::Texts($r))" }
     if (-not $r) { throw "no '$text' in $seconds s; window shows: $($win::Texts($h))" }
   }
@@ -359,14 +393,14 @@ namespace SebTypeSetupTest {
     Typing after-language-change
 
     Check 'round1-uninstall-pages' {
-      Start-Process "$App\unins000.exe"
-      $h = Shot '#32770' '5-uninstall-confirm'
+      Start-Process "$App\unins000.exe" "/LOG=`"$out\uninstall-round1.log`""
+      $h = Message; $win::Shot($h, "$out\73-5-uninstall-confirm.png")
       Click $h 'Yes'
       $h = Window TUninstallProgressForm
       Page $h 'Putting your old keyboards back'; $null = Shot TUninstallProgressForm '6-uninstalling'
-      $h = Window '#32770' 600
+      $h = Message 600
       $win::Shot($h, "$out\73-7-uninstalled.png")
-      $said = $win::Texts($h)  # empty for a task dialog, whose text isn't in windows: the picture shows it
+      $said = $win::Texts($h)  # empty where the box draws its text itself: the picture shows it
       if ($said -and $said -notlike '*was removed*') { throw "the uninstaller says: $said" }
       Click $h 'OK'
       if (-not (Wait-Until 120 { Uninstalled })) { throw 'the uninstaller did not finish' }
@@ -388,7 +422,7 @@ namespace SebTypeSetupTest {
     Check-Installed round2-upgraded en, zh "en-US[0409:00000409] zh-Hans-CN[$WeaselTip]"
     Check 'round2-japanese-words-deleted' { if (Test-Path $learned[1]) { throw "kept: $($learned[1])" }; 'Japanese left out: Mozc and its learned words gone' }
     Check 'round2-uninstall' {
-      Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+      Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\uninstall-round2.log`""
       if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
       'silent'
     }

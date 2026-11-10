@@ -77,7 +77,7 @@ function Stop-Mozc { Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Ob
 # ===================================================================================== the machine
 if ($Machine) {
   if ($Log) { Start-Transcript -Append $Log | Out-Null }
-  New-Item -Force $MachineKey | Out-Null
+  if (-not (Test-Path $MachineKey)) { New-Item $MachineKey | Out-Null }  # -Force would wipe an existing key's values
   # Chinese: SebType's Weasel (pc/windows/weasel), which replaces any other Weasel.
   $w = Get-Weasel
   if ('zh' -in $want) {
