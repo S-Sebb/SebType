@@ -1,0 +1,3 @@
+SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
+- patches/: patches to RimeJni, under RimeJni's licence (MIT, its authors). RimeJni, librime (BSD-3-Clause)
+  and the other libraries build.sh fetches keep their own licences, which travel inside the built aar.

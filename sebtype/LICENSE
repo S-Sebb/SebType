@@ -1,0 +1,7 @@
+SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
+- assets/layouts/: adapted from FUTO's layouts (java/assets/layouts), under their licence (Apache-2.0).
+- res-stable/raw/main_en.dict: FUTO's English dictionary (FUTO Source First License, ../LICENSE.md) with
+  wordfreq's frequencies (CC BY-SA 4.0); see ../NOTICE.
+- res-stable/raw/emoji_i18n.jsondlgz: FUTO's emoji names, trimmed; FUTO Source First License.
+- res-stable/values*/*-sebtype-overrides.xml: changed copies of FUTO's resources; FUTO Source First License.
+- res/font/sebtype_nunito_extrabold.ttf: Nunito, under the SIL Open Font License 1.1 (fonts/OFL-Nunito.txt).
