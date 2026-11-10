@@ -22,6 +22,9 @@ import xml.etree.ElementTree as ET
 serial, results_path, logdir = sys.argv[1:4]
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+# The emulator's Gboard, for typing into SebType's own settings: with SebType in Chinese, Rime would
+# compose the letters instead.
+GBOARD = "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 PREPARING = ("正在准备中文", "Preparing Chinese")
@@ -481,6 +484,7 @@ def emoji_candidates():
 def add_my_word(word, pinyin):
     go(LANG, (MY_WORDS, 1))
     tap_text(labels("添加", '"添加"', "Add"))
+    adb("shell", "ime", "set", GBOARD)
     fields = [
         (y, x) for label, x, y, top, cls in nodes() if cls == "android.widget.EditText"
     ]
@@ -490,6 +494,7 @@ def add_my_word(word, pinyin):
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)  # hides the keyboard
     time.sleep(1)
     tap_text(labels("保存", "Save"))
+    adb("shell", "ime", "set", IME)
 
 
 def my_words():

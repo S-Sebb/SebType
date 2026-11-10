@@ -6,7 +6,6 @@ import android.util.Log
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.res.stringResource
 import androidx.datastore.preferences.core.stringPreferencesKey
 import icu.astronot233.rime.DeployStage
 import icu.astronot233.rime.Rime
