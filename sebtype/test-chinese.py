@@ -225,6 +225,11 @@ def logcat():
     return adb("shell", "logcat -d | grep -F 'ChineseIME (rime)' || true")
 
 
+def screenshot(name):
+    adb("shell", "screencap -p /sdcard/sebtype-shot.png")
+    adb("pull", "/sdcard/sebtype-shot.png", os.path.join(logdir, name))
+
+
 SET_UP = r"Set up rime_ice in (\d+) ms \(deployed: (yes|no)\), self-test (\w+)"
 
 
@@ -496,7 +501,10 @@ def tap_label(labels, timeout=10):
 
 def open_menu():
     open_field()
-    tap_label(OPEN_BAR)
+    # The expanded bar is a saved setting (ActionBarExpanded), so after it has been opened once, a new
+    # keyboard comes up expanded: its toggle reads "Close Action Bar" and its tiles are already showing.
+    if not any(n[0] in ALL_ACTIONS for n in nodes()):
+        tap_label(OPEN_BAR)
     tap_label(ALL_ACTIONS)
 
 
@@ -592,11 +600,6 @@ def tap_chip(expect):
 
 def field_text():
     return next((n[0] for n in nodes() if n[4] == "android.widget.EditText"), "")
-
-
-def screenshot(name):
-    adb("shell", "screencap -p /sdcard/sebtype-shot.png")
-    adb("pull", "/sdcard/sebtype-shot.png", os.path.join(logdir, name))
 
 
 def to_japanese():
