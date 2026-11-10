@@ -17,7 +17,7 @@ $WeaselTag = '0.17.4'
 $RimeTag = '1.16.1'
 $BoostVersion = '1.84.0'
 # Bump on every change to what this builds; setup-ime.ps1 reinstalls when the installed one differs.
-$SebTypeBuild = 1
+$SebTypeBuild = 2
 
 function Invoke-Checked([string]$what, [scriptblock]$cmd) {
   & $cmd
@@ -36,6 +36,8 @@ Push-Location $Work
 try {
   Invoke-Checked 'apply sebtype.patch' { git apply (Join-Path $PSScriptRoot 'sebtype.patch') }
   foreach ($icon in 'zh.ico', 'en.ico', 'en_caps.ico') { Copy-Item (Join-Path $Icons $icon) resource\ -Force }
+  # The pig WeaselServer draws at the start of the candidate window (#94; made by sebtype/make-icon.py).
+  Copy-Item (Join-Path $PSScriptRoot 'sebtype-logo.png') output\ -Force
   # The resource script is UTF-16, so it is edited here rather than in the patch.
   $rc = Join-Path $Work 'WeaselTSF\WeaselTSF.rc'  # .NET resolves relative paths against the process folder
   $text = [IO.File]::ReadAllText($rc, [Text.Encoding]::Unicode)

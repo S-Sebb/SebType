@@ -1,3 +1,16 @@
+diff --git a/RimeWithWeasel/RimeWithWeasel.cpp b/RimeWithWeasel/RimeWithWeasel.cpp
+index 3f4e59d..8bd3dbc 100644
+--- a/RimeWithWeasel/RimeWithWeasel.cpp
++++ b/RimeWithWeasel/RimeWithWeasel.cpp
+@@ -1194,6 +1194,8 @@ static void _UpdateUIStyle(RimeConfig* config, UI* ui, bool initialize) {
+                style.display_tray_icon);
+   _RimeGetBool(config, "style/ascii_tip_follow_cursor", initialize,
+                style.ascii_tip_follow_cursor);
++  _RimeGetBool(config, "style/sebtype_logo", initialize,
++               style.sebtype_logo);
+   _RimeGetBool(config, "style/horizontal", initialize, style.layout_type,
+                UIStyle::LAYOUT_HORIZONTAL, UIStyle::LAYOUT_VERTICAL);
+   _RimeGetBool(config, "style/paging_on_scroll", initialize,
 diff --git a/WeaselTSF/KeyEventSink.cpp b/WeaselTSF/KeyEventSink.cpp
 index c885ddd..15e58ba 100644
 --- a/WeaselTSF/KeyEventSink.cpp
@@ -30,6 +43,214 @@ index a03b615..d01d576 100644
                                    GetSystemMetrics(SM_CXSMICON),
                                    GetSystemMetrics(SM_CYSMICON), LR_SHARED);
      else
+diff --git a/WeaselUI/HorizontalLayout.cpp b/WeaselUI/HorizontalLayout.cpp
+index 99d8e64..c6c96cb 100644
+--- a/WeaselUI/HorizontalLayout.cpp
++++ b/WeaselUI/HorizontalLayout.cpp
+@@ -220,6 +220,7 @@ void HorizontalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
+   }
+   _highlightRect = _candidateRects[id];
+   UpdateStatusIconLayout(&width, &height);
++  ReserveLogoColumn(&width, height);
+   _contentSize.SetSize(width + offsetX, height + 2 * offsetY);
+   _contentRect.SetRect(0, 0, _contentSize.cx, _contentSize.cy);
+ 
+diff --git a/WeaselUI/Layout.h b/WeaselUI/Layout.h
+index d96ad8e..00a9bc4 100644
+--- a/WeaselUI/Layout.h
++++ b/WeaselUI/Layout.h
+@@ -81,6 +81,7 @@ class Layout {
+   virtual CRect GetCandidateRect(int id) const = 0;
+   virtual CRect GetCandidateCommentRect(int id) const = 0;
+   virtual CRect GetStatusIconRect() const = 0;
++  virtual CRect GetLogoRect() const = 0;
+   virtual IsToRoundStruct GetRoundInfo(int id) = 0;
+   virtual IsToRoundStruct GetTextRoundInfo() = 0;
+   virtual CRect GetContentRect() = 0;
+diff --git a/WeaselUI/StandardLayout.cpp b/WeaselUI/StandardLayout.cpp
+index bdffad0..f95e279 100644
+--- a/WeaselUI/StandardLayout.cpp
++++ b/WeaselUI/StandardLayout.cpp
+@@ -312,6 +312,31 @@ void weasel::StandardLayout::_PrepareRoundInfo(CDCHandle& dc) {
+   }
+ }
+ 
++// SebType (#94): a column at the start for SebType's pig, as tall as a
++// candidate row plus half the margins, so it follows the font size and DPI.
++// Everything laid out so far moves right by the column; height is the
++// content height inside the border.
++void StandardLayout::ReserveLogoColumn(int* width, int height) {
++  if (!_style.sebtype_logo || !candidates_count)
++    return;
++  const int h = _candidateRects[0].Height() + real_margin_y;
++  const int w = h * LOGO_WIDTH / LOGO_HEIGHT;
++  const int top = offsetY + (height - h) / 2;
++  _logoRect.SetRect(offsetX + real_margin_x, top,
++                    offsetX + real_margin_x + w, top + h);
++  const int shift = w + real_margin_x / 2;
++  for (CRect* rc : {&_preeditRect, &_auxiliaryRect, &_highlightRect,
++                    &_statusIconRect})
++    rc->OffsetRect(shift, 0);
++  for (auto i = 0; i < candidates_count && i < MAX_CANDIDATES_COUNT; ++i) {
++    _candidateRects[i].OffsetRect(shift, 0);
++    _candidateLabelRects[i].OffsetRect(shift, 0);
++    _candidateTextRects[i].OffsetRect(shift, 0);
++    _candidateCommentRects[i].OffsetRect(shift, 0);
++  }
++  *width += shift;
++}
++
+ void StandardLayout::UpdateStatusIconLayout(int* width, int* height) {
+   // rule 1. status icon is middle-aligned with preedit text or auxiliary text,
+   // whichever comes first rule 2. there is a spacing between preedit/aux text
+diff --git a/WeaselUI/StandardLayout.h b/WeaselUI/StandardLayout.h
+index 23eef35..2ade1c8 100644
+--- a/WeaselUI/StandardLayout.h
++++ b/WeaselUI/StandardLayout.h
+@@ -9,6 +9,8 @@
+ namespace weasel {
+ const int MAX_CANDIDATES_COUNT = 100;
+ const int STATUS_ICON_SIZE = GetSystemMetrics(SM_CXICON);
++// SebType: sebtype-logo.png's size, for its aspect ratio (#94)
++const int LOGO_WIDTH = 158, LOGO_HEIGHT = 160;
+ 
+ class StandardLayout : public Layout {
+  public:
+@@ -36,6 +38,7 @@ class StandardLayout : public Layout {
+   }
+   virtual CRect GetCandidateRect(int id) const { return _candidateRects[id]; }
+   virtual CRect GetStatusIconRect() const { return _statusIconRect; }
++  virtual CRect GetLogoRect() const { return _logoRect; }
+   virtual std::wstring GetLabelText(const std::vector<Text>& labels,
+                                     int id,
+                                     const wchar_t* format) const;
+@@ -67,6 +70,7 @@ class StandardLayout : public Layout {
+   void _PrepareRoundInfo(CDCHandle& dc);
+ 
+   void UpdateStatusIconLayout(int* width, int* height);
++  void ReserveLogoColumn(int* width, int height);
+ 
+   CSize _beforesz, _hilitedsz, _aftersz;
+   weasel::TextRange _range;
+@@ -77,6 +81,7 @@ class StandardLayout : public Layout {
+   CRect _candidateTextRects[MAX_CANDIDATES_COUNT];
+   CRect _candidateCommentRects[MAX_CANDIDATES_COUNT];
+   CRect _statusIconRect;
++  CRect _logoRect;
+   CRect _bgRect;
+   CRect _contentRect;
+   IsToRoundStruct _roundInfo[MAX_CANDIDATES_COUNT];
+diff --git a/WeaselUI/VerticalLayout.cpp b/WeaselUI/VerticalLayout.cpp
+index fee38f6..dcd889f 100644
+--- a/WeaselUI/VerticalLayout.cpp
++++ b/WeaselUI/VerticalLayout.cpp
+@@ -208,6 +208,7 @@ void weasel::VerticalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
+     _candidateRects[i].right = right;
+   }
+ 
++  ReserveLogoColumn(&width, height);
+   _contentSize.SetSize(width + offsetX * 2, height + offsetY * 2);
+ 
+   /* Highlighted Candidate */
+diff --git a/WeaselUI/WeaselPanel.cpp b/WeaselUI/WeaselPanel.cpp
+index 18964a0..8bf8309 100644
+--- a/WeaselUI/WeaselPanel.cpp
++++ b/WeaselUI/WeaselPanel.cpp
+@@ -77,6 +77,11 @@ WeaselPanel::WeaselPanel(weasel::UI& ui)
+                        LR_DEFAULTCOLOR);
+   // for gdi+ drawings, initialization
+   GdiplusStartup(&_m_gdiplusToken, &_m_gdiplusStartupInput, NULL);
++  WCHAR exe[MAX_PATH];
++  GetModuleFileNameW(NULL, exe, MAX_PATH);
++  std::wstring logo(exe);
++  logo = logo.substr(0, logo.find_last_of(L'\\') + 1) + L"sebtype-logo.png";
++  m_logo.reset(Gdiplus::Bitmap::FromFile(logo.c_str()));
+ 
+   HMONITOR hMonitor = MonitorFromRect(m_inputPos, MONITOR_DEFAULTTONEAREST);
+   UINT dpiX = 96, dpiY = 96;
+@@ -90,6 +95,7 @@ WeaselPanel::WeaselPanel(weasel::UI& ui)
+ }
+ 
+ WeaselPanel::~WeaselPanel() {
++  m_logo.reset();  // before GDI+ shuts down
+   Gdiplus::GdiplusShutdown(_m_gdiplusToken);
+   delete m_layout;
+   m_layout = NULL;
+@@ -1027,6 +1033,16 @@ void WeaselPanel::DoPaint(CDCHandle dc) {
+     }
+     // end texts drawing
+ 
++    // SebType: the pig in its column at the start (#94)
++    CRect logorc = m_layout->GetLogoRect();
++    if (!logorc.IsRectEmpty() && m_logo &&
++        m_logo->GetLastStatus() == Gdiplus::Ok) {
++      Gdiplus::Graphics g(memDC);
++      g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
++      g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
++      g.DrawImage(m_logo.get(), logorc.left, logorc.top, logorc.Width(),
++                  logorc.Height());
++    }
+     // status icon (I guess Metro IME stole my idea :)
+     if (m_layout->ShouldDisplayStatusIcon()) {
+       // decide if custom schema zhung icon to show
+diff --git a/WeaselUI/WeaselPanel.h b/WeaselUI/WeaselPanel.h
+index 478e798..de5cba5 100644
+--- a/WeaselUI/WeaselPanel.h
++++ b/WeaselUI/WeaselPanel.h
+@@ -4,6 +4,7 @@
+ #include "StandardLayout.h"
+ #include "Layout.h"
+ #include "GdiplusBlur.h"
++#include <memory>
+ 
+ #pragma comment(lib, "d2d1.lib")
+ #pragma comment(lib, "dwrite.lib")
+@@ -122,6 +123,8 @@ class WeaselPanel
+   CIcon m_iconAlpha;
+   CIcon m_iconFull;
+   CIcon m_iconHalf;
++  // SebType: sebtype-logo.png next to WeaselServer.exe (#94)
++  std::unique_ptr<Gdiplus::Bitmap> m_logo;
+   std::wstring m_current_zhung_icon;
+   std::wstring m_current_ascii_icon;
+   std::wstring m_current_half_icon;
+diff --git a/include/WeaselIPCData.h b/include/WeaselIPCData.h
+index 09f22f9..3455732 100644
+--- a/include/WeaselIPCData.h
++++ b/include/WeaselIPCData.h
+@@ -226,6 +226,8 @@ struct UIStyle {
+   bool inline_preedit;
+   bool display_tray_icon;
+   bool ascii_tip_follow_cursor;
++  // SebType: SebType's pig at the start of the candidate window (#94)
++  bool sebtype_logo;
+   bool paging_on_scroll;
+   bool enhanced_position;
+   bool click_to_capture;
+@@ -303,6 +305,7 @@ struct UIStyle {
+         inline_preedit(false),
+         display_tray_icon(false),
+         ascii_tip_follow_cursor(false),
++        sebtype_logo(false),
+         paging_on_scroll(false),
+         enhanced_position(false),
+         click_to_capture(false),
+@@ -378,6 +381,7 @@ struct UIStyle {
+         inline_preedit != st.inline_preedit || mark_text != st.mark_text ||
+         display_tray_icon != st.display_tray_icon ||
+         ascii_tip_follow_cursor != st.ascii_tip_follow_cursor ||
++        sebtype_logo != st.sebtype_logo ||
+         current_zhung_icon != st.current_zhung_icon ||
+         current_ascii_icon != st.current_ascii_icon ||
+         current_half_icon != st.current_half_icon ||
+@@ -443,6 +447,7 @@ void serialize(Archive& ar, weasel::UIStyle& s, const unsigned int version) {
+   ar & s.preedit_type;
+   ar & s.display_tray_icon;
+   ar & s.ascii_tip_follow_cursor;
++  ar & s.sebtype_logo;
+   ar & s.current_zhung_icon;
+   ar & s.current_ascii_icon;
+   ar & s.current_half_icon;
 diff --git a/include/WeaselUtility.h b/include/WeaselUtility.h
 index 54f840f..651f60c 100755
 --- a/include/WeaselUtility.h
@@ -68,10 +289,19 @@ index 3a40f51..996db53 100644
  #define IDR_MENU_POPUP_HANS             109
  #define IDS_STR_UNDER_MAINTENANCE       302
 diff --git a/output/install.nsi b/output/install.nsi
-index 3d5130c..8239b37 100644
+index 3d5130c..b6fe22c 100644
 --- a/output/install.nsi
 +++ b/output/install.nsi
-@@ -326,6 +326,8 @@ program_files:
+@@ -236,6 +236,8 @@ program_files:
+   File "rime-install-config.bat"
+   File "start_service.bat"
+   File "stop_service.bat"
++  ; SebType: the pig in the candidate window (#94)
++  File "sebtype-logo.png"
+   File "weasel.dll"
+   ${If} ${RunningX64}
+     File "weaselx64.dll"
+@@ -326,6 +328,8 @@ program_files:
    WriteRegStr HKLM "${REG_UNINST_KEY}" "HelpLink" "https://rime.im/docs/"
    WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoModify" 1
    WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoRepair" 1
@@ -80,7 +310,7 @@ index 3d5130c..8239b37 100644
    WriteUninstaller "$INSTDIR\uninstall.exe"
  
    ; run as user...
-@@ -349,7 +351,8 @@ program_files:
+@@ -349,7 +353,8 @@ program_files:
    Exec "$INSTDIR\WeaselServer.exe"
  
    ; option CheckForUpdates

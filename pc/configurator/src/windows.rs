@@ -185,11 +185,13 @@ pub fn candidates() -> Candidates {
     }
 }
 
-pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
+/// weasel.custom.yaml `old` with the candidate window settings `c`.
+fn candidate_style(old: &str, c: &Candidates) -> String {
     let keys = [
         "style/horizontal",
         "style/font_point",
         "style/color_scheme",
+        "style/sebtype_logo",
         "preset_color_schemes/sebtype_picnic",
     ];
     let mut entries = vec![
@@ -198,11 +200,17 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
     ];
     if c.picnic {
         entries.push(format!("  style/color_scheme: {PICNIC}"));
+        // SebType's Weasel draws the pig at the start of the window (#94)
+        entries.push("  style/sebtype_logo: true".into());
         entries.push(format!("  preset_color_schemes/{PICNIC}:"));
         entries.extend(PICNIC_SCHEME.iter().map(|l| l.to_string()));
     }
+    patch::set(old, &keys, &entries)
+}
+
+pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
     let old = style_text();
-    let new = patch::set(&old, &keys, &entries);
+    let new = candidate_style(&old, c);
     if new == old {
         return Ok(false);
     }
@@ -265,4 +273,24 @@ pub fn open_url(url: &str) {
         .args(["url.dll,FileProtocolHandler", url])
         .creation_flags(NO_WINDOW)
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picnic_turns_the_logo_on_and_the_system_look_off() {
+        let c = |picnic| Candidates {
+            vertical: false,
+            font_size: 14,
+            picnic,
+        };
+        let user = "patch:\n  style/inline_preedit: true\n";
+        let picnic = candidate_style(user, &c(true));
+        assert_eq!(patch::value(&picnic, "style/sebtype_logo"), Some("true"));
+        let system = candidate_style(&picnic, &c(false));
+        assert_eq!(patch::value(&system, "style/sebtype_logo"), None);
+        assert_eq!(patch::value(&system, "style/inline_preedit"), Some("true"));
+    }
 }
