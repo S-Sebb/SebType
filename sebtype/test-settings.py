@@ -12,6 +12,7 @@ appended to RESULTS; each check finds its own way from the home screen, so one f
 stop the next.
 """
 
+import functools
 import os
 import re
 import subprocess
@@ -22,9 +23,6 @@ import xml.etree.ElementTree as ET
 serial, results_path, logdir = sys.argv[1:4]
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
-# The emulator's Gboard, for typing into SebType's own settings: with SebType in Chinese, Rime would
-# compose the letters instead.
-GBOARD = "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 PREPARING = ("正在准备中文", "Preparing Chinese")
@@ -481,20 +479,40 @@ def emoji_candidates():
     return f"xiao offers {on[:3]} with it on, none off"
 
 
+@functools.cache
+def install_set_text():
+    """Builds and installs sebtype/set-text, once per run (run from the repo root)."""
+    apk = os.path.join(logdir, "set-text.apk")
+    subprocess.run(["sebtype/set-text/build.sh", apk], check=True, capture_output=True)
+    adb("install", "-r", apk)
+
+
+def set_text(index, text):
+    """Sets the active window's index-th text field through accessibility, with no keyboard."""
+    install_set_text()
+    out = adb(
+        "shell",
+        "am",
+        "instrument",
+        "-w",
+        "-e",
+        "index",
+        str(index),
+        "-e",
+        "text",
+        text,
+        "dev.sebb.sebtype.settext/.SetText",
+    )
+    if "result=set" not in out:
+        raise Fail(f"couldn't set field {index} to {text}: {out.strip()[-300:]}")
+
+
 def add_my_word(word, pinyin):
     go(LANG, (MY_WORDS, 1))
     tap_text(labels("添加", '"添加"', "Add"))
-    adb("shell", "ime", "set", GBOARD)
-    fields = [
-        (y, x) for label, x, y, top, cls in nodes() if cls == "android.widget.EditText"
-    ]
-    for (y, x), text in zip(sorted(fields), (word, pinyin)):
-        tap(x, y)
-        adb("shell", "input", "text", text)
-    adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)  # hides the keyboard
-    time.sleep(1)
+    set_text(0, word)
+    set_text(1, pinyin)
     tap_text(labels("保存", "Save"))
-    adb("shell", "ime", "set", IME)
 
 
 def my_words():
