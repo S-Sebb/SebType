@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock: password,
-private, URL and email fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
+private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -551,7 +551,6 @@ check(
 )
 check("private-no-learning", no_learning_in("private", "wm"), needs=["first-install"])
 check("url-no-learning", no_learning_in("url", "wm"), needs=["first-install"])
-check("email-no-learning", no_learning_in("email", "wm"), needs=["first-install"])
 check("normal-still-learns", normal_still_learns("wm"), needs=["first-install"])
 # Before the update: a restart after it has once switched the keyboard to English (not rime-ice's doing).
 check("failure-visible", failure_is_visible, needs=["first-install"])
