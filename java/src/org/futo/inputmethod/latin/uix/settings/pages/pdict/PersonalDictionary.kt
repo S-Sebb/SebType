@@ -23,9 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -37,8 +35,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.latin.R
-import org.futo.inputmethod.latin.Subtypes
-import org.futo.inputmethod.latin.SubtypesSetting
 import org.futo.inputmethod.latin.localeFromString
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.IMPORT_SETTINGS_REQUEST
@@ -52,8 +48,6 @@ import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.Route
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
-import org.futo.inputmethod.latin.uix.settings.ScrollableList
-import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import java.util.Locale
 import kotlin.collections.get
 
@@ -279,51 +273,6 @@ fun PersonalDictionaryLanguageListForLocale(
                 style = NavigationItemStyle.MiscNoArrow,
                 navigate = {
                     navController.navigate(Route.PersonalDictWord(locale?.toLanguageTag(), Json.encodeToString(it)))
-                }
-            )
-        }
-    }
-}
-
-@Composable
-@Preview(showBackground = true)
-fun PersonalDictionaryLanguageList() {
-    val nav = LocalNavController.current
-    val context = LocalContext.current
-    val words = if(!LocalInspectionMode.current) {
-        remember { UserDictionaryIO(context).get() }
-    } else {
-        listOf(PersonalWord(word = "word", frequency = 0, locale = "en", appId = 0, shortcut = null))
-    }
-    val enabledLanguages = useDataStoreValue(SubtypesSetting).map {
-        Subtypes.getLocale(Subtypes.convertToSubtype(it))
-    }
-    val languages = (words.mapNotNull { it.locale }.map { localeFromString(it) } + enabledLanguages)
-        .toSet().map { locale ->
-            locale to words.count { it.locale?.let { localeFromString(it) } == locale }
-        }
-    val allLanguagesCount = words.count { it.locale == null }
-
-    ScrollableList {
-        ScreenTitle(stringResource(R.string.edit_personal_dictionary), showBack = true, navController = nav)
-        NavigationItem(
-            title = stringResource(R.string.user_dict_settings_all_languages),
-            subtitle = pluralStringResource(R.plurals.personal_dictionary_language_word_count, allLanguagesCount, allLanguagesCount),
-            style = NavigationItemStyle.MiscNoArrow,
-            navigate = {
-                nav!!.navigate(Route.PersonalDictList(null))
-            }
-        )
-        languages.forEach {
-            val exception = ExceptionalPersonalDictionaryLanguages[it.first.language]
-            if(exception?.supported == false) return@forEach
-
-            NavigationItem(
-                title = it.first.getDisplayName(LocalConfiguration.current.locale),
-                subtitle = pluralStringResource(R.plurals.personal_dictionary_language_word_count, it.second, it.second),
-                style = NavigationItemStyle.MiscNoArrow,
-                navigate = {
-                    nav!!.navigate(Route.PersonalDictList(it.first.toLanguageTag()))
                 }
             )
         }

@@ -89,19 +89,8 @@
     <string name="action_clipboard_manager_enable_clipboard_history_button">Enable Clipboard History</string>
     <!-- This message is shown when we're typing in a text field does not support image insertion ("app" refers to the external app that is providing the text field) -->
     <string name="action_clipboard_manager_error_app_image_insertion_unsupported">App does not support image insertion</string>
-    <string name="action_clipboard_manager_settings_title">Clipboard Manager Settings</string>
-    <string name="action_clipboard_manager_settings_save_images">Save copied images</string>
-    <string name="action_clipboard_manager_settings_save_screenshots">Save recent screenshots</string>
-    <string name="action_clipboard_manager_settings_save_screenshots_subtitle">You\'ll need to grant permission to access your screenshots</string>
     <string name="action_clipboard_manager_settings_hours_to_keep_clips">Hours to keep unpinned clips</string>
     <string name="action_clipboard_manager_settings_maximum_clips">Number of unpinned clips to keep</string>
-    <string name="action_clipboard_manager_settings_save_sensitive_clips">Save sensitive clips</string>
-    <string name="action_clipboard_manager_settings_save_sensitive_clips_subtitle">If enabled, it will save items from password managers, incognito windows, etc</string>
-    <string name="action_clipboard_manager_settings_list_layout">Use vertical list layout instead of grid</string>
-    <string name="action_clipboard_manager_settings_show_pinned_above_others">Keep pinned clips on top</string>
-    <string name="action_clipboard_manager_settings_skip_delete_confirmation">Skip confirmation when deleting unpinned clips</string>
-
-    <string name="action_clipboard_manager_settings_show_quick_clips">Show recently copied text in suggestion bar</string>
 
     <!-- For keyboard modes action -->
     <string name="action_keyboard_modes_title">Keyboard Modes</string>
@@ -265,8 +254,6 @@
 
     <string name="payment_unpaid_version_title">Unpaid FUTO Keyboard</string>
     <string name="payment_unpaid_version_indicator">Unpaid</string>
-    <string name="payment_paid_version_indicator">Thank you for using the paid version of FUTO Keyboard!</string>
-
 
     <!-- Lack of automatic updates notice -->
     <string name="manual_update_notice_title">Updates Notice</string>
@@ -277,7 +264,6 @@
     <!-- can be translated as "understood", etc -->
     <string name="manual_update_notice_dismiss_notice_button">Dismiss</string>
 
-
     <!-- General settings strings -->
     <string name="settings_tip">Tip</string>
     <string name="settings_unknown_error_title">Unknown Error</string>
@@ -286,41 +272,11 @@
     <string name="settings_external_model_name">Externally imported model</string>
     <string name="settings_check_for_updates_manually">Check for updates manually</string>
     <string name="settings_update_available">Update Available</string>
-    <!-- May be translated as "Start", "All", etc. This is the starting menu where all settings live.
-         Usually the string `english_ime_settings` is used instead, but this title is used in search
-         results. -->
-    <string name="settings_home_title">Home</string>
-    <!-- When a setting exists but is hidden due to another option being disabled (or enabled), the search
-         will display the option title with this subtitle. Tapping will visit the menu where the setting
-         lives, and usually the user can figure out what option to toggle to show the option. For example,
-         all voice input options are hidden if the "Use System Voice Input" toggle is on. -->
-    <string name="settings_search_option_exists_but_disabled">Option is disabled as it depends on another option, tap to visit menu: %1$s</string>
-    <string name="settings_search_menu_title">Search</string>
-    <string name="settings_search_enter_your_search">Enter a search term…</string>
-    <string name="settings_search_no_options_found">No results found</string>
-    <string name="misc_settings_title">Miscellaneous</string>
     <string name="setting_section_collapsed">Collapsed</string>
     <string name="setting_section_expanded">Expanded</string>
 
-    <!-- When adding a new language -->
-    <string name="language_settings_title">Languages &amp; Models</string>
-    <string name="language_settings_add_language_button">Add language</string>
-    <string name="language_settings_select_language">Select language to add</string>
     <string name="language_settings_search">Search</string>
-    <string name="language_settings_select_layout">Select a layout to add</string>
-    <string name="language_settings_warning_language_has_no_dict">This language has no built-in dictionary. We recommend downloading and importing one to get autocorrect and word suggestions.</string>
-    <string name="language_settings_resource_none">(None)</string>
-    <string name="language_settings_layouts_of_this_language">Keyboard Layouts</string>
-    <string name="language_settings_add_layout_for_this_language">Add Keyboard Layout</string>
-    <string name="language_settings_enable_multilingual_typing_for_this_language">Multilingual Typing</string>
-    <string name="language_settings_remove_this_language">Remove Language</string>
 
-    <string name="language_settings_manage_languages_title">Manage languages and layouts</string>
-    <string name="language_settings_manage_languages_subtitle">View languages you’ve enabled, remove languages, change or add additional layouts, or toggle multilingual typing</string>
-
-    <string name="language_settings_resource_imported_indicator">(Imported)</string>
-    <string name="language_settings_resource_unsupported_indicator">(Unsupported)</string>
-    <string name="language_settings_resource_builtin_dictionary_name">Built-in Dictionary</string>
     <string name="language_settings_resource_voice_input_selected">Would you like to revert the voice input model to default, or replace it with another file?</string>
     <string name="language_settings_resource_voice_input_selected_no_default_warning">No built-in voice input model exists for this language, so if you remove it, voice input will stop working for this language until you import a different model!</string>
     <string name="language_settings_resource_voice_input_selected_unset">You have not configured a custom voice input model for this language. You can explore downloads online, or import one from a file.</string>
@@ -335,11 +291,6 @@
     <string name="language_settings_resource_revert_to_default_button">Revert to Default</string>
     <string name="language_settings_resource_remove_button">Remove</string>
     <string name="language_settings_resource_explore_online_button">Explore</string>
-
-    <string name="language_settings_remove_language_title">Delete %1$s?</string>
-    <string name="language_settings_remove_language_body">Remove %1$s, all of its associated layouts and custom resources?</string>
-    <string name="language_settings_remove_language_remove_button">Remove</string>
-    <string name="language_settings_remove_language_cancel_button">Cancel</string>
 
     <string name="language_settings_other_options">Other options</string>
     <string name="language_settings_import_resource_from_file">Import resource file</string>
@@ -368,78 +319,31 @@
     <string name="resource_importer_warning_cfg_backup_is_destructive2">Are you sure you want to import this configuration backup? This will replace all of your settings, personal dictionary (system-wide), learned dictionary words, any imported resources, and more. If you’re unsure, make another backup before this.</string>
     <string name="resource_importer_warning_cfg_backup_newer_version">This configuration backup was created by a newer version of FUTO Keyboard, and it might not import properly. Try updating FUTO Keyboard first.</string>
 
-    <string name="settings_export_configuration_title">Settings Backup</string>
-    <string name="settings_export_configuration">Export configuration</string>
     <string name="settings_export_configuration_subtitle">Back up all of your settings, clipboard, learned words, resources, and more.</string>
     <string name="settings_export_configuration_exporting">Exporting configuration…</string>
     <string name="settings_export_configuration_exporting_text">Please do not close this menu until the process is completed (5 to 10 seconds)</string>
-    <string name="settings_import_configuration">Import configuration</string>
     <string name="settings_import_configuration_subtitle">If you previously exported your config, you can re-import it here.</string>
-    <string name="settings_import_export_tags">backup, restore, save, load, export, import, transfer device</string>
 
     <!-- Keyboard actions -->
     <string name="action_editor_title">Edit Actions</string>
-    <string name="action_editor_subtitle">Edit favorite actions, pinned actions, and the action key next to the spacebar</string>
     <string name="action_editor_edit_actions">Edit actions</string>
     <string name="action_editor_warning_no_actions">No actions are enabled</string>
     <string name="action_editor_error_more_than_one_action_key">Please assign only one action key. You cannot assign more than one action to the action key.</string>
     <string name="action_editor_warning_too_many_pinned">Please consider pinning fewer actions. The suggestion bar will need to be shrunk to accommodate this many actions.</string>
     <string name="action_editor_add_next_action">Add next</string>
 
-    <!-- Action settings -->
-    <string name="action_settings_title">Actions</string>
-    <string name="action_settings_quick_options_title">Quick Options</string>
-    <string name="action_settings_quick_option_enable_action_key">Enable action key</string>
-    <string name="action_settings_quick_option_enable_action_key_subtitle_no_assignment">Show a key to the left of spacebar to quickly access an action. Enabling this will place an emoji key, but it can be customized in “Edit Actions“</string>
-    <string name="action_settings_quick_option_enable_action_key_subtitle_with_assignment">Show a key to the left of spacebar to quickly access an action. Disabling this will move the currently assigned action: %s</string>
-    <string name="action_settings_quick_option_language_switch_key">Language switch key</string>
-    <string name="action_settings_quick_option_language_switch_key_subtitle">Replace the emoji key with a language switch key. Go to “Edit Actions” to put something else.</string>
-    <string name="action_settings_action_settings">Action Settings</string>
-
     <!-- Keyboard's size settings -->
     <string name="size_settings_title">Resize Keyboard</string>
-    <string name="size_settings_subtitle2">Change keyboard size, make it one-handed, floating, split</string>
     <string name="size_settings_resize_tip">Tap the \"Resize Keyboard\" button to resize.</string>
     <string name="size_settings_keyboard_modes_tip">You can access this anywhere with the Keyboard Modes action:</string>
     <string name="size_settings_keyboard_modes_portrait_landscape_tip">Size and mode is stored separately for portrait and landscape.</string>
     <string name="size_settings_reset">Reset size settings</string>
     <string name="size_settings_reset_subtitle">Tap to reset all sizes and modes for both portrait and landscape to default</string>
 
-    <!-- Long-press keys, or otherwise called secondary keys, more keys, additional keys -->
-    <string name="morekey_settings_title">Long-Press Keys &amp; Spacebar</string>
-    <string name="morekey_settings_subtitle">Configure long-press duration, how to order letters/symbols, and behavior of spacebar and delete key.</string>
-    <string name="morekey_settings_layout">Layout of long-press keys</string>
-    <string name="morekey_settings_reset">Reset to default</string>
-    <string name="morekey_settings_move_kind_up">Move up</string>
-    <string name="morekey_settings_move_kind_down">Move down</string>
-    <string name="morekey_settings_move_kind_up_to_top">Move to top</string>
-    <string name="morekey_settings_move_kind_down_to_bottom">Move to bottom</string>
-    <string name="morekey_settings_kind_position">Position %1$s of %2$s</string>
-    <string name="morekey_settings_active">Active</string>
-    <string name="morekey_settings_inactive">Inactive</string>
-    <string name="morekey_settings_reactivate">Reactivate</string>
-    <string name="morekey_settings_disable">Deactivate</string>
-    <string name="morekey_settings_keys">Long-Press Keys</string>
     <string name="morekey_settings_show_hints">Show hints</string>
     <string name="morekey_settings_show_hints_subtitle">Display a small hint on each key, showing the primary long-press key</string>
-    <string name="morekey_settings_show_hints_tags">additional characters, alt keys, symbols, popup keys</string>
     <string name="morekey_settings_duration">Long Press Duration</string>
     <string name="morekey_settings_duration_subtitle">How long a key needs to be pressed to be considered a long-press</string>
-
-    <string name="morekey_settings_backspace_title">Backspace</string>
-    <string name="morekey_settings_backspace_hold_delete_words">Hold to delete words</string>
-    <string name="morekey_settings_backspace_swipe_to_delete">Swipe to delete</string>
-    <string name="morekey_settings_backspace_swipe_to_delete_off">Off</string>
-    <string name="morekey_settings_backspace_swipe_to_delete_characters">Characters</string>
-    <string name="morekey_settings_backspace_swipe_to_delete_words">Words</string>
-    <string name="morekey_settings_spacebar_title">Spacebar</string>
-    <string name="morekey_settings_spacebar_swipe_shortcut">Swipe</string>
-    <string name="morekey_settings_spacebar_swipe_shortcut_off">Off</string>
-    <string name="morekey_settings_spacebar_swipe_shortcut_cursor">Move cursor</string>
-    <string name="morekey_settings_spacebar_swipe_shortcut_language">Switch language</string>
-    <string name="morekey_settings_spacebar_hold_shortcut">Hold</string>
-    <string name="morekey_settings_spacebar_hold_shortcut_cursor">Move cursor</string>
-    <string name="morekey_settings_spacebar_hold_shortcut_language">Switch language</string>
 
     <!-- Types of morekeys that can be configured, and examples of them -->
     <string name="morekey_settings_kind_numbers">Numbers</string>
@@ -454,56 +358,19 @@
     <string name="morekey_settings_kind_misc_common">Misc. letters from common languages</string>
     <string name="morekey_settings_kind_misc_common_example">e.g. [ß] on [s] in all Latin script languages</string>
 
-    <!-- typing settings -->
-    <string name="typing_settings_title">Typing preferences</string>
-    <string name="typing_settings_suggest_emojis">Emoji Suggestions</string>
-    <string name="typing_settings_suggest_emojis_subtitle">Suggest emojis while you\'re typing</string>
     <string name="typing_settings_vibration_strength">Vibration</string>
     <string name="typing_settings_vibration_strength_default">Default</string>
     <string name="typing_settings_keypress_sound_volume">Sound Volume</string>
     <string name="typing_settings_keypress_sound_volume_default">Default</string>
     <string name="typing_settings_keypress_sound_volume_vendor_warning">The volume setting may have no effect on some versions of Android.</string>
     <string name="typing_settings_keypress_sound_volume_ringer_mode_warning">The sound will not play if your ringer mode is set to silent or vibrate.</string>
-    <string name="typing_settings_enable_clipboard_history">Clipboard History</string>
-    <string name="typing_settings_enable_clipboard_history_tags">copy, paste</string>
-    <string name="typing_settings_delete_pasted_text_on_backspace">Delete pasted/inserted text on backspace</string>
-    <string name="typing_settings_revert_correction_on_backspace">Undo autocorrect on backspace</string>
-
-    <!-- Automatic space insertion -->
-    <string name="typing_settings_auto_space_mode">Automatic spaces mode</string>
-    <string name="typing_settings_auto_space_mode_auto2">Immediate space after suggestions &amp; punctuation</string>
-    <string name="typing_settings_auto_space_mode_suggestions2">Immediate space after suggestions</string>
-    <string name="typing_settings_auto_space_mode_legacy2">Delayed space after suggestions (legacy mode)</string>
-    <string name="typing_settings_auto_space_mode_none2">Disabled (not recommended)</string>
 
     <!-- Misc keyboard settings -->
     <string name="keyboard_settings_title">Keyboard</string>
     <string name="keyboard_settings_show_number_row">Show Number Row</string>
     <string name="keyboard_settings_show_number_row_subtitle">When active, the number row is shown on top of the keyboard on supported layouts</string>
-    <string name="keyboard_settings_show_arrow_row">Show Arrow Keys</string>
-    <string name="keyboard_settings_show_arrow_row_subtitle">When active, the arrow keys row is shown on the bottom of the keyboard</string>
     <string name="keyboard_settings_extra_layouts">Additional Layouts</string>
     <string name="keyboard_settings_extra_layouts_subtitle">Configure additional layouts in the languages screen</string>
-    <string name="keyboard_settings_show_suggestion_row">Show action/suggestions bar</string>
-    <string name="keyboard_settings_show_suggestion_row_subtitle">Show the bar containing suggestions. Recommended to keep enabled</string>
-    <string name="keyboard_settings_inline_autofill">Inline autofill</string>
-    <string name="keyboard_settings_inline_autofill_subtitle">Display password manager autofill and auto-reply suggestions (provided by app) in suggestion bar</string>
-    <string name="keyboard_settings_period_key">Quick period key</string>
-    <string name="keyboard_settings_period_key_subtitle2">Replaces the layout of long-pressed period key with a flickable layout: ! , . ?</string>
-
-    <string name="keyboard_settings_number_row_title">Number row</string>
-    <string name="keyboard_settings_number_row_style">Number row style</string>
-    <!-- Slightly more compact than a full key, has no background -->
-    <string name="keyboard_settings_number_row_style_default">Compact</string>
-    <!-- "Key" as in full-size keyboard key -->
-    <string name="keyboard_settings_number_row_style_classic">Key</string>
-    <!-- Languages like Arabic can have their own digit symbols, this forces use of Western numerals -->
-    <string name="keyboard_settings_number_row_dont_use_script_digits">Always use Western numerals</string>
-
-    <string name="keyboard_settings_hide_when_hardware_keyboard_is_connected">Hide when USB keyboard is detected</string>
-
-    <!-- misc titles -->
-    <string name="settings_keyboard_typing_title">Keyboard &amp; Typing</string>
 
     <!-- Theme, as in visual style -->
     <string name="theme_settings_title">Theme</string>
@@ -593,45 +460,6 @@
     <string name="voice_input_settings_change_models">Models</string>
     <string name="voice_input_settings_change_models_subtitle">To change the models, visit Languages &amp; Models menu</string>
 
-    <!-- Prediction menu -->
-    <string name="prediction_settings_title">Text Prediction</string>
-    <string name="prediction_settings_transformer">Transformer LM</string>
-    <string name="prediction_settings_transformer_finetuning">Transformer fine-tuning</string>
-    <string name="prediction_settings_transformer_finetuning_subtitle">May kill your battery if enabled! This feature is pending more work</string>
-    <string name="prediction_settings_transformer_models">Transformer Models</string>
-    <string name="prediction_settings_transformer_alpha_notice">Note: Transformer LM is in alpha state</string>
-    <!-- When translating this, you can point out the local language specifically, e.g. for Portuguese, "... This has no effect for typing in Portuguese and other languages" -->
-    <string name="prediction_settings_transformer_english_notice">These settings are experimental and only relevant for English. These settings have no effect for other languages.</string>
-    <string name="prediction_settings_smart_keyhit_detection">Smart key-hit detection</string>
-    <string name="prediction_settings_smart_keyhit_detection_subtitle">Uses dictionary to determine relevant next keys, and boosts their hit area. Boosting is avoided after a backspace</string>
-    <string name="prediction_settings_word_blacklist">Word Blacklist</string>
-    <string name="prediction_settings_word_blacklist_add">Add to blacklist</string>
-    <string name="prediction_settings_word_blacklist_none">There are no blacklisted words.</string>
-    <string name="prediction_settings_word_blacklist_edit_blacklisted_words_title">View and edit blacklisted words</string>
-    <string name="prediction_settings_word_blacklist_edit_blacklisted_words_subtitle">Click here to view the list of blacklisted suggestions, add or remove entries</string>
-    <string name="prediction_settings_word_blacklist_remove_word_from_blacklist">Remove word</string>
-
-
-    <!-- Help & feedback menu -->
-    <string name="help_menu_title">Help &amp; Feedback</string>
-    <string name="help_menu_version_name">Version Name: %1$s</string>
-    <string name="help_menu_version_code">Version Code: %1$s</string>
-    <string name="help_menu_version_tip">We want to hear from you! If you\'re reporting an issue, your version may be relevant: v%1$s</string>
-    <string name="help_menu_website">FUTO Website</string>
-    <string name="help_menu_website_subtitle">Learn more about us and our philosophy</string>
-    <string name="help_menu_website_tags">download, apps, voice input</string>
-    <string name="help_menu_documentation">Documentation</string>
-    <string name="help_menu_documentation_subtitle">Learn more about the keyboard\'s features and capabilities</string>
-    <string name="help_menu_discord">Discord Server</string>
-    <string name="help_menu_discord_subtitle">Wanna talk but don\'t like Zulip? Chat here</string>
-    <string name="help_menu_futo_chat">FUTO Chat (Zulip)</string>
-    <string name="help_menu_futo_chat_subtitle">Wanna talk but don\'t like Discord? Chat here</string>
-    <string name="help_menu_github">Public issue tracker (GitHub)</string>
-    <string name="help_menu_github_subtitle">Specific bug or feature request? Post here</string>
-    <string name="help_menu_email">Email keyboard@futo.org</string>
-    <string name="help_menu_email_subtitle">Private feedback, help, or don\'t use GitHub? Email us</string>
-    <string name="help_menu_email_tags">gmail, support, contact, help, broken, bug, error, issue, problem, complaint, ticket, payment, support, glitch, malfunction, fix, customer service, crash, question, inquiry, assistance</string>
-
     <!-- Setup configuration -->
     <string name="setup_step_1">Setup - Step 1</string>
     <string name="setup_step_2">Setup - Step 2</string>
@@ -656,46 +484,16 @@
     <string name="credits_menu_project_information_title">%s information</string>
     <string name="credits_menu_project_url_link">Project URL</string>
 
-    <!-- Settings category title -->
-    <string name="language_specific_settings_title">Language-specific settings</string>
-
-    <!-- Specific to Chinese input method -->
-    <string name="chinese_settings_title">Chinese Input Settings</string>
-    <string name="chinese_setting_search_tags">chinese, rime</string>
-    <string name="chinese_setting_simplification">Simplification</string>
     <string name="chinese_setting_simplification_simplify_by_language_country">Default (by country)</string>
     <string name="chinese_setting_simplification_force_simplified">Simplified</string>
     <string name="chinese_setting_simplification_force_traditional">Traditional</string>
-    <string name="chinese_setting_pinyin_scheme">Pinyin Scheme</string>
     <string name="chinese_setting_fuzzy_pinyin">Fuzzy Pinyin</string>
 
-    <!-- Specific to Japanese input method -->
-    <string name="japanese_settings_title">Japanese Input Settings</string>
-    <string name="japanese_settings_toggle_flick_only">Flick only</string>
-    <string name="japanese_settings_toggle_flick_only_subtitle">Disables cycling between vowels on repeated key presses (Keitai input)</string>
     <string name="japanese_settings_toggle_halfwidth_space">Use half-width space</string>
     <string name="japanese_settings_toggle_halfwidth_space_subtitle">Always use half-width space</string>
 
-    <!-- Advanced parameters, these are only really relevant for English -->
-    <string name="prediction_settings_transformer_advanced_params">Advanced Parameters</string>
-    <string name="prediction_settings_transformer_advanced_params_experimental_notice">Options below are experimental and may be removed or changed in the future as internal workings of the app change. Changing these values may have an adverse impact on your experience.
-
-Note: These only affect English</string>
-    <string name="prediction_settings_transformer_advanced_params_transformer_lm_strength">Transformer LM strength</string>
-    <string name="prediction_settings_transformer_advanced_params_transformer_lm_strength_subtitle">Lower value will make autocorrect behave more similarly to standard AOSP keyboard, while higher value will make it more dependent on the neural network
-Default is %1$s</string>
-    <string name="prediction_settings_transformer_advanced_params_transformer_lm_strength_always_transformer">always Transformer LM</string>
-    <string name="prediction_settings_transformer_advanced_params_transformer_lm_strength_always_binarydictionary">always BinaryDictionary</string>
-    <string name="prediction_settings_transformer_advanced_params_autocorrect_threshold">Autocorrect Threshold</string>
-    <string name="prediction_settings_transformer_advanced_params_autocorrect_threshold_subtitle">A lower threshold will autocorrect more often (and miscorrect more often), while a higher threshold will autocorrect less often (and miscorrect less often).
-Default is %1$s</string>
-
     <!-- Personal dictionary -->
     <string name="personal_dictionary_shortcut_error_symbols">Error: Shortcut may not start with symbol</string>
-    <plurals name="personal_dictionary_language_word_count">
-        <item quantity="one">%1$s word</item>
-        <item quantity="other">%1$s words</item>
-    </plurals>
     <string name="personal_dictionary_imported_additional_files_list_header">Files</string>
     <string name="personal_dictionary_import_additional_file">Import</string>
     <string name="personal_dictionary_words_list_header">Words</string>
