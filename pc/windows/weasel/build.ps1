@@ -63,7 +63,8 @@ try {
 
   # get-rime.ps1 asks GitHub's API for the release; a token avoids the runner's shared rate limit.
   if ($env:GITHUB_TOKEN) { "`$global:authorization = '$env:GITHUB_TOKEN'" | Set-Content "$HOME\.get-rime.conf.ps1" }
-  .\get-rime.ps1 -use dev -tag $RimeTag
+  # Its own process: get-rime.ps1 isn't written for strict mode.
+  Invoke-Checked 'get-rime' { pwsh -NoProfile -File .\get-rime.ps1 -use dev -tag $RimeTag }
   if (-not (Test-Path lib64\rime.lib)) { throw "get-rime.ps1 didn't fetch librime $RimeTag" }
 
   $env:RELEASE_BUILD = '1'
