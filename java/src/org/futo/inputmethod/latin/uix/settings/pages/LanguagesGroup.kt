@@ -9,6 +9,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -26,6 +27,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavHostController
+import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.map
 import org.futo.inputmethod.engine.general.ChineseIMESettings
 import org.futo.inputmethod.engine.general.ChineseOptions
 import org.futo.inputmethod.engine.general.JapaneseIMESettings
@@ -37,6 +40,7 @@ import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.stripExtensionsIfNeeded
 import org.futo.inputmethod.latin.toLocale
 import org.futo.inputmethod.latin.uix.SHOW_EMOJI_SUGGESTIONS
+import org.futo.inputmethod.latin.uix.dataStore
 import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.uix.settings.BottomSpacer
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
@@ -51,7 +55,6 @@ import org.futo.inputmethod.latin.uix.settings.SettingToggleSharedPrefs
 import org.futo.inputmethod.latin.uix.settings.Tip
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
-import kotlin.math.roundToInt
 
 // SebType's Languages group (#41): the globe order, then each language's own options on one screen.
 
@@ -64,7 +67,7 @@ private val GlobeShortNames = mapOf("en" to "EN", "zh" to "中", "ja" to "日")
 private fun languageOf(subtype: String) = Subtypes.getLocale(Subtypes.convertToSubtype(subtype)).language
 
 /** The languages that are on, in globe order, then the ones that are off. */
-private fun globeLanguages(subtypes: Set<String>): List<GlobeLanguage> {
+private fun globeLanguages(subtypes: List<String>): List<GlobeLanguage> {
     val all = SebTypeLanguages.map { (locale, layout) ->
         val canonical = Subtypes.subtypeToString(
             Subtypes.makeSubtype(locale.toLocale().stripExtensionsIfNeeded().toString(), layout))
@@ -75,14 +78,26 @@ private fun globeLanguages(subtypes: Set<String>): List<GlobeLanguage> {
     return on + all.filter { a -> on.none { it.language == a.language } }
 }
 
+/**
+ * The subtypes in globe order. FUTO's settings cache and setting flows compare sets, which ignores
+ * their order, so they miss a reorder.
+ */
+@Composable
+fun useSubtypesInOrder(): List<String> {
+    val context = LocalContext.current
+    val initial = useDataStoreValue(SubtypesSetting)
+    return remember { context.dataStore.data.map { (it[SubtypesSetting.key] ?: SubtypesSetting.default).toList() } }
+        .collectAsState(initial.toList()).value
+}
+
 /** "EN → 中 → 日", the languages the globe key cycles through. */
-fun globeOrderSummary(subtypes: Set<String>) =
+fun globeOrderSummary(subtypes: List<String>) =
     globeLanguages(subtypes).filter { it.subtype != null }.joinToString(" → ") { GlobeShortNames[it.language]!! }
 
 @Composable
 private fun GlobeOrder() {
     val context = LocalContext.current
-    val subtypes = useDataStoreValue(SubtypesSetting)
+    val subtypes = useSubtypesInOrder()
     val rows = remember(subtypes) { globeLanguages(subtypes) }
     val currentRows by rememberUpdatedState(rows)
     val onCount = rows.count { it.subtype != null }
@@ -93,13 +108,13 @@ private fun GlobeOrder() {
     // The set's order is the globe order; subtypes of other languages (none on a SebType install) stay last.
     fun save(newRows: List<GlobeLanguage>) {
         val ours = newRows.mapNotNull { it.subtype }
-        val new = (ours + (subtypes - ours.toSet())).toSet()
+        val new = (ours + (subtypes - ours.toSet())).distinct()
         // DataStore skips a value equal to the stored one, and sets with the same items are equal, so
         // a new order goes through a different set first. The keyboard only follows the active language.
-        if(new == subtypes && new.toList() != subtypes.toList()) {
+        if(new != subtypes && new.toSet() == subtypes.toSet()) {
             context.setSettingBlocking(SubtypesSetting.key, setOf(new.first()))
         }
-        context.setSettingBlocking(SubtypesSetting.key, new)
+        context.setSettingBlocking(SubtypesSetting.key, new.toSet())
     }
 
     fun move(language: String, by: Int) {

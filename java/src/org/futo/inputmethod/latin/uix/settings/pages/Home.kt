@@ -31,7 +31,6 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import org.futo.inputmethod.latin.R
-import org.futo.inputmethod.latin.SubtypesSetting
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.TextEditPopupActivity
@@ -51,7 +50,7 @@ import org.futo.inputmethod.latin.uix.theme.defaultThemeOption
 @Composable
 private fun HomeGroups(navController: NavHostController) {
     val context = LocalContext.current
-    val subtypes = useDataStoreValue(SubtypesSetting)
+    val subtypes = useSubtypesInOrder()
     val autocorrect = useSharedPrefsBool(Settings.PREF_AUTO_CORRECTION, true).value
     val learning = useSharedPrefsBool(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true).value
     val clipboard = useDataStoreValue(ClipboardHistoryEnabled)
