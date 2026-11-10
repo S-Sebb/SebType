@@ -681,4 +681,55 @@ def no_switch_in_japanese():
 check("ja-menu-has-no-zh-switch", no_switch_in_japanese, needs=["ja-chip"])
 
 
+def main_learns():
+    """main's build, fresh, learns 厉害 (rime-ice's dictionary, same schema id rime_ice)."""
+    adb("uninstall", PKG, check=False)
+    adb("install", main_apk, timeout=300)
+    wait_for(
+        "SebType to be listed",
+        lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+        30,
+    )
+    adb("shell", "ime", "enable", IME)
+    adb("logcat", "-c")
+    open_field()
+    tap_globe()  # a fresh install starts in EN
+    wait_set_up()
+    return learn_lower_candidate()
+
+
+def update_from_main():
+    adb("logcat", "-c")
+    adb("install", "-r", apk, timeout=300)
+    setup, install, _, _ = wait_set_up()
+    # main and this build ship the same bundled data version, which RimeIceBundle leaves installed;
+    # only a release that changes the data reinstalls it here (as BUMPED_APK does above).
+    data = f"data reinstalled in {install} ms" if install else "installed data kept"
+    wait_for(
+        "SebType to be listed again",
+        lambda: IME in adb("shell", "ime", "list", "-s"),
+        30,
+    )
+    try:
+        open_field()
+    except Fail:
+        open_field()
+    return f"main -> this build: {data}, set up in {setup} ms"
+
+
+if main_apk:
+    check("main-learns", main_learns)
+    check("update-from-main", update_from_main, needs=["main-learns"])
+    check(
+        "update-from-main-keeps-learned",
+        expect_first("lh", "厉害"),
+        needs=["update-from-main"],
+    )
+    check(
+        "update-from-main-chinese",
+        expect_first("ranh", "然后"),
+        needs=["update-from-main"],
+    )
+else:
+    result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
