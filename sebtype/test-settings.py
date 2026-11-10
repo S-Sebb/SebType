@@ -8,7 +8,8 @@ Opens every settings screen from the home screen (one screenshot each, settings-
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
 words in Chinese and Japanese. Labels match the emulator's Chinese UI or English. One line per check
-appended to RESULTS; checks that depend on an earlier one SKIP when it failed.
+appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
+stop the next.
 """
 
 import os
@@ -23,12 +24,8 @@ PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
-NOT_CANDIDATES = (
-    "正在准备中文",
-    "Preparing Chinese",
-    "中文输入启动失败",
-    "Chinese input failed",
-)
+PREPARING = ("正在准备中文", "Preparing Chinese")
+NOT_CANDIDATES = (*PREPARING, "中文输入启动失败", "Chinese input failed")
 log_path = os.path.join(logdir, "test-settings.log")
 
 
@@ -209,9 +206,16 @@ def to_language(probe, word):
         try:
             open_field()
             type_keys(probe)
-            # Chinese sets itself up the first time it comes up, with no candidates meanwhile.
-            if word in wait_for("candidates", lambda: candidates(nodes()), 300, 3):
-                return
+            # Chinese sets itself up the first time it comes up, showing its notice meanwhile.
+            end = time.time() + 300
+            while True:
+                ns = nodes()
+                if word in candidates(ns):
+                    return
+                preparing = any(n[0].startswith(PREPARING) for n in ns)
+                if not preparing or time.time() > end:
+                    break
+                time.sleep(3)
             open_field()
             bottom_key(3)
             time.sleep(2)
@@ -246,7 +250,10 @@ def find_all(ns, texts):
         (
             (y, x)
             for label, x, y, top, cls in ns
-            if any(label == t or label.startswith((t + ",", t + "\n")) for t in texts)
+            if any(
+                label == t or label.startswith((t + ".", t + ",", t + "\n"))
+                for t in texts
+            )
         )
     )
 
@@ -269,17 +276,11 @@ def tap_text(texts, nth=0):
     raise Fail(f"no {texts[0]} on the screen")
 
 
-def back():
-    adb("shell", "input", "keyevent", "KEYCODE_BACK")
-    time.sleep(1.2)
-
-
 def open_settings():
-    adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
-    adb("shell", "am", "force-stop", PKG)
-    # Without SebType chosen as the keyboard the app opens on its setup screen.
+    # A new task each time, so it opens on the home screen. Without SebType chosen as the keyboard
+    # the app opens on its setup screen instead.
     adb("shell", "ime", "set", IME)
-    adb("shell", "am", "start", "-W", "-n", SETTINGS)
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", SETTINGS)
     wait_for("the settings home screen", lambda: screen_has(HOME["about"]), 30)
 
 
@@ -303,17 +304,9 @@ def toggle(path, texts):
     tap_text(texts)
 
 
-passed = {}
-
-
-def check(name, fn, needs=()):
-    missing = [n for n in needs if not passed.get(n)]
-    if missing:
-        result("SKIP", name, f"needs {', '.join(missing)}")
-        return
+def check(name, fn):
     try:
         detail = fn()
-        passed[name] = True
         result("PASS", name, detail or "")
     except (
         Fail,
@@ -417,7 +410,11 @@ def drag_globe_row(src, dst):
     rows = find_all(nodes(), labels("拖动以排序", "Drag to reorder"))
     if len(rows) < 3:
         raise Fail(f"{len(rows)} drag handles on the languages screen")
-    (y1, x), (y2, _) = rows[src], rows[dst]
+    (y1, _), (y2, _) = rows[src], rows[dst]
+    # The handle's label merges into its row's, so this node is the row; the handle is its icon, in
+    # the first tenth of the screen's width.
+    width = int(re.search(r"(\d+)x\d+", adb("shell", "wm", "size")).group(1))
+    x = width // 10
     adb(
         "shell",
         "input",
@@ -466,7 +463,7 @@ def full_width_punctuation():
 
 
 def is_emoji(text):
-    return any(ord(c) >= 0x1F300 or 0x2600 <= ord(c) < 0x27C0 for c in text)
+    return any(0x1F300 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF for c in text)
 
 
 def emoji_candidates():
@@ -549,10 +546,10 @@ def forget_japanese():
 
 adb("logcat", "-c")
 check("settings-screens", every_screen)
-check("settings-globe-order", globe_order, needs=["settings-screens"])
-check("settings-zh-punctuation", full_width_punctuation, needs=["settings-screens"])
-check("settings-zh-emoji", emoji_candidates, needs=["settings-screens"])
-check("settings-zh-my-words", my_words, needs=["settings-screens"])
-check("settings-zh-forget", forget_chinese, needs=["settings-screens"])
-check("settings-ja-forget", forget_japanese, needs=["settings-screens"])
+check("settings-globe-order", globe_order)
+check("settings-zh-punctuation", full_width_punctuation)
+check("settings-zh-emoji", emoji_candidates)
+check("settings-zh-my-words", my_words)
+check("settings-zh-forget", forget_chinese)
+check("settings-ja-forget", forget_japanese)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

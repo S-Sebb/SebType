@@ -26,7 +26,7 @@
     <string name="sebtype_settings_about">About</string>
     <string name="sebtype_settings_about_subtitle">Version, help, support FUTO, licences</string>
     <string name="sebtype_settings_globe_order">Globe order</string>
-    <string name="sebtype_settings_globe_order_tip">The globe key switches between the languages that are on, in this order. Drag ⋮⋮ to reorder.</string>
+    <string name="sebtype_settings_globe_order_tip">The globe key switches between the languages that are on, in this order. Drag ≡ to reorder.</string>
     <string name="sebtype_settings_drag">Drag to reorder</string>
     <string name="sebtype_settings_zh_engine">rime-ice pinyin</string>
     <string name="sebtype_settings_ja_engine">Mozc romaji</string>

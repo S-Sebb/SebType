@@ -93,7 +93,13 @@ private fun GlobeOrder() {
     // The set's order is the globe order; subtypes of other languages (none on a SebType install) stay last.
     fun save(newRows: List<GlobeLanguage>) {
         val ours = newRows.mapNotNull { it.subtype }
-        context.setSettingBlocking(SubtypesSetting.key, (ours + (subtypes - ours.toSet())).toSet())
+        val new = (ours + (subtypes - ours.toSet())).toSet()
+        // DataStore skips a value equal to the stored one, and sets with the same items are equal, so
+        // a new order goes through a different set first. The keyboard only follows the active language.
+        if(new == subtypes && new.toList() != subtypes.toList()) {
+            context.setSettingBlocking(SubtypesSetting.key, setOf(new.first()))
+        }
+        context.setSettingBlocking(SubtypesSetting.key, new)
     }
 
     fun move(language: String, by: Int) {

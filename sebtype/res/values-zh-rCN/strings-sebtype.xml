@@ -19,7 +19,7 @@
     <string name="sebtype_settings_about">关于</string>
     <string name="sebtype_settings_about_subtitle">版本、帮助、支持 FUTO、许可</string>
     <string name="sebtype_settings_globe_order">地球键顺序</string>
-    <string name="sebtype_settings_globe_order_tip">地球键按此顺序在已开启的语言之间切换。拖动 ⋮⋮ 可调整顺序。</string>
+    <string name="sebtype_settings_globe_order_tip">地球键按此顺序在已开启的语言之间切换。拖动 ≡ 可调整顺序。</string>
     <string name="sebtype_settings_drag">拖动以排序</string>
     <string name="sebtype_settings_zh_engine">雾凇拼音</string>
     <string name="sebtype_settings_ja_engine">Mozc 罗马字</string>
