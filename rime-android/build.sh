@@ -43,6 +43,16 @@ fi
 TASKS=(":rime:assembleRelease")
 [[ -n "${RIME_ANDROID_GRADLE_TASKS:-}" ]] && read -ra TASKS <<<"$RIME_ANDROID_GRADLE_TASKS"
 
+# Native objects come from sccache when it is installed (CMake reads the launcher from the environment):
+# a rebuild takes 31 s instead of 130 s and gives the same aar (#58). The objects hold their source paths,
+# so they are shared only within this checkout (no SCCACHE_BASEDIRS, unlike sebtype/build.sh).
+if command -v sccache >/dev/null; then
+  SCCACHE_SERVER_UDS=$(mktemp -u /tmp/rime-android-sccache.XXXXXX)
+  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_SERVER_UDS
+  sccache --start-server >/dev/null
+  trap 'sccache --stop-server >/dev/null; rm -f "$SCCACHE_SERVER_UDS"' EXIT
+fi
+
 devq -w 3600 -m 30 -P "${DEVQ_RANK:-2}" -n "rime-android build" /tmp/agent-locks/sebtype/build.lock \
   bash -c 'cd "$1" && shift && ./gradlew --no-daemon --console=plain -PrimeAbis="$0" "$@"' \
   "$ABIS" "$WORK" "${TASKS[@]}"
