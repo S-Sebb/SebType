@@ -25,7 +25,11 @@ main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
-RIME = f"/storage/emulated/0/Android/data/{PKG}/files/rime"
+# Rime's data is private (#32): read through the emulator's root shell (su), as a release APK has no run-as.
+RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
+RIME_SHARED = f"/data/user/0/{PKG}/no_backup/rime/shared"
+# Where builds before #32 kept it; nothing may be left there.
+EXTERNAL = f"/storage/emulated/0/Android/data/{PKG}/files"
 FAILURE_NOTICES = (
     "中文输入启动失败，点此重试",
     "Chinese input failed to start. Tap to retry",
@@ -49,6 +53,14 @@ def adb(*args, timeout=120, check=True):
             f"adb {' '.join(args)} failed: {p.stderr.strip() or p.stdout.strip()}"
         )
     return p.stdout
+
+
+def root(cmd):
+    return adb("shell", f"su 0 {cmd}")
+
+
+def external_files():
+    return adb("shell", f"ls -A {EXTERNAL} 2>/dev/null || true").split()
 
 
 # The field app just supplies an exported text box; it stays installed, like the keyboards.
@@ -348,7 +360,7 @@ def fresh_install():
         raise Fail(
             f"{runs} setups logged, deployed: {deployed}; expected one, deploying"
         )
-    built = adb("shell", "ls", f"{RIME}/user/build").split()
+    built = root(f"ls {RIME_USER}/build").split()
     # The bundle comes compiled: no table, prism or reverse db may be built on the phone.
     rebuilt = [f for f in built if f.endswith(".bin")]
     if rebuilt:
@@ -431,13 +443,9 @@ def update_over_itself():
 def failure_is_visible():
     # Break the installed data behind the app's back: its compiled dictionary goes.
     adb("shell", "am", "force-stop", PKG)
-    adb(
-        "shell",
-        "rm",
-        "-rf",
-        f"{RIME}/shared/rime_ice.dict.yaml",
-        f"{RIME}/shared/build/rime_ice.table.bin",
-        f"{RIME}/user/build",
+    root(
+        f"rm -rf {RIME_SHARED}/rime_ice.dict.yaml {RIME_SHARED}/build/rime_ice.table.bin "
+        f"{RIME_USER}/build"
     )
     adb("logcat", "-c")
     open_field()
@@ -461,6 +469,16 @@ def failure_recovers():
 
 
 check("first-install", fresh_install)
+
+
+def nothing_external():
+    left = external_files()
+    if left:
+        raise Fail(f"external files: {left}")
+    return "nothing under the app's external files"
+
+
+check("fresh-nothing-external", nothing_external, needs=["first-install"])
 check("ranh", expect_first("ranh", "然后"), needs=["first-install"])
 check("lh-in-bar", lh_in_top, needs=["first-install"])
 check("rq-date", rq_date, needs=["first-install"])
@@ -717,9 +735,18 @@ def update_from_main():
     return f"main -> this build: {data}, set up in {setup} ms"
 
 
+def moved_from_external():
+    """main kept Rime's data in external storage; this build moved it into private storage (#32)."""
+    if "rime_ice.userdb" not in root(f"ls {RIME_USER}").split():
+        raise Fail(f"no rime_ice.userdb in {RIME_USER}")
+    nothing_external()
+    return "learned words in private storage, nothing left in external files"
+
+
 if main_apk:
     check("main-learns", main_learns)
     check("update-from-main", update_from_main, needs=["main-learns"])
+    check("update-from-main-moved", moved_from_external, needs=["update-from-main"])
     check(
         "update-from-main-keeps-learned",
         expect_first("lh", "厉害"),

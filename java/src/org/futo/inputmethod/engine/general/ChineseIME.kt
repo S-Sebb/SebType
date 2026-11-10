@@ -57,6 +57,7 @@ import org.futo.inputmethod.latin.utils.ZipFileHelper
 import org.futo.inputmethod.latin.utils.toEnumOrNull
 import org.futo.inputmethod.v2keyboard.KeyboardLayoutSetV2
 import java.io.File
+import java.io.IOException
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
@@ -198,15 +199,42 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             'z' to '⼄',
         )
 
+        /** Rime's user data (learned words, settings patches), in private storage (#32) */
         @JvmStatic
-        fun getRimeDir(context: Context) = context.getExternalFilesDir("rime")
-                ?: throw IllegalStateException("Failed to access ExternalFilesDir!")
+        fun getRimeDir(context: Context): File = File(context.filesDir, "rime").also {
+            if(!it.exists()) moveFromExternalStorage(context, it)
+        }
 
+        /** The bundled data ([RimeIceBundle]), installed again after every update: kept out of backups */
         @JvmStatic
-        fun getShared(context: Context) = File(getRimeDir(context), "shared")
+        fun getShared(context: Context) = File(context.noBackupFilesDir, "rime/shared")
 
         @JvmStatic
         fun getUser(context: Context) = File(getRimeDir(context), "user")
+
+        /**
+         * SebType (#32): Rime's data used to be in external storage, which other apps and tools can read.
+         * Its user dir moves to [dir] once; the shared data stays behind, as the bundle installs it again.
+         */
+        @Synchronized
+        private fun moveFromExternalStorage(context: Context, dir: File) {
+            if(dir.exists()) return
+            // Creates the external files dir if missing: removed again below while empty.
+            val external = context.getExternalFilesDir(null)
+            val old = external?.let { File(it, "rime") }
+            val oldUser = old?.let { File(it, "user") }
+            if(oldUser?.isDirectory == true) {
+                // Copied (external storage is another file system) into a temporary dir renamed at the
+                // end, so an interrupted move is redone from the start.
+                val moving = File(context.filesDir, "rime.moving").apply { deleteRecursively() }
+                oldUser.copyRecursively(File(moving, "user"))
+                if(!moving.renameTo(dir)) throw IOException("Can't move Rime's data to $dir")
+            } else {
+                dir.mkdirs()
+            }
+            old?.deleteRecursively()
+            external?.delete()
+        }
 
         val PreviouslyExtractedDictionaryName = SettingsKey(
             stringPreferencesKey("ChineseDictionaryExtractedValue"),

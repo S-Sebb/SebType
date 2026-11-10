@@ -32,6 +32,9 @@ serial=$("$adb" devices | awk '/^emulator-[0-9]+\tdevice/ {print $1; exit}')
 lock=/tmp/agent-locks/devices/emulator-$("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r').lock # shared by all projects
 [[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] ||
   { echo "preflight: emulator $serial can't run arm64 apps"; exit 1; }
+# Rime's data is in the app's private storage (#32), which the checks read as root.
+[[ $("$adb" -s "$serial" shell su 0 id -u | tr -d '\r') == 0 ]] ||
+  { echo "preflight: emulator $serial has no root shell (su), needed to read the app's Rime data"; exit 1; }
 apk=$(sebtype/build.sh release 2> "$out/build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/build.log"; exit 1; }
 # The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.

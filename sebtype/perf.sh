@@ -147,7 +147,7 @@ probe_len() { # length of what "ka " types into a fresh test field: 3 in EN, 1 o
   sh rm -f /data/local/tmp/sebtype-ui.xml
   echo "${#text}"
 }
-rime_dir=/sdcard/Android/data/$pkg/files/rime
+rime_user=/data/user/0/$pkg/files/rime/user # private (#32): readable only from a root shell (emulator)
 
 # ---- Phases ----
 phase_install() {
@@ -195,7 +195,9 @@ phase_zh-deploy() { # switch to 中: the first-run Chinese setup (install and ch
   echo "setup_ms=$(sed -n 's/.*Set up rime_ice in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
   echo "install_ms=$(sed -n 's/.*Installed the bundled [^0-9]* in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
   echo "pss_peak_kb=$peak"
-  echo "built_on_device=$(sh "ls $rime_dir/user/build" | grep -c '\.bin$')" # tables or prisms compiled here
+  if [[ $(sh su 0 id -u 2>/dev/null) == 0 ]]; then # tables or prisms compiled here
+    echo "built_on_device=$(sh su 0 ls "$rime_user/build" | grep -c '\.bin$')"
+  fi
 }
 phase_zh() {
   . "$work/geometry"
@@ -277,7 +279,8 @@ phase_sizes() { # needs a root shell (emulator): app code, internal data, extern
   [[ $(sh id -u) == 0 ]] || { echo "skip=needs a root adb shell to read app data (emulator: adb root)"; return; }
   echo "code_mb=$(sh du -sm "$(dirname "$(sh pm path "$pkg" | head -1 | cut -d: -f2)")" | cut -f1)"
   echo "data_mb=$(sh du -sm "/data/data/$pkg" | cut -f1)"
-  echo "external_mb=$(sh du -sm "/sdcard/Android/data/$pkg" | cut -f1)"
+  local ext; ext=$(sh du -sm "/sdcard/Android/data/$pkg" 2>/dev/null | cut -f1)
+  echo "external_mb=${ext:-0}" # none since #32
 }
 
 device_steps() { # under the device lock
