@@ -1,13 +1,15 @@
 # Chinese benchmark sets (#40)
 
 Each line is `keys<TAB>expected`: what is typed and the text that should come first. 800 items per
-set, drawn with seed 40; the pinyin comes from pypinyin. None of this text is in any dictionary tested.
+set, drawn with seed 40 (the typo sets: `make-typos.py`, seed 46, from the even clauses; the odd ones are for tuning); the pinyin comes from pypinyin. None of this text is in any dictionary tested.
 
 | Set | What is typed |
 |---|---|
 | `*-sent` | Han clauses of 2–12 characters in full pinyin (`zhangdaobingchadehoujinertaidale` → 长岛冰茶的后劲儿太大了) |
 | `*-abbr` | 2–4-character words as initials (`zd` → 知道), sampled by occurrence |
 | `*-partial` | full pinyin except the last syllable's initial (`ranh` → 然后) |
+| `typo-phone` | a `*-sent` clause of 2–8 characters with a phone typo (#46): touch slips on SebType's key grid, missing, extra and swapped letters in the shares measured on phones; 10 % have two (`jaiyoumeiyoi` → 还有没有) |
+| `typo-pc` | the same with a PC typo: ANSI neighbour keys, missing, extra and swapped letters in the desktop shares (`xinfqiumingshi` → 星球名是) |
 
 Sources:
 

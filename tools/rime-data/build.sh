@@ -38,7 +38,7 @@ OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceef
 # Must equal the librime that rime-android builds, so the phone takes the compiled files as they are.
 . rime-android/versions.sh
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=3
+BUNDLE_REVISION=4
 
 out=${1:-build/sebtype-assets}/rime
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
@@ -47,7 +47,7 @@ libopencc=/usr/lib64/libopencc.so.1.1
 headers=$cache/librime-$LIBRIME_VERSION-headers
 mkdir -p "$cache" "$out"
 
-key=$(cat "$0" "$here/deploy.c" rime-android/versions.sh | sha256sum | cut -c1-16)
+key=$(cat "$0" "$here/deploy.c" "$here/sebtype_typo.lua" rime-android/versions.sh | sha256sum | cut -c1-16)
 zip=$cache/rime-data-$key.zip
 version="rime-ice $RIME_ICE_VERSION + rime-frost $RIME_FROST_VERSION, sebtype $BUNDLE_REVISION"
 
@@ -91,6 +91,7 @@ EOF
   mkdir "$s/cn_dicts"
   for d in "${FROST_CORE[@]}"; do mv "$work/frost/cn_dicts/$d.dict.yaml" "$s/cn_dicts/"; done
   mv "$work/frost/zh-moqi.gram" "$s/"
+  cp "$here/sebtype_typo.lua" "$s/lua/"
   # rime-ice ships only its emoji table in opencc/; the 简/繁 switch needs OpenCC's s2t.
   printf '%s\n' '#include <string>' \
     'namespace opencc { void ConvertDictionary(const std::string &, const std::string &, const std::string &, const std::string &); }' \
@@ -123,6 +124,39 @@ for schema in schemas:
     s += ("\n# SebType: 白霜 (rime-frost)'s zh-moqi grammar\ngrammar:\n  language: zh-moqi\n"
           "  non_collocation_penalty: -4\n")
     open(p, "w", encoding="utf-8").write(s)
+
+# Typo correction (#46), full pinyin only (a double-pinyin key isn't a letter of the spelling):
+# librime's correction in a second translator over the same dictionary, ranked by sebtype_typo.lua.
+# The main translator stays exact; without its own user dictionary the second one neither learns
+# twice nor shows learned words corrected. Its comments carry the corrected spelling for the filter.
+p = f"{shared}/rime_ice.schema.yaml"
+s = open(p, encoding="utf-8").read()
+# Last among the translators: right after the main one, it stopped rime-ice's date translator (rq).
+for pattern, line in ((r"^  translators:\n(?:    - .*\n)+", "    - script_translator@corr  # SebType: typo corrections (#46)\n"),
+                      (r"^  filters:\n", "    - lua_filter@*sebtype_typo  # SebType: ranks typo corrections (#46)\n")):
+    s, n = re.subn(pattern, lambda m: m.group(0) + line, s, count=1, flags=re.M)
+    assert n == 1, f"{pattern} not found in {p}"
+preedit = re.search(r"^  preedit_format:.*\n((?:    .*\n)+)", s, re.M)
+assert preedit and "\ncorr:" not in s, p
+s += f"""
+# SebType: typo corrections (#46)
+corr:
+  dictionary: rime_ice
+  enable_correction: true
+  enable_user_dict: false
+  enable_word_completion: false
+  contextual_suggestions: false
+  initial_quality: -1
+  spelling_hints: 100
+  always_show_comments: true
+  comment_format:
+    - xform/^/〔/
+    - xform/$/〕/
+  preedit_format:
+{preedit.group(1)}sebtype_typo:
+  keyboard: phone  # pc on Linux and Windows (their setup scripts)
+"""
+open(p, "w", encoding="utf-8").write(s)
 
 p = f"{shared}/default.yaml"
 s = open(p, encoding="utf-8").read()
@@ -172,7 +206,9 @@ Changes to rime-ice: its dictionary (cn_dicts/) is replaced by rime-frost's cn_d
 under the name rime_ice (rime_ice.dict.yaml is rime-frost's rime_frost.dict.yaml without its
 cn_dicts_cell imports); the schemas ${SCHEMAS[*]} get rime-frost's zh-moqi grammar
 (non_collocation_penalty -4, contextual_suggestions off); default.yaml lists only those schemas;
-weasel.yaml, squirrel.yaml and the other schemas are left out. The dictionary sources are compiled
+weasel.yaml, squirrel.yaml and the other schemas are left out. rime_ice.schema.yaml gets SebType's
+typo correction: a second translator, corr, with librime's correction on, ranked by
+lua/sebtype_typo.lua (SebType's, GPL-3.0). The dictionary sources are compiled
 into build/ with librime $LIBRIME_VERSION and not included here: they are at the source links above.
 
 opencc/s2t.json, STPhrases.ocd2 and STCharacters.ocd2 are OpenCC $OPENCC_VERSION's (Apache License 2.0,

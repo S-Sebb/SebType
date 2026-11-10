@@ -136,6 +136,7 @@ Check switch-keys-off ($snapNow.Toggle -eq 'Hotkey=3 Language Hotkey=3 Layout Ho
 $desc = (Get-Item "$tipKey\LanguageProfile\0x00000804\{3D02CAB6-2B8E-4781-BA20-1C9267529467}").GetValue('Description')
 Check label-zhongwen ($desc -eq '中文') "Win+Space shows '$desc'"
 Check schema-name-zhongwen ([bool](Select-String -Quiet -Path "$rimeUser\rime_ice.custom.yaml" -Pattern '^  schema/name: 中文')) ''
+Check typo-keyboard-pc ([bool](Select-String -Quiet -Path "$rimeUser\rime_ice.custom.yaml" -Pattern '^  sebtype_typo/keyboard: pc')) ''
 Check rime-deployed (Test-Path "$rimeUser\build\rime_ice.schema.yaml") "$rimeUser\build"
 Check weasel-server-running ([bool](Get-Process WeaselServer -ErrorAction SilentlyContinue)) ''
 
