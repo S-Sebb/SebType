@@ -207,7 +207,7 @@ def type_keys(text):
 
 def open_field(kind=None):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
-    a password, private, url or email field (#30)."""
+    a password, pin, private, url or email field (#30)."""
     global keyboard_rows
     keyboard_rows = 5 if kind in ("password", "visible-password", "email") else 4
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
@@ -443,6 +443,22 @@ def password_plain(kind):
     return run
 
 
+def pin_plain():
+    """#30: a PIN field's keypad types digits in 中, with no candidates: its left column's top three keys."""
+    open_field("pin")
+    left, top, right, bottom = keyboard_frame
+    for row in range(3):
+        y = top + (row + 0.5) * (bottom - top) / 4
+        adb("shell", "input", "tap", str(int(left + (right - left) / 8)), str(int(y)))
+    time.sleep(1.5)
+    ns = nodes()
+    got = candidates(ns)
+    field = [n[0] for n in ns if n[4] == "android.widget.EditText"]
+    if got or len(field) != 1 or len(field[0]) != 3:
+        raise Fail(f"tapped 3 keypad keys in a PIN field: bar {got[:6]}, field {field}")
+    return f"tapped 3 keypad keys in a PIN field: no candidates, field {field}"
+
+
 def no_learning_in(kind, code):
     """#30: a lower candidate picked in a kind field isn't learned: it stays where it was in a normal one."""
 
@@ -544,6 +560,7 @@ check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
 check("password-plain", password_plain("password"), needs=["first-install"])
+check("pin-plain", pin_plain, needs=["first-install"])
 check(
     "visible-password-plain",
     password_plain("visible-password"),

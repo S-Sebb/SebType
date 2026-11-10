@@ -14,7 +14,7 @@ import android.widget.EditText;
 /**
  * A plain text field for sebtype/perf.sh: it opens with the keyboard up, and with the extra
  * "chars" it starts with that much filler text, cursor at the end (the long-field case); the extra
- * "kind" makes it a password, visible-password, private, URL or email field.
+ * "kind" makes it a password, PIN, visible-password, private, URL or email field.
  * It records only the text length, as the Perfetto counter "sebperf_len", never the text.
  */
 public class PerfField extends Activity {
@@ -29,6 +29,8 @@ public class PerfField extends Activity {
         String kind = getIntent().getStringExtra("kind");
         if ("password".equals(kind)) {
             field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        } else if ("pin".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         } else if ("visible-password".equals(kind)) {
             field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         } else if ("private".equals(kind)) {
