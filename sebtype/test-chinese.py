@@ -90,6 +90,7 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
+keyboard_rows = 4  # 5 in password fields, which have a number row on top
 
 
 def nodes():
@@ -107,21 +108,22 @@ def nodes():
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
-        out += letter_keys(*frame)
+        out += letter_keys(*frame, keyboard_rows)
     return out
 
 
-def letter_keys(left, top, right, bottom):
+def letter_keys(left, top, right, bottom, rows=4):
     """SebType's letter keys aren't in the tree unless an accessibility service is on; their places
-    on its QWERTY: three letter rows over a bottom row, ten keys across, rows 2 and 3 indented."""
-    w, h = (right - left) / 10, (bottom - top) / 4
+    on its QWERTY: three letter rows over a bottom row (under a number row if rows is 5), ten keys
+    across, rows 2 and 3 indented."""
+    w, h = (right - left) / 10, (bottom - top) / rows
     rows = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
     return [
         (
             ch,
             int(left + (i + indent) * w),
-            int(top + (r + 0.5) * h),
-            int(top + r * h),
+            int(top + (r + rows - 3.5) * h),
+            int(top + (r + rows - 4) * h),
             "key",
         )
         for r, (letters, indent) in enumerate(rows)
@@ -421,17 +423,26 @@ def learned_survives_restart():
     return expect_first("lh", "厉害")()
 
 
-def password_plain():
-    # #30: Rime never sees keys typed into a password field: they go in as letters, with no candidates.
-    open_field("password")
-    type_keys("lh")
-    ns = nodes()
-    got, field = candidates(ns), [n[0] for n in ns if n[4] == "android.widget.EditText"]
-    if got or field not in (["lh"], ["••"]):
-        raise Fail(
-            f"typed lh into a password field: bar {got[:6]}, field shows {field}"
-        )
-    return f"typed lh into a password field: no candidates, field shows {field}"
+def password_plain(kind):
+    """#30: Rime never sees keys typed into a password field: no candidates, and (where the field shows
+    its text) the letters themselves, not a composition."""
+
+    def run():
+        global keyboard_rows
+        keyboard_rows = 5
+        try:
+            open_field(kind)
+            type_keys("lh")
+            ns = nodes()
+        finally:
+            keyboard_rows = 4
+        got = candidates(ns)
+        field = [n[0] for n in ns if n[4] == "android.widget.EditText"]
+        if got or (kind == "visible-password" and field != ["lh"]):
+            raise Fail(f"typed lh into a {kind} field: bar {got[:6]}, field {field}")
+        return f"typed lh into a {kind} field: no candidates, field {field}"
+
+    return run
 
 
 def no_learning_in(kind, code):
@@ -532,11 +543,16 @@ check("rq-date", rq_date, needs=["first-install"])
 check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
-check("password-plain", password_plain, needs=["first-install"])
-check("private-no-learning", no_learning_in("private", "sj"), needs=["first-install"])
-check("url-no-learning", no_learning_in("url", "sj"), needs=["first-install"])
-check("email-no-learning", no_learning_in("email", "sj"), needs=["first-install"])
-check("normal-still-learns", normal_still_learns("sj"), needs=["first-install"])
+check("password-plain", password_plain("password"), needs=["first-install"])
+check(
+    "visible-password-plain",
+    password_plain("visible-password"),
+    needs=["first-install"],
+)
+check("private-no-learning", no_learning_in("private", "wm"), needs=["first-install"])
+check("url-no-learning", no_learning_in("url", "wm"), needs=["first-install"])
+check("email-no-learning", no_learning_in("email", "wm"), needs=["first-install"])
+check("normal-still-learns", normal_still_learns("wm"), needs=["first-install"])
 # Before the update: a restart after it has once switched the keyboard to English (not rime-ice's doing).
 check("failure-visible", failure_is_visible, needs=["first-install"])
 check("failure-recovers", failure_recovers, needs=["failure-visible"])
