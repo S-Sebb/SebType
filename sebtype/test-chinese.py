@@ -479,10 +479,16 @@ check(
 )
 
 
-# The 简/繁 switch at the top of the keyboard menu (#36): Open Action Bar, then All Actions.
-def tap_label(label, timeout=10):
+# The 简/繁 switch at the top of the keyboard menu (#36): Open Action Bar, then All Actions. Their
+# labels follow the system language (English, Chinese or Japanese).
+OPEN_BAR = ("Open Action Bar", "打开操作栏", "アクションバーを開く")
+ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト")
+BACK = ("Back", "返回", "戻る")
+
+
+def tap_label(labels, timeout=10):
     n = wait_for(
-        label, lambda: next((n for n in nodes() if n[0] == label), None), timeout
+        labels[0], lambda: next((n for n in nodes() if n[0] in labels), None), timeout
     )
     adb("shell", "input", "tap", str(n[1]), str(n[2]))
     time.sleep(1)
@@ -490,12 +496,12 @@ def tap_label(label, timeout=10):
 
 def open_menu():
     open_field()
-    tap_label("Open Action Bar")
-    tap_label("All Actions")
+    tap_label(OPEN_BAR)
+    tap_label(ALL_ACTIONS)
 
 
 def close_menu():
-    tap_label("Back")
+    tap_label(BACK)
 
 
 def menu_switch():
@@ -658,6 +664,18 @@ check("ja-chip", to_japanese, needs=["first-install"])
 check("ja-katakana-candidate", katakana_candidate, needs=["ja-chip"])
 check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
 check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
+
+
+def no_switch_in_japanese():
+    open_menu()
+    sw = menu_switch()
+    close_menu()
+    if sw:
+        raise Fail("the menu shows the 简/繁 switch in 日")
+    return "日's menu has no 简/繁 switch"
+
+
+check("ja-menu-has-no-zh-switch", no_switch_in_japanese, needs=["ja-chip"])
 
 
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
