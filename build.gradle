@@ -262,7 +262,7 @@ android {
     }
 
     final def keystorePropertiesFile = rootProject.file("keystore.properties")
-    def releaseSigning = signingConfigs.debug
+    def releaseSigning = null
     if (keystorePropertiesFile.exists()) {
         final def keystoreProperties = new Properties()
         keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
@@ -272,8 +272,14 @@ android {
             storeFile rootProject.file(keystoreProperties['storeFile'])
             storePassword keystoreProperties['storePassword']
         }
-    } else {
-        project.logger.lifecycle('keystore.properties not found, APK may not be signed')
+    } else if (!project.hasProperty('unsignedRelease')) {
+        // SebType (#149): a release APK or bundle is signed with SebType's registered key or not built,
+        // never with java/shared.keystore (Android's public test key). Debug builds don't package these tasks.
+        gradle.taskGraph.whenReady { graph ->
+            if (graph.allTasks.any { it.name ==~ /package\w+Release(Bundle|UniversalApk)?/ }) {
+                throw new GradleException("Release builds need ${keystorePropertiesFile} with SebType's release key (sebtype/build.sh release writes it); pass -PunsignedRelease for an unsigned APK")
+            }
+        }
     }
 
 

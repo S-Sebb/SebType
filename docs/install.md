@@ -28,6 +28,10 @@ Releases are signed with SebType's own key, which never goes into the repo or a 
 Android only accepts updates signed with the same key: losing it means uninstalling SebType and
 reinstalling it, which wipes its learned words and settings.
 
+A release build (`assembleStableRelease` and the like) without `keystore.properties` stops with a
+line naming that file; it is never signed with Android's public test key (`java/shared.keystore`).
+`-PunsignedRelease` builds it unsigned instead.
+
 ## Publishing a release
 
 From a clean checkout of `origin/main`:
