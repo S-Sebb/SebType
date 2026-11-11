@@ -90,8 +90,9 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
-# Password and email fields get a number row on top, in a keyboard of the same height (SettingsValues).
-keyboard_rows = 4
+# Password and email fields get a number row on top (SettingsValues), 0.8 of a row high (LayoutEngine);
+# the keyboard grows by that much, so the other rows stay where they are.
+number_row = False
 
 
 def nodes():
@@ -109,22 +110,27 @@ def nodes():
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
-        out += letter_keys(*frame, keyboard_rows)
+        out += letter_keys(*frame)
     return out
 
 
-def letter_keys(left, top, right, bottom, n_rows=4):
+def row_y(top, bottom, row):
+    """The middle of a row of SebType's QWERTY: 0 to 2 are the letter rows, 3 the bottom row."""
+    h = (bottom - top) / (4 + 0.8 * number_row)
+    return int(top + (0.8 * number_row + row + 0.5) * h)
+
+
+def letter_keys(left, top, right, bottom):
     """SebType's letter keys aren't in the tree unless an accessibility service is on; their places
-    on its QWERTY: three letter rows over a bottom row (under a number row if n_rows is 5), ten keys
-    across, rows 2 and 3 indented."""
-    w, h = (right - left) / 10, (bottom - top) / n_rows
+    on its QWERTY: three letter rows over a bottom row, ten keys across, rows 2 and 3 indented."""
+    w = (right - left) / 10
     layout = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
     return [
         (
             ch,
             int(left + (i + indent) * w),
-            int(top + (r + n_rows - 3.5) * h),
-            int(top + (r + n_rows - 4) * h),
+            row_y(top, bottom, r),
+            row_y(top, bottom, r - 0.5),
             "key",
         )
         for r, (letters, indent) in enumerate(layout)
@@ -153,13 +159,13 @@ def tap_globe():
         "input",
         "tap",
         str(int(left + 3 * (right - left) / 10)),
-        str(int(top + 3.5 * (bottom - top) / 4)),
+        str(row_y(top, bottom, 3)),
     )
 
 
 def bar_row(ns):
-    k = keys(ns)
-    return (k["q"][2] - 130, k["q"][2]) if "q" in k else None
+    # Right above the keyboard, whose top is the number row's where it has one.
+    return (keyboard_frame[1] - 130, keyboard_frame[1]) if keys(ns) else None
 
 
 def candidates(ns):
@@ -208,8 +214,8 @@ def type_keys(text):
 def open_field(kind=None):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
     a password, pin, private, url or email field (#30)."""
-    global keyboard_rows
-    keyboard_rows = 5 if kind in ("password", "visible-password", "email") else 4
+    global number_row
+    number_row = kind in ("password", "visible-password", "email")
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
@@ -443,6 +449,20 @@ def password_plain(kind):
     return run
 
 
+def password_after_restart():
+    """#100: a keyboard that starts while a UI dump runs puts its keys in the tree, and these checks tap
+    by that tree. In a password keyboard, whose number row moves the letters down, it must show where
+    they are now, not where the keyboard before had them. Three restarts: the tree shows up in about
+    half of them."""
+    for _ in range(3):
+        restart_app()
+        wait_set_up()
+        for _ in range(3):
+            nodes()
+        password_plain("visible-password")()
+    return "typed lh into a visible-password field after each of 3 restarts"
+
+
 def pin_plain():
     """#30: a PIN field's keypad types digits in 中, with no candidates: its left column's top three keys."""
     open_field("pin")
@@ -561,6 +581,8 @@ check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("typo-corrected", expect_first("xoaoshi", "小时"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
+# Restarts 中 and waits for its setup, so it needs 中 working.
+check("password-after-restart", password_after_restart, needs=["ranh"])
 check("password-plain", password_plain("password"), needs=["first-install"])
 check("pin-plain", pin_plain, needs=["first-install"])
 check(
