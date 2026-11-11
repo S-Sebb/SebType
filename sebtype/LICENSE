@@ -5,3 +5,4 @@ SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
 - res-stable/raw/emoji_i18n.jsondlgz: FUTO's emoji names, trimmed; FUTO Source First License.
 - res-stable/values*/*-sebtype-overrides.xml: changed copies of FUTO's resources; FUTO Source First License.
 - res/font/sebtype_nunito_extrabold.ttf: Nunito, under the SIL Open Font License 1.1 (fonts/OFL-Nunito.txt).
+- res/font/sebtype_pixelify_semibold.ttf: Pixelify Sans, under the SIL Open Font License 1.1 (fonts/OFL-PixelifySans.txt).

@@ -25,5 +25,9 @@ data class AdvancedThemeOptions(
     val keyBorders: Boolean = false,
     val keyBackgrounds: KeyedBitmaps<KeyBackground>? = null,
     val font: Typeface? = null,
+    /** Key popups (press preview and long-press menu); [font] when null. */
+    val popupFont: Typeface? = null,
+    /** Drawn behind the first candidate. */
+    val candidateChip: Drawable? = null,
     val textSizeMultiplier: Float = 1.0f,
 )

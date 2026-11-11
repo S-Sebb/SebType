@@ -8,7 +8,8 @@ Opens every settings screen from the home screen (one screenshot each, settings-
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
 words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
-same look in the system's dark mode (#111); that FUTO's payment screen and its row in About carry
+same look in the system's dark mode (#111), its pink chip behind the first candidate and its pixel font
+in key popups (#28, settings-picnic-*.png in LOGDIR); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
 in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
@@ -153,36 +154,45 @@ def bottom_key(column):
     tap(int(left + column * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
 
 
-def candidates(ns):
+def candidate_spots(ns):
+    """(x, y, label) of the Chinese or Japanese candidates, left to right."""
     k = keys(ns)
     if "q" not in k:
         return []
     row = (k["q"][2] - 130, k["q"][2])
-    bar = [
-        (x, label)
+    return sorted(
+        (x, y, label)
         for label, x, y, top, cls in ns
         if row[0] < y < row[1]
         and cls == "android.widget.TextView"
         and label
         and not label.startswith(NOT_CANDIDATES)
         and label not in ("あ", "ア")
-    ]
-    return [label for x, label in sorted(bar)]
+    )
 
 
-def en_candidates(ns):
-    """English's suggestions, left to right: the bar's labelled nodes of any class, but its buttons."""
+def candidates(ns):
+    return [label for x, y, label in candidate_spots(ns)]
+
+
+def en_spots(ns):
+    """(x, y, label) of English's suggestions, left to right: the bar's labelled nodes of any class, but its buttons."""
     k = keys(ns)
     if "q" not in k:
         return []
     row = (k["q"][2] - 130, k["q"][2])
     controls = {"あ", "ア", *BAR_CONTROLS}
-    bar = {
-        (x, label)
-        for label, x, y, top, cls in ns
-        if row[0] < y < row[1] and label and label not in controls
-    }
-    return [label for x, label in sorted(bar)]
+    return sorted(
+        {
+            (x, y, label)
+            for label, x, y, top, cls in ns
+            if row[0] < y < row[1] and label and label not in controls
+        }
+    )
+
+
+def en_candidates(ns):
+    return [label for x, y, label in en_spots(ns)]
 
 
 def expanded_candidates():
@@ -813,8 +823,8 @@ PICNIC = [
 ]
 
 
-def picnic_share(box=None):
-    """The share of the screen (or of box, x1 y1 x2 y2) in Picnic's colours, from a raw screencap."""
+def picnic_share(box=None, colours=PICNIC):
+    """The share of the screen (or of box, x1 y1 x2 y2) in Picnic's colours (or colours), from a raw screencap."""
     raw = subprocess.run(
         ["adb", "-s", serial, "exec-out", "screencap"],
         capture_output=True,
@@ -832,7 +842,7 @@ def picnic_share(box=None):
             total += 1
             # 12 covers the cloth's RGB_565 rounding.
             near += any(
-                abs(r - pr) + abs(g - pg) + abs(b - pb) <= 12 for pr, pg, pb in PICNIC
+                abs(r - pr) + abs(g - pg) + abs(b - pb) <= 12 for pr, pg, pb in colours
             )
     return near / total
 
@@ -860,6 +870,48 @@ def dark_mode_picnic():
     if home < 0.4 or keyboard < 0.4:
         raise Fail(summary)
     return summary
+
+
+def chip_share(x, y):
+    """Picnic pink's share round a candidate's centre: high when its chip is behind it (#28)."""
+    return picnic_share((x - 40, y - 24, x + 40, y + 24), [PICNIC[4]])
+
+
+def hold_shot(key, name, wait):
+    """Holds key down for wait seconds, saves a screenshot (settings-<name>.png), lets go. In one shell
+    command, so a wait of 0 catches the press preview before the long-press menu opens."""
+    x, y, _ = keys(nodes())[key]
+    adb(
+        "shell",
+        f"input motionevent DOWN {x} {y}; sleep {wait}; screencap -p /sdcard/sebtype-shot.png;"
+        f" input motionevent UP {x} {y}",
+    )
+    adb(
+        "pull", "/sdcard/sebtype-shot.png", os.path.join(logdir, f"settings-{name}.png")
+    )
+
+
+def picnic_look():
+    """Picnic's pink chip behind the first candidate, and the pixel font in key popups (#28): the
+    chip is measured in Chinese; English's chip and the popups' font are for the eye, in the screenshots."""
+    to_language("ni", "你")
+    spots = candidate_spots(nodes())
+    shares = [chip_share(x, y) for x, y, _ in spots[:2]]
+    screenshot("picnic-candidates-zh")
+    hold_shot("h", "picnic-press-preview", 0)
+    hold_shot("e", "picnic-long-press", 1.5)
+    summary = f"Chinese first candidate {shares[0]:.0%} pink, second {shares[1]:.0%}"
+    # The chip's fill covers most of the box round the word; the cloth has no pink.
+    if shares[0] < 0.3 or shares[1] > 0.05:
+        raise Fail(summary)
+    try:  # only for the screenshot: the switch to English can be slow on a busy PC
+        to_language("hello", "hello")
+        shares = [chip_share(x, y) for x, y, _ in en_spots(nodes())]
+        screenshot("picnic-candidates-en")
+        english = "English " + ", ".join(f"{s:.0%}" for s in shares) + " pink"
+    except Fail as e:
+        english = f"no English screenshot: {e}"
+    return f"{summary}; {english}; screenshots settings-picnic-*.png"
 
 
 NOTE_ROW = labels(
@@ -1343,6 +1395,7 @@ check("settings-zh-forget", forget_chinese)
 check("settings-ja-forget", forget_japanese)
 check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
+check("settings-picnic-look", picnic_look)
 check("settings-payment-note", payment_note)
 check("settings-smooth-scrolling", smooth_scrolling)
 

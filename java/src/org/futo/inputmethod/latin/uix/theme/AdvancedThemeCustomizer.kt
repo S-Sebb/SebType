@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import org.futo.inputmethod.keyboard.Key
 import org.futo.inputmethod.keyboard.Keyboard
+import org.futo.inputmethod.keyboard.MoreKeysKeyboard
 import org.futo.inputmethod.keyboard.internal.KeyDrawParams
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
 import org.futo.inputmethod.latin.uix.KeyboardColorScheme
@@ -139,6 +140,8 @@ class AdvancedThemeMatcher(
         } ?: key.selectHintTextColor(drawableProvider, params)
 
         val textSize = key.selectTextSize(params).toFloat() * theme.textSizeMultiplier
+        val selectTypeface: (Typeface) -> Typeface = if (keyboard is MoreKeysKeyboard)
+            drawableProvider::selectPopupTypeface else drawableProvider::selectKeyTypeface
         val hintSize = key.selectHintTextSize(drawableProvider, params).toFloat()
 
         return KeyDrawingConfiguration(
@@ -153,8 +156,8 @@ class AdvancedThemeMatcher(
             hintColor = hintColor,
             textSize = textSize,
             hintSize = hintSize,
-            textTypeface = drawableProvider.selectKeyTypeface(key.selectTypeface(params)),
-            hintTypeface = drawableProvider.selectKeyTypeface(key.selectHintTypeface(drawableProvider, params)),
+            textTypeface = selectTypeface(key.selectTypeface(params)),
+            hintTypeface = selectTypeface(key.selectHintTypeface(drawableProvider, params)),
             outline = outline
         )
     }

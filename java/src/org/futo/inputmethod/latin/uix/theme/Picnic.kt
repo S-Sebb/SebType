@@ -137,9 +137,12 @@ private fun cloth(context: Context): Bitmap {
     return bitmap
 }
 
+/** The key frames' line: 2 dp in whole device pixels. */
+private fun frameWidth(density: Float) = maxOf(1, (2 * density).roundToInt())
+
 private fun keyBackgrounds(context: Context): KeyedBitmaps<KeyBackground> {
     val density = context.resources.displayMetrics.density
-    val w = maxOf(1, (2 * density).roundToInt())
+    val w = frameWidth(density)
     val cream = PixelFrame(Picnic.surface, Picnic.white, Picnic.line, w, true)
     val pinkKey = PixelFrame(Picnic.pink, Picnic.white, Picnic.buttonLow, w, true)
     val berry = PixelFrame(Picnic.key, Picnic.keyHigh, Picnic.keyLow, w, true)
@@ -226,6 +229,10 @@ fun picnicColors(context: Context): KeyboardColorScheme {
                 textSizeMultiplier = 0.85f,
                 keyBackgrounds = keyBackgrounds(context),
                 font = ResourcesCompat.getFont(context, R.font.sebtype_nunito_extrabold),
+                // SebChat's button font.
+                popupFont = ResourcesCompat.getFont(context, R.font.sebtype_pixelify_semibold),
+                // SebChat's chip: a flat pink frame, no bevel or shadow.
+                candidateChip = PixelFrame(Picnic.pink, null, null, frameWidth(m.density), false),
             )
         )).also { cached = size to it }
     }
