@@ -82,22 +82,66 @@ jobs:
           git archive -o "$env:RUNNER_TEMP\icons.tar" HEAD pc/icons
           tar -xf "$env:RUNNER_TEMP\icons.tar"
           if (-not (Test-Path pc/icons/32/ja-A.svg) -or -not (Test-Path pc/icons/32/ja-a.svg)) { throw 'ja-a and ja-A did not both check out' }
-      # The MSI depends only on these; a run with the same ones reuses it.
+      # The MSI depends only on these; a run with the same ones reuses it, a PR's run main's.
+      - id: inputs
+        run: "hash=${{ hashFiles('pc/windows/mozc/versions.psd1', 'pc/windows/mozc/*.patch', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/windows/mozc/apply_patch.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         id: cache
         with:
           path: out/mozc
-          key: mozc-msi-${{ hashFiles('pc/windows/mozc/versions.psd1', 'pc/windows/mozc/*.patch', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/windows/mozc/apply_patch.py', 'pc/icons/**') }}
+          key: mozc-msi-${{ steps.inputs.outputs.hash }}
       - uses: actions/setup-python@v5
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           python-version: '3.13'
+      # Building Qt takes most of a cold build (#154), and Qt depends only on Mozc's Qt pin and
+      # build_qt.py: the key is theirs, read from Mozc's source (fetched where build.ps1 looks for it).
+      - name: Qt's key
+        id: qt
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          $v = Import-PowerShellDataFile pc/windows/mozc/versions.psd1
+          New-Item -ItemType Directory -Force D:\m\dl, "$env:RUNNER_TEMP\qt" | Out-Null
+          $tarball = "D:\m\dl\$($v.MozcCommit)"
+          curl.exe -sSfL --retry 3 -o $tarball "https://codeload.github.com/google/mozc/tar.gz/$($v.MozcCommit)"
+          if ((Get-FileHash $tarball).Hash -ne $v.MozcSha256) { throw 'Mozc source: checksum mismatch' }
+          $tools = "mozc-$($v.MozcCommit)/src/build_tools"
+          tar -xzf $tarball -C "$env:RUNNER_TEMP\qt" --strip-components=3 "$tools/update_deps.py" "$tools/build_qt.py"
+          $pin = (Select-String -Path "$env:RUNNER_TEMP\qt\update_deps.py" -Pattern 'qtbase-everywhere-src').Line
+          Set-Content -NoNewline "$env:RUNNER_TEMP\qt\key" ($pin + (Get-Content -Raw "$env:RUNNER_TEMP\qt\build_qt.py"))
+          "key=mozc-qt-$((Get-FileHash "$env:RUNNER_TEMP\qt\key").Hash)" >> $env:GITHUB_OUTPUT
+      - uses: actions/cache@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: D:\m\mozc\src\third_party\qt
+          key: ${{ steps.qt.outputs.key }}
+      # Bazel's caches from main's last build, so a patch change recompiles only what it touches.
+      - uses: actions/cache/restore@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: D:\m\bazel-cache
+          key: mozc-bazel-${{ steps.inputs.outputs.hash }}
+          restore-keys: mozc-bazel-
       - name: Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          $msi = pc/windows/mozc/build.ps1 -WorkDir D:\m | Select-Object -Last 1
+          $start = Get-Date
+          $msi = pc/windows/mozc/build.ps1 -WorkDir D:\m -BazelCache D:\m\bazel-cache | Select-Object -Last 1
           New-Item -ItemType Directory -Force out/mozc | Out-Null
           Copy-Item $msi out/mozc/
+          # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and
+          # would only grow the saved cache.
+          $old = Get-ChildItem -Recurse -File D:\m\bazel-cache\disk | Where-Object LastWriteTime -lt $start
+          $old | Remove-Item
+          $left = Get-ChildItem -Recurse -File D:\m\bazel-cache | Measure-Object -Sum Length
+          Write-Host "Bazel cache: dropped $(@($old).Count) unused entries, kept $($left.Count) ($([int]($left.Sum / 1MB)) MB)"
+      # Only main's (and a manual run's) builds are saved: PRs build on main's, and each saved cache
+      # takes GBs of the repository's cache space.
+      - uses: actions/cache/save@v4
+        if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          path: D:\m\bazel-cache
+          key: mozc-bazel-${{ steps.inputs.outputs.hash }}
       - uses: actions/upload-artifact@v4
         with:
           name: sebtype-mozc
