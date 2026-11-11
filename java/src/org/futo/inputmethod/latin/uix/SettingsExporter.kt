@@ -183,6 +183,8 @@ object SettingsExporter {
     private const val sharedPreferencesFileName = "sharedPreferences.json"
     private const val clipboardFileName = ClipboardFileName
     private const val personalDictFileName = "userdictionary.json"
+    // Rime's installation_id names this phone's folder on the sync server (#12): never copied to another phone (#169)
+    private const val RIME_INSTALLATION = "user/installation.yaml"
 
     suspend fun exportSettings(
         context: Context,
@@ -290,6 +292,7 @@ object SettingsExporter {
         val rimeDir = ChineseIME.getRimeDir(context)
         rimeDir.walk().filter { it.isFile }.forEach { subfile ->
             val rel = subfile.toRelativeString(rimeDir)
+            if (rel == RIME_INSTALLATION) return@forEach
 
             val entry = ZipEntry("rime/$rel")
             zipOut.putNextEntry(entry)
@@ -359,7 +362,11 @@ object SettingsExporter {
                 }
             }
 
+            // This phone's Rime installation_id stays its own
+            val installation = File(ChineseIME.getRimeDir(context), RIME_INSTALLATION)
+            val ownInstallation = installation.takeIf { it.isFile }?.readBytes()
             ChineseIME.getRimeDir(context).deleteRecursively()
+            ownInstallation?.let { installation.parentFile!!.mkdirs(); installation.writeBytes(it) }
             mozcUserProfileDir(context).deleteRecursively()
         }
         while (entry != null) {
@@ -404,6 +411,10 @@ object SettingsExporter {
                 }
 
                 entry.name.startsWith("mozc/") -> zipIn.extractTo(mozcUserProfileDir(context), entry.name)
+
+                // Older exports carry another phone's installation_id, which would make the two phones
+                // share one sync folder (#169)
+                entry.name == "rime/$RIME_INSTALLATION" -> {}
 
                 // Older exports also carry rime/shared/, the bundled data, which installs itself
                 entry.name.startsWith("rime/user/") -> zipIn.extractTo(ChineseIME.getRimeDir(context), entry.name)

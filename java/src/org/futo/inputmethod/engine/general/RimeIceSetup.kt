@@ -206,32 +206,9 @@ object RimeIceSetup {
         }
     }
 
-    /**
-     * Rime's own sync (#11): merges the learned words of every `sync/<id>/rime_ice.userdb.txt` in the
-     * user dir into this device's, then writes this device's to `sync/<its id>/`. [prepare] runs first,
-     * with Rime set up. Returns whether the merge finished.
-     */
-    suspend fun syncUserData(context: Context, prepare: () -> Unit): Boolean {
-        if(!ensure(context, defaultConfiguration(context))) return false
-        return withContext(Dispatchers.IO) {
-            mutex.withLock {
-                prepare()
-                val rime = rime(context)
-                val t0 = SystemClock.elapsedRealtime()
-                var ok = rime.syncUserData()
-                // Rime merges in the background and takes sessions again once it is done.
-                if(ok) {
-                    ok = false
-                    while(SystemClock.elapsedRealtime() - t0 < DEPLOY_TIMEOUT_MS) {
-                        if(rime.selectSchema(RimeIceBundle.SCHEMA)) { ok = true; break }
-                        delay(300L)
-                    }
-                }
-                Log.w(TAG, "Synced user data in ${SystemClock.elapsedRealtime() - t0} ms, ${if(ok) "done" else "failed"}")
-                ok
-            }
-        }.also { stopWhenIdle(context) }
-    }
+    /** [ensure] for the settings' configuration from outside the keyboard; Rime stops once idle, as after [prepareInBackground]. */
+    suspend fun ensureNow(context: Context): Boolean =
+        ensure(context, defaultConfiguration(context)).also { stopWhenIdle(context) }
 
     // SebType (#56): Rime (its tables and engine) stops ENGINE_IDLE_MS after the Chinese keyboard was
     // last in use; the next ensure starts it again.
@@ -270,11 +247,13 @@ object RimeIceSetup {
      * Rime's sync (#12, [ChineseSync]): merges the other devices' snapshots in `user/sync/` into the
      * learned words and writes this device's snapshot. librime's sync ends every session, so meanwhile
      * Chinese shows as preparing: a keyboard that comes up waits in [ensure] and sets its options again
-     * on the new session. A Rime that wasn't running is started for it and stopped after.
+     * on the new session. A Rime that wasn't running is started for it and stopped after. [prepare]
+     * runs first, under the same lock (an import puts its snapshot in place, #11).
      */
-    suspend fun syncUserData(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun syncUserData(context: Context, prepare: () -> Unit = {}): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             if(!RimeIceBundle.isInstalled(context)) return@withLock false // Chinese never set up: nothing learned
+            prepare()
             val rime = rime(context)
             val wasStarted = started
             val before = mutableState.value

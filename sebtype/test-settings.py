@@ -1399,6 +1399,49 @@ def backup_clipboard():
     return "box off by default leaves it out; ticked includes it and import restores it"
 
 
+INSTALLATION = f"{FILES}/rime/user/installation.yaml"
+
+
+def installation_id():
+    m = re.search(
+        r'installation_id:\s*"?([^"\s]+)', root(f"cat {INSTALLATION} 2>/dev/null; true")
+    )
+    return m and m.group(1)
+
+
+def backup_installation_id():
+    """A backup carries no Rime installation_id, and an older backup's leaves the phone's alone: the id
+    names the phone's folder on the sync server, so two phones must never share one (#169)."""
+    to_language("ni", "你")  # Chinese set up: Rime has written its installation.yaml
+    own = wait_for("Rime's installation_id", installation_id, 60)
+    entries = export_backup(False, "sebtype-169.backup")
+    if "rime/user/installation.yaml" in entries:
+        raise Fail("the backup carries rime/user/installation.yaml")
+    # What an older backup from another phone looks like: made-up id.
+    old = os.path.join(logdir, "sebtype-169-old.backup")
+    with (
+        zipfile.ZipFile(os.path.join(logdir, "sebtype-169.backup")) as src,
+        zipfile.ZipFile(old, "w") as dst,
+    ):
+        for item in src.infolist():
+            dst.writestr(item, src.read(item))
+        dst.writestr(
+            "rime/user/installation.yaml",
+            'installation_id: "sebtype-test-other-phone"\n',
+        )
+    adb("push", old, "/sdcard/Download/sebtype-169-old.backup")
+    try:
+        import_backup("sebtype-169-old.backup")
+    finally:
+        adb("shell", "rm -f /sdcard/Download/sebtype-169*.backup", check=False)
+    after = installation_id()
+    if after != own:
+        raise Fail(
+            f"installation_id {own} became {after} after importing another phone's backup"
+        )
+    return f"no installation.yaml in the backup; {own} kept after importing one with another id"
+
+
 def backup_screenshots():
     """The backup screen in English and Japanese, whatever the system language."""
     try:
@@ -2029,5 +2072,6 @@ for name in PERSONAL_DATA:
 
 # Last, in en-US: importing a backup reinstalls the Chinese data in the background.
 check("settings-backup-clipboard", backup_clipboard)
+check("settings-backup-installation-id", backup_installation_id)
 check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

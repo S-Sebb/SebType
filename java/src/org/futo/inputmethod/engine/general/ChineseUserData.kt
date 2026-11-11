@@ -100,7 +100,8 @@ object ChineseLearnedWords {
     suspend fun merge(context: Context, snapshot: InputStream): Boolean {
         val dir = File(ChineseIME.getUser(context), "sync/sebtype-import")
         return try {
-            RimeIceSetup.syncUserData(context) {
+            // Set up first, so a phone that hasn't typed Chinese yet has learned words to merge into.
+            RimeIceSetup.ensureNow(context) && RimeIceSetup.syncUserData(context) {
                 dir.mkdirs()
                 File(dir, "rime_ice.userdb.txt").outputStream().use { snapshot.copyTo(it) }
             }
