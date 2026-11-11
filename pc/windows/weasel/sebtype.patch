@@ -75,7 +75,7 @@ index 3d5130c..8239b37 100644
    WriteRegStr HKLM "${REG_UNINST_KEY}" "HelpLink" "https://rime.im/docs/"
    WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoModify" 1
    WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoRepair" 1
-+  ; SebType: marks SebType's build, which pc/windows/setup-ime.ps1 checks
++  ; SebType: marks SebType's build, which pc/windows/setup/setup.ps1 checks
 +  WriteRegStr HKLM "${REG_UNINST_KEY}" "SebType" "${PRODUCT_VERSION}"
    WriteUninstaller "$INSTDIR\uninstall.exe"
  

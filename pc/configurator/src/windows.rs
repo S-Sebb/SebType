@@ -1,5 +1,5 @@
-//! Windows: SebType's Weasel (小狼毫) for Chinese and Mozc for Japanese, set up by pc/windows/setup-ime.ps1
-//! (later the installer, #73). Weasel's look is its weasel.custom.yaml; the languages are the Windows
+//! Windows: SebType's Weasel (小狼毫) for Chinese and Mozc for Japanese, set up by SebType's installer
+//! (pc/windows/setup, #73). Weasel's look is its weasel.custom.yaml; the languages are the Windows
 //! user language list.
 
 use crate::{patch, Candidates};
@@ -61,7 +61,7 @@ fn run(program: &str, args: &[&str]) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 fn powershell(script: &str) -> io::Result<String> {
-    // Windows PowerShell: its language cmdlets are the ones that can change the list (setup-ime.ps1).
+    // Windows PowerShell: its language cmdlets are the ones that can change the list (pc/windows/setup/setup.ps1).
     run(
         "powershell.exe",
         &[

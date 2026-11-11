@@ -1,5 +1,5 @@
-# SebType's Windows Mozc (#65): upstream Mozc at a release tag, plus SebType's patches
-# (*.patch) and the Set E icons. Read by build.ps1 and install.ps1. Bump SebTypeRelease when a patch or
+﻿# SebType's Windows Mozc (#65): upstream Mozc at a release tag, plus SebType's patches
+# (*.patch) and the Set E icons. Read by build.ps1. Bump SebTypeRelease when a patch or
 # the build changes.
 @{
     MozcVersion     = '3.35.6354'                                 # google/mozc tag, 2026-10-16
