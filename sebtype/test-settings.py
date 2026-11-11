@@ -904,19 +904,24 @@ def english_on_screen(patterns):
 
 
 def system_locale(tag):
-    """Sets the system language and restarts Android's framework, which applies it everywhere."""
-    root(f"setprop persist.sys.locale {tag}; stop; start")
-    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
-    wait_for(
-        f"Android back in {tag}",
-        lambda: (
-            f"-{config}-" in adb("shell", "am", "get-config", check=False)
-            and adb("shell", "pm", "path", PKG, check=False).strip()
-        ),
-        240,
-        3,
+    """Sets the system language and restarts Android's framework, which applies it everywhere.
+    Android takes it from the system_locales setting at start, so that is set with the property."""
+    root(
+        f"settings put system system_locales {tag}; setprop persist.sys.locale {tag}; stop; start"
     )
+    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
+
+    def in_tag():
+        out = adb("shell", "am", "get-config", check=False)
+        return (
+            re.search(rf"[ -]{config}-", out)
+            and adb("shell", "pm", "path", PKG, check=False).strip()
+        )
+
+    wait_for(f"Android back in {tag}", in_tag, 240, 3)
     time.sleep(10)  # the launcher and keyboards settle after the framework restart
+    if not in_tag():
+        raise Fail(f"Android went back from {tag} after it started")
 
 
 def japanese_ui():
