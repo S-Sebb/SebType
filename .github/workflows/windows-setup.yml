@@ -109,8 +109,8 @@ jobs:
           $tools = "mozc-$($v.MozcCommit)/src/build_tools"
           tar -xzf $tarball -C "$env:RUNNER_TEMP\qt" --strip-components=3 "$tools/update_deps.py" "$tools/build_qt.py"
           $pin = (Select-String -Path "$env:RUNNER_TEMP\qt\update_deps.py" -Pattern 'qtbase-everywhere-src').Line
-          Set-Content -NoNewline "$env:RUNNER_TEMP\qt\key" ($pin + (Get-Content -Raw "$env:RUNNER_TEMP\qt\build_qt.py"))
-          "key=mozc-qt-$((Get-FileHash "$env:RUNNER_TEMP\qt\key").Hash)" >> $env:GITHUB_OUTPUT
+          $key = $pin + (Get-Content -Raw "$env:RUNNER_TEMP\qt\build_qt.py")
+          "key=mozc-qt-$([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($key))))" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         if: steps.cache.outputs.cache-hit != 'true'
         with:
