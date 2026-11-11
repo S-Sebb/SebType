@@ -3,25 +3,27 @@
 # on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
-# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc and --undo-rime
-# put Fedora's fcitx5-mozc and fcitx5-rime back in place of SebType's builds. --undo-configurator removes the SebType Configurator app
+# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc, --undo-rime and
+# --undo-librime put Fedora's fcitx5-mozc, fcitx5-rime and librime back in place of SebType's builds.
+# --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
 # --undo-chinese-data puts Rime's folder back as it was before SebType's Chinese data.
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0 undo_rime=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
+dry=0 undo_icons=0 undo_mozc=0 undo_rime=0 undo_librime=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
   --undo-mozc) undo_mozc=1 ;;
   --undo-rime) undo_rime=1 ;;
+  --undo-librime) undo_librime=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
   --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-rime | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-rime | --undo-librime | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -119,25 +121,28 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's fcitx5-mozc (#66) and fcitx5-rime (#117): Fedora's packages rebuilt with SebType's patches
-# (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
+# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101): Fedora's packages rebuilt with
+# SebType's patches (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
 # shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
 source "$here/mozc/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=rime/versions.sh
 source "$here/rime/versions.sh"
 installed() { rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
 restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
-undo_build() { # package
+undo_build() { # package [packages built with it...]
   local now; now=$(installed "$1")
   if [[ $now == *.sebtype* ]]; then
-    echo "change: replace SebType's $1 $now with Fedora's"
-    sudo dnf distro-sync -y "$1"
+    echo "change: replace SebType's $* $now with Fedora's"
+    sudo dnf distro-sync -y "$@"
     restart_note "$1"
   fi
   exit 0
 }
+# librime's packages here: librime and its plugins, which must come from the same build
+librime_installed() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
 ((undo_mozc)) && undo_build fcitx5-mozc
 ((undo_rime)) && undo_build fcitx5-rime
+((undo_librime)) && { mapfile -t librime_pkgs < <(librime_installed); undo_build "${librime_pkgs[@]}"; }
 
 # 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; fcitx5-mozc is the Japanese engine.
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
@@ -152,12 +157,15 @@ if ((${#missing[@]})); then
   fi
 fi
 
-# 1b. SebType's fcitx5-mozc and fcitx5-rime in place of Fedora's, built from Fedora's source packages by
-# mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute). A Fedora
-# update to another version replaces them; then setup-ime.sh warns until <dir>/versions.sh follows it.
-# own_build <package> <version> <Fedora's release> <SebType's release> <rpm> <build script> <what it adds> <what is missing without it>
+# 1b. SebType's fcitx5-mozc, fcitx5-rime and librime in place of Fedora's, built from Fedora's source
+# packages by mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or
+# five). A Fedora update to another version replaces them; then setup-ime.sh warns until
+# <dir>/versions.sh follows it.
+# own_build <package> <version> <Fedora's release> <SebType's release> <build command> <what it adds>
+#   <what is missing without it> <rpm...>: the package's RPM first, then any built with it
 own_build() {
-  local pkg=$1 version=$2 fedora=$3 ours=$4 rpm=$5 build=$6 adds=$7 without=$8 now answer
+  local pkg=$1 version=$2 fedora=$3 ours=$4 build=$5 adds=$6 without=$7 now answer
+  shift 7
   now=$(installed "$pkg")
   case $now in
     "$version-$ours" | '') ;;
@@ -165,18 +173,26 @@ own_build() {
       if change "replace $pkg $now with SebType's build $ours, Fedora's plus $adds (asks before using sudo; undo: $0 --undo-${pkg#fcitx5-})"; then
         read -rp "Build SebType's $pkg if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
         if [[ $answer == [yY]* ]]; then
-          [[ -f $rpm ]] || "$build" >/dev/null
-          sudo dnf install -y "$rpm"
+          # shellcheck disable=SC2086  # word-split: a script and its arguments
+          [[ -f $1 ]] || $build >/dev/null
+          sudo dnf install -y "$@"
           busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "$pkg")"
         else warn "$pkg stays Fedora's: $without"; fi
       fi ;;
-    *) warn "$pkg $now isn't the version SebType's build is for ($version): $without until pc/linux/$(basename "$(dirname "$build")")/versions.sh follows it" ;;
+    *) warn "$pkg $now isn't the version SebType's build is for ($version): $without until pc/linux/$(basename "$(dirname "${build%% *}")")/versions.sh follows it" ;;
   esac
 }
-own_build fcitx5-mozc "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" "$SEBTYPE_RELEASE" "$MOZC_CACHE/rpms/$MOZC_RPM" "$here/mozc/build.sh" \
-  "a Caps Lock icon and Japanese's one menu switch, あ → ア" "Japanese shows a, not A, with Caps Lock on, and its menu keeps Mozc's input modes and tools"
-own_build fcitx5-rime "$RIME_VERSION" "$RIME_FEDORA_RELEASE" "$RIME_SEBTYPE_RELEASE" "$RIME_CACHE/$RIME_RPM" "$here/rime/build.sh" \
-  "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize"
+own_build fcitx5-mozc "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" "$SEBTYPE_RELEASE" "$here/mozc/build.sh" \
+  "a Caps Lock icon and Japanese's one menu switch, あ → ア" "Japanese shows a, not A, with Caps Lock on, and its menu keeps Mozc's input modes and tools" \
+  "$MOZC_CACHE/rpms/$MOZC_RPM"
+own_build fcitx5-rime "$RIME_VERSION" "$RIME_FEDORA_RELEASE" "$RIME_SEBTYPE_RELEASE" "$here/rime/build.sh" \
+  "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize" "$RIME_CACHE/$RIME_RPM"
+# librime's typo correction knows a PC keyboard's vertical neighbours too (rime/layout-model.patch), so
+# a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
+librime_rpms=()
+while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
+own_build librime "$LIBRIME_VERSION" "$LIBRIME_FEDORA_RELEASE" "$LIBRIME_SEBTYPE_RELEASE" "$here/rime/build.sh librime" \
+  "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.

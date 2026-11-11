@@ -1,0 +1,207 @@
+diff --git a/src/rime/algo/syllabifier.cc b/src/rime/algo/syllabifier.cc
+index d357762..5934548 100644
+--- a/src/rime/algo/syllabifier.cc
++++ b/src/rime/algo/syllabifier.cc
+@@ -58,13 +58,13 @@ int Syllabifier::BuildSyllableGraph(const string& input,
+     // see where we can go by advancing a syllable
+     vector<Prism::Match> matches;
+     set<SyllableId> exact_match_syllables;
++    Corrections corrections;
+     auto current_input = input.substr(current_pos);
+     prism.CommonPrefixSearch(current_input, &matches);
+     if (corrector_) {
+       for (auto& m : matches) {
+         exact_match_syllables.insert(m.value);
+       }
+-      Corrections corrections;
+       corrector_->ToleranceSearch(prism, current_input, &corrections, 5);
+       for (const auto& m : corrections) {
+         for (auto accessor = prism.QuerySpelling(m.first);
+@@ -109,7 +109,10 @@ int Syllabifier::BuildSyllableGraph(const string& input,
+             if (corrector_ && exact_match_syllables.find(m.value) ==
+                                   exact_match_syllables.end()) {
+               props.is_correction = true;
+-              props.credibility = kCorrectionCredibility;
++              auto c = corrections.find(m.value);
++              props.credibility = c != corrections.end()
++                                      ? c->second.credibility
++                                      : kCorrectionCredibility;
+             }
+             auto it = spellings.find(syllable_id);
+             if (it == spellings.end()) {
+diff --git a/src/rime/dict/corrector.cc b/src/rime/dict/corrector.cc
+index 85cac5c..b95b0e2 100644
+--- a/src/rime/dict/corrector.cc
++++ b/src/rime/dict/corrector.cc
+@@ -7,6 +7,7 @@
+ 
+ #include "corrector.h"
+ #include <algorithm>
++#include <cmath>
+ #include <numeric>
+ #include <queue>
+ #include <rime/schema.h>
+@@ -243,25 +244,74 @@ bool EditDistanceCorrector::Build(const Syllabary& syllabary,
+ EditDistanceCorrector::EditDistanceCorrector(const path& file_path)
+     : Prism(file_path) {}
+ 
++// SebType (#101): a PC hits a neighbour key, the vertical ones included, which
++// librime's own map above lacks: keys whose centres are within 1.25 key widths
++// on the staggered ANSI rows. Each slip costs -log P(typed | meant): the
++// substitution rate (Dhakal et al. 2018) shared among the meant key's
++// neighbours, as tools/rime-data/sebtype_typo.lua prices it.
++KeyboardModel KeyboardModel::Pc() {
++  const char* rows[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
++  const double stagger[] = {0, 0.25, 0.75};
++  const double kSubstitution = 0.0165, kReach = 1.25, kFar = 1e-3;
++  hash_map<char, std::pair<double, double>> pos;
++  for (int r = 0; r < 3; ++r)
++    for (int i = 0; rows[r][i]; ++i)
++      pos[rows[r][i]] = {i + stagger[r], r};
++  auto near = [&](char a, char b) {
++    double dx = pos[a].first - pos[b].first, dy = pos[a].second - pos[b].second;
++    return a != b && dx * dx + dy * dy <= kReach * kReach;
++  };
++  KeyboardModel model;
++  for (auto& [meant, p] : pos) {
++    double total = 0;
++    for (auto& [typed, q] : pos)
++      if (typed != meant)
++        total += near(meant, typed) ? 1 : kFar;
++    for (auto& [typed, q] : pos)
++      if (near(meant, typed))
++        model.slips[typed].push_back(
++            {meant, -std::log(kSubstitution) - std::log(1 / total)});
++  }
++  return model;
++}
++
+ void NearSearchCorrector::ToleranceSearch(const Prism& prism,
+                                           const string& key,
+                                           Corrections* results,
+                                           size_t threshold) {
+   if (key.empty())
+     return;
++  // One slip per syllable: with a PC's six-odd neighbours per key, librime's
++  // five would take the typo path from 7 to 14 ms per key (p95) for no gain.
++  if (model_)
++    threshold = 1;
+ 
+   using record = struct {
+     size_t node_pos;
+     size_t idx;
+     size_t distance;
+     char ch;
++    double credibility;
+   };
+ 
+   std::queue<record> queue;
+-  queue.push({0, 0, 0, key[0]});
+-  for (auto subst : keyboard_map[key[0]]) {
+-    queue.push({0, 0, 1, subst});
+-  }
++  // the meant keys a typed key may stand for
++  auto push_slips = [&](size_t node_pos, size_t idx, size_t distance,
++                        double credibility) {
++    if (!model_) {
++      for (auto subst : keyboard_map[key[idx]])
++        queue.push({node_pos, idx, distance + 1, subst, credibility});
++      return;
++    }
++    auto it = model_->slips.find(key[idx]);
++    if (it == model_->slips.end())
++      return;
++    for (const auto& [meant, cost] : it->second)
++      queue.push({node_pos, idx, distance + 1, meant, credibility - cost});
++  };
++  const double start = model_ ? 0 : Correction{}.credibility;
++  queue.push({0, 0, 0, key[0], start});
++  push_slips(0, 0, 0, start);
+   for (; !queue.empty(); queue.pop()) {
+     auto& rec = queue.front();
+     char ch = rec.ch;
+@@ -274,14 +324,13 @@ void NearSearchCorrector::ToleranceSearch(const Prism& prism,
+     if (val == -2)
+       continue;
+     if (val >= 0) {
+-      results->Alter(val, {rec.distance, val, rec.idx});
++      results->Alter(val, {rec.distance, val, rec.idx, rec.credibility});
+     }
+     if (rec.idx < key.size()) {
+-      queue.push({rec.node_pos, rec.idx, rec.distance, key[rec.idx]});
++      queue.push({rec.node_pos, rec.idx, rec.distance, key[rec.idx],
++                  rec.credibility});
+       if (rec.distance < threshold) {
+-        for (auto subst : keyboard_map[key[rec.idx]]) {
+-          queue.push({rec.node_pos, rec.idx, rec.distance + 1, subst});
+-        }
++        push_slips(rec.node_pos, rec.idx, rec.distance, rec.credibility);
+       }
+     }
+   }
+@@ -317,5 +366,12 @@ Corrector* CorrectorComponent::Create(const Ticket& ticket) noexcept {
+     return new NearSearchCorrector();
+   }
+ #endif
++  // SebType (#101): the PCs' layout model, set by their setup scripts.
++  string keyboard;
++  if (ticket.schema &&
++      ticket.schema->config()->GetString("sebtype_typo/keyboard", &keyboard) &&
++      keyboard == "pc")
++    return new NearSearchCorrector(
++        std::make_unique<KeyboardModel>(KeyboardModel::Pc()));
+   return new NearSearchCorrector();
+ }
+diff --git a/src/rime/dict/corrector.h b/src/rime/dict/corrector.h
+index f363419..f2f9154 100644
+--- a/src/rime/dict/corrector.h
++++ b/src/rime/dict/corrector.h
+@@ -35,6 +35,8 @@ struct Correction {
+   size_t distance;
+   SyllableId syllable;
+   size_t length;
++  // log P(typed | meant) of the syllable; the flat log(0.01) without a layout model
++  double credibility = -4.605170185988091;
+ };
+ class Corrections : public hash_map<SyllableId, Correction> {
+  public:
+@@ -42,8 +44,10 @@ class Corrections : public hash_map<SyllableId, Correction> {
+   /// \param syllable
+   /// \param correction
+   inline void Alter(SyllableId syllable, Correction correction) {
+-    if (find(syllable) == end() ||
+-        correction.distance < (*this)[syllable].distance) {
++    auto it = find(syllable);
++    if (it == end() || correction.distance < it->second.distance ||
++        (correction.distance == it->second.distance &&
++         correction.credibility > it->second.credibility)) {
+       (*this)[syllable] = correction;
+     }
+   };
+@@ -112,14 +116,26 @@ class EditDistanceCorrector : public Corrector, public Prism {
+                                          corrector::Distance threshold);
+ };
+ 
++// SebType (#101): which keys a slip lands on, and how likely it is.
++struct KeyboardModel {
++  // typed key -> (meant key, -log P(typed | meant)) for each likely slip
++  hash_map<char, vector<std::pair<char, double>>> slips;
++  static KeyboardModel Pc();
++};
++
+ class RIME_DLL NearSearchCorrector : public Corrector {
+  public:
+   NearSearchCorrector() = default;
++  explicit NearSearchCorrector(the<KeyboardModel> model)
++      : model_(std::move(model)) {}
+   ~NearSearchCorrector() override = default;
+   void ToleranceSearch(const Prism& prism,
+                        const string& key,
+                        corrector::Corrections* results,
+                        size_t tolerance) override;
++
++ private:
++  the<KeyboardModel> model_;
+ };
+ 
+ template <class... Cs>

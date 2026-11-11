@@ -32,19 +32,23 @@ cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
 mapfile -t rime_zips < <(for z in ~/.cache/sebtype/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
 ((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/.cache/sebtype"; exit 1; }
 rime_data=$out/rime-data/rime/rime-data.zip
-# SebType's fcitx5-rime and fcitx5-mozc (#66, #117), built once and cached. The private Fcitx5s below
-# run them without installing them: bwrap mounts their files over Fedora's for that Fcitx5 alone.
+# SebType's fcitx5-rime, librime and fcitx5-mozc (#66, #117, #101), built once and cached. The private
+# Fcitx5s below run them without installing them: bwrap mounts their files over Fedora's for that Fcitx5 alone.
 # shellcheck source=mozc/versions.sh
 source mozc/versions.sh
 # shellcheck source=rime/versions.sh
 source rime/versions.sh
 own=$out/own-builds; rm -rf "$own"; mkdir -p "$own"
-for b in "mozc/build.sh $MOZC_CACHE/rpms/$MOZC_RPM" "rime/build.sh $RIME_CACHE/$RIME_RPM"; do
-  read -r build rpm <<<"$b"
-  [[ -f $rpm ]] || "./$build" >/dev/null || { echo "preflight: pc/linux/$build failed"; exit 1; }
+for b in "$MOZC_CACHE/rpms/$MOZC_RPM mozc/build.sh" "$RIME_CACHE/$RIME_RPM rime/build.sh" \
+  "$(librime_rpm librime) rime/build.sh librime" "$(librime_rpm librime-lua) rime/build.sh librime"; do
+  read -r rpm build <<<"$b"
+  # shellcheck disable=SC2086  # word-split: a script and its arguments
+  [[ -f $rpm ]] || ./$build >/dev/null || { echo "preflight: pc/linux/$build failed"; exit 1; }
   rpm2cpio "$rpm" | (cd "$own" && cpio -idm --quiet) || { echo "preflight: can't unpack $rpm"; exit 1; }
 done
 own_fcitx=(bwrap --dev-bind / / --ro-bind "$own/usr/lib64/fcitx5/librime.so" /usr/lib64/fcitx5/librime.so
+  --ro-bind "$own/usr/lib64/librime.so.$LIBRIME_VERSION" "/usr/lib64/librime.so.$LIBRIME_VERSION"
+  --ro-bind "$own/usr/lib64/rime-plugins/librime-lua.so" /usr/lib64/rime-plugins/librime-lua.so
   --ro-bind "$own/usr/lib64/fcitx5/fcitx5-mozc.so" /usr/lib64/fcitx5/fcitx5-mozc.so
   --ro-bind "$own/usr/libexec/fcitx5-mozc" /usr/libexec/fcitx5-mozc)
 
@@ -82,6 +86,8 @@ case \"\$*\" in
   'dnf install -y '*/$RIME_RPM) echo -n '$RIME_VERSION-$RIME_SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
   'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_VERSION-$MOZC_FEDORA_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
   'dnf distro-sync -y fcitx5-rime') echo -n '$RIME_VERSION-$RIME_FEDORA_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
+  'dnf install -y '*/librime-*) for p in librime librime-lua; do echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\$p\"; done ;;
+  'dnf distro-sync -y librime librime-lua') for p in librime librime-lua; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
 stub systemctl 'cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
@@ -342,7 +348,8 @@ fi
 # must show 中文 in the popup, both the long one and the compact one (the reference PC's setting; it shows
 # the label the tray text uses), and the schema id must stay rime_ice. The same Fcitx5 checks the
 # Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app; and typo correction
-# (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first.
+# (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first, and so does xkaoshi (k for
+# the i above it), which only SebType's librime corrects (#101).
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
@@ -391,7 +398,7 @@ call(ic, IC, 'FocusIn')
 
 SHIFT, CTRL = 1, 4
 KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'space': (0x20, 65), 'Escape': (0xff1b, 9),
-        'f': (0x66, 41), 'F': (0x46, 41), **{c: (ord(c), code) for c, code in zip('houlaixsn', (43, 32, 30, 46, 38, 31, 53, 39, 57))}}
+        'f': (0x66, 41), 'F': (0x46, 41), **{c: (ord(c), code) for c, code in zip('houlaixsnk', (43, 32, 30, 46, 38, 31, 53, 39, 57, 45))}}
 def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
     taken = call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], state, release, 0)[0]
     wait(lambda: False, 0.03)
@@ -445,6 +452,7 @@ ctrl('f', shift=True)  # Shift may send the lowercase keysym
 check('simplified after the second Ctrl+Shift+F', houlai(), '后来')
 check('Ctrl+F reaches the app', ctrl('f'), False)
 check('typo xoaoshi gives 小时 first', first('xoaoshi'), '小时')
+check('typo xkaoshi (k under i, SebType librime) gives 小时 first', first('xkaoshi'), '小时')
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
@@ -613,27 +621,34 @@ rerun() {
 }
 check rerun-only-asks-for-missing-package rerun
 
-# SebType's fcitx5-mozc (#66) and fcitx5-rime (#117) replace Fedora's after a yes, a rerun leaves them,
-# --undo-mozc and --undo-rime bring back Fedora's once, and a package of another version is left alone
-# with a warning. The RPMs are placeholders, so nothing is built.
-own_swap() { # package version Fedora's-release rpm
-  local p=$1 v=$2 fedora=$3 rpm=$4 o
-  mkdir -p "${rpm%/*}"; : > "$rpm"; rm -f "$fake/sudo.log"
-  echo -n "$v-$fedora" > "$fake/$p"
+# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101) replace Fedora's after a yes, a
+# rerun leaves them, --undo-mozc, --undo-rime and --undo-librime bring back Fedora's once, and a package
+# of another version is left alone with a warning. The RPMs are placeholders, so nothing is built.
+own_swap() { # version Fedora's-release package rpm [package rpm...]: setup checks the first package
+  local v=$1 fedora=$2 pkgs=() rpms=() p o
+  shift 2
+  while (($#)); do pkgs+=("$1"); rpms+=("$2"); shift 2; done
+  for o in "${rpms[@]}"; do mkdir -p "${o%/*}"; : > "$o"; done; rm -f "$fake/sudo.log"
+  for p in "${pkgs[@]}"; do echo -n "$v-$fedora" > "$fake/$p"; done
+  p=${pkgs[0]}
   o=$(echo y | fake_run) || return 1; echo "$o"
   grep -q "^change: replace $p .* with SebType's build" <<<"$o" &&
-    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $rpm" && $(cat "$fake/$p") == *.sebtype* ]] || return 1
+    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y ${rpms[*]}" && $(cat "$fake/$p") == *.sebtype* ]] || return 1
   o=$(fake_run < /dev/null) || return 1; echo "$o"
-  ! grep -q "$p" <<<"$o" || return 1
+  ! grep -q " $p " <<<"$o" || return 1
   o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) || return 1; echo "$o"
-  [[ $(tail -1 "$fake/sudo.log") == "sudo dnf distro-sync -y $p" && $(cat "$fake/$p") == "$v-$fedora" ]] &&
+  [[ $(tail -1 "$fake/sudo.log") == "sudo dnf distro-sync -y ${pkgs[*]}" && $(cat "$fake/$p") == "$v-$fedora" ]] &&
     o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) && [[ -z $o ]] || return 1
   echo -n 9.9.9-1.fc45 > "$fake/$p"
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(wc -l < "$fake/sudo.log") == 2 ]]
 }
-check mozc-install-and-undo own_swap fcitx5-mozc "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" "$h/.cache/sebtype/mozc/rpms/$MOZC_RPM"
-check rime-install-and-undo own_swap fcitx5-rime "$RIME_VERSION" "$RIME_FEDORA_RELEASE" "$h/.cache/sebtype/fcitx5-rime/$RIME_RPM"
+check mozc-install-and-undo own_swap "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" fcitx5-mozc "$h/.cache/sebtype/mozc/rpms/$MOZC_RPM"
+check rime-install-and-undo own_swap "$RIME_VERSION" "$RIME_FEDORA_RELEASE" fcitx5-rime "$h/.cache/sebtype/fcitx5-rime/$RIME_RPM"
+# librime with its Lua plugin, which must be the same build
+check librime-install-and-undo own_swap "$LIBRIME_VERSION" "$LIBRIME_FEDORA_RELEASE" \
+  librime "$h/.cache/sebtype/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
+  librime-lua "$h/.cache/sebtype/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
 check undo-icons-and-reinstall undo_icons
 check undo-configurator-and-reinstall undo_configurator
 check undo-names-and-rename undo_names

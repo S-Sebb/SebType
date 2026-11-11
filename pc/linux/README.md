@@ -20,6 +20,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `fcitx5-rime`, `fcitx5-mozc`, `kcm-fcitx5` | The engines, and the modules XWayland and older apps load |
 | SebType's fcitx5-mozc | Replaces Fedora's `fcitx5-mozc` with SebType's build of the same version (`mozc/`), after asking, with sudo | Japanese's English mode shows **A** while Caps Lock is on, like Chinese's, and its tray menu has one switch, あ → ア (#117) |
 | SebType's fcitx5-rime | Replaces Fedora's `fcitx5-rime` with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese's tray menu has one switch, 简 → 繁, with no schema list, Deploy or Synchronize (#117) |
+| SebType's librime | Replaces Fedora's `librime` and its installed plugins (`librime-lua`, …) with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese typo correction also fixes a slip onto the key above or below, which librime's own neighbour map lacks: `xkaoshi` gives 小时 (#101) |
 | KWin input method | `kwinrc` `[Wayland] InputMethod` = Fcitx 5 (System Settings → Keyboard → Virtual Keyboard) | Every native Wayland app (GTK, Qt, Electron) through text-input, with no environment variables. Takes effect at the next login if Fcitx5 isn't already running under KWin |
 | XWayland | `XMODIFIERS=@im=fcitx` in `~/.config/environment.d/90-sebtype-im.conf`, only if the session doesn't already have it | XIM apps on XWayland: Steam, WINE/Proton, Java, Xlib/SDL games |
 | Global IM modules | Warns about any global `*_IM_MODULE` (`/etc/environment`, `environment.d`, Plasma env scripts, shell profiles) and doesn't edit it | A global `GTK_IM_MODULE`/`QT_IM_MODULE` overrides Wayland text-input and makes candidate windows flicker |
@@ -159,14 +160,34 @@ without them.
 `rime/versions.sh`, in about a minute. Its release `1.sebtype1.fc44` sorts above Fedora's `1.fc44`.
 To undo: `pc/linux/setup-ime.sh --undo-rime`.
 
+### SebType's librime
+
+SebType's typo correction (#46) asks a second translator, `corr`, with librime's correction on, and
+`lua/sebtype_typo.lua` ranks what it finds by a keyboard model. librime only proposes slips onto the key
+left or right, so on a PC a slip onto the key above or below (`xkaoshi` for xiaoshi) was never found.
+`rime/layout-model.patch` gives librime's correction a PC layout model when the schema says
+`sebtype_typo/keyboard: pc` (setup sets it; the phone keeps librime's own map): the neighbours within
+1.25 key widths on the staggered rows, each slip priced −log P(typed | meant) as the Lua filter prices
+it, one slip per syllable. Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
+
+| | typo-pc top-1 / top-3 | typo-phone top-1 / top-3 | clean sets | typo key p95 |
+|---|---|---|---|---|
+| Lua filter on Fedora's librime | 7.0 / 9.8 % | 14.6 / 17.6 % | 51.2 / 62.0 % | 6.3–6.8 ms |
+| Lua filter on SebType's librime | 16.2 / 22.2 % | 16.2 / 19.6 % | 51.2 / 62.0 % | 7.6 ms |
+
+The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
+sentences. `rime/build.sh librime` builds it from Fedora's source package with its plugins, which must
+match it. Its release `2.sebtype1.fc44` sorts above Fedora's `2.fc44`. To undo:
+`pc/linux/setup-ime.sh --undo-librime`.
+
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
 restarts. At the end it checks that Fcitx5 runs under KWin and that the session has `XMODIFIERS`, and
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc and fcitx5-rime and the Configurator,
+rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc, fcitx5-rime and librime and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
-text, the 简/繁 key and typo correction (`xoaoshi` → 小时) in a private Fcitx5 running Rime on SebType's
+text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 with SebType's librime) in a private Fcitx5 running Rime on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
 icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's builds without installing them: `bwrap`
 mounts their files over Fedora's for that Fcitx5 alone. It doesn't touch the session.
