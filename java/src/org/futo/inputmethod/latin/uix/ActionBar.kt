@@ -126,7 +126,6 @@ import org.futo.inputmethod.latin.SuggestionBlacklist
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.suggestions.SuggestionStripViewListener
 import org.futo.inputmethod.latin.uix.actions.FavoriteActions
-import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.actions.MoreActionsAction
 import org.futo.inputmethod.latin.uix.actions.PinnedActions
 import org.futo.inputmethod.latin.uix.actions.toActionList
@@ -784,46 +783,6 @@ fun ModeChipButton(chip: ModeChip) {
     }
 }
 
-/**
- * SebType (#31): shown while incognito, in the theme's accent. A tap turns the manual toggle off; a field that is
- * incognito by itself (password, private tab) can't be switched out of, so then the badge only shows.
- */
-@Composable
-fun IncognitoBadge() {
-    val shown = Incognito.shown.value
-    if(shown == Incognito.Shown.Off) return
-    val view = LocalView.current
-    val manager = LocalManager.current
-    val scheme = LocalKeyboardScheme.current
-    val label = stringResource(
-        if(shown == Incognito.Shown.Toggle) R.string.sebtype_incognito_on_tap_off else R.string.sebtype_incognito_field
-    )
-    Box(Modifier.fillMaxHeight().padding(start = 4.dp, end = 2.dp), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(scheme.primary)
-                .then(if(shown == Incognito.Shown.Toggle) Modifier.clickable {
-                    manager.performHapticAndAudioFeedback(Constants.CODE_TAB, view)
-                    manager.setIncognito(false)
-                } else Modifier)
-                .clearAndSetSemantics {
-                    contentDescription = label
-                    if(shown == Incognito.Shown.Toggle) role = Role.Button
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.incognito),
-                contentDescription = null,
-                tint = scheme.onPrimary,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
 @Composable
 fun ImportantNoticeView(
     importantNotice: ImportantNotice
@@ -954,7 +913,6 @@ fun ActionBar(
         ) {
             Row(Modifier.safeKeyboardPadding()) {
                 modeChip?.let { ModeChipButton(it) }
-                IncognitoBadge()
                 ExpandActionsButton(isActionsExpanded) {
                     toggleActionsExpanded()
 
@@ -1503,7 +1461,6 @@ fun BoxScope.ActionBarWithExpandableCandidates(
             Row(Modifier.safeKeyboardPadding()) {
                 // Pinned: it stays put while the candidates scroll.
                 modeChip?.let { ModeChipButton(it) }
-                IncognitoBadge()
                 if (wordList.isNotEmpty()) {
                     InlineCandidates(
                         suggestionsExpansion,

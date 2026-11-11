@@ -36,7 +36,6 @@ import org.futo.inputmethod.engine.IMEMessage
 import org.futo.inputmethod.engine.MenuSwitch
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.latin.InputAttributes
-import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.Subtypes.switchToNextLanguage
 import org.futo.inputmethod.latin.SuggestedWords
@@ -475,7 +474,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         // From the field itself: the settings still hold the previous field's attributes at this point.
         val attrs = InputAttributes(helper.getCurrentEditorInfo(), false, helper.context.packageName)
         plainField = attrs.mIsPasswordField || !attrs.mShouldShowSuggestions
-        noLearning = attrs.mNoLearning || attrs.mIsUriField || attrs.mIsEmailField || Incognito.toggledOn(helper.context)
+        noLearning = attrs.mNoLearning || attrs.mIsUriField || attrs.mIsEmailField
         RimeIceSetup.setInUse(helper.context, true)
         showSetupState(RimeIceSetup.state.value)
         updateConfig()

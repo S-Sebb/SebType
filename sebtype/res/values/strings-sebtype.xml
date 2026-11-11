@@ -25,9 +25,6 @@
     <string name="sebtype_settings_globe_order">Globe order</string>
     <string name="sebtype_settings_globe_order_tip">The globe key switches between the languages that are on, in this order. Drag ≡ to reorder.</string>
     <string name="sebtype_settings_drag">Drag to reorder</string>
-    <!-- The language rows in the globe order: the English UI adds the English name. -->
-    <string name="sebtype_settings_globe_zh">中文 Chinese</string>
-    <string name="sebtype_settings_globe_ja">日本語 Japanese</string>
     <string name="sebtype_settings_zh_engine">rime-ice pinyin</string>
     <string name="sebtype_settings_ja_engine">Mozc romaji</string>
     <string name="sebtype_settings_autocorrect">Autocorrect</string>
@@ -56,11 +53,6 @@
     <string name="sebtype_settings_action_bar_subtitle">Which buttons sit in the bar above the keys</string>
     <string name="sebtype_settings_learn">Learn from my typing</string>
     <string name="sebtype_settings_learn_subtitle">English, 中文 and 日本語 remember the words you pick</string>
-    <!-- Incognito (#31): the action bar button, the Privacy switch and the action bar badge. -->
-    <string name="sebtype_incognito">Incognito</string>
-    <string name="sebtype_incognito_subtitle">Learns no words and keeps no clipboard history until you turn it off. Password fields and private tabs are always incognito.</string>
-    <string name="sebtype_incognito_on_tap_off">Incognito on. Tap to turn off</string>
-    <string name="sebtype_incognito_field">Incognito in this field</string>
     <string name="sebtype_settings_clipboard">Clipboard history</string>
     <string name="sebtype_settings_clipboard_keep_history">Keep clipboard history</string>
     <string name="sebtype_settings_clipboard_keep">Keep</string>
@@ -85,7 +77,4 @@
     <string name="sebtype_payment_licence_note">FUTO\'s licence requires SebType to include this page. Payments go to FUTO; SebType has no relation to them and receives nothing.</string>
     <string name="sebtype_settings_credits">Licence and credits</string>
     <string name="sebtype_settings_credits_subtitle">FUTO\'s licence, rime-ice, Mozc and others</string>
-    <!-- Clipboard history is left out of a backup unless ticked (#34) -->
-    <string name="sebtype_settings_export_clipboard">Include clipboard history</string>
-    <string name="sebtype_settings_export_subtitle">Back up your settings, learned words, resources and more</string>
 </resources>

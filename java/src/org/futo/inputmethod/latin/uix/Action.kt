@@ -104,9 +104,6 @@ interface KeyboardManagerForAction {
     fun copyToClipboard(cut: Boolean = false)
     fun pasteFromClipboard()
 
-    /** SebType (#31): the manual incognito toggle; applies to the current field at once. */
-    fun setIncognito(on: Boolean)
-
     // Returns null if the current IME is not of this kind.
     // TODO: In the future make an IMEActionInterface for correctness
     fun getCurrentIME(): IMEInterface

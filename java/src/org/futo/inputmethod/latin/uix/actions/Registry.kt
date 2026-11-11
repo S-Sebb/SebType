@@ -39,7 +39,6 @@ val AllActionsMap = mapOf(
     "left" to ArrowLeftAction,
     "right" to ArrowRightAction,
     "font_typer" to FontTyperAction,
-    "incognito" to IncognitoAction, // SebType (#31)
 )
 
 val ActionToId = AllActionsMap.entries.associate { it.value to it.key }
@@ -251,7 +250,7 @@ val DefaultActionSettings = mapOf(
     // SebType: the globe sits beside the space bar; emoji moves to the action bar
     ActionCategory.ActionKey to listOf(SwitchLanguageAction),
     ActionCategory.PinnedKey to listOf(), // SebType: voice input, FUTO's pinned key, is gone (#6)
-    ActionCategory.Favorites to listOfNotNull(if(IsDebug) MemoryDebugAction else null, EmojiAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, IncognitoAction, KeyboardModeAction),
+    ActionCategory.Favorites to listOfNotNull(if(IsDebug) MemoryDebugAction else null, EmojiAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, KeyboardModeAction),
     ActionCategory.More to listOf(), // Remaining actions get populated automatically by ensureWellFormed
     ActionCategory.Disabled to listOf(MemoryDebugAction, BugViewerAction)
 )

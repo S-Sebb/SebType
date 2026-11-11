@@ -205,3 +205,23 @@ index f363419..f2f9154 100644
  };
  
  template <class... Cs>
+diff --git a/src/rime/gear/script_translator.cc b/src/rime/gear/script_translator.cc
+index 8a0d939..cf4e923 100644
+--- a/src/rime/gear/script_translator.cc
++++ b/src/rime/gear/script_translator.cc
+@@ -485,6 +485,15 @@ bool ScriptTranslation::Evaluate(Dictionary* dict, UserDictionary* user_dict) {
+   if (has_at_least_two_syllables && !has_reliable_phrase &&
+       !has_reliable_user_phrase) {
+     sentence_ = MakeSentence(dict, user_dict);
++    // SebType (#135): drop a sentence that reads the same as the best phrase
++    // over the whole input (a correction, or there would be no sentence):
++    // DistinctTranslation would keep the sentence and hide the phrase, whose
++    // weight is the right one. nihap: the sentence 你|好 hid the phrase 你好.
++    if (sentence_ && phrase_ && phrase_iter_ != phrase_->rend() &&
++        phrase_iter_->first == consumed &&
++        !phrase_iter_->second.exhausted() &&
++        phrase_iter_->second.Peek()->text == sentence_->text())
++      sentence_.reset();
+   }
+ 
+   return !CheckEmpty();

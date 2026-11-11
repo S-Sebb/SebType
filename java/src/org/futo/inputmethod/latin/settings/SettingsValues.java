@@ -78,9 +78,6 @@ public class SettingsValues {
 
     public final boolean mUseContactsDict;
     public final boolean mUsePersonalizedDicts;
-    /** SebType (#31): the manual toggle; mIncognito adds password, code and private (no personalised learning) fields. */
-    public final boolean mIncognitoToggle;
-    public final boolean mIncognito;
     public final boolean mUseDoubleSpacePeriod;
     public final boolean mBlockPotentiallyOffensive;
     public final boolean mBlockSlurs;
@@ -189,8 +186,6 @@ public class SettingsValues {
         mUseDictionaryKeyBoosting = prefs.getBoolean(Settings.PREF_USE_DICT_KEY_BOOSTING, true);
         mUseContactsDict = prefs.getBoolean(Settings.PREF_KEY_USE_CONTACTS_DICT, true);
         mUsePersonalizedDicts = prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true);
-        mIncognitoToggle = prefs.getBoolean(Settings.PREF_SEBTYPE_INCOGNITO, false);
-        mIncognito = mIncognitoToggle || inputAttributes.mNoLearning;
         mUseDoubleSpacePeriod = prefs.getBoolean(Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD, true)
                 && inputAttributes.mIsGeneralTextInput;
         mBlockPotentiallyOffensive = Settings.readBlockPotentiallyOffensive(prefs, res);

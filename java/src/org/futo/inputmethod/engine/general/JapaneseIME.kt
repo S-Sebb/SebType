@@ -49,7 +49,6 @@ import org.futo.inputmethod.latin.uix.ResourceHelper
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.UserDictionaryIO
 import org.futo.inputmethod.latin.uix.actions.ArrowDownAction
-import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.actions.ArrowLeftAction
 import org.futo.inputmethod.latin.uix.actions.ArrowRightAction
 import org.futo.inputmethod.latin.uix.actions.ArrowUpAction
@@ -439,8 +438,6 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     private fun updateConfig(resetSelectionTracker: Boolean = true) {
         val settings = Settings.getInstance().current
         val halfWidthOnly = helper.context.getSetting(JapaneseIMESettings.HalfWidthSpace)
-        // From the field itself: at its start the settings still hold the previous field's attributes.
-        val incognito = Incognito.inField(helper.context, helper.getCurrentEditorInfo())
 
         executor.config = ProtoConfig.Config.newBuilder().apply {
             sessionKeymap = ProtoConfig.Config.SessionKeymap.MOBILE
@@ -457,7 +454,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             yenSignCharacter = ProtoConfig.Config.YenSignCharacter.YEN_SIGN
 
             historyLearningLevel = when {
-                incognito || !settings.isPersonalizationEnabled ->
+                settings.mInputAttributes.mNoLearning || !settings.isPersonalizationEnabled ->
                     ProtoConfig.Config.HistoryLearningLevel.READ_ONLY
 
                 //BuildConfig.DEBUG ->
@@ -466,8 +463,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                 else ->
                     ProtoConfig.Config.HistoryLearningLevel.DEFAULT_HISTORY
             }
-            // SebType (#31): Mozc neither learns nor suggests from its history while incognito.
-            incognitoMode = incognito
+            incognitoMode = false
             generalConfig = ProtoConfig.GeneralConfig.newBuilder().apply {
                 uploadUsageStats = false
             }.build()

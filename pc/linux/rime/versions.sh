@@ -17,7 +17,7 @@ LIBRIME_VERSION=1.16.1
 LIBRIME_FEDORA_RELEASE=2.fc44
 LIBRIME_SRPM_URL='https://kojipkgs.fedoraproject.org/packages/librime/1.16.1/2.fc44/src/librime-1.16.1-2.fc44.src.rpm'
 LIBRIME_SRPM_SHA256=65ffb514b91d883106841895083900c4ec71de30d2ba2bc7be8ddc89a7d1ba62
-LIBRIME_SEBTYPE_RELEASE=2.sebtype1.fc44
+LIBRIME_SEBTYPE_RELEASE=2.sebtype2.fc44
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
 LIBRIME_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/librime
 librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package

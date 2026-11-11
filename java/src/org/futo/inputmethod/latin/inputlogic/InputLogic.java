@@ -2011,7 +2011,7 @@ public final class InputLogic {
         // expect to receive non-words.
         if (!settingsValues.mAutoCorrectionEnabledPerTextFieldSettings) return;
         if (!settingsValues.isPersonalizationEnabled()) return;
-        if (settingsValues.mIncognito) return;
+        if (settingsValues.mInputAttributes.mNoLearning) return;
 
         if (mConnection.hasSlowInputConnection()) {
             // Since we don't unlearn when the user backspaces on a slow InputConnection,

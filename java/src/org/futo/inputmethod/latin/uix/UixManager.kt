@@ -125,7 +125,6 @@ import org.futo.inputmethod.latin.uix.actions.ActionRegistry
 import org.futo.inputmethod.latin.uix.actions.AllActions
 import org.futo.inputmethod.latin.uix.actions.BugViewerAction
 import org.futo.inputmethod.latin.uix.actions.BugViewerState
-import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.actions.KeyboardModeAction
 import org.futo.inputmethod.latin.uix.actions.PersistentEmojiState
 import org.futo.inputmethod.latin.uix.actions.keyCode
@@ -510,8 +509,6 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     }
 
     @Composable override fun menuSwitch() = latinIME.imeManager.menuSwitch()
-
-    override fun setIncognito(on: Boolean) = latinIME.setIncognito(on)
 }
 
 data class ActiveDialogRequest(
@@ -1600,7 +1597,6 @@ class UixManager(private val latinIME: LatinIME) {
         }
         inlineStuffHiddenByTyping.value = false
         this.editorInfo = editorInfo
-        Incognito.update(latinIME, editorInfo)
 
         currTutorialMode.value = tutorialMode
         tutorialCompleted.value = false

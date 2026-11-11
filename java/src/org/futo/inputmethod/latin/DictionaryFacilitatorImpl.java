@@ -270,7 +270,7 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     @Override
     public void onEmailTyped(String email) {
         SettingsValues settings = Settings.getInstance().getCurrent();
-        if(!settings.isPersonalizationEnabled() || settings.mIncognito) return;
+        if(!settings.isPersonalizationEnabled() || settings.mInputAttributes.mNoLearning) return;
 
         if(email == null) return;
 
@@ -842,10 +842,7 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
 
         updateDictionaryGroupWeights();
 
-        // SebType (#31): no personalised suggestions while incognito, from learned words or learned addresses.
-        final boolean incognito = Settings.getInstance().getCurrent().mIncognito;
-
-        if(keyboard.mId.mMode == KeyboardId.MODE_EMAIL && mEmailDictionary != null && !incognito) {
+        if(keyboard.mId.mMode == KeyboardId.MODE_EMAIL && mEmailDictionary != null) {
             boolean isTypingDomain = ngramContext.fullContext.contains("@");
             NgramContext ngramContextForEmail = isTypingDomain ? NgramContext.EMAIL_DOMAIN : NgramContext.BEGINNING_OF_SENTENCE;
 
@@ -871,7 +868,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
 
         for(DictionaryGroup dictionaryGroup : mDictionaryGroups) {
             for (final String dictType : ALL_DICTIONARY_TYPES) {
-                if (incognito && Dictionary.TYPE_USER_HISTORY.equals(dictType)) continue;
                 final Dictionary dictionary = dictionaryGroup.getDict(dictType);
                 if (null == dictionary) continue;
                 final float weightForLocale = composedData.mIsBatchMode

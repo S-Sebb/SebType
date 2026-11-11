@@ -187,8 +187,7 @@ object SettingsExporter {
     suspend fun exportSettings(
         context: Context,
         outputStream: OutputStream,
-        includeHeavyResources: Boolean,
-        includeClipboard: Boolean
+        includeHeavyResources: Boolean
     ) = ZipOutputStream(outputStream).use { zipOut ->
         zipOut.setLevel(1)
 
@@ -226,9 +225,9 @@ object SettingsExporter {
             zipOut.closeEntry()
         }
 
-        // Collect clipboard, only when the user ticked it: clipboard history is often private (#34)
+        // Collect clipboard
         val clipboardFile = context.clipboardFile
-        if (includeClipboard && clipboardFile.exists()) {
+        if (clipboardFile.exists()) {
             zipOut.putNextEntry(ZipEntry(clipboardFileName))
             clipboardFile.inputStream().use { it.copyTo(zipOut) }
             zipOut.closeEntry()
@@ -269,7 +268,7 @@ object SettingsExporter {
         }
 
         // Collect clipboard files
-        if (includeClipboard) context.clipboardDir.listFiles()?.forEach { clipboardFile ->
+        context.clipboardDir.listFiles()?.forEach { clipboardFile ->
             assert(!clipboardFile.isDirectory)
             val entry = ZipEntry("clipboard/${clipboardFile.name}")
             zipOut.putNextEntry(entry)
@@ -331,17 +330,12 @@ object SettingsExporter {
         val clipboardFile = context.clipboardFile
         val transformersDir = ModelPaths.getModelDirectory(context)
         val extFilesDir = context.getExternalFilesDir(null)!!
-        // A backup without clipboard history keeps the current one, so its old history goes only
-        // when the backup carries a new one
-        var clipboardCleared = !destructive
-        fun clearClipboard() {
-            if (clipboardCleared) return
-            clipboardFile.delete()
-            context.clipboardDir.deleteRecursively()
-            clipboardCleared = true
-        }
-        var clipboardImported = false
         if (destructive) {
+            // delete old clipboard
+            if (clipboardFile.exists()) {
+                clipboardFile.delete()
+            }
+
             // delete all transformers
             transformersDir.listFiles()?.forEach {
                 it.delete()
@@ -359,6 +353,7 @@ object SettingsExporter {
                 }
             }
 
+            context.clipboardDir.deleteRecursively()
             ChineseIME.getRimeDir(context).deleteRecursively()
             mozcUserProfileDir(context).deleteRecursively()
         }
@@ -384,11 +379,11 @@ object SettingsExporter {
                 }
 
                 entry.name == clipboardFileName -> {
-                    clearClipboard()
                     clipboardFile.outputStream().use {
                         zipIn.copyTo(it)
                     }
-                    clipboardImported = true
+
+                    onClipboardImportedFlow.emit(clipboardFile)
                 }
 
                 entry.name.startsWith("ext/") -> zipIn.extractTo(extFilesDir, entry.name)
@@ -398,10 +393,7 @@ object SettingsExporter {
                 // userdict/<UserHistoryDictionary dir>/<file>, only into those dirs of filesDir
                 entry.name.startsWith("userdict/UserHistoryDictionary") ->zipIn.extractTo(context.filesDir, entry.name)
 
-                entry.name.startsWith("clipboard/") -> {
-                    clearClipboard()
-                    zipIn.extractTo(context.clipboardDir, entry.name)
-                }
+                entry.name.startsWith("clipboard/") -> zipIn.extractTo(context.clipboardDir, entry.name)
 
                 entry.name.startsWith("mozc/") -> zipIn.extractTo(mozcUserProfileDir(context), entry.name)
 
@@ -419,9 +411,6 @@ object SettingsExporter {
             zipIn.closeEntry()
             entry = zipIn.nextEntry
         }
-
-        // After the loop, so the clipboard/ files its entries point to are already there
-        if (clipboardImported) onClipboardImportedFlow.emit(clipboardFile)
 
         GlobalIMEMessage.tryEmit(IMEMessage.ReloadResources)
     }

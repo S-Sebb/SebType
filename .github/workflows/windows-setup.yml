@@ -14,7 +14,6 @@ on:
       - pc/configurator/**
       - pc/linux/mozc-keymap.tsv
       - pc/linux/perf-rime.c
-      - pc/linux/rime/layout-model.patch
       - tools/rime-data/**
       - rime-android/versions.sh
       - sebtype/make-icon.py
