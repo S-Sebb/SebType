@@ -1,8 +1,16 @@
 // Every setting the window shows, and the callbacks that apply a change. src/main.rs fills and handles them.
-export struct Lang { id: string, name: string, detail: string, on: bool }
+// Every word the window shows is here or in the other .slint files, in English inside @tr; lang/ holds the
+// 中文 and 日本語 (#118).
+export struct Lang { id: string, on: bool }   // id: "en", "zh" or "ja"
 export struct Fuzzy { label: string, on: bool }
 export struct ZhWord { word: string, code: string }
 export struct JaWord { reading: string, word: string, pos: int }
+
+export enum Msg {
+    none, applied, zh-redeployed, ja-next-time, theme-next-time, saved-zh, saved-ja, deleted-zh, deleted,
+    nothing-learned, forgotten, exported, imported, redeployed, not-a-backup, pinyin-letters-only,
+    reading-hiragana-only, failed,
+}
 
 export global State {
     in property <string> version;
@@ -14,7 +22,7 @@ export global State {
 
     in-out property <[Lang]> langs;
     in property <int> langs-on;              // how many are on (one must stay on)
-    in property <string> fuzzy-summary;
+    in property <string> fuzzy-summary;      // the ones that are on, or "" for none
     in-out property <int> zh-script;          // 0 简体, 1 繁體
     in-out property <bool> zh-full-punct: true;
     in-out property <bool> zh-emoji: true;
@@ -22,7 +30,8 @@ export global State {
     in-out property <[ZhWord]> zh-words;
     in-out property <bool> ja-half-space;
     in-out property <[JaWord]> ja-words;
-    out property <[string]> ja-pos: ["名詞", "固有名詞", "人名", "地名", "組織", "顔文字"];
+    // mozc::POS's order
+    out property <[string]> ja-pos: [@tr("Noun"), @tr("Proper noun"), @tr("Person"), @tr("Place"), @tr("Organization"), @tr("Emoticon")];
 
     in-out property <int> page-size: 5;
     in-out property <bool> vertical;
@@ -30,7 +39,10 @@ export global State {
     in-out property <bool> picnic: true;
     in-out property <bool> learn: true;
 
-    in-out property <string> toast;
+    // What the last change did, shown for a moment (main.rs's toast); app.slint words it.
+    in-out property <Msg> toast;
+    in property <string> toast-arg;          // the file for exported, the error for failed
+    out property <string> backup-file: @tr("SebType settings") + ".json";
 
     callback set-lang(int, bool);
     callback move-lang(int, int);

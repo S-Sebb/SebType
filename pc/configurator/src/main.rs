@@ -18,7 +18,7 @@ mod windows;
 use windows as platform;
 
 use serde::{Deserialize, Serialize};
-use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::{rc::Rc, sync::mpsc, time::Duration};
 
 slint::include_modules!();
@@ -32,7 +32,7 @@ pub struct Candidates {
     pub picnic: bool,
 }
 
-/// What 导出设置 writes and 导入设置 reads.
+/// What Export settings writes and Import settings reads.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Backup {
@@ -46,17 +46,17 @@ struct Backup {
 }
 
 fn lang_row(id: &str, on: bool) -> Lang {
-    let (name, detail) = match id {
-        "en" => ("English", "系统美式键盘"),
-        "zh" => ("中文 Chinese", "雾凇拼音 · 白霜词库"),
-        _ => ("日本語 Japanese", "Mozc 罗马字"),
-    };
-    Lang {
-        id: id.into(),
-        name: name.into(),
-        detail: detail.into(),
-        on,
-    }
+    Lang { id: id.into(), on }
+}
+
+/// The window's language: the system's when it is 中文 or 日本語, else English (#118). Slint picks the
+/// same one by itself; choosing it here keeps the font in step with it.
+fn language() -> &'static str {
+    let system = sys_locale::get_locale().unwrap_or_default();
+    ["zh", "ja"]
+        .into_iter()
+        .find(|l| system.starts_with(l))
+        .unwrap_or("en")
 }
 
 struct Ui {
@@ -70,9 +70,13 @@ thread_local! {
     static TOAST: slint::Timer = slint::Timer::default();
 }
 
-fn toast(app: &AppWindow, text: String) {
+/// What a change did, worded by the window (app.slint), and the file or error it names.
+type Toast = (Msg, String);
+
+fn toast(app: &AppWindow, (msg, arg): Toast) {
     let state = app.global::<State>();
-    state.set_toast(text.into());
+    state.set_toast(msg);
+    state.set_toast_arg(arg.into());
     let weak = app.as_weak();
     TOAST.with(|t| {
         t.start(
@@ -80,31 +84,34 @@ fn toast(app: &AppWindow, text: String) {
             Duration::from_millis(2600),
             move || {
                 if let Some(app) = weak.upgrade() {
-                    app.global::<State>().set_toast(SharedString::new());
+                    app.global::<State>().set_toast(Msg::None);
                 }
             },
         )
     });
 }
 
-type Job = Box<dyn FnOnce() -> Result<String, String> + Send>;
+type Job = Box<dyn FnOnce() -> Result<Toast, Toast> + Send>;
 
 /// Runs jobs one after another off the window's thread, and shows each one's outcome.
 fn worker(weak: slint::Weak<AppWindow>) -> mpsc::Sender<Job> {
     let (tx, rx) = mpsc::channel::<Job>();
     std::thread::spawn(move || {
         for job in rx {
-            let text = job().unwrap_or_else(|e| format!("没有应用：{e}"));
-            if !text.is_empty() {
-                let _ = weak.upgrade_in_event_loop(move |app| toast(&app, text));
+            let (Ok(t) | Err(t)) = job();
+            if t.0 != Msg::None {
+                let _ = weak.upgrade_in_event_loop(move |app| toast(&app, t));
             }
         }
     });
     tx
 }
 
-fn err(e: impl std::fmt::Display) -> String {
-    e.to_string()
+fn say(msg: Msg) -> Toast {
+    (msg, String::new())
+}
+fn err(e: impl std::fmt::Display) -> Toast {
+    (Msg::Failed, e.to_string())
 }
 
 fn chinese(s: &State, ui: &Ui) -> rime::Chinese {
@@ -134,18 +141,18 @@ fn langs(ui: &Ui) -> Vec<(String, bool)> {
     ui.langs.iter().map(|l| (l.id.to_string(), l.on)).collect()
 }
 
-fn apply_chinese(c: rime::Chinese) -> Result<String, String> {
+fn apply_chinese(c: rime::Chinese) -> Result<Toast, Toast> {
     if rime::save(&platform::rime_dir(), &c).map_err(err)? {
         platform::redeploy_rime().map_err(err)?;
-        return Ok("已应用 · 中文已重新部署".into());
+        return Ok(say(Msg::ZhRedeployed));
     }
-    Ok("已应用".into())
+    Ok(say(Msg::Applied))
 }
-fn apply_japanese(j: mozc::Japanese) -> Result<String, String> {
+fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
     if mozc::save(&platform::mozc_dir(), &j).map_err(err)? {
         platform::restart_mozc();
     }
-    Ok("已应用 · 日本語下次输入时生效".into())
+    Ok(say(Msg::JaNextTime))
 }
 
 fn set_langs_model(app: &AppWindow, ui: &Ui, list: Vec<(String, bool)>) {
@@ -168,11 +175,8 @@ fn refresh_fuzzy(app: &AppWindow, ui: &Ui) {
         .filter(|f| f.on)
         .map(|f| f.label.to_string())
         .collect();
-    app.global::<State>().set_fuzzy_summary(if on.is_empty() {
-        "关".into()
-    } else {
-        on.join("、").into()
-    });
+    app.global::<State>()
+        .set_fuzzy_summary(on.join(" · ").into());
 }
 
 /// Reads every setting from the engines' files into the window.
@@ -244,19 +248,19 @@ fn ja_words(ui: &Ui) -> Vec<mozc::Word> {
         .collect()
 }
 
-fn export(backup: Backup) -> Result<String, String> {
+fn export(backup: Backup, file: String) -> Result<Toast, Toast> {
     let Some(path) = rfd::FileDialog::new()
-        .set_file_name("SebType 设置.json")
+        .set_file_name(file)
         .add_filter("JSON", &["json"])
         .save_file()
     else {
-        return Ok(String::new());
+        return Ok(say(Msg::None));
     };
     std::fs::write(&path, serde_json::to_string_pretty(&backup).map_err(err)?).map_err(err)?;
-    Ok(format!("已导出到 {}", path.display()))
+    Ok((Msg::Exported, path.display().to_string()))
 }
 
-fn import() -> Result<Option<Backup>, String> {
+fn import() -> Result<Option<Backup>, Toast> {
     let Some(path) = rfd::FileDialog::new()
         .add_filter("JSON", &["json"])
         .pick_file()
@@ -266,7 +270,7 @@ fn import() -> Result<Option<Backup>, String> {
     let b: Backup =
         serde_json::from_str(&std::fs::read_to_string(path).map_err(err)?).map_err(err)?;
     if b.sebtype_configurator != 1 {
-        return Err("这不是 SebType Configurator 导出的文件".into());
+        return Err(say(Msg::NotABackup));
     }
     let (rime_dir, mozc_dir) = (platform::rime_dir(), platform::mozc_dir());
     if rime_dir.is_dir() {
@@ -291,6 +295,8 @@ fn main() -> Result<(), slint::PlatformError> {
     slint::BackendSelector::new().select()?;
     slint::set_xdg_app_id("sebtype-configurator")?;
     let app = AppWindow::new()?;
+    let lang = language();
+    let _ = slint::select_bundled_translation(lang);
     let ui = Rc::new(Ui {
         langs: Rc::new(VecModel::default()),
         fuzzy: Rc::new(VecModel::default()),
@@ -300,7 +306,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let s = app.global::<State>();
     s.set_version(env!("CARGO_PKG_VERSION").into());
     s.set_system(platform::SYSTEM.into());
-    s.set_ui_font(platform::UI_FONT.into());
+    s.set_ui_font(platform::ui_font(lang).into());
     s.set_langs(ModelRc::from(ui.langs.clone()));
     s.set_fuzzy(ModelRc::from(ui.fuzzy.clone()));
     s.set_zh_words(ModelRc::from(ui.zh_words.clone()));
@@ -310,7 +316,7 @@ fn main() -> Result<(), slint::PlatformError> {
     load(&app, &ui);
     UI.with(|u| *u.borrow_mut() = Some(ui.clone()));
 
-    // For screenshots and tests: --page N (0 语言 … 5 关于) and --sub N open that screen.
+    // For screenshots and tests: --page N (0 Languages … 5 About) and --sub N open that screen.
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| {
         args.iter()
@@ -340,7 +346,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let list = platform::langs().map_err(err)?;
             let _ = weak
                 .upgrade_in_event_loop(move |app| with_ui(|ui| set_langs_model(&app, ui, list)));
-            Ok(String::new())
+            Ok(say(Msg::None))
         }));
     }
 
@@ -354,7 +360,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let list = langs(&ui);
             run(Box::new(move || {
                 platform::set_langs(&list)
-                    .map(|_| "已应用".into())
+                    .map(|_| say(Msg::Applied))
                     .map_err(err)
             }));
         }
@@ -367,7 +373,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let list = langs(&ui);
             run(Box::new(move || {
                 platform::set_langs(&list)
-                    .map(|_| "已应用".into())
+                    .map(|_| say(Msg::Applied))
                     .map_err(err)
             }));
         }
@@ -406,7 +412,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 if platform::rime_dir().is_dir() {
                     return apply_chinese(c);
                 }
-                Ok("已应用".into())
+                Ok(say(Msg::Applied))
             }));
         }
     });
@@ -431,7 +437,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 if deployed {
                     platform::redeploy_rime().map_err(err)?;
                 }
-                Ok("已应用".into())
+                Ok(say(Msg::Applied))
             }));
         }
     });
@@ -441,7 +447,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let k = candidates(&weak.unwrap().global::<State>());
             run(Box::new(move || {
                 platform::set_candidates(&k)
-                    .map(|_| "已应用 · 下次打开候选窗时生效".into())
+                    .map(|_| say(Msg::ThemeNextTime))
                     .map_err(err)
             }));
         }
@@ -451,7 +457,7 @@ fn main() -> Result<(), slint::PlatformError> {
         move |word, code| {
             let pinyin = rime::normalize_pinyin(&code);
             if !rime::valid_word(&word, &pinyin) {
-                toast(&weak.unwrap(), "拼音只能有字母".into());
+                toast(&weak.unwrap(), say(Msg::PinyinLettersOnly));
                 return false;
             }
             ui.zh_words.push(ZhWord {
@@ -462,7 +468,7 @@ fn main() -> Result<(), slint::PlatformError> {
             run(Box::new(move || {
                 rime::save_words(&platform::rime_dir(), &words).map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
-                Ok("已保存 · 中文已重新部署".into())
+                Ok(say(Msg::SavedZh))
             }));
             true
         }
@@ -475,7 +481,7 @@ fn main() -> Result<(), slint::PlatformError> {
             run(Box::new(move || {
                 rime::save_words(&platform::rime_dir(), &words).map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
-                Ok("已删除 · 中文已重新部署".into())
+                Ok(say(Msg::DeletedZh))
             }));
         }
     });
@@ -483,7 +489,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
         move |reading, word, pos| {
             if !mozc::valid_word(&reading, &word) {
-                toast(&weak.unwrap(), "読み只能用平假名".into());
+                toast(&weak.unwrap(), say(Msg::ReadingHiraganaOnly));
                 return false;
             }
             ui.ja_words.push(JaWord {
@@ -495,7 +501,7 @@ fn main() -> Result<(), slint::PlatformError> {
             run(Box::new(move || {
                 mozc::save_words(&platform::mozc_dir(), &words).map_err(err)?;
                 platform::restart_mozc();
-                Ok("已保存 · 日本語下次输入时生效".into())
+                Ok(say(Msg::SavedJa))
             }));
             true
         }
@@ -508,7 +514,7 @@ fn main() -> Result<(), slint::PlatformError> {
             run(Box::new(move || {
                 mozc::save_words(&platform::mozc_dir(), &words).map_err(err)?;
                 platform::restart_mozc();
-                Ok("已删除".into())
+                Ok(say(Msg::Deleted))
             }));
         }
     });
@@ -522,11 +528,11 @@ fn main() -> Result<(), slint::PlatformError> {
                     platform::forget_mozc()
                 }
                 .map_err(err)?;
-                Ok(if n == 0 {
-                    "没有已学的词".into()
+                Ok(say(if n == 0 {
+                    Msg::NothingLearned
                 } else {
-                    "已忘记".into()
-                })
+                    Msg::Forgotten
+                }))
             }));
         }
     });
@@ -544,7 +550,8 @@ fn main() -> Result<(), slint::PlatformError> {
                 chinese_words: zh_words(&ui),
                 japanese_words: ja_words(&ui),
             };
-            run(Box::new(move || export(b)));
+            let file = st.get_backup_file().into();
+            run(Box::new(move || export(b, file)));
         }
     });
     s.on_import_settings({
@@ -553,11 +560,11 @@ fn main() -> Result<(), slint::PlatformError> {
             let weak = weak.clone();
             run(Box::new(move || {
                 let Some(b) = import()? else {
-                    return Ok(String::new());
+                    return Ok(say(Msg::None));
                 };
                 let _ =
                     weak.upgrade_in_event_loop(move |app| reload_after_import(&app, b.languages));
-                Ok("已导入".into())
+                Ok(say(Msg::Imported))
             }));
         }
     });
@@ -567,7 +574,7 @@ fn main() -> Result<(), slint::PlatformError> {
             run(Box::new(|| {
                 platform::redeploy_rime().map_err(err)?;
                 platform::restart_mozc();
-                Ok("已重新部署".into())
+                Ok(say(Msg::Redeployed))
             }))
         }
     });
@@ -592,4 +599,131 @@ fn reload_after_import(app: &AppWindow, languages: Vec<(String, bool)>) {
             set_langs_model(app, ui, languages);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeMap, fs, path::Path};
+
+    /// What the window shows the same in every language: names, keys, licences and the sample candidates.
+    #[rustfmt::skip]
+    const SAME_IN_EVERY_LANGUAGE: &[&str] = &[
+        "SebType", "English", "中文", "日本語", " · 中文", " · 日本語", "zh", "ja", "Windows", "简体", "繁體", "Picnic",
+        "Mozc", "Nunito", "Win+Space", "Shift", "Alt+`", "Ctrl+Shift+F", "日本語 あ ⇄ ア", "中文 简 ⇄ 繁", "Win+V",
+        "Klipper", "A−", "A+", "小明", "xiaoming", "せぶ → SebType", "ni hao", "你好", "拟好", "你", "呢", "泥", "尼",
+        "妮", "倪", "雾凇拼音 rime-ice · 白霜拼音 rime-frost", "Rime (librime)", " · 小狼毫 Weasel",
+        " · Fcitx5 · fcitx5-rime", "GPL-3.0", "BSD-3-Clause", "BSD-3-Clause · GPL-3.0",
+        "BSD-3-Clause · LGPL-2.1+", "SIL Open Font License 1.1", ".json",
+    ];
+
+    /// The string literals of a .slint file that the window can show, each with whether it is the
+    /// English of an @tr.
+    fn literals(src: &str) -> Vec<(String, bool)> {
+        let (mut out, mut rest) = (vec![], src);
+        while let Some(i) = rest.find(['"', '/']) {
+            if rest[i..].starts_with("//") {
+                rest = rest[i..].find('\n').map_or("", |n| &rest[i + n..]);
+                continue;
+            }
+            if rest[i..].starts_with('/') {
+                rest = &rest[i + 1..];
+                continue;
+            }
+            let before = rest[..i].trim_end();
+            let (mut s, mut chars, mut end) =
+                (String::new(), rest[i + 1..].char_indices(), rest.len());
+            while let Some((j, c)) = chars.next() {
+                match c {
+                    '\\' => s.extend(chars.next().map(|(_, e)| e)),
+                    '"' => {
+                        end = i + 2 + j;
+                        break;
+                    }
+                    c => s.push(c),
+                }
+            }
+            if !["import", "from", "@image-url("]
+                .iter()
+                .any(|k| before.ends_with(k))
+            {
+                out.push((s, before.ends_with("@tr(")));
+            }
+            rest = &rest[end..];
+        }
+        out
+    }
+
+    /// msgid → msgstr of a .po file.
+    fn catalog(po: &str) -> BTreeMap<String, String> {
+        let unquote = |l: &str| {
+            l.trim()
+                .trim_matches('"')
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+        };
+        let (mut map, mut id, mut text, mut in_id) =
+            (BTreeMap::new(), String::new(), String::new(), false);
+        for line in po.lines().chain(["msgid \"\""]) {
+            if let Some(rest) = line.strip_prefix("msgid ") {
+                if !id.is_empty() {
+                    map.insert(std::mem::take(&mut id), std::mem::take(&mut text));
+                }
+                (id, text, in_id) = (unquote(rest), String::new(), true);
+            } else if let Some(rest) = line.strip_prefix("msgstr ") {
+                (text, in_id) = (unquote(rest), false);
+            } else if line.starts_with('"') {
+                if in_id {
+                    id += &unquote(line)
+                } else {
+                    text += &unquote(line)
+                }
+            }
+        }
+        map
+    }
+
+    #[test]
+    fn every_string_is_translated() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (mut english, mut untranslated) = (vec![], vec![]);
+        for f in fs::read_dir(dir.join("ui")).unwrap() {
+            let path = f.unwrap().path();
+            if path.extension().is_some_and(|e| e == "slint") {
+                for (s, tr) in literals(&fs::read_to_string(&path).unwrap()) {
+                    if tr {
+                        if !english.contains(&s) {
+                            english.push(s);
+                        }
+                    } else if s.chars().any(char::is_alphabetic)
+                        && !SAME_IN_EVERY_LANGUAGE.contains(&s.as_str())
+                    {
+                        untranslated.push(format!("{}: {s:?} is not in @tr", path.display()));
+                    }
+                }
+            }
+        }
+        assert!(
+            english.len() > 100,
+            "found only {} @tr strings",
+            english.len()
+        );
+        for lang in ["zh", "ja"] {
+            let po = dir.join(format!("lang/{lang}/LC_MESSAGES/sebtype-configurator.po"));
+            let cat = catalog(&fs::read_to_string(&po).unwrap());
+            for s in &english {
+                let t = cat.get(s).map_or("", String::as_str);
+                if t.is_empty() {
+                    untranslated.push(format!("{lang}: {s:?} has no translation"));
+                } else if t.matches("{}").count() != s.matches("{}").count() {
+                    untranslated.push(format!("{lang}: {t:?} has other {{}} than {s:?}"));
+                }
+            }
+            untranslated.extend(
+                cat.keys()
+                    .filter(|k| !english.contains(k))
+                    .map(|k| format!("{lang}: {k:?} is no longer in the window")),
+            );
+        }
+        assert!(untranslated.is_empty(), "\n{}", untranslated.join("\n"));
+    }
 }

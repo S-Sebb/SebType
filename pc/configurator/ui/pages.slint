@@ -5,9 +5,9 @@ import { Switch, Segmented, Card, Row, Divider, SectionTitle, PageTitle, Info, B
 
 // Which group (page) and which screen inside it is shown, and the question waiting for an answer.
 export global Nav {
-    in-out property <int> page;       // 0 语言 … 5 关于
-    in-out property <int> sub;        // 0 the group; 1 模糊拼音, 2 中文 我的词语, 3 日本語 我的词语
-    in-out property <string> confirm-lang;  // "zh" or "ja" while 忘记 waits for a yes
+    in-out property <int> page;       // 0 Languages … 5 About
+    in-out property <int> sub;        // 0 the group; 1 Fuzzy pinyin, 2 中文 My words, 3 日本語 My words
+    in-out property <string> confirm-lang;  // "zh" or "ja" while Forget waits for a yes
 }
 
 component Page inherits ScrollView {
@@ -26,14 +26,19 @@ component Page inherits ScrollView {
 }
 
 component LanguagesPage inherits Page {
-    title: "语言";
+    title: @tr("Languages");
     property <length> lang-row: 58px;
     property <int> dragging: -1;
     property <int> target: -1;
+    // The input method names, the same in every language (Decisions #2, #92).
+    pure function name(id: string) -> string { return id == "zh" ? "中文" : id == "ja" ? "日本語" : "English"; }
+    pure function detail(id: string) -> string {
+        return id == "zh" ? @tr("rime-ice pinyin · rime-frost dictionary") : id == "ja" ? @tr("Mozc romaji") : @tr("The US keyboard");
+    }
 
     // Linux: Win+Space is Fcitx5's trigger key, English ⇄ the last other language (#93).
-    Info { text: State.system == "Windows" ? "按 Win+Space 在已开启的语言之间按此顺序切换。拖动 ≡ 可调整顺序。"
-        : "按 Win+Space 在第一个语言和上次用的另一种语言之间切换，其他语言从托盘菜单选。拖动 ≡ 可调整顺序。"; }
+    Info { text: State.system == "Windows" ? @tr("Win+Space switches between the languages that are on, in this order. Drag ≡ to reorder.")
+        : @tr("Win+Space switches between the first language and the other one you used last; pick the others from the tray menu. Drag ≡ to reorder."); }
     Card {
         for l[i] in State.langs: Rectangle {
             height: root.lang-row;
@@ -52,8 +57,8 @@ component LanguagesPage inherits Page {
                 Rectangle {
                     width: 34px;
                     accessible-role: button;
-                    accessible-label: "移动 " + l.name;
-                    accessible-description: "上移";
+                    accessible-label: @tr("Move {}", root.name(l.id));
+                    accessible-description: @tr("Move up");
                     accessible-action-default => { if i > 0 { State.move-lang(i, i - 1); } }
                     Text { text: "≡"; color: Theme.muted; font-size: 20px; }
                     TouchArea {
@@ -73,14 +78,14 @@ component LanguagesPage inherits Page {
                 VerticalLayout {
                     alignment: center;
                     horizontal-stretch: 1;
-                    Text { text: l.name; color: Theme.ink; font-size: Theme.body-size; }
-                    Text { text: l.detail; color: Theme.muted; font-size: Theme.detail-size; }
+                    Text { text: root.name(l.id); color: Theme.ink; font-size: Theme.body-size; }
+                    Text { text: root.detail(l.id); color: Theme.muted; font-size: Theme.detail-size; }
                 }
                 VerticalLayout {
                     alignment: center;
                     Switch {
                         checked: l.on;
-                        label: l.name;
+                        label: root.name(l.id);
                         // One language stays on.
                         enabled: State.langs-ready && !(l.on && State.langs-on <= 1);
                         toggled(on) => { State.set-lang(i, on); }
@@ -93,8 +98,8 @@ component LanguagesPage inherits Page {
     SectionTitle { text: "中文"; }
     Card {
         Row {
-            title: "默认字形";
-            detail: "随时可按 Ctrl+Shift+F 切换";
+            title: @tr("Default characters");
+            detail: @tr("Ctrl+Shift+F switches at any time");
             enabled: State.zh-available;
             VerticalLayout { alignment: center;
                 Segmented {
@@ -107,34 +112,34 @@ component LanguagesPage inherits Page {
         }
         Divider { }
         Row {
-            title: "全角标点";
-            detail: "输入 ，。？ 而不是 , . ?";
+            title: @tr("Full-width punctuation");
+            detail: @tr("，。？ instead of , . ?");
             enabled: State.zh-available;
             VerticalLayout { alignment: center;
-                Switch { checked <=> State.zh-full-punct; label: "全角标点"; enabled: State.zh-available; toggled => { State.zh-changed(); } }
+                Switch { checked <=> State.zh-full-punct; label: @tr("Full-width punctuation"); enabled: State.zh-available; toggled => { State.zh-changed(); } }
             }
         }
         Divider { }
         Row {
-            title: "候选词中显示表情";
-            detail: "在有对应表情的词旁显示表情";
+            title: @tr("Emoji in candidates");
+            detail: @tr("An emoji next to words that have one");
             enabled: State.zh-available;
             VerticalLayout { alignment: center;
-                Switch { checked <=> State.zh-emoji; label: "候选词中显示表情"; enabled: State.zh-available; toggled => { State.zh-changed(); } }
+                Switch { checked <=> State.zh-emoji; label: @tr("Emoji in candidates"); enabled: State.zh-available; toggled => { State.zh-changed(); } }
             }
         }
         Divider { }
         Row {
-            title: "模糊拼音";
-            detail: State.fuzzy-summary;
+            title: @tr("Fuzzy pinyin");
+            detail: State.fuzzy-summary == "" ? @tr("Off") : State.fuzzy-summary;
             arrow: true;
             enabled: State.zh-available;
             clicked => { Nav.sub = 1; }
         }
         Divider { }
         Row {
-            title: "我的词语";
-            detail: "你自己的词，输入其拼音时排在首位";
+            title: @tr("My words");
+            detail: @tr("Your own words, first when you type their pinyin");
             arrow: true;
             enabled: State.zh-available;
             clicked => { Nav.sub = 2; }
@@ -143,17 +148,17 @@ component LanguagesPage inherits Page {
     SectionTitle { text: "日本語"; }
     Card {
         Row {
-            title: "半角空格";
-            detail: State.ja-available ? "空格键总是输入半角空格" : "未找到 Mozc";
+            title: @tr("Half-width space");
+            detail: State.ja-available ? @tr("Space always types a half-width space") : @tr("Mozc not found");
             enabled: State.ja-available;
             VerticalLayout { alignment: center;
-                Switch { checked <=> State.ja-half-space; label: "半角空格"; enabled: State.ja-available; toggled => { State.ja-changed(); } }
+                Switch { checked <=> State.ja-half-space; label: @tr("Half-width space"); enabled: State.ja-available; toggled => { State.ja-changed(); } }
             }
         }
         Divider { }
         Row {
-            title: "我的词语";
-            detail: "Mozc 用户词典";
+            title: @tr("My words");
+            detail: @tr("Mozc's user dictionary");
             arrow: true;
             enabled: State.ja-available;
             clicked => { Nav.sub = 3; }
@@ -162,14 +167,14 @@ component LanguagesPage inherits Page {
 
     SectionTitle { text: "English"; }
     Card {
-        Row { title: "系统美式键盘"; detail: "电脑上的英文是普通键盘输入，没有 SebType 的额外功能"; }
+        Row { title: @tr("The system's US keyboard"); detail: @tr("English on the PC is the plain keyboard, without SebType's extras"); }
     }
 }
 
 component FuzzyPage inherits Page {
-    title: "模糊拼音";
+    title: @tr("Fuzzy pinyin");
     back: true;
-    Info { text: "把容易混淆的音当作同一个音，例如打 zi 也能出“知”。"; }
+    Info { text: @tr("Sounds that are easy to mix up count as one, so zi also gives 知."); }
     Card {
         for f[i] in State.fuzzy: Row {
             title: f.label;
@@ -181,19 +186,19 @@ component FuzzyPage inherits Page {
 }
 
 component ZhWordsPage inherits Page {
-    title: "我的词语 · 中文";
+    title: @tr("My words") + " · 中文";
     back: true;
     property <string> word;
     property <string> code;
-    Info { text: "你自己的词，例如名字。输入它的拼音时，它排在第一位。"; }
+    Info { text: @tr("Your own words, such as names. They come first when you type their pinyin."); }
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
             spacing: 10px;
-            Field { text <=> root.word; placeholder: "词语，例如 小明"; horizontal-stretch: 1; }
-            Field { text <=> root.code; placeholder: "拼音，例如 xiaoming"; horizontal-stretch: 1; accepted => { add.clicked(); } }
+            Field { text <=> root.word; placeholder: @tr("Word, e.g. {}", "小明"); horizontal-stretch: 1; }
+            Field { text <=> root.code; placeholder: @tr("Pinyin, e.g. {}", "xiaoming"); horizontal-stretch: 1; accepted => { add.clicked(); } }
             add := Button {
-                text: "添加";
+                text: @tr("Add");
                 primary: true;
                 enabled: root.word != "" && root.code != "";
                 clicked => { if State.add-zh-word(root.word, root.code) { root.word = ""; root.code = ""; } }
@@ -205,29 +210,29 @@ component ZhWordsPage inherits Page {
             title: w.word;
             detail: w.code;
             VerticalLayout { alignment: center;
-                Button { text: "删除"; clicked => { State.remove-zh-word(i); } }
+                Button { text: @tr("Delete"); clicked => { State.remove-zh-word(i); } }
             }
         }
     }
 }
 
 component JaWordsPage inherits Page {
-    title: "我的词语 · 日本語";
+    title: @tr("My words") + " · 日本語";
     back: true;
     property <string> reading;
     property <string> word;
     property <int> pos;
-    Info { text: "Mozc 的用户词典。读音用平假名，例如 せぶ → SebType。"; }
+    Info { text: @tr("Mozc's user dictionary. Readings are in hiragana, e.g. {}.", "せぶ → SebType"); }
     Card {
         VerticalLayout {
             padding: Theme.row-padding-x;
             spacing: 10px;
             HorizontalLayout {
                 spacing: 10px;
-                Field { text <=> root.reading; placeholder: "読み（ひらがな）"; horizontal-stretch: 1; }
-                Field { text <=> root.word; placeholder: "単語"; horizontal-stretch: 1; accepted => { add.clicked(); } }
+                Field { text <=> root.reading; placeholder: @tr("Reading (hiragana)"); horizontal-stretch: 1; }
+                Field { text <=> root.word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { add.clicked(); } }
                 add := Button {
-                    text: "添加";
+                    text: @tr("Add");
                     primary: true;
                     enabled: root.reading != "" && root.word != "";
                     clicked => { if State.add-ja-word(root.reading, root.word, root.pos) { root.reading = ""; root.word = ""; } }
@@ -244,7 +249,7 @@ component JaWordsPage inherits Page {
             title: w.word;
             detail: w.reading + " · " + State.ja-pos[w.pos];
             VerticalLayout { alignment: center;
-                Button { text: "删除"; clicked => { State.remove-ja-word(i); } }
+                Button { text: @tr("Delete"); clicked => { State.remove-ja-word(i); } }
             }
         }
     }
@@ -298,8 +303,8 @@ component CandidateSample inherits Rectangle {
 }
 
 component KeyboardPage inherits Page {
-    title: "键盘";
-    SectionTitle { text: "候选窗"; }
+    title: @tr("Keyboard");
+    SectionTitle { text: @tr("Candidate window"); }
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
@@ -309,8 +314,8 @@ component KeyboardPage inherits Page {
         }
         Divider { }
         Row {
-            title: "每页候选词";
-            detail: "中文（日本語固定 9 个）";
+            title: @tr("Candidates per page");
+            detail: @tr("中文 (日本語 always shows 9)");
             VerticalLayout { alignment: center;
                 Segmented {
                     options: ["5", "6", "7", "8", "9"];
@@ -321,10 +326,10 @@ component KeyboardPage inherits Page {
         }
         Divider { }
         Row {
-            title: "排列";
+            title: @tr("Layout");
             VerticalLayout { alignment: center;
                 Segmented {
-                    options: ["横排", "竖排"];
+                    options: [@tr("Horizontal"), @tr("Vertical")];
                     current: State.vertical ? 1 : 0;
                     selected(i) => { State.vertical = i == 1; State.candidates-changed(); }
                 }
@@ -332,7 +337,7 @@ component KeyboardPage inherits Page {
         }
         Divider { }
         Row {
-            title: "字号";
+            title: @tr("Font size");
             detail: State.font-size;
             HorizontalLayout { alignment: center; spacing: 8px;
                 Button { text: "A−"; enabled: State.font-size > 9; clicked => { State.font-size -= 1; State.candidates-changed(); } }
@@ -340,15 +345,16 @@ component KeyboardPage inherits Page {
             }
         }
     }
-    SectionTitle { text: "快捷键"; }
+    SectionTitle { text: @tr("Shortcuts"); }
     Card {
-        Row { title: State.system == "Windows" ? "切换语言 EN → 中 → 日" : "切换语言 EN ⇄ 上次的 中 或 日"; VerticalLayout { alignment: center; Kbd { text: "Win+Space"; } } }
+        Row { title: State.system == "Windows" ? @tr("Switch language: EN → 中 → 日") : @tr("Switch language: EN ⇄ the last 中 or 日"); VerticalLayout { alignment: center; Kbd { text: "Win+Space"; } } }
         Divider { }
-        Row { title: "中文或日本語里临时输入英文"; VerticalLayout { alignment: center; Kbd { text: "Shift"; } } }
+        // The names of the two switches are the menus' (#117).
+        Row { title: @tr("English letters in 中文 or 日本語"); detail: @tr("Tap Shift on its own"); VerticalLayout { alignment: center; Kbd { text: "Shift"; } } }
         Divider { }
         Row { title: "日本語 あ ⇄ ア"; VerticalLayout { alignment: center; Kbd { text: "Alt+`"; } } }
         Divider { }
-        Row { title: "简体 ⇄ 繁體"; VerticalLayout { alignment: center; Kbd { text: "Ctrl+Shift+F"; } } }
+        Row { title: "中文 简 ⇄ 繁"; VerticalLayout { alignment: center; Kbd { text: "Ctrl+Shift+F"; } } }
     }
 }
 
@@ -376,22 +382,23 @@ component ThemeChoice inherits Rectangle {
 }
 
 component ThemePage inherits Page {
-    title: "主题";
-    SectionTitle { text: "候选窗"; }
+    title: @tr("Theme");
+    SectionTitle { text: @tr("Candidate window"); }
     HorizontalLayout {
         spacing: Theme.card-gap;
         ThemeChoice { title: "Picnic"; picnic: true; selected: State.picnic;
             clicked => { if !State.picnic { State.picnic = true; State.theme-changed(); } } }
-        ThemeChoice { title: "系统样式"; picnic: false; selected: !State.picnic;
+        ThemeChoice { title: @tr("System style"); picnic: false; selected: !State.picnic;
             clicked => { if State.picnic { State.picnic = false; State.theme-changed(); } } }
     }
     Text {
-        text: State.system == "Windows" ? "日本語的候选窗由 Mozc 自己绘制，保持原样。" : "中文和日本語的候选窗都使用此样式。";
+        text: State.system == "Windows" ? @tr("日本語's candidate window is drawn by Mozc itself and stays as it is.")
+            : @tr("The candidate windows of 中文 and 日本語 both use this style.");
         color: Theme.muted;
         font-size: Theme.detail-size;
         wrap: word-wrap;
     }
-    SectionTitle { text: "托盘图标"; }
+    SectionTitle { text: @tr("Tray icons"); }
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
@@ -403,43 +410,43 @@ component ThemePage inherits Page {
                     @image-url("../../icons/scalable/ja-a.svg"), @image-url("../../icons/scalable/ja-A.svg")]:
                 Image { source: icon; width: 40px; height: 40px; }
         }
-        Row { title: "SebType 的按键图标"; detail: "EN、中、あ、ア，以及中文和日本語英文模式下的 a / A（大写锁定）"; }
+        Row { title: @tr("SebType's key icons"); detail: @tr("EN, 中, あ, ア, and a / A (Caps Lock) in the English mode of 中文 and 日本語"); }
     }
 }
 
 component PrivacyPage inherits Page {
-    title: "隐私";
+    title: @tr("Privacy");
     Card {
         Row {
-            title: "从我的输入中学习";
-            detail: "中文和日本語记住你选过的词，下次排在前面";
+            title: @tr("Learn from my typing");
+            detail: @tr("中文 and 日本語 remember the words you pick and put them first next time");
             VerticalLayout { alignment: center;
-                Switch { checked <=> State.learn; label: "从我的输入中学习"; toggled => { State.learn-changed(); } }
+                Switch { checked <=> State.learn; label: @tr("Learn from my typing"); toggled => { State.learn-changed(); } }
             }
         }
     }
-    SectionTitle { text: "忘记已学的词"; }
+    SectionTitle { text: @tr("Forget learned words"); }
     Card {
         Row {
             title: "中文";
-            detail: "删除 Rime 学到的词；你自己的词保留";
+            detail: @tr("Deletes the words Rime learned; your own words stay");
             enabled: State.zh-available;
             VerticalLayout { alignment: center;
-                Button { text: "忘记…"; enabled: State.zh-available; clicked => { Nav.confirm-lang = "zh"; } }
+                Button { text: @tr("Forget…"); enabled: State.zh-available; clicked => { Nav.confirm-lang = "zh"; } }
             }
         }
         Divider { }
         Row {
             title: "日本語";
-            detail: "删除 Mozc 的输入历史；用户词典保留";
+            detail: @tr("Deletes Mozc's typing history; the user dictionary stays");
             enabled: State.ja-available;
             VerticalLayout { alignment: center;
-                Button { text: "忘记…"; enabled: State.ja-available; clicked => { Nav.confirm-lang = "ja"; } }
+                Button { text: @tr("Forget…"); enabled: State.ja-available; clicked => { Nav.confirm-lang = "ja"; } }
             }
         }
     }
     Text {
-        text: "剪贴板历史由系统提供（" + (State.system == "Windows" ? "Win+V" : "Klipper") + "），这里没有。";
+        text: @tr("Clipboard history comes from the system ({}), not from here.", State.system == "Windows" ? "Win+V" : "Klipper");
         color: Theme.muted;
         font-size: Theme.detail-size;
         wrap: word-wrap;
@@ -447,41 +454,41 @@ component PrivacyPage inherits Page {
 }
 
 component SyncPage inherits Page {
-    title: "同步与备份";
-    SectionTitle { text: "同步"; }
+    title: @tr("Sync & backup");
+    SectionTitle { text: @tr("Sync"); }
     Card {
         Row {
-            title: "与我的服务器同步";
-            detail: "即将推出：已学的词和你自己的词在手机和电脑之间同步";
+            title: @tr("Sync with my server");
+            detail: @tr("Coming soon: learned words and your own words, the same on phone and PC");
             enabled: false;
-            VerticalLayout { alignment: center; Switch { enabled: false; label: "与我的服务器同步"; } }
+            VerticalLayout { alignment: center; Switch { enabled: false; label: @tr("Sync with my server"); } }
         }
         Divider { }
         Row {
-            title: "删除服务器上已学的词";
-            detail: "只删除服务器上的副本，本机的词不变（同步推出后可用）";
+            title: @tr("Delete learned words on the server");
+            detail: @tr("Deletes only the server's copy; the words on this PC stay (once sync is out)");
             enabled: false;
-            VerticalLayout { alignment: center; Button { text: "删除…"; danger: true; enabled: false; } }
+            VerticalLayout { alignment: center; Button { text: @tr("Delete…"); danger: true; enabled: false; } }
         }
     }
-    SectionTitle { text: "备份"; }
+    SectionTitle { text: @tr("Backup"); }
     Card {
         Row {
-            title: "导出设置";
-            detail: "所有设置和你自己的词，保存为一个文件";
-            VerticalLayout { alignment: center; Button { text: "导出…"; clicked => { State.export-settings(); } } }
+            title: @tr("Export settings");
+            detail: @tr("Every setting and your own words, in one file");
+            VerticalLayout { alignment: center; Button { text: @tr("Export…"); clicked => { State.export-settings(); } } }
         }
         Divider { }
         Row {
-            title: "导入设置";
-            detail: "从导出的文件恢复";
-            VerticalLayout { alignment: center; Button { text: "导入…"; clicked => { State.import-settings(); } } }
+            title: @tr("Import settings");
+            detail: @tr("Restore from an exported file");
+            VerticalLayout { alignment: center; Button { text: @tr("Import…"); clicked => { State.import-settings(); } } }
         }
     }
 }
 
 component AboutPage inherits Page {
-    title: "关于";
+    title: @tr("About");
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
@@ -492,21 +499,21 @@ component AboutPage inherits Page {
                 Image { source: @image-url("../../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png"); width: 64px; height: 64px; }
             }
             VerticalLayout { alignment: center;
-                PageTitle { text: "SebType Configurator"; font-size: 18px; }
-                Text { text: "版本 " + State.version + " · " + State.system; color: Theme.muted; font-size: Theme.detail-size; }
+                PageTitle { text: @tr("SebType Configurator"); font-size: 18px; }
+                Text { text: @tr("Version {} · {}", State.version, State.system); color: Theme.muted; font-size: Theme.detail-size; }
             }
         }
     }
     Card {
-        Row { title: "帮助与反馈"; detail: "SebType 在 GitHub 上的问题页"; arrow: true; clicked => { State.open-help(); } }
+        Row { title: @tr("Help and feedback"); detail: @tr("SebType's issues on GitHub"); arrow: true; clicked => { State.open-help(); } }
         Divider { }
         Row {
-            title: "重新部署";
-            detail: "重新应用所有设置，中文需要几秒";
-            VerticalLayout { alignment: center; Button { text: "重新部署"; clicked => { State.redeploy(); } } }
+            title: @tr("Redeploy");
+            detail: @tr("Applies every setting again; 中文 takes a few seconds");
+            VerticalLayout { alignment: center; Button { text: @tr("Redeploy"); clicked => { State.redeploy(); } } }
         }
     }
-    SectionTitle { text: "许可与致谢"; }
+    SectionTitle { text: @tr("Licence and credits"); }
     Card {
         Row { title: "雾凇拼音 rime-ice · 白霜拼音 rime-frost"; detail: "GPL-3.0"; }
         Divider { }

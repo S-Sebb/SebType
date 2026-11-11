@@ -2,11 +2,11 @@
 // settings (#41).
 import "../../../sebtype/res/font/sebtype_nunito_extrabold.ttf";
 import { Theme } from "theme.slint";
-import { State, Lang, Fuzzy, ZhWord, JaWord } from "state.slint";
+import { State, Lang, Fuzzy, ZhWord, JaWord, Msg } from "state.slint";
 import { Button, PageTitle } from "widgets.slint";
 import { Nav, Pages } from "pages.slint";
 
-export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord }
+export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg }
 
 component NavItem inherits Rectangle {
     in property <string> text;
@@ -40,7 +40,7 @@ component NavItem inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    title: "SebType 设置";
+    title: @tr("SebType Configurator");
     icon: @image-url("../../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png");
     preferred-width: 780px;
     preferred-height: 600px;
@@ -68,19 +68,40 @@ export component AppWindow inherits Window {
                     }
                     PageTitle { text: "SebType"; font-size: 19px; vertical-alignment: center; }
                 }
-                NavItem { index: 0; text: "语言"; icon: @image-url("icons/globe.svg"); }
-                NavItem { index: 1; text: "键盘"; icon: @image-url("icons/keyboard.svg"); dark: true; }
-                NavItem { index: 2; text: "主题"; icon: @image-url("icons/palette.svg"); }
-                NavItem { index: 3; text: "隐私"; icon: @image-url("icons/lock.svg"); }
-                NavItem { index: 4; text: "同步与备份"; icon: @image-url("icons/sync.svg"); dark: true; }
-                NavItem { index: 5; text: "关于"; icon: @image-url("icons/info.svg"); }
+                NavItem { index: 0; text: @tr("Languages"); icon: @image-url("icons/globe.svg"); }
+                NavItem { index: 1; text: @tr("Keyboard"); icon: @image-url("icons/keyboard.svg"); dark: true; }
+                NavItem { index: 2; text: @tr("Theme"); icon: @image-url("icons/palette.svg"); }
+                NavItem { index: 3; text: @tr("Privacy"); icon: @image-url("icons/lock.svg"); }
+                NavItem { index: 4; text: @tr("Sync & backup"); icon: @image-url("icons/sync.svg"); dark: true; }
+                NavItem { index: 5; text: @tr("About"); icon: @image-url("icons/info.svg"); }
             }
             Rectangle { x: parent.width - 1px; width: 1px; background: Theme.line; }
         }
         Pages { horizontal-stretch: 1; }
     }
 
-    if State.toast != "": Rectangle {
+    pure function message(m: Msg, arg: string) -> string {
+        if m == Msg.applied { return @tr("Applied"); }
+        if m == Msg.zh-redeployed { return @tr("Applied · 中文 redeployed"); }
+        if m == Msg.ja-next-time { return @tr("Applied · 日本語 takes it from the next time you type"); }
+        if m == Msg.theme-next-time { return @tr("Applied · from the next time the candidate window opens"); }
+        if m == Msg.saved-zh { return @tr("Saved · 中文 redeployed"); }
+        if m == Msg.saved-ja { return @tr("Saved · 日本語 takes it from the next time you type"); }
+        if m == Msg.deleted-zh { return @tr("Deleted · 中文 redeployed"); }
+        if m == Msg.deleted { return @tr("Deleted"); }
+        if m == Msg.nothing-learned { return @tr("No learned words"); }
+        if m == Msg.forgotten { return @tr("Learned words forgotten"); }
+        if m == Msg.exported { return @tr("Exported to {}", arg); }
+        if m == Msg.imported { return @tr("Imported"); }
+        if m == Msg.redeployed { return @tr("Redeployed"); }
+        if m == Msg.not-a-backup { return @tr("This file wasn't exported by SebType Configurator"); }
+        if m == Msg.pinyin-letters-only { return @tr("Pinyin letters only"); }
+        if m == Msg.reading-hiragana-only { return @tr("The reading must be hiragana"); }
+        if m == Msg.failed { return @tr("Not applied: {}", arg); }
+        return "";
+    }
+
+    if State.toast != Msg.none: Rectangle {
         x: 210px + (parent.width - 210px - self.width) / 2;
         y: parent.height - self.height - 18px;
         width: toast-text.preferred-width + 32px;
@@ -88,8 +109,8 @@ export component AppWindow inherits Window {
         border-radius: 17px;
         background: Theme.ink;
         accessible-role: text;
-        accessible-label: State.toast;
-        toast-text := Text { text: State.toast; color: Theme.card; font-size: 13px; }
+        accessible-label: toast-text.text;
+        toast-text := Text { text: root.message(State.toast, State.toast-arg); color: Theme.card; font-size: 13px; }
     }
 
     if Nav.confirm-lang != "": Rectangle {
@@ -105,11 +126,11 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 padding: 20px;
                 spacing: 12px;
-                PageTitle { text: Nav.confirm-lang == "zh" ? "忘记中文已学的词？" : "忘记日本語的输入历史？"; font-size: 18px; }
+                PageTitle { text: Nav.confirm-lang == "zh" ? @tr("Forget the words 中文 learned?") : @tr("Forget 日本語's typing history?"); font-size: 18px; }
                 Text {
                     text: Nav.confirm-lang == "zh"
-                        ? "Rime 学到的词和顺序会被删除，无法恢复。你自己的词保留。"
-                        : "Mozc 学到的词和顺序会被删除，无法恢复。用户词典保留。";
+                        ? @tr("The words and order Rime learned are deleted for good. Your own words stay.")
+                        : @tr("The words and order Mozc learned are deleted for good. The user dictionary stays.");
                     color: Theme.ink;
                     wrap: word-wrap;
                     vertical-stretch: 1;
@@ -117,8 +138,8 @@ export component AppWindow inherits Window {
                 HorizontalLayout {
                     alignment: end;
                     spacing: 10px;
-                    Button { text: "取消"; clicked => { Nav.confirm-lang = ""; } }
-                    Button { text: "忘记"; danger: true; clicked => { State.forget(Nav.confirm-lang); Nav.confirm-lang = ""; } }
+                    Button { text: @tr("Cancel"); clicked => { Nav.confirm-lang = ""; } }
+                    Button { text: @tr("Forget"); danger: true; clicked => { State.forget(Nav.confirm-lang); Nav.confirm-lang = ""; } }
                 }
             }
         }

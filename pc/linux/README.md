@@ -89,12 +89,15 @@ was; learned words stay. Rime uses the old data once it redeploys.
 ### SebType Configurator
 
 SebType's settings app (`pc/configurator`, Rust with Slint), the PC counterpart of the phone's settings
-with the same groups and wording: 语言 (which languages are on and their order in the tray menu; Super+Space toggles the first one and the
+with the same groups and wording: Languages (which languages are on and their order in the tray menu; Super+Space toggles the first one and the
 last other one; Chinese's
 简/繁 start, punctuation, emoji, fuzzy pinyin and own words; Japanese's half-width space and own words),
-键盘 (candidates per page, row or column, text size; the shortcuts), 主题 (the candidate window in
-SebType's Picnic look, with its pig at the start, or the system's), 隐私 (learning, and forgetting what Rime or Mozc learned), 同步与备份
-(export and import of the settings and own words; sync is #12) and 关于. It writes the same files the
+Keyboard (candidates per page, row or column, text size; the shortcuts), Theme (the candidate window in
+SebType's Picnic look, with its pig at the start, or the system's), Privacy (learning, and forgetting what Rime or Mozc learned), Sync & backup
+(export and import of the settings and own words; sync is #12) and About. It shows them in English, 中文
+or 日本語, following the system language (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`; Windows' display
+language), English for any other (#118): the English is in `ui/*.slint` inside `@tr`, and
+`lang/{zh,ja}/LC_MESSAGES/sebtype-configurator.po` are built into the program. It writes the same files the
 engines read (`rime_ice.custom.yaml`, `default.custom.yaml`, `custom_phrase.txt`, Mozc's `config1.db` and
 `user_dictionary.db`, Fcitx5's `classicui.conf` and group) and tells a running Fcitx5 over D-Bus, so a
 change shows at the next key; Chinese changes redeploy Rime.
@@ -102,8 +105,9 @@ change shows at the next key; Chinese changes redeploy Rime.
 To undo: `pc/linux/setup-ime.sh --undo-configurator`. It removes the app and its entry, and puts back the
 candidate window look that Picnic replaced. Settings made with it stay.
 
-`pc/configurator/test.sh` checks it without touching the session: unit tests, every screen opened in a
-nested virtual KWin (screenshots in `/tmp/sebtype/configurator-shots`), a private Fcitx5 and Rime on
+`pc/configurator/test.sh` checks it without touching the session: unit tests, that every string the
+window shows has its 中文 and 日本語, every screen opened in each of the three languages in a nested
+virtual KWin (screenshots in `/tmp/sebtype/configurator-shots`), a private Fcitx5 and Rime on
 a copy of this account's rime-ice taking the languages and Chinese settings the app writes, and
 `test-setup-ime.sh`. The Windows build is the `sebtype-configurator` artifact of the Configurator
 workflow.

@@ -5,7 +5,14 @@ use crate::Candidates;
 use std::{env, fs, io, path::PathBuf, process::Command};
 
 pub const SYSTEM: &str = "Linux";
-pub const UI_FONT: &str = "Noto Sans CJK SC";
+/// Noto's CJK font in the window's language, so 日本語 gets Japanese kanji shapes.
+pub fn ui_font(lang: &str) -> &'static str {
+    if lang == "ja" {
+        "Noto Sans CJK JP"
+    } else {
+        "Noto Sans CJK SC"
+    }
+}
 const PICNIC: &str = "sebtype-picnic";
 /// SebType's pig (logo.svg) at the start of the Picnic window (#94). Fcitx5 scales theme images with the
 /// DPI but not with the font, so the logo is sized here: a little under the window's inner height.

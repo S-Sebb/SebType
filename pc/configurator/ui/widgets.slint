@@ -249,7 +249,7 @@ export component BackTitle inherits HorizontalLayout {
         border-radius: 16px;
         background: back-touch.has-hover ? Theme.pink : transparent;
         accessible-role: button;
-        accessible-label: "返回";
+        accessible-label: @tr("Back");
         accessible-action-default => { root.back(); }
         Text { text: "←"; color: Theme.ink; font-size: 20px; }
         back-touch := TouchArea { mouse-cursor: pointer; clicked => { root.back(); } }

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Checks the SebType Configurator (#72) on Linux without touching the live desktop: unit tests, the
-# release build, every screen opened in a nested virtual KWin (screenshots kept), a private Fcitx5 and
+# Checks the SebType Configurator (#72) on Linux without touching the live desktop: unit tests, every
+# string translated into 中文 and 日本語 (#118), the release build, every screen opened in English, 中文
+# and 日本語 as the system language in a nested virtual KWin (screenshots kept), a private Fcitx5 and
 # Rime taking what the app writes, the Picnic candidate window it writes drawn with SebType's pig (#94),
 # and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
 # /tmp/sebtype/configurator-test-results.txt; logs and screenshots next to it.
 set -uo pipefail
-cd "$(dirname "$0")" || exit 1
+self=$(readlink -f "$0")  # the devq re-exec below needs a path that still resolves after this cd
+cd "$(dirname "$self")" || exit 1
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/configurator-test-results.txt; : > "$results"
@@ -26,7 +28,18 @@ command -v xrdb >/dev/null || { echo "preflight: xrdb missing"; exit 1; }
 [[ -f /usr/share/fcitx5/addon/rime.conf && -f ~/.local/share/fcitx5/rime/rime_ice.schema.yaml ]] ||
   { echo "preflight: fcitx5-rime and rime-ice (pc/linux/setup-ime.sh) needed"; exit 1; }
 
+command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
+
+# The nested sessions and setup-ime's test run under this PC's lock (devq), after an unlocked build.
+if [[ -z ${HOLDING-} ]]; then
+  { cargo build --release && cargo test --release --no-run; } > "$out/configurator-test-build.log" 2>&1 ||
+    { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
+  exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
+    /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
+fi
+
 check unit-tests 900 cargo test --release
+check every-string-translated 300 cargo test --release every_string_is_translated
 check release-build 900 cargo build --release
 bin=$PWD/target/release/sebtype-configurator
 
@@ -49,7 +62,8 @@ sandbox() {
 }
 sandbox
 
-# Every screen opens and stays open; the screenshots are kept for the eye.
+# Every screen opens and stays open in each language, set as the system's; the screenshots are kept for
+# the eye, and a 中文 or 日本語 screen that looks the same as the English one fails.
 shots() {
   local d=$out/configurator-shots
   rm -rf "$d"; mkdir -p "$d"
@@ -57,15 +71,23 @@ shots() {
 #!/usr/bin/env bash
 bin=$1 d=$2; shift 2
 exec >> "$d/status" 2>&1  # KWin doesn't pass its client's output on
-for spec in "$@"; do
-  name=${spec%%:*}; read -ra a <<<"${spec#*:}"
-  "$bin" "${a[@]}" & pid=$!
-  sleep 3
-  kill -0 $pid 2>/dev/null || { echo "$name: the app exited"; exit 1; }
-  spectacle -b -n -a -o "$d/$name.png" 2>/dev/null
-  kill $pid; wait $pid 2>/dev/null
-  [[ -s $d/$name.png ]] || { echo "$name: no screenshot"; exit 1; }
-  echo "$name ok"
+unset LC_ALL LC_MESSAGES
+for lang in en_US zh_CN ja_JP; do
+  for spec in "$@"; do
+    name=${lang%_*}-${spec%%:*}; read -ra a <<<"${spec#*:}"
+    LANGUAGE=$lang LANG=$lang.UTF-8 "$bin" "${a[@]}" & pid=$!
+    sleep 3
+    kill -0 $pid 2>/dev/null || { echo "$name: the app exited"; exit 1; }
+    spectacle -b -n -a -o "$d/$name.png" 2>/dev/null
+    kill $pid; wait $pid 2>/dev/null
+    [[ -s $d/$name.png ]] || { echo "$name: no screenshot"; exit 1; }
+    if [[ $lang != en_US && $(python3 -c 'import sys, numpy as n; from PIL import Image
+a, b = (n.asarray(Image.open(f).convert("RGB")) for f in sys.argv[1:])
+print("differs" if a.shape != b.shape or (a != b).any() else "same")' "$d/en-${spec%%:*}.png" "$d/$name.png") != differs ]]; then
+      echo "$name: looks the same as in English"; exit 1
+    fi
+    echo "$name ok"
+  done
 done
 echo all-screens-ok
 SH
@@ -76,7 +98,7 @@ SH
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
 export -f shots; export out sb bin
-check every-screen-opens 150 shots
+check every-screen-in-every-language 400 shots
 
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
 # shellcheck disable=SC2016  # the inner script gets its paths as arguments

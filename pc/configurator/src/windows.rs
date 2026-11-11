@@ -6,7 +6,14 @@ use crate::{patch, Candidates};
 use std::{env, fs, io, os::windows::process::CommandExt, path::PathBuf, process::Command};
 
 pub const SYSTEM: &str = "Windows";
-pub const UI_FONT: &str = "Microsoft YaHei UI";
+/// Windows' UI font for the window's language, so 日本語 gets Japanese kanji shapes.
+pub fn ui_font(lang: &str) -> &'static str {
+    if lang == "ja" {
+        "Yu Gothic UI"
+    } else {
+        "Microsoft YaHei UI"
+    }
+}
 const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW: no console flashes up for helper programs
 const WEASEL_TIP: &str =
     "0804:{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}{3D02CAB6-2B8E-4781-BA20-1C9267529467}";
