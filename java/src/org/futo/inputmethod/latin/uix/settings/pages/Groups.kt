@@ -100,6 +100,13 @@ fun PrivacyScreen(navController: NavHostController) {
                 key = Settings.PREF_KEY_USE_PERSONALIZED_DICTS,
                 default = true
             )
+            // SebType (#31): the same switch as the action bar's incognito button.
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.sebtype_incognito),
+                subtitle = stringResource(R.string.sebtype_incognito_subtitle),
+                key = Settings.PREF_SEBTYPE_INCOGNITO,
+                default = false
+            )
         }
 
         ScreenTitle(stringResource(R.string.sebtype_settings_clipboard))

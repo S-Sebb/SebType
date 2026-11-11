@@ -50,6 +50,11 @@
     <string name="sebtype_settings_action_bar_subtitle">键盘上方操作栏里放哪些按钮</string>
     <string name="sebtype_settings_learn">从我的输入中学习</string>
     <string name="sebtype_settings_learn_subtitle">English、中文和日本語记住你选的词</string>
+    <!-- 无痕模式 (#31) -->
+    <string name="sebtype_incognito">无痕模式</string>
+    <string name="sebtype_incognito_subtitle">关闭之前不学习新词，也不保存剪贴板历史。密码框和无痕标签页总是无痕。</string>
+    <string name="sebtype_incognito_on_tap_off">无痕模式已开，点按关闭</string>
+    <string name="sebtype_incognito_field">此输入框为无痕模式</string>
     <string name="sebtype_settings_clipboard">剪贴板历史</string>
     <string name="sebtype_settings_clipboard_keep_history">保留剪贴板历史</string>
     <string name="sebtype_settings_clipboard_keep">保留</string>

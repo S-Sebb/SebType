@@ -157,6 +157,8 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
 
     // SebType (#39): a "." typed after a space stays put; it only joins a tapped suggestion.
     public static final int DEFAULT_ALT_SPACES_MODE = SPACES_MODE_SUGGESTIONS;
+    /** SebType (#31): the manual incognito toggle; stays on until turned off. */
+    public static final String PREF_SEBTYPE_INCOGNITO = "pref_sebtype_incognito";
     private static final String PREF_SEBTYPE_ALT_SPACES_MIGRATED = "pref_sebtype_alt_spaces_migrated";
 
     // Emoji

@@ -537,7 +537,7 @@ public class LanguageModelFacilitator(
     ) {
         if(shouldPassThroughToLegacy()) return
         if(!trainingEnabled) return
-        if(settings.current?.mInputAttributes?.mNoLearning != false) return
+        if(settings.current?.mIncognito != false) return
 
         if(dictionaryFacilitator.mostConfidentLocale != languageModel?.locale) return
 

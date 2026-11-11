@@ -11,7 +11,9 @@ words in Chinese and Japanese; that Picnic is the only look, with no theme choic
 same look in the system's dark mode (#111); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
 in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
-that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Labels
+that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
+password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
+clipboard copy; the toggle survives a restart, and turned off, learning resumes. Labels
 match the emulator's Chinese, English or Japanese UI. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
 stop the next.
@@ -184,16 +186,23 @@ def type_keys(text):
     time.sleep(1.5)
 
 
-def open_field():
+def open_field(kind=None, clip=None):
+    """A new text field with SebType up; kind makes it a password or private field, clip a text the
+    field app copies to the clipboard a moment after it opens (sebtype/perf/PerfField.java)."""
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
+    # A slow emulator can show "System UI isn't responding" over everything; this closes it.
+    adb("shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS")
+    extra = (["--es", "kind", kind] if kind else []) + (
+        ["--es", "clip", clip] if clip else []
+    )
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
     wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
 
 
-def candidates_for(text, expand=False):
-    open_field()
+def candidates_for(text, expand=False, kind=None):
+    open_field(kind)
     type_keys(text)
     got = wait_for(f"candidates for {text}", lambda: candidates(nodes()), 60)
     if expand:
@@ -215,7 +224,9 @@ def tap_candidate(word):
 
 
 def to_language(probe, word):
-    """Cycles the globe until typing probe offers word (中: ni -> 你, 日: nihongo -> 日本語)."""
+    """Cycles the globe until typing probe offers word (中: ni -> 你, 日: nihongo -> 日本語, English:
+    hello -> Hello, capitalised at the field's start, with no Chinese or Japanese among the candidates,
+    as 中 and 日 offer hello among their own words)."""
     for _ in range(8):
         try:
             open_field()
@@ -224,7 +235,11 @@ def to_language(probe, word):
             end = time.time() + 300
             while True:
                 ns = nodes()
-                if word in candidates(ns):
+                got = candidates(ns)
+                english = probe != "hello" or not any(
+                    re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
+                )
+                if english and word in [c.lower() for c in got]:
                     return
                 preparing = any(n[0].startswith(PREPARING) for n in ns)
                 if not preparing or time.time() > end:
@@ -846,6 +861,251 @@ def payment_note():
     )
 
 
+# --- Incognito (#31): the action bar button, its badge, and what is learned and copied meanwhile ---
+
+INCOGNITO = labels("无痕模式", "Incognito", "シークレットモード")
+INCOGNITO_ON = labels(
+    "无痕模式已开，点按关闭",
+    "Incognito on. Tap to turn off",
+    "シークレットモード オン。タップでオフ",
+)
+INCOGNITO_FIELD = labels(
+    "此输入框为无痕模式", "Incognito in this field", "この入力欄はシークレットモード"
+)
+OPEN_BAR = labels("打开操作栏", "Open Action Bar", "アクションバーを開く")
+CLOSE_BAR = labels("关闭操作栏", "Close Action Bar", "アクションバーを閉じる")
+CLIPBOARD_FILE = f"/data/data/{PKG}/files/clipboard.json"
+
+
+def badge():
+    """The incognito badge in the suggestion bar: "toggle", "field" or None."""
+    ns = nodes()
+    if find_all(ns, INCOGNITO_ON):
+        return "toggle"
+    return "field" if find_all(ns, INCOGNITO_FIELD) else None
+
+
+def set_incognito(on, shot=None):
+    """On through the action bar's Incognito button, off through a tap on the badge."""
+    open_field()
+    if (badge() == "toggle") == on:
+        return
+    if on:
+        tap_text(OPEN_BAR)
+        if shot:
+            screenshot(shot)
+        tap_text(INCOGNITO)
+        tap_text(CLOSE_BAR)
+    else:
+        tap_text(INCOGNITO_ON)
+    want = "toggle" if on else None
+    wait_for(f"the badge to show {want}", lambda: badge() == want, 10)
+
+
+def commit_twice(word):
+    """Types a made-up word and picks it from the bar as typed (the field capitalises the first one),
+    or presses space if the bar doesn't offer it, twice: English suggests a word it doesn't know only
+    after it is typed more than once."""
+    for _ in range(2):
+        type_keys(word)
+        typed = [c for c in candidates(nodes()) if c.lower() == word]
+        if typed:
+            tap_candidate(typed[0])
+        else:
+            bottom_key(5)
+            time.sleep(1.5)
+
+
+def suggested_after(word, kind=None):
+    """English's suggestions, in lower case, for word's first five letters in a new field."""
+    open_field(kind)
+    type_keys(word[:5])
+    return [c.lower() for c in candidates(nodes())]
+
+
+def incognito_toggle():
+    to_language("hello", "hello")
+    set_incognito(True, shot="31-action-bar.png")
+    screenshot("31-badge-toggle.png")
+    open_field()
+    if badge() != "toggle":
+        raise Fail(f"a new field after turning incognito on shows the badge {badge()}")
+    return "the action bar's Incognito button turns it on; a new field still shows the badge"
+
+
+def incognito_en():
+    open_field()
+    commit_twice("zorbleq")
+    got = suggested_after("zorbleq")
+    if "zorbleq" in got:
+        raise Fail(f"typed zorbleq twice while incognito; zorbl -> {got[:6]}")
+    return f"typed zorbleq twice while incognito; zorbl -> {got[:6]}"
+
+
+def incognito_zh():
+    to_language("ni", "你")
+    before = candidates_for("sx")
+    word = before[2]
+    tap_candidate(word)
+    after = candidates_for("sx")
+    if word in after[:2]:
+        raise Fail(
+            f"sx -> {before[:4]}; picked {word} while incognito; next sx -> {after[:4]}"
+        )
+    return f"sx -> {before[:4]}; picked {word} while incognito; next sx -> {after[:4]}"
+
+
+def incognito_ja():
+    to_language("nihongo", "日本語")
+    before = candidates_for("hashi")
+    word = before[2]
+    tap_candidate(word)
+    after = candidates_for("hashi")
+    if word in after[:2]:
+        raise Fail(
+            f"hashi -> {before[:4]}; picked {word} while incognito; next hashi -> {after[:4]}"
+        )
+    return f"hashi -> {before[:4]}; picked {word} while incognito; next hashi -> {after[:4]}"
+
+
+def clipboard_has(text):
+    return text in root(f"cat {CLIPBOARD_FILE} 2>/dev/null || true")
+
+
+def clipboard_capture(text, kind=None):
+    """Copies text in the field app; whether SebType's clipboard history kept it."""
+    open_field(kind, clip=text)
+    time.sleep(
+        4
+    )  # the copy comes 1.5 s after the field opens; the history saves it in the background
+    return clipboard_has(text)
+
+
+def incognito_clipboard():
+    # Clipboard history is off after a fresh install: on, then a control copy from a normal field
+    # (taken before incognito is turned on) shows it is on.
+    set_incognito(False)
+    for _ in range(2):
+        if clipboard_capture(f"sebclip-ctl-{time.time_ns()}"):
+            break
+        toggle(
+            (HOME["privacy"],),
+            labels(
+                "保留剪贴板历史", "Keep clipboard history", "クリップボード履歴を残す"
+            ),
+        )
+    else:
+        raise Fail("clipboard history keeps no copy even from a normal field")
+    private = f"sebclip-private-{time.time_ns()}"
+    if clipboard_capture(private, kind="private"):
+        raise Fail("a copy made in a private field was kept")
+    set_incognito(True)
+    copied = f"sebclip-incog-{time.time_ns()}"
+    if clipboard_capture(copied):
+        raise Fail("a copy made while incognito was kept")
+    return "copies from a private field and while incognito not kept; a normal one is"
+
+
+def incognito_after_restart():
+    adb("shell", "am", "force-stop", PKG)
+    open_field()
+    wait_for("the badge after a restart", lambda: badge() == "toggle", 15)
+    return "incognito still on after the keyboard restarted"
+
+
+def incognito_privacy_switch():
+    go(HOME["privacy"])
+    if not screen_has(INCOGNITO):
+        raise Fail("no Incognito switch in Privacy")
+    screenshot("31-privacy.png")
+    return "Privacy shows the Incognito switch"
+
+
+def incognito_auto_fields():
+    shown = {}
+    for kind in ("password", "private"):
+        open_field(kind)
+        shown[kind] = badge()
+        screenshot(f"31-badge-{kind}.png")
+    open_field()
+    shown["normal"] = badge()
+    if shown != {"password": "field", "private": "field", "normal": None}:
+        raise Fail(f"badge per field: {shown}")
+    return f"badge per field: {shown}"
+
+
+def incognito_private_en():
+    to_language("hello", "hello")
+    open_field("private")
+    commit_twice("vemquat")
+    got = suggested_after("vemquat")
+    if "vemquat" in got:
+        raise Fail(f"typed vemquat twice in a private field; vemqu -> {got[:6]}")
+    return f"typed vemquat twice in a private field; vemqu -> {got[:6]}"
+
+
+def incognito_private_ja():
+    to_language("nihongo", "日本語")
+    before = candidates_for("kami")
+    word = before[2]
+    private = candidates_for("kami", kind="private")
+    if word not in private:
+        raise Fail(f"kami -> {before[:4]}, but in a private field -> {private[:4]}")
+    tap_candidate(word)
+    after = candidates_for("kami")
+    if word in after[:2]:
+        raise Fail(
+            f"kami -> {before[:4]}; picked {word} in a private field; next kami -> {after[:4]}"
+        )
+    return f"kami -> {before[:4]}; picked {word} in a private field; next kami -> {after[:4]}"
+
+
+def learns_again_en():
+    """After incognito: English learns again, and hides what it learned while incognito is back on."""
+    to_language("hello", "hello")
+    open_field()
+    commit_twice("zorbleq")
+    got = suggested_after("zorbleq")
+    if "zorbleq" not in got:
+        raise Fail(f"typed zorbleq twice after incognito; zorbl -> {got[:6]}")
+    set_incognito(True)
+    hidden = suggested_after("zorbleq")
+    set_incognito(False)
+    if "zorbleq" in hidden:
+        raise Fail(f"zorbl -> {got[:6]} learned, but {hidden[:6]} while incognito")
+    return f"zorbl -> {got[:6]} after incognito; {hidden[:6]} while incognito again"
+
+
+def learns_again(language, probe, probe_word, code):
+    """After incognito the language learns again; Mozc also hides while incognito what it learned:
+    its order then is the unlearned one, so the word picked is one that order doesn't put first."""
+
+    def run():
+        to_language(probe, probe_word)
+        unlearned = None
+        if language == "ja":
+            set_incognito(True)
+            unlearned = candidates_for(code)
+            set_incognito(False)
+        got = candidates_for(code)
+        word = next(c for c in got[1:] if not unlearned or c != unlearned[0])
+        tap_candidate(word)
+        after = candidates_for(code)
+        detail = f"picked {word} for {code} after incognito; next {code} -> {after[:4]}"
+        if after[0] != word:
+            raise Fail(detail)
+        if unlearned:
+            set_incognito(True)
+            hidden = candidates_for(code)
+            set_incognito(False)
+            detail += f"; while incognito again -> {hidden[:4]}"
+            if hidden[0] == word:
+                raise Fail(detail)
+        return detail
+
+    return run
+
+
 adb("logcat", "-c")
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
@@ -969,4 +1229,21 @@ check(
     lambda: system_locale("en-US") or "the system is back in en-US",
 )
 
+check("incognito-auto-fields", incognito_auto_fields)
+check("incognito-private-en", incognito_private_en)
+check("incognito-private-ja", incognito_private_ja)
+check("incognito-toggle-on", incognito_toggle)
+check("incognito-en", incognito_en)
+check("incognito-after-restart", incognito_after_restart)
+check("incognito-privacy-switch", incognito_privacy_switch)
+check("incognito-zh", incognito_zh)
+check("incognito-ja", incognito_ja)
+check("incognito-clipboard", incognito_clipboard)
+check(
+    "incognito-badge-tap-off",
+    lambda: set_incognito(False) or "a tap on the badge turns incognito off",
+)
+check("incognito-off-learns-en", learns_again_en)
+check("incognito-off-learns-zh", learns_again("zh", "ni", "你", "sx"))
+check("incognito-off-learns-ja", learns_again("ja", "nihongo", "日本語", "hashi"))
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
