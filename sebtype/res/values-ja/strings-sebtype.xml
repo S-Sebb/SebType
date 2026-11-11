@@ -74,4 +74,9 @@
     <string name="sebtype_payment_licence_note">FUTO のライセンスにより、SebType はこのページを含める必要があります。支払いは FUTO に送られます。SebType はこれと無関係で、何も受け取りません。</string>
     <string name="sebtype_settings_credits">ライセンスとクレジット</string>
     <string name="sebtype_settings_credits_subtitle">FUTO のライセンス、雾凇拼音、Mozc など</string>
+    <!-- シークレットモード (#31) -->
+    <string name="sebtype_incognito">シークレットモード</string>
+    <string name="sebtype_incognito_subtitle">オフにするまで単語を学習せず、クリップボード履歴も残しません。パスワード欄とシークレットタブは常にシークレットモードです。</string>
+    <string name="sebtype_incognito_on_tap_off">シークレットモード オン。タップでオフ</string>
+    <string name="sebtype_incognito_field">この入力欄はシークレットモード</string>
 </resources>

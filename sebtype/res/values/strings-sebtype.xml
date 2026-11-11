@@ -56,6 +56,11 @@
     <string name="sebtype_settings_action_bar_subtitle">Which buttons sit in the bar above the keys</string>
     <string name="sebtype_settings_learn">Learn from my typing</string>
     <string name="sebtype_settings_learn_subtitle">English, 中文 and 日本語 remember the words you pick</string>
+    <!-- Incognito (#31): the action bar button, the Privacy switch and the action bar badge. -->
+    <string name="sebtype_incognito">Incognito</string>
+    <string name="sebtype_incognito_subtitle">Learns no words and keeps no clipboard history until you turn it off. Password fields and private tabs are always incognito.</string>
+    <string name="sebtype_incognito_on_tap_off">Incognito on. Tap to turn off</string>
+    <string name="sebtype_incognito_field">Incognito in this field</string>
     <string name="sebtype_settings_clipboard">Clipboard history</string>
     <string name="sebtype_settings_clipboard_keep_history">Keep clipboard history</string>
     <string name="sebtype_settings_clipboard_keep">Keep</string>
