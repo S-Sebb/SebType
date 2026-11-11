@@ -134,7 +134,6 @@ import org.futo.inputmethod.latin.uix.settings.DataStoreCacheProvider
 import org.futo.inputmethod.latin.uix.settings.pages.ActionBarDisplayedSetting
 import org.futo.inputmethod.latin.uix.settings.pages.InlineAutofillSetting
 import org.futo.inputmethod.latin.uix.settings.useDataStore
-import org.futo.inputmethod.latin.uix.theme.KeyboardSurfaceShaderBackground
 import org.futo.inputmethod.latin.uix.theme.Typography
 import org.futo.inputmethod.latin.uix.theme.UixThemeAuto
 import org.futo.inputmethod.latin.uix.theme.UixThemeWrapper
@@ -208,26 +207,14 @@ fun Modifier.keyboardBottomPadding(size: ComputedKeyboardSize): Modifier = with(
 fun BoxScope.KeyboardBackground(
     colorScheme: KeyboardColorScheme,
     computedSize: ComputedKeyboardSize? = null,
-    useThumbnail: Boolean = false,
 ) {
     val backgroundBrush = colorScheme.keyboardBackgroundGradient ?: SolidColor(colorScheme.keyboardSurface)
     val advanced = colorScheme.extended.advancedThemeOptions
 
-    val shader = advanced.backgroundShader
-    val image = if(useThumbnail) advanced.thumbnailImage else advanced.backgroundImage
-    val rect = advanced.backgroundImageVisibleArea?.let {
-        if(useThumbnail) {
-            Rect(
-                (it.left * advanced.thumbnailScale).roundToInt(),
-                (it.top * advanced.thumbnailScale).roundToInt(),
-                (it.right * advanced.thumbnailScale).roundToInt(),
-                (it.bottom * advanced.thumbnailScale).roundToInt()
-            )
-        } else it
-    }
+    val image = advanced.backgroundImage
+    val rect = advanced.backgroundImageVisibleArea
 
     when {
-        shader != null -> KeyboardSurfaceShaderBackground(shader, modifier = Modifier.matchParentSize())
         image != null && rect != null -> {
             val navbarHeight = navBarHeight()
             Canvas(Modifier.matchParentSize()) {

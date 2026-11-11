@@ -30,8 +30,6 @@ import org.futo.inputmethod.latin.uix.settings.pages.DevKeyboardScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEdit
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEditor
 import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutList
-import org.futo.inputmethod.latin.uix.settings.pages.DevPaletteScreen
-import org.futo.inputmethod.latin.uix.settings.pages.DevThemeImportScreen
 import org.futo.inputmethod.latin.uix.settings.pages.DeveloperScreen
 import org.futo.inputmethod.latin.uix.settings.pages.HomeScreen
 import org.futo.inputmethod.latin.uix.settings.pages.KeyboardSettingsMenu
@@ -45,10 +43,6 @@ import org.futo.inputmethod.latin.uix.settings.pages.pdict.ChineseWordsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.ConfirmDeleteExtraDictFileDialog
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.PersonalDictionaryLanguageListForLocale
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.WordPopupDialogF
-import org.futo.inputmethod.latin.uix.settings.pages.themes.CustomThemeDialog
-import org.futo.inputmethod.latin.uix.settings.pages.themes.CustomThemeScreen
-import org.futo.inputmethod.latin.uix.settings.pages.themes.DeleteCustomThemeDialog
-import org.futo.inputmethod.latin.uix.settings.pages.themes.ThemeScreen
 
 // Utility function for quick error messages
 fun NavHostController.navigateToError(title: String, body: String) {
@@ -67,8 +61,6 @@ object Route {
     @Serializable data class PersonalDictWord(val lang: String?, val word: String?)
     @Serializable data class PersonalDictDelete(val dict: String)
     @Serializable data class DevLayoutEdit(val i: Int)
-    @Serializable data class CustomTheme(val uri: String)
-    @Serializable data class DeleteTheme(val name: String)
     @Serializable data class ThirdPartyInfo(val idx: Int)
 }
 
@@ -112,9 +104,6 @@ fun SettingsNavigator(
 
                 composable<Route.DevLayoutEdit> { DevLayoutEdit(nav, it.i) }
 
-                composable<Route.CustomTheme> { CustomThemeScreen(it.uri, nav) }
-                dialog<Route.DeleteTheme> { DeleteCustomThemeDialog(it.name, nav) }
-
                 composable<Route.ThirdPartyInfo> { ProjectInfoView(it.idx, nav) }
 
                 dialog<Route.Error> { ErrorDialog(it.title, it.body, nav) }
@@ -132,14 +121,11 @@ fun SettingsNavigator(
                 if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }
             }
             composable("resize") { ResizeScreen(navController) }
-            composable("themes") { ThemeScreen(navController) }
             composable("developer") { DeveloperScreen(navController) }
             composable("devtextedit") { DevEditTextVariationsScreen(navController) }
             composable("devbuggytextedit") { BuggyTextEditVariations(navController) }
             composable("devlayouts") { DevLayoutList(navController) }
             composable("devlayouteditor") { DevLayoutEditor(navController) }
-            composable("devtheme") { DevThemeImportScreen(navController) }
-            composable("dynamicpalette") { DevPaletteScreen(navController) }
             composable("devkeyboard") { DevKeyboardScreen(navController) }
             composable("payment") { PaymentScreen(navController) { navController.navigateUp() } }
             composable("paid") { PaymentThankYouScreen { navController.navigateUp() } }
@@ -150,9 +136,6 @@ fun SettingsNavigator(
             }
             dialog("alreadyPaid") {
                 AlreadyPaidDialog(navController = navController)
-            }
-            dialog("customThemeDialog") {
-                CustomThemeDialog(navController = navController)
             }
         }
     }

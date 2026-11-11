@@ -32,7 +32,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.settings.Settings
-import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.TextEditPopupActivity
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryEnabled
 import org.futo.inputmethod.latin.uix.settings.SettingsCard
@@ -42,11 +41,9 @@ import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.settings.useSharedPrefsBool
-import org.futo.inputmethod.latin.uix.theme.ThemeOptions
 import org.futo.inputmethod.latin.uix.theme.Typography
-import org.futo.inputmethod.latin.uix.theme.defaultThemeOption
 
-// SebType's home (#41): six groups, each line showing its current state, at most two taps from any
+// SebType's home (#41): five groups (Theme went with #111), each line showing its current state, at most two taps from any
 // option. FUTO's payment reminder still appears here when it is due; the payment screen is in About.
 @Composable
 private fun HomeGroups(navController: NavHostController) {
@@ -55,10 +52,6 @@ private fun HomeGroups(navController: NavHostController) {
     val autocorrect = useSharedPrefsBool(Settings.PREF_AUTO_CORRECTION, true).value
     val learning = useSharedPrefsBool(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true).value
     val clipboard = useDataStoreValue(ClipboardHistoryEnabled)
-    val themeKey = useDataStoreValue(THEME_KEY)
-    val theme = ThemeOptions[themeKey]?.name?.let { stringResource(it) }
-        ?: if(themeKey.isEmpty()) stringResource(defaultThemeOption(context).name)
-        else stringResource(R.string.sebtype_settings_custom_theme)
 
     SettingsCard {
         NavigationItem(
@@ -75,13 +68,6 @@ private fun HomeGroups(navController: NavHostController) {
             style = NavigationItemStyle.HomeSecondary,
             icon = painterResource(R.drawable.keyboard),
             navigate = { navController.navigate("keyboard") }
-        )
-        NavigationItem(
-            title = stringResource(R.string.theme_settings_title),
-            subtitle = theme,
-            style = NavigationItemStyle.HomeTertiary,
-            icon = painterResource(R.drawable.themes),
-            navigate = { navController.navigate("themes") }
         )
     }
     SettingsCard {

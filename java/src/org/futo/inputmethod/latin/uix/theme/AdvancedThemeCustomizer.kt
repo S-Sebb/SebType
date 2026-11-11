@@ -5,7 +5,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
-import android.os.Build
 import android.util.TypedValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -35,7 +34,6 @@ data class KeyDrawingConfiguration(
     val hintSize: Float,
     val textTypeface: Typeface,
     val hintTypeface: Typeface,
-    val centeredHint: Boolean = false,
     val outline: KeyOutline? = null,
 )
 
@@ -69,10 +67,8 @@ class AdvancedThemeMatcher(
                     .sorted().distinct()
 
     val id = globalId.also {
-        globalId += layers.size + 4
+        globalId += layers.size + 1
     }
-
-    val iconList = theme.keyIcons?.v ?: emptyList()
 
     val backgrounds = buildMap {
         layers.forEachIndexed { index, i ->
@@ -80,22 +76,7 @@ class AdvancedThemeMatcher(
         }
     }
 
-    val icons = CachedKeyedMatcher(cacheId = id + layers.size +1, full = iconList, matcher = keyedBitmapMatcher<KeyIcon>())
-    val popupBackgrounds = CachedKeyedMatcher(cacheId = id + layers.size + 2, full = backgroundList, matcher = keyedBitmapMatcher<KeyBackground>(true))
-    val hintIcons = CachedKeyedMatcher(cacheId = id + layers.size + 3, full = iconList, matcher = { keyboard: Keyboard, key: Key, layer: Int, entry: KeyedBitmap<KeyIcon> ->
-        val hintLabel = key.effectiveHintLabel
-        val hintIcon = key.effectiveHintIcon
-        matchesHint(entry.qualifiers, keyboard.mId.mKeyboardLayoutSetName, hintLabel, hintIcon)
-    })
-
-    fun findIcon(matcher: CachedKeyedMatcher<KeyedBitmap<KeyIcon>>, keyboard: Keyboard, key: Key): KeyIcon? {
-        if(matcher.full.isEmpty()) return null
-
-        val bitmap = matcher.find(keyboard, key, 0)
-        if(bitmap == null) return null
-
-        return bitmap.bitmap
-    }
+    val popupBackgrounds = CachedKeyedMatcher(cacheId = id + layers.size, full = backgroundList, matcher = keyedBitmapMatcher<KeyBackground>(true))
 
     fun findBackground(matcher: CachedKeyedMatcher<KeyedBitmap<KeyBackground>>, keyboard: Keyboard, key: Key, layer: Int): KeyBackground? {
         if(matcher.full.isEmpty()) return null
@@ -157,51 +138,23 @@ class AdvancedThemeMatcher(
             Color(fgCol).let { it.copy(alpha = it.alpha*0.8f) }.toArgb()
         } ?: key.selectHintTextColor(drawableProvider, params)
 
-        val icon = findIcon(icons, keyboard, key)?.drawable ?: key.getIconOverride(keyboard.mIconsSet, params.mAnimAlpha)
-        val hintIcon = findIcon(hintIcons, keyboard, key)?.drawable
-
-        var label: String? = key.labelOverride ?: key.label
-        var hintLabel: String? = if(hintIcon == null) key.effectiveHintLabel else null
-
-        val textSize = key.selectTextSize(params).toFloat() * scheme.extended.advancedThemeOptions.textSizeMultiplier
-        val hintSize = key.selectHintTextSize(drawableProvider, params).toFloat() * scheme.extended.advancedThemeOptions.hintSizeMultiplier
-
-        var textTypeface = drawableProvider.selectKeyTypeface(key.selectTypeface(params))
-        var hintTypeface = drawableProvider.selectKeyTypeface(key.selectHintTypeface(drawableProvider, params))
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            if (scheme.extended.advancedThemeOptions.textWeight != null) {
-                textTypeface = Typeface.create(
-                    textTypeface,
-                    scheme.extended.advancedThemeOptions.textWeight.roundToInt(),
-                    false
-                )
-            }
-
-            if (scheme.extended.advancedThemeOptions.hintWeight != null) {
-                hintTypeface = Typeface.create(
-                    hintTypeface,
-                    scheme.extended.advancedThemeOptions.hintWeight.roundToInt(),
-                    false
-                )
-            }
-        }
+        val textSize = key.selectTextSize(params).toFloat() * theme.textSizeMultiplier
+        val hintSize = key.selectHintTextSize(drawableProvider, params).toFloat()
 
         return KeyDrawingConfiguration(
             background = background,
             backgroundPadding = backgroundPadding,
             backgroundGap = backgroundGap,
-            icon = icon,
-            hintIcon = hintIcon ?: key.getHintIcon(keyboard.mIconsSet, params.mAnimAlpha),
-            label = label,
-            hintLabel = hintLabel,
+            icon = key.getIconOverride(keyboard.mIconsSet, params.mAnimAlpha),
+            hintIcon = key.getHintIcon(keyboard.mIconsSet, params.mAnimAlpha),
+            label = key.labelOverride ?: key.label,
+            hintLabel = key.effectiveHintLabel,
             textColor = textColor,
             hintColor = hintColor,
             textSize = textSize,
             hintSize = hintSize,
-            textTypeface = textTypeface,
-            hintTypeface = hintTypeface,
-            centeredHint = scheme.extended.advancedThemeOptions.centerHints,
+            textTypeface = drawableProvider.selectKeyTypeface(key.selectTypeface(params)),
+            hintTypeface = drawableProvider.selectKeyTypeface(key.selectHintTypeface(drawableProvider, params)),
             outline = outline
         )
     }

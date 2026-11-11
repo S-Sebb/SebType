@@ -21,19 +21,6 @@ import org.futo.inputmethod.latin.uix.settings.SettingsActivity
 import java.net.URLDecoder
 import java.net.URLEncoder
 
-// Not exhaustive
-fun KeyboardColorScheme.differsFrom(other: KeyboardColorScheme): Boolean {
-    return this.background != other.background
-            || this.surface != other.surface
-            || this.primary != other.primary
-            || this.secondary != other.secondary
-            || this.primaryContainer != other.primaryContainer
-            || this.secondaryContainer != other.secondaryContainer
-            || this.onSurface != other.onSurface
-            || this.onBackground != other.onBackground
-            || this.onPrimary != other.onPrimary
-}
-
 fun Context.fromDp(v: Float): Float {
     return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
 }

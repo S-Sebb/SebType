@@ -1,4 +1,4 @@
-package org.futo.inputmethod.latin.uix.theme.presets
+package org.futo.inputmethod.latin.uix.theme
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -10,26 +10,17 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.res.ResourcesCompat
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.KeyboardColorScheme
 import org.futo.inputmethod.latin.uix.extendedLightColorScheme
-import org.futo.inputmethod.latin.uix.theme.KeyBackground
-import org.futo.inputmethod.latin.uix.theme.KeyQualifier
-import org.futo.inputmethod.latin.uix.theme.KeyedBitmap
-import org.futo.inputmethod.latin.uix.theme.KeyedBitmaps
-import org.futo.inputmethod.latin.uix.theme.ThemeOption
-import org.futo.inputmethod.latin.uix.theme.selector.ThemePreview
 import org.futo.inputmethod.v2keyboard.KeyVisualStyle
 import kotlin.math.roundToInt
 
-// SebType's "Picnic" theme: SebChat's pixel look (S-Sebb/SebChat app/lib/look.dart). Cream keys in
+// SebType's one look, "Picnic" (#17, #111), in light and dark system mode alike: SebChat's pixel look (S-Sebb/SebChat app/lib/look.dart). Cream keys in
 // notched brown frames with a hard shadow, on SebChat's checkered cloth at half its size (48 dp checks).
 private object Picnic {
     const val background = 0xFFFBE9D6.toInt()
@@ -51,7 +42,7 @@ private object Picnic {
 
 /** SebChat's PixelBorder as a drawable: an outline with square corners cut away, a highlight
  *  top-left and lowlight bottom-right inside, and a hard shadow in the last [w] pixels right and below.
- *  The settings' cards use it too (settings/PixelLook.kt), in the current theme's colours. */
+ *  The settings' cards use it too (settings/PixelLook.kt). */
 internal class PixelFrame(
     private val fill: Int,
     private val highlight: Int?,
@@ -109,7 +100,7 @@ private class Clear : Drawable() {
 }
 
 /** SebChat's cloth tile: 64 pixels checkered in two halves with three tiny flowers, one pixel being
- *  1.5 dp rounded to whole device pixels. The settings page repeats it too, in the theme's colours. */
+ *  1.5 dp rounded to whole device pixels. The settings page repeats it too. */
 internal fun clothTile(density: Float, background: Int, check: Int): Bitmap {
     val px = maxOf(1, (1.5f * density).roundToInt())
     val half = 32f * px
@@ -217,15 +208,11 @@ private val scheme = extendedLightColorScheme(
 // The cloth is screen-sized, so it is made once per screen size and density.
 private var cached: Pair<Triple<Int, Int, Float>, KeyboardColorScheme>? = null
 
-val PicnicTheme = ThemeOption(
-    dynamic = false,
-    key = "SebTypePicnic",
-    name = R.string.sebtype_theme_picnic,
-    available = { true }
-) { context ->
+/** The keyboard's and the settings' colours, cloth and key frames. */
+fun picnicColors(context: Context): KeyboardColorScheme {
     val m = context.resources.displayMetrics
     val size = Triple(m.widthPixels, m.heightPixels, m.density)
-    cached?.takeIf { it.first == size }?.second ?: run {
+    return cached?.takeIf { it.first == size }?.second ?: run {
         val image = cloth(context).asImageBitmap()
         scheme.copy(extended = scheme.extended.copy(
             // Draws over the cloth; clear so the cloth shows.
@@ -233,7 +220,6 @@ val PicnicTheme = ThemeOption(
             advancedThemeOptions = scheme.extended.advancedThemeOptions.copy(
                 backgroundImage = image,
                 backgroundImageVisibleArea = Rect(0, 0, image.width, image.height),
-                thumbnailImage = image,
                 actionBarOpacity = 0f,
                 keyBorders = true,
                 // Nunito's letters are wide; this brings them to the size of FUTO's default font.
@@ -243,10 +229,4 @@ val PicnicTheme = ThemeOption(
             )
         )).also { cached = size to it }
     }
-}
-
-@Composable
-@Preview
-private fun PreviewPicnic() {
-    ThemePreview(PicnicTheme)
 }

@@ -17,29 +17,13 @@ data class KeyBackground(
     val background: Drawable
 )
 
-data class KeyIcon(
-    val drawable: Drawable
-)
-
+/** What Picnic sets beyond colours: the cloth, the key frames and the font. */
 data class AdvancedThemeOptions(
-    val backgroundShader: String? = null,
     val backgroundImage: ImageBitmap? = null,
     val backgroundImageVisibleArea: Rect? = null,
-    val thumbnailImage: ImageBitmap? = null,
-    val thumbnailScale: Float = 1.0f,
-    val keyRoundness: Float = 1.0f,
     val actionBarOpacity: Float = 0.5f,
-    val keyBorders: Boolean? = null,
+    val keyBorders: Boolean = false,
     val keyBackgrounds: KeyedBitmaps<KeyBackground>? = null,
-    val keyIcons: KeyedBitmaps<KeyIcon>? = null,
     val font: Typeface? = null,
-    val themeName: String? = null,
-    val themeAuthor: String? = null,
-
     val textSizeMultiplier: Float = 1.0f,
-    val hintSizeMultiplier: Float = 1.0f,
-    val textWeight: Float? = null,
-    val hintWeight: Float? = null,
-
-    val centerHints: Boolean = false,
 )

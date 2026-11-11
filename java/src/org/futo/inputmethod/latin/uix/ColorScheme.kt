@@ -2,7 +2,6 @@ package org.futo.inputmethod.latin.uix
 
 import androidx.annotation.FloatRange
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
@@ -149,96 +148,6 @@ data class KeyboardColorScheme(
         get() = extended.hintColor
 }
 
-fun extendedDarkColorScheme(
-    primary: Color,
-    onPrimary: Color,
-    primaryContainer: Color,
-    onPrimaryContainer: Color,
-    secondary: Color,
-    onSecondary: Color,
-    secondaryContainer: Color,
-    onSecondaryContainer: Color,
-    tertiary: Color,
-    onTertiary: Color,
-    tertiaryContainer: Color,
-    onTertiaryContainer: Color,
-    error: Color,
-    onError: Color,
-    errorContainer: Color,
-    onErrorContainer: Color,
-    outline: Color,
-    outlineVariant: Color,
-    surface: Color,
-    onSurface: Color,
-    onSurfaceVariant: Color,
-    surfaceContainerHighest: Color,
-    shadow: Color = Color.Black,
-    keyboardSurface: Color,
-    keyboardSurfaceDim: Color = keyboardSurface,
-    keyboardContainer: Color,
-    keyboardContainerVariant: Color,
-    onKeyboardContainer: Color,
-    keyboardPress: Color,
-    keyboardFade0: Color = surface,
-    keyboardFade1: Color = surface,
-    keyboardBackgroundGradient: Brush? = null,
-    primaryTransparent: Color,
-    onSurfaceTransparent: Color,
-    navigationBarColor: Color? = null,
-    navigationBarColorForTransparency: Color? = null,
-    keyboardContainerPressed: Color = outline.copy(alpha = 0.33f),
-    onKeyboardContainerPressed: Color = Color.Transparent,
-    hintColor: Color? = null,
-    keyboardBackgroundShader: String? = null
-): KeyboardColorScheme =
-    KeyboardColorScheme(
-        darkColorScheme(
-            primary                    = primary,
-            onPrimary                  = onPrimary,
-            primaryContainer           = primaryContainer,
-            onPrimaryContainer         = onPrimaryContainer,
-            secondary                  = secondary,
-            onSecondary                = onSecondary,
-            secondaryContainer         = secondaryContainer,
-            onSecondaryContainer       = onSecondaryContainer,
-            tertiary                   = tertiary,
-            onTertiary                 = onTertiary,
-            tertiaryContainer          = tertiaryContainer,
-            onTertiaryContainer        = onTertiaryContainer,
-            error                      = error,
-            onError                    = onError,
-            errorContainer             = errorContainer,
-            onErrorContainer           = onErrorContainer,
-            outline                    = outline,
-            outlineVariant             = outlineVariant,
-            surface                    = surface,
-            onSurface                  = onSurface,
-            onSurfaceVariant           = onSurfaceVariant,
-            surfaceContainerHighest    = surfaceContainerHighest,
-            background                 = surface,
-            onBackground               = onSurface
-        ),
-
-        ExtraColors(
-            keyboardSurface            = keyboardSurface,
-            keyboardSurfaceDim         = keyboardSurfaceDim,
-            keyboardContainer          = keyboardContainer,
-            keyboardContainerVariant   = keyboardContainerVariant,
-            onKeyboardContainer        = onKeyboardContainer,
-            keyboardPress              = keyboardPress,
-            keyboardBackgroundGradient = keyboardBackgroundGradient,
-            primaryTransparent         = primaryTransparent,
-            onSurfaceTransparent       = onSurfaceTransparent,
-            navigationBarColor         = navigationBarColor,
-            keyboardContainerPressed   = keyboardContainerPressed,
-            onKeyboardContainerPressed = onKeyboardContainerPressed,
-            hintColor = hintColor,
-            navigationBarColorForTransparency = navigationBarColorForTransparency,
-            advancedThemeOptions = AdvancedThemeOptions()
-        )
-    )
-
-
 fun extendedLightColorScheme(
     primary: Color,
     onPrimary: Color,
@@ -327,27 +236,6 @@ fun extendedLightColorScheme(
             advancedThemeOptions = AdvancedThemeOptions()
         )
     )
-
-fun wrapDarkColorScheme(scheme: ColorScheme): KeyboardColorScheme {
-    return KeyboardColorScheme(
-        scheme,
-        ExtraColors(
-            keyboardSurface = scheme.surface,
-            keyboardSurfaceDim = scheme.surfaceContainerLowest,
-            keyboardContainer = scheme.surfaceContainerHigh,
-            keyboardContainerVariant = scheme.surfaceContainerLow,
-            onKeyboardContainer = scheme.onSurface,
-            keyboardPress = scheme.inversePrimary,
-            keyboardBackgroundGradient = null,
-            primaryTransparent = scheme.primary.copy(alpha = 0.3f),
-            onSurfaceTransparent = scheme.onSurface.copy(alpha = 0.1f),
-            keyboardContainerPressed = scheme.outline.copy(alpha = 0.33f),
-            onKeyboardContainerPressed = Color.Transparent,
-            hintColor = null,
-            advancedThemeOptions = AdvancedThemeOptions()
-        )
-    )
-}
 
 fun wrapLightColorScheme(scheme: ColorScheme): KeyboardColorScheme {
     return KeyboardColorScheme(

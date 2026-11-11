@@ -24,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,13 +73,12 @@ import org.futo.inputmethod.latin.uix.settings.DropDownPicker
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
+import org.futo.inputmethod.latin.uix.settings.Tip
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import org.futo.inputmethod.latin.uix.settings.SpacedColumn
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.theme.Typography
-import org.futo.inputmethod.latin.uix.theme.UixThemeWrapper
-import org.futo.inputmethod.latin.uix.theme.presets.DynamicDarkTheme
 import org.futo.inputmethod.updates.dismissedMigrateUpdateNotice
 import org.futo.inputmethod.updates.openURI
 import kotlin.math.absoluteValue
@@ -453,6 +451,8 @@ fun PaymentScreen(
 
     ScrollableList {
         ScreenTitle(stringResource(R.string.payment_screen_short_title), showBack = true, navController = navController)
+        // SebType keeps FUTO's screen unchanged, as FUTO's licence requires, and only adds this note (#112).
+        Tip(stringResource(R.string.sebtype_payment_licence_note))
 
         Spacer(Modifier.height(8.dp))
 
@@ -613,18 +613,6 @@ fun PaymentScreen(
         })
     }
 }
-
-@Composable
-@Preview(heightDp = 2048)
-private fun PaymentScreenDark() {
-    val context = LocalContext.current
-    UixThemeWrapper(colorScheme = DynamicDarkTheme.obtainColors(context)) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            PaymentScreen()
-        }
-    }
-}
-
 
 @Composable
 fun PaymentScreenSwitch(

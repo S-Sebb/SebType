@@ -1,6 +1,5 @@
 package org.futo.inputmethod.latin.uix.theme
 
-import android.content.Context
 import android.graphics.Typeface
 import android.os.Build
 import android.text.TextPaint
@@ -18,10 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import org.futo.inputmethod.latin.uix.KeyboardColorScheme
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
-import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.actions.compatEmojiTypeface
 import org.futo.inputmethod.latin.uix.findActivity
-import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import kotlin.math.sqrt
 
 fun applyWindowColors(window: Window, @ColorInt color: Int, statusBar: Boolean) {
@@ -99,27 +96,9 @@ fun UixThemeWrapper(colorScheme: KeyboardColorScheme, content: @Composable () ->
     }
 }
 
-fun ThemeOption?.ensureAvailable(context: Context): ThemeOption? {
-    return if(this == null) {
-        null
-    } else {
-        if(!this.available(context)) {
-            null
-        } else {
-            this
-        }
-    }
-}
-
 @Composable
 fun UixThemeAuto(content: @Composable () -> Unit) {
     val context = LocalContext.current
-
-    val themeIdx = useDataStoreValue(THEME_KEY)
-
-    val theme: ThemeOption = getThemeOption(context, themeIdx).orDefault(context)
-
-    val colors = remember(theme.key) { theme.obtainColors(context) }
-
+    val colors = remember { picnicColors(context) }
     UixThemeWrapper(colorScheme = colors, content)
 }

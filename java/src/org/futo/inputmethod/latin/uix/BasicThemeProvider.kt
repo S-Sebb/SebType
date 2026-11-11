@@ -35,7 +35,6 @@ import org.futo.inputmethod.latin.uix.theme.KeyBackground
 import org.futo.inputmethod.v2keyboard.Direction
 import org.futo.inputmethod.v2keyboard.KeyVisualStyle
 
-val KeyBordersSetting = SettingsKey(booleanPreferencesKey("keyBorders"), true)
 val HiddenKeysSetting = SettingsKey(booleanPreferencesKey("hiddenKeys1"), false)
 val KeyHintsSetting   = SettingsKey(booleanPreferencesKey("keyHints"), false)
 
@@ -298,7 +297,7 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         themeTypeface = advanced.font
 
         expertMode = context.getSettingBlocking(HiddenKeysSetting)
-        keyBorders = advanced.keyBorders ?: context.getSettingBlocking(KeyBordersSetting)
+        keyBorders = advanced.keyBorders
         showKeyHints = context.getSettingBlocking(KeyHintsSetting)
 
         hintColor = colorScheme.hintColor?.toArgb() ?: colorScheme.onSurfaceVariant.toArgb()
@@ -420,16 +419,15 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
 
         keyboardBackground = coloredRectangle(0x00000000)
 
-        val roundness = advanced.keyRoundness
-        val keyCornerRadius = 9.dp * roundness
+        val keyCornerRadius = 9.dp
 
         val spaceCornerRadius = if(keyBorders) {
             keyCornerRadius
         } else {
-            48.dp * roundness
+            48.dp
         }
 
-        val actionKeyRadius = 128.dp * roundness
+        val actionKeyRadius = 128.dp
 
         keyStyles = mapOf(
             KeyVisualStyle.Action to if(expertMode) {

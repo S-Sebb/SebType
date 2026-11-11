@@ -8,7 +8,6 @@
     <string name="sebtype_settings_autocorrect_on">自动纠正已开</string>
     <string name="sebtype_settings_autocorrect_off">自动纠正已关</string>
     <string name="sebtype_settings_keyboard_subtitle">尺寸、数字行、声音和振动</string>
-    <string name="sebtype_settings_custom_theme">自定义主题</string>
     <string name="sebtype_settings_privacy">隐私</string>
     <string name="sebtype_settings_learning_on">学习已开</string>
     <string name="sebtype_settings_learning_off">学习已关</string>
@@ -68,7 +67,8 @@
     <string name="sebtype_settings_help">帮助与反馈</string>
     <string name="sebtype_settings_help_subtitle">GitHub 上的 SebType</string>
     <string name="sebtype_settings_support_futo">支持 FUTO</string>
-    <string name="sebtype_settings_support_futo_subtitle">FUTO 的付款页面</string>
+    <string name="sebtype_settings_support_futo_subtitle">FUTO 许可证要求；与 SebType 无关</string>
+    <string name="sebtype_payment_licence_note">FUTO 的许可证要求 SebType 包含此页面。付款归 FUTO 所有；SebType 与此无关，也不会收到任何款项。</string>
     <string name="sebtype_settings_credits">许可与致谢</string>
     <string name="sebtype_settings_credits_subtitle">FUTO 的许可、雾凇拼音、Mozc 等</string>
 </resources>

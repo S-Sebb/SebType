@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,23 +50,14 @@ import org.futo.inputmethod.latin.ReadOnlyBinaryDictionary
 import org.futo.inputmethod.latin.Subtypes
 import org.futo.inputmethod.latin.SubtypesSetting
 import org.futo.inputmethod.latin.localeFromString
-import org.futo.inputmethod.latin.uix.actions.BugInfo
-import org.futo.inputmethod.latin.uix.actions.BugViewerState
-import org.futo.inputmethod.latin.uix.actions.DebugLabel
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitleWithIcon
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import org.futo.inputmethod.latin.uix.settings.Tip
-import org.futo.inputmethod.latin.uix.settings.pages.DevAutoAcceptThemeImport
-import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.theme.StatusBarColorSetter
-import org.futo.inputmethod.latin.uix.theme.ThemeOption
-import org.futo.inputmethod.latin.uix.theme.UixThemeWrapper
-import org.futo.inputmethod.latin.uix.theme.ZipThemes
-import org.futo.inputmethod.latin.uix.theme.getThemeOption
-import org.futo.inputmethod.latin.uix.theme.orDefault
+import org.futo.inputmethod.latin.uix.theme.UixThemeAuto
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.SubtypeLocaleUtils
 import org.futo.inputmethod.latin.xlm.ModelPaths
@@ -621,11 +611,9 @@ sealed class ItemBeingImported {
     data class LanguageResource(val v: FileKindAndInfo) : ItemBeingImported()
     data class SettingsBackup(val v: SettingsExporter.CfgFileMetadata) : ItemBeingImported()
     data class UserDictFile(val v: DetectedUserDictFile) : ItemBeingImported()
-    data class CustomTheme(val v: ZipThemes.ThemeMetadataResult) : ItemBeingImported()
 }
 
 class ImportResourceActivity : ComponentActivity() {
-    private val themeOption: MutableState<ThemeOption?> = mutableStateOf(null)
     private val itemBeingImported: MutableState<ItemBeingImported?> = mutableStateOf(null)
     private var uri: Uri? = null
 
@@ -754,56 +742,6 @@ class ImportResourceActivity : ComponentActivity() {
 
     @Composable
     private fun InnerScreen() = itemBeingImported.value.let { item -> when(item) {
-        is ItemBeingImported.CustomTheme -> {
-            ScrollableList {
-                ScreenTitleWithIcon(
-                    stringResource(R.string.theme_customizer_import_custom_theme_menu_title),
-                    painterResource(R.drawable.themes)
-                )
-
-                val errors = item.v.config?.errors ?: ""
-                if(item.v.meta.isNewer || errors.isNotEmpty()) {
-                    Tip("⚠\uFE0F " + stringResource(R.string.theme_settings_warning_newer_version))
-                }
-
-                if(errors.isNotEmpty()) {
-                    Text("${errors}", style = DebugLabel)
-                }
-
-                if(item.v.config == null) {
-                    Text("Error parsing theme:\n" + (item.v.error ?: "?"))
-
-                    Button(onClick = {
-                        finish()
-                    }) {
-                        Text("Close")
-                    }
-                } else {
-                    Text(
-                        stringResource(
-                            R.string.theme_customizer_import_custom_theme_name_text,
-                            item.v.config.name
-                        )
-                    )
-
-                    Text(
-                        stringResource(
-                            R.string.theme_customizer_import_custom_theme_author_text,
-                            item.v.config.author
-                        )
-                    )
-
-                    Button(onClick = {
-                        getInputStream()?.use {
-                            ZipThemes.importTheme(applicationContext, it, item.v)
-                        }
-                        finish()
-                    }) {
-                        Text(stringResource(R.string.resource_importer_import_button))
-                    }
-                }
-            }
-        }
         is ItemBeingImported.LanguageResource -> {
             ImportScreen(
                 fileKind = item.v,
@@ -870,18 +808,14 @@ class ImportResourceActivity : ComponentActivity() {
 
     private fun updateContent() {
         setContent {
-            themeOption.value?.let { themeOption ->
-                val themeIdx = useDataStore(key = THEME_KEY.key, default = themeOption.key)
-                val theme: ThemeOption = getThemeOption(this, themeIdx.value) ?: themeOption
-                UixThemeWrapper(theme.obtainColors(LocalContext.current)) {
-                    StatusBarColorSetter()
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        Box(Modifier.safeDrawingPadding()) {
-                            InnerScreen()
-                        }
+            UixThemeAuto {
+                StatusBarColorSetter()
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    Box(Modifier.safeDrawingPadding()) {
+                        InnerScreen()
                     }
                 }
             }
@@ -902,9 +836,6 @@ class ImportResourceActivity : ComponentActivity() {
         val userDictFile = getInputStream()?.use { detectJapaneseUserDict(it) }
         if(userDictFile != null) return ItemBeingImported.UserDictFile(userDictFile)
 
-        val customTheme = getInputStream()?.use { ZipThemes.getMetadata(it) }
-        if(customTheme != null) return ItemBeingImported.CustomTheme(customTheme)
-
         return null
     }
 
@@ -915,31 +846,11 @@ class ImportResourceActivity : ComponentActivity() {
 
         itemBeingImported.value = detectItemBeingImported()
 
-        val item = itemBeingImported.value
-        if(item is ItemBeingImported.CustomTheme && DevAutoAcceptThemeImport) {
-            if(item.v.config == null) {
-                BugViewerState.pushBug(BugInfo(
-                    name = "your custom theme (invalid metadata)",
-                    details = item.v.error ?: "Unknown error",
-                ))
-                BugViewerState.triggerOpen()
-            } else {
-                getInputStream()?.use {
-                    ZipThemes.importTheme(applicationContext, it, item.v)
-                }
-            }
-            finish()
-            return
-        }
-
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 updateContent()
             }
         }
-
-        val key = getSetting(THEME_KEY)
-        this.themeOption.value = getThemeOption(this, key).orDefault(this)
     }
 }
 
