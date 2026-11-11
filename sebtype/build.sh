@@ -60,7 +60,7 @@ fi
 start=$(date +%s)
 # Gradle reads signing from keystore.properties (gitignored). It is written and removed under the lock:
 # a release build in the same checkout that ends while another waits would otherwise remove it first,
-# and Gradle would quietly sign that one with the debug key.
+# and Gradle would stop that one for want of the key (#149).
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
 export SEBTYPE_KEY_DIR=$keydir KIND=$kind OUT=$out LOCKED=$locked
