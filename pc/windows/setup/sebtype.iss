@@ -201,6 +201,8 @@ var
 
 function AddFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
   external 'AddFontResourceExW@gdi32.dll stdcall';
+function RemoveFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
+  external 'RemoveFontResourceExW@gdi32.dll stdcall';
 
 // SebType's languages Setup sets up, as setup.ps1 -Languages takes them.
 function Chosen: String;
@@ -270,9 +272,18 @@ begin
     Restyle(C, '', 0, Ink);
 end;
 
-procedure LoadFont(Folder, FileName: String);
+// The app's fonts, loaded from {tmp} for this process only. A loaded font file can't be deleted, so they
+// are let go before Setup or the uninstaller removes {tmp}, and never loaded from {app}.
+procedure LoadFonts;
 begin
-  AddFontResourceEx(Folder + '\' + FileName, FR_PRIVATE, 0);
+  AddFontResourceEx(ExpandConstant('{tmp}\Jersey10-Regular.ttf'), FR_PRIVATE, 0);
+  AddFontResourceEx(ExpandConstant('{tmp}\Nunito-Bold.ttf'), FR_PRIVATE, 0);
+end;
+
+procedure UnloadFonts;
+begin
+  RemoveFontResourceEx(ExpandConstant('{tmp}\Jersey10-Regular.ttf'), FR_PRIVATE, 0);
+  RemoveFontResourceEx(ExpandConstant('{tmp}\Nunito-Bold.ttf'), FR_PRIVATE, 0);
 end;
 
 function Scale: String;
@@ -284,8 +295,7 @@ procedure InitializeWizard;
 begin
   ExtractTemporaryFile('Jersey10-Regular.ttf');
   ExtractTemporaryFile('Nunito-Bold.ttf');
-  LoadFont(ExpandConstant('{tmp}'), 'Jersey10-Regular.ttf');
-  LoadFont(ExpandConstant('{tmp}'), 'Nunito-Bold.ttf');
+  LoadFonts;
   Heading(WizardForm.WelcomeLabel1, 24);
   Heading(WizardForm.FinishedHeadingLabel, 24);
   Heading(WizardForm.PageNameLabel, 16);
@@ -352,6 +362,11 @@ begin
   Result := FailCode;
 end;
 
+procedure DeinitializeSetup;
+begin
+  UnloadFonts;
+end;
+
 procedure InitializeUninstallProgressForm;
 var
   Look: String;
@@ -362,8 +377,9 @@ begin
   Cloth := TBitmapImage.Create(UninstallProgressForm);
   Cloth.PngImage.LoadFromFile(Look + '\cloth.png');
   WizardSetBackImage([Cloth.PngImage], True, True, 255);
-  LoadFont(Look, 'Jersey10-Regular.ttf');
-  LoadFont(Look, 'Nunito-Bold.ttf');
+  FileCopy(Look + '\Jersey10-Regular.ttf', ExpandConstant('{tmp}\Jersey10-Regular.ttf'), False);
+  FileCopy(Look + '\Nunito-Bold.ttf', ExpandConstant('{tmp}\Nunito-Bold.ttf'), False);
+  LoadFonts;
   Heading(UninstallProgressForm.PageNameLabel, 16);
   UninstallProgressForm.PageNameLabel.Top := UninstallProgressForm.PageNameLabel.Top - ScaleY(6);
   UninstallProgressForm.PageNameLabel.Height := UninstallProgressForm.PageNameLabel.Height + ScaleY(8);
@@ -371,15 +387,21 @@ begin
   Restyle(UninstallProgressForm.StatusLabel, '', 0, Ink);
 end;
 
-// The uninstaller runs elevated as the person removing SebType, whose account it puts back: the user
-// step first (it needs the engines to stop them), then the engines.
+// The uninstaller runs elevated as the person removing SebType, whose account it puts back. The engines
+// go first: removing Mozc adds an empty Japanese to the account's languages, and a running Weasel or
+// Mozc writes its folder again, so the account is put back only once they are gone.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep <> usUninstall then
     Exit;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('Undoing');
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max div 3;
-  Step('-User -Undo', '-User -Undo', '%LOCALAPPDATA%\SebType\setup.log', False);
-  UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max * 2 div 3;
   Step('-Machine -Undo', '-Machine -Undo -Log "' + ExpandConstant('{app}\setup.log') + '"', ExpandConstant('{app}\setup.log'), False);
+  UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max * 2 div 3;
+  Step('-User -Undo', '-User -Undo', '%LOCALAPPDATA%\SebType\setup.log', False);
+end;
+
+procedure DeinitializeUninstall;
+begin
+  UnloadFonts;
 end;

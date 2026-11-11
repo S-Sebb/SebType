@@ -250,6 +250,8 @@ if (Test-Path $StateFile) {
     # Windows prunes this user's text service settings (HKCU ...\CTF\TIP) when the language list changes.
     RegBackups = @(@((Export-Key 'HKCU\Control Panel\Input Method\Hot Keys' "$backup\hotkeys.reg"),
         (Export-Key 'HKCU\Software\Microsoft\CTF\TIP' "$backup\tip.reg")) | Where-Object { $_ })
+    # The text services the account had settings for, without SebType's (see Languages).
+    TipKeys = @((Get-ChildItem 'HKCU:\Software\Microsoft\CTF\TIP' -ErrorAction SilentlyContinue).PSChildName | Where-Object { $_ -notin $WeaselClsid, $MozcClsid })
     RimeSettingsExisted = Test-Path 'HKCU:\Software\Rime'
     # Another Rime or Mozc's folders from before SebType: the user's own, put back when SebType goes.
     RimeBackup = if (Test-Path $RimeUser) { "$backup\Rime" } else { $null }
@@ -404,8 +406,10 @@ if (-not $Undo) {
 # Undo: the rest of how the account was before SebType.
 if ($state.DefaultInputMethod) { Set-WinDefaultInputMethodOverride -InputTip $state.DefaultInputMethod }
 foreach ($f in $state.RegBackups) { Import-Key $f }
-# The backup can hold the keys Windows made for SebType's input methods before it was taken.
-Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
+# Windows makes text service settings for the account as engines come and go (SebType's, and Microsoft's
+# Japanese IME when Mozc goes): only the ones from before stay.
+Get-ChildItem 'HKCU:\Software\Microsoft\CTF\TIP' -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -notin @($state.TipKeys) } |
+  Remove-Item -Recurse -ErrorAction SilentlyContinue
 New-Item $ToggleKey -Force | Out-Null
 foreach ($name in $ToggleNames) {
   $v = $state.Toggle.$name
