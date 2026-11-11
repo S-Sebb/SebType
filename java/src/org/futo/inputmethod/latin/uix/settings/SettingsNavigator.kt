@@ -22,6 +22,8 @@ import org.futo.inputmethod.latin.uix.settings.pages.PrivacyScreen
 import org.futo.inputmethod.latin.uix.settings.pages.FuzzyPinyinScreen
 import org.futo.inputmethod.latin.uix.settings.pages.ForgetLearnedDialog
 import org.futo.inputmethod.latin.uix.settings.pages.BackupScreen
+import org.futo.inputmethod.latin.uix.settings.pages.SyncDeleteDialog
+import org.futo.inputmethod.latin.uix.settings.pages.SyncLoginDialog
 import org.futo.inputmethod.latin.uix.settings.pages.AboutMenu
 import org.futo.inputmethod.latin.uix.settings.pages.AlreadyPaidDialog
 import org.futo.inputmethod.latin.uix.settings.pages.CreditsScreen
@@ -116,6 +118,8 @@ fun SettingsNavigator(
             composable("privacy") { PrivacyScreen(navController) }
             dialog("forgetLearned") { ForgetLearnedDialog(navController) }
             composable("backup") { BackupScreen(navController) }
+            dialog("syncLogin") { SyncLoginDialog(navController) }
+            dialog("syncDelete") { SyncDeleteDialog(navController) }
             composable("actionEdit") { ActionEditorScreen(navController) }
             SettingsMenus.forEach { menu ->
                 if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }

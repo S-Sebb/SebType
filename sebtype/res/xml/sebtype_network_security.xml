@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType (#12, H10 in #26): no cleartext traffic, and only the system's certificate authorities, not
+     ones the user or another app installed. The network is used only for the user's sync server. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

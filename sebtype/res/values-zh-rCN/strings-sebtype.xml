@@ -81,4 +81,25 @@
     <!-- Clipboard history is left out of a backup unless ticked (#34) -->
     <string name="sebtype_settings_export_clipboard">包含剪贴板历史</string>
     <string name="sebtype_settings_export_subtitle">备份你的设置、学到的词、资源等</string>
+    <!-- Sync of the learned words with the user's own server (#12) -->
+    <string name="sebtype_settings_sync">同步</string>
+    <string name="sebtype_settings_sync_toggle">同步学到的词</string>
+    <string name="sebtype_settings_sync_off">中文学到的词，通过你自己的服务器</string>
+    <string name="sebtype_settings_sync_not_yet">尚未同步</string>
+    <string name="sebtype_settings_sync_syncing">正在同步…</string>
+    <string name="sebtype_settings_sync_synced">上次同步：%s</string>
+    <string name="sebtype_settings_sync_offline">无法连接服务器，连上后会自动同步</string>
+    <string name="sebtype_settings_sync_login_failed">用户名或密码错误</string>
+    <string name="sebtype_settings_sync_login">服务器和登录</string>
+    <string name="sebtype_settings_sync_login_none">未设置</string>
+    <string name="sebtype_settings_sync_server">服务器地址</string>
+    <string name="sebtype_settings_sync_server_invalid">需要 https:// 地址</string>
+    <string name="sebtype_settings_sync_user">用户名</string>
+    <string name="sebtype_settings_sync_password">密码</string>
+    <string name="sebtype_settings_sync_delete">删除服务器上学到的词</string>
+    <string name="sebtype_settings_sync_delete_subtitle">你设备上的词会保留</string>
+    <string name="sebtype_settings_sync_delete_confirm">将从服务器删除你所有设备学到的词，并关闭同步。这台手机和其他设备上的词会保留。再次打开同步时会上传这台手机的词。</string>
+    <string name="sebtype_settings_sync_delete_button">删除</string>
+    <string name="sebtype_settings_sync_deleted">已在服务器上删除</string>
+    <string name="sebtype_settings_sync_delete_failed">无法连接服务器，没有删除任何内容</string>
 </resources>

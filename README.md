@@ -17,7 +17,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 | FUTO Keyboard's code: `java/`, `native/`, `common/`, `tests/`, `tools/` other than SebType's files below, `.github/ISSUE_TEMPLATE/`, the root build files and the submodules. SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
 | The original AOSP keyboard code in those folders, up to commit `d847619a` | Apache-2.0 ([NOTICE](NOTICE)) |
 | Code from other projects that FUTO vendored (sentencepiece, protobuf, ggml, llama.cpp, gemoji and others) | each project's own, in its folder |
-| SebType's own code: `pc/`, `rime-android/`, `sebtype/`, `tools/rime-data/`, `tools/en-dict/`, `docs/`, with the exceptions below. Each folder's `LICENSE` file lists its exceptions. Also `tools/trim-emoji.sh`, `tools/pack-rime-ice.sh`, `tools/userdb-to-futo-backup.py` and `.github/workflows/` | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
+| SebType's own code: `pc/`, `rime-android/`, `sebtype/`, `sync-server/`, `tools/rime-data/`, `tools/en-dict/`, `docs/`, with the exceptions below. Each folder's `LICENSE` file lists its exceptions. Also `tools/trim-emoji.sh`, `tools/pack-rime-ice.sh`, `tools/userdb-to-futo-backup.py` and `.github/workflows/` | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
 | `sebtype/assets/layouts/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
 | `sebtype/res-stable/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) and `sebtype/res-stable/values*/*-sebtype-overrides.xml` (changed copies of FUTO's resources) | FUTO Source First License 1.1 |
 | `sebtype/res-stable/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
@@ -32,6 +32,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 - What it must do: [Requirements (#1)](https://github.com/S-Sebb/sebtype/issues/1)
 - Settled choices: [Decisions (#2)](https://github.com/S-Sebb/sebtype/issues/2)
 - Device tests and the two emulators: [docs/testing.md](docs/testing.md)
+- Sync 中文's learned words with your own server: [sync-server/README.md](sync-server/README.md)
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 

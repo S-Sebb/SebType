@@ -6,7 +6,8 @@
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
 # mode chip (#38); with MAIN_APK (main's release APK), last an update from main that keeps a word
 # learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41),
-# incognito (#31), and clipboard history in a settings backup only when ticked (#34).
+# incognito (#31), sync with a local sync-server (#12), and clipboard history in a settings backup only
+# when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
 # install and the locale always, and test-chinese.py's earlier checks they depend on. A PR runs the checks

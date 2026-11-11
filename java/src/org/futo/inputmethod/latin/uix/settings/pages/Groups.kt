@@ -222,6 +222,7 @@ fun BackupScreen(navController: NavHostController) {
     val includeClipboard = remember { findSettingsActivity(context)!!.exportIncludesClipboard }
     ScrollableList {
         ScreenTitle(stringResource(R.string.sebtype_settings_backup), showBack = true, navController)
+        SyncSection(navController)
         ScreenTitle(stringResource(R.string.sebtype_settings_settings_file))
         SettingsCard {
             SettingCheckbox(
