@@ -3,19 +3,23 @@
 # Checks pc/linux/setup-ime.sh: ShellCheck, a read-only --dry-run on this PC, and a full run on a
 # fake fresh account (stubbed packages, systemd, Fcitx5 and KWin calls) that must be idempotent.
 # Changes nothing in the real session. One line per check in /tmp/sebtype/test-setup-ime-results.txt.
+# Check names as arguments run only those (fresh-apply, which the later checks build on, always runs).
 # Typing in real apps is the manual checklist in pc/linux/README.md.
 set -uo pipefail
 script=$(readlink -f "$0")
 cd "$(dirname "$script")" || exit 1
 # Its private Fcitx5 instances run on this PC: one test at a time, in the shared device queue.
 [[ -n ${HOLDING-} ]] || exec env HOLDING=1 devq -w 1800 -m 10 -n "sebtype test-setup-ime ($(git branch --show-current))" \
-  /tmp/agent-locks/devices/nobara-pc.lock bash "$script"
+  /tmp/agent-locks/devices/nobara-pc.lock bash "$script" "$@"
 
 out=/tmp/sebtype; mkdir -p "$out"
+selected=("$@")
 results=$out/test-setup-ime-results.txt; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, command... (each run of setup-ime.sh has its own timeout)
   local name=$1; shift
+  if ((${#selected[@]})) && [[ $name != fresh-apply && " ${selected[*]} " != *" $name "* ]]; then
+    result SKIP "$name" "not selected"; return; fi
   if "$@" > "$out/test-setup-ime-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-setup-ime-$name.log"; fi
 }
@@ -127,7 +131,7 @@ fake_run() { mkdir -p "$h/.cache/sebtype"; ln -sf "${rime_zips[@]}" "$h/.cache/s
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 16 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 17 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && ! -e $fake/deploy.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -146,6 +150,7 @@ fresh_apply() {
     grep -qx 'Name=English' "$h/.local/share/fcitx5/inputmethod/keyboard-us.conf" &&
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
+    grep -q '^  menu/page_size: 6 ' "$h/.local/share/fcitx5/rime/default.custom.yaml" &&
     [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data
 }
 # The Configurator is in the app menu, starts this account's copy of the build, and has the pig icon.
@@ -198,6 +203,15 @@ tray_icons() {
   done
 }
 check fresh-apply fresh_apply
+
+# A page size of the user's own (as the Configurator writes it) stays when setup runs again (#163).
+page_size_kept() {
+  local f=$h/.local/share/fcitx5/rime/default.custom.yaml o
+  sed -i 's|^  menu/page_size: .*|  menu/page_size: 8|' "$f"
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  ! grep -q 'candidates per page' <<<"$o" && [[ $(grep -c '^  menu/page_size:' "$f") == 1 ]] && grep -qx '  menu/page_size: 8' "$f"
+}
+check page-size-kept page_size_kept
 
 # --undo-icons brings back the inherited theme and removes SebType's; a second undo changes nothing.
 undo_icons() {
@@ -355,15 +369,18 @@ fi
 # Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app; and typo correction
 # (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first, and so does xkaoshi (k for
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
-# grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file.
+# grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
+# default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
   mkdir -p "$h/.config/fcitx5" "$r"
   printf 'patch:\n  schema_list: [{schema: rime_ice}]\n' > "$r/default.custom.yaml"
-  printf 'patch:\n  menu/page_size: 6\n' > "$r/rime_ice.custom.yaml"
+  printf 'patch:\n  translator/spelling_hints: 9\n' > "$r/rime_ice.custom.yaml"
   fake_run < /dev/null > /dev/null || return 1
-  grep -qx '  menu/page_size: 6' "$r/rime_ice.custom.yaml" || { echo "rime_ice.custom.yaml lost its patch"; return 1; }
+  grep -qx '  translator/spelling_hints: 9' "$r/rime_ice.custom.yaml" || { echo "rime_ice.custom.yaml lost its patch"; return 1; }
+  grep -q '^  schema_list:' "$r/default.custom.yaml" || { echo "default.custom.yaml lost its patch"; return 1; }
+  grep -q '^  menu/page_size: 6 ' "$r/default.custom.yaml" || { echo "default.custom.yaml has no page size 6"; return 1; }
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
@@ -389,11 +406,12 @@ def up():
 wait(up, 10)
 ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-popups = []
+popups, candidates = [], [[]]
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'UpdateClientSideUI':
         text = ''.join(s for s, _ in params.unpack()[2])
         if text: popups.append(text)
+        candidates[0] = params.unpack()[4]
 committed = []
 def on_commit(_c, _s, _p, _i, name, params):
     if name == 'CommitString': committed.append(params.unpack()[0])
@@ -462,6 +480,10 @@ check('typo xoaoshi gives 小时 first', first('xoaoshi'), '小时')
 check('typo xkaoshi (k under i, SebType librime) gives 小时 first', first('xkaoshi'), '小时')
 check('typo nihap (p beside o) gives 你好 first', first('nihap'), '你好')
 check('beirendingwei gives 被认定为 first (the grammar file; without it 被人定位)', first('beirendingwei'), '被认定为')
+def page(keys):  # how many candidates the first page of keys shows
+    for c in keys: tap(c)
+    wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n
+check('a page shows 6 candidates (shi)', page('shi'), 6)
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY

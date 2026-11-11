@@ -484,6 +484,19 @@ if ! grep -q 'toggle: traditionalization, accept: Control+Shift+f }' "$src" ||
   fi
 fi
 
+# 13a. 6 candidates per page (Decisions #2, #163; rime-ice has 5), as on Windows. Only when the user has no
+# page size of their own: the Configurator writes theirs here too, and shows 6 when there is none.
+src=$default_custom; [[ -f $src ]] || src=/dev/null
+if ! grep -q '^  menu/page_size:' "$src" &&
+  change "6 Chinese candidates per page in $default_custom (backup in $backup)"; then
+  want_custom=$(awk '{ print } /^patch:/ && !done { print line; done = 1 }
+    END { if (!done) print "patch:\n" line }' line='  menu/page_size: 6  # SebType: 6 candidates per page (#163)' "$src")
+  # Step 13 may have saved the file as it was already.
+  [[ -f $default_custom && ! -f $backup/default.custom.yaml ]] && save "$default_custom"
+  mkdir -p "$rime_dir"; printf '%s\n' "$want_custom" > "$default_custom"
+  rime_changed=1
+fi
+
 # 13b. Chinese uses SebType's Chinese data (#102), the data the phone and Windows use: rime-ice's schemas and
 # Lua with 白霜's dictionary and SebType's typo correction (#46), its tables prebuilt, built (cached) by
 # tools/rime-data/build.sh. It goes into Rime's folder over the files of the same name, as on Windows;

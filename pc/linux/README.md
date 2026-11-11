@@ -37,6 +37,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Typo correction | `sebtype_typo/keyboard: pc` in the same `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | Chinese data | Builds SebType's Chinese data with `tools/rime-data/build.sh` (cached in `~/.cache/sebtype`; the first build needs gcc, g++ and OpenCC and takes about a minute) and unzips it into `~/.local/share/fcitx5/rime` over the files of the same name, then removes the dictionary sources (`*.dict.yaml`) it has prebuilt tables for. Learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. Every file it replaces or removes is kept first in `~/.local/share/sebtype/rime-before`, and `sebtype-data.txt` in Rime's folder names the data installed. Rime then deploys it (Rime deploy, below) | Chinese on Linux types with the same data as the phone and Windows: rime-ice's schemas and Lua with 白霜's dictionary, and SebType's typo correction (#46, #102), so `xoaoshi` gives 小时 first. Full pinyin is its only scheme, and 简 → 繁 its only menu switch: punctuation, emoji, half-width and the other switches stay at their defaults (#117) |
 | 简/繁 key | Ctrl+Shift+F toggles rime-ice's `traditionalization` option at any time, added to `key_binder/bindings` in `~/.local/share/fcitx5/rime/default.custom.yaml`, keeping the file's other patches | Chinese switches between simplified and traditional output, as with Weasel on Windows. Only the output changes, so learned words stay shared; Ctrl+F alone stays Find in apps |
+| Candidates per page | `menu/page_size: 6` in the same `default.custom.yaml`, only when it has no page size yet | 6 Chinese candidates per page instead of rime-ice's 5 (Decisions #2, #163). A page size of the user's own, which the Configurator writes there too, stays |
 | Rime deploy | When any of the Chinese steps changed something and Fcitx5 runs, asks it over D-Bus to redeploy Rime, which it does in the background | The changes apply without Rime's Deploy menu entry, which SebType's fcitx5-rime doesn't have |
 | SebType Configurator | Builds `pc/configurator` with Rust's `cargo` when its sources changed, and installs it in `~/.local/share/sebtype/configurator` with the app-menu entry **SebType Configurator** (`sebtype-configurator.desktop`) and the phone's pig as its icon. Without Rust it only warns | SebType's settings without editing YAML: see [SebType Configurator](#sebtype-configurator) |
 
@@ -193,10 +194,10 @@ says to log in again if not.
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
 rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc, fcitx5-rime and librime and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
-text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) in a private Fcitx5 running Rime on SebType's
+text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) and 6 candidates per page (a page size of the user's own kept) in a private Fcitx5 running Rime on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
 icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's builds without installing them: `bwrap`
-mounts their files over Fedora's for that Fcitx5 alone. It doesn't touch the session.
+mounts their files over Fedora's for that Fcitx5 alone. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
 
 ## App checklist
 

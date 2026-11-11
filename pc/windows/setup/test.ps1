@@ -372,7 +372,7 @@ namespace SebTypeSetupTest {
       'input methods, switch keys, per-window setting, hotkeys; SebType, Weasel, Mozc, learned words and the Start menu entry gone'
     }
   }
-  function Check-Installed($round, [string[]]$langs, [string]$order) {
+  function Check-Installed($round, [string[]]$langs, [string]$order, [int]$pageSize = 6) {
     Check "$round-installed" {
       $missing = @("$App\sebtype-configurator.exe", "$App\setup.ps1", "$App\unins000.exe", "$App\sebtype.ico" | Where-Object { -not (Test-Path $_) })
       $entry = Get-ItemProperty $AppKey
@@ -397,9 +397,11 @@ namespace SebTypeSetupTest {
       Check "$round-chinese" {
         $name = (Get-Item "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid\LanguageProfile\0x00000804\{3D02CAB6-2B8E-4781-BA20-1C9267529467}").GetValue('Description')
         $patch = Get-Content "$env:APPDATA\Rime\rime_ice.custom.yaml" -Encoding utf8 -ErrorAction SilentlyContinue
+        $pages = @(Get-Content "$env:APPDATA\Rime\default.custom.yaml" -Encoding utf8 -ErrorAction SilentlyContinue) -match '^  menu/page_size:'
         if ($name -ne '中文') { throw "Weasel's input method reads '$name'" }
         if (-not (Test-Path "$env:APPDATA\Rime\build\rime_ice.schema.yaml") -or -not ($patch -match 'schema/name: 中文') -or -not ($patch -match 'sebtype_typo/keyboard: pc')) { throw 'the Chinese data is not deployed with SebType''s patches' }
-        'named 中文; rime-ice and 白霜 deployed with the 中文 name and PC typo correction'
+        if ($pages.Count -ne 1 -or $pages[0] -notmatch "^  menu/page_size: $pageSize\b") { throw "default.custom.yaml's page size: '$($pages -join ' | ')', want $pageSize (#163)" }
+        "named 中文; rime-ice and 白霜 deployed with the 中文 name, PC typo correction and $pageSize candidates per page"
       }
     }
     if ('ja' -in $langs) {
@@ -501,8 +503,11 @@ namespace SebTypeSetupTest {
     Check 'round2-install-without-english' { Silent round2-install @('/TASKS="zh,ja"'); 'silent, 中文 and 日本語' }
     Check-Installed round2 zh, ja "zh-Hans-CN[$WeaselTip] ja[$MozcTip] en-US[0409:00000409]"
     New-Item -Force $learned[1] | Out-Null
+    # A page size of the user's own (the Configurator's line) stays through the upgrade (#163).
+    $defaults = "$env:APPDATA\Rime\default.custom.yaml"
+    [IO.File]::WriteAllLines($defaults, @(@(Get-Content $defaults -Encoding utf8) -replace '^  menu/page_size: .*', '  menu/page_size: 8'))
     Check 'round2-upgrade-drops-japanese' { Silent round2-upgrade @('/TASKS="en,zh"'); 'silent, English and 中文' }
-    Check-Installed round2-upgraded en, zh "en-US[0409:00000409] zh-Hans-CN[$WeaselTip]"
+    Check-Installed round2-upgraded en, zh "en-US[0409:00000409] zh-Hans-CN[$WeaselTip]" 8
     Check 'round2-japanese-words-deleted' { if (Test-Path $learned[1]) { throw "kept: $($learned[1])" }; 'Japanese left out: Mozc and its learned words gone' }
     Check 'round2-uninstall' {
       Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\uninstall-round2.log`""

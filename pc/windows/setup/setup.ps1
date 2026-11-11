@@ -323,6 +323,11 @@ if ('zh' -in $want) {
   $redeploy = (Set-RimePatch 'rime_ice.custom.yaml' '^  (schema/name|sebtype_typo/keyboard):' @(
       '  schema/name: 中文  # SebType: Chinese reads 中文, not 雾凇拼音 (#69)'
       '  sebtype_typo/keyboard: pc  # SebType: typo correction for a PC keyboard (#46)')) -or $redeploy
+  # 6 candidates per page (Decisions #2, #163; rime-ice has 5). Only when the user has no page size of their
+  # own: the Configurator writes theirs here too. The Configurator shows 6 when there is none.
+  if (-not (@(Get-Content (Join-Path $RimeUser 'default.custom.yaml') -Encoding utf8 -ErrorAction SilentlyContinue) -match '^  menu/page_size:')) {
+    $redeploy = (Set-RimePatch 'default.custom.yaml' '^  menu/page_size:' @('  menu/page_size: 6  # SebType: 6 candidates per page (#163)')) -or $redeploy
+  }
   # Ctrl+Shift+F switches 简/繁 at any time (Decisions #2, #36). Both keysyms, as Shift may send either.
   $redeploy = (Set-RimePatch 'default.custom.yaml' '^  (# SebType: Ctrl\+Shift\+F|key_binder/bindings/\+:$|  - \{ when: always, toggle: traditionalization, accept: Control\+Shift\+[fF] \})' @(
       '  # SebType: Ctrl+Shift+F switches 简/繁 (#36)'
