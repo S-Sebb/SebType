@@ -32,7 +32,8 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Tray icons | Installs `~/.local/share/icons/SebType`, an icon theme that holds only SebType's tray icons (`pc/icons`) and inherits the theme that was active, then makes it the active icon theme. Plasma reloads icons at once | The tray shows SebType's keycaps instead of the icon theme's keyboard, Rime logo and Mozc squares |
 | Chinese name | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. Rime's own schema menu (F4) lists the schema as `.中文` |
 | Japanese and English names | `mozc.conf` named 日本語 and `keyboard-us.conf` named English in the same `inputmethod` folder. Show once Fcitx5 restarts | The tray menu and the Super+Space popup read English · 中文 · 日本語 instead of Keyboard - English (US) · Rime · Mozc (#92). An entry there also renames the keyboard addon's built-in `keyboard-us`; its layout still comes from the id |
-| Typo correction | `sebtype_typo/keyboard: pc` in the same `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid. It takes effect with SebType's Chinese data (`tools/rime-data/build.sh`) |
+| Typo correction | `sebtype_typo/keyboard: pc` in the same `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
+| Chinese data | Builds SebType's Chinese data with `tools/rime-data/build.sh` (cached in `~/.cache/sebtype`; the first build needs gcc, g++ and OpenCC and takes about a minute) and unzips it into `~/.local/share/fcitx5/rime` over the files of the same name, then removes the dictionary sources (`*.dict.yaml`) it has prebuilt tables for. Learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. Every file it replaces or removes is kept first in `~/.local/share/sebtype/rime-before`, and `sebtype-data.txt` in Rime's folder names the data installed. Rime uses it once it redeploys (tray icon → Deploy, or a Fcitx5 restart) | Chinese on Linux types with the same data as the phone and Windows: rime-ice's schemas and Lua with 白霜's dictionary, and SebType's typo correction (#46, #102), so `xoaoshi` gives 小时 first |
 | 简/繁 key | Ctrl+Shift+F toggles rime-ice's `traditionalization` option at any time, added to `key_binder/bindings` in `~/.local/share/fcitx5/rime/default.custom.yaml`, keeping the file's other patches. Works once Rime redeploys (tray icon → Deploy, or a Fcitx5 restart) | Chinese switches between simplified and traditional output, as with Weasel on Windows. Only the output changes, so learned words stay shared; Ctrl+F alone stays Find in apps |
 | SebType Configurator | Builds `pc/configurator` with Rust's `cargo` when its sources changed, and installs it in `~/.local/share/sebtype/configurator` with the app-menu entry **SebType Configurator** (`sebtype-configurator.desktop`) and the phone's pig as its icon. Without Rust it only warns | SebType's settings without editing YAML: see [SebType Configurator](#sebtype-configurator) |
 
@@ -74,6 +75,12 @@ To undo the names English · 中文 · 日本語: `pc/linux/setup-ime.sh --undo-
 input method entries from `~/.local/share/fcitx5/inputmethod` and the `.中文` schema name from
 `rime_ice.custom.yaml`, so Fcitx5 shows Keyboard - English (US), Rime (雾 in the popup) and Mozc again once
 it restarts.
+
+### Chinese data
+
+To undo: `pc/linux/setup-ime.sh --undo-chinese-data`. It removes the files SebType's Chinese data placed
+in `~/.local/share/fcitx5/rime` and puts back the ones it replaced or removed, so Rime's folder is as it
+was; learned words stay. Rime uses the old data once it redeploys.
 
 ### SebType Configurator
 
@@ -126,7 +133,8 @@ says to log in again if not.
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
 rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
-text read from a private Fcitx5 running Rime, and Super+Space, Rime's Shift tap and the tray menu's names,
+text, the 简/繁 key and typo correction (`xoaoshi` → 小时) in a private Fcitx5 running Rime on SebType's
+Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
 icons and picks in a private Fcitx5 with a stand-in for Plasma's tray). It doesn't touch the session.
 
 ## App checklist

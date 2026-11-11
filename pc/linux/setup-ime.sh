@@ -7,18 +7,20 @@
 # fcitx5-mozc back in place of SebType's build. --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
+# --undo-chinese-data puts Rime's folder back as it was before SebType's Chinese data.
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0 undo_configurator=0 undo_names=0
+dry=0 undo_icons=0 undo_mozc=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
   --undo-mozc) undo_mozc=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
+  --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-configurator | --undo-names]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -87,6 +89,24 @@ if ((undo_names)); then
     sed -i '/^  schema\/name: ".中文"/d' "$rime_custom"; changes=1
   fi
   ((changes)) && busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && echo "$names_note"
+  exit 0
+fi
+
+# SebType's Chinese data (step 13b): files.txt lists, in order, each path in Rime's folder it placed or
+# removed (directories end in /), and old/ holds the ones that were there before.
+rime_before=$data/sebtype/rime-before rime_marker=$rime_dir/sebtype-data.txt
+redeploy_note="Rime uses it once it redeploys: right-click the tray icon → Deploy, or log in again"
+if ((undo_chinese_data)); then
+  if [[ -f $rime_before/files.txt ]]; then
+    echo "change: put $rime_dir back as it was before SebType's Chinese data"
+    tac "$rime_before/files.txt" | while IFS= read -r f; do
+      if [[ $f == */ ]]; then rmdir --ignore-fail-on-non-empty "$rime_dir/$f"; continue; fi
+      rm -f "$rime_dir/$f"
+      [[ -e $rime_before/old/$f ]] && cp -p "$rime_before/old/$f" "$rime_dir/$f"
+    done
+    rm -f "$rime_marker"; rm -r "$rime_before"
+    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && echo "$redeploy_note"
+  fi
   exit 0
 fi
 
@@ -416,6 +436,38 @@ if ! grep -q 'toggle: traditionalization, accept: Control+Shift+f }' "$src" ||
       warn "Ctrl+Shift+F switches 简/繁 once Rime redeploys: right-click the tray icon → Deploy"
   fi
 fi
+
+# 13b. Chinese uses SebType's Chinese data (#102), the data the phone and Windows use: rime-ice's schemas and
+# Lua with 白霜's dictionary and SebType's typo correction (#46), its tables prebuilt, built (cached) by
+# tools/rime-data/build.sh. It goes into Rime's folder over the files of the same name, as on Windows;
+# learned words, *.custom.yaml and an existing custom_phrase.txt stay. Dictionary sources the data has
+# prebuilt tables for are removed, or Rime would compile them instead. What it replaces or removes is
+# kept in $rime_before first, so --undo-chinese-data puts the folder back.
+rime_tmp=$(mktemp -d)
+if "$here/../../tools/rime-data/build.sh" "$rime_tmp" > "$rime_tmp/build.log" 2>&1; then
+  rime_zip=$rime_tmp/rime/rime-data.zip rime_id=$(sha256sum < "$rime_zip" | cut -d' ' -f1)
+  if [[ $(cat "$rime_marker" 2>/dev/null) != "$rime_id" ]] &&
+    change "install SebType's Chinese data with typo correction in $rime_dir (the files it replaces kept in $rime_before; undo: $0 --undo-chinese-data)"; then
+    new=$rime_tmp/data
+    unzip -q "$rime_zip" -d "$new"
+    [[ -f $rime_dir/custom_phrase.txt ]] && rm "$new/custom_phrase.txt"
+    mkdir -p "$rime_before/old" "$rime_dir"; touch "$rime_before/files.txt"
+    while IFS= read -r f; do # directories first, so the undo, going backwards, empties them before removing
+      grep -qxF -- "$f" "$rime_before/files.txt" && continue
+      if [[ $f == */ ]]; then [[ -d $rime_dir/$f ]] && continue
+      elif [[ -e $rime_dir/$f ]]; then mkdir -p "$(dirname "$rime_before/old/$f")"; cp -p "$rime_dir/$f" "$rime_before/old/$f"; fi
+      echo "$f" >> "$rime_before/files.txt"
+    done < <(cd "$new" && find . -mindepth 1 -type d -printf '%P/\n' | sort; find . -type f -printf '%P\n' | sort
+      for t in build/*.table.bin; do t=${t#build/}; echo "${t%.table.bin}.dict.yaml"; done)
+    for t in "$new"/build/*.table.bin; do t=${t##*/}; rm -f "$rime_dir/${t%.table.bin}.dict.yaml"; done
+    cp -r "$new/." "$rime_dir/"
+    echo "$rime_id" > "$rime_marker"
+    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$redeploy_note"
+  fi
+else
+  warn "SebType's Chinese data doesn't build, so Chinese has no typo correction: $(tail -1 "$rime_tmp/build.log")"
+fi
+rm -r "$rime_tmp"
 
 # 14. SebType Configurator (#72): SebType's settings app, "SebType Configurator" in the app menu. Built
 # from pc/configurator with Rust's cargo (a few minutes the first time) whenever its sources are newer

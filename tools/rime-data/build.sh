@@ -47,7 +47,7 @@ libopencc=/usr/lib64/libopencc.so.1.1
 headers=$cache/librime-$LIBRIME_VERSION-headers
 mkdir -p "$cache" "$out"
 
-key=$(cat "$0" "$here/deploy.c" "$here/sebtype_typo.lua" rime-android/versions.sh | sha256sum | cut -c1-16)
+key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" rime-android/versions.sh | sha256sum | cut -c1-16)
 zip=$cache/rime-data-$key.zip
 version="rime-ice $RIME_ICE_VERSION + rime-frost $RIME_FROST_VERSION, sebtype $BUNDLE_REVISION"
 
