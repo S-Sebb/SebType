@@ -1,0 +1,2 @@
+# Patches apply byte for byte: no CRLF conversion on a Windows checkout (#133).
+*.patch -text
