@@ -11,9 +11,10 @@ Needs Visual Studio 2022 or its Build Tools (C++ x64 tools, ATL, a Windows 11 SD
 .NET 8+ SDK; it says how to install what is missing. It fetches the rest itself, each pinned by checksum
 (Mozc's source, Bazelisk, resvg, CMake) or by Mozc's own update_deps.py (LLVM, MSYS2, Ninja, Qt, WiX). The
 tree stays in WorkDir, so a rebuild compiles only what changed. The first build takes about 40 minutes and
-10 GB; WorkDir should be a short path (Bazel and MAX_PATH).
+10 GB; WorkDir should be a short path (Bazel and MAX_PATH). -BazelCache keeps Bazel's disk and repository
+caches in that folder: CI, whose WorkDir starts empty, restores it from main's last build.
 #>
-param([string]$WorkDir = "$env:SystemDrive\sebtype-mozc")
+param([string]$WorkDir = "$env:SystemDrive\sebtype-mozc", [string]$BazelCache)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $v = Import-PowerShellDataFile "$PSScriptRoot\versions.psd1"
@@ -79,9 +80,10 @@ try {
         python build_tools/build_qt.py --release --confirm_license --vcvarsall_path "$vs\VC\Auxiliary\Build\vcvarsall.bat"
         Remove-Item -Recurse -Force third_party\qt_src -ErrorAction SilentlyContinue
     }
+    $cache = if ($BazelCache) { "--disk_cache=$BazelCache\disk", "--repository_cache=$BazelCache\repo" }
     # Mozc's .bazelrc turns on --windows_enable_symlinks, which needs Developer Mode or admin rights.
     & $bazelisk "--output_user_root=$WorkDir\bazel" --nowindows_enable_symlinks build package --config release_build --jobs=8 `
-        --platforms=//:windows-x86_64 *> "$WorkDir\out\build.log"
+        --platforms=//:windows-x86_64 @cache *> "$WorkDir\out\build.log"
 } catch {
     Get-Content "$WorkDir\out\build.log" -Tail 40 -ErrorAction SilentlyContinue
     throw
