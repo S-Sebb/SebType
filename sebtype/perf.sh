@@ -119,9 +119,10 @@ typed() { # trace -> characters each test field gained (last length - starting l
     order by (select min(ts) from counter where track_id = t.id);" > "$work/len.sql"
   query "$1" "$work/len.sql" | grep -E '^-?[0-9]+$'
 }
+per_key_count() { echo $(( $(wc -l < "$work/$1.csv") - 1 )); } # trace: touches the keyboard got
 per_key() { # trace: the per-key CSV, and the characters typed into each field
   query "$1" "$keys_sql" > "$work/$1.csv"
-  echo "keys=$(( $(wc -l < "$work/$1.csv") - 1 ))"
+  echo "keys=$(per_key_count "$1")"
   echo "typed=$(typed "$1" | paste -sd, -)"
   # Nothing in a typing trace restarts the keyboard, so each keyboard process started in it means one died.
   echo "crashes=$(query "$1" "$opens_sql" | grep -c '^"cold"' || true)"
@@ -148,12 +149,15 @@ restart_keyboard() { # stop SebType while another keyboard is active, then switc
   sh am force-stop "$pkg"; sleep 1
   sh ime set "$ime_id" > /dev/null; sleep 5 # the emulator's cold open takes up to 2 s
 }
+field_text() { # the test field's text, from a UI dump
+  sh uiautomator dump /data/local/tmp/sebtype-ui.xml > /dev/null
+  sh cat /data/local/tmp/sebtype-ui.xml |
+    grep -o '<node [^>]*class="android.widget.EditText"' | sed -n 's/.* text="\([^"]*\)".*/\1/p'
+  sh rm -f /data/local/tmp/sebtype-ui.xml
+}
 probe_len() { # length of what "ka " types into a fresh test field: 3 in EN, 1 or 2 in 中 and 日
   open_field; taps 300 "ka "; sleep 2
-  sh uiautomator dump /data/local/tmp/sebtype-ui.xml > /dev/null
-  local text; text=$(sh cat /data/local/tmp/sebtype-ui.xml |
-    grep -o '<node [^>]*class="android.widget.EditText"' | sed -n 's/.* text="\([^"]*\)".*/\1/p')
-  sh rm -f /data/local/tmp/sebtype-ui.xml
+  local text; text=$(field_text)
   echo "${#text}"
 }
 rime_user=/data/user/0/$pkg/files/rime/user # private (#32): readable only from a root shell (emulator)
@@ -237,7 +241,8 @@ gfx() { # package -> janky frames and frame-time percentiles since the last rese
     /Janky frames:/ && !j++ {gsub(/[()%]/, "", $4); print p "_janky_pct=" $4}
     /^95th percentile/ && !q++ {sub(/ms/, "", $3); print p "_p95_ms=" $3}'
 }
-fast() { # name field-extra...: fast typing (100 ms per key) with gfxinfo jank for both apps
+fast() { # name [--ei chars N]: fast typing (100 ms per key) with gfxinfo jank for both apps, and the
+  # field's text against the taps: a lost or swapped key is named with its position (#49)
   local name=$1 text="the quick brown fox jumps over the lazy dog the quick brown fox jumps over the lazy dog "
   shift
   . "$work/geometry"
@@ -250,6 +255,13 @@ fast() { # name field-extra...: fast typing (100 ms per key) with gfxinfo jank f
   per_key "$name"
   echo "taps=${#text}"
   gfx "$pkg" ime; gfx "$field" field
+  # Touches first: autocorrect can put back a key the keyboard never got, and a missing touch means
+  # the taps' injection lost it, not the keyboard.
+  local keys; keys=$(per_key_count "$name")
+  (( keys == ${#text} )) || { echo "$name: the keyboard got $keys of ${#text} taps" >&2; return 1; }
+  field_text > "$work/$name.text"
+  python3 -I "$PWD/sebtype/perf/textdiff.py" "$text" "$work/$name.text" "${3:-0}" > "$work/$name.diff" ||
+    { echo "$name: the field's text isn't what was tapped: $(head -5 "$work/$name.diff" | paste -sd ";")" >&2; return 1; }
 }
 phase_fast() { # right after 中 and 日: all three engines are loaded
   fast fast
