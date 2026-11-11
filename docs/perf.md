@@ -45,11 +45,12 @@ framework trace slices and frame timelines; the trace records no logs.
 
 Notes:
 
-- **Engines load on demand (#56).** English's transformer loads on the first prediction and unloads
-  when the language switches or after 3 minutes without a prediction (`ENGINE_IDLE_MS`). Rime stops 3
-  minutes after 中 was last in use, or after a background setup nobody types into. Mozc unloads 3
-  minutes after 日 was last in use, and the next 日 field loads it again. So "after typing 中" has no transformer in it, and
-  "after fast typing EN" (right after 中 and 日) is the most that is ever loaded at once.
+- **Engines load on demand (#56).** English's transformer loads once the first letter is typed (an
+  empty field gets the dictionary's suggestions until then) and unloads when the language switches
+  or after 3 minutes without a prediction (`ENGINE_IDLE_MS`). Rime stops 3 minutes after 中 was last
+  in use, or after a background setup nobody types into. Mozc unloads 3 minutes after 日 was last in
+  use, and the next 日 field loads it again. So "after typing 中" has no transformer in it, and "after
+  fast typing EN" (right after 中 and 日) is the most that is ever loaded at once.
 - **Idle is read once the keyboard settled**, 30 s after it opens (`SETTLE_S`). A new process reads
   about 25 MB higher for its first seconds (start-up Java garbage not yet collected): on the phone
   152 MB 3 s after the first open, 124 MB at 30 s.

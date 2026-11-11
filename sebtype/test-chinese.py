@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock: password,
 private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38), its
-cold starts (#97) and its idle unload (#56).
+cold starts (#97) and its idle unload (#56), and that English's model waits for the first letter (#56).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -942,6 +942,29 @@ def ja_unloads_when_idle():
 
 
 check("ja-unloads-when-idle", ja_unloads_when_idle, needs=["ja-chip"])
+
+
+def model_mapped():
+    pid = adb("shell", "pidof", PKG).strip()
+    return pid and "transformer-models/" in root(f"cat /proc/{pid}/maps")
+
+
+def en_model_waits_for_letter():
+    """English's prediction model loads only once a letter is typed (#56, Decisions #2)."""
+    open_field()
+    if chip(nodes()):
+        tap_globe()  # 日 -> EN
+    stop_keyboard()
+    open_field()
+    time.sleep(10)
+    if model_mapped():
+        raise Fail("the model loaded in an empty field before any letter")
+    type_keys("th")
+    wait_for("the model to load after a letter", model_mapped, 60, interval=2)
+    return "empty field: no model; after typing th: loaded"
+
+
+check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
 
 
 def main_learns():

@@ -143,7 +143,7 @@ public class LanguageModelFacilitator(
     private val TAG = "LanguageModelFacilitator"
     private val userDictionary = UserDictionaryObserver(context)
 
-    private var languageModel: LanguageModel? = null
+    @Volatile private var languageModel: LanguageModel? = null
     data class PredictionInputValues(
         val composedData: ComposedData,
         val ngramContext: NgramContext,
@@ -480,6 +480,10 @@ public class LanguageModelFacilitator(
         if(settingsValues.mInputAttributes.mIsEmailField) return null
 
         if(!inputLogic.mConnection.isConnected) return null
+
+        // SebType (#56, Decisions #2): the model (about 110 MB) loads only once a letter is typed; until
+        // then, as in an empty field, the dictionary suggests alone.
+        if(languageModel == null && !inputLogic.mWordComposer.isComposingWord) return null
 
         try {
             val wordComposer = inputLogic.mWordComposer
