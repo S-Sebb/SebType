@@ -13,7 +13,9 @@ SebType's licence note (#112). Last, that long lists (300 of My words, the credi
 in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
 password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
-clipboard copy; the toggle survives a restart, and turned off, learning resumes. Labels
+clipboard copy; the toggle survives a restart, and turned off, learning resumes. Last, that a
+settings backup leaves clipboard history out unless its box is ticked, and that importing restores it
+(#34), with the backup screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels
 match the emulator's Chinese, English or Japanese UI. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
 stop the next.
@@ -27,6 +29,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 
 serial, results_path, logdir = sys.argv[1:4]
 # Only the checks whose names start with this (sebtype/test-incognito-phone.sh runs "incognito").
@@ -1138,6 +1141,165 @@ def learns_again(language, probe, probe_word, code):
     return run
 
 
+# --- Clipboard history in a settings backup (#34) ---
+
+CLIP_BOX = labels(
+    "包含剪贴板历史", "Include clipboard history", "クリップボード履歴を含める"
+)
+EXPORT = labels("导出设置", "Export settings", "設定をエクスポート")
+IMPORT = labels("导入设置", "Import settings", "設定をインポート")
+SAVE = labels("保存", "SAVE", "Save")
+IMPORT_BUTTON = labels("导入", "Import", "インポート")
+KEEP_HISTORY = labels(
+    "保留剪贴板历史", "Keep clipboard history", "クリップボード履歴を残す"
+)
+FILES = f"/data/data/{PKG}/files"
+# Made-up entries only, never anyone's real clipboard.
+CLIP_TEXT = "SebType test clip 34"
+CLIP_FILE = "sebtype-test-34.txt"
+# Pinned, so the app's pruning keeps both; the second points to a file in clipboardfiles/.
+CLIP_JSON = (
+    '[{"timestamp":1,"pinned":true,"text":"' + CLIP_TEXT + '","uri":null,'
+    '"mimeTypes":["text/plain"]},'
+    '{"timestamp":2,"pinned":true,"text":null,"uri":null,"mimeTypes":["text/plain"],'
+    '"backingFile":"' + CLIP_FILE + '","sizeMb":0.0}]'
+)
+
+
+def is_checked(texts):
+    """The state of the checkbox or switch row showing one of texts."""
+    adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        label = n.get("text") or n.get("content-desc") or ""
+        if n.get("checkable") == "true" and any(label.startswith(t) for t in texts):
+            return n.get("checked") == "true"
+    raise Fail(f"no {texts[1]} checkbox or switch")
+
+
+def keep_clipboard_history(on):
+    go(HOME["privacy"])
+    if is_checked(KEEP_HISTORY) != on:
+        tap_text(KEEP_HISTORY)
+
+
+def seed_clipboard():
+    """Made-up clipboard history in the app's files, written while the app is stopped. With
+    history off, the app deletes it when it starts."""
+    keep_clipboard_history(True)
+    adb("shell", "am", "force-stop", PKG)
+    tmp = "/data/local/tmp/sebtype-clipboard.json"
+    adb("shell", f"echo '{CLIP_JSON}' > {tmp}")
+    uid = root(f"stat -c %u {FILES}").strip()
+    root(
+        f"cp {tmp} {FILES}/clipboard.json && mkdir -p {FILES}/clipboardfiles && "
+        f"echo made-up > {FILES}/clipboardfiles/{CLIP_FILE} && "
+        f"chown -R {uid}:{uid} {FILES}/clipboard.json {FILES}/clipboardfiles && "
+        f"restorecon -R {FILES}/clipboard.json {FILES}/clipboardfiles"
+    )
+
+
+def clear_clipboard():
+    adb("shell", "am", "force-stop", PKG)
+    root(f"rm -rf {FILES}/clipboard.json* {FILES}/clipboardfiles")
+
+
+def clipboard_on_device():
+    return CLIP_TEXT in root(f"cat {FILES}/clipboard.json 2>/dev/null; true") and (
+        CLIP_FILE in root(f"ls {FILES}/clipboardfiles 2>/dev/null; true")
+    )
+
+
+def export_backup(include_clipboard, name):
+    """Exports from the backup screen into Downloads; returns the backup's entry names."""
+    go(HOME["backup"])
+    if is_checked(CLIP_BOX):
+        raise Fail("the clipboard checkbox starts ticked")
+    if include_clipboard:
+        tap_text(CLIP_BOX)
+        if not is_checked(CLIP_BOX):
+            raise Fail("tapping the clipboard checkbox doesn't tick it")
+    adb("shell", "rm -f /sdcard/Download/FUTOKeyboardSettings_*.backup")
+    tap_text(EXPORT)
+    wait_for("the save dialog", lambda: screen_has(SAVE), 20)
+    if not screen_has(labels("下载", "Downloads", "Download")):
+        tap_text(labels("显示根目录", "Show roots"))
+        tap_text(labels("下载", "Downloads"))
+    tap_text(SAVE)
+    path = wait_for(
+        "the exported backup",
+        lambda: adb(
+            "shell", "ls /sdcard/Download/FUTOKeyboardSettings_*.backup", check=False
+        ).strip(),
+        60,
+    )
+    wait_for("the export to finish", lambda: screen_has(EXPORT), 60)
+    adb("shell", f"mv {path} /sdcard/Download/{name}")
+    local = os.path.join(logdir, name)
+    adb("pull", f"/sdcard/Download/{name}", local)
+    with zipfile.ZipFile(local) as z:
+        return z.namelist()
+
+
+def import_backup(name):
+    go(HOME["backup"])
+    tap_text(IMPORT)
+    wait_for(f"{name} in the file picker", lambda: screen_has((name,)), 20)
+    tap_text((name,))
+    tap_text(IMPORT_BUTTON)
+    wait_for("the import to finish", lambda: not screen_has(IMPORT_BUTTON), 120)
+
+
+def has_clipboard(entries):
+    return "clipboard.json" in entries or any(
+        e.startswith("clipboard/") for e in entries
+    )
+
+
+def backup_clipboard():
+    seed_clipboard()
+    off = export_backup(False, "sebtype-34-off.backup")
+    if has_clipboard(off):
+        raise Fail(f"clipboard history in a backup with the box off: {off}")
+    on = export_backup(True, "sebtype-34-on.backup")
+    if "clipboard.json" not in on or f"clipboard/{CLIP_FILE}" not in on:
+        raise Fail(f"no clipboard history in a backup with the box ticked: {on}")
+    clear_clipboard()
+    import_backup("sebtype-34-on.backup")
+    wait_for("the imported clipboard history", clipboard_on_device, 30)
+    # A backup without clipboard history leaves the one on the phone alone.
+    import_backup("sebtype-34-off.backup")
+    if not clipboard_on_device():
+        raise Fail("importing a backup without clipboard history removed the phone's")
+    adb("shell", "rm -f /sdcard/Download/sebtype-34-*.backup")
+    clear_clipboard()
+    keep_clipboard_history(False)
+    return "box off by default leaves it out; ticked includes it and import restores it"
+
+
+def backup_screenshots():
+    """The backup screen in English and Japanese, whatever the system language."""
+    try:
+        for lang in ("en-US", "ja-JP"):
+            adb("shell", "cmd", "locale", "set-app-locales", PKG, "--locales", lang)
+            adb("shell", "am", "force-stop", PKG)
+            go(HOME["backup"])
+            wait_for(f"the {lang} checkbox", lambda: screen_has(CLIP_BOX), 10)
+            screenshot(f"backup-{lang}")
+    finally:
+        adb(
+            "shell",
+            "cmd",
+            "locale",
+            "set-app-locales",
+            PKG,
+            "--locales",
+            "",
+            check=False,
+        )
+    return "settings-backup-en-US.png, settings-backup-ja-JP.png"
+
+
 adb("logcat", "-c")
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
@@ -1278,4 +1440,7 @@ check(
 check("incognito-off-learns-en", learns_again_en)
 check("incognito-off-learns-zh", learns_again("zh", "ni", "你", "sx"))
 check("incognito-off-learns-ja", learns_again("ja", "nihongo", "日本語", "hashi"))
+# Last, in en-US: importing a backup reinstalls the Chinese data in the background.
+check("settings-backup-clipboard", backup_clipboard)
+check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

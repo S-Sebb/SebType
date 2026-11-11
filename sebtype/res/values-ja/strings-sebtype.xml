@@ -79,4 +79,7 @@
     <string name="sebtype_incognito_subtitle">オフにするまで単語を学習せず、クリップボード履歴も残しません。パスワード欄とシークレットタブは常にシークレットモードです。</string>
     <string name="sebtype_incognito_on_tap_off">シークレットモード オン。タップでオフ</string>
     <string name="sebtype_incognito_field">この入力欄はシークレットモード</string>
+    <!-- Clipboard history is left out of a backup unless ticked (#34) -->
+    <string name="sebtype_settings_export_clipboard">クリップボード履歴を含める</string>
+    <string name="sebtype_settings_export_subtitle">設定、学習した単語、リソースなどをバックアップします</string>
 </resources>

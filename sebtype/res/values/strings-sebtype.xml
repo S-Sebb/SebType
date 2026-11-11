@@ -85,4 +85,7 @@
     <string name="sebtype_payment_licence_note">FUTO\'s licence requires SebType to include this page. Payments go to FUTO; SebType has no relation to them and receives nothing.</string>
     <string name="sebtype_settings_credits">Licence and credits</string>
     <string name="sebtype_settings_credits_subtitle">FUTO\'s licence, rime-ice, Mozc and others</string>
+    <!-- Clipboard history is left out of a backup unless ticked (#34) -->
+    <string name="sebtype_settings_export_clipboard">Include clipboard history</string>
+    <string name="sebtype_settings_export_subtitle">Back up your settings, learned words, resources and more</string>
 </resources>

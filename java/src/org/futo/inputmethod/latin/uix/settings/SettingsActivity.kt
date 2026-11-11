@@ -253,6 +253,8 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
     }
 
     val exportInProgress = mutableStateOf(0)
+    // Ticked on the backup screen; each export starts with it off (#34)
+    val exportIncludesClipboard = mutableStateOf(false)
     @Deprecated("This method has been deprecated in favor of using the Activity Result API\n      which brings increased type safety via an {@link ActivityResultContract} and the prebuilt\n      contracts for common intents available in\n      {@link androidx.activity.result.contract.ActivityResultContracts}, provides hooks for\n      testing, and allow receiving results in separate, testable classes independent from your\n      activity. Use\n      {@link #registerForActivityResult(ActivityResultContract, ActivityResultCallback)}\n      with the appropriate {@link ActivityResultContract} and handling the result in the\n      {@link ActivityResultCallback#onActivityResult(Object) callback}.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -260,6 +262,7 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
         if(resultCode != Activity.RESULT_OK){
             if(requestCode == EXPORT_SETTINGS_REQUEST) {
                 exportInProgress.value = 0
+                exportIncludesClipboard.value = false
             }
             return
         }
@@ -289,10 +292,11 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
                     data?.data?.let { uri ->
                         contentResolver.openOutputStream(uri)!!
                     }?.use {
-                        SettingsExporter.exportSettings(this@SettingsActivity, it, true)
+                        SettingsExporter.exportSettings(this@SettingsActivity, it, true, exportIncludesClipboard.value)
                     }
                 }
                 exportInProgress.value = 0
+                exportIncludesClipboard.value = false
             }
         }
     }
