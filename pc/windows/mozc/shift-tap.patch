@@ -1,7 +1,7 @@
 diff --git a/win32/base/keyevent_handler.cc b/win32/base/keyevent_handler.cc
 --- a/win32/base/keyevent_handler.cc
 +++ b/win32/base/keyevent_handler.cc
-@@ -679,8 +679,14 @@
+@@ -688,8 +688,14 @@
    // keys.
    if (!ime_state.open) {
      // TODO(yukawa): Treat VK_PACKET as a direct mode key.
