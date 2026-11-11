@@ -66,6 +66,7 @@
     <string name="sebtype_settings_settings_file">設定ファイル</string>
     <string name="sebtype_settings_export">設定をエクスポート</string>
     <string name="sebtype_settings_import">設定をインポート</string>
+    <string name="sebtype_settings_import_subtitle">エクスポートしたバックアップを復元するか、単語リスト・学習した単語・ユーザー辞書を取り込みます。</string>
     <string name="sebtype_settings_version">バージョン</string>
     <string name="sebtype_settings_help">ヘルプとフィードバック</string>
     <string name="sebtype_settings_help_subtitle">GitHub の SebType</string>
