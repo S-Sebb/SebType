@@ -6,6 +6,9 @@
 # Typing in real apps is the manual checklist in pc/linux/README.md.
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
+# Its private Fcitx5 instances run on this PC: one test at a time, in the shared device queue.
+[[ -n ${HOLDING-} ]] || exec env HOLDING=1 devq -w 1800 -m 10 -n "sebtype test-setup-ime ($(git branch --show-current))" \
+  /tmp/agent-locks/devices/nobara-pc.lock bash "$0"
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-setup-ime-results.txt; : > "$results"
@@ -22,6 +25,11 @@ command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (K
 # The fake account has no Rust: setup-ime.sh copies the Configurator built here.
 cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
   { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
+# Nor does it build SebType's Chinese data: each fake account's cache links the zip built here.
+../../tools/rime-data/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||
+  { echo "preflight: SebType's Chinese data does not build (see $out/test-setup-ime-rime-data.log)"; exit 1; }
+mapfile -t rime_zips < <(for z in ~/.cache/sebtype/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
+((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/.cache/sebtype"; exit 1; }
 
 check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh
 
@@ -33,6 +41,7 @@ live_dry() {
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
+    -e "install SebType's Chinese data" \
     -e 'English ⇄ the last other language' -e 'install SebType.s tray icons' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
@@ -81,12 +90,13 @@ mkdir -p "$h/.config/fcitx5" "$h/.config/mozc"
 printf '[Hotkey]\nEnumerateWithTriggerKeys=True\n\n[Hotkey/TriggerKeys]\n0=Super+space\n\n[Hotkey/AltTriggerKeys]\n0=Shift_L\n\n[Hotkey/EnumerateForwardKeys]\n0=Control+Shift+Shift_L\n\n[Behavior]\nActiveByDefault=False\nShareInputState=No\n' > "$h/.config/fcitx5/config"
 printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db"
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
-fake_run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
+fake_run() { mkdir -p "$h/.cache/sebtype"; ln -sf "${rime_zips[@]}" "$h/.cache/sebtype/"
+  env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 15 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 16 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -104,7 +114,8 @@ fresh_apply() {
     grep -qx 'Name=日本語' "$h/.local/share/fcitx5/inputmethod/mozc.conf" &&
     grep -qx 'Name=English' "$h/.local/share/fcitx5/inputmethod/keyboard-us.conf" &&
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
-    grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator
+    grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
+    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator
 }
 # The Configurator is in the app menu, starts this account's copy of the build, and has the pig icon.
 configurator() {
@@ -294,30 +305,16 @@ if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addo
 else result SKIP mozc-shift-tap-and-alt-grave "needs fcitx5, fcitx5-mozc, dbus-run-session and python3-gobject"
 fi
 
-# Chinese label (#69): a private Fcitx5 (as above) running Rime with a tiny schema that has rime-ice's id
-# and name, on a third fake account set up by setup-ime.sh. Switching to it must show 中文 in the popup,
-# both the long one and the compact one (the reference PC's setting; it shows the label the tray text
-# uses), and the schema id must stay rime_ice. The schema also has rime-ice's 简/繁 switch, so the same
-# Fcitx5 checks the Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app.
+# Chinese label (#69) and SebType's Chinese data (#102): a private Fcitx5 (as above) running Rime on a
+# third fake account set up by setup-ime.sh, which installs SebType's Chinese data there. Switching to it
+# must show 中文 in the popup, both the long one and the compact one (the reference PC's setting; it shows
+# the label the tray text uses), and the schema id must stay rime_ice. The same Fcitx5 checks the
+# Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app; and typo correction
+# (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first.
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
   mkdir -p "$h/.config/fcitx5" "$r"
-  cat > "$r/rime_ice.schema.yaml" <<'YAML'
-schema: { schema_id: rime_ice, name: 雾凇拼音 }
-switches: [{ name: traditionalization, states: [简, 繁] }]
-engine:
-  processors: [ascii_composer, key_binder, speller, selector, express_editor]
-  segmentors: [abc_segmentor]
-  translators: [table_translator]
-  filters: [simplifier@traditionalize]
-speller: { alphabet: abcdefghijklmnopqrstuvwxyz, delimiter: " '" }
-translator: { dictionary: sebtest }
-traditionalize: { option_name: traditionalization, opencc_config: s2t.json }
-key_binder: { import_preset: default }
-YAML
-  printf -- '---\nname: sebtest\nversion: "1"\nsort: by_weight\n...\n后来\thou lai\t100\n后\thou\t10\n来\tlai\t10\n' > "$r/sebtest.dict.yaml"
-  mkdir -p "$r/opencc"; cp /usr/share/opencc/{s2t.json,STPhrases.ocd2,STCharacters.ocd2} "$r/opencc/"
   printf 'patch:\n  schema_list: [{schema: rime_ice}]\n' > "$r/default.custom.yaml"
   printf 'patch:\n  menu/page_size: 6\n' > "$r/rime_ice.custom.yaml"
   fake_run < /dev/null > /dev/null || return 1
@@ -361,8 +358,8 @@ call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
 call(ic, IC, 'FocusIn')
 
 SHIFT, CTRL = 1, 4
-KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'space': (0x20, 65), 'f': (0x66, 41), 'F': (0x46, 41),
-        **{c: (ord(c), code) for c, code in zip('houlai', (43, 32, 30, 46, 38, 31))}}
+KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'space': (0x20, 65), 'Escape': (0xff1b, 9),
+        'f': (0x66, 41), 'F': (0x46, 41), **{c: (ord(c), code) for c, code in zip('houlaixsn', (43, 32, 30, 46, 38, 31, 53, 39, 57))}}
 def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
     taken = call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], state, release, 0)[0]
     wait(lambda: False, 0.03)
@@ -375,11 +372,18 @@ def ctrl(name, shift=False):  # Ctrl(+Shift)+name, pressed in order and released
     taken = tap(name, mods)
     shift and key('Shift_L', mods, True); key('Control_L', CTRL, True)
     return taken
-def houlai():  # types houlai, picks the first candidate, returns what was committed
+def first(keys):  # types keys, picks the first candidate, returns what was committed
     committed.clear()
-    for c in 'houlai': tap(c)
+    for c in keys: tap(c)
     tap('space'); wait(lambda: committed, 2)
     return ''.join(committed)
+houlai = lambda: first('houlai')
+preedit = ['']
+def on_preedit(_c, _s, _p, _i, name, params):
+    if name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+bus.signal_subscribe(None, IC, None, ic, None, 0, on_preedit)
+def rime_ready():  # Rime deploys on first use and takes no keys until then: n shows a preedit once it does
+    tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
 
 def switch():  # the popup text shown when switching from English to Chinese
     call(*CONTROLLER, 'SetCurrentIM', '(s)', 'keyboard-us'); wait(lambda: False, 0.2)
@@ -394,8 +398,7 @@ def check(name, got, want):
     print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
 
 switch()  # loads Rime, which deploys the schema
-check('Rime deployed', wait(lambda: os.path.exists(f'{sys.argv[2]}/build/rime_ice.schema.yaml'), 30), True)
-wait(lambda: False, 1)
+check('Rime deployed', wait(rime_ready, 60), True)
 check('long popup reads 中文', switch(), '中文')
 with open(sys.argv[3], 'a') as f: f.write('\n[Behavior]\nCompactInputMethodInformation=True\n')
 call(*CONTROLLER, 'ReloadConfig')
@@ -407,6 +410,7 @@ check('traditional after Ctrl+Shift+F', houlai(), '後來')
 ctrl('f', shift=True)  # Shift may send the lowercase keysym
 check('simplified after the second Ctrl+Shift+F', houlai(), '后来')
 check('Ctrl+F reaches the app', ctrl('f'), False)
+check('typo xoaoshi gives 小时 first', first('xoaoshi'), '小时')
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
@@ -577,5 +581,32 @@ check mozc-install-and-undo mozc_swap
 check undo-icons-and-reinstall undo_icons
 check undo-configurator-and-reinstall undo_configurator
 check undo-names-and-rename undo_names
+
+# SebType's Chinese data over an account's own rime-ice (#102): it replaces the files of the same name,
+# removes the dictionary source it has a prebuilt table for, and keeps learned words, settings and the
+# user's custom_phrase.txt; a rerun changes nothing. --undo-chinese-data leaves Rime's folder exactly as
+# it was (the files setup's other steps patch aside), a second undo changes nothing, and setup installs it again.
+chinese_data() {
+  local h=$fake/data r o before
+  r=$h/.local/share/fcitx5/rime
+  mkdir -p "$h/.config" "$r/build" "$r/lua" "$r/sync/pc"
+  echo 'schema: { schema_id: rime_ice, name: own }' > "$r/rime_ice.schema.yaml"
+  echo 'name: rime_ice' > "$r/rime_ice.dict.yaml"
+  echo own > "$r/build/rime_ice.table.bin"; echo own > "$r/lua/own.lua"; echo '我的	wd' > "$r/custom_phrase.txt"
+  echo learned > "$r/rime_ice.userdb"; echo 'patch: {}' > "$r/rime_ice.custom.yaml"
+  snap() { (cd "$r" && find . \( -name '*.custom.yaml' -prune \) -o \( -type d -printf '%p/\n' \) -o -type f -exec md5sum {} + | sort); }
+  before=$(snap)
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  grep -q "^change: install SebType's Chinese data" <<<"$o" && grep -q 'corr:' "$r/rime_ice.schema.yaml" &&
+    [[ ! -e $r/rime_ice.dict.yaml && -f $r/lua/sebtype_typo.lua && -f $r/lua/own.lua && $(cat "$r/build/rime_ice.table.bin") != own &&
+      $(cat "$r/custom_phrase.txt") == '我的	wd' && $(cat "$r/rime_ice.userdb") == learned ]] || return 1
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  ! grep -q 'Chinese data' <<<"$o" || return 1
+  o=$(fake_run --undo-chinese-data < /dev/null) || return 1; echo "$o"
+  [[ $(grep -c '^change:' <<<"$o") == 1 && $(snap) == "$before" && ! -e $h/.local/share/sebtype/rime-before ]] || { diff <(echo "$before") <(snap); return 1; }
+  o=$(fake_run --undo-chinese-data < /dev/null) && [[ -z $o ]] &&
+    o=$(fake_run < /dev/null) && grep -q "^change: install SebType's Chinese data" <<<"$o" && [[ -f $r/lua/sebtype_typo.lua ]]
+}
+check chinese-data-and-undo chinese_data
 
 ! grep -q '^FAIL' "$results"
