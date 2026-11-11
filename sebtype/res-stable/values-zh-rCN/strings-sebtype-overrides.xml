@@ -3,4 +3,8 @@
 <resources>
     <string name="english_ime_name">SebType</string>
     <string name="english_ime_settings">SebType 设置</string>
+    <!-- FUTO has no Simplified Chinese for these. -->
+    <string name="setup_welcome_text">欢迎使用 SebType（基于 FUTO Keyboard 修改）。\n\n首先，请将 SebType 启用为输入法。</string>
+    <string name="setup_active_input_method">请选择 SebType 作为当前输入法。</string>
+    <string name="chinese_setting_fuzzy_pinyin">模糊拼音</string>
 </resources>

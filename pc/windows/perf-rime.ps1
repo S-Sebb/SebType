@@ -1,4 +1,4 @@
-#Requires -Version 7
+#Requires -Version 5.1
 <#
 Times Rime per key (key, then read the candidates) on Windows with perf-rime.exe (pc/linux/perf-rime.c,
 built by weasel/build.ps1, in the CI artifact sebtype-weasel), against Weasel's rime.dll and on a private copy of the Chinese data, so nothing is
@@ -26,6 +26,7 @@ try {
   $out = Join-Path $work 'out.txt'
   $p = Start-Process (Join-Path $PSScriptRoot 'perf-rime.exe') -PassThru -NoNewWindow -RedirectStandardInput $inputs `
     -RedirectStandardOutput $out -RedirectStandardError "$out.err" -ArgumentList "`"$Root\data`"", "`"$work`"", 'rime_ice', $Runs
+  $null = $p.Handle  # Windows PowerShell keeps the exit code only once the handle is read
   if (-not $p.WaitForExit(600000)) { $p.Kill(); throw 'perf-rime.exe: timeout after 600 s' }
   $v = @{}; Get-Content $out | ForEach-Object { $k, $x = $_ -split '=', 2; $v[$k] = $x }
   if ($p.ExitCode -or -not $v.ContainsKey('key_p95_us')) { throw "perf-rime.exe failed: $(Get-Content "$out.err" -Raw)" }

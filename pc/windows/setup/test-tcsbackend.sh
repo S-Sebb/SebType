@@ -2,8 +2,8 @@
 # Tests SebType's installer (#73) on TCSBackEnd (Windows Server 2022) from nobara-pc, in the background,
 # and puts TCSBackEnd back as found. One command, no arguments:
 #   pc/windows/setup/test-tcsbackend.sh
-# It takes SebType-setup-*.exe from the "Windows setup" CI run of this commit (gh), or else from build/,
-# runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
+# It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
+# else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
 # (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
@@ -32,9 +32,12 @@ run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$bran
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
   exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
+  # perf-rime.exe, for the Rime per-key check against the librime the setup installed (#133)
+  gh run download -R S-Sebb/SebType "$run" -n sebtype-weasel -D "$out/in" >/dev/null 2>&1
 else
   exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
 fi
+perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/weasel/perf-rime.exe 2>/dev/null | head -1)
 [ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
 echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
@@ -112,7 +115,7 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-setup-test | Out-Null' | tps
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
+if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 

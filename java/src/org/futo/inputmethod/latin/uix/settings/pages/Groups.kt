@@ -33,6 +33,7 @@ import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.personalization.PersonalizationHelper
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.SettingsExporter
+import org.futo.inputmethod.latin.uix.findSettingsActivity
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryEnabled
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryItemsToKeep
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryTimeToKeep
@@ -45,6 +46,7 @@ import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
+import org.futo.inputmethod.latin.uix.settings.SettingCheckbox
 import org.futo.inputmethod.latin.uix.settings.SettingItem
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
@@ -99,6 +101,13 @@ fun PrivacyScreen(navController: NavHostController) {
                 subtitle = stringResource(R.string.sebtype_settings_learn_subtitle),
                 key = Settings.PREF_KEY_USE_PERSONALIZED_DICTS,
                 default = true
+            )
+            // SebType (#31): the same switch as the action bar's incognito button.
+            SettingToggleSharedPrefs(
+                title = stringResource(R.string.sebtype_incognito),
+                subtitle = stringResource(R.string.sebtype_incognito_subtitle),
+                key = Settings.PREF_SEBTYPE_INCOGNITO,
+                default = false
             )
         }
 
@@ -210,13 +219,19 @@ fun ForgetLearnedDialog(navController: NavHostController) {
 @Composable
 fun BackupScreen(navController: NavHostController) {
     val context = LocalContext.current
+    val includeClipboard = remember { findSettingsActivity(context)!!.exportIncludesClipboard }
     ScrollableList {
         ScreenTitle(stringResource(R.string.sebtype_settings_backup), showBack = true, navController)
         ScreenTitle(stringResource(R.string.sebtype_settings_settings_file))
         SettingsCard {
+            SettingCheckbox(
+                title = stringResource(R.string.sebtype_settings_export_clipboard),
+                checked = includeClipboard.value,
+                setChecked = { includeClipboard.value = it }
+            )
             NavigationItem(
                 title = stringResource(R.string.sebtype_settings_export),
-                subtitle = stringResource(R.string.settings_export_configuration_subtitle),
+                subtitle = stringResource(R.string.sebtype_settings_export_subtitle),
                 style = NavigationItemStyle.Misc,
                 navigate = { navController.navigate("exportingcfg") }
             )

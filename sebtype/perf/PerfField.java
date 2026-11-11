@@ -1,6 +1,8 @@
 package dev.sebb.sebtype.perffield;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.os.Bundle;
 import android.os.Trace;
 import android.text.Editable;
@@ -14,7 +16,7 @@ import android.widget.EditText;
 /**
  * A plain text field for sebtype/perf.sh: it opens with the keyboard up, and with the extra
  * "chars" it starts with that much filler text, cursor at the end (the long-field case); the extra
- * "kind" makes it a password, PIN, visible-password, private, URL or email field.
+ * "clip" copies that text just after it opens. "kind" makes it a password, PIN, visible-password, private, URL or email field.
  * It records only the text length, as the Perfetto counter "sebperf_len", never the text.
  */
 public class PerfField extends Activity {
@@ -55,6 +57,13 @@ public class PerfField extends Activity {
         });
         setContentView(field);
         field.requestFocus();
+        // A copy made in this app, for the incognito clipboard checks (#31): once the keyboard has
+        // started on this field, so the keyboard judges the copy by this field, not the one before.
+        String clip = getIntent().getStringExtra("clip");
+        if (clip != null) {
+            field.postDelayed(() -> ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
+                    .setPrimaryClip(ClipData.newPlainText("test", clip)), 1500);
+        }
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     }
