@@ -5,14 +5,16 @@ session (test-tcsbackend.sh does that on TCSBackEnd and opens the Remote Desktop
 
     powershell -File C:\sebtype-setup-test\test.ps1
 
-The folder holds this script, TsfHost.cs (../mozc) and SebType-setup-*.exe. The test creates a local
+The folder holds this script, TsfHost.cs (../mozc), perf-rime.ps1 and perf-rime.exe (../, from the
+Weasel build) and SebType-setup-*.exe. The test creates a local
 admin user, sebtype-test, and runs everything as that user in a Remote Desktop session of its own, so
 nobody's own input settings change, then removes the user and its profile:
 
 1. The installer's pictures: the language dialog (which must preselect Windows' own display language),
    the welcome page in English, 中文 and 日本語, then a whole install in English with the uninstaller.
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
-   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, Japanese) and Chinese's
+   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese),
+   Rime's time per key (p95 ≤ 10 ms, Decisions #2) and Chinese's
    tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu), a silent
    upgrade that keeps learned words, Japanese still working after the language list changes, then the
    uninstall: everything back as before, learned words gone.
@@ -106,6 +108,12 @@ if ($Typing) {
           Start-Sleep 1; $t = $tsf::EditText($h).Trim()
           if ($t -ne '後來后来') { throw "houlai with 繁 then 简 gave '$t'" }
           $t
+        }
+        # SebType's librime (#133): a slip onto the key under i is corrected; the word typed right stays.
+        Check 'chinese-typo-xkaoshi' {
+          $typo = Typed 'xkaoshi '; $clean = Typed 'kaoshi '
+          if ("$typo $clean" -ne '小时 考试') { throw "xkaoshi + Space gave '$typo', kaoshi + Space '$clean' (want 小时, 考试)" }
+          "xkaoshi → $typo, kaoshi → $clean"
         }
       }
       # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
@@ -413,6 +421,15 @@ namespace SebTypeSetupTest {
     Save-MachineLog round1-install; Stop-Setup
     Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
     Typing all
+    # Rime per key on the installed librime and data (perf-rime.exe from the Weasel build; #133).
+    Check 'round1-rime-p95' {
+      if (-not (Test-Path "$root\perf-rime.exe")) { throw 'no perf-rime.exe next to test.ps1' }
+      $weasel = (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot
+      $line = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $weasel -Rime "$App\rime-data.zip" |
+        Select-Object -Last 1
+      if ($line -notlike 'PASS *') { throw "$line" }
+      $line -replace '^PASS rime-p95-under-10ms: '
+    }
     # What it learned stays through an upgrade: a mark in each learned-words folder.
     $learned | ForEach-Object { New-Item -Force $_ | Out-Null }
     Check 'round1-upgrade' { Silent round1-upgrade @(); 'silent, same languages' }
