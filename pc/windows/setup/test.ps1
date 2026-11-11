@@ -162,7 +162,8 @@ namespace SebTypeSetupTest {
       IntPtr found = IntPtr.Zero;
       EnumWindows((h, l) => {
         uint pid; GetWindowThreadProcessId(h, out pid);
-        if (IsWindowVisible(h) && Array.IndexOf(pids, (int)pid) >= 0 && Array.IndexOf(forms, Cls(h)) < 0) { found = h; return false; }
+        RECT r; GetWindowRect(h, out r);
+        if (IsWindowVisible(h) && r.R - r.L >= 80 && r.B - r.T >= 60 && Array.IndexOf(pids, (int)pid) >= 0 && Array.IndexOf(forms, Cls(h)) < 0) { found = h; return false; }
         return true;
       }, IntPtr.Zero);
       return found;
@@ -213,6 +214,7 @@ namespace SebTypeSetupTest {
       Front(h);
       System.Threading.Thread.Sleep(700);
       RECT r; GetWindowRect(h, out r);
+      if (r.R - r.L < 1 || r.B - r.T < 1) throw new ArgumentException(Cls(h) + " '" + Text(h) + "' has no size to picture");
       using (var bmp = new Bitmap(r.R - r.L, r.B - r.T)) {
         using (var g = Graphics.FromImage(bmp)) { var dc = g.GetHdc(); PrintWindow(h, dc, 2); g.ReleaseHdc(dc); }  // PW_RENDERFULLCONTENT
         bmp.Save(path, ImageFormat.Png);
@@ -228,10 +230,11 @@ namespace SebTypeSetupTest {
     if (-not $h) { throw "no $cls window in $seconds s; windows: $($win::Visible())" }
     $h
   }
-  # Setup's processes (the stub, its copy in %TEMP%) and the uninstaller's (unins000, its copy in %TEMP%).
+  # Setup's processes (the stub, its .tmp copy in %TEMP%) and the uninstaller's (unins000, its .tmp copy),
+  # not the Weasel installer Setup runs from its folder there.
   $forms = [string[]]('TWizardForm', 'TSelectLanguageForm', 'TUninstallProgressForm', 'TApplication')
   function Find-Message {
-    $pids = @(Get-Process | Where-Object { $_.Path -like "$env:TEMP\*" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins*' } | ForEach-Object Id)
+    $pids = @(Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins*' } | ForEach-Object Id)
     if ($pids) { $m = $win::Owned([int[]]$pids, $forms); if ($m -ne [IntPtr]::Zero) { $m } }
   }
   function Message($seconds = 60) {

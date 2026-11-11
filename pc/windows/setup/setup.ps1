@@ -241,7 +241,9 @@ if (Test-Path $StateFile) {
   $state = [pscustomobject][ordered]@{
     Backup = $backup
     Chosen = @()  # the languages SebType set up last time
-    Languages = Get-Languages
+    # Without SebType's own input methods: Windows adds a newly registered text service to every
+    # logged-on user's list, so the machine step has put them there already.
+    Languages = @(Get-Languages | ForEach-Object { $_.Tips = @($_.Tips | Where-Object { $_ -notin $WeaselTip, $MozcTip }); $_ } | Where-Object { $_.Tips })
     DefaultInputMethod = if ($default) { $default.InputMethodTip } else { $null }
     LegacySwitchingMode = (Get-WinLanguageBarOption).IsLegacySwitchingMode
     Toggle = [pscustomobject]@{}
@@ -363,9 +365,10 @@ if ('ja' -in $want) {
   New-Item -Force $profileKey | Out-Null
   Set-ItemProperty $profileKey Enable 1 -Type DWord
 }
-# Windows can take a few seconds to apply a language list right after another change.
-for ($i = 0; $i -lt 20 -and (Format-Languages (Get-Languages)) -ne (Format-Languages $list); $i++) { Start-Sleep -Milliseconds 500 }
-if ($i -eq 20) { throw "Windows didn't take the input methods $(Format-Languages $list)" }
+# Windows can take a while to apply a language list right after another change (over 10 s for a new
+# account's first one, on TCSBackEnd).
+for ($i = 0; $i -lt 120 -and (Format-Languages (Get-Languages)) -ne (Format-Languages $list); $i++) { Start-Sleep -Milliseconds 500 }
+if ($i -eq 120) { throw "Windows didn't take the input methods $(Format-Languages $list)" }
 
 if (-not $Undo) {
   # Win+Space is the only language switch: no Alt+Shift / Ctrl+Shift switch keys (3 = none), and one
@@ -401,6 +404,8 @@ if (-not $Undo) {
 # Undo: the rest of how the account was before SebType.
 if ($state.DefaultInputMethod) { Set-WinDefaultInputMethodOverride -InputTip $state.DefaultInputMethod }
 foreach ($f in $state.RegBackups) { Import-Key $f }
+# The backup can hold the keys Windows made for SebType's input methods before it was taken.
+Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
 New-Item $ToggleKey -Force | Out-Null
 foreach ($name in $ToggleNames) {
   $v = $state.Toggle.$name
