@@ -104,11 +104,11 @@ try {
   $installer = "output\archives\weasel-$WeaselTag.$SebTypeBuild-installer.exe"
   Copy-Item $installer (Join-Path $Out "sebtype-weasel-$WeaselTag.$SebTypeBuild-installer.exe") -Force
 
-  # 32-bit, like the rime.dll it loads: Weasel ships only a 32-bit one.
+  # 64-bit, like the rime.dll Weasel installs on a 64-bit PC (its 32-bit one is for 32-bit Windows).
   $vcvars = & $vswhere -latest -find 'VC\Auxiliary\Build\vcvarsall.bat' | Select-Object -First 1
   $perf = (Resolve-Path (Join-Path $PSScriptRoot '..\..\linux\perf-rime.c')).Path
   # A batch file, so cmd gets the quotes as written.
-  Set-Content perf-rime.bat "@call `"$vcvars`" x86 >nul && cl /nologo /O2 /MT /Iinclude /Fe`"$Out\perf-rime.exe`" `"$perf`" psapi.lib"
+  Set-Content perf-rime.bat "@call `"$vcvars`" x64 >nul && cl /nologo /O2 /MT /Iinclude /Fe`"$Out\perf-rime.exe`" `"$perf`" psapi.lib"
   Invoke-Checked 'build perf-rime' { cmd /c perf-rime.bat }
 } finally {
   Pop-Location

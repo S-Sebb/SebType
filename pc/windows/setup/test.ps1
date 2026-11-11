@@ -425,9 +425,12 @@ namespace SebTypeSetupTest {
     Check 'round1-rime-p95' {
       if (-not (Test-Path "$root\perf-rime.exe")) { throw 'no perf-rime.exe next to test.ps1' }
       $weasel = (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot
-      $line = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $weasel -Rime "$App\rime-data.zip" |
-        Select-Object -Last 1
-      if ($line -notlike 'PASS *') { throw "$line" }
+      # The child's stderr says why when it says nothing else; 'Stop' here would drop it.
+      $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      $said = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $weasel -Rime "$App\rime-data.zip" 2>&1
+      $ErrorActionPreference = $eap
+      $line = @($said) | Where-Object { "$_" -like '*rime-p95-under-10ms*' } | Select-Object -Last 1
+      if ($line -notlike 'PASS *') { throw "perf-rime.ps1 (Weasel at '$weasel') exit $LASTEXITCODE said: $($said -join ' | ')" }
       $line -replace '^PASS rime-p95-under-10ms: '
     }
     # What it learned stays through an upgrade: a mark in each learned-words folder.
