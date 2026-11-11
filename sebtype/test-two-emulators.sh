@@ -79,8 +79,8 @@ while :; do
 done > "$out/memory.log" &
 sampler=$!
 # Both start once both emulators are free, so another worktree's run doesn't put them in one queue.
-timeout 3600 bash -c 'until for l in /tmp/agent-locks/devices/emulator-guide35{,b}.lock; do
-  flock -n "$l" true && [[ -z $(ls "$l.queue" 2> /dev/null) ]] || exit 1; done; do sleep 5; done' ||
+timeout 3600 bash -c 'until (for l in /tmp/agent-locks/devices/emulator-guide35{,b}.lock; do
+  flock -n "$l" true && [[ -z $(ls "$l.queue" 2> /dev/null) ]] || exit 1; done); do sleep 5; done' ||
   result FAIL both-free "both emulators weren't free within an hour"
 suite "$PWD" a & pa=$!
 suite "$wt" b & pb=$!
