@@ -449,6 +449,20 @@ def password_plain(kind):
     return run
 
 
+def password_after_restart():
+    """#100: a keyboard that starts while a UI dump runs puts its keys in the tree, and these checks tap
+    by that tree. In a password keyboard, whose number row moves the letters down, it must show where
+    they are now, not where the keyboard before had them. Three restarts: the tree shows up in about
+    half of them."""
+    for _ in range(3):
+        restart_app()
+        wait_set_up()
+        for _ in range(3):
+            nodes()
+        password_plain("visible-password")()
+    return "typed lh into a visible-password field after each of 3 restarts"
+
+
 def pin_plain():
     """#30: a PIN field's keypad types digits in 中, with no candidates: its left column's top three keys."""
     open_field("pin")
@@ -567,6 +581,7 @@ check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("typo-corrected", expect_first("xoaoshi", "小时"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
+check("password-after-restart", password_after_restart, needs=["first-install"])
 check("password-plain", password_plain("password"), needs=["first-install"])
 check("pin-plain", pin_plain, needs=["first-install"])
 check(
