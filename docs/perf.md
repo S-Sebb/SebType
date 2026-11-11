@@ -13,7 +13,7 @@ ANDROID_SERIAL=<serial> sebtype/perf.sh   # any other device; the only way to ru
 
 It reinstalls SebType, so everything SebType learned on that device is lost. It then types into its
 own small test field (`sebtype/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
-back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 15
+back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 20
 minutes. While it runs it holds the device's devq lock, shared by all projects:
 `/tmp/agent-locks/devices/emulator-<AVD>.lock`, or on a phone the lock named after its maker and
 model (`nothing-a001.lock`), which other projects take for the phone too.
@@ -24,7 +24,7 @@ What it measures:
 |---|---|
 | APK size, biggest entries | the APK file; shrunk resource names mapped back with `aapt2` |
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
-| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, with all three engines loaded (fast typing right after 中 and 日), idle again once unused engines unloaded (`IDLE_UNLOAD_S`, default 200 s, just over the app's 3 minutes), peak during the first Chinese setup. Each breakdown is kept in `run/meminfo-<point>.txt` |
+| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, in 日 alone (only Mozc loaded: past Rime's idle stop), with all three engines loaded (fast typing right after 中 and 日), idle again once unused engines unloaded (`IDLE_UNLOAD_S`, default 200 s, just over the app's 3 minutes), peak during the first Chinese setup. Each breakdown is kept in `run/meminfo-<point>.txt` |
 | Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
 | Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle), and the transformer thread's CPU time |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
