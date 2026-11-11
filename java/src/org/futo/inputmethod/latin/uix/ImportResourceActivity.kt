@@ -684,7 +684,8 @@ class ImportResourceActivity : ComponentActivity() {
 
     private fun applyPersonalData(item: ItemBeingImported.PersonalData) {
         lifecycleScope.launch {
-            val done = withContext(Dispatchers.IO) {
+            // A file that passed detection can still fail to import (cut off, unreadable): say so, not crash.
+            val done = withContext(Dispatchers.IO) { runCatching {
                 when(item.kind) {
                     Kind.RimeWordList -> {
                         contentResolver.openInputStream(uri!!)!!.use { ChineseWordList.import(applicationContext, it) }
@@ -697,7 +698,7 @@ class ImportResourceActivity : ComponentActivity() {
                         true
                     }
                 }
-            }
+            }.getOrElse { Log.e("ImportResourceActivity", "Importing ${item.kind} failed", it); false } }
             if(!done) Toast.makeText(applicationContext, R.string.settings_unknown_error_subtitle, Toast.LENGTH_LONG).show()
             GlobalIMEMessage.tryEmit(IMEMessage.ReloadResources)
             finish()

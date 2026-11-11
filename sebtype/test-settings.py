@@ -1980,6 +1980,14 @@ def offered(language, code):
     return got
 
 
+def import_done():
+    """The import screen closed: it closes itself once the import is done. Only the resumed activity
+    counts; the dump keeps finished ones in other lists for a while."""
+    dump = adb("shell", "dumpsys", "activity", "activities")
+    resumed = [line for line in dump.splitlines() if "ResumedActivity" in line]
+    return resumed and not any("ImportResourceActivity" in line for line in resumed)
+
+
 def import_personal_data(name):
     def run():
         language, code, word, file, text = PERSONAL_DATA[name]
@@ -2000,15 +2008,7 @@ def import_personal_data(name):
                 30,
             )
             tap(row[1], row[2])
-            wait_for(
-                "the import to finish",
-                lambda: (
-                    "ImportResourceActivity"
-                    not in adb("shell", "dumpsys", "activity", "activities")
-                ),
-                300,
-                interval=2,
-            )
+            wait_for("the import to finish", import_done, 300, interval=2)
         finally:
             adb("shell", f"rm -f /sdcard/Download/{file}", check=False)
         to_language(*PROBES[language])
