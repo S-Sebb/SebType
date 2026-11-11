@@ -55,7 +55,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -y librsvg2-bin python3-pil python3-numpy fonts-noto-cjk
+      # The runner's Azure apt mirror sometimes doesn't resolve (#142), and apt-get update only warns
+      # then: retry the install with that mirror dropped from the runner's mirror list.
+      - run: |
+          for try in 1 2 3; do
+            sudo apt-get update -q && sudo apt-get install -y librsvg2-bin python3-pil python3-numpy fonts-noto-cjk && exit 0
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt; sleep 10
+          done; exit 1
       - run: python3 pc/windows/setup/pictures.py out/pictures
       - uses: actions/upload-artifact@v4
         with:
