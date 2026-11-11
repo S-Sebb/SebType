@@ -32,8 +32,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 serial, results_path, logdir = sys.argv[1:4]
-# Only the checks whose names start with one of CHECKS (comma-separated, as sebtype/test-emulator.sh takes it).
-CHECKS = [c for c in os.environ.get("CHECKS", "").split(",") if c]
+# Only the checks whose names start with one of SEBTYPE_CHECKS (comma-separated, as test-emulator.sh takes it).
+CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 # Timing checks run only in the final performance run (#54, Decisions #2 2026-11-11): PERF_RUN=1.
 TIMING = {"settings-smooth-scrolling"}
 PKG = "dev.sebb.sebtype"

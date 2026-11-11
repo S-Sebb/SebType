@@ -3,21 +3,21 @@
 ## Which checks a run takes
 
 A PR runs the checks for what it changed; the full suite (40–60 minutes on an emulator) runs for a
-release. `CHECKS` picks them by name prefix, comma-separated, from the names in the results:
+release. `SEBTYPE_CHECKS` picks them by name prefix, comma-separated, from the names in the results:
 
 ```
-CHECKS=settings-japanese,incognito sebtype/test-emulator.sh
+SEBTYPE_CHECKS=settings-japanese,incognito sebtype/test-emulator.sh
 ```
 
-That runs those checks and what they need: the build, the install beside FUTO Keyboard and the locale
-always, and the earlier `test-chinese.py` checks a named one depends on (its `needs`, so `CHECKS=ranh`
-also runs `first-install`). The settings checks (`test-settings.py`) declare no such needs: a settings
+That runs those checks and what they need: always the build, the install beside FUTO Keyboard, the
+locale, SebType enabled and the test field app; and the earlier `test-chinese.py` checks a named one
+depends on (its `needs`, so `SEBTYPE_CHECKS=ranh` also runs `first-install`). The settings checks (`test-settings.py`) declare no such needs: a settings
 check that relies on Chinese being set up runs with `first-install` named too.
 
 Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in
 `pc/windows/setup/test-tcsbackend.sh`; `mozc-speed-and-dictionary` in `pc/windows/mozc/test.ps1`) measure
 speed, so they run only in the final performance run (#54, Decisions #2 2026-11-11), with `PERF_RUN=1`
-(`-PerfRun` for the PowerShell scripts). Without it they write no result line, unless `CHECKS` names
+(`-PerfRun` for the PowerShell scripts). Without it they write no result line, unless `SEBTYPE_CHECKS` names
 one: then it reports SKIP and says why. `sebtype/perf.sh` is a measurement of its own, run only then too.
 
 ## The two emulators

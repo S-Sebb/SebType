@@ -294,9 +294,9 @@ passed = {}
 
 
 def wanted():
-    """With CHECKS (comma-separated name prefixes, as sebtype/test-emulator.sh takes it), the checks
-    named there and those they need; None runs all."""
-    prefixes = [c for c in os.environ.get("CHECKS", "").split(",") if c]
+    """With SEBTYPE_CHECKS (comma-separated name prefixes, as sebtype/test-emulator.sh takes it), the
+    checks named there and those they need; None runs all."""
+    prefixes = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
     if not prefixes:
         return None
     needs = {}
@@ -318,6 +318,8 @@ def wanted():
 
 
 WANTED = wanted()
+if WANTED == set():  # none of the named checks is here
+    sys.exit()
 
 
 def check(name, fn, needs=()):
