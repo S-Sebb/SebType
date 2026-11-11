@@ -5,8 +5,9 @@ has the details):
   (LICENSE.md).
 - The original AOSP keyboard code: the Apache License 2.0 below.
 - Code from other projects that FUTO vendored: each project's own licence, in its folder.
-- SebType's own code in pc/, rime-android/, sebtype/, tools/rime-data/, tools/en-dict/ and docs/: the MIT
-  licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb. These files in those folders are not SebType's own
+- SebType's own code in pc/, rime-android/, sebtype/, tools/rime-data/, tools/en-dict/ and docs/, and
+  tools/trim-emoji.sh, tools/pack-rime-ice.sh, tools/userdb-to-futo-backup.py and .github/workflows/: the
+  MIT licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb. These files in those folders are not SebType's own
   and keep their licence (each folder's LICENSE file lists them):
   - sebtype/assets/layouts/: adapted from FUTO's layouts, Apache-2.0.
   - sebtype/res-stable/raw/emoji_i18n.jsondlgz and sebtype/res-stable/values*/*-sebtype-overrides.xml:
