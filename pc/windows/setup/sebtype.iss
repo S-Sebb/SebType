@@ -340,6 +340,8 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
   WizardForm.StatusLabel.Caption := CustomMessage('Engines');
+  // How the account is before SebType, saved before the engines' installers touch it.
+  Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
   if WizardIsTaskSelected('zh') then
   begin
     ExtractTemporaryFile('{#WeaselExe}');

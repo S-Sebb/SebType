@@ -253,14 +253,15 @@ namespace SebTypeSetupTest {
   }
   function Save-MachineLog($what) { Copy-Item "$App\setup.log" "$out\machine-$what.log" -ErrorAction SilentlyContinue }
   # A Setup or uninstaller started here and left showing is stopped, with the temporary copy it runs.
-  function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" -or $_.Path -like "$env:TEMP\_iu*" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
+  function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
   function Silent($what, [string[]]$arguments) {
     $p = Start-Process $setup -PassThru -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\setup-$what.log`"") + $arguments)
     if (-not $p.WaitForExit(900000)) { throw "Setup ($what) ran over 15 minutes" }
     Save-MachineLog $what
     if ($p.ExitCode) { throw "Setup ($what) exited with $($p.ExitCode) (logs: out\setup-$what.log, out\machine-$what.log, out\user-setup.log)" }
   }
-  function Uninstalled { -not (Test-Path $AppKey) -and -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\_iu*" }) }
+  # The uninstaller finishes in its copy, %TEMP%\is-*-uninstall.tmp\_unins.tmp.
+  function Uninstalled { -not (Test-Path $AppKey) -and -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\*-uninstall.tmp\*" }) }
   function Typing($phase) {
     Set-Content "$out\typing-phase.txt" $phase
     Start-ScheduledTask SebType-setup-typing

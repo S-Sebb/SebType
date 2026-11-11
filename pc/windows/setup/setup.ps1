@@ -3,6 +3,7 @@ SebType's Windows setup steps (#73), run by SebType's installer (sebtype.iss), w
 in SebType's folder. Why each step exists: pc/windows/README.md.
 
   setup.ps1 -Machine -Languages en,zh,ja [-Weasel <installer.exe>] [-Mozc <msi>]   # elevated: the engines
+  setup.ps1 -User -Save                                                            # as the user, first
   setup.ps1 -User -Languages en,zh,ja                                              # as the user: settings
   setup.ps1 -Machine -Undo / -User -Undo                                           # uninstall
 
@@ -19,6 +20,7 @@ param(
   [switch]$User,
   [string]$Languages = '',
   [switch]$Undo,
+  [switch]$Save,
   [string]$Weasel,
   [string]$Mozc,
   [string]$RimeData = '',
@@ -263,6 +265,9 @@ if (Test-Path $StateFile) {
 }
 function Save-State { $state | ConvertTo-Json -Depth 5 | Set-Content $StateFile -Encoding utf8 }
 Save-State
+# -Save, before the machine step: Weasel's and Mozc's installers make their folders and settings for the
+# account they run as, which would otherwise look like the account's own from before SebType.
+if ($Save) { Write-Output 'user: saved how the account is before SebType'; Stop-Transcript | Out-Null; exit 0 }
 $removed = @($state.Chosen | Where-Object { $_ -notin $want })
 $w = Get-Weasel
 

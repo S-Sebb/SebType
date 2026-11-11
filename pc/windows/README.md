@@ -31,9 +31,10 @@ changes; tried on YukaROG). Setup runs elevated, does the machine's part, then s
 person who started it, not elevated (`setup/setup.ps1`):
 
 ```powershell
+setup.ps1 -User -Save                                                                    # as the person, first
 setup.ps1 -Machine -Languages en,zh,ja -Weasel <installer.exe> -Mozc <msi> -Log <file>   # elevated
 setup.ps1 -User -Languages en,zh,ja                                                      # as the person
-setup.ps1 -User -Undo; setup.ps1 -Machine -Undo                                          # uninstall
+setup.ps1 -Machine -Undo; setup.ps1 -User -Undo                                          # uninstall
 ```
 
 It runs in Windows PowerShell 5.1, which every Windows has; PowerShell 7's language list cmdlets fail on
@@ -48,8 +49,8 @@ the choice for the next upgrade.
 changed, replaces the Chinese data and keeps everything learned: Rime's `*.userdb`, `*.custom.yaml` and
 `custom_phrase.txt`, and Mozc's user dictionary and history.
 
-**Uninstall** puts the account back as it was before the first install and removes Weasel, Mozc, SebType's
-folder and the Start menu entry. The first install saves to `%LOCALAPPDATA%\SebType\setup.json` and
+**Uninstall** removes the engines, then puts the account back as it was before the first install and removes Weasel, Mozc, SebType's
+folder and the Start menu entry. The first install saves, before the engines' installers run (`-User -Save`), to `%LOCALAPPDATA%\SebType\setup.json` and
 `backup\` the language list, the default input method, the switch keys, the per-window setting, the input
 hotkeys and text service settings, and copies of the Rime and Mozc folders if there were any. Uninstall
 restores those and deletes what SebType learned on this PC (Decisions #2): Setup's message says so.
