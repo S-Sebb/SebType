@@ -16,6 +16,9 @@ export out=${PERF_OUT:-/tmp/sebtype/perf-$(basename "$PWD")}; export work=$out/r
 export sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 export adb=$sdk/platform-tools/adb
 export runs=${RUNS:-3}
+# Idle memory is read this long after the keyboard opens: a new process's start-up garbage (about
+# 25 MB of Java heap on the phone) is collected within half a minute.
+export settle=${SETTLE_S:-30}
 export pkg=dev.sebb.sebtype field=dev.sebb.sebtype.perffield
 export ime_id=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
 export field_act=dev.sebb.sebtype.perffield/.PerfField
@@ -179,7 +182,7 @@ phase_first-open() { # the first keyboard open after install
   trace_stop first-open
   geometry && declare -p W dpi top > "$work/geometry"
   opens first-open first
-  echo "pss_idle_kb=$(pss_kb idle)"
+  sleep "$settle"; echo "pss_idle_kb=$(pss_kb idle)"
 }
 phase_en() {
   . "$work/geometry"
@@ -294,7 +297,7 @@ phase_cold-open() { # switch to another keyboard and back with SebType's process
   done
   trace_stop cold-open
   opens cold-open cold
-  sleep 5; echo "pss_idle_kb=$(pss_kb fresh)" # a fresh process, EN, idle
+  sleep "$settle"; echo "pss_idle_kb=$(pss_kb fresh)" # a fresh process, EN, idle
 }
 phase_sizes() { # needs a root shell (emulator): app code, internal data, external data
   [[ $(sh id -u) == 0 ]] || { echo "skip=needs a root adb shell to read app data (emulator: adb root)"; return; }

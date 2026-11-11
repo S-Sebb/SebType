@@ -132,6 +132,10 @@ public final class GestureTrailsDrawingPreview extends AbstractDrawingPreview im
         if (!isPreviewEnabled()) {
             return;
         }
+        // SebType (#56): the keyboard-sized trail buffer waits for the first gesture.
+        if (mOffscreenBuffer == null && mGestureTrails.size() == 0) {
+            return;
+        }
         mayAllocateOffscreenBuffer();
         // Draw gesture trails to offscreen buffer.
         final boolean needsUpdatingGestureTrail = drawGestureTrails(

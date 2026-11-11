@@ -192,12 +192,6 @@ public class KeyboardView extends View {
                 Color.red(color), Color.green(color), Color.blue(color));
     }
 
-    public void setHardwareAcceleratedDrawingEnabled(final boolean enabled) {
-        if (!enabled) return;
-        // TODO: Should use LAYER_TYPE_SOFTWARE when hardware acceleration is off?
-        setLayerType(LAYER_TYPE_HARDWARE, null);
-    }
-
     /**
      * Attaches a keyboard to this view. The keyboard can be switched at any time and the
      * view will re-layout itself to accommodate the keyboard.
@@ -260,6 +254,7 @@ public class KeyboardView extends View {
         mKeyboardBackground.setBounds(0, 0, getWidth(), getHeight());
         mKeyboardBackground.draw(canvas);
 
+        // SebType (#56): no hardware layer either; one cost about 5 MB of GPU memory while shown.
         if (canvas.isHardwareAccelerated()) {
             onDrawKeyboard(canvas);
             return;
@@ -293,8 +288,6 @@ public class KeyboardView extends View {
     }
 
     private void freeOffscreenBuffer() {
-        setLayerType(LAYER_TYPE_NONE, null);
-
         mOffscreenCanvas.setBitmap(null);
         mOffscreenCanvas.setMatrix(null);
         if (mOffscreenBuffer != null) {

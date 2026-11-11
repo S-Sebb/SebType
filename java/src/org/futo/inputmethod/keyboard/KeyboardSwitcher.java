@@ -68,7 +68,6 @@ public final class KeyboardSwitcher implements SwitchActions {
     private MainKeyboardView mKeyboardView;
     private LatinIMELegacy mLatinIMELegacy;
     private RichInputMethodManager mRichImm;
-    private boolean mIsHardwareAcceleratedDrawingEnabled;
 
     public KeyboardState mState;
 
@@ -98,15 +97,13 @@ public final class KeyboardSwitcher implements SwitchActions {
         mLatinIMELegacy = latinImeLegacy;
         mRichImm = RichInputMethodManager.getInstance();
         mState = new KeyboardState(this);
-        mIsHardwareAcceleratedDrawingEnabled = true;
     }
 
     public void updateKeyboardTheme(@NonNull Context displayContext) {
         final boolean themeUpdated = updateKeyboardThemeAndContextThemeWrapper(
                 displayContext, KeyboardTheme.getKeyboardTheme(displayContext /* context */));
         if (themeUpdated && mKeyboardView != null) {
-            mLatinIMELegacy.getLatinIME().updateLegacyView(onCreateInputView(
-                    displayContext, mIsHardwareAcceleratedDrawingEnabled));
+            mLatinIMELegacy.getLatinIME().updateLegacyView(onCreateInputView(displayContext));
             mLatinIMELegacy.updateMainKeyboardViewSettings();
         }
     }
@@ -385,8 +382,7 @@ public final class KeyboardSwitcher implements SwitchActions {
         }
     }
 
-    public View onCreateInputView(@NonNull Context displayContext,
-            final boolean isHardwareAcceleratedDrawingEnabled) {
+    public View onCreateInputView(@NonNull Context displayContext) {
         if (mKeyboardView != null) {
             mKeyboardView.closing();
         }
@@ -397,7 +393,6 @@ public final class KeyboardSwitcher implements SwitchActions {
                 R.layout.input_view, null, false);
         mMainKeyboardFrame = mCurrentInputView.findViewById(R.id.main_keyboard_frame);
         mKeyboardView = (MainKeyboardView) mCurrentInputView.findViewById(R.id.keyboard_view);
-        mKeyboardView.setHardwareAcceleratedDrawingEnabled(isHardwareAcceleratedDrawingEnabled);
         mKeyboardView.setKeyboardActionListener(mLatinIMELegacy);
         return mCurrentInputView;
     }

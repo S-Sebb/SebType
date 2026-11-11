@@ -6,9 +6,9 @@
 # doesn't come within seconds, for the other too; the first turn wins (#140). One it starts
 # runs headless; guide35b is stopped again when CMD ends, guide35 stays up for the other projects
 # (SebChat) and scripts that expect it running. ANDROID_SERIAL picks the device instead: an
-# emulator by its AVD's lock, a phone by the lock of the PC it's plugged into, which other projects
-# (SebChat) take for the phone (#76). CMD gets ANDROID_SERIAL; the exit status is CMD's, or devq's 1
-# if the lock's turn didn't come.
+# emulator by its AVD's lock, a phone by its maker and model (nothing-a001.lock), the lock every
+# project's agents take for that phone (#76). CMD gets ANDROID_SERIAL; the exit status is CMD's, or
+# devq's 1 if the lock's turn didn't come.
 # Locks are shared by all projects: /tmp/agent-locks/devices/emulator-<AVD>.lock.
 set -uo pipefail
 sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
@@ -78,7 +78,8 @@ if [[ -n ${ANDROID_SERIAL:-} ]]; then
   [[ $("$adb" -s "$ANDROID_SERIAL" get-state 2>/dev/null) == device ]] || { echo "$ANDROID_SERIAL not connected" >&2; exit 1; }
   case $ANDROID_SERIAL in
     emulator-*) lock=$locks/emulator-$("$adb" -s "$ANDROID_SERIAL" emu avd name | head -1 | tr -d '\r').lock ;;
-    *) lock=$locks/$(hostname -s).lock ;;
+    *) lock=$locks/$("$adb" -s "$ANDROID_SERIAL" shell getprop ro.product.manufacturer | tr -d '\r')-$("$adb" -s "$ANDROID_SERIAL" shell getprop ro.product.model | tr -d '\r').lock
+       lock=${lock,,} ;;
   esac
   export ANDROID_SERIAL
   exec devq "${opts[@]}" "$lock" "$0" --run "$@"

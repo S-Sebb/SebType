@@ -18,9 +18,6 @@ package org.futo.inputmethod.keyboard.internal;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
 import android.util.AttributeSet;
 import android.widget.RelativeLayout;
 
@@ -36,13 +33,6 @@ public final class DrawingPreviewPlacerView extends RelativeLayout {
     public DrawingPreviewPlacerView(final Context context, final AttributeSet attrs) {
         super(context, attrs);
         setWillNotDraw(false);
-    }
-
-    public void setHardwareAcceleratedDrawingEnabled(final boolean enabled) {
-        if (!enabled) return;
-        final Paint layerPaint = new Paint();
-        layerPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_OVER));
-        setLayerType(LAYER_TYPE_HARDWARE, layerPaint);
     }
 
     public void addPreview(final AbstractDrawingPreview preview) {
@@ -61,8 +51,6 @@ public final class DrawingPreviewPlacerView extends RelativeLayout {
     }
 
     public void deallocateMemory() {
-        setLayerType(LAYER_TYPE_NONE, null);
-
         final int count = mPreviews.size();
         for (int i = 0; i < count; i++) {
             mPreviews.get(i).onDeallocateMemory();
