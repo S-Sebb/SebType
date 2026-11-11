@@ -456,6 +456,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
 
             yenSignCharacter = ProtoConfig.Config.YenSignCharacter.YEN_SIGN
 
+            // SebType (#31, #158): while incognito Mozc still suggests from its history but adds nothing to it.
             historyLearningLevel = when {
                 incognito || !settings.isPersonalizationEnabled ->
                     ProtoConfig.Config.HistoryLearningLevel.READ_ONLY
@@ -466,8 +467,6 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                 else ->
                     ProtoConfig.Config.HistoryLearningLevel.DEFAULT_HISTORY
             }
-            // SebType (#31): Mozc neither learns nor suggests from its history while incognito.
-            incognitoMode = incognito
             generalConfig = ProtoConfig.GeneralConfig.newBuilder().apply {
                 uploadUsageStats = false
             }.build()
