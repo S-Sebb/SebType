@@ -1,7 +1,7 @@
 # SebType sync server
 
-Syncs the words SebType learned in 中文 between your phone and your PCs, through a server you run
-yourself (#12). There is no SebType cloud: the phone talks only to the address you enter, with a
+Syncs the words SebType learned in 中文, and your Japanese and English personal dictionaries, between
+your phone and your PCs, through a server you run yourself (#12, #14). There is no SebType cloud: the phone talks only to the address you enter, with a
 username and password that belong to this server alone.
 
 ## How it works
@@ -11,13 +11,22 @@ On a sync, every device writes a text snapshot of its learned words into its own
 the snapshots in everyone else's. Since each device writes only its own folder, a server that keeps
 one copy of each device's folder is enough, and two devices never overwrite each other.
 
-`sebtype_sync.py` is that server, and a small client for the PCs. It stores only `*.userdb.txt`
-snapshots, one folder per device under each user, and the phone's crash reports (below). Passwords are stored as scrypt hashes in
+The same folders carry the personal dictionaries: each device puts its whole Japanese dictionary there
+as `mozc_dictionary.txt`, in the format of Mozc's own dictionary export, and its other (English) words
+as `userdictionary.json`, FUTO Keyboard's format, which only phones have. A device takes in only the
+words another device's file gained since it last took that file. A word you delete stays deleted on
+that device, even while another device still has it. A sync only ever adds words. To remove a word
+everywhere, delete it on each device. Learning history (what Mozc or the English keyboard learned
+from your typing) isn't synced.
+
+`sebtype_sync.py` is that server, and a small client for the PCs. It stores only these files
+(`*.userdb.txt`, `mozc_dictionary.txt`, `userdictionary.json`), one folder per device under each user,
+and the phone's crash reports (below). Passwords are stored as scrypt hashes in
 `users.json`. Python 3.9 or newer, standard library only.
 
 The phone syncs in the background while the keyboard is hidden: when it hides (at most once a minute)
 and every half hour while SebType runs. Offline, Rime keeps learning as usual, and the next sync that
-reaches the server takes everything along. The phone sends nothing but these snapshots and its crash
+reaches the server takes everything along. The phone sends nothing but these files and its crash
 reports: no clipboard, no typed text.
 
 ## Crash reports
@@ -100,7 +109,7 @@ All requests use HTTP Basic auth with a user from `users.json`.
 |---|---|
 | `GET /v1/files` | Lists the user's files: `{"files": [{"device", "name", "size", "sha256"}]}` |
 | `GET /v1/files/<device>/<name>` | Downloads one |
-| `PUT /v1/files/<device>/<name>` | Stores one (a `*.userdb.txt`, up to 64 MB) |
+| `PUT /v1/files/<device>/<name>` | Stores one (a `*.userdb.txt`, `mozc_dictionary.txt` or `userdictionary.json`, up to 64 MB) |
 | `DELETE /v1/files` | Deletes all of the user's files |
 | `PUT /v1/crashes/<name>` | Stores a crash report (`crash-YYYYMMDD-HHMMSS-xxxxxx.txt`, up to 256 KB) in `crashes/<user>/` |
 
@@ -111,8 +120,13 @@ or path), the username and the password. Saving a first login turns "Sync learne
 at once; its line then shows when the last sync was, or why it failed. The login is encrypted with a
 key in the Android Keystore and kept out of backups, settings exports and logs.
 
-"Delete learned words on the server" deletes every device's snapshots on the server and turns sync off.
-The words on the phone and on your other devices stay; turning sync on again uploads the phone's own.
+"Delete learned words on the server" deletes every device's files on the server, dictionaries included,
+and turns sync off. The words on the phone and on your other devices stay; turning sync on again
+uploads the phone's own.
+
+Words from other devices go into the personal dictionaries: Japanese ones into 日本語's **My words**,
+English ones into English's. Japanese words with a part of speech the phone doesn't know come in as
+nouns, without their comments.
 
 ## On a Linux PC (fcitx5-rime)
 
@@ -150,9 +164,34 @@ own snapshot goes up.
 On Windows (Weasel) the user dir is `%APPDATA%\Rime`, and the menu's 用户资料同步 is Rime's sync; the
 same `pull` and `push` work with `--rime-dir "%APPDATA%\Rime"`.
 
+## Japanese on a PC (Mozc)
+
+With `--mozc-db`, `push` also uploads the PC's Mozc user dictionary, and `pull` adds the other devices'
+new Japanese words to it. They go into a dictionary of their own, "SebType sync", in Mozc's dictionary
+tool. The PC still needs Rime, for its device id. English words stay on the phones: a PC has no English
+personal dictionary to put them in.
+
+On Linux (fcitx5-mozc) the dictionary is `~/.config/mozc/user_dictionary.db`. Add the option to both
+commands above:
+
+```sh
+python3 sebtype_sync.py pull ... --rime-dir "$R" --mozc-db ~/.config/mozc/user_dictionary.db
+python3 sebtype_sync.py push ... --rime-dir "$R" --mozc-db ~/.config/mozc/user_dictionary.db
+```
+
+If Mozc's dictionary tool is open, `pull` stops without changing anything and says so. Before it changes the dictionary it keeps the old one as `user_dictionary.db.sebtype-backup`.
+Mozc reads its dictionary when it starts, so new words come up once `mozc_server` restarts, at the
+next login or after `kill $(pidof mozc_server)` (fcitx5 starts it again at the next key).
+
+On Windows, Google 日本語入力 is the same engine with the same dictionary file,
+`%USERPROFILE%\AppData\LocalLow\Google\Google Japanese Input\user_dictionary.db`. Close its
+dictionary tool before `pull`, which can't check that on Windows. Neither is tested on Windows yet.
+Microsoft IME keeps no file this can sync.
+
 ## Tests
 
-`python3 -I sync-server/test_sebtype_sync.py`: the server on a local port with a made-up user, and two
-made-up devices syncing through it, and a crash report. The phone side is checked on the emulator by
-`SEBTYPE_CHECKS=first-install,sync sebtype/test-emulator.sh` (`sync-crash-report` crashes SebType and
-finds the report in the crash folder) ([docs/testing.md](../docs/testing.md)).
+`python3 -I sync-server/test_sebtype_sync.py`: the server on a local port with a made-up user, two
+made-up devices syncing through it, a made-up Mozc dictionary, and a crash report. The phone side is
+checked on the emulator by `SEBTYPE_CHECKS=first-install,sync sebtype/test-emulator.sh`
+(`sync-crash-report` crashes SebType and finds the report in the crash folder)
+([docs/testing.md](../docs/testing.md)).

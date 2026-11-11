@@ -165,9 +165,10 @@ class SyncServer(private val account: SyncAccount) {
  * `<user dir>/sync/<installation id>/`: each device writes only its own folder and merges in the
  * others' (study report on #3, section 6). A sync downloads the other devices' changed snapshots,
  * lets Rime merge them and write this phone's, and uploads that; Rime runs only when something
- * changed. It runs in the background while the keyboard is hidden: when it hides (at most once a
- * minute) and every half hour. Offline, Rime keeps learning as always and the next sync takes
- * everything along.
+ * changed. The same folders carry the Japanese and English personal dictionaries
+ * ([PersonalDictionarySync], #14). It runs in the background while the keyboard is hidden: when it
+ * hides (at most once a minute) and every half hour. Offline, Rime keeps learning as always and the
+ * next sync takes everything along.
  */
 object ChineseSync {
     private const val TAG = "SebType sync"
@@ -286,15 +287,19 @@ object ChineseSync {
         var remote = server.list()
         val ownBefore = installationId(context)
         for(file in remote) {
-            if(file.device == ownBefore || !DEVICE.matches(file.device) || !FILE.matches(file.name)) continue
+            val dictionary = file.name in PersonalDictionarySync.FILES
+            if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || FILE.matches(file.name))) continue
             val local = File(sync, "${file.device}/${file.name}")
-            if(local.isFile && sha256(local.readBytes()) == file.sha256) continue
+            val old = local.takeIf { it.isFile }?.readBytes()
+            if(old != null && sha256(old) == file.sha256) continue
             val bytes = server.download(file)
+            // The copy kept here is what the next download is compared with, so it is saved after the words.
+            if(dictionary) PersonalDictionarySync.takeIn(context, file.name, bytes, old)
             local.parentFile!!.mkdirs()
             val tmp = File(local.path + ".tmp")
             tmp.writeBytes(bytes)
             if(!tmp.renameTo(local)) throw IOException("can't save a download")
-            markMerge(context)
+            if(!dictionary) markMerge(context)
         }
 
         if(mergeFile(context).exists() || remote.none { it.device == ownBefore }) {
@@ -310,9 +315,9 @@ object ChineseSync {
         val own = installationId(context) ?: return Status.Synced(System.currentTimeMillis())
         if(own != ownBefore) remote = server.list()
         val uploaded = remote.filter { it.device == own }.associate { it.name to it.sha256 }
-        File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().forEach { f ->
-            val bytes = f.readBytes()
-            if(uploaded[f.name] != sha256(bytes)) server.upload(own, f.name, bytes)
+        val files = File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().associate { it.name to it.readBytes() }
+        (files + PersonalDictionarySync.snapshots(context)).forEach { (name, bytes) ->
+            if(uploaded[name] != sha256(bytes)) server.upload(own, name, bytes)
         }
         return Status.Synced(System.currentTimeMillis())
     }

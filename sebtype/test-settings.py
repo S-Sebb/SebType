@@ -17,19 +17,21 @@ password and private fields and the sticky toggle learn nothing in English, 中�
 clipboard copy, but still offer what was learned before; the toggle survives a restart, and turned off,
 learning resumes. Then sync with a local sync-server (#12, made-up login and words): offline a learned
 word stays on the phone, back online a keyboard hide uploads it, a word in another device's folder on
-the server is offered after a sync, a crash's report reaches the server's crash folder without typed
-words or the login (#33), the login is in no log or plain file, and the delete button empties
-the server. Then that made-up personal data of each kind imports through the backup screen's Import
-and is offered as candidates (#11): a Rime word list and Rime learned words in 中文, Mozc and MS-IME
-dictionaries in 日本語, FUTO's personal dictionary in English. Last, that a settings backup leaves
-clipboard history out unless its box is ticked, and that importing restores it (#34), with the backup
-screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels match the
-emulator's Chinese, English or Japanese UI. One line per check appended to RESULTS; each check finds
-its own way from the home screen, so one failing doesn't stop the next.
+the server is offered after a sync, so are made-up Japanese and English personal words (#14), whose
+phone-side counterparts reach the phone's folder, a crash's report reaches the server's crash folder
+without typed words or the login (#33), the login is in no log or plain file, and the delete button
+empties the server. Then that made-up personal data of each kind imports through the backup
+screen's Import and is offered as candidates (#11): a Rime word list and Rime learned words in 中文,
+Mozc and MS-IME dictionaries in 日本語, FUTO's personal dictionary in English. Last, that a settings
+backup leaves clipboard history out unless its box is ticked, and that importing restores it (#34),
+with the backup screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels
+match the emulator's Chinese, English or Japanese UI. One line per check appended to RESULTS; each
+check finds its own way from the home screen, so one failing doesn't stop the next.
 """
 
 import functools
 import glob
+import json
 import os
 import re
 import shutil
@@ -1839,6 +1841,88 @@ def sync_crash_report():
     return f"{names[0]} on the server, {len(report.splitlines())} lines, no typed word or login; the phone's queue is empty"
 
 
+WORDS = "content://user_dictionary/words"
+# Made-up personal words (#14): the other device's, then the phone's own (reading, word for Japanese).
+OTHER_JA, OTHER_EN = ("ぷるもに", "プルモニ語"), "Plonkravit"
+PHONE_JA, PHONE_EN = ("ぴよぽん", "ピヨポン丸"), "Quindlewump"
+
+
+def sync_personal_dictionaries():
+    """Made-up Japanese and English words in another device's folder are offered on the phone after a
+    sync, and words added on the phone reach its own folder (#14)."""
+    # As root: Android's user dictionary takes words only from keyboards, spell checkers and root (#143).
+    root(
+        f"content insert --uri {WORDS} --bind word:s:{PHONE_JA[1]} --bind 'shortcut:s:{PHONE_JA[0]}\t1'"
+        f" --bind locale:s:ja --bind frequency:i:0 --bind appid:i:0;"
+        f" content insert --uri {WORDS} --bind word:s:{PHONE_EN} --bind locale:s:en"
+        " --bind frequency:i:250 --bind appid:i:0"
+    )
+    try:
+        os.makedirs(sync_server_dir(OTHER_DEVICE), exist_ok=True)
+        with open(
+            sync_server_dir(OTHER_DEVICE, "mozc_dictionary.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(f"{OTHER_JA[0]}\t{OTHER_JA[1]}\t名詞\tmade up\n")
+        with open(
+            sync_server_dir(OTHER_DEVICE, "userdictionary.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump(
+                [
+                    {
+                        "word": OTHER_EN,
+                        "frequency": 250,
+                        "locale": "en",
+                        "appId": 0,
+                        "shortcut": None,
+                    }
+                ],
+                f,
+            )
+        sync_by_hiding()
+
+        def uploaded(name):
+            path = sync_server_dir(SYNC["device"], name)
+            if not os.path.isfile(path):
+                return ""
+            with open(path, encoding="utf-8") as f:
+                return f.read()
+
+        mozc = wait_for(
+            "the phone's words in its own folder",
+            lambda: (
+                PHONE_JA[1] in (m := uploaded("mozc_dictionary.txt"))
+                and PHONE_EN in uploaded("userdictionary.json")
+                and m
+            ),
+            90,
+        )
+        wait_for(
+            "the other device's words in the phone's dictionary",
+            lambda: all(
+                w in root(f"content query --uri {WORDS} --projection word")
+                for w in (OTHER_JA[1], OTHER_EN)
+            ),
+            30,
+        )
+        to_language("nihongo", "日本語")
+        ja = candidates_for("purumoni")
+        to_language("hello", "hello")
+        en = suggested_after(OTHER_EN)
+    finally:
+        root(
+            "; ".join(
+                f"content delete --uri {WORDS} --where \"word='{w}'\""
+                for w in (PHONE_JA[1], PHONE_EN, OTHER_JA[1], OTHER_EN)
+            )
+        )
+    detail = (
+        f"purumoni -> {ja[:4]}, plonk -> {en[:4]}; the phone's file: {mozc.strip()!r}"
+    )
+    if OTHER_JA[1] not in ja or OTHER_EN.lower() not in en:
+        raise Fail(detail)
+    return detail
+
+
 def sync_delete_on_server():
     go(HOME["backup"], SYNC_DELETE)
     screenshot("12-sync-delete")
@@ -1995,6 +2079,7 @@ try:
     check("sync-online-uploads", sync_online_uploads)
     check("sync-other-device", sync_other_device)
     check("sync-crash-report", sync_crash_report)
+    check("sync-personal-dictionaries", sync_personal_dictionaries)
     check("sync-credentials-private", sync_credentials_private)
     check("sync-delete-on-server", sync_delete_on_server)
 finally:
