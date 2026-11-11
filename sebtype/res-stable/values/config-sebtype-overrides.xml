@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType: on a phone in portrait the keyboard is as tall as Gboard's English one, whose rows are
+     155 px apart on a 1080 px wide, 420 dpi screen (#161). FUTO's is -61.8%p (java/res/values/config.xml). -->
+<resources>
+    <fraction name="config_min_keyboard_height">-61.05%p</fraction>
+</resources>

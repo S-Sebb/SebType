@@ -477,8 +477,9 @@ class KeyboardSizingCalculator(val context: Context, val uixManager: UixManager)
                     settings.mIsNumberRowEnabled && !settings.mIsNumberRowEnabledByUser ->
                         effectiveRows.first { it.isNumberRow }.rowHeight.guardNaN(0.5).coerceAtLeast(0.0)
 
-                    // If it's enabled by user, add only 0.5 to make the keyboard slightly less tall
-                    settings.mIsNumberRowEnabled -> 0.5
+                    // If it's enabled by user, the keyboard grows by a little less than the row, as
+                    // Gboard's does (SebType, #161)
+                    settings.mIsNumberRowEnabled -> 0.8
 
                     else -> 0.0
                 } +
@@ -581,7 +582,8 @@ class KeyboardSizingCalculator(val context: Context, val uixManager: UixManager)
 
         val minDp = Math.min(widthDp, heightDp)
 
-        return (minDp / 100.0f).coerceIn(3.0f, 6.0f)
+        // SebType: Picnic's key frame (without its 2 dp shadow) as wide as a Gboard key (#161).
+        return (minDp / 120.0f).coerceIn(2.5f, 5.0f)
     }
 
     fun calculateSuggestionBarHeightDp(): Float {

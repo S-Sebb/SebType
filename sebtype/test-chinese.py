@@ -95,7 +95,7 @@ keyboard_frame = None  # the keyboard's bounds, from the last nodes()
 # Seconds for the keyboard to come up. It restarts often here, and while the other emulator runs a
 # suite (#103) a restart has taken over 30 s; how fast it comes up is perf.sh's to measure.
 KEYBOARD_WAIT = 60
-# Password and email fields get a number row on top (SettingsValues), 0.8 of a row high (LayoutEngine);
+# Password and email fields get a number row on top (SettingsValues), 0.9 of a row high (LayoutEngine);
 # the keyboard grows by that much, so the other rows stay where they are.
 number_row = False
 
@@ -121,8 +121,8 @@ def nodes():
 
 def row_y(top, bottom, row):
     """The middle of a row of SebType's QWERTY: 0 to 2 are the letter rows, 3 the bottom row."""
-    h = (bottom - top) / (4 + 0.8 * number_row)
-    return int(top + (0.8 * number_row + row + 0.5) * h)
+    h = (bottom - top) / (4 + 0.9 * number_row)
+    return int(top + (0.9 * number_row + row + 0.5) * h)
 
 
 def letter_keys(left, top, right, bottom):

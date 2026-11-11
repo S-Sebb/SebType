@@ -9,7 +9,7 @@ LOGDIR), then checks that SebType's own options take effect while typing: the gl
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
 words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
 same look in the system's dark mode (#111), its pink chip behind the first candidate and its pixel font
-in key popups (#28, settings-picnic-*.png in LOGDIR); that FUTO's payment screen and its row in About carry
+in key popups (#28, settings-picnic-*.png in LOGDIR), English's rows as far apart as Gboard's (#161); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
 in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
@@ -914,6 +914,20 @@ def picnic_look():
     return f"{summary}; {english}; screenshots settings-picnic-*.png"
 
 
+def gboard_size():
+    """English's rows as far apart as Gboard's (#161): 155 px on guide35's 420 dpi screen, so 59 dp;
+    the rest of the match (key frames, letter size) is for the eye, in settings-picnic-size-en.png."""
+    to_language("hello", "hello")
+    k = keys(nodes())
+    density = int(re.search(r"(\d+)\s*$", adb("shell", "wm", "density")).group(1)) / 160
+    pitches = [(k[b][2] - k[a][2]) / density for a, b in (("q", "a"), ("a", "z"))]
+    screenshot("picnic-size-en")
+    summary = "rows " + ", ".join(f"{p:.1f}" for p in pitches) + " dp apart (Gboard 59)"
+    if any(abs(p - 59) > 1 for p in pitches):
+        raise Fail(summary)
+    return summary
+
+
 NOTE_ROW = labels(
     "FUTO 许可证要求；与 SebType 无关",
     "Required by FUTO's licence; not related to SebType",
@@ -1396,6 +1410,7 @@ check("settings-ja-forget", forget_japanese)
 check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
 check("settings-picnic-look", picnic_look)
+check("settings-picnic-size", gboard_size)
 check("settings-payment-note", payment_note)
 check("settings-smooth-scrolling", smooth_scrolling)
 
