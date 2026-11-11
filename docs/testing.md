@@ -33,9 +33,13 @@ that is still over its limits while another emulator's lock is held, it reports 
 instead of FAIL. Compare `perf.sh` numbers only between runs with the other emulator idle. To start one by hand:
 
 ```
-~/Android/Sdk/emulator/emulator -avd guide35b -port 5580 -no-window -no-audio -no-snapshot-load -no-boot-anim &
+systemd-run --user --collect --unit=emulator-guide35b ~/Android/Sdk/emulator/emulator -avd guide35b -port 5580 \
+  -no-window -no-audio -no-snapshot-load -no-boot-anim
 adb -s emulator-5580 emu kill   # stops it
 ```
+
+Start an emulator as a unit of the user's systemd, as `emulator.sh` does, not from a shell: one started
+from an agent's shell (even with `setsid` or `&`) stops when that agent's session ends.
 
 Take its lock while you use it (`devq -m <minutes> /tmp/agent-locks/devices/emulator-guide35b.lock <command>`).
 

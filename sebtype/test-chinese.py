@@ -312,7 +312,6 @@ def check(name, fn, needs=()):
 
 
 def fresh_install():
-    global keyboard_frame
     adb("uninstall", PKG, check=False)
     adb("install", apk, timeout=300)
     wait_for(
@@ -337,16 +336,22 @@ def fresh_install():
         f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
     )
     adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
+    # Under load (the other emulator's suite) the keyboard can take seconds to come back.
+    wait_for("the keyboard back in the field", lambda: keys(nodes()), 30)
     time.sleep(1)  # taps while the keyboard slides back in are dropped
     tap_globe()  # a fresh install starts in EN; the globe turns it into 中
     time.sleep(0.3)
     ready_first = bool(re.search(SET_UP, logcat()))
     # Keys while Chinese isn't ready type plain letters.
     adb("shell", "input", "tap", str(q[0]), str(q[1]))
-    keyboard_frame = None
-    ns = nodes()
-    if not keyboard_frame:
-        raise Fail("no keyboard on screen during setup")
+
+    def keyboard_nodes():
+        global keyboard_frame
+        keyboard_frame = None
+        ns = nodes()
+        return ns if keyboard_frame else None
+
+    ns = wait_for("the keyboard on screen during setup", keyboard_nodes, 10)
     notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
     if notice:
         adb("shell", "screencap -p /sdcard/sebtype-indicator.png")

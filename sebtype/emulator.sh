@@ -27,19 +27,24 @@ serial_of() { # AVD -> serial of its running emulator, booted or not
 
 if [[ ${1:-} == --run ]]; then # under the lock: $avd and $port from the caller
   shift
-  started= pid=$$
+  started=
   if [[ -z ${ANDROID_SERIAL:-} ]]; then
+    unit=emulator-$avd
     if ! ANDROID_SERIAL=$(serial_of "$avd"); then
-      ANDROID_SERIAL=emulator-$port started=1
-      mkdir -p /tmp/sebtype
-      # No snapshot saved either: it would write the RAM to disk at every stop.
-      setsid "$sdk/emulator/emulator" -avd "$avd" -port "$port" -no-window -no-audio -no-snapshot-load \
-        -no-snapshot-save -no-boot-anim < /dev/null > "/tmp/sebtype/emulator-$avd.log" 2>&1 &
-      pid=$!
+      ANDROID_SERIAL=emulator-$port
+      if ! systemctl --user is-active --quiet "$unit"; then # else it's booting
+        started=1
+        mkdir -p /tmp/sebtype
+        # A unit of the user's systemd, not a child of this shell: an emulator in an agent's process
+        # tree stops when that agent's session ends, under whoever holds its lock then. No snapshot
+        # saved either: it would write the RAM to disk at every stop.
+        systemd-run --user --collect --quiet --unit="$unit" sh -c "exec '$sdk/emulator/emulator' -avd $avd -port $port \
+          -no-window -no-audio -no-snapshot-load -no-snapshot-save -no-boot-anim > /tmp/sebtype/emulator-$avd.log 2>&1"
+      fi
     fi
     export ANDROID_SERIAL
     timeout 600 bash -c 'until [[ $("$0" shell getprop sys.boot_completed 2>/dev/null | tr -d "\r") == 1 ]]; do
-      kill -0 "$1" 2> /dev/null || exit 1; sleep 3; done' "$adb" "$pid" ||
+      [[ $1 == "" ]] || systemctl --user is-active --quiet "$1" || exit 1; sleep 3; done' "$adb" "${started:+$unit}" ||
       { echo "emulator $avd ($ANDROID_SERIAL) didn't boot, see /tmp/sebtype/emulator-$avd.log" >&2; exit 1; }
     # A cold boot keeps the guest busy for about a minute after it says it's booted (load up to 13),
     # too slow for the UI checks: wait until its 1-minute load is below 3, about 2 minutes.
@@ -52,7 +57,7 @@ if [[ ${1:-} == --run ]]; then # under the lock: $avd and $port from the caller
   "$@"; rc=$?
   if [[ -n $started && $avd == "$on_demand" ]]; then
     "$adb" emu kill > /dev/null
-    timeout 60 bash -c 'while "$0" -s "$1" get-state > /dev/null 2>&1; do sleep 1; done' "$adb" "$ANDROID_SERIAL"
+    timeout 60 bash -c 'while systemctl --user is-active --quiet "$0"; do sleep 1; done' "$unit"
   fi
   exit $rc
 fi
