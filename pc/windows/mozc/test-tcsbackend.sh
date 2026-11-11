@@ -118,8 +118,14 @@ done
 if [ -n "${logon:-}" ]; then
   # Remote Desktop one way; the other way, test.ps1's typing checks reach rdp-keys.py, which types into
   # FreeRDP on gamescope's display, so the keys reach Windows as a keyboard's scancodes.
-  ssh -N -o ExitOnForwardFailure=yes -L 13389:127.0.0.1:3389 -R 127.0.0.1:47812:127.0.0.1:47812 TCSBackEnd & tunnel=$!
-  sleep 3
+  # Retried: a forward can fail for a few seconds, e.g. while the last run's sshd still holds the port.
+  for try in 1 2 3 4 5; do
+    ssh -N -o ExitOnForwardFailure=yes -L 13389:127.0.0.1:3389 -R 127.0.0.1:47812:127.0.0.1:47812 TCSBackEnd 2>>"$out/tunnel.log" & tunnel=$!
+    for i in $(seq 1 20); do ss -ltn | grep -q '127.0.0.1:13389 ' && break; kill -0 "$tunnel" 2>/dev/null || break; sleep 0.5; done
+    sleep 2  # the remote forward is set up after the local one
+    kill -0 "$tunnel" 2>/dev/null && ss -ltn | grep -q '127.0.0.1:13389 ' && break
+    kill "$tunnel" 2>/dev/null; tunnel=; sleep 5
+  done
   # The password is this run's own, for a user test.ps1 removes when it ends.
   gamescope --backend headless -W 1280 -H 800 -- bash -c 'python3 "$1" 47812 >"$2" 2>&1 & shift 2; exec xfreerdp "$@"' \
     _ "$here/rdp-keys.py" "$out/rdp-keys.log" /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \

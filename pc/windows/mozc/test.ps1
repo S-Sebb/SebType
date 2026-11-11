@@ -48,7 +48,9 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
         Set-WinUserLanguageList $ll -Force
         $langsBefore = ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; '
         $setup = "$PSScriptRoot\..\setup\setup.ps1"  # what SebType's installer runs for the user (#73)
-        Check 'install-for-user' { & $setup -User -Languages en,ja | Out-String | ForEach-Object Trim }
+        # In its own process, as the installer runs it: its log stays open until the process ends.
+        function Setup { $o = powershell.exe -NoProfile -ExecutionPolicy Bypass -File $setup -User @args; if ($LASTEXITCODE) { throw "setup.ps1 -User $args exited $LASTEXITCODE`: $o" }; ($o | Out-String).Trim() }
+        Check 'install-for-user' { Setup -Languages 'en,ja' }
         Check 'languages-en-ja-zh' {
             $langs = @((Get-WinUserLanguageList) | ForEach-Object { $_ })
             $order = ($langs | ForEach-Object { $_.LanguageTag.Substring(0, 2) }) -join ','
@@ -197,7 +199,7 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
             $tsf::Stop()
         }
         Check 'undo-for-user' {
-            & $setup -User -Undo | Out-Null
+            Setup -Undo | Out-Null
             $after = ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; '
             if ($after -ne $langsBefore) { throw "languages $after, were $langsBefore" }
             'languages back to English and Chinese'
