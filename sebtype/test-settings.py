@@ -29,6 +29,8 @@ import time
 import xml.etree.ElementTree as ET
 
 serial, results_path, logdir = sys.argv[1:4]
+# Only the checks whose names start with this (sebtype/test-incognito-phone.sh runs "incognito").
+ONLY = os.environ.get("SEBTYPE_CHECKS", "")
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
@@ -91,6 +93,9 @@ def tap(x, y):
 # --- The keyboard (as in test-chinese.py) ---
 
 keyboard_frame = None
+BAR_CONTROLS = (
+    set()
+)  # the suggestion bar's own buttons, filled in with their labels below
 
 
 def nodes():
@@ -157,6 +162,21 @@ def candidates(ns):
         and not label.startswith(NOT_CANDIDATES)
         and label not in ("あ", "ア")
     ]
+    return [label for x, label in sorted(bar)]
+
+
+def en_candidates(ns):
+    """English's suggestions, left to right: the bar's labelled nodes of any class, but its buttons."""
+    k = keys(ns)
+    if "q" not in k:
+        return []
+    row = (k["q"][2] - 130, k["q"][2])
+    controls = {"あ", "ア", *BAR_CONTROLS}
+    bar = {
+        (x, label)
+        for label, x, y, top, cls in ns
+        if row[0] < y < row[1] and label and label not in controls
+    }
     return [label for x, label in sorted(bar)]
 
 
@@ -235,10 +255,13 @@ def to_language(probe, word):
             end = time.time() + 300
             while True:
                 ns = nodes()
-                got = candidates(ns)
-                english = probe != "hello" or not any(
-                    re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
-                )
+                if probe == "hello":  # English's words aren't TextViews: en_candidates
+                    got = en_candidates(ns)
+                    english = not any(
+                        re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
+                    )
+                else:
+                    got, english = candidates(ns), True
                 if english and word in [c.lower() for c in got]:
                     return
                 preparing = any(n[0].startswith(PREPARING) for n in ns)
@@ -342,6 +365,8 @@ def toggle(path, texts):
 
 
 def check(name, fn):
+    if ONLY and not name.startswith(ONLY):
+        return
     try:
         detail = fn()
         result("PASS", name, detail or "")
@@ -875,6 +900,7 @@ INCOGNITO_FIELD = labels(
 OPEN_BAR = labels("打开操作栏", "Open Action Bar", "アクションバーを開く")
 CLOSE_BAR = labels("关闭操作栏", "Close Action Bar", "アクションバーを閉じる")
 CLIPBOARD_FILE = f"/data/data/{PKG}/files/clipboard.json"
+BAR_CONTROLS.update((*INCOGNITO_ON, *INCOGNITO_FIELD, *OPEN_BAR, *CLOSE_BAR))
 
 
 def badge():
@@ -891,7 +917,8 @@ def set_incognito(on, shot=None):
     if (badge() == "toggle") == on:
         return
     if on:
-        tap_text(OPEN_BAR)
+        if not screen_has(CLOSE_BAR):  # the bar stays open from before
+            tap_text(OPEN_BAR)
         if shot:
             screenshot(shot)
         tap_text(INCOGNITO)
@@ -908,7 +935,7 @@ def commit_twice(word):
     after it is typed more than once."""
     for _ in range(2):
         type_keys(word)
-        typed = [c for c in candidates(nodes()) if c.lower() == word]
+        typed = [c for c in en_candidates(nodes()) if c.lower() == word]
         if typed:
             tap_candidate(typed[0])
         else:
@@ -920,7 +947,7 @@ def suggested_after(word, kind=None):
     """English's suggestions, in lower case, for word's first five letters in a new field."""
     open_field(kind)
     type_keys(word[:5])
-    return [c.lower() for c in candidates(nodes())]
+    return [c.lower() for c in en_candidates(nodes())]
 
 
 def incognito_toggle():
@@ -982,6 +1009,8 @@ def clipboard_capture(text, kind=None):
 
 
 def incognito_clipboard():
+    if adb("shell", "su 0 id -u", check=False).strip() != "0":
+        raise Skip("no root shell to read the clipboard history (a phone)")
     # Clipboard history is off after a fresh install: on, then a control copy from a normal field
     # (taken before incognito is turned on) shows it is on.
     set_incognito(False)
