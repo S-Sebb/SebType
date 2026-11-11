@@ -84,7 +84,8 @@ jobs:
           if (-not (Test-Path pc/icons/32/ja-A.svg) -or -not (Test-Path pc/icons/32/ja-a.svg)) { throw 'ja-a and ja-A did not both check out' }
       # The MSI depends only on these; a run with the same ones reuses it, a PR's run main's.
       - id: inputs
-        run: "hash=${{ hashFiles('pc/windows/mozc/versions.psd1', 'pc/windows/mozc/*.patch', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/windows/mozc/apply_patch.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
+        run: |
+          "hash=${{ hashFiles('pc/windows/mozc/versions.psd1', 'pc/windows/mozc/*.patch', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/windows/mozc/apply_patch.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         id: cache
         with:
