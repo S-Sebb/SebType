@@ -34,6 +34,7 @@ function Result($name, $status, $why = '') {
   Add-Content -Encoding utf8 $results $line; Write-Host $line
 }
 function Check($name, [scriptblock]$body) {
+  if ($Typing) { Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) CHECK $name" }  # DIAG #129
   try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
 }
 function Wait-Until([int]$seconds, [scriptblock]$cond) {
@@ -65,6 +66,7 @@ if ($Typing) {
     $kr = New-Object IO.StreamReader $keys.GetStream()
     function Keys {  # X keysym names or chords (Alt_L+grave), pressed in order
       $line = ($args | ForEach-Object { $_ }) -join ' '
+      Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) $line"  # DIAG #129
       $kw.WriteLine($line); $r = $kr.ReadLine()
       if ($r -ne 'ok') { throw "keys $line`: $r" }
       Start-Sleep -Milliseconds 500
@@ -75,6 +77,26 @@ if ($Typing) {
       $null = $np.WaitForInputIdle(10000)
       $h = $np.MainWindowHandle
       if (-not $tsf::Foreground($h)) { throw 'Notepad did not come to the front' }
+      # DIAG #129: Notepad's IME open status, conversion mode and language over time.
+      $probe = Start-Job -ArgumentList $h.ToInt64(), "$out\imeopen-$Typing.txt" {
+        param($h, $file)
+        Add-Type -Namespace P -Name W -MemberDefinition @'
+[DllImport("imm32.dll")] public static extern System.IntPtr ImmGetDefaultIMEWnd(System.IntPtr h);
+[DllImport("user32.dll")] public static extern System.IntPtr SendMessageW(System.IntPtr h, uint m, System.IntPtr w, System.IntPtr l);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, System.IntPtr p);
+[DllImport("user32.dll")] public static extern System.IntPtr GetKeyboardLayout(uint t);
+'@
+        $last = ''
+        while ($true) {
+          $ime = [P.W]::ImmGetDefaultIMEWnd([IntPtr]$h)
+          $open = [P.W]::SendMessageW($ime, 0x283, [IntPtr]5, [IntPtr]0)
+          $conv = [P.W]::SendMessageW($ime, 0x283, [IntPtr]1, [IntPtr]0)
+          $lang = '{0:x4}' -f ([int64][P.W]::GetKeyboardLayout([P.W]::GetWindowThreadProcessId([IntPtr]$h, [IntPtr]::Zero)) -band 0xFFFF)
+          $st = "open=$open conv=$conv lang=$lang"
+          if ($st -ne $last) { Add-Content $file "$(Get-Date -f HH:mm:ss.fff) $st"; $last = $st }
+          Start-Sleep -Milliseconds 20
+        }
+      }
       function Typed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Start-Sleep 1; $tsf::EditText($h).Trim() }
       function Lang { '{0:x4}' -f $tsf::Language($h) }
       function To-Language($id) {
@@ -128,7 +150,7 @@ if ($Typing) {
           'あ → ア → あ; in English Alt+` stays English'
         }
       }
-    } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue }
+    } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue }
     # The tray menu (#117) of the test's own TSF text field, where the input mode button can be
     # right-clicked: Chinese's one switch, 简 → 繁, with its key. Japanese's is in mozc/test.ps1. A picture
     # of each, 117-menu-*.png.

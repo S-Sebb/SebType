@@ -332,7 +332,10 @@ if ('zh' -in $want) {
 }
 
 # Japanese: Mozc's keymap gets a Shift tap for あ ⇄ English and Alt+` for あ ⇄ ア (pc/linux/mozc-keymap.tsv,
-# Decisions #2, #117); every other setting stays. Mozc's text service reads it once per app, when the app first loads it.
+# Decisions #2, #117); every other setting stays. Mozc's server reads it only when it starts, and the account's
+# server may run already: Windows adds a newly installed Mozc to every logged-on user's list, which can
+# start it (#123). So a changed keymap stops this account's Mozc; the next key starts it again with the
+# new keymap. Mozc's text service reads it once per app, when the app first loads it.
 if ('ja' -in $want) {
   if (-not (Get-MozcProduct)) { throw "SebType's Mozc isn't installed (setup.ps1 -Machine first)" }
   $db = Join-Path $MozcUser 'config1.db'
@@ -343,6 +346,7 @@ if ('ja' -in $want) {
   if ([Convert]::ToBase64String($data) -ne [Convert]::ToBase64String($new)) {
     New-Item -ItemType Directory -Force $MozcUser | Out-Null
     [IO.File]::WriteAllBytes($db, $new)
+    Stop-Mozc
     Write-Output 'user: Mozc keymap'
   }
 }
