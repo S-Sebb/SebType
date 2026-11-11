@@ -10,7 +10,9 @@ full-width punctuation, emoji among Chinese candidates, Chinese "My words", and 
 words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
 same look in the system's dark mode (#111); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
-in their pixel-framed cards on the cloth (#87). Labels match the emulator's Chinese UI or English. One line per check
+in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
+that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Labels
+match the emulator's Chinese, English or Japanese UI. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
 stop the next.
 """
@@ -245,13 +247,13 @@ def labels(*texts):
 
 
 HOME = {
-    "languages": labels("语言", "Languages"),
-    "keyboard": labels("键盘", "Keyboard"),
-    "privacy": labels("隐私", "Privacy"),
-    "backup": labels("同步与备份", "Sync & backup"),
-    "about": labels("关于", "About"),
+    "languages": labels("语言", "Languages", "言語"),
+    "keyboard": labels("键盘", "Keyboard", "キーボード"),
+    "privacy": labels("隐私", "Privacy", "プライバシー"),
+    "backup": labels("同步与备份", "Sync & backup", "同期とバックアップ"),
+    "about": labels("关于", "About", "情報"),
 }
-MY_WORDS = labels("我的词语", "My words")
+MY_WORDS = labels("我的词语", "My words", "自分の単語")
 FULL_WIDTH = labels("全角标点", "Full-width punctuation")
 EMOJI = labels("候选词中显示表情", "Emoji in candidates")
 
@@ -344,52 +346,77 @@ def check(name, fn):
 # Every screen: how to get there from home, and a text only it shows.
 LANG = HOME["languages"]
 SCREENS = [
-    ("home", (), labels("同步与备份", "Sync & backup")),
-    ("languages", (LANG,), labels("地球键顺序", "Globe order")),
+    ("home", (), labels("同步与备份", "Sync & backup", "同期とバックアップ")),
+    ("languages", (LANG,), labels("地球键顺序", "Globe order", "地球キーの順番")),
     (
         "en-words",
         (LANG, (MY_WORDS, 0)),
-        labels("添加", '"添加"', "Add", "Words", "词语"),
+        labels("添加", '"添加"', "Add", "Words", "词语", '"追加"', "追加", "単語"),
     ),
     (
         "zh-fuzzy",
-        (LANG, labels("Fuzzy Pinyin", "模糊拼音")),
+        (LANG, labels("Fuzzy Pinyin", "模糊拼音", "あいまいピンイン")),
         labels("zh=z", "zh = z", "z=zh", "z = zh", "zh, ch, sh"),
     ),
-    ("zh-words", (LANG, (MY_WORDS, 1)), labels("还没有词语", "No words yet")),
+    (
+        "zh-words",
+        (LANG, (MY_WORDS, 1)),
+        labels("还没有词语", "No words yet", "単語はまだありません"),
+    ),
     (
         "ja-words",
         (LANG, (MY_WORDS, 2)),
-        labels("添加", '"添加"', "Add", "Words", "词语"),
+        labels("添加", '"添加"', "Add", "Words", "词语", '"追加"', "追加", "単語"),
     ),
-    ("keyboard", (HOME["keyboard"],), labels("尺寸和位置", "Size and position")),
+    (
+        "keyboard",
+        (HOME["keyboard"],),
+        labels("尺寸和位置", "Size and position", "サイズと位置"),
+    ),
     (
         "resize",
-        (HOME["keyboard"], labels("尺寸和位置", "Size and position")),
-        labels("调整键盘大小", "Resize Keyboard"),
+        (HOME["keyboard"], labels("尺寸和位置", "Size and position", "サイズと位置")),
+        labels("调整键盘大小", "Resize Keyboard", "キーボードサイズ調整"),
     ),
     (
         "action-bar",
-        (HOME["keyboard"], labels("操作栏按钮", "Action bar buttons")),
-        labels("编辑快捷方式", "Edit Actions"),
+        (
+            HOME["keyboard"],
+            labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
+        ),
+        labels("编辑快捷方式", "Edit Actions", "アクションの編集"),
     ),
-    ("privacy", (HOME["privacy"],), labels("从我的输入中学习", "Learn from my typing")),
+    (
+        "privacy",
+        (HOME["privacy"],),
+        labels("从我的输入中学习", "Learn from my typing", "入力から学習"),
+    ),
     (
         "forget",
-        (HOME["privacy"], labels("忘记学到的词", "Forget learned words")),
-        labels("忘记", "Forget"),
+        (
+            HOME["privacy"],
+            labels("忘记学到的词", "Forget learned words", "学習した単語を消去"),
+        ),
+        labels("忘记", "Forget", "消去"),
     ),
-    ("backup", (HOME["backup"],), labels("导出设置", "Export settings")),
-    ("about", (HOME["about"],), labels("版本", "Version")),
+    (
+        "backup",
+        (HOME["backup"],),
+        labels("导出设置", "Export settings", "設定をエクスポート"),
+    ),
+    ("about", (HOME["about"],), labels("版本", "Version", "バージョン")),
     (
         "credits",
-        (HOME["about"], labels("许可与致谢", "Licence and credits")),
-        labels("Credits", "致谢"),
+        (
+            HOME["about"],
+            labels("许可与致谢", "Licence and credits", "ライセンスとクレジット"),
+        ),
+        labels("Credits", "致谢", "クレジット"),
     ),
     (
         "payment",
-        (HOME["about"], labels("支持 FUTO", "Support FUTO")),
-        labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard"),
+        (HOME["about"], labels("支持 FUTO", "Support FUTO", "FUTO を支援")),
+        labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"),
     ),
 ]
 
@@ -550,9 +577,12 @@ def my_words():
 
 
 def forget(language):
-    go(HOME["privacy"], labels("忘记学到的词", "Forget learned words"))
+    go(
+        HOME["privacy"],
+        labels("忘记学到的词", "Forget learned words", "学習した単語を消去"),
+    )
     tap_text(language)
-    found = find_all(nodes(), labels("忘记", "Forget"))
+    found = find_all(nodes(), labels("忘记", "Forget", "消去"))
     y, x = found[-1]  # the dialog's button, below the dialog title
     tap(x, y)
     time.sleep(3)
@@ -672,7 +702,13 @@ def smooth_scrolling():
         stats = [
             best_flings("zh-words-300", (LANG, (MY_WORDS, 1))),
             best_flings(
-                "credits", (HOME["about"], labels("许可与致谢", "Licence and credits"))
+                "credits",
+                (
+                    HOME["about"],
+                    labels(
+                        "许可与致谢", "Licence and credits", "ライセンスとクレジット"
+                    ),
+                ),
             ),
         ]
     finally:
@@ -707,7 +743,10 @@ def nothing_shows(texts, swipes):
 def no_theme_choice():
     open_settings()
     nothing_shows(THEME, 2)
-    go(HOME["keyboard"], labels("操作栏按钮", "Action bar buttons"))
+    go(
+        HOME["keyboard"],
+        labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
+    )
     nothing_shows(THEME_ACTION, 4)
     return "no Theme group on the home screen, no theme switcher among the actions"
 
@@ -790,12 +829,16 @@ def payment_note():
     wait_for(
         f"the payment row's note ({NOTE_ROW[0]})", lambda: screen_contains(NOTE_ROW), 10
     )
-    tap_text(labels("支持 FUTO", "Support FUTO"))
+    tap_text(labels("支持 FUTO", "Support FUTO", "FUTO を支援"))
     wait_for(f"the licence note ({NOTE[0]})", lambda: screen_contains(NOTE), 10)
     # The note only adds to FUTO's screen: its own title and payment options are still there.
     wait_for(
         "FUTO's payment title",
-        lambda: screen_has(labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard")),
+        lambda: screen_has(
+            labels(
+                "为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"
+            )
+        ),
         10,
     )
     return (
@@ -815,4 +858,115 @@ check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
 check("settings-payment-note", payment_note)
 check("settings-smooth-scrolling", smooth_scrolling)
+
+
+# --- The settings in 日本語 (#120) ---
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def english_strings():
+    """SebType's English strings as patterns (%d is any number), and FUTO's one SebType translates;
+    not those that read the same in 日本語 (the name SebType)."""
+
+    def strings(path):
+        return {e.get("name"): e for e in ET.parse(os.path.join(HERE, path)).getroot()}
+
+    texts = {"Fuzzy Pinyin"}
+    for d, f in (
+        ("res", "strings-sebtype.xml"),
+        ("res-stable", "strings-sebtype-overrides.xml"),
+    ):
+        ja = strings(f"{d}/values-ja/{f}")
+        for name, e in strings(f"{d}/values/{f}").items():
+            if e.get("translatable") != "false" and (
+                name not in ja or ja[name].text != e.text
+            ):
+                texts.add(e.text)
+    return [
+        re.compile(
+            re.escape(t.replace("\\'", "'").replace("\\n", "\n"))
+            .replace("%d", r"\d+")
+            .replace("%%", "%")
+        )
+        for t in texts
+    ]
+
+
+def english_on_screen(patterns):
+    """The visible labels, or parts of one joined with " · ", ", " or a line break, that are SebType English."""
+    found = set()
+    for label, *_ in nodes():
+        for part in {label, *re.split(r"\n| · |, ", label)}:
+            if any(p.fullmatch(part) for p in patterns):
+                found.add(part)
+    return found
+
+
+def system_locale(tag):
+    """Sets the system's language list to tag alone with test-emulator.sh's set-locale helper (the way
+    Settings does it, without a restart, which can crash the emulator; docs/testing.md)."""
+    dex = "/data/local/tmp/sebtype-set-locale.dex"
+    adb("push", os.path.join(logdir, "set-locale.dex"), dex)
+    try:
+        adb(
+            "shell",
+            "app_process",
+            "-cp",
+            dex,
+            "/",
+            "dev.sebb.sebtype.setlocale.SetLocale",
+            tag,
+        )
+    finally:
+        adb("shell", "rm", "-f", dex, check=False)
+    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
+    wait_for(
+        f"the system in {tag}",
+        lambda: re.search(rf"[ -]{config}-", adb("shell", "am", "get-config")),
+        30,
+    )
+    time.sleep(3)  # open apps redraw in the new language
+
+
+def japanese_ui():
+    for f in glob.glob(os.path.join(logdir, "settings-ja-*.png")):
+        os.remove(f)  # a last run's extra pages would pass for this run's
+    system_locale("ja-JP")
+    patterns = english_strings()
+    english = {}
+    failed = []
+    for name, path, marker in SCREENS:
+        try:
+            go(*path)
+            wait_for(f"{name} ({marker[-1]})", lambda m=marker: screen_has(m), 10)
+        except Fail as e:
+            failed.append(f"{name}: {e}")
+        screenshot(f"ja-{name}")
+        seen = english_on_screen(patterns)
+        # Down the screen too, a page at a time; resizing's page is the keyboard's handles.
+        for page in range(2, 6 if name != "resize" else 2):
+            before = {label for label, *_ in nodes()}
+            adb("shell", "input", "swipe", "540", "1900", "540", "900", "400")
+            time.sleep(1)
+            if {label for label, *_ in nodes()} == before:
+                break
+            screenshot(f"ja-{name}-{page}")
+            seen |= english_on_screen(patterns)
+        if seen:
+            english[name] = sorted(seen)
+    if english:
+        failed.append(f"English on {english}")
+    if failed:
+        raise Fail("; ".join(failed))
+    return f"{len(SCREENS)} screens in 日本語, no English SebType string (settings-ja-*.png)"
+
+
+check("settings-japanese", japanese_ui)
+# test-emulator.sh runs everything else in en-US.
+check(
+    "settings-locale-back",
+    lambda: system_locale("en-US") or "the system is back in en-US",
+)
+
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

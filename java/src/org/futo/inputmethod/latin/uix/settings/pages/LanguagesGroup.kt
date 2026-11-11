@@ -61,7 +61,6 @@ import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 /** One of SebType's three languages and its keyboard subtype; [subtype] is null while it's off. */
 private data class GlobeLanguage(val language: String, val canonical: String, val subtype: String?)
 
-private val GlobeNames = mapOf("en" to "English", "zh" to "中文 Chinese", "ja" to "日本語 Japanese")
 private val GlobeShortNames = mapOf("en" to "EN", "zh" to "中", "ja" to "日")
 
 private fun languageOf(subtype: String) = Subtypes.getLocale(Subtypes.convertToSubtype(subtype)).language
@@ -132,7 +131,11 @@ private fun GlobeOrder() {
                 val on = row.subtype != null
                 val isDragged = dragging == row.language
                 SettingItem(
-                    title = GlobeNames[row.language]!!,
+                    title = when(row.language) {
+                        "zh" -> stringResource(R.string.sebtype_settings_globe_zh)
+                        "ja" -> stringResource(R.string.sebtype_settings_globe_ja)
+                        else -> "English"
+                    },
                     subtitle = when(row.language) {
                         "zh" -> stringResource(R.string.sebtype_settings_zh_engine)
                         "ja" -> stringResource(R.string.sebtype_settings_ja_engine)
