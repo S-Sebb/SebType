@@ -10,7 +10,13 @@ full-width punctuation, emoji among Chinese candidates, Chinese "My words", and 
 words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
 same look in the system's dark mode (#111); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
-in their pixel-framed cards on the cloth (#87). Labels match the emulator's Chinese UI or English. One line per check
+in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
+that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
+password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
+clipboard copy; the toggle survives a restart, and turned off, learning resumes. Last, that a
+settings backup leaves clipboard history out unless its box is ticked, and that importing restores it
+(#34), with the backup screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels
+match the emulator's Chinese, English or Japanese UI. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
 stop the next.
 """
@@ -23,8 +29,11 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 
 serial, results_path, logdir = sys.argv[1:4]
+# Only the checks whose names start with this (sebtype/test-incognito-phone.sh runs "incognito").
+ONLY = os.environ.get("SEBTYPE_CHECKS", "")
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
@@ -87,6 +96,9 @@ def tap(x, y):
 # --- The keyboard (as in test-chinese.py) ---
 
 keyboard_frame = None
+BAR_CONTROLS = (
+    set()
+)  # the suggestion bar's own buttons, filled in with their labels below
 
 
 def nodes():
@@ -156,6 +168,21 @@ def candidates(ns):
     return [label for x, label in sorted(bar)]
 
 
+def en_candidates(ns):
+    """English's suggestions, left to right: the bar's labelled nodes of any class, but its buttons."""
+    k = keys(ns)
+    if "q" not in k:
+        return []
+    row = (k["q"][2] - 130, k["q"][2])
+    controls = {"あ", "ア", *BAR_CONTROLS}
+    bar = {
+        (x, label)
+        for label, x, y, top, cls in ns
+        if row[0] < y < row[1] and label and label not in controls
+    }
+    return [label for x, label in sorted(bar)]
+
+
 def expanded_candidates():
     ns = nodes()
     k = keys(ns)
@@ -182,16 +209,23 @@ def type_keys(text):
     time.sleep(1.5)
 
 
-def open_field():
+def open_field(kind=None, clip=None):
+    """A new text field with SebType up; kind makes it a password or private field, clip a text the
+    field app copies to the clipboard a moment after it opens (sebtype/perf/PerfField.java)."""
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
+    # A slow emulator can show "System UI isn't responding" over everything; this closes it.
+    adb("shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS")
+    extra = (["--es", "kind", kind] if kind else []) + (
+        ["--es", "clip", clip] if clip else []
+    )
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
     wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
 
 
-def candidates_for(text, expand=False):
-    open_field()
+def candidates_for(text, expand=False, kind=None):
+    open_field(kind)
     type_keys(text)
     got = wait_for(f"candidates for {text}", lambda: candidates(nodes()), 60)
     if expand:
@@ -213,19 +247,31 @@ def tap_candidate(word):
 
 
 def to_language(probe, word):
-    """Cycles the globe until typing probe offers word (中: ni -> 你, 日: nihongo -> 日本語)."""
+    """Cycles the globe until typing probe offers word (中: ni -> 你, 日: nihongo -> 日本語, English:
+    hello -> Hello, capitalised at the field's start, with no Chinese or Japanese among the candidates,
+    as 中 and 日 offer hello among their own words)."""
     for _ in range(8):
         try:
             open_field()
             type_keys(probe)
             # Chinese sets itself up the first time it comes up, showing its notice meanwhile.
             end = time.time() + 300
+            # A language that has just come up can take a moment before its first candidates.
+            first = time.time() + 15
             while True:
                 ns = nodes()
-                if word in candidates(ns):
+                if probe == "hello":  # English's words aren't TextViews: en_candidates
+                    got = en_candidates(ns)
+                    english = not any(
+                        re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
+                    )
+                else:
+                    got, english = candidates(ns), True
+                if english and word in [c.lower() for c in got]:
                     return
                 preparing = any(n[0].startswith(PREPARING) for n in ns)
-                if not preparing or time.time() > end:
+                waiting = preparing or (not got and time.time() < first)
+                if not waiting or time.time() > end:
                     break
                 time.sleep(3)
             open_field()
@@ -245,13 +291,13 @@ def labels(*texts):
 
 
 HOME = {
-    "languages": labels("语言", "Languages"),
-    "keyboard": labels("键盘", "Keyboard"),
-    "privacy": labels("隐私", "Privacy"),
-    "backup": labels("同步与备份", "Sync & backup"),
-    "about": labels("关于", "About"),
+    "languages": labels("语言", "Languages", "言語"),
+    "keyboard": labels("键盘", "Keyboard", "キーボード"),
+    "privacy": labels("隐私", "Privacy", "プライバシー"),
+    "backup": labels("同步与备份", "Sync & backup", "同期とバックアップ"),
+    "about": labels("关于", "About", "情報"),
 }
-MY_WORDS = labels("我的词语", "My words")
+MY_WORDS = labels("我的词语", "My words", "自分の単語")
 FULL_WIDTH = labels("全角标点", "Full-width punctuation")
 EMOJI = labels("候选词中显示表情", "Emoji in candidates")
 
@@ -325,6 +371,8 @@ def toggle(path, texts):
 
 
 def check(name, fn):
+    if ONLY and not name.startswith(ONLY):
+        return
     try:
         detail = fn()
         result("PASS", name, detail or "")
@@ -344,52 +392,77 @@ def check(name, fn):
 # Every screen: how to get there from home, and a text only it shows.
 LANG = HOME["languages"]
 SCREENS = [
-    ("home", (), labels("同步与备份", "Sync & backup")),
-    ("languages", (LANG,), labels("地球键顺序", "Globe order")),
+    ("home", (), labels("同步与备份", "Sync & backup", "同期とバックアップ")),
+    ("languages", (LANG,), labels("地球键顺序", "Globe order", "地球キーの順番")),
     (
         "en-words",
         (LANG, (MY_WORDS, 0)),
-        labels("添加", '"添加"', "Add", "Words", "词语"),
+        labels("添加", '"添加"', "Add", "Words", "词语", '"追加"', "追加", "単語"),
     ),
     (
         "zh-fuzzy",
-        (LANG, labels("Fuzzy Pinyin", "模糊拼音")),
+        (LANG, labels("Fuzzy Pinyin", "模糊拼音", "あいまいピンイン")),
         labels("zh=z", "zh = z", "z=zh", "z = zh", "zh, ch, sh"),
     ),
-    ("zh-words", (LANG, (MY_WORDS, 1)), labels("还没有词语", "No words yet")),
+    (
+        "zh-words",
+        (LANG, (MY_WORDS, 1)),
+        labels("还没有词语", "No words yet", "単語はまだありません"),
+    ),
     (
         "ja-words",
         (LANG, (MY_WORDS, 2)),
-        labels("添加", '"添加"', "Add", "Words", "词语"),
+        labels("添加", '"添加"', "Add", "Words", "词语", '"追加"', "追加", "単語"),
     ),
-    ("keyboard", (HOME["keyboard"],), labels("尺寸和位置", "Size and position")),
+    (
+        "keyboard",
+        (HOME["keyboard"],),
+        labels("尺寸和位置", "Size and position", "サイズと位置"),
+    ),
     (
         "resize",
-        (HOME["keyboard"], labels("尺寸和位置", "Size and position")),
-        labels("调整键盘大小", "Resize Keyboard"),
+        (HOME["keyboard"], labels("尺寸和位置", "Size and position", "サイズと位置")),
+        labels("调整键盘大小", "Resize Keyboard", "キーボードサイズ調整"),
     ),
     (
         "action-bar",
-        (HOME["keyboard"], labels("操作栏按钮", "Action bar buttons")),
-        labels("编辑快捷方式", "Edit Actions"),
+        (
+            HOME["keyboard"],
+            labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
+        ),
+        labels("编辑快捷方式", "Edit Actions", "アクションの編集"),
     ),
-    ("privacy", (HOME["privacy"],), labels("从我的输入中学习", "Learn from my typing")),
+    (
+        "privacy",
+        (HOME["privacy"],),
+        labels("从我的输入中学习", "Learn from my typing", "入力から学習"),
+    ),
     (
         "forget",
-        (HOME["privacy"], labels("忘记学到的词", "Forget learned words")),
-        labels("忘记", "Forget"),
+        (
+            HOME["privacy"],
+            labels("忘记学到的词", "Forget learned words", "学習した単語を消去"),
+        ),
+        labels("忘记", "Forget", "消去"),
     ),
-    ("backup", (HOME["backup"],), labels("导出设置", "Export settings")),
-    ("about", (HOME["about"],), labels("版本", "Version")),
+    (
+        "backup",
+        (HOME["backup"],),
+        labels("导出设置", "Export settings", "設定をエクスポート"),
+    ),
+    ("about", (HOME["about"],), labels("版本", "Version", "バージョン")),
     (
         "credits",
-        (HOME["about"], labels("许可与致谢", "Licence and credits")),
-        labels("Credits", "致谢"),
+        (
+            HOME["about"],
+            labels("许可与致谢", "Licence and credits", "ライセンスとクレジット"),
+        ),
+        labels("Credits", "致谢", "クレジット"),
     ),
     (
         "payment",
-        (HOME["about"], labels("支持 FUTO", "Support FUTO")),
-        labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard"),
+        (HOME["about"], labels("支持 FUTO", "Support FUTO", "FUTO を支援")),
+        labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"),
     ),
 ]
 
@@ -550,9 +623,12 @@ def my_words():
 
 
 def forget(language):
-    go(HOME["privacy"], labels("忘记学到的词", "Forget learned words"))
+    go(
+        HOME["privacy"],
+        labels("忘记学到的词", "Forget learned words", "学習した単語を消去"),
+    )
     tap_text(language)
-    found = find_all(nodes(), labels("忘记", "Forget"))
+    found = find_all(nodes(), labels("忘记", "Forget", "消去"))
     y, x = found[-1]  # the dialog's button, below the dialog title
     tap(x, y)
     time.sleep(3)
@@ -672,7 +748,13 @@ def smooth_scrolling():
         stats = [
             best_flings("zh-words-300", (LANG, (MY_WORDS, 1))),
             best_flings(
-                "credits", (HOME["about"], labels("许可与致谢", "Licence and credits"))
+                "credits",
+                (
+                    HOME["about"],
+                    labels(
+                        "许可与致谢", "Licence and credits", "ライセンスとクレジット"
+                    ),
+                ),
             ),
         ]
     finally:
@@ -707,7 +789,10 @@ def nothing_shows(texts, swipes):
 def no_theme_choice():
     open_settings()
     nothing_shows(THEME, 2)
-    go(HOME["keyboard"], labels("操作栏按钮", "Action bar buttons"))
+    go(
+        HOME["keyboard"],
+        labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
+    )
     nothing_shows(THEME_ACTION, 4)
     return "no Theme group on the home screen, no theme switcher among the actions"
 
@@ -790,17 +875,429 @@ def payment_note():
     wait_for(
         f"the payment row's note ({NOTE_ROW[0]})", lambda: screen_contains(NOTE_ROW), 10
     )
-    tap_text(labels("支持 FUTO", "Support FUTO"))
+    tap_text(labels("支持 FUTO", "Support FUTO", "FUTO を支援"))
     wait_for(f"the licence note ({NOTE[0]})", lambda: screen_contains(NOTE), 10)
     # The note only adds to FUTO's screen: its own title and payment options are still there.
     wait_for(
         "FUTO's payment title",
-        lambda: screen_has(labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard")),
+        lambda: screen_has(
+            labels(
+                "为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"
+            )
+        ),
         10,
     )
     return (
         "About's Support FUTO row and the payment screen say FUTO's licence requires it"
     )
+
+
+# --- Incognito (#31): the action bar button, its badge, and what is learned and copied meanwhile ---
+
+INCOGNITO = labels("无痕模式", "Incognito", "シークレットモード")
+INCOGNITO_ON = labels(
+    "无痕模式已开，点按关闭",
+    "Incognito on. Tap to turn off",
+    "シークレットモード オン。タップでオフ",
+)
+INCOGNITO_FIELD = labels(
+    "此输入框为无痕模式", "Incognito in this field", "この入力欄はシークレットモード"
+)
+OPEN_BAR = labels("打开操作栏", "Open Action Bar", "アクションバーを開く")
+CLOSE_BAR = labels("关闭操作栏", "Close Action Bar", "アクションバーを閉じる")
+CLIPBOARD_FILE = f"/data/data/{PKG}/files/clipboard.json"
+BAR_CONTROLS.update((*INCOGNITO_ON, *INCOGNITO_FIELD, *OPEN_BAR, *CLOSE_BAR))
+
+
+def badge():
+    """The incognito badge in the suggestion bar: "toggle", "field" or None."""
+    ns = nodes()
+    if find_all(ns, INCOGNITO_ON):
+        return "toggle"
+    return "field" if find_all(ns, INCOGNITO_FIELD) else None
+
+
+def set_incognito(on, shot=None):
+    """On through the action bar's Incognito button, off through a tap on the badge."""
+    open_field()
+    if (badge() == "toggle") == on:
+        return
+    if on:
+        if not screen_has(CLOSE_BAR):  # the bar stays open from before
+            tap_text(OPEN_BAR)
+        if shot:
+            screenshot(shot)
+        tap_text(INCOGNITO)
+        tap_text(CLOSE_BAR)
+    else:
+        tap_text(INCOGNITO_ON)
+    want = "toggle" if on else None
+    wait_for(f"the badge to show {want}", lambda: badge() == want, 10)
+
+
+def commit_twice(word):
+    """Types a made-up word and picks it from the bar as typed (the field capitalises the first one),
+    or presses space if the bar doesn't offer it, twice: English suggests a word it doesn't know only
+    after it is typed more than once."""
+    for _ in range(2):
+        type_keys(word)
+        typed = [c for c in en_candidates(nodes()) if c.lower() == word]
+        if typed:
+            tap_candidate(typed[0])
+        else:
+            bottom_key(5)
+            time.sleep(1.5)
+
+
+def suggested_after(word, kind=None):
+    """English's suggestions, in lower case, for word's first five letters in a new field."""
+    open_field(kind)
+    type_keys(word[:5])
+    return [c.lower() for c in en_candidates(nodes())]
+
+
+def incognito_toggle():
+    to_language("hello", "hello")
+    set_incognito(True, shot="31-action-bar.png")
+    screenshot("31-badge-toggle.png")
+    open_field()
+    if badge() != "toggle":
+        raise Fail(f"a new field after turning incognito on shows the badge {badge()}")
+    return "the action bar's Incognito button turns it on; a new field still shows the badge"
+
+
+def incognito_en():
+    open_field()
+    commit_twice("zorbleq")
+    got = suggested_after("zorbleq")
+    if "zorbleq" in got:
+        raise Fail(f"typed zorbleq twice while incognito; zorbl -> {got[:6]}")
+    return f"typed zorbleq twice while incognito; zorbl -> {got[:6]}"
+
+
+def incognito_zh():
+    to_language("ni", "你")
+    before = candidates_for("sx")
+    word = before[2]
+    tap_candidate(word)
+    after = candidates_for("sx")
+    if word in after[:2]:
+        raise Fail(
+            f"sx -> {before[:4]}; picked {word} while incognito; next sx -> {after[:4]}"
+        )
+    return f"sx -> {before[:4]}; picked {word} while incognito; next sx -> {after[:4]}"
+
+
+def incognito_ja():
+    to_language("nihongo", "日本語")
+    before = candidates_for("hashi")
+    word = before[2]
+    tap_candidate(word)
+    after = candidates_for("hashi")
+    if word in after[:2]:
+        raise Fail(
+            f"hashi -> {before[:4]}; picked {word} while incognito; next hashi -> {after[:4]}"
+        )
+    return f"hashi -> {before[:4]}; picked {word} while incognito; next hashi -> {after[:4]}"
+
+
+def clipboard_has(text):
+    return text in root(f"cat {CLIPBOARD_FILE} 2>/dev/null || true")
+
+
+def clipboard_capture(text, kind=None):
+    """Copies text in the field app; whether SebType's clipboard history kept it."""
+    open_field(kind, clip=text)
+    time.sleep(
+        4
+    )  # the copy comes 1.5 s after the field opens; the history saves it in the background
+    return clipboard_has(text)
+
+
+def incognito_clipboard():
+    if adb("shell", "su 0 id -u", check=False).strip() != "0":
+        raise Skip("no root shell to read the clipboard history (a phone)")
+    # Clipboard history is off after a fresh install: on, then a control copy from a normal field
+    # (taken before incognito is turned on) shows it is on.
+    set_incognito(False)
+    for _ in range(2):
+        if clipboard_capture(f"sebclip-ctl-{time.time_ns()}"):
+            break
+        toggle(
+            (HOME["privacy"],),
+            labels(
+                "保留剪贴板历史", "Keep clipboard history", "クリップボード履歴を残す"
+            ),
+        )
+    else:
+        raise Fail("clipboard history keeps no copy even from a normal field")
+    private = f"sebclip-private-{time.time_ns()}"
+    if clipboard_capture(private, kind="private"):
+        raise Fail("a copy made in a private field was kept")
+    set_incognito(True)
+    copied = f"sebclip-incog-{time.time_ns()}"
+    if clipboard_capture(copied):
+        raise Fail("a copy made while incognito was kept")
+    return "copies from a private field and while incognito not kept; a normal one is"
+
+
+def incognito_after_restart():
+    adb("shell", "am", "force-stop", PKG)
+    open_field()
+    wait_for("the badge after a restart", lambda: badge() == "toggle", 15)
+    return "incognito still on after the keyboard restarted"
+
+
+def incognito_privacy_switch():
+    go(HOME["privacy"])
+    if not screen_has(INCOGNITO):
+        raise Fail("no Incognito switch in Privacy")
+    screenshot("31-privacy.png")
+    return "Privacy shows the Incognito switch"
+
+
+def incognito_auto_fields():
+    shown = {}
+    for kind in ("password", "private"):
+        open_field(kind)
+        shown[kind] = badge()
+        screenshot(f"31-badge-{kind}.png")
+    open_field()
+    shown["normal"] = badge()
+    if shown != {"password": "field", "private": "field", "normal": None}:
+        raise Fail(f"badge per field: {shown}")
+    return f"badge per field: {shown}"
+
+
+def incognito_private_en():
+    to_language("hello", "hello")
+    open_field("private")
+    commit_twice("vemquat")
+    got = suggested_after("vemquat")
+    if "vemquat" in got:
+        raise Fail(f"typed vemquat twice in a private field; vemqu -> {got[:6]}")
+    return f"typed vemquat twice in a private field; vemqu -> {got[:6]}"
+
+
+def incognito_private_ja():
+    to_language("nihongo", "日本語")
+    before = candidates_for("kami")
+    word = before[2]
+    private = candidates_for("kami", kind="private")
+    if word not in private:
+        raise Fail(f"kami -> {before[:4]}, but in a private field -> {private[:4]}")
+    tap_candidate(word)
+    after = candidates_for("kami")
+    if word in after[:2]:
+        raise Fail(
+            f"kami -> {before[:4]}; picked {word} in a private field; next kami -> {after[:4]}"
+        )
+    return f"kami -> {before[:4]}; picked {word} in a private field; next kami -> {after[:4]}"
+
+
+def learns_again_en():
+    """After incognito: English learns again, and hides what it learned while incognito is back on."""
+    to_language("hello", "hello")
+    open_field()
+    commit_twice("zorbleq")
+    got = suggested_after("zorbleq")
+    if "zorbleq" not in got:
+        raise Fail(f"typed zorbleq twice after incognito; zorbl -> {got[:6]}")
+    set_incognito(True)
+    hidden = suggested_after("zorbleq")
+    set_incognito(False)
+    if "zorbleq" in hidden:
+        raise Fail(f"zorbl -> {got[:6]} learned, but {hidden[:6]} while incognito")
+    return f"zorbl -> {got[:6]} after incognito; {hidden[:6]} while incognito again"
+
+
+def learns_again(language, probe, probe_word, code):
+    """After incognito the language learns again; Mozc also hides while incognito what it learned:
+    its order then is the unlearned one, so the word picked is one that order doesn't put first."""
+
+    def run():
+        to_language(probe, probe_word)
+        unlearned = None
+        if language == "ja":
+            set_incognito(True)
+            unlearned = candidates_for(code)
+            set_incognito(False)
+        got = candidates_for(code)
+        word = next(c for c in got[1:] if not unlearned or c != unlearned[0])
+        tap_candidate(word)
+        after = candidates_for(code)
+        detail = f"picked {word} for {code} after incognito; next {code} -> {after[:4]}"
+        if after[0] != word:
+            raise Fail(detail)
+        if unlearned:
+            set_incognito(True)
+            hidden = candidates_for(code)
+            set_incognito(False)
+            detail += f"; while incognito again -> {hidden[:4]}"
+            if hidden[0] == word:
+                raise Fail(detail)
+        return detail
+
+    return run
+
+
+# --- Clipboard history in a settings backup (#34) ---
+
+CLIP_BOX = labels(
+    "包含剪贴板历史", "Include clipboard history", "クリップボード履歴を含める"
+)
+EXPORT = labels("导出设置", "Export settings", "設定をエクスポート")
+IMPORT = labels("导入设置", "Import settings", "設定をインポート")
+SAVE = labels("保存", "SAVE", "Save")
+IMPORT_BUTTON = labels("导入", "Import", "インポート")
+KEEP_HISTORY = labels(
+    "保留剪贴板历史", "Keep clipboard history", "クリップボード履歴を残す"
+)
+FILES = f"/data/data/{PKG}/files"
+# Made-up entries only, never anyone's real clipboard.
+CLIP_TEXT = "SebType test clip 34"
+CLIP_FILE = "sebtype-test-34.txt"
+# Pinned, so the app's pruning keeps both; the second points to a file in clipboardfiles/.
+CLIP_JSON = (
+    '[{"timestamp":1,"pinned":true,"text":"' + CLIP_TEXT + '","uri":null,'
+    '"mimeTypes":["text/plain"]},'
+    '{"timestamp":2,"pinned":true,"text":null,"uri":null,"mimeTypes":["text/plain"],'
+    '"backingFile":"' + CLIP_FILE + '","sizeMb":0.0}]'
+)
+
+
+def is_checked(texts):
+    """The state of the checkbox or switch row showing one of texts."""
+    adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        label = n.get("text") or n.get("content-desc") or ""
+        if n.get("checkable") == "true" and any(label.startswith(t) for t in texts):
+            return n.get("checked") == "true"
+    raise Fail(f"no {texts[1]} checkbox or switch")
+
+
+def keep_clipboard_history(on):
+    go(HOME["privacy"])
+    if is_checked(KEEP_HISTORY) != on:
+        tap_text(KEEP_HISTORY)
+
+
+def seed_clipboard():
+    """Made-up clipboard history in the app's files, written while the app is stopped. With
+    history off, the app deletes it when it starts."""
+    keep_clipboard_history(True)
+    adb("shell", "am", "force-stop", PKG)
+    tmp = "/data/local/tmp/sebtype-clipboard.json"
+    adb("shell", f"echo '{CLIP_JSON}' > {tmp}")
+    uid = root(f"stat -c %u {FILES}").strip()
+    root(
+        f"cp {tmp} {FILES}/clipboard.json && mkdir -p {FILES}/clipboardfiles && "
+        f"echo made-up > {FILES}/clipboardfiles/{CLIP_FILE} && "
+        f"chown -R {uid}:{uid} {FILES}/clipboard.json {FILES}/clipboardfiles && "
+        f"restorecon -R {FILES}/clipboard.json {FILES}/clipboardfiles"
+    )
+
+
+def clear_clipboard():
+    adb("shell", "am", "force-stop", PKG)
+    root(f"rm -rf {FILES}/clipboard.json* {FILES}/clipboardfiles")
+
+
+def clipboard_on_device():
+    return CLIP_TEXT in root(f"cat {FILES}/clipboard.json 2>/dev/null; true") and (
+        CLIP_FILE in root(f"ls {FILES}/clipboardfiles 2>/dev/null; true")
+    )
+
+
+def export_backup(include_clipboard, name):
+    """Exports from the backup screen into Downloads; returns the backup's entry names."""
+    go(HOME["backup"])
+    if is_checked(CLIP_BOX):
+        raise Fail("the clipboard checkbox starts ticked")
+    if include_clipboard:
+        tap_text(CLIP_BOX)
+        if not is_checked(CLIP_BOX):
+            raise Fail("tapping the clipboard checkbox doesn't tick it")
+    adb("shell", "rm -f /sdcard/Download/FUTOKeyboardSettings_*.backup")
+    tap_text(EXPORT)
+    wait_for("the save dialog", lambda: screen_has(SAVE), 20)
+    if not screen_has(labels("下载", "Downloads", "Download")):
+        tap_text(labels("显示根目录", "Show roots"))
+        tap_text(labels("下载", "Downloads"))
+    tap_text(SAVE)
+    path = wait_for(
+        "the exported backup",
+        lambda: adb(
+            "shell", "ls /sdcard/Download/FUTOKeyboardSettings_*.backup", check=False
+        ).strip(),
+        60,
+    )
+    wait_for("the export to finish", lambda: screen_has(EXPORT), 60)
+    adb("shell", f"mv {path} /sdcard/Download/{name}")
+    local = os.path.join(logdir, name)
+    adb("pull", f"/sdcard/Download/{name}", local)
+    with zipfile.ZipFile(local) as z:
+        return z.namelist()
+
+
+def import_backup(name):
+    go(HOME["backup"])
+    tap_text(IMPORT)
+    wait_for(f"{name} in the file picker", lambda: screen_has((name,)), 20)
+    tap_text((name,))
+    tap_text(IMPORT_BUTTON)
+    wait_for("the import to finish", lambda: not screen_has(IMPORT_BUTTON), 120)
+
+
+def has_clipboard(entries):
+    return "clipboard.json" in entries or any(
+        e.startswith("clipboard/") for e in entries
+    )
+
+
+def backup_clipboard():
+    seed_clipboard()
+    off = export_backup(False, "sebtype-34-off.backup")
+    if has_clipboard(off):
+        raise Fail(f"clipboard history in a backup with the box off: {off}")
+    on = export_backup(True, "sebtype-34-on.backup")
+    if "clipboard.json" not in on or f"clipboard/{CLIP_FILE}" not in on:
+        raise Fail(f"no clipboard history in a backup with the box ticked: {on}")
+    clear_clipboard()
+    import_backup("sebtype-34-on.backup")
+    wait_for("the imported clipboard history", clipboard_on_device, 30)
+    # A backup without clipboard history leaves the one on the phone alone.
+    import_backup("sebtype-34-off.backup")
+    if not clipboard_on_device():
+        raise Fail("importing a backup without clipboard history removed the phone's")
+    adb("shell", "rm -f /sdcard/Download/sebtype-34-*.backup")
+    clear_clipboard()
+    keep_clipboard_history(False)
+    return "box off by default leaves it out; ticked includes it and import restores it"
+
+
+def backup_screenshots():
+    """The backup screen in English and Japanese, whatever the system language."""
+    try:
+        for lang in ("en-US", "ja-JP"):
+            adb("shell", "cmd", "locale", "set-app-locales", PKG, "--locales", lang)
+            adb("shell", "am", "force-stop", PKG)
+            go(HOME["backup"])
+            wait_for(f"the {lang} checkbox", lambda: screen_has(CLIP_BOX), 10)
+            screenshot(f"backup-{lang}")
+    finally:
+        adb(
+            "shell",
+            "cmd",
+            "locale",
+            "set-app-locales",
+            PKG,
+            "--locales",
+            "",
+            check=False,
+        )
+    return "settings-backup-en-US.png, settings-backup-ja-JP.png"
 
 
 adb("logcat", "-c")
@@ -815,4 +1312,135 @@ check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
 check("settings-payment-note", payment_note)
 check("settings-smooth-scrolling", smooth_scrolling)
+
+
+# --- The settings in 日本語 (#120) ---
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def english_strings():
+    """SebType's English strings as patterns (%d is any number), and FUTO's one SebType translates;
+    not those that read the same in 日本語 (the name SebType)."""
+
+    def strings(path):
+        return {e.get("name"): e for e in ET.parse(os.path.join(HERE, path)).getroot()}
+
+    texts = {"Fuzzy Pinyin"}
+    for d, f in (
+        ("res", "strings-sebtype.xml"),
+        ("res-stable", "strings-sebtype-overrides.xml"),
+    ):
+        ja = strings(f"{d}/values-ja/{f}")
+        for name, e in strings(f"{d}/values/{f}").items():
+            if e.get("translatable") != "false" and (
+                name not in ja or ja[name].text != e.text
+            ):
+                texts.add(e.text)
+    return [
+        re.compile(
+            re.escape(t.replace("\\'", "'").replace("\\n", "\n"))
+            .replace("%d", r"\d+")
+            .replace("%%", "%")
+        )
+        for t in texts
+    ]
+
+
+def english_on_screen(patterns):
+    """The visible labels, or parts of one joined with " · ", ", " or a line break, that are SebType English."""
+    found = set()
+    for label, *_ in nodes():
+        for part in {label, *re.split(r"\n| · |, ", label)}:
+            if any(p.fullmatch(part) for p in patterns):
+                found.add(part)
+    return found
+
+
+def system_locale(tag):
+    """Sets the system's language list to tag alone with test-emulator.sh's set-locale helper (the way
+    Settings does it, without a restart, which can crash the emulator; docs/testing.md)."""
+    dex = "/data/local/tmp/sebtype-set-locale.dex"
+    adb("push", os.path.join(logdir, "set-locale.dex"), dex)
+    try:
+        adb(
+            "shell",
+            "app_process",
+            "-cp",
+            dex,
+            "/",
+            "dev.sebb.sebtype.setlocale.SetLocale",
+            tag,
+        )
+    finally:
+        adb("shell", "rm", "-f", dex, check=False)
+    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
+    wait_for(
+        f"the system in {tag}",
+        lambda: re.search(rf"[ -]{config}-", adb("shell", "am", "get-config")),
+        30,
+    )
+    time.sleep(3)  # open apps redraw in the new language
+
+
+def japanese_ui():
+    for f in glob.glob(os.path.join(logdir, "settings-ja-*.png")):
+        os.remove(f)  # a last run's extra pages would pass for this run's
+    system_locale("ja-JP")
+    patterns = english_strings()
+    english = {}
+    failed = []
+    for name, path, marker in SCREENS:
+        try:
+            go(*path)
+            wait_for(f"{name} ({marker[-1]})", lambda m=marker: screen_has(m), 10)
+        except Fail as e:
+            failed.append(f"{name}: {e}")
+        screenshot(f"ja-{name}")
+        seen = english_on_screen(patterns)
+        # Down the screen too, a page at a time; resizing's page is the keyboard's handles.
+        for page in range(2, 6 if name != "resize" else 2):
+            before = {label for label, *_ in nodes()}
+            adb("shell", "input", "swipe", "540", "1900", "540", "900", "400")
+            time.sleep(1)
+            if {label for label, *_ in nodes()} == before:
+                break
+            screenshot(f"ja-{name}-{page}")
+            seen |= english_on_screen(patterns)
+        if seen:
+            english[name] = sorted(seen)
+    if english:
+        failed.append(f"English on {english}")
+    if failed:
+        raise Fail("; ".join(failed))
+    return f"{len(SCREENS)} screens in 日本語, no English SebType string (settings-ja-*.png)"
+
+
+check("settings-japanese", japanese_ui)
+# test-emulator.sh runs everything else in en-US.
+check(
+    "settings-locale-back",
+    lambda: system_locale("en-US") or "the system is back in en-US",
+)
+
+check("incognito-auto-fields", incognito_auto_fields)
+check("incognito-private-en", incognito_private_en)
+check("incognito-private-ja", incognito_private_ja)
+check("incognito-toggle-on", incognito_toggle)
+check("incognito-en", incognito_en)
+check("incognito-after-restart", incognito_after_restart)
+check("incognito-privacy-switch", incognito_privacy_switch)
+check("incognito-zh", incognito_zh)
+check("incognito-ja", incognito_ja)
+check("incognito-clipboard", incognito_clipboard)
+check(
+    "incognito-badge-tap-off",
+    lambda: set_incognito(False) or "a tap on the badge turns incognito off",
+)
+check("incognito-off-learns-en", learns_again_en)
+check("incognito-off-learns-zh", learns_again("zh", "ni", "你", "sx"))
+check("incognito-off-learns-ja", learns_again("ja", "nihongo", "日本語", "hashi"))
+# Last, in en-US: importing a backup reinstalls the Chinese data in the background.
+check("settings-backup-clipboard", backup_clipboard)
+check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

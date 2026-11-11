@@ -20,6 +20,8 @@
     <string name="sebtype_settings_globe_order">地球键顺序</string>
     <string name="sebtype_settings_globe_order_tip">地球键按此顺序在已开启的语言之间切换。拖动 ≡ 可调整顺序。</string>
     <string name="sebtype_settings_drag">拖动以排序</string>
+    <string name="sebtype_settings_globe_zh">中文</string>
+    <string name="sebtype_settings_globe_ja">日本語</string>
     <string name="sebtype_settings_zh_engine">雾凇拼音</string>
     <string name="sebtype_settings_ja_engine">Mozc 罗马字</string>
     <string name="sebtype_settings_autocorrect">自动纠正</string>
@@ -48,6 +50,11 @@
     <string name="sebtype_settings_action_bar_subtitle">键盘上方操作栏里放哪些按钮</string>
     <string name="sebtype_settings_learn">从我的输入中学习</string>
     <string name="sebtype_settings_learn_subtitle">English、中文和日本語记住你选的词</string>
+    <!-- 无痕模式 (#31) -->
+    <string name="sebtype_incognito">无痕模式</string>
+    <string name="sebtype_incognito_subtitle">关闭之前不学习新词，也不保存剪贴板历史。密码框和无痕标签页总是无痕。</string>
+    <string name="sebtype_incognito_on_tap_off">无痕模式已开，点按关闭</string>
+    <string name="sebtype_incognito_field">此输入框为无痕模式</string>
     <string name="sebtype_settings_clipboard">剪贴板历史</string>
     <string name="sebtype_settings_clipboard_keep_history">保留剪贴板历史</string>
     <string name="sebtype_settings_clipboard_keep">保留</string>
@@ -71,4 +78,7 @@
     <string name="sebtype_payment_licence_note">FUTO 的许可证要求 SebType 包含此页面。付款归 FUTO 所有；SebType 与此无关，也不会收到任何款项。</string>
     <string name="sebtype_settings_credits">许可与致谢</string>
     <string name="sebtype_settings_credits_subtitle">FUTO 的许可、雾凇拼音、Mozc 等</string>
+    <!-- Clipboard history is left out of a backup unless ticked (#34) -->
+    <string name="sebtype_settings_export_clipboard">包含剪贴板历史</string>
+    <string name="sebtype_settings_export_subtitle">备份你的设置、学到的词、资源等</string>
 </resources>
