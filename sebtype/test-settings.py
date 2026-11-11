@@ -10,7 +10,7 @@ full-width punctuation, emoji among Chinese candidates, Chinese "My words", and 
 words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
 same look in the system's dark mode (#111); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
-in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back after,
+in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Labels
 match the emulator's Chinese, English or Japanese UI. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
@@ -904,24 +904,29 @@ def english_on_screen(patterns):
 
 
 def system_locale(tag):
-    """Sets the system language and restarts Android's framework, which applies it everywhere.
-    Android takes it from the system_locales setting at start, so that is set with the property."""
-    root(
-        f"settings put system system_locales {tag}; setprop persist.sys.locale {tag}; stop; start"
-    )
-    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
-
-    def in_tag():
-        out = adb("shell", "am", "get-config", check=False)
-        return (
-            re.search(rf"[ -]{config}-", out)
-            and adb("shell", "pm", "path", PKG, check=False).strip()
+    """Sets the system's language list to tag alone with test-emulator.sh's set-locale helper (the way
+    Settings does it, without a restart, which can crash the emulator; docs/testing.md)."""
+    dex = "/data/local/tmp/sebtype-set-locale.dex"
+    adb("push", os.path.join(logdir, "set-locale.dex"), dex)
+    try:
+        adb(
+            "shell",
+            "app_process",
+            "-cp",
+            dex,
+            "/",
+            "dev.sebb.sebtype.setlocale.SetLocale",
+            tag,
         )
-
-    wait_for(f"Android back in {tag}", in_tag, 240, 3)
-    time.sleep(10)  # the launcher and keyboards settle after the framework restart
-    if not in_tag():
-        raise Fail(f"Android went back from {tag} after it started")
+    finally:
+        adb("shell", "rm", "-f", dex, check=False)
+    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
+    wait_for(
+        f"the system in {tag}",
+        lambda: re.search(rf"[ -]{config}-", adb("shell", "am", "get-config")),
+        30,
+    )
+    time.sleep(3)  # open apps redraw in the new language
 
 
 def japanese_ui():
@@ -955,10 +960,11 @@ def japanese_ui():
     return f"{len(SCREENS)} screens in 日本語, no English SebType string (settings-ja-*.png)"
 
 
-was = adb("shell", "getprop", "persist.sys.locale").strip() or "en-US"
 check("settings-japanese", japanese_ui)
+# test-emulator.sh runs everything else in en-US.
 check(
-    "settings-locale-back", lambda: system_locale(was) or f"the system is back in {was}"
+    "settings-locale-back",
+    lambda: system_locale("en-US") or "the system is back in en-US",
 )
 
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
