@@ -49,10 +49,11 @@ the choice for the next upgrade.
 changed, replaces the Chinese data and keeps everything learned: Rime's `*.userdb`, `*.custom.yaml` and
 `custom_phrase.txt`, and Mozc's user dictionary and history.
 
-**Uninstall** removes the engines, then puts the account back as it was before the first install and removes Weasel, Mozc, SebType's
-folder and the Start menu entry. The first install saves, before the engines' installers run (`-User -Save`), to `%LOCALAPPDATA%\SebType\setup.json` and
-`backup\` the language list, the default input method, the switch keys, the per-window setting, the input
-hotkeys and text service settings, and copies of the Rime and Mozc folders if there were any. Uninstall
+**Uninstall** removes Weasel, Mozc, SebType's folder and the Start menu entry, then puts the account back
+as it was before the first install. The first install saves, before the engines' installers run
+(`-User -Save`), to `%LOCALAPPDATA%\SebType\setup.json` and `backup\` the language list, the default input
+method, the switch keys, the per-window setting, the input hotkeys and text service settings, and copies
+of the Rime and Mozc folders if there were any. Uninstall
 restores those and deletes what SebType learned on this PC (Decisions #2): Setup's message says so.
 
 **Sync (#12)** isn't built. `setup.ps1` has one marked place, `SYNC HOOK (#12)`, just before a language's
