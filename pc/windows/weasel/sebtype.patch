@@ -209,20 +209,26 @@ diff --git a/WeaselUI/StandardLayout.cpp b/WeaselUI/StandardLayout.cpp
 index bdffad0..0609a0e 100644
 --- a/WeaselUI/StandardLayout.cpp
 +++ b/WeaselUI/StandardLayout.cpp
-@@ -312,6 +312,31 @@ void weasel::StandardLayout::_PrepareRoundInfo(CDCHandle& dc) {
+@@ -312,6 +312,37 @@ void weasel::StandardLayout::_PrepareRoundInfo(CDCHandle& dc) {
    }
  }
  
-+// SebType (#94): a column at the start for SebType's pig, as tall as a
-+// candidate row plus half the margins, so it follows the font size and DPI.
-+// Everything laid out so far moves right by the column; height is the
-+// content height inside the border.
++// SebType (#94): a column at the start for SebType's pig, 10/7 of a
++// candidate row plus half the margins (#162), so it follows the font size and
++// DPI; its top is level with the first row (the pinyin when it is shown) and
++// it stays inside the content. Everything laid out so far moves right by the
++// column; height is the content height inside the border.
 +void StandardLayout::ReserveLogoColumn(int* width, int height) {
 +  if (_style.sebtype_logo.empty() || !candidates_count)
 +    return;
-+  const int h = _candidateRects[0].Height() + real_margin_y;
++  int top = _candidateRects[0].top;
++  for (const CRect* rc : {&_preeditRect, &_auxiliaryRect})
++    if (!rc->IsRectEmpty())
++      top = min(top, rc->top);
++  const int h = min((_candidateRects[0].Height() + real_margin_y) * 10 / 7,
++                    height);
 +  const int w = h * LOGO_WIDTH / LOGO_HEIGHT;
-+  const int top = offsetY + (height - h) / 2;
++  top = min(top, offsetY + height - h);
 +  _logoRect.SetRect(offsetX + real_margin_x, top,
 +                    offsetX + real_margin_x + w, top + h);
 +  const int shift = w + real_margin_x / 2;

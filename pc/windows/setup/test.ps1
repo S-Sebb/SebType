@@ -5,7 +5,7 @@ session (test-tcsbackend.sh does that on TCSBackEnd and opens the Remote Desktop
 
     powershell -File C:\sebtype-setup-test\test.ps1
 
-The folder holds this script, TsfHost.cs (../mozc), perf-rime.ps1 and perf-rime.exe (../, from the
+The folder holds this script, TsfHost.cs (../mozc), windows.rs (the Configurator's Picnic scheme), perf-rime.ps1 and perf-rime.exe (../, from the
 Weasel build) and SebType-setup-*.exe. The test creates a local
 admin user, sebtype-test, and runs everything as that user in a Remote Desktop session of its own, so
 nobody's own input settings change, then removes the user and its profile:
@@ -15,7 +15,8 @@ nobody's own input settings change, then removes the user and its profile:
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
    (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese),
    Rime's time per key (p95 ≤ 10 ms, only with -PerfRun: the final performance run, #54) and Chinese's
-   tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu), a silent
+   tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu) and its
+   Picnic candidate window with the pig (pictures, horizontal and vertical), a silent
    upgrade that keeps learned words, Japanese still working after the language list changes, then the
    uninstall: everything back as before, learned words gone.
 3. Round 2, all silent: install with Chinese and Japanese only (no English), upgrade to English and
@@ -177,6 +178,24 @@ if ($Typing) {
             throw "menu '$m', then houlai gave '$hant'; menu '$m2', then '$hans'"
           }
           'menu 简 → 繁 (後來), then 繁 → 简 (后来)'
+        }
+        # The Picnic window with SebType's pig (#94, #162), as the Configurator writes it (its scheme from
+        # windows.rs), at 14 pt: pictures 162-weasel-horizontal.png and -vertical.png.
+        Check 'chinese-picnic-window' {
+          $rs = (((Get-Content "$root\windows.rs" -Encoding utf8 -Raw) -split 'const PICNIC_SCHEME')[1] -split '\];')[0]
+          $scheme = [regex]::Matches($rs, '"(    [^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+          $deployer = Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe
+          $sizes = foreach ($o in 'horizontal', 'vertical') {
+            [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]](@('patch:',
+              "  style/horizontal: $($o -eq 'horizontal')".ToLower(), '  style/font_point: 14', '  style/color_scheme: sebtype_picnic',
+              '  style/sebtype_logo: true', '  preset_color_schemes/sebtype_picnic:') + $scheme))
+            Start-Process $deployer /deploy -Wait
+            $tsf::Clear(); TypeText 'nihao'; Start-Sleep 2
+            $size = $tsf::CandidateWindow("$out\162-weasel-$o.png"); Keys Escape
+            if (-not $size) { throw "no candidate window ($o)" }
+            "$o $size"
+          }
+          $sizes -join ', '
         }
       } finally { $tsf::Stop() }
     }

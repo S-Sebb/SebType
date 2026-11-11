@@ -117,7 +117,7 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-setup-test | Out-Null' | tps
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
+if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$repo/pc/configurator/src/windows.rs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 

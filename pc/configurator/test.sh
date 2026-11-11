@@ -6,6 +6,8 @@
 # and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
 # /tmp/sebtype/configurator-test-results.txt; logs and screenshots next to it.
+# SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b (picnic-candidate-window draws
+# what private-fcitx5-and-rime wrote, so it needs that one named too).
 set -uo pipefail
 self=$(readlink -f "$0")  # the devq re-exec below needs a path that still resolves after this cd
 cd "$(dirname "$self")" || exit 1
@@ -14,7 +16,11 @@ out=/tmp/sebtype; mkdir -p "$out"
 results=$out/configurator-test-results.txt; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, timeout seconds, command or exported function...
-  local name=$1 secs=$2; shift 2
+  local name=$1 secs=$2 c; shift 2
+  if [[ -n ${SEBTYPE_CHECKS-} ]]; then
+    for c in ${SEBTYPE_CHECKS//,/ }; do [[ $name == "$c"* ]] && break; done
+    [[ $name == "$c"* ]] || return 0
+  fi
   if timeout "$secs" bash -c '"$@"' _ "$@" > "$out/configurator-test-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/configurator-test-$name.log"; fi
 }
@@ -129,10 +135,10 @@ for o in horizontal vertical; do
   fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,rime > "$out/configurator-picnic-fcitx5-$o.log" 2>&1 & f=$!
   for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
   sleep 3  # Rime loads its schema
-  read -r size pink < <(python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png")
+  read -r size pink tab < <(python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png")
   kill $f; wait $f
-  if [[ ${pink:-0} -gt 100 ]]; then echo "$o ok: $size, $pink logo pixels"
-  else echo "$o: no logo (${size:-no window}, ${pink:-0} logo pixels)"; fi
+  if [[ ${pink:-0} -gt 100 && ${tab:-0} == 1 ]]; then echo "$o ok: $size, $pink logo pixels, on its tab"
+  else echo "$o: no logo on a tab (${size:-no window}, ${pink:-0} logo pixels, tab ${tab:-0})"; fi
 done
 SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"

@@ -5,8 +5,9 @@
 
 Runs inside a nested KWin with Xwayland, where Fcitx5 draws with X11 (classicui on xcb). It talks to
 Fcitx5 as an app would (an input context with inline preedit, on Rime), waits for the window's size to
-settle, saves its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS`: the pink pixels
-where the Picnic theme draws SebType's pig, left of the candidates.
+settle, saves its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS TAB`: the pink pixels
+where the Picnic theme draws SebType's pig, left of the candidates, and 1 if the window's top is a tab
+(#162): drawn at the left, clear at the right.
 """
 
 import sys
@@ -92,4 +93,5 @@ Image.fromarray(rgb.astype(np.uint8)).save(out)
 # The pig's pink (about #f5a0b4) in the first 40 px; the theme's own pinks are darker (#c2506a).
 r, g, b = (rgb[:, :40, i] for i in range(3))
 pink = int(((r > 220) & (g > 120) & (g < 200) & (b > 140) & (r - g > 40)).sum())
-print(f"{size[0]}x{size[1]} {pink}")
+tab = int(a[3, 10] > 0 and a[3, size[0] - 15] == 0)
+print(f"{size[0]}x{size[1]} {pink} {tab}")
