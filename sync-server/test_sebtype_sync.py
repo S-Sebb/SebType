@@ -81,6 +81,29 @@ class Server(unittest.TestCase):
                 self.call("PUT", path, b"x")
             self.assertEqual(e.exception.code, 404, path)
 
+    def test_crash_reports_go_to_their_own_folder(self):
+        """A report lands in crashes/<user>/, apart from the learned words, and only under a report's name."""
+        self.call("DELETE", "/v1/files")
+        name = "crash-20261111-202304-0a1b2c.txt"
+        self.assertEqual(
+            self.call("PUT", f"/v1/crashes/{name}", b"made up trace\n")[0], 204
+        )
+        with open(os.path.join(self.data, "crashes", "alice", name), "rb") as f:
+            self.assertEqual(f.read(), b"made up trace\n")
+        self.assertEqual(json.loads(self.call("GET", "/v1/files")[1])["files"], [])
+        for path in (
+            "/v1/crashes/../x.txt",
+            "/v1/crashes/crash-1.txt",
+            f"/v1/crashes/sub/{name}",
+            f"/v1/crashes/{name}.userdb.txt",
+        ):
+            with self.assertRaises(urllib.error.HTTPError, msg=path) as e:
+                self.call("PUT", path, b"x")
+            self.assertEqual(e.exception.code, 404, path)
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            self.call("PUT", f"/v1/crashes/{name}", b"x" * (s.MAX_CRASH + 1))
+        self.assertEqual(e.exception.code, 413)
+
     def test_pc_client_syncs_two_devices(self):
         """Each device pushes only its own folder and pulls the other's."""
         self.call("DELETE", "/v1/files")

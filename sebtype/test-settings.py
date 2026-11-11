@@ -17,7 +17,8 @@ password and private fields and the sticky toggle learn nothing in English, 中�
 clipboard copy, but still offer what was learned before; the toggle survives a restart, and turned off,
 learning resumes. Then sync with a local sync-server (#12, made-up login and words): offline a learned
 word stays on the phone, back online a keyboard hide uploads it, a word in another device's folder on
-the server is offered after a sync, the login is in no log or plain file, and the delete button empties
+the server is offered after a sync, a crash's report reaches the server's crash folder without typed
+words or the login (#33), the login is in no log or plain file, and the delete button empties
 the server. Then that made-up personal data of each kind imports through the backup screen's Import
 and is offered as candidates (#11): a Rime word list and Rime learned words in 中文, Mozc and MS-IME
 dictionaries in 日本語, FUTO's personal dictionary in English. Last, that a settings backup leaves
@@ -1797,6 +1798,47 @@ def sync_other_device():
     return f"a made-up word in another device's folder: lulu -> {got[: got.index(OTHER_WORD) + 1]} after a sync"
 
 
+def sync_crash_report():
+    """A crash while sync is on goes to the server's crash folder with the next sync (#33), without the
+    words typed before it or the login."""
+    queue = f"{NO_BACKUP}/crash-reports"
+    crashes = os.path.join(SYNC["data"], "crashes", SYNC_USER)
+    open_field()
+    adb("shell", "am", "crash", PKG)  # an uncaught exception on SebType's main thread
+    wait_for(
+        "the report queued on the phone",
+        lambda: "crash-" in root(f"ls {queue} 2>/dev/null; true"),
+        60,
+    )
+    sync_by_hiding()
+    names = wait_for(
+        "the report in the server's crash folder",
+        lambda: os.path.isdir(crashes) and os.listdir(crashes),
+        90,
+    )
+    with open(os.path.join(crashes, names[0]), encoding="utf-8") as f:
+        report = f.read()
+    shutil.copy(
+        os.path.join(crashes, names[0]), os.path.join(logdir, "33-crash-report.txt")
+    )
+    missing = [
+        t
+        for t in ("Device: ", "Thread: main", "\tat android.", "Last warnings")
+        if t not in report
+    ]
+    leaked = [
+        t for t in (SYNC["word"], OTHER_WORD, SYNC_USER, SYNC_PASSWORD) if t in report
+    ]
+    if missing or leaked:
+        raise Fail(f"missing {missing}, leaked {leaked} (33-crash-report.txt)")
+    wait_for(
+        "the queue emptied on the phone",
+        lambda: "crash-" not in root(f"ls {queue} 2>/dev/null; true"),
+        30,
+    )
+    return f"{names[0]} on the server, {len(report.splitlines())} lines, no typed word or login; the phone's queue is empty"
+
+
 def sync_delete_on_server():
     go(HOME["backup"], SYNC_DELETE)
     screenshot("12-sync-delete")
@@ -1952,6 +1994,7 @@ try:
     check("sync-offline-learns", sync_offline_learns)
     check("sync-online-uploads", sync_online_uploads)
     check("sync-other-device", sync_other_device)
+    check("sync-crash-report", sync_crash_report)
     check("sync-credentials-private", sync_credentials_private)
     check("sync-delete-on-server", sync_delete_on_server)
 finally:

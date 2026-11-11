@@ -12,13 +12,29 @@ the snapshots in everyone else's. Since each device writes only its own folder, 
 one copy of each device's folder is enough, and two devices never overwrite each other.
 
 `sebtype_sync.py` is that server, and a small client for the PCs. It stores only `*.userdb.txt`
-snapshots, one folder per device under each user. Passwords are stored as scrypt hashes in
+snapshots, one folder per device under each user, and the phone's crash reports (below). Passwords are stored as scrypt hashes in
 `users.json`. Python 3.9 or newer, standard library only.
 
 The phone syncs in the background while the keyboard is hidden: when it hides (at most once a minute)
 and every half hour while SebType runs. Offline, Rime keeps learning as usual, and the next sync that
-reaches the server takes everything along. The phone sends nothing but these snapshots: no clipboard,
-no typed text.
+reaches the server takes everything along. The phone sends nothing but these snapshots and its crash
+reports: no clipboard, no typed text.
+
+## Crash reports
+
+When SebType crashes while sync is on, the phone keeps a report of the crash (at most the last 10)
+and the next sync uploads it, then deletes it on the phone. The server keeps each one as a text file
+in `<data>/crashes/<user>/crash-<UTC date>-<time>-<random>.txt`, next to `files/` and apart from the
+learned words; read them there. `deluser` deletes them too, "Delete learned words on the server" does not.
+
+A report holds the stack trace (exception classes and code lines, without the exceptions' messages),
+SebType's version, Android's version, the phone's maker and model, and SebType's last 200 warnings
+and errors with their messages removed (stack frames and SebType's own sync messages stay). Messages
+are removed because any of them could quote typed text; settings and the login are never read into it.
+
+While sync is off nothing is sent and a crash leaves no report. Reports kept from before sync was
+turned off stay on the phone (no-backup storage, out of backups and exports) and go up with the first
+sync after it is turned on again.
 
 ## Running the server
 
@@ -86,6 +102,7 @@ All requests use HTTP Basic auth with a user from `users.json`.
 | `GET /v1/files/<device>/<name>` | Downloads one |
 | `PUT /v1/files/<device>/<name>` | Stores one (a `*.userdb.txt`, up to 64 MB) |
 | `DELETE /v1/files` | Deletes all of the user's files |
+| `PUT /v1/crashes/<name>` | Stores a crash report (`crash-YYYYMMDD-HHMMSS-xxxxxx.txt`, up to 256 KB) in `crashes/<user>/` |
 
 ## On the phone
 
@@ -136,5 +153,6 @@ same `pull` and `push` work with `--rime-dir "%APPDATA%\Rime"`.
 ## Tests
 
 `python3 -I sync-server/test_sebtype_sync.py`: the server on a local port with a made-up user, and two
-made-up devices syncing through it. The phone side is checked on the emulator by
-`SEBTYPE_CHECKS=first-install,sync sebtype/test-emulator.sh` ([docs/testing.md](../docs/testing.md)).
+made-up devices syncing through it, and a crash report. The phone side is checked on the emulator by
+`SEBTYPE_CHECKS=first-install,sync sebtype/test-emulator.sh` (`sync-crash-report` crashes SebType and
+finds the report in the crash folder) ([docs/testing.md](../docs/testing.md)).

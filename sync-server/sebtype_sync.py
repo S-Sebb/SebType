@@ -3,13 +3,13 @@
 
 Rime syncs learned words through a folder, `sync/<installation id>/`: every device writes only its own
 folder and merges in everyone else's, so a server that keeps one copy of each device's folder per user
-is all sync needs (study report on #3, section 6). The server stores the `*.userdb.txt` files and
-nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
+is all sync needs (study report on #3, section 6). The server stores the `*.userdb.txt` files and the
+phone's crash reports (#33) and nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
 HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give it a certificate.
 
     sebtype_sync.py serve   --data DIR [--host H] [--port P] [--tls-cert F --tls-key F]
     sebtype_sync.py adduser --data DIR NAME [--password-stdin]
-    sebtype_sync.py deluser --data DIR NAME          (also deletes the user's files)
+    sebtype_sync.py deluser --data DIR NAME          (also deletes the user's files and crash reports)
     sebtype_sync.py pull|push --server URL --user NAME --password-file F --rime-dir DIR
 
 API, all with HTTP Basic auth:
@@ -17,6 +17,7 @@ API, all with HTTP Basic auth:
     GET    /v1/files/<device>/<name>  the file
     PUT    /v1/files/<device>/<name>  stores the file (a device writes only its own folder)
     DELETE /v1/files                  deletes all of the user's files
+    PUT    /v1/crashes/<name>         stores a SebType crash report in crashes/<user>/ (#33)
 
 Python 3.9+, standard library only.
 """
@@ -44,6 +45,8 @@ NAME = re.compile(
 )  # users and devices (Rime's ids are UUIDs)
 FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.userdb\.txt")
 MAX_FILE = 64 << 20  # a userdb snapshot of years of typing is a few MB
+CRASH = re.compile(r"crash-\d{8}-\d{6}-[0-9a-f]{6}\.txt")
+MAX_CRASH = 256 << 10  # a report is a stack trace and 200 log lines, a few dozen KB
 SCRYPT = {"n": 1 << 14, "r": 8, "p": 1}
 
 
@@ -176,6 +179,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         user = self.user()
         if not user:
             return
+        if self.path.startswith("/v1/crashes/"):
+            return self.put_crash(user)
         target = self.target()
         if not target:
             return self.reply(404, "not found\n")
@@ -190,6 +195,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with os.fdopen(fd, "wb") as f:
             f.write(body)
         os.replace(tmp, os.path.join(folder, target[1]))
+        self.reply(204)
+
+    def put_crash(self, user):
+        """Stores a crash report from the phone (#33) in crashes/<user>/, next to files/, never replacing one."""
+        name = self.path.split("?")[0][len("/v1/crashes/") :]
+        if not CRASH.fullmatch(name):
+            return self.reply(404, "not found\n")
+        length = int(self.headers.get("Content-Length") or -1)
+        if not 0 <= length <= MAX_CRASH:
+            self.close_connection = True
+            return self.reply(413, "too large or no length\n")
+        body = self.rfile.read(length)
+        folder = os.path.join(self.data, "crashes", user)
+        os.makedirs(folder, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=".upload-")
+        with os.fdopen(fd, "wb") as f:
+            f.write(body)
+        os.replace(
+            tmp, os.path.join(folder, name)
+        )  # the same name is the same report, sent again
         self.reply(204)
 
     def do_DELETE(self):
@@ -344,9 +369,10 @@ def main():
             users[args.name] = hash_password(password)
         else:
             users.pop(args.name, None)
-            shutil.rmtree(
-                os.path.join(args.data, "files", args.name), ignore_errors=True
-            )
+            for kind in ("files", "crashes"):
+                shutil.rmtree(
+                    os.path.join(args.data, kind, args.name), ignore_errors=True
+                )
         save_users(args.data, users)
     else:
         run_client(args)

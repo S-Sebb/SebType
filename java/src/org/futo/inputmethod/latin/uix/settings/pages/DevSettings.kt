@@ -17,7 +17,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.general.UseExpandableSuggestionsForGeneralIME
 import org.futo.inputmethod.latin.BuildConfig
-import org.futo.inputmethod.latin.CrashLoggingApplication
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.TextInputAlternativeIC
 import org.futo.inputmethod.latin.TextInputAlternativeICComposing
@@ -72,8 +71,6 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
         ScreenTitle("Developer", showBack = true, navController)
 
         SettingToggleDataStore(title = "Developer mode", setting = IS_DEVELOPER)
-
-        CrashLoggingApplication.CopyLogsOption()
 
         SettingToggleDataStore(title = "Disable all update reminders", setting = DISABLE_UPDATE_REMINDER)
         
