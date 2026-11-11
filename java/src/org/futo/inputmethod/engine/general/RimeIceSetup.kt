@@ -38,6 +38,7 @@ object RimeIceSetup {
     // How long a deploy may take before setup fails. The tables come prebuilt, so this is far more
     // than a deploy needs.
     private const val DEPLOY_TIMEOUT_MS = 5 * 60_000L
+    private const val SYNC_TIMEOUT_MS = 60_000L
 
     sealed interface State {
         /** Installing ([percent] of the bundle extracted) or deploying ([percent] null). */
@@ -79,6 +80,7 @@ object RimeIceSetup {
     private var rime: Rime? = null
     private var started = false
     private var readyFor: String? = null
+    private var readySchema: String? = null
 
     /** The process's Rime; creating it starts librime, so the first call is best off the main thread. */
     @Synchronized
@@ -197,7 +199,7 @@ object RimeIceSetup {
             Log.w(TAG, "Set up ${config.schema} in ${SystemClock.elapsedRealtime() - t0} ms " +
                     "(deployed: ${if(deploy) "yes" else "no"}), self-test ${if(ok) "passed" else "failed"}")
 
-            if(ok) readyFor = key
+            if(ok) { readyFor = key; readySchema = config.schema }
             mutableState.value = if(ok) State.Ready else State.Failed
             ok
         }
@@ -233,6 +235,37 @@ object RimeIceSetup {
             readyFor = null
             mutableState.value = State.Preparing(null)
             block()
+        }
+    }
+
+    /**
+     * Rime's sync (#12, [ChineseSync]): merges the other devices' snapshots in `user/sync/` into the
+     * learned words and writes this device's snapshot. librime's sync ends every session, so meanwhile
+     * Chinese shows as preparing: a keyboard that comes up waits in [ensure] and sets its options again
+     * on the new session. A Rime that wasn't running is started for it and stopped after.
+     */
+    suspend fun syncUserData(context: Context): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            if(!RimeIceBundle.isInstalled(context)) return@withLock false // Chinese never set up: nothing learned
+            val rime = rime(context)
+            val wasStarted = started
+            val before = mutableState.value
+            if(!started) {
+                rime.startup(false)
+                started = true
+            }
+            mutableState.value = State.Preparing(null)
+            var ok = rime.syncUserData()
+            // The merge runs on librime's maintenance thread; a schema is selectable again once it is done.
+            val t0 = SystemClock.elapsedRealtime()
+            while(ok && !rime.selectSchema(readySchema ?: RimeIceBundle.SCHEMA)) {
+                if(SystemClock.elapsedRealtime() - t0 > SYNC_TIMEOUT_MS) ok = false else delay(200L)
+            }
+            Log.w(TAG, "Synced user data in ${SystemClock.elapsedRealtime() - t0} ms, ${if(ok) "done" else "failed"}")
+            if(!ok) readyFor = null
+            if(!wasStarted || !ok) stop(rime)
+            mutableState.value = if(ok || before != State.Ready) before else State.Preparing(null)
+            ok
         }
     }
 

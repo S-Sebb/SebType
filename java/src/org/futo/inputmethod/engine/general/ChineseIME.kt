@@ -304,6 +304,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         }
         is RimeMessage.Commit -> {
             connect?.commitText(msg.value, 1)
+            if(!noLearning) ChineseSync.onChineseCommit(helper.context)
         }
         is RimeMessage.Passby -> {
             val (x11Code, mask) = msg.value

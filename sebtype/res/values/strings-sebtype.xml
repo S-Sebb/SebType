@@ -88,4 +88,25 @@
     <!-- Clipboard history is left out of a backup unless ticked (#34) -->
     <string name="sebtype_settings_export_clipboard">Include clipboard history</string>
     <string name="sebtype_settings_export_subtitle">Back up your settings, learned words, resources and more</string>
+    <!-- Sync of the learned words with the user's own server (#12) -->
+    <string name="sebtype_settings_sync">Sync</string>
+    <string name="sebtype_settings_sync_toggle">Sync learned words</string>
+    <string name="sebtype_settings_sync_off">中文\'s learned words, with your own server</string>
+    <string name="sebtype_settings_sync_not_yet">Not synced yet</string>
+    <string name="sebtype_settings_sync_syncing">Syncing…</string>
+    <string name="sebtype_settings_sync_synced">Last synced %s</string>
+    <string name="sebtype_settings_sync_offline">Can\'t reach the server. Syncs once it can</string>
+    <string name="sebtype_settings_sync_login_failed">Wrong username or password</string>
+    <string name="sebtype_settings_sync_login">Server and login</string>
+    <string name="sebtype_settings_sync_login_none">Not set</string>
+    <string name="sebtype_settings_sync_server">Server address</string>
+    <string name="sebtype_settings_sync_server_invalid">An https:// address</string>
+    <string name="sebtype_settings_sync_user">Username</string>
+    <string name="sebtype_settings_sync_password">Password</string>
+    <string name="sebtype_settings_sync_delete">Delete learned words on the server</string>
+    <string name="sebtype_settings_sync_delete_subtitle">The words on your devices stay</string>
+    <string name="sebtype_settings_sync_delete_confirm">Deletes the learned words of all your devices from the server and turns sync off. The words on this phone and your other devices stay. Turning sync on again uploads this phone\'s words.</string>
+    <string name="sebtype_settings_sync_delete_button">Delete</string>
+    <string name="sebtype_settings_sync_deleted">Deleted on the server</string>
+    <string name="sebtype_settings_sync_delete_failed">Can\'t reach the server. Nothing was deleted</string>
 </resources>

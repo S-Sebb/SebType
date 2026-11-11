@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.accessibility.AccessibilityUtils
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
+import org.futo.inputmethod.engine.general.ChineseSync
 import org.futo.inputmethod.engine.IMEManager
 import org.futo.inputmethod.engine.general.WordLearner
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo
@@ -377,6 +378,8 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
         DataStoreHelper.init(this)
 
+        ChineseSync.start(this)
+
         val filter = IntentFilter(Intent.ACTION_USER_UNLOCKED)
         registerReceiver(unlockReceiver, filter)
 
@@ -622,6 +625,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     override fun onWindowShown() {
         super.onWindowShown()
+        ChineseSync.onKeyboardShown()
         latinIMELegacy.onWindowShown()
         updateColorsIfDensityChanged()
     }
@@ -630,6 +634,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         super.onWindowHidden()
         latinIMELegacy.onWindowHidden()
         uixManager.onInputFinishing()
+        ChineseSync.onKeyboardHidden(this)
     }
 
     override fun onUpdateSelection(

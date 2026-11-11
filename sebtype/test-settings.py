@@ -14,7 +14,10 @@ in their pixel-framed cards on the cloth (#87). Then, with the system switched t
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
 password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
 clipboard copy, but still offer what was learned before; the toggle survives a restart, and turned off,
-learning resumes. Last, that a settings backup leaves clipboard history out unless its box is ticked,
+learning resumes. Then sync with a local sync-server (#12, made-up login and words): offline a learned
+word stays on the phone, back online a keyboard hide uploads it, a word in another device's folder on
+the server is offered after a sync, the login is in no log or plain file, and the delete button empties
+the server. Last, that a settings backup leaves clipboard history out unless its box is ticked,
 and that importing restores it (#34), with the backup screen's screenshot in English and Japanese
 (settings-backup-<locale>.png). Labels match the emulator's Chinese, English or Japanese UI. One line
 per check appended to RESULTS; each check finds its own way from the home screen, so one failing
@@ -25,6 +28,8 @@ import functools
 import glob
 import os
 import re
+import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -1352,6 +1357,346 @@ check("settings-smooth-scrolling", smooth_scrolling)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+# --- Sync with the user's own server (#12) ---
+# A local sync-server on this PC (127.0.0.1, which the emulator reaches as 10.0.2.2) over HTTPS with a
+# made-up certificate authority the emulator trusts until the end of the run, a made-up login and
+# made-up words. Nothing of the maintainer's own server.
+SYNC_USER, SYNC_PASSWORD = "sebtype-test", "made-up-pass-4821"
+OTHER_DEVICE = "5e5e5e5e-0000-4000-8000-000000000012"  # a made-up second device
+OTHER_CODE, OTHER_WORD = "lu lu", "鹿芦"
+SYNC = {}  # the server process, its port and data dir, the CA's file name on the emulator, airplane mode before
+NO_BACKUP = f"/data/data/{PKG}/no_backup"
+RIME_USER = f"/data/data/{PKG}/files/rime/user"
+SYNC_LOGIN = labels("服务器和登录", "Server and login", "サーバーとログイン")
+SYNC_DELETE = labels(
+    "删除服务器上学到的词",
+    "Delete learned words on the server",
+    "サーバー上の学習した単語を削除",
+)
+SYNC_OFFLINE = ("无法连接服务器", "Can't reach the server", "サーバーに接続できません")
+SYNC_SYNCED = ("上次同步", "Last synced", "前回の同期")
+SYNC_OFF = ("通过你自己的服务器", "with your own server", "自分のサーバーと")
+CA_SCRIPT = r"""set -u
+d=/data/local/tmp/sebtype-cacerts apex=/apex/com.android.conscrypt/cacerts
+zygotes=$(pidof zygote64 zygote)
+if [ "$1" = add ]; then
+  rm -rf $d; mkdir -p $d; cp $apex/* $d/; cp /data/local/tmp/$2 $d/
+  label=$(ls -Z $apex/$(ls $apex | head -1) | cut -d" " -f1)
+  for z in $zygotes; do
+    nsenter --mount=/proc/$z/ns/mnt -- sh -c "mount -t tmpfs tmpfs $apex && cp $d/* $apex/ && chmod 755 $apex && chmod 644 $apex/* && chcon $label $apex $apex/*" || exit 1
+  done
+else
+  for z in $zygotes; do nsenter --mount=/proc/$z/ns/mnt -- umount $apex; done
+  rm -rf $d /data/local/tmp/$2 /data/local/tmp/sebtype-ca.sh
+fi
+"""
+
+
+def sync_server_dir(*parts):
+    return os.path.join(SYNC["data"], "files", SYNC_USER, *parts)
+
+
+def openssl(*args, cwd):
+    subprocess.run(
+        ["openssl", *args], cwd=cwd, check=True, capture_output=True, timeout=60
+    )
+
+
+def start_sync_server():
+    """The server with TLS from a made-up CA, whose certificate the emulator's apps trust meanwhile."""
+    d = os.path.join(logdir, "sync-server")
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    openssl(
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        "ca.key",
+        "-out",
+        "ca.pem",
+        "-days",
+        "2",
+        "-subj",
+        "/CN=SebType test CA (made up)",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE",
+        "-addext",
+        "keyUsage=critical,keyCertSign",
+        cwd=d,
+    )
+    openssl(
+        "req",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        "server.key",
+        "-out",
+        "server.csr",
+        "-subj",
+        "/CN=10.0.2.2",
+        cwd=d,
+    )
+    with open(os.path.join(d, "ext.cnf"), "w") as f:
+        f.write("subjectAltName=IP:10.0.2.2\nextendedKeyUsage=serverAuth\n")
+    openssl(
+        "x509",
+        "-req",
+        "-in",
+        "server.csr",
+        "-CA",
+        "ca.pem",
+        "-CAkey",
+        "ca.key",
+        "-CAcreateserial",
+        "-out",
+        "server.pem",
+        "-days",
+        "2",
+        "-extfile",
+        "ext.cnf",
+        cwd=d,
+    )
+    SYNC["data"] = os.path.join(d, "data")
+    server = os.path.join(HERE, "..", "sync-server", "sebtype_sync.py")
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            server,
+            "adduser",
+            "--data",
+            SYNC["data"],
+            SYNC_USER,
+            "--password-stdin",
+        ],
+        input=SYNC_PASSWORD + "\n",
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        SYNC["port"] = sock.getsockname()[1]
+    SYNC["log"] = open(os.path.join(d, "server.log"), "w")  # noqa: SIM115 (open while the server runs)
+    SYNC["server"] = subprocess.Popen(
+        [
+            sys.executable,
+            "-I",
+            server,
+            "serve",
+            "--data",
+            SYNC["data"],
+            "--port",
+            str(SYNC["port"]),
+            "--tls-cert",
+            os.path.join(d, "server.pem"),
+            "--tls-key",
+            os.path.join(d, "server.key"),
+        ],
+        stdout=SYNC["log"],
+        stderr=subprocess.STDOUT,
+    )
+    wait_for(
+        "the sync server",
+        lambda: socket.socket().connect_ex(("127.0.0.1", SYNC["port"])) == 0,
+        30,
+    )
+
+    name = (
+        subprocess.run(
+            [
+                "openssl",
+                "x509",
+                "-subject_hash_old",
+                "-noout",
+                "-in",
+                os.path.join(d, "ca.pem"),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        + ".0"
+    )
+    with open(os.path.join(d, "ca.sh"), "w") as f:
+        f.write(CA_SCRIPT)
+    adb("push", os.path.join(d, "ca.pem"), f"/data/local/tmp/{name}")
+    adb("push", os.path.join(d, "ca.sh"), "/data/local/tmp/sebtype-ca.sh")
+    SYNC["ca"] = name
+    root(f"sh /data/local/tmp/sebtype-ca.sh add {name}")
+    # SebType's process forks from zygote again, now with the CA.
+    adb("shell", "am", "force-stop", PKG)
+
+
+def stop_sync_server():
+    if "airplane" in SYNC:
+        airplane(SYNC.pop("airplane") == "1")
+    if "ca" in SYNC:
+        root(f"sh /data/local/tmp/sebtype-ca.sh remove {SYNC.pop('ca')}")
+        adb("shell", "am", "force-stop", PKG)
+    if "server" in SYNC:
+        SYNC.pop("server").terminate()
+        SYNC.pop("log").close()
+
+
+def airplane(on):
+    adb("shell", "cmd", "connectivity", "airplane-mode", "enable" if on else "disable")
+    # Some images keep Wi-Fi on in airplane mode; the emulator's Wi-Fi and data are on by default.
+    adb("shell", "svc", "wifi", "disable" if on else "enable")
+    adb("shell", "svc", "data", "disable" if on else "enable")
+    reachable = lambda: adb(
+        "shell", "ping", "-c", "1", "-W", "2", "10.0.2.2", check=False, timeout=30
+    )
+    wait_for(
+        "the network " + ("off" if on else "back"),
+        lambda: (" 0% packet loss" in reachable()) != on,
+        60,
+        interval=3,
+    )
+
+
+def sync_by_hiding():
+    """Hides the keyboard over a minute after it was last up: a hide syncs at most once a minute."""
+    adb("shell", "input", "keyevent", "KEYCODE_HOME")
+    time.sleep(62)
+    open_field()
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+
+
+def server_snapshot(device):
+    path = sync_server_dir(device, "rime_ice.userdb.txt")
+    if not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def sync_setup():
+    to_language("ni", "你")
+    start_sync_server()
+    go(HOME["backup"], SYNC_LOGIN)
+    set_text(0, f"10.0.2.2:{SYNC['port']}")
+    set_text(1, SYNC_USER)
+    set_text(2, SYNC_PASSWORD)
+    screenshot("12-sync-login")
+    tap_text(labels("保存", "Save"))
+    # A first login turns sync on and syncs: this phone's learned words arrive in its own folder.
+    devices = wait_for(
+        "this phone's folder on the server",
+        lambda: os.path.isdir(sync_server_dir()) and os.listdir(sync_server_dir()),
+        90,
+    )
+    SYNC["device"] = devices[0]
+    wait_for("its snapshot", lambda: server_snapshot(SYNC["device"]), 30)
+    wait_for("the status 'Last synced'", lambda: screen_contains(SYNC_SYNCED), 20)
+    screenshot("12-sync-section")
+    return f"login saved, sync on; the phone's folder {SYNC['device'][:8]}… arrived; status Last synced"
+
+
+def sync_offline_learns():
+    SYNC["airplane"] = adb(
+        "shell", "settings", "get", "global", "airplane_mode_on"
+    ).strip()
+    airplane(True)
+    words = candidates_for("maogoujiya")
+    SYNC["word"] = words[0]
+    tap_candidate(SYNC["word"])
+    sync_by_hiding()
+    go(HOME["backup"])
+    wait_for(
+        "the status 'Can't reach the server'", lambda: screen_contains(SYNC_OFFLINE), 30
+    )
+    screenshot("12-sync-offline")
+    if SYNC["word"] in server_snapshot(SYNC["device"]):
+        raise Fail(f"{SYNC['word']} reached the server in airplane mode")
+    return f"offline: picked {SYNC['word']} for maogoujiya; status Can't reach the server; not on the server"
+
+
+def sync_online_uploads():
+    airplane(False)
+    sync_by_hiding()
+    snapshot = wait_for(
+        f"{SYNC['word']} on the server",
+        lambda: (
+            (s := server_snapshot(SYNC["device"])) and f"\t{SYNC['word']}\t" in s and s
+        ),
+        90,
+    )
+    folders = os.listdir(sync_server_dir())
+    if folders != [SYNC["device"]]:
+        raise Fail(f"folders on the server: {folders}")
+    line = next(l for l in snapshot.splitlines() if f"\t{SYNC['word']}\t" in l)
+    return f"back online, a keyboard hide uploaded it: {line!r}; only the phone's own folder"
+
+
+def sync_other_device():
+    before = candidates_for(OTHER_CODE.replace(" ", ""), expand=True)
+    if OTHER_WORD in before:
+        raise Fail(f"{OTHER_WORD} offered before it was synced: {before[:8]}")
+    # The other device's snapshot, in the phone's format with its own id and one made-up word.
+    snapshot = server_snapshot(SYNC["device"])
+    line = next(l for l in snapshot.splitlines() if f"\t{SYNC['word']}\t" in l)
+    key = OTHER_CODE + (" " if line.split("\t")[0].endswith(" ") else "")
+    tick = re.search(r"^#@/tick\t(\d+)", snapshot, re.MULTILINE)[1]
+    header = [
+        re.sub(r"^#@/user_id\t.*", f"#@/user_id\t{OTHER_DEVICE}", l)
+        for l in snapshot.splitlines()
+        if l.startswith("#")
+    ]
+    os.makedirs(sync_server_dir(OTHER_DEVICE))
+    with open(
+        sync_server_dir(OTHER_DEVICE, "rime_ice.userdb.txt"), "w", encoding="utf-8"
+    ) as f:
+        f.write("\n".join(header + [f"{key}\t{OTHER_WORD}\tc=50 d=50 t={tick}"]) + "\n")
+    sync_by_hiding()
+    wait_for(
+        "the other device's snapshot on the phone",
+        lambda: (
+            "rime_ice.userdb.txt"
+            in root(f"ls {RIME_USER}/sync/{OTHER_DEVICE} 2>/dev/null; true")
+        ),
+        60,
+    )
+    time.sleep(10)  # Rime merges it right after the download
+    got = candidates_for(OTHER_CODE.replace(" ", ""), expand=True)
+    if OTHER_WORD not in got:
+        raise Fail(f"after the sync, lulu -> {got[:8]}")
+    return f"a made-up word in another device's folder: lulu -> {got[: got.index(OTHER_WORD) + 1]} after a sync"
+
+
+def sync_delete_on_server():
+    go(HOME["backup"], SYNC_DELETE)
+    screenshot("12-sync-delete")
+    found = find_all(nodes(), labels("删除", "Delete", "削除"))
+    y, x = found[-1]  # the dialog's button, below its title
+    tap(x, y)
+    wait_for("the server emptied", lambda: not os.path.isdir(sync_server_dir()), 30)
+    go(HOME["backup"])
+    wait_for("sync shown as off", lambda: screen_contains(SYNC_OFF), 20)
+    return "the button deleted every device's words on the server and turned sync off"
+
+
+def sync_credentials_private():
+    found = []
+    if SYNC_PASSWORD in adb("logcat", "-d", timeout=120):
+        found.append("logcat")
+    if "account" not in root(f"ls {NO_BACKUP}/sync 2>/dev/null; true").split():
+        raise Fail(f"no account file in {NO_BACKUP}/sync")
+    # grep prints only the names of files with the password or username in plain text.
+    plain = root(
+        f"grep -rl -e {SYNC_PASSWORD} -e {SYNC_USER} /data/data/{PKG} 2>/dev/null | head -5; true"
+    ).split()
+    if plain:
+        found.append(f"files of the app: {plain}")
+    if found:
+        raise Fail(f"the login in plain text in {found}")
+    return "the login is in no log and no file of the app in plain text (no_backup/sync/account is encrypted)"
+
+
 def english_strings():
     """SebType's English strings as patterns (%d is any number), and FUTO's one SebType translates;
     not those that read the same in 日本語 (the name SebType)."""
@@ -1473,6 +1818,15 @@ check(
 check("incognito-off-learns-en", learns_again_en)
 check("incognito-off-learns-zh", learns_again("ni", "你", "sx"))
 check("incognito-off-learns-ja", learns_again("nihongo", "日本語", "hashi"))
+try:
+    check("sync-setup", sync_setup)
+    check("sync-offline-learns", sync_offline_learns)
+    check("sync-online-uploads", sync_online_uploads)
+    check("sync-other-device", sync_other_device)
+    check("sync-credentials-private", sync_credentials_private)
+    check("sync-delete-on-server", sync_delete_on_server)
+finally:
+    stop_sync_server()
 # Last, in en-US: importing a backup reinstalls the Chinese data in the background.
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-screenshots", backup_screenshots)

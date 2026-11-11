@@ -33,6 +33,8 @@
         android:minSdkVersion="33" />
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
+    <!-- SebType (#12): only for syncing learned words with the user's own server, over HTTPS -->
+    <uses-permission android:name="android.permission.INTERNET"/>
 
     <application android:label="@string/sebtype_app_name"
          android:icon="@mipmap/ic_launcher"
@@ -40,6 +42,7 @@
          android:supportsRtl="true"
          android:allowBackup="false"
          android:dataExtractionRules="@xml/data_extraction_rules"
+         android:networkSecurityConfig="@xml/sebtype_network_security"
          android:largeHeap="true"
          android:enableOnBackInvokedCallback="true"
          android:name=".CrashLoggingApplication">
