@@ -378,7 +378,13 @@ def toggle(path, texts):
 
 
 def check(name, fn):
-    if CHECKS and not any(name.startswith(c) for c in CHECKS):
+    # A named run of settings-japanese leaves the system in 日本語, and the file picker's labels the
+    # checks after it read (Downloads, Show roots) are English: settings-locale-back always runs.
+    if (
+        CHECKS
+        and not any(name.startswith(c) for c in CHECKS)
+        and name != "settings-locale-back"
+    ):
         return
     if name in TIMING and not os.environ.get("PERF_RUN"):
         if CHECKS:  # named, so say why it didn't run
