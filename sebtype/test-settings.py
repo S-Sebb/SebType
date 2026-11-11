@@ -284,7 +284,16 @@ def open_settings():
     # the app opens on its setup screen instead.
     adb("shell", "ime", "set", IME)
     adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", SETTINGS)
-    wait_for("the settings home screen", lambda: screen_has(HOME["about"]), 30)
+    wait_for("the settings home screen", home_shown, 30)
+
+
+def home_shown():
+    if screen_has(HOME["about"]):
+        return True
+    # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
+    # takes the setup screen on to the home screen.
+    adb("shell", "ime", "set", IME)
+    return False
 
 
 def go(*path):
