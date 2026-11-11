@@ -46,6 +46,9 @@ if [[ ${1:-} == --run ]]; then # under the lock: $avd and $port from the caller
     [[ -n $started ]] && timeout 300 bash -c 'until (( $("$0" shell cat /proc/loadavg | cut -d. -f1) < 3 )); do
       sleep 5; done' "$adb"
   fi
+  # An app too slow to answer under load (a cold boot, both emulators busy) gets an "isn't responding"
+  # dialog that covers the screen and fails every UI check after it; hidden, Android closes the app.
+  [[ $ANDROID_SERIAL == emulator-* ]] && "$adb" shell settings put global hide_error_dialogs 1
   "$@"; rc=$?
   if [[ -n $started && $avd == "$on_demand" ]]; then
     "$adb" emu kill > /dev/null

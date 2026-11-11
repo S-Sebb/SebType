@@ -14,7 +14,10 @@ and holds that lock for the whole device part of the run, so no other run reinst
 middle of it. An emulator that isn't running is started headless, and the run waits until it has
 settled (about 2 minutes after a cold boot). `guide35` then stays up: other projects (SebChat) use it
 through the same lock and expect it running. `guide35b` is stopped again when the run that started it
-ends. `ANDROID_SERIAL=<serial>` picks the device instead, a phone included.
+ends. On an emulator it also turns on `hide_error_dialogs`: under load an app can be slow enough to get
+an "isn't responding" dialog, which covers the screen and fails every UI check after it. With the
+setting on, Android closes that app instead. `ANDROID_SERIAL=<serial>` picks the device instead, a
+phone included.
 
 Once it holds the lock, `test-emulator.sh` sets the emulator's language list to `en-US` alone
 (`sebtype/set-locale`, the way Settings does it; its `locale` check logs the list it replaced). A fresh
