@@ -9,8 +9,10 @@ run at once (Decisions #2). `sebtype/emulator.sh` picks one for each run:
 | `guide35` | `emulator-5554` | 2.5 GB | `/tmp/agent-locks/devices/emulator-guide35.lock` |
 | `guide35b` | `emulator-5580` | 2.5 GB | `/tmp/agent-locks/devices/emulator-guide35b.lock` |
 
-It takes the emulator whose lock is free (a running one first), else the one with the shorter queue,
-and holds that lock for the whole device part of the run, so no other run reinstalls SebType in the
+It queues for the emulator whose lock is free (a running one first), else the one with the shorter
+queue. If that turn doesn't come within 5 seconds (another run took the lock first, or both are
+held), it queues for the other one too and runs on whichever comes first (#140);
+`sebtype/test-emulator-pick.sh` checks that choice with stub locks, no emulator needed. It holds that lock for the whole device part of the run, so no other run reinstalls SebType in the
 middle of it. An emulator that isn't running is started headless, and the run waits until it has
 settled (about 2 minutes after a cold boot). `guide35` then stays up: other projects (SebChat) use it
 through the same lock and expect it running. `guide35b` is stopped again when the run that started it
