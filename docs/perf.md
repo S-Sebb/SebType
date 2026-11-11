@@ -16,8 +16,8 @@ It reinstalls SebType, so everything SebType learned on that device is lost. It 
 own small test field (`sebtype/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
 back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 20
 minutes. While it runs it holds the device's devq lock, shared by all projects:
-`/tmp/agent-locks/devices/emulator-<AVD>.lock`, or on a phone the lock named after its maker and
-model (`nothing-a001.lock`), which other projects take for the phone too.
+`/tmp/agent-locks/devices/emulator-<AVD>.lock`, or on a phone the lock of the PC it is plugged
+into (`nobara-pc.lock`), which other projects take for the phone too.
 
 What it measures:
 
