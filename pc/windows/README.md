@@ -67,10 +67,10 @@ ever on, the account's words are saved to the server first.
 | SebType's Weasel | Machine: installs `sebtype-weasel-<version>-installer.exe` silently when it isn't already the installed one. It replaces any other Weasel | Upstream Weasel 0.17.4 with SebType's patch and icons, see below |
 | SebType's Mozc | Machine: installs `SebType-Mozc-<version>.msi` when it isn't already the installed one, and enables its 日本語 profile by default for every user (`HKLM\SOFTWARE\Microsoft\CTF\TIP\<Mozc>\LanguageProfile\0x00000411\<profile>`, `Enable=1`) | See Japanese below. Mozc registers its profile without enabling it by default, so Windows turned it off for the user when the language list changed later (#65) |
 | Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`tools/rime-data/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. Weasel's librime has librime-lua built in |
-| Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
+| Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+\`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
 | Typo correction | `sebtype_typo/keyboard: pc` in `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
-| Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept | A Shift tap and Alt+` toggle あ ⇄ English, as on Linux |
+| Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept | A Shift tap toggles あ ⇄ English, and Alt+\` あ ⇄ ア, as on Linux (#117) |
 | Input methods | Language list: the chosen ones first, EN (US layout first) → 中文 (Weasel only) → 日本語 (Mozc only), then the account's other languages. Other Chinese and Japanese IMEs are taken off those two languages, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |
 | Switch keys | `HKCU\Keyboard Layout\Toggle`: Hotkey, Language Hotkey and Layout Hotkey = 3 (none), applied at once | Alt+Shift and Ctrl+Shift no longer switch language |
 | Per-window input | "Let me use a different input method for each app window" off | One language for every window, as on Linux |
@@ -88,12 +88,17 @@ SebType's Android build uses. `.github/workflows/weasel.yml` runs it on GitHub's
 something under `pc/windows/weasel/` or `pc/icons/` changes; the installer is that run's artifact
 `sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
 
-The patch is about 20 lines:
+The patch is about 90 lines:
 
 - The input method is named **中文**, so Windows' Win+Space switcher shows 中文(简体，中国) / 中文 rather
   than 小狼毫 (#69).
 - English mode shows **A** instead of **a** while Caps Lock is on, and the icon redraws when Caps Lock
   changes (Decisions #2, "Everywhere").
+- The menu of the tray icon (right-click) is Chinese's one switch with its key, `简 → 繁 Ctrl+Shift+F`
+  (`繁 → 简` while traditional), as on Linux (#117), instead of Weasel's settings, dictionary manager,
+  sync, folders, help, deploy, restart and exit. Rime's state reaches the text service as a new
+  `status.traditional`, and the click sets `traditionalization` through WeaselServer. Rime's switcher
+  (Ctrl+\`) has the same one switch: SebType's Chinese data keeps `states` only on traditionalization.
 - The installer marks the build (`SebType` in Weasel's uninstall entry, which `setup.ps1` checks) and
   never turns on Weasel's update check, which would replace SebType's build with upstream's.
 
@@ -109,6 +114,11 @@ with each size's own drawing (16, 20, 24, 32 px; 40–64 px from the 48 px one):
 Windows shows them in the taskbar's input indicator, where Weasel's language bar button sits, and Weasel
 shows them in its status tip. Windows draws the indicator for the US layout itself (ENG), so plain English
 can't show SebType's EN key there.
+
+What Windows itself shows and SebType can't change (#117): the input indicator's left-click list of
+input methods (with "More keyboard settings"), Windows' own items in the Win+Space switcher, and, in the
+optional floating language bar, Windows' own buttons (Help, Options, Restore). The engines' items are
+gone from all of them.
 
 ### Test
 
@@ -128,6 +138,8 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`/tmp/sebtype/73-*.png`): welcome in all three languages, languages, installing, finish |
 | `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, Weasel and Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
+| `japanese-alt-grave` | In Notepad, in 日本語: Alt+\` types ア, again あ; after a Shift tap to English, Alt+\` still types `a`, and a Shift tap is あ again |
+| `chinese-tray-menu` | In a TSF text field of the test's own: the tray icon's menu is the one item `简 → 繁 Ctrl+Shift+F`; picking it makes `houlai` → 後來, and the menu then reads `繁 → 简 Ctrl+Shift+F` and goes back (`/tmp/sebtype/117-menu-zh-*.png`) |
 | `round1-upgrade`, `-upgrade-keeps-learned-words` | A silent rerun exits 0 and keeps the Rime and Mozc learned-word folders |
 | `japanese-after-language-change` | After a language is added and removed, Japanese still types |
 | `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; Weasel, Mozc and SebType gone |
@@ -146,8 +158,14 @@ Linux and the phone, with SebType's changes:
 - **Tray icons:** the Set E keycaps from `pc/icons`: あ (hiragana), ア (katakana, full and half
   width), **a** in English (direct input, half and full width alphanumeric) and **A** in English while
   Caps Lock is on (Decisions #2, "Everywhere").
-- **Keys:** a Shift tap and Alt+` toggle あ ⇄ English, as Shift does in Chinese; Win+Space is the only
-  language switch and cycles EN → 中 → 日. The keymap is Linux's, `pc/linux/mozc-keymap.tsv`.
+- **Keys:** a Shift tap toggles あ ⇄ English, as Shift does in Chinese, and Alt+\` あ ⇄ ア before typing
+  (#117); Win+Space is the only language switch and cycles EN → 中 → 日. The keymap is Linux's,
+  `pc/linux/mozc-keymap.tsv`; `menu.patch` makes Mozc's kana switch a two-way あ ⇄ ア, without the
+  half-width katakana step.
+- **Menu:** the tray icon's menu (right-click) is Japanese's one switch with its key, ``あ → ア Alt+` ``
+  (`ア → あ` in katakana), as on Linux (#117), instead of Mozc's six input modes, dictionary tool, word
+  registration, properties, about and help. The floating language bar loses Mozc's Tool button and
+  Help items too (`menu.patch`).
 
 ### Build
 
@@ -210,9 +228,10 @@ a local standard user it creates for the run (`sebtype-test`):
 - `setup.ps1 -User -Languages en,ja` for that user: Japanese after English, Chinese where it was;
 - the name Windows shows for Japanese, 日本語;
 - typing in Notepad: Win+Space to 日本語, `nihongo` → 日本語, and the Shift tap there and back;
-- typing in its own text field: `nihongo` → 日本語, あ ⇄ ア (from the tray menu: a US keyboard has no
-  katakana key), Shift tap and Alt+` for English, Shift+letter staying Japanese in あ and English in
-  English, and the tray icon in each mode and with Caps Lock;
+- typing in its own text field: `nihongo` → 日本語, the tray menu's one item ``あ → ア Alt+` `` and back
+  (a picture of each, `menu-ja-*.png`), Alt+\` for あ ⇄ ア and nothing in English, the Shift tap for
+  English, Shift+letter staying Japanese in あ and English in English, and the tray icon in each mode
+  and with Caps Lock;
 - `setup.ps1 -User -Undo` for that user.
 
 After that it removes the user, its profile and Mozc. Last, it checks that your own language list,

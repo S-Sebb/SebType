@@ -17,7 +17,7 @@ $WeaselTag = '0.17.4'
 $RimeTag = '1.16.1'
 $BoostVersion = '1.84.0'
 # Bump on every change to what this builds; setup-ime.ps1 reinstalls when the installed one differs.
-$SebTypeBuild = 2
+$SebTypeBuild = 3
 
 function Invoke-Checked([string]$what, [scriptblock]$cmd) {
   & $cmd

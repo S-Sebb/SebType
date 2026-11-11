@@ -154,7 +154,7 @@ done
 mkdir -p "$out/logs"
 scp -q -r 'TCSBackEnd:C:/sebtype-setup-test/out/*' 'TCSBackEnd:C:/sebtype-setup-test/run.log' "$out/logs/" 2>/dev/null
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
-for png in "$out"/logs/73-*.png; do
+for png in "$out"/logs/73-*.png "$out"/logs/117-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "/tmp/sebtype/$(basename "$png")"
 done
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"

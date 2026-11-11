@@ -19,9 +19,11 @@ has the details):
   - The patches to Mozc in pc/linux/mozc/ and pc/windows/mozc/, and pc/linux/mozc-keymap.tsv: Mozc's
     BSD-3-Clause licence.
   - pc/windows/weasel/sebtype.patch, a patch to Weasel: Weasel's GPL-3.0.
+  - pc/linux/rime/menu.patch, a patch to fcitx5-rime: fcitx5-rime's LGPL-2.1-or-later.
   - rime-android/patches/, patches to RimeJni: RimeJni's MIT licence.
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
-  librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0.
+  librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0, fcitx5-rime
+  LGPL-2.1-or-later.
 
 FUTO's NOTICE follows unchanged, then the credits for SebType's English dictionary.
 

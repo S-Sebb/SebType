@@ -1,0 +1,213 @@
+diff --git a/src/session/session.cc b/src/session/session.cc
+index 586c879..09f099f 100644
+--- a/src/session/session.cc
++++ b/src/session/session.cc
+@@ -2188,10 +2188,9 @@ bool Session::InputModeSwitchKanaType(commands::Command *command) {
+       next_type = transliteration::FULL_KATAKANA;
+       break;
+ 
++    // SebType: hiragana ⇄ katakana, as Alt+` does (Decisions #2, menu hotkeys); SebType offers no
++    // half-width katakana.
+     case transliteration::FULL_KATAKANA:
+-      next_type = transliteration::HALF_KATAKANA;
+-      break;
+-
+     case transliteration::HALF_KATAKANA:
+       next_type = transliteration::HIRAGANA;
+       break;
+diff --git a/src/unix/fcitx5/mozc_engine.cc b/src/unix/fcitx5/mozc_engine.cc
+index c326e4e..7e03938 100644
+--- a/src/unix/fcitx5/mozc_engine.cc
++++ b/src/unix/fcitx5/mozc_engine.cc
+@@ -23,7 +23,6 @@
+ #include <fcitx-config/rawconfig.h>
+ #include <fcitx-utils/log.h>
+ #include <fcitx-utils/macros.h>
+-#include <fcitx-utils/semver.h>
+ #include <fcitx-utils/standardpath.h>
+ #include <fcitx-utils/stringutils.h>
+ #include <fcitx/action.h>
+@@ -42,7 +41,6 @@
+ #include <string>
+ 
+ #include "base/init_mozc.h"
+-#include "base/process.h"
+ #include "protocol/commands.pb.h"
+ #include "unix/fcitx5/i18nwrapper.h"
+ #include "unix/fcitx5/mozc_client_interface.h"
+@@ -106,23 +104,19 @@ const struct CompositionModeInfo {
+ };
+ const size_t kNumCompositionModes = FCITX_ARRAY_SIZE(kPropCompositionModes);
+ 
+-MozcModeSubAction::MozcModeSubAction(MozcEngine *engine,
+-                                     mozc::commands::CompositionMode mode)
+-    : engine_(engine), mode_(mode) {
+-  setShortText(_(kPropCompositionModes[mode].description));
+-  setLongText(_(kPropCompositionModes[mode].description));
+-  setIcon(kPropCompositionModes[mode].icon);
+-  setCheckable(true);
++std::string MozcKanaAction::shortText(InputContext *ic) const {
++  return katakana(ic) ? "ア → あ\tAlt+`" : "あ → ア\tAlt+`";
+ }
+ 
+-bool MozcModeSubAction::isChecked(InputContext *ic) const {
+-  auto *mozc_state = engine_->mozcState(ic);
+-  return mozc_state->GetCompositionMode() == mode_;
++void MozcKanaAction::activate(InputContext *ic) {
++  engine_->mozcState(ic)->SendCompositionMode(
++      katakana(ic) ? mozc::commands::HIRAGANA : mozc::commands::FULL_KATAKANA);
+ }
+ 
+-void MozcModeSubAction::activate(InputContext *ic) {
+-  auto *mozc_state = engine_->mozcState(ic);
+-  mozc_state->SendCompositionMode(mode_);
++bool MozcKanaAction::katakana(InputContext *ic) const {
++  const auto mode = engine_->mozcState(ic)->GetCompositionMode();
++  return mode == mozc::commands::FULL_KATAKANA ||
++         mode == mozc::commands::HALF_KATAKANA;
+ }
+ 
+ // This array must correspond with the CompositionMode enum in the
+@@ -145,77 +139,8 @@ MozcEngine::MozcEngine(Instance *instance)
+       client_(createClient()),
+       factory_([this](InputContext &ic) { return new MozcState(&ic, this); }) {
+   pool_ = std::make_unique<MozcClientPool>(GetSharedStatePolicy());
+-  for (auto command :
+-       {mozc::commands::DIRECT, mozc::commands::HIRAGANA,
+-        mozc::commands::FULL_KATAKANA, mozc::commands::FULL_ASCII,
+-        mozc::commands::HALF_ASCII, mozc::commands::HALF_KATAKANA}) {
+-    modeActions_.push_back(std::make_unique<MozcModeSubAction>(this, command));
+-  }
+-
+   instance_->inputContextManager().registerProperty("mozcState", &factory_);
+-  instance_->userInterfaceManager().registerAction("mozc-tool", &toolAction_);
+-  toolAction_.setShortText(_("Mozc Settings"));
+-  toolAction_.setLongText(_("Mozc Settings"));
+-  toolAction_.setIcon("fcitx_mozc_tool");
+-
+-  int i = 0;
+-  for (auto &modeAction : modeActions_) {
+-    instance_->userInterfaceManager().registerAction(
+-        kPropCompositionModes[i].name, modeAction.get());
+-    toolMenu_.addAction(modeAction.get());
+-    i++;
+-  }
+-
+-  separatorAction_.setSeparator(true);
+-  instance_->userInterfaceManager().registerAction("mozc-separator",
+-                                                   &separatorAction_);
+-
+-  SemanticVersion version;
+-  version.setMajor(5);
+-  version.setMinor(0);
+-  version.setPatch(22);
+-  // Where we fix the support for separator
+-  if (auto fcitxVersion = SemanticVersion::parse(Instance::version());
+-      fcitxVersion && *fcitxVersion >= version) {
+-    toolMenu_.addAction(&separatorAction_);
+-  }
+-
+-  instance_->userInterfaceManager().registerAction("mozc-tool-config",
+-                                                   &configToolAction_);
+-  configToolAction_.setShortText(_("Configuration Tool"));
+-  configToolAction_.setIcon("fcitx_mozc_tool");
+-  configToolAction_.connect<SimpleAction::Activated>([](InputContext *) {
+-    mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=config_dialog");
+-  });
+-
+-  instance_->userInterfaceManager().registerAction("mozc-tool-dict",
+-                                                   &dictionaryToolAction_);
+-  dictionaryToolAction_.setShortText(_("Dictionary Tool"));
+-  dictionaryToolAction_.setIcon("fcitx_mozc_dictionary");
+-  dictionaryToolAction_.connect<SimpleAction::Activated>([](InputContext *) {
+-    mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=dictionary_tool");
+-  });
+-
+-  instance_->userInterfaceManager().registerAction("mozc-tool-add",
+-                                                   &addWordAction_);
+-  addWordAction_.setShortText(_("Add Word"));
+-  addWordAction_.connect<SimpleAction::Activated>([](InputContext *) {
+-    mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=word_register_dialog");
+-  });
+-
+-  instance_->userInterfaceManager().registerAction("mozc-tool-about",
+-                                                   &aboutAction_);
+-  aboutAction_.setShortText(_("About Mozc"));
+-  aboutAction_.connect<SimpleAction::Activated>([](InputContext *) {
+-    mozc::Process::SpawnMozcProcess("mozc_tool", "--mode=about_dialog");
+-  });
+-
+-  toolMenu_.addAction(&configToolAction_);
+-  toolMenu_.addAction(&dictionaryToolAction_);
+-  toolMenu_.addAction(&addWordAction_);
+-  toolMenu_.addAction(&aboutAction_);
+-
+-  toolAction_.setMenu(&toolMenu_);
++  instance_->userInterfaceManager().registerAction("mozc-kana", &kanaAction_);
+ 
+   globalConfigReloadHandle_ =
+       instance_->watchEvent(EventType::GlobalConfigReloaded,
+@@ -267,7 +192,7 @@ void MozcEngine::activate(const fcitx::InputMethodEntry & /*entry*/,
+   auto *ic = event.inputContext();
+   auto *mozc_state = mozcState(ic);
+   mozc_state->FocusIn();
+-  ic->statusArea().addAction(StatusGroup::InputMethod, &toolAction_);
++  ic->statusArea().addAction(StatusGroup::InputMethod, &kanaAction_);
+ }
+ void MozcEngine::deactivate(const fcitx::InputMethodEntry & /*entry*/,
+                             fcitx::InputContextEvent &event) {
+@@ -336,9 +261,7 @@ MozcState *MozcEngine::mozcState(InputContext *ic) {
+ }
+ 
+ void MozcEngine::compositionModeUpdated(InputContext *ic) {
+-  for (const auto &modeAction : modeActions_) {
+-    modeAction->update(ic);
+-  }
++  kanaAction_.update(ic);
+   ic->updateUserInterface(UserInterfaceComponent::StatusArea);
+ }
+ 
+diff --git a/src/unix/fcitx5/mozc_engine.h b/src/unix/fcitx5/mozc_engine.h
+index beff429..49d75d8 100644
+--- a/src/unix/fcitx5/mozc_engine.h
++++ b/src/unix/fcitx5/mozc_engine.h
+@@ -106,15 +106,18 @@ FCITX_CONFIGURATION(
+     ExternalOption aboutTool{this, "About Mozc", _("About Mozc"),
+                              toolCommand("--mode=about_dialog")};);
+ 
+-class MozcModeSubAction : public SimpleAction {
++// SebType: Japanese's only menu entry (Decisions #2, Japanese menu, #117), like 中文's 简 → 繁:
++// あ → ア with its key, Alt+`, which does the same. It replaces Mozc's input modes and tools.
++class MozcKanaAction : public Action {
+  public:
+-  MozcModeSubAction(MozcEngine *engine, mozc::commands::CompositionMode mode);
+-  bool isChecked(fcitx::InputContext *ic) const override;
++  explicit MozcKanaAction(MozcEngine *engine) : engine_(engine) {}
++  std::string shortText(fcitx::InputContext *ic) const override;
++  std::string icon(fcitx::InputContext * /*unused*/) const override { return ""; }
+   void activate(fcitx::InputContext *ic) override;
+ 
+  private:
++  bool katakana(fcitx::InputContext *ic) const;
+   MozcEngine *engine_;
+-  mozc::commands::CompositionMode mode_;
+ };
+ 
+ class MozcEngine final : public InputMethodEngineV2 {
+@@ -161,15 +164,10 @@ class MozcEngine final : public InputMethodEngineV2 {
+   std::unique_ptr<MozcClientInterface> client_;
+   std::unique_ptr<MozcClientPool> pool_;
+   FactoryFor<MozcState> factory_;
+-  SimpleAction toolAction_;
+-  std::vector<std::unique_ptr<MozcModeSubAction>> modeActions_;
++  MozcKanaAction kanaAction_{this};
+   std::unique_ptr<HandlerTableEntry<EventHandler>> globalConfigReloadHandle_;
+   ScopedConnection xkbStateChangedConnection_;
+ 
+-  SimpleAction configToolAction_, dictionaryToolAction_, addWordAction_,
+-      aboutAction_;
+-  SimpleAction separatorAction_;
+-  Menu toolMenu_;
+   MozcEngineConfig config_;
+   bool deactivating_ = false;
+ 

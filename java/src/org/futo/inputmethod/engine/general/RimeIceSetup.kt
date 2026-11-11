@@ -107,10 +107,8 @@ object RimeIceSetup {
     /** The configuration of the Chinese QWERTY layout in an ordinary text field, read from the settings. */
     private fun defaultConfiguration(context: Context): Configuration {
         val prefs = PreferenceUtils.getDefaultSharedPreferences(context)
-        val pinyinScheme = context.getSetting(ChineseIMESettings.PinyinSchemeSetting)
-            .toEnumOrNull<ChineseIMESettings.PinyinScheme>() ?: ChineseIMESettings.PinyinScheme.FullPinyin
         return Configuration(
-            schema = schemaFor("qwerty", pinyinScheme)!!,
+            schema = schemaFor("qwerty")!!,
             learning = prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true),
             fuzzyMode = ChineseIMESettings.FuzzyPinyinModes.fromCommaString(
                 context.getSetting(ChineseIMESettings.FuzzyPinyinSetting)
@@ -118,9 +116,9 @@ object RimeIceSetup {
         )
     }
 
-    fun schemaFor(layoutHint: String?, pinyinScheme: ChineseIMESettings.PinyinScheme) = when(layoutHint) {
-        "qwerty" -> if(pinyinScheme == ChineseIMESettings.PinyinScheme.FullPinyin) RimeIceBundle.SCHEMA
-                    else pinyinScheme.rimeId
+    // Full pinyin is the only Chinese scheme (Decisions #2, #117): SebType's data has no double pinyin.
+    fun schemaFor(layoutHint: String?) = when(layoutHint) {
+        "qwerty" -> RimeIceBundle.SCHEMA
         "stroke" -> "stroke"
         null -> null
         else -> {

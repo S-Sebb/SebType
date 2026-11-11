@@ -1,0 +1,352 @@
+diff --git a/session/session.cc b/session/session.cc
+index 8186b0a..0c49a25 100644
+--- a/session/session.cc
++++ b/session/session.cc
+@@ -2174,10 +2174,9 @@ bool Session::CompositionModeSwitchKanaType(commands::Command* command) {
+       next_type = transliteration::FULL_KATAKANA;
+       break;
+ 
++    // SebType (#117): Alt+` toggles あ ⇄ ア, as Japanese's one menu switch
++    // does, with no half-width katakana step.
+     case transliteration::FULL_KATAKANA:
+-      next_type = transliteration::HALF_KATAKANA;
+-      break;
+-
+     case transliteration::HALF_KATAKANA:
+       next_type = transliteration::HIRAGANA;
+       break;
+diff --git a/win32/tip/tip_lang_bar.cc b/win32/tip/tip_lang_bar.cc
+index 8ea3fef..c08b606 100644
+--- a/win32/tip/tip_lang_bar.cc
++++ b/win32/tip/tip_lang_bar.cc
+@@ -52,15 +52,6 @@ namespace win32 {
+ namespace tsf {
+ namespace {
+ 
+-// The GUID of the help menu in the system language bar.
+-
+-// {ED9D5450-EBE6-4255-8289-F8A31E687228}
+-constexpr GUID kSystemLangBarHelpMenu = {
+-    0xED9D5450,
+-    0xEBE6,
+-    0x4255,
+-    {0x82, 0x89, 0xF8, 0xA3, 0x1E, 0x68, 0x72, 0x28}};
+-
+ #ifdef GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ // {D8C8D5EB-8213-47CE-95B7-BA3F67757F94}
+@@ -70,17 +61,6 @@ constexpr GUID kTipLangBarItem_Button = {
+     0x47ce,
+     {0x95, 0xb7, 0xba, 0x3f, 0x67, 0x75, 0x7f, 0x94}};
+ 
+-// {0EAB48C4-F798-4CC8-91FA-087B24F520A8}
+-constexpr GUID kTipLangBarItem_ToolButton = {
+-    0xeab48c4, 0xf798, 0x4cc8, {0x91, 0xfa, 0x8, 0x7b, 0x24, 0xf5, 0x20, 0xa8}};
+-
+-// {6D46F0F2-2924-4666-9B89-4F23699B2203}
+-constexpr GUID kTipLangBarItem_HelpMenu = {
+-    0x6d46f0f2,
+-    0x2924,
+-    0x4666,
+-    {0x9b, 0x89, 0x4f, 0x23, 0x69, 0x9b, 0x22, 0x3}};
+-
+ #else  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ // {FC8E2486-F5BA-4863-91C3-8D166B454604}
+@@ -90,20 +70,6 @@ constexpr GUID kTipLangBarItem_Button = {
+     0x4863,
+     {0x91, 0xc3, 0x8d, 0x16, 0x6b, 0x45, 0x46, 0x4}};
+ 
+-// {1BA637CA-7521-4F21-B51E-6516271A9FE3}
+-constexpr GUID kTipLangBarItem_ToolButton = {
+-    0x1ba637ca,
+-    0x7521,
+-    0x4f21,
+-    {0xb5, 0x1e, 0x65, 0x16, 0x27, 0x1a, 0x9f, 0xe3}};
+-
+-// {F78AD6B1-49D3-400E-8218-896F22A70011}
+-constexpr GUID kTipLangBarItem_HelpMenu = {
+-    0xf78ad6b1,
+-    0x49d3,
+-    0x400e,
+-    {0x82, 0x18, 0x89, 0x6f, 0x22, 0xa7, 0x0, 0x11}};
+-
+ #endif  // GOOGLE_JAPANESE_INPUT_BUILD
+ 
+ constexpr bool kShowInTaskbar = true;
+@@ -240,77 +206,8 @@ HRESULT TipLangBar::InitLangBar(TipLangBarCallback* text_service) {
+     input_mode_button_for_win8_ = std::move(input_mode_menu);
+   }
+ 
+-  if (tool_button_menu_ == nullptr) {
+-    // Add the "Tool" button.
+-    // TODO(yukawa): Make an Icon for kWordRegister.
+-    const TipLangBarMenuItem kToolMenu[] = {
+-        {kTipLangBarItemTypeDefault, TipLangBarCallback::kDictionary,
+-         IDS_DICTIONARY, IDI_DICTIONARY_NT, IDI_DICTIONARY},
+-        {kTipLangBarItemTypeDefault, TipLangBarCallback::kWordRegister,
+-         IDS_WORD_REGISTER, IDI_DICTIONARY_NT,
+-         IDI_DICTIONARY},  // Use Dictionary icon temporarily
+-        {kTipLangBarItemTypeDefault, TipLangBarCallback::kProperty,
+-         IDS_PROPERTY, IDI_PROPERTY_NT, IDI_PROPERTY},
+-        {kTipLangBarItemTypeSeparator, 0, 0, 0, 0},
+-        {kTipLangBarItemTypeDefault, TipLangBarCallback::kCancel, IDS_CANCEL, 0,
+-         0},
+-    };
+-
+-    // Always show the tool icon so that a user can find the icon.
+-    // This setting is different from that of MS-IME but we believe this is
+-    // more friendly. See b/2275683
+-    auto tool_button = MakeComPtr<TipLangBarMenuButton>(
+-        text_service, kTipLangBarItem_ToolButton, kShowInTaskbar);
+-    if (tool_button == nullptr) {
+-      return E_OUTOFMEMORY;
+-    }
+-
+-    result = tool_button->Init(TipDllModule::module_handle(), IDS_TOOL,
+-                               &kToolMenu[0], std::size(kToolMenu), IDI_TOOL_NT,
+-                               IDI_TOOL);
+-    if (result != S_OK) {
+-      return result;
+-    }
+-    lang_bar_item_mgr_->AddItem(tool_button.get());
+-    tool_button_menu_ = std::move(tool_button);
+-  }
+-
+-  if (help_menu_ == nullptr) {
+-    // Add the "Help" items to the system language bar help menu.
+-    const TipLangBarMenuItem kHelpMenu[] = {
+-        {0, TipLangBarCallback::kAbout, IDS_ABOUT, 0, 0},
+-        {0, TipLangBarCallback::kHelp, IDS_HELP, 0, 0},
+-    };
+-
+-    auto help_menu = MakeComPtr<TipSystemLangBarMenu>(text_service,
+-                                                      kTipLangBarItem_HelpMenu);
+-    if (help_menu == nullptr) {
+-      return E_OUTOFMEMORY;
+-    }
+-
+-    result = help_menu->Init(TipDllModule::module_handle(), &kHelpMenu[0],
+-                             std::size(kHelpMenu));
+-    if (result != S_OK) {
+-      return result;
+-    }
+-
+-    wil::com_ptr_nothrow<ITfLangBarItem> help_menu_item;
+-    result =
+-        lang_bar_item_mgr_->GetItem(kSystemLangBarHelpMenu, &help_menu_item);
+-    if (result != S_OK) {
+-      return result;
+-    }
+-    ASSIGN_OR_RETURN_HRESULT(auto source,
+-                             ComQueryHR<ITfSource>(help_menu_item));
+-    result = source->AdviseSink(IID_ITfSystemLangBarItemSink, help_menu.get(),
+-                                &help_menu_cookie_);
+-    if (result != S_OK) {
+-      return result;
+-    }
+-
+-    help_menu_ = std::move(help_menu);
+-  }
+-
++  // SebType (#117): no Tool button or Help items. Japanese's menu is its one
++  // switch, あ → ア, as on Linux (TipLangBarButton::KanaSwitch).
+   return result;
+ }
+ 
+@@ -333,25 +230,6 @@ HRESULT TipLangBar::UninitLangBar() {
+     item->RemoveItem(input_button_menu_.get());
+     input_button_menu_.reset();
+   }
+-  if (tool_button_menu_) {
+-    item->RemoveItem(tool_button_menu_.get());
+-    tool_button_menu_.reset();
+-  }
+-
+-  if (help_menu_ && (help_menu_cookie_ != TF_INVALID_COOKIE)) {
+-    wil::com_ptr_nothrow<ITfLangBarItem> help_menu_item;
+-    result = item->GetItem(kSystemLangBarHelpMenu, &help_menu_item);
+-    if (result == S_OK) {
+-      auto source = ComQuery<ITfSource>(help_menu_item);
+-      if (source) {
+-        result = source->UnadviseSink(help_menu_cookie_);
+-        if (result == S_OK) {
+-          help_menu_cookie_ = TF_INVALID_COOKIE;
+-          help_menu_.reset();
+-        }
+-      }
+-    }
+-  }
+ 
+   return result;
+ }
+@@ -361,7 +239,6 @@ HRESULT TipLangBar::UpdateMenu(bool enabled, uint32_t composition_mode) {
+   input_button_menu_->SelectMenuItem(menu_id);
+   input_mode_button_for_win8_->SelectMenuItem(menu_id);
+   input_button_menu_->SetEnabled(enabled);
+-  tool_button_menu_->SetEnabled(enabled);
+   input_mode_button_for_win8_->SetEnabled(enabled);
+   return S_OK;
+ }
+diff --git a/win32/tip/tip_lang_bar.h b/win32/tip/tip_lang_bar.h
+index 462b12c..94fa69a 100644
+--- a/win32/tip/tip_lang_bar.h
++++ b/win32/tip/tip_lang_bar.h
+@@ -45,14 +45,9 @@ namespace mozc {
+ namespace win32 {
+ namespace tsf {
+ 
+-class TipSystemLangBarMenu;
+-
+ class TipLangBar {
+  public:
+-  TipLangBar()
+-      : tool_button_menu_(nullptr),
+-        help_menu_(nullptr),
+-        help_menu_cookie_(TF_INVALID_COOKIE) {}
++  TipLangBar() = default;
+   TipLangBar(const TipLangBar&) = delete;
+   TipLangBar& operator=(const TipLangBar&) = delete;
+   ~TipLangBar() = default;
+@@ -85,15 +80,6 @@ class TipLangBar {
+   // To avoid the compile error we use CComPtr<ITfLangBarItemButton> instead.
+   wil::com_ptr_nothrow<TipLangBarToggleButton> input_button_menu_;
+   wil::com_ptr_nothrow<TipLangBarToggleButton> input_mode_button_for_win8_;
+-
+-  // Represents the tool button menu in the language bar.
+-  wil::com_ptr_nothrow<TipLangBarMenuButton> tool_button_menu_;
+-
+-  // Represents the help menu in the system language bar.
+-  wil::com_ptr_nothrow<TipSystemLangBarMenu> help_menu_;
+-
+-  // The cookie issued for installing ITfSystemLangBarItemSink of help_menu_.
+-  DWORD help_menu_cookie_;
+ };
+ 
+ }  // namespace tsf
+diff --git a/win32/tip/tip_lang_bar_menu.cc b/win32/tip/tip_lang_bar_menu.cc
+index 4e1ff98..9988375 100644
+--- a/win32/tip/tip_lang_bar_menu.cc
++++ b/win32/tip/tip_lang_bar_menu.cc
+@@ -265,51 +265,10 @@ STDMETHODIMP TipLangBarButton::OnClick(TfLBIClick click, POINT point,
+     return S_OK;
+   }
+ 
++  const wchar_t* label;
++  const TipLangBarMenuData* data = menu_data(KanaSwitch(&label));
+   wil::unique_hmenu menu(::CreatePopupMenu());
+-  for (size_t i = 0; i < menu_data_size(); ++i) {
+-    TipLangBarMenuData* data = menu_data(i);
+-    const UINT id = static_cast<UINT>(data->item_id_);
+-    MENUITEMINFO info = {};
+-    info.cbSize = CCSIZEOF_STRUCT(MENUITEMINFO, hbmpItem);
+-    if (data->flags_ == TF_LBMENUF_SEPARATOR) {
+-      info.fMask |= MIIM_FTYPE;
+-      info.fType |= MFT_SEPARATOR;
+-    } else {
+-      info.fMask |= MIIM_ID;
+-      info.wID = id;
+-
+-      info.fMask |= MIIM_FTYPE;
+-      info.fType |= MFT_STRING;
+-
+-      info.fMask |= MIIM_STRING;
+-      info.dwTypeData = data->text_;
+-
+-      switch (data->flags_) {
+-        case TF_LBMENUF_RADIOCHECKED:
+-          info.fMask |= MIIM_STATE;
+-          info.fState |= MFS_CHECKED;
+-          info.fMask |= MIIM_FTYPE;
+-          info.fType |= MFT_RADIOCHECK;
+-          break;
+-        case TF_LBMENUF_CHECKED:
+-          info.fMask |= MIIM_STATE;
+-          info.fState |= MFS_CHECKED;
+-          break;
+-        case TF_LBMENUF_SUBMENU:
+-          // TODO(yukawa): Support this.
+-          break;
+-        case TF_LBMENUF_GRAYED:
+-          info.fMask |= MIIM_STATE;
+-          info.fState |= MFS_GRAYED;
+-          break;
+-        default:
+-          info.fMask |= MIIM_STATE;
+-          info.fState |= MFS_ENABLED;
+-          break;
+-      }
+-    }
+-    ::InsertMenuItem(menu.get(), i, TRUE, &info);
+-  }
++  ::AppendMenu(menu.get(), MF_STRING, data->item_id_, label);
+ 
+   // Caveats: TPM_NONOTIFY is important because the attached window may
+   // change the menu state unless this flag is specified. We actually suffered
+@@ -338,6 +297,27 @@ STDMETHODIMP TipLangBarButton::OnClick(TfLBIClick click, POINT point,
+       static_cast<TipLangBarCallback::ItemId>(result));
+ }
+ 
++size_t TipLangBarButton::KanaSwitch(const wchar_t** label) {
++  bool katakana = false;
++  for (size_t i = 0; i < menu_data_size(); ++i) {
++    const TipLangBarMenuData* data = menu_data(i);
++    if ((data->flags_ & TF_LBMENUF_RADIOCHECKED) != 0) {
++      katakana = data->item_id_ == TipLangBarCallback::kFullKatakana ||
++                 data->item_id_ == TipLangBarCallback::kHalfKatakana;
++    }
++  }
++  *label = katakana ? L"\u30a2 \u2192 \u3042\tAlt+`"   // ア → あ
++                    : L"\u3042 \u2192 \u30a2\tAlt+`";  // あ → ア
++  const UINT target = katakana ? TipLangBarCallback::kHiragana
++                               : TipLangBarCallback::kFullKatakana;
++  for (size_t i = 0; i < menu_data_size(); ++i) {
++    if (menu_data(i)->item_id_ == target) {
++      return i;
++    }
++  }
++  return 0;
++}
++
+ // Implements the ITfLangBarItemButton::GetText() function.
+ // This function is called by Windows to retrieve the text label of this
+ // button menu.
+@@ -632,17 +612,10 @@ STDMETHODIMP TipLangBarToggleButton::InitMenu(ITfMenu* menu) {
+     return result;
+   }
+ 
+-  // Add the menu items of this object to the given ITfMenu object.
+-  for (size_t i = 0; i < menu_data_size(); ++i) {
+-    const TipLangBarMenuData* data = menu_data(i);
+-    result = menu->AddMenuItem(i, data->flags_, nullptr, nullptr, data->text_,
+-                               data->length_, nullptr);
+-    if (result != S_OK) {
+-      break;
+-    }
+-  }
+-
+-  return result;
++  const wchar_t* label;
++  const size_t i = KanaSwitch(&label);
++  return menu->AddMenuItem(i, 0, nullptr, nullptr, label, wcslen(label),
++                           nullptr);
+ }
+ 
+ STDMETHODIMP TipLangBarToggleButton::OnMenuSelect(UINT menu_id) {
+diff --git a/win32/tip/tip_lang_bar_menu.h b/win32/tip/tip_lang_bar_menu.h
+index 8e11beb..c9fa54c 100644
+--- a/win32/tip/tip_lang_bar_menu.h
++++ b/win32/tip/tip_lang_bar_menu.h
+@@ -188,6 +188,12 @@ class TipLangBarButton : public TipComImplements<ITfLangBarItemButton,
+   // IsMenuButton() returns false.
+   void SetContextMenuEnabled(bool enabled);
+ 
++  // SebType (#117): Japanese's menu is its one switch with its key, as on
++  // Linux: あ → ア, or ア → あ in katakana. The input modes stay in the menu
++  // data for the icon. Returns the index of the item the switch selects, and
++  // its label.
++  size_t KanaSwitch(const wchar_t** label);
++
+   wil::com_ptr_nothrow<ITfLangBarItemSink> item_sink_;
+   // Save the TipLangBarCallback object that owns this button to prevent the
+   // object from being deleted.

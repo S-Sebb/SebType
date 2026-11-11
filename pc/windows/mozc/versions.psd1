@@ -11,5 +11,5 @@
     ResvgSha256     = '38af9631b37e61118a32a5ef31e6be6af083eda63b4c17ffc4fdc63e449277df'
     CMakeUrl        = 'https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-windows-x86_64.zip'
     CMakeSha256     = '81aa9964dbabd71fe02e7ec50472fd3ad56138c49944515ece9001efbff8d719'
-    SebTypeRelease  = 3
+    SebTypeRelease  = 4
 }

@@ -1,8 +1,20 @@
 diff --git a/RimeWithWeasel/RimeWithWeasel.cpp b/RimeWithWeasel/RimeWithWeasel.cpp
-index 3f4e59d..c6b912d 100644
+index 3f4e59d..d310941 100644
 --- a/RimeWithWeasel/RimeWithWeasel.cpp
 +++ b/RimeWithWeasel/RimeWithWeasel.cpp
-@@ -1194,6 +1194,12 @@ static void _UpdateUIStyle(RimeConfig* config, UI* ui, bool initialize) {
+@@ -812,6 +812,11 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
+                        std::to_string(status.is_disabled) + '\n');
+     messages.push_back(std::string("status.full_shape=") +
+                        std::to_string(status.is_full_shape) + '\n');
++    messages.push_back(
++        std::string("status.traditional=") +
++        std::to_string(
++            rime_api->get_option(session_id, "traditionalization")) +
++        '\n');
+     messages.push_back(std::string("status.schema_id=") +
+                        std::string(status.schema_id) + '\n');
+     if (m_global_ascii_mode &&
+@@ -1194,6 +1199,12 @@ static void _UpdateUIStyle(RimeConfig* config, UI* ui, bool initialize) {
                 style.display_tray_icon);
    _RimeGetBool(config, "style/ascii_tip_follow_cursor", initialize,
                 style.ascii_tip_follow_cursor);
@@ -15,6 +27,37 @@ index 3f4e59d..c6b912d 100644
    _RimeGetBool(config, "style/horizontal", initialize, style.layout_type,
                 UIStyle::LAYOUT_HORIZONTAL, UIStyle::LAYOUT_VERTICAL);
    _RimeGetBool(config, "style/paging_on_scroll", initialize,
+diff --git a/WeaselIPC/ContextUpdater.cpp b/WeaselIPC/ContextUpdater.cpp
+index 8d8c2f0..bd57eb8 100644
+--- a/WeaselIPC/ContextUpdater.cpp
++++ b/WeaselIPC/ContextUpdater.cpp
+@@ -124,4 +124,9 @@ void StatusUpdater::Store(Deserializer::KeyType const& k,
+     m_pTarget->p_status->full_shape = bool_value;
+     return;
+   }
++
++  if (k[1] == L"traditional") {
++    m_pTarget->p_status->traditional = bool_value;
++    return;
++  }
+ }
+diff --git a/WeaselIPCServer/WeaselServerImpl.cpp b/WeaselIPCServer/WeaselServerImpl.cpp
+index 11225c4..05a63eb 100644
+--- a/WeaselIPCServer/WeaselServerImpl.cpp
++++ b/WeaselIPCServer/WeaselServerImpl.cpp
+@@ -119,6 +119,12 @@ LRESULT ServerImpl::OnCommand(UINT uMsg,
+     case ID_WEASELTRAY_DISABLE_ASCII:
+       m_pRequestHandler->SetOption(lParam, "ascii_mode", false);
+       return 0;
++    // SebType: the language bar's one switch, 简 → 繁 (#117).
++    case ID_WEASELTRAY_TRADITIONAL:
++    case ID_WEASELTRAY_SIMPLIFIED:
++      m_pRequestHandler->SetOption(lParam, "traditionalization",
++                                   uID == ID_WEASELTRAY_TRADITIONAL);
++      return 0;
+     default:;
+   }
+ 
 diff --git a/WeaselTSF/KeyEventSink.cpp b/WeaselTSF/KeyEventSink.cpp
 index c885ddd..15e58ba 100644
 --- a/WeaselTSF/KeyEventSink.cpp
@@ -29,10 +72,81 @@ index c885ddd..15e58ba 100644
  
      prevfEaten = *pfEaten;
 diff --git a/WeaselTSF/LanguageBar.cpp b/WeaselTSF/LanguageBar.cpp
-index a03b615..d01d576 100644
+index a03b615..70f41bb 100644
 --- a/WeaselTSF/LanguageBar.cpp
 +++ b/WeaselTSF/LanguageBar.cpp
-@@ -203,8 +203,13 @@ STDAPI CLangBarItemButton::OnMenuSelect(UINT wID) {
+@@ -34,6 +34,17 @@ static void HMENU2ITfMenu(HMENU hMenu, ITfMenu* pTfMenu) {
+   }
+ }
+ 
++// SebType (#117): Chinese's menu is its one switch with its key, as on Linux:
++// 简 → 繁, or 繁 → 简 while traditional. setup-ime.ps1 binds the key; the TSF
++// has no Rime config to read it from.
++static HMENU SwitchMenu(bool traditional) {
++  HMENU menu = CreatePopupMenu();
++  AppendMenuW(menu, MF_STRING,
++              traditional ? ID_WEASELTRAY_SIMPLIFIED : ID_WEASELTRAY_TRADITIONAL,
++              traditional ? L"繁 → 简\tCtrl+Shift+F" : L"简 → 繁\tCtrl+Shift+F");
++  return menu;
++}
++
+ static LPCWSTR GetWeaselRegName() {
+   LPCWSTR WEASEL_REG_NAME_;
+   if (is_wow64())
+@@ -69,6 +80,7 @@ CLangBarItemButton::CLangBarItemButton(com_ptr<WeaselTSF> pTextService,
+   _pTextService = pTextService;
+   _guid = guid;
+   ascii_mode = false;
++  traditional = false;
+ }
+ 
+ CLangBarItemButton::~CLangBarItemButton() {
+@@ -168,43 +180,42 @@ STDAPI CLangBarItemButton::OnClick(TfLBIClick click,
+     /* Open menu */
+     HWND hwnd = _pTextService->_GetFocusedContextWindow();
+     if (hwnd != NULL) {
+-      LANGID langid = get_language_id();
+-      HMENU menu;
+-      if (langid == TEXTSERVICE_LANGID_HANS) {
+-        menu = LoadMenuW(g_hInst, MAKEINTRESOURCE(IDR_MENU_POPUP_HANS));
+-      } else if (langid == TEXTSERVICE_LANGID_HANT) {
+-        menu = LoadMenuW(g_hInst, MAKEINTRESOURCE(IDR_MENU_POPUP_HANT));
+-      } else {
+-        menu = LoadMenuW(g_hInst, MAKEINTRESOURCE(IDR_MENU_POPUP));
+-      }
+-      HMENU popupMenu = GetSubMenu(menu, 0);
++      HMENU menu = SwitchMenu(traditional);
+       UINT wID = TrackPopupMenuEx(
+-          popupMenu, TPM_NONOTIFY | TPM_RETURNCMD | TPM_HORPOSANIMATION, pt.x,
+-          pt.y, hwnd, NULL);
++          menu, TPM_NONOTIFY | TPM_RETURNCMD | TPM_HORPOSANIMATION, pt.x, pt.y,
++          hwnd, NULL);
+       DestroyMenu(menu);
+-      _pTextService->_HandleLangBarMenuSelect(wID);
++      if (wID)
++        OnMenuSelect(wID);
+     }
+   }
+   return S_OK;
+ }
+ 
+ STDAPI CLangBarItemButton::InitMenu(ITfMenu* pMenu) {
+-  HMENU menu = LoadMenuW(g_hInst, MAKEINTRESOURCE(IDR_MENU_POPUP));
+-  HMENU popupMenu = GetSubMenu(menu, 0);
+-  HMENU2ITfMenu(popupMenu, pMenu);
++  HMENU menu = SwitchMenu(traditional);
++  HMENU2ITfMenu(menu, pMenu);
+   DestroyMenu(menu);
+   return S_OK;
+ }
+ 
+ STDAPI CLangBarItemButton::OnMenuSelect(UINT wID) {
++  // Shown until Rime's next status says so too.
++  if (wID == ID_WEASELTRAY_TRADITIONAL || wID == ID_WEASELTRAY_SIMPLIFIED)
++    traditional = wID == ID_WEASELTRAY_TRADITIONAL;
+   _pTextService->_HandleLangBarMenuSelect(wID);
+   return S_OK;
+ }
  
  STDAPI CLangBarItemButton::GetIcon(HICON* phIcon) {
    if (ascii_mode) {
@@ -47,6 +161,26 @@ index a03b615..d01d576 100644
                                    GetSystemMetrics(SM_CXSMICON),
                                    GetSystemMetrics(SM_CYSMICON), LR_SHARED);
      else
+@@ -259,6 +270,7 @@ void CLangBarItemButton::UpdateWeaselStatus(weasel::Status stat) {
+   if (stat.ascii_mode != ascii_mode) {
+     ascii_mode = stat.ascii_mode;
+   }
++  traditional = stat.traditional;
+   if (_current_schema_zhung_icon != _style.current_zhung_icon) {
+     _current_schema_zhung_icon = _style.current_zhung_icon;
+   }
+diff --git a/WeaselTSF/LanguageBar.h b/WeaselTSF/LanguageBar.h
+index 2c0513a..07b0a20 100644
+--- a/WeaselTSF/LanguageBar.h
++++ b/WeaselTSF/LanguageBar.h
+@@ -42,6 +42,7 @@ class CLangBarItemButton : public ITfLangBarItemButton, public ITfSource {
+   LONG _cRef; /* COM Reference count */
+   DWORD _status;
+   bool ascii_mode;
++  bool traditional;
+   weasel::UIStyle& _style;
+   std::wstring _current_schema_zhung_icon;
+   std::wstring _current_schema_ascii_icon;
 diff --git a/WeaselUI/HorizontalLayout.cpp b/WeaselUI/HorizontalLayout.cpp
 index 99d8e64..c6c96cb 100644
 --- a/WeaselUI/HorizontalLayout.cpp
@@ -216,10 +350,47 @@ index 478e798..9ac509a 100644
    std::wstring m_current_ascii_icon;
    std::wstring m_current_half_icon;
 diff --git a/include/WeaselIPCData.h b/include/WeaselIPCData.h
-index 09f22f9..5239da4 100644
+index 09f22f9..e3b8a61 100644
 --- a/include/WeaselIPCData.h
 +++ b/include/WeaselIPCData.h
-@@ -226,6 +226,9 @@ struct UIStyle {
+@@ -153,7 +153,8 @@ struct Status {
+         ascii_mode(false),
+         composing(false),
+         disabled(false),
+-        full_shape(false) {}
++        full_shape(false),
++        traditional(false) {}
+   void reset() {
+     schema_name.clear();
+     schema_id.clear();
+@@ -161,13 +162,15 @@ struct Status {
+     composing = false;
+     disabled = false;
+     full_shape = false;
++    traditional = false;
+     type = SCHEMA;
+   }
+   bool operator==(const Status status) {
+     return (status.schema_name == schema_name &&
+             status.schema_id == schema_id && status.ascii_mode == ascii_mode &&
+             status.composing == composing && status.disabled == disabled &&
+-            status.full_shape == full_shape && status.type == type);
++            status.full_shape == full_shape &&
++            status.traditional == traditional && status.type == type);
+   }
+   // 輸入方案
+   std::wstring schema_name;
+@@ -181,6 +184,9 @@ struct Status {
+   bool disabled;
+   // 全角状态
+   bool full_shape;
++  // SebType: Chinese outputs traditional characters (rime-ice's
++  // traditionalization), for the language bar's one switch (#117).
++  bool traditional;
+   // 图标类型, schema/full_shape
+   IconType type;
+ };
+@@ -226,6 +232,9 @@ struct UIStyle {
    bool inline_preedit;
    bool display_tray_icon;
    bool ascii_tip_follow_cursor;
@@ -229,7 +400,7 @@ index 09f22f9..5239da4 100644
    bool paging_on_scroll;
    bool enhanced_position;
    bool click_to_capture;
-@@ -303,6 +306,7 @@ struct UIStyle {
+@@ -303,6 +312,7 @@ struct UIStyle {
          inline_preedit(false),
          display_tray_icon(false),
          ascii_tip_follow_cursor(false),
@@ -237,7 +408,7 @@ index 09f22f9..5239da4 100644
          paging_on_scroll(false),
          enhanced_position(false),
          click_to_capture(false),
-@@ -378,6 +382,7 @@ struct UIStyle {
+@@ -378,6 +388,7 @@ struct UIStyle {
          inline_preedit != st.inline_preedit || mark_text != st.mark_text ||
          display_tray_icon != st.display_tray_icon ||
          ascii_tip_follow_cursor != st.ascii_tip_follow_cursor ||
@@ -245,7 +416,7 @@ index 09f22f9..5239da4 100644
          current_zhung_icon != st.current_zhung_icon ||
          current_ascii_icon != st.current_ascii_icon ||
          current_half_icon != st.current_half_icon ||
-@@ -443,6 +448,7 @@ void serialize(Archive& ar, weasel::UIStyle& s, const unsigned int version) {
+@@ -443,6 +454,7 @@ void serialize(Archive& ar, weasel::UIStyle& s, const unsigned int version) {
    ar & s.preedit_type;
    ar & s.display_tray_icon;
    ar & s.ascii_tip_follow_cursor;
@@ -279,7 +450,7 @@ index 54f840f..651f60c 100755
  
  inline LONG RegGetStringValue(HKEY key,
 diff --git a/include/resource.h b/include/resource.h
-index 3a40f51..996db53 100644
+index 3a40f51..a183ec6 100644
 --- a/include/resource.h
 +++ b/include/resource.h
 @@ -9,6 +9,7 @@
@@ -290,8 +461,17 @@ index 3a40f51..996db53 100644
  #define IDR_MENU_POPUP_HANT             108
  #define IDR_MENU_POPUP_HANS             109
  #define IDS_STR_UNDER_MAINTENANCE       302
+@@ -27,6 +28,8 @@
+ #define ID_WEASELTRAY_DISABLE_ASCII     40014
+ #define ID_WEASELTRAY_RERUN_SERVICE     40015
+ #define ID_WEASELTRAY_LOGDIR            40016
++#define ID_WEASELTRAY_TRADITIONAL       40017
++#define ID_WEASELTRAY_SIMPLIFIED        40018
+ 
+ // Next default values for new objects
+ //
 diff --git a/output/install.nsi b/output/install.nsi
-index 3d5130c..b6fe22c 100644
+index 3d5130c..e784bbb 100644
 --- a/output/install.nsi
 +++ b/output/install.nsi
 @@ -236,6 +236,8 @@ program_files:
