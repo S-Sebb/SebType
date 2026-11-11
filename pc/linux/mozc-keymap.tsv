@@ -158,6 +158,7 @@ Prediction	Ctrl Delete	DeleteSelectedCandidate
 Suggestion	Down	PredictAndConvert
 Suggestion	Shift Enter	CommitFirstSuggestion
 Precomposition	Alt `	InputModeSwitchKanaType
+Precomposition	Alt Hankaku/Zenkaku	InputModeSwitchKanaType
 Composition	Shift	IMEOff
 Conversion	Shift	IMEOff
 DirectInput	Shift	IMEOn

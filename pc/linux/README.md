@@ -40,7 +40,8 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | SebType Configurator | Builds `pc/configurator` with Rust's `cargo` when its sources changed, and installs it in `~/.local/share/sebtype/configurator` with the app-menu entry **SebType Configurator** (`sebtype-configurator.desktop`) and the phone's pig as its icon. Without Rust it only warns | SebType's settings without editing YAML: see [SebType Configurator](#sebtype-configurator) |
 
 `mozc-keymap.tsv` is Mozc's `src/data/keymap/ms-ime.tsv` (BSD-3-Clause, Google) with Alt+\` (あ ⇄ ア) and Shift
-lines added at the end.
+lines added at the end. Windows passes Alt+\` on as the Kanji key with Alt held, so the same switch is also
+there as `Alt Hankaku/Zenkaku`.
 
 The Shift tap needs no addon or Mozc patch. fcitx5-mozc already turns a Shift press and release with no
 other key in between into a bare `Shift` key for Mozc, and drops it when any key came between (Shift+K,

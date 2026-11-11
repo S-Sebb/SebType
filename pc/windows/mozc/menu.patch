@@ -15,6 +15,29 @@ index 8186b0a..0c49a25 100644
      case transliteration::HALF_KATAKANA:
        next_type = transliteration::HIRAGANA;
        break;
+diff --git a/win32/base/keyevent_handler.cc b/win32/base/keyevent_handler.cc
+index 528465c..4533ea8 100644
+--- a/win32/base/keyevent_handler.cc
++++ b/win32/base/keyevent_handler.cc
+@@ -339,8 +339,17 @@ void ClearModifyerKeyIfNeeded(const KeyEvent* key,
+     switch (key->special_key()) {
+       // Clear modifier keys when the key is filtered in
+       // KeyBindingFilter::Encode in gui/config_dialog/keybinding_editor.cc
++      case KeyEvent::HANKAKU:  // VK_DBE_SBCSCHAR or VK_DBE_DBCSCHAR
++        // SebType (#117): Alt stays. Alt+` reaches Mozc as this key (its text service and Windows'
++        // Japanese keyboard layer both pass it on as the Kanji key), and SebType's keymap gives
++        // Alt Hankaku/Zenkaku a line of its own, あ ⇄ ア.
++        if (modifiers->contains(KeyEvent::ALT)) {
++          *modifiers = {KeyEvent::ALT};
++        } else {
++          modifiers->clear();
++        }
++        break;
+       case KeyEvent::EISU:      // VK_DBE_ALPHANUMERIC
+-      case KeyEvent::HANKAKU:   // VK_DBE_SBCSCHAR or VK_DBE_DBCSCHAR
+       case KeyEvent::KANA:      // VK_DBE_HIRAGANA
+       case KeyEvent::KATAKANA:  // VK_DBE_KATAKANA
+         modifiers->clear();
 diff --git a/win32/tip/tip_lang_bar.cc b/win32/tip/tip_lang_bar.cc
 index 8ea3fef..c08b606 100644
 --- a/win32/tip/tip_lang_bar.cc
@@ -350,47 +373,3 @@ index 8e11beb..c9fa54c 100644
    wil::com_ptr_nothrow<ITfLangBarItemSink> item_sink_;
    // Save the TipLangBarCallback object that owns this button to prevent the
    // object from being deleted.
-diff --git a/win32/tip/tip_text_service.cc b/win32/tip/tip_text_service.cc
-index 23c62a9..0c29194 100644
---- a/win32/tip/tip_text_service.cc
-+++ b/win32/tip/tip_text_service.cc
-@@ -125,6 +125,13 @@ constexpr GUID kTipPreservedKey_Kanji = {
-     0x47ca,
-     {0x97, 0xf8, 0x3c, 0x84, 0xd5, 0xb4, 0x08, 0xda}};
- 
-+// {204B6FC8-1FEF-46E2-BEF8-A2816294DC3B}: SebType (#117)
-+constexpr GUID kTipPreservedKey_AltGrave = {
-+    0x204b6fc8,
-+    0x1fef,
-+    0x46e2,
-+    {0xbe, 0xf8, 0xa2, 0x81, 0x62, 0x94, 0xdc, 0x3b}};
-+
- // {B62565AA-288A-432B-B517-EC333E0F99F3}
- constexpr GUID kTipPreservedKey_F10 = {
-     0xb62565aa,
-@@ -159,6 +166,13 @@ constexpr GUID kTipPreservedKey_Kanji = {
-     0x4ac6,
-     {0xa3, 0x5b, 0x6, 0xea, 0x77, 0x18, 0x0a, 0x18}};
- 
-+// {AEFB527F-935E-4F6A-A0B1-C9511CCC8A6A}: SebType (#117)
-+constexpr GUID kTipPreservedKey_AltGrave = {
-+    0xaefb527f,
-+    0x935e,
-+    0x4f6a,
-+    {0xa0, 0xb1, 0xc9, 0x51, 0x1c, 0xcc, 0x8a, 0x6a}};
-+
- // {80DAD291-1981-46FA-998D-B84D6C1BA02C}
- constexpr GUID kTipPreservedKey_F10 = {
-     0x80dad291,
-@@ -322,8 +336,10 @@ struct PreserveKeyItem {
-   size_t length;
- };
- 
-+// SebType (#117): Alt+` has a GUID of its own. Sharing the Kanji key's, it reached the session as the
-+// Kanji key (the text service maps each GUID to one key), so the keymap's Alt+` line (あ ⇄ ア) never applied.
- constexpr PreserveKeyItem kPreservedKeyItems[] = {
--    {kTipPreservedKey_Kanji,
-+    {kTipPreservedKey_AltGrave,
-      {VK_OEM_3, TF_MOD_ALT},
-      VK_OEM_3,
-      &kTipKeyTilde[0],
