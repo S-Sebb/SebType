@@ -1,7 +1,8 @@
 # Measuring SebType's size, memory and speed
 
-Two scripts measure SebType the same way every time (#45). Run them before merging changes to the
-engines, dictionaries or the keyboard UI, and compare against the baseline on #45.
+Two scripts measure SebType the same way every time (#45). They run in the final performance run of a
+batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional
+until they are compared with other IMEs.
 
 ## Android: `sebtype/perf.sh`
 
@@ -13,7 +14,7 @@ ANDROID_SERIAL=<serial> sebtype/perf.sh   # any other device; the only way to ru
 
 It reinstalls SebType, so everything SebType learned on that device is lost. It then types into its
 own small test field (`sebtype/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
-back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 15
+back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 20
 minutes. While it runs it holds the device's devq lock, shared by all projects:
 `/tmp/agent-locks/devices/emulator-<AVD>.lock`, or on a phone the lock of the PC it is plugged
 into (`nobara-pc.lock`), which other projects take for the phone too.
@@ -24,7 +25,7 @@ What it measures:
 |---|---|
 | APK size, biggest entries | the APK file; shrunk resource names mapped back with `aapt2` |
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
-| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, with all three engines loaded (fast typing right after 中 and 日), idle again once unused engines unloaded (`IDLE_UNLOAD_S`, default 200 s, just over the app's 3 minutes), peak during the first Chinese setup. Each breakdown is kept in `run/meminfo-<point>.txt` |
+| Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, in 日 alone (only Mozc loaded: past Rime's idle stop), with all three engines loaded (fast typing right after 中 and 日), idle again once unused engines unloaded (`IDLE_UNLOAD_S`, default 200 s, just over the app's 3 minutes), peak during the first Chinese setup. Each breakdown is kept in `run/meminfo-<point>.txt` |
 | Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
 | Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle), and the transformer thread's CPU time |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
@@ -45,13 +46,15 @@ framework trace slices and frame timelines; the trace records no logs.
 
 Notes:
 
-- **Engines load on demand (#56).** English's transformer loads on the first prediction and unloads
-  when the language switches or after 3 minutes without a prediction (`ENGINE_IDLE_MS`). Rime stops 3
-  minutes after 中 was last in use, or after a background setup nobody types into. Mozc stays loaded
-  once 日 was used: its JNI has no way to free it. So "after typing 中" has no transformer in it, and
-  "after fast typing EN" (right after 中 and 日) is the most that is ever loaded at once.
-- **Idle right after the first open settles.** It reads about 25 MB higher for the first seconds
-  (Java garbage not yet collected): on the emulator 103 MB at the first open, 74 MB a minute later.
+- **Engines load on demand (#56).** English's transformer loads once the first letter is typed (an
+  empty field gets the dictionary's suggestions until then) and unloads when the language switches
+  or after 3 minutes without a prediction (`ENGINE_IDLE_MS`). Rime stops 3 minutes after 中 was last
+  in use, or after a background setup nobody types into. Mozc unloads 3 minutes after 日 was last in
+  use, and the next 日 field loads it again. So "after typing 中" has no transformer in it, and "after
+  fast typing EN" (right after 中 and 日) is the most that is ever loaded at once.
+- **Idle is read once the keyboard settled**, 30 s after it opens (`SETTLE_S`). A new process reads
+  about 25 MB higher for its first seconds (start-up Java garbage not yet collected): on the phone
+  152 MB 3 s after the first open, 124 MB at 30 s.
 - **The emulator gives relative numbers only.** It runs SebType's arm64 code through translation
   and renders in software. Compare an emulator run with another emulator run, never with the phone.
 - **Key positions** come from SebType's uniform layout at the default keyboard height. Each typing
@@ -72,22 +75,22 @@ it does, and fails naming the window that came to the front. In #76, another pro
 its app on the phone during a run (it took a different lock), and the rest of the taps went into that
 app. The failure looked like SebType had come back in the wrong language.
 
-#### Phone results (Nothing A001, Android 16, main 8565c7161, 2026-11-10)
+#### Phone results (Nothing A001, Android 16, #56's branch, 2026-11-11)
 
-Against the budgets in Decisions #2. All phases passed; the full table is on #56.
+Against the budgets in Decisions #2. All phases passed; the full tables, before and after, are on #56's PR.
 
 | Budget | Phone | Met |
 |---|---|---|
 | APK ≤ 150 MB | 105 MB | yes |
-| PSS idle ≤ 100 MB | 140 MB at first open, 132 MB in a fresh process, 187 MB idle after using all three | no |
-| PSS in one language ≤ 150 MB | EN 232 MB, 中 143 MB, 日 163 MB | 中 only |
-| PSS with all three ≤ 200 MB | 308 MB | no |
-| No Rime deploy on the phone | Chinese set up in 1954 ms (install 701 ms); files compiled not readable without root | emulator: 0 compiled |
-| Key handling p95 ≤ 8 ms | EN 10, 中 10, 日 7 ms | 日 only |
-| Key → text p95 ≤ 50 ms (日 ≤ 60) | EN 24, 日 41 ms | yes |
-| Key → candidates p95 ≤ 100 ms | EN 77, 中 67, 日 57 ms | yes |
-| Warm open ≤ 150 ms, cold ≤ 1 s | warm 62 / 78 ms, cold 428 / 614 ms (median / p95) | yes |
-| 10 keys a second: no late frames from the app, every character arrives | 88 of 88 arrived; 24 of 845 frames late from the app (20,000-character field: 69 of 843) | no |
+| PSS idle ≤ 110 MB | 103 MB at first open, 94 MB in a fresh process, 123 MB idle after using all three | first open, fresh |
+| PSS: EN ≤ 250 MB, 中 and 日 ≤ 150 MB | EN 214 MB, 中 128 MB, 日 150 MB alone (156 MB right after 中, with Rime still loaded) | yes, 日 alone |
+| PSS with all three ≤ 320 MB | 242 MB | yes |
+| No Rime deploy on the phone | Chinese set up in 1362 ms (install 729 ms); files compiled not readable without root | emulator: 0 compiled |
+| Key handling p95 ≤ 8 ms | EN 10, 中 8, 日 8 ms | 中, 日 |
+| Key → text p95 ≤ 50 ms (日 ≤ 60) | EN 25, 日 52 ms | yes |
+| Key → candidates p95 ≤ 100 ms | EN 85, 中 64, 日 53 ms | yes |
+| Warm open ≤ 150 ms, cold ≤ 1 s | warm 67 / 75 ms, cold 455 / 501 ms (median / p95) | yes |
+| 10 keys a second: ≤ 1 frame in 500 late from the app, every character arrives | 88 of 88 arrived; 32 of 846 frames late from the app (20,000-character field: 63 of 840); the run before, 1 of 699 | no |
 | 0 crashes | 0 | yes |
 
 ## PC (Linux): `pc/linux/perf.sh`

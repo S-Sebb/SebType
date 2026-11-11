@@ -38,4 +38,15 @@ public final class JniUtils {
     public static void loadNativeLibrary() {
         // Ensures the static initializer is called
     }
+
+    /**
+     * SebType (#56): after an engine unloads, hands what it freed back to the system. Without this the
+     * keyboard idles with the freed Java heap and the native allocator's freed pages still counted.
+     */
+    public static void releaseFreedMemory() {
+        Runtime.getRuntime().gc();
+        purgeNativeHeapNative();
+    }
+
+    private static native void purgeNativeHeapNative();
 }

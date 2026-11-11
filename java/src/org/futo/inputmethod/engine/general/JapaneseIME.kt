@@ -20,8 +20,11 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import com.google.android.apps.inputmethod.libs.mozc.session.MozcJNI
 import com.google.common.base.Optional
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.engine.ENGINE_IDLE_MS
 import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
 import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEHelper
@@ -61,6 +64,7 @@ import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.decodeJapanesePersonalWord
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.InputTypeUtils
+import org.futo.inputmethod.latin.utils.JniUtils
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter.KeyEventInterface
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter.getMozcKeyEvent
@@ -488,6 +492,8 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     internal fun mozcInit() {
+        idleUnload?.cancel()
+        unloaded = false
         initJniDictLocations(helper.context)
 
         if(!::executor.isInitialized) {
@@ -531,7 +537,25 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         blacklist.init()
     }
 
+    // SebType (#56): Mozc's engine (its dictionary and caches) unloads ENGINE_IDLE_MS after 日 was left,
+    // and the next 日 field loads it again. Loading again with no data file swaps in Mozc's minimal
+    // engine, which frees the full one (its JNI has no unload); finishing input synced the user data.
+    private var idleUnload: Job? = null
+    private var unloaded = false
+
+    override fun onLanguageLeft() {
+        idleUnload?.cancel()
+        idleUnload = helper.lifecycleScope.launch {
+            delay(ENGINE_IDLE_MS)
+            MozcJNI.load(mozcUserProfileDir(helper.context).absolutePath, "", 0, 0)
+            unloaded = true
+            Log.w(TAG, "Mozc unloaded after ${ENGINE_IDLE_MS / 1000} s in another language")
+            withContext(Dispatchers.Default) { JniUtils.releaseFreedMemory() }
+        }
+    }
+
     override fun onDestroy() {
+        idleUnload?.cancel()
         executor.syncData()
         // Might need to edit mozc library to add a reset function not just for tests
         // This is necessary because reinit JNI after onDestroy -> onCreate and the old
@@ -572,6 +596,12 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     override fun onStartInput() {
+        idleUnload?.cancel()
+        if(unloaded) {
+            val t0 = SystemClock.elapsedRealtime()
+            mozcInit()
+            Log.w(TAG, "Mozc loaded again in ${SystemClock.elapsedRealtime() - t0} ms")
+        }
         executor.removePendingEvaluations()
         executor.resetContext()
         setNeutralSuggestionStrip()

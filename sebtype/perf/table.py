@@ -86,7 +86,18 @@ row("Memory (PSS) idle, first open, EN", mb(fo.get("pss_idle_kb")), "first-open"
 row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "transformer loaded")
 row("Memory (PSS) peak during Chinese setup", mb(zd.get("pss_peak_kb")), "zh-deploy")
 row("Memory (PSS) after typing 中", mb(zh.get("pss_kb")), "zh")
-row("Memory (PSS) after typing 日", mb(ja.get("pss_kb")), "ja")
+row(
+    "Memory (PSS) after typing 日",
+    mb(ja.get("pss_kb")),
+    "ja",
+    "right after 中: Rime still loaded",
+)
+row(
+    "Memory (PSS) in 日 alone",
+    mb(out("ja-alone").get("pss_kb")),
+    "ja-alone",
+    "only Mozc: Rime stopped after 中 was left",
+)
 row(
     "Memory (PSS) after fast typing EN",
     mb(out("fast").get("pss_kb")),

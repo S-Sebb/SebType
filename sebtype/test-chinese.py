@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Chinese checks on the emulator, run by sebtype/test-emulator.sh under the emulator lock: password,
-private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38) and its cold starts (#97).
+private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38), its
+cold starts (#97) and its idle unload (#56), and that English's model waits for the first letter (#56).
 
     test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
@@ -914,6 +915,60 @@ def personal_word_after_restart():
 
 
 check("ja-personal-word-after-restart", personal_word_after_restart, needs=["ja-chip"])
+
+
+def mozc_log():
+    return adb("shell", "logcat -d -s JapaneseIME || true")
+
+
+def ja_unloads_when_idle():
+    """Mozc unloads 3 minutes after 日 was left, and the next 日 field loads it again (#56)."""
+    to_japanese()
+    type_keys("ka")
+    adb("logcat", "-c")
+    tap_globe()  # 日 -> EN
+    time.sleep(2)
+    if chip(nodes()):
+        raise Fail("the globe didn't leave 日")
+    wait_for("Mozc to unload", lambda: "Mozc unloaded" in mozc_log(), 240, interval=5)
+    to_japanese()
+    type_keys("ka")
+    if (text := field_text()) != "か":
+        raise Fail(f"after the unload, typed ka in 日; the field shows {text!r}")
+    loaded = re.search(r"Mozc loaded again in (\d+) ms", mozc_log())
+    if not loaded:
+        raise Fail("日 worked, but no log of Mozc loading again")
+    return f"unloaded in EN; back in 日 Mozc loaded again in {loaded.group(1)} ms, ka -> か"
+
+
+check("ja-unloads-when-idle", ja_unloads_when_idle, needs=["ja-chip"])
+
+
+def model_mapped():
+    pid = adb("shell", "pidof", PKG).strip()
+    return pid and "transformer-models/" in root(f"cat /proc/{pid}/maps")
+
+
+def en_model_waits_for_letter():
+    """English's prediction model loads only once a letter is typed (#56, Decisions #2)."""
+    open_field()
+    if chip(nodes()):
+        tap_globe()  # 日 -> EN
+    stop_keyboard()
+    open_field()
+    time.sleep(10)
+    if model_mapped():
+        raise Fail("the model loaded in an empty field before any letter")
+    type_keys("th")
+    # No chip is EN or 中: in 中, th has Chinese candidates and no English model to load.
+    got = candidates(nodes())
+    if not all(c.isascii() for c in got):
+        raise Fail(f"th -> {got[:6]}: the keyboard is in 中, not EN")
+    wait_for("the model to load after a letter", model_mapped, 60, interval=2)
+    return "empty field: no model; after typing th: loaded"
+
+
+check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
 
 
 def main_learns():

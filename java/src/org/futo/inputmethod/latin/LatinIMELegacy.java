@@ -143,7 +143,6 @@ public class LatinIMELegacy implements KeyboardActionListener,
     private final BroadcastReceiver mDictionaryDumpBroadcastReceiver =
             new DictionaryDumpBroadcastReceiver(this);
 
-    private final boolean mIsHardwareAcceleratedDrawingEnabled;
 
     // Loading the native library eagerly to avoid unexpected UnsatisfiedLinkError at the initial
     // JNI call as much as possible.
@@ -156,8 +155,6 @@ public class LatinIMELegacy implements KeyboardActionListener,
         mInputMethodService = inputMethodService;
         mSettings = Settings.getInstance();
         mKeyboardSwitcher = KeyboardSwitcher.getInstance();
-        mIsHardwareAcceleratedDrawingEnabled = true;
-        Log.i(TAG, "Hardware accelerated drawing: " + mIsHardwareAcceleratedDrawingEnabled);
 
         mImeManager = ((LatinIME)inputMethodService).getImeManager();
     }
@@ -291,8 +288,7 @@ public class LatinIMELegacy implements KeyboardActionListener,
     public View onCreateInputView() {
         StatsUtils.onCreateInputView();
         assert mDisplayContext != null;
-        return mKeyboardSwitcher.onCreateInputView(mDisplayContext,
-                mIsHardwareAcceleratedDrawingEnabled);
+        return mKeyboardSwitcher.onCreateInputView(mDisplayContext);
     }
 
     public void updateTheme() {

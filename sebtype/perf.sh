@@ -16,6 +16,9 @@ export out=${PERF_OUT:-/tmp/sebtype/perf-$(basename "$PWD")}; export work=$out/r
 export sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 export adb=$sdk/platform-tools/adb
 export runs=${RUNS:-3}
+# Idle memory is read this long after the keyboard opens: a new process's start-up garbage (about
+# 25 MB of Java heap on the phone) is collected within half a minute.
+export settle=${SETTLE_S:-30}
 export pkg=dev.sebb.sebtype field=dev.sebb.sebtype.perffield
 export ime_id=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
 export field_act=dev.sebb.sebtype.perffield/.PerfField
@@ -179,7 +182,7 @@ phase_first-open() { # the first keyboard open after install
   trace_stop first-open
   geometry && declare -p W dpi top > "$work/geometry"
   opens first-open first
-  echo "pss_idle_kb=$(pss_kb idle)"
+  sleep "$settle"; echo "pss_idle_kb=$(pss_kb idle)"
 }
 phase_en() {
   . "$work/geometry"
@@ -294,7 +297,15 @@ phase_cold-open() { # switch to another keyboard and back with SebType's process
   done
   trace_stop cold-open
   opens cold-open cold
-  sleep 5; echo "pss_idle_kb=$(pss_kb fresh)" # a fresh process, EN, idle
+  sleep "$settle"; echo "pss_idle_kb=$(pss_kb fresh)" # a fresh process, EN, idle
+}
+phase_ja-alone() { # 日 with only Mozc loaded: in a fresh process, through 中 to 日, then past Rime's idle stop
+  . "$work/geometry"
+  open_field; taps 0 G; sleep 5; taps 0 G; sleep 5 # EN → 中 → 日
+  open_field; taps 300 'nihongo konnichiha E'
+  sleep "${IDLE_UNLOAD_S:-200}" # Rime stops ENGINE_IDLE_MS after 中 was left; Mozc stays while 日 is in use
+  open_field; taps 300 'arigatou toukyou E'
+  sleep "$settle"; echo "pss_kb=$(pss_kb ja-alone)"
 }
 phase_sizes() { # needs a root shell (emulator): app code, internal data, external data
   [[ $(sh id -u) == 0 ]] || { echo "skip=needs a root adb shell to read app data (emulator: adb root)"; return; }
@@ -327,6 +338,7 @@ device_steps() { # under the device lock
   check unload 400
   check warm-open 300
   check cold-open 300
+  check ja-alone 600
   check sizes 120
 }
 

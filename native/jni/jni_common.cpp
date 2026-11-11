@@ -27,6 +27,22 @@
 #include "org_futo_inputmethod_latin_xlm_AdapterTrainer.h"
 #include "org_futo_inputmethod_latin_xlm_ModelInfoLoader.h"
 
+#include <dlfcn.h>
+#include <malloc.h>
+
+namespace {
+// SebType (#56): returns the native allocator's free pages to the system (mallopt M_PURGE_ALL, or
+// M_PURGE before Android 14). mallopt is looked up at run time: it is newer than the minimum SDK.
+void purgeNativeHeap(JNIEnv *, jclass) {
+    auto mallopt_fn = reinterpret_cast<int (*)(int, int)>(dlsym(RTLD_DEFAULT, "mallopt"));
+    if (mallopt_fn && !mallopt_fn(-104 /* M_PURGE_ALL */, 0)) mallopt_fn(-101 /* M_PURGE */, 0);
+}
+
+const JNINativeMethod sJniUtilsMethods[] = {
+        {"purgeNativeHeapNative", "()V", reinterpret_cast<void *>(purgeNativeHeap)},
+};
+} // namespace
+
 /*
  * Returns the JNI version on success, -1 on failure.
  */
@@ -68,6 +84,11 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     }
     if (!latinime::register_ModelInfoLoader(env)) {
         AKLOGE("ERROR: ModelInfoLoader native registration failed");
+        return -1;
+    }
+    if (!latinime::registerNativeMethods(env, "org/futo/inputmethod/latin/utils/JniUtils",
+            sJniUtilsMethods, NELEMS(sJniUtilsMethods))) {
+        AKLOGE("ERROR: JniUtils native registration failed");
         return -1;
     }
     /* success -- return valid version number */
