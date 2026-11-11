@@ -13,6 +13,7 @@ on:
       - pc/linux/perf-rime.c
       - pc/linux/rime/layout-model.patch
       - .github/workflows/weasel.yml
+      - .github/apt-install.sh
 
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -y librsvg2-bin python3-pil
+      - run: .github/apt-install.sh librsvg2-bin python3-pil
       - run: python3 pc/windows/weasel/make-icons.py out/icons
       - uses: actions/upload-artifact@v4
         with:

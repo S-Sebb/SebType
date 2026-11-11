@@ -23,6 +23,7 @@ on:
       - .github/workflows/windows-setup.yml
       - .github/workflows/weasel.yml
       - .github/workflows/configurator.yml
+      - .github/apt-install.sh
   push:
     branches: [main]
     paths: *paths
@@ -55,7 +56,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -y librsvg2-bin python3-pil python3-numpy fonts-noto-cjk
+      - run: .github/apt-install.sh librsvg2-bin python3-pil python3-numpy fonts-noto-cjk
       - run: python3 pc/windows/setup/pictures.py out/pictures
       - uses: actions/upload-artifact@v4
         with:
