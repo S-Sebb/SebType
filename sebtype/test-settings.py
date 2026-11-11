@@ -13,12 +13,12 @@ SebType's licence note (#112). Last, that long lists (300 of My words, the credi
 in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
 password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
-clipboard copy; the toggle survives a restart, and turned off, learning resumes. Last, that a
-settings backup leaves clipboard history out unless its box is ticked, and that importing restores it
-(#34), with the backup screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels
-match the emulator's Chinese, English or Japanese UI. One line per check
-appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
-stop the next.
+clipboard copy, but still offer what was learned before; the toggle survives a restart, and turned off,
+learning resumes. Last, that a settings backup leaves clipboard history out unless its box is ticked,
+and that importing restores it (#34), with the backup screen's screenshot in English and Japanese
+(settings-backup-<locale>.png). Labels match the emulator's Chinese, English or Japanese UI. One line
+per check appended to RESULTS; each check finds its own way from the home screen, so one failing
+doesn't stop the next.
 """
 
 import functools
@@ -1134,7 +1134,8 @@ def incognito_private_ja():
 
 
 def learns_again_en():
-    """After incognito: English learns again, and hides what it learned while incognito is back on."""
+    """After incognito: English learns again, and still offers what it learned once incognito is back
+    on (Decisions #2, #158: incognito stops learning, not the use of what was learned)."""
     to_language("hello", "hello")
     open_field()
     commit_twice("zorbleq")
@@ -1142,38 +1143,32 @@ def learns_again_en():
     if "zorbleq" not in got:
         raise Fail(f"typed zorbleq twice after incognito; zorbl -> {got[:6]}")
     set_incognito(True)
-    hidden = suggested_after("zorbleq")
+    kept = suggested_after("zorbleq")
     set_incognito(False)
-    if "zorbleq" in hidden:
-        raise Fail(f"zorbl -> {got[:6]} learned, but {hidden[:6]} while incognito")
-    return f"zorbl -> {got[:6]} after incognito; {hidden[:6]} while incognito again"
+    detail = f"zorbl -> {got[:6]} after incognito; {kept[:6]} while incognito again"
+    if "zorbleq" not in kept:
+        raise Fail(detail)
+    return detail
 
 
-def learns_again(language, probe, probe_word, code):
-    """After incognito the language learns again; Mozc also hides while incognito what it learned:
-    its order then is the unlearned one, so the word picked is one that order doesn't put first."""
+def learns_again(probe, probe_word, code):
+    """After incognito the language learns again: a lower candidate picked goes first. Once incognito
+    is back on, it stays first (#158)."""
 
     def run():
         to_language(probe, probe_word)
-        unlearned = None
-        if language == "ja":
-            set_incognito(True)
-            unlearned = candidates_for(code)
-            set_incognito(False)
-        got = candidates_for(code)
-        word = next(c for c in got[1:] if not unlearned or c != unlearned[0])
+        word = candidates_for(code)[1]
         tap_candidate(word)
         after = candidates_for(code)
         detail = f"picked {word} for {code} after incognito; next {code} -> {after[:4]}"
         if after[0] != word:
             raise Fail(detail)
-        if unlearned:
-            set_incognito(True)
-            hidden = candidates_for(code)
-            set_incognito(False)
-            detail += f"; while incognito again -> {hidden[:4]}"
-            if hidden[0] == word:
-                raise Fail(detail)
+        set_incognito(True)
+        kept = candidates_for(code)
+        set_incognito(False)
+        detail += f"; while incognito again -> {kept[:4]}"
+        if kept[0] != word:
+            raise Fail(detail)
         return detail
 
     return run
@@ -1476,8 +1471,8 @@ check(
     lambda: set_incognito(False) or "a tap on the badge turns incognito off",
 )
 check("incognito-off-learns-en", learns_again_en)
-check("incognito-off-learns-zh", learns_again("zh", "ni", "你", "sx"))
-check("incognito-off-learns-ja", learns_again("ja", "nihongo", "日本語", "hashi"))
+check("incognito-off-learns-zh", learns_again("ni", "你", "sx"))
+check("incognito-off-learns-ja", learns_again("nihongo", "日本語", "hashi"))
 # Last, in en-US: importing a backup reinstalls the Chinese data in the background.
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-screenshots", backup_screenshots)
