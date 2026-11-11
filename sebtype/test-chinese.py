@@ -891,16 +891,23 @@ WORDS = "content://user_dictionary/words"
 def personal_word_after_restart():
     """A Japanese personal word added while the keyboard is stopped reaches Mozc at its next start (#97:
     the start re-sends the user dictionaries only when they changed)."""
+    adb("logcat", "-b", "crash", "-c")
     stop_keyboard()
-    adb(
-        "shell",
+    # As root: Android's user dictionary takes words only from enabled keyboards, spell checkers and
+    # root, and ignores the shell user without an error (#143).
+    root(
         f"content insert --uri {WORDS} --bind word:s:SebType語 --bind 'shortcut:s:てすとご\t1'"
-        " --bind locale:s:ja --bind frequency:i:250 --bind appid:i:0",
+        " --bind locale:s:ja --bind frequency:i:250 --bind appid:i:0"
     )
     try:
+        if "SebType語" not in root(f"content query --uri {WORDS} --projection word"):
+            raise Fail("SebType語 didn't reach Android's user dictionary")
+        # This start re-sends the user dictionaries to Mozc, the step that crashed in #97.
         got = candidates_for("tesutogo")
+    except Fail as e:
+        raise Fail(f"{e}; {sebtype_crashes()} crashes") from e
     finally:
-        adb("shell", f"content delete --uri {WORDS} --where \"word='SebType語'\"")
+        root(f"content delete --uri {WORDS} --where \"word='SebType語'\"")
     if "SebType語" not in got:
         raise Fail(f"tesutogo -> {got[:6]}, without the personal word SebType語")
     return f"tesutogo -> {got[:6]}"
