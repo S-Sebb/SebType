@@ -3,24 +3,25 @@
 # on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
-# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc puts Fedora's
-# fcitx5-mozc back in place of SebType's build. --undo-configurator removes the SebType Configurator app
+# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc and --undo-rime
+# put Fedora's fcitx5-mozc and fcitx5-rime back in place of SebType's builds. --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
 # --undo-chinese-data puts Rime's folder back as it was before SebType's Chinese data.
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
+dry=0 undo_icons=0 undo_mozc=0 undo_rime=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
   --undo-mozc) undo_mozc=1 ;;
+  --undo-rime) undo_rime=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
   --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-rime | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -95,7 +96,13 @@ fi
 # SebType's Chinese data (step 13b): files.txt lists, in order, each path in Rime's folder it placed or
 # removed (directories end in /), and old/ holds the ones that were there before.
 rime_before=$data/sebtype/rime-before rime_marker=$rime_dir/sebtype-data.txt
-redeploy_note="Rime uses it once it redeploys: right-click the tray icon → Deploy, or log in again"
+# Rime applies its data and patches when it deploys. SebType's tray menu has no Deploy (#117), so a running
+# Fcitx5 is asked for one; without one, Rime deploys when Fcitx5 starts.
+deploy_rime() {
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 || return 0
+  echo "Rime deploys the changes in the background"
+  busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/rime/deploy s '' || true
+}
 if ((undo_chinese_data)); then
   if [[ -f $rime_before/files.txt ]]; then
     echo "change: put $rime_dir back as it was before SebType's Chinese data"
@@ -105,27 +112,32 @@ if ((undo_chinese_data)); then
       [[ -e $rime_before/old/$f ]] && cp -p "$rime_before/old/$f" "$rime_dir/$f"
     done
     rm -f "$rime_marker"; rm -r "$rime_before"
-    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && echo "$redeploy_note"
+    deploy_rime
   fi
   exit 0
 fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's fcitx5-mozc (#66): Fedora's package rebuilt with a patch that gives Japanese's English mode
-# a Caps Lock icon. The undo goes back to the Fedora release in the repositories.
+# SebType's fcitx5-mozc (#66) and fcitx5-rime (#117): Fedora's packages rebuilt with SebType's patches
+# (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
 # shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
 source "$here/mozc/versions.sh"
-mozc_installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}' fcitx5-mozc 2>/dev/null) || mozc_installed=
-restart_note="Fcitx5 loads the new fcitx5-mozc once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"
-if ((undo_mozc)); then
-  if [[ $mozc_installed == *.sebtype* ]]; then
-    echo "change: replace SebType's fcitx5-mozc $mozc_installed with Fedora's"
-    sudo dnf distro-sync -y fcitx5-mozc
-    echo "$restart_note"
+# shellcheck source-path=SCRIPTDIR source=rime/versions.sh
+source "$here/rime/versions.sh"
+installed() { rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
+restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
+undo_build() { # package
+  local now; now=$(installed "$1")
+  if [[ $now == *.sebtype* ]]; then
+    echo "change: replace SebType's $1 $now with Fedora's"
+    sudo dnf distro-sync -y "$1"
+    restart_note "$1"
   fi
   exit 0
-fi
+}
+((undo_mozc)) && undo_build fcitx5-mozc
+((undo_rime)) && undo_build fcitx5-rime
 
 # 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; fcitx5-mozc is the Japanese engine.
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
@@ -138,27 +150,33 @@ if ((${#missing[@]})); then
     if [[ $answer == [yY]* ]]; then sudo dnf install -y "${missing[@]}"
     else warn "packages not installed: ${missing[*]}"; fi
   fi
-  mozc_installed=$(rpm -q --qf '%{VERSION}-%{RELEASE}' fcitx5-mozc 2>/dev/null) || mozc_installed=
 fi
 
-# 1b. SebType's fcitx5-mozc in place of Fedora's (#66), so Japanese's English mode shows A with Caps Lock
-# on. Built from Fedora's source package by mozc/build.sh (about an hour the first time, in a container).
-# A Fedora update to another version replaces it; then Japanese shows a with Caps Lock on until
-# mozc/versions.sh follows that version.
-built_rpm=$MOZC_CACHE/rpms/$MOZC_RPM
-case $mozc_installed in
-  "$MOZC_VERSION-$SEBTYPE_RELEASE" | '') ;;
-  "$MOZC_VERSION-$MOZC_FEDORA_RELEASE" | "$MOZC_VERSION-"*.sebtype*)
-    if change "replace fcitx5-mozc $mozc_installed with SebType's build $SEBTYPE_RELEASE, Fedora's plus a Caps Lock icon (asks before using sudo; undo: $0 --undo-mozc)"; then
-      read -rp "Build SebType's fcitx5-mozc if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
-      if [[ $answer == [yY]* ]]; then
-        [[ -f $built_rpm ]] || "$here/mozc/build.sh" >/dev/null
-        sudo dnf install -y "$built_rpm"
-        busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$restart_note"
-      else warn "fcitx5-mozc stays Fedora's: Japanese shows a, not A, with Caps Lock on"; fi
-    fi ;;
-  *) warn "fcitx5-mozc $mozc_installed isn't the version SebType's build is for ($MOZC_VERSION): Japanese shows a, not A, with Caps Lock on until pc/linux/mozc/versions.sh follows it" ;;
-esac
+# 1b. SebType's fcitx5-mozc and fcitx5-rime in place of Fedora's, built from Fedora's source packages by
+# mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute). A Fedora
+# update to another version replaces them; then setup-ime.sh warns until <dir>/versions.sh follows it.
+# own_build <package> <version> <Fedora's release> <SebType's release> <rpm> <build script> <what it adds> <what is missing without it>
+own_build() {
+  local pkg=$1 version=$2 fedora=$3 ours=$4 rpm=$5 build=$6 adds=$7 without=$8 now answer
+  now=$(installed "$pkg")
+  case $now in
+    "$version-$ours" | '') ;;
+    "$version-$fedora" | "$version-"*.sebtype*)
+      if change "replace $pkg $now with SebType's build $ours, Fedora's plus $adds (asks before using sudo; undo: $0 --undo-${pkg#fcitx5-})"; then
+        read -rp "Build SebType's $pkg if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
+        if [[ $answer == [yY]* ]]; then
+          [[ -f $rpm ]] || "$build" >/dev/null
+          sudo dnf install -y "$rpm"
+          busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "$pkg")"
+        else warn "$pkg stays Fedora's: $without"; fi
+      fi ;;
+    *) warn "$pkg $now isn't the version SebType's build is for ($version): $without until pc/linux/$(basename "$(dirname "$build")")/versions.sh follows it" ;;
+  esac
+}
+own_build fcitx5-mozc "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" "$SEBTYPE_RELEASE" "$MOZC_CACHE/rpms/$MOZC_RPM" "$here/mozc/build.sh" \
+  "a Caps Lock icon and Japanese's one menu switch, あ → ア" "Japanese shows a, not A, with Caps Lock on, and its menu keeps Mozc's input modes and tools"
+own_build fcitx5-rime "$RIME_VERSION" "$RIME_FEDORA_RELEASE" "$RIME_SEBTYPE_RELEASE" "$RIME_CACHE/$RIME_RPM" "$here/rime/build.sh" \
+  "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize"
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
@@ -283,11 +301,12 @@ if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true
 fi
 
-# 9. Japanese: a Shift tap and Alt+` toggle あ and direct English (Decisions #2), in Mozc's own keymap,
-# so no addon or patch is needed. fcitx5-mozc sends Mozc a bare Shift only when it is released with no
-# other key pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it.
+# 9. Japanese: a Shift tap toggles あ and direct English, and Alt+` あ and ア (Decisions #2, menu hotkeys),
+# in Mozc's own keymap. fcitx5-mozc sends Mozc a bare Shift only when it is released with no other key
+# pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it. Alt+` is
+# Mozc's InputModeSwitchKanaType, which SebType's build (mozc/menu.patch) makes a two-way switch.
 # Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
-# Alt+` and Shift lines for each state (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
+# Shift lines for each state and Alt+` (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
 # kept. Mozc reads it at start, so a running mozc_server is stopped; fcitx5-mozc restarts it on the next key.
 mozc_db=$config/mozc/config1.db
@@ -323,14 +342,14 @@ sys.stdout.buffer.write(before + enc(41 << 3) + enc(0) + enc(42 << 3 | 2) + enc(
 PY
 )
 if [[ $(base64 -w0 "$mozc_db" 2>/dev/null) != "$mozc_want" ]] &&
-  change "set Mozc's keymap to MS-IME plus Shift tap and Alt+\` for あ ⇄ English in $mozc_db (backup in $backup)"; then
+  change "set Mozc's keymap to MS-IME plus Shift tap for あ ⇄ English and Alt+\` for あ ⇄ ア in $mozc_db (backup in $backup)"; then
   [[ -f $mozc_db ]] && save "$mozc_db"
   mkdir -p "${mozc_db%/*}"; base64 -d <<<"$mozc_want" > "$mozc_db"
   mapfile -t pids < <(pgrep -u "$(id -u)" -x mozc_server)
   ((${#pids[@]})) && kill "${pids[@]}"
   # fcitx5-mozc reads the keys that work in direct English mode once, when Fcitx5 starts.
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-    warn "Shift tap and Alt+\` from English back to あ work once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+    warn "the Shift tap from English back to あ works once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
 fi
 
 # 10. Plasma binds Alt+` (and Meta+`) to "Walk Through Windows of Current Application", so Mozc would
@@ -374,6 +393,7 @@ if { ! diff -rq "$want_theme" "$theme" >/dev/null 2>&1 || [[ $(icon_theme) != Se
 fi
 rm -r "$want_theme"
 
+rime_changed=0  # steps 12 to 13b set it; 13c deploys
 # 12. Chinese reads 中文 in the switch popup and the tray text (#69). fcitx5-rime's label is the first
 # character of the schema name (雾 from 雾凇拼音), unless the name starts with "."; then Fcitx5 shows the
 # input method's own label. So the schema name becomes ".中文" (its id stays rime_ice, so learned words
@@ -391,7 +411,8 @@ if { [[ $(cat "$rime_im" 2>/dev/null) != "$want_im" ]] || [[ $(cat "$src") != "$
   for f in "$rime_im" "$rime_custom"; do [[ -f $f ]] && save "$f"; done
   mkdir -p "${rime_im%/*}" "$rime_dir"
   printf '%s\n' "$want_im" > "$rime_im"; printf '%s\n' "$want_custom" > "$rime_custom"
-  # Fcitx5 reads input method entries when it starts, and Rime redeploys then too.
+  rime_changed=1
+  # Fcitx5 reads input method entries when it starts.
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$names_note"
 fi
 
@@ -432,8 +453,7 @@ if ! grep -q 'toggle: traditionalization, accept: Control+Shift+f }' "$src" ||
   if change "Ctrl+Shift+F switches Chinese 简/繁 in $default_custom (backup in $backup)"; then
     [[ -f $default_custom ]] && save "$default_custom"
     mkdir -p "$rime_dir"; printf '%s\n' "$want_custom" > "$default_custom"
-    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-      warn "Ctrl+Shift+F switches 简/繁 once Rime redeploys: right-click the tray icon → Deploy"
+    rime_changed=1
   fi
 fi
 
@@ -462,12 +482,15 @@ if "$here/../../tools/rime-data/build.sh" "$rime_tmp" > "$rime_tmp/build.log" 2>
     for t in "$new"/build/*.table.bin; do t=${t##*/}; rm -f "$rime_dir/${t%.table.bin}.dict.yaml"; done
     cp -r "$new/." "$rime_dir/"
     echo "$rime_id" > "$rime_marker"
-    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$redeploy_note"
+    rime_changed=1
   fi
 else
   warn "SebType's Chinese data doesn't build, so Chinese has no typo correction: $(tail -1 "$rime_tmp/build.log")"
 fi
 rm -r "$rime_tmp"
+
+# 13c. A running Fcitx5's Rime deploys whatever steps 12 to 13b changed.
+((rime_changed)) && deploy_rime
 
 # 14. SebType Configurator (#72): SebType's settings app, "SebType Configurator" in the app menu. Built
 # from pc/configurator with Rust's cargo (a few minutes the first time) whenever its sources are newer

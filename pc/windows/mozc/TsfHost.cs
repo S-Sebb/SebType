@@ -6,6 +6,7 @@
 // Mozc expect. C# 5: Windows PowerShell 5.1 compiles it.
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -242,6 +243,7 @@ namespace SebType {
   public static class TsfHost {
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
     [StructLayout(LayoutKind.Sequential)] struct ICONINFO { public bool fIcon; public int x, y; public IntPtr mask, color; }
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateWindowExW(uint ex, string cls, string name, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
     [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetMessageW(out MSG m, IntPtr h, uint a, uint b);
@@ -253,6 +255,12 @@ namespace SebType {
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string name);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageW(IntPtr h, uint msg, IntPtr w, StringBuilder l);
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")] static extern IntPtr SendMessagePtr(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder s, int n, uint flags);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
     [DllImport("user32.dll")] static extern IntPtr LoadImageW(IntPtr inst, IntPtr name, uint type, int cx, int cy, uint flags);
     [DllImport("user32.dll")] static extern bool GetIconInfo(IntPtr icon, out ICONINFO info);
@@ -384,28 +392,62 @@ namespace SebType {
     public static void Clear() { OnUi(() => { store.AppEdit(0, store.Text.Length, ""); return 0; }); }
     public static bool CapsLock() { return OnUi(() => { var s = new byte[256]; GetKeyboardState(s); return (s[0x14] & 1) != 0; }); }
 
-    // Picks an item of the menu of Mozc's input mode button (the tray's あ/a), as a click there does:
-    // 0 あ, 1 ア. A US keyboard has no key for katakana mode.
-    public static void TrayMenu(uint item) {
+    // The active input method's input mode button: the tray's 中/a or あ/a.
+    static ITfLangBarItemButton InputModeButton() {
+      var guid = GUID_LBI_INPUTMODE;
+      object item;
+      Marshal.ThrowExceptionForHR(((ITfLangBarItemMgr)threadMgr).GetItem(ref guid, out item));
+      return (ITfLangBarItemButton)item;
+    }
+    // Opens the input mode button's menu, as a right-click on the tray icon does, and returns its items
+    // ("|" between them). Then picks the first item (pick) or closes the menu. shot: a PNG file for a
+    // picture of the test window with the menu open, or null.
+    public static string TrayPopup(bool pick, string shot) {
+      string items = null;
+      var watcher = new Thread(() => {
+        for (int i = 0; i < 100 && items == null; i++) {
+          Thread.Sleep(50);
+          IntPtr w = IntPtr.Zero;
+          while ((w = FindWindowExW(IntPtr.Zero, w, "#32768", null)) != IntPtr.Zero &&
+                 !(IsWindowVisible(w) && GetWindowThreadProcessId(w, IntPtr.Zero) == threadId)) { }
+          if (w == IntPtr.Zero) continue;
+          IntPtr menu = SendMessagePtr(w, 0x01E1 /* MN_GETHMENU */, IntPtr.Zero, IntPtr.Zero);
+          var labels = new List<string>();
+          for (int k = 0; k < GetMenuItemCount(menu); k++) {
+            var s = new StringBuilder(256);
+            GetMenuStringW(menu, (uint)k, s, s.Capacity, 0x400 /* MF_BYPOSITION */);
+            labels.Add(s.ToString());
+          }
+          if (shot != null) { Thread.Sleep(300); Picture(w, shot); }  // after the menu's fade-in
+          if (pick) PostMessageW(w, 0x100 /* WM_KEYDOWN */, (IntPtr)0x28 /* VK_DOWN */, IntPtr.Zero);
+          PostMessageW(w, 0x100, (IntPtr)(pick ? 0x0D /* VK_RETURN */ : 0x1B /* VK_ESCAPE */), IntPtr.Zero);
+          items = string.Join("|", labels);
+        }
+      });
+      watcher.Start();
       OnUi(() => {
-        var mgr = (ITfLangBarItemMgr)threadMgr;
-        var guid = GUID_LBI_INPUTMODE;
-        object button;
-        Marshal.ThrowExceptionForHR(mgr.GetItem(ref guid, out button));
-        ((ITfLangBarItemButton)button).OnMenuSelect(item);
+        RECT r; GetWindowRect(store.Hwnd, out r);
+        long pt = ((long)(r.T + 40) << 32) | (uint)(r.L + 40);  // a POINT: x, then y
+        InputModeButton().OnClick(1 /* TF_LBI_CLK_RIGHT */, pt, IntPtr.Zero);
         return 0;
       });
+      watcher.Join();
       Settle(300);
+      return items ?? "no menu";
+    }
+    static void Picture(IntPtr menu, string path) {
+      RECT a, b; GetWindowRect(store.Hwnd, out a); GetWindowRect(menu, out b);
+      int l = Math.Min(a.L, b.L), t = Math.Min(a.T, b.T);
+      using (var bmp = new System.Drawing.Bitmap(Math.Max(a.R, b.R) - l, Math.Max(a.B, b.B) - t)) {
+        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(l, t, 0, 0, bmp.Size);
+        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+      }
     }
     // Which of Mozc's icon resources its input mode button (the tray's あ/a) shows now, or -1.
     public static int TrayIcon(int[] ids) {
       return OnUi(() => {
-        var mgr = (ITfLangBarItemMgr)threadMgr;
-        var guid = GUID_LBI_INPUTMODE;
-        object item;
-        Marshal.ThrowExceptionForHR(mgr.GetItem(ref guid, out item));
         IntPtr icon;
-        Marshal.ThrowExceptionForHR(((ITfLangBarItemButton)item).GetIcon(out icon));
+        Marshal.ThrowExceptionForHR(InputModeButton().GetIcon(out icon));
         var shown = Pixels(icon);
         DestroyIcon(icon);
         IntPtr dll = GetModuleHandleW("mozc_tip64.dll");

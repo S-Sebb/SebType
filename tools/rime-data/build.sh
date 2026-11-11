@@ -5,7 +5,7 @@
 # the result is cached by its inputs, so only the first build after a change compiles (about 10 s).
 #   tools/rime-data/build.sh [ASSETS_DIR]   # default build/sebtype-assets; writes ASSETS_DIR/rime/
 #
-# The zip is the Rime shared dir: rime-ice's files (minus the schemas SebType can't select), 白霜's
+# The zip is the Rime shared dir: rime-ice's files (minus the schemas other than full pinyin), 白霜's
 # zh-moqi.gram and build/ with the compiled tables. The dictionary sources aren't shipped: librime
 # uses the prebuilt tables as they are when a table's source is missing, so it neither checksums nor
 # rebuilds them. Both projects are GPL-3.0; the zip carries the licence and SOURCE.txt (pinned
@@ -25,8 +25,8 @@ RIME_FROST_SHA256=4f4998ae83f63d757c0a4ace192f69d48265bddfabe231642b73e3739ed0f2
 # 白霜 core: its rime_frost.dict.yaml without the cn_dicts_cell domain dictionaries (undocumented
 # origin) or tencent (which 白霜 leaves out too).
 FROST_CORE=(8105 41448 base ext others corrections)
-# The pinyin schemes SebType offers (ChineseIMESettings.PinyinScheme), all on the same dictionary.
-SCHEMAS=(rime_ice double_pinyin double_pinyin_abc double_pinyin_flypy double_pinyin_mspy)
+# Full pinyin is SebType's only Chinese scheme (Decisions #2, Chinese menu, #117): rime-ice's 9-key and
+# double-pinyin schemes are left out. melt_eng and radical_pinyin stay: rime_ice uses them.
 # OpenCC's simplified → traditional conversion, which rime-ice's 简/繁 switch (traditionalization, #36)
 # runs: its s2t config and the two dictionaries that config reads, compiled to OpenCC's binary format
 # with the host's libopencc (the format is the same in every OpenCC since 1.0).
@@ -38,7 +38,7 @@ OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceef
 # Must equal the librime that rime-android builds, so the phone takes the compiled files as they are.
 . rime-android/versions.sh
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=4
+BUNDLE_REVISION=5
 
 out=${1:-build/sebtype-assets}/rime
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
@@ -84,10 +84,7 @@ EOF
 
   # rime-ice's own dictionary gives way to 白霜 core's, under rime-ice's name: the schemas, Lua and the
   # learned words (rime_ice.userdb) all refer to it by that name.
-  rm -rf "$s"/cn_dicts "$s"/{weasel,squirrel}.yaml "$s"/t9.schema.yaml
-  for f in "$s"/double_pinyin_*.schema.yaml; do
-    [[ " ${SCHEMAS[*]} " == *" $(basename "$f" .schema.yaml) "* ]] || rm "$f"
-  done
+  rm -rf "$s"/cn_dicts "$s"/{weasel,squirrel}.yaml "$s"/t9.schema.yaml "$s"/double_pinyin*.schema.yaml
   mkdir "$s/cn_dicts"
   for d in "${FROST_CORE[@]}"; do mv "$work/frost/cn_dicts/$d.dict.yaml" "$s/cn_dicts/"; done
   mv "$work/frost/zh-moqi.gram" "$s/"
@@ -100,9 +97,9 @@ EOF
   cp "$(fetch "$OPENCC_URL/config/s2t.json" "$OPENCC_S2T_SHA256")" "$s/opencc/s2t.json"
   "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STPhrases.txt" "$OPENCC_PHRASES_SHA256")" "$s/opencc/STPhrases.ocd2"
   "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STCharacters.txt" "$OPENCC_CHARACTERS_SHA256")" "$s/opencc/STCharacters.ocd2"
-  python3 -I - "$work/frost/rime_frost.dict.yaml" "$s" "${FROST_CORE[*]}" "${SCHEMAS[*]}" <<'EOF'
+  python3 -I - "$work/frost/rime_frost.dict.yaml" "$s" "${FROST_CORE[*]}" <<'EOF'
 import re, sys
-frost, shared, core, schemas = sys.argv[1], sys.argv[2], sys.argv[3].split(), sys.argv[4].split()
+frost, shared, core = sys.argv[1], sys.argv[2], sys.argv[3].split()
 
 head, sep, body = open(frost, encoding="utf-8").read().partition("\n...\n")
 head, n = re.subn(r"^name: rime_frost$", "name: rime_ice", head, flags=re.M)
@@ -112,25 +109,32 @@ assert imports == core, f"白霜's core list changed: {imports}"
 head = "\n".join(l for l in head.split("\n") if not l.startswith("  - cn_dicts_cell/"))
 open(f"{shared}/rime_ice.dict.yaml", "w", encoding="utf-8").write(head + sep + body)
 
-# 白霜's grammar with the penalty the #40 study measured; contextual suggestions stay off, as in 白霜.
-for schema in schemas:
-    p = f"{shared}/{schema}.schema.yaml"
-    s = open(p, encoding="utf-8").read()
-    # Plain keys, not a root __patch: that would turn off librime's automatic <schema>.custom.yaml patch.
-    assert "\ngrammar:" not in s and "contextual_suggestions" not in s, p
-    s, n = re.subn(r"^translator:\n", "translator:\n  contextual_suggestions: false  # SebType: as in 白霜\n",
-                   s, count=1, flags=re.M)
-    assert n == 1, f"no translator in {p}"
-    s += ("\n# SebType: 白霜 (rime-frost)'s zh-moqi grammar\ngrammar:\n  language: zh-moqi\n"
-          "  non_collocation_penalty: -4\n")
-    open(p, "w", encoding="utf-8").write(s)
-
-# Typo correction (#46), full pinyin only (a double-pinyin key isn't a letter of the spelling):
-# librime's correction in a second translator over the same dictionary, asked and ranked by sebtype_typo.lua.
-# The main translator stays exact; without its own user dictionary the second one neither learns
-# twice nor shows learned words corrected. Its comments carry the corrected spelling for the filter.
 p = f"{shared}/rime_ice.schema.yaml"
 s = open(p, encoding="utf-8").read()
+# 白霜's grammar with the penalty the #40 study measured; contextual suggestions stay off, as in 白霜.
+# Plain keys, not a root __patch: that would turn off librime's automatic <schema>.custom.yaml patch.
+assert "\ngrammar:" not in s and "contextual_suggestions" not in s, p
+s, n = re.subn(r"^translator:\n", "translator:\n  contextual_suggestions: false  # SebType: as in 白霜\n",
+               s, count=1, flags=re.M)
+assert n == 1, f"no translator in {p}"
+s += ("\n# SebType: 白霜 (rime-frost)'s zh-moqi grammar\ngrammar:\n  language: zh-moqi\n"
+      "  non_collocation_penalty: -4\n")
+
+# One switch in the menus, 简 → 繁 (Decisions #2, Chinese menu, #117): the other switches lose their
+# states, which is what hides a switch in every Rime menu (Fcitx5's, Weasel's and the Ctrl+` switcher),
+# and keep their place (the Configurator patches them by index) and their reset: Chinese punctuation,
+# emoji on, half-width, normal words. ascii_mode stays a switch: the Shift tap is its key.
+switches = re.search(r"^switches:\n((?:  .*\n)+)", s, re.M)
+names = re.findall(r"^  - name: (\w+)", switches.group(1), re.M)
+assert names == ["ascii_mode", "ascii_punct", "traditionalization", "emoji", "full_shape", "search_single_char"], names
+fixed = re.sub(r"^(  - name: (?:ascii_mode|ascii_punct|emoji|full_shape|search_single_char)\b.*\n)(?:    (?:states|abbrev):.*\n)+",
+               r"\1", switches.group(1), flags=re.M)
+s = s[:switches.start(1)] + fixed + s[switches.end(1):]
+
+# Typo correction (#46): librime's correction in a second translator over the same dictionary, asked
+# and ranked by sebtype_typo.lua. The main translator stays exact; without its own user dictionary the
+# second one neither learns twice nor shows learned words corrected. Its comments carry the corrected
+# spelling for the filter.
 s, n = re.subn(r"^  filters:\n", lambda m: m.group(0) + "    - lua_filter@*sebtype_typo  # SebType: typo corrections (#46)\n",
                s, count=1, flags=re.M)
 assert n == 1, f"filters not found in {p}"
@@ -159,9 +163,15 @@ open(p, "w", encoding="utf-8").write(s)
 
 p = f"{shared}/default.yaml"
 s = open(p, encoding="utf-8").read()
-s, n = re.subn(r"^schema_list:\n(?:[ #].*\n|\n)*",
-               "schema_list:\n" + "".join(f"  - schema: {x}\n" for x in schemas) + "\n", s, count=1, flags=re.M)
+s, n = re.subn(r"^schema_list:\n(?:[ #].*\n|\n)*", "schema_list:\n  - schema: rime_ice\n\n", s, count=1, flags=re.M)
 assert n == 1, "schema_list not found in default.yaml"
+# The menu remembers only 简/繁, so a value saved before #117 can't keep a switch the menu no longer has.
+s, n = re.subn(r"^  save_options:\n(?:    .*\n)+", "  save_options:\n    - traditionalization\n", s, count=1, flags=re.M)
+assert n == 1, "switcher/save_options not found in default.yaml"
+# 简/繁's only key is Ctrl+Shift+F (#36, the PCs' setup); rime-ice's Ctrl+Shift+3 (punctuation) and
+# Ctrl+Shift+4 (简/繁) go with the fixed switches.
+s, n = re.subn(r"^    - \{ when: always, toggle: (?:ascii_punct|traditionalization), accept: Control\+Shift\+.*\n", "", s, flags=re.M)
+assert n == 4, f"{n} of rime-ice's 4 Ctrl+Shift switch keys found in default.yaml"
 open(p, "w", encoding="utf-8").write(s)
 EOF
 
@@ -185,6 +195,9 @@ EOF
   # The 简/繁 switch on: traditional output from the shipped OpenCC data.
   "$work/deploy" "$s" "$work/hant" rime_ice houlai traditionalization > "$work/hant.out" 2> "$work/hant.log"
   grep -qx 'first=後來' "$work/hant.out" || { echo "rime-data: 繁 doesn't convert: houlai -> $(cat "$work/hant.out")" >&2; exit 1; }
+  # The Ctrl+` switcher, like the menus, offers the one schema and one switch (#117).
+  "$work/deploy" "$s" "$work/phone" rime_ice '^`' > "$work/switcher.out" 2> "$work/switcher.log"
+  grep -qx 'menu=雾凇拼音 | 简 → 繁' "$work/switcher.out" || { echo "rime-data: Ctrl+\` menu: $(cat "$work/switcher.out")" >&2; exit 1; }
   # The app's settings patch (here fuzzy z = zh, as RimeIceSetup writes it) still applies without the sources.
   mkdir "$work/fuzzy"
   printf 'patch:\n    speller/algebra/+:\n        - derive/^z/zh/\n        - derive/^zh/z/\n' > "$work/fuzzy/rime_ice.custom.yaml"
@@ -203,9 +216,11 @@ LICENSE file next to this one. Built by tools/rime-data/build.sh in https://gith
 
 Changes to rime-ice: its dictionary (cn_dicts/) is replaced by rime-frost's cn_dicts/ ${FROST_CORE[*]}
 under the name rime_ice (rime_ice.dict.yaml is rime-frost's rime_frost.dict.yaml without its
-cn_dicts_cell imports); the schemas ${SCHEMAS[*]} get rime-frost's zh-moqi grammar
-(non_collocation_penalty -4, contextual_suggestions off); default.yaml lists only those schemas;
-weasel.yaml, squirrel.yaml and the other schemas are left out. rime_ice.schema.yaml gets SebType's
+cn_dicts_cell imports); the schema rime_ice gets rime-frost's zh-moqi grammar
+(non_collocation_penalty -4, contextual_suggestions off); default.yaml lists only rime_ice, remembers
+only the traditionalization switch and drops the Control+Shift+3 and 4 switch keys; in rime_ice the
+switches but traditionalization have no states, so menus don't show them;
+weasel.yaml, squirrel.yaml, t9 and the double-pinyin schemas are left out. rime_ice.schema.yaml gets SebType's
 typo correction: a second translator, corr, with librime's correction on, ranked by
 lua/sebtype_typo.lua (SebType's, GPL-3.0). The dictionary sources are compiled
 into build/ with librime $LIBRIME_VERSION and not included here: they are at the source links above.

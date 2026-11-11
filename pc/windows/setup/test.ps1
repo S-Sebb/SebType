@@ -12,7 +12,8 @@ nobody's own input settings change, then removes the user and its profile:
 1. The installer's pictures: the language dialog (which must preselect Windows' own display language),
    the welcome page in English, 中文 and 日本語, then a whole install in English with the uninstaller.
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
-   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, Japanese), a silent
+   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, Japanese) and Chinese's
+   tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu), a silent
    upgrade that keeps learned words, Japanese still working after the language list changes, then the
    uninstall: everything back as before, learned words gone.
 3. Round 2, all silent: install with Chinese and Japanese only (no English), upgrade to English and
@@ -55,7 +56,7 @@ function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.Languag
 # ============================================================ typing, as the test user, not elevated
 if ($Typing) {
   try {
-    Add-Type -Path "$root\TsfHost.cs"
+    Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
     $tsf = [SebType.TsfHost]
     # Keys come from the Remote Desktop client (rdp-keys.py through test-tcsbackend.sh's tunnel), as a person's.
     $keys = Wait-Until 30 { try { New-Object Net.Sockets.TcpClient '127.0.0.1', 47812 } catch { $null } }
@@ -107,16 +108,47 @@ if ($Typing) {
           $t
         }
       }
+      # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
+      function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
       Check "japanese-$Typing" {
         To-Language '0411'
-        # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
-        function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
-        if ((Committed 'a') -eq 'a') { Keys 'Alt_L+grave' }
+        if ((Committed 'a') -eq 'a') { Keys Shift_L }
         $t = Committed 'nihongo '
         if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
         $t
       }
+      if ($Typing -eq 'all') {
+        # Alt+` is あ ⇄ ア, and the Shift tap the only way to English letters, where Alt+` switches nothing (#117).
+        Check 'japanese-alt-grave' {
+          Keys 'Alt_L+grave'; $kata = Committed 'a'
+          Keys 'Alt_L+grave'; $hira = Committed 'a'
+          Keys Shift_L; Keys 'Alt_L+grave'; $en = Committed 'a'
+          Keys Shift_L; $back = Committed 'a'
+          if ("$kata $hira $en $back" -ne 'ア あ a あ') { throw "Alt+`` gave '$kata', again '$hira'; Shift tap and Alt+`` '$en', Shift tap '$back'" }
+          'あ → ア → あ; in English Alt+` stays English'
+        }
+      }
     } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue }
+    # The tray menu (#117) of the test's own TSF text field, where the input mode button can be
+    # right-clicked: Chinese's one switch, 简 → 繁, with its key. Japanese's is in mozc/test.ps1. A picture
+    # of each, 117-menu-*.png.
+    if ($Typing -eq 'all') {
+      $tsf::Start()
+      try {
+        Check 'chinese-tray-menu' {
+          if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
+          $tsf::Activate(0x804, [Guid]$WeaselClsid, [Guid]'{3D02CAB6-2B8E-4781-BA20-1C9267529467}')
+          function Field($s) { $tsf::Clear(); TypeText $s; Start-Sleep 1; $tsf::Text().Trim() }
+          $null = Field 'ni'; Keys Escape  # Weasel's first key in this window
+          $m = $tsf::TrayPopup($true, "$out\117-menu-zh-hans.png"); $hant = Field 'houlai '
+          $m2 = $tsf::TrayPopup($true, "$out\117-menu-zh-hant.png"); $hans = Field 'houlai '
+          if ($m -ne "简 → 繁`tCtrl+Shift+F" -or $hant -ne '後來' -or $m2 -ne "繁 → 简`tCtrl+Shift+F" -or $hans -ne '后来') {
+            throw "menu '$m', then houlai gave '$hant'; menu '$m2', then '$hans'"
+          }
+          'menu 简 → 繁 (後來), then 繁 → 简 (后来)'
+        }
+      } finally { $tsf::Stop() }
+    }
   } catch { Result "typing-$Typing" FAIL $_.Exception.Message } finally {
     New-Item -ItemType File -Force "$out\typing-$Typing-done" | Out-Null
   }
@@ -343,8 +375,8 @@ namespace SebTypeSetupTest {
         $name = (Get-Item "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid\LanguageProfile\0x00000411\{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}").GetValue('Description')
         $db = "$env:USERPROFILE\AppData\LocalLow\Mozc\config1.db"
         if ($name -ne '日本語') { throw "Mozc's input method reads '$name'" }
-        if (-not (Test-Path $db) -or -not ([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($db)) -match 'IMEOn')) { throw 'no SebType keymap in config1.db' }
-        'named 日本語, with SebType''s keymap (Shift tap, Alt+`)'
+        if (-not (Test-Path $db) -or -not ([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($db)) -match '(?s)IMEOn.*InputModeSwitchKanaType')) { throw 'no SebType keymap in config1.db' }
+        'named 日本語, with SebType''s keymap (Shift tap for English, Alt+` for ア)'
       }
     }
   }
@@ -510,7 +542,7 @@ Check 'admin-input-as-before' {
   if ((Languages) -ne $adminBefore.languages) { throw "this admin's input methods are $(Languages), were $($adminBefore.languages)" }
   'this admin''s input methods untouched'
 }
-foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'japanese-all',
+foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'japanese-all', 'japanese-alt-grave',
   'round1-upgrade', 'japanese-after-language-change', 'round1-uninstall-pages', 'round1-everything-as-before', 'round2-upgrade-drops-japanese', 'round2-everything-as-before') {
   if (-not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
 }

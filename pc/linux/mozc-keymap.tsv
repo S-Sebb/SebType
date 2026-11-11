@@ -157,10 +157,8 @@ Precomposition	Space	InsertSpace
 Prediction	Ctrl Delete	DeleteSelectedCandidate
 Suggestion	Down	PredictAndConvert
 Suggestion	Shift Enter	CommitFirstSuggestion
-Composition	Alt `	IMEOff
-Conversion	Alt `	IMEOff
-DirectInput	Alt `	IMEOn
-Precomposition	Alt `	IMEOff
+Precomposition	Alt `	InputModeSwitchKanaType
+Precomposition	Alt Hankaku/Zenkaku	InputModeSwitchKanaType
 Composition	Shift	IMEOff
 Conversion	Shift	IMEOff
 DirectInput	Shift	IMEOn

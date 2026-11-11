@@ -331,8 +331,8 @@ if ('zh' -in $want) {
       '    - { when: always, toggle: traditionalization, accept: Control+Shift+F }')) -or $redeploy
 }
 
-# Japanese: Mozc's keymap gets Alt+` and a Shift tap for あ ⇄ English (pc/linux/mozc-keymap.tsv, Decisions
-# #2); every other setting stays. Mozc's text service reads it once per app, when the app first loads it.
+# Japanese: Mozc's keymap gets a Shift tap for あ ⇄ English and Alt+` for あ ⇄ ア (pc/linux/mozc-keymap.tsv,
+# Decisions #2, #117); every other setting stays. Mozc's text service reads it once per app, when the app first loads it.
 if ('ja' -in $want) {
   if (-not (Get-MozcProduct)) { throw "SebType's Mozc isn't installed (setup.ps1 -Machine first)" }
   $db = Join-Path $MozcUser 'config1.db'

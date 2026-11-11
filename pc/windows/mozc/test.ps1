@@ -32,7 +32,7 @@ $clsid = [Guid]'{10A67BC8-22FA-4A59-90DC-2546652C56BF}'  # Mozc's OSS text servi
 $profileId = [Guid]'{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
 $mozcTip = '0411:{10A67BC8-22FA-4A59-90DC-2546652C56BF}{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
 $typingChecks = 'test-user', 'install-for-user', 'languages-en-ja-zh', 'rdp-keys', 'notepad-japanese', 'notepad-shift-tap', 'tsf-started', 'window-focused', 'name-nihongo', 'mozc-active', 'kana-input',
-    'tray-hiragana', 'katakana-and-back', 'shift-tap-toggles-english', 'shift-letter-stays-japanese', 'alt-grave-toggles-english', 'shift-letter-stays-english',
+    'tray-hiragana', 'tray-menu-katakana-and-back', 'shift-tap-toggles-english', 'shift-letter-stays-japanese', 'alt-grave-katakana-and-back', 'shift-letter-stays-english',
     'caps-lock-icon', 'undo-for-user'
 
 if ($Typing) {  # the typing checks, as the test user: not elevated, with a profile of its own
@@ -58,7 +58,7 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
         }
         # The keys come from the Remote Desktop client, as a person's would: rdp-keys.py on its side, which
         # test-tcsbackend.sh tunnels to this port. They go to the window in front of this session.
-        Add-Type -Path "$PSScriptRoot\TsfHost.cs"
+        Add-Type -Path "$PSScriptRoot\TsfHost.cs" -ReferencedAssemblies System.Drawing
         $tsf = [SebType.TsfHost]
         $keys = $null
         Check 'rdp-keys' {
@@ -90,7 +90,7 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
                     if (-not $tsf::Foreground($h)) { throw 'Notepad did not come to the front' }
                     for ($i = 0; $i -lt 3 -and $tsf::Language($h) -ne 0x411; $i++) { Keys 'Super_L+space'; Start-Sleep 1 }
                     if ($tsf::Language($h) -ne 0x411) { throw "Win+Space three times left Notepad in language $('{0:x4}' -f $tsf::Language($h))" }
-                    if ((NotepadTyped 'a') -eq 'a') { Keys 'Alt_L+grave' }  # Japanese starts in English or あ
+                    if ((NotepadTyped 'a') -eq 'a') { Keys Shift_L }  # Japanese starts in English or あ
                     $t = NotepadTyped 'nihongo '
                     if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
                     "Win+Space to 日本語, typed $t"
@@ -123,7 +123,7 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
             }
             function Typed($s) { $tsf::Clear(); TypeText $s; Keys Return; $tsf::Text().Trim() }
             # Japanese starts in English or あ; a typed "a" says which.
-            function To-Hiragana { if ((Typed 'a') -eq 'a') { Keys 'Alt_L+grave' } }
+            function To-Hiragana { if ((Typed 'a') -eq 'a') { Keys Shift_L } }
 
             Check 'kana-input' {
                 To-Hiragana
@@ -132,12 +132,23 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
                 $t
             }
             Check 'tray-hiragana' { $t = Tray; if ($t -ne 'hira') { throw "tray shows $t" }; 'あ' }
-            Check 'katakana-and-back' {
-                $tsf::TrayMenu(1)
+            # The tray menu is the one switch, あ → ア, with its key (#117), with a picture of each in $out.
+            Check 'tray-menu-katakana-and-back' {
+                $m = $tsf::TrayPopup($true, "$out\menu-ja-hira.png")
                 $t = Tray; $k = Typed 'a'
-                $tsf::TrayMenu(0)
+                $m2 = $tsf::TrayPopup($true, "$out\menu-ja-kata.png")
                 $back = Tray
-                if ($t -ne 'kata' -or $k -ne 'ア' -or $back -ne 'hira') { throw "ア mode: tray $t, typed '$k'; back: tray $back" }
+                if ($m -ne "あ → ア`tAlt+``" -or $t -ne 'kata' -or $k -ne 'ア' -or $m2 -ne "ア → あ`tAlt+``" -or $back -ne 'hira') {
+                    throw "menu '$m', then tray $t, typed '$k'; menu '$m2', then tray $back"
+                }
+                'menu あ → ア (typed ア), then ア → あ'
+            }
+            Check 'alt-grave-katakana-and-back' {
+                Keys 'Alt_L+grave'
+                $t = Tray; $k = Typed 'a'
+                Keys 'Alt_L+grave'
+                $back = Tray
+                if ($t -ne 'kata' -or $k -ne 'ア' -or $back -ne 'hira') { throw "after Alt+``: tray $t, typed '$k'; after a second Alt+``: tray $back" }
                 'あ → ア (typed ア) → あ'
             }
             Check 'shift-tap-toggles-english' {
@@ -154,29 +165,30 @@ if ($Typing) {  # the typing checks, as the test user: not elevated, with a prof
                 if ($t -ne 'hira') { throw "Shift+K left the tray at $t" }
                 'Shift+K is no Shift tap'
             }
-            Check 'alt-grave-toggles-english' {
-                Keys 'Alt_L+grave'
+            # The Shift tap is the only way to English letters: Alt+` there switches nothing (#117).
+            Check 'alt-grave-stays-english' {
+                Keys Shift_L; Keys 'Alt_L+grave'
                 $t = Tray; $e = Typed 'a'
-                Keys 'Alt_L+grave'
+                Keys Shift_L
                 $back = Tray
-                if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "after Alt+``: tray $t, typed '$e'; after a second Alt+``: tray $back" }
-                'あ → a → あ'
+                if ($t -ne 'a' -or $e -ne 'a' -or $back -ne 'hira') { throw "English, then Alt+``: tray $t, typed '$e'; after a Shift tap: tray $back" }
+                'a → Alt+` → a → あ'
             }
             Check 'shift-letter-stays-english' {
-                Keys 'Alt_L+grave'
+                Keys Shift_L
                 $tsf::Clear(); Keys 'Shift_L+k'; $k = $tsf::Text(); $t = Tray
-                Keys 'Alt_L+grave'
+                Keys Shift_L
                 if ($k -ne 'K' -or $t -ne 'a') { throw "Shift+K in English typed '$k', tray $t" }
                 'Shift+K types K and stays English'
             }
             # Caps Lock is this session's own: the test user's, not anyone's keyboard.
             Check 'caps-lock-icon' {
                 if ($tsf::CapsLock()) { Keys Caps_Lock }
-                Keys 'Alt_L+grave'; $off = Tray
+                Keys Shift_L; $off = Tray
                 Keys Caps_Lock; $on = Tray
-                Keys 'Alt_L+grave'; $hiraCaps = Tray
-                Keys Caps_Lock; Keys 'Alt_L+grave'; $offAgain = Tray
-                Keys 'Alt_L+grave'
+                Keys Shift_L; $hiraCaps = Tray
+                Keys Caps_Lock; Keys Shift_L; $offAgain = Tray
+                Keys Shift_L
                 if ($off -ne 'a' -or $on -ne 'caps' -or $hiraCaps -ne 'hira' -or $offAgain -ne 'a') {
                     throw "English: $off, with Caps Lock: $on, あ with Caps Lock: $hiraCaps, English after: $offAgain"
                 }

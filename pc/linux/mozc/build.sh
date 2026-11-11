@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds SebType's fcitx5-mozc RPM (#66): Fedora's own source package (sources, spec, flags) at the
-# version in versions.sh, plus caps-lock-icon.patch, in a pinned Fedora container. Prints the RPM's path.
+# version in versions.sh, plus caps-lock-icon.patch and menu.patch, in a pinned Fedora container. Prints
+# the RPM's path.
 #
 #   pc/linux/mozc/build.sh    # -> ~/.cache/sebtype/mozc/rpms/fcitx5-mozc-<version>-<release>.x86_64.rpm
 #
@@ -37,15 +38,16 @@ fi
 inner=$(cat <<'EOF'
 set -euo pipefail
 rel=$1
-spec() { # Fedora's spec with our release and patch
+spec() { # Fedora's spec with our release and patches
   sed -e "s/^Release:.*/Release: $rel/" -e '/^%autochangelog/d' \
-    -e 's/^Patch1:/Patch100: caps-lock-icon.patch\n&/' -e 's/^%patch 0 -p1/&\n%patch 100 -p1/' "$1"
+    -e 's/^Patch1:/Patch100: caps-lock-icon.patch\nPatch101: menu.patch\n&/' \
+    -e 's/^%patch 0 -p1/&\n%patch 100 -p1\n%patch 101 -p1/' "$1"
 }
 rm -rf /work/fresh && mkdir -p /work/fresh /work/top
 rpm -i --define '_topdir /work/fresh' /srpm.rpm
-cp /patch /work/fresh/SOURCES/caps-lock-icon.patch
+cp /patches/caps-lock-icon.patch /patches/menu.patch /work/fresh/SOURCES/
 spec /work/fresh/SPECS/fcitx5-mozc.spec > /work/fresh/fcitx5-mozc.spec
-stamp=$(cat /work/fresh/fcitx5-mozc.spec /patch /srpm.rpm | sha256sum)
+stamp=$(cat /work/fresh/fcitx5-mozc.spec /patches/*.patch /srpm.rpm | sha256sum)
 defs=(--define '_topdir /work/top' --define 'debug_package %{nil}')
 if [[ $stamp != "$(cat /work/top/prep.stamp 2>/dev/null)" ]]; then
   rpmbuild -bp --nodeps --define '_topdir /work/fresh' /work/fresh/fcitx5-mozc.spec >/work/prep.log 2>&1 ||
@@ -66,7 +68,7 @@ EOF
 start=$SECONDS
 devq -w 3600 -m 120 -P "${DEVQ_RANK:-2}" -n "fcitx5-mozc build" /tmp/agent-locks/sebtype/build.lock \
   podman run --rm --memory 6g --memory-swap 6g -v "$MOZC_CACHE/work:/work:Z" -v "$srpm:/srpm.rpm:ro,Z" \
-  -v "$here/caps-lock-icon.patch:/patch:ro,Z" "$image" bash -c "$inner" inner "$SEBTYPE_RELEASE"
+  -v "$here:/patches:ro,Z" "$image" bash -c "$inner" inner "$SEBTYPE_RELEASE"
 cp "$MOZC_CACHE/work/top/RPMS/x86_64/$MOZC_RPM" "$MOZC_CACHE/rpms/"
 echo "built in $((SECONDS - start)) s (logs: $MOZC_CACHE/work/*.log)" >&2
 echo "$MOZC_CACHE/rpms/$MOZC_RPM"

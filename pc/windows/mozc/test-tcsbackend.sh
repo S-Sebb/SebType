@@ -137,8 +137,10 @@ done
 tps > "$out/results.txt" <<'EOF'
 "--- run.log"; Get-Content C:\sebtype-test\run.log -Encoding utf8 -ErrorAction SilentlyContinue
 "--- mozc-results.txt"; Get-Content "$env:LOCALAPPDATA\SebType\test\mozc-results.txt" -Encoding utf8 -ErrorAction SilentlyContinue
-Get-ChildItem "$env:LOCALAPPDATA\SebType\test" -Exclude mozc-results.txt -ErrorAction SilentlyContinue | ForEach-Object { "--- $($_.Name)"; Get-Content $_.FullName -Encoding utf8 -Tail 60 }
+Get-ChildItem "$env:LOCALAPPDATA\SebType\test" -Exclude mozc-results.txt, *.png -ErrorAction SilentlyContinue | ForEach-Object { "--- $($_.Name)"; Get-Content $_.FullName -Encoding utf8 -Tail 60 }
 EOF
+# The pictures of the tray menu (#117).
+scp -q 'TCSBackEnd:C:/Users/Administrator/AppData/Local/SebType/test/*.png' "$out/" 2>/dev/null
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 30 minutes (log: $out/results.txt)"
 sed -n '/^--- mozc-results.txt/,/^--- /p' "$out/results.txt" | grep -aE '^(PASS|FAIL|SKIP|BLOCKED) '
 cleanup >/dev/null

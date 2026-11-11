@@ -1,8 +1,8 @@
 ﻿<#
 Builds SebType's Mozc for Windows (#65): upstream Mozc at the tag in versions.psd1, plus
-caps-lock-icon.patch (the Caps Lock icon), japanese-name.patch (the name 日本語), shift-tap.patch
-(Shift tap from English back to あ) and the Set E tray
-icons from pc/icons. Prints the
+caps-lock-icon.patch (the Caps Lock icon), japanese-name.patch (the name 日本語), menu.patch (the
+language bar's one switch, あ → ア, and Alt+` as a two-way あ ⇄ ア), shift-tap.patch (Shift tap from
+English back to あ) and the Set E tray icons from pc/icons. Prints the
 installer's path.
 
     pwsh pc/windows/mozc/build.ps1 [-WorkDir D:\sebtype-mozc]

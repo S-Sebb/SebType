@@ -71,21 +71,6 @@ object ChineseIMESettings {
         Traditional(R.string.chinese_setting_simplification_force_traditional);
     }
 
-    enum class PinyinScheme(
-        val displayNameZH: String,
-        val displayNameEN: String,
-        val rimeId: String
-    ) {
-        // These must not be renamed, or the existing setting value for users will break
-        FullPinyin("全拼", "Full Pinyin", "luna_pinyin"),
-        Natural("自然碼雙拼", "Double Pinyin", "double_pinyin"),
-        ABC("智能ABC雙拼", "Double Pinyin - ABC", "double_pinyin_abc"),
-        FlyPY("小鶴雙拼", "Double Pinyin - flyPY", "double_pinyin_flypy"),
-        MS("微軟雙拼", "Double Pinyin - MS", "double_pinyin_mspy"),
-        PYJJ("拼音加加雙拼", "Double Pinyin - PYJJ", "double_pinyin_pyjj"),
-        ST("四通雙拼", "Double Pinyin - ST", "double_pinyin_st");
-    }
-
     internal fun initialPatch(pattern: String, substitution: String, twoWay: Boolean)
             = buildList {
         add("derive/^${pattern}/${substitution}/")
@@ -128,11 +113,6 @@ object ChineseIMESettings {
     val SimplificationSetting = SettingsKey(
         stringPreferencesKey("ChineseIME_simplification"),
         ChineseSimplificationMode.ByLanguage.name
-    )
-
-    val PinyinSchemeSetting = SettingsKey(
-        stringPreferencesKey("ChineseIME_pinyin_scheme"),
-        PinyinScheme.FullPinyin.name
     )
 
     val FuzzyPinyinSetting = SettingsKey(
@@ -534,10 +514,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
 
             try {
                 val settings = Settings.getInstance().current
-                val pinyinScheme = helper.context.getSetting(ChineseIMESettings.PinyinSchemeSetting)
-                    .toEnumOrNull<ChineseIMESettings.PinyinScheme>()
-                    ?: ChineseIMESettings.PinyinScheme.FullPinyin
-                val schema = RimeIceSetup.schemaFor(layoutHint, pinyinScheme) ?: return@launch
+                val schema = RimeIceSetup.schemaFor(layoutHint) ?: return@launch
                 traditional.value = !RimeIceSetup.isSimplifiedChinese(helper.context, settings.mLocale)
 
                 val config = RimeIceSetup.Configuration(
