@@ -33,7 +33,6 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.edit
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -63,7 +62,6 @@ import org.futo.inputmethod.engine.general.WordLearner
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.settings.Settings
-import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.BasicThemeProvider
 import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
@@ -76,7 +74,6 @@ import org.futo.inputmethod.latin.uix.SUGGESTION_BLACKLIST
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.UixManager
 import org.futo.inputmethod.latin.uix.actions.CanThrowIfDebug
-import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.createInlineSuggestionsRequest
 import org.futo.inputmethod.latin.uix.dataStore
 import org.futo.inputmethod.latin.uix.forceUnlockDatastore
@@ -571,15 +568,6 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         }
 
         latinIMELegacy.setInputView(legacyInputView.value)
-    }
-
-    /** SebType (#31): the sticky incognito toggle; the current field's engine restarts so it applies at once. */
-    fun setIncognito(on: Boolean) {
-        PreferenceUtils.getDefaultSharedPreferences(this).edit { putBoolean(Settings.PREF_SEBTYPE_INCOGNITO, on) }
-        imeManager.onFinishInput()
-        latinIMELegacy.loadSettings()
-        imeManager.onStartInput()
-        Incognito.update(this, currentInputEditorInfo)
     }
 
     override fun setCandidatesView(view: View?) {

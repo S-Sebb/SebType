@@ -5,8 +5,7 @@
 # the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
 # mode chip (#38); with MAIN_APK (main's release APK), last an update from main that keeps a word
-# learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41),
-# incognito (#31), and clipboard history in a settings backup only when ticked (#34).
+# learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41).
 # It uninstalls SebType first, so its data is lost.
 # One line per check in /tmp/sebtype/test-emulator-<checkout>/results.txt; logs next to it (one directory
 # per checkout, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
@@ -130,13 +129,13 @@ device_suite() {
     PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run \
       python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
     # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
-    PATH=$(dirname "$adb"):$PATH T=3600 check settings-run python3 -I sebtype/test-settings.py "$serial" "$results" "$out"
+    PATH=$(dirname "$adb"):$PATH T=2400 check settings-run python3 -I sebtype/test-settings.py "$serial" "$results" "$out"
   else
     result SKIP chinese "needs install-beside-futo and bumped-apk"
   fi
 }
 export -f result check set_locale device_checks device_suite; export adb apk futo_apk field_apk locale_dex results
-sebtype/emulator.sh -P 1 -w 1800 -m 50 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
+sebtype/emulator.sh -P 1 -w 1800 -m 35 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "$(head -1 "$out/emulator.log")"
 

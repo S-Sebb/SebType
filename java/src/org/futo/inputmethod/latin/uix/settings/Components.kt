@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -366,21 +365,6 @@ fun SettingToggleRaw(
                 setValue(!enabled)
             }
         }, enabled = !disabled)
-    }
-}
-
-@Composable
-fun SettingCheckbox(title: String, checked: Boolean, setChecked: (Boolean) -> Unit) {
-    SettingItem(
-        title = title,
-        onClick = { setChecked(!checked) },
-        modifier = Modifier.clearAndSetSemantics {
-            this.text = AnnotatedString(title)
-            this.role = Role.Checkbox
-            this.toggleableState = ToggleableState(checked)
-        }
-    ) {
-        Checkbox(checked = checked, onCheckedChange = setChecked)
     }
 }
 

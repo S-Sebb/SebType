@@ -40,7 +40,8 @@ source mozc/versions.sh
 source rime/versions.sh
 own=$out/own-builds; rm -rf "$own"; mkdir -p "$own"
 for b in "$MOZC_CACHE/rpms/$MOZC_RPM mozc/build.sh" "$RIME_CACHE/$RIME_RPM rime/build.sh" \
-  "$(librime_rpm librime) rime/build.sh librime" "$(librime_rpm librime-lua) rime/build.sh librime"; do
+  "$(librime_rpm librime) rime/build.sh librime" "$(librime_rpm librime-lua) rime/build.sh librime" \
+  "$(librime_rpm librime-octagram) rime/build.sh librime"; do
   read -r rpm build <<<"$b"
   # shellcheck disable=SC2086  # word-split: a script and its arguments
   [[ -f $rpm ]] || ./$build >/dev/null || { echo "preflight: pc/linux/$build failed"; exit 1; }
@@ -48,7 +49,7 @@ for b in "$MOZC_CACHE/rpms/$MOZC_RPM mozc/build.sh" "$RIME_CACHE/$RIME_RPM rime/
 done
 own_fcitx=(bwrap --dev-bind / / --ro-bind "$own/usr/lib64/fcitx5/librime.so" /usr/lib64/fcitx5/librime.so
   --ro-bind "$own/usr/lib64/librime.so.$LIBRIME_VERSION" "/usr/lib64/librime.so.$LIBRIME_VERSION"
-  --ro-bind "$own/usr/lib64/rime-plugins/librime-lua.so" /usr/lib64/rime-plugins/librime-lua.so
+  --ro-bind "$own/usr/lib64/rime-plugins" /usr/lib64/rime-plugins
   --ro-bind "$own/usr/lib64/fcitx5/fcitx5-mozc.so" /usr/lib64/fcitx5/fcitx5-mozc.so
   --ro-bind "$own/usr/libexec/fcitx5-mozc" /usr/libexec/fcitx5-mozc)
 
@@ -63,7 +64,7 @@ live_dry() {
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
-    -e "install SebType's Chinese data" -e "set Mozc's keymap" \
+    -e "install SebType's Chinese data" -e "set Mozc's keymap" -e '^would: install packages librime-octagram ' \
     -e 'English ⇄ the last other language' -e 'install SebType.s tray icons' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
@@ -77,17 +78,18 @@ trap 'rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
 # fcitx5-mozc is installed only when $FAKE/fcitx5-mozc holds its version-release; fcitx5-rime is
-# installed, as $FAKE/fcitx5-rime's version-release once that file exists. The fake sudo logs and applies
+# installed, as $FAKE/fcitx5-rime's version-release once that file exists, and not while it is empty. The fake sudo logs and applies
 # dnf's install of SebType's RPMs and their distro-sync back to Fedora's.
-stub rpm 'p=${*: -1}; [[ $p == fcitx5-mozc || -f $FAKE/$p ]] || exit 0; [[ -f $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
+stub rpm 'p=${*: -1}; [[ $p == fcitx5-mozc || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
 stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
   'dnf install -y '*/$MOZC_RPM) echo -n '$MOZC_VERSION-$SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
   'dnf install -y '*/$RIME_RPM) echo -n '$RIME_VERSION-$RIME_SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
   'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_VERSION-$MOZC_FEDORA_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
   'dnf distro-sync -y fcitx5-rime') echo -n '$RIME_VERSION-$RIME_FEDORA_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
-  'dnf install -y '*/librime-*) for p in librime librime-lua; do echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\$p\"; done ;;
-  'dnf distro-sync -y librime librime-lua') for p in librime librime-lua; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
+  'dnf install -y '*/librime-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
+  'dnf install -y librime-octagram') echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/librime-octagram\" ;;
+  'dnf distro-sync -y librime '*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
 stub systemctl 'cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
@@ -352,7 +354,8 @@ fi
 # the label the tray text uses), and the schema id must stay rime_ice. The same Fcitx5 checks the
 # Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app; and typo correction
 # (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first, and so does xkaoshi (k for
-# the i above it), which only SebType's librime corrects (#101).
+# the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
+# grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file.
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
@@ -401,7 +404,8 @@ call(ic, IC, 'FocusIn')
 
 SHIFT, CTRL = 1, 4
 KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'space': (0x20, 65), 'Escape': (0xff1b, 9),
-        'f': (0x66, 41), 'F': (0x46, 41), **{c: (ord(c), code) for c, code in zip('houlaixsnk', (43, 32, 30, 46, 38, 31, 53, 39, 57, 45))}}
+        'F': (0x46, 41), **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
+                            for code, c in enumerate(row, first)}}
 def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
     taken = call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], state, release, 0)[0]
     wait(lambda: False, 0.03)
@@ -456,6 +460,8 @@ check('simplified after the second Ctrl+Shift+F', houlai(), '后来')
 check('Ctrl+F reaches the app', ctrl('f'), False)
 check('typo xoaoshi gives 小时 first', first('xoaoshi'), '小时')
 check('typo xkaoshi (k under i, SebType librime) gives 小时 first', first('xkaoshi'), '小时')
+check('typo nihap (p beside o) gives 你好 first', first('nihap'), '你好')
+check('beirendingwei gives 被认定为 first (the grammar file; without it 被人定位)', first('beirendingwei'), '被认定为')
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
@@ -651,7 +657,22 @@ check rime-install-and-undo own_swap "$RIME_VERSION" "$RIME_FEDORA_RELEASE" fcit
 # librime with its Lua plugin, which must be the same build
 check librime-install-and-undo own_swap "$LIBRIME_VERSION" "$LIBRIME_FEDORA_RELEASE" \
   librime "$h/.cache/sebtype/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
-  librime-lua "$h/.cache/sebtype/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
+  librime-lua "$h/.cache/sebtype/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
+  librime-octagram "$h/.cache/sebtype/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
+# The grammar plugin (#127): a missing librime-octagram is installed, Fedora's beside Fedora's librime and
+# SebType's build beside SebType's (Fedora's requires Fedora's librime).
+octagram() {
+  local ours=$h/.cache/sebtype/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm release o
+  for release in "$LIBRIME_FEDORA_RELEASE" "$LIBRIME_SEBTYPE_RELEASE"; do
+    echo -n "$LIBRIME_VERSION-$release" > "$fake/librime"; : > "$fake/librime-octagram"; rm -f "$fake/sudo.log"
+    o=$(echo y | fake_run) || return 1; echo "$o"
+    grep -q '^change: install packages librime-octagram ' <<<"$o" || return 1
+    if [[ $release == "$LIBRIME_FEDORA_RELEASE" ]]; then [[ $(head -1 "$fake/sudo.log") == 'sudo dnf install -y librime-octagram' ]]
+    else [[ $(head -1 "$fake/sudo.log") == "sudo dnf install -y $ours" ]]; fi || return 1
+    [[ $(cat "$fake/librime-octagram") == "$LIBRIME_VERSION-$release" ]] || return 1
+  done
+}
+check grammar-plugin-install octagram
 check undo-icons-and-reinstall undo_icons
 check undo-configurator-and-reinstall undo_configurator
 check undo-names-and-rename undo_names

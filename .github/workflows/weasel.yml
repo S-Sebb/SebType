@@ -11,7 +11,6 @@ on:
       - pc/windows/weasel/**
       - pc/icons/**
       - pc/linux/perf-rime.c
-      - pc/linux/rime/layout-model.patch
       - .github/workflows/weasel.yml
 
 permissions:
@@ -47,6 +46,8 @@ jobs:
           key: boost-1.84.0-msvc-14.3-weasel-0.17.4
       - name: Build
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: pc/windows/weasel/build.ps1 -Icons out/icons -Out out/weasel
       - uses: actions/upload-artifact@v4
         with:

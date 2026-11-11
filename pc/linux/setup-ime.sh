@@ -144,15 +144,26 @@ librime_installed() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ -z $(ins
 ((undo_rime)) && undo_build fcitx5-rime
 ((undo_librime)) && { mapfile -t librime_pkgs < <(librime_installed); undo_build "${librime_pkgs[@]}"; }
 
-# 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; fcitx5-mozc is the Japanese engine.
+# 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-octagram is the Rime plugin
+# that reads the Chinese data's grammar file, as the phone and Windows do (#127); fcitx5-mozc is the
+# Japanese engine.
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
-  fcitx5-rime fcitx5-mozc kcm-fcitx5)
+  fcitx5-rime librime-octagram fcitx5-mozc kcm-fcitx5)
 missing=()
 for p in "${pkgs[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if ((${#missing[@]})); then
   if change "install packages ${missing[*]} (asks before using sudo)"; then
     read -rp "Install ${missing[*]} with 'sudo dnf install'? [y/N] " answer || answer=
-    if [[ $answer == [yY]* ]]; then sudo dnf install -y "${missing[@]}"
+    if [[ $answer == [yY]* ]]; then
+      # librime's plugins come from librime's own build: SebType's, once librime is (1b)
+      if [[ " ${missing[*]} " == *" librime-octagram "* && $(installed librime) == *.sebtype* ]]; then
+        octagram_rpm=$(librime_rpm librime-octagram)
+        [[ -f $octagram_rpm ]] || "$here/rime/build.sh" librime >/dev/null
+        missing=("${missing[@]/#librime-octagram/$octagram_rpm}")
+      fi
+      sudo dnf install -y "${missing[@]}"
+      [[ " ${missing[*]} " == *octagram* ]] && busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
+        warn "$(restart_note "grammar plugin")"
     else warn "packages not installed: ${missing[*]}"; fi
   fi
 fi

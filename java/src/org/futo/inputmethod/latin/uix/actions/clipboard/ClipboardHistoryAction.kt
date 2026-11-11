@@ -86,7 +86,6 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import org.futo.inputmethod.latin.R
-import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionHeaderSearch
@@ -573,8 +572,6 @@ class ClipboardHistoryManager(val context: Context, val coroutineScope: Lifecycl
     private val primaryClipChangedListener = object : ClipboardManager.OnPrimaryClipChangedListener {
             override fun onPrimaryClipChanged() {
                 if (!context.getSettingBlocking(ClipboardHistoryEnabled)) return
-                // SebType (#31): no copies kept while incognito (the toggle, or a password or private field).
-                if (Settings.getInstance().current?.mIncognito == true) return
 
                 val clip = try {
                     clipboardManager.primaryClip

@@ -17,7 +17,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 
 | Step | Change | Fixes |
 |---|---|---|
-| Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `fcitx5-rime`, `fcitx5-mozc`, `kcm-fcitx5` | The engines, and the modules XWayland and older apps load |
+| Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `fcitx5-rime`, `librime-octagram`, `fcitx5-mozc`, `kcm-fcitx5`; `librime-octagram` from SebType's librime build once librime is SebType's | The engines, and the modules XWayland and older apps load. `librime-octagram` reads the Chinese data's grammar file, so Chinese candidates come in the phone's and Windows' order: `beirendingwei` gives 被认定为, not 被人定位 (#127) |
 | SebType's fcitx5-mozc | Replaces Fedora's `fcitx5-mozc` with SebType's build of the same version (`mozc/`), after asking, with sudo | Japanese's English mode shows **A** while Caps Lock is on, like Chinese's, and its tray menu has one switch, あ → ア (#117) |
 | SebType's fcitx5-rime | Replaces Fedora's `fcitx5-rime` with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese's tray menu has one switch, 简 → 繁, with no schema list, Deploy or Synchronize (#117) |
 | SebType's librime | Replaces Fedora's `librime` and its installed plugins (`librime-lua`, …) with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese typo correction also fixes a slip onto the key above or below, which librime's own neighbour map lacks: `xkaoshi` gives 小时 (#101) |
@@ -172,7 +172,9 @@ left or right, so on a PC a slip onto the key above or below (`xkaoshi` for xiao
 `rime/layout-model.patch` gives librime's correction a PC layout model when the schema says
 `sebtype_typo/keyboard: pc` (setup sets it; the phone keeps librime's own map): the neighbours within
 1.25 key widths on the staggered rows, each slip priced −log P(typed | meant) as the Lua filter prices
-it, one slip per syllable. Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
+it, one slip per syllable. It also stops a sentence of several words, such as 你|好 for the corrected
+`nihap`, from hiding the phrase that reads the same (你好), which librime's duplicate filter did (#135).
+Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
 
 | | typo-pc top-1 / top-3 | typo-phone top-1 / top-3 | clean sets | typo key p95 |
 |---|---|---|---|---|
@@ -181,7 +183,7 @@ it, one slip per syllable. Measured on this PC (#101, SebType's data, per-key CP
 
 The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
 sentences. `rime/build.sh librime` builds it from Fedora's source package with its plugins, which must
-match it. Its release `2.sebtype1.fc44` sorts above Fedora's `2.fc44`. To undo:
+match it. Its release `2.sebtype2.fc44` sorts above Fedora's `2.fc44`. To undo:
 `pc/linux/setup-ime.sh --undo-librime`.
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
@@ -191,7 +193,7 @@ says to log in again if not.
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
 rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc, fcitx5-rime and librime and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
-text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 with SebType's librime) in a private Fcitx5 running Rime on SebType's
+text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) in a private Fcitx5 running Rime on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
 icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's builds without installing them: `bwrap`
 mounts their files over Fedora's for that Fcitx5 alone. It doesn't touch the session.
