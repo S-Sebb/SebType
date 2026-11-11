@@ -16,6 +16,7 @@ stop the next.
 """
 
 import functools
+import glob
 import os
 import re
 import subprocess
@@ -58,6 +59,10 @@ def result(status, name, detail=""):
 
 
 class Fail(Exception):
+    pass
+
+
+class Skip(Exception):
     pass
 
 
@@ -320,6 +325,8 @@ def check(name, fn):
     try:
         detail = fn()
         result("PASS", name, detail or "")
+    except Skip as e:
+        result("SKIP", name, str(e))
     except (
         Fail,
         RuntimeError,
@@ -632,6 +639,16 @@ def best_flings(name, path):
     return min(tries, key=lambda t: t[2]) + (len(tries),)
 
 
+def other_emulator_busy():
+    """Whether another emulator's lock is held (#103): a suite running there slows this one's frames."""
+    me = adb("emu", "avd", "name").splitlines()[0].strip()
+    return any(
+        subprocess.run(["flock", "-n", lock, "true"], check=False).returncode != 0
+        for lock in glob.glob("/tmp/agent-locks/devices/emulator-*.lock")
+        if os.path.basename(lock) != f"emulator-{me}.lock"
+    )
+
+
 def smooth_scrolling():
     # 300 of My words, which it reads after its marker; the file goes back as it was afterwards.
     local = os.path.join(logdir, "my-words-300.txt")
@@ -663,6 +680,9 @@ def smooth_scrolling():
         for n, f, j, p, t in stats
     )
     if not all(smooth(*s[:4]) for s in stats):
+        # The limits hold on a quiet PC; a drawing regression shows in the next run without company.
+        if other_emulator_busy():
+            raise Skip(f"too slow while another emulator ran a test: {summary}")
         raise Fail(summary)
     return summary
 

@@ -25,8 +25,9 @@ with root (`su`) and ARM translation for SebType's arm64 APK. Their `config.ini`
 the emulator raises that to 2560 MB, its minimum for this device and Android version. Each emulator
 uses about 3–4 GB of the PC's memory at its peak, so two of them leave little room for a build. That's
 why `guide35b` runs only while a test needs it. Timing checks (`settings-smooth-scrolling`, `perf.sh`)
-run slower while the other emulator is busy: the smoothness check keeps the best of three tries, and
-compare `perf.sh` numbers only between runs with the other emulator idle. To start one by hand:
+run slower while the other emulator is busy. The smoothness check keeps the best of three tries, and if
+that is still over its limits while another emulator's lock is held, it reports SKIP with the numbers
+instead of FAIL. Compare `perf.sh` numbers only between runs with the other emulator idle. To start one by hand:
 
 ```
 ~/Android/Sdk/emulator/emulator -avd guide35b -port 5580 -no-window -no-audio -no-snapshot-load -no-boot-anim &

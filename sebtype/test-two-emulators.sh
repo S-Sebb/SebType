@@ -3,8 +3,8 @@
 # the same time, from this checkout and from a scratch worktree of the same commit
 # (~/.cache/sebtype/test-two-emulators-wt, deleted at the end). Both parallel runs must take different
 # emulators, overlap, and get the single run's results. visible-password-plain is a known failure (#100)
-# and isn't compared. guide35 is left in zh-Hans-CN first, to check that the suite puts the locale back.
-# Memory is sampled while both run.
+# and isn't compared, nor is the timing check settings-smooth-scrolling. guide35 is left in zh-Hans-CN
+# first, to check that the suite puts the locale back. Memory is sampled while both run.
 # One line per check in /tmp/sebtype/test-two-emulators/results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -39,7 +39,8 @@ suite() { # checkout name: runs its test-emulator.sh, each output line stamped w
   echo "$(date +%s) end" >> "$out/$2.log"
   cp "/tmp/sebtype/test-emulator-$(basename "$1")/results.txt" "$out/$2-results.txt" 2> /dev/null
 }
-outcomes() { grep -v ' visible-password-plain' "$1" | cut -d: -f1 | sort; } # "PASS name" lines
+# "PASS name" lines; frame timing depends on what else the PC runs, so the smoothness check isn't compared.
+outcomes() { grep -v ' visible-password-plain\| settings-smooth-scrolling' "$1" | cut -d: -f1 | sort; }
 started() { awk '$2 == "testing" {print $1; exit}' "$out/$1.log"; }
 serial() { awk '$2 == "testing" {print $5; exit}' "$out/$1.log"; }
 
@@ -77,6 +78,10 @@ while :; do
   sleep 10
 done > "$out/memory.log" &
 sampler=$!
+# Both start once both emulators are free, so another worktree's run doesn't put them in one queue.
+timeout 3600 bash -c 'until for l in /tmp/agent-locks/devices/emulator-guide35{,b}.lock; do
+  flock -n "$l" true && [[ -z $(ls "$l.queue" 2> /dev/null) ]] || exit 1; done; do sleep 5; done' ||
+  result FAIL both-free "both emulators weren't free within an hour"
 suite "$PWD" a & pa=$!
 suite "$wt" b & pb=$!
 wait "$pa" "$pb"

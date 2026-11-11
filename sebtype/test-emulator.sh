@@ -122,7 +122,7 @@ device_suite() {
     { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
   # The system language decides which of SebType's languages a fresh install starts with, and another
   # task can leave the emulator in Chinese (#106's second run: 13 checks failed for that alone).
-  T=60 check locale bash -c set_locale && echo "locale en-US, $(head -1 "$out/locale.log")"
+  T=60 check locale bash -c set_locale && echo "locale en-US, $(grep -m1 '^locale was' "$out/locale.log")"
   T=300 check install-beside-futo bash -c device_checks
   if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
     # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
