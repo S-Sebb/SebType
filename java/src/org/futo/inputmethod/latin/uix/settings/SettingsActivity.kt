@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -42,13 +41,8 @@ import org.futo.inputmethod.latin.uix.EXPORT_SETTINGS_REQUEST
 import org.futo.inputmethod.latin.uix.IMPORT_SETTINGS_REQUEST
 import org.futo.inputmethod.latin.uix.ImportResourceActivity
 import org.futo.inputmethod.latin.uix.SettingsExporter
-import org.futo.inputmethod.latin.uix.THEME_KEY
-import org.futo.inputmethod.latin.uix.getSettingBlocking
-import org.futo.inputmethod.latin.uix.getSettingFlow
-import org.futo.inputmethod.latin.uix.theme.ThemeOption
 import org.futo.inputmethod.latin.uix.theme.UixThemeAuto
-import org.futo.inputmethod.latin.uix.theme.getThemeOption
-import org.futo.inputmethod.latin.uix.theme.orDefault
+import org.futo.inputmethod.latin.uix.theme.picnicColors
 import org.futo.inputmethod.latin.xlm.ModelPaths
 import org.futo.inputmethod.updates.checkForUpdateAndSaveToPreferences
 import org.futo.inputmethod.v2keyboard.LayoutManager
@@ -88,8 +82,6 @@ public const val EXPORT_GGUF_MODEL_REQUEST = 80595439
 
 
 class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
-    private val themeOption: MutableState<ThemeOption?> = mutableStateOf(null)
-
     private val inputMethodEnabled = mutableStateOf(false)
     private val inputMethodSelected = mutableStateOf(false)
     private val doublePackage = mutableStateOf(false)
@@ -236,31 +228,8 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
             checkForUpdateAndSaveToPreferences(applicationContext)
         }
 
-        lifecycleScope.launch {
-            getSettingFlow(THEME_KEY).collect {
-                val themeOption = getThemeOption(this@SettingsActivity, it).orDefault(this@SettingsActivity)
-
-                this@SettingsActivity.themeOption.value = themeOption
-                this@SettingsActivity.themeProvider = BasicThemeProvider(
-                    context = this@SettingsActivity,
-                    colorScheme = themeOption.obtainColors(this@SettingsActivity)
-                )
-
-                updateEdgeToEdge()
-            }
-        }
-
-        getSettingBlocking(THEME_KEY).let {
-            val themeOption = getThemeOption(this, it).orDefault(this@SettingsActivity)
-
-            this.themeOption.value = themeOption
-            this.themeProvider = BasicThemeProvider(
-                context = this@SettingsActivity,
-                colorScheme = themeOption.obtainColors(this@SettingsActivity)
-            )
-
-            updateEdgeToEdge()
-        }
+        themeProvider = BasicThemeProvider(this, picnicColors(this))
+        updateEdgeToEdge()
 
         intent?.let { handleIntent(it) }
     }

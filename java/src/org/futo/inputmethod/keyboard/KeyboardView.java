@@ -471,11 +471,6 @@ public class KeyboardView extends View {
             // Vertical label text alignment.
             labelBaseline = centerY + labelCharHeight / 2.0f;
 
-
-            if(kdc.getCenteredHint() && kdc.getHintLabel() != null && !key.getHasHintLabel() && !key.getHasShiftedLetterHint()) {
-                labelBaseline += kdc.getTextSize() * 0.1f;
-            }
-
             // Horizontal label text alignment
             if (key.isAlignLabelOffCenter()) {
                 // The label is placed off center of the key. Used mainly on "phone number" layout.
@@ -566,10 +561,6 @@ public class KeyboardView extends View {
                 hintX = keyWidth - keyHintPaddingX - Math.max(hintDigitWidth, hintLabelWidth) / 2.0f;
                 hintBaseline = -paint.ascent() + keyHintPaddingY;
 
-                if (kdc.getCenteredHint()) {
-                    hintX = centerX;
-                    hintBaseline += paint.ascent() / 3.0f;
-                }
                 paint.setTextAlign(Align.CENTER);
             }
             final float adjustmentY = params.mHintLabelVerticalAdjustment * labelCharHeight;
@@ -584,10 +575,6 @@ public class KeyboardView extends View {
             int hintX = keyWidth - iconWidth - (int)keyHintPaddingX;
             int hintY = (int)keyHintPaddingY;
 
-
-            if(kdc.getCenteredHint()) {
-                hintX = (int)centerX - iconWidth / 2;
-            }
 
             hintIcon.setTint(kdc.getHintColor());
             drawIcon(canvas, hintIcon, hintX, hintY, iconWidth, iconHeight);

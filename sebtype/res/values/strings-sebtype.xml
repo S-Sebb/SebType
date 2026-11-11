@@ -2,20 +2,17 @@
 <resources>
     <!-- App and keyboard name; not translated, so it reads SebType in every locale. -->
     <string name="sebtype_app_name" translatable="false">SebType</string>
-    <!-- Theme named after SebChat's look; not translated, like the app name. -->
-    <string name="sebtype_theme_picnic" translatable="false">Picnic</string>
     <!-- Suggestion bar notice while Chinese (rime-ice) is set up; the percentage is how much of it is installed. -->
     <string name="sebtype_chinese_preparing">Preparing Chinese…</string>
     <string name="sebtype_chinese_preparing_percent">Preparing Chinese… %d%%</string>
     <!-- Suggestion bar notice when Chinese (rime-ice) failed to set up; tapping it sets Chinese up again. -->
     <string name="sebtype_chinese_engine_failed">Chinese input failed to start. Tap to retry</string>
-    <!-- Settings (#41): the six groups and their options. -->
+    <!-- Settings (#41): the five groups and their options. -->
     <string name="sebtype_settings_subtitle">a modified FUTO Keyboard</string>
     <string name="sebtype_settings_languages">Languages</string>
     <string name="sebtype_settings_autocorrect_on">autocorrect on</string>
     <string name="sebtype_settings_autocorrect_off">autocorrect off</string>
     <string name="sebtype_settings_keyboard_subtitle">Size, number row, sound and vibration</string>
-    <string name="sebtype_settings_custom_theme">Custom theme</string>
     <string name="sebtype_settings_privacy">Privacy</string>
     <string name="sebtype_settings_learning_on">Learning on</string>
     <string name="sebtype_settings_learning_off">Learning off</string>
@@ -75,7 +72,9 @@
     <string name="sebtype_settings_help">Help and feedback</string>
     <string name="sebtype_settings_help_subtitle">SebType on GitHub</string>
     <string name="sebtype_settings_support_futo">Support FUTO</string>
-    <string name="sebtype_settings_support_futo_subtitle">FUTO\'s payment screen</string>
+    <!-- FUTO's licence requires SebType to keep FUTO's payment screen (#112); the row and the screen say so. -->
+    <string name="sebtype_settings_support_futo_subtitle">Required by FUTO\'s licence; not related to SebType</string>
+    <string name="sebtype_payment_licence_note">FUTO\'s licence requires SebType to include this page. Payments go to FUTO; SebType has no relation to them and receives nothing.</string>
     <string name="sebtype_settings_credits">Licence and credits</string>
     <string name="sebtype_settings_credits_subtitle">FUTO\'s licence, rime-ice, Mozc and others</string>
 </resources>

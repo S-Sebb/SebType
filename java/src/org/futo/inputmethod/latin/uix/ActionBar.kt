@@ -5,7 +5,6 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import android.view.View
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -134,13 +133,10 @@ import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.theme.LocalCompatEmojiFamily
 import org.futo.inputmethod.latin.uix.theme.LocalCompatEmojiTypeface
-import org.futo.inputmethod.latin.uix.theme.ThemeOption
 import org.futo.inputmethod.latin.uix.theme.Typography
 import org.futo.inputmethod.latin.uix.theme.UixThemeWrapper
 import org.futo.inputmethod.latin.uix.theme.emojiNeedsCompat
-import org.futo.inputmethod.latin.uix.theme.presets.DefaultDarkScheme
-import org.futo.inputmethod.latin.uix.theme.presets.DynamicDarkTheme
-import org.futo.inputmethod.latin.uix.theme.presets.DynamicLightTheme
+import org.futo.inputmethod.latin.uix.theme.picnicColors
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -1651,8 +1647,8 @@ val exampleSuggestedWordsEmpty = SuggestedWords(
 
 @Composable
 @Preview
-fun PreviewActionBarWithSuggestions(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarWithSuggestions() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         ActionBar(
             words = exampleSuggestedWords,
             suggestionStripListener = ExampleListener(),
@@ -1667,8 +1663,8 @@ fun PreviewActionBarWithSuggestions(colorScheme: ThemeOption = DefaultDarkScheme
 
 @Composable
 @Preview
-fun PreviewActionBarWithExpandableCandidatesExtraSpace(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarWithExpandableCandidatesExtraSpace() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         Box(Modifier.fillMaxWidth().height(250.dp)) {
             ActionBarWithExpandableCandidates(
                 words = japaneseSuggestedWords,
@@ -1684,8 +1680,8 @@ fun PreviewActionBarWithExpandableCandidatesExtraSpace(colorScheme: ThemeOption 
 
 @Composable
 @Preview
-fun PreviewActionBarWithExpandableCandidatesNoExtraSpace(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarWithExpandableCandidatesNoExtraSpace() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         Box(Modifier.fillMaxWidth().height(250.dp)) {
             ActionBarWithExpandableCandidates(
                 words = japaneseSuggestedWords,
@@ -1701,8 +1697,8 @@ fun PreviewActionBarWithExpandableCandidatesNoExtraSpace(colorScheme: ThemeOptio
 
 @Composable
 @Preview
-fun PreviewActionBarWithQuickClip(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarWithQuickClip() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         ActionBar(
             words = exampleSuggestedWords,
             suggestionStripListener = ExampleListener(),
@@ -1728,8 +1724,8 @@ fun PreviewActionBarWithQuickClip(colorScheme: ThemeOption = DefaultDarkScheme) 
 
 @Composable
 @Preview
-fun PreviewActionBarWithNotice(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarWithNotice() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         ActionBar(
             words = exampleSuggestedWords,
             suggestionStripListener = ExampleListener(),
@@ -1753,8 +1749,8 @@ fun PreviewActionBarWithNotice(colorScheme: ThemeOption = DefaultDarkScheme) {
 
 @Composable
 @Preview
-fun PreviewActionBarWithEmptySuggestions(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarWithEmptySuggestions() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         ActionBar(
             words = exampleSuggestedWordsEmpty,
             suggestionStripListener = ExampleListener(),
@@ -1769,8 +1765,8 @@ fun PreviewActionBarWithEmptySuggestions(colorScheme: ThemeOption = DefaultDarkS
 
 @Composable
 @Preview
-fun PreviewActionBarLoading(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewActionBarLoading() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         ActionBar(
             words = exampleSuggestedWordsEmpty,
             suggestionStripListener = ExampleListener(),
@@ -1786,8 +1782,8 @@ fun PreviewActionBarLoading(colorScheme: ThemeOption = DefaultDarkScheme) {
 
 @Composable
 @Preview
-fun PreviewExpandedActionBar(colorScheme: ThemeOption = DefaultDarkScheme) {
-    UixThemeWrapper(colorScheme.obtainColors(LocalContext.current)) {
+fun PreviewExpandedActionBar() {
+    UixThemeWrapper(picnicColors(LocalContext.current)) {
         ActionBar(
             words = exampleSuggestedWordsEmpty,
             suggestionStripListener = ExampleListener(),
@@ -1802,7 +1798,7 @@ fun PreviewExpandedActionBar(colorScheme: ThemeOption = DefaultDarkScheme) {
 
 @Composable
 @Preview
-fun PreviewCollapsibleBar(colorScheme: ThemeOption = DefaultDarkScheme) {
+fun PreviewCollapsibleBar() {
     CollapsibleSuggestionsBar(
         onCollapse = { },
         onClose = { },
@@ -1811,62 +1807,4 @@ fun PreviewCollapsibleBar(colorScheme: ThemeOption = DefaultDarkScheme) {
         showCollapse = true,
         suggestionStripListener = ExampleListener()
     )
-}
-
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewActionBarWithSuggestionsDynamicLight() {
-    PreviewActionBarWithSuggestions(DynamicLightTheme)
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewActionBarWithEmptySuggestionsDynamicLight() {
-    PreviewActionBarWithEmptySuggestions(DynamicLightTheme)
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewActionBarLoadingDynamicLight() {
-    PreviewActionBarLoading(DynamicLightTheme)
-}
-
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewExpandedActionBarDynamicLight() {
-    PreviewExpandedActionBar(DynamicLightTheme)
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewActionBarWithSuggestionsDynamicDark() {
-    PreviewActionBarWithSuggestions(DynamicDarkTheme)
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewActionBarWithEmptySuggestionsDynamicDark() {
-    PreviewActionBarWithEmptySuggestions(DynamicDarkTheme)
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewActionBarLoadingDynamicDark() {
-    PreviewActionBarLoading(DynamicDarkTheme)
-}
-
-@RequiresApi(Build.VERSION_CODES.S)
-@Composable
-@Preview
-fun PreviewExpandedActionBarDynamicDark() {
-    PreviewExpandedActionBar(DynamicDarkTheme)
 }

@@ -40,13 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.times
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
 import org.futo.inputmethod.latin.uix.theme.Typography
-import org.futo.inputmethod.latin.uix.theme.presets.PixelFrame
-import org.futo.inputmethod.latin.uix.theme.presets.clothTile
+import org.futo.inputmethod.latin.uix.theme.PixelFrame
+import org.futo.inputmethod.latin.uix.theme.clothTile
 import kotlin.math.roundToInt
 
 // SebType's settings look (#87, "C, pixel frames"): items sit in the Picnic keys' notched pixel frames
 // on the checkered cloth, with pink tags as section headers. Every part of the look is in this file.
-// Colours come from the current theme, so with the default theme they are Picnic's own.
+// Colours come from MaterialTheme, which is always Picnic's (#111).
 
 /** Inside a card, section titles stay plain text instead of becoming tags (sliders and radio lists). */
 internal val LocalInCard = staticCompositionLocalOf { false }
@@ -83,7 +83,7 @@ fun Modifier.framed(fill: Color, horizontal: Dp = 0.dp, vertical: Dp = 0.dp): Mo
         .padding(start = 2 * px + horizontal, top = 2 * px + vertical, end = 3 * px + horizontal, bottom = 3 * px + vertical)
 }
 
-/** The page behind every settings screen: the keyboard's cloth, repeated, in the theme's colours. */
+/** The page behind every settings screen: the keyboard's cloth, repeated, in Picnic's colours. */
 @Composable
 fun Modifier.settingsCloth(): Modifier {
     val page = LocalKeyboardScheme.current.keyboardSurface

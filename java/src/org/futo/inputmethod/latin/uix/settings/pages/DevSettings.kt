@@ -1,35 +1,12 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
@@ -50,14 +27,10 @@ import org.futo.inputmethod.latin.VoiceInputAlternativeICComposing
 import org.futo.inputmethod.latin.uix.AndroidTextInput
 import org.futo.inputmethod.latin.uix.DebugOnly
 import org.futo.inputmethod.latin.uix.HiddenKeysSetting
-import org.futo.inputmethod.latin.uix.IMPORT_SETTINGS_REQUEST
 import org.futo.inputmethod.latin.uix.OldStyleActionsBar
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.UixManagerInstanceForDebug
-import org.futo.inputmethod.latin.uix.actions.BugViewerAction
-import org.futo.inputmethod.latin.uix.actions.BugViewerState
 import org.futo.inputmethod.latin.uix.actions.clipboard.clipboardFile
-import org.futo.inputmethod.latin.uix.findActivity
 import org.futo.inputmethod.latin.uix.getPreferencesDataStoreFile
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
@@ -67,13 +40,6 @@ import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
 import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
-import org.futo.inputmethod.latin.uix.theme.TonalPalette
-import org.futo.inputmethod.latin.uix.theme.Tones
-import org.futo.inputmethod.latin.uix.theme.Typography
-import org.futo.inputmethod.latin.uix.theme.dynamicTonalPalette
-import org.futo.inputmethod.latin.uix.theme.serialization.AlphaOrder
-import org.futo.inputmethod.latin.uix.theme.serialization.argbLongToHexColorString
-import org.futo.inputmethod.latin.uix.theme.serialization.long
 import org.futo.inputmethod.latin.xlm.AllowTransformerOnNonQWERTYLayouts
 import org.futo.inputmethod.updates.DISABLE_UPDATE_REMINDER
 import org.futo.inputmethod.updates.dismissedMigrateUpdateNotice
@@ -95,101 +61,6 @@ fun DevKeyboardScreen(navController: NavHostController = rememberNavController()
     }
 }
 
-
-private val ColTextStyle = TextStyle(
-    fontFamily = FontFamily.Monospace,
-    fontWeight = FontWeight.Normal,
-    fontSize = 8.sp,
-    lineHeight = 8.sp
-)
-
-@Composable
-private fun ShowColor(col: Color?, name: String) {
-    val colHex = col?.let { argbLongToHexColorString(it.toArgb().toLong(), AlphaOrder.RGBA) } ?: "?"
-    Box(
-        Modifier.fillMaxWidth().height(18.dp)
-            .background(col ?: Color.Red)
-    ) {
-        Text(
-            "${name} ${colHex}",
-            modifier = Modifier.align(Alignment.Center),
-            style = ColTextStyle,
-            color = if ((col ?: Color.Red).luminance() > 0.6f) Color.Black else Color.White
-        )
-    }
-}
-@Composable
-private fun RowScope.TonesList(palette: TonalPalette, name: String) {
-    Column(Modifier.weight(1.0f)) {
-        listOf(100, 99, 98, 96, 95, 94, 92, 90, 87, 80, 70, 60, 50, 40, 30, 20, 10, 0).forEach {
-            val col = palette.resolve("${name}${it}")
-            ShowColor(col, "${name}${it}")
-        }
-    }
-}
-
-@Composable
-fun DevPaletteScreen(navController: NavHostController = rememberNavController()) {
-    val context = LocalContext.current
-    val palette = remember { dynamicTonalPalette(context) }
-    ScrollableList {
-        ScreenTitle("Tonal palette", showBack = true, navController)
-        Row {
-            TonesList(palette, "primary")
-            TonesList(palette, "secondary")
-            TonesList(palette, "tertiary")
-        }
-        Row {
-            TonesList(palette, "neutral")
-            TonesList(palette, "neutralVariant")
-            TonesList(palette, "error")
-        }
-        VerticalGrid(items=palette.otherDynamicColors.keys.toList(), columns=4) {
-            ShowColor(palette.otherDynamicColors[it], it)
-        }
-    }
-}
-
-
-
-private fun triggerImportTheme(context: Context) {
-    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-        addCategory(Intent.CATEGORY_OPENABLE)
-        type = "application/zip"
-    }
-    findActivity(context)!!.startActivityForResult(intent, IMPORT_SETTINGS_REQUEST)
-}
-
-var DevAutoAcceptThemeImport = false
-
-@OptIn(DebugOnly::class)
-@Composable
-fun DevThemeImportScreen(navController: NavHostController = rememberNavController()) {
-    val context = LocalContext.current
-    DisposableEffect(Unit) {
-        DevAutoAcceptThemeImport = true
-        onDispose {
-            DevAutoAcceptThemeImport = false
-        }
-    }
-    Box {
-        ScrollableList {
-            ScreenTitle("Theme development", showBack = true, navController)
-            Text("Push the theme zip file via adb and tap button below to re-import it")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    triggerImportTheme(context)
-                    BugViewerState.clearBugs()
-                }) { Text("Reimport") }
-                Button(onClick = {
-                    UixManagerInstanceForDebug?.onActionActivated(BugViewerAction)
-                }) { Text("Bugviewer") }
-            }
-
-            AndroidTextInput()
-        }
-    }
-}
 
 @Preview(showBackground = true)
 @Composable
@@ -230,16 +101,6 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
             title = "Custom layouts",
             style = NavigationItemStyle.Misc,
             navigate = { navController.navigate("devlayouteditor") }
-        )
-        NavigationItem(
-            title = "Theme dev utility",
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("devtheme") }
-        )
-        NavigationItem(
-            title = "Dynamic palette",
-            style = NavigationItemStyle.Misc,
-            navigate = { navController.navigate("dynamicpalette") }
         )
 
         SettingToggleDataStore(

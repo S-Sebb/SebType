@@ -7,7 +7,9 @@ test-chinese.py, which leaves SebType installed, chosen as the keyboard and Chin
 Opens every settings screen from the home screen (one screenshot each, settings-<screen>.png in
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
-words in Chinese and Japanese. Last, that long lists (300 of My words, the credits) scroll smoothly
+words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
+same look in the system's dark mode (#111); that FUTO's payment screen and its row in About carry
+SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
 in their pixel-framed cards on the cloth (#87). Labels match the emulator's Chinese UI or English. One line per check
 appended to RESULTS; each check finds its own way from the home screen, so one failing doesn't
 stop the next.
@@ -237,7 +239,6 @@ def labels(*texts):
 HOME = {
     "languages": labels("语言", "Languages"),
     "keyboard": labels("键盘", "Keyboard"),
-    "theme": labels("主题", "Theme"),
     "privacy": labels("隐私", "Privacy"),
     "backup": labels("同步与备份", "Sync & backup"),
     "about": labels("关于", "About"),
@@ -283,7 +284,16 @@ def open_settings():
     # the app opens on its setup screen instead.
     adb("shell", "ime", "set", IME)
     adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", SETTINGS)
-    wait_for("the settings home screen", lambda: screen_has(HOME["about"]), 30)
+    wait_for("the settings home screen", home_shown, 30)
+
+
+def home_shown():
+    if screen_has(HOME["about"]):
+        return True
+    # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
+    # takes the setup screen on to the home screen.
+    adb("shell", "ime", "set", IME)
+    return False
 
 
 def go(*path):
@@ -353,7 +363,6 @@ SCREENS = [
         (HOME["keyboard"], labels("操作栏按钮", "Action bar buttons")),
         labels("编辑快捷方式", "Edit Actions"),
     ),
-    ("theme", (HOME["theme"],), labels("主题", "Theme")),
     ("privacy", (HOME["privacy"],), labels("从我的输入中学习", "Learn from my typing")),
     (
         "forget",
@@ -642,6 +651,119 @@ def smooth_scrolling():
     return summary
 
 
+THEME = labels("主题", "Theme")
+THEME_ACTION = labels("主题切换器", "Theme Switcher")
+
+
+def nothing_shows(texts, swipes):
+    """Fails if any of texts shows on the screen, scrolling down swipes times."""
+    for _ in range(swipes + 1):
+        found = [label for label, *_ in nodes() if label in texts]
+        if found:
+            raise Fail(f"{found[0]!r} on the screen")
+        adb("shell", "input", "swipe", "540", "1900", "540", "900", "400")
+        time.sleep(1)
+
+
+def no_theme_choice():
+    open_settings()
+    nothing_shows(THEME, 2)
+    go(HOME["keyboard"], labels("操作栏按钮", "Action bar buttons"))
+    nothing_shows(THEME_ACTION, 4)
+    return "no Theme group on the home screen, no theme switcher among the actions"
+
+
+# Picnic's own colours (theme/Picnic.kt): the cloth's two, the cream keys and cards, their lines, pink.
+PICNIC = [
+    (0xFB, 0xE9, 0xD6),
+    (0xF8, 0xE2, 0xCC),
+    (0xFF, 0xF7, 0xE8),
+    (0xEC, 0xD0, 0xAE),
+    (0xFD, 0xE0, 0xE6),
+]
+
+
+def picnic_share(box=None):
+    """The share of the screen (or of box, x1 y1 x2 y2) in Picnic's colours, from a raw screencap."""
+    raw = subprocess.run(
+        ["adb", "-s", serial, "exec-out", "screencap"],
+        capture_output=True,
+        timeout=60,
+        check=True,
+    ).stdout
+    w, h = int.from_bytes(raw[0:4], "little"), int.from_bytes(raw[4:8], "little")
+    pixels = raw[len(raw) - w * h * 4 :]
+    x1, y1, x2, y2 = box or (0, 0, w, h)
+    near = total = 0
+    for y in range(y1, y2, 12):
+        for x in range(x1, x2, 12):
+            i = (y * w + x) * 4
+            r, g, b = pixels[i], pixels[i + 1], pixels[i + 2]
+            total += 1
+            # 12 covers the cloth's RGB_565 rounding.
+            near += any(
+                abs(r - pr) + abs(g - pg) + abs(b - pb) <= 12 for pr, pg, pb in PICNIC
+            )
+    return near / total
+
+
+def dark_mode_picnic():
+    adb("shell", "cmd", "uimode", "night", "yes")
+    try:
+        time.sleep(2)
+        adb("shell", "am", "force-stop", PKG)
+        open_settings()
+        time.sleep(1)
+        screenshot("dark-home")
+        home = picnic_share()
+        # Chinese, not Japanese: Mozc can crash when it starts on the emulator (#35).
+        to_language("ni", "你")
+        open_field()
+        time.sleep(1)
+        screenshot("dark-keyboard")
+        keyboard = picnic_share(keyboard_frame)
+    finally:
+        adb("shell", "cmd", "uimode", "night", "no")
+    summary = f"in dark mode {home:.0%} of the settings home and {keyboard:.0%} of the keyboard in Picnic's colours"
+    # Picnic measured 92 % on the home screen and 73 % on the keyboard (guide35, 2026-11-11); a dark
+    # theme is near 0.
+    if home < 0.4 or keyboard < 0.4:
+        raise Fail(summary)
+    return summary
+
+
+NOTE_ROW = labels(
+    "FUTO 许可证要求；与 SebType 无关",
+    "Required by FUTO's licence; not related to SebType",
+)
+NOTE = labels(
+    "FUTO 的许可证要求 SebType 包含此页面。",
+    "FUTO's licence requires SebType to include this page.",
+)
+
+
+def screen_contains(texts):
+    return any(t in label for label, *_ in nodes() for t in texts)
+
+
+def payment_note():
+    go(HOME["about"])
+    wait_for(
+        f"the payment row's note ({NOTE_ROW[0]})", lambda: screen_contains(NOTE_ROW), 10
+    )
+    tap_text(labels("支持 FUTO", "Support FUTO"))
+    wait_for(f"the licence note ({NOTE[0]})", lambda: screen_contains(NOTE), 10)
+    # The note only adds to FUTO's screen: its own title and payment options are still there.
+    wait_for(
+        "FUTO's payment title",
+        lambda: screen_has(labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard")),
+        10,
+    )
+    return (
+        "About's Support FUTO row and the payment screen say FUTO's licence requires it"
+    )
+
+
 adb("logcat", "-c")
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
@@ -650,5 +772,8 @@ check("settings-zh-emoji", emoji_candidates)
 check("settings-zh-my-words", my_words)
 check("settings-zh-forget", forget_chinese)
 check("settings-ja-forget", forget_japanese)
+check("settings-no-theme-choice", no_theme_choice)
+check("settings-dark-mode-picnic", dark_mode_picnic)
+check("settings-payment-note", payment_note)
 check("settings-smooth-scrolling", smooth_scrolling)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

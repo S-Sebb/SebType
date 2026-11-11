@@ -46,7 +46,6 @@ import org.futo.inputmethod.latin.uix.actions.clipboard.clipboardDir
 import org.futo.inputmethod.latin.uix.actions.clipboard.clipboardFile
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
-import org.futo.inputmethod.latin.uix.theme.ZipThemes
 import org.futo.inputmethod.latin.xlm.ModelPaths
 import org.json.JSONArray
 import org.json.JSONObject
@@ -296,13 +295,6 @@ object SettingsExporter {
             subfile.inputStream().use { it.copyTo(zipOut) }
             zipOut.closeEntry()
         }
-
-        // Collect themes
-        ZipThemes.customThemesDir(context).listFiles()?.forEach { themeFile ->
-            zipOut.putNextEntry(ZipEntry("themes/${themeFile.name}"))
-            themeFile.inputStream().use { it.copyTo(zipOut) }
-            zipOut.closeEntry()
-        }
     }
 
     private fun String.splitSlash(): String = split("/", limit = 2)[1]
@@ -338,7 +330,6 @@ object SettingsExporter {
         val clipboardFile = context.clipboardFile
         val transformersDir = ModelPaths.getModelDirectory(context)
         val extFilesDir = context.getExternalFilesDir(null)!!
-        val themesDir = ZipThemes.customThemesDir(context)
         if (destructive) {
             // delete old clipboard
             if (clipboardFile.exists()) {
@@ -365,9 +356,6 @@ object SettingsExporter {
             context.clipboardDir.deleteRecursively()
             ChineseIME.getRimeDir(context).deleteRecursively()
             mozcUserProfileDir(context).deleteRecursively()
-
-            // delete all themes
-            ZipThemes.customThemesDir(context).listFiles()?.forEach { it.delete() }
         }
         while (entry != null) {
             when {
@@ -412,7 +400,6 @@ object SettingsExporter {
                 // Older exports also carry rime/shared/, the bundled data, which installs itself
                 entry.name.startsWith("rime/user/") -> zipIn.extractTo(ChineseIME.getRimeDir(context), entry.name)
 
-                entry.name.startsWith("themes/") -> zipIn.extractTo(themesDir, entry.name)
 
                 else -> {
                     Log.w(

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SebType's Japanese strings; the rest fall back to English (values/strings-sebtype.xml). -->
+<resources>
+    <string name="sebtype_settings_support_futo_subtitle">FUTO のライセンスで必要。SebType とは無関係</string>
+    <string name="sebtype_payment_licence_note">FUTO のライセンスにより、SebType はこのページを含める必要があります。支払いは FUTO に送られます。SebType はこれと無関係で、何も受け取りません。</string>
+</resources>

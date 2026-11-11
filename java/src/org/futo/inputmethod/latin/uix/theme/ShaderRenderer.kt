@@ -9,14 +9,6 @@ import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
 import android.os.SystemClock
 import android.util.Log
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
-import kotlinx.coroutines.delay
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -297,32 +289,6 @@ class ShaderRenderer(
         """
     }
 }
-
-class ShaderSurfaceView(context: Context, shaderSource: String, iChannels: List<Bitmap>) : GLSurfaceView(context) {
-    init {
-        setEGLContextClientVersion(2)
-        //debugFlags = DEBUG_LOG_GL_CALLS or DEBUG_CHECK_GL_ERROR
-        setRenderer(ShaderRenderer(context, shaderSource, iChannels))
-        renderMode = RENDERMODE_WHEN_DIRTY
-    }
-}
-
-@Composable
-fun KeyboardSurfaceShaderBackground(shaderSource: String, iChannels: List<Bitmap> = listOf(), modifier: Modifier = Modifier) {
-    val view: MutableState<GLSurfaceView?> = remember { mutableStateOf<GLSurfaceView?>(null) }
-    LaunchedEffect(view.value) {
-        while (true) {
-            delay(16L)
-            view.value?.requestRender()
-        }
-    }
-
-    AndroidView(
-        factory = { context -> ShaderSurfaceView(context, shaderSource, iChannels).also { view.value = it } },
-        modifier = modifier
-    )
-}
-
 
 fun renderShaderToBitmap(context: Context, shaderSource: String, width: Int, height: Int, iChannels: List<Bitmap>): Bitmap {
     val egl = (EGLContext.getEGL() as EGL10)

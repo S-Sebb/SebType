@@ -68,17 +68,14 @@ import org.futo.inputmethod.latin.uix.DynamicThemeProvider
 import org.futo.inputmethod.latin.uix.DynamicThemeProviderOwner
 import org.futo.inputmethod.latin.uix.EmojiTracker.useEmoji
 import org.futo.inputmethod.latin.uix.HiddenKeysSetting
-import org.futo.inputmethod.latin.uix.KeyBordersSetting
 import org.futo.inputmethod.latin.uix.KeyHintsSetting
 import org.futo.inputmethod.latin.uix.KeyboardColorScheme
 import org.futo.inputmethod.latin.uix.SUGGESTION_BLACKLIST
 import org.futo.inputmethod.latin.uix.SettingsKey
-import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.UixManager
 import org.futo.inputmethod.latin.uix.actions.CanThrowIfDebug
 import org.futo.inputmethod.latin.uix.createInlineSuggestionsRequest
 import org.futo.inputmethod.latin.uix.dataStore
-import org.futo.inputmethod.latin.uix.differsFrom
 import org.futo.inputmethod.latin.uix.forceUnlockDatastore
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.getSettingBlocking
@@ -86,11 +83,8 @@ import org.futo.inputmethod.latin.uix.getSettingFlow
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.safeKeyboardPadding
 import org.futo.inputmethod.latin.uix.setSetting
-import org.futo.inputmethod.latin.uix.theme.ThemeOption
 import org.futo.inputmethod.latin.uix.theme.applyWindowColors
-import org.futo.inputmethod.latin.uix.theme.getThemeOption
-import org.futo.inputmethod.latin.uix.theme.orDefault
-import org.futo.inputmethod.latin.uix.theme.presets.DefaultDarkScheme
+import org.futo.inputmethod.latin.uix.theme.picnicColors
 import org.futo.inputmethod.latin.utils.JniUtils
 import org.futo.inputmethod.updates.scheduleUpdateCheckingJob
 import org.futo.inputmethod.v2keyboard.ComputedKeyboardSize
@@ -204,8 +198,8 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     val sizingCalculator = KeyboardSizingCalculator(this, uixManager)
 
-    private var activeThemeOption: ThemeOption? = null
-    private val activeColorScheme = mutableStateOf(DefaultDarkScheme.obtainColors(this))
+    // Picnic is the only look (#111); it changes only with the screen's size and density.
+    private val activeColorScheme by lazy { mutableStateOf(picnicColors(this)) }
     private var pendingRecreateKeyboard: Boolean = false
 
     val colorScheme get() = activeColorScheme.value
@@ -297,23 +291,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         }
     }
 
-    private fun updateColorsIfDynamicChanged() {
-        if(activeThemeOption?.dynamic == true) {
-            val currColors = colorScheme
-            val nextColors = activeThemeOption!!.obtainColors(this)
-
-            if(currColors.differsFrom(nextColors)) {
-                updateDrawableProvider(nextColors)
-                recreateKeyboard()
-                return
-            }
-        }
-
-        // TODO: Verify this actually fixes anything
+    private fun updateColorsIfDensityChanged() {
         if(drawableProvider?.displayDpi != resources.displayMetrics.densityDpi) {
-            updateDrawableProvider(colorScheme)
+            updateDrawableProvider(picnicColors(this))
             recreateKeyboard()
-            return
         }
     }
 
@@ -398,13 +379,6 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
         Subtypes.addDefaultSubtypesIfNecessary(this)
 
-        getSettingBlocking(THEME_KEY).let {
-            val themeOption = getThemeOption(this, it).orDefault(this@LatinIME)
-
-            activeThemeOption = themeOption
-            activeColorScheme.value = themeOption.obtainColors(this@LatinIME)
-        }
-
         imeManager.onCreate()
         latinIMELegacy.onCreate()
 
@@ -412,30 +386,13 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         launchJob { uixManager.showUpdateNoticeIfNeeded() }
 
         launchJob {
-            getSettingFlow(THEME_KEY).collect {
-                val themeOption = getThemeOption(this@LatinIME, it).orDefault(this@LatinIME)
-
-                activeThemeOption = themeOption
-                activeColorScheme.value = themeOption.obtainColors(this@LatinIME)
-
-                updateDrawableProvider(activeColorScheme.value)
-                invalidateKeyboard()
-            }
-        }
-
-        launchJob {
             combine(
                 getSettingFlow(HiddenKeysSetting),
-                getSettingFlow(KeyBordersSetting),
                 getSettingFlow(KeyHintsSetting)
-            ) { a, b, c -> Triple(a, b, c) }.collect {
-                    drawableProvider?.let { provider ->
-                        if(provider is BasicThemeProvider) {
-                            activeThemeOption?.obtainColors?.let { f ->
-                                updateDrawableProvider(f(this@LatinIME))
-                                invalidateKeyboard()
-                            }
-                        }
+            ) { a, b -> a to b }.collect {
+                    if(drawableProvider is BasicThemeProvider) {
+                        updateDrawableProvider(colorScheme)
+                        invalidateKeyboard()
                     }
                 }
         }
@@ -630,7 +587,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         imeManager.onStartInput()
         latinIMELegacy.onStartInputView(info, restarting)
         lifecycleScope.launch { uixManager.showUpdateNoticeIfNeeded() }
-        updateColorsIfDynamicChanged()
+        updateColorsIfDensityChanged()
         uixManager.updateEmojiTranslationsIfNeeded()
     }
 
@@ -654,7 +611,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     override fun onWindowShown() {
         super.onWindowShown()
         latinIMELegacy.onWindowShown()
-        updateColorsIfDynamicChanged()
+        updateColorsIfDensityChanged()
     }
 
     override fun onWindowHidden() {

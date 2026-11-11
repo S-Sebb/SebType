@@ -13,7 +13,6 @@ import androidx.datastore.preferences.core.PreferencesSerializer
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.preferencesOf
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.lifecycle.LifecycleOwner
@@ -40,7 +39,6 @@ import okio.source
 import org.futo.inputmethod.latin.ActiveSubtype
 import org.futo.inputmethod.latin.Subtypes
 import org.futo.inputmethod.latin.SubtypesSetting
-import org.futo.inputmethod.latin.uix.theme.presets.PicnicTheme
 import org.futo.inputmethod.v2keyboard.LayoutManager
 import java.io.File
 
@@ -49,7 +47,6 @@ private object DefaultDataStore : DataStore<Preferences> {
     private var activePreferences = preferencesOf(
         ActiveSubtype.key to "en_US:",
         SubtypesSetting.key to setOf("en_US:"),
-        THEME_KEY.key to PicnicTheme.key, // SebType default (#17)
         KeyHintsSetting.key to true
     )
 
@@ -363,11 +360,6 @@ fun <T> LifecycleOwner.deferSetSetting(context: Context, key: SettingsKey<T>, va
     return deferSetSetting(context, key.key, value)
 }
 
-
-val THEME_KEY = SettingsKey(
-    key = stringPreferencesKey("activeThemeOption"),
-    default = ""
-)
 
 val USE_TRANSFORMER_FINETUNING = SettingsKey(
     key = booleanPreferencesKey("useTransformerFinetuning2"),

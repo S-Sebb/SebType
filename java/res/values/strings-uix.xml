@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <!-- Keyboard actions -->
-    <string name="action_theme_switcher_title">Theme Switcher</string>
     <string name="action_select_all_title">Select All</string>
     <string name="action_cut_title">Cut to Clipboard</string>
     <string name="action_copy_title">Copy to Clipboard</string>
@@ -136,32 +135,6 @@
     <string name="action_kind_favorites">Favorite Actions</string>
     <string name="action_kind_more">More Actions</string>
     <string name="action_kind_disabled">Hidden Actions</string>
-
-    <!-- Keyboard themes -->
-    <string name="theme_default_dark">Dark Mode</string>
-    <string name="theme_default_light">Light Mode</string>
-    <string name="theme_amoled_dark">AMOLED Dark Purple</string>
-    <string name="theme_catppuccin_mocha">Catppuccin Mocha</string>
-    <string name="theme_classic_dark">AOSP Material Dark</string>
-    <string name="theme_classic_light">AOSP Material Light</string>
-    <string name="theme_vi">FUTO VI Theme</string>
-    <string name="theme_deepsea_dark">Deep Sea Dark</string>
-    <string name="theme_deepsea_light">Deep Sea Light</string>
-    <string name="theme_emerald">Emerald</string>
-    <string name="theme_gradient1">Gradient 1</string>
-    <string name="theme_gradient2">Gradient 2</string>
-    <string name="theme_rainbow">Rainbow</string>
-    <string name="theme_snowfall">Snowfall</string>
-    <string name="theme_steel_gray">Steel Gray</string>
-    <string name="theme_sunflower">Sunflower</string>
-    <string name="theme_cotton_candy">Cotton Candy</string>
-    <string name="theme_hotdog">Hot Dog</string>
-    <string name="theme_high_contrast_yellow">High Contrast Yellow</string>
-    <string name="theme_dev">Construction Theme</string>
-    <string name="theme_dynamic_system">Dynamic Auto</string>
-    <string name="theme_dynamic_dark">Dynamic Dark</string>
-    <string name="theme_dynamic_light">Dynamic Light</string>
-    <string name="theme_custom_named">Custom: %s</string>
 
     <!-- Auto update strings (note: the auto updater is currently inactive) -->
     <string name="autoupdater_service_title">Update Checking service</string>
@@ -371,35 +344,6 @@
     <string name="keyboard_settings_show_number_row_subtitle">When active, the number row is shown on top of the keyboard on supported layouts</string>
     <string name="keyboard_settings_extra_layouts">Additional Layouts</string>
     <string name="keyboard_settings_extra_layouts_subtitle">Configure additional layouts in the languages screen</string>
-
-    <!-- Theme, as in visual style -->
-    <string name="theme_settings_title">Theme</string>
-    <string name="theme_settings_key_borders">Key borders</string>
-    <string name="theme_settings_default_themes">Built-in</string>
-    <string name="theme_settings_seasonal_themes">Seasonal</string>
-    <string name="theme_settings_custom_themes">Your themes</string>
-    <string name="theme_settings_custom_theme_delete_title">Delete custom theme?</string>
-    <string name="theme_settings_custom_theme_delete_body">Theme: %s</string>
-    <string name="theme_settings_custom_theme_delete_confirm">Delete</string>
-    <string name="theme_settings_custom_theme_delete_cancel">Cancel</string>
-    <string name="theme_settings_add_new_theme">Add new theme</string>
-    <string name="theme_settings_add_new_theme_question">Create a new theme from a picture, or add a downloaded ZIP theme?</string>
-    <string name="theme_settings_warning_newer_version">This theme may require a newer version of FUTO Keyboard than the one you have. If you\'re a theme developer, check the error log below.</string>
-    <string name="theme_settings_visit_theme_store">Explore themes online</string>
-
-    <!-- Theme customizer -->
-    <string name="theme_customizer_select_background_image_button">Select picture</string>
-    <string name="theme_customizer_adjust_background_image_hint">Drag or pinch to adjust image</string>
-    <string name="theme_customizer_transparency_slider_name">Transparency</string>
-    <string name="theme_customizer_blur_slider_name">Blur</string>
-    <string name="theme_customizer_color_sliders_name">Color</string>
-    <string name="theme_customizer_dark_mode_toggle">Dark mode</string>
-    <string name="theme_customizer_light_mode_toggle">Light mode</string>
-    <string name="theme_customizer_finish_theme_adjustment">Finish</string>
-    <string name="theme_customizer_load_custom_theme_file">Load ZIP theme</string>
-    <string name="theme_customizer_import_custom_theme_menu_title">Import custom theme</string>
-    <string name="theme_customizer_import_custom_theme_name_text">Theme name: %s</string>
-    <string name="theme_customizer_import_custom_theme_author_text">Author: %s</string>
 
     <string name="dev_settings_title">Developer Settings</string>
 

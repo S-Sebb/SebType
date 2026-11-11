@@ -73,14 +73,6 @@ fun getLayer(qualifiers: Set<KeyQualifier>) =
     qualifiers.filterIsInstance<KeyQualifier.Layer>().firstOrNull()?.layer ?: 0
 
 
-fun matchesHint(qualifiers: Set<KeyQualifier>, layout: String, hintLabel: String?, hintIcon: String?) =
-    qualifiers.all { when(it) {
-        is KeyQualifier.Layout -> layout == it.name
-        is KeyQualifier.Label -> hintLabel == it.label
-        is KeyQualifier.Icon -> hintIcon == it.icon
-        else -> false
-    } }
-
 fun matchesMoreKeysKeyboardBackground(qualifiers: Set<KeyQualifier>, layout: String) =
     qualifiers.contains(KeyQualifier.MoreKeysKeyboardBackground) && qualifiers.all { when(it) {
         is KeyQualifier.Layout -> layout == it.name
