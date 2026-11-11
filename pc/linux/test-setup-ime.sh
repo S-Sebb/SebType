@@ -116,9 +116,12 @@ mkdir -p "$h/.config/fcitx5" "$h/.config/mozc"
 printf '[Hotkey]\nEnumerateWithTriggerKeys=True\n\n[Hotkey/TriggerKeys]\n0=Super+space\n\n[Hotkey/AltTriggerKeys]\n0=Shift_L\n\n[Hotkey/EnumerateForwardKeys]\n0=Control+Shift+Shift_L\n\n[Behavior]\nActiveByDefault=False\nShareInputState=No\n' > "$h/.config/fcitx5/config"
 printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db"
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
+# setup-ime.sh rebuilds the Configurator with cargo when its sources are newer, so cargo needs this
+# account's Rust (rustup's toolchains) even though the fake account has its own HOME.
 fake_run() { mkdir -p "$h/.cache/sebtype"; ln -sf "${rime_zips[@]}" "$h/.cache/sebtype/"
   env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
-  XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
+  XDG_DATA_HOME="$h/.local/share" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+  timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"

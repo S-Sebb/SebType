@@ -7,7 +7,8 @@
 # sandbox; learned words are never copied or forgotten. One line per check in
 # /tmp/sebtype/configurator-test-results.txt; logs and screenshots next to it.
 set -uo pipefail
-cd "$(dirname "$0")" || exit 1
+self=$(readlink -f "$0")  # the devq re-exec below needs a path that still resolves after this cd
+cd "$(dirname "$self")" || exit 1
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/configurator-test-results.txt; : > "$results"
@@ -34,7 +35,7 @@ if [[ -z ${HOLDING-} ]]; then
   { cargo build --release && cargo test --release --no-run; } > "$out/configurator-test-build.log" 2>&1 ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
-    /tmp/agent-locks/devices/nobara-pc.lock bash "$0"
+    /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
 fi
 
 check unit-tests 900 cargo test --release
