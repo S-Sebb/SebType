@@ -16,7 +16,8 @@ import android.widget.EditText;
 /**
  * A plain text field for sebtype/perf.sh: it opens with the keyboard up, and with the extra
  * "chars" it starts with that much filler text, cursor at the end (the long-field case); the extra
- * "clip" copies that text just after it opens. "kind" makes it a password, PIN, visible-password, private, URL or email field.
+ * "clip" copies that text just after it opens, and "hidden" keeps the keyboard down. "kind" makes it
+ * a password, PIN, visible-password, private, URL or email field.
  * It records only the text length, as the Perfetto counter "sebperf_len", never the text.
  */
 public class PerfField extends Activity {
@@ -64,7 +65,10 @@ public class PerfField extends Activity {
             field.postDelayed(() -> ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
                     .setPrimaryClip(ClipData.newPlainText("test", clip)), 1500);
         }
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
-                | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        // Hidden: the keyboard starts on the field but never shows in it (#139).
+        int keyboard = getIntent().getBooleanExtra("hidden", false)
+                ? WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+                : WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
+        getWindow().setSoftInputMode(keyboard | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
     }
 }

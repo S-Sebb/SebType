@@ -30,6 +30,15 @@ object Incognito {
     fun inField(context: Context, editorInfo: EditorInfo?) =
         toggledOn(context) || fieldNoLearning(context, editorInfo)
 
+    /**
+     * For a copy (#139): judged by the field focused when it happens, which the keyboard may never have
+     * shown in, so the settings may hold an older field. A focused view that is not a text field (a web
+     * page in a private tab) counts as private when it asks for no personalised learning.
+     */
+    fun atCopy(context: Context, editorInfo: EditorInfo?) =
+        inField(context, editorInfo) ||
+            ((editorInfo?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+
     fun update(context: Context, editorInfo: EditorInfo?) {
         shown.value = when {
             toggledOn(context) -> Shown.Toggle
