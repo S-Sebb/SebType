@@ -34,7 +34,7 @@ function Result($name, $status, $why = '') {
   Add-Content -Encoding utf8 $results $line; Write-Host $line
 }
 function Check($name, [scriptblock]$body) {
-  if ($Typing) { Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) CHECK $name" }  # DIAG #129
+  if ($Typing) { Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) CHECK $name" }  # with ime-*.txt (#129)
   try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
 }
 function Wait-Until([int]$seconds, [scriptblock]$cond) {
@@ -66,7 +66,7 @@ if ($Typing) {
     $kr = New-Object IO.StreamReader $keys.GetStream()
     function Keys {  # X keysym names or chords (Alt_L+grave), pressed in order
       $line = ($args | ForEach-Object { $_ }) -join ' '
-      Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) $line"  # DIAG #129
+      Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) $line"
       $kw.WriteLine($line); $r = $kr.ReadLine()
       if ($r -ne 'ok') { throw "keys $line`: $r" }
       Start-Sleep -Milliseconds 500
@@ -77,8 +77,9 @@ if ($Typing) {
       $null = $np.WaitForInputIdle(10000)
       $h = $np.MainWindowHandle
       if (-not $tsf::Foreground($h)) { throw 'Notepad did not come to the front' }
-      # DIAG #129: Notepad's IME open status, conversion mode and language over time.
-      $probe = Start-Job -ArgumentList $h.ToInt64(), "$out\imeopen-$Typing.txt" {
+      # Notepad's IME open status, conversion mode (its low bit: Weasel's 中 1, English 0) and language at each change, in
+      # ime-*.txt next to the keys sent, keys-*.txt: says when a flaky Chinese check found English (#129).
+      $null = Start-Job -ArgumentList $h.ToInt64(), "$out\ime-$Typing.txt" {
         param($h, $file)
         Add-Type -Namespace P -Name W -MemberDefinition @'
 [DllImport("imm32.dll")] public static extern System.IntPtr ImmGetDefaultIMEWnd(System.IntPtr h);
@@ -89,8 +90,8 @@ if ($Typing) {
         $last = ''
         while ($true) {
           $ime = [P.W]::ImmGetDefaultIMEWnd([IntPtr]$h)
-          $open = [P.W]::SendMessageW($ime, 0x283, [IntPtr]5, [IntPtr]0)
-          $conv = [P.W]::SendMessageW($ime, 0x283, [IntPtr]1, [IntPtr]0)
+          $open = [P.W]::SendMessageW($ime, 0x283, [IntPtr]5, [IntPtr]0)  # WM_IME_CONTROL: IMC_GETOPENSTATUS
+          $conv = [P.W]::SendMessageW($ime, 0x283, [IntPtr]1, [IntPtr]0)  # IMC_GETCONVERSIONMODE
           $lang = '{0:x4}' -f ([int64][P.W]::GetKeyboardLayout([P.W]::GetWindowThreadProcessId([IntPtr]$h, [IntPtr]::Zero)) -band 0xFFFF)
           $st = "open=$open conv=$conv lang=$lang"
           if ($st -ne $last) { Add-Content $file "$(Get-Date -f HH:mm:ss.fff) $st"; $last = $st }
@@ -120,7 +121,7 @@ if ($Typing) {
         Check 'chinese-shift-tap' {
           Keys 'Control_L+a' BackSpace; TypeText 'ni'; Keys Shift_L; TypeText 'ok'; Keys Shift_L; TypeText 'ranhou '
           Start-Sleep 1; $t = $tsf::EditText($h).Trim()
-          if ($t -ne 'niok然后') { throw "ni Shift ok Shift ranhou gave '$t'" }
+          if ($t -ne 'niok然后') { throw "ni Shift ok Shift ranhou gave '$t' (see ime-all.txt)" }
           $t
         }
         Check 'chinese-ctrl-shift-f' {
@@ -172,6 +173,7 @@ if ($Typing) {
       } finally { $tsf::Stop() }
     }
   } catch { Result "typing-$Typing" FAIL $_.Exception.Message } finally {
+    Copy-Item "$env:TEMP\rime.weasel" "$out\weasel-log-$Typing" -Recurse -ErrorAction SilentlyContinue  # Weasel's own log (#129)
     New-Item -ItemType File -Force "$out\typing-$Typing-done" | Out-Null
   }
   exit
