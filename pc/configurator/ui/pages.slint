@@ -1,7 +1,7 @@
 import { ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { State } from "state.slint";
-import { Switch, Segmented, Card, Row, Divider, SectionTitle, PageTitle, Info, Button, Kbd, Field, BackTitle } from "widgets.slint";
+import { Switch, Segmented, PixelFrame, Card, Row, Divider, SectionTag, PageTitle, Info, Button, Kbd, Field, TitleBar } from "widgets.slint";
 
 // Which group (page) and which screen inside it is shown, and the question waiting for an answer.
 export global Nav {
@@ -10,18 +10,21 @@ export global Nav {
     in-out property <string> confirm-lang;  // "zh" or "ja" while Forget waits for a yes
 }
 
-component Page inherits ScrollView {
+// A page: its title bar, and its items scrolling on the cloth under it.
+component Page inherits VerticalLayout {
     in property <string> title;
     in property <bool> back;
-    content-width: self.visible-width;
-    VerticalLayout {
-        width: root.visible-width;
-        padding: Theme.page-padding;
-        spacing: Theme.card-gap;
-        alignment: start;
-        if !root.back: PageTitle { text: root.title; }
-        if root.back: BackTitle { text: root.title; back => { Nav.sub = 0; } }
-        @children
+    TitleBar { text: root.title; back: root.back; go-back => { Nav.sub = 0; } }
+    scroll := ScrollView {
+        vertical-stretch: 1;
+        content-width: self.visible-width;
+        VerticalLayout {
+            width: scroll.visible-width;
+            padding: Theme.page-padding;
+            spacing: Theme.card-gap;
+            alignment: start;
+            @children
+        }
     }
 }
 
@@ -43,7 +46,7 @@ component LanguagesPage inherits Page {
         for l[i] in State.langs: Rectangle {
             height: root.lang-row;
             background: i == root.dragging ? Theme.pink : transparent;
-            border-radius: Theme.card-radius - 2px;
+            if i > 0: Divider { y: 0; width: parent.width; }
             // Where the dragged language will land.
             if root.dragging >= 0 && i == root.target && i != root.dragging: Rectangle {
                 y: root.target < root.dragging ? 0 : parent.height - 3px;
@@ -95,7 +98,7 @@ component LanguagesPage inherits Page {
         }
     }
 
-    SectionTitle { text: "中文"; }
+    SectionTag { text: "中文"; }
     Card {
         Row {
             title: @tr("Default characters");
@@ -145,7 +148,7 @@ component LanguagesPage inherits Page {
             clicked => { Nav.sub = 2; }
         }
     }
-    SectionTitle { text: "日本語"; }
+    SectionTag { text: "日本語"; }
     Card {
         Row {
             title: @tr("Half-width space");
@@ -165,7 +168,7 @@ component LanguagesPage inherits Page {
         }
     }
 
-    SectionTitle { text: "English"; }
+    SectionTag { text: "English"; }
     Card {
         Row { title: @tr("The system's US keyboard"); detail: @tr("English on the PC is the plain keyboard, without SebType's extras"); }
     }
@@ -178,6 +181,7 @@ component FuzzyPage inherits Page {
     Card {
         for f[i] in State.fuzzy: Row {
             title: f.label;
+            line-above: i > 0;
             VerticalLayout { alignment: center;
                 Switch { checked: f.on; label: f.label; toggled(on) => { State.fuzzy-changed(i, on); } }
             }
@@ -208,6 +212,7 @@ component ZhWordsPage inherits Page {
     if State.zh-words.length > 0: Card {
         for w[i] in State.zh-words: Row {
             title: w.word;
+            line-above: i > 0;
             detail: w.code;
             VerticalLayout { alignment: center;
                 Button { text: @tr("Delete"); clicked => { State.remove-zh-word(i); } }
@@ -247,6 +252,7 @@ component JaWordsPage inherits Page {
     if State.ja-words.length > 0: Card {
         for w[i] in State.ja-words: Row {
             title: w.word;
+            line-above: i > 0;
             detail: w.reading + " · " + State.ja-pos[w.pos];
             VerticalLayout { alignment: center;
                 Button { text: @tr("Delete"); clicked => { State.remove-ja-word(i); } }
@@ -304,7 +310,7 @@ component CandidateSample inherits Rectangle {
 
 component KeyboardPage inherits Page {
     title: @tr("Keyboard");
-    SectionTitle { text: @tr("Candidate window"); }
+    SectionTag { text: @tr("Candidate window"); }
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
@@ -345,7 +351,7 @@ component KeyboardPage inherits Page {
             }
         }
     }
-    SectionTitle { text: @tr("Shortcuts"); }
+    SectionTag { text: @tr("Shortcuts"); }
     Card {
         Row { title: State.system == "Windows" ? @tr("Switch language: EN → 中 → 日") : @tr("Switch language: EN ⇄ the last 中 or 日"); VerticalLayout { alignment: center; Kbd { text: "Win+Space"; } } }
         Divider { }
@@ -358,32 +364,31 @@ component KeyboardPage inherits Page {
     }
 }
 
-component ThemeChoice inherits Rectangle {
+component ThemeChoice inherits PixelFrame {
     in property <string> title;
     in property <bool> picnic;
     in property <bool> selected;
     callback clicked;
-    border-radius: Theme.card-radius;
-    border-width: selected ? 3px : 1px;
-    border-color: selected ? Theme.key : Theme.card-border;
-    background: Theme.card;
+    fill: selected ? Theme.pink : Theme.card;
     accessible-role: button;
     accessible-label: title;
     accessible-checked: selected;
     accessible-action-default => { clicked(); }
-    VerticalLayout {
-        padding: 14px;
-        spacing: 10px;
-        alignment: start;
-        HorizontalLayout { alignment: center; CandidateSample { picnic: root.picnic; vertical: false; count: 4; } }
-        Text { text: (root.selected ? "● " : "○ ") + root.title; color: Theme.ink; font-size: Theme.body-size; horizontal-alignment: center; }
+    Rectangle {
+        VerticalLayout {
+            padding: 12px;
+            spacing: 10px;
+            alignment: start;
+            HorizontalLayout { alignment: center; CandidateSample { picnic: root.picnic; vertical: false; count: 4; } }
+            Text { text: (root.selected ? "● " : "○ ") + root.title; color: Theme.ink; font-size: Theme.body-size; horizontal-alignment: center; }
+        }
+        TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
     }
-    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
 component ThemePage inherits Page {
     title: @tr("Theme");
-    SectionTitle { text: @tr("Candidate window"); }
+    SectionTag { text: @tr("Candidate window"); }
     HorizontalLayout {
         spacing: Theme.card-gap;
         ThemeChoice { title: "Picnic"; picnic: true; selected: State.picnic;
@@ -398,7 +403,7 @@ component ThemePage inherits Page {
         font-size: Theme.detail-size;
         wrap: word-wrap;
     }
-    SectionTitle { text: @tr("Tray icons"); }
+    SectionTag { text: @tr("Tray icons"); }
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
@@ -425,7 +430,7 @@ component PrivacyPage inherits Page {
             }
         }
     }
-    SectionTitle { text: @tr("Forget learned words"); }
+    SectionTag { text: @tr("Forget learned words"); }
     Card {
         Row {
             title: "中文";
@@ -455,7 +460,7 @@ component PrivacyPage inherits Page {
 
 component SyncPage inherits Page {
     title: @tr("Sync & backup");
-    SectionTitle { text: @tr("Sync"); }
+    SectionTag { text: @tr("Sync"); }
     Card {
         Row {
             title: @tr("Sync with my server");
@@ -471,7 +476,7 @@ component SyncPage inherits Page {
             VerticalLayout { alignment: center; Button { text: @tr("Delete…"); danger: true; enabled: false; } }
         }
     }
-    SectionTitle { text: @tr("Backup"); }
+    SectionTag { text: @tr("Backup"); }
     Card {
         Row {
             title: @tr("Export settings");
@@ -513,7 +518,7 @@ component AboutPage inherits Page {
             VerticalLayout { alignment: center; Button { text: @tr("Redeploy"); clicked => { State.redeploy(); } } }
         }
     }
-    SectionTitle { text: @tr("Licence and credits"); }
+    SectionTag { text: @tr("Licence and credits"); }
     Card {
         Row { title: "雾凇拼音 rime-ice · 白霜拼音 rime-frost"; detail: "GPL-3.0"; }
         Divider { }
@@ -527,6 +532,15 @@ component AboutPage inherits Page {
 }
 
 export component Pages inherits Rectangle {
+    // The keyboard's cloth behind every page, as behind the phone's settings.
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("cloth.svg");
+        horizontal-tiling: repeat;
+        vertical-tiling: repeat;
+        image-rendering: pixelated;
+    }
     if Nav.page == 0 && Nav.sub == 0: LanguagesPage { }
     if Nav.page == 0 && Nav.sub == 1: FuzzyPage { }
     if Nav.page == 0 && Nav.sub == 2: ZhWordsPage { }

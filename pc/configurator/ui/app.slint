@@ -3,7 +3,7 @@
 import "../../../sebtype/res/font/sebtype_nunito_extrabold.ttf";
 import { Theme } from "theme.slint";
 import { State, Lang, Fuzzy, ZhWord, JaWord, Msg } from "state.slint";
-import { Button, PageTitle } from "widgets.slint";
+import { Button, PageTitle, PixelFrame } from "widgets.slint";
 import { Nav, Pages } from "pages.slint";
 
 export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg }
@@ -15,14 +15,16 @@ component NavItem inherits Rectangle {
     in property <int> index;
     property <bool> selected: Nav.page == index;
     height: 46px;
-    border-radius: 12px;
-    background: selected ? Theme.pink : touch.has-hover ? Theme.card : transparent;
+    background: !selected && touch.has-hover ? Theme.page : transparent;
     accessible-role: tab;
     accessible-label: text;
     accessible-item-selected: selected;
     accessible-action-default => { Nav.page = index; Nav.sub = 0; }
+    // The page shown is a pink tag, as the phone's section headers.
+    if root.selected: PixelFrame { width: parent.width; height: parent.height; fill: Theme.pink; }
     HorizontalLayout {
         padding-left: 8px;
+        padding-right: 14px;
         spacing: 12px;
         Rectangle {
             width: 34px;
@@ -31,7 +33,7 @@ component NavItem inherits Rectangle {
             border-radius: 17px;
             background: root.dark ? Theme.key-low : Theme.pink;
             border-width: root.selected && !root.dark ? 1px : 0;
-            border-color: Theme.card-border;
+            border-color: Theme.line;
             Image { source: root.icon; width: 20px; height: 20px; colorize: root.dark ? white : Theme.ink; }
         }
         Text { text: root.text; color: Theme.ink; font-size: 15px; vertical-alignment: center; font-weight: root.selected ? 700 : 400; }
@@ -51,9 +53,11 @@ export component AppWindow inherits Window {
     default-font-size: 14px;
 
     HorizontalLayout {
-        Rectangle {
-            width: 210px;
-            background: Theme.nav;
+        // As wide as its longest item: 同期とバックアップ is longer than 210 px in its pink tag.
+        sidebar := Rectangle {
+            min-width: 210px;
+            horizontal-stretch: 0;
+            background: Theme.card;
             VerticalLayout {
                 padding: 12px;
                 spacing: 4px;
@@ -75,7 +79,7 @@ export component AppWindow inherits Window {
                 NavItem { index: 4; text: @tr("Sync & backup"); icon: @image-url("icons/sync.svg"); dark: true; }
                 NavItem { index: 5; text: @tr("About"); icon: @image-url("icons/info.svg"); }
             }
-            Rectangle { x: parent.width - 1px; width: 1px; background: Theme.line; }
+            Rectangle { x: parent.width - Theme.frame; width: Theme.frame; background: Theme.outline; }
         }
         Pages { horizontal-stretch: 1; }
     }
@@ -102,7 +106,7 @@ export component AppWindow inherits Window {
     }
 
     if State.toast != Msg.none: Rectangle {
-        x: 210px + (parent.width - 210px - self.width) / 2;
+        x: sidebar.width + (parent.width - sidebar.width - self.width) / 2;
         y: parent.height - self.height - 18px;
         width: toast-text.preferred-width + 32px;
         height: 34px;
@@ -116,15 +120,11 @@ export component AppWindow inherits Window {
     if Nav.confirm-lang != "": Rectangle {
         background: #4A2F2266;
         TouchArea { }   // keeps clicks off the page behind
-        Rectangle {
+        PixelFrame {
             width: 380px;
             height: 190px;
-            border-radius: Theme.card-radius;
-            background: Theme.card;
-            border-width: 2px;
-            border-color: Theme.outline;
             VerticalLayout {
-                padding: 20px;
+                padding: 18px;
                 spacing: 12px;
                 PageTitle { text: Nav.confirm-lang == "zh" ? @tr("Forget the words 中文 learned?") : @tr("Forget 日本語's typing history?"); font-size: 18px; }
                 Text {

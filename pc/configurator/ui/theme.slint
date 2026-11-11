@@ -1,18 +1,21 @@
-// SebType's Picnic colours (java/.../theme/presets/Picnic.kt) and the look of settings items, in one
-// place: the item style (cards on a page background) follows the phone's settings design (#87), so a
-// change there is a change here only.
+// SebType's Picnic colours (java/.../theme/Picnic.kt) and the look of settings items, in one place.
+// The look is the phone's settings look (#87, Decisions #2 "C, pixel frames", settings/PixelLook.kt):
+// cream items in the keys' notched pixel frames on the keyboard's cloth (cloth.svg), pink tags as
+// section headers and dashed lines between rows (#90). A change there is a change here.
 export global Theme {
-    // Page and sidebar background, and the background of an item (a card of rows).
+    // The cloth's colour and its checks; the sidebar and title bar are cream, edged in the outline.
     out property <color> page: #FBE9D6;
-    out property <color> nav: #F8E2CC;
+    out property <color> check: #F7E3CC;
     out property <color> card: #FFF7E8;
-    out property <color> card-border: #ECD0AE;
-    out property <length> card-radius: 14px;
-    out property <length> card-border-width: 1px;
+    // Frames are 2 dp thick, as on the phone; the hard shadow is the outline at 0x30.
+    out property <length> frame: 2px;
+    out property <color> drop: #5B331C30;
     out property <length> card-gap: 12px;
+    out property <length> dash-inset: 14px;
     out property <length> row-padding-x: 16px;
     out property <length> row-min-height: 52px;
-    out property <length> page-padding: 22px;
+    out property <length> page-padding: 18px;
+    out property <length> title-bar-height: 56px;
 
     out property <color> ink: #4A2F22;
     out property <color> muted: #73533F;
@@ -28,7 +31,7 @@ export global Theme {
 
     out property <string> title-font: "Nunito";
     out property <length> title-size: 22px;
-    out property <length> section-size: 15px;
+    out property <length> section-size: 14px;
     out property <length> body-size: 15px;
     out property <length> detail-size: 12.5px;
 }
