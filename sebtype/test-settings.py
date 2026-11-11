@@ -253,6 +253,8 @@ def to_language(probe, word):
             type_keys(probe)
             # Chinese sets itself up the first time it comes up, showing its notice meanwhile.
             end = time.time() + 300
+            # A language that has just come up can take a moment before its first candidates.
+            first = time.time() + 15
             while True:
                 ns = nodes()
                 if probe == "hello":  # English's words aren't TextViews: en_candidates
@@ -265,7 +267,8 @@ def to_language(probe, word):
                 if english and word in [c.lower() for c in got]:
                     return
                 preparing = any(n[0].startswith(PREPARING) for n in ns)
-                if not preparing or time.time() > end:
+                waiting = preparing or (not got and time.time() < first)
+                if not waiting or time.time() > end:
                     break
                 time.sleep(3)
             open_field()
