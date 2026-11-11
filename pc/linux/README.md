@@ -82,7 +82,7 @@ with the same groups and wording: 语言 (which languages are on and their order
 last other one; Chinese's
 简/繁 start, punctuation, emoji, fuzzy pinyin and own words; Japanese's half-width space and own words),
 键盘 (candidates per page, row or column, text size; the shortcuts), 主题 (the candidate window in
-SebType's Picnic look or the system's), 隐私 (learning, and forgetting what Rime or Mozc learned), 同步与备份
+SebType's Picnic look, with its pig at the start, or the system's), 隐私 (learning, and forgetting what Rime or Mozc learned), 同步与备份
 (export and import of the settings and own words; sync is #12) and 关于. It writes the same files the
 engines read (`rime_ice.custom.yaml`, `default.custom.yaml`, `custom_phrase.txt`, Mozc's `config1.db` and
 `user_dictionary.db`, Fcitx5's `classicui.conf` and group) and tells a running Fcitx5 over D-Bus, so a

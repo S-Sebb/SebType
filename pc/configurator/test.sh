@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks the SebType Configurator (#72) on Linux without touching the live desktop: unit tests, the
 # release build, every screen opened in a nested virtual KWin (screenshots kept), a private Fcitx5 and
-# Rime taking what the app writes, and its install by setup-ime.sh. Engine files are copies in a
+# Rime taking what the app writes, the Picnic candidate window it writes drawn with SebType's pig (#94),
+# and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
 # /tmp/sebtype/configurator-test-results.txt; logs and screenshots next to it.
 set -uo pipefail
@@ -20,6 +21,8 @@ check() { # name, timeout seconds, command or exported function...
 for c in cargo dbus-run-session kwin_wayland spectacle fcitx5 desktop-file-validate; do
   command -v "$c" >/dev/null || { echo "preflight: $c missing"; exit 1; }
 done
+python3 -c 'import dbus, Xlib, PIL, numpy' 2>/dev/null || { echo "preflight: python3-dbus, python3-xlib, python3-pillow and python3-numpy needed"; exit 1; }
+command -v xrdb >/dev/null || { echo "preflight: xrdb missing"; exit 1; }
 [[ -f /usr/share/fcitx5/addon/rime.conf && -f ~/.local/share/fcitx5/rime/rime_ice.schema.yaml ]] ||
   { echo "preflight: fcitx5-rime and rime-ice (pc/linux/setup-ime.sh) needed"; exit 1; }
 
@@ -88,6 +91,36 @@ private_fcitx5() {
 }
 export -f private_fcitx5
 check private-fcitx5-and-rime 300 private_fcitx5
+
+# The Picnic window that test wrote draws SebType's pig at the start (#94), horizontal and vertical: a
+# private Fcitx5 on X11 in a nested KWin, typed into over D-Bus. The screenshots are kept for the eye.
+picnic_window() {
+  cat > "$sb/picnic.sh" <<'SH'
+#!/usr/bin/env bash
+here=$1 sb=$2 out=$3
+exec >> "$out/configurator-picnic.status" 2>&1  # KWin doesn't pass its client's output on
+unset WAYLAND_DISPLAY  # Fcitx5 draws on Xwayland, where the window can be read back
+echo "Xft.dpi: 96" | xrdb -merge
+ui=$sb/config/fcitx5/conf/classicui.conf
+for o in horizontal vertical; do
+  sed -i "s/^Vertical Candidate List=.*/Vertical Candidate List=$([[ $o == vertical ]] && echo True || echo False)/" "$ui"
+  fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,rime > "$out/configurator-picnic-fcitx5-$o.log" 2>&1 & f=$!
+  for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
+  sleep 3  # Rime loads its schema
+  read -r size pink < <(python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png")
+  kill $f; wait $f
+  if [[ ${pink:-0} -gt 100 ]]; then echo "$o ok: $size, $pink logo pixels"
+  else echo "$o: no logo (${size:-no window}, ${pink:-0} logo pixels)"; fi
+done
+SH
+  chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
+  env -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" dbus-run-session -- \
+    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --exit-with-session \
+    "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
+  cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 2 ]]
+}
+export -f picnic_window
+check picnic-candidate-window 120 picnic_window
 
 check setup-ime 900 ../linux/test-setup-ime.sh
 

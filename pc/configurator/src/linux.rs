@@ -7,16 +7,36 @@ use std::{env, fs, io, path::PathBuf, process::Command};
 pub const SYSTEM: &str = "Linux";
 pub const UI_FONT: &str = "Noto Sans CJK SC";
 const PICNIC: &str = "sebtype-picnic";
-const THEME_FILES: [(&str, &str); 5] = [
-    ("theme.conf", include_str!("../fcitx5-theme/theme.conf")),
-    ("panel.svg", include_str!("../fcitx5-theme/panel.svg")),
-    (
-        "highlight.svg",
-        include_str!("../fcitx5-theme/highlight.svg"),
-    ),
-    ("prev.svg", include_str!("../fcitx5-theme/prev.svg")),
-    ("next.svg", include_str!("../fcitx5-theme/next.svg")),
-];
+/// SebType's pig (logo.svg) at the start of the Picnic window (#94). Fcitx5 scales theme images with the
+/// DPI but not with the font, so the logo is sized here: a little under the window's inner height.
+fn picnic_files(font_size: i32) -> [(&'static str, String); 6] {
+    let height = 16 + font_size * 6 / 5; // px at 96 dpi: 28 at 10 pt, 44 at 24 pt
+    let width = (height * 158 + 80) / 160; // the logo image is 158x160
+    [
+        (
+            "theme.conf",
+            // 9 px before the logo (OverlayOffsetX), 4 after it
+            include_str!("../fcitx5-theme/theme.conf")
+                .replace("@LOGO_MARGIN@", &(width + 13).to_string()),
+        ),
+        (
+            "logo.svg",
+            include_str!("../fcitx5-theme/logo.svg")
+                .replace("@WIDTH@", &width.to_string())
+                .replace("@HEIGHT@", &height.to_string()),
+        ),
+        (
+            "panel.svg",
+            include_str!("../fcitx5-theme/panel.svg").into(),
+        ),
+        (
+            "highlight.svg",
+            include_str!("../fcitx5-theme/highlight.svg").into(),
+        ),
+        ("prev.svg", include_str!("../fcitx5-theme/prev.svg").into()),
+        ("next.svg", include_str!("../fcitx5-theme/next.svg").into()),
+    ]
+}
 /// SebType's languages as Fcitx5 input methods.
 const IMS: [(&str, &str); 3] = [("en", "keyboard-us"), ("zh", "rime"), ("ja", "mozc")];
 
@@ -284,10 +304,11 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
 
     let saved = theme_dir().join("previous");
     let current = (ini_get(&ui, "Theme"), ini_get(&ui, "DarkTheme"));
+    let mut theme_changed = false;
     if c.picnic {
         fs::create_dir_all(theme_dir())?;
-        for (name, text) in THEME_FILES {
-            write_if_changed(&theme_dir().join(name), text)?;
+        for (name, text) in picnic_files(c.font_size) {
+            theme_changed |= write_if_changed(&theme_dir().join(name), &text)?;
         }
         if current.0.as_deref() != Some(PICNIC) {
             // Remember the system look, for 系统样式 and for setup-ime.sh --undo-configurator.
@@ -312,7 +333,7 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
             &ini_get(&prev, "DarkTheme").unwrap_or("default".into()),
         );
     }
-    let mut changed = write_if_changed(&path, &ui)?;
+    let mut changed = write_if_changed(&path, &ui)? | theme_changed;
     // fcitx5-mozc lays out its own candidates (its Vertical option, on by default).
     let mozc = fs::read_to_string(mozc_conf()).unwrap_or_default();
     let mozc_changed = write_if_changed(&mozc_conf(), &ini_set(&mozc, "Vertical", tf(c.vertical)))?;
@@ -374,6 +395,26 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picnic_logo_follows_the_font_size() {
+        for (size, w, h, margin) in [(9, 26, 26, 39), (10, 28, 28, 41), (24, 43, 44, 56)] {
+            let files = picnic_files(size);
+            let text = |name: &str| &files.iter().find(|(n, _)| *n == name).unwrap().1;
+            assert!(text("logo.svg").starts_with(&format!(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{w}\" height=\"{h}\" "
+            )), "logo at {size} pt");
+            assert!(
+                text("theme.conf")
+                    .contains(&format!("[InputPanel/ContentMargin]\nLeft={margin}\n")),
+                "margin at {size} pt"
+            );
+            assert!(
+                files.iter().all(|(_, t)| !t.contains('@')),
+                "a placeholder left at {size} pt"
+            );
+        }
+    }
 
     #[test]
     fn ini_set_replaces_or_appends_and_keeps_comments() {
@@ -452,5 +493,17 @@ mod tests {
                 .any(|l| l == "  enable_user_dict: false"),
             "learn"
         );
+
+        // Picnic with SebType's pig (#94); test.sh then draws this window in a nested KWin.
+        let picnic = Candidates {
+            vertical: false,
+            font_size: 10,
+            picnic: true,
+        };
+        assert!(set_candidates(&picnic).unwrap());
+        assert!(fs::read_to_string(theme_dir().join("logo.svg"))
+            .unwrap()
+            .contains(" width=\"28\" height=\"28\" "));
+        assert!(candidates().picnic);
     }
 }
