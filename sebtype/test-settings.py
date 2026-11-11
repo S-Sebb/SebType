@@ -2031,10 +2031,21 @@ def import_done():
     return resumed and not any("ImportResourceActivity" in line for line in resumed)
 
 
+def drop_personal_word(word):
+    """English's personal words go into Android's user dictionary, which outlives the app's uninstall:
+    an earlier run's import would already offer the word."""
+    adb(
+        "shell",
+        f"su 0 content delete --uri content://user_dictionary/words --where \"word='{word}'\"",
+    )
+
+
 def import_personal_data(name):
     def run():
         language, code, word, file, text = PERSONAL_DATA[name]
         to_language(*PROBES[language])
+        if language == "en":
+            drop_personal_word(word)
         before = offered(language, code)
         if word in before:
             raise Fail(f"{code} offers {word} before the import: {before[:5]}")
