@@ -410,7 +410,11 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
                 mAccessibilityDelegate = new MainKeyboardAccessibilityDelegate(this, mKeyDetector);
             }
             mAccessibilityDelegate.setKeyboard(keyboard);
-        } else {
+        } else if (mAccessibilityDelegate != null) {
+            // SebType (#100): the delegate registered itself on this view, which would otherwise go on
+            // describing the keyboard it last had: after a switch to a password keyboard (which has a
+            // number row), its keys a row away from the ones drawn.
+            setAccessibilityDelegate(null);
             mAccessibilityDelegate = null;
         }
     }

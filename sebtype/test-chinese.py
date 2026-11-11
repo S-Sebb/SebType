@@ -90,8 +90,9 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
-# Password and email fields get a number row on top, in a keyboard of the same height (SettingsValues).
-keyboard_rows = 4
+# Password and email fields get a number row on top (SettingsValues), 0.8 of a row high (LayoutEngine);
+# the keyboard grows by that much, so the other rows stay where they are.
+number_row = False
 
 
 def nodes():
@@ -109,22 +110,27 @@ def nodes():
             if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
-        out += letter_keys(*frame, keyboard_rows)
+        out += letter_keys(*frame)
     return out
 
 
-def letter_keys(left, top, right, bottom, n_rows=4):
+def row_y(top, bottom, row):
+    """The middle of a row of SebType's QWERTY: 0 to 2 are the letter rows, 3 the bottom row."""
+    h = (bottom - top) / (4 + 0.8 * number_row)
+    return int(top + (0.8 * number_row + row + 0.5) * h)
+
+
+def letter_keys(left, top, right, bottom):
     """SebType's letter keys aren't in the tree unless an accessibility service is on; their places
-    on its QWERTY: three letter rows over a bottom row (under a number row if n_rows is 5), ten keys
-    across, rows 2 and 3 indented."""
-    w, h = (right - left) / 10, (bottom - top) / n_rows
+    on its QWERTY: three letter rows over a bottom row, ten keys across, rows 2 and 3 indented."""
+    w = (right - left) / 10
     layout = (("qwertyuiop", 0.5), ("asdfghjkl", 1), ("zxcvbnm", 2))
     return [
         (
             ch,
             int(left + (i + indent) * w),
-            int(top + (r + n_rows - 3.5) * h),
-            int(top + (r + n_rows - 4) * h),
+            row_y(top, bottom, r),
+            row_y(top, bottom, r - 0.5),
             "key",
         )
         for r, (letters, indent) in enumerate(layout)
@@ -153,13 +159,13 @@ def tap_globe():
         "input",
         "tap",
         str(int(left + 3 * (right - left) / 10)),
-        str(int(top + 3.5 * (bottom - top) / 4)),
+        str(row_y(top, bottom, 3)),
     )
 
 
 def bar_row(ns):
-    k = keys(ns)
-    return (k["q"][2] - 130, k["q"][2]) if "q" in k else None
+    # Right above the keyboard, whose top is the number row's where it has one.
+    return (keyboard_frame[1] - 130, keyboard_frame[1]) if keys(ns) else None
 
 
 def candidates(ns):
@@ -208,8 +214,8 @@ def type_keys(text):
 def open_field(kind=None):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
     a password, pin, private, url or email field (#30)."""
-    global keyboard_rows
-    keyboard_rows = 5 if kind in ("password", "visible-password", "email") else 4
+    global number_row
+    number_row = kind in ("password", "visible-password", "email")
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
