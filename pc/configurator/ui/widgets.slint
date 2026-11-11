@@ -73,16 +73,53 @@ export component Segmented inherits Rectangle {
     }
 }
 
-// One item: a group of rows on the item background.
-export component Card inherits Rectangle {
-    background: Theme.card;
-    border-radius: Theme.card-radius;
-    border-width: Theme.card-border-width;
-    border-color: Theme.card-border;
+// The Picnic keys' notched pixel frame (PixelFrame in java/.../theme/Picnic.kt), rect for rect: an
+// outline with its corners cut away, a highlight top-left and lowlight bottom-right inside, and a hard
+// shadow in the last frame width right and below. The children keep clear of all of it.
+export component PixelFrame inherits Rectangle {
+    in property <color> fill: Theme.card;
+    in property <color> outline: Theme.outline;
+    in property <bool> shadow: true;
+    in property <bool> pressed;   // pushed in: the bevel flips and the shadow goes, as on the keys
+    in property <length> padding-x;
+    in property <length> padding-y;
+    property <length> w: Theme.frame;
+    // As the phone's settings: the highlight is the fill 85 % of the way to white, the lowlight the line.
+    property <color> high: pressed ? Theme.line : fill.mix(white, 0.15);
+    property <color> low: pressed ? fill.mix(white, 0.15) : Theme.line;
+    if root.shadow && !root.pressed: Rectangle { x: root.width - root.w; y: 3 * root.w; width: root.w; height: root.height - 3 * root.w; background: Theme.drop; }
+    if root.shadow && !root.pressed: Rectangle { x: 3 * root.w; y: root.height - root.w; width: root.width - 4 * root.w; height: root.w; background: Theme.drop; }
+    Rectangle { x: root.w; y: root.w; width: root.width - 3 * root.w; height: root.height - 3 * root.w; background: root.fill; }
+    Rectangle { x: root.w; y: root.height - 3 * root.w; width: root.width - 3 * root.w; height: root.w; background: root.low; }
+    Rectangle { x: root.width - 3 * root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.low; }
+    Rectangle { x: root.w; y: root.w; width: root.width - 3 * root.w; height: root.w; background: root.high; }
+    Rectangle { x: root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.high; }
+    Rectangle { x: root.w; y: 0; width: root.width - 3 * root.w; height: root.w; background: root.outline; }
+    Rectangle { x: root.w; y: root.height - 2 * root.w; width: root.width - 3 * root.w; height: root.w; background: root.outline; }
+    Rectangle { x: 0; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.outline; }
+    Rectangle { x: root.width - 2 * root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.outline; }
     VerticalLayout {
-        padding-top: 4px;
-        padding-bottom: 4px;
+        padding-left: 2 * root.w + root.padding-x;
+        padding-right: 3 * root.w + root.padding-x;
+        padding-top: 2 * root.w + root.padding-y;
+        padding-bottom: 3 * root.w + root.padding-y;
         @children
+    }
+}
+
+// One item: a group of rows in a cream frame, a Divider between rows.
+export component Card inherits PixelFrame { }
+
+// The dashed line between a card's rows.
+export component Divider inherits Rectangle {
+    height: Theme.frame;
+    Image {
+        x: Theme.dash-inset;
+        width: parent.width - 2 * Theme.dash-inset;
+        height: parent.height;
+        source: @image-url("dash.svg");
+        horizontal-tiling: repeat;
+        image-rendering: pixelated;
     }
 }
 
@@ -91,9 +128,11 @@ export component Row inherits Rectangle {
     in property <string> detail;
     in property <bool> enabled: true;
     in property <bool> arrow;
+    in property <bool> line-above;   // a Divider over the row, for rows made by a for
     callback clicked;
     min-height: Theme.row-min-height;
     opacity: enabled ? 1 : 0.5;
+    if root.line-above: Divider { y: 0; width: parent.width; }
     if root.arrow: Rectangle {
         accessible-role: button;
         accessible-label: root.title;
@@ -124,19 +163,19 @@ export component Row inherits Rectangle {
     }
 }
 
-export component Divider inherits Rectangle {
-    height: 1px;
-    Rectangle {
-        x: Theme.row-padding-x;
-        width: parent.width - 2 * Theme.row-padding-x;
-        background: Theme.line;
+// A section header: a pink tag framed like the keys, as wide as its text.
+export component SectionTag inherits HorizontalLayout {
+    in property <string> text;
+    alignment: start;
+    padding-top: 4px;
+    PixelFrame {
+        fill: Theme.pink;
+        padding-x: 10px;
+        padding-y: 3px;
+        accessible-role: AccessibleRole.text;
+        accessible-label: root.text;
+        Text { text: root.text; color: Theme.ink; font-size: Theme.section-size; font-weight: 700; }
     }
-}
-
-export component SectionTitle inherits Text {
-    color: Theme.ink;
-    font-size: Theme.section-size;
-    font-weight: 700;
 }
 
 export component PageTitle inherits Text {
@@ -146,80 +185,67 @@ export component PageTitle inherits Text {
     font-weight: 800;
 }
 
-export component Info inherits Rectangle {
+// A tip: a pink frame.
+export component Info inherits PixelFrame {
     in property <string> text;
-    background: Theme.pink;
-    border-radius: 10px;
-    HorizontalLayout {
-        padding: 10px;
-        Text { text: root.text; color: Theme.ink; font-size: Theme.detail-size; wrap: word-wrap; }
-    }
+    fill: Theme.pink;
+    padding-x: 10px;
+    padding-y: 8px;
+    Text { text: root.text; color: Theme.ink; font-size: Theme.detail-size; wrap: word-wrap; }
 }
 
-export component Button inherits Rectangle {
+// A button is a Picnic key: cream, or the pink key's colour when it's the main one.
+export component Button inherits PixelFrame {
     in property <string> text;
     in property <bool> primary;
     in property <bool> danger;
     in property <bool> enabled: true;
     callback clicked;
-    height: 32px;
-    border-radius: 16px;
-    background: !enabled ? Theme.off-track : primary ? (touch.has-hover ? Theme.key-high : Theme.key) : danger ? Theme.danger : (touch.has-hover ? Theme.pink : Theme.card);
-    border-width: primary || danger ? 0 : 2px;
-    border-color: Theme.outline;
+    height: 34px;
+    fill: !enabled ? Theme.off-track : primary ? (touch.has-hover ? Theme.key-high : Theme.key) : danger ? Theme.danger : (touch.has-hover ? Theme.pink : Theme.card);
+    pressed: touch.pressed;
+    padding-x: 12px;
     opacity: enabled ? 1 : 0.6;
     accessible-role: button;
     accessible-label: text;
     accessible-action-default => { if enabled { clicked(); } }
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
+    Rectangle {
         Text {
             text: root.text;
-            color: root.primary || root.danger ? white : Theme.ink;
+            color: root.enabled && (root.primary || root.danger) ? white : Theme.ink;
             font-size: 13.5px;
             vertical-alignment: center;
             horizontal-alignment: center;
         }
-    }
-    touch := TouchArea {
-        enabled: root.enabled;
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        touch := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
     }
 }
 
-export component Kbd inherits Rectangle {
+// A key cap, framed as the keyboard's keys.
+export component Kbd inherits PixelFrame {
     in property <string> text;
-    background: white;
-    border-radius: 6px;
-    border-width: 1.5px;
-    border-color: Theme.outline;
-    height: 26px;
-    HorizontalLayout {
-        padding-left: 8px;
-        padding-right: 8px;
-        Text { text: root.text; color: Theme.ink; font-size: 12px; font-weight: 700; vertical-alignment: center; }
-    }
-    // The key's lower edge, as on the phone's keys.
-    Rectangle { y: parent.height - 3px; height: 3px; border-radius: 2px; background: Theme.outline; }
+    height: 30px;
+    padding-x: 8px;
+    Text { text: root.text; color: Theme.ink; font-size: 12px; font-weight: 700; vertical-alignment: center; }
 }
 
-export component Field inherits Rectangle {
+export component Field inherits PixelFrame {
     in-out property <string> text;
     in property <string> placeholder;
     callback accepted;
-    height: 34px;
-    background: white;
-    border-radius: 8px;
-    border-width: input.has-focus ? 2px : 1.5px;
-    border-color: input.has-focus ? Theme.key : Theme.outline;
+    height: 36px;
+    fill: white;
+    shadow: false;
+    outline: input.has-focus ? Theme.key : Theme.outline;
+    padding-x: 8px;
     accessible-role: text-input;
     accessible-label: placeholder;
     accessible-value: text;
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
+    Rectangle {
         input := TextInput {
             text <=> root.text;
             color: Theme.ink;
@@ -228,31 +254,43 @@ export component Field inherits Rectangle {
             single-line: true;
             accepted => { root.accepted(); }
         }
-    }
-    if root.text == "": Text {
-        x: 11px;
-        text: root.placeholder;
-        color: Theme.muted;
-        font-size: 13px;
-        vertical-alignment: center;
-        height: parent.height;
+        if root.text == "": Text {
+            x: 1px;
+            width: parent.width;
+            text: root.placeholder;
+            color: Theme.muted;
+            font-size: 13px;
+            vertical-alignment: center;
+            overflow: elide;
+        }
     }
 }
 
-export component BackTitle inherits HorizontalLayout {
+// The bar with a page's title, as the phone's: cream, with the frames' outline under it.
+export component TitleBar inherits Rectangle {
     in property <string> text;
-    callback back;
-    spacing: 10px;
-    Rectangle {
-        width: 32px;
-        height: 32px;
-        border-radius: 16px;
-        background: back-touch.has-hover ? Theme.pink : transparent;
-        accessible-role: button;
-        accessible-label: @tr("Back");
-        accessible-action-default => { root.back(); }
-        Text { text: "←"; color: Theme.ink; font-size: 20px; }
-        back-touch := TouchArea { mouse-cursor: pointer; clicked => { root.back(); } }
+    in property <bool> back;
+    callback go-back;
+    height: Theme.title-bar-height;
+    background: Theme.card;
+    HorizontalLayout {
+        padding-left: root.back ? 12px : Theme.page-padding;
+        padding-right: Theme.page-padding;
+        padding-bottom: Theme.frame;
+        spacing: 8px;
+        if root.back: Rectangle {
+            width: 34px;
+            height: 34px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 17px;
+            background: back-touch.has-hover ? Theme.pink : transparent;
+            accessible-role: button;
+            accessible-label: @tr("Back");
+            accessible-action-default => { root.go-back(); }
+            Text { text: "←"; color: Theme.ink; font-size: 20px; }
+            back-touch := TouchArea { mouse-cursor: pointer; clicked => { root.go-back(); } }
+        }
+        PageTitle { text: root.text; vertical-alignment: center; overflow: elide; }
     }
-    PageTitle { text: root.text; vertical-alignment: center; }
+    Rectangle { y: parent.height - Theme.frame; height: Theme.frame; background: Theme.outline; }
 }

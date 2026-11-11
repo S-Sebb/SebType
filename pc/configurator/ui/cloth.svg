@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" shape-rendering="crispEdges">
+<!-- The phone's cloth (clothTile in java/.../theme/Picnic.kt): 64 cloth pixels of 2 px, checkered, three flowers. -->
+<rect width="128" height="128" fill="#FBE9D6"/>
+<rect width="64" height="64" fill="#F7E3CC"/>
+<rect x="64" y="64" width="64" height="64" fill="#F7E3CC"/>
+<rect x="20" y="22" width="2" height="2" fill="#F4B6C2"/>
+<rect x="18" y="24" width="2" height="2" fill="#F4B6C2"/>
+<rect x="22" y="24" width="2" height="2" fill="#F4B6C2"/>
+<rect x="20" y="26" width="2" height="2" fill="#F4B6C2"/>
+<rect x="20" y="24" width="2" height="2" fill="#F0B443"/>
+<rect x="88" y="98" width="2" height="2" fill="#C9B6EF"/>
+<rect x="86" y="100" width="2" height="2" fill="#C9B6EF"/>
+<rect x="90" y="100" width="2" height="2" fill="#C9B6EF"/>
+<rect x="88" y="102" width="2" height="2" fill="#C9B6EF"/>
+<rect x="88" y="100" width="2" height="2" fill="#F0B443"/>
+<rect x="100" y="30" width="2" height="2" fill="#F4B6C2"/>
+<rect x="98" y="32" width="2" height="2" fill="#F4B6C2"/>
+<rect x="102" y="32" width="2" height="2" fill="#F4B6C2"/>
+<rect x="100" y="34" width="2" height="2" fill="#F4B6C2"/>
+<rect x="100" y="32" width="2" height="2" fill="#FFFFFF"/>
+</svg>
