@@ -27,7 +27,7 @@ data class AdvancedThemeOptions(
     val font: Typeface? = null,
     /** Key popups (press preview and long-press menu); [font] when null. */
     val popupFont: Typeface? = null,
-    /** Drawn behind the candidate that space commits. */
+    /** Drawn behind the first candidate. */
     val candidateChip: Drawable? = null,
     val textSizeMultiplier: Float = 1.0f,
 )

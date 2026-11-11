@@ -287,7 +287,7 @@ fun AutoFitText(
     }
 }
 
-/** The theme's chip behind the candidate that space commits: [width] wide at most, 28 dp high, centred. */
+/** The theme's chip behind the first candidate: [width] wide at most, 28 dp high, centred. */
 private fun DrawScope.drawCandidateChip(chip: Drawable, width: Float) {
     val w = width.coerceAtMost(size.width).roundToInt()
     val h = 28.dp.toPx().coerceAtMost(size.height).roundToInt()
@@ -312,7 +312,7 @@ fun TextStyle.withCustomFont(orDefault: FontFamily? = null): TextStyle {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun RowScope.SuggestionItem(words: SuggestedWords, idx: Int, isPrimary: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, forcePrimary: Boolean, isEmoji: Boolean) {
+fun RowScope.SuggestionItem(words: SuggestedWords, idx: Int, isPrimary: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, forcePrimary: Boolean, isEmoji: Boolean, isFirst: Boolean = false) {
     val wordInfo = words.getInfoOrNull(idx)
     val isVerbatim = wordInfo?.kind == KIND_TYPED
     val word = wordInfo?.mWord
@@ -362,7 +362,7 @@ fun RowScope.SuggestionItem(words: SuggestedWords, idx: Int, isPrimary: Boolean,
         true -> suggestionStylePrimary
         false -> suggestionStyleAlternative
     }.copy(color = color).withCustomFont(potentiallyCompatEmojiFont)
-    val chip = LocalKeyboardScheme.current.extended.advancedThemeOptions.candidateChip.takeIf { isAutocorrect }
+    val chip = LocalKeyboardScheme.current.extended.advancedThemeOptions.candidateChip.takeIf { isFirst }
 
     Box(
         modifier = textButtonModifier
@@ -504,6 +504,13 @@ fun RowScope.SuggestionItems(words: SuggestedWords, onClick: (i: Int) -> Unit, o
         swipeTailRemovePrimarySuggestion = false // SebType: no glide typing (#6)
     )
 
+    // The middle slot, or the only one: the first candidate, which gets the theme's chip.
+    val first = when {
+        layout.isGestureBatch || (layout.emojiMatches.isEmpty() && layout.presentableSuggestions.size <= 1) ->
+            layout.presentableSuggestions.firstOrNull()
+        else -> layout.autocorrectMatch ?: layout.sortedMatches.getOrNull(0)
+    }
+
     val suggestionItem = @Composable { suggestion: SuggestedWordInfo? ->
         if(suggestion != null) {
             val idx = words.indexOf(suggestion)
@@ -514,7 +521,8 @@ fun RowScope.SuggestionItems(words: SuggestedWords, onClick: (i: Int) -> Unit, o
                 forcePrimary = suggestion == layout.swipePrimaryElement,
                 onClick = { onClick(idx) },
                 onLongClick = { onLongClick(idx) },
-                isEmoji = suggestion in layout.emojiMatches
+                isEmoji = suggestion in layout.emojiMatches,
+                isFirst = suggestion == first
             )
         } else {
             Spacer(Modifier.weight(1.0f))
