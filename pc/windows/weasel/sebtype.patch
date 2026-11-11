@@ -1,13 +1,17 @@
 diff --git a/RimeWithWeasel/RimeWithWeasel.cpp b/RimeWithWeasel/RimeWithWeasel.cpp
-index 3f4e59d..8bd3dbc 100644
+index 3f4e59d..c6b912d 100644
 --- a/RimeWithWeasel/RimeWithWeasel.cpp
 +++ b/RimeWithWeasel/RimeWithWeasel.cpp
-@@ -1194,6 +1194,8 @@ static void _UpdateUIStyle(RimeConfig* config, UI* ui, bool initialize) {
+@@ -1194,6 +1194,12 @@ static void _UpdateUIStyle(RimeConfig* config, UI* ui, bool initialize) {
                 style.display_tray_icon);
    _RimeGetBool(config, "style/ascii_tip_follow_cursor", initialize,
                 style.ascii_tip_follow_cursor);
-+  _RimeGetBool(config, "style/sebtype_logo", initialize,
-+               style.sebtype_logo);
++  // SebType (#94): the candidate window is drawn in the app's process, so it
++  // gets the full path of the pig, which is next to WeaselServer.exe.
++  _RimeGetBool(config, "style/sebtype_logo", initialize, style.sebtype_logo,
++               (WeaselSharedDataPath().parent_path() / L"sebtype-logo.png")
++                   .wstring(),
++               std::wstring());
    _RimeGetBool(config, "style/horizontal", initialize, style.layout_type,
                 UIStyle::LAYOUT_HORIZONTAL, UIStyle::LAYOUT_VERTICAL);
    _RimeGetBool(config, "style/paging_on_scroll", initialize,
@@ -68,7 +72,7 @@ index d96ad8e..00a9bc4 100644
    virtual IsToRoundStruct GetTextRoundInfo() = 0;
    virtual CRect GetContentRect() = 0;
 diff --git a/WeaselUI/StandardLayout.cpp b/WeaselUI/StandardLayout.cpp
-index bdffad0..f95e279 100644
+index bdffad0..0609a0e 100644
 --- a/WeaselUI/StandardLayout.cpp
 +++ b/WeaselUI/StandardLayout.cpp
 @@ -312,6 +312,31 @@ void weasel::StandardLayout::_PrepareRoundInfo(CDCHandle& dc) {
@@ -80,7 +84,7 @@ index bdffad0..f95e279 100644
 +// Everything laid out so far moves right by the column; height is the
 +// content height inside the border.
 +void StandardLayout::ReserveLogoColumn(int* width, int height) {
-+  if (!_style.sebtype_logo || !candidates_count)
++  if (_style.sebtype_logo.empty() || !candidates_count)
 +    return;
 +  const int h = _candidateRects[0].Height() + real_margin_y;
 +  const int w = h * LOGO_WIDTH / LOGO_HEIGHT;
@@ -153,22 +157,10 @@ index fee38f6..dcd889f 100644
  
    /* Highlighted Candidate */
 diff --git a/WeaselUI/WeaselPanel.cpp b/WeaselUI/WeaselPanel.cpp
-index 18964a0..8bf8309 100644
+index 18964a0..3865832 100644
 --- a/WeaselUI/WeaselPanel.cpp
 +++ b/WeaselUI/WeaselPanel.cpp
-@@ -77,6 +77,11 @@ WeaselPanel::WeaselPanel(weasel::UI& ui)
-                        LR_DEFAULTCOLOR);
-   // for gdi+ drawings, initialization
-   GdiplusStartup(&_m_gdiplusToken, &_m_gdiplusStartupInput, NULL);
-+  WCHAR exe[MAX_PATH];
-+  GetModuleFileNameW(NULL, exe, MAX_PATH);
-+  std::wstring logo(exe);
-+  logo = logo.substr(0, logo.find_last_of(L'\\') + 1) + L"sebtype-logo.png";
-+  m_logo.reset(Gdiplus::Bitmap::FromFile(logo.c_str()));
- 
-   HMONITOR hMonitor = MonitorFromRect(m_inputPos, MONITOR_DEFAULTTONEAREST);
-   UINT dpiX = 96, dpiY = 96;
-@@ -90,6 +95,7 @@ WeaselPanel::WeaselPanel(weasel::UI& ui)
+@@ -90,6 +90,7 @@ WeaselPanel::WeaselPanel(weasel::UI& ui)
  }
  
  WeaselPanel::~WeaselPanel() {
@@ -176,14 +168,22 @@ index 18964a0..8bf8309 100644
    Gdiplus::GdiplusShutdown(_m_gdiplusToken);
    delete m_layout;
    m_layout = NULL;
-@@ -1027,6 +1033,16 @@ void WeaselPanel::DoPaint(CDCHandle dc) {
+@@ -1027,6 +1028,24 @@ void WeaselPanel::DoPaint(CDCHandle dc) {
      }
      // end texts drawing
  
-+    // SebType: the pig in its column at the start (#94)
++    // SebType: the pig in its column at the start, loaded when its path
++    // changes (#94)
++    if (m_logoPath != m_style.sebtype_logo) {
++      m_logoPath = m_style.sebtype_logo;
++      m_logo.reset(m_logoPath.empty()
++                       ? nullptr
++                       : Gdiplus::Bitmap::FromFile(m_logoPath.c_str()));
++      if (m_logo && m_logo->GetLastStatus() != Gdiplus::Ok)
++        m_logo.reset();
++    }
 +    CRect logorc = m_layout->GetLogoRect();
-+    if (!logorc.IsRectEmpty() && m_logo &&
-+        m_logo->GetLastStatus() == Gdiplus::Ok) {
++    if (!logorc.IsRectEmpty() && m_logo) {
 +      Gdiplus::Graphics g(memDC);
 +      g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
 +      g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
@@ -194,7 +194,7 @@ index 18964a0..8bf8309 100644
      if (m_layout->ShouldDisplayStatusIcon()) {
        // decide if custom schema zhung icon to show
 diff --git a/WeaselUI/WeaselPanel.h b/WeaselUI/WeaselPanel.h
-index 478e798..de5cba5 100644
+index 478e798..9ac509a 100644
 --- a/WeaselUI/WeaselPanel.h
 +++ b/WeaselUI/WeaselPanel.h
 @@ -4,6 +4,7 @@
@@ -205,37 +205,39 @@ index 478e798..de5cba5 100644
  
  #pragma comment(lib, "d2d1.lib")
  #pragma comment(lib, "dwrite.lib")
-@@ -122,6 +123,8 @@ class WeaselPanel
+@@ -122,6 +123,9 @@ class WeaselPanel
    CIcon m_iconAlpha;
    CIcon m_iconFull;
    CIcon m_iconHalf;
-+  // SebType: sebtype-logo.png next to WeaselServer.exe (#94)
++  // SebType: the pig from m_style.sebtype_logo, loaded from m_logoPath (#94)
 +  std::unique_ptr<Gdiplus::Bitmap> m_logo;
++  std::wstring m_logoPath;
    std::wstring m_current_zhung_icon;
    std::wstring m_current_ascii_icon;
    std::wstring m_current_half_icon;
 diff --git a/include/WeaselIPCData.h b/include/WeaselIPCData.h
-index 09f22f9..3455732 100644
+index 09f22f9..5239da4 100644
 --- a/include/WeaselIPCData.h
 +++ b/include/WeaselIPCData.h
-@@ -226,6 +226,8 @@ struct UIStyle {
+@@ -226,6 +226,9 @@ struct UIStyle {
    bool inline_preedit;
    bool display_tray_icon;
    bool ascii_tip_follow_cursor;
-+  // SebType: SebType's pig at the start of the candidate window (#94)
-+  bool sebtype_logo;
++  // SebType: the image of SebType's pig at the start of the candidate
++  // window, or empty for none (#94)
++  std::wstring sebtype_logo;
    bool paging_on_scroll;
    bool enhanced_position;
    bool click_to_capture;
-@@ -303,6 +305,7 @@ struct UIStyle {
+@@ -303,6 +306,7 @@ struct UIStyle {
          inline_preedit(false),
          display_tray_icon(false),
          ascii_tip_follow_cursor(false),
-+        sebtype_logo(false),
++        sebtype_logo(),
          paging_on_scroll(false),
          enhanced_position(false),
          click_to_capture(false),
-@@ -378,6 +381,7 @@ struct UIStyle {
+@@ -378,6 +382,7 @@ struct UIStyle {
          inline_preedit != st.inline_preedit || mark_text != st.mark_text ||
          display_tray_icon != st.display_tray_icon ||
          ascii_tip_follow_cursor != st.ascii_tip_follow_cursor ||
@@ -243,7 +245,7 @@ index 09f22f9..3455732 100644
          current_zhung_icon != st.current_zhung_icon ||
          current_ascii_icon != st.current_ascii_icon ||
          current_half_icon != st.current_half_icon ||
-@@ -443,6 +447,7 @@ void serialize(Archive& ar, weasel::UIStyle& s, const unsigned int version) {
+@@ -443,6 +448,7 @@ void serialize(Archive& ar, weasel::UIStyle& s, const unsigned int version) {
    ar & s.preedit_type;
    ar & s.display_tray_icon;
    ar & s.ascii_tip_follow_cursor;

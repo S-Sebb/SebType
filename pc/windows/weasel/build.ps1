@@ -36,7 +36,8 @@ Push-Location $Work
 try {
   Invoke-Checked 'apply sebtype.patch' { git apply (Join-Path $PSScriptRoot 'sebtype.patch') }
   foreach ($icon in 'zh.ico', 'en.ico', 'en_caps.ico') { Copy-Item (Join-Path $Icons $icon) resource\ -Force }
-  # The pig WeaselServer draws at the start of the candidate window (#94; made by sebtype/make-icon.py).
+  # The pig at the start of the candidate window, which WeaselServer finds next to itself (#94; made by
+  # sebtype/make-icon.py).
   Copy-Item (Join-Path $PSScriptRoot 'sebtype-logo.png') output\ -Force
   # The resource script is UTF-16, so it is edited here rather than in the patch.
   $rc = Join-Path $Work 'WeaselTSF\WeaselTSF.rc'  # .NET resolves relative paths against the process folder
