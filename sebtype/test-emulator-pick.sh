@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Checks sebtype/emulator.sh's choice of emulator (#140): a run starts at once on the emulator whose lock
-# is free, and with both held, on whichever comes free first. Uses its own lock directory and a stub adb
-# that reports both emulators booted, so it touches no real emulator or lock and takes about a minute.
+# Checks sebtype/emulator.sh's queue for its one emulator (#170): a run starts at once when guide35's lock
+# is free, and waits for it when held. Uses its own lock directory and a stub adb that reports guide35
+# booted, so it touches no real emulator or lock and takes about half a minute.
 # One line per check in /tmp/sebtype/test-emulator-pick-results.txt; exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -17,8 +17,8 @@ cat > "$ANDROID_HOME/platform-tools/adb" << 'EOF'
 #!/usr/bin/env bash
 [[ $1 == -s ]] && { s=$2; shift 2; }
 case $* in
-  devices) printf 'List of devices attached\nemulator-5554\tdevice\nemulator-5580\tdevice\n' ;;
-  "emu avd name") [[ $s == emulator-5554 ]] && echo guide35 || echo guide35b; echo OK ;;
+  devices) printf 'List of devices attached\nemulator-5554\tdevice\n' ;;
+  "emu avd name") echo guide35; echo OK ;;
   "shell getprop sys.boot_completed") echo 1 ;;
 esac
 EOF
@@ -38,11 +38,8 @@ run() {
   else result FAIL "$1" "got '$got' in $((SECONDS - start))s, want $2 within $3s, see $out/test-emulator-pick-$1.log"; fi
 }
 
-run both-free emulator-5554 3
-hold guide35 120; run guide35-held emulator-5580 3; release
-hold guide35b 120; run guide35b-held emulator-5554 3; release
-# The picked one (guide35, shorter queue) stays held; guide35b comes free after 10 s.
-hold guide35 120; hold guide35b 10; run both-held-b-frees-first emulator-5580 20; release
+run free emulator-5554 3
+hold guide35 10; run held-then-free emulator-5554 20; release
 
 rc=$(timeout 30 sebtype/emulator.sh -- sh -c 'exit 3' 2> /dev/null; echo $?)
 [[ $rc == 3 ]] && result PASS exit-status "3 from CMD" || result FAIL exit-status "got $rc, want CMD's 3"

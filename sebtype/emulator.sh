@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # Runs CMD on a device under that device's lock, held for all of CMD:
 #   sebtype/emulator.sh [devq options] -- CMD [ARGS...]
-# Without ANDROID_SERIAL it takes one of SebType's two emulators (Decisions #2): it queues for the
-# best one (free, a running one before one it has to start, else the shorter queue), and if that turn
-# doesn't come within seconds, for the other too; the first turn wins (#140). One it starts
-# runs headless; guide35b is stopped again when CMD ends, guide35 stays up for the other projects
-# (SebChat) and scripts that expect it running. ANDROID_SERIAL picks the device instead: an
+# Without ANDROID_SERIAL it queues for SebType's one emulator, guide35: one emulator at a time, two ran
+# the PC out of memory (Decisions #2, #170). If it isn't running it is started headless, and it stays up
+# for the other projects (SebChat) and scripts that expect it running. ANDROID_SERIAL picks the device instead: an
 # emulator by its AVD's lock, a phone by the lock of the PC it's plugged into, which other projects
 # (SebChat) take for the phone (#76). CMD gets ANDROID_SERIAL; the exit status is CMD's, or devq's 1
 # if the lock's turn didn't come.
@@ -14,9 +12,8 @@ set -uo pipefail
 sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 adb=$sdk/platform-tools/adb
 locks=${EMULATOR_LOCKS:-/tmp/agent-locks/devices} # another directory only for sebtype/test-emulator-pick.sh
-# AVD and console port: a fixed port gives each emulator a stable serial, emulator-<port>.
-emulators=(guide35:5554 guide35b:5580)
-on_demand=guide35b # stopped when the run that started it ends: two emulators leave little memory
+# AVD and console port: a fixed port gives the emulator a stable serial, emulator-<port>.
+avd=guide35 port=5554
 
 serial_of() { # AVD -> serial of its running emulator, booted or not
   local s
@@ -26,14 +23,9 @@ serial_of() { # AVD -> serial of its running emulator, booted or not
   return 1
 }
 
-if [[ ${1:-} == --run ]]; then # under the lock: $avd and $port from the caller
+if [[ ${1:-} == --run ]]; then # under the lock
   shift
   started=
-  won=${pick:-}; unset pick # not passed on to CMD, which may run emulator.sh itself
-  if [[ -n $won ]]; then # queued for both emulators: run only on the first turn, leave the other queue
-    mkdir "$won/won" 2> /dev/null || exit 0
-    for f in "$won"/*.pid; do [[ $f == "$won/$avd.pid" ]] || kill "$(< "$f")" 2> /dev/null; done
-  fi
   if [[ -z ${ANDROID_SERIAL:-} ]]; then
     unit=emulator-$avd
     if ! ANDROID_SERIAL=$(serial_of "$avd"); then
@@ -57,16 +49,10 @@ if [[ ${1:-} == --run ]]; then # under the lock: $avd and $port from the caller
     [[ -n $started ]] && timeout 300 bash -c 'until (( $("$0" shell cat /proc/loadavg | cut -d. -f1) < 3 )); do
       sleep 5; done' "$adb"
   fi
-  # An app too slow to answer under load (a cold boot, both emulators busy) gets an "isn't responding"
+  # An app too slow to answer under load (a cold boot) gets an "isn't responding"
   # dialog that covers the screen and fails every UI check after it; hidden, Android closes the app.
   [[ $ANDROID_SERIAL == emulator-* ]] && "$adb" shell settings put global hide_error_dialogs 1
-  "$@"; rc=$?
-  if [[ -n $started && $avd == "$on_demand" ]]; then
-    "$adb" emu kill > /dev/null
-    timeout 60 bash -c 'while systemctl --user is-active --quiet "$0"; do sleep 1; done' "$unit"
-  fi
-  [[ -n $won ]] && echo $rc > "$won/rc"
-  exit $rc
+  exec "$@"
 fi
 
 opts=()
@@ -84,28 +70,4 @@ if [[ -n ${ANDROID_SERIAL:-} ]]; then
   exec devq "${opts[@]}" "$lock" "$0" --run "$@"
 fi
 
-# Lowest score first: 0 free and running, 1 free, then 2 + the number waiting.
-best= best_score=
-for e in "${emulators[@]}"; do
-  avd=${e%:*} lock=$locks/emulator-$avd.lock
-  waiting=0
-  for f in "$lock.queue"/*; do [[ -e $f ]] && kill -0 "$(cut -d' ' -f1 "$f")" 2> /dev/null && ((waiting++)); done
-  if ((waiting == 0)) && flock -n "$lock" true; then score=$(serial_of "$avd" > /dev/null && echo 0 || echo 1)
-  else score=$((2 + waiting)); fi
-  [[ -z $best_score ]] || ((score < best_score)) && { best=$e best_score=$score; }
-done
-# The picked lock can be taken before devq gets it, or both be held (#140): unless its turn comes within
-# 5 seconds, queue for the other one too and run on whichever turn comes first.
-pick=$(mktemp -d /tmp/sebtype-emulator-pick.XXXXXX)
-trap 'rm -rf "$pick"' EXIT
-trap 'kill $(cat "$pick"/*.pid) 2> /dev/null; exit 143' TERM INT
-queue() {
-  avd=${1%:*} port=${1#*:} pick=$pick devq "${opts[@]}" "$locks/emulator-${1%:*}.lock" "$0" --run "${@:2}" <&0 &
-  echo $! > "$pick/${1%:*}.pid"
-}
-queue "$best" "$@"
-for _ in {1..25}; do [[ -d $pick/won ]] && break; sleep 0.2; done
-[[ -d $pick/won ]] || for e in "${emulators[@]}"; do [[ $e == "$best" ]] || queue "$e" "$@"; done
-wait
-[[ -e $pick/rc ]] || exit 1 # no turn came: devq said why
-exit "$(< "$pick/rc")"
+exec devq "${opts[@]}" "$locks/emulator-$avd.lock" "$0" --run "$@"
