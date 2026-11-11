@@ -12,6 +12,7 @@ tapping SebType's own keys (found with `uiautomator dump --windows`) and reads t
 line per check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
 """
 
+import ast
 import datetime
 import os
 import re
@@ -292,7 +293,38 @@ def restart_app():
 passed = {}
 
 
+def wanted():
+    """With SEBTYPE_CHECKS (comma-separated name prefixes, as sebtype/test-emulator.sh takes it), the
+    checks named there and those they need; None runs all."""
+    prefixes = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
+    if not prefixes:
+        return None
+    needs = {}
+    with open(__file__, encoding="utf-8") as f:
+        for node in ast.walk(ast.parse(f.read())):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "check":
+                kw = {k.arg: k.value for k in node.keywords}
+                needs[node.args[0].value] = (
+                    [e.value for e in kw["needs"].elts] if "needs" in kw else []
+                )
+    todo = [n for n in needs if any(n.startswith(c) for c in prefixes)]
+    run = set()
+    while todo:
+        n = todo.pop()
+        if n not in run:
+            run.add(n)
+            todo += needs[n]
+    return run
+
+
+WANTED = wanted()
+if WANTED == set():  # none of the named checks is here
+    sys.exit()
+
+
 def check(name, fn, needs=()):
+    if WANTED is not None and name not in WANTED:
+        return
     missing = [n for n in needs if not passed.get(n)]
     if missing:
         result("SKIP", name, f"needs {', '.join(missing)}")
@@ -935,6 +967,6 @@ if main_apk:
         expect_first("ranh", "然后"),
         needs=["update-from-main"],
     )
-else:
+elif WANTED is None or "update-from-main" in WANTED:
     result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

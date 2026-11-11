@@ -14,7 +14,7 @@ nobody's own input settings change, then removes the user and its profile:
    the welcome page in English, 中文 and 日本語, then a whole install in English with the uninstaller.
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
    (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese),
-   Rime's time per key (p95 ≤ 10 ms, Decisions #2) and Chinese's
+   Rime's time per key (p95 ≤ 10 ms, only with -PerfRun: the final performance run, #54) and Chinese's
    tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu), a silent
    upgrade that keeps learned words, Japanese still working after the language list changes, then the
    uninstall: everything back as before, learned words gone.
@@ -24,7 +24,7 @@ nobody's own input settings change, then removes the user and its profile:
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
 #>
-param([string]$Driver, [string]$Typing)
+param([string]$Driver, [string]$Typing, [switch]$PerfRun)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 $out = "$root\out"
@@ -445,7 +445,9 @@ namespace SebTypeSetupTest {
     Save-MachineLog round1-install; Stop-Setup
     Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
     Typing all
-    # Rime per key on the installed librime and data (perf-rime.exe from the Weasel build; #133).
+    # Rime per key on the installed librime and data (perf-rime.exe from the Weasel build; #133). A timing
+    # check: only in the final performance run (Decisions #2, 2026-11-11).
+    if ($PerfRun) {
     Check 'round1-rime-p95' {
       if (-not (Test-Path "$root\perf-rime.exe")) { throw 'no perf-rime.exe next to test.ps1' }
       $weasel = (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot
@@ -456,6 +458,7 @@ namespace SebTypeSetupTest {
       $line = @($said) | Where-Object { "$_" -like '*rime-p95-under-10ms*' } | Select-Object -Last 1
       if ($line -notlike 'PASS *') { throw "perf-rime.ps1 (Weasel at '$weasel') exit $LASTEXITCODE said: $($said -join ' | ')" }
       $line -replace '^PASS rime-p95-under-10ms: '
+    }
     }
     # What it learned stays through an upgrade: a mark in each learned-words folder.
     $learned | ForEach-Object { New-Item -Force $_ | Out-Null }

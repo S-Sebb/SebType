@@ -2,6 +2,7 @@
 # Tests SebType's installer (#73) on TCSBackEnd (Windows Server 2022) from nobara-pc, in the background,
 # and puts TCSBackEnd back as found. One command, no arguments:
 #   pc/windows/setup/test-tcsbackend.sh
+# PERF_RUN=1 adds the timing check (round1-rime-p95), for the final performance run only (#54).
 # It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
 # else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
@@ -103,11 +104,12 @@ grep -q '^installed: .' "$out/before.txt" && { echo "BLOCKED preflight: SebType,
 grep -q '^folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a SebType or test folder exists on TCSBackEnd already ($(grep '^folders:' "$out/before.txt"))"; exit 1; }
 grep -qE '^users: \S*\bsebtype-test\b' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
 
-cat > "$out/run.ps1" <<'EOF'
+# shellcheck disable=SC2016
+sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}/" > "$out/run.ps1" <<'EOF'
 $d = 'C:\sebtype-setup-test'
 Start-Transcript "$d\run.log" | Out-Null
 try {
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$d\test.ps1"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$d\test.ps1" PERFRUN
     "test exit $LASTEXITCODE"
 } catch { "wrapper error: $_" } finally {
     Stop-Transcript | Out-Null

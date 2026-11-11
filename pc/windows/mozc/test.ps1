@@ -4,6 +4,8 @@ and tray icons, and undo. One command, no arguments, run elevated (the MSI insta
 
     powershell -File pc/windows/mozc/test.ps1
 
+-PerfRun adds the speed check (mozc-speed-and-dictionary), for the final performance run only (#54).
+
 Needs build.ps1's MSI (newest SebType-Mozc-*.msi in C:\ or D:\sebtype-mozc\out) and Python. Nothing
 shows on the screen and no real keyboard is read or used: the typing runs as a local user the test
 creates and removes (sebtype-test, a standard account), in a Remote Desktop session of its own that no
@@ -15,7 +17,7 @@ Lock), and that Mozc, the test user and its profile are gone again. The session 
 nobara-pc and opens the session there without a window. One line per check in
 %LOCALAPPDATA%\SebType\test\mozc-results.txt, logs next to it; exit 0 only if every check passes.
 #>
-param([string]$Typing)  # internal: the folder for the typing checks' results, set by the elevated run
+param([string]$Typing, [switch]$PerfRun)  # Typing, internal: the folder for the typing checks' results, set by the elevated run
 $ErrorActionPreference = 'Stop'
 $out = if ($Typing) { $Typing } else { "$env:LOCALAPPDATA\SebType\test" }
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -246,6 +248,8 @@ $before = Snapshot
 $before | ConvertTo-Json | Set-Content "$out\mozc-before.json"
 
 # Speed and dictionary: Mozc's own server from the MSI, timed through its IPC (Decisions #2: p95 ≤ 5 ms).
+# A timing check: only in the final performance run (Decisions #2, 2026-11-11).
+if ($PerfRun) {
 Check 'mozc-speed-and-dictionary' {
     $image = "$env:TEMP\sebtype-mozc-perf"
     Remove-Item -Recurse -Force $image -ErrorAction SilentlyContinue
@@ -271,6 +275,7 @@ Check 'mozc-speed-and-dictionary' {
     if (-not $v.key_p95_ms) { throw "no timings (see $out\mozc-perf.txt)" }
     if ([double]$v.key_p95_ms -gt 5) { throw "key p95 $($v.key_p95_ms) ms > 5 ms" }
     "key p50/p95 $($v.key_p50_ms)/$($v.key_p95_ms) ms, Space p95 $($v.convert_p95_ms) ms, RSS $([int]$v.rss_kb / 1024) MB, dictionary top-1 $($v.top1)"
+}
 }
 
 Check 'install' {

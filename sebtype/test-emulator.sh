@@ -8,6 +8,10 @@
 # learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41),
 # incognito (#31), and clipboard history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
+# SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
+# install and the locale always, and test-chinese.py's earlier checks they depend on. A PR runs the checks
+# for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
+# which only the final performance run uses (#54, Decisions #2 2026-11-11).
 # One line per check in /tmp/sebtype/test-emulator-<checkout>/results.txt; logs next to it (one directory
 # per checkout, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
 set -uo pipefail
@@ -20,9 +24,14 @@ adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
 futo_apk=/tmp/sebtype/futo-keyboard-0.1.30.apk
 
+export SEBTYPE_CHECKS=${SEBTYPE_CHECKS:-} PERF_RUN=${PERF_RUN:-}
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
-check() { # name, command...; timeout T seconds (default 180)
-  local name=$1; shift
+check() { # name, command...; timeout T seconds (default 180); only if SEBTYPE_CHECKS names it or it's a step all need
+  local name=$1 c; shift
+  if [[ -n $SEBTYPE_CHECKS && " bumped-apk locale install-beside-futo chinese-run settings-run " != *" $name "* ]]; then
+    for c in ${SEBTYPE_CHECKS//,/ }; do [[ $name == "$c"* ]] && break; done
+    [[ $name == "$c"* ]] || return 0
+  fi
   if timeout "${T:-180}" "$@" > "$out/$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/$name.log"; fi
 }
@@ -126,6 +135,12 @@ device_suite() {
   T=60 check locale bash -c set_locale && echo "locale en-US, $(grep -m1 '^locale was' "$out/locale.log")"
   T=300 check install-beside-futo bash -c device_checks
   if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
+    # first-install enables SebType and test-chinese.py installs the field app: a run of named checks
+    # may run neither, so it does both here.
+    if [[ -n $SEBTYPE_CHECKS ]]; then
+      "$adb" -s "$serial" shell ime enable "dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME" >/dev/null
+      "$adb" -s "$serial" install -r "$field_apk" >/dev/null
+    fi
     # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
     PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run \
       python3 -I sebtype/test-chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
