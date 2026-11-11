@@ -1,0 +1,25 @@
+diff --git a/rime/src/main/jni/cmake/librime.cmake b/rime/src/main/jni/cmake/librime.cmake
+--- a/rime/src/main/jni/cmake/librime.cmake
++++ b/rime/src/main/jni/cmake/librime.cmake
+@@ -22,6 +22,21 @@
+ endif()
+ file(WRITE "${memory_cc}" "${memory_src}")
+ 
++# SebType (#138): with the option "no_learned_words" on (incognito), lookups skip the user dictionaries
++# that learn, so candidates rank as if nothing had been learned. Read-only ones (My words) still count.
++set(shown "user_dict_ && user_dict_->loaded()")
++set(unless_hidden "user_dict_ && (user_dict_->readonly() || !engine_->context()->get_option(\"no_learned_words\")) && user_dict_->loaded()")
++foreach(translator script_translator table_translator)
++    set(translator_cc "${LIBRIME_SOURCE_DIR}/src/rime/gear/${translator}.cc")
++    file(READ "${translator_cc}" translator_src)
++    string(REPLACE "${shown}" "${unless_hidden}" translator_src "${translator_src}")
++    string(FIND "${translator_src}" "${unless_hidden}" at)
++    if(at EQUAL -1)
++        message(FATAL_ERROR "librime's ${translator} changed: update the no_learned_words patch")
++    endif()
++    file(WRITE "${translator_cc}" "${translator_src}")
++endforeach()
++
+ include(librime-plugins)
+ 
+ # Do not use add_subdirectory(${LIBRIME_SOURCE_DIR}),

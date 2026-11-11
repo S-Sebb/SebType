@@ -11,7 +11,9 @@ librime-octagram and librime-predict sources, an ABI switch (arm64-v8a by defaul
 NDK 28.2. `0002-no-keystroke-log.patch` drops RimeJni's per-key log line, which wrote
 every typed key to logcat. `0003-no-learning-option.patch` adds the option `no_learning`:
 while it is on, librime learns nothing from what is committed (SebType sets it in private, password
-and URL fields).
+and URL fields). `0004-no-learned-words-option.patch` adds `no_learned_words`: while it is on,
+lookups skip the user dictionaries that learn, so candidates rank as if nothing had been learned
+(SebType sets it while incognito; read-only ones such as My words still count).
 
 | Script | What it does |
 |---|---|

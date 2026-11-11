@@ -173,6 +173,8 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         private const val TRADITIONAL = "traditionalization"
         /** SebType's librime patch (rime-android/patches/0003): learns nothing from commits while on */
         private const val NO_LEARNING = "no_learning"
+        /** SebType's librime patch (rime-android/patches/0004): lookups skip what was learned while on */
+        private const val NO_LEARNED_WORDS = "no_learned_words"
 
         @JvmStatic
         private val StrokeTransformation = mapOf(
@@ -470,12 +472,15 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     // (no personalised learning), URL and email fields keep pinyin but learn nothing.
     private var plainField = false
     private var noLearning = false
+    // SebType (#138): while incognito, candidates rank as if nothing had been learned, as in English and 日本語.
+    private var incognito = false
 
     override fun onStartInput() {
         // From the field itself: the settings still hold the previous field's attributes at this point.
         val attrs = InputAttributes(helper.getCurrentEditorInfo(), false, helper.context.packageName)
         plainField = attrs.mIsPasswordField || !attrs.mShouldShowSuggestions
-        noLearning = attrs.mNoLearning || attrs.mIsUriField || attrs.mIsEmailField || Incognito.toggledOn(helper.context)
+        incognito = Incognito.inField(helper.context, helper.getCurrentEditorInfo())
+        noLearning = incognito || attrs.mIsUriField || attrs.mIsEmailField
         RimeIceSetup.setInUse(helper.context, true)
         showSetupState(RimeIceSetup.state.value)
         updateConfig()
@@ -505,6 +510,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     private suspend fun setOptions() {
         rime.setOption(TRADITIONAL, traditional.value)
         rime.setOption(NO_LEARNING, noLearning)
+        rime.setOption(NO_LEARNED_WORDS, incognito)
     }
 
     private var configSemaphore = Semaphore(1)
