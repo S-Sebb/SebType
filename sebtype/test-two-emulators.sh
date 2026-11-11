@@ -3,7 +3,8 @@
 # the same time, from this checkout and from a scratch worktree of the same commit
 # (~/.cache/sebtype/test-two-emulators-wt, deleted at the end). Both parallel runs must take different
 # emulators, overlap, and get the single run's results. visible-password-plain is a known failure (#100)
-# and isn't compared. Memory is sampled while both run.
+# and isn't compared. guide35 is left in zh-Hans-CN first, to check that the suite puts the locale back.
+# Memory is sampled while both run.
 # One line per check in /tmp/sebtype/test-two-emulators/results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -50,6 +51,25 @@ if ! grep -q '^PASS install-beside-futo' "$out/single-results.txt" 2> /dev/null 
 fi
 result PASS single-run "$(serial single), $(grep -c '^PASS' "$out/single-results.txt") checks passed, $(grep -vc '^PASS' "$out/single-results.txt") not"
 
+# Another task can leave an emulator in Chinese; one of the parallel runs gets guide35, so leaving it
+# there checks that test-emulator.sh puts it back to en-US. Only when it runs: other projects start it.
+zh_guide35() {
+  local s
+  for s in $(adb devices | awk '$1 ~ /^emulator-/ {print $1}'); do
+    [[ $(adb -s "$s" emu avd name | head -1 | tr -d '\r') == guide35 ]] || continue
+    adb -s "$s" push "$out/set-locale.dex" /data/local/tmp/sebtype-set-locale.dex > /dev/null &&
+      adb -s "$s" shell app_process -cp /data/local/tmp/sebtype-set-locale.dex / dev.sebb.sebtype.setlocale.SetLocale zh-Hans-CN
+    adb -s "$s" shell rm -f /data/local/tmp/sebtype-set-locale.dex
+    return
+  done
+  return 1
+}
+export -f zh_guide35; export out PATH=${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools:$PATH
+sebtype/set-locale/build.sh "$out/set-locale.dex" > "$out/set-locale.log" 2>&1 &&
+  devq -P 1 -w 1800 -m 1 -n "sebtype #103 test-two-emulators: guide35 to zh-Hans-CN" \
+    /tmp/agent-locks/devices/emulator-guide35.lock bash -c zh_guide35 > "$out/zh-guide35.log" 2>&1
+zh=$?
+
 # Memory every 10 s: available, and each emulator's resident size (MB).
 while :; do
   echo "$(date +%s) avail=$(free -m | awk '/^Mem:/ {print $7}')$(ps -eo rss=,args= | awk '/qemu-system.*-avd / {
@@ -74,6 +94,9 @@ for r in a b; do
     result PASS "same-results-$r" "$(wc -l < "$out/$r-results.txt") lines"
   else result FAIL "same-results-$r" "see $out/$r-diff.txt"; fi
 done
+if ((zh != 0)); then result SKIP locale-reset "couldn't leave guide35 in zh-Hans-CN (not running?), see $out/zh-guide35.log"
+elif grep -q 'locale en-US, locale was zh-Hans-CN' "$out/a.log" "$out/b.log"; then result PASS locale-reset "guide35 from zh-Hans-CN"
+else result FAIL locale-reset "no run reset guide35's zh-Hans-CN"; fi
 result INFO memory "$(awk '{ split($2, a, "="); if (min == "" || a[2] < min) min = a[2]
   for (i = 3; i <= NF; i++) { split($i, e, "="); if (e[2] > max[e[1]]) max[e[1]] = e[2] } }
   END { printf "lowest available %d MB;", min; for (k in max) printf " %s peak %d MB", k, max[k] }' "$out/memory.log")"

@@ -34,6 +34,9 @@ apk=$(sebtype/build.sh release 2> "$out/build.log" | tail -1)
 field_apk=$out/field.apk
 sebtype/perf/build-field.sh "$field_apk" > "$out/field.log" 2>&1 && [[ -f $field_apk ]] ||
   { echo "preflight: test field build failed, see $out/field.log"; exit 1; }
+locale_dex=$out/set-locale.dex
+sebtype/set-locale/build.sh "$locale_dex" > "$out/set-locale.log" 2>&1 ||
+  { echo "preflight: set-locale helper build failed, see $out/set-locale.log"; exit 1; }
 [[ -f $futo_apk ]] || gh release download 0.1.30 -R futo-org/android-keyboard -p keyboard-0.1.30.apk -O "$futo_apk" ||
   { echo "preflight: can't download stock FUTO 0.1.30"; exit 1; }
 
@@ -102,14 +105,14 @@ device_checks() {
   done
   echo "keyboards listed: $imes"; return 1
 }
-set_locale() { # to en-US; the framework restarts (about 15 s) to apply it
+set_locale() { # to en-US, the way Settings does: a framework restart to apply it can crash the emulator
   local was; was=$("$adb" -s "$serial" shell getprop persist.sys.locale | tr -d '\r')
-  was=${was:-$("$adb" -s "$serial" shell getprop ro.product.locale | tr -d '\r')}
-  echo "locale was $was"
+  echo "locale was ${was:=$("$adb" -s "$serial" shell getprop ro.product.locale | tr -d '\r')}"
   [[ $was == en-US ]] && return
-  "$adb" -s "$serial" shell "su 0 setprop persist.sys.locale en-US && su 0 stop && su 0 setprop sys.boot_completed 0 && su 0 start"
-  until [[ $("$adb" -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]] &&
-    "$adb" -s "$serial" shell cmd activity get-config | grep -q '^config:.*-en-rUS-'; do sleep 2; done
+  "$adb" -s "$serial" push "$locale_dex" /data/local/tmp/sebtype-set-locale.dex > /dev/null &&
+    "$adb" -s "$serial" shell app_process -cp /data/local/tmp/sebtype-set-locale.dex / dev.sebb.sebtype.setlocale.SetLocale en-US
+  "$adb" -s "$serial" shell rm -f /data/local/tmp/sebtype-set-locale.dex
+  "$adb" -s "$serial" shell cmd activity get-config | grep -q '^config:.*-en-rUS-'
 }
 device_suite() {
   export serial=$ANDROID_SERIAL
@@ -121,7 +124,7 @@ device_suite() {
     { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
   # The system language decides which of SebType's languages a fresh install starts with, and another
   # task can leave the emulator in Chinese (#106's second run: 13 checks failed for that alone).
-  T=120 check locale bash -c set_locale && echo "locale en-US, $(head -1 "$out/locale.log")"
+  T=60 check locale bash -c set_locale && echo "locale en-US, $(head -1 "$out/locale.log")"
   T=300 check install-beside-futo bash -c device_checks
   if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
     # test-chinese.py appends its own result lines; this line only records whether it ran to the end.
@@ -133,7 +136,7 @@ device_suite() {
     result SKIP chinese "needs install-beside-futo and bumped-apk"
   fi
 }
-export -f result check set_locale device_checks device_suite; export adb apk futo_apk field_apk results
+export -f result check set_locale device_checks device_suite; export adb apk futo_apk field_apk locale_dex results
 sebtype/emulator.sh -P 1 -w 1800 -m 35 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "$(head -1 "$out/emulator.log")"
