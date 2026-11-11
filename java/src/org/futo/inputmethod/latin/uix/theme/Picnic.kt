@@ -148,8 +148,8 @@ private fun keyBackgrounds(context: Context): KeyedBitmaps<KeyBackground> {
     val berry = PixelFrame(Picnic.key, Picnic.keyHigh, Picnic.keyLow, w, true)
     val popup = PixelFrame(Picnic.surface, Picnic.white, Picnic.line, w + maxOf(1, density.roundToInt()), true)
 
-    // Keeps the number hints inside the frame and clear of its shadow.
-    val hintPadding = Rect(0, 3 * w, 4 * w, 0)
+    // Tucks the number hints into the frame's corner, clear of its bevel and shadow and of the letter.
+    val hintPadding = Rect(0, 2 * w, 3 * w, 0)
     fun entry(background: Drawable, foreground: Int?, vararg q: KeyQualifier) =
         KeyedBitmap(q.toSet(), KeyBackground(foregroundColor = foreground, outlineColor = null, padding = hintPadding, background = background))
     fun style(s: KeyVisualStyle) = KeyQualifier.VisualStyle(s)
@@ -225,8 +225,9 @@ fun picnicColors(context: Context): KeyboardColorScheme {
                 backgroundImageVisibleArea = Rect(0, 0, image.width, image.height),
                 actionBarOpacity = 0f,
                 keyBorders = true,
-                // Nunito's letters are wide; this brings them to the size of FUTO's default font.
-                textSizeMultiplier = 0.85f,
+                // Nearly Gboard's letter size (#161); Nunito ExtraBold is wider and heavier than
+                // Gboard's font, so its capitals stay a little lower (47 px to 51 on a 420 dpi phone).
+                textSizeMultiplier = 0.95f,
                 keyBackgrounds = keyBackgrounds(context),
                 font = ResourcesCompat.getFont(context, R.font.sebtype_nunito_extrabold),
                 // SebChat's button font.

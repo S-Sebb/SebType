@@ -8,7 +8,8 @@ import org.futo.inputmethod.latin.settings.Settings
 
 object RowKeyListSerializer : SpacedListSerializer<Key>(KeyPathSerializer)
 
-const val NumberRowHeight: Double = 0.8
+// SebType: Gboard's number row, a little lower than a letter row (#161).
+const val NumberRowHeight: Double = 0.9
 
 enum class RowNumberRowMode(val displayByDefault: Boolean, val displayWhenExplicitlyActive: Boolean, val displayWhenExplicitlyInactive: Boolean) {
     Default(true, true, true),
@@ -70,7 +71,8 @@ data class Row(
      */
     val attributes: KeyAttributes = KeyAttributes(
         style = when {
-            numbers != null -> KeyVisualStyle.NoBackground
+            // SebType: number keys look like letter keys, as on Gboard (#161).
+            numbers != null -> KeyVisualStyle.Normal
             bottom  != null -> KeyVisualStyle.Functional
             else  -> null
         },

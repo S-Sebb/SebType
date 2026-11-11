@@ -113,7 +113,9 @@ data class LayoutEngine(
     val layoutParams: LayoutParams
 ) {
     val horizontalGap = layoutParams.gap
-    val verticalGap = layoutParams.gap * 2
+    // SebType: Picnic's key frame (without its shadow) as tall as a Gboard key at Gboard's row
+    // height (#161).
+    val verticalGap = layoutParams.gap * 2.9f
 
     val effectiveRows = keyboard.getEffectiveRows(params.mId.mNumberRowMode)
 
