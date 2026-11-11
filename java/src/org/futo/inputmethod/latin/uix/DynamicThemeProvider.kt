@@ -66,6 +66,10 @@ interface DynamicThemeProvider {
     fun selectKeyTypeface(defaultTypeface: Typeface): Typeface =
         typefaceOverride ?: themeTypeface ?: defaultTypeface
 
+    val popupTypeface: Typeface?
+    fun selectPopupTypeface(defaultTypeface: Typeface): Typeface =
+        typefaceOverride ?: popupTypeface ?: selectKeyTypeface(defaultTypeface)
+
     fun selectKeyDrawingConfiguration(keyboard: Keyboard?, params: KeyDrawParams, key: Key, layer: Int): KeyDrawingConfiguration?
     fun getPreviewBackground(keyboard: Keyboard?, key: Key): KeyBackground
 

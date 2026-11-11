@@ -86,7 +86,7 @@ public class KeyPreviewView extends androidx.appcompat.widget.AppCompatTextView 
         setCompoundDrawables(null, null, null, null);
         setTextColor(foregroundColor);
         setTextSize(TypedValue.COMPLEX_UNIT_PX, key.selectTextSize(drawParams));
-        setTypeface(mDrawableProvider.selectKeyTypeface(key.selectPreviewTypeface(drawParams)));
+        setTypeface(mDrawableProvider.selectPopupTypeface(key.selectPreviewTypeface(drawParams)));
         // TODO Should take care of temporaryShiftLabel here.
         setTextAndScaleX(key.getWidth(), key.getPreviewLabel());
 

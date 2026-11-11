@@ -165,6 +165,7 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
 
     override var typefaceOverride: Typeface? = null
     override val themeTypeface: Typeface?
+    override val popupTypeface: Typeface?
 
     val kdcMatcher = AdvancedThemeMatcher(context, this, colorScheme)
     override fun selectKeyDrawingConfiguration(
@@ -295,6 +296,7 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         displayDpi = context.resources.displayMetrics.densityDpi
 
         themeTypeface = advanced.font
+        popupTypeface = advanced.popupFont
 
         expertMode = context.getSettingBlocking(HiddenKeysSetting)
         keyBorders = advanced.keyBorders

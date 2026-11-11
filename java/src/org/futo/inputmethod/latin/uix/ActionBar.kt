@@ -2,6 +2,7 @@ package org.futo.inputmethod.latin.uix
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.util.Log
 import android.view.View
@@ -75,9 +76,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -250,7 +254,8 @@ fun AutoFitText(
     text: String,
     modifier: Modifier = Modifier,
     style: TextStyle = TextStyle.Default,
-    layoutDirection: LayoutDirection = LayoutDirection.Ltr
+    layoutDirection: LayoutDirection = LayoutDirection.Ltr,
+    chip: Drawable? = null,
 ) {
     val measurer = rememberTextMeasurer()
 
@@ -270,6 +275,7 @@ fun AutoFitText(
         )
 
         val scale = (size.width / measurement.size.width).coerceAtMost(1.0f)
+        chip?.let { drawCandidateChip(it, measurement.size.width * scale + 20.dp.toPx()) }
 
         translate(left = (scale * (size.width - measurement.size.width)) / 2.0f, top = size.height / 2 - measurement.size.height / 2) {
             scale(scaleX = scale, scaleY = 1.0f) {
@@ -279,6 +285,16 @@ fun AutoFitText(
             }
         }
     }
+}
+
+/** The theme's chip behind the candidate that space commits: [width] wide at most, 28 dp high, centred. */
+private fun DrawScope.drawCandidateChip(chip: Drawable, width: Float) {
+    val w = width.coerceAtMost(size.width).roundToInt()
+    val h = 28.dp.toPx().coerceAtMost(size.height).roundToInt()
+    val left = (size.width.roundToInt() - w) / 2
+    val top = (size.height.roundToInt() - h) / 2
+    chip.setBounds(left, top, left + w, top + h)
+    drawIntoCanvas { chip.draw(it.nativeCanvas) }
 }
 
 @Composable
@@ -346,6 +362,7 @@ fun RowScope.SuggestionItem(words: SuggestedWords, idx: Int, isPrimary: Boolean,
         true -> suggestionStylePrimary
         false -> suggestionStyleAlternative
     }.copy(color = color).withCustomFont(potentiallyCompatEmojiFont)
+    val chip = LocalKeyboardScheme.current.extended.advancedThemeOptions.candidateChip.takeIf { isAutocorrect }
 
     Box(
         modifier = textButtonModifier
@@ -365,9 +382,9 @@ fun RowScope.SuggestionItem(words: SuggestedWords, idx: Int, isPrimary: Boolean,
                     .padding(2.dp)
                     .testTag("SuggestionItemText")
                 if(isVerbatim) {
-                    AutoFitText('"' + word + '"', style = textStyle.copy(fontStyle = FontStyle.Italic), modifier = modifier)
+                    AutoFitText('"' + word + '"', style = textStyle.copy(fontStyle = FontStyle.Italic), modifier = modifier, chip = chip)
                 } else {
-                    AutoFitText(word, style = textStyle, modifier = modifier)
+                    AutoFitText(word, style = textStyle, modifier = modifier, chip = chip)
                 }
             }
         }
@@ -1163,7 +1180,7 @@ class ExampleListener : SuggestionStripViewListener {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CandidateItem(modifier: Modifier, it: SuggestedWordInfo, listener: SuggestionStripViewListener, width: Dp, last: Boolean = false) {
+private fun CandidateItem(modifier: Modifier, it: SuggestedWordInfo, listener: SuggestionStripViewListener, width: Dp, last: Boolean = false, chip: Drawable? = null) {
     val word = it.mWord
     val description = it.mCandidateDescription
     val color = LocalKeyboardScheme.current.onSurface
@@ -1174,6 +1191,7 @@ private fun CandidateItem(modifier: Modifier, it: SuggestedWordInfo, listener: S
     Row(
         modifier
             .width(width)
+            .then(if (chip != null) Modifier.drawBehind { drawCandidateChip(chip, size.width - 6.dp.toPx()) } else Modifier)
             .combinedClickable(
                 enabled = word != null,
                 onClick = {
@@ -1304,8 +1322,10 @@ private fun RowScope.InlineCandidates(
     wordList: List<SuggestedWordInfo>,
     widths: CachedCharacterWidthValues,
     extraSpaceForFirstItem: Boolean,
+    highlightedCandidate: Int?,
 ) {
     val view = LocalView.current
+    val chip = LocalKeyboardScheme.current.extended.advancedThemeOptions.candidateChip
     val expandHeight = with(LocalDensity.current) { 120.dp.toPx().coerceAtMost(keyboardHeight / 2.0f) }
     Box(Modifier.weight(1.0f).fillMaxHeight()) {
         LazyRow(
@@ -1354,6 +1374,7 @@ private fun RowScope.InlineCandidates(
                 CandidateItem(Modifier.height(ActionBarHeight), it,
                     listener = suggestionStripListener,
                     last = i == wordList.size-1,
+                    chip = chip.takeIf { i == (highlightedCandidate ?: 0) },
                     width = with(LocalDensity.current) {
                         measureWord(this, widths, it).toDp()
                     }.coerceAtLeast(if(i == 0 && extraSpaceForFirstItem) 120.dp else 48.dp)
@@ -1515,7 +1536,8 @@ fun BoxScope.ActionBarWithExpandableCandidates(
                         suggestionStripListener,
                         wordList,
                         widths,
-                        expandableSuggestionCfg.addExtraSpaceForFirstEntry
+                        expandableSuggestionCfg.addExtraSpaceForFirstEntry,
+                        words?.mHighlightedCandidate
                     )
                 }
 

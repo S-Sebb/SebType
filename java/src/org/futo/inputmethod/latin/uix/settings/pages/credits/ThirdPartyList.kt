@@ -182,5 +182,19 @@ SKK Development Team <skk@ring.gr.jp>""",
         "https://github.com/gaboolic/rime-frost",
         "Copyright (c) gaboolic",
         License.GPL_V3
+    ),
+    TP(
+        "Nunito",
+        "Picnic theme's key font",
+        "https://github.com/googlefonts/nunito",
+        "Copyright 2014 The Nunito Project Authors",
+        License.OFL1_1
+    ),
+    TP(
+        "Pixelify Sans",
+        "Picnic theme's popup font",
+        "https://github.com/eifetx/Pixelify-Sans",
+        "Copyright 2021 The Pixelify Sans Project Authors",
+        License.OFL1_1
     )
 )
