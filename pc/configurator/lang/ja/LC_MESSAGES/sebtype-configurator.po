@@ -1,0 +1,350 @@
+# SebType Configurator in Japanese (#118). Terms follow the phone's settings and the installer.
+msgid ""
+msgstr ""
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Noun"
+msgstr "名詞"
+
+msgid "Proper noun"
+msgstr "固有名詞"
+
+msgid "Person"
+msgstr "人名"
+
+msgid "Place"
+msgstr "地名"
+
+msgid "Organization"
+msgstr "組織"
+
+msgid "Emoticon"
+msgstr "顔文字"
+
+msgid "SebType settings"
+msgstr "SebType 設定"
+
+msgid "SebType Configurator"
+msgstr "SebType 設定"
+
+msgid "Languages"
+msgstr "言語"
+
+msgid "Keyboard"
+msgstr "キーボード"
+
+msgid "Theme"
+msgstr "テーマ"
+
+msgid "Privacy"
+msgstr "プライバシー"
+
+msgid "Sync & backup"
+msgstr "同期とバックアップ"
+
+msgid "About"
+msgstr "情報"
+
+msgid "Applied"
+msgstr "適用しました"
+
+msgid "Applied · 中文 redeployed"
+msgstr "適用しました · 中文を再デプロイしました"
+
+msgid "Applied · 日本語 takes it from the next time you type"
+msgstr "適用しました · 日本語は次の入力から反映されます"
+
+msgid "Applied · from the next time the candidate window opens"
+msgstr "適用しました · 次に候補ウィンドウを開いたときから反映されます"
+
+msgid "Saved · 中文 redeployed"
+msgstr "保存しました · 中文を再デプロイしました"
+
+msgid "Saved · 日本語 takes it from the next time you type"
+msgstr "保存しました · 日本語は次の入力から反映されます"
+
+msgid "Deleted · 中文 redeployed"
+msgstr "削除しました · 中文を再デプロイしました"
+
+msgid "Deleted"
+msgstr "削除しました"
+
+msgid "No learned words"
+msgstr "学習した単語はありません"
+
+msgid "Learned words forgotten"
+msgstr "学習した単語を消去しました"
+
+msgid "Exported to {}"
+msgstr "{} にエクスポートしました"
+
+msgid "Imported"
+msgstr "インポートしました"
+
+msgid "Redeployed"
+msgstr "再デプロイしました"
+
+msgid "This file wasn't exported by SebType Configurator"
+msgstr "これは SebType 設定でエクスポートしたファイルではありません"
+
+msgid "Pinyin letters only"
+msgstr "ピンインは英字だけです"
+
+msgid "The reading must be hiragana"
+msgstr "読みはひらがなだけです"
+
+msgid "Not applied: {}"
+msgstr "適用できませんでした：{}"
+
+msgid "Forget the words 中文 learned?"
+msgstr "中文が学習した単語を消去しますか？"
+
+msgid "Forget 日本語's typing history?"
+msgstr "日本語の入力履歴を消去しますか？"
+
+msgid "The words and order Rime learned are deleted for good. Your own words stay."
+msgstr "Rime が学習した単語と順番は削除され、元に戻せません。自分で追加した単語は残ります。"
+
+msgid "The words and order Mozc learned are deleted for good. The user dictionary stays."
+msgstr "Mozc が学習した単語と順番は削除され、元に戻せません。ユーザー辞書は残ります。"
+
+msgid "Cancel"
+msgstr "キャンセル"
+
+msgid "Forget"
+msgstr "消去"
+
+msgid "Back"
+msgstr "戻る"
+
+msgid "rime-ice pinyin · rime-frost dictionary"
+msgstr "雾凇拼音（rime-ice）· 白霜辞書（rime-frost）"
+
+msgid "Mozc romaji"
+msgstr "Mozc ローマ字入力"
+
+msgid "The US keyboard"
+msgstr "US キーボード"
+
+msgid "Win+Space switches between the languages that are on, in this order. Drag ≡ to reorder."
+msgstr "Win+Space で、オンの言語をこの順に切り替えます。≡ をドラッグして並べ替えます。"
+
+msgid "Win+Space switches between the first language and the other one you used last; pick the others from the tray menu. Drag ≡ to reorder."
+msgstr "Win+Space で、最初の言語と前回使ったもう 1 つの言語を切り替えます。ほかの言語はトレイのメニューから選びます。≡ をドラッグして並べ替えます。"
+
+msgid "Move {}"
+msgstr "{} を移動"
+
+msgid "Move up"
+msgstr "上へ移動"
+
+msgid "Default characters"
+msgstr "既定の字体"
+
+msgid "Ctrl+Shift+F switches at any time"
+msgstr "Ctrl+Shift+F でいつでも切り替え"
+
+msgid "Full-width punctuation"
+msgstr "全角句読点"
+
+msgid "，。？ instead of , . ?"
+msgstr ", . ? の代わりに ，。？"
+
+msgid "Emoji in candidates"
+msgstr "候補に絵文字"
+
+msgid "An emoji next to words that have one"
+msgstr "絵文字がある単語の横に絵文字を表示"
+
+msgid "Fuzzy pinyin"
+msgstr "あいまいピンイン"
+
+msgid "Off"
+msgstr "オフ"
+
+msgid "My words"
+msgstr "自分の単語"
+
+msgid "Your own words, first when you type their pinyin"
+msgstr "自分で追加した単語。そのピンインで最初に出ます"
+
+msgid "Half-width space"
+msgstr "半角スペース"
+
+msgid "Space always types a half-width space"
+msgstr "スペースキーで常に半角スペースを入力"
+
+msgid "Mozc not found"
+msgstr "Mozc が見つかりません"
+
+msgid "Mozc's user dictionary"
+msgstr "Mozc のユーザー辞書"
+
+msgid "The system's US keyboard"
+msgstr "システムの US キーボード"
+
+msgid "English on the PC is the plain keyboard, without SebType's extras"
+msgstr "PC の英語は普通のキーボード入力で、SebType の追加機能はありません"
+
+msgid "Sounds that are easy to mix up count as one, so zi also gives 知."
+msgstr "混同しやすい音を同じ音として扱います。例えば zi でも「知」が出ます。"
+
+msgid "Your own words, such as names. They come first when you type their pinyin."
+msgstr "名前など、自分で追加する単語です。そのピンインを入力すると最初に出ます。"
+
+msgid "Word, e.g. {}"
+msgstr "単語（例：{}）"
+
+msgid "Pinyin, e.g. {}"
+msgstr "ピンイン（例：{}）"
+
+msgid "Add"
+msgstr "追加"
+
+msgid "Delete"
+msgstr "削除"
+
+msgid "Mozc's user dictionary. Readings are in hiragana, e.g. {}."
+msgstr "Mozc のユーザー辞書です。読みはひらがなで入力します（例：{}）。"
+
+msgid "Reading (hiragana)"
+msgstr "読み（ひらがな）"
+
+msgid "Word"
+msgstr "単語"
+
+msgid "Candidate window"
+msgstr "候補ウィンドウ"
+
+msgid "Candidates per page"
+msgstr "1 ページの候補数"
+
+msgid "中文 (日本語 always shows 9)"
+msgstr "中文（日本語は常に 9 個）"
+
+msgid "Layout"
+msgstr "並び"
+
+msgid "Horizontal"
+msgstr "横"
+
+msgid "Vertical"
+msgstr "縦"
+
+msgid "Font size"
+msgstr "文字サイズ"
+
+msgid "Shortcuts"
+msgstr "ショートカット"
+
+msgid "Switch language: EN → 中 → 日"
+msgstr "言語の切り替え EN → 中 → 日"
+
+msgid "Switch language: EN ⇄ the last 中 or 日"
+msgstr "言語の切り替え EN ⇄ 前回の 中 か 日"
+
+msgid "English letters in 中文 or 日本語"
+msgstr "中文・日本語で英字を入力"
+
+msgid "Tap Shift on its own"
+msgstr "Shift だけを短く押す"
+
+msgid "System style"
+msgstr "システムのスタイル"
+
+msgid "日本語's candidate window is drawn by Mozc itself and stays as it is."
+msgstr "日本語の候補ウィンドウは Mozc が描くので、そのままです。"
+
+msgid "The candidate windows of 中文 and 日本語 both use this style."
+msgstr "中文と日本語の候補ウィンドウはどちらもこのスタイルです。"
+
+msgid "Tray icons"
+msgstr "トレイアイコン"
+
+msgid "SebType's key icons"
+msgstr "SebType のキーのアイコン"
+
+msgid "EN, 中, あ, ア, and a / A (Caps Lock) in the English mode of 中文 and 日本語"
+msgstr "EN、中、あ、ア、そして中文と日本語の英字モードの a / A（Caps Lock）"
+
+msgid "Learn from my typing"
+msgstr "入力から学習"
+
+msgid "中文 and 日本語 remember the words you pick and put them first next time"
+msgstr "中文と日本語は選んだ単語を覚えて、次から先に出します"
+
+msgid "Forget learned words"
+msgstr "学習した単語を消去"
+
+msgid "Deletes the words Rime learned; your own words stay"
+msgstr "Rime が学習した単語を削除します。自分で追加した単語は残ります"
+
+msgid "Forget…"
+msgstr "消去…"
+
+msgid "Deletes Mozc's typing history; the user dictionary stays"
+msgstr "Mozc の入力履歴を削除します。ユーザー辞書は残ります"
+
+msgid "Clipboard history comes from the system ({}), not from here."
+msgstr "クリップボード履歴はシステム（{}）の機能で、ここにはありません。"
+
+msgid "Sync"
+msgstr "同期"
+
+msgid "Sync with my server"
+msgstr "自分のサーバーと同期"
+
+msgid "Coming soon: learned words and your own words, the same on phone and PC"
+msgstr "近日対応：学習した単語と自分の単語をスマートフォンと PC で同期"
+
+msgid "Delete learned words on the server"
+msgstr "サーバー上の学習した単語を削除"
+
+msgid "Deletes only the server's copy; the words on this PC stay (once sync is out)"
+msgstr "サーバー上のコピーだけを削除し、この PC の単語はそのままです（同期の対応後に使えます）"
+
+msgid "Delete…"
+msgstr "削除…"
+
+msgid "Backup"
+msgstr "バックアップ"
+
+msgid "Export settings"
+msgstr "設定をエクスポート"
+
+msgid "Every setting and your own words, in one file"
+msgstr "すべての設定と自分の単語を 1 つのファイルに"
+
+msgid "Export…"
+msgstr "エクスポート…"
+
+msgid "Import settings"
+msgstr "設定をインポート"
+
+msgid "Restore from an exported file"
+msgstr "エクスポートしたファイルから復元"
+
+msgid "Import…"
+msgstr "インポート…"
+
+msgid "Version {} · {}"
+msgstr "バージョン {} · {}"
+
+msgid "Help and feedback"
+msgstr "ヘルプとフィードバック"
+
+msgid "SebType's issues on GitHub"
+msgstr "GitHub の SebType の Issues ページ"
+
+msgid "Redeploy"
+msgstr "再デプロイ"
+
+msgid "Applies every setting again; 中文 takes a few seconds"
+msgstr "すべての設定を適用し直します。中文は数秒かかります"
+
+msgid "Licence and credits"
+msgstr "ライセンスとクレジット"

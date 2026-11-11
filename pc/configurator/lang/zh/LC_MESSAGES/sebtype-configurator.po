@@ -1,0 +1,350 @@
+# SebType Configurator in Simplified Chinese (#118). Terms follow the phone's settings and the installer.
+msgid ""
+msgstr ""
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Noun"
+msgstr "名词"
+
+msgid "Proper noun"
+msgstr "专有名词"
+
+msgid "Person"
+msgstr "人名"
+
+msgid "Place"
+msgstr "地名"
+
+msgid "Organization"
+msgstr "组织"
+
+msgid "Emoticon"
+msgstr "颜文字"
+
+msgid "SebType settings"
+msgstr "SebType 设置"
+
+msgid "SebType Configurator"
+msgstr "SebType 设置"
+
+msgid "Languages"
+msgstr "语言"
+
+msgid "Keyboard"
+msgstr "键盘"
+
+msgid "Theme"
+msgstr "主题"
+
+msgid "Privacy"
+msgstr "隐私"
+
+msgid "Sync & backup"
+msgstr "同步与备份"
+
+msgid "About"
+msgstr "关于"
+
+msgid "Applied"
+msgstr "已应用"
+
+msgid "Applied · 中文 redeployed"
+msgstr "已应用 · 中文已重新部署"
+
+msgid "Applied · 日本語 takes it from the next time you type"
+msgstr "已应用 · 日本語下次输入时生效"
+
+msgid "Applied · from the next time the candidate window opens"
+msgstr "已应用 · 下次打开候选窗时生效"
+
+msgid "Saved · 中文 redeployed"
+msgstr "已保存 · 中文已重新部署"
+
+msgid "Saved · 日本語 takes it from the next time you type"
+msgstr "已保存 · 日本語下次输入时生效"
+
+msgid "Deleted · 中文 redeployed"
+msgstr "已删除 · 中文已重新部署"
+
+msgid "Deleted"
+msgstr "已删除"
+
+msgid "No learned words"
+msgstr "没有已学的词"
+
+msgid "Learned words forgotten"
+msgstr "已忘记学到的词"
+
+msgid "Exported to {}"
+msgstr "已导出到 {}"
+
+msgid "Imported"
+msgstr "已导入"
+
+msgid "Redeployed"
+msgstr "已重新部署"
+
+msgid "This file wasn't exported by SebType Configurator"
+msgstr "这不是 SebType 设置导出的文件"
+
+msgid "Pinyin letters only"
+msgstr "拼音只能包含字母"
+
+msgid "The reading must be hiragana"
+msgstr "读音只能用平假名"
+
+msgid "Not applied: {}"
+msgstr "没有应用：{}"
+
+msgid "Forget the words 中文 learned?"
+msgstr "忘记中文已学的词？"
+
+msgid "Forget 日本語's typing history?"
+msgstr "忘记日本語的输入历史？"
+
+msgid "The words and order Rime learned are deleted for good. Your own words stay."
+msgstr "Rime 学到的词和顺序会被删除，无法恢复。你自己的词保留。"
+
+msgid "The words and order Mozc learned are deleted for good. The user dictionary stays."
+msgstr "Mozc 学到的词和顺序会被删除，无法恢复。用户词典保留。"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Forget"
+msgstr "忘记"
+
+msgid "Back"
+msgstr "返回"
+
+msgid "rime-ice pinyin · rime-frost dictionary"
+msgstr "雾凇拼音 · 白霜词库"
+
+msgid "Mozc romaji"
+msgstr "Mozc 罗马字"
+
+msgid "The US keyboard"
+msgstr "美式键盘"
+
+msgid "Win+Space switches between the languages that are on, in this order. Drag ≡ to reorder."
+msgstr "按 Win+Space 在已开启的语言之间按此顺序切换。拖动 ≡ 可调整顺序。"
+
+msgid "Win+Space switches between the first language and the other one you used last; pick the others from the tray menu. Drag ≡ to reorder."
+msgstr "按 Win+Space 在第一个语言和上次用的另一种语言之间切换，其他语言从托盘菜单选。拖动 ≡ 可调整顺序。"
+
+msgid "Move {}"
+msgstr "移动 {}"
+
+msgid "Move up"
+msgstr "上移"
+
+msgid "Default characters"
+msgstr "默认字形"
+
+msgid "Ctrl+Shift+F switches at any time"
+msgstr "随时可按 Ctrl+Shift+F 切换"
+
+msgid "Full-width punctuation"
+msgstr "全角标点"
+
+msgid "，。？ instead of , . ?"
+msgstr "输入 ，。？ 而不是 , . ?"
+
+msgid "Emoji in candidates"
+msgstr "候选词中显示表情"
+
+msgid "An emoji next to words that have one"
+msgstr "在有对应表情的词旁显示表情"
+
+msgid "Fuzzy pinyin"
+msgstr "模糊拼音"
+
+msgid "Off"
+msgstr "关"
+
+msgid "My words"
+msgstr "我的词语"
+
+msgid "Your own words, first when you type their pinyin"
+msgstr "你自己的词，输入其拼音时排在首位"
+
+msgid "Half-width space"
+msgstr "半角空格"
+
+msgid "Space always types a half-width space"
+msgstr "空格键总是输入半角空格"
+
+msgid "Mozc not found"
+msgstr "未找到 Mozc"
+
+msgid "Mozc's user dictionary"
+msgstr "Mozc 用户词典"
+
+msgid "The system's US keyboard"
+msgstr "系统美式键盘"
+
+msgid "English on the PC is the plain keyboard, without SebType's extras"
+msgstr "电脑上的英文是普通键盘输入，没有 SebType 的额外功能"
+
+msgid "Sounds that are easy to mix up count as one, so zi also gives 知."
+msgstr "把容易混淆的音当作同一个音，例如打 zi 也能出“知”。"
+
+msgid "Your own words, such as names. They come first when you type their pinyin."
+msgstr "你自己的词，例如名字。输入它的拼音时，它排在第一位。"
+
+msgid "Word, e.g. {}"
+msgstr "词语，例如 {}"
+
+msgid "Pinyin, e.g. {}"
+msgstr "拼音，例如 {}"
+
+msgid "Add"
+msgstr "添加"
+
+msgid "Delete"
+msgstr "删除"
+
+msgid "Mozc's user dictionary. Readings are in hiragana, e.g. {}."
+msgstr "Mozc 的用户词典。读音用平假名，例如 {}。"
+
+msgid "Reading (hiragana)"
+msgstr "读音（平假名）"
+
+msgid "Word"
+msgstr "词语"
+
+msgid "Candidate window"
+msgstr "候选窗"
+
+msgid "Candidates per page"
+msgstr "每页候选词"
+
+msgid "中文 (日本語 always shows 9)"
+msgstr "中文（日本語固定 9 个）"
+
+msgid "Layout"
+msgstr "排列"
+
+msgid "Horizontal"
+msgstr "横排"
+
+msgid "Vertical"
+msgstr "竖排"
+
+msgid "Font size"
+msgstr "字号"
+
+msgid "Shortcuts"
+msgstr "快捷键"
+
+msgid "Switch language: EN → 中 → 日"
+msgstr "切换语言 EN → 中 → 日"
+
+msgid "Switch language: EN ⇄ the last 中 or 日"
+msgstr "切换语言 EN ⇄ 上次的 中 或 日"
+
+msgid "English letters in 中文 or 日本語"
+msgstr "在中文或日本語里输入英文字母"
+
+msgid "Tap Shift on its own"
+msgstr "单独轻按一下 Shift"
+
+msgid "System style"
+msgstr "系统样式"
+
+msgid "日本語's candidate window is drawn by Mozc itself and stays as it is."
+msgstr "日本語的候选窗由 Mozc 自己绘制，保持原样。"
+
+msgid "The candidate windows of 中文 and 日本語 both use this style."
+msgstr "中文和日本語的候选窗都使用此样式。"
+
+msgid "Tray icons"
+msgstr "托盘图标"
+
+msgid "SebType's key icons"
+msgstr "SebType 的按键图标"
+
+msgid "EN, 中, あ, ア, and a / A (Caps Lock) in the English mode of 中文 and 日本語"
+msgstr "EN、中、あ、ア，以及中文和日本語英文模式下的 a / A（大写锁定）"
+
+msgid "Learn from my typing"
+msgstr "从我的输入中学习"
+
+msgid "中文 and 日本語 remember the words you pick and put them first next time"
+msgstr "中文和日本語记住你选过的词，下次排在前面"
+
+msgid "Forget learned words"
+msgstr "忘记学到的词"
+
+msgid "Deletes the words Rime learned; your own words stay"
+msgstr "删除 Rime 学到的词；你自己的词保留"
+
+msgid "Forget…"
+msgstr "忘记…"
+
+msgid "Deletes Mozc's typing history; the user dictionary stays"
+msgstr "删除 Mozc 的输入历史；用户词典保留"
+
+msgid "Clipboard history comes from the system ({}), not from here."
+msgstr "剪贴板历史由系统提供（{}），这里没有。"
+
+msgid "Sync"
+msgstr "同步"
+
+msgid "Sync with my server"
+msgstr "与我的服务器同步"
+
+msgid "Coming soon: learned words and your own words, the same on phone and PC"
+msgstr "即将推出：已学的词和你自己的词在手机和电脑之间同步"
+
+msgid "Delete learned words on the server"
+msgstr "删除服务器上已学的词"
+
+msgid "Deletes only the server's copy; the words on this PC stay (once sync is out)"
+msgstr "只删除服务器上的副本，本机的词不变（同步推出后可用）"
+
+msgid "Delete…"
+msgstr "删除…"
+
+msgid "Backup"
+msgstr "备份"
+
+msgid "Export settings"
+msgstr "导出设置"
+
+msgid "Every setting and your own words, in one file"
+msgstr "所有设置和你自己的词，保存为一个文件"
+
+msgid "Export…"
+msgstr "导出…"
+
+msgid "Import settings"
+msgstr "导入设置"
+
+msgid "Restore from an exported file"
+msgstr "从导出的文件恢复"
+
+msgid "Import…"
+msgstr "导入…"
+
+msgid "Version {} · {}"
+msgstr "版本 {} · {}"
+
+msgid "Help and feedback"
+msgstr "帮助与反馈"
+
+msgid "SebType's issues on GitHub"
+msgstr "SebType 在 GitHub 上的问题页"
+
+msgid "Redeploy"
+msgstr "重新部署"
+
+msgid "Applies every setting again; 中文 takes a few seconds"
+msgstr "重新应用所有设置，中文需要几秒"
+
+msgid "Licence and credits"
+msgstr "许可与致谢"
