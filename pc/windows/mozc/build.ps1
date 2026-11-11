@@ -12,7 +12,7 @@ Needs Visual Studio 2022 or its Build Tools (C++ x64 tools, ATL, a Windows 11 SD
 (Mozc's source, Bazelisk, resvg, CMake) or by Mozc's own update_deps.py (LLVM, MSYS2, Ninja, Qt, WiX). The
 tree stays in WorkDir, so a rebuild compiles only what changed. The first build takes about 40 minutes and
 10 GB; WorkDir should be a short path (Bazel and MAX_PATH). -BazelCache keeps Bazel's disk and repository
-caches in that folder, for CI, whose WorkDir starts empty.
+caches in that folder: CI, whose WorkDir starts empty, restores it from main's last build.
 #>
 param([string]$WorkDir = "$env:SystemDrive\sebtype-mozc", [string]$BazelCache)
 $ErrorActionPreference = 'Stop'
