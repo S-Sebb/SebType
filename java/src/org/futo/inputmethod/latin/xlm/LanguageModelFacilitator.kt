@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.ENGINE_IDLE_MS
+import org.futo.inputmethod.latin.utils.JniUtils
 import org.futo.inputmethod.engine.general.OnGetSuggestedWordsCallbackWithInputStyle
 import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.KeyboardSwitcher
@@ -412,8 +413,10 @@ public class LanguageModelFacilitator(
     // On the model's thread, so no prediction loads the model again between closing it and dropping it
     public suspend fun destroyModel() = withContext(languageModelScope) {
         if(BuildConfig.DEBUG) Log.d(TAG, "destroyModel called")
-        languageModel?.closeInternalLocked()
+        val model = languageModel ?: return@withContext
+        model.closeInternalLocked()
         languageModel = null
+        JniUtils.releaseFreedMemory()
     }
 
     // SebType (#56): the transformer (about 110 MB) unloads after ENGINE_IDLE_MS without a prediction.

@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.ENGINE_IDLE_MS
+import org.futo.inputmethod.latin.utils.JniUtils
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.actions.throwIfDebug
@@ -221,6 +222,7 @@ object RimeIceSetup {
         idleStop = scope.launch {
             delay(ENGINE_IDLE_MS)
             whileStopped(context) {}
+            JniUtils.releaseFreedMemory()
         }
     }
 

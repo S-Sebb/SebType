@@ -64,6 +64,7 @@ import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.decodeJapanesePersonalWord
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.InputTypeUtils
+import org.futo.inputmethod.latin.utils.JniUtils
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter.KeyEventInterface
 import org.futo.inputmethod.nativelib.mozc.KeycodeConverter.getMozcKeyEvent
@@ -549,6 +550,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             MozcJNI.load(mozcUserProfileDir(helper.context).absolutePath, "", 0, 0)
             unloaded = true
             Log.w(TAG, "Mozc unloaded after ${ENGINE_IDLE_MS / 1000} s in another language")
+            withContext(Dispatchers.Default) { JniUtils.releaseFreedMemory() }
         }
     }
 
