@@ -930,6 +930,8 @@ def system_locale(tag):
 
 
 def japanese_ui():
+    for f in glob.glob(os.path.join(logdir, "settings-ja-*.png")):
+        os.remove(f)  # a last run's extra pages would pass for this run's
     system_locale("ja-JP")
     patterns = english_strings()
     english = {}
