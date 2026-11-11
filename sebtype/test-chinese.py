@@ -581,7 +581,8 @@ check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 check("typo-corrected", expect_first("xoaoshi", "小时"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
-check("password-after-restart", password_after_restart, needs=["first-install"])
+# Restarts 中 and waits for its setup, so it needs 中 working.
+check("password-after-restart", password_after_restart, needs=["ranh"])
 check("password-plain", password_plain("password"), needs=["first-install"])
 check("pin-plain", pin_plain, needs=["first-install"])
 check(
