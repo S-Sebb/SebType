@@ -17,6 +17,9 @@ const EMOJI: &str = "switches/@3/reset";
 const ALGEBRA: &str = "speller/algebra/+";
 const LEARN: &str = "translator/enable_user_dict";
 const PAGE_SIZE: &str = "menu/page_size";
+/// SebType's page size on the PCs (Decisions #2, #163), which the setup scripts write into
+/// default.custom.yaml; rime-ice's default.yaml has 5.
+const DEFAULT_PAGE_SIZE: i32 = 6;
 
 /// The phone's fuzzy pinyin pairs (ChineseIMESettings.FuzzyPinyinModes): initial or final, two-way.
 pub const FUZZY: [(&str, &str, bool, bool); 12] = [
@@ -73,7 +76,7 @@ impl Default for Chinese {
             emoji: true,
             fuzzy: vec![false; FUZZY.len()],
             learn: true,
-            page_size: 5,
+            page_size: DEFAULT_PAGE_SIZE,
         }
     }
 }
@@ -96,7 +99,7 @@ fn write(path: &Path, text: &str) -> io::Result<bool> {
 pub fn load(dir: &Path) -> Chinese {
     let schema = read(&dir.join(SCHEMA_PATCH));
     let rules = patch::block(&schema, ALGEBRA);
-    let page_size = page_size(dir, &read(&dir.join(DEFAULT_PATCH)));
+    let page_size = page_size(&read(&dir.join(DEFAULT_PATCH)));
     Chinese {
         full_width_punctuation: patch::value(&schema, ASCII_PUNCT) != Some("1"),
         traditional: patch::value(&schema, TRADITIONAL) == Some("1"),
@@ -113,26 +116,10 @@ pub fn load(dir: &Path) -> Chinese {
     }
 }
 
-fn page_size(dir: &Path, defaults_patch: &str) -> i32 {
+fn page_size(defaults_patch: &str) -> i32 {
     patch::value(defaults_patch, PAGE_SIZE)
         .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| default_page_size(dir))
-}
-
-/// rime-ice's own page size (default.yaml's `menu: page_size:`), 5 when it can't be read.
-fn default_page_size(dir: &Path) -> i32 {
-    let text = read(&dir.join("default.yaml"));
-    let mut in_menu = false;
-    for line in text.lines() {
-        if !line.starts_with(' ') && !line.is_empty() {
-            in_menu = line.trim_end() == "menu:";
-        } else if in_menu {
-            if let Some(v) = line.trim().strip_prefix("page_size:") {
-                return v.split('#').next().unwrap().trim().parse().unwrap_or(5);
-            }
-        }
-    }
-    5
+        .unwrap_or(DEFAULT_PAGE_SIZE)
 }
 
 /// Writes the patches; true when something changed (Rime then needs a redeploy). Only what differs
@@ -177,7 +164,7 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     }
     let path = dir.join(DEFAULT_PATCH);
     let defaults = read(&path);
-    if page_size(dir, &defaults) != c.page_size {
+    if page_size(&defaults) != c.page_size {
         let line = format!("  {PAGE_SIZE}: {}", c.page_size);
         changed |= write(&path, &patch::set(&defaults, &[PAGE_SIZE], &[line]))?;
     }
@@ -286,6 +273,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load(&d), Chinese::default());
+        assert_eq!(load(&d).page_size, 6, "SebType's 6, not rime-ice's 5");
         // Defaults write nothing new.
         assert!(!save(&d, &Chinese::default()).unwrap());
         assert!(!d.join(DEFAULT_PATCH).exists());

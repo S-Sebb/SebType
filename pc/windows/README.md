@@ -70,6 +70,7 @@ ever on, the account's words are saved to the server first.
 | Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+\`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
 | Typo correction | `sebtype_typo/keyboard: pc` in `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
+| Candidates per page | `menu/page_size: 6` in `default.custom.yaml`, only when it has no page size yet | 6 Chinese candidates per page instead of rime-ice's 5 (Decisions #2, #163). A page size of the user's own, which the Configurator writes there too, stays |
 | Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept; then the account's running Mozc stops, as its server reads the keymap only when it starts | A Shift tap toggles あ ⇄ English, and Alt+\` あ ⇄ ア, as on Linux (#117). Windows adds a newly installed Mozc to every logged-on user's list, which can start their Mozc before Setup writes the keymap (#123) |
 | Input methods | Language list: the chosen ones first, EN (US layout first) → 中文 (Weasel only) → 日本語 (Mozc only), then the account's other languages. Other Chinese and Japanese IMEs are taken off those two languages, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |
 | Switch keys | `HKCU\Keyboard Layout\Toggle`: Hotkey, Language Hotkey and Layout Hotkey = 3 (none), applied at once | Alt+Shift and Ctrl+Shift no longer switch language |
@@ -139,7 +140,7 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 |---|---|
 | `language-follows-windows` | Setup's language dialog offers Windows' display language (简体中文 on TCSBackEnd) |
 | `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`/tmp/sebtype/73-*.png`): welcome in all three languages, languages, installing, finish |
-| `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, Weasel and Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches, Mozc's keymap |
+| `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, Weasel and Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
 | `chinese-typo-xkaoshi` | SebType's librime corrects a slip onto the key under i: `xkaoshi` → 小时, and `kaoshi` stays 考试 (#133) |
 | `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`../perf-rime.ps1` with the Weasel build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
@@ -148,7 +149,7 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `round1-upgrade`, `-upgrade-keeps-learned-words` | A silent rerun exits 0 and keeps the Rime and Mozc learned-word folders |
 | `japanese-after-language-change` | After a language is added and removed, Japanese still types |
 | `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; Weasel, Mozc and SebType gone |
-| `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Mozc and its words go), uninstall; as before |
+| `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Mozc and its words go) keeping a page size of 8 set before it, uninstall; as before |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
 
 ## Japanese: SebType's Mozc (#65)
