@@ -1,7 +1,8 @@
 # Measuring SebType's size, memory and speed
 
-Two scripts measure SebType the same way every time (#45). Run them before merging changes to the
-engines, dictionaries or the keyboard UI, and compare against the baseline on #45.
+Two scripts measure SebType the same way every time (#45). They run in the final performance run of a
+batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional
+until they are compared with other IMEs.
 
 ## Android: `sebtype/perf.sh`
 

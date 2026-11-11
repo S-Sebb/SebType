@@ -960,6 +960,10 @@ def en_model_waits_for_letter():
     if model_mapped():
         raise Fail("the model loaded in an empty field before any letter")
     type_keys("th")
+    # No chip is EN or 中: in 中, th has Chinese candidates and no English model to load.
+    got = candidates(nodes())
+    if not all(c.isascii() for c in got):
+        raise Fail(f"th -> {got[:6]}: the keyboard is in 中, not EN")
     wait_for("the model to load after a letter", model_mapped, 60, interval=2)
     return "empty field: no model; after typing th: loaded"
 
