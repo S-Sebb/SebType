@@ -3,7 +3,8 @@
 #   sebtype/emulator.sh [devq options] -- CMD [ARGS...]
 # Without ANDROID_SERIAL it takes one of SebType's two emulators (Decisions #2): the one whose lock is
 # free, a running one before one it has to start, else the one with the shorter queue. One it starts
-# runs headless and is stopped again when CMD ends. ANDROID_SERIAL picks the device instead: an
+# runs headless; guide35b is stopped again when CMD ends, guide35 stays up for the other projects
+# (SebChat) and scripts that expect it running. ANDROID_SERIAL picks the device instead: an
 # emulator by its AVD's lock, a phone by the lock of the PC it's plugged into, which other projects
 # (SebChat) take for the phone (#76). CMD gets ANDROID_SERIAL; the exit status is CMD's, or devq's 1
 # if the lock's turn didn't come.
@@ -14,6 +15,7 @@ adb=$sdk/platform-tools/adb
 locks=/tmp/agent-locks/devices
 # AVD and console port: a fixed port gives each emulator a stable serial, emulator-<port>.
 emulators=(guide35:5554 guide35b:5580)
+on_demand=guide35b # stopped when the run that started it ends: two emulators leave little memory
 
 serial_of() { # AVD -> serial of its running emulator, booted or not
   local s
@@ -39,9 +41,13 @@ if [[ ${1:-} == --run ]]; then # under the lock: $avd and $port from the caller
     timeout 600 bash -c 'until [[ $("$0" shell getprop sys.boot_completed 2>/dev/null | tr -d "\r") == 1 ]]; do
       kill -0 "$1" 2> /dev/null || exit 1; sleep 3; done' "$adb" "$pid" ||
       { echo "emulator $avd ($ANDROID_SERIAL) didn't boot, see /tmp/sebtype/emulator-$avd.log" >&2; exit 1; }
+    # A cold boot keeps the guest busy for about a minute after it says it's booted (load up to 13),
+    # too slow for the UI checks: wait until its 1-minute load is below 3, about 2 minutes.
+    [[ -n $started ]] && timeout 300 bash -c 'until (( $("$0" shell cat /proc/loadavg | cut -d. -f1) < 3 )); do
+      sleep 5; done' "$adb"
   fi
   "$@"; rc=$?
-  if [[ -n $started ]]; then
+  if [[ -n $started && $avd == "$on_demand" ]]; then
     "$adb" emu kill > /dev/null
     timeout 60 bash -c 'while "$0" -s "$1" get-state > /dev/null 2>&1; do sleep 1; done' "$adb" "$ANDROID_SERIAL"
   fi

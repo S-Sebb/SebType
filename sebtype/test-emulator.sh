@@ -105,14 +105,12 @@ device_checks() {
   done
   echo "keyboards listed: $imes"; return 1
 }
-set_locale() { # to en-US, the way Settings does: a framework restart to apply it can crash the emulator
-  local was; was=$("$adb" -s "$serial" shell getprop persist.sys.locale | tr -d '\r')
-  echo "locale was ${was:=$("$adb" -s "$serial" shell getprop ro.product.locale | tr -d '\r')}"
-  [[ $was == en-US ]] && return
+set_locale() { # language list to en-US only, the way Settings does: a framework restart can crash the emulator
   "$adb" -s "$serial" push "$locale_dex" /data/local/tmp/sebtype-set-locale.dex > /dev/null &&
-    "$adb" -s "$serial" shell app_process -cp /data/local/tmp/sebtype-set-locale.dex / dev.sebb.sebtype.setlocale.SetLocale en-US
+    echo "locale was $("$adb" -s "$serial" shell app_process -cp /data/local/tmp/sebtype-set-locale.dex / \
+      dev.sebb.sebtype.setlocale.SetLocale en-US | tr -d '\r')"
   "$adb" -s "$serial" shell rm -f /data/local/tmp/sebtype-set-locale.dex
-  "$adb" -s "$serial" shell cmd activity get-config | grep -q '^config:.*-en-rUS-'
+  [[ $("$adb" -s "$serial" shell getprop persist.sys.locale | tr -d '\r') == en-US ]]
 }
 device_suite() {
   export serial=$ANDROID_SERIAL

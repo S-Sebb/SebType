@@ -615,6 +615,23 @@ def fling_stats(name, path):
     return name, frames, janky, p90
 
 
+def smooth(name, frames, janky, p90):
+    return (
+        frames >= 30
+        and janky <= SMOOTH_LIMITS[name][0]
+        and p90 <= SMOOTH_LIMITS[name][1]
+    )
+
+
+def best_flings(name, path):
+    """Up to three tries, the least janky kept: frame times follow the PC's load, which the other
+    emulator's suite raises (#103). A drawing cost per row fails every try."""
+    tries = []
+    while len(tries) < 3 and not (tries and smooth(*tries[-1])):
+        tries.append(fling_stats(name, path))
+    return min(tries, key=lambda t: t[2]) + (len(tries),)
+
+
 def smooth_scrolling():
     # 300 of My words, which it reads after its marker; the file goes back as it was afterwards.
     local = os.path.join(logdir, "my-words-300.txt")
@@ -633,20 +650,19 @@ def smooth_scrolling():
             f"mkdir -p $(dirname {WORDS_FILE}) && cp /data/local/tmp/sebtype-words.txt {WORDS_FILE} && chown -R {owner} $(dirname {WORDS_FILE}) && restorecon -R $(dirname {WORDS_FILE})"
         )
         stats = [
-            fling_stats("zh-words-300", (LANG, (MY_WORDS, 1))),
-            fling_stats(
+            best_flings("zh-words-300", (LANG, (MY_WORDS, 1))),
+            best_flings(
                 "credits", (HOME["about"], labels("许可与致谢", "Licence and credits"))
             ),
         ]
     finally:
         root(f"mv {WORDS_FILE}.bak {WORDS_FILE}" if had else f"rm -f {WORDS_FILE}")
     summary = ", ".join(
-        f"{n}: {f} frames, {j}% janky, p90 {p} ms" for n, f, j, p in stats
+        f"{n}: {f} frames, {j}% janky, p90 {p} ms"
+        + (f" (best of {t})" if t > 1 else "")
+        for n, f, j, p, t in stats
     )
-    if any(
-        f < 30 or j > SMOOTH_LIMITS[n][0] or p > SMOOTH_LIMITS[n][1]
-        for n, f, j, p in stats
-    ):
+    if not all(smooth(*s[:4]) for s in stats):
         raise Fail(summary)
     return summary
 
