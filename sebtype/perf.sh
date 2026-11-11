@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Measures SebType's size, memory and speed on an Android device (#45); docs/perf.md says how to read it.
-#   sebtype/perf.sh          builds the release APK, then measures on the running emulator
+#   sebtype/perf.sh          builds the release APK, then measures on a free emulator (sebtype/emulator.sh)
 # APK=<path> skips the build; ANDROID_SERIAL=<serial> measures on that device instead (the only way to
 # pick a phone); RUNS (default 3) repeats each typing set.
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
@@ -293,6 +293,13 @@ phase_sizes() { # needs a root shell (emulator): app code, internal data, extern
 }
 
 device_steps() { # under the device lock
+  [[ $(sh getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "$ANDROID_SERIAL can't run arm64 apps" >&2; return 1; }
+  (( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "$ANDROID_SERIAL: needs Android 14+ (older trace formats are untested)" >&2; return 1; }
+  echo "measuring $APK on $ANDROID_SERIAL ($(sh getprop ro.product.model), Android $(sh getprop ro.build.version.release))"
+  # Another keyboard to switch from for the cold open (the phone keeps Gboard for banking apps).
+  # Gboard first: stock FUTO crashes in Mozc on the emulator.
+  { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
+    sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
   trap 'sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
     /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
     /data/local/tmp/sebtype-ui.xml' EXIT
@@ -322,12 +329,10 @@ if [[ ${1:-} == --device ]]; then device_steps; exit; fi
 # ---- Preflight ----
 mkdir -p "$out"; rm -rf "$work"; mkdir -p "$work"; : > "$results"
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
-# A phone only when named: the run reinstalls SebType, which wipes what it learned there.
-export ANDROID_SERIAL=${ANDROID_SERIAL:-$("$adb" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')}
-[[ -n $ANDROID_SERIAL ]] || { echo "preflight: no emulator running (start AVD guide35; for a phone set ANDROID_SERIAL)"; exit 1; }
-[[ $("$adb" -s "$ANDROID_SERIAL" get-state 2>/dev/null) == device ]] || { echo "preflight: $ANDROID_SERIAL not connected"; exit 1; }
-[[ $(sh getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "preflight: $ANDROID_SERIAL can't run arm64 apps"; exit 1; }
-(( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "preflight: needs Android 14+ (older trace formats are untested)"; exit 1; }
+# A phone only when named (ANDROID_SERIAL): the run reinstalls SebType, which wipes what it learned there.
+if [[ -n ${ANDROID_SERIAL:-} ]]; then
+  [[ $("$adb" -s "$ANDROID_SERIAL" get-state 2>/dev/null) == device ]] || { echo "preflight: $ANDROID_SERIAL not connected"; exit 1; }
+fi
 for x in python3 curl unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 if [[ ! -x $tp ]]; then # Perfetto's trace processor, pinned
   mkdir -p "$(dirname "$tp")"
@@ -343,18 +348,6 @@ if [[ -z ${APK:-} ]]; then
 fi
 export APK=$(realpath "$APK")
 [[ -f $APK ]] || { echo "preflight: no APK at $APK"; exit 1; }
-# Another keyboard to switch from for the cold open (the phone keeps Gboard for banking apps).
-# Gboard first: stock FUTO crashes in Mozc on the emulator.
-{ sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
-  sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
-# Device locks are shared by all projects. An emulator's is named after its AVD; a phone shares the
-# lock of the PC it's plugged into, which other projects (SebChat) take for the phone. A lock of its
-# own let two agents tap the phone at once (#76).
-case $ANDROID_SERIAL in
-  emulator-*) lock=/tmp/agent-locks/devices/emulator-$("$adb" emu avd name | head -1 | tr -d '\r').lock ;;
-  *) lock=/tmp/agent-locks/devices/$(hostname -s).lock ;;
-esac
-echo "measuring $APK on $ANDROID_SERIAL ($(sh getprop ro.product.model), Android $(sh getprop ro.build.version.release))"
 
 # ---- Static: the APK ----
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
@@ -368,8 +361,9 @@ echo "size_mb=$(( $(stat -c %s "$APK") / 1048576 ))" > "$work/apk.out"
 result PASS apk "$(cat "$work/apk.out")"
 
 T=${PERF_LOCK_MINUTES:-30}
-devq -P "${PERF_PRIORITY:-5}" -w 1800 -m "$T" -n "sebtype perf.sh" "$lock" "$self" --device ||
-  echo "device steps stopped early (lock timeout or install failure)" >&2
+# One of SebType's emulators, or the device ANDROID_SERIAL names, under its lock (sebtype/emulator.sh).
+sebtype/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m "$T" -n "sebtype perf.sh" -- "$self" --device ||
+  echo "device steps stopped early (lock timeout, no device or install failure)" >&2
 
 python3 -I sebtype/perf/table.py "$work" "$results" > "$out/perf.md"
 cat "$out/perf.md"

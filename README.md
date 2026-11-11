@@ -31,6 +31,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 
 - What it must do: [Requirements (#1)](https://github.com/S-Sebb/sebtype/issues/1)
 - Settled choices: [Decisions (#2)](https://github.com/S-Sebb/sebtype/issues/2)
+- Device tests and the two emulators: [docs/testing.md](docs/testing.md)
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 

@@ -6,7 +6,7 @@ engines, dictionaries or the keyboard UI, and compare against the baseline on #4
 ## Android: `sebtype/perf.sh`
 
 ```
-sebtype/perf.sh                     # builds the release APK, then measures on the running emulator
+sebtype/perf.sh                     # builds the release APK, then measures on a free emulator ([testing.md](testing.md))
 APK=path/to.apk sebtype/perf.sh     # measures an APK you already built
 ANDROID_SERIAL=<serial> sebtype/perf.sh   # any other device; the only way to run it on a phone
 ```

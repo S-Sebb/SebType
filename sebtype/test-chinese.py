@@ -90,6 +90,9 @@ def wait_for(what, fn, timeout, interval=1.0):
 
 
 keyboard_frame = None  # the keyboard's bounds, from the last nodes()
+# Seconds for the keyboard to come up. It restarts often here, and while the other emulator runs a
+# suite (#103) a restart has taken over 30 s; how fast it comes up is perf.sh's to measure.
+KEYBOARD_WAIT = 60
 # Password and email fields get a number row on top (SettingsValues), 0.8 of a row high (LayoutEngine);
 # the keyboard grows by that much, so the other rows stay where they are.
 number_row = False
@@ -205,7 +208,7 @@ def expanded_candidates():
 
 
 def type_keys(text):
-    k = wait_for("the keyboard", lambda: keys(nodes()), 30)
+    k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
     for ch in text:
         adb("shell", "input", "tap", str(k[ch][0]), str(k[ch][1]))
     time.sleep(1.5)
@@ -223,7 +226,7 @@ def open_field(kind=None):
     # the keyboard again.
     extra = ["--es", "kind", kind] if kind else []
     adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
-    wait_for("the keyboard", lambda: keys(nodes()), 30)
+    wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
 
 
 def candidates_for(text, expand=False, kind=None):
@@ -312,7 +315,6 @@ def check(name, fn, needs=()):
 
 
 def fresh_install():
-    global keyboard_frame
     adb("uninstall", PKG, check=False)
     adb("install", apk, timeout=300)
     wait_for(
@@ -337,16 +339,22 @@ def fresh_install():
         f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
     )
     adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
+    # Under load (the other emulator's suite) the keyboard can take seconds to come back.
+    wait_for("the keyboard back in the field", lambda: keys(nodes()), KEYBOARD_WAIT)
     time.sleep(1)  # taps while the keyboard slides back in are dropped
     tap_globe()  # a fresh install starts in EN; the globe turns it into 中
     time.sleep(0.3)
     ready_first = bool(re.search(SET_UP, logcat()))
     # Keys while Chinese isn't ready type plain letters.
     adb("shell", "input", "tap", str(q[0]), str(q[1]))
-    keyboard_frame = None
-    ns = nodes()
-    if not keyboard_frame:
-        raise Fail("no keyboard on screen during setup")
+
+    def keyboard_nodes():
+        global keyboard_frame
+        keyboard_frame = None
+        ns = nodes()
+        return ns if keyboard_frame else None
+
+    ns = wait_for("the keyboard on screen during setup", keyboard_nodes, 10)
     notice = [n[0] for n in ns if n[0].startswith(PREPARING)]
     if notice:
         adb("shell", "screencap -p /sdcard/sebtype-indicator.png")
