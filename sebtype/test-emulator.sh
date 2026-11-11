@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks the SebType release APK, installs it on one of SebType's two emulators (sebtype/emulator.sh, or
+# Checks the SebType release APK, installs it on SebType's emulator (sebtype/emulator.sh, or
 # the device ANDROID_SERIAL names) next to stock FUTO Keyboard, then
 # types Chinese with it (sebtype/test-chinese.py): the bundled Chinese data set up in the background from
 # the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
