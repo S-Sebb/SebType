@@ -1850,12 +1850,24 @@ PHONE_JA, PHONE_EN = ("ぴよぽん", "ピヨポン丸"), "Quindlewump"
 def sync_personal_dictionaries():
     """Made-up Japanese and English words in another device's folder are offered on the phone after a
     sync, and words added on the phone reach its own folder (#14)."""
-    # As root: Android's user dictionary takes words only from keyboards, spell checkers and root (#143).
-    root(
-        f"content insert --uri {WORDS} --bind word:s:{PHONE_JA[1]} --bind 'shortcut:s:{PHONE_JA[0]}\t1'"
-        f" --bind locale:s:ja --bind frequency:i:0 --bind appid:i:0;"
-        f" content insert --uri {WORDS} --bind word:s:{PHONE_EN} --bind locale:s:en"
-        " --bind frequency:i:250 --bind appid:i:0"
+
+    # As root, but not through root()'s quotes: Android's user dictionary takes words only from
+    # keyboards, spell checkers and root (#143). It outlives the app, so a run starts by deleting the
+    # words an earlier one may have left.
+    def content(args):
+        adb("shell", f"su 0 content {args} --uri {WORDS}")
+
+    def delete_words():
+        for w in (PHONE_JA[1], PHONE_EN, OTHER_JA[1], OTHER_EN):
+            content(f"delete --where \"word='{w}'\"")
+
+    delete_words()
+    content(
+        f"insert --bind word:s:{PHONE_JA[1]} --bind 'shortcut:s:{PHONE_JA[0]}\t1'"
+        " --bind locale:s:ja --bind frequency:i:0 --bind appid:i:0"
+    )
+    content(
+        f"insert --bind word:s:{PHONE_EN} --bind locale:s:en --bind frequency:i:250 --bind appid:i:0"
     )
     try:
         os.makedirs(sync_server_dir(OTHER_DEVICE), exist_ok=True)
@@ -1909,12 +1921,7 @@ def sync_personal_dictionaries():
         to_language("hello", "hello")
         en = suggested_after(OTHER_EN)
     finally:
-        root(
-            "; ".join(
-                f"content delete --uri {WORDS} --where \"word='{w}'\""
-                for w in (PHONE_JA[1], PHONE_EN, OTHER_JA[1], OTHER_EN)
-            )
-        )
+        delete_words()
     detail = (
         f"purumoni -> {ja[:4]}, plonk -> {en[:4]}; the phone's file: {mozc.strip()!r}"
     )
