@@ -5,10 +5,11 @@
 # Changes nothing in the real session. One line per check in /tmp/sebtype/test-setup-ime-results.txt.
 # Typing in real apps is the manual checklist in pc/linux/README.md.
 set -uo pipefail
-cd "$(dirname "$0")" || exit 1
+script=$(readlink -f "$0")
+cd "$(dirname "$script")" || exit 1
 # Its private Fcitx5 instances run on this PC: one test at a time, in the shared device queue.
 [[ -n ${HOLDING-} ]] || exec env HOLDING=1 devq -w 1800 -m 10 -n "sebtype test-setup-ime ($(git branch --show-current))" \
-  /tmp/agent-locks/devices/nobara-pc.lock bash "$0"
+  /tmp/agent-locks/devices/nobara-pc.lock bash "$script"
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-setup-ime-results.txt; : > "$results"
