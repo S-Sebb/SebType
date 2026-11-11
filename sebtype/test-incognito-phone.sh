@@ -35,7 +35,7 @@ phone_run() {
   "$adb" -s "$serial" uninstall dev.sebb.sebtype >/dev/null
   if "$adb" -s "$serial" install "$apk" >/dev/null && "$adb" -s "$serial" install -r "$field_apk" >/dev/null; then
     "$adb" -s "$serial" shell ime enable dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME >/dev/null
-    PATH=$(dirname "$adb"):$PATH SEBTYPE_CHECKS=incognito timeout 2400 \
+    PATH=$(dirname "$adb"):$PATH CHECKS=incognito timeout 2400 \
       python3 -I sebtype/test-settings.py "$serial" "$results" "$out" > "$out/run.log" 2>&1 ||
       echo "FAIL incognito-run: ended early, see $out/run.log"
   else

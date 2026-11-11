@@ -8,6 +8,10 @@
 # learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41),
 # incognito (#31), and clipboard history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
+# CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
+# install and the locale always, and test-chinese.py's earlier checks they depend on. A PR runs the checks
+# for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
+# which only the final performance run uses (#54, Decisions #2 2026-11-11).
 # One line per check in /tmp/sebtype/test-emulator-<checkout>/results.txt; logs next to it (one directory
 # per checkout, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
 set -uo pipefail
@@ -20,9 +24,14 @@ adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
 futo_apk=/tmp/sebtype/futo-keyboard-0.1.30.apk
 
+export CHECKS=${CHECKS:-} PERF_RUN=${PERF_RUN:-}
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
-check() { # name, command...; timeout T seconds (default 180)
-  local name=$1; shift
+check() { # name, command...; timeout T seconds (default 180); only if CHECKS names it or it's a step all need
+  local name=$1 c; shift
+  if [[ -n $CHECKS && " bumped-apk locale install-beside-futo chinese-run settings-run " != *" $name "* ]]; then
+    for c in ${CHECKS//,/ }; do [[ $name == "$c"* ]] && break; done
+    [[ $name == "$c"* ]] || return 0
+  fi
   if timeout "${T:-180}" "$@" > "$out/$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/$name.log"; fi
 }

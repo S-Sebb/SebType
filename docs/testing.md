@@ -1,5 +1,27 @@
 # Testing on the emulators
 
+## Which checks a run takes
+
+A PR runs the checks for what it changed; the full suite (40–60 minutes on an emulator) runs for a
+release. `CHECKS` picks them by name prefix, comma-separated, from the names in the results:
+
+```
+CHECKS=settings-japanese,incognito sebtype/test-emulator.sh
+```
+
+That runs those checks and what they need: the build, the install beside FUTO Keyboard and the locale
+always, and the earlier `test-chinese.py` checks a named one depends on (its `needs`, so `CHECKS=ranh`
+also runs `first-install`). The settings checks (`test-settings.py`) declare no such needs: a settings
+check that relies on Chinese being set up runs with `first-install` named too.
+
+Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in
+`pc/windows/setup/test-tcsbackend.sh`; `mozc-speed-and-dictionary` in `pc/windows/mozc/test.ps1`) measure
+speed, so they run only in the final performance run (#54, Decisions #2 2026-11-11), with `PERF_RUN=1`
+(`-PerfRun` for the PowerShell scripts). Without it they write no result line, unless `CHECKS` names
+one: then it reports SKIP and says why. `sebtype/perf.sh` is a measurement of its own, run only then too.
+
+## The two emulators
+
 SebType's device tests (`sebtype/test-emulator.sh`, `test-typing.sh`, `test-privacy.sh`, `perf.sh`,
 `rime-android/smoke-test.sh`) run on one of two headless emulators on nobara-pc, so two of them can
 run at once (Decisions #2). `sebtype/emulator.sh` picks one for each run:
@@ -29,8 +51,8 @@ Both AVDs are Android 15 Google APIs x86_64 (`system-images;android-35;google_ap
 with root (`su`) and ARM translation for SebType's arm64 APK. Their `config.ini` says `hw.ramSize=2G`, but
 the emulator raises that to 2560 MB, its minimum for this device and Android version. Each emulator
 uses about 3–4 GB of the PC's memory at its peak, so two of them leave little room for a build. That's
-why `guide35b` runs only while a test needs it. Timing checks (`settings-smooth-scrolling`, `perf.sh`)
-run slower while the other emulator is busy. The smoothness check keeps the best of three tries, and if
+why `guide35b` runs only while a test needs it. Timing checks (`settings-smooth-scrolling`, `perf.sh`;
+only with `PERF_RUN=1`, above) run slower while the other emulator is busy. The smoothness check keeps the best of three tries, and if
 that is still over its limits while another emulator's lock is held, it reports SKIP with the numbers
 instead of FAIL. Compare `perf.sh` numbers only between runs with the other emulator idle. To start one by hand:
 

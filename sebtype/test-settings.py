@@ -32,8 +32,10 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 serial, results_path, logdir = sys.argv[1:4]
-# Only the checks whose names start with this (sebtype/test-incognito-phone.sh runs "incognito").
-ONLY = os.environ.get("SEBTYPE_CHECKS", "")
+# Only the checks whose names start with one of CHECKS (comma-separated, as sebtype/test-emulator.sh takes it).
+CHECKS = [c for c in os.environ.get("CHECKS", "").split(",") if c]
+# Timing checks run only in the final performance run (#54, Decisions #2 2026-11-11): PERF_RUN=1.
+TIMING = {"settings-smooth-scrolling"}
 PKG = "dev.sebb.sebtype"
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
@@ -371,7 +373,11 @@ def toggle(path, texts):
 
 
 def check(name, fn):
-    if ONLY and not name.startswith(ONLY):
+    if CHECKS and not any(name.startswith(c) for c in CHECKS):
+        return
+    if name in TIMING and not os.environ.get("PERF_RUN"):
+        if CHECKS:  # named, so say why it didn't run
+            result("SKIP", name, "timing check, runs only with PERF_RUN=1 (#54)")
         return
     try:
         detail = fn()
