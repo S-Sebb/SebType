@@ -161,7 +161,8 @@ Linux and the phone, with SebType's changes:
 - **Keys:** a Shift tap toggles あ ⇄ English, as Shift does in Chinese, and Alt+\` あ ⇄ ア before typing
   (#117); Win+Space is the only language switch and cycles EN → 中 → 日. The keymap is Linux's,
   `pc/linux/mozc-keymap.tsv`; `menu.patch` makes Mozc's kana switch a two-way あ ⇄ ア, without the
-  half-width katakana step.
+  half-width katakana step, and lets the keymap see Alt+\` (upstream's text service passes it on as the
+  Kanji key, so it always turned English on and off).
 - **Menu:** the tray icon's menu (right-click) is Japanese's one switch with its key, ``あ → ア Alt+` ``
   (`ア → あ` in katakana), as on Linux (#117), instead of Mozc's six input modes, dictionary tool, word
   registration, properties, about and help. The floating language bar loses Mozc's Tool button and

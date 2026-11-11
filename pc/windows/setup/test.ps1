@@ -108,10 +108,10 @@ if ($Typing) {
           $t
         }
       }
+      # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
+      function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
       Check "japanese-$Typing" {
         To-Language '0411'
-        # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
-        function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
         if ((Committed 'a') -eq 'a') { Keys Shift_L }
         $t = Committed 'nihongo '
         if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
