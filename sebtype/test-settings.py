@@ -18,11 +18,13 @@ clipboard copy, but still offer what was learned before; the toggle survives a r
 learning resumes. Then sync with a local sync-server (#12, made-up login and words): offline a learned
 word stays on the phone, back online a keyboard hide uploads it, a word in another device's folder on
 the server is offered after a sync, the login is in no log or plain file, and the delete button empties
-the server. Last, that a settings backup leaves clipboard history out unless its box is ticked,
-and that importing restores it (#34), with the backup screen's screenshot in English and Japanese
-(settings-backup-<locale>.png). Labels match the emulator's Chinese, English or Japanese UI. One line
-per check appended to RESULTS; each check finds its own way from the home screen, so one failing
-doesn't stop the next.
+the server. Then that made-up personal data of each kind imports through the backup screen's Import
+and is offered as candidates (#11): a Rime word list and Rime learned words in 中文, Mozc and MS-IME
+dictionaries in 日本語, FUTO's personal dictionary in English. Last, that a settings backup leaves
+clipboard history out unless its box is ticked, and that importing restores it (#34), with the backup
+screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels match the
+emulator's Chinese, English or Japanese UI. One line per check appended to RESULTS; each check finds
+its own way from the home screen, so one failing doesn't stop the next.
 """
 
 import functools
@@ -1351,11 +1353,21 @@ def export_backup(include_clipboard, name):
         return z.namelist()
 
 
-def import_backup(name):
+def pick_import(name):
+    """Opens the backup screen's Import and picks name in Downloads."""
     go(HOME["backup"])
     tap_text(IMPORT)
-    wait_for(f"{name} in the file picker", lambda: screen_has((name,)), 20)
+    try:
+        wait_for(f"{name} in the file picker", lambda: screen_has((name,)), 10)
+    except Fail:  # the picker opened elsewhere
+        tap_text(labels("显示根目录", "Show roots"))
+        tap_text(labels("下载", "Downloads"))
+        wait_for(f"{name} in Downloads", lambda: screen_has((name,)), 20)
     tap_text((name,))
+
+
+def import_backup(name):
+    pick_import(name)
     tap_text(IMPORT_BUTTON)
     wait_for("the import to finish", lambda: not screen_has(IMPORT_BUTTON), 120)
 
@@ -1901,6 +1913,120 @@ try:
     check("sync-delete-on-server", sync_delete_on_server)
 finally:
     stop_sync_server()
+
+
+# --- Personal data import (#11): made-up words only, never anyone's real ones ---
+
+# check: (the file's language, what to type, the word it adds, file name, contents)
+PERSONAL_DATA = {
+    "import-zh-word-list": (
+        "zh",
+        "chongyanyan",
+        "翀嬿琰",
+        "sebtype-11-words.dict.yaml",
+        '# made-up test words (#11)\n---\nname: sebtype_test_words\nversion: "1"\n...\n翀嬿琰\tchong yan yan\t1000\n',
+    ),
+    "import-zh-learned-words": (
+        "zh",
+        "yanchongyan",
+        "琰翀嬿",
+        "sebtype-11.userdb.txt",
+        (
+            "# Rime user dictionary\n#@/db_name\trime_ice\n#@/db_type\tuserdb\n#@/rime_version\t1.16.1\n"
+            "#@/tick\t5\n#@/user_id\tsebtype-test-11\nyan chong yan \t琰翀嬿\tc=20 d=20 t=5\n"
+        ),
+    ),
+    "import-ja-mozc": (
+        "ja",
+        "sebutaipu",
+        "瀬武太威符",
+        "sebtype-11-mozc.txt",
+        "せぶたいぷ\t瀬武太威符\t名詞\t\n",
+    ),
+    "import-ja-ms-ime": (
+        "ja",
+        "pigukii",
+        "皮具木居",
+        "sebtype-11-msime.txt",
+        "!Microsoft IME Dictionary Tool\nぴぐきい\t皮具木居\t名詞\n",
+    ),
+    "import-en-personal-dictionary": (
+        "en",
+        "zorblefl",
+        "zorbleflux",
+        "sebtype-11-en.json",
+        '[{"word":"zorbleflux","frequency":250,"locale":"en_US","appId":0,"shortcut":null}]',
+    ),
+}
+PROBES = {"zh": ("ni", "你"), "ja": ("nihongo", "日本語"), "en": ("hello", "hello")}
+
+
+def offered(language, code):
+    """The candidates typing code offers, the expanded list's too where there is one."""
+    if language == "en":
+        open_field()
+        type_keys(code)
+        return [
+            c.lower()
+            for c in wait_for(
+                f"suggestions for {code}", lambda: en_candidates(nodes()), 30
+            )
+        ]
+    got = candidates_for(code)
+    try:
+        got += [c for c in expanded_candidates() if c not in got]
+    except (Fail, ValueError):  # no expand button
+        pass
+    return got
+
+
+def import_personal_data(name):
+    def run():
+        language, code, word, file, text = PERSONAL_DATA[name]
+        to_language(*PROBES[language])
+        before = offered(language, code)
+        if word in before:
+            raise Fail(f"{code} offers {word} before the import: {before[:5]}")
+        local = os.path.join(logdir, file)
+        with open(local, "w", encoding="utf-8") as f:
+            f.write(text)
+        adb("push", local, f"/sdcard/Download/{file}")
+        try:
+            pick_import(file)
+            # The import screen offers the file's language: "<name> (<tag>)".
+            row = wait_for(
+                f"the import screen's {language} row",
+                lambda: next((n for n in nodes() if f"({language}" in n[0]), None),
+                30,
+            )
+            tap(row[1], row[2])
+            wait_for(
+                "the import to finish",
+                lambda: (
+                    "ImportResourceActivity"
+                    not in adb("shell", "dumpsys", "activity", "activities")
+                ),
+                300,
+                interval=2,
+            )
+        finally:
+            adb("shell", f"rm -f /sdcard/Download/{file}", check=False)
+        to_language(*PROBES[language])
+
+        # Chinese deploys with a new word list in the background, so its words can take a moment.
+        def with_word():
+            got = offered(language, code)
+            return got if word in got else None
+
+        after = wait_for(f"{word} for {code}", with_word, 120, interval=5)
+        return f"{code} -> {before[:3]} before, {after[:3]} after importing {file}"
+
+    return run
+
+
+for name in PERSONAL_DATA:
+    check(name, import_personal_data(name))
+
 # Last, in en-US: importing a backup reinstalls the Chinese data in the background.
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-screenshots", backup_screenshots)

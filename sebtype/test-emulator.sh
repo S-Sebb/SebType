@@ -6,8 +6,8 @@
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
 # mode chip (#38); with MAIN_APK (main's release APK), last an update from main that keeps a word
 # learned there; then every settings screen and SebType's own options (sebtype/test-settings.py, #41),
-# incognito (#31), sync with a local sync-server (#12), and clipboard history in a settings backup only
-# when ticked (#34).
+# incognito (#31), sync with a local sync-server (#12), importing personal data (#11), and clipboard
+# history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
 # install and the locale always, and test-chinese.py's earlier checks they depend on. A PR runs the checks
@@ -63,11 +63,12 @@ check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_
 assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
 check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty; do
   grep -qx "assets/layouts/$f.yaml" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets"
-# The Chinese data comes compiled (tables and 白霜's grammar), without the dictionary sources.
+# The Chinese data comes compiled (tables and 白霜's grammar), without the dictionary sources; its one
+# .dict.yaml is SebType's pack for the user's own word list (#11).
 rime_data=$out/rime-data.zip
 unzip -p "$apk" assets/rime/rime-data.zip > "$rime_data"
 check rime-data-bundled bash -c 'l=$(unzip -Z1 "$1") && grep -qx build/rime_ice.table.bin <<<"$l" &&
-  grep -qx zh-moqi.gram <<<"$l" && ! grep -q "\.dict\.yaml$" <<<"$l"' _ "$rime_data"
+  grep -qx zh-moqi.gram <<<"$l" && [[ $(grep "\.dict\.yaml$" <<<"$l") == sebtype.dict.yaml ]]' _ "$rime_data"
 rm -f "$rime_data"
 
 # The same APK with another bundled data version marker, re-signed: what an update that changes the

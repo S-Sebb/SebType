@@ -443,7 +443,9 @@ object SettingsExporter {
     fun triggerImportSettings(context: Context) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/octet-stream"
+            // Any file: besides backups this takes word lists and dictionaries (.txt, .yaml, .json; #11),
+            // which ImportResourceActivity tells apart by their contents.
+            type = "*/*"
         }
         findActivity(context)!!.startActivityForResult(intent, IMPORT_SETTINGS_REQUEST)
     }

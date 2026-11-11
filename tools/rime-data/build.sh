@@ -6,7 +6,8 @@
 #   tools/rime-data/build.sh [ASSETS_DIR]   # default build/sebtype-assets; writes ASSETS_DIR/rime/
 #
 # The zip is the Rime shared dir: rime-ice's files (minus the schemas other than full pinyin), 白霜's
-# zh-moqi.gram and build/ with the compiled tables. The dictionary sources aren't shipped: librime
+# zh-moqi.gram, SebType's sebtype.dict.yaml (the pack that reads the user's own word list, #11) and
+# build/ with the compiled tables. The dictionary sources aren't shipped: librime
 # uses the prebuilt tables as they are when a table's source is missing, so it neither checksums nor
 # rebuilds them. Both projects are GPL-3.0; the zip carries the licence and SOURCE.txt (pinned
 # sources and what was changed). The same zip suits the PCs (Linux and Windows run librime 1.16.1 too).
@@ -38,7 +39,7 @@ OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceef
 # Must equal the librime that rime-android builds, so the phone takes the compiled files as they are.
 . rime-android/versions.sh
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=5
+BUNDLE_REVISION=6
 
 out=${1:-build/sebtype-assets}/rime
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
@@ -114,7 +115,8 @@ s = open(p, encoding="utf-8").read()
 # 白霜's grammar with the penalty the #40 study measured; contextual suggestions stay off, as in 白霜.
 # Plain keys, not a root __patch: that would turn off librime's automatic <schema>.custom.yaml patch.
 assert "\ngrammar:" not in s and "contextual_suggestions" not in s, p
-s, n = re.subn(r"^translator:\n", "translator:\n  contextual_suggestions: false  # SebType: as in 白霜\n",
+s, n = re.subn(r"^translator:\n", "translator:\n  contextual_suggestions: false  # SebType: as in 白霜\n"
+               "  packs: [sebtype]  # SebType: the user's own word list (sebtype.dict.yaml, #11)\n",
                s, count=1, flags=re.M)
 assert n == 1, f"no translator in {p}"
 s += ("\n# SebType: 白霜 (rime-frost)'s zh-moqi grammar\ngrammar:\n  language: zh-moqi\n"
@@ -175,6 +177,22 @@ assert n == 4, f"{n} of rime-ice's 4 Ctrl+Shift switch keys found in default.yam
 open(p, "w", encoding="utf-8").write(s)
 EOF
 
+  # The user's own word list (#11), the same file on the phone and both PCs: rime_ice's translator
+  # reads it as a pack, a small extra table compiled against the prebuilt dictionary's syllables, so
+  # adding one compiles only that table. Without the list Rime logs that it is missing and goes on.
+  cat > "$s/sebtype.dict.yaml" <<'EOF'
+# SebType's dictionary pack (#11): imports the user's word list, sebtype_words.dict.yaml in Rime's
+# user folder (any Rime word list, renamed). An entry without a weight comes after the dictionary's
+# words for the same code; a large weight (third column) puts it first.
+---
+name: sebtype
+version: "1"
+sort: by_weight
+import_tables:
+  - sebtype_words
+...
+EOF
+
   # Compile, as the keyboard's own first deploy would; then the tables go into the shared dir's build/.
   "$work/deploy" "$s" "$work/user" rime_ice ranh > "$work/deploy.out" 2> "$work/deploy.log" ||
     { tail -5 "$work/deploy.log" >&2; exit 1; }
@@ -192,6 +210,14 @@ EOF
   grep -qx 'first=然后' "$work/phone.out" || { echo "rime-data: shipped data fails ranh: $(cat "$work/phone.out")" >&2; exit 1; }
   rebuilt=$(cd "$work/phone/build" && ls | grep -v '\.yaml$' || true) # compiled tables, prisms or reverse dbs
   [[ -z $rebuilt ]] || { echo "rime-data: a deploy on the shipped data rebuilt: $rebuilt" >&2; exit 1; }
+  # A user's word list (made up) in the user folder: its word comes first, and only its pack is compiled.
+  mkdir "$work/words"
+  printf '%s\n' '# made-up test word' '---' 'name: any_name' 'version: "1"' '...' '翀嬿琰	chong yan yan	1000' \
+    > "$work/words/sebtype_words.dict.yaml"
+  "$work/deploy" "$s" "$work/words" rime_ice chongyanyan > "$work/words.out" 2> "$work/words.log"
+  grep -qx 'first=翀嬿琰' "$work/words.out" || { echo "rime-data: the user's word list isn't offered: chongyanyan -> $(cat "$work/words.out")" >&2; exit 1; }
+  rebuilt=$(cd "$work/words/build" && ls | grep -v '\.yaml$' || true)
+  [[ $rebuilt == sebtype.table.bin ]] || { echo "rime-data: a word list compiled more than its pack: $rebuilt" >&2; exit 1; }
   # The 简/繁 switch on: traditional output from the shipped OpenCC data.
   "$work/deploy" "$s" "$work/hant" rime_ice houlai traditionalization > "$work/hant.out" 2> "$work/hant.log"
   grep -qx 'first=後來' "$work/hant.out" || { echo "rime-data: 繁 doesn't convert: houlai -> $(cat "$work/hant.out")" >&2; exit 1; }
@@ -222,7 +248,9 @@ only the traditionalization switch and drops the Control+Shift+3 and 4 switch ke
 switches but traditionalization have no states, so menus don't show them;
 weasel.yaml, squirrel.yaml, t9 and the double-pinyin schemas are left out. rime_ice.schema.yaml gets SebType's
 typo correction: a second translator, corr, with librime's correction on, ranked by
-lua/sebtype_typo.lua (SebType's, GPL-3.0). The dictionary sources are compiled
+lua/sebtype_typo.lua (SebType's, GPL-3.0). rime_ice's translator also reads the pack sebtype
+(sebtype.dict.yaml, SebType's), which imports the user's own word list, sebtype_words.dict.yaml in
+Rime's user folder, when there is one. The dictionary sources are compiled
 into build/ with librime $LIBRIME_VERSION and not included here: they are at the source links above.
 
 opencc/s2t.json, STPhrases.ocd2 and STCharacters.ocd2 are OpenCC $OPENCC_VERSION's (Apache License 2.0,

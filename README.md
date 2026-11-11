@@ -34,6 +34,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 - Device tests and the emulator: [docs/testing.md](docs/testing.md)
 - Sync 中文's learned words with your own server: [sync-server/README.md](sync-server/README.md)
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
+- Bring in your own words (Rime word lists and learned words, Japanese and English dictionaries): [docs/import.md](docs/import.md)
 - Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
 
 **Chinese** is [rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)'s schemas, Lua and settings with the

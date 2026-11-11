@@ -152,7 +152,7 @@ object RimeIceSetup {
     suspend fun ensure(context: Context, config: Configuration): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             val patch = config.patch()
-            val key = "${RimeIceBundle.bundledVersion(context)}\n${config.schema}\n$patch"
+            val key = "${RimeIceBundle.bundledVersion(context)}\n${config.schema}\n$patch\n${ChineseWordList.stamp(context)}"
             if(readyFor == key) return@withLock true
             readyFor = null
 
@@ -182,6 +182,7 @@ object RimeIceSetup {
                     if(patch.isEmpty()) custom.delete()
                     else if(!custom.isFile || custom.readText() != patch) custom.writeText(patch)
                     deployed.delete()
+                    ChineseWordList.dropStaleTable(context)
                     rime.deploy()
                 }
 
@@ -203,6 +204,33 @@ object RimeIceSetup {
             mutableState.value = if(ok) State.Ready else State.Failed
             ok
         }
+    }
+
+    /**
+     * Rime's own sync (#11): merges the learned words of every `sync/<id>/rime_ice.userdb.txt` in the
+     * user dir into this device's, then writes this device's to `sync/<its id>/`. [prepare] runs first,
+     * with Rime set up. Returns whether the merge finished.
+     */
+    suspend fun syncUserData(context: Context, prepare: () -> Unit): Boolean {
+        if(!ensure(context, defaultConfiguration(context))) return false
+        return withContext(Dispatchers.IO) {
+            mutex.withLock {
+                prepare()
+                val rime = rime(context)
+                val t0 = SystemClock.elapsedRealtime()
+                var ok = rime.syncUserData()
+                // Rime merges in the background and takes sessions again once it is done.
+                if(ok) {
+                    ok = false
+                    while(SystemClock.elapsedRealtime() - t0 < DEPLOY_TIMEOUT_MS) {
+                        if(rime.selectSchema(RimeIceBundle.SCHEMA)) { ok = true; break }
+                        delay(300L)
+                    }
+                }
+                Log.w(TAG, "Synced user data in ${SystemClock.elapsedRealtime() - t0} ms, ${if(ok) "done" else "failed"}")
+                ok
+            }
+        }.also { stopWhenIdle(context) }
     }
 
     // SebType (#56): Rime (its tables and engine) stops ENGINE_IDLE_MS after the Chinese keyboard was

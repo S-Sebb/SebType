@@ -6,6 +6,7 @@ import icu.astronot233.rime.Rime
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.getSetting
 import java.io.File
+import java.io.InputStream
 
 /**
  * SebType's Chinese options and personal data (#41): two of rime-ice's switches, set at run time so no
@@ -90,5 +91,49 @@ object ChineseLearnedWords {
                 .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") }
                 .forEach { it.deleteRecursively() }
         }
+    }
+
+    /**
+     * Merges learned words another Rime exported ([snapshot]: its sync snapshot, `rime_ice.userdb.txt`)
+     * into Rime's own, with Rime's sync (#11). The snapshot is removed after, so it is merged once.
+     */
+    suspend fun merge(context: Context, snapshot: InputStream): Boolean {
+        val dir = File(ChineseIME.getUser(context), "sync/sebtype-import")
+        return try {
+            RimeIceSetup.syncUserData(context) {
+                dir.mkdirs()
+                File(dir, "rime_ice.userdb.txt").outputStream().use { snapshot.copyTo(it) }
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+}
+
+/**
+ * The user's own Rime word list (#11), the same file on the phone and the PCs: `sebtype_words.dict.yaml`
+ * in the user dir, which the bundled pack `sebtype` imports (tools/rime-data/build.sh). Rime compiles
+ * only that pack when it deploys.
+ */
+object ChineseWordList {
+    private const val FILE = "sebtype_words.dict.yaml"
+    private const val TABLE = "build/sebtype.table.bin"
+
+    private fun file(context: Context) = File(ChineseIME.getUser(context), FILE)
+
+    /** What the deploy depends on: a changed list makes [RimeIceSetup.ensure] deploy again. */
+    fun stamp(context: Context) = file(context).let { if(it.isFile) "${it.length()} ${it.lastModified()}" else "" }
+
+    /** Without a list Rime would keep using the table compiled from the last one. */
+    fun dropStaleTable(context: Context) {
+        if(!file(context).isFile) File(ChineseIME.getUser(context), TABLE).delete()
+    }
+
+    /** Replaces the list with [list]; Chinese deploys with it in the background. */
+    suspend fun import(context: Context, list: InputStream) {
+        RimeIceSetup.whileStopped(context) {
+            file(context).outputStream().use { list.copyTo(it) }
+        }
+        RimeIceSetup.prepareInBackground(context)
     }
 }
