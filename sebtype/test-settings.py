@@ -1040,11 +1040,43 @@ def incognito_clipboard():
     private = f"sebclip-private-{time.time_ns()}"
     if clipboard_capture(private, kind="private"):
         raise Fail("a copy made in a private field was kept")
+    # #139: the keyboard was last up in a normal field; a private field then gets focus with the
+    # keyboard down, as in a private browser tab, and a copy made there is still not kept.
+    open_field()
+    hidden = f"sebclip-hidden-{time.time_ns()}"
+    adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-W",
+        "-f",
+        "0x10008000",
+        "-n",
+        FIELD,
+        "--es",
+        "kind",
+        "private",
+        "--es",
+        "clip",
+        hidden,
+        "--ez",
+        "hidden",
+        "true",
+    )
+    time.sleep(4)
+    if keys(nodes()):
+        raise Fail("the keyboard showed in the field meant to keep it down")
+    if clipboard_has(hidden):
+        raise Fail(
+            "a copy made in a private field the keyboard never showed in was kept"
+        )
     set_incognito(True)
     copied = f"sebclip-incog-{time.time_ns()}"
     if clipboard_capture(copied):
         raise Fail("a copy made while incognito was kept")
-    return "copies from a private field and while incognito not kept; a normal one is"
+    return "copies from a private field (keyboard up or never shown there) and while incognito not kept; a normal one is"
 
 
 def incognito_after_restart():
