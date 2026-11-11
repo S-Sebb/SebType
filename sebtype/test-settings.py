@@ -32,6 +32,9 @@ FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 PREPARING = ("正在准备中文", "Preparing Chinese")
 NOT_CANDIDATES = (*PREPARING, "中文输入启动失败", "Chinese input failed")
 log_path = os.path.join(logdir, "test-settings.log")
+# Seconds for the keyboard to come up. It restarts often here, and while the other emulator runs a
+# suite (#103) a restart has taken over 30 s; how fast it comes up is perf.sh's to measure.
+KEYBOARD_WAIT = 60
 
 
 def adb(*args, timeout=120, check=True):
@@ -173,7 +176,7 @@ def expanded_candidates():
 
 
 def type_keys(text):
-    k = wait_for("the keyboard", lambda: keys(nodes()), 30)
+    k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
     for ch in text:
         tap(k[ch][0], k[ch][1])
     time.sleep(1.5)
@@ -184,7 +187,7 @@ def open_field():
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "ime", "set", IME)
     adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
-    wait_for("the keyboard", lambda: keys(nodes()), 30)
+    wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
 
 
 def candidates_for(text, expand=False):
