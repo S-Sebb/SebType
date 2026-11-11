@@ -66,7 +66,7 @@ ever on, the account's words are saved to the server first.
 |---|---|---|
 | SebType's Weasel | Machine: installs `sebtype-weasel-<version>-installer.exe` silently when it isn't already the installed one. It replaces any other Weasel | Upstream Weasel 0.17.4 with SebType's patch and icons, see below |
 | SebType's Mozc | Machine: installs `SebType-Mozc-<version>.msi` when it isn't already the installed one, and enables its 日本語 profile by default for every user (`HKLM\SOFTWARE\Microsoft\CTF\TIP\<Mozc>\LanguageProfile\0x00000411\<profile>`, `Enable=1`) | See Japanese below. Mozc registers its profile without enabling it by default, so Windows turned it off for the user when the language list changed later (#65) |
-| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`tools/rime-data/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. Weasel's librime has librime-lua built in |
+| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`tools/rime-data/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. SebType's librime has librime-lua built in |
 | Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+\`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
 | Typo correction | `sebtype_typo/keyboard: pc` in `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
@@ -83,10 +83,13 @@ Everything Rime learns stays in `%APPDATA%\Rime`, so sync (#12) can add a `sync_
 
 ### SebType's Weasel
 
-`weasel/build.ps1` builds upstream Weasel 0.17.4 with `weasel/sebtype.patch` and librime 1.16.1, the version
-SebType's Android build uses. `.github/workflows/weasel.yml` runs it on GitHub's Windows runner whenever
-something under `pc/windows/weasel/` or `pc/icons/` changes; the installer is that run's artifact
-`sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
+`weasel/build.ps1` builds upstream Weasel 0.17.4 with `weasel/sebtype.patch` and SebType's librime: 1.16.1,
+the version SebType's Android build uses, built from source with Linux's `../linux/rime/layout-model.patch`
+and the plugins (librime-lua, librime-octagram, librime-predict) librime's own 1.16.1 release merges in,
+at the same commits. With the patch, Chinese typo correction also fixes a slip onto the key above or
+below, so `xkaoshi` gives 小时 first (#101, #133). `.github/workflows/weasel.yml` runs it on GitHub's
+Windows runner whenever something under `pc/windows/weasel/`, `pc/icons/` or the patch changes; the
+installer is that run's artifact `sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
 
 The patch is about 90 lines:
 
