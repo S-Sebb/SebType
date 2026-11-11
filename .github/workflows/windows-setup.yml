@@ -23,6 +23,7 @@ on:
       - .github/workflows/windows-setup.yml
       - .github/workflows/weasel.yml
       - .github/workflows/configurator.yml
+      - .github/apt-install.sh
   push:
     branches: [main]
     paths: *paths
