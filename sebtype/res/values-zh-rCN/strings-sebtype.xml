@@ -20,6 +20,8 @@
     <string name="sebtype_settings_globe_order">地球键顺序</string>
     <string name="sebtype_settings_globe_order_tip">地球键按此顺序在已开启的语言之间切换。拖动 ≡ 可调整顺序。</string>
     <string name="sebtype_settings_drag">拖动以排序</string>
+    <string name="sebtype_settings_globe_zh">中文</string>
+    <string name="sebtype_settings_globe_ja">日本語</string>
     <string name="sebtype_settings_zh_engine">雾凇拼音</string>
     <string name="sebtype_settings_ja_engine">Mozc 罗马字</string>
     <string name="sebtype_settings_autocorrect">自动纠正</string>
