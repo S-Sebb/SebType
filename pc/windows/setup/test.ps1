@@ -29,11 +29,15 @@ nobody's own input settings change, then removes the user and its profile:
    words of this PC's (Rime, Mozc) and of another device (test-sync.py); the "SebType sync" task run
    once; then a silent uninstall, which must sync first and remove the task, the login and sync's files.
    The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
+-Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
+   menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
+   the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
+   (-SoakMinutes, default 12; 0 for none); a silent uninstall. -CompareImes picks the input methods. Numbers in out\compare-*.txt.
 
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
 #>
-param([string]$Driver, [string]$Typing, [switch]$PerfRun, [string]$Only)
+param([string]$Driver, [string]$Typing, [switch]$PerfRun, [string]$Only, [int]$SoakMinutes = 12, [string]$CompareImes = 'weasel,weasel-inline,mspinyin,mozc,msime')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 $out = "$root\out"
@@ -83,6 +87,113 @@ if ($Typing) {
       Start-Sleep -Milliseconds 500
     }
     function TypeText($s) { Keys ($s.ToCharArray() | ForEach-Object { if ($_ -eq ' ') { 'space' } else { "$_" } }) }
+    # -Only compare (#54): SebType's Chinese and Japanese next to Microsoft's, typed the same way into
+    # the test's own TSF text field, one fresh process per input method so each one's in-process share of
+    # memory is its own. Per key: from the key entering the session (a low-level hook) to the input
+    # method's first change of the field's text (its composition). Words end with Escape (Mozc and
+    # Microsoft Japanese: Space converts first), so nothing is learned. compare-<ime>.txt: key=value lines.
+    if ($Typing -like 'compare-*') {
+      $ime = $Typing -replace '^compare-'
+      $IMES = @{
+        weasel = 0x804, $WeaselClsid, '{3D02CAB6-2B8E-4781-BA20-1C9267529467}'
+        'weasel-inline' = 0x804, $WeaselClsid, '{3D02CAB6-2B8E-4781-BA20-1C9267529467}'
+        mspinyin = 0x804, '{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}', '{FA550B04-5AD7-411F-A5AC-CA038EC515D7}'
+        mozc = 0x411, $MozcClsid, '{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
+        msime = 0x411, '{03B5835F-F03C-411B-9CE2-AA23E1171E36}', '{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}'
+      }
+      $pinyin = -split 'nihao ranhou ranh lh zhongguo women xiexie zaijian shurufa dianhua kaihui wozhidaole meiguanxi jintiantianqizenmeyang'
+      $romaji = -split 'nihongo konnichiha arigatou toukyou shinkansen watashihagakuseidesu kyouhaiitenkidesune'
+      $f = "$out\compare-$ime.txt"; Set-Content -Encoding utf8 $f ''
+      function Out($k, $v) { Add-Content -Encoding utf8 $f "$k=$v" }
+      $session = (Get-Process -Id $PID).SessionId
+      function Mem($tag) {  # this process (the IME's in-process part) and the input methods' own processes
+        $me = Get-Process -Id $PID
+        Out "${tag}_host_private_kb" ([int]($me.PrivateMemorySize64 / 1KB)); Out "${tag}_host_ws_kb" ([int]($me.WorkingSet64 / 1KB))
+        Get-Process | Where-Object { $_.SessionId -eq $session -and $_.Name -match '^(WeaselServer|mozc_server|mozc_renderer|mozc_broker|ChsIME|IMEJP.*|TextInputHost|InputApp|ctfmon)$' } |
+          ForEach-Object { Out "${tag}_proc" "$($_.Name) pid $($_.Id) ws_kb $([int]($_.WorkingSet64 / 1KB)) private_kb $([int]($_.PrivateMemorySize64 / 1KB))" }
+      }
+      function Use($name) {
+        $l, $c, $p = $IMES[$name]
+        $tsf::Activate($l, [Guid]$c, [Guid]$p); $tsf::Open(); $tsf::Settle(500)
+        $want = '{0:x4} {1}' -f $l, $c.ToUpperInvariant()
+        if ($tsf::Active() -ne $want) { throw "$name isn't active: $($tsf::Active())" }
+      }
+      function Ms([string]$s) { if ($s) { @($s -split ',' | ForEach-Object { [double]::Parse($_, [Globalization.CultureInfo]::InvariantCulture) }) } else { @() } }
+      # One word: its keys and the ones that end it; returns each key's ms until the field first changed
+      # after it, -1 when it didn't before the next key.
+      function Word($w, $tail) {
+        $tsf::Clear(); $null = $tsf::TakeTimes()
+        $sent = @($w.ToCharArray() | ForEach-Object { "$_" }) + $tail
+        Keys $sent; $tsf::Settle(200)
+        $k, $e = $tsf::TakeTimes() -split '\|'
+        $k = Ms $k; $e = Ms $e
+        if ($k.Count -ne $sent.Count) { throw "the hook saw $($k.Count) keys for $($sent.Count) sent ($w)" }
+        for ($i = 0; $i -lt $k.Count; $i++) {
+          $next = if ($i + 1 -lt $k.Count) { $k[$i + 1] } else { $k[$i] + 1000 }
+          $first = @($e | Where-Object { $_ -ge $k[$i] -and $_ -lt $next } | Select-Object -First 1)
+          [pscustomobject]@{ key = $sent[$i]; ms = $(if ($first) { $first[0] - $k[$i] } else { -1 }) }
+        }
+      }
+      function Pct($v, $q) { $s = @($v | Sort-Object); if ($s) { '{0:F1}' -f $s[[math]::Min($s.Count - 1, [math]::Round($q * ($s.Count - 1)))] } }
+      $zh = $ime -in 'weasel', 'weasel-inline', 'mspinyin'
+      # Weasel shows what is typed in its own window, not in the field, so only the first key of a word
+      # changes the field. weasel-inline puts it in the field (inline preedit, for this test's host
+      # alone), as Microsoft Pinyin does, so its keys time like Microsoft's.
+      if ($ime -eq 'weasel-inline') {
+        [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]]@('patch:', '  app_options/powershell.exe: {inline_preedit: true}'))
+        $p = [Diagnostics.Process]::Start((Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe), '/deploy')
+        if (-not $p.WaitForExit(120000)) { throw "Weasel's redeploy took over 2 minutes" }
+      }
+      $words = if ($zh) { $pinyin } else { $romaji }
+      $tail = if ($zh) { @('Escape') } else { @('space', 'Escape', 'Escape') }
+      $tsf::Start(); $tsf::StartTiming()
+      try {
+        if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
+        if ($ime -eq 'soak') {
+          # 10+ minutes of mixed SebType typing, words committed, with memory every 30 s and any server restart.
+          $minutes = [double](Get-Content "$out\soak-minutes.txt"); $end = (Get-Date).AddMinutes($minutes); $start = Get-Date
+          $pids = @{}; $restarts = @(); $n = 0; $next = Get-Date
+          while ((Get-Date) -lt $end) {
+            $isZh = $n % 2 -eq 0
+            Use $(if ($isZh) { 'weasel' } else { 'mozc' })
+            if ($n % 20 -eq 0) { $tsf::Clear() }
+            $w = if ($isZh) { $pinyin[$n % $pinyin.Count] } else { $romaji[$n % $romaji.Count] }
+            Keys (@($w.ToCharArray() | ForEach-Object { "$_" }) + $(if ($isZh) { 'space' } else { 'space', 'Return' }))
+            $n++
+            foreach ($p in Get-Process WeaselServer, mozc_server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ $session) {
+              if ($pids[$p.Name] -and $pids[$p.Name] -ne $p.Id) { $restarts += "$($p.Name) $($pids[$p.Name]) -> $($p.Id) at $([int]((Get-Date) - $start).TotalSeconds) s" }
+              $pids[$p.Name] = $p.Id
+            }
+            if ((Get-Date) -ge $next) { Mem "t$([int]((Get-Date) - $start).TotalSeconds)s"; $next = (Get-Date).AddSeconds(30) }
+          }
+          Out words $n; Out restarts $restarts.Count; $restarts | ForEach-Object { Out restart $_ }
+          Out text_chars $tsf::Text().Length; Out text_sample ($tsf::Text().Substring(0, [math]::Min(40, $tsf::Text().Length)))
+          Result $Typing PASS "$n words in $minutes min, $($restarts.Count) server restarts"
+          return
+        }
+        Mem base
+        Use $ime
+        $first = @(Word $words[0] $tail)
+        Out first_key_ms ('{0:F1}' -f $first[0].ms)
+        $all = @()
+        foreach ($r in 1..3) { foreach ($w in $words) { $all += Word $w $tail } }
+        $letters = @($all | Where-Object { $_.key -match '^[a-z]$' })
+        $shown = @($letters | Where-Object { $_.ms -ge 0 } | ForEach-Object { $_.ms })
+        Out keys $letters.Count; Out keys_changed_text $shown.Count
+        Out key_p50_ms (Pct $shown 0.5); Out key_p95_ms (Pct $shown 0.95); Out key_max_ms (Pct $shown 1)
+        if (-not $zh) {
+          $conv = @($all | Where-Object { $_.key -eq 'space' -and $_.ms -ge 0 } | ForEach-Object { $_.ms })
+          Out convert_p50_ms (Pct $conv 0.5); Out convert_p95_ms (Pct $conv 0.95); Out convert_max_ms (Pct $conv 1)
+        }
+        Mem typed
+        # It was really this input method: one word committed gives Chinese or Japanese.
+        $tsf::Clear(); Keys (@($words[0].ToCharArray() | ForEach-Object { "$_" }) + $(if ($zh) { 'space' } else { 'space', 'Return' })); $tsf::Settle(500)
+        $text = $tsf::Text().Trim(); Out committed $text
+        if ($text -notmatch '[぀-ヿ一-鿿]') { throw "$ime committed '$text', not Chinese or Japanese" }
+        Result $Typing PASS "$($letters.Count) keys, p95 $(Pct $shown 0.95) ms; '$($words[0])' gave $text"
+      } finally { $tsf::Stop() }
+      return
+    }
     # Chinese in the test's own TSF text field (TsfHost.cs, started), after Weasel's first key there.
     function Weasel-Field {
       if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
@@ -365,10 +476,10 @@ namespace SebTypeSetupTest {
   }
   # The uninstaller finishes in its copy, %TEMP%\is-*-uninstall.tmp\_unins.tmp.
   function Uninstalled { -not (Test-Path $AppKey) -and -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\*-uninstall.tmp\*" }) }
-  function Typing($phase) {
+  function Typing($phase, [int]$seconds = 300) {
     Set-Content "$out\typing-phase.txt" $phase
     Start-ScheduledTask SebType-setup-typing
-    if (-not (Wait-Until 300 { Test-Path "$out\typing-$phase-done" })) { Result "typing-$phase" FAIL 'the typing checks took over 5 minutes' }
+    if (-not (Wait-Until $seconds { Test-Path "$out\typing-$phase-done" })) { Result "typing-$phase" FAIL "the typing checks took over $seconds s" }
     Get-Content -Encoding utf8 "$out\typing-$phase-results.txt" | Where-Object { $_ } | ForEach-Object { Add-Content -Encoding utf8 $results $_; Write-Host $_ }
   }
 
@@ -456,6 +567,36 @@ namespace SebTypeSetupTest {
   $learned = "$env:APPDATA\Rime\rime_ice.userdb\SEBTYPE-TEST", "$env:USERPROFILE\AppData\LocalLow\Mozc\SEBTYPE-TEST"
 
   try {
+    if ($Only -eq 'compare') {
+      # SebType next to Microsoft Pinyin and Microsoft Japanese IME (#54): a silent install of all three
+      # languages, what it left in the Start menu (#53 D10), each input method typed in a process of its
+      # own, 10+ minutes of mixed SebType typing, a silent uninstall.
+      Check 'compare-install' { Silent compare-install @(); 'silent, all languages' }
+      Check 'compare-start-menu' {
+        $menus = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+        $items = @(Get-ChildItem $menus -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName -replace '^.*\\Programs\\' } | Where-Object { $_ -match 'SebType|Weasel|小狼毫|Rime|Mozc' })
+        Set-Content -Encoding utf8 "$out\compare-start-menu.txt" $items
+        if ($items -match '小狼毫|Weasel|Rime') { throw "Weasel's own Start menu entries are installed: $($items -join ', ')" }
+        "$($items -join ', ')"
+      }
+      # Microsoft's input methods back next to SebType's, in each language's list.
+      $ll = New-WinUserLanguageList en-US
+      $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage zh-Hans-CN)); $ll[1].InputMethodTips.Clear(); $ll[1].InputMethodTips.Add($WeaselTip); $ll[1].InputMethodTips.Add('0804:{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}{FA550B04-5AD7-411F-A5AC-CA038EC515D7}')
+      $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage ja)); $ll[2].InputMethodTips.Clear(); $ll[2].InputMethodTips.Add($MozcTip); $ll[2].InputMethodTips.Add('0411:{03B5835F-F03C-411B-9CE2-AA23E1171E36}{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}')
+      Set-WinUserLanguageList $ll -Force -WarningAction SilentlyContinue
+      Result compare-languages INFO (Languages)
+      foreach ($ime in $CompareImes -split ',') { Typing "compare-$ime" }
+      if ($SoakMinutes) {
+        Set-Content "$out\soak-minutes.txt" $SoakMinutes
+        Typing compare-soak ($SoakMinutes * 60 + 300)
+      }
+      Check 'compare-uninstall' {
+        Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+        if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
+        'silent'
+      }
+      return
+    }
     if ($Only -eq 'picnic') {
       # Only the Picnic window (#162): a silent install, its pictures, a silent uninstall.
       Check 'picnic-install' { Silent picnic-install @(); 'silent' }
@@ -740,7 +881,7 @@ try {
   Add-LocalGroupMember -SID S-1-5-32-555 -Member $user  # Remote Desktop Users
   & icacls.exe $root /grant "${user}:(OI)(CI)M" | Out-Null
   $run = { param($mode, $level) New-ScheduledTaskAction -Execute powershell.exe -WorkingDirectory $root `
-      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$root\test.ps1`" -$mode $mode$(if ($Only) { " -Only $Only" })" }
+      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$root\test.ps1`" -$mode $mode$(if ($Only) { " -Only $Only -SoakMinutes $SoakMinutes -CompareImes $CompareImes" })" }
   Register-ScheduledTask SebType-setup-driver -Action (& $run Driver) -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $user) `
     -Principal (New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest) -Force | Out-Null
   # The typing runs as apps do, not elevated; the driver starts it, its phase in out\typing-phase.txt.

@@ -142,8 +142,17 @@ Take its lock while you use it (`devq -m <minutes> /tmp/agent-locks/devices/emul
 ## Measuring size, memory and speed
 
 Two scripts measure SebType the same way every time (#45). They run in the final performance run of a
-batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional
-until they are compared with other IMEs.
+batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional.
+Each final run's report is in `docs/perf/`; the first, next to other IMEs, is
+[2026-11-12](perf/2026-11-12.md).
+
+Next to other IMEs, the same way (#54), with a 12-minute mixed-typing run (`SOAK_MIN`) for leaks and crashes:
+
+- Android: `android/perf/perf.sh --compare` (another installed keyboard: `IME_PKG`, `IME_ID`, `KEY_ROWS`,
+  `KEY_SPACE`) and `--soak` (SebType as installed); `--compare-device` and `--soak-device` on a phone.
+- Linux: `pc/linux/compare.sh` (stock fcitx5-rime and fcitx5-mozc, each in a private Fcitx5).
+- Windows: `ONLY=compare pc/windows/setup/test-tcsbackend.sh` (Microsoft Pinyin and Japanese IME;
+  `COMPARE_IMES` narrows it).
 
 ### Android: `android/perf/perf.sh`
 

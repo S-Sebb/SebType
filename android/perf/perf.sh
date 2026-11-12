@@ -3,6 +3,10 @@
 #   android/perf/perf.sh          builds the release APK, then measures on a free emulator (android/emulator.sh)
 # APK=<path> skips the build; ANDROID_SERIAL=<serial> measures on that device instead (the only way to
 # pick a phone); RUNS (default 3) repeats each typing set.
+#   android/perf/perf.sh --compare   another installed keyboard (IME_PKG, IME_ID, KEY_ROWS) the same way,
+#                                    English only: idle memory, typing, fast typing, opens (#54)
+#   android/perf/perf.sh --soak      SOAK_MIN (default 12) minutes of mixed typing in SebType as installed:
+#                                    memory over time and keyboard restarts
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in results.txt, the table in perf.md, traces and logs in run/, all in
 # /tmp/sebtype/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
@@ -20,8 +24,12 @@ export runs=${RUNS:-3}
 # Idle memory is read this long after the keyboard opens: a new process's start-up garbage (about
 # 25 MB of Java heap on the phone) is collected within half a minute.
 export settle=${SETTLE_S:-30}
-export pkg=dev.sebb.sebtype field=dev.sebb.sebtype.perffield
-export ime_id=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
+# IME_PKG and IME_ID measure another keyboard with --compare (#54); KEY_ROWS are its letter rows' and
+# bottom row's centres in dp below the keyboard window's top, KEY_SPACE the space bar's centre in tenths of
+# a key column.
+export pkg=${IME_PKG:-dev.sebb.sebtype} field=dev.sebb.sebtype.perffield
+export ime_id=${IME_ID:-dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME}
+export key_rows=${KEY_ROWS:-69 130 190 249} key_space=${KEY_SPACE:-55}
 export field_act=dev.sebb.sebtype.perffield/.PerfField
 export tp=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/trace_processor_shell-v59.1
 export keys_sql=$PWD/android/perf/keys.sql opens_sql=$PWD/android/perf/opens.sql
@@ -46,7 +54,9 @@ pss_kb() { # [label]: total PSS; the full breakdown stays in run/meminfo-<label>
   sh dumpsys meminfo "$pkg" > "$f"; awk '/TOTAL PSS:/ {print $3; exit}' "$f"
 }
 open_field() {
-  local o; o=$(sh am start -W -S -n "$field_act" "$@") || { echo "test field didn't open: $(tail -2 <<<"$o" | tr '\n' ' ')" >&2; return 1; }
+  # FIELD_ARGS: --compare types into a private field (no personalized learning), so a keyboard the
+  # device's owner uses learns nothing from the test.
+  local o; o=$(sh am start -W -S -n "$field_act" ${FIELD_ARGS:-} "$@") || { echo "test field didn't open: $(tail -2 <<<"$o" | tr '\n' ' ')" >&2; return 1; }
   sleep 3
 }
 geometry() { # keyboard grid from the screen width and the keyboard window's top, in px
@@ -58,15 +68,16 @@ geometry() { # keyboard grid from the screen width and the keyboard window's top
 key_xy() { # key -> "x y". SebType's uniform layout has 10 key columns in every language; the row
   # centres are 69, 130, 190 and 249 dp below the keyboard's top (the action bar comes first) at
   # FUTO's default keyboard height. Positions are in tenths of a key column.
-  local k=$1 rows=(qwertyuiop asdfghjkl zxcvbnm) first=(5 10 20) r pre col y
+  local k=$1 rows=(qwertyuiop asdfghjkl zxcvbnm) first=(5 10 20) r pre col y ys
+  read -ra ys <<<"$key_rows"
   case $k in
-    ' ') col=55 ;; G) col=30 ;; E) col=92 ;; # space, globe, enter
+    ' ') col=$key_space ;; G) col=30 ;; E) col=92 ;; # space, globe, enter
   esac
-  if [[ -n ${col:-} ]]; then y=249
+  if [[ -n ${col:-} ]]; then y=${ys[3]}
   else
     for r in 0 1 2; do
       pre=${rows[r]%%"$k"*}
-      [[ $pre != "${rows[r]}" ]] && { col=$(( first[r] + 10 * ${#pre} )); y=$(( 69 + 61 * r - (r > 1) )); break; }
+      [[ $pre != "${rows[r]}" ]] && { col=$(( first[r] + 10 * ${#pre} )); y=${ys[r]}; break; }
     done
   fi
   [[ -n ${col:-} ]] || { echo "unknown key $k" >&2; return 1; }
@@ -111,7 +122,10 @@ trace_stop() { # name -> $work/name.pftrace
   local i; for i in {1..20}; do sh kill -0 "$tracer" 2>/dev/null || break; sleep 0.5; done
   "$adb" pull "/data/misc/perfetto-traces/sebtype-$1.pftrace" "$work/$1.pftrace" > /dev/null
 }
-query() { "$tp" -q "$2" "$work/$1.pftrace" 2> /dev/null | grep -v '^Query executed' ; } # trace sql-file
+query() { # trace sql-file; the SQL names SebType's process, swapped for the keyboard measured
+  sed -e "s/'dev\.sebb\.sebtype'/'$pkg'/g" -e "s/'ev\.sebb\.sebtype'/'${pkg: -15}'/g" "$2" > "$work/query.sql"
+  "$tp" -q "$work/query.sql" "$work/$1.pftrace" 2> /dev/null | grep -v '^Query executed'
+}
 opens() { # trace kind: keyboard open times (opens.sql), summarised by opens.py
   query "$1" "$opens_sql" > "$work/$1.opens.csv"
   python3 -I "$PWD/android/perf/opens.py" "$2" "$work/$1.opens.csv"
@@ -316,6 +330,73 @@ phase_sizes() { # needs a root shell (emulator): app code, internal data, extern
   echo "external_mb=${ext:-0}" # none since #32
 }
 
+# ---- Another keyboard next to SebType (--compare, #54): the same field, taps and traces ----
+phase_compare-setup() { # the test field and the keyboard to measure, its APK size; nothing reinstalled
+  sh settings get secure default_input_method > "$work/prev-ime"
+  sh input keyevent KEYCODE_WAKEUP; sh wm dismiss-keyguard
+  "$adb" install -r "$work/perf-field.apk" > /dev/null || { echo "field install failed" >&2; return 1; }
+  sh ime enable "$ime_id" > /dev/null && sh ime set "$ime_id" > /dev/null
+  echo "version=$(sh dumpsys package "$pkg" | sed -n 's/.*versionName=//p' | head -1)"
+  local f size=0; for f in $(sh pm path "$pkg" | cut -d: -f2); do size=$(( size + $(sh stat -c %s "$f") )); done
+  echo "apk_mb=$(( size / 1048576 ))"
+  sh am force-stop "$pkg"; sleep 1
+}
+phase_idle() { # opened in a fresh process, settled
+  open_field
+  # A keyboard whose process was just stopped can come up without showing: a tap on the field shows it.
+  sh input tap 540 400; sleep 5
+  geometry && declare -p W dpi top > "$work/geometry"
+  sleep "$settle"; echo "pss_idle_kb=$(pss_kb idle)"
+}
+globe_to() { # length the "ka " probe gives: tap the globe until the keyboard is in that language
+  local n
+  for n in 1 2 3 4; do
+    [[ $(probe_len) == "$1" ]] && { echo "globe_taps=$(( n - 1 ))"; return; }
+    taps 0 G; sleep 2
+  done
+  echo "the globe didn't reach a language where 'ka ' types $1 characters" >&2; return 1
+}
+phase_to-en() { . "$work/geometry"; globe_to 3; }
+phase_to-zh() { . "$work/geometry"; globe_to 1; } # back to the language the keyboard was in (COMPARE_ZH)
+phase_soak() { # SOAK_MIN (default 12) minutes of EN, 中 and 日 in turn, words committed: memory and crashes
+  . "$work/geometry"
+  local end=$(( SECONDS + 60 * ${SOAK_MIN:-12} )) start=$SECONDS n=0 p pid0 restarts=0
+  globe_to 3 > /dev/null # start in EN
+  pid0=$(sh pidof "$pkg")
+  while (( SECONDS < end )); do
+    open_field
+    taps 150 'the quick brown fox jumps over the lazy dog '; taps 0 G; sleep 2
+    taps 150 'nihao women jintiantianqihenhao '; taps 0 G; sleep 2
+    taps 150 'nihongo konnichiha arigatou E'; taps 0 G; sleep 2
+    (( ++n ))
+    p=$(sh pidof "$pkg")
+    [[ $p == "$pid0" ]] || { echo "restart=cycle $n: $pid0 -> ${p:-none}"; (( ++restarts )); pid0=$p; }
+    echo "sample=t$(( SECONDS - start ))s pss_kb=$(pss_kb soak)"
+  done
+  echo "cycles=$n"; echo "restarts=$restarts"
+  [[ $(probe_len) == 3 ]] || echo "note=not back in EN after the last cycle"
+}
+
+compare_steps() { # under the device lock: another keyboard (IME_PKG, IME_ID, KEY_ROWS), English only
+  export FIELD_ARGS='--es kind private'
+  { sh ime list -s | grep -v "^$pkg/" | grep -m1 -e '^com.google.android.inputmethod.latin/' -e '^org.futo.inputmethod.latin/' -e '^dev.sebb.sebtype/'; } > "$work/other-ime"
+  trap 'sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
+    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
+    /data/local/tmp/sebtype-ui.xml' EXIT
+  check compare-setup 300 || return 1
+  check idle 120
+  # COMPARE_ZH=1: the keyboard is in its Chinese (pinyin) layout now, as its owner left it; 中 first,
+  # then English, then back to Chinese at the end.
+  if [[ -n ${COMPARE_ZH:-} ]]; then check zh 600; fi
+  check to-en 120 # the keyboard may have been left in another language
+  check en 600
+  check fast 300
+  check long 300
+  check warm-open 300
+  check cold-open 300
+  [[ -z ${COMPARE_ZH:-} ]] || check to-zh 120
+}
+
 device_steps() { # under the device lock
   [[ $(sh getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "$ANDROID_SERIAL can't run arm64 apps" >&2; return 1; }
   (( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "$ANDROID_SERIAL: needs Android 14+ (older trace formats are untested)" >&2; return 1; }
@@ -350,6 +431,11 @@ if [[ ${1:-} == --phase ]]; then
   "phase_$2"; exit
 fi
 if [[ ${1:-} == --device ]]; then device_steps; exit; fi
+if [[ ${1:-} == --compare-device ]]; then compare_steps; exit; fi
+if [[ ${1:-} == --soak-device ]]; then
+  trap 'sh rm -f /data/local/tmp/sebtype-perf-taps.txt /data/local/tmp/sebtype-ui.xml' EXIT
+  check idle 120 && check soak $(( 60 * ${SOAK_MIN:-12} + 300 )); exit
+fi
 
 # ---- Preflight ----
 mkdir -p "$out"; rm -rf "$work"; mkdir -p "$work"; : > "$results"
@@ -367,6 +453,15 @@ if [[ ! -x $tp ]]; then # Perfetto's trace processor, pinned
 fi
 android/perf/build-field.sh "$work/perf-field.apk" > "$work/field-build.log" 2>&1 ||
   { echo "preflight: test field doesn't build, see $work/field-build.log"; exit 1; }
+mode=--device; [[ ${1:-} == --compare || ${1:-} == --soak ]] && mode=$1-device
+if [[ $mode == --compare-device ]]; then # another keyboard, already installed: no APK
+  android/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m "${PERF_LOCK_MINUTES:-30}" -n "sebtype perf.sh --compare $pkg" -- "$self" "$mode"
+  cat "$results"; ! grep -q '^FAIL' "$results"; exit
+fi
+if [[ $mode == --soak-device ]]; then # SebType as installed by the last run
+  android/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m $(( ${SOAK_MIN:-12} + 20 )) -n "sebtype perf.sh --soak" -- "$self" "$mode"
+  cat "$results"; ! grep -q '^FAIL' "$results"; exit
+fi
 if [[ -z ${APK:-} ]]; then
   APK=$(android/build.sh release 2> "$work/build.log" | tail -1)
   [[ -f $APK ]] || { echo "preflight: release build failed, see $work/build.log"; exit 1; }
