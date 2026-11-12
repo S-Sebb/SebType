@@ -23,7 +23,7 @@ ICONS = {
     "ms_alpha_half_a.ico": "ja-a",
     "ms_alpha_a.ico": "ja-a",
     "ms_disabled_a.ico": "ja-a",
-    "sebtype_english_upper.ico": "ja-A",
+    "sebtype_english_upper.ico": "ja-caps",
     "ms_hiragana_a.ico": "hira",
     "ms_katakana_a.ico": "kata",
     "ms_katakana_half_a.ico": "kata",

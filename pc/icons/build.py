@@ -75,11 +75,11 @@ STATES = {  # state: language, (font, text)
     "en": ("en", ("lat", "EN")),  # US layout
     "zh": ("zh", ("sc", "中")),
     "zh-a": ("zh", ("lat", "a")),  # Chinese, English mode
-    "zh-A": ("zh", ("lat", "A")),  # ... with Caps Lock
+    "zh-caps": ("zh", ("lat", "A")),  # ... with Caps Lock
     "hira": ("ja", ("jp", "あ")),
     "kata": ("ja", ("jp", "ア")),
     "ja-a": ("ja", ("lat", "a")),  # Japanese, English mode
-    "ja-A": ("ja", ("lat", "A")),  # ... with Caps Lock
+    "ja-caps": ("ja", ("lat", "A")),  # ... with Caps Lock
 }
 GLYPHS = {g: glyph(FONTS[g[0]], g[1]) for _, g in STATES.values()}
 SIZES = {"16": 16, "20": 20, "22": 22, "24": 24, "32": 32, "scalable": 48}

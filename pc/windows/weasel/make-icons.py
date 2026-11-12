@@ -27,7 +27,7 @@ SIZES = {
     64: "scalable",
 }
 # Weasel's icon file: SebType state (pc/icons/README.md)
-FILES = {"zh.ico": "zh", "en.ico": "zh-a", "en_caps.ico": "zh-A"}
+FILES = {"zh.ico": "zh", "en.ico": "zh-a", "en_caps.ico": "zh-caps"}
 
 
 def render(svg: Path, size: int) -> Image.Image:
