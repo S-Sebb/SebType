@@ -7,8 +7,8 @@
 #   pc/linux/rime/build.sh librime    # -> ~/.cache/sebtype/librime/librime{,-lua,...}-<version>-<release>.x86_64.rpm
 #   pc/linux/rime/build.sh fcitx5     # -> ~/.cache/sebtype/fcitx5/fcitx5{,-libs,...}-<version>-<release>.<arch>.rpm
 #
-# One to five minutes, under the shared build lock, with 4 compile jobs and the container capped at
-# 6 GB (Decisions #2).
+# One to five minutes, in the shared build lock (tools/lib.sh), the container on the lock's cores and
+# memory.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -16,6 +16,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 source "$here/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=../rpm-sources.sh
 source "$here/../rpm-sources.sh"
+# shellcheck source-path=SCRIPTDIR source=../../../tools/lib.sh
+source "$here/../../../tools/lib.sh"
 pkg=${1:-fcitx5-rime}
 case $pkg in
   fcitx5-rime) src=$here/../../fcitx5-rime version=$RIME_VERSION release=$RIME_SEBTYPE_RELEASE cache=$RIME_CACHE sources=() ;;
@@ -44,13 +46,13 @@ inner=$(cat <<'EOF'
 set -euo pipefail
 rm -rf /work/top
 rpmbuild -bb --define '_topdir /work/top' --define '_sourcedir /sources' --define "sebtype_version $1" \
-  --define "sebtype_release $2" --define 'debug_package %{nil}' --define '_smp_build_ncpus 4' \
+  --define "sebtype_release $2" --define 'debug_package %{nil}' --define "_smp_build_ncpus $3" \
   /pkg.spec > /work/build.log 2>&1 || { tail -30 /work/build.log; exit 1; }
 EOF
 )
-devq -w 3600 -m 5 -P "${DEVQ_RANK:-2}" -n "$pkg build" /tmp/agent-locks/sebtype/build.lock \
-  podman run --rm --memory 6g --memory-swap 6g -v "$cache/work:/work:Z" -v "$cache/sources:/sources:ro,Z" \
-  -v "$spec:/pkg.spec:ro,Z" "$image" bash -c "$inner" inner "$version" "$release"
+build_lock 5 "$pkg build" \
+  podman run --rm --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -v "$cache/work:/work:Z" -v "$cache/sources:/sources:ro,Z" \
+  -v "$spec:/pkg.spec:ro,Z" "$image" bash -c "$inner" inner "$version" "$release" "$BUILD_JOBS"
 for rpm in "$cache"/work/top/RPMS/*/*-"$release".*.rpm; do
   cp "$rpm" "$cache/"
   echo "$cache/${rpm##*/}"

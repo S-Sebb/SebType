@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- test-settings.py's helper (#41): sets a text field through accessibility, with no keyboard. -->
+<!-- settings.py's helper (#41): sets a text field through accessibility, with no keyboard. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.sebb.sebtype.settext">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />

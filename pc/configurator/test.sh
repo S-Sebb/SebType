@@ -11,6 +11,8 @@
 set -uo pipefail
 self=$(readlink -f "$0")  # the devq re-exec below needs a path that still resolves after this cd
 cd "$(dirname "$self")" || exit 1
+# shellcheck source=../../tools/lib.sh
+source ../../tools/lib.sh
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/configurator-test-results.txt; : > "$results"
@@ -37,10 +39,10 @@ command -v xrdb >/dev/null || { echo "preflight: xrdb missing"; exit 1; }
 command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
 
 # The nested sessions and setup-ime's test run under this PC's lock (devq), after a build under the
-# shared build lock at half the cores, so builds never run side by side.
+# shared build lock (tools/lib.sh), so builds never run side by side.
 if [[ -z ${HOLDING-} ]]; then
-  devq -m 30 -n "sebtype configurator test build ($(git branch --show-current))" /tmp/agent-locks/sebtype/build.lock \
-    env CARGO_BUILD_JOBS=8 bash -c 'cargo build --release && cargo test --release --no-run' > "$out/configurator-test-build.log" 2>&1 ||
+  build_lock 30 "sebtype configurator test build ($(git branch --show-current))" \
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" bash -c 'cargo build --release && cargo test --release --no-run' > "$out/configurator-test-build.log" 2>&1 ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"

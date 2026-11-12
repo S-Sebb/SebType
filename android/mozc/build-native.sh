@@ -3,7 +3,8 @@
 #
 #   android/mozc/build-native.sh OUT_DIR ABI...   # ABI: arm64-v8a or x86_64 -> OUT_DIR/<ABI>/libmozc.so
 #
-# Gradle runs it (build.gradle) inside android/build.sh's build lock, so it takes no lock itself. Bazel's
+# Gradle runs it (build.gradle) inside android/build.sh's build lock, so it takes no lock itself, and uses
+# the lock's share of the cores. Bazel's
 # output stays in ~/.cache/sebtype/mozc-android, its disk cache shared by every worktree; its server
 # exits soon after the build.
 set -euo pipefail
@@ -13,6 +14,7 @@ cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/mozc-android
 export SEBTYPE_ANDROID_NDK=${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must name the app\'s NDK}
 # The Bazelisk the Linux build pins; it runs the Bazel version engines/mozc/src/.bazeliskrc names.
 source "$src/../../../pc/linux/mozc/versions.sh"
+source "$src/../../../tools/lib.sh"
 bazelisk=$cache/bazelisk-${BAZELISK_SHA256:0:12}
 if [[ ! -x $bazelisk ]]; then
   mkdir -p "$cache"
@@ -28,7 +30,7 @@ for abi; do targets+=("//android/jni:${target[$abi]:?no Mozc target for $abi}");
 bazel() {
   (cd "$src" && "$bazelisk" --output_user_root="$cache/bazel" --max_idle_secs=15 --host_jvm_args=-Xmx2g "$@")
 }
-opts=(--config oss_android --config release_build --jobs="${SEBTYPE_JOBS:-4}" --disk_cache="$cache/disk"
+opts=(--config oss_android --config release_build --jobs="$BUILD_JOBS" --disk_cache="$cache/disk"
   --symlink_prefix=/ --noshow_progress)
 bazel build "${opts[@]}" "${targets[@]}"
 for abi; do

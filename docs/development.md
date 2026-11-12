@@ -1,13 +1,154 @@
-# Measuring SebType's size, memory and speed
+# Building, testing and measuring SebType
+
+Every build, test and measurement command, what it needs and where its results go. The READMEs in `pc/`
+describe what each PC part does and list what each of its checks verifies.
+
+## Layout
+
+| Folder | What |
+|---|---|
+| `android/` | The Gradle build: `app/` (the keyboard, FUTO Keyboard with SebType's changes), `mozc/` (Mozc's Android client and `libmozc.so`), `rime/` (RimeJni, librime's bindings, and `librime-jni.so`), the build and release scripts, `test/` and `perf/` |
+| `engines/` | `mozc/` and `librime/`: the one source of each engine, built for the phone and both PCs |
+| `pc/` | Linux (Fcitx5) and Windows (Weasel, Mozc's installer, SebType's installer), and the Configurator |
+| `data/` | The Chinese data (`rime/`) and the English dictionary (`en-dict/`), built from pinned sources |
+| `art/` | The icon, the fonts and the script that draws the launcher icons |
+| `sync-server/` | The sync server you run yourself |
+| `tools/` | Scripts shared by the others (`lib.sh`) and data tools |
+
+## Building
+
+### The build lock
+
+Every heavy local build runs through `build_lock` in `tools/lib.sh`: one at a time in the shared queue
+`/tmp/agent-locks/sebtype/build.lock` (`devq status <lock>` shows it), waiting up to an hour, on half
+the PC's threads (`BUILD_JOBS`) and capped at 8 GB (`BUILD_MEMORY_GB`), so a build never takes the memory
+the emulator and the person at the PC need. The queue rank is `DEVQ_RANK` (default 2, lower goes first):
+set it once and every build the script starts, however nested, queues at that rank. A build that
+starts other builds runs them inside its own lock, not through `build_lock` again.
+
+### Android
+
+```
+android/build.sh release        # signed arm64-v8a release APK (keystore in ~/.config/sebtype)
+android/build.sh debug          # debug arm64-v8a APK, the one the emulator tests run
+android/build.sh debug-x86_64   # debug APK for an x86_64 emulator
+android/build.sh test-x86_64    # debug APK and its instrumented-test APK
+```
+
+It prints the APK's path last. Each run gets its own folder in `android/app/build/runs/` (hard links,
+kept a day), so builds run at the same time in one checkout never hand each other's APK out. Debug
+builds have a fixed version (`…-sebtype.dev`, code 1); release builds count main's commits. Android
+Studio or `cd android && ./gradlew assembleDebug` work too, outside the lock.
+
+What it builds from source, and the caches that make a rebuild quick:
+
+| Part | Built by | Cache |
+|---|---|---|
+| Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle`, shared by every worktree |
+| The app's C++ (`libjni_latinime.so`) and Rime (`librime-jni.so`, from `engines/librime` with librime-lua, octagram and predict) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/.cache/sebtype/rime-android` |
+| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/mozc/build-native.sh`) | Gradle's build cache, and Bazel's disk cache in `~/.cache/sebtype/mozc-android` |
+| The Chinese data | `data/rime/build.sh` | `~/.cache/sebtype/rime-data-*.zip` |
+| Mozc's dictionary | `android/app/res-bundle/download-bundles.py` | `android/app/res-bundle/` |
+
+`android/release.sh` builds the release from main and publishes it ([install.md](install.md)).
+
+### PCs
+
+| Command | Builds |
+|---|---|
+| `pc/linux/mozc/build.sh` | SebType's fcitx5-mozc RPM from `engines/mozc`, in a pinned Fedora container |
+| `pc/linux/rime/build.sh [fcitx5-rime\|librime\|fcitx5]` | the fcitx5-rime, librime (from `engines/librime`) or Fcitx5 RPMs |
+| `cargo build --release` in `pc/configurator` | the Configurator |
+| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/weasel/build.ps1` | Mozc's installer and Weasel, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
+
+`pc/linux/setup-ime.sh` builds what it installs itself ([pc/linux/README.md](../pc/linux/README.md)).
+
+## Testing
+
+| Command | What it checks |
+|---|---|
+| `android/test/emulator.sh` | The full emulator suite (below) |
+| `android/test/typing.sh` | The instrumented typing tests on the emulator |
+| `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
+| `android/test/build.sh` | The build's caches and that release builds are reproducible |
+| `android/test/incognito-phone.sh` | Incognito on a phone |
+| `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
+| `cd android && ./gradlew :app:testDebugUnitTest` | The app's unit tests |
+| `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
+| `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account ([pc/linux/README.md](../pc/linux/README.md)) |
+| `pc/configurator/test.sh` | The Configurator in nested sessions |
+| `pc/windows/setup/test-tcsbackend.sh`, `pc/windows/mozc/test-tcsbackend.sh` | SebType's installer and Mozc on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
+
+Each writes one line per check to a results file under `/tmp/sebtype/`, and its logs next to it.
+
+### Which checks a run takes
+
+A PR runs the checks for what it changed; the full suite (40–60 minutes on an emulator) runs for a
+release. `SEBTYPE_CHECKS` picks them by name prefix, comma-separated, from the names in the results:
+
+```
+SEBTYPE_CHECKS=settings-japanese,incognito android/test/emulator.sh
+```
+
+That runs those checks and what they need: always the build, the install beside FUTO Keyboard, the
+locale, SebType enabled and the test field app; and the earlier `android/test/chinese.py` checks a named one
+depends on (its `needs`, so `SEBTYPE_CHECKS=ranh` also runs `first-install`). The settings checks (`android/test/settings.py`) declare no such needs: a settings
+check that relies on Chinese being set up runs with `first-install` named too.
+
+Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in
+`pc/windows/setup/test-tcsbackend.sh`; `mozc-speed-and-dictionary` in `pc/windows/mozc/test.ps1`) measure
+speed, so they run only in the final performance run (#54, Decisions #2 2026-11-11), with `PERF_RUN=1`
+(`-PerfRun` for the PowerShell scripts). Without it they write no result line, unless `SEBTYPE_CHECKS` names
+one: then it reports SKIP and says why. `android/perf/perf.sh` is a measurement of its own, run only then too.
+
+### The emulator
+
+SebType's device tests (`android/test/emulator.sh`, `typing.sh`, `privacy.sh`, `android/perf/perf.sh`) run on one headless emulator on nobara-pc, one run at a time: two
+emulators ran the PC out of memory (Decisions #2, #170). `android/emulator.sh` queues each run for it:
+
+| AVD | Serial | Guest RAM | Lock |
+|---|---|---|---|
+| `guide35` | `emulator-5554` | 2.5 GB | `/tmp/agent-locks/devices/emulator-guide35.lock` |
+
+It holds that lock for the whole device part of the run, so no other run reinstalls SebType in the
+middle of it; `android/test/emulator-pick.sh` checks the queue with stub locks, no emulator needed. If
+the emulator isn't running it is started headless, and the run waits until it has settled (about 2
+minutes after a cold boot). It then stays up: other projects (SebChat) use it through the same lock and
+expect it running. On the emulator it also turns on `hide_error_dialogs`: under load an app can be slow
+enough to get an "isn't responding" dialog, which covers the screen and fails every UI check after it.
+With the setting on, Android closes that app instead. `ANDROID_SERIAL=<serial>` picks the device
+instead, a phone included.
+
+Once it holds the lock, `android/test/emulator.sh` sets the emulator's language list to `en-US` alone
+(`android/test/set-locale`, the way Settings does it; its `locale` check logs the list it replaced). A fresh
+install starts SebType's languages from that list, and other tasks change it.
+
+The AVD is Android 15 Google APIs x86_64 (`system-images;android-35;google_apis;x86_64`), Pixel 7, with
+root (`su`) and ARM translation for SebType's arm64 APK. Its `config.ini` says `hw.ramSize=2G`, but the
+emulator raises that to 2560 MB, its minimum for this device and Android version. It uses about 3–4 GB
+of the PC's memory at its peak. To start it by hand:
+
+```
+systemd-run --user --collect --unit=emulator-guide35 ~/Android/Sdk/emulator/emulator -avd guide35 -port 5554 \
+  -no-window -no-audio -no-snapshot-load -no-boot-anim
+adb -s emulator-5554 emu kill   # stops it
+```
+
+Start the emulator as a unit of the user's systemd, as `emulator.sh` does, not from a shell: one started
+from an agent's shell (even with `setsid` or `&`) stops when that agent's session ends.
+
+Take its lock while you use it (`devq -m <minutes> /tmp/agent-locks/devices/emulator-guide35.lock <command>`).
+
+## Measuring size, memory and speed
 
 Two scripts measure SebType the same way every time (#45). They run in the final performance run of a
 batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional
 until they are compared with other IMEs.
 
-## Android: `android/perf/perf.sh`
+### Android: `android/perf/perf.sh`
 
 ```
-android/perf/perf.sh                     # builds the release APK, then measures on a free emulator ([testing.md](testing.md))
+android/perf/perf.sh                     # builds the release APK, then measures on a free emulator (see The emulator, above)
 APK=path/to.apk android/perf/perf.sh     # measures an APK you already built
 ANDROID_SERIAL=<serial> android/perf/perf.sh   # any other device; the only way to run it on a phone
 ```
@@ -60,7 +201,7 @@ Notes:
 - **Key positions** come from SebType's uniform layout at the default keyboard height. Each typing
   check verifies the text length afterwards and fails with "taps missed the keys" if they didn't land.
 
-### On the phone
+#### On the phone
 
 The phone is shared with its owner: run this only when they agree, with the phone unlocked and
 idle. Turn on USB or wireless debugging, check that `adb devices` lists it, then run
@@ -75,7 +216,7 @@ it does, and fails naming the window that came to the front. In #76, another pro
 its app on the phone during a run (it took a different lock), and the rest of the taps went into that
 app. The failure looked like SebType had come back in the wrong language.
 
-#### Phone results (Nothing A001, Android 16, #56's branch, 2026-11-11)
+##### Phone results (Nothing A001, Android 16, #56's branch, 2026-11-11)
 
 Against the budgets in Decisions #2. All phases passed; the full tables, before and after, are on #56's PR.
 
@@ -93,7 +234,7 @@ Against the budgets in Decisions #2. All phases passed; the full tables, before 
 | 10 keys a second: ≤ 1 frame in 500 late from the app, every character arrives | 88 of 88 arrived; 32 of 846 frames late from the app (20,000-character field: 63 of 840); the run before, 1 of 699 | no |
 | 0 crashes | 0 | yes |
 
-## PC (Linux): `pc/linux/perf.sh`
+### PC (Linux): `pc/linux/perf.sh`
 
 ```
 pc/linux/perf.sh                    # RUNS (default 5) repeats each typing set
@@ -110,13 +251,13 @@ It never touches the running Fcitx5 session:
 - **Memory:** RSS, PSS and swapped-out size of the running `fcitx5` and `mozc_server`, read from
   `ps` and `/proc`.
 
-It needs gcc, python3, librime with librime-lua, and fcitx5-mozc. It fetches librime's public headers
-(pinned, checked by sha256) into `~/.cache/sebtype/`. Results: `/tmp/sebtype/pc-perf.md` and
+It needs gcc, python3, librime with librime-lua, and fcitx5-mozc. It compiles against
+`engines/librime`'s headers. Results: `/tmp/sebtype/pc-perf.md` and
 `/tmp/sebtype/pc-perf-results.txt`.
 
-## Build and test times (#58)
+### Build and test times (#58)
 
-Measured on nobara-pc (16 threads, 15 GB) on 2026-11-10, with other agents' work running beside, so
+Measured on nobara-pc (16 threads, 15 GB) on 2026-11-10, before Mozc and Rime were built from source (#186), with other agents' work running beside, so
 numbers vary by about ±30 %. "Build" is `android/build.sh`'s own time, which it now prints apart from
 the wait for the build lock; "peak" is the summed memory of the build's processes (Gradle, the Kotlin
 daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproducibility parts.
@@ -140,7 +281,6 @@ daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproduc
 
 | Other builds and tests | Before | After |
 |---|---|---|
-| `android/rime/build.sh` (arm64 aar), rebuild in the same checkout | 130 s | 27–31 s, the same aar |
 | `pc/linux/mozc/build.sh`, nothing changed / after a source change / first build | 11 s / 323 s / 490 s | unchanged |
 | `pc/linux/test-setup-ime.sh` | 15 s | unchanged (mostly Fcitx5 and a Rime deploy starting) |
 | `android/test/privacy.sh` (release rebuild + checks) | 13 s | 8 s |
@@ -162,7 +302,7 @@ What made the difference, each measured on its own:
   `…-sebtype.dev`, branch `dev`): they compiled the commit count and branch into `BuildConfig`, so every
   commit missed the cache. Release builds keep the real version.
 - **sccache for the app's C++** (when installed): a clean rebuild 41 → 17 s, a new worktree 41 → 15 s.
-  Each build starts its own sccache server with `SCCACHE_BASEDIRS` set to the checkout, and
+  Each build starts its own sccache server with `SCCACHE_BASEDIRS` set to the checkout's root, and
   `-ffile-prefix-map` keeps the checkout's path out of the objects, so objects are shared between
   worktrees without one worktree's paths ending up in another's library.
 - **Configuration cache**: Gradle reuses the configured build (nothing changed 11 → 6 s, one Kotlin file
@@ -184,4 +324,3 @@ Tried and not kept:
   minify, `assemble` doesn't lint).
 - **ccache in the Mozc container**: a rebuild already recompiles only what changed (11 s with no change);
   ccache would only help the rare first build after a version bump.
-- The PC librime build (#46) isn't on main yet, so it has no numbers here.

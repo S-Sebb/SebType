@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks the build speed-ups of #58 (docs/perf.md, "Build and test times") on this checkout's commit:
+# Checks the build speed-ups of #58 (docs/development.md, "Build and test times") on this checkout's commit:
 # a debug build in a new worktree comes from the shared caches, a Kotlin change compiles incrementally,
 # and the release APK is the same from two checkouts, with or without the caches.
 # Uses a scratch worktree in ~/.cache/sebtype/test-build-wt, deleted at the end; builds take the build lock.
@@ -47,12 +47,12 @@ check new-worktree-debug debug_from_cache
 kotlin_incremental() {
   local kt=android/app/src/main/java/org/futo/inputmethod/latin/uix/ActionBar.kt
   echo "private val sebtypeTestBuildProbe = 1" >> "$wt/$kt"
-  rm -rf "$wt/build/reports/kotlin-build"
+  rm -rf "$wt/android/build/reports/kotlin-build"
   (cd "$wt" && env 'ORG_GRADLE_PROJECT_kotlin.build.report.output=file' android/build.sh debug); local rc=$?
   git -C "$wt" checkout -q -- "$kt"
   ((rc == 0)) || return 1
-  grep -h 'compilation:\|REBUILD_REASON' "$wt"/build/reports/kotlin-build/*
-  ! grep -q 'Non incremental\|REBUILD_REASON' "$wt"/build/reports/kotlin-build/*
+  grep -h 'compilation:\|REBUILD_REASON' "$wt"/android/build/reports/kotlin-build/*
+  ! grep -q 'Non incremental\|REBUILD_REASON' "$wt"/android/build/reports/kotlin-build/*
 }
 export -f kotlin_incremental
 check kotlin-incremental kotlin_incremental
@@ -67,12 +67,12 @@ for i in sorted(zipfile.ZipFile(sys.argv[1]).infolist(), key=lambda i: i.filenam
 same_release() {
   local a b nosc
   a=$(android/build.sh release) || return 1
-  sed -i 's/^org.gradle.caching=true/org.gradle.caching=false/' "$wt/gradle.properties"
+  sed -i 's/^org.gradle.caching=true/org.gradle.caching=false/' "$wt/android/gradle.properties"
   nosc=$(mktemp -d) && ln -s "$(command -v devq)" "$nosc/devq"
-  b=$(cd "$wt" && rm -rf .cxx && PATH=$nosc:$(tr : '\n' <<<"$PATH" | grep -vx "$(dirname "$(command -v sccache)")" | paste -sd:) \
+  b=$(cd "$wt" && rm -rf android/app/.cxx android/rime/.cxx && PATH=$nosc:$(tr : '\n' <<<"$PATH" | grep -vx "$(dirname "$(command -v sccache)")" | paste -sd:) \
     android/build.sh release); local rc=$?
-  rm -rf "$nosc"; git -C "$wt" checkout -q -- gradle.properties
-  ((rc == 0)) && diff <(entries "$a") <(entries "$wt/$b") && echo "same entries: $a and $wt/$b"
+  rm -rf "$nosc"; git -C "$wt" checkout -q -- android/gradle.properties
+  ((rc == 0)) && diff <(entries "$a") <(entries "$b") && echo "same entries: $a and $b"
 }
 export -f entries same_release
 check release-same-in-two-checkouts same_release

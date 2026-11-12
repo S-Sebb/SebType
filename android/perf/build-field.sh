@@ -2,12 +2,13 @@
 # Builds the perf test field (PerfField.java) with the SDK's own tools, no Gradle.
 #   android/perf/build-field.sh OUTPUT.apk
 set -euo pipefail
+source "$(dirname "$0")/../../tools/lib.sh"
 here=$(cd "$(dirname "$0")" && pwd)
 apk=$(realpath -m "$1")
-sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+sdk=$ANDROID_HOME
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
 jar=$(ls -d "$sdk"/platforms/android-* | sort -V | tail -1)/android.jar
-jdk=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1)}
+jdk=$JDK21
 w=$(mktemp -d); trap 'rm -rf "$w"' EXIT
 
 "$jdk/bin/javac" -nowarn --release 11 -classpath "$jar" -d "$w/classes" "$here/PerfField.java"

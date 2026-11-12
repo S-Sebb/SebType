@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Settings checks on the emulator (#41), run by android/test/emulator.sh under the emulator lock after
-test-chinese.py, which leaves SebType installed, chosen as the keyboard and Chinese set up.
+chinese.py, which leaves SebType installed, chosen as the keyboard and Chinese set up.
 
-    test-settings.py SERIAL RESULTS LOGDIR
+    settings.py SERIAL RESULTS LOGDIR
 
 Opens every settings screen from the home screen (one screenshot each, settings-<screen>.png in
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
@@ -44,7 +44,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 serial, results_path, logdir = sys.argv[1:4]
-# Only the checks whose names start with one of SEBTYPE_CHECKS (comma-separated, as test-emulator.sh takes it).
+# Only the checks whose names start with one of SEBTYPE_CHECKS (comma-separated, as emulator.sh takes it).
 CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 # Timing checks run only in the final performance run (#54, Decisions #2 2026-11-11): PERF_RUN=1.
 TIMING = {"settings-smooth-scrolling"}
@@ -107,7 +107,7 @@ def tap(x, y):
     adb("shell", "input", "tap", str(x), str(y))
 
 
-# --- The keyboard (as in test-chinese.py) ---
+# --- The keyboard (as in chinese.py) ---
 
 keyboard_frame = None
 BAR_CONTROLS = (
@@ -2070,8 +2070,8 @@ def english_on_screen(patterns):
 
 
 def system_locale(tag):
-    """Sets the system's language list to tag alone with test-emulator.sh's set-locale helper (the way
-    Settings does it, without a restart, which can crash the emulator; docs/testing.md)."""
+    """Sets the system's language list to tag alone with emulator.sh's set-locale helper (the way
+    Settings does it, without a restart, which can crash the emulator; docs/development.md)."""
     dex = "/data/local/tmp/sebtype-set-locale.dex"
     adb("push", os.path.join(logdir, "set-locale.dex"), dex)
     try:
@@ -2129,7 +2129,7 @@ def japanese_ui():
 
 
 check("settings-japanese", japanese_ui)
-# test-emulator.sh runs everything else in en-US.
+# emulator.sh runs everything else in en-US.
 check(
     "settings-locale-back",
     lambda: system_locale("en-US") or "the system is back in en-US",

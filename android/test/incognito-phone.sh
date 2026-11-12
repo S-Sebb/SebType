@@ -8,10 +8,11 @@
 # Exit 0 only if nothing fails.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
+source tools/lib.sh
 
 out=/tmp/sebtype/test-incognito-phone; rm -rf "$out"; mkdir -p "$out"
 results=$out/results.txt; : > "$results"
-sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+sdk=$ANDROID_HOME
 adb=$sdk/platform-tools/adb
 serial=${ANDROID_SERIAL:-00193353J000665}
 lock=/tmp/agent-locks/devices/nothing-a001.lock

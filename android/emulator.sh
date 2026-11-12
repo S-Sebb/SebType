@@ -9,7 +9,8 @@
 # if the lock's turn didn't come.
 # Locks are shared by all projects: /tmp/agent-locks/devices/emulator-<AVD>.lock.
 set -uo pipefail
-sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+source "$(dirname "$0")/../tools/lib.sh"
+sdk=$ANDROID_HOME
 adb=$sdk/platform-tools/adb
 locks=${EMULATOR_LOCKS:-/tmp/agent-locks/devices} # another directory only for android/test/emulator-pick.sh
 # AVD and console port: a fixed port gives the emulator a stable serial, emulator-<port>.

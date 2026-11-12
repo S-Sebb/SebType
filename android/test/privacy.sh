@@ -6,10 +6,11 @@
 # Typing in all three languages while watching logcat is checked by hand through T3's device tools.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
+source tools/lib.sh
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-privacy-results.txt; : > "$results"
-sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+sdk=$ANDROID_HOME
 adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
 
