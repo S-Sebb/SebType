@@ -13,7 +13,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 source "$here/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=../rpm-sources.sh
 source "$here/../rpm-sources.sh"
-# shellcheck source=../../../tools/lib.sh
+# shellcheck source-path=SCRIPTDIR source=../../../tools/lib.sh
 source "$here/../../../tools/lib.sh"
 mkdir -p "$MOZC_CACHE"/{rpms,work,sources}
 pack_source "$here/../../../engines/mozc" "$MOZC_CACHE/sources/mozc.tar.gz"

@@ -16,7 +16,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 source "$here/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=../rpm-sources.sh
 source "$here/../rpm-sources.sh"
-# shellcheck source=../../../tools/lib.sh
+# shellcheck source-path=SCRIPTDIR source=../../../tools/lib.sh
 source "$here/../../../tools/lib.sh"
 pkg=${1:-fcitx5-rime}
 case $pkg in
