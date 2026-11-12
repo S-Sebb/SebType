@@ -1977,14 +1977,22 @@ def english_strings():
         return {e.get("name"): e for e in ET.parse(os.path.join(HERE, path)).getroot()}
 
     texts = {"Fuzzy Pinyin"}
-    for d, f in (
-        ("res", "strings-sebtype.xml"),
-        ("res-stable", "strings-sebtype-overrides.xml"),
+    # SebType's strings, and FUTO's that SebType rewrote in place
+    for d, f, names in (
+        ("res", "strings-sebtype.xml", None),
+        ("../java/res", "strings-appname.xml", {"english_ime_settings"}),
+        (
+            "../java/res",
+            "strings-uix.xml",
+            {"setup_welcome_text", "setup_active_input_method"},
+        ),
     ):
         ja = strings(f"{d}/values-ja/{f}")
         for name, e in strings(f"{d}/values/{f}").items():
-            if e.get("translatable") != "false" and (
-                name not in ja or ja[name].text != e.text
+            if (
+                (names is None or name in names)
+                and e.get("translatable") != "false"
+                and (name not in ja or ja[name].text.strip('"') != e.text)
             ):
                 texts.add(e.text)
     return [

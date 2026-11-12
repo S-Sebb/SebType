@@ -10,8 +10,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# FUTO's dictionary from the java/res-large submodule (at d87d9db, 2026-04-23: FUTO's 2014 list, acronyms removed).
-FUTO_DICT=java/res-large/raw/main_en.dict
+# FUTO's dictionary from its keyboard-large-resources repo (at d87d9db, 2026-04-23: FUTO's 2014 list, acronyms removed).
+FUTO_DICT_URL=https://gitlab.futo.org/keyboard/keyboard-large-resources/-/raw/d87d9dbdf3966bbe18413be375dab2f6c7bbdfdd/raw/main_en.dict
 FUTO_DICT_SHA256=c3e21185c056e82769a2bb1381ae6b0e799437bdab101379715c6baa0a3544d1
 # wordfreq 3.x "large" English list (frozen since 2021; data CC BY-SA 4.0), at tag v3.2.
 WORDFREQ_URL=https://raw.githubusercontent.com/rspeer/wordfreq/42233e6c36ce792031bcccfa17cdd0cec9af5fa7/wordfreq/data/large_en.msgpack.gz
@@ -24,8 +24,6 @@ out=${1:-sebtype/res-stable/raw/main_en.dict}
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
 mkdir -p "$cache" out "$(dirname "$out")"
 command -v hunspell >/dev/null || { echo "build: hunspell missing" >&2; exit 1; }
-echo "$FUTO_DICT_SHA256  $FUTO_DICT" | sha256sum -c --status ||
-  { echo "build: $FUTO_DICT changed (submodule bump?): check it, then update FUTO_DICT_SHA256" >&2; exit 1; }
 
 fetch() { # url sha256 -> prints cached path
   local f=$cache/$(basename "$1")
@@ -39,6 +37,7 @@ fetch() { # url sha256 -> prints cached path
 
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
+FUTO_DICT=$(fetch "$FUTO_DICT_URL" "$FUTO_DICT_SHA256")
 wordfreq=$(fetch "$WORDFREQ_URL" "$WORDFREQ_SHA256")
 unzip -q "$(fetch "$SCOWL_URL" "$SCOWL_SHA256")" -d "$stage"
 python3 -I -B tools/en-dict/make_dict.py "$FUTO_DICT" "$wordfreq" "$stage" "$out" out/en_wordlist.combined.gz

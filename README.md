@@ -14,12 +14,12 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 
 | Part | Licence |
 |---|---|
-| FUTO Keyboard's code: `java/`, `native/`, `common/`, `tests/`, `tools/` other than SebType's files below, `.github/ISSUE_TEMPLATE/`, the root build files and the submodules. SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
+| FUTO Keyboard's code: `java/`, `native/`, `common/`, `tests/`, `tools/` other than SebType's files below, `.github/ISSUE_TEMPLATE/`, the root build files, `libs/` (FUTO's Mozc library) and the FUTO files brought in from its submodules (`java/assets/layouts/`, the translations in `java/res/values-ja/` and `values-zh-rCN/`, `java/res/raw/ml4_q6_k.gguf`). SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
 | The original AOSP keyboard code in those folders, up to commit `d847619a` | Apache-2.0 ([NOTICE](NOTICE)) |
 | Code from other projects that FUTO vendored (sentencepiece, protobuf, ggml, llama.cpp, gemoji and others) | each project's own, in its folder |
 | SebType's own code: `pc/`, `rime-android/`, `sebtype/`, `sync-server/`, `tools/rime-data/`, `tools/en-dict/`, `docs/`, with the exceptions below. Each folder's `LICENSE` file lists its exceptions. Also `tools/trim-emoji.sh`, `tools/pack-rime-ice.sh`, `tools/userdb-to-futo-backup.py` and `.github/workflows/` | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
 | `sebtype/assets/layouts/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
-| `sebtype/res-stable/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) and `sebtype/res-stable/values*/*-sebtype-overrides.xml` (changed copies of FUTO's resources) | FUTO Source First License 1.1 |
+| `sebtype/res-stable/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) | FUTO Source First License 1.1 |
 | `sebtype/res-stable/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
 | The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([sebtype/fonts/OFL-Nunito.txt](sebtype/fonts/OFL-Nunito.txt), [sebtype/fonts/OFL-PixelifySans.txt](sebtype/fonts/OFL-PixelifySans.txt)) |
 | SebType's Mozc (`pc/mozc/`: Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
@@ -77,20 +77,11 @@ If you want to contribute layouts, check out the [layouts repo](https://github.c
 
 ## Building
 
-When cloning the repository, you must perform a recursive clone to fetch all dependencies:
+`sebtype/build.sh` builds SebType's APKs (`release`, `debug`, and the x86_64 emulator builds); see its header.
+Android Studio or plain Gradle work too:
 ```
-git clone --recursive https://gitlab.futo.org/keyboard/latinime.git
-```
-
-If you forgot to specify recursive clone, use this to fetch submodules:
-```
-git submodule update --init --recursive
-```
-
-You can then open the project in Android Studio and build it that way, or use gradle commands:
-```
-./gradlew assembleUnstableDebug
-./gradlew assembleStableRelease
+./gradlew assembleDebug
+./gradlew assembleRelease
 ```
 
 ## APK signing

@@ -19,7 +19,6 @@ import org.futo.inputmethod.latin.SuggestedWords
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo
 
 interface SuggestionStripViewListener {
-    fun showImportantNoticeContents()
     fun pickSuggestionManually(word: SuggestedWordInfo?)
     fun requestForgetWord(word: SuggestedWordInfo?)
     fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean)

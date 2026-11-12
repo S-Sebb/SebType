@@ -19,12 +19,10 @@
 -->
 
 <resources>
-    <bool name="config_block_potentially_offensive">true</bool>
     <!-- Default value for next word prediction: after entering a word and a space only, should we
          look at input history to suggest a hopefully helpful suggestions for the next word? -->
     <bool name="config_default_next_word_prediction">true</bool>
 
-    <integer name="config_delay_in_milliseconds_to_update_shift_state">100</integer>
     <integer name="config_double_space_period_timeout">1100</integer>
 
     <integer name="config_key_repeat_start_timeout">400</integer>
@@ -42,16 +40,10 @@
     <integer name="config_suppress_key_preview_after_batch_input_duration">1000</integer>
 
     <bool name="config_default_vibration_enabled">true</bool>
-    <integer name="config_max_vibration_duration">100</integer>
 
     <integer name="config_default_longpress_key_timeout">300</integer>
-    <integer name="config_max_longpress_timeout">700</integer>
-    <integer name="config_min_longpress_timeout">100</integer>
-    <integer name="config_longpress_timeout_step">10</integer>
     <integer name="config_accessibility_long_press_key_timeout">3000</integer>
     <integer name="config_max_more_keys_column">5</integer>
-    <integer name="config_more_keys_keyboard_fadein_anim_time">0</integer>
-    <integer name="config_more_keys_keyboard_fadeout_anim_time">100</integer>
 
     <!-- Long pressing shift will invoke caps-lock if > 0, never invoke caps-lock if == 0 -->
     <integer name="config_longpress_shift_lock_timeout">1200</integer>
@@ -107,13 +99,7 @@
     <!-- Common suggestion strip configuration. -->
     <integer name="config_suggestions_count_in_strip">3</integer>
     <fraction name="config_center_suggestion_percentile">36%</fraction>
-    <integer name="config_delay_in_milliseconds_to_update_suggestions">0</integer>
 
-    <!-- Common more suggestions configuraion. -->
-    <dimen name="config_more_suggestions_key_horizontal_padding">12dp</dimen>
-    <dimen name="config_more_suggestions_bottom_gap">6dp</dimen>
-    <dimen name="config_more_suggestions_modal_tolerance">32.0dp</dimen>
-    <fraction name="config_more_suggestions_info_ratio">18%</fraction>
 
     <!-- Common gesture trail parameters -->
     <!-- Minimum distance between gesture trail sampling points. -->
@@ -132,15 +118,8 @@
     <integer name="config_gesture_trail_body_ratio">100</integer>
     <integer name="config_gesture_trail_shadow_ratio">-1</integer>
 
-    <!-- Common configuration of Emoji keyboard -->
-    <dimen name="config_emoji_category_page_id_height">2dp</dimen>
 
-    <!-- Inset used in Accessibility mode to avoid accidental key presses when a finger slides off the screen. -->
-    <dimen name="config_accessibility_edge_slop">8dp</dimen>
 
-    <integer name="config_user_dictionary_max_word_length">48</integer>
 
     <!-- Personalization configuration -->
-    <!-- -1 means periocical wipe of the personalization dict is disabled. -->
-    <integer name="config_personalization_dict_wipe_interval_in_days">-1</integer>
 </resources>

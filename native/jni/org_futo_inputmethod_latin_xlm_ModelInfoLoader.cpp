@@ -3,7 +3,6 @@
 #include "org_futo_inputmethod_latin_xlm_ModelInfoLoader.h"
 #include "defines.h"
 #include "jni_common.h"
-#include "ggml/finetune.h"
 #include "sentencepiece/sentencepiece_processor.h"
 #include "jni_utils.h"
 #include "ggml/ModelMeta.h"

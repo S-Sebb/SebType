@@ -12,7 +12,6 @@ set(LATIN_IME_JNI_SRC_FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_BinaryDictionaryUtils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_DicTraverseSession.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_xlm_LanguageModel.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_xlm_AdapterTrainer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/org_futo_inputmethod_latin_xlm_ModelInfoLoader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/jni_common.cpp)
 
@@ -33,8 +32,6 @@ set(LATIN_IME_CORE_SRC_FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/ggml-quants.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/ggml-backend.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/llama.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/finetune.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/train.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/common.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/LanguageModel.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/ModelMeta.cpp

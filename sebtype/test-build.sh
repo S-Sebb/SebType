@@ -29,7 +29,7 @@ command -v sccache >/dev/null || { echo "preflight: sccache missing (native obje
 sebtype/build.sh debug > /dev/null 2> "$out/test-build-warm.log" ||
   { echo "preflight: debug build failed, see $out/test-build-warm.log"; exit 1; }
 cleanup
-if ! { git worktree add -q --detach "$wt" HEAD && (cd "$wt" && git submodule update --init --depth 1 -q) &&
+if ! { git worktree add -q --detach "$wt" HEAD &&
   cp -a java/res-bundle/. "$wt/java/res-bundle/" && mkdir -p "$wt/rime-android/out" &&
   cp rime-android/out/rime-release.aar "$wt/rime-android/out/"; }; then
   echo "preflight: can't set up $wt"; exit 1

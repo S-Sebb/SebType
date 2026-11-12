@@ -1172,9 +1172,6 @@ fun CollapsibleSuggestionsBar(
 /* ---- Previews ---- */
 
 class ExampleListener : SuggestionStripViewListener {
-    override fun showImportantNoticeContents() {
-    }
-
     override fun pickSuggestionManually(word: SuggestedWordInfo?) {
     }
 
