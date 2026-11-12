@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds SebType's fcitx5-rime RPM (#117), librime RPMs (#101) or Fcitx5 RPMs (#182): pc/fcitx5-rime,
-# pc/librime or pc/fcitx5 with fcitx5-rime.spec, librime.spec or fcitx5.spec, as Fedora builds its
+# engines/librime or pc/fcitx5 with fcitx5-rime.spec, librime.spec or fcitx5.spec, as Fedora builds its
 # packages, in a pinned Fedora container. Prints the RPMs' paths.
 #
 #   pc/linux/rime/build.sh            # -> ~/.cache/sebtype/fcitx5-rime/fcitx5-rime-<version>-<release>.x86_64.rpm
@@ -18,15 +18,15 @@ source "$here/versions.sh"
 source "$here/../rpm-sources.sh"
 pkg=${1:-fcitx5-rime}
 case $pkg in
-  fcitx5-rime) version=$RIME_VERSION release=$RIME_SEBTYPE_RELEASE cache=$RIME_CACHE sources=() ;;
-  librime) version=$LIBRIME_VERSION release=$LIBRIME_SEBTYPE_RELEASE cache=$LIBRIME_CACHE sources=("${LIBRIME_SOURCES[@]}") ;;
-  fcitx5) version=$FCITX5_VERSION release=$FCITX5_SEBTYPE_RELEASE cache=$FCITX5_CACHE sources=() ;;
+  fcitx5-rime) src=$here/../../fcitx5-rime version=$RIME_VERSION release=$RIME_SEBTYPE_RELEASE cache=$RIME_CACHE sources=() ;;
+  librime) src=$here/../../../engines/librime version=$LIBRIME_VERSION release=$LIBRIME_SEBTYPE_RELEASE cache=$LIBRIME_CACHE sources=("${LIBRIME_SOURCES[@]}") ;;
+  fcitx5) src=$here/../../fcitx5 version=$FCITX5_VERSION release=$FCITX5_SEBTYPE_RELEASE cache=$FCITX5_CACHE sources=() ;;
   *) echo "usage: $0 [fcitx5-rime | librime | fcitx5]" >&2; exit 2 ;;
 esac
 spec=$here/$pkg.spec
 mkdir -p "$cache"/{work,sources}
 fetch_lookaside "$pkg" "$cache/sources" "${sources[@]}"
-pack_source "$here/../../$pkg" "$cache/sources/$pkg.tar.gz"
+pack_source "$src" "$cache/sources/$pkg.tar.gz"
 [[ $pkg != fcitx5 ]] || cp "$here/fcitx5-xinput" "$here/fcitx5.sh" "$cache/sources/"
 
 # Builder image: the pinned Fedora with the spec's build dependencies. Built once per pin and spec;

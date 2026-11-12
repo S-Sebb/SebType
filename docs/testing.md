@@ -6,7 +6,7 @@ A PR runs the checks for what it changed; the full suite (40–60 minutes on an 
 release. `SEBTYPE_CHECKS` picks them by name prefix, comma-separated, from the names in the results:
 
 ```
-SEBTYPE_CHECKS=settings-japanese,incognito sebtype/test-emulator.sh
+SEBTYPE_CHECKS=settings-japanese,incognito android/test/emulator.sh
 ```
 
 That runs those checks and what they need: always the build, the install beside FUTO Keyboard, the
@@ -18,20 +18,20 @@ Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in
 `pc/windows/setup/test-tcsbackend.sh`; `mozc-speed-and-dictionary` in `pc/windows/mozc/test.ps1`) measure
 speed, so they run only in the final performance run (#54, Decisions #2 2026-11-11), with `PERF_RUN=1`
 (`-PerfRun` for the PowerShell scripts). Without it they write no result line, unless `SEBTYPE_CHECKS` names
-one: then it reports SKIP and says why. `sebtype/perf.sh` is a measurement of its own, run only then too.
+one: then it reports SKIP and says why. `android/perf/perf.sh` is a measurement of its own, run only then too.
 
 ## The emulator
 
-SebType's device tests (`sebtype/test-emulator.sh`, `test-typing.sh`, `test-privacy.sh`, `perf.sh`,
-`rime-android/smoke-test.sh`) run on one headless emulator on nobara-pc, one run at a time: two
-emulators ran the PC out of memory (Decisions #2, #170). `sebtype/emulator.sh` queues each run for it:
+SebType's device tests (`android/test/emulator.sh`, `test-typing.sh`, `test-privacy.sh`, `perf.sh`,
+`android/rime/smoke-test.sh`) run on one headless emulator on nobara-pc, one run at a time: two
+emulators ran the PC out of memory (Decisions #2, #170). `android/emulator.sh` queues each run for it:
 
 | AVD | Serial | Guest RAM | Lock |
 |---|---|---|---|
 | `guide35` | `emulator-5554` | 2.5 GB | `/tmp/agent-locks/devices/emulator-guide35.lock` |
 
 It holds that lock for the whole device part of the run, so no other run reinstalls SebType in the
-middle of it; `sebtype/test-emulator-pick.sh` checks the queue with stub locks, no emulator needed. If
+middle of it; `android/test/emulator-pick.sh` checks the queue with stub locks, no emulator needed. If
 the emulator isn't running it is started headless, and the run waits until it has settled (about 2
 minutes after a cold boot). It then stays up: other projects (SebChat) use it through the same lock and
 expect it running. On the emulator it also turns on `hide_error_dialogs`: under load an app can be slow
@@ -40,7 +40,7 @@ With the setting on, Android closes that app instead. `ANDROID_SERIAL=<serial>` 
 instead, a phone included.
 
 Once it holds the lock, `test-emulator.sh` sets the emulator's language list to `en-US` alone
-(`sebtype/set-locale`, the way Settings does it; its `locale` check logs the list it replaced). A fresh
+(`android/test/set-locale`, the way Settings does it; its `locale` check logs the list it replaced). A fresh
 install starts SebType's languages from that list, and other tasks change it.
 
 The AVD is Android 15 Google APIs x86_64 (`system-images;android-35;google_apis;x86_64`), Pixel 7, with

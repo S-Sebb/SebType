@@ -299,7 +299,7 @@ if ('ja' -in $removed) {
   Write-Output 'user: Japanese removed, its learned words deleted'
 }
 
-# Chinese: the data the phone bundles (tools/rime-data/build.sh), rime-ice's schemas and Lua with 白霜's
+# Chinese: the data the phone bundles (data/rime/build.sh), rime-ice's schemas and Lua with 白霜's
 # dictionary, its tables prebuilt. librime uses them as they are because their sources aren't there.
 # Learned words (*.userdb), *.custom.yaml and the user's custom_phrase.txt stay. The marker names the data
 # and the Weasel it was deployed with, so a new Weasel redeploys it too.

@@ -38,7 +38,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Chinese name | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. |
 | Japanese and English names | `mozc.conf` named 日本語 and `keyboard-us.conf` named English in the same `inputmethod` folder. Show once Fcitx5 restarts | The tray menu and the Super+Space popup read English · 中文 · 日本語 instead of Keyboard - English (US) · Rime · Mozc (#92). An entry there also renames the keyboard addon's built-in `keyboard-us`; its layout still comes from the id |
 | Typo correction | `sebtype_typo/keyboard: pc` in the same `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
-| Chinese data | Builds SebType's Chinese data with `tools/rime-data/build.sh` (cached in `~/.cache/sebtype`; the first build needs gcc, g++ and OpenCC and takes about a minute) and unzips it into `~/.local/share/fcitx5/rime` over the files of the same name, then removes the dictionary sources (`*.dict.yaml`) it has prebuilt tables for. Learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. Every file it replaces or removes is kept first in `~/.local/share/sebtype/rime-before`, and `sebtype-data.txt` in Rime's folder names the data installed. Rime then deploys it (Rime deploy, below) | Chinese on Linux types with the same data as the phone and Windows: rime-ice's schemas and Lua with 白霜's dictionary, and SebType's typo correction (#46, #102), so `xoaoshi` gives 小时 first. Full pinyin is its only scheme, and 简 → 繁 its only menu switch: punctuation, emoji, half-width and the other switches stay at their defaults (#117) |
+| Chinese data | Builds SebType's Chinese data with `data/rime/build.sh` (cached in `~/.cache/sebtype`; the first build needs gcc, g++ and OpenCC and takes about a minute) and unzips it into `~/.local/share/fcitx5/rime` over the files of the same name, then removes the dictionary sources (`*.dict.yaml`) it has prebuilt tables for. Learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. Every file it replaces or removes is kept first in `~/.local/share/sebtype/rime-before`, and `sebtype-data.txt` in Rime's folder names the data installed. Rime then deploys it (Rime deploy, below) | Chinese on Linux types with the same data as the phone and Windows: rime-ice's schemas and Lua with 白霜's dictionary, and SebType's typo correction (#46, #102), so `xoaoshi` gives 小时 first. Full pinyin is its only scheme, and 简 → 繁 its only menu switch: punctuation, emoji, half-width and the other switches stay at their defaults (#117) |
 | 简/繁 key | Ctrl+Shift+F toggles rime-ice's `traditionalization` option at any time, added to `key_binder/bindings` in `~/.local/share/fcitx5/rime/default.custom.yaml`, keeping the file's other patches | Chinese switches between simplified and traditional output, as with Weasel on Windows. Only the output changes, so learned words stay shared; Ctrl+F alone stays Find in apps |
 | Candidates per page | `menu/page_size: 6` in the same `default.custom.yaml`, only when it has no page size yet | 6 Chinese candidates per page instead of rime-ice's 5 (Decisions #2, #163). A page size of the user's own, which the Configurator writes there too, stays |
 | Rime deploy | When any of the Chinese steps changed something and Fcitx5 runs, asks it over D-Bus to redeploy Rime, which it does in the background | The changes apply without Rime's Deploy menu entry, which SebType's fcitx5-rime doesn't have |
@@ -135,7 +135,7 @@ app (#182).
 ### SebType's fcitx5-mozc
 
 Fedora's fcitx5-mozc picks the tray icon from the input mode alone, so Japanese's English mode can't show
-**A** for Caps Lock. SebType's fcitx5-mozc, built from `pc/mozc` (Mozc 3.35.6354, the same
+**A** for Caps Lock. SebType's fcitx5-mozc, built from `engines/mozc` (Mozc 3.35.6354, the same
 tree as Windows, with fcitx/mozc's Fcitx 5 frontend in `src/unix/fcitx5`), asks for `<icon>_upper` in the English modes while Caps Lock is on, and redraws the
 tray when Caps Lock changes, the way fcitx5-rime does (`src/unix/fcitx5/mozc_engine.cc`). It also
 replaces Mozc's tray menu (its five input modes and its
@@ -145,7 +145,7 @@ Mozc, dictionary and learned words.
 
 `mozc/build.sh` packages it in place of Fedora's: `mozc/fcitx5-mozc.spec` follows Fedora's spec and
 builds with Bazel (Bazelisk, pinned by checksum in `mozc/versions.sh` with the Fedora container image),
-which fetches the libraries `pc/mozc/src/MODULE.bazel` pins. The tools (`mozc_tool`) use Qt 6, as
+which fetches the libraries `engines/mozc/src/MODULE.bazel` pins. The tools (`mozc_tool`) use Qt 6, as
 Mozc's Bazel build does. It runs under the shared build lock with 4 compile jobs in a container capped
 at 6 GB. Bazel's caches stay in `~/.cache/sebtype/mozc/work`, so a rebuild compiles only what changed.
 `setup-ime.sh` runs it when the RPM isn't built yet, replaces Fedora's fcitx5-mozc
@@ -186,7 +186,7 @@ builds it with `rime/fcitx5.spec` (Fedora's spec) and all its subpackages, which
 SebType's typo correction (#46) asks a second translator, `corr`, with librime's correction on, and
 `lua/sebtype_typo.lua` ranks what it finds by a keyboard model. librime only proposes slips onto the key
 left or right, so on a PC a slip onto the key above or below (`xkaoshi` for xiaoshi) was never found.
-SebType's librime, `pc/librime` (1.16.1), gives librime's correction a PC layout model when the schema says
+SebType's librime, `engines/librime` (1.16.1), gives librime's correction a PC layout model when the schema says
 `sebtype_typo/keyboard: pc` (setup sets it; the phone keeps librime's own map): the neighbours within
 1.25 key widths on the staggered rows, each slip priced −log P(typed | meant) as the Lua filter prices
 it, one slip per syllable. It also stops a sentence of several words, such as 你|好 for the corrected

@@ -5,25 +5,25 @@ has the details):
   (LICENSE.md).
 - The original AOSP keyboard code: the Apache License 2.0 below.
 - Code from other projects that FUTO vendored: each project's own licence, in its folder.
-- SebType's own code in pc/, rime-android/, sebtype/, tools/rime-data/, tools/en-dict/ and docs/, and
-  tools/trim-emoji.sh, tools/pack-rime-ice.sh, tools/userdb-to-futo-backup.py and .github/workflows/: the
-  MIT licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb. These files in those folders are not SebType's own
-  and keep their licence (each folder's LICENSE file lists them):
-  - sebtype/assets/layouts/: adapted from FUTO's layouts, Apache-2.0.
-  - sebtype/res-stable/raw/emoji_i18n.jsondlgz:
+- SebType's own code in pc/, art/, data/, docs/, sync-server/, tools/ and .github/workflows/, and SebType's own
+  files in android/ (android/LICENSE lists them): the MIT licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb.
+  These files in those folders are not SebType's own and keep their licence (each folder's LICENSE file lists
+  them):
+  - android/app/src/main/assets/layouts/SebType/: adapted from FUTO's layouts, Apache-2.0.
+  - android/app/src/main/res/raw/emoji_i18n.jsondlgz:
     FUTO's, the FUTO Source First License 1.1.
-  - sebtype/res-stable/raw/main_en.dict: FUTO's dictionary, the FUTO Source First License 1.1, with
+  - android/app/src/main/res/raw/main_en.dict: FUTO's dictionary, the FUTO Source First License 1.1, with
     wordfreq's frequencies under CC BY-SA 4.0 (credits at the end).
-  - sebtype/res/font/sebtype_nunito_extrabold.ttf, sebtype/res/font/sebtype_pixelify_semibold.ttf, and
-    the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
-  - SebType's Mozc in pc/mozc/ (with fcitx/mozc's Fcitx 5 frontend), and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause
+  - android/app/src/main/res/font/sebtype_nunito_extrabold.ttf and sebtype_pixelify_semibold.ttf, the fonts in
+    art/fonts/, and the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
+  - SebType's Mozc in engines/mozc/ (with fcitx/mozc's Fcitx 5 frontend), and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause
     licence.
   - SebType's Weasel in pc/weasel/: Weasel's GPL-3.0.
-  - SebType's librime in pc/librime/: librime's BSD-3-Clause.
+  - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - SebType's fcitx5-rime in pc/fcitx5-rime/: fcitx5-rime's LGPL-2.1-or-later.
   - SebType's Fcitx5 in pc/fcitx5/: Fcitx5's LGPL-2.1-or-later.
   - The RPM specs in pc/linux/: Fedora's, MIT.
-  - rime-android/patches/, patches to RimeJni: RimeJni's MIT licence.
+  - android/rime/patches/, patches to RimeJni: RimeJni's MIT licence.
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0, fcitx5-rime
   LGPL-2.1-or-later.
@@ -228,7 +228,7 @@ up to commit d847619a2b48945465f840b8d81644fa455cc115.
 Includes Dictionaries © Lexiteria LLC.  Used by permission.
 
 
-SebType's English dictionary (sebtype/res-stable/raw/main_en.dict, built by tools/en-dict/build.sh)
+SebType's English dictionary (android/app/src/main/res/raw/main_en.dict, built by data/en-dict/build.sh)
 takes its word frequencies from wordfreq by Robyn Speer (https://github.com/rspeer/wordfreq), whose
 data is under the Creative Commons Attribution-ShareAlike 4.0 licence
 (https://creativecommons.org/licenses/by-sa/4.0/); the dictionary's frequencies are shared under the

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds SebType's fcitx5-mozc RPM (#66): pc/mozc with fcitx5-mozc.spec, as Fedora builds its package,
+# Builds SebType's fcitx5-mozc RPM (#66): engines/mozc with fcitx5-mozc.spec, as Fedora builds its package,
 # in a pinned Fedora container. Prints the RPM's path.
 #
 #   pc/linux/mozc/build.sh    # -> ~/.cache/sebtype/mozc/rpms/fcitx5-mozc-<version>-<release>.x86_64.rpm
@@ -14,7 +14,7 @@ source "$here/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=../rpm-sources.sh
 source "$here/../rpm-sources.sh"
 mkdir -p "$MOZC_CACHE"/{rpms,work,sources}
-pack_source "$here/../../mozc" "$MOZC_CACHE/sources/mozc.tar.gz"
+pack_source "$here/../../../engines/mozc" "$MOZC_CACHE/sources/mozc.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies and Bazelisk. Built once per pin and spec.
 image=localhost/sebtype-mozc-builder:$(cat "$here/fcitx5-mozc.spec" - <<<"$MOZC_BUILD_IMAGE $BAZELISK_SHA256" | sha256sum | head -c 12)

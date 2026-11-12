@@ -1,4 +1,4 @@
-# SebType's Rime and Fcitx5: pc/fcitx5-rime (#117), pc/librime (#101) and pc/fcitx5 (#182), packaged by
+# SebType's Rime and Fcitx5: pc/fcitx5-rime (#117), engines/librime (#101) and pc/fcitx5 (#182), packaged by
 # fcitx5-rime.spec, librime.spec and fcitx5.spec. Sourced by build.sh, ../setup-ime.sh and
 # ../test-setup-ime.sh. Bump a *_SEBTYPE_RELEASE when its source or the build changes.
 RIME_VERSION=5.1.15

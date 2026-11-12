@@ -1,5 +1,5 @@
 # SebType Configurator for Windows (#72): pc/configurator built on a Windows runner with the phone's icon
-# (sebtype/make-icon.py) at every size, after its unit tests. The exe is the run's artifact "sebtype-configurator"; the installer (#73)
+# (art/make-icon.py) at every size, after its unit tests. The exe is the run's artifact "sebtype-configurator"; the installer (#73)
 # ships it.
 name: Configurator
 
@@ -10,16 +10,16 @@ on:
     paths:
       - pc/configurator/**
       - pc/icons/**
-      - sebtype/make-icon.py
-      - assets/icon.png
+      - art/make-icon.py
+      - art/icon.png
       - .github/workflows/configurator.yml
   push:
     branches: [main]
     paths:
       - pc/configurator/**
       - pc/icons/**
-      - sebtype/make-icon.py
-      - assets/icon.png
+      - art/make-icon.py
+      - art/icon.png
       - .github/workflows/configurator.yml
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
       - name: Icon
         run: |
           python -m pip install --quiet pillow numpy
-          python ../../sebtype/make-icon.py --windows ../../out
+          python ../../art/make-icon.py --windows ../../out
           Move-Item -Force ../../out/sebtype.ico $env:SEBTYPE_ICO
       - run: cargo test --release --locked
       - run: cargo build --release --locked

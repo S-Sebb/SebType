@@ -1,4 +1,4 @@
-<img src="assets/icon.png" width="96" height="96" alt="">
+<img src="art/icon.png" width="96" height="96" alt="">
 
 # SebType
 
@@ -14,21 +14,21 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 
 | Part | Licence |
 |---|---|
-| FUTO Keyboard's code: `java/`, `native/`, `common/`, `tests/`, `tools/` other than SebType's files below, `.github/ISSUE_TEMPLATE/`, the root build files, `libs/` (FUTO's Mozc library) and the FUTO files brought in from its submodules (`java/assets/layouts/`, the translations in `java/res/values-ja/` and `values-zh-rCN/`, `java/res/raw/ml4_q6_k.gguf`). SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
+| FUTO Keyboard's code: `android/app/` other than SebType's files below, `android/tools/contributors.py`, `android/tools/make-keyboard-text-py/`, `.github/ISSUE_TEMPLATE/`, the Gradle files in `android/` (other than `android/build.gradle`), `android/app/libs/` (FUTO's Mozc library) and the FUTO files brought in from its submodules (`android/app/src/main/assets/layouts/`, the translations in `android/app/src/main/res/values-ja/` and `values-zh-rCN/`, `android/app/src/main/res/raw/ml4_q6_k.gguf`). SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
 | The original AOSP keyboard code in those folders, up to commit `d847619a` | Apache-2.0 ([NOTICE](NOTICE)) |
 | Code from other projects that FUTO vendored (sentencepiece, protobuf, ggml, llama.cpp, gemoji and others) | each project's own, in its folder |
-| SebType's own code: `pc/`, `rime-android/`, `sebtype/`, `sync-server/`, `tools/rime-data/`, `tools/en-dict/`, `docs/`, with the exceptions below. Each folder's `LICENSE` file lists its exceptions. Also `tools/trim-emoji.sh`, `tools/pack-rime-ice.sh`, `tools/userdb-to-futo-backup.py` and `.github/workflows/` | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
-| `sebtype/assets/layouts/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
-| `sebtype/res-stable/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) | FUTO Source First License 1.1 |
-| `sebtype/res-stable/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
-| The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([sebtype/fonts/OFL-Nunito.txt](sebtype/fonts/OFL-Nunito.txt), [sebtype/fonts/OFL-PixelifySans.txt](sebtype/fonts/OFL-PixelifySans.txt)) |
-| SebType's Mozc (`pc/mozc/`: Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
+| SebType's own code: `pc/`, `art/`, `data/`, `docs/`, `sync-server/`, `tools/`, `.github/workflows/`, and SebType's own files in `android/` ([android/LICENSE](android/LICENSE) lists them: the scripts, `test/`, `perf/`, `rime/`, and in the app the `dev.sebb.sebtype` code, its strings and its launcher icon), with the exceptions below. Each folder's `LICENSE` file lists its exceptions | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
+| `android/app/src/main/assets/layouts/SebType/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
+| `android/app/src/main/res/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) | FUTO Source First License 1.1 |
+| `android/app/src/main/res/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
+| The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([art/fonts/OFL-Nunito.txt](art/fonts/OFL-Nunito.txt), [art/fonts/OFL-PixelifySans.txt](art/fonts/OFL-PixelifySans.txt)) |
+| SebType's Mozc (`engines/mozc/`: Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
 | SebType's Weasel (`pc/weasel/`: Weasel with SebType's changes) | GPL-3.0, like Weasel |
 | SebType's fcitx5-rime (`pc/fcitx5-rime/`: fcitx5-rime with SebType's changes) | LGPL-2.1-or-later, like fcitx5-rime |
 | SebType's Fcitx5 (`pc/fcitx5/`: Fcitx5 with SebType's changes) | LGPL-2.1-or-later, like Fcitx5 |
-| SebType's librime (`pc/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
+| SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
 | Fedora's RPM specs with SebType's changes (`pc/linux/mozc/*.spec`, `pc/linux/rime/*.spec`) | MIT, like Fedora's specs |
-| SebType's patches to RimeJni (`rime-android/patches/`); RimeJni itself | MIT, like RimeJni |
+| SebType's patches to RimeJni (`android/rime/patches/`); RimeJni itself | MIT, like RimeJni |
 | librime | BSD-3-Clause |
 | The rime-ice and 白霜 data in the APK and on the PCs (see Chinese below) | GPL-3.0 |
 
@@ -38,7 +38,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 - Sync 中文's learned words and your Japanese and English personal dictionaries with your own server: [sync-server/README.md](sync-server/README.md)
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Bring in your own words (Rime word lists and learned words, Japanese and English dictionaries): [docs/import.md](docs/import.md)
-- Build and publish a release: `sebtype/release.sh` (see [docs/install.md](docs/install.md))
+- Build and publish a release: `android/release.sh` (see [docs/install.md](docs/install.md))
 
 **Chinese** is [rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)'s schemas, Lua and settings with the
 core dictionary and zh-moqi grammar of [白霜拼音 (rime-frost)](https://github.com/gaboolic/rime-frost), compiled
@@ -46,8 +46,8 @@ and bundled in the APK. Both are under the [GNU GPL v3](https://www.gnu.org/lice
 and a note of what was changed travel inside the bundle. Sources: rime-ice 2026.06.30 at
 [6810e891](https://github.com/iDvel/rime-ice/tree/6810e8916d160498620a16fef2135956fecbd485) and rime-frost 1.0.4 at
 [89ad92e4](https://github.com/gaboolic/rime-frost/tree/89ad92e450f9a5f4dcc2de67ba28004f9af0cc1e).
-[`tools/rime-data/build.sh`](tools/rime-data/build.sh) builds the bundle from those pinned releases, and
-`tools/rime-data/bench/bench.sh` measures its accuracy. It runs on librime with Lua from [rime-android/](rime-android/README.md).
+[`data/rime/build.sh`](data/rime/build.sh) builds the bundle from those pinned releases, and
+`data/rime/bench/bench.sh` measures its accuracy. It runs on librime with Lua from [android/rime/](android/rime/README.md).
 
 SebType's application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard.
 FUTO's own README follows unchanged.
@@ -78,7 +78,7 @@ If you want to contribute layouts, check out the [layouts repo](https://github.c
 
 ## Building
 
-`sebtype/build.sh` builds SebType's APKs (`release`, `debug`, and the x86_64 emulator builds); see its header.
+`android/build.sh` builds SebType's APKs (`release`, `debug`, and the x86_64 emulator builds); see its header.
 Android Studio or plain Gradle work too:
 ```
 ./gradlew assembleDebug

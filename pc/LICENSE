@@ -1,11 +1,7 @@
 SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
-- mozc/: SebType's Mozc (Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes), under Mozc's licence
-  (BSD-3-Clause, Google; each folder's LICENSE, and the licences of the data in src/data/).
 - linux/mozc-keymap.tsv: Mozc's src/data/keymap/ms-ime.tsv with SebType's keys added, under Mozc's licence (BSD-3-Clause).
 - weasel/: SebType's Weasel (Weasel with SebType's changes), under Weasel's licence (GPL-3.0, weasel/LICENSE.txt);
   the third-party programs in weasel/output/ keep their own (7-Zip, curl, WinSparkle).
-- librime/: SebType's librime (librime with SebType's changes), under librime's licence (BSD-3-Clause,
-  librime/LICENSE).
 - fcitx5-rime/: SebType's fcitx5-rime (fcitx5-rime with SebType's changes), under fcitx5-rime's licence
   (LGPL-2.1-or-later, fcitx5-rime/LICENSES/).
 - fcitx5/: SebType's Fcitx5 (Fcitx5 with SebType's changes), under Fcitx5's licence (LGPL-2.1-or-later,

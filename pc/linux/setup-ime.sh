@@ -235,7 +235,7 @@ own_build fcitx5-mozc "$MOZC_FEDORA" "$MOZC_VERSION-$SEBTYPE_RELEASE" "$here/moz
   "$MOZC_CACHE/rpms/$MOZC_RPM"
 own_build fcitx5-rime "$RIME_VERSION-$RIME_FEDORA_RELEASE" "$RIME_VERSION-$RIME_SEBTYPE_RELEASE" "$here/rime/build.sh" \
   "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize" "$RIME_CACHE/$RIME_RPM"
-# librime's typo correction knows a PC keyboard's vertical neighbours too (pc/librime), so
+# librime's typo correction knows a PC keyboard's vertical neighbours too (engines/librime), so
 # a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
 librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
@@ -398,7 +398,7 @@ done
 # 9. Japanese: a Shift tap toggles あ and direct English, and Alt+` あ and ア (Decisions #2, menu hotkeys),
 # in Mozc's own keymap. fcitx5-mozc sends Mozc a bare Shift only when it is released with no other key
 # pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it. Alt+` is
-# Mozc's InputModeSwitchKanaType, which SebType's build (pc/mozc) makes a two-way switch.
+# Mozc's InputModeSwitchKanaType, which SebType's build (engines/mozc) makes a two-way switch.
 # Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
 # Shift lines for each state and Alt+` (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
@@ -566,12 +566,12 @@ fi
 
 # 13b. Chinese uses SebType's Chinese data (#102), the data the phone and Windows use: rime-ice's schemas and
 # Lua with 白霜's dictionary and SebType's typo correction (#46), its tables prebuilt, built (cached) by
-# tools/rime-data/build.sh. It goes into Rime's folder over the files of the same name, as on Windows;
+# data/rime/build.sh. It goes into Rime's folder over the files of the same name, as on Windows;
 # learned words, *.custom.yaml and an existing custom_phrase.txt stay. Dictionary sources the data has
 # prebuilt tables for are removed, or Rime would compile them instead. What it replaces or removes is
 # kept in $rime_before first, so --undo-chinese-data puts the folder back.
 rime_tmp=$(mktemp -d)
-if "$here/../../tools/rime-data/build.sh" "$rime_tmp" > "$rime_tmp/build.log" 2>&1; then
+if "$here/../../data/rime/build.sh" "$rime_tmp" > "$rime_tmp/build.log" 2>&1; then
   rime_zip=$rime_tmp/rime/rime-data.zip rime_id=$(sha256sum < "$rime_zip" | cut -d' ' -f1)
   if [[ $(cat "$rime_marker" 2>/dev/null) != "$rime_id" ]] &&
     change "install SebType's Chinese data with typo correction in $rime_dir (the files it replaces kept in $rime_before; undo: $0 --undo-chinese-data)"; then
@@ -616,7 +616,7 @@ Keywords=SebType;IME;input method;Rime;Mozc;Fcitx;输入法;
 StartupWMClass=sebtype-configurator"
 stale=$( [[ -x $built ]] && find "$src_app" -path "$src_app/target" -prune -o -type f -newer "$built" -print -quit)
 if [[ ! -x $built || -n $stale ]] || ! cmp -s "$built" "$app_bin" || [[ $(cat "$app_desktop" 2>/dev/null) != "$want_desktop" ]] ||
-  ! cmp -s "$here/../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"; then
+  ! cmp -s "$here/../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"; then
   if change "install SebType Configurator in $app_dir with its app-menu entry (undo: $0 --undo-configurator)"; then
     if [[ ! -x $built || -n $stale ]]; then
       if command -v cargo >/dev/null; then
@@ -628,7 +628,7 @@ if [[ ! -x $built || -n $stale ]] || ! cmp -s "$built" "$app_bin" || [[ $(cat "$
     if [[ -x $built ]]; then
       mkdir -p "$app_dir" "${app_desktop%/*}" "${app_icon%/*}"
       cp "$built" "$app_bin.new" && mv "$app_bin.new" "$app_bin"
-      cp "$here/../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"
+      cp "$here/../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"
       printf '%s\n' "$want_desktop" > "$app_desktop"
     fi
   fi

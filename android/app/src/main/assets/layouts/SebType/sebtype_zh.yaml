@@ -1,0 +1,25 @@
+# Adapted from FUTO's Chinese/zh_qwerty.yaml in android/app/src/main/assets/layouts (Apache-2.0, see its LICENSE).
+# SebType: the same grid as English QWERTY; only the two bottom-row punctuation keys differ.
+name: SebType Chinese QWERTY
+languages: zh
+autoShift: false
+imeHint: "qwerty"
+rows:
+  - letters: q w e r t y u i o p
+  - letters: a s d f g h j k l
+  - letters: $shift z x c v b n m $delete
+  - bottom:
+    - $symbols
+    - type: base
+      spec: '，'
+      hint: '、'
+      moreKeys: ['、']
+      attributes: { moreKeyMode: OnlyExplicit }
+    - $action
+    - $space
+    - type: base
+      spec: '。'
+      hint: '？'
+      moreKeys: ['？', '！', '：', '；', '…|……', '—|——']
+      attributes: { moreKeyMode: OnlyExplicit }
+    - $enter

@@ -223,6 +223,6 @@ made-up devices syncing through it, a made-up Mozc dictionary, a crash report, a
 with the password on stdin. The Configurator's sync is checked by `SEBTYPE_CHECKS=private-sync
 pc/configurator/test.sh`: this server on the PC with a throwaway login, a private keyring, Fcitx5, Rime
 and Mozc in a sandbox, made-up words both ways, and delete. The phone side is
-checked on the emulator by `SEBTYPE_CHECKS=first-install,sync sebtype/test-emulator.sh`
+checked on the emulator by `SEBTYPE_CHECKS=first-install,sync android/test/emulator.sh`
 (`sync-crash-report` crashes SebType and finds the report in the crash folder)
 ([docs/testing.md](../docs/testing.md)).

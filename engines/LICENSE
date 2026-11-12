@@ -1,0 +1,5 @@
+The input engines the phone and both PCs share, each under its project's licence:
+- mozc/: SebType's Mozc (Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes), under Mozc's licence
+  (BSD-3-Clause, Google; each folder's LICENSE, and the licences of the data in src/data/).
+- librime/: SebType's librime (librime with SebType's changes), under librime's licence (BSD-3-Clause,
+  librime/LICENSE).

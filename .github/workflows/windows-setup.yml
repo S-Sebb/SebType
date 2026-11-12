@@ -1,6 +1,6 @@
 # SebType's Windows installer (#73): SebType-setup-<version>.exe, built with Inno Setup from
 # pc/windows/setup/sebtype.iss. It packs SebType's Weasel (weasel.yml), the Chinese data
-# (tools/rime-data/build.sh), SebType's Mozc (pc/mozc, built by pc/windows/mozc/build.ps1), the Configurator
+# (data/rime/build.sh), SebType's Mozc (engines/mozc, built by pc/windows/mozc/build.ps1), the Configurator
 # (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
 # run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
 name: Windows setup
@@ -11,17 +11,17 @@ on:
     paths: &paths
       - pc/windows/**
       - pc/weasel/**
-      - pc/librime/**
-      - pc/mozc/**
+      - engines/librime/**
+      - engines/mozc/**
       - pc/icons/**
       - pc/configurator/**
       - pc/linux/mozc-keymap.tsv
       - pc/linux/perf-rime.c
-      - tools/rime-data/**
-      - rime-android/versions.sh
-      - sebtype/make-icon.py
-      - sebtype/fonts/**
-      - assets/icon.png
+      - data/rime/**
+      - android/rime/versions.sh
+      - art/make-icon.py
+      - art/fonts/**
+      - art/icon.png
       - .github/workflows/windows-setup.yml
       - .github/workflows/weasel.yml
       - .github/workflows/configurator.yml
@@ -47,7 +47,7 @@ jobs:
     steps:
       - run: dnf install -q -y git librime librime-lua opencc gcc gcc-c++ curl unzip zip python3 diffutils findutils
       - uses: actions/checkout@v4
-      - run: tools/rime-data/build.sh out
+      - run: data/rime/build.sh out
       - uses: actions/upload-artifact@v4
         with:
           name: rime-data
@@ -76,7 +76,7 @@ jobs:
       # The MSI depends only on these; a run with the same ones reuses it, a PR's run main's.
       - id: inputs
         run: |
-          "hash=${{ hashFiles('pc/mozc/**', 'pc/windows/mozc/versions.psd1', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
+          "hash=${{ hashFiles('engines/mozc/**', 'pc/windows/mozc/versions.psd1', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         id: cache
         with:
@@ -87,20 +87,20 @@ jobs:
         with:
           python-version: '3.13'
       # Building Qt takes most of a cold build (#154), and Qt depends only on Mozc's Qt pin and
-      # build_qt.py: the key is theirs, read from pc/mozc.
+      # build_qt.py: the key is theirs, read from engines/mozc.
       - name: Qt's key
         id: qt
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          $pin = (Select-String -Path pc/mozc/src/build_tools/update_deps.py -Pattern 'qtbase-everywhere-src').Line
-          $key = $pin + (Get-Content -Raw pc/mozc/src/build_tools/build_qt.py)
+          $pin = (Select-String -Path engines/mozc/src/build_tools/update_deps.py -Pattern 'qtbase-everywhere-src').Line
+          $key = $pin + (Get-Content -Raw engines/mozc/src/build_tools/build_qt.py)
           "key=mozc-qt-$([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($key))))" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           path: D:\m\mozc\src\third_party\qt
           key: ${{ steps.qt.outputs.key }}
-      # Bazel's caches from main's last build, so a change to pc/mozc recompiles only what it touches.
+      # Bazel's caches from main's last build, so a change to engines/mozc recompiles only what it touches.
       - uses: actions/cache/restore@v4
         if: steps.cache.outputs.cache-hit != 'true'
         with:

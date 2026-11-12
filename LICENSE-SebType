@@ -1,9 +1,8 @@
-This licence covers SebType's own code: pc/, rime-android/, sebtype/, tools/rime-data/,
-tools/en-dict/ and docs/, except the files from other projects that README.md ("Licences")
-and NOTICE list. Each of those folders has a LICENSE file naming its exceptions. It also
-covers these files, which only SebType wrote: tools/trim-emoji.sh, tools/pack-rime-ice.sh,
-tools/userdb-to-futo-backup.py and .github/workflows/. The rest of the repository is FUTO's
-or AOSP's code and keeps their licences (LICENSE.md and NOTICE).
+This licence covers SebType's own code: pc/, art/, data/, docs/, sync-server/, tools/ and
+.github/workflows/, and SebType's own files in android/ (android/LICENSE lists them), except the files from
+other projects that README.md ("Licences") and NOTICE list. Each of those folders has a LICENSE file naming
+its exceptions. The rest of the repository is FUTO's or AOSP's code and keeps their licences (LICENSE.md and
+NOTICE), and engines/ holds Mozc and librime with SebType's changes, under their own licences (engines/LICENSE).
 
 MIT License
 

@@ -1,6 +1,6 @@
 // SebType Configurator (#72): layout "B, sidebar" (Decisions #2), groups and wording from the phone's
 // settings (#41).
-import "../../../sebtype/res/font/sebtype_nunito_extrabold.ttf";
+import "../../../android/app/src/main/res/font/sebtype_nunito_extrabold.ttf";
 import { Theme } from "theme.slint";
 import { State, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus } from "state.slint";
 import { Button, PageTitle, PixelFrame } from "widgets.slint";
@@ -43,7 +43,7 @@ component NavItem inherits Rectangle {
 
 export component AppWindow inherits Window {
     title: @tr("SebType Configurator");
-    icon: @image-url("../../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png");
+    icon: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png");
     preferred-width: 780px;
     preferred-height: 600px;
     min-width: 640px;
@@ -68,7 +68,7 @@ export component AppWindow inherits Window {
                     spacing: 10px;
                     Rectangle {
                         width: 42px; height: 42px; border-radius: 21px; background: #FFE4EC; clip: true;
-                        Image { source: @image-url("../../../sebtype/res-stable/mipmap-xxxhdpi/ic_launcher_round.png"); width: 42px; height: 42px; }
+                        Image { source: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"); width: 42px; height: 42px; }
                     }
                     PageTitle { text: "SebType"; font-size: 19px; vertical-alignment: center; }
                 }

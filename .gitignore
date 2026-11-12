@@ -5,9 +5,8 @@
 LatinIME.iml
 build/
 local.properties
-java/res/raw/mozc.data
 .cxx
-java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
+android/app/src/main/java/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
 # SebType
 out/
-java/res-bundle/raw*/
+android/app/res-bundle/raw*/
