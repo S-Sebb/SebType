@@ -3,7 +3,7 @@
 
     pc/windows/setup/pictures.py OUT_DIR
 
-- sebtype.ico and pig.png: the phone's icon at every Windows size and the cut-out pig (sebtype/make-icon.py).
+- sebtype.ico and pig.png: the phone's icon at every Windows size and the cut-out pig (art/make-icon.py).
 - cloth.png: SebChat's checkered picnic cloth with its pixel flowers, the wizard's background.
 - welcome-{1,2}.png, finish-{1,2}.png: the cream card on the left of the welcome and finish pages (164 x 314
   at 100 % and 200 % scale): the pig on pink, "SebType", and the languages or the tray keys.
@@ -24,7 +24,7 @@ root = Path(__file__).resolve().parents[3]
 out = Path(sys.argv[1])
 out.mkdir(parents=True, exist_ok=True)
 subprocess.run(
-    [sys.executable, str(root / "sebtype/make-icon.py"), "--windows", str(out)],
+    [sys.executable, str(root / "art/make-icon.py"), "--windows", str(out)],
     check=True,
 )
 pig = Image.open(out / "pig.png").convert("RGBA")
@@ -39,7 +39,7 @@ CREAM, CHECK, CARD, OUTLINE, INK, LINE, PINK = (
     "#ECD0AE",
     "#FDE0E6",
 )
-JERSEY = root / "sebtype/fonts/Jersey10-Regular.ttf"
+JERSEY = root / "art/fonts/Jersey10-Regular.ttf"
 cjk = next(
     f
     for pattern in (

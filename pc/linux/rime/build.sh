@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds SebType's fcitx5-rime RPM (#117), librime RPMs (#101) or Fcitx5 RPMs (#182): pc/fcitx5-rime,
-# pc/librime or pc/fcitx5 with fcitx5-rime.spec, librime.spec or fcitx5.spec, as Fedora builds its
+# engines/librime or pc/fcitx5 with fcitx5-rime.spec, librime.spec or fcitx5.spec, as Fedora builds its
 # packages, in a pinned Fedora container. Prints the RPMs' paths.
 #
 #   pc/linux/rime/build.sh            # -> ~/.cache/sebtype/fcitx5-rime/fcitx5-rime-<version>-<release>.x86_64.rpm

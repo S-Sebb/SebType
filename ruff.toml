@@ -1,5 +1,4 @@
-# FUTO's upstream Python: never lint or reformat it, so upstream merges stay clean.
+# FUTO's and the engines' own Python keeps its upstream style: never lint or reformat it.
 force-exclude = true
-# SebType's Weasel, librime, Mozc, fcitx5-rime and Fcitx5 keep upstream's code style.
-extend-exclude = ["java", "tools/contributors.py", "tools/make-keyboard-text-py", "pc/weasel", "pc/librime",
-  "pc/mozc", "pc/fcitx5-rime", "pc/fcitx5"]
+extend-exclude = ["android/app", "android/tools/contributors.py", "android/tools/make-keyboard-text-py", "engines",
+  "pc/weasel", "pc/fcitx5-rime", "pc/fcitx5"]

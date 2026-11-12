@@ -33,7 +33,7 @@ devq -m 30 -n "configurator build for test-setup-ime" /tmp/agent-locks/sebtype/b
   env CARGO_BUILD_JOBS=8 cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
   { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
 # Nor does it build SebType's Chinese data: each fake account's cache links the zip built here.
-../../tools/rime-data/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||
+../../data/rime/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||
   { echo "preflight: SebType's Chinese data does not build (see $out/test-setup-ime-rime-data.log)"; exit 1; }
 mapfile -t rime_zips < <(for z in ~/.cache/sebtype/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
 ((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/.cache/sebtype"; exit 1; }

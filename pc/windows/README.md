@@ -9,9 +9,9 @@ below). One installer, `SebType-setup-<version>.exe`, installs, upgrades and rem
 `.github/workflows/windows-setup.yml` builds it on every change here and keeps it as the run's artifact
 `sebtype-setup`. It is Inno Setup 6.7.4 (`setup/sebtype.iss`, as SebChat's), in SebType's Picnic look: the
 checkered cloth behind every page, the cream card with the pig, Jersey 10 and Nunito for English, and the
-phone's icon at every Windows size. `setup/pictures.py` draws the pictures from `sebtype/make-icon.py` and
+phone's icon at every Windows size. `setup/pictures.py` draws the pictures from `art/make-icon.py` and
 `pc/icons`. The run builds what the installer packs in parallel jobs: SebType's Weasel (`weasel.yml`), the
-Chinese data (`tools/rime-data/build.sh`, on Fedora for librime 1.16.1), SebType's Mozc (`mozc/build.ps1`,
+Chinese data (`data/rime/build.sh`, on Fedora for librime 1.16.1), SebType's Mozc (`mozc/build.ps1`,
 cached until its inputs change) and the Configurator (`configurator.yml`).
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
@@ -70,7 +70,7 @@ Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 |---|---|---|
 | SebType's Weasel | Machine: installs `sebtype-weasel-<version>-installer.exe` silently when it isn't already the installed one. It replaces any other Weasel | SebType's Weasel (Weasel 0.17.4 with SebType's changes) and icons, see below |
 | SebType's Mozc | Machine: installs `SebType-Mozc-<version>.msi` when it isn't already the installed one, and enables its 日本語 profile by default for every user (`HKLM\SOFTWARE\Microsoft\CTF\TIP\<Mozc>\LanguageProfile\0x00000411\<profile>`, `Enable=1`) | See Japanese below. Mozc registers its profile without enabling it by default, so Windows turned it off for the user when the language list changed later (#65) |
-| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`tools/rime-data/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. SebType's librime has librime-lua built in |
+| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`data/rime/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. SebType's librime has librime-lua built in |
 | Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+\`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
 | Typo correction | `sebtype_typo/keyboard: pc` in `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
@@ -89,12 +89,12 @@ Everything Rime learns stays in `%APPDATA%\Rime`, so sync (#12) can add a `sync_
 ### SebType's Weasel
 
 `weasel/build.ps1` builds SebType's Weasel, `pc/weasel` (Weasel 0.17.4), with SebType's librime,
-`pc/librime` (1.16.1, the version SebType's Android build uses and the one Linux runs), and the
+`engines/librime` (1.16.1, the version SebType's Android build uses and the one Linux runs), and the
 plugins (librime-lua, librime-octagram, librime-predict) librime's own 1.16.1 release merges in, at the
 same commits. With SebType's librime, Chinese typo correction also fixes a slip onto the key above or
 below, so `xkaoshi` gives 小时 first (#101, #133). librime's dependencies and plum (which fetches Rime's
 data) stay upstream's, fetched at pinned commits. `.github/workflows/weasel.yml` runs it on GitHub's
-Windows runner whenever something under `pc/weasel/`, `pc/librime/`, `pc/windows/weasel/` or `pc/icons/`
+Windows runner whenever something under `pc/weasel/`, `engines/librime/`, `pc/windows/weasel/` or `pc/icons/`
 changes; the installer is that run's artifact `sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
 
 SebType's changes to Weasel, about 90 lines:
@@ -193,13 +193,13 @@ SVG renderer for the icons) and a portable CMake (for Qt; the Build Tools lack i
 `update_deps.py` pins LLVM, MSYS2, Ninja, Qt and WiX. The build itself needs no admin rights and no
 Developer Mode (Bazel runs without symlinks).
 
-The script copies SebType's Mozc, `pc/mozc` (Mozc 3.35.6354 with SebType's changes), over the kept
+The script copies SebType's Mozc, `engines/mozc` (Mozc 3.35.6354 with SebType's changes), over the kept
 tree in `-WorkDir`, writes the icons with `make_icons.py`,
 builds Qt once, then Mozc's installer with Bazel (8 jobs). A rebuild compiles only what changed. On
 YukaROG the first build took about 40 minutes (update_deps 4, Qt 14, Bazel 22) and 9 GB, after about
 40 minutes for the Build Tools install.
 
-| SebType's change in `pc/mozc` | What it does |
+| SebType's change in `engines/mozc` | What it does |
 |---|---|
 | Caps Lock icon | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
 | Shift tap | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |

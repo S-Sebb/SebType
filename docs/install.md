@@ -23,15 +23,15 @@ between SebType, FUTO and Gboard with the navigation-bar keyboard icon.
 ## Signing key
 
 Releases are signed with SebType's own key, which never goes into the repo or a release.
-`sebtype/build.sh` reads it from `~/.config/sebtype/` (or `SEBTYPE_KEY_DIR`): `sebtype-release.jks`
+`android/build.sh` reads it from `~/.config/sebtype/` (or `SEBTYPE_KEY_DIR`): `sebtype-release.jks`
 (alias `sebtype`) and its password in `keystore.password`. Keep an offline backup of that folder.
 Android only accepts updates signed with the same key: losing it means uninstalling SebType and
 reinstalling it, which wipes its learned words and settings.
 
-`sebtype/build.sh release` passes the key to Gradle in the build's own environment
+`android/build.sh release` passes the key to Gradle in the build's own environment
 (`SEBTYPE_KEYSTORE`, `SEBTYPE_KEYSTORE_PASSWORD`), so parallel builds can't take each other's away. A
 release build (`assembleRelease` and the like) without them stops with a line naming them; it is
-never signed with Android's public test key (`java/shared.keystore`).
+never signed with Android's public test key (`android/app/shared.keystore`).
 `-PunsignedRelease` builds it unsigned instead.
 
 ## Publishing a release
@@ -39,7 +39,7 @@ never signed with Android's public test key (`java/shared.keystore`).
 From a clean checkout of `origin/main`:
 
 ```
-sebtype/release.sh
+android/release.sh
 ```
 
 It builds the signed arm64 release APK under the shared build lock

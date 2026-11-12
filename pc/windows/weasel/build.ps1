@@ -1,6 +1,6 @@
 # Builds SebType's Weasel (小狼毫) installer: SebType's Weasel in pc/weasel (Weasel $WeaselVersion) with
-# SebType's tray icons, and SebType's librime in pc/librime (librime $RimeVersion, the version SebType's
-# Android build uses, rime-android/versions.sh; #101, #133).
+# SebType's tray icons, and SebType's librime in engines/librime (librime $RimeVersion, the version SebType's
+# Android build uses, android/rime/versions.sh; #101, #133).
 #   pc/windows/weasel/build.ps1 -Icons <dir with zh.ico en.ico en_caps.ico> [-Out <dir>]
 # Needs Visual Studio 2022 with C++ and ATL, git, 7z, NSIS and Git's bash (GitHub's windows-2022
 # runner has them all; .github/workflows/weasel.yml runs this). The third-party code SebType doesn't
@@ -66,7 +66,7 @@ try {
   Get-Commit rime/plum $PlumCommit plum
   foreach ($icon in 'zh.ico', 'en.ico', 'en_caps.ico') { Copy-Item (Join-Path $Icons $icon) resource\ -Force }
   # The pig at the start of the candidate window, which WeaselServer finds next to itself (#94; made by
-  # sebtype/make-icon.py).
+  # art/make-icon.py).
   Copy-Item (Join-Path $PSScriptRoot 'sebtype-logo.png') output\ -Force
 
   Copy-Item env.vs2022.bat env.bat

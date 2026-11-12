@@ -1,4 +1,4 @@
-# SebType's librime (#101): SebType's librime in pc/librime, packaged as Fedora 44 packages librime
+# SebType's librime (#101): SebType's librime in engines/librime, packaged as Fedora 44 packages librime
 # 1.16.1-2 (this is Fedora's spec, MIT licence). build.sh sets the version and release from
 # versions.sh and fetches the plugins, Fedora's own copies.
 
@@ -8,7 +8,7 @@ Release:        %{sebtype_release}
 Summary:        Rime Input Method Engine Library
 License:        GPL-3.0-only
 URL:            https://github.com/S-Sebb/SebType
-# pc/librime, packed by build.sh
+# engines/librime, packed by build.sh
 Source0:        librime.tar.gz
 # The plugins, as Fedora's package has them: librime-lua needs librime's internal API, so it is built
 # with librime.

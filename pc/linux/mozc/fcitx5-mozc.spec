@@ -1,4 +1,4 @@
-# SebType's fcitx5-mozc (#66): SebType's Mozc in pc/mozc, the same tree the Windows build uses, with
+# SebType's fcitx5-mozc (#66): SebType's Mozc in engines/mozc, the same tree the Windows build uses, with
 # fcitx/mozc's Fcitx 5 frontend (src/unix/fcitx5), packaged in place of Fedora 44's fcitx5-mozc (whose
 # spec, MIT licence, this one follows). Mozc builds with Bazel, which fetches the third-party libraries
 # MODULE.bazel pins. build.sh sets the version, release and Bazel's folders.
@@ -14,7 +14,7 @@ Summary:        A wrapper of mozc for fcitx5
 License:        BSD and UCD and Public Domain and mecab-ipadic and LGPLv2+ and MS-PL and ASL-2.0
 URL:            https://github.com/S-Sebb/SebType
 
-# pc/mozc, packed by build.sh
+# engines/mozc, packed by build.sh
 Source0:        mozc.tar.gz
 
 BuildRequires:  gcc-c++

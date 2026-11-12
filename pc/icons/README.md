@@ -15,4 +15,4 @@ larger and HiDPI sizes. States: `en`, `zh`, `zh-a`, `zh-caps`, `hira`, `kata`, `
 
 Linux installs them as an icon theme (`pc/linux/setup-ime.sh`, see `pc/linux/README.md`). The glyphs are
 outlines from Noto Sans CJK Black (SIL Open Font License 1.1, Google) and Nunito ExtraBold
-([OFL](../../sebtype/fonts/OFL-Nunito.txt)).
+([OFL](../../art/fonts/OFL-Nunito.txt)).

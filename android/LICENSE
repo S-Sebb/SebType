@@ -1,0 +1,24 @@
+The Android app: FUTO Keyboard's code with SebType's changes, and SebType's own files.
+
+FUTO Keyboard's code, under the FUTO Source First License 1.1 (../LICENSE.md; its AOSP parts also under the
+Apache License 2.0, ../NOTICE), with SebType's edits inside it counting as FUTO-derived:
+- app/, except SebType's own files listed below; the code other projects wrote that FUTO vendored keeps its
+  own licence, in its folder.
+- tools/contributors.py and tools/make-keyboard-text-py/.
+- The Gradle files (settings.gradle, gradle.properties, gradle/, gradlew, gradlew.bat) and .clang-tidy.
+
+SebType's own files, under the MIT licence in ../LICENSE-SebType:
+- build.gradle, build.sh, release.sh, emulator.sh, upstream-version, test/, perf/, tools/trim-emoji.sh and
+  rime/ (rime/LICENSE lists its exceptions).
+- In app/: src/main/java/dev/sebb/sebtype/, src/test/java/dev/sebb/sebtype/, the strings-sebtype.xml files,
+  src/main/res/xml/sebtype_network_security.xml, and the launcher icon (src/main/res/mipmap-*/ic_launcher*,
+  drawable/ic_launcher_foreground.xml, values/ic_launcher_background.xml), with these exceptions:
+  - src/main/assets/layouts/SebType/: adapted from FUTO's layouts (src/main/assets/layouts), under their
+    licence (Apache-2.0).
+  - src/main/res/raw/main_en.dict: FUTO's English dictionary (FUTO Source First License, ../LICENSE.md) with
+    wordfreq's frequencies (CC BY-SA 4.0); see ../NOTICE.
+  - src/main/res/raw/emoji_i18n.jsondlgz: FUTO's emoji names, trimmed; FUTO Source First License.
+  - src/main/res/font/sebtype_nunito_extrabold.ttf: Nunito, under the SIL Open Font License 1.1
+    (../art/fonts/OFL-Nunito.txt).
+  - src/main/res/font/sebtype_pixelify_semibold.ttf: Pixelify Sans, under the SIL Open Font License 1.1
+    (../art/fonts/OFL-PixelifySans.txt).

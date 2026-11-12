@@ -4,16 +4,16 @@ Two scripts measure SebType the same way every time (#45). They run in the final
 batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional
 until they are compared with other IMEs.
 
-## Android: `sebtype/perf.sh`
+## Android: `android/perf/perf.sh`
 
 ```
-sebtype/perf.sh                     # builds the release APK, then measures on a free emulator ([testing.md](testing.md))
-APK=path/to.apk sebtype/perf.sh     # measures an APK you already built
-ANDROID_SERIAL=<serial> sebtype/perf.sh   # any other device; the only way to run it on a phone
+android/perf/perf.sh                     # builds the release APK, then measures on a free emulator ([testing.md](testing.md))
+APK=path/to.apk android/perf/perf.sh     # measures an APK you already built
+ANDROID_SERIAL=<serial> android/perf/perf.sh   # any other device; the only way to run it on a phone
 ```
 
 It reinstalls SebType, so everything SebType learned on that device is lost. It then types into its
-own small test field (`sebtype/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
+own small test field (`android/perf/PerfField.java`) with `monkey` taps, and puts the previous keyboard
 back at the end. The device needs Android 14 or newer and must run arm64 apps. It takes about 20
 minutes. While it runs it holds the device's devq lock, shared by all projects:
 `/tmp/agent-locks/devices/emulator-<AVD>.lock`, or on a phone the lock of the PC it is plugged
@@ -64,7 +64,7 @@ Notes:
 
 The phone is shared with its owner: run this only when they agree, with the phone unlocked and
 idle. Turn on USB or wireless debugging, check that `adb devices` lists it, then run
-`ANDROID_SERIAL=<serial> sebtype/perf.sh`. SebType is reinstalled, so anything it learned on the phone
+`ANDROID_SERIAL=<serial> android/perf/perf.sh`. SebType is reinstalled, so anything it learned on the phone
 is lost; export its settings first if that matters. Gboard must be enabled for the cold-open check.
 The installed-size row needs root, so on the phone it is SKIP; Settings → Apps → SebType → Storage
 shows the same numbers. Without root, the phone can't count what Rime compiled during setup either;
@@ -117,11 +117,11 @@ It needs gcc, python3, librime with librime-lua, and fcitx5-mozc. It fetches lib
 ## Build and test times (#58)
 
 Measured on nobara-pc (16 threads, 15 GB) on 2026-11-10, with other agents' work running beside, so
-numbers vary by about ±30 %. "Build" is `sebtype/build.sh`'s own time, which it now prints apart from
+numbers vary by about ±30 %. "Build" is `android/build.sh`'s own time, which it now prints apart from
 the wait for the build lock; "peak" is the summed memory of the build's processes (Gradle, the Kotlin
-daemon, clang, aapt2, R8). `sebtype/test-build.sh` checks the cache and reproducibility parts.
+daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproducibility parts.
 
-| `sebtype/build.sh …` | Before | After |
+| `android/build.sh …` | Before | After |
 |---|---|---|
 | debug, first build in a new worktree (same sources built elsewhere before) | 116 s | 14–15 s |
 | debug, clean rebuild in the same worktree | 110–140 s | 18 s |
@@ -140,12 +140,12 @@ daemon, clang, aapt2, R8). `sebtype/test-build.sh` checks the cache and reproduc
 
 | Other builds and tests | Before | After |
 |---|---|---|
-| `rime-android/build.sh` (arm64 aar), rebuild in the same checkout | 130 s | 27–31 s, the same aar |
+| `android/rime/build.sh` (arm64 aar), rebuild in the same checkout | 130 s | 27–31 s, the same aar |
 | `pc/linux/mozc/build.sh`, nothing changed / after a source change / first build | 11 s / 323 s / 490 s | unchanged |
 | `pc/linux/test-setup-ime.sh` | 15 s | unchanged (mostly Fcitx5 and a Rime deploy starting) |
-| `sebtype/test-privacy.sh` (release rebuild + checks) | 13 s | 8 s |
-| `sebtype/test-typing.sh` (test APKs + 4 tests on the emulator) | 22 s build + about 55 s device | 7 s build, 58 s in all |
-| `sebtype/test-emulator.sh` | 12 s build + about 7 min device | 7 s build, 338 s in all |
+| `android/test/privacy.sh` (release rebuild + checks) | 13 s | 8 s |
+| `android/test/typing.sh` (test APKs + 4 tests on the emulator) | 22 s build + about 55 s device | 7 s build, 58 s in all |
+| `android/test/emulator.sh` | 12 s build + about 7 min device | 7 s build, 338 s in all |
 
 The device steps are unchanged: they install fresh on purpose. A test's wall time is often mostly the
 queue for the emulator's lock (`devq status /tmp/agent-locks/devices/emulator-<AVD>.lock`).

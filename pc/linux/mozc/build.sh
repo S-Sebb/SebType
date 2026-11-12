@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds SebType's fcitx5-mozc RPM (#66): pc/mozc with fcitx5-mozc.spec, as Fedora builds its package,
+# Builds SebType's fcitx5-mozc RPM (#66): engines/mozc with fcitx5-mozc.spec, as Fedora builds its package,
 # in a pinned Fedora container. Prints the RPM's path.
 #
 #   pc/linux/mozc/build.sh    # -> ~/.cache/sebtype/mozc/rpms/fcitx5-mozc-<version>-<release>.x86_64.rpm
