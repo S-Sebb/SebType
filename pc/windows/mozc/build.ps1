@@ -1,17 +1,15 @@
 ﻿<#
-Builds SebType's Mozc for Windows (#65): upstream Mozc at the tag in versions.psd1, plus
-caps-lock-icon.patch (the Caps Lock icon), japanese-name.patch (the name 日本語), menu.patch (the
-language bar's one switch, あ → ア, and Alt+` as a two-way あ ⇄ ア), shift-tap.patch (Shift tap from
-English back to あ) and the Set E tray icons from pc/icons. Prints the
-installer's path.
+Builds SebType's Mozc for Windows (#65): SebType's Mozc in pc/mozc (Mozc 3.35.6354 with the Caps Lock
+icon, the name 日本語, the language bar's one switch あ → ア, Alt+` as a two-way あ ⇄ ア, and a Shift tap
+from English back to あ), with the Set E tray icons from pc/icons. Prints the installer's path.
 
     pwsh pc/windows/mozc/build.ps1 [-WorkDir D:\sebtype-mozc]
 
 Needs Visual Studio 2022 or its Build Tools (C++ x64 tools, ATL, a Windows 11 SDK), Python 3.12+ and a
 .NET 8+ SDK; it says how to install what is missing. It fetches the rest itself, each pinned by checksum
-(Mozc's source, Bazelisk, resvg, CMake) or by Mozc's own update_deps.py (LLVM, MSYS2, Ninja, Qt, WiX). The
-tree stays in WorkDir, so a rebuild compiles only what changed. The first build takes about 40 minutes and
-10 GB; WorkDir should be a short path (Bazel and MAX_PATH). -BazelCache keeps Bazel's disk and repository
+(Bazelisk, resvg, CMake) or by Mozc's own update_deps.py (LLVM, MSYS2, Ninja, Qt, WiX). It builds a copy
+of pc/mozc that stays in WorkDir, so a rebuild compiles only what changed. The first build takes about 40
+minutes and 10 GB; WorkDir should be a short path (Bazel and MAX_PATH). -BazelCache keeps Bazel's disk and repository
 caches in that folder: CI, whose WorkDir starts empty, restores it from main's last build.
 #>
 param([string]$WorkDir = "$env:SystemDrive\sebtype-mozc", [string]$BazelCache)
@@ -19,6 +17,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $v = Import-PowerShellDataFile "$PSScriptRoot\versions.psd1"
 $icons = Resolve-Path "$PSScriptRoot\..\..\icons"
+$source = Resolve-Path "$PSScriptRoot\..\..\mozc"
 
 # Preflight: the tools Mozc needs and doesn't fetch.
 $missing = @()
@@ -52,9 +51,6 @@ function Get-Pinned($url, $sha256) {
     $file
 }
 
-# Source: the pinned tarball unpacked over the kept tree, which puts back upstream's files (Bazel
-# rebuilds by content, so unchanged files cost nothing), then SebType's patch and icons.
-$tarball = Get-Pinned "https://codeload.github.com/google/mozc/tar.gz/$($v.MozcCommit)" $v.MozcSha256
 $bazelisk = Get-Pinned $v.BazeliskUrl $v.BazeliskSha256
 $resvg = "$WorkDir\dl\resvg.exe"
 tar -xf (Get-Pinned $v.ResvgUrl $v.ResvgSha256) -C "$WorkDir\dl" resvg.exe
@@ -62,10 +58,12 @@ tar -xf (Get-Pinned $v.ResvgUrl $v.ResvgSha256) -C "$WorkDir\dl" resvg.exe
 $cmakeZip = Get-Pinned $v.CMakeUrl $v.CMakeSha256
 if (-not (Test-Path ($cmake = $cmakeZip -replace '\.zip$'))) { tar -xf $cmakeZip -C "$WorkDir\dl" }
 $env:Path = "$cmake\bin;$env:Path"
-New-Item -ItemType Directory -Force "$WorkDir\mozc" | Out-Null
-tar -xzf $tarball -C "$WorkDir\mozc" --strip-components=1
+# Source: pc/mozc copied over the kept tree, which keeps the build's own files (Qt, Bazel's links) and
+# leaves unchanged files as they are (Bazel rebuilds by content), then the icons.
+# robocopy's exit codes below 8 mean success.
+& { $PSNativeCommandUseErrorActionPreference = $false; robocopy $source "$WorkDir\mozc" /E /NFL /NDL /NJH /NJS /NP | Out-Null }
+if ($LASTEXITCODE -ge 8) { throw "copying $source failed: robocopy exit code $LASTEXITCODE" }
 $src = "$WorkDir\mozc\src"
-Get-ChildItem "$PSScriptRoot\*.patch" | ForEach-Object { python -I "$PSScriptRoot\apply_patch.py" $_.FullName $src }
 python -I "$PSScriptRoot\make_icons.py" $resvg $icons $src
 
 $start = Get-Date

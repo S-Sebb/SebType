@@ -64,7 +64,7 @@ ever on, the account's words are saved to the server first.
 
 | Step | Change | Why |
 |---|---|---|
-| SebType's Weasel | Machine: installs `sebtype-weasel-<version>-installer.exe` silently when it isn't already the installed one. It replaces any other Weasel | Upstream Weasel 0.17.4 with SebType's patch and icons, see below |
+| SebType's Weasel | Machine: installs `sebtype-weasel-<version>-installer.exe` silently when it isn't already the installed one. It replaces any other Weasel | SebType's Weasel (Weasel 0.17.4 with SebType's changes) and icons, see below |
 | SebType's Mozc | Machine: installs `SebType-Mozc-<version>.msi` when it isn't already the installed one, and enables its 日本語 profile by default for every user (`HKLM\SOFTWARE\Microsoft\CTF\TIP\<Mozc>\LanguageProfile\0x00000411\<profile>`, `Enable=1`) | See Japanese below. Mozc registers its profile without enabling it by default, so Windows turned it off for the user when the language list changed later (#65) |
 | Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`tools/rime-data/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. SebType's librime has librime-lua built in |
 | Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+\`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
@@ -84,15 +84,16 @@ Everything Rime learns stays in `%APPDATA%\Rime`, so sync (#12) can add a `sync_
 
 ### SebType's Weasel
 
-`weasel/build.ps1` builds upstream Weasel 0.17.4 with `weasel/sebtype.patch` and SebType's librime: 1.16.1,
-the version SebType's Android build uses, built from source with Linux's `../linux/rime/layout-model.patch`
-and the plugins (librime-lua, librime-octagram, librime-predict) librime's own 1.16.1 release merges in,
-at the same commits. With the patch, Chinese typo correction also fixes a slip onto the key above or
-below, so `xkaoshi` gives 小时 first (#101, #133). `.github/workflows/weasel.yml` runs it on GitHub's
-Windows runner whenever something under `pc/windows/weasel/`, `pc/icons/` or the patch changes; the
-installer is that run's artifact `sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
+`weasel/build.ps1` builds SebType's Weasel, `pc/weasel` (Weasel 0.17.4), with SebType's librime,
+`pc/librime` (1.16.1, the version SebType's Android build uses and the one Linux runs), and the
+plugins (librime-lua, librime-octagram, librime-predict) librime's own 1.16.1 release merges in, at the
+same commits. With SebType's librime, Chinese typo correction also fixes a slip onto the key above or
+below, so `xkaoshi` gives 小时 first (#101, #133). librime's dependencies and plum (which fetches Rime's
+data) stay upstream's, fetched at pinned commits. `.github/workflows/weasel.yml` runs it on GitHub's
+Windows runner whenever something under `pc/weasel/`, `pc/librime/`, `pc/windows/weasel/` or `pc/icons/`
+changes; the installer is that run's artifact `sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
 
-The patch is about 90 lines:
+SebType's changes to Weasel, about 90 lines:
 
 - The input method is named **中文**, so Windows' Win+Space switcher shows 中文(简体，中国) / 中文 rather
   than 小狼毫 (#69).
@@ -163,14 +164,14 @@ Linux and the phone, with SebType's changes:
   Caps Lock is on (Decisions #2, "Everywhere").
 - **Keys:** a Shift tap toggles あ ⇄ English, as Shift does in Chinese, and Alt+\` あ ⇄ ア before typing
   (#117); Win+Space is the only language switch and cycles EN → 中 → 日. The keymap is Linux's,
-  `pc/linux/mozc-keymap.tsv`; `menu.patch` makes Mozc's kana switch a two-way あ ⇄ ア, without the
+  `pc/linux/mozc-keymap.tsv`; SebType's Mozc makes Mozc's kana switch a two-way あ ⇄ ア, without the
   half-width katakana step, and keeps Alt on the Kanji key (半角/全角). Windows passes Alt+\` on as
   that key, and upstream dropped Alt from it, so Alt+\` always turned English on and off; the keymap's
   `Alt Hankaku/Zenkaku` line now makes it あ ⇄ ア.
 - **Menu:** the tray icon's menu (right-click) is Japanese's one switch with its key, ``あ → ア Alt+` ``
   (`ア → あ` in katakana), as on Linux (#117), instead of Mozc's six input modes, dictionary tool, word
   registration, properties, about and help. The floating language bar loses Mozc's Tool button and
-  Help items too (`menu.patch`).
+  Help items too.
 
 ### Build
 
@@ -182,22 +183,22 @@ It builds on Windows, because Mozc's Windows build needs MSVC's headers and libr
 Windows SDK, which don't cross-build from Linux. The build machine needs Visual Studio 2022 or its Build
 Tools (C++ x64 tools, ATL, a Windows 11 SDK), Python 3.12+ and a .NET 8+ SDK; the preflight says which is
 missing and prints the `winget` line to install it (as admin). Everything else is fetched and pinned:
-`mozc/versions.psd1` pins Mozc's release tag with the checksum of its source, Bazelisk, resvg (the
+`mozc/versions.psd1` pins Bazelisk, resvg (the
 SVG renderer for the icons) and a portable CMake (for Qt; the Build Tools lack it). Mozc's
 `update_deps.py` pins LLVM, MSYS2, Ninja, Qt and WiX. The build itself needs no admin rights and no
 Developer Mode (Bazel runs without symlinks).
 
-The script unpacks Mozc's source over the kept tree in `-WorkDir`, applies SebType's patches with
-`apply_patch.py` (exact match, no fuzz; YukaROG has no git), writes the icons with `make_icons.py`,
+The script copies SebType's Mozc, `pc/mozc` (Mozc 3.35.6354 with SebType's changes), over the kept
+tree in `-WorkDir`, writes the icons with `make_icons.py`,
 builds Qt once, then Mozc's installer with Bazel (8 jobs). A rebuild compiles only what changed. On
 YukaROG the first build took about 40 minutes (update_deps 4, Qt 14, Bazel 22) and 9 GB, after about
 40 minutes for the Build Tools install.
 
-| Patch | Change |
+| SebType's change in `pc/mozc` | What it does |
 |---|---|
-| `caps-lock-icon.patch` | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
-| `shift-tap.patch` | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |
-| `japanese-name.patch` | Japanese reads **日本語** in Win+Space and the language settings, not "Mozc" (Decisions #2, #92), as Chinese reads 中文 (`win32/tip/tip_resource.rc`, `win32/base/tsf_registrar.cc`) |
+| Caps Lock icon | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
+| Shift tap | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |
+| Japanese's name | Japanese reads **日本語** in Win+Space and the language settings, not "Mozc" (Decisions #2, #92), as Chinese reads 中文 (`win32/tip/tip_resource.rc`, `win32/base/tsf_registrar.cc`) |
 
 `make_icons.py` replaces Mozc's mode icons with `.ico` files holding a PNG for each tray size from
 100 % to 400 % scaling: pc/icons' hand-drawn 16, 20, 24 and 32 px drawings, and the 48 px drawing for

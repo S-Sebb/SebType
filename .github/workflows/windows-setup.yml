@@ -1,6 +1,6 @@
 # SebType's Windows installer (#73): SebType-setup-<version>.exe, built with Inno Setup from
 # pc/windows/setup/sebtype.iss. It packs SebType's Weasel (weasel.yml), the Chinese data
-# (tools/rime-data/build.sh), SebType's Mozc (pc/windows/mozc/build.ps1), the Configurator
+# (tools/rime-data/build.sh), SebType's Mozc (pc/mozc, built by pc/windows/mozc/build.ps1), the Configurator
 # (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
 # run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
 name: Windows setup
@@ -10,11 +10,13 @@ on:
   pull_request:
     paths: &paths
       - pc/windows/**
+      - pc/weasel/**
+      - pc/librime/**
+      - pc/mozc/**
       - pc/icons/**
       - pc/configurator/**
       - pc/linux/mozc-keymap.tsv
       - pc/linux/perf-rime.c
-      - pc/linux/rime/layout-model.patch
       - tools/rime-data/**
       - rime-android/versions.sh
       - sebtype/make-icon.py
@@ -74,7 +76,7 @@ jobs:
       # The MSI depends only on these; a run with the same ones reuses it, a PR's run main's.
       - id: inputs
         run: |
-          "hash=${{ hashFiles('pc/windows/mozc/versions.psd1', 'pc/windows/mozc/*.patch', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/windows/mozc/apply_patch.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
+          "hash=${{ hashFiles('pc/mozc/**', 'pc/windows/mozc/versions.psd1', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         id: cache
         with:
@@ -85,27 +87,20 @@ jobs:
         with:
           python-version: '3.13'
       # Building Qt takes most of a cold build (#154), and Qt depends only on Mozc's Qt pin and
-      # build_qt.py: the key is theirs, read from Mozc's source (fetched where build.ps1 looks for it).
+      # build_qt.py: the key is theirs, read from pc/mozc.
       - name: Qt's key
         id: qt
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          $v = Import-PowerShellDataFile pc/windows/mozc/versions.psd1
-          New-Item -ItemType Directory -Force D:\m\dl, "$env:RUNNER_TEMP\qt" | Out-Null
-          $tarball = "D:\m\dl\$($v.MozcCommit)"
-          curl.exe -sSfL --retry 3 -o $tarball "https://codeload.github.com/google/mozc/tar.gz/$($v.MozcCommit)"
-          if ((Get-FileHash $tarball).Hash -ne $v.MozcSha256) { throw 'Mozc source: checksum mismatch' }
-          $tools = "mozc-$($v.MozcCommit)/src/build_tools"
-          tar -xzf $tarball -C "$env:RUNNER_TEMP\qt" --strip-components=3 "$tools/update_deps.py" "$tools/build_qt.py"
-          $pin = (Select-String -Path "$env:RUNNER_TEMP\qt\update_deps.py" -Pattern 'qtbase-everywhere-src').Line
-          $key = $pin + (Get-Content -Raw "$env:RUNNER_TEMP\qt\build_qt.py")
+          $pin = (Select-String -Path pc/mozc/src/build_tools/update_deps.py -Pattern 'qtbase-everywhere-src').Line
+          $key = $pin + (Get-Content -Raw pc/mozc/src/build_tools/build_qt.py)
           "key=mozc-qt-$([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($key))))" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           path: D:\m\mozc\src\third_party\qt
           key: ${{ steps.qt.outputs.key }}
-      # Bazel's caches from main's last build, so a patch change recompiles only what it touches.
+      # Bazel's caches from main's last build, so a change to pc/mozc recompiles only what it touches.
       - uses: actions/cache/restore@v4
         if: steps.cache.outputs.cache-hit != 'true'
         with:

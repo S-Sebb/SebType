@@ -121,8 +121,8 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101): Fedora's packages rebuilt with
-# SebType's patches (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
+# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101): SebType's source in pc/, packaged
+# as Fedora's packages (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
 # shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
 source "$here/mozc/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=rime/versions.sh
@@ -198,7 +198,7 @@ own_build fcitx5-mozc "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" "$SEBTYPE_RELEASE" 
   "$MOZC_CACHE/rpms/$MOZC_RPM"
 own_build fcitx5-rime "$RIME_VERSION" "$RIME_FEDORA_RELEASE" "$RIME_SEBTYPE_RELEASE" "$here/rime/build.sh" \
   "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize" "$RIME_CACHE/$RIME_RPM"
-# librime's typo correction knows a PC keyboard's vertical neighbours too (rime/layout-model.patch), so
+# librime's typo correction knows a PC keyboard's vertical neighbours too (pc/librime), so
 # a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
 librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
@@ -331,7 +331,7 @@ fi
 # 9. Japanese: a Shift tap toggles あ and direct English, and Alt+` あ and ア (Decisions #2, menu hotkeys),
 # in Mozc's own keymap. fcitx5-mozc sends Mozc a bare Shift only when it is released with no other key
 # pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it. Alt+` is
-# Mozc's InputModeSwitchKanaType, which SebType's build (mozc/menu.patch) makes a two-way switch.
+# Mozc's InputModeSwitchKanaType, which SebType's build (pc/fcitx5-mozc) makes a two-way switch.
 # Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
 # Shift lines for each state and Alt+` (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings

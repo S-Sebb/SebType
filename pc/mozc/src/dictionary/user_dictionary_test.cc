@@ -1,0 +1,1105 @@
+// Copyright 2010-2021, Google Inc.
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+//
+//     * Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above
+// copyright notice, this list of conditions and the following disclaimer
+// in the documentation and/or other materials provided with the
+// distribution.
+//     * Neither the name of Google Inc. nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+#include "dictionary/user_dictionary.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
+#include "base/container/tuple.h"
+#include "base/file/temp_dir.h"
+#include "base/file_util.h"
+#include "base/random.h"
+#include "data_manager/testing/mock_data_manager.h"
+#include "dictionary/dictionary_interface.h"
+#include "dictionary/dictionary_mock.h"
+#include "dictionary/dictionary_test_util.h"
+#include "dictionary/dictionary_token.h"
+#include "dictionary/pos_matcher.h"
+#include "dictionary/user_pos.h"
+#include "protocol/user_dictionary_storage.pb.h"
+#include "testing/gmock.h"
+#include "testing/gunit.h"
+#include "testing/mozctest.h"
+
+namespace mozc {
+namespace dictionary {
+namespace {
+
+using ::mozc::dictionary::DictionaryInterface;
+using ::testing::_;
+using ::testing::AnyNumber;
+using ::testing::AnyOf;
+using ::testing::Each;
+using ::testing::ElementsAre;
+using ::testing::Eq;
+using ::testing::Field;
+using ::testing::IsEmpty;
+using ::testing::Return;
+using ::testing::UnorderedElementsAreArray;
+
+constexpr char kUserDictionary0[] =
+    "start\tstart\tverb\n"
+    "star\tstar\tnoun\n"
+    "starting\tstarting\tnoun\n"
+    "stamp\tstamp\tnoun\n"
+    "stand\tstand\tverb\n"
+    "smile\tsmile\tverb\n"
+    "smog\tsmog\tnoun\n"
+    // invalid characters "あ\x81\x84う" in reading. "い" is "E3 81 84".
+    "あ\x81\x84う\tvalue\tnoun\n"
+
+    // This is also a valid entry. Key can contain any valid characters.
+    "水雲\tvalue\tnoun\n"
+
+    // Empty key
+    "\tvalue\tnoun\n"
+    // Empty value
+    "start\t\tnoun\n"
+    // Invalid POS
+    "star\tvalue\tpos\n"
+    // Empty POS
+    "star\tvalue\t\n"
+    // Duplicate entry
+    "start\tstart\tverb\n"
+    // The following are for tests for LookupComment
+    // No comment
+    "comment_key1\tcomment_value1\tnoun\n"
+    // Has comment
+    "comment_key2\tcomment_value2\tnoun\tcomment\n"
+    // Different POS
+    "comment_key3\tcomment_value3\tnoun\tcomment1\n"
+    "comment_key3\tcomment_value3\tverb\tcomment2\n"
+    // White spaces comment
+    "comment_key4\tcomment_value4\tverb\t     \n";
+
+constexpr char kUserDictionary1[] = "end\tend\tverb\n";
+
+void PushBackToken(absl::string_view key, absl::string_view value, uint16_t id,
+                   std::vector<UserPos::Token>* tokens) {
+  tokens->push_back(UserPos::Token{
+      .key = std::string(key),
+      .value = std::string(value),
+      .id = id,
+  });
+}
+
+// This class is a mock class for writing unit tests of a class that
+// depends on POS. It accepts only two values for part-of-speech:
+// "noun" as words without inflection and "verb" as words with
+// inflection.
+class UserPosMock : public UserPos {
+ public:
+  // Given a verb, this method expands it to three different forms,
+  // i.e. base form (the word itself), "-ed" form and "-ing" form. For
+  // example, if the given word is "play", the method returns "play",
+  // "played" and "playing". When a noun is passed, it returns only
+  // base form. The method set lid and rid of the word as following:
+  //
+  //  POS              | lid | rid
+  // ------------------+-----+-----
+  //  noun             | 100 | 100
+  //  verb (base form) | 200 | 200
+  //  verb (-ed form)  | 210 | 210
+  //  verb (-ing form) | 220 | 220
+  std::vector<UserPos::Token> GetTokens(
+      absl::string_view key, absl::string_view value,
+      user_dictionary::UserDictionary::PosType pos_type) const override {
+    std::vector<UserPos::Token> tokens;
+    if (key.empty() || value.empty()) {
+      return tokens;
+    }
+
+    if (pos_type == kNoun) {
+      PushBackToken(key, value, 100, &tokens);
+    } else if (pos_type == kVerb) {
+      PushBackToken(key, value, 200, &tokens);
+      PushBackToken(absl::StrCat(key, "ed"), absl::StrCat(value, "ed"), 210,
+                    &tokens);
+      PushBackToken(absl::StrCat(key, "ing"), absl::StrCat(value, "ing"), 220,
+                    &tokens);
+    }
+
+    return tokens;
+  }
+
+  std::vector<std::string> GetPosList() const override { return {"名詞"}; }
+
+  static constexpr user_dictionary::UserDictionary::PosType kNoun =
+      user_dictionary::UserDictionary::NOUN;
+  static constexpr user_dictionary::UserDictionary::PosType kVerb =
+      user_dictionary::UserDictionary::WA_GROUP1_VERB;
+};
+
+class UserDictionaryTest : public testing::TestWithTempUserProfile {
+ protected:
+  // Workaround for the constructor of UserDictionary being protected.
+  // Creates a user dictionary with mock pos data.
+  std::unique_ptr<UserDictionary> CreateDictionaryWithMockPos() {
+    return std::make_unique<UserDictionary>(
+        std::make_unique<UserPosMock>(),
+        dictionary::PosMatcher(mock_data_manager_.GetPosMatcherData()));
+  }
+
+  // Creates a user dictionary with actual pos data.
+  std::unique_ptr<UserDictionary> CreateDictionary() {
+    return std::make_unique<UserDictionary>(
+        make_unique_from_tuples<UserPos>(mock_data_manager_.GetUserPosData()),
+        dictionary::PosMatcher(mock_data_manager_.GetPosMatcherData()));
+  }
+
+  std::unique_ptr<UserDictionary> CreateDictionaryWithFilename(
+      std::string filename) {
+    return std::make_unique<UserDictionary>(
+        make_unique_from_tuples<UserPos>(mock_data_manager_.GetUserPosData()),
+        dictionary::PosMatcher(mock_data_manager_.GetPosMatcherData()),
+        std::move(filename));
+  }
+
+  struct Entry {
+    std::string key;
+    std::string value;
+    uint16_t lid;
+    uint16_t rid;
+
+    bool operator==(const Entry& rhs) const {
+      return std::tie(key, value, lid, rid) ==
+             std::tie(rhs.key, rhs.value, rhs.lid, rhs.rid);
+    }
+
+    template <typename Sink>
+    friend void AbslStringify(Sink& sink, const Entry& entry) {
+      absl::Format(&sink, "key = %s, value = %s, lid = %d, rid = %d", entry.key,
+                   entry.value, entry.lid, entry.rid);
+    }
+  };
+
+  class EntryCollector : public DictionaryInterface::Callback {
+   public:
+    ResultType OnToken(absl::string_view,  // key
+                       absl::string_view,  // actual_key
+                       Token token) override {
+      // Collect only user dictionary entries.
+      if (token.attributes & Token::USER_DICTIONARY) {
+        entries_.push_back(Entry({.key = std::move(token.key),
+                                  .value = std::move(token.value),
+                                  .lid = static_cast<uint16_t>(token.lid),
+                                  .rid = static_cast<uint16_t>(token.rid)}));
+      }
+      return TRAVERSE_CONTINUE;
+    }
+
+    std::vector<Entry>&& entries() && { return std::move(entries_); }
+
+   private:
+    std::vector<Entry> entries_;
+  };
+
+  std::vector<Entry> LookupPredictive(absl::string_view key,
+                                      const UserDictionary& dic) {
+    EntryCollector collector;
+    dic.LookupPredictive(key, &collector);
+    return std::move(collector).entries();
+  }
+
+  std::vector<Entry> LookupPrefix(absl::string_view key,
+                                  const UserDictionary& dic) {
+    EntryCollector collector;
+    dic.LookupPrefix(key, &collector);
+    return std::move(collector).entries();
+  }
+
+  std::vector<Entry> LookupExact(absl::string_view key,
+                                 const UserDictionary& dic) {
+    EntryCollector collector;
+    dic.LookupExact(key, &collector);
+    return std::move(collector).entries();
+  }
+
+  static void LoadFromString(absl::string_view contents,
+                             user_dictionary::UserDictionaryStorage* storage) {
+    storage->Clear();
+    user_dictionary::UserDictionary* dic = storage->add_dictionaries();
+    CHECK(dic);
+
+    for (absl::string_view line : absl::StrSplit(contents, '\n')) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+      std::vector<absl::string_view> fields =
+          absl::StrSplit(line, '\t', absl::AllowEmpty());
+      EXPECT_GE(fields.size(), 3) << line;
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      CHECK(entry);
+      entry->set_key(fields[0]);
+      entry->set_value(fields[1]);
+      if (fields[2] == "verb") {
+        entry->set_pos(user_dictionary::UserDictionary::WA_GROUP1_VERB);
+      } else if (fields[2] == "noun") {
+        entry->set_pos(user_dictionary::UserDictionary::NOUN);
+      }
+      if (fields.size() >= 4 && !fields[3].empty()) {
+        entry->set_comment(fields[3]);
+      }
+    }
+  }
+
+  // Helper function to lookup comment string from |dic|.
+  std::string LookupComment(const UserDictionary& dic, absl::string_view key,
+                            absl::string_view value) {
+    std::string comment;
+    dic.LookupComment(key, value, &comment);
+    return comment;
+  }
+
+ private:
+  const testing::MockDataManager mock_data_manager_;
+};
+
+TEST_F(UserDictionaryTest, TestLookupPredictiveCallback) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    UserDictionaryTest::LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  MockCallback mock_callback;
+  EXPECT_CALL(mock_callback, OnKey(_))
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnActualKey(_, _, _))
+      .Times(AnyNumber())
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnToken(_, _, _))
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+
+  EXPECT_CALL(mock_callback, OnKey(Eq("start")))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnActualKey(Eq("start"), Eq("start"), Eq(0)))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnToken(Eq("start"), Eq("start"), _))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+
+  dic->LookupPredictive("start", &mock_callback);
+}
+
+TEST_F(UserDictionaryTest, TestLookupExactCallback) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    UserDictionaryTest::LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  MockCallback mock_callback;
+  EXPECT_CALL(mock_callback, OnKey(Eq("start")))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnActualKey(Eq("start"), Eq("start"), Eq(0)))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnToken(Eq("start"), Eq("start"), _))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+
+  dic->LookupExact("start", &mock_callback);
+}
+
+TEST_F(UserDictionaryTest, TestLookupPrefixCallback) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    UserDictionaryTest::LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  MockCallback mock_callback;
+  EXPECT_CALL(mock_callback, OnKey(_))
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnActualKey(_, _, _))
+      .Times(AnyNumber())
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnToken(_, _, _))
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+
+  EXPECT_CALL(mock_callback, OnKey(Eq("start")))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnActualKey(Eq("start"), Eq("start"), Eq(0)))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+  EXPECT_CALL(mock_callback, OnToken(Eq("start"), Eq("start"), _))
+      .Times(1)
+      .WillRepeatedly(Return(DictionaryInterface::Callback::TRAVERSE_CONTINUE));
+
+  dic->LookupPrefix("start", &mock_callback);
+}
+
+TEST_F(UserDictionaryTest, TestLookupPredictive) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    UserDictionaryTest::LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  // A normal lookup operation.
+  const Entry kExpected0[] = {
+      {"start", "start", 200, 200},
+      {"started", "started", 210, 210},
+      {"starting", "starting", 100, 100},
+      {"starting", "starting", 220, 220},
+  };
+  EXPECT_THAT(LookupPredictive("start", *dic),
+              UnorderedElementsAreArray(kExpected0));
+
+  // Another normal lookup operation.
+  const Entry kExpected1[] = {
+      {"stamp", "stamp", 100, 100},       {"stand", "stand", 200, 200},
+      {"standed", "standed", 210, 210},   {"standing", "standing", 220, 220},
+      {"star", "star", 100, 100},         {"start", "start", 200, 200},
+      {"started", "started", 210, 210},   {"starting", "starting", 100, 100},
+      {"starting", "starting", 220, 220},
+  };
+  EXPECT_THAT(LookupPredictive("st", *dic),
+              UnorderedElementsAreArray(kExpected1));
+
+  // Invalid input values should be just ignored.
+  EXPECT_THAT(LookupPredictive("", *dic), IsEmpty());
+  EXPECT_THAT(LookupPredictive("あ\x81\x84う", *dic), IsEmpty());
+
+  // Kanji is also a valid key chararcter.
+  EXPECT_THAT(LookupPredictive("水雲", *dic),
+              ElementsAre(Entry{"水雲", "value", 100, 100}));
+
+  // Make a change to the dictionary file and load it again.
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    LoadFromString(kUserDictionary1, &storage);
+    dic->Load(storage);
+  }
+
+  // A normal lookup again.
+  const Entry kExpected3[] = {
+      {"end", "end", 200, 200},
+      {"ended", "ended", 210, 210},
+      {"ending", "ending", 220, 220},
+  };
+  EXPECT_THAT(LookupPredictive("end", *dic),
+              UnorderedElementsAreArray(kExpected3));
+
+  // Entries in the dictionary before reloading cannot be looked up.
+  EXPECT_THAT(LookupPredictive("start", *dic), IsEmpty());
+  EXPECT_THAT(LookupPredictive("st", *dic), IsEmpty());
+}
+
+TEST_F(UserDictionaryTest, TestLookupPrefix) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  // A normal lookup operation.
+  const Entry kExpected0[] = {
+      {"star", "star", 100, 100},
+      {"start", "start", 200, 200},
+      {"started", "started", 210, 210},
+  };
+  EXPECT_THAT(LookupPrefix("started", *dic),
+              UnorderedElementsAreArray(kExpected0));
+
+  // Another normal lookup operation.
+  const Entry kExpected1[] = {
+      {"star", "star", 100, 100},
+      {"start", "start", 200, 200},
+      {"starting", "starting", 100, 100},
+      {"starting", "starting", 220, 220},
+  };
+  EXPECT_THAT(LookupPrefix("starting", *dic),
+              UnorderedElementsAreArray(kExpected1));
+
+  // Invalid input values should be just ignored.
+  EXPECT_THAT(LookupPrefix("", *dic), IsEmpty());
+  EXPECT_THAT(LookupPrefix("あ\x81\x84う", *dic), IsEmpty());
+
+  // Kanji is also a valid key chararcter.
+  EXPECT_THAT(LookupPrefix("水雲", *dic),
+              ElementsAre(Entry{"水雲", "value", 100, 100}));
+
+  // Make a change to the dictionary file and load it again.
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    LoadFromString(kUserDictionary1, &storage);
+    dic->Load(storage);
+  }
+
+  // A normal lookup.
+  const Entry kExpected3[] = {
+      {"end", "end", 200, 200},
+      {"ending", "ending", 220, 220},
+  };
+  EXPECT_THAT(LookupPrefix("ending", *dic),
+              UnorderedElementsAreArray(kExpected3));
+
+  // Lookup for entries which are gone should returns empty result.
+  EXPECT_THAT(LookupPrefix("started", *dic), IsEmpty());
+  EXPECT_THAT(LookupPrefix("starting", *dic), IsEmpty());
+}
+
+TEST_F(UserDictionaryTest, TestLookupExact) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  // A normal lookup operation.
+  EXPECT_THAT(LookupExact("start", *dic),
+              ElementsAre(Entry{"start", "start", 200, 200}));
+
+  // Another normal lookup operation.
+  const Entry kExpected1[] = {
+      {"starting", "starting", 100, 100},
+      {"starting", "starting", 220, 220},
+  };
+  EXPECT_THAT(LookupExact("starting", *dic),
+              UnorderedElementsAreArray(kExpected1));
+
+  // Invalid input values should be just ignored.
+  EXPECT_THAT(LookupExact("", *dic), IsEmpty());
+  EXPECT_THAT(LookupExact("あ\x81\x84う", *dic), IsEmpty());
+
+  // Kanji is also a valid key chararcter.
+  EXPECT_THAT(LookupExact("水雲", *dic),
+              ElementsAre(Entry{"水雲", "value", 100, 100}));
+}
+
+TEST_F(UserDictionaryTest, TestLookupExactWithSuggestionOnlyWords) {
+  std::unique_ptr<UserDictionary> user_dic(CreateDictionary());
+  user_dic->WaitForReloader();
+
+  // Create dictionary
+  user_dictionary::UserDictionaryStorage storage;
+  {
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+
+    // "名詞"
+    user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+    entry->set_key("key");
+    entry->set_value("noun");
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+
+    // "サジェストのみ"
+    entry = dic->add_entries();
+    entry->set_key("key");
+    entry->set_value("suggest_only");
+    entry->set_pos(user_dictionary::UserDictionary::SUGGESTION_ONLY);
+
+    user_dic->Load(storage);
+  }
+
+  // "suggestion_only" should not be looked up.
+  const testing::MockDataManager mock_data_manager;
+  const dictionary::PosMatcher pos_matcher(
+      mock_data_manager.GetPosMatcherData());
+  const uint16_t kNounId = pos_matcher.GetGeneralNounId();
+  EXPECT_THAT(LookupExact("key", *user_dic),
+              ElementsAre(Entry{"key", "noun", kNounId, kNounId}));
+}
+
+TEST_F(UserDictionaryTest, TestLookupWithNoPos) {
+  std::unique_ptr<UserDictionary> user_dic(CreateDictionary());
+  user_dic->WaitForReloader();
+
+  // Create dictionary
+  user_dictionary::UserDictionaryStorage storage;
+  {
+    // Creates the shortcut dictionary (from Gboard Android).
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+    dic->set_name("__auto_imported_android_shortcuts_dictionary");
+
+    // "名詞"
+    user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+    entry->set_key("key");
+    entry->set_value("noun");
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+
+    // SUGGESTION ONLY word is handled as NO_POS word.
+    entry = dic->add_entries();
+    entry->set_key("key");
+    entry->set_value("suggest_only");
+    entry->set_pos(user_dictionary::UserDictionary::SUGGESTION_ONLY);
+
+    // NO POS word is handled as NO_POS word.
+    entry = dic->add_entries();
+    entry->set_key("key");
+    entry->set_value("no_pos");
+    entry->set_pos(user_dictionary::UserDictionary::NO_POS);
+
+    user_dic->Load(storage);
+  }
+
+  // NO_POS words are looked up.
+  const testing::MockDataManager mock_data_manager;
+  const dictionary::PosMatcher pos_matcher(
+      mock_data_manager.GetPosMatcherData());
+  const uint16_t kNounId = pos_matcher.GetGeneralNounId();
+  const uint16_t kUnknownId = pos_matcher.GetUnknownId();
+  const Entry kExpected2[] = {
+      {"key", "noun", kNounId, kNounId},
+      {"key", "no_pos", kUnknownId, kUnknownId},
+  };
+  const Entry kExpectedPrediction[] = {
+      {"key", "noun", kNounId, kNounId},
+      {"key", "no_pos", kUnknownId, kUnknownId},
+      {"key", "suggest_only", kUnknownId, kUnknownId},
+  };
+
+  EXPECT_THAT(LookupExact("key", *user_dic),
+              UnorderedElementsAreArray(kExpected2));
+  EXPECT_THAT(LookupPredictive("ke", *user_dic),
+              UnorderedElementsAreArray(kExpectedPrediction));
+  EXPECT_THAT(LookupPrefix("key", *user_dic),
+              UnorderedElementsAreArray(kExpected2));
+}
+
+TEST_F(UserDictionaryTest, TestKeyNormalization) {
+  std::unique_ptr<UserDictionary> user_dic(CreateDictionary());
+  user_dic->WaitForReloader();
+
+  // Create dictionary
+  user_dictionary::UserDictionaryStorage storage;
+  {
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+
+    // "名詞"(NOUN)
+    // Full width will be normalized to half width.
+    user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+    entry->set_key("１％");
+    entry->set_value("１％");
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+
+    // Half width katakana will be normalized to full width hiragana.
+    entry = dic->add_entries();
+    entry->set_key("ｸﾞｰｸﾞﾙ");
+    entry->set_value("Google");
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+
+    // NO POS word is handled as NO_POS word.
+    // voiced sound mark in「う゛」 will be normalized to be 「ゔ」.
+    entry = dic->add_entries();
+    entry->set_key("う゛ぃくとりー");
+    entry->set_value("ヴィクトリー");
+    entry->set_pos(user_dictionary::UserDictionary::NO_POS);
+
+    // Katakana will be normalized to hiragana.
+    entry = dic->add_entries();
+    entry->set_key("ジーボード");
+    entry->set_value("Gboard");
+    entry->set_pos(user_dictionary::UserDictionary::NO_POS);
+
+    user_dic->Load(storage);
+  }
+
+  EXPECT_EQ(LookupExact("1%", *user_dic).size(), 1);
+  EXPECT_EQ(LookupExact("１％", *user_dic).size(), 0);
+
+  EXPECT_EQ(LookupExact("ぐーぐる", *user_dic).size(), 1);
+  EXPECT_EQ(LookupExact("グーグル", *user_dic).size(), 0);
+  EXPECT_EQ(LookupExact("ｸﾞｰｸﾞﾙ", *user_dic).size(), 0);
+
+  EXPECT_EQ(LookupExact("ゔぃくとりー", *user_dic).size(), 1);
+  EXPECT_EQ(LookupExact("う゛ぃくとりー", *user_dic).size(), 0);
+  EXPECT_EQ(LookupExact("ヴィクトリー", *user_dic).size(), 0);
+
+  EXPECT_EQ(LookupExact("じーぼーど", *user_dic).size(), 1);
+  EXPECT_EQ(LookupExact("ジーボード", *user_dic).size(), 0);
+}
+
+TEST_F(UserDictionaryTest, AsyncLoadTest) {
+  TempDirectory temp_dir = testing::MakeTempDirectoryOrDie();
+  const std::string filename =
+      FileUtil::JoinPath(temp_dir.path(), "async_load_test.db");
+  Random random;
+
+  // Create dictionary
+  std::vector<std::string> keys;
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+    for (size_t j = 0; j < 10000; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      entry->set_key(random.Utf8StringRandomLen(10, 'a', 'z'));
+      entry->set_value(random.Utf8StringRandomLen(10, 'a', 'z'));
+      entry->set_pos(user_dictionary::UserDictionary::NOUN);
+      entry->set_comment(random.Utf8StringRandomLen(10, 'a', 'z'));
+      keys.push_back(entry->key());
+    }
+    EXPECT_OK(FileUtil::SetContents(filename, storage.SerializeAsString()));
+  }
+
+  {
+    std::unique_ptr<UserDictionary> dic(CreateDictionaryWithFilename(filename));
+    // Wait for async reload called from the constructor.
+    dic->WaitForReloader();
+
+    for (int i = 0; i < 32; ++i) {
+      std::shuffle(keys.begin(), keys.end(), random);
+      dic->Reload();
+      for (int i = 0; i < 1000; ++i) {
+        CollectTokenCallback callback;
+        dic->LookupPrefix(keys[i], &callback);
+        EXPECT_FALSE(callback.tokens().empty());
+      }
+    }
+    dic->WaitForReloader();
+  }
+
+  // Fix b//341758719. Waits the reload inside the destructor.
+  {
+    std::unique_ptr<UserDictionary> dic(CreateDictionaryWithFilename(filename));
+    dic->Reload();
+  }
+}
+
+TEST_F(UserDictionaryTest, ConsecutiveReloadTest) {
+  TempDirectory temp_dir = testing::MakeTempDirectoryOrDie();
+  const std::string filename =
+      FileUtil::JoinPath(temp_dir.path(), "consecutive_reload_test.db");
+
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithFilename(filename));
+  dic->WaitForReloader();
+
+  constexpr int kNumUpdates = 10;
+  user_dictionary::UserDictionaryStorage storage;
+  for (int i = 0; i < kNumUpdates; ++i) {
+    user_dictionary::UserDictionary* user_dic = storage.add_dictionaries();
+    user_dic->set_name(absl::StrCat("dic_", i));
+    for (int j = 0; j < 500; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = user_dic->add_entries();
+      entry->set_key(absl::StrFormat("key_%d_%d", i, j));
+      entry->set_value(absl::StrFormat("value_%d_%d", i, j));
+      entry->set_pos(user_dictionary::UserDictionary::NOUN);
+    }
+
+    const std::string tmp_filename = absl::StrCat(filename, ".tmp");
+    EXPECT_OK(FileUtil::SetContents(tmp_filename, storage.SerializeAsString()));
+    EXPECT_OK(FileUtil::AtomicRename(tmp_filename, filename));
+
+    // Trigger Reload() immediately without waiting for the previous reload to
+    // finish.
+    EXPECT_TRUE(dic->Reload());
+  }
+
+  dic->WaitForReloader();
+
+  for (int i = 0; i < kNumUpdates; ++i) {
+    EXPECT_FALSE(LookupExact(absl::StrFormat("key_%d_0", i), *dic).empty());
+  }
+}
+
+TEST_F(UserDictionaryTest, TestSuppressionDictionary) {
+  std::unique_ptr<UserDictionary> user_dic(CreateDictionaryWithMockPos());
+  user_dic->WaitForReloader();
+
+  user_dictionary::UserDictionaryStorage storage;
+
+  // Create dictionary
+  {
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+    for (size_t j = 0; j < 10000; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      entry->set_key(absl::StrCat("no_suppress_key", j));
+      entry->set_value(absl::StrCat("no_suppress_value", j));
+      entry->set_pos(user_dictionary::UserDictionary::NOUN);
+    }
+
+    for (size_t j = 0; j < 10; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      entry->set_key(absl::StrCat("suppress_key", j));
+      entry->set_value(absl::StrCat("suppress_value", j));
+      // entry->set_pos("抑制単語");
+      entry->set_pos(user_dictionary::UserDictionary::SUPPRESSION_WORD);
+    }
+
+    user_dic->Load(storage);
+
+    for (size_t j = 0; j < 10; ++j) {
+      EXPECT_TRUE(user_dic->IsSuppressedEntry(
+          absl::StrCat("suppress_key", j), absl::StrCat("suppress_value", j)));
+    }
+  }
+
+  // Remove suppression entry
+  {
+    storage.Clear();
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+    for (size_t j = 0; j < 10000; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      entry->set_key(absl::StrCat("no_suppress_key", j));
+      entry->set_value(absl::StrCat("no_suppress_value", j));
+      entry->set_pos(user_dictionary::UserDictionary::NOUN);
+    }
+
+    user_dic->Load(storage);
+
+    for (size_t j = 0; j < 10; ++j) {
+      EXPECT_FALSE(user_dic->IsSuppressedEntry(
+          absl::StrCat("suppress_key", j), absl::StrCat("suppress_value", j)));
+    }
+  }
+}
+
+TEST_F(UserDictionaryTest, TestSuggestionOnlyWord) {
+  std::unique_ptr<UserDictionary> user_dic(CreateDictionary());
+  user_dic->WaitForReloader();
+
+  user_dictionary::UserDictionaryStorage storage;
+
+  // Create dictionary
+  {
+    user_dictionary::UserDictionary* dic = storage.add_dictionaries();
+
+    for (size_t j = 0; j < 10; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      entry->set_key(absl::StrCat("key", j));
+      entry->set_value("default");
+      // "名詞"
+      entry->set_pos(user_dictionary::UserDictionary::NOUN);
+    }
+
+    for (size_t j = 0; j < 10; ++j) {
+      user_dictionary::UserDictionary::Entry* entry = dic->add_entries();
+      entry->set_key(absl::StrCat("key", j));
+      entry->set_value("suggest_only");
+      // "サジェストのみ"
+      entry->set_pos(user_dictionary::UserDictionary::SUGGESTION_ONLY);
+    }
+
+    user_dic->Load(storage);
+  }
+
+  {
+    constexpr char kKey[] = "key0123";
+    CollectTokenCallback callback;
+    user_dic->LookupPrefix(kKey, &callback);
+    EXPECT_THAT(callback.tokens(), Each(Field(&Token::value, Eq("default"))));
+  }
+  {
+    constexpr char kKey[] = "key";
+    CollectTokenCallback callback;
+    user_dic->LookupPredictive(kKey, &callback);
+    EXPECT_THAT(
+        callback.tokens(),
+        Each(Field(&Token::value, AnyOf(Eq("suggest_only"), Eq("default")))));
+  }
+}
+
+TEST_F(UserDictionaryTest, LookupComment) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  // Wait for async reload called from the constructor.
+  dic->WaitForReloader();
+
+  {
+    user_dictionary::UserDictionaryStorage storage;
+    UserDictionaryTest::LoadFromString(kUserDictionary0, &storage);
+    dic->Load(storage);
+  }
+
+  // Entry is in user dictionary but has no comment.
+  std::string comment;
+  comment = "prev comment";
+  EXPECT_FALSE(dic->LookupComment("comment_key1", "comment_value2", &comment));
+  EXPECT_EQ(comment, "prev comment");
+
+  // Usual case: single key-value pair with comment.
+  EXPECT_TRUE(dic->LookupComment("comment_key2", "comment_value2", &comment));
+  EXPECT_EQ(comment, "comment");
+
+  // There exist two entries having the same key, value and POS.  Since POS is
+  // irrelevant to comment lookup, the first nonempty comment should be found.
+  EXPECT_TRUE(dic->LookupComment("comment_key3", "comment_value3", &comment));
+  EXPECT_EQ(comment, "comment1");
+
+  // White-space only comments should be cleared.
+  EXPECT_FALSE(dic->LookupComment("comment_key4", "comment_value4", &comment));
+  // The previous comment should remain.
+  EXPECT_EQ(comment, "comment1");
+
+  // Comment should be found iff key and value match.
+  EXPECT_TRUE(LookupComment(*dic, "comment_key", "mismatching_value").empty());
+  EXPECT_TRUE(LookupComment(*dic, "comment_key1", "mismatching_value").empty());
+  EXPECT_TRUE(LookupComment(*dic, "comment_key2", "mismatching_value").empty());
+  EXPECT_TRUE(LookupComment(*dic, "comment_key3", "mismatching_value").empty());
+  EXPECT_TRUE(LookupComment(*dic, "comment_key4", "mismatching_value").empty());
+  EXPECT_TRUE(LookupComment(*dic, "mismatching_key", "comment_value").empty());
+  EXPECT_TRUE(LookupComment(*dic, "mismatching_key", "comment_value1").empty());
+  EXPECT_TRUE(LookupComment(*dic, "mismatching_key", "comment_value2").empty());
+  EXPECT_TRUE(LookupComment(*dic, "mismatching_key", "comment_value3").empty());
+  EXPECT_TRUE(LookupComment(*dic, "mismatching_key", "comment_value4").empty());
+}
+
+TEST_F(UserDictionaryTest, TestPopulateTokenFromUserPosToken) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  dic->WaitForReloader();
+
+  const testing::MockDataManager mock_data_manager;
+  const dictionary::PosMatcher pos_matcher(
+      mock_data_manager.GetPosMatcherData());
+
+  UserPos::Token user_token{.key = "key", .value = "value", .id = 10};
+  user_token.set_pos_type(user_dictionary::UserDictionary::
+                              SA_IRREGULAR_CONJUGATION_NOUN);  // 名詞サ変
+
+  const int expected_cost = UserPos::GetCostFromPosType(user_token.pos_type());
+  Token token;
+
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.key, "key");
+  EXPECT_EQ(token.value, "value");
+  EXPECT_EQ(token.lid, 10);
+  EXPECT_EQ(token.rid, 10);
+  EXPECT_EQ(token.cost, expected_cost);
+  EXPECT_EQ(token.attributes, Token::USER_DICTIONARY);
+
+  user_token.set_pos_type(user_dictionary::UserDictionary::ABBREVIATION);
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, 200);
+
+  user_token.set_pos_type(user_dictionary::UserDictionary::SUGGESTION_ONLY);
+  dic->PopulateTokenFromUserPosTokenForTesting(
+      user_token, UserDictionary::UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.lid, pos_matcher.GetUnknownId());
+  EXPECT_EQ(token.rid, pos_matcher.GetUnknownId());
+  EXPECT_EQ(token.cost, expected_cost);
+
+  user_token.set_pos_type(user_dictionary::UserDictionary::NO_POS);
+  dic->PopulateTokenFromUserPosTokenForTesting(
+      user_token, UserDictionary::PREDICTIVE, &token);
+  // NO_POS id is set via user_pos.def.
+  EXPECT_EQ(token.cost, expected_cost);
+
+  user_token.set_pos_type(user_dictionary::UserDictionary::NO_POS);
+
+  user_token.key = "a";  // one char
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, expected_cost + 2000 * 3);
+
+  user_token.key = "aa";
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, expected_cost + 2000 * 2);
+
+  user_token.key = "aaa";
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, expected_cost + 2000);
+
+  user_token.key = "aaaa";
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, expected_cost);
+
+  user_token.key = "aaaaaaa";
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, expected_cost);
+}
+
+TEST_F(UserDictionaryTest, TestPopulateTokenFromUserPosTokenWithEntryPenalty) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  user_dictionary::UserDictionaryStorage storage;
+  user_dictionary::UserDictionary* user_dic = storage.add_dictionaries();
+  for (int i = 0; i < 10; ++i) {
+    user_dictionary::UserDictionary::Entry* entry = user_dic->add_entries();
+    entry->set_key(absl::StrCat("key", i));
+    entry->set_value(absl::StrCat("value", i));
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+  }
+  dic->Load(storage);
+
+  UserPos::Token user_token{.key = "key0", .value = "value0", .id = 10};
+  user_token.set_pos_type(user_dictionary::UserDictionary::NOUN);
+
+  Token token;
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  const int base_cost = UserPos::GetCostFromPosType(user_token.pos_type());
+  const int expected_penalty =
+      static_cast<int>(500.0 * std::log(11.0));  // N = 10
+  EXPECT_EQ(token.cost, base_cost + expected_penalty);
+
+  // POS type with cost 0 in user_pos.def (e.g. WA_GROUP1_VERB) uses default
+  // cost (5000) without penalty.
+  user_token.set_pos_type(user_dictionary::UserDictionary::WA_GROUP1_VERB);
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, 5000);
+
+  // ABBREVIATION always uses fixed cost (200) without penalty.
+  user_token.set_pos_type(user_dictionary::UserDictionary::ABBREVIATION);
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, 200);
+
+  // At N = 148, cost_penalty is static_cast<int>(500 * log(149)) = 2501 >=
+  // 2500, so the per-POS discount is fully phased out and all standard POS
+  // types scale as 2500 + cost_penalty.
+  for (int i = 10; i < 148; ++i) {
+    user_dictionary::UserDictionary::Entry* entry = user_dic->add_entries();
+    entry->set_key(absl::StrCat("key", i));
+    entry->set_value(absl::StrCat("value", i));
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+  }
+  dic->Load(storage);
+
+  const int penalty_148 = static_cast<int>(500.0 * std::log(149.0));  // 2501
+  for (const user_dictionary::UserDictionary::PosType pos_type : {
+           user_dictionary::UserDictionary::NOUN,
+           user_dictionary::UserDictionary::PERSONAL_NAME,
+           user_dictionary::UserDictionary::SYMBOL,
+       }) {
+    user_token.set_pos_type(pos_type);
+    dic->PopulateTokenFromUserPosTokenForTesting(
+        user_token, UserDictionary::PREFIX, &token);
+    EXPECT_EQ(token.cost, 2500 + penalty_148);
+  }
+
+  user_token.set_pos_type(user_dictionary::UserDictionary::ABBREVIATION);
+  dic->PopulateTokenFromUserPosTokenForTesting(user_token,
+                                               UserDictionary::PREFIX, &token);
+  EXPECT_EQ(token.cost, 200);
+}
+
+TEST_F(UserDictionaryTest, LoadFromStreamTest) {
+  std::unique_ptr<UserDictionary> dic(CreateDictionaryWithMockPos());
+  dic->WaitForReloader();
+
+  user_dictionary::UserDictionaryStorage storage;
+  storage.set_version(1);
+  user_dictionary::UserDictionary* user_dic = storage.add_dictionaries();
+  user_dic->set_id(12345);
+  user_dic->set_name("test_dic");
+
+  {
+    user_dictionary::UserDictionary::Entry* entry = user_dic->add_entries();
+    entry->set_key("start");
+    entry->set_value("start_val");
+    entry->set_pos(user_dictionary::UserDictionary::NOUN);
+    entry->set_comment("test_comment");
+  }
+  {
+    user_dictionary::UserDictionary::Entry* entry = user_dic->add_entries();
+    entry->set_key("suppress_key");
+    entry->set_value("suppress_val");
+    entry->set_pos(user_dictionary::UserDictionary::SUPPRESSION_WORD);
+  }
+
+  std::string serialized = storage.SerializeAsString();
+  // Append unknown Fixed64 (tag = (15 << 3) | 1 = 0x79) and Fixed32
+  // (tag = (15 << 3) | 5 = 0x7d) fields to verify SkipField handling.
+  serialized.append("\x79\x01\x02\x03\x04\x05\x06\x07\x08", 9);
+  serialized.append("\x7d\x01\x02\x03\x04", 5);
+
+  {
+    std::istringstream iss(serialized);
+    EXPECT_TRUE(dic->Load(iss));
+  }
+  EXPECT_THAT(LookupExact("start", *dic),
+              ElementsAre(Entry{"start", "start_val", 100, 100}));
+  EXPECT_EQ(LookupComment(*dic, "start", "start_val"), "test_comment");
+  EXPECT_TRUE(dic->IsSuppressedEntry("suppress_key", "suppress_val"));
+
+  // Corrupted streams (truncated length varint or Entry message) should fail
+  // and keep existing tokens intact.
+  {
+    std::istringstream bad_dic_len_iss("\x12");
+    EXPECT_FALSE(dic->Load(bad_dic_len_iss));
+  }
+  {
+    std::istringstream bad_entry_len_iss("\x22");
+    EXPECT_FALSE(dic->Load(bad_entry_len_iss));
+  }
+  {
+    std::istringstream bad_iss("\x22\x05xyz");
+    EXPECT_FALSE(dic->Load(bad_iss));
+  }
+  // Invalid wire type (wire type 6: tag = (15 << 3) | 6 = 0x7e) should fail.
+  {
+    std::istringstream bad_wire_iss("\x7e");
+    EXPECT_FALSE(dic->Load(bad_wire_iss));
+  }
+  EXPECT_THAT(LookupExact("start", *dic),
+              ElementsAre(Entry{"start", "start_val", 100, 100}));
+}
+
+}  // namespace
+}  // namespace dictionary
+}  // namespace mozc

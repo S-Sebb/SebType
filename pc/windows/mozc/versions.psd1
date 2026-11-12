@@ -1,10 +1,7 @@
-﻿# SebType's Windows Mozc (#65): upstream Mozc at a release tag, plus SebType's patches
-# (*.patch) and the Set E icons. Read by build.ps1. Bump SebTypeRelease when a patch or
-# the build changes.
+﻿# SebType's Windows Mozc (#65): pc/mozc and the Set E icons, and the tools that build them.
+# Read by build.ps1. Bump SebTypeRelease when pc/mozc or the build changes.
 @{
-    MozcVersion     = '3.35.6354'                                 # google/mozc tag, 2026-10-16
-    MozcCommit      = '0136c35782536cb43d710575c311cd4185982738'
-    MozcSha256      = 'c69e0de991d25490bfbbae2d43bbffdb1bfaad0506e208b47431d0232c686b40'  # codeload tar.gz
+    MozcVersion     = '3.35.6354'                                 # pc/mozc's Mozc release
     BazeliskUrl     = 'https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-windows-amd64.exe'
     BazeliskSha256  = '5d14a31e9d8a363c48ba1900dbd56764d730835232eb0d113cce255856ffe3ef'
     ResvgUrl        = 'https://github.com/linebender/resvg/releases/download/v0.49.0/resvg-win-x86_64.zip'
