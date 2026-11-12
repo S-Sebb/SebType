@@ -49,7 +49,7 @@ librime=/usr/lib64/librime.so.1
 libopencc=/usr/lib64/libopencc.so.1.1
 mkdir -p "$cache" "$out"
 
-key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" engines/librime/CMakeLists.txt "$headers"/rime_api*.h | sha256sum | cut -c1-16)
+key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
 zip=$cache/rime-data-$key.zip
 version="rime-ice $RIME_ICE_VERSION + rime-frost $RIME_FROST_VERSION, sebtype $BUNDLE_REVISION"
 
