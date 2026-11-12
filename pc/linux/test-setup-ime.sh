@@ -59,6 +59,10 @@ own_fcitx=(bwrap --dev-bind / / --ro-bind "$own/usr/lib64/fcitx5/librime.so" /us
 
 check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh rime/build.sh
 
+# No two icon files differ only by case: a Windows checkout would keep one of them (#77).
+icon_case() { ! git ls-files ../icons | tr '[:upper:]' '[:lower:]' | sort | uniq -d | grep .; }
+check icon-names-differ-beyond-case icon_case
+
 # Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (and
 # SebType's fcitx5-mozc and fcitx5-rime, until the user says yes to their sudo install; the typo keyboard
 # line, #46; #92/#93's Win+Space toggle, 日本語 and English names and Japanese's menu icon; and #102/#117's
@@ -196,8 +200,8 @@ tray_icons() {
   [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == SebType ]] &&
     grep -qx 'Inherits=Fluent-dark' "$t/index.theme" && grep -q iconChanged "$fake/emit.log" || return 1
   for d in 16 20 22 24 32 scalable; do
-    for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A fcitx_mozc:hira fcitx_mozc_hiragana:hira \
-      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a fcitx_mozc_direct_upper:ja-A; do
+    for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps fcitx_mozc:hira fcitx_mozc_hiragana:hira \
+      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a fcitx_mozc_direct_upper:ja-caps; do
       cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
     done
   done

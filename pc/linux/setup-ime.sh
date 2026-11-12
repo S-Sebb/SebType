@@ -395,10 +395,10 @@ fi
 # theme of our own set as active overrides them. fcitx_rime_latin_upper is what fcitx5-rime asks for in
 # English with Caps Lock on; SebType's fcitx5-mozc build (step 1b) asks for <English mode icon>_upper.
 icons=$here/../icons
-icon_names=(input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-A
+icon_names=(input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps
   fcitx_mozc:hira fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
   fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a
-  fcitx_mozc_direct_upper:ja-A fcitx_mozc_alpha_half_upper:ja-A fcitx_mozc_alpha_full_upper:ja-A)
+  fcitx_mozc_direct_upper:ja-caps fcitx_mozc_alpha_half_upper:ja-caps fcitx_mozc_alpha_full_upper:ja-caps)
 want_theme=$(mktemp -d)
 dirs=(16 20 22 24 32 scalable)
 {

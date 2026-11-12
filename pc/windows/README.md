@@ -193,10 +193,6 @@ builds Qt once, then Mozc's installer with Bazel (8 jobs). A rebuild compiles on
 YukaROG the first build took about 40 minutes (update_deps 4, Qt 14, Bazel 22) and 9 GB, after about
 40 minutes for the Build Tools install.
 
-`pc/icons` has states whose names differ only by case (`ja-a`, `ja-A`), so on Windows the folder must
-be case-sensitive before the repo's files go in (`fsutil file setCaseSensitiveInfo <dir> enable` for
-each size folder, no admin needed), or the English icons all come out as **A** (#77).
-
 | Patch | Change |
 |---|---|
 | `caps-lock-icon.patch` | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
