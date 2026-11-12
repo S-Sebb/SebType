@@ -12,12 +12,12 @@
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
 # (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
 # ImageMagick and `ssh TCSBackEnd`. Output: one line per check; logs in $out, the installer's pages in
-# /tmp/sebtype/73-*.png. Takes the device lock; exit 0 only if every check passes and TCSBackEnd ends
+# ~/scratch/sebtype/73-*.png. Takes the device lock; exit 0 only if every check passes and TCSBackEnd ends
 # as found.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
-out=/tmp/sebtype/73-setup-tcsbackend
+out=$HOME/scratch/sebtype/73-setup-tcsbackend
 lock=/tmp/agent-locks/devices/tcsbackend.lock
 branch=$(git -C "$repo" branch --show-current)
 if [ -z "${HOLDING:-}" ]; then
@@ -170,7 +170,7 @@ mkdir -p "$out/logs"
 scp -q -r 'TCSBackEnd:C:/sebtype-setup-test/out/*' 'TCSBackEnd:C:/sebtype-setup-test/run.log' "$out/logs/" 2>/dev/null
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
 for png in "$out"/logs/73-*.png "$out"/logs/117-*.png; do
-  [ -e "$png" ] && magick "$png" -resize '1000x1000>' "/tmp/sebtype/$(basename "$png")"
+  [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$HOME/scratch/sebtype/$(basename "$png")"
 done
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
 [ -s "$out/results.txt" ] || echo "FAIL results: test.ps1 wrote no results (logs: $out/logs)"

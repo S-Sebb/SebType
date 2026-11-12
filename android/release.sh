@@ -14,8 +14,8 @@ gh auth status >/dev/null 2>&1 || { echo "release: gh is not logged in" >&2; exi
 apk=$(android/build.sh release)
 version="$(cat android/upstream-version)-sebtype.$(git rev-list --first-parent --count HEAD)"
 tag="v$version"
-asset=/tmp/sebtype/SebType-$version-arm64-v8a.apk
-mkdir -p /tmp/sebtype && cp "$apk" "$asset"
+asset=$SCRATCH/SebType-$version-arm64-v8a.apk
+mkdir -p "$SCRATCH" && cp "$apk" "$asset"
 
 # Refuse an APK that isn't signed with the SebType key: Android would refuse it as an update anyway.
 apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)

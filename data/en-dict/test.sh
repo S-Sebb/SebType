@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Checks SebType's English dictionary (#47): the dictionary codec, that the committed main_en.dict is what
 # build.sh makes from the pinned sources, the #40 benchmark against FUTO's dictionary, and that the release
-# APK ships it. One line per check in /tmp/sebtype/test-en-dict-results.txt; logs next to it.
+# APK ships it. One line per check in ~/scratch/sebtype/test-en-dict-results.txt; logs next to it.
 # Exit 0 only if all pass. Typing on the emulator ("gi" -> GitHub, autocorrect) is checked by hand.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
 
-out=/tmp/sebtype; mkdir -p "$out"
+out=$SCRATCH; mkdir -p "$out"
 results=$out/test-en-dict-results.txt; : > "$results"
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
+cache=$SCRATCH/cache
 dict=android/app/src/main/res/raw/main_en.dict
 sdk=$ANDROID_HOME
 bt=$(ls -d "$sdk"/build-tools/* 2>/dev/null | tail -1)

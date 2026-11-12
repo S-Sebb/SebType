@@ -22,7 +22,7 @@ android {
             // The third-party sources librime builds on are downloaded (pinned, checksum-checked) once into
             // a cache every worktree shares.
             arguments "-DLIBRIME_SOURCE_DIR=${repoRoot}/engines/librime",
-                "-DRIME_DEPS_CACHE=${System.getenv('XDG_CACHE_HOME') ?: "${System.getProperty('user.home')}/.cache"}/sebtype/rime-android",
+                "-DRIME_DEPS_CACHE=${System.getProperty('user.home')}/scratch/sebtype/cache/rime-android",
                 '-DCMAKE_BUILD_TYPE=Release'
             cFlags "-ffile-prefix-map=${repoRoot}/="
             cppFlags '-Wno-deprecated', '-fpermissive', '-fno-char8_t', "-ffile-prefix-map=${repoRoot}/="

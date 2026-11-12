@@ -145,13 +145,13 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | Check | What passes |
 |---|---|
 | `language-follows-windows` | Setup's language dialog offers Windows' display language (简体中文 on TCSBackEnd) |
-| `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`/tmp/sebtype/73-*.png`): welcome in all three languages, languages, installing, finish |
+| `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`~/scratch/sebtype/73-*.png`): welcome in all three languages, languages, installing, finish |
 | `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, Weasel and Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
 | `chinese-typo-xkaoshi` | SebType's librime corrects a slip onto the key under i: `xkaoshi` → 小时, and `kaoshi` stays 考试 (#133) |
 | `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`../perf-rime.ps1` with the Weasel build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
 | `japanese-alt-grave` | In Notepad, in 日本語: Alt+\` types ア, again あ; after a Shift tap to English, Alt+\` still types `a`, and a Shift tap is あ again |
-| `chinese-tray-menu` | In a TSF text field of the test's own: the tray icon's menu is the one item `简 → 繁 Ctrl+Shift+F`; picking it makes `houlai` → 後來, and the menu then reads `繁 → 简 Ctrl+Shift+F` and goes back (`/tmp/sebtype/117-menu-zh-*.png`) |
+| `chinese-tray-menu` | In a TSF text field of the test's own: the tray icon's menu is the one item `简 → 繁 Ctrl+Shift+F`; picking it makes `houlai` → 後來, and the menu then reads `繁 → 简 Ctrl+Shift+F` and goes back (`~/scratch/sebtype/117-menu-zh-*.png`) |
 | `round1-upgrade`, `-upgrade-keeps-learned-words` | A silent rerun exits 0 and keeps the Rime and Mozc learned-word folders |
 | `japanese-after-language-change` | After a language is added and removed, Japanese still types |
 | `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; Weasel, Mozc and SebType gone |

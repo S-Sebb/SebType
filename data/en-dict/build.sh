@@ -21,7 +21,7 @@ SCOWL_URL=https://github.com/en-wl/wordlist/releases/download/rel-2026.02.25/hun
 SCOWL_SHA256=06ab5a2a12c29033f100988d3b0a5e53dcad40bf2473ccb78270619d1da99321
 
 out=${1:-sebtype/res-stable/raw/main_en.dict}
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
+cache=$HOME/scratch/sebtype/cache
 mkdir -p "$cache" out "$(dirname "$out")"
 command -v hunspell >/dev/null || { echo "build: hunspell missing" >&2; exit 1; }
 

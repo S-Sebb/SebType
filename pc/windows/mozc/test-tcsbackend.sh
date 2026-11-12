@@ -11,7 +11,7 @@
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
-out=/tmp/sebtype/mozc-tcsbackend
+out=$HOME/scratch/sebtype/mozc-tcsbackend
 lock=/tmp/agent-locks/devices/tcsbackend.lock
 if [ -z "${HOLDING:-}" ]; then
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype mozc test on TCSBackEnd ($(git -C "$repo" branch --show-current))" "$lock" bash "$0"
@@ -21,14 +21,14 @@ mkdir -p "$out"; rm -f "$out"/*
 msi=$(ls -t "$repo"/build/SebType-Mozc-*.msi ~/Downloads/xfer/*SebType-Mozc-*.msi 2>/dev/null | head -1)
 python_url=https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip
 python_sha=9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38
-python_zip=~/.cache/sebtype/python-3.13.17-embed-amd64.zip
+python_zip=~/scratch/sebtype/cache/python-3.13.17-embed-amd64.zip
 missing=
 [ -n "$msi" ] || missing='no SebType-Mozc-*.msi in build/ or ~/Downloads/xfer: run build.ps1 and xfer it here'
 command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && python3 -c 'import Xlib' 2>/dev/null ||
   missing=${missing:-'needs gamescope, xfreerdp and python3-xlib'}
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 if [ -z "$missing" ] && ! echo "$python_sha  $python_zip" | sha256sum -c --status 2>/dev/null; then
-  mkdir -p ~/.cache/sebtype
+  mkdir -p ~/scratch/sebtype/cache
   curl -fsSL -o "$python_zip" "$python_url" && echo "$python_sha  $python_zip" | sha256sum -c --status ||
     missing="Python download failed or its sha256 differs ($python_url)"
 fi
