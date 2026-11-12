@@ -5,7 +5,7 @@ session (test-tcsbackend.sh does that on TCSBackEnd and opens the Remote Desktop
 
     powershell -File C:\sebtype-setup-test\test.ps1
 
-The folder holds this script, TsfHost.cs (../mozc), perf-rime.ps1 and perf-rime.exe (../, from the
+The folder holds this script, TsfHost.cs (../mozc), windows.rs (the Configurator's Picnic scheme), perf-rime.ps1 and perf-rime.exe (../, from the
 Weasel build) and SebType-setup-*.exe. The test creates a local
 admin user, sebtype-test, and runs everything as that user in a Remote Desktop session of its own, so
 nobody's own input settings change, then removes the user and its profile:
@@ -15,16 +15,19 @@ nobody's own input settings change, then removes the user and its profile:
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
    (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese),
    Rime's time per key (p95 ≤ 10 ms, only with -PerfRun: the final performance run, #54) and Chinese's
-   tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu), a silent
+   tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu) and its
+   Picnic candidate window with the pig (pictures, horizontal and vertical), a silent
    upgrade that keeps learned words, Japanese still working after the language list changes, then the
    uninstall: everything back as before, learned words gone.
 3. Round 2, all silent: install with Chinese and Japanese only (no English), upgrade to English and
    Chinese (Japanese and its learned words go), uninstall.
 
+-Only picnic: only a silent install, the Picnic window's pictures and a silent uninstall (#162).
+
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
 #>
-param([string]$Driver, [string]$Typing, [switch]$PerfRun)
+param([string]$Driver, [string]$Typing, [switch]$PerfRun, [string]$Only)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 $out = "$root\out"
@@ -74,6 +77,37 @@ if ($Typing) {
       Start-Sleep -Milliseconds 500
     }
     function TypeText($s) { Keys ($s.ToCharArray() | ForEach-Object { if ($_ -eq ' ') { 'space' } else { "$_" } }) }
+    # Chinese in the test's own TSF text field (TsfHost.cs, started), after Weasel's first key there.
+    function Weasel-Field {
+      if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
+      $tsf::Activate(0x804, [Guid]$WeaselClsid, [Guid]'{3D02CAB6-2B8E-4781-BA20-1C9267529467}')
+      $tsf::Clear(); TypeText 'ni'; Start-Sleep 1; Keys Escape
+    }
+    # The Picnic window with SebType's pig (#94, #162), as the Configurator writes it (its scheme from
+    # windows.rs), at 14 pt, in Weasel-Field: pictures 162-weasel-horizontal.png and -vertical.png.
+    $picnic = {
+      $rs = (((Get-Content "$root\windows.rs" -Encoding utf8 -Raw) -split 'const PICNIC_SCHEME')[1] -split '\];')[0]
+      $scheme = [regex]::Matches($rs, '"(    [^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+      $deployer = Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe
+      $sizes = foreach ($o in 'horizontal', 'vertical') {
+        [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]](@('patch:',
+          "  style/horizontal: $($o -eq 'horizontal')".ToLower(), '  style/font_point: 14', '  style/color_scheme: sebtype_picnic',
+          '  style/sebtype_logo: true', '  preset_color_schemes/sebtype_picnic:') + $scheme))
+        # Not Start-Process: its trailing space makes the deployer open its settings window (setup.ps1)
+        $p = [Diagnostics.Process]::Start($deployer, '/deploy')
+        if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's redeploy ($o) took over a minute" }
+        $tsf::Clear(); TypeText 'nihao'; Start-Sleep 2
+        $size = $tsf::CandidateWindow("$out\162-weasel-$o.png"); Keys Escape
+        if (-not $size) { throw "no candidate window ($o)" }
+        "$o $size"
+      }
+      $sizes -join ', '
+    }
+    if ($Typing -eq 'picnic') {
+      $tsf::Start()
+      try { Check 'chinese-picnic-window' { Weasel-Field; & $picnic } } finally { $tsf::Stop() }
+      return
+    }
     $np = Start-Process notepad -PassThru
     try {
       $null = $np.WaitForInputIdle(10000)
@@ -167,10 +201,8 @@ if ($Typing) {
       $tsf::Start()
       try {
         Check 'chinese-tray-menu' {
-          if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
-          $tsf::Activate(0x804, [Guid]$WeaselClsid, [Guid]'{3D02CAB6-2B8E-4781-BA20-1C9267529467}')
+          Weasel-Field
           function Field($s) { $tsf::Clear(); TypeText $s; Start-Sleep 1; $tsf::Text().Trim() }
-          $null = Field 'ni'; Keys Escape  # Weasel's first key in this window
           $m = $tsf::TrayPopup($true, "$out\117-menu-zh-hans.png"); $hant = Field 'houlai '
           $m2 = $tsf::TrayPopup($true, "$out\117-menu-zh-hant.png"); $hans = Field 'houlai '
           if ($m -ne "简 → 繁`tCtrl+Shift+F" -or $hant -ne '後來' -or $m2 -ne "繁 → 简`tCtrl+Shift+F" -or $hans -ne '后来') {
@@ -178,6 +210,7 @@ if ($Typing) {
           }
           'menu 简 → 繁 (後來), then 繁 → 简 (后来)'
         }
+        Check 'chinese-picnic-window' $picnic
       } finally { $tsf::Stop() }
     }
   } catch { Result "typing-$Typing" FAIL $_.Exception.Message } finally {
@@ -417,6 +450,17 @@ namespace SebTypeSetupTest {
   $learned = "$env:APPDATA\Rime\rime_ice.userdb\SEBTYPE-TEST", "$env:USERPROFILE\AppData\LocalLow\Mozc\SEBTYPE-TEST"
 
   try {
+    if ($Only -eq 'picnic') {
+      # Only the Picnic window (#162): a silent install, its pictures, a silent uninstall.
+      Check 'picnic-install' { Silent picnic-install @(); 'silent' }
+      Typing picnic
+      Check 'picnic-uninstall' {
+        Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+        if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
+        'silent'
+      }
+      return
+    }
     # ---------------------------------------------------------------------------------- pictures
     Check 'language-follows-windows' {
       Start-Process $setup
@@ -548,7 +592,7 @@ try {
   Add-LocalGroupMember -SID S-1-5-32-555 -Member $user  # Remote Desktop Users
   & icacls.exe $root /grant "${user}:(OI)(CI)M" | Out-Null
   $run = { param($mode, $level) New-ScheduledTaskAction -Execute powershell.exe -WorkingDirectory $root `
-      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$root\test.ps1`" -$mode $mode" }
+      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$root\test.ps1`" -$mode $mode$(if ($Only) { " -Only $Only" })" }
   Register-ScheduledTask SebType-setup-driver -Action (& $run Driver) -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $user) `
     -Principal (New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest) -Force | Out-Null
   # The typing runs as apps do, not elevated; the driver starts it, its phase in out\typing-phase.txt.
@@ -596,6 +640,6 @@ Check 'admin-input-as-before' {
 }
 foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'japanese-all', 'japanese-alt-grave',
   'round1-upgrade', 'japanese-after-language-change', 'round1-uninstall-pages', 'round1-everything-as-before', 'round2-upgrade-drops-japanese', 'round2-everything-as-before') {
-  if (-not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
+  if (-not $Only -and -not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
 }
 exit [int][bool](Select-String -Quiet '^(FAIL|SKIP) ' $results)

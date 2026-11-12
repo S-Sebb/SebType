@@ -189,7 +189,7 @@ index 99d8e64..c6c96cb 100644
    }
    _highlightRect = _candidateRects[id];
    UpdateStatusIconLayout(&width, &height);
-+  ReserveLogoColumn(&width, height);
++  ReserveLogoColumn(&width, height, pDWR->dpiScaleLayout);
    _contentSize.SetSize(width + offsetX, height + 2 * offsetY);
    _contentRect.SetRect(0, 0, _contentSize.cx, _contentSize.cy);
  
@@ -209,23 +209,29 @@ diff --git a/WeaselUI/StandardLayout.cpp b/WeaselUI/StandardLayout.cpp
 index bdffad0..0609a0e 100644
 --- a/WeaselUI/StandardLayout.cpp
 +++ b/WeaselUI/StandardLayout.cpp
-@@ -312,6 +312,31 @@ void weasel::StandardLayout::_PrepareRoundInfo(CDCHandle& dc) {
+@@ -312,6 +312,37 @@ void weasel::StandardLayout::_PrepareRoundInfo(CDCHandle& dc) {
    }
  }
  
-+// SebType (#94): a column at the start for SebType's pig, as tall as a
-+// candidate row plus half the margins, so it follows the font size and DPI.
-+// Everything laid out so far moves right by the column; height is the
-+// content height inside the border.
-+void StandardLayout::ReserveLogoColumn(int* width, int height) {
++// SebType (#94): a column at the start for SebType's pig, 10/7 of a
++// candidate row plus half the margins (#162), so it follows the font size and
++// DPI; its top is level with the first row (the pinyin when it is shown) and
++// it stays inside the content. Everything laid out so far moves right by the
++// column; height is the content height inside the border.
++void StandardLayout::ReserveLogoColumn(int* width, int height, float scale) {
 +  if (_style.sebtype_logo.empty() || !candidates_count)
 +    return;
-+  const int h = _candidateRects[0].Height() + real_margin_y;
++  int top = _candidateRects[0].top;
++  for (const CRect* rc : {&_preeditRect, &_auxiliaryRect})
++    if (!rc->IsRectEmpty())
++      top = min(top, rc->top);
++  const int h = min((_candidateRects[0].Height() + real_margin_y) * 10 / 7,
++                    height);
 +  const int w = h * LOGO_WIDTH / LOGO_HEIGHT;
-+  const int top = offsetY + (height - h) / 2;
++  top = min(top, offsetY + height - h);
 +  _logoRect.SetRect(offsetX + real_margin_x, top,
 +                    offsetX + real_margin_x + w, top + h);
-+  const int shift = w + real_margin_x / 2;
++  const int shift = w + real_margin_x / 2 + (int)(LOGO_GAP * scale);
 +  for (CRect* rc : {&_preeditRect, &_auxiliaryRect, &_highlightRect,
 +                    &_statusIconRect})
 +    rc->OffsetRect(shift, 0);
@@ -245,12 +251,14 @@ diff --git a/WeaselUI/StandardLayout.h b/WeaselUI/StandardLayout.h
 index 23eef35..2ade1c8 100644
 --- a/WeaselUI/StandardLayout.h
 +++ b/WeaselUI/StandardLayout.h
-@@ -9,6 +9,8 @@
+@@ -9,6 +9,10 @@
  namespace weasel {
  const int MAX_CANDIDATES_COUNT = 100;
  const int STATUS_ICON_SIZE = GetSystemMetrics(SM_CXICON);
 +// SebType: sebtype-logo.png's size, for its aspect ratio (#94)
 +const int LOGO_WIDTH = 158, LOGO_HEIGHT = 160;
++// SebType: px at 100% between the pig and the text, as on Linux (#162)
++const int LOGO_GAP = 9;
  
  class StandardLayout : public Layout {
   public:
@@ -266,7 +274,7 @@ index 23eef35..2ade1c8 100644
    void _PrepareRoundInfo(CDCHandle& dc);
  
    void UpdateStatusIconLayout(int* width, int* height);
-+  void ReserveLogoColumn(int* width, int height);
++  void ReserveLogoColumn(int* width, int height, float scale);
  
    CSize _beforesz, _hilitedsz, _aftersz;
    weasel::TextRange _range;
@@ -286,7 +294,7 @@ index fee38f6..dcd889f 100644
      _candidateRects[i].right = right;
    }
  
-+  ReserveLogoColumn(&width, height);
++  ReserveLogoColumn(&width, height, pDWR->dpiScaleLayout);
    _contentSize.SetSize(width + offsetX * 2, height + offsetY * 2);
  
    /* Highlighted Candidate */

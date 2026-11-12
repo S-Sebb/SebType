@@ -3,6 +3,7 @@
 # and puts TCSBackEnd back as found. One command, no arguments:
 #   pc/windows/setup/test-tcsbackend.sh
 # PERF_RUN=1 adds the timing check (round1-rime-p95), for the final performance run only (#54).
+# ONLY=picnic runs only the Picnic candidate window's pictures (#162), with TCSBackEnd's own checks.
 # It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
 # else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
@@ -105,7 +106,7 @@ grep -q '^folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a Seb
 grep -qE '^users: \S*\bsebtype-test\b' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
 
 # shellcheck disable=SC2016
-sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}/" > "$out/run.ps1" <<'EOF'
+sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}${ONLY:+ -Only $ONLY}/" > "$out/run.ps1" <<'EOF'
 $d = 'C:\sebtype-setup-test'
 Start-Transcript "$d\run.log" | Out-Null
 try {
@@ -117,7 +118,7 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-setup-test | Out-Null' | tps
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
+if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$repo/pc/configurator/src/windows.rs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 

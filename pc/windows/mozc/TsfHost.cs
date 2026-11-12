@@ -258,6 +258,8 @@ namespace SebType {
     [DllImport("user32.dll", EntryPoint = "SendMessageW")] static extern IntPtr SendMessagePtr(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumThreadWindows(uint thread, EnumProc f, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder s, int n, uint flags);
@@ -442,6 +444,19 @@ namespace SebType {
         using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(l, t, 0, 0, bmp.Size);
         bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
       }
+    }
+    // Saves the input method's candidate window, the visible window other than the field that its code
+    // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one.
+    public static string CandidateWindow(string path) {
+      IntPtr w = IntPtr.Zero;
+      OnUi(() => { EnumThreadWindows(threadId, (h, l) => { if (h != store.Hwnd && IsWindowVisible(h)) w = h; return w == IntPtr.Zero; }, IntPtr.Zero); return 0; });
+      if (w == IntPtr.Zero) return null;
+      RECT r; GetWindowRect(w, out r);
+      using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T)) {
+        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
+        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+      }
+      return (r.R - r.L) + "x" + (r.B - r.T);
     }
     // Which of Mozc's icon resources its input mode button (the tray's あ/a) shows now, or -1.
     public static int TrayIcon(int[] ids) {
