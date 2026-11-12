@@ -56,9 +56,13 @@ method, the switch keys, the per-window setting, the input hotkeys and text serv
 of the Rime and Mozc folders if there were any. Uninstall
 restores those and deletes what SebType learned on this PC (Decisions #2): Setup's message says so.
 
-**Sync (#12)** isn't built. `setup.ps1` has one marked place, `SYNC HOOK (#12)`, just before a language's
-learned words are deleted (uninstall or a language left out): there, once SebType has sync and it was
-ever on, the account's words are saved to the server first.
+**Sync (#180)** is the Configurator's (Sync & backup, [sync-server/README.md](../../sync-server/README.md)).
+Setup packs Python's embeddable package into `{app}\python` for it, since Windows has no Python: the
+setup CI fetches it with `python.ps1`, which checks its SHA-256, and caches it. Just before a language's learned words are deleted
+(uninstall or a language left out), `setup.ps1` runs `sebtype-configurator.exe --sync-before-removal`:
+if sync was ever on since the last delete on the server, the account's words go to the server first.
+It never deletes anything on the server. `-User -Undo` then removes sync's scheduled task, its login in
+Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 
 ### What it does, and why
 

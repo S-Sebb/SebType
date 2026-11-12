@@ -23,6 +23,12 @@ nobody's own input settings change, then removes the user and its profile:
    Chinese (Japanese and its learned words go), uninstall.
 
 -Only picnic: only a silent install, the Picnic window's pictures and a silent uninstall (#162).
+-Only sync: only sync with your own server (#180): a silent install; sebtype_sync.py serving on this PC's
+   localhost, run by a copy of the Python Setup packs, with a throwaway login; the login saved as the
+   Configurator's Save does (sebtype-configurator --save-login: Credential Manager, the task); made-up
+   words of this PC's (Rime, Mozc) and of another device (test-sync.py); the "SebType sync" task run
+   once; then a silent uninstall, which must sync first and remove the task, the login and sync's files.
+   The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
 
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
@@ -461,6 +467,148 @@ namespace SebTypeSetupTest {
       }
       return
     }
+    if ($Only -eq 'sync') {
+      Check 'sync-install' { Silent sync-install @(); 'silent, all languages' }
+      # The server runs from a copy of Setup's Python: the uninstaller removes {app}\python, which it holds.
+      Copy-Item -Recurse "$App\python" "$out\python"
+      $python = "$out\python\python.exe"
+      function Run-Exe($exe, [string[]]$arguments, [string]$stdin) {  # its output; throws on a failure
+        $psi = New-Object Diagnostics.ProcessStartInfo $exe, (($arguments | ForEach-Object { "`"$_`"" }) -join ' ')
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $psi.RedirectStandardOutput = $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+        $p = [Diagnostics.Process]::Start($psi)
+        $p.StandardInput.WriteLine($stdin); $p.StandardInput.Close()
+        $o = $p.StandardOutput.ReadToEnd(); $e = $p.StandardError.ReadToEnd()
+        if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; throw "$(Split-Path -Leaf $exe) $($arguments[0..1] -join ' ') ran over 5 minutes" }
+        if ($p.ExitCode) { throw "$(Split-Path -Leaf $exe) $($arguments[0..1] -join ' '): exit $($p.ExitCode) $e$o".Trim() }
+        $o.Trim()
+      }
+      function Py([string[]]$arguments, [string]$stdin) { Run-Exe $python (@('-I', '-X', 'utf8') + $arguments) $stdin }
+      function Helper { Py (@("$root\test-sync.py") + $args) $syncPassword }
+      $syncUser = 'sebtype-sync-test'
+      $syncPassword = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+      $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $listener.Start()
+      $port = $listener.LocalEndpoint.Port; $listener.Stop()
+      $url = "http://127.0.0.1:$port"
+      $syncJson = "$env:LOCALAPPDATA\SebType\sync.json"
+      $rime = "$env:APPDATA\Rime"
+      $mozcDb = "$env:USERPROFILE\AppData\LocalLow\Mozc\user_dictionary.db"
+      $deployer = Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe
+      function Rime-Sync {  # Weasel's 用户资料同步; not Start-Process (its trailing space, see $picnic)
+        $p = [Diagnostics.Process]::Start($deployer, '/sync')
+        if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's sync took over 2 minutes" }
+      }
+      # A script as this admin, not elevated, in a one-off task as the Configurator's tray runs: the elevated
+      # driver's token from Task Scheduler has an empty Credential Manager (its cmdkey /list lists none).
+      # $ScriptText is the script's text, $Answer a file it writes before it ends.
+      function Plain([string]$ScriptText, [string]$Answer, [int]$Seconds = 120) {
+        $f = "$out\plain-$(Get-Random)"
+        [IO.File]::WriteAllText("$f.ps1", $ScriptText)
+        Register-ScheduledTask SebType-setup-plain -Force `
+          -Action (New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$f.ps1`"") `
+          -Principal (New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited) | Out-Null
+        try {
+          Start-ScheduledTask SebType-setup-plain
+          if (-not (Wait-Until $Seconds { (Test-Path $Answer) -and (Get-ScheduledTask SebType-setup-plain).State -eq 'Ready' })) {
+            throw "not elevated: nothing in $Answer after $Seconds s"
+          }
+        } finally { Unregister-ScheduledTask SebType-setup-plain -Confirm:$false }
+      }
+      $server = $loginLeft = $null
+      try {
+        Check 'sync-server' {
+          $null = Py @("$root\sebtype_sync.py", 'adduser', '--data', "$out\sync-server", '--password-stdin', $syncUser) $syncPassword
+          $script:server = Start-Process $python -PassThru -NoNewWindow -RedirectStandardError "$out\sync-server.log" `
+            -ArgumentList '-I', "`"$root\sebtype_sync.py`"", 'serve', '--data', "`"$out\sync-server`"", '--port', $port
+          if (-not (Wait-Until 30 { try { (New-Object Net.Sockets.TcpClient '127.0.0.1', $port).Close(); $true } catch { $false } })) { throw "no server on $url" }
+          "sebtype_sync.py on $url with Setup's Python, a throwaway login"
+        }
+        Check 'sync-login-in-credential-manager' {
+          # The login is made and Credential Manager listed in the one plain task: the elevated driver sees none.
+          $login = "$out\save-login"
+          [IO.File]::WriteAllText("$login-in.txt", "$url`n$syncUser`n$syncPassword`n")
+          $save = @"
+Get-Content -Raw '$login-in.txt' | & '$App\sebtype-configurator.exe' --save-login 2>&1 | Out-File -Encoding utf8 '$login-out.txt'
+`$exit = `$LASTEXITCODE
+cmdkey /list 2>&1 | Out-File -Encoding utf8 '$login-cred.txt'
+Set-Content '$login-code.txt' `$exit
+"@
+          try { Plain $save "$login-code.txt" } finally { Remove-Item "$login-in.txt" -ErrorAction SilentlyContinue }  # a throwaway password
+          $code = (Get-Content "$login-code.txt" -Raw -ErrorAction SilentlyContinue)
+          if ("$code".Trim() -ne '0') { throw "--save-login, not elevated: exit '$code' $(Get-Content "$login-out.txt" -Raw -ErrorAction SilentlyContinue)" }
+          # Not cmdkey /list:'login.SebType sync': its space reaches cmdkey as two arguments, and its labels are localized.
+          $cred = Get-Content "$login-cred.txt" -Raw -ErrorAction SilentlyContinue
+          if ($cred -notmatch 'target=.*login\.SebType sync') { throw "no 'login.SebType sync' in Credential Manager: $cred" }
+          $saved = Get-Content $syncJson -Raw -Encoding utf8
+          if ($saved.Contains($syncPassword)) { throw 'the password is in sync.json' }
+          if (-not ($saved | ConvertFrom-Json).enabled) { throw "sync is off after the first login: $saved" }
+          if (-not (Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue)) { throw 'no SebType sync task' }
+          'the password only in Credential Manager (login.SebType sync), sync on, the SebType sync task made'
+        }
+        $device = Helper device $rime
+        Check 'sync-made-up-words' {
+          # A word Rime learned on this PC: Rime takes in its own snapshot, which then goes, so only its
+          # learned words hold the word until the task's sync writes the snapshot again.
+          $snap = (Helper seed-rime $rime) + '\rime_ice.userdb.txt'
+          Rime-Sync; Remove-Item $snap; Rime-Sync
+          if (-not ((Get-Content $snap -Raw -Encoding utf8) -match '莫福姬')) { throw 'Rime did not take in the PC''s word 莫福姬' }
+          Remove-Item $snap
+          $null = Helper add-mozc $mozcDb 'もふてすと' 'モフ試験語'
+          $null = Helper put-phone $url $syncUser
+          "this PC ($device): 莫福姬 in Rime's learned words, モフ試験語 in Mozc; another device's 普噜莫 and プルモ試験語 on the server"
+        }
+        Check 'sync-scheduled-task' {
+          Start-ScheduledTask -TaskName 'SebType sync'
+          $j = Wait-Until 300 { $x = Get-Content $syncJson -Raw -Encoding utf8 | ConvertFrom-Json; if ($x.status -ne 'not-yet') { $x } }
+          if (-not $j) { throw 'the task did not sync in 5 minutes' }
+          if ($j.status -ne 'synced') { throw "the task's sync: $($j.status)" }
+          'the SebType sync task ran sebtype-configurator --sync: synced'
+        }
+        Check 'sync-pc-words-reach-server' {
+          (Helper server-has $url $syncUser $device rime_ice.userdb.txt '莫福姬'), (Helper server-has $url $syncUser $device mozc_dictionary.txt 'モフ試験語') -join '; '
+        }
+        Check 'sync-other-device-reaches-pc' { Helper pc-has $rime $mozcDb }
+        Check 'sync-uninstall-syncs-first-and-cleans-up' {
+          $null = Helper add-mozc $mozcDb 'さいごて' 'サイゴ試験語'  # only the uninstall's sync can take this one up
+          Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\uninstall-sync.log`""
+          if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
+          $synced = Helper server-has $url $syncUser $device mozc_dictionary.txt 'サイゴ試験語'
+          $files = [int](Helper server-files $url $syncUser)
+          if ($files -lt 4) { throw "the server keeps $files files, not this PC's and the other device's 4" }
+          $left = @()
+          if (Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue) { $left += 'the SebType sync task' }
+          Plain "cmdkey /list 2>&1 | Out-File -Encoding utf8 '$out\after-uninstall.txt'" "$out\after-uninstall.txt"
+          if (-not (Test-Path "$out\after-uninstall.txt")) { throw 'no Credential Manager listing after the uninstall' }
+          $script:loginLeft = (Get-Content "$out\after-uninstall.txt" -Raw) -match 'target=.*login\.SebType sync'
+          $left += @('sync.json', 'sync.lock', 'sebtype_sync.py' | Where-Object { Test-Path "$env:LOCALAPPDATA\SebType\$_" })
+          if ($left) { throw "left after uninstall: $($left -join ', ')" }
+          "synced first ($synced), the server's $files files kept; task and sync's files gone"
+        }
+        # The uninstall runs elevated from this driver, whose token from Task Scheduler (a logon without a
+        # password) can read Credential Manager but not change it, so setup.ps1's CredDeleteW can't remove
+        # the login here; UAC's elevated token, a real uninstall's, comes from the password logon and can.
+        # A test-made password logon instead leaves the test user's profile loaded until a reboot. So
+        # here: setup.ps1's own call, from this account's logon token.
+        if ($loginLeft -eq $false) { Result 'sync-uninstall-removes-login' PASS 'the login is gone from Credential Manager' } elseif ($loginLeft) {
+          try {
+            Plain @"
+Add-Type -Namespace T -Name C -MemberDefinition '[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool CredDeleteW(string target, uint type, uint flags);'
+`$ok = [T.C]::CredDeleteW('login.SebType sync', 1, 0); `$e = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+Set-Content '$out\cred-delete.txt' "`$ok `$e"
+"@ "$out\cred-delete.txt"
+            $r = (Get-Content "$out\cred-delete.txt" -Raw).Trim()
+            if ($r -notmatch '^True') { throw "the login stayed, and setup.ps1's CredDeleteW from the logon token failed too: $r" }
+            Result 'sync-uninstall-removes-login' INFO ("not checkable here: the driver's elevated token can't change Credential Manager, " +
+              "so the uninstall left the login; setup.ps1's CredDeleteW('login.SebType sync', CRED_TYPE_GENERIC) removed it from this account's logon token")
+          } catch { Result 'sync-uninstall-removes-login' FAIL $_.Exception.Message }
+        }
+      } finally {
+        if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item -Recurse -Force "$out\python", "$out\sync-server" -ErrorAction SilentlyContinue
+      }
+      return
+    }
     # ---------------------------------------------------------------------------------- pictures
     Check 'language-follows-windows' {
       Start-Process $setup
@@ -607,7 +755,7 @@ try {
   }
 } catch { Result admin FAIL $_.Exception.Message } finally {
   Remove-Item -Recurse (Split-Path $rdp) -ErrorAction SilentlyContinue
-  'SebType-setup-driver', 'SebType-setup-typing' | ForEach-Object { Unregister-ScheduledTask $_ -Confirm:$false -ErrorAction SilentlyContinue }
+  'SebType-setup-driver', 'SebType-setup-typing', 'SebType sync' | ForEach-Object { Unregister-ScheduledTask $_ -Confirm:$false -ErrorAction SilentlyContinue }
   # A run that died may leave SebType installed: its own uninstaller, then the session, profile and user.
   if (Test-Path $AppKey) { Start-Process -Wait "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'; Start-Sleep 20 }
   query.exe session 2>$null | ForEach-Object { if ("$_" -match "\s$user\s+(\d+)\s") { logoff.exe $Matches[1] } }

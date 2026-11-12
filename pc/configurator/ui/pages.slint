@@ -1,13 +1,14 @@
 import { ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { State } from "state.slint";
+import { State, SyncStatus } from "state.slint";
 import { Switch, Segmented, PixelFrame, Card, Row, Divider, SectionTag, PageTitle, Info, Button, Kbd, Field, TitleBar } from "widgets.slint";
 
 // Which group (page) and which screen inside it is shown, and the question waiting for an answer.
 export global Nav {
     in-out property <int> page;       // 0 Languages … 5 About
-    in-out property <int> sub;        // 0 the group; 1 Fuzzy pinyin, 2 中文 My words, 3 日本語 My words
+    in-out property <int> sub;        // 0 the group; 1 Fuzzy pinyin or Server and login, 2 中文 My words, 3 日本語 My words
     in-out property <string> confirm-lang;  // "zh" or "ja" while Forget waits for a yes
+    in-out property <bool> confirm-delete;  // while Delete on the server waits for a yes
 }
 
 // A page: its title bar, and its items scrolling on the cloth under it.
@@ -458,22 +459,40 @@ component PrivacyPage inherits Page {
     }
 }
 
+// Sync's wording is the phone's sync screen's (#14).
 component SyncPage inherits Page {
     title: @tr("Sync & backup");
     SectionTag { text: @tr("Sync"); }
     Card {
         Row {
-            title: @tr("Sync with my server");
-            detail: @tr("Coming soon: learned words and your own words, the same on phone and PC");
-            enabled: false;
-            VerticalLayout { alignment: center; Switch { enabled: false; label: @tr("Sync with my server"); } }
+            title: @tr("Sync learned words and dictionaries");
+            detail: State.sync-status == SyncStatus.off ? @tr("中文's learned words and your Japanese and English dictionaries, with your own server")
+                : State.sync-status == SyncStatus.not-yet ? @tr("Not synced yet")
+                : State.sync-status == SyncStatus.syncing ? @tr("Syncing…")
+                : State.sync-status == SyncStatus.synced ? @tr("Last synced {}", State.sync-at)
+                : State.sync-status == SyncStatus.offline ? @tr("Can't reach the server. Syncs once it can")
+                : @tr("Wrong username or password");
+            VerticalLayout { alignment: center;
+                Switch {
+                    checked <=> State.sync-on;
+                    label: @tr("Sync learned words and dictionaries");
+                    // Without a login, the switch asks for one first.
+                    toggled(on) => { if State.sync-user == "" { self.checked = false; Nav.sub = 1; } else { State.sync-toggled(on); } }
+                }
+            }
         }
         Divider { }
         Row {
-            title: @tr("Delete learned words on the server");
-            detail: @tr("Deletes only the server's copy; the words on this PC stay (once sync is out)");
-            enabled: false;
-            VerticalLayout { alignment: center; Button { text: @tr("Delete…"); danger: true; enabled: false; } }
+            title: @tr("Server and login");
+            detail: State.sync-user == "" ? @tr("Not set") : State.sync-user + " · " + State.sync-server;
+            arrow: true;
+            clicked => { Nav.sub = 1; }
+        }
+        if State.sync-user != "": Row {
+            title: @tr("Delete learned words and dictionaries on the server");
+            detail: @tr("The learned words and dictionaries on your devices stay");
+            line-above: true;
+            VerticalLayout { alignment: center; Button { text: @tr("Delete…"); danger: true; clicked => { Nav.confirm-delete = true; } } }
         }
     }
     SectionTag { text: @tr("Backup"); }
@@ -488,6 +507,43 @@ component SyncPage inherits Page {
             title: @tr("Import settings");
             detail: @tr("Restore from an exported file");
             VerticalLayout { alignment: center; Button { text: @tr("Import…"); clicked => { State.import-settings(); } } }
+        }
+    }
+}
+
+component SyncLoginPage inherits Page {
+    title: @tr("Server and login");
+    back: true;
+    property <string> server: State.sync-server;
+    property <string> user: State.sync-user;
+    property <string> password;
+    property <bool> invalid;
+    Card {
+        VerticalLayout {
+            padding: Theme.row-padding-x;
+            spacing: 6px;
+            Text { text: @tr("Server address"); color: Theme.ink; font-size: Theme.body-size; }
+            Field { text <=> root.server; placeholder: "sync.example.com"; }
+            if root.invalid: Text { text: @tr("An https:// address"); color: Theme.danger; font-size: Theme.detail-size; }
+            Text { text: @tr("Username"); color: Theme.ink; font-size: Theme.body-size; }
+            Field { text <=> root.user; }
+            Text { text: @tr("Password"); color: Theme.ink; font-size: Theme.body-size; }
+            Field { text <=> root.password; input-type: InputType.password; accepted => { save.clicked(); } }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10px;
+                padding-top: 6px;
+                Button { text: @tr("Cancel"); clicked => { Nav.sub = 0; } }
+                save := Button {
+                    text: @tr("Save");
+                    primary: true;
+                    enabled: root.server != "" && root.user != "" && root.password != "";
+                    clicked => {
+                        if !self.enabled { return; }
+                        if State.save-login(root.server, root.user, root.password) { root.password = ""; Nav.sub = 0; } else { root.invalid = true; }
+                    }
+                }
+            }
         }
     }
 }
@@ -548,6 +604,7 @@ export component Pages inherits Rectangle {
     if Nav.page == 1: KeyboardPage { }
     if Nav.page == 2: ThemePage { }
     if Nav.page == 3: PrivacyPage { }
-    if Nav.page == 4: SyncPage { }
+    if Nav.page == 4 && Nav.sub == 0: SyncPage { }
+    if Nav.page == 4 && Nav.sub == 1: SyncLoginPage { }
     if Nav.page == 5: AboutPage { }
 }

@@ -3,7 +3,7 @@
 # string translated into 中文 and 日本語 (#118), the release build, every screen opened in English, 中文
 # and 日本語 as the system language in a nested virtual KWin (screenshots kept), a private Fcitx5 and
 # Rime taking what the app writes, the Picnic candidate window it writes drawn with SebType's pig (#94),
-# and its install by setup-ime.sh. Engine files are copies in a
+# its sync with a local sebtype_sync.py server both ways (#180), and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
 # /tmp/sebtype/configurator-test-results.txt; logs and screenshots next to it.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b (picnic-candidate-window draws
@@ -36,9 +36,11 @@ command -v xrdb >/dev/null || { echo "preflight: xrdb missing"; exit 1; }
 
 command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
 
-# The nested sessions and setup-ime's test run under this PC's lock (devq), after an unlocked build.
+# The nested sessions and setup-ime's test run under this PC's lock (devq), after a build under the
+# shared build lock at half the cores, so builds never run side by side.
 if [[ -z ${HOLDING-} ]]; then
-  { cargo build --release && cargo test --release --no-run; } > "$out/configurator-test-build.log" 2>&1 ||
+  devq -m 30 -n "sebtype configurator test build ($(git branch --show-current))" /tmp/agent-locks/sebtype/build.lock \
+    env CARGO_BUILD_JOBS=8 bash -c 'cargo build --release && cargo test --release --no-run' > "$out/configurator-test-build.log" 2>&1 ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
@@ -54,7 +56,7 @@ sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
 # The nested sessions' portal and ksecretd outlive their D-Bus: stop whatever still runs in the sandbox.
 cleanup() {
   local p
-  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/data" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
   sleep 1; rm -rf "$sb"
 }
 trap cleanup EXIT
@@ -63,7 +65,8 @@ trap cleanup EXIT
 # $XDG_RUNTIME_DIR/doc, and the user's mount goes when it ends, so Flatpak apps no longer start.
 runtime_dir() { mktemp -d "$sb/run.XXXX"; }  # 0700
 export -f runtime_dir
-sandbox() {
+sandbox() { # [dir], $sb by default
+  local sb=${1:-$sb}
   mkdir -p "$sb/config" "$sb/data/fcitx5"
   cp -r ~/.config/fcitx5 "$sb/config/"
   [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db ~/.config/mozc "$sb/config/"
@@ -105,7 +108,7 @@ SH
   chmod +x "$sb/shots.sh"
   env -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" dbus-run-session -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
-    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
+    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
 export -f shots; export out sb bin
@@ -154,6 +157,65 @@ SH
 }
 export -f picnic_window
 check picnic-candidate-window 120 picnic_window
+
+# Sync (#180) with a sebtype_sync.py server on this PC, both ways, then delete on the server: a sandbox
+# of its own (the checks above turn learning off), with a made-up device id and no sync_dir, so Rime
+# writes only there, a throwaway login in a private keyring (gnome-keyring), and made-up words.
+# shellcheck disable=SC2016  # the inner script gets its paths as arguments
+private_sync() {
+  local d=$sb/sync-account rime port
+  sandbox "$d"; mkdir -p "$d/server"
+  rime=$d/data/fcitx5/rime
+  sed -i '/^sync_dir:/d; s/^installation_id:.*/installation_id: "sebtype-test-pc"/' "$rime/installation.yaml"
+  sed -i 's|translator/enable_user_dict: false|translator/enable_user_dict: true|' "$rime/rime_ice.custom.yaml" 2>/dev/null
+  rm -f "$d/config/mozc/user_dictionary.db"  # only made-up Japanese words
+  port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+  env -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" XDG_RUNTIME_DIR="$(runtime_dir)" \
+    CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
+    dbus-run-session -- bash -c '
+      d=$1 here=$2 port=$3 server=$2/../../sync-server/sebtype_sync.py
+      SEBTYPE_TEST_SYNC_PASSWORD=$(head -c 18 /dev/urandom | base64)
+      printf "%s\n" "$SEBTYPE_TEST_SYNC_PASSWORD" | python3 -I "$server" adduser --data "$d/server" --password-stdin sebtype-test || exit 1
+      python3 -I "$server" serve --data "$d/server" --port "$port" > "$d/server.log" 2>&1 & s=$!
+      head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
+      fcitx5 -k --disable=all --enable=dbus,dbusfrontend,keyboard,rime,mozc > "$d/fcitx5.log" 2>&1 & f=$!
+      for _ in $(seq 50); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.2; done
+      # Rime opens its learned words (rime_ice.userdb) once 中文 is in use: one key in a private input context.
+      python3 - <<"PY"
+import os, time
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):
+    return bus.call_sync("org.fcitx.Fcitx5", path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+ic, _ = call("/org/freedesktop/portal/inputmethod", "org.fcitx.Fcitx.InputMethod1", "CreateInputContext", "(a(ss))", [("program", "sebtype-test")])
+call(ic, "org.fcitx.Fcitx.InputContext1", "FocusIn")
+for _ in range(100):  # the rime addon loads a moment after Fcitx5 is on the bus
+    call("/controller", "org.fcitx.Fcitx.Controller1", "SetCurrentIM", "(s)", "rime")
+    if call("/controller", "org.fcitx.Fcitx.Controller1", "CurrentInputMethod")[0] == "rime":
+        break
+    time.sleep(0.2)
+# Rime takes no keys while it deploys after its start: "a" and Escape until its learned words are open.
+userdb = os.path.join(os.environ["XDG_DATA_HOME"], "fcitx5/rime/rime_ice.userdb")
+for _ in range(60):
+    for sym, code in ((0x61, 38), (0xff1b, 9)):
+        for release in (False, True):
+            call(ic, "org.fcitx.Fcitx.InputContext1", "ProcessKeyEvent", "(uuubu)", sym, code, 0, release, 0)
+    if os.path.isdir(userdb):
+        break
+    time.sleep(0.5)
+else:
+    print("Rime has no rime_ice.userdb: 中文 never came up")
+PY
+      export SEBTYPE_TEST_SYNC_SERVER=http://127.0.0.1:$port SEBTYPE_TEST_SYNC_USER=sebtype-test SEBTYPE_TEST_SYNC_PASSWORD
+      cargo test --release --manifest-path "$here/Cargo.toml" -- --ignored --exact sync::tests::private_server_syncs_both_ways_and_delete_clears_it
+      rc=$?; kill $f $s; wait $f $s
+      cp "$d/fcitx5.log" "$4/configurator-test-private-sync-fcitx5.log"
+      ls -lR --time-style=+%T "$XDG_DATA_HOME/fcitx5/rime/sync" "$XDG_DATA_HOME/fcitx5/rime" > "$4/configurator-test-private-sync-rime.txt" 2>&1
+      exit $rc' _ "$d" "$PWD" "$port" "$out"
+}
+export -f private_sync sandbox
+check private-sync 300 private_sync
 
 check setup-ime 900 ../linux/test-setup-ime.sh
 

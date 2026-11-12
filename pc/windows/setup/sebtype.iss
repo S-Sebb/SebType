@@ -31,6 +31,12 @@
 #define MozcMsi FindGetFileName(Handle)
 #expr FindClose(Handle)
 
+; Python's embeddable package, for the Configurator's sync (#180): python.ps1 puts it in In\python.
+#define PythonDir In + "\python"
+#if !FileExists(PythonDir + "\python.exe")
+  #error No Python's embeddable package in In\python: run python.ps1 -Dir <In>\python first
+#endif
+
 [Setup]
 AppId={{5C1E7A52-3D8B-4F7E-9E0B-7B3B5A1C7354}
 AppName=SebType
@@ -163,6 +169,7 @@ Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Repo}\pc\linux\mozc-keymap.tsv"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\rime-data\rime-data.zip"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\sebtype-configurator\sebtype-configurator.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PythonDir}\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs
 Source: "{#Pictures}\sebtype.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; The uninstaller's look: it runs from {app}, without Setup's own files.
 Source: "{#Pictures}\cloth.png"; DestDir: "{app}\look"; Flags: ignoreversion

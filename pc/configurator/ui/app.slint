@@ -2,11 +2,11 @@
 // settings (#41).
 import "../../../sebtype/res/font/sebtype_nunito_extrabold.ttf";
 import { Theme } from "theme.slint";
-import { State, Lang, Fuzzy, ZhWord, JaWord, Msg } from "state.slint";
+import { State, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus } from "state.slint";
 import { Button, PageTitle, PixelFrame } from "widgets.slint";
 import { Nav, Pages } from "pages.slint";
 
-export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg }
+export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus }
 
 component NavItem inherits Rectangle {
     in property <string> text;
@@ -102,6 +102,8 @@ export component AppWindow inherits Window {
         if m == Msg.pinyin-letters-only { return @tr("Pinyin letters only"); }
         if m == Msg.reading-hiragana-only { return @tr("The reading must be hiragana"); }
         if m == Msg.failed { return @tr("Not applied: {}", arg); }
+        if m == Msg.sync-deleted { return @tr("Learned words and dictionaries deleted on the server"); }
+        if m == Msg.sync-delete-failed { return @tr("Can't reach the server. Nothing was deleted"); }
         return "";
     }
 
@@ -140,6 +142,32 @@ export component AppWindow inherits Window {
                     spacing: 10px;
                     Button { text: @tr("Cancel"); clicked => { Nav.confirm-lang = ""; } }
                     Button { text: @tr("Forget"); danger: true; clicked => { State.forget(Nav.confirm-lang); Nav.confirm-lang = ""; } }
+                }
+            }
+        }
+    }
+
+    if Nav.confirm-delete: Rectangle {
+        background: #4A2F2266;
+        TouchArea { }   // keeps clicks off the page behind
+        PixelFrame {
+            width: 420px;
+            height: 240px;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                PageTitle { text: @tr("Delete learned words and dictionaries on the server"); font-size: 18px; wrap: word-wrap; }
+                Text {
+                    text: @tr("Deletes the learned words and dictionaries of all your devices from the server and turns sync off. The learned words and dictionaries on this PC and your other devices stay. Turning sync on again uploads this PC's learned words and dictionaries.");
+                    color: Theme.ink;
+                    wrap: word-wrap;
+                    vertical-stretch: 1;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 10px;
+                    Button { text: @tr("Cancel"); clicked => { Nav.confirm-delete = false; } }
+                    Button { text: @tr("Delete"); danger: true; clicked => { State.delete-on-server(); Nav.confirm-delete = false; } }
                 }
             }
         }

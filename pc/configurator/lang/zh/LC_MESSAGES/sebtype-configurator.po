@@ -295,17 +295,62 @@ msgstr "剪贴板历史由系统提供（{}），这里没有。"
 msgid "Sync"
 msgstr "同步"
 
-msgid "Sync with my server"
-msgstr "与我的服务器同步"
+msgid "Sync learned words and dictionaries"
+msgstr "同步学到的词和词典"
 
-msgid "Coming soon: learned words and your own words, the same on phone and PC"
-msgstr "即将推出：已学的词和你自己的词在手机和电脑之间同步"
+msgid "中文's learned words and your Japanese and English dictionaries, with your own server"
+msgstr "中文学到的词和你的日语、英语词典，通过你自己的服务器"
 
-msgid "Delete learned words on the server"
-msgstr "删除服务器上已学的词"
+msgid "Not synced yet"
+msgstr "尚未同步"
 
-msgid "Deletes only the server's copy; the words on this PC stay (once sync is out)"
-msgstr "只删除服务器上的副本，本机的词不变（同步推出后可用）"
+msgid "Syncing…"
+msgstr "正在同步…"
+
+msgid "Last synced {}"
+msgstr "上次同步：{}"
+
+msgid "Can't reach the server. Syncs once it can"
+msgstr "无法连接服务器，连上后会自动同步"
+
+msgid "Wrong username or password"
+msgstr "用户名或密码错误"
+
+msgid "Server and login"
+msgstr "服务器和登录"
+
+msgid "Not set"
+msgstr "未设置"
+
+msgid "Delete learned words and dictionaries on the server"
+msgstr "删除服务器上学到的词和词典"
+
+msgid "The learned words and dictionaries on your devices stay"
+msgstr "你设备上学到的词和词典会保留"
+
+msgid "Server address"
+msgstr "服务器地址"
+
+msgid "An https:// address"
+msgstr "需要 https:// 地址"
+
+msgid "Username"
+msgstr "用户名"
+
+msgid "Password"
+msgstr "密码"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Deletes the learned words and dictionaries of all your devices from the server and turns sync off. The learned words and dictionaries on this PC and your other devices stay. Turning sync on again uploads this PC's learned words and dictionaries."
+msgstr "将从服务器删除你所有设备学到的词和词典，并关闭同步。这台电脑和其他设备上学到的词和词典会保留。再次打开同步时会上传这台电脑学到的词和词典。"
+
+msgid "Learned words and dictionaries deleted on the server"
+msgstr "已在服务器上删除学到的词和词典"
+
+msgid "Can't reach the server. Nothing was deleted"
+msgstr "无法连接服务器，没有删除任何内容"
 
 msgid "Delete…"
 msgstr "删除…"

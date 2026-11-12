@@ -8,6 +8,7 @@ import base64
 import http.server
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -147,6 +148,29 @@ class Server(unittest.TestCase):
         with open(os.path.join(sync_dir, "phone-0002", "rime_ice.userdb.txt")) as f:
             self.assertEqual(f.read(), "made up word of phone-0002\n")
         self.assertEqual(s.pull(client, device, sync_dir), (0, 0))
+
+    def test_command_line_reads_the_password_from_stdin(self):
+        """The Configurator's way (#180): the password on stdin, a refused login as exit code 3, and
+        delete clearing the server."""
+        self.call("PUT", "/v1/files/dev-b/rime_ice.userdb.txt", b"made up\n")
+        rime_dir = self.rime_dirs("pc-0005")[0]
+
+        def run(command, password, *extra):
+            return subprocess.run(
+                [sys.executable, "-I", s.__file__, command, "--server", self.url]
+                + ["--user", "alice", "--password-stdin", *extra],
+                input=password + "\n",
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+
+        r = run("push", "made-up-pass", "--rime-dir", rime_dir)
+        self.assertEqual((r.returncode, r.stdout), (0, "push: 1 file(s)\n"), r.stderr)
+        self.assertEqual(run("pull", "wrong", "--rime-dir", rime_dir).returncode, 3)
+        self.assertEqual(run("delete", "made-up-pass").returncode, 0)
+        self.assertEqual(json.loads(self.call("GET", "/v1/files")[1])["files"], [])
 
     def test_mozc_dictionary_syncs_and_a_deleted_word_stays_deleted(self):
         """A PC's Mozc words go up in Mozc's export format; another device's new words come into a

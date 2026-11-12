@@ -7,6 +7,7 @@ mod mozc;
 mod patch;
 mod proto;
 mod rime;
+mod sync;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -290,7 +291,82 @@ fn import() -> Result<Option<Backup>, Toast> {
     Ok(Some(b))
 }
 
+/// Shows sync's switch, its status line and the login.
+fn show_sync(app: &AppWindow, s: &sync::Sync, syncing: bool) {
+    let st = app.global::<State>();
+    st.set_sync_on(s.enabled);
+    st.set_sync_server(s.server.trim_start_matches("https://").into());
+    st.set_sync_user(s.user.as_str().into());
+    st.set_sync_at(
+        chrono::DateTime::from_timestamp(s.at, 0)
+            .map(|t| {
+                t.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
+            .unwrap_or_default()
+            .into(),
+    );
+    st.set_sync_status(match (s.enabled, syncing, s.status) {
+        (false, _, _) => SyncStatus::Off,
+        (true, true, _) => SyncStatus::Syncing,
+        (true, false, sync::Status::NotYet) => SyncStatus::NotYet,
+        (true, false, sync::Status::Synced) => SyncStatus::Synced,
+        (true, false, sync::Status::Offline) => SyncStatus::Offline,
+        (true, false, sync::Status::LoginFailed) => SyncStatus::LoginFailed,
+    });
+}
+
+/// Runs a sync step off the window's thread (a sync can take a while, so not on the settings' worker),
+/// then syncs if sync is on, showing "Syncing…" meanwhile.
+fn sync_job(
+    weak: slint::Weak<AppWindow>,
+    step: impl FnOnce() -> Result<sync::Sync, String> + Send + 'static,
+) {
+    std::thread::spawn(move || {
+        let s = match step() {
+            Ok(s) => s,
+            Err(e) => {
+                let s = sync::load();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    show_sync(&app, &s, false);
+                    toast(&app, err(e));
+                });
+                return;
+            }
+        };
+        let shown = s.clone();
+        let _ = weak.upgrade_in_event_loop(move |app| show_sync(&app, &shown, shown.enabled));
+        if s.enabled {
+            let s = sync::run(false);
+            let _ = weak.upgrade_in_event_loop(move |app| show_sync(&app, &s, false));
+        }
+    });
+}
+
 fn main() -> Result<(), slint::PlatformError> {
+    // The schedule's sync (platform::schedule), and Setup's before it deletes learned words: no window.
+    if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
+        sync::run(a == "--sync-before-removal");
+        return Ok(());
+    }
+    // For tests without a window (pc/windows/setup/test.ps1): the server, username and password on
+    // stdin, one per line, saved as Server and login's Save does.
+    if std::env::args().any(|a| a == "--save-login") {
+        let mut lines = std::io::stdin().lines().map_while(Result::ok);
+        let mut line = || lines.next().unwrap_or_default();
+        let (server, user, password) = (line(), line(), line());
+        let saved = sync::normalize_server(&server)
+            .ok_or("not an https address".to_string())
+            .and_then(|server| sync::save_login(server, user.trim().to_string(), &password));
+        std::process::exit(match saved {
+            Ok(_) => 0,
+            Err(e) => {
+                eprintln!("--save-login: {e}");
+                1
+            }
+        });
+    }
     // Wayland matches the window to its launcher (and icon) by this id: sebtype-configurator.desktop.
     slint::BackendSelector::new().select()?;
     slint::set_xdg_app_id("sebtype-configurator")?;
@@ -314,7 +390,20 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.langs
         .set_vec(["en", "zh", "ja"].map(|id| lang_row(id, true)).to_vec());
     load(&app, &ui);
+    show_sync(&app, &sync::load(), false);
     UI.with(|u| *u.borrow_mut() = Some(ui.clone()));
+    // The schedule syncs while the window is open too: its outcome shows up here.
+    let sync_refresh = slint::Timer::default();
+    sync_refresh.start(slint::TimerMode::Repeated, Duration::from_secs(10), {
+        let weak = app.as_weak();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                if app.global::<State>().get_sync_status() != SyncStatus::Syncing {
+                    show_sync(&app, &sync::load(), false);
+                }
+            }
+        }
+    });
 
     // For screenshots and tests: --page N (0 Languages … 5 About) and --sub N open that screen.
     let args: Vec<String> = std::env::args().collect();
@@ -578,6 +667,48 @@ fn main() -> Result<(), slint::PlatformError> {
             }))
         }
     });
+    s.on_sync_toggled({
+        let weak = app.as_weak();
+        move |on| {
+            sync_job(weak.clone(), move || {
+                sync::set_enabled(on).map_err(|e| e.to_string())
+            })
+        }
+    });
+    s.on_save_login({
+        let weak = app.as_weak();
+        move |server, user, password| {
+            let Some(server) = sync::normalize_server(&server) else {
+                return false;
+            };
+            let (user, password) = (user.trim().to_string(), password.to_string());
+            sync_job(weak.clone(), move || {
+                sync::save_login(server, user, &password)
+            });
+            true
+        }
+    });
+    s.on_delete_on_server({
+        let weak = app.as_weak();
+        move || {
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let deleted = sync::delete_on_server();
+                let s = sync::load();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    show_sync(&app, &s, false);
+                    toast(
+                        &app,
+                        say(if deleted {
+                            Msg::SyncDeleted
+                        } else {
+                            Msg::SyncDeleteFailed
+                        }),
+                    );
+                });
+            });
+        }
+    });
     s.on_open_help(|| platform::open_url("https://github.com/S-Sebb/SebType/issues"));
 
     app.run()
@@ -613,7 +744,7 @@ mod tests {
         "Klipper", "A−", "A+", "小明", "xiaoming", "せぶ → SebType", "ni hao", "你好", "拟好", "你", "呢", "泥", "尼",
         "妮", "倪", "雾凇拼音 rime-ice · 白霜拼音 rime-frost", "Rime (librime)", " · 小狼毫 Weasel",
         " · Fcitx5 · fcitx5-rime", "GPL-3.0", "BSD-3-Clause", "BSD-3-Clause · GPL-3.0",
-        "BSD-3-Clause · LGPL-2.1+", "SIL Open Font License 1.1", ".json",
+        "BSD-3-Clause · LGPL-2.1+", "SIL Open Font License 1.1", ".json", "sync.example.com",
     ];
 
     /// The string literals of a .slint file that the window can show, each with whether it is the

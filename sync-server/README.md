@@ -128,7 +128,32 @@ Words from other devices go into the personal dictionaries: Japanese ones into �
 English ones into English's. Japanese words with a part of speech the phone doesn't know come in as
 nouns, without their comments.
 
-## On a Linux PC (fcitx5-rime)
+## On a PC (SebType Configurator)
+
+Sync & backup in the SebType Configurator, on Linux and Windows, has the phone's sync rows (#180). Server
+and login takes the same address, username and password as the phone (an `https://` address; plain
+`http://` only to the PC itself, such as `http://127.0.0.1:8740`). Saving a first login turns "Sync
+learned words and dictionaries" on and syncs at once; its line then shows when the last sync was, or
+why it failed. The password is kept only in the system's keyring: Secret Service (KWallet, GNOME
+Keyring) on Linux, Credential Manager on Windows, as "SebType sync". The address and username are in
+SebType's folder (`~/.local/share/sebtype/sync.json`, `%LOCALAPPDATA%\SebType\sync.json`), with the last
+sync's outcome.
+
+While sync is on, `sebtype-configurator --sync` runs every half hour, as on the phone: a systemd user
+timer (`sebtype-sync.timer`, also two minutes after login) on Linux, a Task Scheduler task
+("SebType sync", while you're logged on) on Windows. Each run is the three steps below with this
+`sebtype_sync.py`, built into the Configurator: `pull`, Rime's sync (Fcitx5's save on Linux,
+`WeaselDeployer /sync` on Windows), `push`, with the password on the client's stdin
+(`--password-stdin`) and the Mozc dictionary included. When new Japanese words came in, Mozc restarts to
+read them. On Windows the Configurator runs it with the Python that Setup installs next to it.
+
+"Delete learned words and dictionaries on the server" runs the client's `delete` and turns sync off; the
+words on the PC stay. Uninstalling SebType, or leaving a language out in Setup, never deletes anything on
+the server: if sync was ever on, Setup syncs first (Decisions #2), then removes the schedule and the login.
+
+## By hand on a Linux PC (fcitx5-rime)
+
+This is what the Configurator does; without it, the client runs like this.
 
 Rime's user dir is `~/.local/share/fcitx5/rime`. Its sync folder is `sync/` inside it unless
 `installation.yaml` there names another one with `sync_dir`. To keep it elsewhere, for example in a
@@ -143,7 +168,8 @@ from the same file.
 
 One sync on the PC has three steps: download the other devices' snapshots, let Rime merge them and
 write the PC's own, upload that. Put the password in a file only you can read
-(`install -m 600 /dev/null ~/.config/sebtype-sync-password`, then write it in), and run:
+(`install -m 600 /dev/null ~/.config/sebtype-sync-password`, then write it in), or give it on stdin with
+`--password-stdin` instead of `--password-file`, and run:
 
 ```sh
 R=~/.local/share/fcitx5/rime
@@ -159,7 +185,9 @@ python3 sebtype_sync.py push --server https://sync.example.com --user alice \
 
 fcitx5 also saves, and so syncs, when it quits (at logout). To sync regularly, run the three steps
 from a systemd user timer or cron. `pull` and `push` send only files that changed, and only the PC's
-own snapshot goes up.
+own snapshot goes up. A Save while Rime is still busy (deploying after fcitx5 starts) is skipped: if
+the PC's snapshot didn't change, save again. `delete` (with the same login options, no Rime dir) deletes
+every device's files on the server. The client exits with 3 when the server refuses the login.
 
 On Windows (Weasel) the user dir is `%APPDATA%\Rime`, and the menu's 用户资料同步 is Rime's sync; the
 same `pull` and `push` work with `--rime-dir "%APPDATA%\Rime"`.
@@ -191,7 +219,10 @@ Microsoft IME keeps no file this can sync.
 ## Tests
 
 `python3 -I sync-server/test_sebtype_sync.py`: the server on a local port with a made-up user, two
-made-up devices syncing through it, a made-up Mozc dictionary, and a crash report. The phone side is
+made-up devices syncing through it, a made-up Mozc dictionary, a crash report, and the command line
+with the password on stdin. The Configurator's sync is checked by `SEBTYPE_CHECKS=private-sync
+pc/configurator/test.sh`: this server on the PC with a throwaway login, a private keyring, Fcitx5, Rime
+and Mozc in a sandbox, made-up words both ways, and delete. The phone side is
 checked on the emulator by `SEBTYPE_CHECKS=first-install,sync sebtype/test-emulator.sh`
 (`sync-crash-report` crashes SebType and finds the report in the crash folder)
 ([docs/testing.md](../docs/testing.md)).

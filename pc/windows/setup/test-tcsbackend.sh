@@ -4,6 +4,8 @@
 #   pc/windows/setup/test-tcsbackend.sh
 # PERF_RUN=1 adds the timing check (round1-rime-p95), for the final performance run only (#54).
 # ONLY=picnic runs only the Picnic candidate window's pictures (#162), with TCSBackEnd's own checks.
+# ONLY=sync runs only sync with your own server (#180): a local sebtype_sync.py with a throwaway login,
+# made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
 # It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
 # else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
@@ -69,7 +71,7 @@ EOF
 cleanup() {  # what a run that died may leave: its session, user, profile, SebType, Weasel, Mozc, tasks and files
   # Uninstalling a text service late can change the Administrator's language list: it goes back as found.
   { echo "\$adminLanguages = '$(sed -n 's/^languages: //p' "$out/before.txt")'"; cat; } <<'EOF' | T=900 tps
-Get-ScheduledTask -TaskName SebType-setup* -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+Get-ScheduledTask -TaskName SebType-setup*, 'SebType sync' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'sebtype-setup-test' -or $_.ExecutablePath -match '\\(is-[^\\]+\.tmp|_iu[^\\]+)\\' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 # the session first: an account deleted while its session runs leaves its profile loaded until a reboot
@@ -118,7 +120,8 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-setup-test | Out-Null' | tps
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$repo/pc/configurator/src/windows.rs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
+if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$repo/pc/configurator/src/windows.rs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+  "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 

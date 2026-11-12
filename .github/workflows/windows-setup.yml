@@ -144,6 +144,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: in
+      # Python's embeddable package for the Configurator's sync (#180), pinned in python.ps1.
+      - uses: actions/cache@v4
+        with:
+          path: in/python
+          key: python-embed-${{ hashFiles('pc/windows/setup/python.ps1') }}
+      - name: Python
+        run: pc/windows/setup/python.ps1 -Dir in/python
       - name: Inno Setup
         run: |
           $exe = "$env:RUNNER_TEMP\innosetup.exe"
