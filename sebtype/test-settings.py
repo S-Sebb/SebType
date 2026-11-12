@@ -1919,7 +1919,7 @@ def sync_personal_dictionaries():
         to_language("nihongo", "日本語")
         ja = candidates_for("purumoni")
         to_language("hello", "hello")
-        en = suggested_after(OTHER_EN)
+        en = suggested_after(OTHER_EN.lower())
     finally:
         delete_words()
     detail = (
