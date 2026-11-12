@@ -30,8 +30,7 @@ android/build.sh debug > /dev/null 2> "$out/test-build-warm.log" ||
   { echo "preflight: debug build failed, see $out/test-build-warm.log"; exit 1; }
 cleanup
 if ! { git worktree add -q --detach "$wt" HEAD &&
-  cp -a android/app/res-bundle/. "$wt/android/app/res-bundle/" && mkdir -p "$wt/android/rime/out" &&
-  cp android/rime/out/rime-release.aar "$wt/android/rime/out/"; }; then
+  cp -a android/app/res-bundle/. "$wt/android/app/res-bundle/"; }; then
   echo "preflight: can't set up $wt"; exit 1
 fi
 

@@ -176,7 +176,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     companion object {
         /** rime-ice's 简/繁 switch, the one Ctrl+Shift+F toggles on the PCs */
         private const val TRADITIONAL = "traditionalization"
-        /** SebType's librime patch (android/rime/patches/0003): learns nothing from commits while on */
+        /** SebType's librime option (Memory::OnCommit in engines/librime): learns nothing from commits while on */
         private const val NO_LEARNING = "no_learning"
 
         @JvmStatic

@@ -4,8 +4,8 @@
 #   android/build.sh release       signed arm64-v8a release APK (keystore in ~/.config/sebtype)
 #   android/build.sh debug-x86_64  debug APK for an x86_64 emulator
 #   android/build.sh test-x86_64   debug APK, then its instrumented-test APK, for an x86_64 emulator
-#   android/build.sh debug         debug arm64-v8a APK; the x86_64 ones have no Rime (its aar is arm64
-#                                  only), an x86_64 emulator runs this one through its ARM translation
+#   android/build.sh debug         debug arm64-v8a APK, the one the emulator tests run (through the
+#                                  emulator's ARM translation), as the phone does
 # BUILD_PRIORITY (default 1) is the devq rank for the build lock.
 # Prints the APK path last. Version: <FUTO release>-sebtype.<first-parent commit count> for release;
 # debug builds are always <FUTO release>-sebtype.dev, code 1, so BuildConfig doesn't change
@@ -50,7 +50,7 @@ esac
 # when it first configures a checkout). A private server per build hashes paths relative to this checkout,
 # and build.gradle keeps them out of the objects, so every worktree shares the cache.
 if command -v sccache >/dev/null; then
-  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=$PWD \
+  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=${PWD%/*} \
     SCCACHE_SERVER_UDS=$locked.sccache
   sccache --start-server >/dev/null
   trap 'sccache --stop-server >/dev/null; rm -f "$locked" "$SCCACHE_SERVER_UDS"' EXIT

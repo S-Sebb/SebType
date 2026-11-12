@@ -10,11 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-
-        flatDir {
-            dirs 'app/libs'
-        }
     }
 }
 rootProject.name = 'SebType' // fixed, so the build cache matches across worktrees (#58)
-include ':app'
+include ':app', ':mozc', ':rime'

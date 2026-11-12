@@ -14,10 +14,10 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 
 | Part | Licence |
 |---|---|
-| FUTO Keyboard's code: `android/app/` other than SebType's files below, `android/tools/contributors.py`, `android/tools/make-keyboard-text-py/`, `.github/ISSUE_TEMPLATE/`, the Gradle files in `android/` (other than `android/build.gradle`), `android/app/libs/` (FUTO's Mozc library) and the FUTO files brought in from its submodules (`android/app/src/main/assets/layouts/`, the translations in `android/app/src/main/res/values-ja/` and `values-zh-rCN/`, `android/app/src/main/res/raw/ml4_q6_k.gguf`). SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
+| FUTO Keyboard's code: `android/app/` other than SebType's files below, `android/tools/contributors.py`, `android/tools/make-keyboard-text-py/`, `.github/ISSUE_TEMPLATE/`, the Gradle files in `android/` (other than `android/build.gradle`), `android/mozc/src/` (FUTO's mozc-lib, Mozc's Android client; Google's parts BSD-3-Clause) and the FUTO files brought in from its submodules (`android/app/src/main/assets/layouts/`, the translations in `android/app/src/main/res/values-ja/` and `values-zh-rCN/`, `android/app/src/main/res/raw/ml4_q6_k.gguf`). SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
 | The original AOSP keyboard code in those folders, up to commit `d847619a` | Apache-2.0 ([NOTICE](NOTICE)) |
 | Code from other projects that FUTO vendored (sentencepiece, protobuf, ggml, llama.cpp, gemoji and others) | each project's own, in its folder |
-| SebType's own code: `pc/`, `art/`, `data/`, `docs/`, `sync-server/`, `tools/`, `.github/workflows/`, and SebType's own files in `android/` ([android/LICENSE](android/LICENSE) lists them: the scripts, `test/`, `perf/`, `rime/`, and in the app the `dev.sebb.sebtype` code, its strings and its launcher icon), with the exceptions below. Each folder's `LICENSE` file lists its exceptions | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
+| SebType's own code: `pc/`, `art/`, `data/`, `docs/`, `sync-server/`, `tools/`, `.github/workflows/`, and SebType's own files in `android/` ([android/LICENSE](android/LICENSE) lists them: the scripts, `test/`, `perf/`, the build files of `mozc/` and `rime/`, and in the app the `dev.sebb.sebtype` code, its strings and its launcher icon), with the exceptions below. Each folder's `LICENSE` file lists its exceptions | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
 | `android/app/src/main/assets/layouts/SebType/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
 | `android/app/src/main/res/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) | FUTO Source First License 1.1 |
 | `android/app/src/main/res/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
@@ -28,7 +28,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 | SebType's Fcitx5 (`pc/fcitx5/`: Fcitx5 with SebType's changes) | LGPL-2.1-or-later, like Fcitx5 |
 | SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
 | Fedora's RPM specs with SebType's changes (`pc/linux/mozc/*.spec`, `pc/linux/rime/*.spec`) | MIT, like Fedora's specs |
-| SebType's patches to RimeJni (`android/rime/patches/`); RimeJni itself | MIT, like RimeJni |
+| RimeJni with SebType's changes (`android/rime/`: the Kotlin and JNI bindings to librime; its bundled libraries' licences are in `android/rime/src/main/assets/licenses/`) | MIT, like RimeJni |
 | librime | BSD-3-Clause |
 | The rime-ice and 白霜 data in the APK and on the PCs (see Chinese below) | GPL-3.0 |
 
@@ -47,7 +47,7 @@ and a note of what was changed travel inside the bundle. Sources: rime-ice 2026.
 [6810e891](https://github.com/iDvel/rime-ice/tree/6810e8916d160498620a16fef2135956fecbd485) and rime-frost 1.0.4 at
 [89ad92e4](https://github.com/gaboolic/rime-frost/tree/89ad92e450f9a5f4dcc2de67ba28004f9af0cc1e).
 [`data/rime/build.sh`](data/rime/build.sh) builds the bundle from those pinned releases, and
-`data/rime/bench/bench.sh` measures its accuracy. It runs on librime with Lua from [android/rime/](android/rime/README.md).
+`data/rime/bench/bench.sh` measures its accuracy. It runs on the host's librime with Lua, the same version as `engines/librime`.
 
 SebType's application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard.
 FUTO's own README follows unchanged.

@@ -1,0 +1,54 @@
+// Rime for the phone: RimeJni's Kotlin API and JNI (by Astronot233, see NOTICE.md) built against
+// engines/librime, the librime the PCs run, with librime-lua, octagram and predict.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+final def repoRoot = rootDir.parentFile
+
+android {
+    namespace 'icu.astronot233.rime'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        minSdk 24
+        consumerProguardFiles 'consumer-rules.pro'
+        ndk {
+            abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
+        }
+        externalNativeBuild.cmake {
+            // The third-party sources librime builds on are downloaded (pinned, checksum-checked) once into
+            // a cache every worktree shares.
+            arguments "-DLIBRIME_SOURCE_DIR=${repoRoot}/engines/librime",
+                "-DRIME_DEPS_CACHE=${System.getenv('XDG_CACHE_HOME') ?: "${System.getProperty('user.home')}/.cache"}/sebtype/rime-android",
+                '-DCMAKE_BUILD_TYPE=Release'
+            cFlags "-ffile-prefix-map=${repoRoot}/="
+            cppFlags '-Wno-deprecated', '-fpermissive', '-fno-char8_t', "-ffile-prefix-map=${repoRoot}/="
+        }
+    }
+    buildTypes {
+        // librime is slow unoptimized, so debug builds compile it as Release too (above).
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    externalNativeBuild {
+        cmake {
+            path 'src/main/jni/CMakeLists.txt'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.7.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+}

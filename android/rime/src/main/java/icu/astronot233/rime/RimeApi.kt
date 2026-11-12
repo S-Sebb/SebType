@@ -1,0 +1,55 @@
+package icu.astronot233.rime
+
+import android.util.Log
+
+object RimeApi {
+    
+    init {
+        Log.d("RimeApi", "Loading native library...")
+        System.loadLibrary("rime-jni")
+    }
+
+    @JvmStatic external fun initialize(
+        sharedDataDir: String,
+        userDataDir: String,
+        appName: String,
+    ): Boolean
+
+    // Lifecycle
+    @JvmStatic private external fun startupImpl(fullCheck: Boolean): Boolean
+    @JvmStatic fun startup(fullCheck: Boolean = false) = startupImpl(fullCheck)
+    @JvmStatic external fun shutdown()
+    @JvmStatic external fun syncUserData(): Boolean
+    // IO behavior
+    @JvmStatic private external fun processKeyImpl(keyCode: Int, mask: Int): Boolean
+    @JvmStatic fun processKey(keyCode: Int, mask: Int = 0) = processKeyImpl(keyCode, mask)
+    @JvmStatic external fun simulateKeySequence(sequence: String): Boolean
+    @JvmStatic external fun commitComposition(): Boolean
+    @JvmStatic external fun clearComposition()
+    // Option
+    @JvmStatic external fun setOption(option: String, value: Boolean)
+    @JvmStatic external fun getOption(option: String): Boolean
+    @JvmStatic external fun setProperty(property: String, value: String)
+    @JvmStatic external fun getProperty(property: String): String
+    // Schema
+    @JvmStatic external fun deploySchema(schemaFile: String): Boolean
+    @JvmStatic external fun getSchemataImpl(): Array<RimeSchema>
+    @JvmStatic fun getSchemata() = getSchemataImpl().toList()
+    @JvmStatic external fun getCurrentSchema(): RimeSchema
+    @JvmStatic external fun selectSchema(schemaId: String): Boolean
+    // Candidate and page
+    @JvmStatic external fun getCandidatesImpl(): Array<RimeCandidate>
+    @JvmStatic fun getCandidates() = getCandidatesImpl().toList()
+    @JvmStatic external fun selectCandidate(index: Int): Boolean
+    @JvmStatic external fun deleteCandidate(index: Int): Boolean
+    @JvmStatic external fun highlightCandidate(index: Int): Boolean
+    @JvmStatic external fun changePage(backward: Boolean): Boolean
+    // Config
+    @JvmStatic external fun deployConfigFile(fileName: String, versionKey: String): Boolean
+    // Query
+    @JvmStatic external fun getStatusImpl(): Int
+    @JvmStatic fun getStatus() = RimeStatus(getStatusImpl())
+    @JvmStatic external fun getCommit(): String
+    @JvmStatic external fun getPreedit(): String
+
+}

@@ -120,6 +120,20 @@ absl::StatusOr<std::unique_ptr<const DataManager>> DataManager::CreateFromFile(
 }
 
 // static
+absl::StatusOr<std::unique_ptr<const DataManager>>
+DataManager::CreateFromFileRegion(absl::string_view path, size_t offset,
+                                  size_t size) {
+  auto data_manager = std::make_unique<DataManager>();
+  absl::Status status =
+      data_manager->InitFromFile(path, kDataSetMagicNumber, offset, size);
+  if (!status.ok()) {
+    LOG(ERROR) << status;
+    return status;
+  }
+  return data_manager;
+}
+
+// static
 absl::StatusOr<std::unique_ptr<const DataManager>> DataManager::CreateFromArray(
     absl::string_view array) {
   return CreateFromArray(array, kDataSetMagicNumber);
@@ -437,8 +451,9 @@ absl::Status DataManager::InitFromFile(absl::string_view path) {
 }
 
 absl::Status DataManager::InitFromFile(absl::string_view path,
-                                       absl::string_view magic) {
-  absl::StatusOr<Mmap> mmap = Mmap::Map(path, Mmap::READ_ONLY);
+                                       absl::string_view magic, size_t offset,
+                                       std::optional<size_t> size) {
+  absl::StatusOr<Mmap> mmap = Mmap::Map(path, offset, size, Mmap::READ_ONLY);
   if (!mmap.ok()) {
     return absl::PermissionDeniedError(
         absl::StrCat("Mmap failed ", mmap.status()));

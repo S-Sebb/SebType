@@ -17,7 +17,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import androidx.compose.runtime.mutableStateOf
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import com.google.android.apps.inputmethod.libs.mozc.session.MozcJNI
+import com.google.android.apps.inputmethod.libs.mozc.session.MozcJni
 import com.google.common.base.Optional
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -81,6 +81,7 @@ import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.SessionComma
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoConfig
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoUserDictionaryStorage
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -137,7 +138,7 @@ fun initJniDictLocations(context: Context) {
     if(!context.isDirectBootUnlocked) {
         val tmpDir = File("/tmp/.mozc")
         tmpDir.mkdirs()
-        MozcJNI.load(
+        MozcJni.load(
             tmpDir.absolutePath,
             "", 0, 0
         )
@@ -186,14 +187,14 @@ fun initJniDictLocations(context: Context) {
 
     when {
         dictFile != null -> {
-            MozcJNI.load(
+            MozcJni.load(
                 userProfileDirectory.absolutePath,
                 dictFile.absolutePath,
                 0, 0
             )
         }
         fallbackFile != null -> {
-            MozcJNI.load(
+            MozcJni.load(
                 userProfileDirectory.absolutePath,
                 fallbackFile.mFilename,
                 fallbackFile.mOffset,
@@ -201,7 +202,7 @@ fun initJniDictLocations(context: Context) {
             )
         }
         else -> {
-            MozcJNI.load(
+            MozcJni.load(
                 userProfileDirectory.absolutePath,
                 "", 0, 0
             )
@@ -212,157 +213,46 @@ fun initJniDictLocations(context: Context) {
 private const val MOZC_DICT_NAME = "FUTO_UserDict"
 private fun sha256(text: String) =
     MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
-typealias MozcStatus = ProtoUserDictionaryStorage.UserDictionaryCommandStatus.Status
 fun refreshMozcDictionaries(context: Context, executor: SessionExecutor, onlyIfChanged: Boolean = false) {
-    val necessaryDictionaries = getImportedUserDictFilesForLocale(context, Locale.JAPANESE)
-    val missingDictionaries = necessaryDictionaries.toMutableList()
+    val importedDictionaries = getImportedUserDictFilesForLocale(context, Locale.JAPANESE)
     val words = UserDictionaryIO(context).get()
         .filter { it.locale?.let { localeFromString(it) }?.language == "ja" }
         .mapNotNull { decodeJapanesePersonalWord(it) }
 
-    // SebType (#97): Mozc keeps the user dictionaries it was given, so its start re-sends them only when
-    // the imported dictionaries or the personal words changed. Re-sending them at every start crashed the
-    // keyboard on the emulator (a corrupt protobuf in this command burst; the cause is unknown). A
-    // missing stamp means nothing was given yet.
+    // SebType (#97): Mozc keeps the user dictionaries it was given, so its start rewrites them only when
+    // the imported dictionaries or the personal words changed. A missing stamp means nothing was given yet.
     val stamp = File(mozcUserProfileDir(context), "sebtype-user-dictionaries.sha256")
     val source = sha256(
-        (necessaryDictionaries.map { (file, _) -> "${file.name}\t${file.length()}\t${file.lastModified()}" } +
+        (importedDictionaries.map { (file, _) -> "${file.name}\t${file.length()}\t${file.lastModified()}" } +
             words.map { "${it.furigana}\t${it.output}\t${it.pos.id}" }).joinToString("\n")
     )
     if(onlyIfChanged && source == (stamp.takeIf { it.exists() }?.readText() ?: sha256(""))) return
 
-    val sessionResult = executor.sendUserDictionaryCommand(
-        ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-            .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.CREATE_SESSION)
-            .build()
-    )
-
-    if(!sessionResult.hasSessionId())
-        throw Exception("Failed to create mozc session")
-
-    val sessionId = sessionResult.sessionId
-    try {
-        executor.sendUserDictionaryCommand(
-            ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.LOAD)
-                .setSessionId(sessionId)
-                .build()
-        ).let {
-            if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS)
-                Log.e("MozcDic", "Loading failed! This is not fatal, we can re-make the user dictionary.")
-        }
-
-        val enumerateDictionariesResult = executor.sendUserDictionaryCommand(
-            ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.GET_USER_DICTIONARY_NAME_LIST)
-                .setSessionId(sessionId)
-                .build()
-        )
-
-        if(enumerateDictionariesResult.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS || !enumerateDictionariesResult.hasStorage())
-            throw Exception("Listing dictionaries failed!")
-
-        val dicts = enumerateDictionariesResult.storage.dictionariesList
-        if(BuildConfig.DEBUG) Log.d("MozcDic", "Dictionary enumeration: ${dicts.size} entries, data: ${dicts.map { it.id to it.name }}")
-
-        val extraDictionaries = mutableListOf<ProtoUserDictionaryStorage.UserDictionary>()
-        dicts.forEach { mozcDict ->
-            val matchesExpected = missingDictionaries.removeAll { dict ->
-                mozcDict.name == dict.first.nameWithoutExtension
-            }
-
-            if(!matchesExpected) {
-                extraDictionaries.add(mozcDict)
-            }
-        }
-
-        // Delete extra (no longer necessary) dictionaries
-        // (this will also delete $MOZC_DICT_NAME)
-        extraDictionaries.forEach {
-            if(BuildConfig.DEBUG) Log.d("MozcDic", "Delete dict ${it.name} ${it.id}")
-            executor.sendUserDictionaryCommand(
-                ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                    .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.DELETE_DICTIONARY)
-                    .setDictionaryId(it.id)
-                    .setSessionId(sessionId)
-                    .build()
-            ).let {
-                if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS)
-                    throw Exception("Deleting dictionary failed!")
-            }
-        }
-
-        // Add missing dictionaries
-        missingDictionaries.forEach {
-            if(BuildConfig.DEBUG) Log.d("MozcDic", "Create dict ${it.first.nameWithoutExtension}")
-
-            executor.sendUserDictionaryCommand(
-                ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                    .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.IMPORT_DATA)
-                    .setData(it.first.inputStream().use { it.bufferedReader().readText() } )
-                    .setDictionaryName(it.first.nameWithoutExtension)
-                    .setSessionId(sessionId)
-                    .setIgnoreInvalidEntries(true)
-                    .build()
-            ).let {
-                if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS)
-                    throw Exception("Importing data failed! [${it.status}]")
-            }
-        }
-
-        // Create new user dict
-        val result = executor.sendUserDictionaryCommand(
-            ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.CREATE_DICTIONARY)
-                .setDictionaryName(MOZC_DICT_NAME)
-                .setSessionId(sessionId)
-                .build()
-        )
-        result.let {
-            if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS || !it.hasDictionaryId())
-                throw Exception("Creating FUTO_UserDict failed!")
-        }
-        val dictId = result.dictionaryId
-
-        // Add every word from personal dictionary
-        words.forEach {
-            executor.sendUserDictionaryCommand(
-                ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                    .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.ADD_ENTRY)
-                    .setEntry(
-                        ProtoUserDictionaryStorage.UserDictionary.Entry.newBuilder()
-                            .setKey(it.furigana)
-                            .setValue(it.output)
-                            .setPos(it.pos.id)
-                            .build()
-                    )
-                    .setDictionaryId(dictId)
-                    .setSessionId(sessionId)
-                    .build()
-            ).let {
-                if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS)
-                    throw Exception("Adding word failed!")
-            }
-        }
-
-        executor.sendUserDictionaryCommand(
-            ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.SAVE)
-                .setSessionId(sessionId)
-                .build()
-        ).let {
-            if (it.status != MozcStatus.USER_DICTIONARY_COMMAND_SUCCESS)
-                throw Exception("Saving user dict failed! [${it.status}]")
-        }
-        stamp.writeText(source)
-    } finally {
-        executor.sendUserDictionaryCommand(
-            ProtoUserDictionaryStorage.UserDictionaryCommand.newBuilder()
-                .setType(ProtoUserDictionaryStorage.UserDictionaryCommand.CommandType.DELETE_SESSION)
-                .setSessionId(sessionId)
-                .build()
+    // SebType (#186): Mozc takes no user dictionary commands any more, so the keyboard writes Mozc's
+    // user_dictionary.db itself, one dictionary per imported file and one for the personal words, and
+    // has Mozc reload it.
+    val storage = ProtoUserDictionaryStorage.UserDictionaryStorage.newBuilder()
+    importedDictionaries.forEach { (file, _) ->
+        storage.addDictionaries(
+            ProtoUserDictionaryStorage.UserDictionary.parseFrom(MozcJni.importUserDictionary(file.readBytes()))
+                .toBuilder().setId(storage.dictionariesCount + 1L).setName(file.nameWithoutExtension)
         )
     }
+    storage.addDictionaries(
+        ProtoUserDictionaryStorage.UserDictionary.newBuilder()
+            .setId(storage.dictionariesCount + 1L)
+            .setName(MOZC_DICT_NAME)
+            .addAllEntries(words.map {
+                ProtoUserDictionaryStorage.UserDictionary.Entry.newBuilder()
+                    .setKey(it.furigana).setValue(it.output).setPos(it.pos.id).build()
+            })
+    )
+    val db = File(mozcUserProfileDir(context), "user_dictionary.db")
+    val written = File(db.path + ".new")
+    written.writeBytes(storage.build().toByteArray())
+    if(!written.renameTo(db)) throw IOException("Can't write ${db.path}")
+    executor.reload()
+    stamp.writeText(source)
 }
 
 private const val SUGGESTION_ID_INVERSION = 10000
@@ -544,7 +434,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         idleUnload?.cancel()
         idleUnload = helper.lifecycleScope.launch {
             delay(ENGINE_IDLE_MS)
-            MozcJNI.load(mozcUserProfileDir(helper.context).absolutePath, "", 0, 0)
+            MozcJni.load(mozcUserProfileDir(helper.context).absolutePath, "", 0, 0)
             unloaded = true
             Log.w(TAG, "Mozc unloaded after ${ENGINE_IDLE_MS / 1000} s in another language")
             withContext(Dispatchers.Default) { JniUtils.releaseFreedMemory() }
@@ -868,7 +758,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             return
         }
 
-        // Meta key may invoke a command for Mozc server like SWITCH_INPUT_MODE session command. In this
+        // Meta key may invoke a command for Mozc server like SWITCH_COMPOSITION_MODE session command. In this
         // case, the command is consumed by Mozc server and the application cannot get the key event.
         // To avoid such situation, we should send the key event back to application. b/13238551
         // The command itself is consumed by Mozc server, so we should NOT put a return statement here.
@@ -916,16 +806,16 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             // If preedit field is empty, we should clear composing text in the InputConnection
             // because Mozc server asks us to do so.
             // But there is special situation in Android.
-            // On onWindowShown, SWITCH_INPUT_MODE command is sent as a step of initialization.
+            // On onWindowShown, SWITCH_COMPOSITION_MODE command is sent as a step of initialization.
             // In this case we reach here with empty preedit.
             // As described above we should clear the composing text but if we do so
             // texts in selection range (e.g., URL in OmniBox) is always cleared.
             // To avoid from this issue, we don't clear the composing text if the input
-            // is SWITCH_INPUT_MODE.
+            // is SWITCH_COMPOSITION_MODE.
             val input = command.input
             if (
                 input.type != ProtoCommands.Input.CommandType.SEND_COMMAND ||
-                input.command.type != SessionCommand.CommandType.SWITCH_INPUT_MODE
+                input.command.type != SessionCommand.CommandType.SWITCH_COMPOSITION_MODE
             ) {
                 if (!inputConnection.setComposingText("", 0)) {
                     Log.e(TAG, "Failed to set composing text.")

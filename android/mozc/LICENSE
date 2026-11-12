@@ -1,0 +1,7 @@
+Mozc for the phone:
+- src/: FUTO's mozc-lib (https://gitlab.futo.org/keyboard/mozc-lib at 872ec075), Mozc's Android client
+  that Google wrote (BSD-3-Clause, in each file's header and ../../engines/mozc/LICENSE) with FUTO's
+  changes, which count as FUTO Keyboard's code (FUTO Source First License 1.1, ../../LICENSE.md), and
+  SebType's.
+- build.gradle and build-native.sh: SebType's own, under the MIT licence in ../../LICENSE-SebType.
+The native library is built from ../../engines/mozc, under Mozc's licence.

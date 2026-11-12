@@ -200,7 +200,7 @@ Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
 
 The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
 sentences. `rime/build.sh librime` builds it with `rime/librime.spec` (Fedora's spec) and Fedora's
-copies of its plugins, which must match it. Its release `2.sebtype2.fc44` sorts above Fedora's `2.fc44`. To undo:
+copies of its plugins, which must match it. Its release `2.sebtype3.fc44` sorts above Fedora's `2.fc44`. To undo:
 `pc/linux/setup-ime.sh --undo-librime`.
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5

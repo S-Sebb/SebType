@@ -126,7 +126,9 @@ bool Memory::ProcessSegmentOnCommit(CommitEntry& commit_entry,
 }
 
 void Memory::OnCommit(Context* ctx) {
-  if (!user_dict_ || user_dict_->readonly())
+  // SebType (#30): with the option no_learning on (private, password and URL fields on the phone),
+  // nothing committed goes into the user dictionary.
+  if (!user_dict_ || user_dict_->readonly() || ctx->get_option("no_learning"))
     return;
   StartSession();
   CommitEntry commit_entry(this);
