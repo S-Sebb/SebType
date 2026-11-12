@@ -31,10 +31,10 @@
 #define MozcMsi FindGetFileName(Handle)
 #expr FindClose(Handle)
 
-; Python's embeddable package, for the Configurator's sync (#180): python.ps1 fetches and checks it now.
-#define PythonDir SourcePath + "\out\python"
-#if Exec("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File """ + SourcePath + "\python.ps1"" -Dir """ + PythonDir + """", SourcePath, 1, 0) != 0
-  #error python.ps1 failed: Python's embeddable package for sync is missing
+; Python's embeddable package, for the Configurator's sync (#180): python.ps1 puts it in In\python.
+#define PythonDir In + "\python"
+#if !FileExists(PythonDir + "\python.exe")
+  #error No Python's embeddable package in In\python: run python.ps1 -Dir <In>\python first
 #endif
 
 [Setup]

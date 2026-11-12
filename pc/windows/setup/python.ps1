@@ -1,7 +1,7 @@
 ﻿<#
 Python's embeddable package for the Configurator's sync (#180), which runs sync-server/sebtype_sync.py
-with it: Windows has no Python of its own. sebtype.iss runs this while it compiles and packs -Dir into
-{app}\python. Kept from the last run while it is there; checked against python.org's SHA-256.
+with it: Windows has no Python of its own. The setup CI runs this before ISCC, which packs In\python
+into {app}\python. Kept while it is there (CI caches it); checked against python.org's SHA-256.
 
   python.ps1 -Dir <folder>
 #>
