@@ -175,13 +175,13 @@ Source: "{#Pictures}\sebtype.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Pictures}\cloth.png"; DestDir: "{app}\look"; Flags: ignoreversion
 Source: "{#Pictures}\small-1.png"; DestDir: "{app}\look"; Flags: ignoreversion
 Source: "{#Pictures}\small-2.png"; DestDir: "{app}\look"; Flags: ignoreversion
-Source: "{#Repo}\sebtype\fonts\Jersey10-Regular.ttf"; DestDir: "{app}\look"; Flags: ignoreversion
-Source: "{#Repo}\sebtype\fonts\Nunito-Bold.ttf"; DestDir: "{app}\look"; Flags: ignoreversion
-Source: "{#Repo}\sebtype\fonts\OFL-Jersey10.txt"; DestDir: "{app}\look"; Flags: ignoreversion
-Source: "{#Repo}\sebtype\fonts\OFL-Nunito.txt"; DestDir: "{app}\look"; Flags: ignoreversion
+Source: "{#Repo}\art\fonts\Jersey10-Regular.ttf"; DestDir: "{app}\look"; Flags: ignoreversion
+Source: "{#Repo}\art\fonts\Nunito-Bold.ttf"; DestDir: "{app}\look"; Flags: ignoreversion
+Source: "{#Repo}\art\fonts\OFL-Jersey10.txt"; DestDir: "{app}\look"; Flags: ignoreversion
+Source: "{#Repo}\art\fonts\OFL-Nunito.txt"; DestDir: "{app}\look"; Flags: ignoreversion
 ; Setup's own, unpacked when needed.
-Source: "{#Repo}\sebtype\fonts\Jersey10-Regular.ttf"; Flags: dontcopy
-Source: "{#Repo}\sebtype\fonts\Nunito-Bold.ttf"; Flags: dontcopy
+Source: "{#Repo}\art\fonts\Jersey10-Regular.ttf"; Flags: dontcopy
+Source: "{#Repo}\art\fonts\Nunito-Bold.ttf"; Flags: dontcopy
 Source: "{#Pictures}\finish-1.png"; Flags: dontcopy
 Source: "{#Pictures}\finish-2.png"; Flags: dontcopy
 Source: "{#In}\sebtype-weasel\{#WeaselExe}"; Flags: dontcopy
