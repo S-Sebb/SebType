@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- SebType has no glide (swipe) typing (#6): its decoder, models and settings are removed. -->
-<resources>
-    <bool name="config_gesture_input_enabled_by_build_config">false</bool>
-</resources>

@@ -76,7 +76,6 @@ import org.futo.inputmethod.latin.uix.KeyboardColorScheme
 import org.futo.inputmethod.latin.uix.SUGGESTION_BLACKLIST
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.UixManager
-import org.futo.inputmethod.latin.uix.actions.CanThrowIfDebug
 import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.createInlineSuggestionsRequest
 import org.futo.inputmethod.latin.uix.dataStore
@@ -90,7 +89,6 @@ import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.uix.theme.applyWindowColors
 import org.futo.inputmethod.latin.uix.theme.picnicColors
 import org.futo.inputmethod.latin.utils.JniUtils
-import org.futo.inputmethod.updates.scheduleUpdateCheckingJob
 import org.futo.inputmethod.v2keyboard.ComputedKeyboardSize
 import org.futo.inputmethod.v2keyboard.FloatingKeyboardSize
 import org.futo.inputmethod.v2keyboard.KeyboardSettings
@@ -370,8 +368,6 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
         UserBinaryDictionary.resetUserDictionariesRequiringRecreation()
 
-        CanThrowIfDebug = isDirectBootUnlocked
-
         JniUtils.loadNativeLibrary()
 
         LayoutManager.init(this)
@@ -388,8 +384,6 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         imeManager.onCreate()
         latinIMELegacy.onCreate()
 
-        scheduleUpdateCheckingJob(this)
-        launchJob { uixManager.showUpdateNoticeIfNeeded() }
 
         launchJob {
             combine(
@@ -595,7 +589,6 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         onSizeMaybeUpdated()
         imeManager.onStartInput()
         latinIMELegacy.onStartInputView(info, restarting)
-        lifecycleScope.launch { uixManager.showUpdateNoticeIfNeeded() }
         updateColorsIfDensityChanged()
         uixManager.updateEmojiTranslationsIfNeeded()
     }
@@ -902,8 +895,6 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         imeManager.onDeviceUnlocked()
 
         uixManager.onPersistentStatesUnlocked()
-
-        CanThrowIfDebug = true
 
         // TODO: Spell checker service
     }

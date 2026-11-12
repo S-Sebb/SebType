@@ -63,7 +63,7 @@ object CrashReports {
         if(account?.enabled != true) return
         val now = Date()
         val about = listOf(
-            "SebType ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.FLAVOR} ${BuildConfig.BUILD_TYPE})",
+            "SebType ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TYPE})",
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.SUPPORTED_ABIS.firstOrNull()}",
             "Device: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Time: ${utc("yyyy-MM-dd HH:mm:ss 'UTC'", now)}",

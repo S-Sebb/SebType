@@ -40,7 +40,6 @@ import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.xlm.AllowTransformerOnNonQWERTYLayouts
-import org.futo.inputmethod.updates.DISABLE_UPDATE_REMINDER
 import org.futo.inputmethod.updates.dismissedMigrateUpdateNotice
 import kotlin.system.exitProcess
 
@@ -72,8 +71,6 @@ fun DeveloperScreen(navController: NavHostController = rememberNavController()) 
 
         SettingToggleDataStore(title = "Developer mode", setting = IS_DEVELOPER)
 
-        SettingToggleDataStore(title = "Disable all update reminders", setting = DISABLE_UPDATE_REMINDER)
-        
         SettingToggleDataStore(
             title = "Touch typing mode",
             subtitle = "Hides all keys. Touch typists only! Recommended to disable emoji key and enable key borders",

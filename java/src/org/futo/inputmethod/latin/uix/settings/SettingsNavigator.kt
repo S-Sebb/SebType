@@ -135,9 +135,6 @@ fun SettingsNavigator(
             composable("paid") { PaymentThankYouScreen { navController.navigateUp() } }
             composable("credits") { CreditsScreen(navController) }
             composable("exportingcfg") { ExportingMenu(navController) }
-            dialog("update") {
-                UpdateDialog(navController = navController)
-            }
             dialog("alreadyPaid") {
                 AlreadyPaidDialog(navController = navController)
             }

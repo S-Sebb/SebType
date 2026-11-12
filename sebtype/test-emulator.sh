@@ -94,7 +94,7 @@ export -f make_bumped; export apk bt bumped out
 check bumped-apk bash -c make_bumped
 
 # The trim (#6): no voice input, glide typing or other languages; only English, Japanese and Chinese
-# translations. Russian's sources stay in FUTO's submodules (build.gradle drops them from the APK).
+# translations (#6, #178: the other languages' files aren't in the repo).
 dicts=$("$bt/aapt2" dump resources "$apk" | grep -o 'raw/main_[a-z_]*' | sort -u | tr '\n' ' ')
 check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -E "tiny_en_acft|futo-swipe|libswipe_jni|assets/layouts/(Cyrillic|LatinScript)/")
   [[ -z $bad ]] || { echo "still in the APK: $bad"; exit 1; }

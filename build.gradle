@@ -47,112 +47,11 @@ def getVersionName = { ->
     }
 }
 
-def getBranch = { ->
-    def envName = System.getenv('BRANCH_NAME')
-    if (envName?.trim()) {
-        return envName.trim()
-    } else {
-        project.logger.warn("BRANCH_NAME env variable not set – falling back to git branch.")
-    }
-
-    try {
-        // SebType (#58): providers.exec, which the configuration cache allows at configuration time
-        final def stdout = providers.exec { commandLine 'git', 'branch', '--show-current' }.standardOutput.asText.get()
-        return stdout.trim()
-    } catch (ignored) {
-        project.logger.lifecycle("Failed to get branch from git!")
-        return "master"
-    }
-}
-
-
-final def translationsWithoutEngValues = { final String path ->
-    final def sourceDir = file(path)
-    final def taskNameSuffix = sourceDir.name.capitalize()
-
-    final def destDir = file("$buildDir/generated/res-translations-filtered/${taskNameSuffix}")
-
-    tasks.register("prepareResFilter${taskNameSuffix}", Copy) {
-        from(sourceDir) {
-            include 'values-*/**'
-            exclude '**/strings-crash-reporting.xml' // FUTO's crash dialog, gone (#33)
-
-            filter { String line ->
-                def matcher = line =~ /<string name="([^"]+)"[^>]*>(.+)<\/string>/
-
-                if (matcher.find()) {
-                    var stringName = matcher.group(1)
-                    var content = matcher.group(2)
-
-                    content = content
-                    // Fix duplicate string tags
-                            .replaceAll(/<!\[CDATA\[<string [^>]+>(.+)<\\/string>\]\]>/, '$1')
-                            .replaceAll(/<string [^>]+>(.+)<\\/string>/, '$1')
-                            .replaceAll(/&lt;string [^&]+&gt;(.+)&lt;\\/string&gt;/, '$1')
-                    // Remove xliff:g tags entirely, keep only the content
-                            .replaceAll(/<xliff:g [^>]+>(.+?)<\/xliff:g>/, '$1')
-                            .replaceAll(/&lt;xliff:g [^&]+&gt;(.+?)&lt;\/xliff:g&gt;/, '$1')
-                    // Fix escaped quotes
-                            .replaceAll(/&amp;quot;/, '"')
-                            .replaceAll(/&quot;/, '"')
-                            .replaceAll(/\\+/, "\\\\")
-                            .replaceAll(/\\"/, '"')
-                            .replaceAll(/\\'/, "'")
-
-                    if (content.startsWith("&quot;")) {
-                        content = content.substring(6)
-                    } else if (content.startsWith('\\"')) {
-                        content = content.substring(2)
-                    } else if (content.startsWith('"')) {
-                        content = content.substring(1)
-                    }
-                    if (content.endsWith("&quot;")) {
-                        content = content.substring(0, content.length() - 6)
-                    } else if (content.endsWith('\\"')) {
-                        content = content.substring(0, content.length() - 2)
-                    } else if (content.endsWith('"')) {
-                        content = content.substring(0, content.length() - 1)
-                    }
-
-                    content = content.replaceAll('"', '\\\\"')
-
-                    "    <string name=\"" + stringName + "\">\"" + content + "\"</string>\n"
-                } else {
-                    line
-                }
-            }
-        }
-        into(destDir)
-        includeEmptyDirs = false
-
-        doFirst {
-            if (destDir.exists()) {
-                println "Cleaning old contents of $destDir"
-                destDir.deleteDir()
-            }
-        }
-    }
-
-    // Ensure it runs before build
-    preBuild.dependsOn("prepareResFilter${taskNameSuffix}")
-
-    destDir
-}
-
 tasks.register('updateLocales', Exec) {
     workingDir = file('tools/make-keyboard-text-py')
     commandLine = [
             System.getProperty("os.name").toLowerCase().contains("windows") ? "python" : "python3",
             "src/generate.py"
-    ]
-}
-
-tasks.register('updateBundleResources', Exec) {
-    workingDir = file('java/res-bundle')
-    commandLine = [
-            System.getProperty("os.name").toLowerCase().contains("windows") ? "python" : "python3",
-            "download-bundles.py",
-            file('java/res-bundle').absolutePath
     ]
 }
 
@@ -182,20 +81,6 @@ tasks.register('buildRimeData', Exec) {
     commandLine 'bash', file('tools/rime-data/build.sh').absolutePath, layout.buildDirectory.dir('sebtype-assets').get().asFile.absolutePath
 }
 preBuild.dependsOn buildRimeData
-
-// SebType ships English, Chinese and Japanese only (#6): the other languages' dictionaries and layouts
-// stay in FUTO's submodules but out of the APK. Russian comes back by deleting its entries here.
-final def sebtypeDroppedDicts = ['de', 'es', 'fr', 'it', 'pt_br', 'ru'].collect { "raw/main_${it}.dict" }
-final def sebtypeDroppedLayoutDirs = ['Amazigh', 'ArabicScript', 'Armenian', 'Bengali', 'ConstructedScripts',
-    'Cyrillic', 'Devanagari', 'Georgian', 'Greek', 'Gurmukhi', 'Hebrew', 'InternationalPhoneticAlphabet',
-    'Kannada', 'Khmer', 'KoashurKhat', 'Korean', 'Lao', 'LatinScript', 'Legacy', 'Malayalam', 'MyanmarScript',
-    'Newa', 'Sinhala', 'Tamil', 'Telugu', 'Thai', 'Tibetan']
-final def sebtypeResLarge = layout.buildDirectory.dir('generated/sebtype-res-large')
-tasks.register('sebtypeResLarge', Sync) {
-    from('java/res-large') { exclude sebtypeDroppedDicts + ['README.md'] }
-    into sebtypeResLarge
-}
-preBuild.dependsOn 'sebtypeResLarge'
 
 // Workaround (#62): the APK ships the NDK's libc++_shared.so, though nothing loads it. On the Nothing A001
 // (Dimensity 7300, Android 16), the phone schedules SebType on its little cores without an extra native library,
@@ -262,27 +147,26 @@ android {
         }
     }
 
-    final def keystorePropertiesFile = rootProject.file("keystore.properties")
+    // SebType (#149, #178): a release APK or bundle is signed with SebType's registered key, which
+    // sebtype/build.sh passes for its run alone, or not built: never with java/shared.keystore (Android's
+    // public test key). -PunsignedRelease builds it unsigned. Debug builds don't package these tasks.
+    final def releaseKeystore = providers.environmentVariable('SEBTYPE_KEYSTORE').orNull
     def releaseSigning = null
-    if (keystorePropertiesFile.exists()) {
-        final def keystoreProperties = new Properties()
-        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    if (releaseKeystore) {
+        final def password = providers.environmentVariable('SEBTYPE_KEYSTORE_PASSWORD').get()
         releaseSigning = signingConfigs.create("release") {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile rootProject.file(keystoreProperties['storeFile'])
-            storePassword keystoreProperties['storePassword']
+            storeFile file(releaseKeystore)
+            storePassword password
+            keyAlias 'sebtype'
+            keyPassword password
         }
     } else if (!project.hasProperty('unsignedRelease')) {
-        // SebType (#149): a release APK or bundle is signed with SebType's registered key or not built,
-        // never with java/shared.keystore (Android's public test key). Debug builds don't package these tasks.
         gradle.taskGraph.whenReady { graph ->
-            if (graph.allTasks.any { it.name ==~ /package\w+Release(Bundle|UniversalApk)?/ }) {
-                throw new GradleException("Release builds need ${keystorePropertiesFile} with SebType's release key (sebtype/build.sh release writes it); pass -PunsignedRelease for an unsigned APK")
+            if (graph.allTasks.any { it.name ==~ /package\w*Release(Bundle|UniversalApk)?/ }) {
+                throw new GradleException("Release builds need SEBTYPE_KEYSTORE and SEBTYPE_KEYSTORE_PASSWORD (sebtype/build.sh release sets them); pass -PunsignedRelease for an unsigned APK")
             }
         }
     }
-
 
     buildTypes {
         debug {
@@ -304,47 +188,12 @@ android {
 
             it.buildConfigField "String", "GOOGLEPAY_URL", "\"https://play.google.com/store/apps/details?id=org.futo.keyboardpayment\""
             it.buildConfigField "String", "GOOGLEPAY_PRICE", "\"~\$11.99\""
-        }
-    }
 
-    flavorDimensions = ["buildType"]
-
-    productFlavors {
-        unstable {
-            dimension "buildType"
-            applicationIdSuffix ".unstable"
-            versionNameSuffix "-unstable"
-
-            buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
-            buildConfigField "boolean", "UPDATE_CHECKING", "true"
-            buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
-            buildConfigField "String", "BRANCH", "\"${getBranch()}\""
-            getIsDefault().set(true)
-
-            buildConfigField "String", "PAYMENT_PRICE", "FUTOPAY_PRICE"
-        }
-
-        stable {
-            dimension "buildType"
-            buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
-            buildConfigField "boolean", "UPDATE_CHECKING", "false" // SebType: updates come from GitHub releases
-            buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
-            buildConfigField "String", "BRANCH", "\"${getBranch()}\""
-
-            buildConfigField "String", "PAYMENT_PRICE", "FUTOPAY_PRICE"
-        }
-
-        playstore {
-            dimension "buildType"
-            applicationIdSuffix ".playstore"
-            versionNameSuffix "-playstore"
-
-            buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "true"
-            buildConfigField "boolean", "UPDATE_CHECKING", "false"
-            buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
-            buildConfigField "String", "BRANCH", "\"${getBranch()}\""
-
-            buildConfigField "String", "PAYMENT_PRICE", "GOOGLEPAY_PRICE"
+            // FUTO's non-Play Store payment screen, unchanged (FUTO's licence, #53); FLAVOR is the one it
+            // was built as before SebType dropped the flavors (#178).
+            it.buildConfigField "String", "FLAVOR", "\"stable\""
+            it.buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
+            it.buildConfigField "String", "PAYMENT_PRICE", "FUTOPAY_PRICE"
         }
     }
 
@@ -358,32 +207,15 @@ android {
         main {
             res.srcDirs = [
                     'java/res',
-                    translationsWithoutEngValues('translations/core'),
-                    translationsWithoutEngValues('translations/core-ign'),
-                    sebtypeResLarge, // java/res-large without the dropped languages' dictionaries
-                    'sebtype/res' // SebType's own strings (new names only, so nothing clashes)
+                    'java/res-bundle', // Mozc's dictionary, downloaded by sebtype/build.sh
+                    'sebtype/res', // SebType's own strings
+                    'sebtype/res-stable' // SebType's launcher icon and English dictionary
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
             jniLibs.srcDirs = [sebtypeJniLibs] // the unused libc++_shared.so (#62)
-            // SebType's layouts (outside FUTO's layouts submodule) and the bundled Chinese data
+            // FUTO's and SebType's layouts, and the bundled Chinese data
             assets.srcDirs = ['java/assets', 'sebtype/assets', layout.buildDirectory.dir('sebtype-assets')]
-        }
-
-        playstore {
-            res.srcDirs = ['java/res-bundle']
-            manifest.srcFile 'java/playstore/AndroidManifest.xml'
-        }
-
-        stable {
-            // SebType: the Play Store flavor's manifest: no update checker service
-            manifest.srcFile 'java/playstore/AndroidManifest.xml'
-            res.srcDirs = ['sebtype/res-stable', 'java/res-bundle'] // SebType launcher icon and English dictionary, overriding FUTO's; bundled Mozc dictionary
-        }
-
-        unstable {
-            manifest.srcFile 'java/stable/AndroidManifest.xml'
-            res.srcDirs = ['java/unstable/res', translationsWithoutEngValues('translations/devbuild')]
         }
 
         test {
@@ -403,9 +235,6 @@ android {
 
     aaptOptions {
         noCompress 'dict', 'zip'
-        // aapt's default ignore list, plus the dropped languages' layout folders (FUTO's layouts submodule)
-        ignoreAssetsPattern(['!.svn', '!.git', '!.ds_store', '!*.scc', '.*', '!CVS', '!thumbs.db', '!picasa.ini',
-                             '!*~', *sebtypeDroppedLayoutDirs.collect { "!<dir>$it" }].join(':'))
     }
 
     packagingOptions {
@@ -429,12 +258,6 @@ android {
         viewBinding true
         mlModelBinding true
         buildConfig true
-    }
-
-    packagingOptions {
-        jniLibs {
-            useLegacyPackaging = true
-        }
     }
 }
 

@@ -58,9 +58,7 @@ Stack trace: ${exception.stackTrace.map { it.toString() }}
 private val Throwable.rootCause: Throwable?
     get() = generateSequence(this) { it.cause }.lastOrNull()?.takeIf { it !== this }
 
-var CanThrowIfDebug = true
-
-val IsDebug = BuildConfig.DEBUG || (BuildConfig.FLAVOR == "unstable" && CanThrowIfDebug)
+val IsDebug = BuildConfig.DEBUG
 fun throwIfDebug(ex: Exception) {
     if(IsDebug) {
         throw ex

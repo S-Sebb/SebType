@@ -64,7 +64,6 @@ import org.futo.inputmethod.latin.uix.theme.StatusBarColorSetter
 import org.futo.inputmethod.latin.uix.theme.UixThemeAuto
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.SubtypeLocaleUtils
-import org.futo.inputmethod.latin.xlm.ModelPaths
 import org.futo.inputmethod.updates.openURI
 import java.io.BufferedReader
 import java.io.File
@@ -612,7 +611,6 @@ suspend fun removeImportedUserDictFile(context: Context, value: Pair<File, Strin
 }
 
 sealed class ItemBeingImported {
-    data class LanguageResource(val v: FileKindAndInfo) : ItemBeingImported()
     data class SettingsBackup(val v: SettingsExporter.CfgFileMetadata) : ItemBeingImported()
     data class UserDictFile(val v: DetectedUserDictFile) : ItemBeingImported()
     /** SebType (#11): words from another keyboard or Rime, added to what is there (PersonalDataImport). */
@@ -711,81 +709,11 @@ class ImportResourceActivity : ComponentActivity() {
             return applyUserDictSetting(item.v, inputMethodSubtype)
         }
         if(item is ItemBeingImported.PersonalData) return applyPersonalData(item)
-
-        if(item == null) return
-
-        var locale = fileKind.forceLocale ?: inputMethodSubtype.locale
-
-        val sanitizedLocaleForFilename = locale.replace("#", "H")
-        val outputFileName = "${fileKind.kind.name.lowercase()}_$sanitizedLocaleForFilename${fileKind.kind.extension()}"
-
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                // This is a special case for now
-                if (fileKind.kind == FileKind.Transformer) {
-                    // 1. Copy file
-                    val contentResolver = applicationContext.contentResolver
-                    val outDirectory = ModelPaths.getModelDirectory(applicationContext)
-                    val outputFile = File(outDirectory, outputFileName)
-                    if (outputFile.exists()) {
-                        outputFile.delete()
-                    }
-
-                    contentResolver.openInputStream(uri!!)!!.use { inputStream ->
-                        outputFile.outputStream().use { outputStream ->
-                            inputStream.copyTo(outputStream, 1024)
-                        }
-                    }
-
-                    // 2. Update reference
-                    val language = locale.split("_").first()
-                    ModelPaths.updateModelOption(applicationContext, language, outputFile)
-                } else {
-                    // 1. Copy file
-                    val contentResolver = applicationContext.contentResolver
-                    contentResolver.openInputStream(uri!!)!!.use { inputStream ->
-                        val outputFile =
-                            File(applicationContext.getExternalFilesDir(null), outputFileName)
-                        if(outputFile.exists()) { outputFile.delete() }
-
-                        outputFile.outputStream().use { outputStream ->
-                            inputStream.copyTo(outputStream, 1024)
-                        }
-                    }
-
-                    // 2. Update reference
-                    applicationContext.setSetting(
-                        fileKind.kind.preferenceKeyFor(locale),
-                        outputFileName
-                    )
-                    fileKind.name?.let {
-                        applicationContext.setSetting(
-                            fileKind.kind.namePreferenceKeyFor(locale),
-                            it
-                        )
-                    }
-                }
-            }
-            GlobalIMEMessage.tryEmit(IMEMessage.ReloadResources)
-            finish()
-        }
     }
 
 
     @Composable
     private fun InnerScreen() = itemBeingImported.value.let { item -> when(item) {
-        is ItemBeingImported.LanguageResource -> {
-            ImportScreen(
-                fileKind = item.v,
-                onApply = { fileKind, inputMethodSubtype ->
-                    applySetting(
-                        fileKind,
-                        inputMethodSubtype
-                    )
-                },
-                onCancel = { finish() }
-            )
-        }
         is ItemBeingImported.SettingsBackup -> {
             SettingsImportScreen(
                 metadata = item.v,
@@ -902,77 +830,6 @@ class ImportResourceActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 updateContent()
             }
-        }
-    }
-}
-
-object MissingDictionaryHelper {
-    sealed class DictCheckResult {
-        object CheckFailed : DictCheckResult()
-        object DontShowDictNotice : DictCheckResult()
-        data class ShowDictNotice(val locale: Locale, val dismissalSetting: SettingsKey<Int>) : DictCheckResult()
-    }
-    fun checkIfDictInstalled(context: Context): DictCheckResult {
-        if(context.isDeviceLocked) return DictCheckResult.CheckFailed
-
-        val locale = Subtypes.getLocale(Subtypes.getActiveSubtype(context))
-        val hasImportedDict = ResourceHelper.findKeyForLocaleAndKind(
-            context,
-            locale,
-            FileKind.Dictionary
-        ) != null
-        val hasBuiltInDict = Dictionaries.getDictionaryIfExists(context, locale, Dictionaries.DictionaryKind.Any) != null
-
-        // These languages have an automatic prompt to download the right file on keyboard.futo.tech
-        val langsWithDownloadableDictionaries = setOf(
-            "ar", "hy", "as", "bn", "eu", "be", "bg", "ca", "hr", "cs", "da", "nl", "en", "eo", "fi",
-            "fr", "gl", "ka", "de", "gom", "el", "gu", "he", "iw", "hi", "hu", "it", "kn", "ks", "lv",
-            "lt", "lb", "mai", "ml", "mr", "nb", "or", "pl", "pt", "pa", "ro", "ru", "sa", "sat", "sr",
-            "sd", "sl", "es", "sv", "ta", "te", "tok", "tcy", "tr", "uk", "ur", "af", "ar", "bn", "bg",
-            "cs", "fr", "de", "he", "id", "it", "kab", "kk", "pms", "ru", "sk", "es", "uk", "vi",
-            "ja" // SebType: no "zh", its Chinese dictionary (rime-ice) is bundled
-        )
-
-        // Typing is severely broken in these languages without the dictionary, it is vital that this message
-        // is shown every time until the user downloads the dictionary
-        val undismissableLanguages = setOf("ja")
-
-        val dismissalSetting = SettingsKey(
-            intPreferencesKey("dictionary_notice_dismiss_${locale.language}"),
-            0
-        )
-
-        if(
-            !hasImportedDict &&
-            !hasBuiltInDict &&
-            langsWithDownloadableDictionaries.contains(locale.language) &&
-            (context.getSetting(dismissalSetting) < 15 || undismissableLanguages.contains(locale.language))
-        ) {
-            return DictCheckResult.ShowDictNotice(locale, dismissalSetting)
-        }
-
-        return DictCheckResult.DontShowDictNotice
-    }
-
-    class NoDictionaryNotice(
-        val dismissalSetting: SettingsKey<Int>,
-        val locale: Locale,
-        val string: String,
-        val resetNotice: () -> Unit) : ImportantNotice {
-        @Composable
-        override fun getText(): String {
-            return string
-        }
-
-        override fun onDismiss(context: Context, auto: Boolean) {
-            resetNotice()
-            context.setSettingBlocking(dismissalSetting.key,
-                context.getSetting(dismissalSetting) + if(auto) 1 else 5)
-        }
-
-        override fun onOpen(context: Context) {
-            resetNotice()
-            context.openURI(FileKind.Dictionary.getAddonUrlForLocale(locale), true)
         }
     }
 }

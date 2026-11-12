@@ -10,7 +10,6 @@ out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-en-dict-results.txt; : > "$results"
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
 dict=sebtype/res-stable/raw/main_en.dict
-futo=java/res-large/raw/main_en.dict
 sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
 bt=$(ls -d "$sdk"/build-tools/* 2>/dev/null | tail -1)
 # Benchmark text, as in the #40 study: OpenAssistant oasst1 prompts (Apache-2.0) and Wikipedia's
@@ -36,8 +35,11 @@ fetch() { # url sha256 name -> cached path
 
 # Preflight
 for c in python3 hunspell curl; do command -v $c >/dev/null || { echo "preflight: $c missing"; exit 1; }; done
-[[ -f $dict && -f $futo ]] || { echo "preflight: $dict or $futo missing (git submodule update --init)"; exit 1; }
+[[ -f $dict ]] || { echo "preflight: $dict missing"; exit 1; }
 mkdir -p "$cache"
+# FUTO's dictionary, the one tools/en-dict/build.sh starts from
+futo=$(fetch https://gitlab.futo.org/keyboard/keyboard-large-resources/-/raw/d87d9dbdf3966bbe18413be375dab2f6c7bbdfdd/raw/main_en.dict c3e21185c056e82769a2bb1381ae6b0e799437bdab101379715c6baa0a3544d1 futo-main_en.dict) ||
+  { echo "preflight: can't download FUTO's dictionary"; exit 1; }
 chat=$(fetch "$CHAT_URL" "$CHAT_SHA256" oasst1-prompts.jsonl.gz) || { echo "preflight: can't download $CHAT_URL"; exit 1; }
 typos=$(fetch "$TYPOS_URL" "$TYPOS_SHA256" misspellings-1199637275.txt) || { echo "preflight: can't download misspellings"; exit 1; }
 

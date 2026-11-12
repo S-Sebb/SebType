@@ -146,14 +146,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
             ngramContext, timestamp,
             blockOffensive
         )
-
-        if (settings.current.mTransformerPredictionEnabled) {
-            languageModelFacilitator.addToHistory(
-                word, wasCapitalized,
-                ngramContext, timestamp,
-                blockOffensive, importance
-            )
-        }
     }
 
     override fun removeFromHistory(
@@ -165,12 +157,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         dictionaryFacilitator.unlearnFromUserHistory(
             word, ngramContext, timestamp, eventType
         )
-
-        if (settings.current.mTransformerPredictionEnabled) {
-            languageModelFacilitator.unlearnFromHistory(
-                word, ngramContext, timestamp, eventType
-            )
-        }
     }
 
 
@@ -228,7 +214,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
 
     override fun onDestroy() {
         dictionaryFacilitator.closeDictionaries()
-        languageModelFacilitator.saveHistoryLog()
 
         runBlocking {
             languageModelFacilitator.destroyModel()
@@ -236,9 +221,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         }
     }
 
-    override fun onDeviceUnlocked() {
-        languageModelFacilitator.loadHistoryLog()
-    }
+    override fun onDeviceUnlocked() {}
 
     // The transformer reloads on the first key back in English
     override fun onLanguageLeft() {
@@ -276,7 +259,6 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
                 delay(5000L)
                 withContext(Dispatchers.Main) {
                     dictionaryFacilitator.flushUserHistoryDictionaries()
-                    languageModelFacilitator.saveHistoryLog()
                 }
             }
         }

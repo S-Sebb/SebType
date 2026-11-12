@@ -20,7 +20,6 @@ import static org.futo.inputmethod.latin.common.Constants.ImeOption.FORCE_ASCII;
 import static org.futo.inputmethod.latin.common.Constants.ImeOption.NO_MICROPHONE;
 import static org.futo.inputmethod.latin.common.Constants.ImeOption.NO_MICROPHONE_COMPAT;
 
-import android.Manifest.permission;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.AlertDialog;
@@ -140,9 +139,6 @@ public class LatinIMELegacy implements KeyboardActionListener,
     // Used for re-initialize keyboard layout after onConfigurationChange.
     @Nullable private Context mDisplayContext;
 
-    private final BroadcastReceiver mDictionaryDumpBroadcastReceiver =
-            new DictionaryDumpBroadcastReceiver(this);
-
 
     // Loading the native library eagerly to avoid unexpected UnsatisfiedLinkError at the initial
     // JNI call as much as possible.
@@ -178,10 +174,6 @@ public class LatinIMELegacy implements KeyboardActionListener,
         filter.addAction(AudioManager.RINGER_MODE_CHANGED_ACTION);
         ContextCompat.registerReceiver(mInputMethodService, mRingerModeChangeReceiver, filter, ContextCompat.RECEIVER_EXPORTED);
 
-        final IntentFilter dictDumpFilter = new IntentFilter();
-        dictDumpFilter.addAction(DictionaryDumpBroadcastReceiver.DICTIONARY_DUMP_INTENT_ACTION);
-        ContextCompat.registerReceiver(mInputMethodService, mDictionaryDumpBroadcastReceiver, dictDumpFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
-
         StatsUtils.onCreate(mSettings.getCurrent(), mRichImm);
     }
 
@@ -211,12 +203,10 @@ public class LatinIMELegacy implements KeyboardActionListener,
     public void onDestroy() {
         mSettings.onDestroy();
         mInputMethodService.unregisterReceiver(mRingerModeChangeReceiver);
-        mInputMethodService.unregisterReceiver(mDictionaryDumpBroadcastReceiver);
     }
 
     @UsedForTesting
     public void recycle() {
-        mInputMethodService.unregisterReceiver(mDictionaryDumpBroadcastReceiver);
         mInputMethodService.unregisterReceiver(mRingerModeChangeReceiver);
         mImeManager.recycle();
     }
@@ -587,15 +577,6 @@ public class LatinIMELegacy implements KeyboardActionListener,
                     Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE);
         }
         return keyboard.getCoordinates(codePoints);
-    }
-
-    // Callback for the {@link SuggestionStripView}, to call when the important notice strip is
-    // pressed.
-    @Override
-    public void showImportantNoticeContents() {
-        PermissionsManager.get(mInputMethodService).requestPermissions(
-                this /* PermissionsResultCallback */,
-                null /* activity */, permission.READ_CONTACTS);
     }
 
     @Override
@@ -997,14 +978,6 @@ public class LatinIMELegacy implements KeyboardActionListener,
     @UsedForTesting
     void clearPersonalizedDictionariesForTest() {
         // TODO: mDictionaryFacilitator.clearUserHistoryDictionary(mInputMethodService);
-    }
-
-    public void dumpDictionaryForDebug(final String dictName) {
-        // TODO: Remove?
-        //if (!mDictionaryFacilitator.isActive()) {
-        //    resetDictionaryFacilitatorIfNecessary();
-        //}
-        //mDictionaryFacilitator.dumpDictionaryForDebug(dictName);
     }
 
     public void debugDumpStateAndCrashWithException(final String context) {

@@ -16,7 +16,6 @@
 
 package org.futo.inputmethod.latin;
 
-import android.Manifest;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.Log;
@@ -33,7 +32,6 @@ import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import org.futo.inputmethod.latin.common.ComposedData;
 import org.futo.inputmethod.latin.common.Constants;
 import org.futo.inputmethod.latin.common.StringUtils;
-import org.futo.inputmethod.latin.permissions.PermissionsUtil;
 import org.futo.inputmethod.latin.personalization.UserHistoryDictionary;
 import org.futo.inputmethod.latin.settings.Settings;
 import org.futo.inputmethod.latin.settings.SettingsValues;
@@ -367,12 +365,8 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         final HashSet<String> subDictTypesToUse = new HashSet<>();
         subDictTypesToUse.add(Dictionary.TYPE_USER);
 
-        // Do not use contacts dictionary if we do not have permissions to read contacts.
-        final boolean contactsPermissionGranted = PermissionsUtil.checkAllPermissionsGranted(
-                context, Manifest.permission.READ_CONTACTS);
-        if (useContactsDict && contactsPermissionGranted) {
-            subDictTypesToUse.add(Dictionary.TYPE_CONTACTS);
-        }
+        // SebType has no contacts dictionary (it never asks for READ_CONTACTS, #178); useContactsDict is
+        // kept for FUTO's spell checker.
         if (usePersonalizedDicts) {
             subDictTypesToUse.add(Dictionary.TYPE_USER_HISTORY);
         }

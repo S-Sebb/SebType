@@ -43,14 +43,5 @@
     <!-- The index of the auto correction threshold values array. -->
     <string name="auto_correction_threshold_mode_index_off" translatable="false">0</string>
     <string name="auto_correction_threshold_mode_index_modest" translatable="false">1</string>
-    <string name="auto_correction_threshold_mode_index_aggressive" translatable="false">2</string>
-    <string name="auto_correction_threshold_mode_index_very_aggressive" translatable="false">3</string>
 
-    <!-- The array of the auto correction threshold settings values. -->
-    <string-array name="auto_correction_threshold_mode_indexes" translatable="false">
-      <item>@string/auto_correction_threshold_mode_index_off</item>
-      <item>@string/auto_correction_threshold_mode_index_modest</item>
-      <item>@string/auto_correction_threshold_mode_index_aggressive</item>
-      <item>@string/auto_correction_threshold_mode_index_very_aggressive</item>
-    </string-array>
 </resources>

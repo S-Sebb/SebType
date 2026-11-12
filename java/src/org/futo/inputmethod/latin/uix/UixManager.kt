@@ -138,11 +138,6 @@ import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.theme.Typography
 import org.futo.inputmethod.latin.uix.theme.UixThemeAuto
 import org.futo.inputmethod.latin.uix.theme.UixThemeWrapper
-import org.futo.inputmethod.updates.autoDeferManualUpdateIfNeeded
-import org.futo.inputmethod.updates.deferManualUpdate
-import org.futo.inputmethod.updates.isManualUpdateTimeExpired
-import org.futo.inputmethod.updates.openManualUpdateCheck
-import org.futo.inputmethod.updates.retrieveSavedLastUpdateCheckResult
 import org.futo.inputmethod.v2keyboard.ComputedKeyboardSize
 import org.futo.inputmethod.v2keyboard.getPrimaryLayoutOverride
 import org.futo.inputmethod.v2keyboard.FloatingKeyboardSize
@@ -537,10 +532,6 @@ class UixManager(private val latinIME: LatinIME) {
         get() = latinIME.composeView
 
     private val suggestionStripListener = object : SuggestionStripViewListener {
-        override fun showImportantNoticeContents() {
-            latinIME.latinIMELegacy.showImportantNoticeContents()
-        }
-
         override fun pickSuggestionManually(word: SuggestedWordInfo?) {
             if(floatingPreeditEditing.value && floatingPreedit.value != null) {
                 val text = floatingPreeditText.value
@@ -1356,69 +1347,6 @@ class UixManager(private val latinIME: LatinIME) {
         }
     }
 
-    suspend fun showUpdateNoticeIfNeeded() {
-        if(!BuildConfig.UPDATE_CHECKING) return
-
-        autoDeferManualUpdateIfNeeded(latinIME)
-
-        val updateInfo = retrieveSavedLastUpdateCheckResult(latinIME)
-        if(updateInfo != null && updateInfo.isNewer()) {
-            /*if(!latinIME.getSetting(DISABLE_UPDATE_REMINDER)) {
-                numSuggestionsSinceNotice = 0
-                currentNotice.value = object : ImportantNotice {
-                    @Composable
-                    override fun getText(): String {
-                        return "Update available: ${updateInfo.nextVersionString}"
-                    }
-
-                    override fun onDismiss(context: Context) {
-                        currentNotice.value = null
-                    }
-
-                    override fun onOpen(context: Context) {
-                        currentNotice.value = null
-
-                        val intent = Intent(context, SettingsActivity::class.java)
-                        intent.putExtra("navDest", "update")
-
-                        if (context !is Activity) {
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-
-                        context.startActivity(intent)
-                    }
-                }
-            }*/
-        } else {
-            if(isManualUpdateTimeExpired(latinIME)) {
-                numSuggestionsSinceNotice = 0
-                currentNotice.value = object : ImportantNotice {
-                    @Composable
-                    override fun getText(): String {
-                        return stringResource(R.string.keyboard_actionbar_manual_update_check_notice)
-                    }
-
-                    override fun onDismiss(context: Context, auto: Boolean) {
-                        currentNotice.value = null
-
-                        runBlocking {
-                            deferManualUpdate(latinIME)
-                        }
-                    }
-
-                    override fun onOpen(context: Context) {
-                        currentNotice.value = null
-                        context.openManualUpdateCheck()
-
-                        runBlocking {
-                            deferManualUpdate(latinIME)
-                        }
-                    }
-                }
-
-            }
-        }
-    }
 
     fun onColorSchemeChanged() {
         setContent()
@@ -1593,11 +1521,6 @@ class UixManager(private val latinIME: LatinIME) {
     private val quickClipState: MutableState<QuickClipState?> = mutableStateOf(null)
     fun dismissQuickClips() { quickClipState.value = null }
     fun inputStarted(editorInfo: EditorInfo?) {
-        try {
-            checkIfDictInstalled()
-        } catch(e: Exception) {
-            e.printStackTrace()
-        }
         inlineStuffHiddenByTyping.value = false
         this.editorInfo = editorInfo
         Incognito.update(latinIME, editorInfo)
@@ -1656,7 +1579,6 @@ class UixManager(private val latinIME: LatinIME) {
         }
 
         updateEmojiTranslationsIfNeeded()
-        checkIfDictInstalled()
         return result
     }
 
@@ -1670,28 +1592,6 @@ class UixManager(private val latinIME: LatinIME) {
             it.close()
         }
         persistentStates.clear()
-    }
-
-    private fun checkIfDictInstalled() {
-        val check = MissingDictionaryHelper.checkIfDictInstalled(latinIME)
-        when(check) {
-            MissingDictionaryHelper.DictCheckResult.CheckFailed -> { }
-            MissingDictionaryHelper.DictCheckResult.DontShowDictNotice -> {
-                // Hide any existing one, e.g. if user just installed a dict or switched to a language
-                // with a dict.
-                if(currentNotice.value is MissingDictionaryHelper.NoDictionaryNotice) {
-                    currentNotice.value = null
-                }
-            }
-            is MissingDictionaryHelper.DictCheckResult.ShowDictNotice -> {
-                numSuggestionsSinceNotice = 0
-                currentNotice.value = MissingDictionaryHelper.NoDictionaryNotice(
-                    check.dismissalSetting,
-                    check.locale,
-                    latinIME.getString(R.string.keyboard_actionbar_no_dictionary_installed_notice)
-                ) { currentNotice.value = null }
-            }
-        }
     }
 
     fun setPreedit(preedit: FloatingPreEdit?) {

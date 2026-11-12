@@ -10,7 +10,7 @@ has the details):
   MIT licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb. These files in those folders are not SebType's own
   and keep their licence (each folder's LICENSE file lists them):
   - sebtype/assets/layouts/: adapted from FUTO's layouts, Apache-2.0.
-  - sebtype/res-stable/raw/emoji_i18n.jsondlgz and sebtype/res-stable/values*/*-sebtype-overrides.xml:
+  - sebtype/res-stable/raw/emoji_i18n.jsondlgz:
     FUTO's, the FUTO Source First License 1.1.
   - sebtype/res-stable/raw/main_en.dict: FUTO's dictionary, the FUTO Source First License 1.1, with
     wordfreq's frequencies under CC BY-SA 4.0 (credits at the end).
