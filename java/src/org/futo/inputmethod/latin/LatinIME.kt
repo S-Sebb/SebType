@@ -383,7 +383,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         val filter = IntentFilter(Intent.ACTION_USER_UNLOCKED)
         registerReceiver(unlockReceiver, filter)
 
-        Subtypes.addDefaultSubtypesIfNecessary(this)
+        launchJob { withContext(Dispatchers.IO) { Subtypes.addDefaultSubtypesIfNecessary(this@LatinIME) } }
 
         imeManager.onCreate()
         latinIMELegacy.onCreate()
