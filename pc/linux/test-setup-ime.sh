@@ -28,7 +28,9 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
 # The fake account has no Rust: setup-ime.sh copies the Configurator built here.
-cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
+# Under the shared build lock with half the cores, like every heavy local build (Decisions #2).
+devq -m 30 -n "configurator build for test-setup-ime" /tmp/agent-locks/sebtype/build.lock \
+  env CARGO_BUILD_JOBS=8 cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
   { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
 # Nor does it build SebType's Chinese data: each fake account's cache links the zip built here.
 ../../tools/rime-data/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||
