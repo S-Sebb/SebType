@@ -199,9 +199,11 @@ android_ndk_repository_extension = use_extension(
     "@rules_android_ndk//:extension.bzl",
     "android_ndk_repository_extension",
 )
-# SebType: the NDK is the one ANDROID_NDK_HOME names (android/mozc/build.gradle passes the app's), and
-# the library runs on the app's minSdk.
+# SebType: ANDROID_NDK_HOME, when set, comes before the path (bazel/rules_android_ndk.patch), so the
+# phone's build uses the app's NDK (android/mozc/build.gradle passes it); the library runs on the app's
+# minSdk.
 android_ndk_repository_extension.configure(
+    path = "$WORKSPACE_ROOT/third_party/ndk/android-ndk-r29",
     api_level = 24,
 )
 use_repo(android_ndk_repository_extension, "androidndk")
