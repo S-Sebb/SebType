@@ -350,6 +350,23 @@ fn main() -> Result<(), slint::PlatformError> {
         sync::run(a == "--sync-before-removal");
         return Ok(());
     }
+    // For tests without a window (pc/windows/setup/test.ps1): the server, username and password on
+    // stdin, one per line, saved as Server and login's Save does.
+    if std::env::args().any(|a| a == "--save-login") {
+        let mut lines = std::io::stdin().lines().map_while(Result::ok);
+        let mut line = || lines.next().unwrap_or_default();
+        let (server, user, password) = (line(), line(), line());
+        let saved = sync::normalize_server(&server)
+            .ok_or("not an https address".to_string())
+            .and_then(|server| sync::save_login(server, user.trim().to_string(), &password));
+        std::process::exit(match saved {
+            Ok(_) => 0,
+            Err(e) => {
+                eprintln!("--save-login: {e}");
+                1
+            }
+        });
+    }
     // Wayland matches the window to its launcher (and icon) by this id: sebtype-configurator.desktop.
     slint::BackendSelector::new().select()?;
     slint::set_xdg_app_id("sebtype-configurator")?;

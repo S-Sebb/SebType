@@ -37,7 +37,7 @@ command -v xrdb >/dev/null || { echo "preflight: xrdb missing"; exit 1; }
 command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
 
 # The nested sessions and setup-ime's test run under this PC's lock (devq), after a build under the
-# shared build lock at half the cores (Decisions #2, 2026-11-12).
+# shared build lock at half the cores, so builds never run side by side.
 if [[ -z ${HOLDING-} ]]; then
   devq -m 30 -n "sebtype configurator test build ($(git branch --show-current))" /tmp/agent-locks/sebtype/build.lock \
     env CARGO_BUILD_JOBS=8 bash -c 'cargo build --release && cargo test --release --no-run' > "$out/configurator-test-build.log" 2>&1 ||
