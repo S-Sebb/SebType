@@ -14,7 +14,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,6 +92,9 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -711,6 +718,47 @@ private fun EmojiCategoriesContainer(
             }
         }
     }
+}
+
+// Fires on press, then repeats while held, as a key does
+@Composable
+private fun Modifier.repeatablyClickableAction(repeatable: Boolean = true, onTrigger: (Boolean) -> Unit): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val currentOnTrigger by rememberUpdatedState(onTrigger)
+
+    LaunchedEffect(interactionSource, repeatable) {
+        var repeatJob: Job? = null
+
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> {
+                    currentOnTrigger(false)
+
+                    if (repeatable) {
+                        repeatJob?.cancel()
+                        repeatJob = launch {
+                            delay(670L)
+                            while (isActive) {
+                                currentOnTrigger(true)
+                                delay(50L)
+                            }
+                        }
+                    }
+                }
+                is PressInteraction.Release,
+                is PressInteraction.Cancel -> {
+                    repeatJob?.cancel()
+                    repeatJob = null
+                }
+            }
+        }
+    }
+
+    return this.clickable(
+        interactionSource = interactionSource,
+        indication = LocalIndication.current,
+        onClick = { }
+    )
 }
 
 @Composable

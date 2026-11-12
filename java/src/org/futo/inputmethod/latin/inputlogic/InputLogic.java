@@ -53,7 +53,7 @@ import org.futo.inputmethod.latin.settings.SettingsValues;
 import org.futo.inputmethod.latin.settings.SettingsValuesForSuggestion;
 import org.futo.inputmethod.latin.settings.SpacingAndPunctuations;
 import org.futo.inputmethod.latin.suggestions.SuggestionStripViewAccessor;
-import org.futo.inputmethod.latin.uix.actions.BugViewerKt;
+import org.futo.inputmethod.latin.uix.actions.ThrowIfDebugKt;
 import org.futo.inputmethod.latin.utils.InputTypeUtils;
 import org.futo.inputmethod.latin.utils.RecapitalizeStatus;
 import org.futo.inputmethod.latin.utils.StatsUtils;
@@ -989,7 +989,7 @@ public final class InputLogic {
                 // Handled in KeyboardState
                 break;
             default:
-                BugViewerKt.throwIfDebug(new RuntimeException("Unknown key code : " + event.mKeyCode));
+                ThrowIfDebugKt.throwIfDebug(new RuntimeException("Unknown key code : " + event.mKeyCode));
                 return;
         }
     }
@@ -2341,7 +2341,7 @@ public final class InputLogic {
             return mConnection.getCursorCapsMode(inputType, settingsValues.mSpacingAndPunctuations,
                     SpaceState.PHANTOM == mSpaceState);
         } catch(StringIndexOutOfBoundsException ex) {
-            BugViewerKt.throwIfDebug(ex);
+            ThrowIfDebugKt.throwIfDebug(ex);
             return Constants.TextUtils.CAP_MODE_OFF;
         }
     }

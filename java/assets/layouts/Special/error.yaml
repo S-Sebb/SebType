@@ -14,7 +14,7 @@ attributes:
     autoXScale: true
 rows:
   - letters:
-      - {type: base, spec: "View layout error details|!code/action_bugs"}
+      - {type: base, spec: "Layout error|!code/key_unspecified"}
     splittable: false
   - bottom:
       - {type: base, spec: "Switch language|!code/action_switch_language"}

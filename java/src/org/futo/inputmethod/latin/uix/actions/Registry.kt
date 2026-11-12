@@ -13,32 +13,26 @@ import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryAction
-import org.futo.inputmethod.latin.uix.actions.fonttyper.FontTyperAction
-import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
 
-// Note: indices must stay stable
+// Settings store the names; an action's index only gives its key code in the running keyboard
 val AllActionsMap = mapOf(
     "emoji" to EmojiAction,
     "settings" to SettingsAction,
     "paste" to PasteAction,
-    "text_edit" to TextEditAction,
     "undo" to UndoAction,
     "redo" to RedoAction,
     "switch_language" to SwitchLanguageAction,
     "clipboard_history" to ClipboardHistoryAction,
-    "mem_dbg" to MemoryDebugAction,
     "cut" to CutAction,
     "copy" to CopyAction,
     "select_all" to SelectAllAction,
     "more" to MoreActionsAction,
-    "bugs" to BugViewerAction,
     "keyboard_modes" to KeyboardModeAction,
-    "up" to ArrowUpAction,
-    "down" to ArrowDownAction,
-    "left" to ArrowLeftAction,
-    "right" to ArrowRightAction,
-    "font_typer" to FontTyperAction,
+    // SebType: Japanese layouts' cursor keys, not action-bar buttons. New names, so a saved "left" or
+    // "right" favourite is dropped like the removed actions (#182).
+    "cursor_left" to ArrowLeftAction,
+    "cursor_right" to ArrowRightAction,
     "incognito" to IncognitoAction, // SebType (#31)
 )
 
@@ -251,9 +245,9 @@ val DefaultActionSettings = mapOf(
     // SebType: the globe sits beside the space bar; emoji moves to the action bar
     ActionCategory.ActionKey to listOf(SwitchLanguageAction),
     ActionCategory.PinnedKey to listOf(), // SebType: voice input, FUTO's pinned key, is gone (#6)
-    ActionCategory.Favorites to listOfNotNull(if(IsDebug) MemoryDebugAction else null, EmojiAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, IncognitoAction, KeyboardModeAction),
+    ActionCategory.Favorites to listOf(EmojiAction, UndoAction, RedoAction, ClipboardHistoryAction, IncognitoAction, KeyboardModeAction),
     ActionCategory.More to listOf(), // Remaining actions get populated automatically by ensureWellFormed
-    ActionCategory.Disabled to listOf(MemoryDebugAction, BugViewerAction)
+    ActionCategory.Disabled to listOf()
 )
 
 val DefaultActionKey = DefaultActionSettings[ActionCategory.ActionKey]!!.firstOrNull()?.let {

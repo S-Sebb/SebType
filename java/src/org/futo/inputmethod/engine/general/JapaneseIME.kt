@@ -51,11 +51,9 @@ import org.futo.inputmethod.latin.uix.FileKind
 import org.futo.inputmethod.latin.uix.ResourceHelper
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.UserDictionaryIO
-import org.futo.inputmethod.latin.uix.actions.ArrowDownAction
 import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.actions.ArrowLeftAction
 import org.futo.inputmethod.latin.uix.actions.ArrowRightAction
-import org.futo.inputmethod.latin.uix.actions.ArrowUpAction
 import org.futo.inputmethod.latin.uix.actions.UndoAction
 import org.futo.inputmethod.latin.uix.actions.keyCode
 import org.futo.inputmethod.latin.uix.getImportedUserDictFilesForLocale
@@ -1155,8 +1153,6 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                         Constants.CODE_DELETE -> KeycodeConverter.SPECIALKEY_BACKSPACE
                         ArrowLeftAction.keyCode -> KeycodeConverter.SPECIALKEY_VIRTUAL_LEFT
                         ArrowRightAction.keyCode -> KeycodeConverter.SPECIALKEY_VIRTUAL_RIGHT
-                        ArrowUpAction.keyCode -> KeycodeConverter.SPECIALKEY_UP
-                        ArrowDownAction.keyCode -> KeycodeConverter.SPECIALKEY_DOWN
                         UndoAction.keyCode -> {
                             // TODO: Should probably update mozc-lib to pass key event here explicitly instead of doing it like this
                             executor.undoOrRewind(emptyList(), { command, _ ->

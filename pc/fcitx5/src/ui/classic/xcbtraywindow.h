@@ -60,7 +60,6 @@ private:
     Menu menu_;
     SimpleAction groupAction_;
     SimpleAction separatorActions_[2];
-    SimpleAction configureAction_;
     SimpleAction restartAction_;
     SimpleAction exitAction_;
 

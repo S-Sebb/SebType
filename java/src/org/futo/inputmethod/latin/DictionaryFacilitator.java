@@ -17,7 +17,6 @@
 package org.futo.inputmethod.latin;
 
 import android.content.Context;
-import android.util.LruCache;
 
 import org.futo.inputmethod.annotations.UsedForTesting;
 import org.futo.inputmethod.keyboard.Keyboard;
@@ -40,8 +39,7 @@ import javax.annotation.Nullable;
 /**
  * Interface that facilitates interaction with different kinds of dictionaries. Provides APIs to
  * instantiate and select the correct dictionaries (based on language or account), update entries
- * and fetch suggestions. Currently AndroidSpellCheckerService and LatinIME both use
- * DictionaryFacilitator as a client for interacting with dictionaries.
+ * and fetch suggestions.
  */
 public interface DictionaryFacilitator {
 
@@ -57,18 +55,6 @@ public interface DictionaryFacilitator {
             Dictionary.TYPE_CONTACTS,
             Dictionary.TYPE_USER_HISTORY,
             Dictionary.TYPE_USER};
-
-    /**
-     * The facilitator will put words into the cache whenever it decodes them.
-     * @param cache
-     */
-    void setValidSpellingWordReadCache(final LruCache<String, Boolean> cache);
-
-    /**
-     * The facilitator will get words from the cache whenever it needs to check their spelling.
-     * @param cache
-     */
-    void setValidSpellingWordWriteCache(final LruCache<String, Boolean> cache);
 
     /**
      * Returns whether this facilitator is exactly for this locale.
@@ -90,7 +76,6 @@ public interface DictionaryFacilitator {
 
     /**
      * Called every time {@link LatinIMELegacy} starts on a new text field.
-     * Dot not affect {@link AndroidSpellCheckerService}.
      *
      * WARNING: The service methods that call start/finish are very spammy.
      */
@@ -100,7 +85,6 @@ public interface DictionaryFacilitator {
      * Called every time the {@link LatinIMELegacy} finishes with the current text field.
      * May be followed by {@link #onStartInput} again in another text field,
      * or it may be done for a while.
-     * Dot not affect {@link AndroidSpellCheckerService}.
      *
      * WARNING: The service methods that call start/finish are very spammy.
      */
@@ -174,8 +158,6 @@ public interface DictionaryFacilitator {
             final NgramContext ngramContext, @Nonnull final Keyboard keyboard,
             final SettingsValuesForSuggestion settingsValuesForSuggestion, final int sessionId,
             final int inputStyle);
-
-    boolean isValidSpellingWord(final String word);
 
     boolean isValidSuggestionWord(final String word);
 

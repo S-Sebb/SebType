@@ -8,7 +8,7 @@ export struct JaWord { reading: string, word: string, pos: int }
 
 export enum Msg {
     none, applied, zh-redeployed, ja-next-time, theme-next-time, saved-zh, saved-ja, deleted-zh, deleted,
-    nothing-learned, forgotten, exported, imported, redeployed, not-a-backup, pinyin-letters-only,
+    nothing-learned, forgotten, exported, imported, not-a-backup, pinyin-letters-only,
     reading-hiragana-only, failed, sync-deleted, sync-delete-failed,
 }
 
@@ -69,7 +69,6 @@ export global State {
     callback forget(string);   // "zh" or "ja"
     callback export-settings();
     callback import-settings();
-    callback redeploy();
     callback sync-toggled(bool);
     callback save-login(string, string, string) -> bool;   // server, user, password; false: not an https address
     callback delete-on-server();

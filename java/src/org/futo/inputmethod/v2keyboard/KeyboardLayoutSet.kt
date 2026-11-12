@@ -6,7 +6,6 @@ import android.util.Log
 import android.view.inputmethod.EditorInfo
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import org.futo.inputmethod.keyboard.Keyboard
 import org.futo.inputmethod.keyboard.KeyboardId
 import org.futo.inputmethod.keyboard.internal.KeyboardLayoutElement
@@ -15,13 +14,8 @@ import org.futo.inputmethod.keyboard.internal.KeyboardLayoutPage
 import org.futo.inputmethod.keyboard.internal.KeyboardParams
 import org.futo.inputmethod.keyboard.internal.KeyboardTextsMultiSet
 import org.futo.inputmethod.latin.settings.LongPressKeySettings
-import org.futo.inputmethod.latin.uix.actions.BugInfo
-import org.futo.inputmethod.latin.uix.actions.BugViewerState
-import org.futo.inputmethod.latin.uix.settings.pages.CustomLayout
 import org.futo.inputmethod.latin.utils.InputTypeUtils
 import java.util.Locale
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Serializable
 enum class Script(val id: Int, val iso4letterCode: String) {
@@ -85,7 +79,6 @@ data class KeyboardLayoutSetV2Params(
     val numberRow: Boolean,
     val numberRowMode: Int,
     val useLocalNumbers: Boolean,
-    val arrowRow: Boolean,
     val alternativePeriodKey: Boolean,
     val gap: Float = 4.0f,
     val bottomActionKey: Int?,
@@ -105,61 +98,7 @@ class KeyboardLayoutSetV2 internal constructor(
     val forcedLocale = privateParams["org.futo.inputmethod.latin.ForceLocale"]?.let { Locale.forLanguageTag(it) }
     val forcedMultilingualTypingLanguages: List<Locale>? = forcedLocale?.let { emptyList() }
 
-
-    @OptIn(ExperimentalEncodingApi::class)
-    val forcedCustomLayout = privateParams["org.futo.inputmethod.latin.ForceCustomLayoutYamlB64"]?.let {
-        try {
-            Json.Default.decodeFromString(
-                CustomLayout.serializer(),
-                Base64.Default.decode(it.replace("_", "=")).decodeToString()
-            )
-        } catch (e: Exception) {
-            BugViewerState.pushBug(BugInfo(
-                name = "Custom layout",
-                details =
-                """
-Custom layout could not parsed.
-
-Cause: ${e.message}
-
-Stack trace: ${e.stackTrace.map { it.toString() }}
-
-Data: $it
-"""
-            ))
-            null
-        }
-    }
-
     val errorLayout = LayoutManager.getLayout(context, "error")
-
-    val customLayout = forcedCustomLayout?.let {
-        val x = try {
-            parseKeyboardYamlString(it.layoutYaml)
-        } catch(e: Exception) {
-            BugViewerState.pushBug(BugInfo(
-                name = "Custom layout",
-                details =
-                """
-Custom layout could not be loaded.
-
-Cause: ${e.message}
-
-Stack trace: ${e.stackTrace.map { it.toString() }}
-
-Layout: $it
-"""
-            ))
-            errorLayout
-        }
-
-        Log.d("KeyboardLayoutSet", "$x")
-        x
-    }
-
-    init {
-        Log.d("KeyboardLayoutSet", "$forcedCustomLayout, ${privateParams["org.futo.inputmethod.latin.ForceCustomLayoutYamlB64"]}, $privateParams, ${editorInfo.privateImeOptions}")
-    }
 
     // Necessary for Java API
     fun getScriptId(): Int = script.id
@@ -170,24 +109,12 @@ Layout: $it
         try {
             LayoutManager.getLayout(context, name)
         } catch (e: Exception) {
-            BugViewerState.pushBug(BugInfo(
-                name = if(layoutName.startsWith("custom")) { "your custom layout" } else { "layout $layoutName" },
-                details =
-                """
-Layout $name could not be loaded.
-
-Cause: ${e.message}
-
-Stack trace: ${e.stackTrace.map { it.toString() }}
-
-Layout: $layoutName
-"""
-            ))
+            Log.e("KeyboardLayoutSet", "Layout $name could not be loaded", e)
             errorLayout
         }
 
-    val layoutName = customLayout?.let { "custompreview" } ?: forcedLayout ?: params.keyboardLayoutSet
-    val mainLayout = customLayout ?: safeGetLayout(layoutName)
+    val layoutName = forcedLayout ?: params.keyboardLayoutSet
+    val mainLayout = safeGetLayout(layoutName)
 
     val symbolsLayout = safeGetLayout(mainLayout.layoutSetOverrides.symbols)
     val symbolsShiftedLayout = safeGetLayout(mainLayout.layoutSetOverrides.symbolsShifted)
@@ -259,8 +186,7 @@ Layout: $layoutName
             }
         } ?: run {
             // If all else fails, show the error layout
-            BugViewerState.pushBug(BugInfo("KeyboardLayoutSet",
-                "Keyboard $layoutName does not have element $element. Available elements: ${elements.keys}"))
+            Log.e("KeyboardLayoutSet", "Keyboard $layoutName does not have element $element. Available elements: ${elements.keys}")
             errorLayout
         }
     }
@@ -303,7 +229,6 @@ Layout: $layoutName
             isNumberRowActive,
             params.numberRowMode,
             params.useLocalNumbers,
-            params.arrowRow,
             params.alternativePeriodKey,
             params.longPressKeySettings ?: LongPressKeySettings.load(context),
             element
@@ -333,20 +258,6 @@ Layout: $layoutName
             Log.e("KeyboardLayoutSet", "Failed to load element $element for keyboard layout set $layoutName. Message: ${e.message}")
             Log.e("KeyboardLayoutSet", "LayoutSet params: $params, keyboardId: $keyboardId")
             e.printStackTrace()
-
-            BugViewerState.pushBug(BugInfo(
-                name = "KeyboardLayoutSet",
-                details =
-"""
-Element $element for layout $layoutName could not be loaded
-
-Cause: ${e.message}
-
-Params: $params
-
-Stack trace: ${e.stackTrace.map { it.toString() }}
-"""
-            ))
 
             return errorLayout.build(context, keyboardParams, layoutParams)
         }

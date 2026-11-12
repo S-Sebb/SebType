@@ -29,7 +29,6 @@ enum BuiltInIndex {
     BII_InputMethodGroup = 1,
     BII_Separator1,
     BII_Separator2,
-    BII_Configure,
     BII_Restart,
     BII_Exit,
     BII_NormalEnd = 99,
@@ -74,9 +73,6 @@ void DBusMenu::handleEvent(int32_t id) {
     auto &imManager = parent_->instance()->inputMethodManager();
     if (id <= BII_NormalEnd) {
         switch (id) {
-        case BII_Configure:
-            parent_->instance()->configure();
-            break;
         case BII_Restart:
             parent_->instance()->restart();
             break;
@@ -150,9 +146,8 @@ void DBusMenu::fillLayoutItem(
      * root (0,0) -> Group -> not visible if only one group
      *            -> Input Method
      *            -> configure current.
-     *            -> configure (0,2)
-     *            -> restart (0,3)
-     *            -> exit (0,4)
+     *            -> restart
+     *            -> exit
      */
     if (depth == 0) {
         return;
@@ -192,7 +187,7 @@ void DBusMenu::fillLayoutItem(
         if (parent_->instance()->canRestart()) {
             appendSubItem(subLayoutItems, BII_Restart, depth, propertyNames);
         }
-        appendSubItem(subLayoutItems, BII_Configure, depth, propertyNames);
+        // SebType: no Input Method Settings item; SebType Configurator holds the settings (#182)
         if (parent_->instance()->canRestart() &&
             getDesktopType() != DesktopType::DEEPIN &&
             getDesktopType() != DesktopType::UKUI) {
@@ -247,15 +242,6 @@ void DBusMenu::fillLayoutProperties(
         case BII_Separator2:
             appendProperty(properties, propertyNames, "type",
                            dbus::Variant("separator"));
-            break;
-        case BII_Configure:
-            /* this icon sucks on KDE, why configure doesn't have "configure" */
-            appendProperty(properties, propertyNames, "label",
-                           dbus::Variant(_("Input Method Settings")));
-            if (isKDE()) {
-                properties.emplace_back("icon-name",
-                                        dbus::Variant("configure"));
-            }
             break;
         case BII_Restart:
             appendProperty(properties, propertyNames, "label",

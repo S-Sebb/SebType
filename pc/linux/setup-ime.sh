@@ -3,8 +3,9 @@
 # on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
-# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc, --undo-rime and
-# --undo-librime put Fedora's fcitx5-mozc, fcitx5-rime and librime back in place of SebType's builds.
+# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc, --undo-rime,
+# --undo-librime and --undo-fcitx5 put Fedora's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 back in
+# place of SebType's builds.
 # --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
@@ -12,18 +13,19 @@
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0 undo_rime=0 undo_librime=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
+dry=0 undo_icons=0 undo_mozc=0 undo_rime=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
   --undo-mozc) undo_mozc=1 ;;
   --undo-rime) undo_rime=1 ;;
   --undo-librime) undo_librime=1 ;;
+  --undo-fcitx5) undo_fcitx5=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
   --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-rime | --undo-librime | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-rime | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -136,7 +138,7 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101): SebType's source in pc/, packaged
+# SebType's fcitx5-mozc (#66), fcitx5-rime (#117), librime (#101) and Fcitx5 (#182): SebType's source in pc/, packaged
 # as Fedora's packages (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
 # shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
 source "$here/mozc/versions.sh"
@@ -155,15 +157,18 @@ undo_build() { # package [packages built with it...]
 }
 # librime's packages here: librime and its plugins, which must come from the same build
 librime_installed() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
+# Fcitx5's packages here: Fcitx5 and its subpackages, which must come from the same build
+fcitx5_installed() { local p; for p in "${FCITX5_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
 ((undo_mozc)) && undo_build fcitx5-mozc
 ((undo_rime)) && undo_build fcitx5-rime
 ((undo_librime)) && { mapfile -t librime_pkgs < <(librime_installed); undo_build "${librime_pkgs[@]}"; }
+((undo_fcitx5)) && { mapfile -t fcitx5_pkgs < <(fcitx5_installed); undo_build "${fcitx5_pkgs[@]}"; }
 
 # 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-octagram is the Rime plugin
 # that reads the Chinese data's grammar file, as the phone and Windows do (#127); fcitx5-mozc is the
 # Japanese engine.
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
-  fcitx5-rime librime-octagram fcitx5-mozc kcm-fcitx5)
+  fcitx5-rime librime-octagram fcitx5-mozc)
 missing=()
 for p in "${pkgs[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if ((${#missing[@]})); then
@@ -182,8 +187,14 @@ if ((${#missing[@]})); then
     else warn "packages not installed: ${missing[*]}"; fi
   fi
 fi
+# Fcitx5's own settings page in System Settings is not SebType's (Decisions #2, #182): the Configurator is.
+if rpm -q kcm-fcitx5 >/dev/null 2>&1 && change "remove kcm-fcitx5, Fcitx5's own page in System Settings (asks before using sudo)"; then
+  read -rp "Remove kcm-fcitx5 with 'sudo dnf remove'? [y/N] " answer || answer=
+  if [[ $answer == [yY]* ]]; then sudo dnf remove -y kcm-fcitx5
+  else warn "kcm-fcitx5 stays installed"; fi
+fi
 
-# 1b. SebType's fcitx5-mozc, fcitx5-rime and librime in place of Fedora's, built from SebType's source by
+# 1b. SebType's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 in place of Fedora's, built from SebType's source by
 # mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or five). Each
 # replaces one Fedora release; Fedora's update to another one warns until <dir>/versions.sh follows it.
 # own_build <package> <Fedora's version-release> <SebType's version-release> <build command> <what it adds>
@@ -218,6 +229,12 @@ librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
 own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/rime/build.sh librime" \
   "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
+# Fcitx5's tray menu has no Input Method Settings item: the Configurator holds SebType's settings
+# (pc/fcitx5, Decisions #2, #182). Its subpackages are rebuilt with it.
+fcitx5_rpms=()
+while read -r p; do fcitx5_rpms+=("$(fcitx5_rpm "$p")"); done < <(fcitx5_installed)
+own_build fcitx5 "$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE" "$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE" "$here/rime/build.sh fcitx5" \
+  "a tray menu without Input Method Settings" "the tray menu keeps Input Method Settings, Fcitx5's own settings" "${fcitx5_rpms[@]}"
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
@@ -341,6 +358,30 @@ if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
   mkdir -p "${fcitx_conf%/*}"; printf '%s\n' "$want" > "$fcitx_conf"
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true
 fi
+
+# 8b. Fcitx5's own add-on hotkeys are off (Decisions #2, #182): clipboard history (Ctrl+;), Unicode input
+# (Ctrl+Alt+Shift+U, Ctrl+Shift+U) and quick phrase (Super+`, Super+;). The add-ons stay loaded, as
+# fcitx5-mozc reads the clipboard through one; only their key lists are emptied (Key= before any section).
+addon_keys_off() { # file keys...: prints the add-on's config with those key lists empty, keeping the rest
+  local f=$1; shift
+  awk -v keys="$*" '
+    BEGIN { n = split(keys, k, " "); for (i = 1; i <= n; i++) { own[k[i]] = 1; own["[" k[i] "]"] = 1; print k[i] "=" } }
+    /^\[/ { sec = $0; skip = (sec in own) }
+    skip || (sec == "" && (substr($0, 1, index($0, "=") - 1) in own)) { next }
+    { print }' "$f"
+}
+for spec in "clipboard TriggerKey" "unicode TriggerKey DirectUnicodeMode" "quickphrase TriggerKey"; do
+  read -r addon keys <<<"$spec"
+  f=$config/fcitx5/conf/$addon.conf src=$f; [[ -f $src ]] || src=/dev/null
+  # shellcheck disable=SC2086  # word-split: one argument per key
+  want=$(addon_keys_off "$src" $keys)
+  if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
+    change "turn off Fcitx5's $addon hotkeys ($keys) in $f (backup in $backup)"; then
+    [[ -f $f ]] && save "$f"
+    mkdir -p "${f%/*}"; printf '%s\n' "$want" > "$f"
+    busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadAddonConfig s "$addon" 2>/dev/null || true
+  fi
+done
 
 # 9. Japanese: a Shift tap toggles あ and direct English, and Alt+` あ and ア (Decisions #2, menu hotkeys),
 # in Mozc's own keymap. fcitx5-mozc sends Mozc a bare Shift only when it is released with no other key

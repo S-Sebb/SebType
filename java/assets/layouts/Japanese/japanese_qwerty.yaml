@@ -14,8 +14,8 @@ rows:
       - $action
       - $space
       - "。|."
-      - "!icon/action_left|!code/action_left"
-      - "!icon/action_right|!code/action_right"
+      - "!icon/action_cursor_left|!code/action_cursor_left"
+      - "!icon/action_cursor_right|!code/action_cursor_right"
       - $enter
 subKeyboards:
   # ABC
@@ -35,6 +35,6 @@ subKeyboards:
           - ","
           - $space
           - "."
-          - "!icon/action_left|!code/action_left"
-          - "!icon/action_right|!code/action_right"
+          - "!icon/action_cursor_left|!code/action_cursor_left"
+          - "!icon/action_cursor_right|!code/action_cursor_right"
           - $enter

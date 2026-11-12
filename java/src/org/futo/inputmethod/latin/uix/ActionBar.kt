@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.drawable.Drawable
 import android.os.Build
-import android.util.Log
 import android.view.View
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -52,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,7 +59,6 @@ import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,7 +133,6 @@ import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.actions.MoreActionsAction
 import org.futo.inputmethod.latin.uix.actions.PinnedActions
 import org.futo.inputmethod.latin.uix.actions.toActionList
-import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import org.futo.inputmethod.latin.uix.theme.LocalCompatEmojiFamily
 import org.futo.inputmethod.latin.uix.theme.LocalCompatEmojiTypeface
@@ -188,11 +186,6 @@ val ActionBarScrollOffsetSetting = SettingsKey(
 
 val ActionBarExpanded = SettingsKey(
     booleanPreferencesKey("actionExpanded"),
-    false
-)
-
-val OldStyleActionsBar = SettingsKey(
-    booleanPreferencesKey("oldActionBar"),
     false
 )
 
@@ -938,9 +931,7 @@ fun ActionBar(
     val view = LocalView.current
     val context = LocalContext.current
 
-    val oldActionBar = useDataStore(OldStyleActionsBar)
-
-    val useDoubleHeight = isActionsExpanded && oldActionBar.value == false
+    val useDoubleHeight = isActionsExpanded
 
     Column(Modifier
         .height(
@@ -956,7 +947,7 @@ fun ActionBar(
             testTag = "ActionBar"
             testTagsAsResourceId = true
         }) {
-        if(isActionsExpanded && !oldActionBar.value) {
+        if(isActionsExpanded) {
             ActionSep()
 
             Surface(
@@ -989,53 +980,45 @@ fun ActionBar(
                     )
                 }
 
-                if(oldActionBar.value && isActionsExpanded) {
-                    Box(modifier = Modifier
-                        .weight(1.0f)
-                        .fillMaxHeight()) {
-                        ActionItems(onActionActivated, onActionAltActivated)
-                    }
+                if (importantNotice != null) {
+                    ImportantNoticeView(importantNotice)
                 } else {
-                    if (importantNotice != null) {
-                        ImportantNoticeView(importantNotice)
+                    if(loading) {
+                        Spacer(Modifier.weight(1.0f))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(32.dp).align(CenterVertically),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.weight(1.0f))
+                    } else if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                        && inlineSuggestions.isNotEmpty()
+                    ) {
+                        InlineSuggestions(inlineSuggestions)
+                    } else if(quickClipState != null) {
+                        QuickClipView(quickClipState, onQuickClipDismiss)
+                    } else if (words != null) {
+                        SuggestionItems(
+                            words,
+                            onClick = {
+                                suggestionStripListener.pickSuggestionManually(
+                                    words.getInfo(it)
+                                )
+                                keyboardManagerForAction?.performHapticAndAudioFeedback(
+                                    Constants.CODE_TAB,
+                                    view
+                                )
+                            },
+                            onLongClick = {
+                                suggestionStripListener.requestForgetWord(
+                                    words.getInfo(it)
+                                )
+                            })
                     } else {
-                        if(loading) {
-                            Spacer(Modifier.weight(1.0f))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(32.dp).align(CenterVertically),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.weight(1.0f))
-                        } else if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                            && inlineSuggestions.isNotEmpty()
-                        ) {
-                            InlineSuggestions(inlineSuggestions)
-                        } else if(quickClipState != null) {
-                            QuickClipView(quickClipState, onQuickClipDismiss)
-                        } else if (words != null) {
-                            SuggestionItems(
-                                words,
-                                onClick = {
-                                    suggestionStripListener.pickSuggestionManually(
-                                        words.getInfo(it)
-                                    )
-                                    keyboardManagerForAction?.performHapticAndAudioFeedback(
-                                        Constants.CODE_TAB,
-                                        view
-                                    )
-                                },
-                                onLongClick = {
-                                    suggestionStripListener.requestForgetWord(
-                                        words.getInfo(it)
-                                    )
-                                })
-                        } else {
-                            Spacer(modifier = Modifier.weight(1.0f))
-                        }
+                        Spacer(modifier = Modifier.weight(1.0f))
+                    }
 
-                        if(inlineSuggestions.isEmpty()) {
-                            PinnedActionItems(onActionActivated, onActionAltActivated)
-                        }
+                    if(inlineSuggestions.isEmpty()) {
+                        PinnedActionItems(onActionActivated, onActionAltActivated)
                     }
                 }
             }

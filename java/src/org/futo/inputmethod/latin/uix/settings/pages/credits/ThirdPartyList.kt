@@ -63,20 +63,6 @@ val ThirdPartyList: List<ThirdPartyItem> = listOf(
         License.OFL1_1
     ),
     TP(
-        "Noto Mono",
-        "Noto Mono",
-        "https://fonts.google.com/noto",
-        "Copyright (c) 2022 The Noto Project Authors",
-        License.OFL1_1
-    ),
-    TP(
-        "Anton Font",
-        "Anton Font",
-        "https://fonts.google.com/specimen/Anton",
-        "Copyright (c) 2020 The Anton Project Authors",
-        License.OFL1_1
-    ),
-    TP(
         "mozc dictionaries",
         "Japanese dictionaries include data from IPAdic",
         "https://github.com/google/mozc",

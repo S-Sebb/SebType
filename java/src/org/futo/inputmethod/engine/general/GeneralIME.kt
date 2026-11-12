@@ -4,7 +4,6 @@ import android.os.Build
 import android.os.Looper
 import android.util.Log
 import android.view.HapticFeedbackConstants
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -17,12 +16,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.futo.inputmethod.annotations.UsedForTesting
-import org.futo.inputmethod.engine.ExpandableSuggestionBarConfiguration
 import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEHelper
 import org.futo.inputmethod.engine.IMEInterface
 import org.futo.inputmethod.engine.IMEMessage
-import org.futo.inputmethod.engine.NonExpandableSuggestionBar
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.event.InputTransaction
 import org.futo.inputmethod.keyboard.KeyboardSwitcher
@@ -42,9 +39,7 @@ import org.futo.inputmethod.latin.common.InputPointers
 import org.futo.inputmethod.latin.inputlogic.InputLogic
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.suggestions.SuggestionStripViewAccessor
-import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.actions.throwIfDebug
-import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.utils.AsyncResultHolder
 import org.futo.inputmethod.latin.xlm.LanguageModelFacilitator
@@ -73,11 +68,6 @@ interface OnGetSuggestedWordsCallbackWithInputStyle {
     fun onGetSuggestedWords(suggestedWords: SuggestedWords, inputStyle: Int, sequenceNumber: Int)
 }
 
-val UseExpandableSuggestionsForGeneralIME = SettingsKey(
-    booleanPreferencesKey("use_expandable_suggestions_for_generalime"),
-    false
-)
-
 /**
  * General IME implementation that works for Latin-based languages and some
  * more: Cyrillic, Hangul (with combiner), etc.
@@ -102,9 +92,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         }
 
     private val dictionaryFacilitator: DictionaryFacilitator =
-        DictionaryFacilitatorProvider.getDictionaryFacilitator(
-            false /* isNeededForSpellChecking */
-        )
+        DictionaryFacilitatorProvider.getDictionaryFacilitator()
 
     private val inputLogic: InputLogic = InputLogic(
         helper, this, dictionaryFacilitator,
@@ -228,15 +216,7 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
         helper.lifecycleScope.launch { languageModelFacilitator.destroyModel() }
     }
 
-    private val expandableExpandableCfg = ExpandableSuggestionBarConfiguration(true, false)
-    private var expandableCfg: ExpandableSuggestionBarConfiguration = NonExpandableSuggestionBar
     override fun onStartInput() {
-        expandableCfg = if(helper.context.getSetting(UseExpandableSuggestionsForGeneralIME)) {
-            expandableExpandableCfg
-        } else {
-            NonExpandableSuggestionBar
-        }
-
         resetDictionaryFacilitator()
         setNeutralSuggestionStrip()
         dictionaryFacilitator.onStartInput()
@@ -765,16 +745,16 @@ class GeneralIME(val helper: IMEHelper) : IMEInterface, WordLearner, SuggestionS
 
     override fun setNeutralSuggestionStrip() {
         inputLogic.setSuggestedWords(SuggestedWords.getEmptyInstance())
-        helper.setNeutralSuggestionStrip(expandableCfg)
+        helper.setNeutralSuggestionStrip()
     }
 
     override fun showSuggestionStrip(words: SuggestedWords?) {
         inputLogic.setSuggestedWords(words)
 
         if(settings.current.isSuggestionsEnabledPerUserSettings) {
-            helper.showSuggestionStrip(words, expandableCfg)
+            helper.showSuggestionStrip(words)
         } else {
-            helper.setNeutralSuggestionStrip(expandableCfg)
+            helper.setNeutralSuggestionStrip()
         }
     }
 

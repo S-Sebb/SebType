@@ -23,7 +23,6 @@ import org.futo.inputmethod.latin.uix.Action;
 import org.futo.inputmethod.latin.uix.actions.ActionRegistry;
 import org.futo.inputmethod.latin.uix.actions.EmojiActionKt;
 import org.futo.inputmethod.latin.uix.actions.SwitchLanguageActionKt;
-import org.futo.inputmethod.latin.uix.actions.TextEditActionKt;
 import org.futo.inputmethod.latin.uix.actions.UndoRedoActionsKt;
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryActionKt;
 
@@ -152,7 +151,6 @@ public abstract class AbstractLayoutBase {
     protected static final ExpectedKey TABLET_SYMBOLS_SHIFT_KEY = key("~ [ <", Constants.CODE_SHIFT);
 
     protected static final ExpectedKey SWITCH_LANGUAGE_KEY = actionKey(SwitchLanguageActionKt.getSwitchLanguageAction());
-    protected static final ExpectedKey TEXT_EDIT_KEY = actionKey(TextEditActionKt.getTextEditAction());
     protected static final ExpectedKey CLIPBOARD_HISTORY_KEY = actionKey(ClipboardHistoryActionKt.getClipboardHistoryAction());
     protected static final ExpectedKey EMOJI_KEY = actionKey(EmojiActionKt.getEmojiAction());
     protected static final ExpectedKey UNDO_KEY = actionKey(UndoRedoActionsKt.getUndoAction());

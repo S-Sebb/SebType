@@ -36,7 +36,6 @@ import java.util.Locale;
 @SmallTest
 public class KeyboardLayoutSetNavigateMoreKeysTest extends KeyboardLayoutSetTestsBase {
     private ExpectedMoreKey mSwitchLanguageMoreKey = new ExpectedMoreKey("action_switch_language");
-    private ExpectedMoreKey mTextEditMoreKey = new ExpectedMoreKey("action_text_edit");
     private ExpectedMoreKey mClipboardHistoryMoreKey = new ExpectedMoreKey("action_clipboard_history");
     private ExpectedMoreKey mEmojiMoreKey = new ExpectedMoreKey("action_emoji");
     private ExpectedMoreKey mExpectedNavigateNextMoreKey = new ExpectedMoreKey(KeyboardIconsSet.NAME_NEXT_KEY);
@@ -115,7 +114,6 @@ public class KeyboardLayoutSetNavigateMoreKeysTest extends KeyboardLayoutSetTest
 
         ExpectedMoreKey[] normal = new ExpectedMoreKey[] {
                 mSwitchLanguageMoreKey,
-                mTextEditMoreKey,
                 mClipboardHistoryMoreKey,
                 mEmojiMoreKey,
                 mUndoMoreKey,
@@ -124,7 +122,6 @@ public class KeyboardLayoutSetNavigateMoreKeysTest extends KeyboardLayoutSetTest
 
         ExpectedMoreKey[] withNav = new ExpectedMoreKey[] {
                 mSwitchLanguageMoreKey,
-                mTextEditMoreKey,
                 mClipboardHistoryMoreKey,
                 mEmojiMoreKey,
                 mExpectedNavigatePreviousMoreKey,

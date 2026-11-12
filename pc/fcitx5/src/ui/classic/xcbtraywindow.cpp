@@ -52,17 +52,14 @@ XCBTrayWindow::XCBTrayWindow(XCBUI *ui) : XCBWindow(ui, 48, 48) {
     }
     groupAction_.setShortText(_("Group"));
     groupAction_.setMenu(&groupMenu_);
-    configureAction_.setShortText(_("Input Method Settings"));
     restartAction_.setShortText(_("Restart"));
     exitAction_.setShortText(_("Exit"));
     menu_.addAction(&groupAction_);
     menu_.addAction(&separatorActions_[0]);
-    menu_.addAction(&configureAction_);
+    // SebType: no Input Method Settings item; SebType Configurator holds the settings (#182)
     menu_.addAction(&restartAction_);
     menu_.addAction(&exitAction_);
 
-    configureAction_.connect<SimpleAction::Activated>(
-        [this](InputContext *) { ui_->parent()->instance()->configure(); });
     restartAction_.connect<SimpleAction::Activated>(
         [this](InputContext *) { ui_->parent()->instance()->restart(); });
     exitAction_.connect<SimpleAction::Activated>(
@@ -70,7 +67,6 @@ XCBTrayWindow::XCBTrayWindow(XCBUI *ui) : XCBWindow(ui, 48, 48) {
 
     auto &uiManager = ui_->parent()->instance()->userInterfaceManager();
     uiManager.registerAction(&groupAction_);
-    uiManager.registerAction(&configureAction_);
     uiManager.registerAction(&restartAction_);
     uiManager.registerAction(&exitAction_);
 
@@ -465,7 +461,7 @@ void XCBTrayWindow::updateMenu() {
     for (auto *action : menu_.actions()) {
         if (action == &separatorActions_[0]) {
             start = true;
-        } else if (action == &configureAction_) {
+        } else if (action == &restartAction_) {
             break;
         } else if (start) {
             menu_.removeAction(action);
@@ -480,12 +476,12 @@ void XCBTrayWindow::updateMenu() {
                 // Obviously it's not registered with ui manager.
                 continue;
             }
-            menu_.insertAction(&configureAction_, action);
+            menu_.insertAction(&restartAction_, action);
             hasAction = true;
         }
     }
     if (hasAction) {
-        menu_.insertAction(&configureAction_, &separatorActions_[1]);
+        menu_.insertAction(&restartAction_, &separatorActions_[1]);
     }
 }
 

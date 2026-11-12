@@ -25,6 +25,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 | SebType's Mozc (`pc/mozc/`: Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
 | SebType's Weasel (`pc/weasel/`: Weasel with SebType's changes) | GPL-3.0, like Weasel |
 | SebType's fcitx5-rime (`pc/fcitx5-rime/`: fcitx5-rime with SebType's changes) | LGPL-2.1-or-later, like fcitx5-rime |
+| SebType's Fcitx5 (`pc/fcitx5/`: Fcitx5 with SebType's changes) | LGPL-2.1-or-later, like Fcitx5 |
 | SebType's librime (`pc/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
 | Fedora's RPM specs with SebType's changes (`pc/linux/mozc/*.spec`, `pc/linux/rime/*.spec`) | MIT, like Fedora's specs |
 | SebType's patches to RimeJni (`rime-android/patches/`); RimeJni itself | MIT, like RimeJni |

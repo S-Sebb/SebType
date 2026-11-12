@@ -8,36 +8,8 @@ import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.TextAttribute
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.actions.throwIfDebug
-import org.futo.inputmethod.latin.uix.getSetting
 import kotlin.text.iterator
-
-val TextInputAlternativeIC = SettingsKey(
-    key = booleanPreferencesKey("text_input_experimental_ic_fix"),
-    default = true
-)
-
-val TextInputAlternativeICComposing = SettingsKey(
-    key = booleanPreferencesKey("text_input_experimental_ic_fix_use_composing"),
-    default = false
-)
-
-val TextInputBufferedIC = SettingsKey(
-    key = booleanPreferencesKey("text_input_buffered_ic"),
-    default = true
-)
-
-val VoiceInputAlternativeIC = SettingsKey(
-    booleanPreferencesKey("voice_input_experimental_ic_fix11"),
-    true
-)
-
-val VoiceInputAlternativeICComposing = SettingsKey(
-    booleanPreferencesKey("voice_input_experimental_ic_fix_composing"),
-    false
-)
 
 /*
  * This is a wrapper around InputConnection that works around wonky app behavior by avoiding use of
@@ -65,12 +37,11 @@ class InputConnectionInternalComposingWrapper(
     companion object {
         @JvmStatic
         fun createWithSettingsFromContext(context: Context, target: InputConnection): InputConnection {
-            if(context.getSetting(TextInputAlternativeIC) == false) return target
             if(!SupportsNonComposing) return target
 
             return InputConnectionInternalComposingWrapper(
-                context.getSetting(TextInputAlternativeICComposing),
-                context.getSetting(TextInputBufferedIC),
+                useSetComposingRegion = false,
+                useBufferingWrapper = true,
                 target
             )
         }

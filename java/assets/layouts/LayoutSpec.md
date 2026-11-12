@@ -1155,38 +1155,29 @@ Actions:
 * `emoji`
 * `settings`
 * `paste`
-* `text_edit`
-* `themes`
 * `undo`
 * `redo`
-* `voice_input`
-* `system_voice_input`
 * `switch_language`
 * `clipboard_history`
-* `mem_dbg`
 * `cut`
 * `copy`
 * `select_all`
 * `more`
-* `bugs`
 * `keyboard_modes`
-* `up`
-* `down`
-* `left`
-* `right`
+* `cursor_left`
+* `cursor_right`
+* `incognito`
 
 
 Combine icon and code with |, e.g. `!icon/delete_key|!code/key_delete` or `!icon/action_emoji|!code/action_emoji`.
 
 Example usage:
 ```yaml
-name: Arrow keys with a and b
+name: Cursor keys with a and b
 rows:
   - letters:
-    - "!icon/action_up|!code/action_up"
-    - "!icon/action_down|!code/action_down"
-    - "!icon/action_left|!code/action_left"
-    - "!icon/action_right|!code/action_right"
+    - "!icon/action_cursor_left|!code/action_cursor_left"
+    - "!icon/action_cursor_right|!code/action_cursor_right"
   - letters:
     - "a"
     - "b"

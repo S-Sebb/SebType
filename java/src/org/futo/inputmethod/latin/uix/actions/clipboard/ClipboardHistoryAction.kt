@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.collection.LruCache
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -97,11 +98,7 @@ import org.futo.inputmethod.latin.uix.PersistentActionState
 import org.futo.inputmethod.latin.uix.PersistentStateInitialization
 import org.futo.inputmethod.latin.uix.QuickClip
 import org.futo.inputmethod.latin.uix.SettingsKey
-import org.futo.inputmethod.latin.uix.actions.BugInfo
-import org.futo.inputmethod.latin.uix.actions.BugViewerAction
-import org.futo.inputmethod.latin.uix.actions.BugViewerState
 import org.futo.inputmethod.latin.uix.actions.PasteAction
-import org.futo.inputmethod.latin.uix.actions.fonttyper.SuperheroRenderer
 import org.futo.inputmethod.latin.uix.actions.throwIfDebug
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.getSettingBlocking
@@ -409,26 +406,8 @@ fun ClipboardEntryViewPreview() {
             )
         }
 
-        item {
-            ClipboardEntryView(
-                modifier = Modifier,
-                clipboardEntry = ClipboardEntry(0L, false, null, null, listOf("image/png"), "[test]", 0.0f),
-                onPin = {}, onPaste = {}, onRemove = {},
-                bitmapOverride = SuperheroRenderer.render(LocalContext.current, "my clipboard image")?.asImageBitmap()
-            )
-        }
-
         items(sampleText.size / 2) {
             ClipboardEntryView(modifier = Modifier, clipboardEntry = ClipboardEntry(0L, it % 2 == 0, sampleText[it], null, listOf()), onPin = {}, onPaste = {}, onRemove = {})
-        }
-
-        item {
-            ClipboardEntryView(
-                modifier = Modifier,
-                clipboardEntry = ClipboardEntry(0L, false, null, null, listOf("image/png"), "[test]", 0.0f),
-                onPin = {}, onPaste = {}, onRemove = {},
-                bitmapOverride = SuperheroRenderer.render(LocalContext.current, "hey")?.asImageBitmap()
-            )
         }
 
         items(sampleText.size / 2) {
@@ -851,26 +830,7 @@ class ClipboardHistoryManager(val context: Context, val coroutineScope: Lifecycl
         decodeData(AtomicFile(file).readFully())
 
     private fun reportError(during: String, e: Exception) {
-        BugViewerState.pushBug(BugInfo("ClipboardHistoryManager", """
-Clipboard IO error during $during
-
-Cause: ${e.message}
-
-Stack trace: ${e.stackTrace.map { it.toString() }}
-
---- main data start --- snip ---
-${if(clipboardFile.exists()) { clipboardFile.readText() } else { "File does not exist" }}
---- main data end --- snip ---
-
-
---- bak data start --- snip ---
-${if(clipboardFileBak.exists()) { clipboardFileBak.readText() } else { "File does not exist" }}
---- bak data end --- snip ---
-
---- swap data start --- snip ---
-${if(clipboardFileSwap.exists()) { clipboardFileSwap.readText() } else { "File does not exist" }}
---- swap data end --- snip ---
-"""))
+        Log.e("ClipboardHistoryManager", "Clipboard IO error during $during", e)
     }
 
     private suspend fun loadClipboard() = withContext(ClipboardIOContext) {
@@ -1126,11 +1086,6 @@ val ClipboardHistoryAction = Action(
                                     R.string.action_clipboard_manager_error_general_text,
                                     clipboardHistoryManager.clipboardIOFailureReason
                                 ))
-                            Button(onClick = {
-                                manager.activateAction(BugViewerAction)
-                            }, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.action_clipboard_manager_inspect_error_via_bugs_action))
-                            }
                             Button(onClick = {
                                 clipboardHistoryManager.saveClipboard()
                             }, modifier = Modifier.fillMaxWidth()) {

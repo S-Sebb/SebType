@@ -657,16 +657,6 @@ fn main() -> Result<(), slint::PlatformError> {
             }));
         }
     });
-    s.on_redeploy({
-        let run = run.clone();
-        move || {
-            run(Box::new(|| {
-                platform::redeploy_rime().map_err(err)?;
-                platform::restart_mozc();
-                Ok(say(Msg::Redeployed))
-            }))
-        }
-    });
     s.on_sync_toggled({
         let weak = app.as_weak();
         move |on| {

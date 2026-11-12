@@ -35,7 +35,6 @@ import org.futo.inputmethod.latin.uix.theme.KeyBackground
 import org.futo.inputmethod.v2keyboard.Direction
 import org.futo.inputmethod.v2keyboard.KeyVisualStyle
 
-val HiddenKeysSetting = SettingsKey(booleanPreferencesKey("hiddenKeys1"), false)
 val KeyHintsSetting   = SettingsKey(booleanPreferencesKey("keyHints"), false)
 
 fun<T> Preferences.get(key: SettingsKey<T>): T {
@@ -275,7 +274,6 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         )
     }
 
-    val expertMode: Boolean
     val showKeyHints: Boolean
 
     private fun addIcon(iconName: String, drawableIntResId: Int, tint: Int) {
@@ -298,7 +296,6 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         themeTypeface = advanced.font
         popupTypeface = advanced.popupFont
 
-        expertMode = context.getSettingBlocking(HiddenKeysSetting)
         keyBorders = advanced.keyBorders
         showKeyHints = context.getSettingBlocking(KeyHintsSetting)
 
@@ -321,7 +318,6 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         val onSecondary = colorScheme.onSecondary.toArgb()
         val onBackground = colorScheme.onBackground.toArgb()
         val onBackgroundHalf = colorScheme.onBackground.copy(alpha = 0.5f).toArgb()
-        val onBackgroundThird = colorScheme.onBackground.copy(alpha = 0.33f).toArgb()
 
         val transparent = Color.Transparent.toArgb()
         keyboardColor = colorScheme.keyboardSurface.toArgb()
@@ -352,10 +348,9 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         }
 
         val onKeyColorHalf = Color(onKeyColor).copy(alpha = 0.5f).toArgb()
-        val onKeyColorThird = Color(onKeyColor).copy(alpha = 0.33f).toArgb()
 
-        val enterKeyBackground = if(expertMode) { functionalKeyColor } else { primary }
-        val enterKeyForeground = if(expertMode) { onBackgroundThird } else { onPrimary }
+        val enterKeyBackground = primary
+        val enterKeyForeground = onPrimary
 
         colors[R.styleable.Keyboard_Key_keyTextColor] = onKeyColor
         colors[R.styleable.Keyboard_Key_keyTextInactivatedColor] = onKeyColorHalf
@@ -408,17 +403,6 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
             colors[R.styleable.Keyboard_Key_keyHintLabelColor] = transparent
         }
 
-        if(expertMode) {
-            colors[R.styleable.Keyboard_Key_keyTextColor] = transparent
-            colors[R.styleable.Keyboard_Key_keyTextInactivatedColor] = transparent
-            colors[R.styleable.Keyboard_Key_keyHintLetterColor] = transparent
-            colors[R.styleable.Keyboard_Key_keyHintLabelColor] = transparent
-
-
-            // Note: We don't fully hide some things, but fade them away as they may be important landmarks
-            colors[R.styleable.Keyboard_Key_functionalTextColor] = onKeyColorThird
-        }
-
         keyboardBackground = coloredRectangle(0x00000000)
 
         val keyCornerRadius = 9.dp
@@ -432,35 +416,25 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         val actionKeyRadius = 128.dp
 
         keyStyles = mapOf(
-            KeyVisualStyle.Action to if(expertMode) {
-                VisualStyleDescriptor(
-                    backgroundDrawable = coloredRoundedRectangle(colorScheme.outline.copy(alpha = 0.1f).toArgb(), dp(actionKeyRadius)),
-                    foregroundColor    = colorScheme.onSurface.copy(alpha = 0.6f).toArgb(),
+            KeyVisualStyle.Action to VisualStyleDescriptor(
+                backgroundDrawable = coloredRoundedRectangle(colorScheme.primary.toArgb(), dp(actionKeyRadius)),
+                foregroundColor    = colorScheme.onPrimary.toArgb(),
 
-                    backgroundDrawablePressed = coloredRoundedRectangle(colorScheme.outline.copy(alpha = 0.6f).toArgb(), dp(actionKeyRadius)),
-                    foregroundColorPressed    = colorScheme.onSurface.toArgb()
-                )
-            } else {
-                VisualStyleDescriptor(
-                    backgroundDrawable = coloredRoundedRectangle(colorScheme.primary.toArgb(), dp(actionKeyRadius)),
-                    foregroundColor    = colorScheme.onPrimary.toArgb(),
-
-                    backgroundDrawablePressed = coloredRoundedRectangle(colorScheme.secondaryContainer.toArgb(), dp(actionKeyRadius)),
-                    foregroundColorPressed    = colorScheme.onSecondaryContainer.toArgb()
-                )
-            },
+                backgroundDrawablePressed = coloredRoundedRectangle(colorScheme.secondaryContainer.toArgb(), dp(actionKeyRadius)),
+                foregroundColorPressed    = colorScheme.onSecondaryContainer.toArgb()
+            ),
 
             KeyVisualStyle.Normal to if(keyBorders) {
                 makeVisualStyle(
                     keyColor,
-                    if(expertMode) transparent else onKeyColor,
+                    onKeyColor,
                     highlight, highlightForeground,
                     keyCornerRadius,
                 )
             } else {
                 makeVisualStyle(
                     transparent,
-                    if(expertMode) transparent else onKeyColor,
+                    onKeyColor,
                     highlight, highlightForeground,
                     keyCornerRadius
                 )
@@ -479,14 +453,14 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
             KeyVisualStyle.Functional to if(keyBorders) {
                 makeVisualStyle(
                     functionalKeyColor,
-                    if(expertMode) Color(onKeyColor).copy(alpha = 0.2f).toArgb() else onKeyColor,
+                    onKeyColor,
                     highlight, highlightForeground,
                     keyCornerRadius
                 )
             } else {
                 makeVisualStyle(
                     transparent,
-                    if(expertMode) Color(onKeyColor).copy(alpha = 0.2f).toArgb() else onKeyColor,
+                    onKeyColor,
                     highlight, highlightForeground,
                     keyCornerRadius
                 )
@@ -495,14 +469,14 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
             KeyVisualStyle.StickyOff to if(keyBorders) {
                 makeVisualStyle(
                     keyColor,
-                    if(expertMode) Color(onKeyColor).copy(alpha = 0.2f).toArgb() else onKeyColor,
+                    onKeyColor,
                     highlight, highlightForeground,
                     keyCornerRadius
                 )
             } else {
                 makeVisualStyle(
                     transparent,
-                    if(expertMode) Color(onKeyColor).copy(alpha = 0.2f).toArgb() else onKeyColor,
+                    onKeyColor,
                     highlight, highlightForeground,
                     keyCornerRadius
                 )
@@ -519,12 +493,6 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
 
             KeyVisualStyle.Spacebar to when {
                 keyBorders -> makeVisualStyle(keyColor, onKeyColor, highlight, highlightForeground, spaceCornerRadius)
-                expertMode -> makeVisualStyle(
-                    colorScheme.outline.copy(alpha = 0.1f).toArgb(),
-                    onKeyColor,
-                    highlight, highlightForeground,
-                    spaceCornerRadius
-                )
                 else -> makeVisualStyle(
                     highlight,
                     onKeyColor,
