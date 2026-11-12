@@ -75,6 +75,7 @@ final def translationsWithoutEngValues = { final String path ->
     tasks.register("prepareResFilter${taskNameSuffix}", Copy) {
         from(sourceDir) {
             include 'values-*/**'
+            exclude '**/strings-crash-reporting.xml' // FUTO's crash dialog, gone (#33)
 
             filter { String line ->
                 def matcher = line =~ /<string name="([^"]+)"[^>]*>(.+)<\/string>/
@@ -283,15 +284,6 @@ android {
     }
 
 
-    final def crashReportPropertiesFile = rootProject.file("crashreporting.properties")
-    final def crashReportProperties = new Properties()
-    if (crashReportPropertiesFile.exists()) {
-        crashReportProperties.load(new FileInputStream(crashReportPropertiesFile))
-    } else {
-        project.logger.lifecycle('crashreporting.properties not found, crash reporting will be disabled')
-    }
-
-
     buildTypes {
         debug {
             minifyEnabled false
@@ -306,18 +298,6 @@ android {
         }
 
         buildTypes.each {
-            if (crashReportPropertiesFile.exists()) {
-                it.buildConfigField "boolean", "ENABLE_ACRA", crashReportProperties['acraEnabled']
-                it.buildConfigField "String", "ACRA_URL", crashReportProperties['acraUrl']
-                it.buildConfigField "String", "ACRA_USER", crashReportProperties['acraUser']
-                it.buildConfigField "String", "ACRA_PASSWORD", crashReportProperties['acraPassword']
-            } else {
-                it.buildConfigField "boolean", "ENABLE_ACRA", "false"
-                it.buildConfigField "String", "ACRA_URL", "\"\""
-                it.buildConfigField "String", "ACRA_USER", "\"\""
-                it.buildConfigField "String", "ACRA_PASSWORD", "\"\""
-            }
-
             //it.buildConfigField "String", "FUTOPAY_URL", "\"https://pay.futo.org/api/PaymentPortal?product=voiceinput&success=futo-keyboard%3a%2f%2flicense%2factivate\""
             it.buildConfigField "String", "FUTOPAY_URL", "\"https://pay2.futo.org/checkout/polar/futo-keyboard/futo-keyboard-voiceinput/checkout-ready?success=redirect-to-organization-page\""
             it.buildConfigField "String", "FUTOPAY_PRICE", "\"~\$6.99\""
@@ -391,21 +371,17 @@ android {
         }
 
         playstore {
-            java.srcDirs = ['common/src', 'java/src', 'java/playstore/java']
             res.srcDirs = ['java/res-bundle']
             manifest.srcFile 'java/playstore/AndroidManifest.xml'
         }
 
         stable {
-            // SebType: the Play Store flavor's app class and manifest: no crash dialog mailing FUTO (ACRA),
-            // no update checker service
-            java.srcDirs = ['common/src', 'java/src', 'java/playstore/java']
+            // SebType: the Play Store flavor's manifest: no update checker service
             manifest.srcFile 'java/playstore/AndroidManifest.xml'
             res.srcDirs = ['sebtype/res-stable', 'java/res-bundle'] // SebType launcher icon and English dictionary, overriding FUTO's; bundled Mozc dictionary
         }
 
         unstable {
-            java.srcDirs = ['common/src', 'java/src', 'java/stable/java']
             manifest.srcFile 'java/stable/AndroidManifest.xml'
             res.srcDirs = ['java/unstable/res', translationsWithoutEngValues('translations/devbuild')]
         }
@@ -484,9 +460,6 @@ dependencies {
     implementation 'androidx.datastore:datastore-preferences:1.1.7'
     implementation 'androidx.autofill:autofill:1.1.0'
     implementation 'androidx.window:window:1.3.0'
-
-    unstableImplementation 'ch.acra:acra-mail:5.11.1'
-    unstableImplementation 'ch.acra:acra-dialog:5.11.1'
 
     implementation 'sh.calvin.reorderable:reorderable:3.0.0'
 

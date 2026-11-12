@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.latin.CrashReports
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.json.JSONObject
 import java.io.File
@@ -106,7 +107,8 @@ object SyncAccountStore {
 class SyncLoginFailed : IOException("login failed")
 
 /**
- * SebType's only network client, used only for the user's sync server (H10, #26): HTTPS only (the app's
+ * SebType's only network client, used only for the user's sync server (H10, #26) and its crash reports
+ * (#33): HTTPS only (the app's
  * network security config forbids cleartext too), Basic auth, the API of `sync-server/sebtype_sync.py`.
  */
 class SyncServer(private val account: SyncAccount) {
@@ -152,6 +154,8 @@ class SyncServer(private val account: SyncAccount) {
         request("GET", "/v1/files/${file.device}/${file.name}") { c -> c.inputStream.use { it.readBytes() } }
 
     fun upload(device: String, name: String, bytes: ByteArray) = request("PUT", "/v1/files/$device/$name", bytes) {}
+
+    fun uploadCrashReport(name: String, bytes: ByteArray) = request("PUT", "/v1/crashes/$name", bytes) {}
 
     fun deleteAll() = request("DELETE", "/v1/files") {}
 }
@@ -264,7 +268,8 @@ object ChineseSync {
             val previous = mutableStatus.value
             mutableStatus.value = Status.Syncing
             mutableStatus.value = try {
-                syncWith(context, SyncServer(account))
+                val server = SyncServer(account)
+                syncWith(context, server).also { CrashReports.upload(context, server) }
             } catch(e: SyncLoginFailed) {
                 Status.LoginFailed
             } catch(e: IOException) {
