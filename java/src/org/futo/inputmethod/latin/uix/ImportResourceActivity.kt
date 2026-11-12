@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.inputmethod.InputMethodSubtype
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.GlobalIMEMessage
+import org.futo.inputmethod.engine.general.ChineseLearnedWords
+import org.futo.inputmethod.engine.general.ChineseWordList
+import org.futo.inputmethod.latin.uix.ItemBeingImported.PersonalData.Kind
 import org.futo.inputmethod.engine.IMEMessage
 import org.futo.inputmethod.latin.Dictionary
 import org.futo.inputmethod.latin.R
@@ -611,6 +615,10 @@ sealed class ItemBeingImported {
     data class LanguageResource(val v: FileKindAndInfo) : ItemBeingImported()
     data class SettingsBackup(val v: SettingsExporter.CfgFileMetadata) : ItemBeingImported()
     data class UserDictFile(val v: DetectedUserDictFile) : ItemBeingImported()
+    /** SebType (#11): words from another keyboard or Rime, added to what is there (PersonalDataImport). */
+    data class PersonalData(val kind: Kind, val name: String?, val locale: String?, val words: List<PersonalWord> = emptyList()) : ItemBeingImported() {
+        enum class Kind { RimeWordList, RimeLearnedWords, PersonalWords }
+    }
 }
 
 class ImportResourceActivity : ComponentActivity() {
@@ -674,11 +682,35 @@ class ImportResourceActivity : ComponentActivity() {
         }
     }
 
+    private fun applyPersonalData(item: ItemBeingImported.PersonalData) {
+        lifecycleScope.launch {
+            // A file that passed detection can still fail to import (cut off, unreadable): say so, not crash.
+            val done = withContext(Dispatchers.IO) { runCatching {
+                when(item.kind) {
+                    Kind.RimeWordList -> {
+                        contentResolver.openInputStream(uri!!)!!.use { ChineseWordList.import(applicationContext, it) }
+                        true
+                    }
+                    Kind.RimeLearnedWords ->
+                        contentResolver.openInputStream(uri!!)!!.use { ChineseLearnedWords.merge(applicationContext, it) }
+                    Kind.PersonalWords -> {
+                        UserDictionaryIO(applicationContext).put(item.words)
+                        true
+                    }
+                }
+            }.getOrElse { Log.e("ImportResourceActivity", "Importing ${item.kind} failed", it); false } }
+            if(!done) Toast.makeText(applicationContext, R.string.settings_unknown_error_subtitle, Toast.LENGTH_LONG).show()
+            GlobalIMEMessage.tryEmit(IMEMessage.ReloadResources)
+            finish()
+        }
+    }
+
     private fun applySetting(fileKind: FileKindAndInfo, inputMethodSubtype: InputMethodSubtype) {
         val item = itemBeingImported.value
         if(item is ItemBeingImported.UserDictFile) {
             return applyUserDictSetting(item.v, inputMethodSubtype)
         }
+        if(item is ItemBeingImported.PersonalData) return applyPersonalData(item)
 
         if(item == null) return
 
@@ -778,6 +810,13 @@ class ImportResourceActivity : ComponentActivity() {
                 }
             )
         }
+        is ItemBeingImported.PersonalData -> {
+            ImportScreen(
+                fileKind = FileKindAndInfo(FileKind.Dictionary, name = item.name, locale = item.locale),
+                onApply = { fileKind, inputMethodSubtype -> applySetting(fileKind, inputMethodSubtype) },
+                onCancel = { finish() }
+            )
+        }
         is ItemBeingImported.UserDictFile -> {
             val pseudoKind = FileKindAndInfo(FileKind.Dictionary, name = item.v.name, locale = item.v.locale.toString())
             ImportScreen(
@@ -833,8 +872,21 @@ class ImportResourceActivity : ComponentActivity() {
         val settingsBackup = getInputStream()?.use { SettingsExporter.getCfgFileMetadata(it) }
         if(settingsBackup != null) return ItemBeingImported.SettingsBackup(settingsBackup)
 
+        // SebType (#11): a Rime word list or learned words, for Chinese
+        getInputStream()?.use { PersonalDataImport.rimeLearnedWords(it) }
+            ?.let { return ItemBeingImported.PersonalData(Kind.RimeLearnedWords, it, "zh") }
+        getInputStream()?.use { PersonalDataImport.rimeWordList(it) }
+            ?.let { return ItemBeingImported.PersonalData(Kind.RimeWordList, it, "zh") }
+
         val userDictFile = getInputStream()?.use { detectJapaneseUserDict(it) }
+            ?: getInputStream()?.use { PersonalDataImport.mozcDictionary(it) }
         if(userDictFile != null) return ItemBeingImported.UserDictFile(userDictFile)
+
+        // FUTO's personal dictionary on its own; each word keeps its language
+        getInputStream()?.use { PersonalDataImport.personalWords(it) }?.let { words ->
+            val language = words.mapNotNull { it.locale?.substringBefore('_') }.distinct().singleOrNull()
+            return ItemBeingImported.PersonalData(Kind.PersonalWords, null, language, words)
+        }
 
         return null
     }

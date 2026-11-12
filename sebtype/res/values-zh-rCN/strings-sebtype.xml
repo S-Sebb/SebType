@@ -70,6 +70,7 @@
     <string name="sebtype_settings_settings_file">设置文件</string>
     <string name="sebtype_settings_export">导出设置</string>
     <string name="sebtype_settings_import">导入设置</string>
+    <string name="sebtype_settings_import_subtitle">恢复导出的备份，或导入词库、学到的词和个人词典。</string>
     <string name="sebtype_settings_version">版本</string>
     <string name="sebtype_settings_help">帮助与反馈</string>
     <string name="sebtype_settings_help_subtitle">GitHub 上的 SebType</string>

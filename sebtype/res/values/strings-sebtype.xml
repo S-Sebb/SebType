@@ -76,6 +76,7 @@
     <string name="sebtype_settings_settings_file">Settings file</string>
     <string name="sebtype_settings_export">Export settings</string>
     <string name="sebtype_settings_import">Import settings</string>
+    <string name="sebtype_settings_import_subtitle">Restore an exported backup, or bring in word lists, learned words and personal dictionaries.</string>
     <string name="sebtype_settings_version">Version</string>
     <string name="sebtype_settings_help">Help and feedback</string>
     <string name="sebtype_settings_help_subtitle">SebType on GitHub</string>

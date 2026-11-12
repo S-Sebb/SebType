@@ -238,7 +238,7 @@ fun BackupScreen(navController: NavHostController) {
             )
             NavigationItem(
                 title = stringResource(R.string.sebtype_settings_import),
-                subtitle = stringResource(R.string.settings_import_configuration_subtitle),
+                subtitle = stringResource(R.string.sebtype_settings_import_subtitle),
                 style = NavigationItemStyle.Misc,
                 navigate = { SettingsExporter.triggerImportSettings(context) }
             )

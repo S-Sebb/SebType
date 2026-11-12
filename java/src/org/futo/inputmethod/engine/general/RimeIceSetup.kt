@@ -152,7 +152,7 @@ object RimeIceSetup {
     suspend fun ensure(context: Context, config: Configuration): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             val patch = config.patch()
-            val key = "${RimeIceBundle.bundledVersion(context)}\n${config.schema}\n$patch"
+            val key = "${RimeIceBundle.bundledVersion(context)}\n${config.schema}\n$patch\n${ChineseWordList.stamp(context)}"
             if(readyFor == key) return@withLock true
             readyFor = null
 
@@ -182,6 +182,7 @@ object RimeIceSetup {
                     if(patch.isEmpty()) custom.delete()
                     else if(!custom.isFile || custom.readText() != patch) custom.writeText(patch)
                     deployed.delete()
+                    ChineseWordList.dropStaleTable(context)
                     rime.deploy()
                 }
 
@@ -204,6 +205,10 @@ object RimeIceSetup {
             ok
         }
     }
+
+    /** [ensure] for the settings' configuration from outside the keyboard; Rime stops once idle, as after [prepareInBackground]. */
+    suspend fun ensureNow(context: Context): Boolean =
+        ensure(context, defaultConfiguration(context)).also { stopWhenIdle(context) }
 
     // SebType (#56): Rime (its tables and engine) stops ENGINE_IDLE_MS after the Chinese keyboard was
     // last in use; the next ensure starts it again.
@@ -242,11 +247,13 @@ object RimeIceSetup {
      * Rime's sync (#12, [ChineseSync]): merges the other devices' snapshots in `user/sync/` into the
      * learned words and writes this device's snapshot. librime's sync ends every session, so meanwhile
      * Chinese shows as preparing: a keyboard that comes up waits in [ensure] and sets its options again
-     * on the new session. A Rime that wasn't running is started for it and stopped after.
+     * on the new session. A Rime that wasn't running is started for it and stopped after. [prepare]
+     * runs first, under the same lock (an import puts its snapshot in place, #11).
      */
-    suspend fun syncUserData(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun syncUserData(context: Context, prepare: () -> Unit = {}): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             if(!RimeIceBundle.isInstalled(context)) return@withLock false // Chinese never set up: nothing learned
+            prepare()
             val rime = rime(context)
             val wasStarted = started
             val before = mutableState.value
