@@ -130,21 +130,22 @@ engine's. Rime's switcher (Ctrl+\` or F4) has the same one switch.
 ### SebType's fcitx5-mozc
 
 Fedora's fcitx5-mozc picks the tray icon from the input mode alone, so Japanese's English mode can't show
-**A** for Caps Lock. `mozc/caps-lock-icon.patch` (about 30 lines in `mozc_engine.cc`) asks for
-`<icon>_upper` in the English modes while Caps Lock is on, and redraws the tray when Caps Lock changes,
-the way fcitx5-rime does. `mozc/menu.patch` replaces Mozc's tray menu (its five input modes and its
+**A** for Caps Lock. SebType's fcitx5-mozc, built from `pc/mozc` (Mozc 3.35.6354, the same
+tree as Windows, with fcitx/mozc's Fcitx 5 frontend in `src/unix/fcitx5`), asks for `<icon>_upper` in the English modes while Caps Lock is on, and redraws the
+tray when Caps Lock changes, the way fcitx5-rime does (`src/unix/fcitx5/mozc_engine.cc`). It also
+replaces Mozc's tray menu (its five input modes and its
 tools) with the one switch, あ → ア, and makes Mozc's kana switch (Alt+\`) a two-way toggle of hiragana
 and full-width katakana instead of a cycle through half-width katakana. Nothing else changes: the same
 Mozc, dictionary and learned words.
 
-`mozc/build.sh` builds it from Fedora's own source package (`mozc/versions.sh` pins its version and
-checksum, and the Fedora container image), with Fedora's spec, flags and bundled protobuf and abseil.
-It runs under the shared build lock with 4 compile jobs in a container capped at 6 GB. The build tree
-stays in `~/.cache/sebtype/mozc/work`, so a rebuild compiles only what changed. `setup-ime.sh` runs it
-when the RPM isn't built yet, installs the RPM with `sudo dnf install` and asks first. Its release,
-`6.sebtype2.fc44`, sorts above Fedora's `6.fc44`, so `dnf upgrade` keeps it until Fedora ships a newer
-fcitx5-mozc. That update replaces it: Japanese then shows **a** with Caps Lock on, and `setup-ime.sh`
-warns until `mozc/versions.sh` follows the new version.
+`mozc/build.sh` packages it in place of Fedora's: `mozc/fcitx5-mozc.spec` follows Fedora's spec and
+builds with Bazel (Bazelisk, pinned by checksum in `mozc/versions.sh` with the Fedora container image),
+which fetches the libraries `pc/mozc/src/MODULE.bazel` pins. The tools (`mozc_tool`) use Qt 6, as
+Mozc's Bazel build does. It runs under the shared build lock with 4 compile jobs in a container capped
+at 6 GB. Bazel's caches stay in `~/.cache/sebtype/mozc/work`, so a rebuild compiles only what changed.
+`setup-ime.sh` runs it when the RPM isn't built yet, replaces Fedora's fcitx5-mozc
+(`2.30.5618.102^20250124gitc0ed34e-6.fc44`) with it through `sudo dnf install` and asks first. Its
+version, 3.35.6354, is above Fedora's, so `dnf upgrade` keeps it; `--undo-mozc` brings Fedora's back.
 
 Fcitx5 loads the new fcitx5-mozc when it restarts: turn System Settings → Keyboard → Virtual Keyboard
 off and back on, or log in again.
@@ -155,14 +156,14 @@ package), then restart Fcitx5 the same way.
 ### SebType's fcitx5-rime
 
 Fedora's fcitx5-rime puts Rime's schema list, Latin Mode, Deploy and Synchronize into the tray menu, and
-every switch the schema has. `rime/menu.patch` leaves out the schema list, Deploy and Synchronize, and
+every switch the schema has. SebType's fcitx5-rime, `pc/fcitx5-rime` (5.1.15), leaves out the schema list, Deploy and Synchronize, and
 adds each switch's key to its menu entry (read from Rime's `default.yaml` key bindings, so the entry
 reads `简 → 繁 Ctrl+Shift+F`). Which switches show comes from the data: SebType's Chinese data keeps
 `states` only on `traditionalization`, and fcitx5-rime, Weasel and Rime's switcher hide a switch
 without them.
 
-`rime/build.sh` builds it the same way as fcitx5-mozc, from Fedora's source package pinned in
-`rime/versions.sh`, in about a minute. Its release `1.sebtype1.fc44` sorts above Fedora's `1.fc44`.
+`rime/build.sh` builds it the same way as fcitx5-mozc, with `rime/fcitx5-rime.spec` (Fedora's spec)
+and the image pinned in `rime/versions.sh`, in about a minute. Its release `1.sebtype1.fc44` sorts above Fedora's `1.fc44`.
 To undo: `pc/linux/setup-ime.sh --undo-rime`.
 
 ### SebType's librime
@@ -170,7 +171,7 @@ To undo: `pc/linux/setup-ime.sh --undo-rime`.
 SebType's typo correction (#46) asks a second translator, `corr`, with librime's correction on, and
 `lua/sebtype_typo.lua` ranks what it finds by a keyboard model. librime only proposes slips onto the key
 left or right, so on a PC a slip onto the key above or below (`xkaoshi` for xiaoshi) was never found.
-`rime/layout-model.patch` gives librime's correction a PC layout model when the schema says
+SebType's librime, `pc/librime` (1.16.1), gives librime's correction a PC layout model when the schema says
 `sebtype_typo/keyboard: pc` (setup sets it; the phone keeps librime's own map): the neighbours within
 1.25 key widths on the staggered rows, each slip priced −log P(typed | meant) as the Lua filter prices
 it, one slip per syllable. It also stops a sentence of several words, such as 你|好 for the corrected
@@ -183,8 +184,8 @@ Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
 | Lua filter on SebType's librime | 16.2 / 22.2 % | 16.2 / 19.6 % | 51.2 / 62.0 % | 7.6 ms |
 
 The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
-sentences. `rime/build.sh librime` builds it from Fedora's source package with its plugins, which must
-match it. Its release `2.sebtype2.fc44` sorts above Fedora's `2.fc44`. To undo:
+sentences. `rime/build.sh librime` builds it with `rime/librime.spec` (Fedora's spec) and Fedora's
+copies of its plugins, which must match it. Its release `2.sebtype2.fc44` sorts above Fedora's `2.fc44`. To undo:
 `pc/linux/setup-ime.sh --undo-librime`.
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5

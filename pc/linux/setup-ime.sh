@@ -121,8 +121,8 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101): Fedora's packages rebuilt with
-# SebType's patches (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
+# SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101): SebType's source in pc/, packaged
+# as Fedora's packages (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
 # shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
 source "$here/mozc/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=rime/versions.sh
@@ -168,19 +168,18 @@ if ((${#missing[@]})); then
   fi
 fi
 
-# 1b. SebType's fcitx5-mozc, fcitx5-rime and librime in place of Fedora's, built from Fedora's source
-# packages by mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or
-# five). A Fedora update to another version replaces them; then setup-ime.sh warns until
-# <dir>/versions.sh follows it.
-# own_build <package> <version> <Fedora's release> <SebType's release> <build command> <what it adds>
+# 1b. SebType's fcitx5-mozc, fcitx5-rime and librime in place of Fedora's, built from SebType's source by
+# mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or five). Each
+# replaces one Fedora release; Fedora's update to another one warns until <dir>/versions.sh follows it.
+# own_build <package> <Fedora's version-release> <SebType's version-release> <build command> <what it adds>
 #   <what is missing without it> <rpm...>: the package's RPM first, then any built with it
 own_build() {
-  local pkg=$1 version=$2 fedora=$3 ours=$4 build=$5 adds=$6 without=$7 now answer
-  shift 7
+  local pkg=$1 fedora=$2 ours=$3 build=$4 adds=$5 without=$6 now answer
+  shift 6
   now=$(installed "$pkg")
   case $now in
-    "$version-$ours" | '') ;;
-    "$version-$fedora" | "$version-"*.sebtype*)
+    "$ours" | '') ;;
+    "$fedora" | *.sebtype*)
       if change "replace $pkg $now with SebType's build $ours, Fedora's plus $adds (asks before using sudo; undo: $0 --undo-${pkg#fcitx5-})"; then
         read -rp "Build SebType's $pkg if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
         if [[ $answer == [yY]* ]]; then
@@ -190,19 +189,19 @@ own_build() {
           busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "$pkg")"
         else warn "$pkg stays Fedora's: $without"; fi
       fi ;;
-    *) warn "$pkg $now isn't the version SebType's build is for ($version): $without until pc/linux/$(basename "$(dirname "${build%% *}")")/versions.sh follows it" ;;
+    *) warn "$pkg $now isn't the version SebType's build is for ($fedora): $without until pc/linux/$(basename "$(dirname "${build%% *}")")/versions.sh follows it" ;;
   esac
 }
-own_build fcitx5-mozc "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" "$SEBTYPE_RELEASE" "$here/mozc/build.sh" \
+own_build fcitx5-mozc "$MOZC_FEDORA" "$MOZC_VERSION-$SEBTYPE_RELEASE" "$here/mozc/build.sh" \
   "a Caps Lock icon and Japanese's one menu switch, あ → ア" "Japanese shows a, not A, with Caps Lock on, and its menu keeps Mozc's input modes and tools" \
   "$MOZC_CACHE/rpms/$MOZC_RPM"
-own_build fcitx5-rime "$RIME_VERSION" "$RIME_FEDORA_RELEASE" "$RIME_SEBTYPE_RELEASE" "$here/rime/build.sh" \
+own_build fcitx5-rime "$RIME_VERSION-$RIME_FEDORA_RELEASE" "$RIME_VERSION-$RIME_SEBTYPE_RELEASE" "$here/rime/build.sh" \
   "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize" "$RIME_CACHE/$RIME_RPM"
-# librime's typo correction knows a PC keyboard's vertical neighbours too (rime/layout-model.patch), so
+# librime's typo correction knows a PC keyboard's vertical neighbours too (pc/librime), so
 # a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
 librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
-own_build librime "$LIBRIME_VERSION" "$LIBRIME_FEDORA_RELEASE" "$LIBRIME_SEBTYPE_RELEASE" "$here/rime/build.sh librime" \
+own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/rime/build.sh librime" \
   "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
@@ -331,7 +330,7 @@ fi
 # 9. Japanese: a Shift tap toggles あ and direct English, and Alt+` あ and ア (Decisions #2, menu hotkeys),
 # in Mozc's own keymap. fcitx5-mozc sends Mozc a bare Shift only when it is released with no other key
 # pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it. Alt+` is
-# Mozc's InputModeSwitchKanaType, which SebType's build (mozc/menu.patch) makes a two-way switch.
+# Mozc's InputModeSwitchKanaType, which SebType's build (pc/mozc) makes a two-way switch.
 # Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
 # Shift lines for each state and Alt+` (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings

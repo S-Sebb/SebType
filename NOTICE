@@ -16,10 +16,12 @@ has the details):
     wordfreq's frequencies under CC BY-SA 4.0 (credits at the end).
   - sebtype/res/font/sebtype_nunito_extrabold.ttf, sebtype/res/font/sebtype_pixelify_semibold.ttf, and
     the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
-  - The patches to Mozc in pc/linux/mozc/ and pc/windows/mozc/, and pc/linux/mozc-keymap.tsv: Mozc's
-    BSD-3-Clause licence.
-  - pc/windows/weasel/sebtype.patch, a patch to Weasel: Weasel's GPL-3.0.
-  - pc/linux/rime/menu.patch, a patch to fcitx5-rime: fcitx5-rime's LGPL-2.1-or-later.
+  - SebType's Mozc in pc/mozc/ (with fcitx/mozc's Fcitx 5 frontend), and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause
+    licence.
+  - SebType's Weasel in pc/weasel/: Weasel's GPL-3.0.
+  - SebType's librime in pc/librime/: librime's BSD-3-Clause.
+  - SebType's fcitx5-rime in pc/fcitx5-rime/: fcitx5-rime's LGPL-2.1-or-later.
+  - The RPM specs in pc/linux/: Fedora's, MIT.
   - rime-android/patches/, patches to RimeJni: RimeJni's MIT licence.
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0, fcitx5-rime

@@ -22,9 +22,11 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 | `sebtype/res-stable/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) and `sebtype/res-stable/values*/*-sebtype-overrides.xml` (changed copies of FUTO's resources) | FUTO Source First License 1.1 |
 | `sebtype/res-stable/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
 | The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([sebtype/fonts/OFL-Nunito.txt](sebtype/fonts/OFL-Nunito.txt), [sebtype/fonts/OFL-PixelifySans.txt](sebtype/fonts/OFL-PixelifySans.txt)) |
-| SebType's patches to Mozc (`pc/linux/mozc/`, `pc/windows/mozc/`) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys); Mozc itself | BSD-3-Clause, like Mozc |
-| SebType's patch to Weasel (`pc/windows/weasel/sebtype.patch`); Weasel itself | GPL-3.0, like Weasel |
-| SebType's patch to fcitx5-rime (`pc/linux/rime/menu.patch`); fcitx5-rime itself | LGPL-2.1-or-later, like fcitx5-rime |
+| SebType's Mozc (`pc/mozc/`: Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
+| SebType's Weasel (`pc/weasel/`: Weasel with SebType's changes) | GPL-3.0, like Weasel |
+| SebType's fcitx5-rime (`pc/fcitx5-rime/`: fcitx5-rime with SebType's changes) | LGPL-2.1-or-later, like fcitx5-rime |
+| SebType's librime (`pc/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
+| Fedora's RPM specs with SebType's changes (`pc/linux/mozc/*.spec`, `pc/linux/rime/*.spec`) | MIT, like Fedora's specs |
 | SebType's patches to RimeJni (`rime-android/patches/`); RimeJni itself | MIT, like RimeJni |
 | librime | BSD-3-Clause |
 | The rime-ice and 白霜 data in the APK and on the PCs (see Chinese below) | GPL-3.0 |

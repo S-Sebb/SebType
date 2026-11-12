@@ -141,7 +141,7 @@ daemon, clang, aapt2, R8). `sebtype/test-build.sh` checks the cache and reproduc
 | Other builds and tests | Before | After |
 |---|---|---|
 | `rime-android/build.sh` (arm64 aar), rebuild in the same checkout | 130 s | 27–31 s, the same aar |
-| `pc/linux/mozc/build.sh`, nothing changed / after a patch change / first build | 11 s / 323 s / 490 s | unchanged |
+| `pc/linux/mozc/build.sh`, nothing changed / after a source change / first build | 11 s / 323 s / 490 s | unchanged |
 | `pc/linux/test-setup-ime.sh` | 15 s | unchanged (mostly Fcitx5 and a Rime deploy starting) |
 | `sebtype/test-privacy.sh` (release rebuild + checks) | 13 s | 8 s |
 | `sebtype/test-typing.sh` (test APKs + 4 tests on the emulator) | 22 s build + about 55 s device | 7 s build, 58 s in all |
