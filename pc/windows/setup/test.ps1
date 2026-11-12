@@ -499,7 +499,23 @@ namespace SebTypeSetupTest {
         $p = [Diagnostics.Process]::Start($deployer, '/sync')
         if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's sync took over 2 minutes" }
       }
-      $server = $null
+      # A script as this admin, not elevated, in a one-off task as the Configurator's tray runs: the elevated
+      # driver's token from Task Scheduler has an empty Credential Manager (its cmdkey /list lists none).
+      # $ScriptText is the script's text, $Answer a file it writes before it ends.
+      function Plain([string]$ScriptText, [string]$Answer, [int]$Seconds = 120) {
+        $f = "$out\plain-$(Get-Random)"
+        [IO.File]::WriteAllText("$f.ps1", $ScriptText)
+        Register-ScheduledTask SebType-setup-plain -Force `
+          -Action (New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$f.ps1`"") `
+          -Principal (New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited) | Out-Null
+        try {
+          Start-ScheduledTask SebType-setup-plain
+          if (-not (Wait-Until $Seconds { (Test-Path $Answer) -and (Get-ScheduledTask SebType-setup-plain).State -eq 'Ready' })) {
+            throw "not elevated: nothing in $Answer after $Seconds s"
+          }
+        } finally { Unregister-ScheduledTask SebType-setup-plain -Confirm:$false }
+      }
+      $server = $loginLeft = $null
       try {
         Check 'sync-server' {
           $null = Py @("$root\sebtype_sync.py", 'adduser', '--data', "$out\sync-server", '--password-stdin', $syncUser) $syncPassword
@@ -509,9 +525,21 @@ namespace SebTypeSetupTest {
           "sebtype_sync.py on $url with Setup's Python, a throwaway login"
         }
         Check 'sync-login-in-credential-manager' {
-          $null = Run-Exe "$App\sebtype-configurator.exe" @('--save-login') "$url`n$syncUser`n$syncPassword"
-          $cred = cmdkey.exe /list:'login.SebType sync' | Out-String
-          if ($cred -notmatch 'Target: .*login\.SebType sync') { throw "no 'login.SebType sync' in Credential Manager: $cred" }
+          # The login is made and Credential Manager listed in the one plain task: the elevated driver sees none.
+          $login = "$out\save-login"
+          [IO.File]::WriteAllText("$login-in.txt", "$url`n$syncUser`n$syncPassword`n")
+          $save = @"
+Get-Content -Raw '$login-in.txt' | & '$App\sebtype-configurator.exe' --save-login 2>&1 | Out-File -Encoding utf8 '$login-out.txt'
+`$exit = `$LASTEXITCODE
+cmdkey /list 2>&1 | Out-File -Encoding utf8 '$login-cred.txt'
+Set-Content '$login-code.txt' `$exit
+"@
+          try { Plain $save "$login-code.txt" } finally { Remove-Item "$login-in.txt" -ErrorAction SilentlyContinue }  # a throwaway password
+          $code = (Get-Content "$login-code.txt" -Raw -ErrorAction SilentlyContinue)
+          if ("$code".Trim() -ne '0') { throw "--save-login, not elevated: exit '$code' $(Get-Content "$login-out.txt" -Raw -ErrorAction SilentlyContinue)" }
+          # Not cmdkey /list:'login.SebType sync': its space reaches cmdkey as two arguments, and its labels are localized.
+          $cred = Get-Content "$login-cred.txt" -Raw -ErrorAction SilentlyContinue
+          if ($cred -notmatch 'target=.*login\.SebType sync') { throw "no 'login.SebType sync' in Credential Manager: $cred" }
           $saved = Get-Content $syncJson -Raw -Encoding utf8
           if ($saved.Contains($syncPassword)) { throw 'the password is in sync.json' }
           if (-not ($saved | ConvertFrom-Json).enabled) { throw "sync is off after the first login: $saved" }
@@ -550,10 +578,30 @@ namespace SebTypeSetupTest {
           if ($files -lt 4) { throw "the server keeps $files files, not this PC's and the other device's 4" }
           $left = @()
           if (Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue) { $left += 'the SebType sync task' }
-          if ((cmdkey.exe /list:'login.SebType sync' | Out-String) -match 'Target:') { $left += 'the login in Credential Manager' }
+          Plain "cmdkey /list 2>&1 | Out-File -Encoding utf8 '$out\after-uninstall.txt'" "$out\after-uninstall.txt"
+          if (-not (Test-Path "$out\after-uninstall.txt")) { throw 'no Credential Manager listing after the uninstall' }
+          $script:loginLeft = (Get-Content "$out\after-uninstall.txt" -Raw) -match 'target=.*login\.SebType sync'
           $left += @('sync.json', 'sync.lock', 'sebtype_sync.py' | Where-Object { Test-Path "$env:LOCALAPPDATA\SebType\$_" })
           if ($left) { throw "left after uninstall: $($left -join ', ')" }
-          "synced first ($synced), the server's $files files kept; task, login and sync's files gone"
+          "synced first ($synced), the server's $files files kept; task and sync's files gone"
+        }
+        # The uninstall runs elevated from this driver, whose token from Task Scheduler (a logon without a
+        # password) can read Credential Manager but not change it, so setup.ps1's CredDeleteW can't remove
+        # the login here; UAC's elevated token, a real uninstall's, comes from the password logon and can.
+        # A test-made password logon instead leaves the test user's profile loaded until a reboot. So
+        # here: setup.ps1's own call, from this account's logon token.
+        if ($loginLeft -eq $false) { Result 'sync-uninstall-removes-login' PASS 'the login is gone from Credential Manager' } elseif ($loginLeft) {
+          try {
+            Plain @"
+Add-Type -Namespace T -Name C -MemberDefinition '[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool CredDeleteW(string target, uint type, uint flags);'
+`$ok = [T.C]::CredDeleteW('login.SebType sync', 1, 0); `$e = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+Set-Content '$out\cred-delete.txt' "`$ok `$e"
+"@ "$out\cred-delete.txt"
+            $r = (Get-Content "$out\cred-delete.txt" -Raw).Trim()
+            if ($r -notmatch '^True') { throw "the login stayed, and setup.ps1's CredDeleteW from the logon token failed too: $r" }
+            Result 'sync-uninstall-removes-login' INFO ("not checkable here: the driver's elevated token can't change Credential Manager, " +
+              "so the uninstall left the login; setup.ps1's CredDeleteW('login.SebType sync', CRED_TYPE_GENERIC) removed it from this account's logon token")
+          } catch { Result 'sync-uninstall-removes-login' FAIL $_.Exception.Message }
         }
       } finally {
         if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
