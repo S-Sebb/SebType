@@ -76,8 +76,13 @@ class Server(unittest.TestCase):
         self.assertEqual(
             self.call("GET", "/v1/files/dev-a/rime_ice.userdb.txt")[1], b"made up\n"
         )
-        self.call("DELETE", "/v1/files")
+        self.call(
+            "DELETE", "/v1/files"
+        )  # every device's files: learned words and dictionaries
         self.assertEqual(json.loads(self.call("GET", "/v1/files")[1])["files"], [])
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            self.call("GET", "/v1/files/dev-a/mozc_dictionary.txt")
+        self.assertEqual(e.exception.code, 404)
 
     def test_only_synced_files_inside_the_users_folder(self):
         for path in (

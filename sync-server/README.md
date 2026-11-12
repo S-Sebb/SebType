@@ -34,7 +34,7 @@ reports: no clipboard, no typed text.
 When SebType crashes while sync is on, the phone keeps a report of the crash (at most the last 10)
 and the next sync uploads it, then deletes it on the phone. The server keeps each one as a text file
 in `<data>/crashes/<user>/crash-<UTC date>-<time>-<random>.txt`, next to `files/` and apart from the
-learned words; read them there. `deluser` deletes them too, "Delete learned words on the server" does not.
+learned words; read them there. `deluser` deletes them too, "Delete learned words and dictionaries on the server" does not.
 
 A report holds the stack trace (exception classes and code lines, without the exceptions' messages),
 SebType's version, Android's version, the phone's maker and model, and SebType's last 200 warnings
@@ -116,12 +116,12 @@ All requests use HTTP Basic auth with a user from `users.json`.
 ## On the phone
 
 Settings › Sync & backup › Server and login: the server's address (`sync.example.com`, or with a port
-or path), the username and the password. Saving a first login turns "Sync learned words" on and syncs
+or path), the username and the password. Saving a first login turns "Sync learned words and dictionaries" on and syncs
 at once; its line then shows when the last sync was, or why it failed. The login is encrypted with a
 key in the Android Keystore and kept out of backups, settings exports and logs.
 
-"Delete learned words on the server" deletes every device's files on the server, dictionaries included,
-and turns sync off. The words on the phone and on your other devices stay; turning sync on again
+"Delete learned words and dictionaries on the server" deletes every device's files on the server:
+learned words and dictionaries. It turns sync off. The words on the phone and on your other devices stay; turning sync on again
 uploads the phone's own.
 
 Words from other devices go into the personal dictionaries: Japanese ones into 日本語's **My words**,

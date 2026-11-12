@@ -85,8 +85,8 @@
     <string name="sebtype_settings_export_subtitle">設定、学習した単語、リソースなどをバックアップします</string>
     <!-- Sync of the learned words with the user's own server (#12) -->
     <string name="sebtype_settings_sync">同期</string>
-    <string name="sebtype_settings_sync_toggle">学習した単語を同期</string>
-    <string name="sebtype_settings_sync_off">中文の学習した単語を、自分のサーバーと</string>
+    <string name="sebtype_settings_sync_toggle">学習した単語と辞書を同期</string>
+    <string name="sebtype_settings_sync_off">中文の学習した単語と日本語・英語の辞書を、自分のサーバーと</string>
     <string name="sebtype_settings_sync_not_yet">まだ同期していません</string>
     <string name="sebtype_settings_sync_syncing">同期中…</string>
     <string name="sebtype_settings_sync_synced">前回の同期：%s</string>
@@ -98,10 +98,10 @@
     <string name="sebtype_settings_sync_server_invalid">https:// のアドレスを入力してください</string>
     <string name="sebtype_settings_sync_user">ユーザー名</string>
     <string name="sebtype_settings_sync_password">パスワード</string>
-    <string name="sebtype_settings_sync_delete">サーバー上の学習した単語を削除</string>
-    <string name="sebtype_settings_sync_delete_subtitle">各端末の単語は残ります</string>
-    <string name="sebtype_settings_sync_delete_confirm">すべての端末の学習した単語をサーバーから削除し、同期をオフにします。この端末と他の端末の単語は残ります。同期をもう一度オンにすると、この端末の単語をアップロードします。</string>
+    <string name="sebtype_settings_sync_delete">サーバー上の学習した単語と辞書を削除</string>
+    <string name="sebtype_settings_sync_delete_subtitle">各端末の学習した単語と辞書は残ります</string>
+    <string name="sebtype_settings_sync_delete_confirm">すべての端末の学習した単語と辞書をサーバーから削除し、同期をオフにします。この端末と他の端末の学習した単語と辞書は残ります。同期をもう一度オンにすると、この端末の学習した単語と辞書をアップロードします。</string>
     <string name="sebtype_settings_sync_delete_button">削除</string>
-    <string name="sebtype_settings_sync_deleted">サーバー上で削除しました</string>
+    <string name="sebtype_settings_sync_deleted">サーバー上の学習した単語と辞書を削除しました</string>
     <string name="sebtype_settings_sync_delete_failed">サーバーに接続できません。何も削除されていません</string>
 </resources>

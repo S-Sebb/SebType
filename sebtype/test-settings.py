@@ -1501,9 +1501,9 @@ NO_BACKUP = f"/data/data/{PKG}/no_backup"
 RIME_USER = f"/data/data/{PKG}/files/rime/user"
 SYNC_LOGIN = labels("服务器和登录", "Server and login", "サーバーとログイン")
 SYNC_DELETE = labels(
-    "删除服务器上学到的词",
-    "Delete learned words on the server",
-    "サーバー上の学習した単語を削除",
+    "删除服务器上学到的词和词典",
+    "Delete learned words and dictionaries on the server",
+    "サーバー上の学習した単語と辞書を削除",
 )
 SYNC_OFFLINE = ("无法连接服务器", "Can't reach the server", "サーバーに接続できません")
 SYNC_SYNCED = ("上次同步", "Last synced", "前回の同期")
@@ -1931,6 +1931,15 @@ def sync_personal_dictionaries():
 
 
 def sync_delete_on_server():
+    # The dictionaries go too (#14): the phone's and the other device's, left by sync-personal-dictionaries.
+    dictionaries = [
+        os.path.join(device, name)
+        for device in (SYNC["device"], OTHER_DEVICE)
+        for name in ("mozc_dictionary.txt", "userdictionary.json")
+        if os.path.isfile(sync_server_dir(device, name))
+    ]
+    if len(dictionaries) != 4:
+        raise Fail(f"before the delete, dictionary files on the server: {dictionaries}")
     go(HOME["backup"], SYNC_DELETE)
     screenshot("12-sync-delete")
     found = find_all(nodes(), labels("删除", "Delete", "削除"))
@@ -1939,7 +1948,8 @@ def sync_delete_on_server():
     wait_for("the server emptied", lambda: not os.path.isdir(sync_server_dir()), 30)
     go(HOME["backup"])
     wait_for("sync shown as off", lambda: screen_contains(SYNC_OFF), 20)
-    return "the button deleted every device's words on the server and turned sync off"
+    screenshot("14-sync-settings")
+    return "the button deleted every device's learned words and the 4 dictionary files on the server and turned sync off"
 
 
 def sync_credentials_private():
