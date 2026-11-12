@@ -1,9 +1,0 @@
-#!/bin/sh
-
-_bldtype="${_bldtype:-Debug}"
-PREFIX="${PREFIX:-/usr}"
-
-install -D -pm 755 "out_linux/${_bldtype}/fcitx5-mozc.so" "${PREFIX}/lib/fcitx5/fcitx5-mozc.so"
-
-PREFIX="${PREFIX}" ../scripts/install_fcitx5_data
-PREFIX="${PREFIX}" ../scripts/install_fcitx5_icons

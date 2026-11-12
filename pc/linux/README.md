@@ -130,23 +130,22 @@ engine's. Rime's switcher (Ctrl+\` or F4) has the same one switch.
 ### SebType's fcitx5-mozc
 
 Fedora's fcitx5-mozc picks the tray icon from the input mode alone, so Japanese's English mode can't show
-**A** for Caps Lock. SebType's fcitx5-mozc, `pc/fcitx5-mozc` (fcitx/mozc at `c0ed34e`, the version
-Fedora 44 ships), asks for `<icon>_upper` in the English modes while Caps Lock is on, and redraws the
+**A** for Caps Lock. SebType's fcitx5-mozc, built from `pc/mozc` (Mozc 3.35.6354, the same
+tree as Windows, with fcitx/mozc's Fcitx 5 frontend in `src/unix/fcitx5`), asks for `<icon>_upper` in the English modes while Caps Lock is on, and redraws the
 tray when Caps Lock changes, the way fcitx5-rime does (`src/unix/fcitx5/mozc_engine.cc`). It also
 replaces Mozc's tray menu (its five input modes and its
 tools) with the one switch, あ → ア, and makes Mozc's kana switch (Alt+\`) a two-way toggle of hiragana
 and full-width katakana instead of a cycle through half-width katakana. Nothing else changes: the same
 Mozc, dictionary and learned words.
 
-`mozc/build.sh` builds it as Fedora builds its package: `mozc/fcitx5-mozc.spec` is Fedora's spec, with
-Fedora's flags and bundled protobuf and abseil, whose sources (and the postal codes) come from Fedora's
-lookaside cache, pinned by checksum in `mozc/versions.sh` with the Fedora container image.
-It runs under the shared build lock with 4 compile jobs in a container capped at 6 GB. The build tree
-stays in `~/.cache/sebtype/mozc/work`, so a rebuild compiles only what changed. `setup-ime.sh` runs it
-when the RPM isn't built yet, installs the RPM with `sudo dnf install` and asks first. Its release,
-`6.sebtype2.fc44`, sorts above Fedora's `6.fc44`, so `dnf upgrade` keeps it until Fedora ships a newer
-fcitx5-mozc. That update replaces it: Japanese then shows **a** with Caps Lock on, and `setup-ime.sh`
-warns until `mozc/versions.sh` follows the new version.
+`mozc/build.sh` packages it in place of Fedora's: `mozc/fcitx5-mozc.spec` follows Fedora's spec and
+builds with Bazel (Bazelisk, pinned by checksum in `mozc/versions.sh` with the Fedora container image),
+which fetches the libraries `pc/mozc/src/MODULE.bazel` pins. The tools (`mozc_tool`) use Qt 6, as
+Mozc's Bazel build does. It runs under the shared build lock with 4 compile jobs in a container capped
+at 6 GB. Bazel's caches stay in `~/.cache/sebtype/mozc/work`, so a rebuild compiles only what changed.
+`setup-ime.sh` runs it when the RPM isn't built yet, replaces Fedora's fcitx5-mozc
+(`2.30.5618.102^20250124gitc0ed34e-6.fc44`) with it through `sudo dnf install` and asks first. Its
+version, 3.35.6354, is above Fedora's, so `dnf upgrade` keeps it; `--undo-mozc` brings Fedora's back.
 
 Fcitx5 loads the new fcitx5-mozc when it restarts: turn System Settings → Keyboard → Virtual Keyboard
 off and back on, or log in again.

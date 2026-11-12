@@ -39,8 +39,10 @@ BAZEL_TOOLS_PREFIX = "@bazel_tools"
 
 LINUX_MOZC_BROWSER_COMMAND = "/usr/bin/xdg-open"
 LINUX_MOZC_ICONS_DIR = "/usr/share/icons/mozc"
-LINUX_MOZC_SERVER_DIR = "/usr/lib/mozc"
-LINUX_MOZC_DOCUMENT_DIR = LINUX_MOZC_SERVER_DIR + "/documents"
+# SebType: where pc/linux/mozc/fcitx5-mozc.spec installs them; the server's own folder lets it sit next
+# to ibus-mozc.
+LINUX_MOZC_SERVER_DIR = "/usr/libexec/fcitx5-mozc"
+LINUX_MOZC_DOCUMENT_DIR = "/usr/share/doc/fcitx5-mozc"
 IBUS_COMPONENT_DIR = "/usr/share/ibus/component"
 IBUS_MOZC_INSTALL_DIR = "/usr/share/ibus-mozc"
 IBUS_MOZC_ICON_PATH = IBUS_MOZC_INSTALL_DIR + "/product_icon.png"

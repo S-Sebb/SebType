@@ -28,7 +28,7 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
 # The fake account has no Rust: setup-ime.sh copies the Configurator built here.
-# Under the shared build lock with half the cores, like every heavy local build (Decisions #2).
+# Under the shared build lock with half the cores, like every heavy local build.
 devq -m 30 -n "configurator build for test-setup-ime" /tmp/agent-locks/sebtype/build.lock \
   env CARGO_BUILD_JOBS=8 cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
   { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
@@ -95,7 +95,7 @@ stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
   'dnf install -y '*/$MOZC_RPM) echo -n '$MOZC_VERSION-$SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
   'dnf install -y '*/$RIME_RPM) echo -n '$RIME_VERSION-$RIME_SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
-  'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_VERSION-$MOZC_FEDORA_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
+  'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_FEDORA' > \"\$FAKE/fcitx5-mozc\" ;;
   'dnf distro-sync -y fcitx5-rime') echo -n '$RIME_VERSION-$RIME_FEDORA_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
   'dnf install -y '*/librime-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
   'dnf install -y librime-octagram') echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/librime-octagram\" ;;
@@ -680,12 +680,12 @@ check rerun-only-asks-for-missing-package rerun
 # SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and librime (#101) replace Fedora's after a yes, a
 # rerun leaves them, --undo-mozc, --undo-rime and --undo-librime bring back Fedora's once, and a package
 # of another version is left alone with a warning. The RPMs are placeholders, so nothing is built.
-own_swap() { # version Fedora's-release package rpm [package rpm...]: setup checks the first package
-  local v=$1 fedora=$2 pkgs=() rpms=() p o
-  shift 2
+own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup checks the first package
+  local fedora=$1 pkgs=() rpms=() p o
+  shift
   while (($#)); do pkgs+=("$1"); rpms+=("$2"); shift 2; done
   for o in "${rpms[@]}"; do mkdir -p "${o%/*}"; : > "$o"; done; rm -f "$fake/sudo.log"
-  for p in "${pkgs[@]}"; do echo -n "$v-$fedora" > "$fake/$p"; done
+  for p in "${pkgs[@]}"; do echo -n "$fedora" > "$fake/$p"; done
   p=${pkgs[0]}
   o=$(echo y | fake_run) || return 1; echo "$o"
   grep -q "^change: replace $p .* with SebType's build" <<<"$o" &&
@@ -693,16 +693,16 @@ own_swap() { # version Fedora's-release package rpm [package rpm...]: setup chec
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   ! grep -q " $p " <<<"$o" || return 1
   o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) || return 1; echo "$o"
-  [[ $(tail -1 "$fake/sudo.log") == "sudo dnf distro-sync -y ${pkgs[*]}" && $(cat "$fake/$p") == "$v-$fedora" ]] &&
+  [[ $(tail -1 "$fake/sudo.log") == "sudo dnf distro-sync -y ${pkgs[*]}" && $(cat "$fake/$p") == "$fedora" ]] &&
     o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) && [[ -z $o ]] || return 1
   echo -n 9.9.9-1.fc45 > "$fake/$p"
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(wc -l < "$fake/sudo.log") == 2 ]]
 }
-check mozc-install-and-undo own_swap "$MOZC_VERSION" "$MOZC_FEDORA_RELEASE" fcitx5-mozc "$h/.cache/sebtype/mozc/rpms/$MOZC_RPM"
-check rime-install-and-undo own_swap "$RIME_VERSION" "$RIME_FEDORA_RELEASE" fcitx5-rime "$h/.cache/sebtype/fcitx5-rime/$RIME_RPM"
+check mozc-install-and-undo own_swap "$MOZC_FEDORA" fcitx5-mozc "$h/.cache/sebtype/mozc/rpms/$MOZC_RPM"
+check rime-install-and-undo own_swap "$RIME_VERSION-$RIME_FEDORA_RELEASE" fcitx5-rime "$h/.cache/sebtype/fcitx5-rime/$RIME_RPM"
 # librime with its Lua plugin, which must be the same build
-check librime-install-and-undo own_swap "$LIBRIME_VERSION" "$LIBRIME_FEDORA_RELEASE" \
+check librime-install-and-undo own_swap "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" \
   librime "$h/.cache/sebtype/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
   librime-lua "$h/.cache/sebtype/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
   librime-octagram "$h/.cache/sebtype/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"

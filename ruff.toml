@@ -2,4 +2,4 @@
 force-exclude = true
 # SebType's Weasel, librime and Mozc keep upstream's code style.
 extend-exclude = ["java", "tools/contributors.py", "tools/make-keyboard-text-py", "pc/weasel", "pc/librime",
-  "pc/mozc", "pc/fcitx5-mozc", "pc/fcitx5-rime"]
+  "pc/mozc", "pc/fcitx5-rime"]
