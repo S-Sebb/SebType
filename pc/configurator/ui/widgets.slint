@@ -236,6 +236,7 @@ export component Kbd inherits PixelFrame {
 export component Field inherits PixelFrame {
     in-out property <string> text;
     in property <string> placeholder;
+    in property <InputType> input-type: InputType.text;
     callback accepted;
     height: 36px;
     fill: white;
@@ -252,6 +253,7 @@ export component Field inherits PixelFrame {
             font-size: 14px;
             vertical-alignment: center;
             single-line: true;
+            input-type: root.input-type;
             accepted => { root.accepted(); }
         }
         if root.text == "": Text {

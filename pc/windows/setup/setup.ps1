@@ -183,6 +183,7 @@ function Export-Key($key, $file) {
 function Import-Key($file) { & { $ErrorActionPreference = 'Continue'; reg.exe import $file 2>&1 | Out-Null } }
 Add-Type -Namespace SebType -Name User32 -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint a, uint b, System.IntPtr c, uint d);
+[DllImport("advapi32.dll", CharSet = CharSet.Unicode)] public static extern bool CredDeleteW(string target, uint type, uint flags);
 '@
 function Update-ToggleKeys { [void][SebType.User32]::SystemParametersInfo(0x5B, 0, [IntPtr]::Zero, 0) } # SPI_SETLANGTOGGLE
 
@@ -271,11 +272,15 @@ if ($Save) { Write-Output 'user: saved how the account is before SebType'; Stop-
 $removed = @($state.Chosen | Where-Object { $_ -notin $want })
 $w = Get-Weasel
 
-# ---------------------------------------------------------------------------- SYNC HOOK (#12)
-# When SebType has sync: if sync was ever on, save this account's learned words to the server here,
-# before the steps below delete them (Decisions #2, #73). The server's copy is never deleted here; the
-# settings' own button does that. Nothing to do yet: SebType has no sync.
-# ---------------------------------------------------------------------------------------------
+# Sync (#180): if sync was ever on, this account's learned words and dictionary go to the server first,
+# before the steps below delete them (Decisions #2, #73). The Configurator's sync does it, with the
+# login from Credential Manager. The server's copy is never deleted here; the Configurator's own button
+# does that.
+$SyncFile = Join-Path $StateDir 'sync.json'
+if ($removed -and (Test-Path $SyncFile)) {
+  $p = Start-Process -Wait -PassThru (Join-Path $PSScriptRoot 'sebtype-configurator.exe') '--sync-before-removal'
+  Write-Output "user: synced before learned words are deleted (exit $($p.ExitCode))"
+}
 
 # Chinese gone: its learned words with it; a Rime folder from before SebType comes back.
 if ('zh' -in $removed) {
@@ -434,6 +439,11 @@ $bar = Get-WinLanguageBarOption
 if ($bar.IsLegacySwitchingMode -ne $state.LegacySwitchingMode) {
   Set-WinLanguageBarOption -UseLegacySwitchMode:$state.LegacySwitchingMode -UseLegacyLanguageBar:$bar.IsLegacyLanguageBar
 }
+# Sync's schedule, its login in Credential Manager (a generic credential, named as the keyring crate
+# names it) and its files. The server's copy stays (Decisions #2).
+& { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType sync' /f 2>&1 | Out-Null }
+[void][SebType.User32]::CredDeleteW('login.SebType sync', 1, 0)  # CRED_TYPE_GENERIC
+Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
 Remove-Item $StateFile, $state.Backup -Recurse -Force
 Write-Output 'user: undone; input methods, switch keys and per-window setting as before SebType'
 Remove-UserFolder

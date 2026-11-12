@@ -95,7 +95,8 @@ last other one; Chinese's
 简/繁 start, punctuation, emoji, fuzzy pinyin and own words; Japanese's half-width space and own words),
 Keyboard (candidates per page, row or column, text size; the shortcuts), Theme (the candidate window in
 SebType's Picnic look, with its pig at the start, rising above the window on a tab, or the system's), Privacy (learning, and forgetting what Rime or Mozc learned), Sync & backup
-(export and import of the settings and own words; sync is #12) and About. It shows them in English, 中文
+(sync with your own server, [sync-server/README.md](../../sync-server/README.md); export and import of the
+settings and own words) and About. It shows them in English, 中文
 or 日本語, following the system language (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`; Windows' display
 language), English for any other (#118): the English is in `ui/*.slint` inside `@tr`, and
 `lang/{zh,ja}/LC_MESSAGES/sebtype-configurator.po` are built into the program. It writes the same files the

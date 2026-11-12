@@ -11,7 +11,10 @@ HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give
     sebtype_sync.py serve   --data DIR [--host H] [--port P] [--tls-cert F --tls-key F]
     sebtype_sync.py adduser --data DIR NAME [--password-stdin]
     sebtype_sync.py deluser --data DIR NAME          (also deletes the user's files and crash reports)
-    sebtype_sync.py pull|push --server URL --user NAME --password-file F --rime-dir DIR [--mozc-db F]
+    sebtype_sync.py pull|push --server URL --user NAME (--password-file F | --password-stdin) --rime-dir DIR [--mozc-db F]
+    sebtype_sync.py delete    --server URL --user NAME (--password-file F | --password-stdin)
+
+The client exits with 3 when the server refuses the login, and 1 on any other failure.
 
 API, all with HTTP Basic auth:
     GET    /v1/files                  {"files": [{"device", "name", "size", "sha256"}]}
@@ -560,18 +563,28 @@ def push(client, device, sync_dir, mozc_db=None):
 
 
 def run_client(args):
-    with open(args.password_file, encoding="utf-8") as f:
-        password = f.read().strip()
-    device, sync_dir = rime_installation(args.rime_dir)
+    if (
+        args.password_stdin
+    ):  # the SebType Configurator's way: the login stays in the system's keyring
+        password = sys.stdin.readline().rstrip("\n")
+    else:
+        with open(args.password_file, encoding="utf-8") as f:
+            password = f.read().strip()
     client = Client(args.server, args.user, password)
+    if args.command != "delete":
+        device, sync_dir = rime_installation(args.rime_dir)
     try:
-        if args.command == "pull":
+        if args.command == "delete":
+            client.request("DELETE", "/v1/files")
+            print("delete: done")
+        elif args.command == "pull":
             files, words = pull(client, device, sync_dir, args.mozc_db)
             print(f"pull: {files} file(s), {words} new word(s) for Mozc")
         else:
             print(f"push: {push(client, device, sync_dir, args.mozc_db)} file(s)")
     except urllib.error.HTTPError as e:
-        sys.exit(f"{args.command}: the server said {e.code}")
+        print(f"{args.command}: the server said {e.code}", file=sys.stderr)
+        sys.exit(3 if e.code in (401, 403) else 1)
     except OSError as e:
         sys.exit(f"{args.command}: can't reach the server ({type(e).__name__})")
 
@@ -591,11 +604,17 @@ def main():
         u.add_argument("name")
         if command == "adduser":
             u.add_argument("--password-stdin", action="store_true")
-    for command in ("pull", "push"):
+    for command in ("pull", "push", "delete"):
         c = sub.add_parser(command)
         c.add_argument("--server", required=True)
         c.add_argument("--user", required=True)
-        c.add_argument("--password-file", required=True)
+        password = c.add_mutually_exclusive_group(required=True)
+        password.add_argument("--password-file")
+        password.add_argument(
+            "--password-stdin", action="store_true", help="the password's first line"
+        )
+        if command == "delete":
+            continue  # every device's files of this user, on the server only
         c.add_argument(
             "--rime-dir", required=True, help="Rime's user dir, with installation.yaml"
         )

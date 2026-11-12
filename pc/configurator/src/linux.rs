@@ -2,7 +2,12 @@
 //! is told over D-Bus (busctl); without one, its files are written and read when it starts.
 
 use crate::Candidates;
-use std::{env, fs, io, path::PathBuf, process::Command};
+use std::{
+    env, fs, io,
+    path::{Path, PathBuf},
+    process::Command,
+    time::{Duration, Instant, SystemTime},
+};
 
 pub const SYSTEM: &str = "Linux";
 /// Noto's CJK font in the window's language, so 日本語 gets Japanese kanji shapes.
@@ -428,6 +433,104 @@ pub fn forget_mozc() -> io::Result<usize> {
     stop_mozc();
     std::thread::sleep(std::time::Duration::from_millis(300)); // it saves its files on the way out
     crate::mozc::forget(&mozc_dir())
+}
+
+// --- Sync (#180) ---
+
+/// SebType's own folder: sync's server, username and last outcome, and its client.
+pub fn sebtype_dir() -> PathBuf {
+    data().join("sebtype")
+}
+
+pub fn python() -> Command {
+    Command::new("python3")
+}
+
+/// Rime's sync, which fcitx5-rime runs when Fcitx5 saves: it merges the other devices' snapshots into
+/// the learned words and writes this PC's into `own`. Rime skips it while it is busy (deploying after
+/// a start), so it is asked again every 5 s until it has written, at most 30 s; without a running
+/// Fcitx5 there is nothing to wait for.
+pub fn sync_rime(own: &Path) {
+    let newest = || {
+        fs::read_dir(own)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".userdb.txt"))
+            .filter_map(|e| e.metadata().ok()?.modified().ok())
+            .max()
+    };
+    let start = SystemTime::now();
+    if !fcitx_running() {
+        return;
+    }
+    let end = Instant::now() + Duration::from_secs(30);
+    let mut ask = Instant::now();
+    while Instant::now() < end {
+        if Instant::now() >= ask {
+            if controller("Save", &[]).is_err() {
+                return;
+            }
+            ask += Duration::from_secs(5);
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        if newest().is_some_and(|t| t >= start) {
+            std::thread::sleep(Duration::from_secs(1)); // a schema's dictionaries are written one by one
+            return;
+        }
+    }
+}
+
+const SYNC_TIMER: &str = "sebtype-sync.timer";
+
+fn sync_units(exe: &Path) -> [(&'static str, String); 2] {
+    [
+        (
+            "sebtype-sync.service",
+            format!(
+                "[Unit]\nDescription=SebType sync with your own server\n\n[Service]\nType=oneshot\nExecStart=\"{}\" --sync\n",
+                exe.display()
+            ),
+        ),
+        (
+            SYNC_TIMER,
+            // As the phone: every half hour, and soon after login.
+            "[Unit]\nDescription=SebType sync every half hour\n\n[Timer]\nOnStartupSec=2min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".into(),
+        ),
+    ]
+}
+
+/// Syncs every half hour with a systemd user timer while sync is on.
+pub fn schedule(on: bool) -> io::Result<()> {
+    let dir = config().join("systemd/user");
+    let systemctl = |args: &[&str]| -> io::Result<()> {
+        let out = Command::new("systemctl")
+            .arg("--user")
+            .args(args)
+            .output()?;
+        if !out.status.success() {
+            return Err(io::Error::other(
+                String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            ));
+        }
+        Ok(())
+    };
+    let units = sync_units(&env::current_exe()?);
+    if on {
+        for (name, text) in &units {
+            write_if_changed(&dir.join(name), text)?;
+        }
+        systemctl(&["daemon-reload"])?;
+        return systemctl(&["enable", "--now", SYNC_TIMER]);
+    }
+    if !dir.join(SYNC_TIMER).exists() {
+        return Ok(());
+    }
+    let _ = systemctl(&["disable", "--now", SYNC_TIMER]);
+    for (name, _) in &units {
+        fs::remove_file(dir.join(name))?;
+    }
+    systemctl(&["daemon-reload"])
 }
 
 pub fn open_url(url: &str) {

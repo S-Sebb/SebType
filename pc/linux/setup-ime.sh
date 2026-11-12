@@ -69,6 +69,21 @@ app_icon=$data/icons/hicolor/192x192/apps/sebtype-configurator.png
 picnic_theme=$data/fcitx5/themes/sebtype-picnic classicui=$config/fcitx5/conf/classicui.conf
 if ((undo_configurator)); then
   for f in "$app_desktop" "$app_icon"; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }; done
+  # Sync (#180): its half-hourly timer, its login in the keyring and its files. The server's copy stays.
+  sync_units=$config/systemd/user
+  if [[ -f $sync_units/sebtype-sync.timer ]]; then
+    echo "change: stop and remove SebType's sync timer"
+    systemctl --user disable --now sebtype-sync.timer 2>/dev/null
+    rm -f "$sync_units/sebtype-sync.timer" "$sync_units/sebtype-sync.service"
+    systemctl --user daemon-reload 2>/dev/null
+  fi
+  if [[ -f $data/sebtype/sync.json ]] && command -v secret-tool >/dev/null; then
+    echo "change: remove SebType's sync login from the keyring"
+    secret-tool clear service 'SebType sync' username login 2>/dev/null
+  fi
+  for f in "$data"/sebtype/sync.json "$data"/sebtype/sync.lock "$data"/sebtype/sebtype_sync.py; do
+    [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }
+  done
   [[ -d $app_dir ]] && { echo "change: remove $app_dir"; rm -r "$app_dir"; }
   if [[ -f $classicui ]] && grep -q '^Theme=sebtype-picnic$' "$classicui"; then
     prev=$picnic_theme/previous

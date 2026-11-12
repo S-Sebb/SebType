@@ -3,7 +3,12 @@
 //! user language list.
 
 use crate::{patch, Candidates};
-use std::{env, fs, io, os::windows::process::CommandExt, path::PathBuf, process::Command};
+use std::{
+    env, fs, io,
+    os::windows::process::CommandExt,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 pub const SYSTEM: &str = "Windows";
 /// Windows' UI font for the window's language, so 日本語 gets Japanese kanji shapes.
@@ -273,6 +278,52 @@ pub fn forget_mozc() -> io::Result<usize> {
     stop_mozc();
     std::thread::sleep(std::time::Duration::from_millis(300));
     crate::mozc::forget(&mozc_dir())
+}
+
+// --- Sync (#180) ---
+
+/// SebType's own folder, next to Setup's setup.json: sync's server, username and last outcome, and its
+/// client.
+pub fn sebtype_dir() -> PathBuf {
+    appdata("LOCALAPPDATA").join("SebType")
+}
+
+/// The Python the installer puts next to the Configurator (Python's embeddable package, sebtype.iss):
+/// Windows has none of its own.
+pub fn python() -> Command {
+    let exe = env::current_exe().unwrap_or_default();
+    let mut c = Command::new(exe.with_file_name("python").join("python.exe"));
+    c.creation_flags(NO_WINDOW);
+    c
+}
+
+/// Weasel's 用户资料同步: Rime merges the other devices' snapshots into the learned words and writes
+/// this PC's. The deployer returns when it is done.
+pub fn sync_rime(_own: &Path) {
+    if let Some(root) = weasel_root() {
+        let _ = Command::new(root.join("WeaselDeployer.exe"))
+            .arg("/sync")
+            .creation_flags(NO_WINDOW)
+            .status();
+    }
+}
+
+const SYNC_TASK: &str = "SebType sync";
+
+/// Syncs every half hour with a Task Scheduler task while sync is on. It runs as the user, only while
+/// they are logged on, which Credential Manager needs.
+pub fn schedule(on: bool) -> io::Result<()> {
+    if on {
+        let exe = env::current_exe()?;
+        let command = format!("\"{}\" --sync", exe.display());
+        let args = [
+            "/create", "/tn", SYNC_TASK, "/tr", &command, "/sc", "minute", "/mo", "30", "/f",
+        ];
+        return run("schtasks", &args).map(|_| ());
+    }
+    // No task (sync was never on) is fine.
+    let _ = run("schtasks", &["/delete", "/tn", SYNC_TASK, "/f"]);
+    Ok(())
 }
 
 pub fn open_url(url: &str) {

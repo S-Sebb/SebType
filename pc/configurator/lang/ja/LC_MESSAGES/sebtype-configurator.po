@@ -295,17 +295,62 @@ msgstr "クリップボード履歴はシステム（{}）の機能で、ここ�
 msgid "Sync"
 msgstr "同期"
 
-msgid "Sync with my server"
-msgstr "自分のサーバーと同期"
+msgid "Sync learned words and dictionaries"
+msgstr "学習した単語と辞書を同期"
 
-msgid "Coming soon: learned words and your own words, the same on phone and PC"
-msgstr "近日対応：学習した単語と自分の単語をスマートフォンと PC で同期"
+msgid "中文's learned words and your Japanese and English dictionaries, with your own server"
+msgstr "中文の学習した単語と日本語・英語の辞書を、自分のサーバーと"
 
-msgid "Delete learned words on the server"
-msgstr "サーバー上の学習した単語を削除"
+msgid "Not synced yet"
+msgstr "まだ同期していません"
 
-msgid "Deletes only the server's copy; the words on this PC stay (once sync is out)"
-msgstr "サーバー上のコピーだけを削除し、この PC の単語はそのままです（同期の対応後に使えます）"
+msgid "Syncing…"
+msgstr "同期中…"
+
+msgid "Last synced {}"
+msgstr "前回の同期：{}"
+
+msgid "Can't reach the server. Syncs once it can"
+msgstr "サーバーに接続できません。接続できたら同期します"
+
+msgid "Wrong username or password"
+msgstr "ユーザー名またはパスワードが違います"
+
+msgid "Server and login"
+msgstr "サーバーとログイン"
+
+msgid "Not set"
+msgstr "未設定"
+
+msgid "Delete learned words and dictionaries on the server"
+msgstr "サーバー上の学習した単語と辞書を削除"
+
+msgid "The learned words and dictionaries on your devices stay"
+msgstr "各端末の学習した単語と辞書は残ります"
+
+msgid "Server address"
+msgstr "サーバーのアドレス"
+
+msgid "An https:// address"
+msgstr "https:// のアドレスを入力してください"
+
+msgid "Username"
+msgstr "ユーザー名"
+
+msgid "Password"
+msgstr "パスワード"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Deletes the learned words and dictionaries of all your devices from the server and turns sync off. The learned words and dictionaries on this PC and your other devices stay. Turning sync on again uploads this PC's learned words and dictionaries."
+msgstr "すべての端末の学習した単語と辞書をサーバーから削除し、同期をオフにします。この PC と他の端末の学習した単語と辞書は残ります。同期をもう一度オンにすると、この PC の学習した単語と辞書をアップロードします。"
+
+msgid "Learned words and dictionaries deleted on the server"
+msgstr "サーバー上の学習した単語と辞書を削除しました"
+
+msgid "Can't reach the server. Nothing was deleted"
+msgstr "サーバーに接続できません。何も削除されていません"
 
 msgid "Delete…"
 msgstr "削除…"

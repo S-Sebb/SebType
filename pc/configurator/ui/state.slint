@@ -9,8 +9,11 @@ export struct JaWord { reading: string, word: string, pos: int }
 export enum Msg {
     none, applied, zh-redeployed, ja-next-time, theme-next-time, saved-zh, saved-ja, deleted-zh, deleted,
     nothing-learned, forgotten, exported, imported, redeployed, not-a-backup, pinyin-letters-only,
-    reading-hiragana-only, failed,
+    reading-hiragana-only, failed, sync-deleted, sync-delete-failed,
 }
+
+// What sync's switch says under it, as the phone's (ChineseSync.Status).
+export enum SyncStatus { off, not-yet, syncing, synced, offline, login-failed }
 
 export global State {
     in property <string> version;
@@ -39,6 +42,13 @@ export global State {
     in-out property <bool> picnic: true;
     in-out property <bool> learn: true;
 
+    // Sync with the user's own server (#180)
+    in-out property <bool> sync-on;
+    in property <SyncStatus> sync-status;
+    in property <string> sync-at;            // when the last sync went through, for synced
+    in property <string> sync-server;        // the saved login, "" before the first
+    in property <string> sync-user;
+
     // What the last change did, shown for a moment (main.rs's toast); app.slint words it.
     in-out property <Msg> toast;
     in property <string> toast-arg;          // the file for exported, the error for failed
@@ -60,5 +70,8 @@ export global State {
     callback export-settings();
     callback import-settings();
     callback redeploy();
+    callback sync-toggled(bool);
+    callback save-login(string, string, string) -> bool;   // server, user, password; false: not an https address
+    callback delete-on-server();
     callback open-help();
 }

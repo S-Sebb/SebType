@@ -3,7 +3,10 @@
 
 use crate::patch;
 use serde::{Deserialize, Serialize};
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 const SCHEMA_PATCH: &str = "rime_ice.custom.yaml";
 const DEFAULT_PATCH: &str = "default.custom.yaml";
@@ -246,6 +249,23 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
     let mut n = 0;
     walk(dir, &mut n)?;
     Ok(n)
+}
+
+/// This PC's own folder in Rime's sync folder, `<sync_dir>/<installation_id>`, read from
+/// installation.yaml as sync-server/sebtype_sync.py reads it; None before Rime's first start.
+pub fn own_sync_folder(dir: &Path) -> Option<PathBuf> {
+    let text = read(&dir.join("installation.yaml"));
+    let value = |key: &str| {
+        text.lines().find_map(|l| {
+            let v = l.trim().strip_prefix(key)?.trim_start().strip_prefix(':')?;
+            Some(v.split('#').next()?.trim().trim_matches('"').to_string())
+        })
+    };
+    let id = value("installation_id").filter(|v| !v.is_empty())?;
+    let sync = value("sync_dir")
+        .filter(|v| !v.is_empty())
+        .map_or_else(|| dir.join("sync"), PathBuf::from);
+    Some(sync.join(id))
 }
 
 #[cfg(test)]
