@@ -189,7 +189,9 @@ if ($Typing) {
             [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]](@('patch:',
               "  style/horizontal: $($o -eq 'horizontal')".ToLower(), '  style/font_point: 14', '  style/color_scheme: sebtype_picnic',
               '  style/sebtype_logo: true', '  preset_color_schemes/sebtype_picnic:') + $scheme))
-            Start-Process $deployer /deploy -Wait
+            # Not Start-Process: its trailing space makes the deployer open its settings window (setup.ps1)
+            $p = [Diagnostics.Process]::Start($deployer, '/deploy')
+            if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's redeploy ($o) took over a minute" }
             $tsf::Clear(); TypeText 'nihao'; Start-Sleep 2
             $size = $tsf::CandidateWindow("$out\162-weasel-$o.png"); Keys Escape
             if (-not $size) { throw "no candidate window ($o)" }
