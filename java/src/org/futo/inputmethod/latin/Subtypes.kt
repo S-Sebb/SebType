@@ -36,10 +36,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.uix.SettingsKey
+import org.futo.inputmethod.latin.uix.dataStore
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.getSettingBlocking
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
@@ -85,12 +87,9 @@ val MultilingualBucketSetting = SettingsKey(
 )
 
 object Subtypes {
-    // Removes extensions from existing existing subtypes which are not meant to be there
-    private fun removeExtensionsIfNecessary(context: Context) {
-        val currentSubtypes = context.getSettingBlocking(SubtypesSetting)
-        if(currentSubtypes.isEmpty()) return
-
-        val newSubtypes = currentSubtypes.map {
+    // Removes extensions from existing subtypes which are not meant to be there
+    private fun removeExtensions(currentSubtypes: Set<String>): Set<String> =
+        currentSubtypes.map {
             val subtype = convertToSubtype(it)
             if(subtype.locale.contains("_#u-")) {
                 subtypeToString(InputMethodSubtypeBuilder()
@@ -103,25 +102,30 @@ object Subtypes {
             }
         }.toSet()
 
-        if(newSubtypes != currentSubtypes) {
-            Log.w("Subtypes", "Removed extensions: $currentSubtypes - $newSubtypes")
-            context.setSettingBlocking(SubtypesSetting.key, newSubtypes)
-        }
-    }
-
-    fun addDefaultSubtypesIfNecessary(context: Context) {
+    // Suspends instead of blocking: LatinIME.onCreate used to wait for this write on the main thread,
+    // which hung for good when the settings activity started in the same process (#75). One edit reads
+    // the stored value, not DataStoreHelper's cache, which lags behind writes.
+    suspend fun addDefaultSubtypesIfNecessary(context: Context) {
         if(!context.isDirectBootUnlocked) return
 
-        val currentSubtypes = context.getSettingBlocking(SubtypesSetting)
-        if(currentSubtypes.isNotEmpty()) {
-            removeExtensionsIfNecessary(context)
-            return
+        context.dataStore.edit { preferences ->
+            val currentSubtypes = preferences[SubtypesSetting.key] ?: SubtypesSetting.default
+            if(currentSubtypes.isNotEmpty()) {
+                val newSubtypes = removeExtensions(currentSubtypes)
+                if(newSubtypes != currentSubtypes) {
+                    Log.w("Subtypes", "Removed extensions: $currentSubtypes - $newSubtypes")
+                    preferences[SubtypesSetting.key] = newSubtypes
+                }
+                return@edit
+            }
+
+            // SebType: always EN, 中, 日 in globe order, whatever the system languages are
+            val defaults = SebTypeLanguages.map { (locale, layout) ->
+                subtypeToString(makeSubtype(locale.toLocale().stripExtensionsIfNeeded().toString(), layout))
+            }
+            preferences[SubtypesSetting.key] = defaults.toSet()
+            preferences[ActiveSubtype.key] = defaults.first()
         }
-
-        // SebType: always EN, 中, 日 in globe order, whatever the system languages are
-        SebTypeLanguages.forEach { (locale, layout) -> addLanguage(context, locale.toLocale(), layout) }
-
-        context.setSettingBlocking(ActiveSubtype.key, context.getSettingBlocking(SubtypesSetting).firstOrNull() ?: return)
     }
 
     fun findClosestLocaleLayouts(context: Context, locale: Locale): List<String> {

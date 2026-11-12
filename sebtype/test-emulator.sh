@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks the SebType release APK, installs it on SebType's emulator (sebtype/emulator.sh, or
-# the device ANDROID_SERIAL names) next to stock FUTO Keyboard, then
+# the device ANDROID_SERIAL names) next to stock FUTO Keyboard, opens its settings as the new keyboard
+# starts for the first time (no hang, default languages saved, #75), then
 # types Chinese with it (sebtype/test-chinese.py): the bundled Chinese data set up in the background from
 # the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
@@ -117,6 +118,35 @@ device_checks() {
   done
   echo "keyboards listed: $imes"; return 1
 }
+# #75: on a fresh install that hasn't run yet, opening the settings app while SebType is being selected
+# starts the activity and the keyboard service in one new process; the keyboard's first-start write
+# blocked the main thread for good ("SebType isn't responding"). The keyboard must still save its
+# default languages (EN, 中, 日).
+first_start_settings() {
+  local ime=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME prev prefs pid i saved=
+  local act=dev.sebb.sebtype/org.futo.inputmethod.latin.uix.settings.SettingsActivity
+  prev=$("$adb" -s "$serial" shell settings get secure default_input_method | tr -d '\r')
+  # install-beside-futo just installed SebType, and nothing has started it since.
+  "$adb" -s "$serial" shell ime enable "$ime" >/dev/null || return 1
+  "$adb" -s "$serial" logcat -c
+  "$adb" -s "$serial" shell "am start -n $act & ime set $ime; wait"
+  for i in {1..25}; do
+    prefs=$("$adb" -s "$serial" shell su 0 cat /data/data/dev.sebb.sebtype/files/datastore/settings.preferences_pb 2>/dev/null |
+      tr -c '[:print:]' ' ')
+    [[ $prefs == *en_US:KeyboardLayoutSet=qwerty* && $prefs == *zh:KeyboardLayoutSet=sebtype_zh* &&
+       $prefs == *ja:KeyboardLayoutSet=sebtype_ja* ]] && { saved=1; break; }
+    sleep 1
+  done
+  pid=$("$adb" -s "$serial" shell pidof dev.sebb.sebtype | tr -d '\r')
+  [[ -n $pid ]] && "$adb" -s "$serial" shell su 0 debuggerd -j "$pid" > "$out/first-start-settings-stacks.txt" 2>&1
+  "$adb" -s "$serial" shell ime set "$prev" >/dev/null
+  if grep -A30 '^"main"' "$out/first-start-settings-stacks.txt" 2>/dev/null | grep -m1 runBlocking; then
+    echo "main thread stuck in runBlocking: see first-start-settings-stacks.txt"; return 1
+  fi
+  "$adb" -s "$serial" logcat -d | grep -E "ANR in dev\.sebb\.sebtype|executing service dev\.sebb\.sebtype" && return 1
+  [[ $saved ]] || { echo "default languages not saved in 25 s: $prefs"; return 1; }
+  echo "no hang; default languages saved"
+}
 set_locale() { # language list to en-US only, the way Settings does: a framework restart can crash the emulator
   "$adb" -s "$serial" push "$locale_dex" /data/local/tmp/sebtype-set-locale.dex > /dev/null &&
     echo "locale was $("$adb" -s "$serial" shell app_process -cp /data/local/tmp/sebtype-set-locale.dex / \
@@ -136,6 +166,7 @@ device_suite() {
   # task can leave the emulator in Chinese (#106's second run: 13 checks failed for that alone).
   T=60 check locale bash -c set_locale && echo "locale en-US, $(grep -m1 '^locale was' "$out/locale.log")"
   T=300 check install-beside-futo bash -c device_checks
+  grep -q '^PASS install-beside-futo' "$results" && T=90 check first-start-settings bash -c first_start_settings
   if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
     # first-install enables SebType and test-chinese.py installs the field app: a run of named checks
     # may run neither, so it does both here.
@@ -152,7 +183,7 @@ device_suite() {
     result SKIP chinese "needs install-beside-futo and bumped-apk"
   fi
 }
-export -f result check set_locale device_checks device_suite; export adb apk futo_apk field_apk locale_dex results
+export -f result check set_locale device_checks first_start_settings device_suite; export adb apk futo_apk field_apk locale_dex results
 sebtype/emulator.sh -P 1 -w 1800 -m 50 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "$(head -1 "$out/emulator.log")"
