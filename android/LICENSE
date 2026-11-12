@@ -8,8 +8,13 @@ Apache License 2.0, ../NOTICE), with SebType's edits inside it counting as FUTO-
 - The Gradle files (settings.gradle, gradle.properties, gradle/, gradlew, gradlew.bat) and .clang-tidy.
 
 SebType's own files, under the MIT licence in ../LICENSE-SebType:
-- build.gradle, build.sh, release.sh, emulator.sh, upstream-version, test/, perf/, tools/trim-emoji.sh and
-  rime/ (rime/LICENSE lists its exceptions).
+- build.gradle, build.sh, release.sh, emulator.sh, upstream-version, test/, perf/, tools/trim-emoji.sh,
+  mozc/build.gradle and mozc/build-native.sh, and rime/build.gradle.
+
+Other projects' code SebType builds here keeps its licence:
+- mozc/src/: see mozc/LICENSE.
+- rime/, except rime/build.gradle: RimeJni (MIT, rime/LICENSE) with SebType's changes; its NOTICE.md and
+  src/main/assets/licenses/ list the libraries it builds.
 - In app/: src/main/java/dev/sebb/sebtype/, src/test/java/dev/sebb/sebtype/, the strings-sebtype.xml files,
   src/main/res/xml/sebtype_network_security.xml, and the launcher icon (src/main/res/mipmap-*/ic_launcher*,
   drawable/ic_launcher_foreground.xml, values/ic_launcher_background.xml), with these exceptions:

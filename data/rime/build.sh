@@ -36,8 +36,10 @@ OPENCC_URL=https://raw.githubusercontent.com/BYVoid/OpenCC/ver.$OPENCC_VERSION/d
 OPENCC_S2T_SHA256=710bb970e406d9c0a3dd33c609248686cf1c5578d064b7b7fc89e70fbb9ea75d
 OPENCC_PHRASES_SHA256=17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b
 OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41
-# Must equal the librime that rime-android builds, so the phone takes the compiled files as they are.
-. android/rime/versions.sh
+# The tables are compiled with the host's librime, which must be engines/librime's version (the one the
+# phone builds, android/rime), so the phone takes the compiled files as they are.
+LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
+headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
 BUNDLE_REVISION=6
 
@@ -45,10 +47,9 @@ out=${1:-build/sebtype-assets}/rime
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
 librime=/usr/lib64/librime.so.1
 libopencc=/usr/lib64/libopencc.so.1.1
-headers=$cache/librime-$LIBRIME_VERSION-headers
 mkdir -p "$cache" "$out"
 
-key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" android/rime/versions.sh | sha256sum | cut -c1-16)
+key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
 zip=$cache/rime-data-$key.zip
 version="rime-ice $RIME_ICE_VERSION + rime-frost $RIME_FROST_VERSION, sebtype $BUNDLE_REVISION"
 
@@ -65,16 +66,6 @@ fetch() { # url sha256 -> prints cached path
 if [[ ! -f $zip ]]; then
   [[ -f $librime && -f $libopencc ]] && command -v gcc g++ >/dev/null ||
     { echo "rime-data: needs gcc, g++, librime $LIBRIME_VERSION ($librime) and OpenCC ($libopencc) to compile the tables" >&2; exit 1; }
-  mkdir -p "$headers"
-  while read -r sum f; do # librime's public headers, pinned; Fedora ships them only in librime-devel
-    echo "$sum  $headers/$f" | sha256sum -c --status 2>/dev/null && continue
-    curl -fsSL -o "$headers/$f" "https://raw.githubusercontent.com/rime/librime/$LIBRIME_VERSION/src/$f"
-    echo "$sum  $headers/$f" | sha256sum -c --status || { echo "rime-data: bad librime header $f" >&2; exit 1; }
-  done <<'EOF'
-6eb5629162c44761e7b878f1b122f464de5c8685bd3cd5ac1e8519badc6d6424 rime_api.h
-21625c4e16480a4540939299a002f21b11150bb10b69f5331e1580875ac63341 rime_api_deprecated.h
-f5a64254e98c1c12ce6628f5d540bcd4e4b542ec287b4873c0b0ce4ed1bece99 rime_api_stdbool.h
-EOF
   work=$(mktemp -d "$cache/rime-data.XXXXXX")
   trap 'rm -rf "$work"' EXIT
   gcc -O2 -I"$headers" -o "$work/deploy" "$here/deploy.c" "$librime"

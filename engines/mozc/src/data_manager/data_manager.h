@@ -65,6 +65,10 @@ class DataManager {
   static DMStatusOr CreateFromFile(absl::string_view path);
   static DMStatusOr CreateFromFile(absl::string_view path,
                                    absl::string_view magic);
+  // SebType: the data set at [offset, offset + size) of the file, so the phone maps it straight
+  // from inside its APK.
+  static DMStatusOr CreateFromFileRegion(absl::string_view path, size_t offset,
+                                         size_t size);
 
   static DMStatusOr CreateFromArray(absl::string_view array);
   static DMStatusOr CreateFromArray(absl::string_view array,
@@ -165,7 +169,9 @@ class DataManager {
   // The same as above InitFromArray() but the data is loaded using mmap, which
   // is owned in this instance.
   absl::Status InitFromFile(absl::string_view path);
-  absl::Status InitFromFile(absl::string_view path, absl::string_view magic);
+  absl::Status InitFromFile(absl::string_view path, absl::string_view magic,
+                            size_t offset = 0,
+                            std::optional<size_t> size = std::nullopt);
 
   // The same as above InitFromArray() but only parses data set for user pos
   // manager.  For mozc runtime modules, use InitFromArray() because this method

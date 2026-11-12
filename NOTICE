@@ -23,7 +23,9 @@ has the details):
   - SebType's fcitx5-rime in pc/fcitx5-rime/: fcitx5-rime's LGPL-2.1-or-later.
   - SebType's Fcitx5 in pc/fcitx5/: Fcitx5's LGPL-2.1-or-later.
   - The RPM specs in pc/linux/: Fedora's, MIT.
-  - android/rime/patches/, patches to RimeJni: RimeJni's MIT licence.
+  - android/rime/: RimeJni (MIT) with SebType's changes, under RimeJni's licence (android/rime/LICENSE).
+  - android/mozc/src/: FUTO's mozc-lib, Google's Mozc Android client (BSD-3-Clause) with FUTO's and
+    SebType's changes (android/mozc/LICENSE).
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0, fcitx5-rime
   LGPL-2.1-or-later.

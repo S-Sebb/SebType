@@ -83,7 +83,8 @@ try {
     & $bazelisk "--output_user_root=$WorkDir\bazel" --nowindows_enable_symlinks build package --config release_build --jobs=8 `
         --platforms=//:windows-x86_64 @cache *> "$WorkDir\out\build.log"
 } catch {
-    Get-Content "$WorkDir\out\build.log" -Tail 40 -ErrorAction SilentlyContinue
+    # To the host: the caller keeps only the MSI's path from the output.
+    Get-Content "$WorkDir\out\build.log" -Tail 40 -ErrorAction SilentlyContinue | Write-Host
     throw
 } finally { Pop-Location }
 

@@ -41,14 +41,17 @@
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/random/random.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "base/system_util.h"
 #include "base/util.h"
+#include "client/user_dictionary/user_dictionary_importer.h"
 #include "data_manager/data_manager.h"
 #include "engine/engine.h"
 #include "protocol/commands.pb.h"
+#include "protocol/user_dictionary_storage.pb.h"
 #include "session/session_handler.h"
 
 namespace mozc {
@@ -57,6 +60,19 @@ namespace {
 
 // The global instance of Mozc system to be initialized in onPostLoad().
 std::unique_ptr<SessionHandler> g_session_handler;
+
+std::string JbyteArrayToString(JNIEnv* env, jbyteArray array) {
+  std::string s(env->GetArrayLength(array), '\0');
+  env->GetByteArrayRegion(array, 0, s.size(), reinterpret_cast<jbyte*>(s.data()));
+  return s;
+}
+
+jbyteArray StringToJbyteArray(JNIEnv* env, absl::string_view s) {
+  jbyteArray array = env->NewByteArray(s.size());
+  env->SetByteArrayRegion(array, 0, s.size(),
+                          reinterpret_cast<const jbyte*>(s.data()));
+  return array;
+}
 
 // Concrete implementation for MozcJni.evalCommand
 jbyteArray JNICALL evalCommand(JNIEnv* env, jclass clazz,
@@ -92,10 +108,14 @@ std::string JstringToCcString(JNIEnv* env, jstring j_string) {
   return cc_string;
 }
 
+// SebType: a data file length of 0 maps the whole file; otherwise the data set is the region
+// [offset, offset + length) of the file, e.g. an uncompressed resource inside the APK.
 std::unique_ptr<EngineInterface> CreateMobileEngine(
-    const std::string& data_file_path) {
+    const std::string& data_file_path, size_t offset, size_t length) {
   absl::StatusOr<std::unique_ptr<const DataManager>> data_manager =
-      DataManager::CreateFromFile(data_file_path);
+      length == 0
+          ? DataManager::CreateFromFile(data_file_path)
+          : DataManager::CreateFromFileRegion(data_file_path, offset, length);
   if (!data_manager.ok()) {
     LOG(ERROR)
         << "Fallback to minimal engine due to data manager creation failure: "
@@ -122,7 +142,9 @@ std::unique_ptr<EngineInterface> CreateMobileEngine(
 }
 
 std::unique_ptr<SessionHandler> CreateSessionHandler(JNIEnv* env,
-                                                     jstring j_data_file_path) {
+                                                     jstring j_data_file_path,
+                                                     jlong offset,
+                                                     jlong length) {
   if (env == nullptr) {
     LOG(DFATAL) << "JNIEnv is null";
     return nullptr;
@@ -134,21 +156,20 @@ std::unique_ptr<SessionHandler> CreateSessionHandler(JNIEnv* env,
   } else {
     const std::string& data_file_path =
         JstringToCcString(env, j_data_file_path);
-    engine = CreateMobileEngine(data_file_path);
+    engine = CreateMobileEngine(data_file_path, offset, length);
   }
   DCHECK(engine);
   return std::make_unique<SessionHandler>(std::move(engine));
 }
 
 // Does post-load tasks.
-// Returns true if the task succeeded
-// or SessionHandler has already been initialized.
+// Returns true if the task succeeded. SebType: a later call replaces the SessionHandler, so the
+// keyboard can reload Mozc with another data file or user profile.
 jboolean JNICALL onPostLoad(JNIEnv* env, jclass clazz,
                             jstring user_profile_directory_path,
-                            jstring data_file_path) {
-  if (g_session_handler) {
-    return true;
-  }
+                            jstring data_file_path, jlong data_file_offset,
+                            jlong data_file_length) {
+  g_session_handler.reset();
 
   // First of all, set the user profile directory.
   const std::string& original_dir = SystemUtil::GetUserProfileDirectory();
@@ -156,7 +177,8 @@ jboolean JNICALL onPostLoad(JNIEnv* env, jclass clazz,
       JstringToCcString(env, user_profile_directory_path));
 
   // Initializes the global Mozc system.
-  g_session_handler = CreateSessionHandler(env, data_file_path);
+  g_session_handler = CreateSessionHandler(env, data_file_path,
+                                           data_file_offset, data_file_length);
   if (!g_session_handler) {
     SystemUtil::SetUserProfileDirectory(original_dir);
     LOG(DFATAL) << "Failed to create Mozc session handler";
@@ -164,6 +186,22 @@ jboolean JNICALL onPostLoad(JNIEnv* env, jclass clazz,
   }
 
   return true;
+}
+
+// SebType: parses a user dictionary file the user imported (Mozc, MS-IME, ATOK or Kotoeri text) into a
+// serialized UserDictionary, skipping entries it can't read. The phone writes user_dictionary.db with it,
+// since Mozc no longer takes user dictionary commands.
+jbyteArray JNICALL importUserDictionary(JNIEnv* env, jclass clazz,
+                                        jbyteArray j_text) {
+  const std::string text = JbyteArrayToString(env, j_text);
+  user_dictionary::StringTextLineIterator iter(text);
+  user_dictionary::UserDictionary dictionary;
+  if (absl::Status status = user_dictionary::ImportFromTextLineIterator(
+          user_dictionary::IME_AUTO_DETECT, &iter, &dictionary);
+      !status.ok()) {
+    LOG(WARNING) << "User dictionary import: " << status;
+  }
+  return StringToJbyteArray(env, dictionary.SerializeAsString());
 }
 
 jstring JNICALL getDataVersion(JNIEnv* env) {
@@ -191,8 +229,10 @@ Java_com_google_android_apps_inputmethod_libs_mozc_session_MozcJni_initialize(
   const JNINativeMethod methods[] = {
       {"evalCommand", "([B)[B",
        reinterpret_cast<void*>(&mozc::jni::evalCommand)},
-      {"onPostLoad", "(Ljava/lang/String;Ljava/lang/String;)Z",
+      {"onPostLoad", "(Ljava/lang/String;Ljava/lang/String;JJ)Z",
        reinterpret_cast<void*>(&mozc::jni::onPostLoad)},
+      {"importUserDictionary", "([B)[B",
+       reinterpret_cast<void*>(&mozc::jni::importUserDictionary)},
       {"getDataVersion", "()Ljava/lang/String;",
        reinterpret_cast<void*>(&mozc::jni::getDataVersion)},
   };

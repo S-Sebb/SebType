@@ -18,7 +18,6 @@ on:
       - pc/linux/mozc-keymap.tsv
       - pc/linux/perf-rime.c
       - data/rime/**
-      - android/rime/versions.sh
       - art/make-icon.py
       - art/fonts/**
       - art/icon.png

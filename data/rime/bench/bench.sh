@@ -9,11 +9,11 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/../../.."
-. android/rime/versions.sh
+LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
+headers=$PWD/engines/librime/src
 
 out=/tmp/sebtype/rime-bench; mkdir -p "$out"
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
-headers=$cache/librime-$LIBRIME_VERSION-headers
 librime=/usr/lib64/librime.so.1 lua=/usr/lib64/rime-plugins/librime-lua.so
 OLD_URL=https://github.com/iDvel/rime-ice/releases/download/2026.06.30/full_compiled.zip
 OLD_SHA256=ae810e0023f28d3eb45ff98a7c58830dd0b505c2272638a321fa6d5a6f5d5418
@@ -26,7 +26,7 @@ for x in gcc dnf rpm2cpio cpio curl; do command -v $x >/dev/null || { echo "pref
 work=$(mktemp -d "$cache/rime-bench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
-# SebType's data (also fetches librime's headers), rime-ice as bundled before, and the octagram plugin.
+# SebType's data, rime-ice as bundled before, and the octagram plugin.
 data/rime/build.sh "$work/assets" > "$work/build.log" 2>&1 || { echo "preflight: data/rime/build.sh failed, see below"; tail -3 "$work/build.log"; exit 1; }
 old=$cache/rime-ice-2026.06.30-full_compiled.zip
 if ! echo "$OLD_SHA256  $old" | sha256sum -c --status 2>/dev/null; then

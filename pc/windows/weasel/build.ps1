@@ -1,6 +1,6 @@
 # Builds SebType's Weasel (小狼毫) installer: SebType's Weasel in pc/weasel (Weasel $WeaselVersion) with
 # SebType's tray icons, and SebType's librime in engines/librime (librime $RimeVersion, the version SebType's
-# Android build uses, android/rime/versions.sh; #101, #133).
+# Android build uses too; #101, #133).
 #   pc/windows/weasel/build.ps1 -Icons <dir with zh.ico en.ico en_caps.ico> [-Out <dir>]
 # Needs Visual Studio 2022 with C++ and ATL, git, 7z, NSIS and Git's bash (GitHub's windows-2022
 # runner has them all; .github/workflows/weasel.yml runs this). The third-party code SebType doesn't

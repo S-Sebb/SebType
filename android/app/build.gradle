@@ -71,11 +71,7 @@ tasks.register('updateContributors') {
 
 preBuild.dependsOn updateLocales
 
-// SebType: the Rime aar with Lua (../rime/), downloaded and checksum-checked, and the Chinese data,
-// compiled from pinned sources (cached); neither is committed.
-tasks.register('fetchRimeAar', Exec) {
-    commandLine 'bash', file('../rime/fetch-aar.sh').absolutePath, file('../rime/out/rime-release.aar').absolutePath
-}
+// SebType: the Chinese data, compiled from pinned sources (cached) and not committed.
 tasks.register('buildRimeData', Exec) {
     commandLine 'bash', file('../../data/rime/build.sh').absolutePath, layout.buildDirectory.dir('sebtype-assets').get().asFile.absolutePath
 }
@@ -127,8 +123,8 @@ android {
         // SebType (#58): native code names its source files relative to the checkout, so the libraries are
         // the same in every worktree and sccache (build.sh) can share objects between them.
         externalNativeBuild.cmake {
-            cFlags "-ffile-prefix-map=${rootDir}/="
-            cppFlags "-ffile-prefix-map=${rootDir}/="
+            cFlags "-ffile-prefix-map=${rootDir.parent}/="
+            cppFlags "-ffile-prefix-map=${rootDir.parent}/="
         }
         // SebType speaks English, Chinese and Japanese only (#6); add 'ru' back with Russian.
         resConfigs 'en', 'ja', 'zh-rCN'
@@ -279,15 +275,10 @@ dependencies {
 
     implementation "com.charleskorn.kaml:kaml:0.61.0"
 
-    // For MOZC
-    implementation 'com.google.protobuf:protobuf-javalite:3.8.0'
+    implementation project(':mozc')
     implementation 'com.google.guava:guava:33.4.8-android'
-    implementation(name:'mozc-release', ext:'aar')
-    // End for MOZC
 
-    // For RIME
-    implementation files('../rime/out/rime-release.aar').builtBy('fetchRimeAar')
-    // End for RIME
+    implementation project(':rime')
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 

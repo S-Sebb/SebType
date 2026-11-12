@@ -1,0 +1,62 @@
+// Mozc for the phone: FUTO's Android client for Mozc (from its mozc-lib), and libmozc.so built from
+// engines/mozc, the Mozc the PCs run, with its protocol buffers compiled from the same tree.
+plugins {
+    id 'com.android.library'
+    id 'com.google.protobuf'
+}
+
+final def mozcSrc = file('../../engines/mozc/src')
+final def abis = (findProperty('sebtypeAbis') ?: 'arm64-v8a').split(',') as List
+final def mozcLibs = layout.buildDirectory.dir('generated/mozc/jniLibs')
+
+android {
+    namespace 'org.futo.inputmethod.nativelib.mozc'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        minSdk 24
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    sourceSets {
+        main {
+            jniLibs.srcDirs = [mozcLibs]
+            proto {
+                srcDir mozcSrc
+                include 'protocol/*.proto'
+            }
+        }
+    }
+}
+
+// Bazel builds only when engines/mozc changes; Gradle's build cache serves the result to every worktree.
+tasks.register('buildMozcNative', Exec) {
+    inputs.files(fileTree(mozcSrc) { exclude 'bazel-*' }).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file('build-native.sh').withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property('abis', abis)
+    outputs.dir mozcLibs
+    outputs.cacheIf { true }
+    environment 'ANDROID_NDK_HOME', android.ndkDirectory.absolutePath
+    commandLine(['bash', file('build-native.sh').absolutePath, mozcLibs.get().asFile.absolutePath] + abis)
+}
+preBuild.dependsOn 'buildMozcNative'
+
+protobuf {
+    protoc { artifact = 'com.google.protobuf:protoc:3.8.0' }
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins { java { option 'lite' } }
+        }
+    }
+}
+
+dependencies {
+    api 'com.google.protobuf:protobuf-javalite:3.8.0'
+    implementation 'com.google.guava:guava:33.4.8-android'
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+}
