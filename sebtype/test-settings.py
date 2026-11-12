@@ -29,6 +29,7 @@ match the emulator's Chinese, English or Japanese UI. One line per check appende
 check finds its own way from the home screen, so one failing doesn't stop the next.
 """
 
+import ast
 import functools
 import glob
 import json
@@ -392,14 +393,48 @@ def toggle(path, texts):
     tap_text(texts)
 
 
-def check(name, fn):
+def dependency_checks():
+    """The checks the ones SEBTYPE_CHECKS names need besides themselves, from their `needs=`."""
+    needs = {}
+    with open(__file__, encoding="utf-8") as f:
+        for node in ast.walk(ast.parse(f.read())):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", "") == "check"
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                kw = {k.arg: k.value for k in node.keywords}
+                needs[node.args[0].value] = (
+                    [e.value for e in kw["needs"].elts] if "needs" in kw else []
+                )
+    named = {n for n in needs if any(n.startswith(c) for c in CHECKS)}
+    todo = list(named)
+    run = set()
+    while todo:
+        n = todo.pop()
+        if n not in run:
+            run.add(n)
+            todo += needs[n]
+    return run - named
+
+
+NEEDED = dependency_checks() if CHECKS else set()
+passed = set()
+
+
+def check(name, fn, needs=()):
     # A named run of settings-japanese leaves the system in 日本語, and the file picker's labels the
     # checks after it read (Downloads, Show roots) are English: settings-locale-back always runs.
     if (
         CHECKS
         and not any(name.startswith(c) for c in CHECKS)
+        and name not in NEEDED
         and name != "settings-locale-back"
     ):
+        return
+    missing = [n for n in needs if n not in passed]
+    if missing:
+        result("SKIP", name, f"needs {', '.join(missing)}")
         return
     if name in TIMING and not os.environ.get("PERF_RUN"):
         if CHECKS:  # named, so say why it didn't run
@@ -407,6 +442,7 @@ def check(name, fn):
         return
     try:
         detail = fn()
+        passed.add(name)
         result("PASS", name, detail or "")
     except Skip as e:
         result("SKIP", name, str(e))
@@ -2100,13 +2136,21 @@ check("incognito-off-learns-zh", learns_again("ni", "你", "sx"))
 check("incognito-off-learns-ja", learns_again("nihongo", "日本語", "hashi"))
 try:
     check("sync-setup", sync_setup)
-    check("sync-offline-learns", sync_offline_learns)
-    check("sync-online-uploads", sync_online_uploads)
-    check("sync-other-device", sync_other_device)
-    check("sync-crash-report", sync_crash_report)
-    check("sync-personal-dictionaries", sync_personal_dictionaries)
-    check("sync-credentials-private", sync_credentials_private)
-    check("sync-delete-on-server", sync_delete_on_server)
+    check("sync-offline-learns", sync_offline_learns, needs=["sync-setup"])
+    check("sync-online-uploads", sync_online_uploads, needs=["sync-offline-learns"])
+    check("sync-other-device", sync_other_device, needs=["sync-online-uploads"])
+    check("sync-crash-report", sync_crash_report, needs=["sync-online-uploads"])
+    check(
+        "sync-personal-dictionaries",
+        sync_personal_dictionaries,
+        needs=["sync-setup"],
+    )
+    check("sync-credentials-private", sync_credentials_private, needs=["sync-setup"])
+    check(
+        "sync-delete-on-server",
+        sync_delete_on_server,
+        needs=["sync-personal-dictionaries"],
+    )
 finally:
     stop_sync_server()
 
