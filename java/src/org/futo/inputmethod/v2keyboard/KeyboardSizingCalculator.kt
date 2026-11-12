@@ -25,10 +25,8 @@ import kotlinx.serialization.json.Json
 import org.futo.inputmethod.latin.FoldStateProvider
 import org.futo.inputmethod.latin.LatinIME
 import org.futo.inputmethod.latin.settings.SettingsValues
-import org.futo.inputmethod.latin.uix.OldStyleActionsBar
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.UixManager
-import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.getSettingBlocking
 import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.utils.ResourceUtils
@@ -482,10 +480,6 @@ class KeyboardSizingCalculator(val context: Context, val uixManager: UixManager)
                     settings.mIsNumberRowEnabled -> 0.8
 
                     else -> 0.0
-                } +
-                when { // Arrow row height
-                    settings.mIsArrowRowEnabled -> 0.8
-                    else -> 0.0
                 }
 
         val recommendedHeight = numRows * singularRowHeight + padding.bottom
@@ -593,8 +587,7 @@ class KeyboardSizingCalculator(val context: Context, val uixManager: UixManager)
     fun calculateTotalActionBarHeightPx(): Int =
         when {
             uixManager.actionsExpanded
-                    && (uixManager.currWindowActionWindow == null)
-                    && (context.getSetting(OldStyleActionsBar) == false) -> dp(2 * calculateSuggestionBarHeightDp())
+                    && (uixManager.currWindowActionWindow == null) -> dp(2 * calculateSuggestionBarHeightDp())
             else -> dp(calculateSuggestionBarHeightDp())
         }
 }

@@ -85,9 +85,6 @@ msgstr "已导出到 {}"
 msgid "Imported"
 msgstr "已导入"
 
-msgid "Redeployed"
-msgstr "已重新部署"
-
 msgid "This file wasn't exported by SebType Configurator"
 msgstr "这不是 SebType 设置导出的文件"
 
@@ -262,15 +259,6 @@ msgstr "日本語的候选窗由 Mozc 自己绘制，保持原样。"
 msgid "The candidate windows of 中文 and 日本語 both use this style."
 msgstr "中文和日本語的候选窗都使用此样式。"
 
-msgid "Tray icons"
-msgstr "托盘图标"
-
-msgid "SebType's key icons"
-msgstr "SebType 的按键图标"
-
-msgid "EN, 中, あ, ア, and a / A (Caps Lock) in the English mode of 中文 and 日本語"
-msgstr "EN、中、あ、ア，以及中文和日本語英文模式下的 a / A（大写锁定）"
-
 msgid "Learn from my typing"
 msgstr "从我的输入中学习"
 
@@ -384,12 +372,6 @@ msgstr "帮助与反馈"
 
 msgid "SebType's issues on GitHub"
 msgstr "SebType 在 GitHub 上的问题页"
-
-msgid "Redeploy"
-msgstr "重新部署"
-
-msgid "Applies every setting again; 中文 takes a few seconds"
-msgstr "重新应用所有设置，中文需要几秒"
 
 msgid "Licence and credits"
 msgstr "许可与致谢"

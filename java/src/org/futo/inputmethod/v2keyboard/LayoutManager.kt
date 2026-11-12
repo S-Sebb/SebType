@@ -14,10 +14,6 @@ import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
 import org.futo.inputmethod.latin.SebTypeLanguages
 import org.futo.inputmethod.latin.localeFromString
-import org.futo.inputmethod.latin.uix.actions.BugInfo
-import org.futo.inputmethod.latin.uix.actions.BugViewerState
-import org.futo.inputmethod.latin.uix.settings.pages.CustomLayout
-import org.futo.inputmethod.latin.uix.settings.pages.getCustomLayout
 import java.util.Locale
 
 @Serializable
@@ -88,19 +84,11 @@ object LayoutManager {
 
     fun getLayout(context: Context, name: String): Keyboard {
         ensureInitialized()
-        if(name.startsWith("custom")) return CustomLayout.getCustomLayout(context, name)
-
         return layoutsById?.get(name)?.get(context) ?: throw IllegalArgumentException("Failed to find keyboard layout $name. Available layouts: ${layoutsById?.keys}")
     }
 
     fun getLayoutOrNull(context: Context, name: String): Keyboard? {
         ensureInitialized()
-        if(name.startsWith("custom")) return try {
-            CustomLayout.getCustomLayout(context, name)
-        } catch (_: Exception) {
-            null
-        }
-
         return layoutsById?.get(name)?.get(context)
     }
 
@@ -205,12 +193,7 @@ internal class LazyKeyboard(
             id = filename
         }
     } catch(e: Exception) {
-        BugViewerState.pushBug(BugInfo(
-            "LayoutManager",
-            "Failed to parse layout $filename\nMessage: ${e.message}, cause: ${e.cause?.message}"
-        ))
-
-        e.printStackTrace()
+        Log.e("LayoutManager", "Failed to parse layout $filename", e)
 
         parseKeyboardYaml(context, "layouts/Special/error.yaml").apply { id = filename }
     }

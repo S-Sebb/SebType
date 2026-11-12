@@ -21,6 +21,7 @@ has the details):
   - SebType's Weasel in pc/weasel/: Weasel's GPL-3.0.
   - SebType's librime in pc/librime/: librime's BSD-3-Clause.
   - SebType's fcitx5-rime in pc/fcitx5-rime/: fcitx5-rime's LGPL-2.1-or-later.
+  - SebType's Fcitx5 in pc/fcitx5/: Fcitx5's LGPL-2.1-or-later.
   - The RPM specs in pc/linux/: Fedora's, MIT.
   - rime-android/patches/, patches to RimeJni: RimeJni's MIT licence.
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,

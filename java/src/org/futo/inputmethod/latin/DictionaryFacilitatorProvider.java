@@ -20,7 +20,7 @@ package org.futo.inputmethod.latin;
  * Factory for instantiating DictionaryFacilitator objects.
  */
 public class DictionaryFacilitatorProvider {
-    public static DictionaryFacilitator getDictionaryFacilitator(boolean isNeededForSpellChecking) {
+    public static DictionaryFacilitator getDictionaryFacilitator() {
         return new DictionaryFacilitatorImpl();
     }
 }

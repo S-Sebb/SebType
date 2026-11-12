@@ -7,13 +7,7 @@
     <string name="action_paste_title">Paste from Clipboard</string>
     <string name="action_undo_title">Undo</string>
     <string name="action_redo_title">Redo</string>
-    <string name="action_text_editor_title">Text Editor</string>
-    <string name="action_debug_title">Debug Info</string>
     <string name="action_more_actions_title">All Actions</string>
-    <string name="action_bug_viewer_title">Bug Viewer</string>
-    <!-- These move the text cursor up, down, left, right -->
-    <string name="action_cursor_up_title">Arrow Up</string>
-    <string name="action_cursor_down_title">Arrow Down</string>
     <string name="action_cursor_left_title">Arrow Left</string>
     <string name="action_cursor_right_title">Arrow Right</string>
 
@@ -42,7 +36,6 @@
     <string name="action_emoji_clear_recent_emojis_content_description">Clear recent emojis</string>
     <!-- Must be fairly short -->
     <string name="action_emoji_search_for_emojis">Search</string>
-
 
     <!-- For clipboard manager action -->
     <string name="action_clipboard_manager_title">Clipboard Manager</string>
@@ -74,8 +67,6 @@
     <!-- Must be fairly short -->
     <string name="action_clipboard_manager_retry_saving_loading">Retry</string>
     <!-- Must be fairly short -->
-    <string name="action_clipboard_manager_inspect_error_via_bugs_action">Inspect error in Bug Viewer</string>
-    <!-- Must be fairly short -->
     <string name="action_clipboard_manager_delete_corrupted_clipboard_button">Delete</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_title">Clipboard History Inactive</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_text_v2">To save clipboard items, you can enable clipboard history. This will keep up to <xliff:g id="numItems" example="25">%1$s</xliff:g> items for <xliff:g id="numDays" example="3">%2$s</xliff:g> days (pinned items are exempt). You can configure this in settings.</string>
@@ -101,27 +92,6 @@
     <string name="action_keyboard_modes_resizing_reset_size">Reset</string>
     <!-- This string must be super short (below 10 chars if possible) -->
     <string name="action_keyboard_modes_resizing_apply_new_size">Apply</string>
-
-    <!-- For Font Typer action -->
-    <string name="action_fonttyper_title">WordStyles</string>
-    <!-- This message is shown when we're typing in a text field does not support image insertion ("app" refers to the external app that is providing the text field) -->
-    <string name="action_fonttyper_app_unsupported_warning">App may not support image insertion, this feature may not work.</string>
-    <string name="action_fonttyper_select_a_preset">Select preset</string>
-    <!-- Abstract, fragmented orange characters on a black background, resembling an alien script -->
-    <string name="action_fonttyper_preset_title_scratch">Scratch</string>
-    <!-- Comic book style text: bold, italicized yellow-orange letters with a thick shadow, looking 3d -->
-    <string name="action_fonttyper_preset_title_superhero">Superhero</string>
-    <!-- Large, bold 3d white letters in a powerful cinematic perspective -->
-    <string name="action_fonttyper_preset_title_dramatictext">Dramatic Text</string>
-    <!-- Pink candy-like cursive text -->
-    <string name="action_fonttyper_preset_title_candy">Candy</string>
-    <!-- Rainbow colored text with a skewed shadow -->
-    <string name="action_fonttyper_preset_title_rainbow">Rainbow</string>
-    <!-- Sky and ground colored serif text with a dark grey shadow, the text color looks like a horizon -->
-    <string name="action_fonttyper_preset_title_horizon">Horizon</string>
-    <!-- Orange text on a black background, tilted in a 3d style effect, like a TV show opening crawl -->
-    <string name="action_fonttyper_preset_title_opening_crawl">Opening Crawl</string>
-    <string name="action_fonttyper_finish">Finish</string>
 
     <!-- Keyboard action kinds -->
     <string name="action_kind_action_key">Action Key</string>
@@ -212,15 +182,12 @@
     <string name="payment_unpaid_version_title">Unpaid FUTO Keyboard</string>
     <string name="payment_unpaid_version_indicator">Unpaid</string>
 
-
     <!-- General settings strings -->
     <string name="settings_tip">Tip</string>
     <string name="settings_unknown_error_subtitle">An unknown error has occurred.</string>
     <string name="settings_try_typing_here">Try typing here…</string>
     <string name="setting_section_collapsed">Collapsed</string>
     <string name="setting_section_expanded">Expanded</string>
-
-
 
     <string name="language_settings_import_dictionary_or_model">Import dictionary or model</string>
 
@@ -292,16 +259,6 @@
     <string name="keyboard_settings_title">Keyboard</string>
     <string name="keyboard_settings_show_number_row">Show Number Row</string>
     <string name="keyboard_settings_show_number_row_subtitle">When active, the number row is shown on top of the keyboard on supported layouts</string>
-
-    <string name="dev_settings_title">Developer Settings</string>
-
-
-
-
-
-
-
-
 
     <!-- Setup configuration -->
     <string name="setup_step_1">Setup - Step 1</string>

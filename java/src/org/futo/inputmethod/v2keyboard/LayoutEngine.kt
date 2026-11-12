@@ -82,23 +82,6 @@ data class LayoutRow(
     val splittable: Boolean
 )
 
-val ArrowRow = Row(
-    letters = listOf(
-        BaseKey("!icon/action_up|!code/action_up"),
-        BaseKey("!icon/action_down|!code/action_down"),
-        BaseKey("!icon/action_left|!code/action_left"),
-        BaseKey("!icon/action_right|!code/action_right"),
-    ),
-    attributes = KeyAttributes(
-        width = KeyWidth.Grow,
-        style = KeyVisualStyle.NoBackground,
-        showPopup = false,
-        repeatableEnabled = true
-    ),
-    splittable = false,
-    rowHeight = 0.8
-)
-
 data class LayoutParams(
     val size: ComputedKeyboardSize,
     val gap: Dp,
@@ -134,10 +117,7 @@ data class LayoutEngine(
                     (it.numRowMode.displayWhenExplicitlyInactive && !params.mId.mNumberRow)
         }
 
-        val finalRows = filteredRows +
-                if(params.mId.mArrowRow) { listOf(ArrowRow) } else { emptyList() }
-
-        finalRows
+        filteredRows
     }
 
     private val density = context.resources.displayMetrics.density
@@ -658,9 +638,8 @@ data class LayoutEngine(
             else -> null
         }
 
-        // For the spacebar specifically, extend the hitbox all the way down to include the padded area,
-        // unless arrow row is active
-        val extendedBottomPadding = if(data.style == KeyVisualStyle.Spacebar && data.code == Constants.CODE_SPACE && !params.mId.mArrowRow) {
+        // For the spacebar specifically, extend the hitbox all the way down to include the padded area
+        val extendedBottomPadding = if(data.style == KeyVisualStyle.Spacebar && data.code == Constants.CODE_SPACE) {
             layoutParams.size.padding.bottom
         } else {
             0

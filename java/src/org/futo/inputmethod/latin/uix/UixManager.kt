@@ -55,11 +55,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -108,7 +108,6 @@ import org.futo.inputmethod.engine.IMEInterface
 import org.futo.inputmethod.engine.NonExpandableSuggestionBar
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.latin.AudioAndHapticFeedbackManager
-import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.FoldingOptions
 import org.futo.inputmethod.latin.LanguageSwitcherDialog
 import org.futo.inputmethod.latin.LatinIME
@@ -123,8 +122,6 @@ import org.futo.inputmethod.latin.suggestions.SuggestionStripViewListener
 import org.futo.inputmethod.latin.uix.actions.ActionEditor
 import org.futo.inputmethod.latin.uix.actions.ActionRegistry
 import org.futo.inputmethod.latin.uix.actions.AllActions
-import org.futo.inputmethod.latin.uix.actions.BugViewerAction
-import org.futo.inputmethod.latin.uix.actions.BugViewerState
 import org.futo.inputmethod.latin.uix.actions.Incognito
 import org.futo.inputmethod.latin.uix.actions.KeyboardModeAction
 import org.futo.inputmethod.latin.uix.actions.PersistentEmojiState
@@ -515,18 +512,7 @@ data class ActiveDialogRequest(
     val onCancel: () -> Unit
 )
 
-@RequiresOptIn(level = RequiresOptIn.Level.ERROR, message = "This is for debug purposes only.")
-@Retention(AnnotationRetention.BINARY)
-annotation class DebugOnly
-
-@DebugOnly
-var UixManagerInstanceForDebug: UixManager? = null
-
 class UixManager(private val latinIME: LatinIME) {
-    init {
-        @OptIn(DebugOnly::class)
-        UixManagerInstanceForDebug = this
-    }
 
     internal val composeView: ComposeView?
         get() = latinIME.composeView
@@ -1531,9 +1517,6 @@ class UixManager(private val latinIME: LatinIME) {
 
         if(tutorialMode == TutorialMode.ResizerTutorial) {
             onActionActivated(KeyboardModeAction)
-        }else if(BugViewerState.isBugViewerPendingOpen) {
-            BugViewerState.clearPendingOpen()
-            onActionActivated(BugViewerAction)
         }
 
         quickClipState.value = QuickClip.getCurrentState(latinIME)

@@ -106,8 +106,9 @@ SebType's changes to Weasel, about 90 lines:
 - The menu of the tray icon (right-click) is Chinese's one switch with its key, `简 → 繁 Ctrl+Shift+F`
   (`繁 → 简` while traditional), as on Linux (#117), instead of Weasel's settings, dictionary manager,
   sync, folders, help, deploy, restart and exit. Rime's state reaches the text service as a new
-  `status.traditional`, and the click sets `traditionalization` through WeaselServer. Rime's switcher
-  (Ctrl+\`) has the same one switch: SebType's Chinese data keeps `states` only on traditionalization.
+  `status.traditional`, and the click sets `traditionalization` through WeaselServer. No key opens
+  Rime's switcher (F4 and Ctrl+\` reach the app, #182), and Weasel hides a switch without `states`:
+  SebType's Chinese data keeps them only on traditionalization.
 - The installer marks the build (`SebType` in Weasel's uninstall entry, which `setup.ps1` checks) and
   never turns on Weasel's update check, which would replace SebType's build with upstream's.
 

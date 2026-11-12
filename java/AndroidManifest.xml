@@ -60,19 +60,6 @@
                  android:resource="@xml/method"/>
         </service>
 
-        <!--
-        <service android:name=".spellcheck.AndroidSpellCheckerService"
-             android:label="@string/spell_checker_service_name"
-             android:permission="android.permission.BIND_TEXT_SERVICE"
-             android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.textservice.SpellCheckerService"/>
-            </intent-filter>
-            <meta-data android:name="android.view.textservice.scs"
-                 android:resource="@xml/spellchecker"/>
-        </service>
-        -->
-
         <!-- Activities -->
         <activity android:name=".uix.settings.SettingsActivity"
              android:theme="@style/Theme.AppCompat.Light.NoActionBar"
@@ -117,15 +104,6 @@
              android:theme="@android:style/Theme.Translucent.NoTitleBar"
              android:exported="false"
              android:taskAffinity="">
-        </activity>
-
-        <activity android:name=".spellcheck.SpellCheckerSettingsActivity"
-             android:theme="@style/platformSettingsTheme"
-             android:label="@string/android_spell_checker_settings"
-             android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-            </intent-filter>
         </activity>
 
         <!-- Broadcast receivers -->
@@ -184,12 +162,6 @@
             android:authorities="${applicationId}.androidx-startup"
             tools:node="remove"
             tools:ignore="MissingClass" />
-
-        <provider
-            android:authorities="${applicationId}.font"
-            android:name=".content.KbContentProvider"
-            android:exported="false"
-            android:grantUriPermissions="true" />
 
         <provider
             android:authorities="${applicationId}.clipboard"

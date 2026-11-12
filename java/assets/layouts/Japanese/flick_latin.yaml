@@ -47,7 +47,7 @@ rows:
     splittable: false
   - letters:
       - type: base
-        spec: "!icon/action_left|!code/action_left"
+        spec: "!icon/action_cursor_left|!code/action_cursor_left"
         attributes: *repeatable
 
       - type: flick
@@ -72,7 +72,7 @@ rows:
         down: "ho|&"
 
       - type: base
-        spec: "!icon/action_right|!code/action_right"
+        spec: "!icon/action_cursor_right|!code/action_cursor_right"
         attributes: *repeatable
     splittable: false
   - letters:
@@ -184,7 +184,7 @@ subKeyboards:
         splittable: false
       - letters:
           - type: base
-            spec: "!icon/action_left|!code/action_left"
+            spec: "!icon/action_cursor_left|!code/action_cursor_left"
             attributes: *repeatable
 
           - type: flick
@@ -209,7 +209,7 @@ subKeyboards:
             down: "6|&"
 
           - type: base
-            spec: "!icon/action_right|!code/action_right"
+            spec: "!icon/action_cursor_right|!code/action_cursor_right"
             attributes: *repeatable
         splittable: false
       - letters:

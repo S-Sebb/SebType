@@ -123,7 +123,7 @@ s += ("\n# SebType: 白霜 (rime-frost)'s zh-moqi grammar\ngrammar:\n  language:
       "  non_collocation_penalty: -4\n")
 
 # One switch in the menus, 简 → 繁 (Decisions #2, Chinese menu, #117): the other switches lose their
-# states, which is what hides a switch in every Rime menu (Fcitx5's, Weasel's and the Ctrl+` switcher),
+# states, which is what hides a switch in every Rime menu (Fcitx5's and Weasel's),
 # and keep their place (the Configurator patches them by index) and their reset: Chinese punctuation,
 # emoji on, half-width, normal words. ascii_mode stays a switch: the Shift tap is its key.
 switches = re.search(r"^switches:\n((?:  .*\n)+)", s, re.M)
@@ -174,6 +174,10 @@ assert n == 1, "switcher/save_options not found in default.yaml"
 # Ctrl+Shift+4 (简/繁) go with the fixed switches.
 s, n = re.subn(r"^    - \{ when: always, toggle: (?:ascii_punct|traditionalization), accept: Control\+Shift\+.*\n", "", s, flags=re.M)
 assert n == 4, f"{n} of rime-ice's 4 Ctrl+Shift switch keys found in default.yaml"
+# No key opens Rime's switcher (Decisions #2, #182): F4, Ctrl+` and Ctrl+Shift+` reach the app. The
+# menus (Fcitx5's and Weasel's) still offer the schema and 简/繁.
+s, n = re.subn(r"^  hotkeys:\n(?:    .*\n)+", "  hotkeys: []\n", s, count=1, flags=re.M)
+assert n == 1 and "F4" not in s, "switcher/hotkeys not found in default.yaml"
 open(p, "w", encoding="utf-8").write(s)
 EOF
 
@@ -221,9 +225,11 @@ EOF
   # The 简/繁 switch on: traditional output from the shipped OpenCC data.
   "$work/deploy" "$s" "$work/hant" rime_ice houlai traditionalization > "$work/hant.out" 2> "$work/hant.log"
   grep -qx 'first=後來' "$work/hant.out" || { echo "rime-data: 繁 doesn't convert: houlai -> $(cat "$work/hant.out")" >&2; exit 1; }
-  # The Ctrl+` switcher, like the menus, offers the one schema and one switch (#117).
-  "$work/deploy" "$s" "$work/phone" rime_ice '^`' > "$work/switcher.out" 2> "$work/switcher.log"
-  grep -qx 'menu=雾凇拼音 | 简 → 繁' "$work/switcher.out" || { echo "rime-data: Ctrl+\` menu: $(cat "$work/switcher.out")" >&2; exit 1; }
+  # F4 and Ctrl+` don't open Rime's switcher (#182): Rime leaves both keys to the app.
+  for k in F4 '^`'; do
+    "$work/deploy" "$s" "$work/phone" rime_ice "$k" > "$work/switcher.out" 2> "$work/switcher.log"
+    grep -qx 'handled=0' "$work/switcher.out" || { echo "rime-data: $k opens Rime's switcher: $(cat "$work/switcher.out")" >&2; exit 1; }
+  done
   # The app's settings patch (here fuzzy z = zh, as RimeIceSetup writes it) still applies without the sources.
   mkdir "$work/fuzzy"
   printf 'patch:\n    speller/algebra/+:\n        - derive/^z/zh/\n        - derive/^zh/z/\n' > "$work/fuzzy/rime_ice.custom.yaml"
@@ -244,7 +250,8 @@ Changes to rime-ice: its dictionary (cn_dicts/) is replaced by rime-frost's cn_d
 under the name rime_ice (rime_ice.dict.yaml is rime-frost's rime_frost.dict.yaml without its
 cn_dicts_cell imports); the schema rime_ice gets rime-frost's zh-moqi grammar
 (non_collocation_penalty -4, contextual_suggestions off); default.yaml lists only rime_ice, remembers
-only the traditionalization switch and drops the Control+Shift+3 and 4 switch keys; in rime_ice the
+only the traditionalization switch, drops the Control+Shift+3 and 4 switch keys and has no switcher
+hotkeys (F4, Control+grave, Control+Shift+grave); in rime_ice the
 switches but traditionalization have no states, so menus don't show them;
 weasel.yaml, squirrel.yaml, t9 and the double-pinyin schemas are left out. rime_ice.schema.yaml gets SebType's
 typo correction: a second translator, corr, with librime's correction on, ranked by

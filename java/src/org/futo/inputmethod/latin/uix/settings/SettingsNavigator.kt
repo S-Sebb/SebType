@@ -27,12 +27,6 @@ import org.futo.inputmethod.latin.uix.settings.pages.SyncLoginDialog
 import org.futo.inputmethod.latin.uix.settings.pages.AboutMenu
 import org.futo.inputmethod.latin.uix.settings.pages.AlreadyPaidDialog
 import org.futo.inputmethod.latin.uix.settings.pages.CreditsScreen
-import org.futo.inputmethod.latin.uix.settings.pages.DevEditTextVariationsScreen
-import org.futo.inputmethod.latin.uix.settings.pages.DevKeyboardScreen
-import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEdit
-import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutEditor
-import org.futo.inputmethod.latin.uix.settings.pages.DevLayoutList
-import org.futo.inputmethod.latin.uix.settings.pages.DeveloperScreen
 import org.futo.inputmethod.latin.uix.settings.pages.HomeScreen
 import org.futo.inputmethod.latin.uix.settings.pages.KeyboardSettingsMenu
 import org.futo.inputmethod.latin.uix.settings.pages.LanguagesScreen
@@ -40,7 +34,6 @@ import org.futo.inputmethod.latin.uix.settings.pages.PaymentScreen
 import org.futo.inputmethod.latin.uix.settings.pages.PaymentThankYouScreen
 import org.futo.inputmethod.latin.uix.settings.pages.ProjectInfoView
 import org.futo.inputmethod.latin.uix.settings.pages.ResizeScreen
-import org.futo.inputmethod.latin.uix.settings.pages.buggyeditors.BuggyTextEditVariations
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.ChineseWordsScreen
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.ConfirmDeleteExtraDictFileDialog
 import org.futo.inputmethod.latin.uix.settings.pages.pdict.PersonalDictionaryLanguageListForLocale
@@ -62,7 +55,6 @@ object Route {
     @Serializable data class PersonalDictList(val lang: String?)
     @Serializable data class PersonalDictWord(val lang: String?, val word: String?)
     @Serializable data class PersonalDictDelete(val dict: String)
-    @Serializable data class DevLayoutEdit(val i: Int)
     @Serializable data class ThirdPartyInfo(val idx: Int)
 }
 
@@ -104,8 +96,6 @@ fun SettingsNavigator(
                 dialog<Route.PersonalDictWord> { WordPopupDialogF(it.word, it.lang?.toLocale()) }
                 dialog<Route.PersonalDictDelete> { ConfirmDeleteExtraDictFileDialog(it.dict) }
 
-                composable<Route.DevLayoutEdit> { DevLayoutEdit(nav, it.i) }
-
                 composable<Route.ThirdPartyInfo> { ProjectInfoView(it.idx, nav) }
 
                 dialog<Route.Error> { ErrorDialog(it.title, it.body, nav) }
@@ -125,12 +115,6 @@ fun SettingsNavigator(
                 if(menu.registerNavPath) composable(menu.navPath) { UserSettingsMenuScreen(menu) }
             }
             composable("resize") { ResizeScreen(navController) }
-            composable("developer") { DeveloperScreen(navController) }
-            composable("devtextedit") { DevEditTextVariationsScreen(navController) }
-            composable("devbuggytextedit") { BuggyTextEditVariations(navController) }
-            composable("devlayouts") { DevLayoutList(navController) }
-            composable("devlayouteditor") { DevLayoutEditor(navController) }
-            composable("devkeyboard") { DevKeyboardScreen(navController) }
             composable("payment") { PaymentScreen(navController) { navController.navigateUp() } }
             composable("paid") { PaymentThankYouScreen { navController.navigateUp() } }
             composable("credits") { CreditsScreen(navController) }

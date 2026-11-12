@@ -6,13 +6,7 @@
     <string name="action_paste_title">"从剪切板粘贴"</string>
     <string name="action_undo_title">"撤销"</string>
     <string name="action_redo_title">"重做"</string>
-    <string name="action_text_editor_title">"文本编辑器"</string>
-    <string name="action_debug_title">"调试信息"</string>
     <string name="action_more_actions_title">"所有操作项"</string>
-    <string name="action_bug_viewer_title">"故障查看器"</string>
-  <!-- These move the text cursor up, down, left, right -->
-    <string name="action_cursor_up_title">"向上箭头"</string>
-    <string name="action_cursor_down_title">"向下箭头"</string>
     <string name="action_cursor_left_title">"向左箭头"</string>
     <string name="action_cursor_right_title">"向右箭头"</string>
   <!-- For emoji menu action -->
@@ -66,8 +60,6 @@
   <!-- Must be fairly short -->
     <string name="action_clipboard_manager_retry_saving_loading">"重试"</string>
   <!-- Must be fairly short -->
-    <string name="action_clipboard_manager_inspect_error_via_bugs_action">"在错误查看器中查看错误"</string>
-  <!-- Must be fairly short -->
     <string name="action_clipboard_manager_delete_corrupted_clipboard_button">"删除"</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_title">"剪切板记录已停用"</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_text_v2">"要保存剪切板项目，你可以启用剪切板记录。此功能将保留最多%1$s个项目，有效期为%2$s天 (已固定项目除外)。你可以在设置里进行配置。"</string>
@@ -92,26 +84,6 @@
     <string name="action_keyboard_modes_resizing_reset_size">"重置"</string>
   <!-- This string must be super short (below 10 chars if possible) -->
     <string name="action_keyboard_modes_resizing_apply_new_size">"应用"</string>
-  <!-- For Font Typer action -->
-    <string name="action_fonttyper_title">"字体样式"</string>
-  <!-- This message is shown when we're typing in a text field does not support image insertion ("app" refers to the external app that is providing the text field) -->
-    <string name="action_fonttyper_app_unsupported_warning">"此应用可能不支持插入图片，这个功能可能不起效。"</string>
-    <string name="action_fonttyper_select_a_preset">"选择预设"</string>
-  <!-- Abstract, fragmented orange characters on a black background, resembling an alien script -->
-    <string name="action_fonttyper_preset_title_scratch">"Scratch"</string>
-  <!-- Comic book style text: bold, italicized yellow-orange letters with a thick shadow, looking 3d -->
-    <string name="action_fonttyper_preset_title_superhero">"超人"</string>
-  <!-- Large, bold 3d white letters in a powerful cinematic perspective -->
-    <string name="action_fonttyper_preset_title_dramatictext">"戏剧文本"</string>
-  <!-- Pink candy-like cursive text -->
-    <string name="action_fonttyper_preset_title_candy">"糖果"</string>
-  <!-- Rainbow colored text with a skewed shadow -->
-    <string name="action_fonttyper_preset_title_rainbow">"彩虹"</string>
-  <!-- Sky and ground colored serif text with a dark grey shadow, the text color looks like a horizon -->
-    <string name="action_fonttyper_preset_title_horizon">"地平线"</string>
-  <!-- Orange text on a black background, tilted in a 3d style effect, like a TV show opening crawl -->
-    <string name="action_fonttyper_preset_title_opening_crawl">"片头滚字"</string>
-    <string name="action_fonttyper_finish">"完成"</string>
   <!-- Keyboard action kinds -->
     <string name="action_kind_action_key">"操作键"</string>
     <string name="action_kind_pinned_key">"固定操作项"</string>
@@ -257,7 +229,6 @@
     <string name="keyboard_settings_title">"键盘"</string>
     <string name="keyboard_settings_show_number_row">"显示数字行"</string>
     <string name="keyboard_settings_show_number_row_subtitle">"启用时，在支持的布局中会在键盘的顶部显示数字行"</string>
-    <string name="dev_settings_title">"开发者选项"</string>
     <!-- SebType: FUTO has no Simplified Chinese for these. -->
     <string name="setup_welcome_text">"欢迎使用 SebType（基于 FUTO Keyboard 修改）。\n\n首先，请将 SebType 启用为输入法。"</string>
     <string name="setup_active_input_method">"请选择 SebType 作为当前输入法。"</string>

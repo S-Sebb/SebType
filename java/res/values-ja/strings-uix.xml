@@ -6,13 +6,7 @@
     <string name="action_paste_title">"クリップボードから貼り付け"</string>
     <string name="action_undo_title">"元に戻す"</string>
     <string name="action_redo_title">"やり直す"</string>
-    <string name="action_text_editor_title">"テキストエディタ"</string>
-    <string name="action_debug_title">"デバッグ情報"</string>
     <string name="action_more_actions_title">"アクションリスト"</string>
-    <string name="action_bug_viewer_title">"バグビューア"</string>
-  <!-- These move the text cursor up, down, left, right -->
-    <string name="action_cursor_up_title">"上矢印"</string>
-    <string name="action_cursor_down_title">"下矢印"</string>
     <string name="action_cursor_left_title">"左矢印"</string>
     <string name="action_cursor_right_title">"右矢印"</string>
   <!-- For emoji menu action -->
@@ -65,8 +59,6 @@
   <!-- Must be fairly short -->
     <string name="action_clipboard_manager_retry_saving_loading">"再試行"</string>
   <!-- Must be fairly short -->
-    <string name="action_clipboard_manager_inspect_error_via_bugs_action">"バグビューアでエラーを確認"</string>
-  <!-- Must be fairly short -->
     <string name="action_clipboard_manager_delete_corrupted_clipboard_button">"削除"</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_title">"クリップボード履歴を無効にする"</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_text_v2">"クリップボードの項目を保存するには、クリップボード履歴を有効にしてください。これにより、最大%1$s件の項目を%2$s日間保存できます（ピン留めされた項目は対象外です）。この機能は設定から変更することができます。"</string>
@@ -91,26 +83,6 @@
     <string name="action_keyboard_modes_resizing_reset_size">"初期化"</string>
   <!-- This string must be super short (below 10 chars if possible) -->
     <string name="action_keyboard_modes_resizing_apply_new_size">"適用"</string>
-  <!-- For Font Typer action -->
-    <string name="action_fonttyper_title">"書体指定"</string>
-  <!-- This message is shown when we're typing in a text field does not support image insertion ("app" refers to the external app that is providing the text field) -->
-    <string name="action_fonttyper_app_unsupported_warning">"このアプリでは画像挿入がサポートされていない可能性があります。"</string>
-    <string name="action_fonttyper_select_a_preset">"プリセットを選択"</string>
-  <!-- Abstract, fragmented orange characters on a black background, resembling an alien script -->
-    <string name="action_fonttyper_preset_title_scratch">"スクラッチ"</string>
-  <!-- Comic book style text: bold, italicized yellow-orange letters with a thick shadow, looking 3d -->
-    <string name="action_fonttyper_preset_title_superhero">"スーパーヒーロー"</string>
-  <!-- Large, bold 3d white letters in a powerful cinematic perspective -->
-    <string name="action_fonttyper_preset_title_dramatictext">"ドラマチック"</string>
-  <!-- Pink candy-like cursive text -->
-    <string name="action_fonttyper_preset_title_candy">"キャンディ"</string>
-  <!-- Rainbow colored text with a skewed shadow -->
-    <string name="action_fonttyper_preset_title_rainbow">"レインボー"</string>
-  <!-- Sky and ground colored serif text with a dark grey shadow, the text color looks like a horizon -->
-    <string name="action_fonttyper_preset_title_horizon">"ホライズン"</string>
-  <!-- Orange text on a black background, tilted in a 3d style effect, like a TV show opening crawl -->
-    <string name="action_fonttyper_preset_title_opening_crawl">"オープニングクラウル"</string>
-    <string name="action_fonttyper_finish">"フィニッシュ"</string>
   <!-- Keyboard action kinds -->
     <string name="action_kind_action_key">"アクションキー"</string>
     <string name="action_kind_pinned_key">"ピン留めされたアクション"</string>
@@ -284,7 +256,6 @@
     <string name="keyboard_settings_title">"キーボード"</string>
     <string name="keyboard_settings_show_number_row">"数字行を表示"</string>
     <string name="keyboard_settings_show_number_row_subtitle">"サポートされている配列の場合、キーボードの上部に数字の行が表示されます"</string>
-    <string name="dev_settings_title">"開発者設定"</string>
   <!-- Setup configuration -->
     <string name="setup_step_1">"セットアップ - ステップ 1"</string>
     <string name="setup_step_2">"セットアップ - ステップ 2"</string>

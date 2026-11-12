@@ -1,6 +1,6 @@
-# SebType's Rime: pc/fcitx5-rime (#117) and pc/librime (#101), packaged by fcitx5-rime.spec and
-# librime.spec. Sourced by build.sh, ../setup-ime.sh and ../test-setup-ime.sh. Bump a *_SEBTYPE_RELEASE
-# when its source or the build changes.
+# SebType's Rime and Fcitx5: pc/fcitx5-rime (#117), pc/librime (#101) and pc/fcitx5 (#182), packaged by
+# fcitx5-rime.spec, librime.spec and fcitx5.spec. Sourced by build.sh, ../setup-ime.sh and
+# ../test-setup-ime.sh. Bump a *_SEBTYPE_RELEASE when its source or the build changes.
 RIME_VERSION=5.1.15
 RIME_FEDORA_RELEASE=1.fc44
 # The same pinned fedora:44 as mozc/versions.sh.
@@ -23,3 +23,15 @@ LIBRIME_SEBTYPE_RELEASE=2.sebtype2.fc44
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
 LIBRIME_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/librime
 librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package
+
+# fcitx5.spec builds Fcitx5 and its subpackages, which must match each other: setup replaces every one
+# installed.
+FCITX5_VERSION=5.1.23
+FCITX5_FEDORA_RELEASE=1.fc44
+FCITX5_SEBTYPE_RELEASE=1.sebtype1.fc44
+FCITX5_PACKAGES=(fcitx5 fcitx5-libs fcitx5-data fcitx5-devel fcitx5-autostart)
+FCITX5_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/fcitx5
+fcitx5_rpm() { # package
+  local arch=x86_64; [[ $1 == fcitx5-data || $1 == fcitx5-autostart ]] && arch=noarch
+  echo "$FCITX5_CACHE/$1-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.$arch.rpm"
+}

@@ -29,6 +29,7 @@ match the emulator's Chinese, English or Japanese UI. One line per check appende
 check finds its own way from the home screen, so one failing doesn't stop the next.
 """
 
+import ast
 import functools
 import glob
 import json
@@ -392,14 +393,48 @@ def toggle(path, texts):
     tap_text(texts)
 
 
-def check(name, fn):
+def dependency_checks():
+    """The checks the ones SEBTYPE_CHECKS names need besides themselves, from their `needs=`."""
+    needs = {}
+    with open(__file__, encoding="utf-8") as f:
+        for node in ast.walk(ast.parse(f.read())):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", "") == "check"
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                kw = {k.arg: k.value for k in node.keywords}
+                needs[node.args[0].value] = (
+                    [e.value for e in kw["needs"].elts] if "needs" in kw else []
+                )
+    named = {n for n in needs if any(n.startswith(c) for c in CHECKS)}
+    todo = list(named)
+    run = set()
+    while todo:
+        n = todo.pop()
+        if n not in run:
+            run.add(n)
+            todo += needs[n]
+    return run - named
+
+
+NEEDED = dependency_checks() if CHECKS else set()
+passed = set()
+
+
+def check(name, fn, needs=()):
     # A named run of settings-japanese leaves the system in 日本語, and the file picker's labels the
     # checks after it read (Downloads, Show roots) are English: settings-locale-back always runs.
     if (
         CHECKS
         and not any(name.startswith(c) for c in CHECKS)
+        and name not in NEEDED
         and name != "settings-locale-back"
     ):
+        return
+    missing = [n for n in needs if n not in passed]
+    if missing:
+        result("SKIP", name, f"needs {', '.join(missing)}")
         return
     if name in TIMING and not os.environ.get("PERF_RUN"):
         if CHECKS:  # named, so say why it didn't run
@@ -407,6 +442,7 @@ def check(name, fn):
         return
     try:
         detail = fn()
+        passed.add(name)
         result("PASS", name, detail or "")
     except Skip as e:
         result("SKIP", name, str(e))
@@ -1496,6 +1532,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SYNC_USER, SYNC_PASSWORD = "sebtype-test", "made-up-pass-4821"
 OTHER_DEVICE = "5e5e5e5e-0000-4000-8000-000000000012"  # a made-up second device
 OTHER_CODE, OTHER_WORD = "lu lu", "鹿芦"
+# The word the offline check learns, by the code it types: 繁 on shows 貓狗擠壓 where the file keeps
+# 猫狗挤压 (zh-hant-on in another run of the suite may leave it on, #36), the key is the code either way.
+SYNC_CODE = "maogoujiya"
 SYNC = {}  # the server process, its port and data dir, the CA's file name on the emulator, airplane mode before
 NO_BACKUP = f"/data/data/{PKG}/no_backup"
 RIME_USER = f"/data/data/{PKG}/files/rime/user"
@@ -1707,7 +1746,22 @@ def server_snapshot(device):
         return f.read()
 
 
+def entry_line(snapshot):
+    """The offline check's word in a sync snapshot, or "" — found by its key, whose text 繁 may convert."""
+    return next(
+        (
+            line
+            for line in snapshot.splitlines()
+            if line.split("\t")[0].replace(" ", "") == SYNC_CODE
+        ),
+        "",
+    )
+
+
 def sync_setup():
+    # Incognito (#31) is sticky and a run of just some checks may start with it on: nothing is learned
+    # while it is, so nothing would ever reach the server.
+    set_incognito(False)
     to_language("ni", "你")
     start_sync_server()
     go(HOME["backup"], SYNC_LOGIN)
@@ -1734,7 +1788,7 @@ def sync_offline_learns():
         "shell", "settings", "get", "global", "airplane_mode_on"
     ).strip()
     airplane(True)
-    words = candidates_for("maogoujiya")
+    words = candidates_for(SYNC_CODE)
     SYNC["word"] = words[0]
     tap_candidate(SYNC["word"])
     sync_by_hiding()
@@ -1743,9 +1797,9 @@ def sync_offline_learns():
         "the status 'Can't reach the server'", lambda: screen_contains(SYNC_OFFLINE), 30
     )
     screenshot("12-sync-offline")
-    if SYNC["word"] in server_snapshot(SYNC["device"]):
+    if entry_line(server_snapshot(SYNC["device"])):
         raise Fail(f"{SYNC['word']} reached the server in airplane mode")
-    return f"offline: picked {SYNC['word']} for maogoujiya; status Can't reach the server; not on the server"
+    return f"offline: picked {SYNC['word']} for {SYNC_CODE}; status Can't reach the server; not on the server"
 
 
 def sync_online_uploads():
@@ -1753,15 +1807,13 @@ def sync_online_uploads():
     sync_by_hiding()
     snapshot = wait_for(
         f"{SYNC['word']} on the server",
-        lambda: (
-            (s := server_snapshot(SYNC["device"])) and f"\t{SYNC['word']}\t" in s and s
-        ),
+        lambda: (s := server_snapshot(SYNC["device"])) and entry_line(s) and s,
         90,
     )
     folders = os.listdir(sync_server_dir())
     if folders != [SYNC["device"]]:
         raise Fail(f"folders on the server: {folders}")
-    line = next(l for l in snapshot.splitlines() if f"\t{SYNC['word']}\t" in l)
+    line = entry_line(snapshot)
     return f"back online, a keyboard hide uploaded it: {line!r}; only the phone's own folder"
 
 
@@ -1771,7 +1823,7 @@ def sync_other_device():
         raise Fail(f"{OTHER_WORD} offered before it was synced: {before[:8]}")
     # The other device's snapshot, in the phone's format with its own id and one made-up word.
     snapshot = server_snapshot(SYNC["device"])
-    line = next(l for l in snapshot.splitlines() if f"\t{SYNC['word']}\t" in l)
+    line = entry_line(snapshot)
     key = OTHER_CODE + (" " if line.split("\t")[0].endswith(" ") else "")
     tick = re.search(r"^#@/tick\t(\d+)", snapshot, re.MULTILINE)[1]
     header = [
@@ -2100,13 +2152,21 @@ check("incognito-off-learns-zh", learns_again("ni", "你", "sx"))
 check("incognito-off-learns-ja", learns_again("nihongo", "日本語", "hashi"))
 try:
     check("sync-setup", sync_setup)
-    check("sync-offline-learns", sync_offline_learns)
-    check("sync-online-uploads", sync_online_uploads)
-    check("sync-other-device", sync_other_device)
-    check("sync-crash-report", sync_crash_report)
-    check("sync-personal-dictionaries", sync_personal_dictionaries)
-    check("sync-credentials-private", sync_credentials_private)
-    check("sync-delete-on-server", sync_delete_on_server)
+    check("sync-offline-learns", sync_offline_learns, needs=["sync-setup"])
+    check("sync-online-uploads", sync_online_uploads, needs=["sync-offline-learns"])
+    check("sync-other-device", sync_other_device, needs=["sync-online-uploads"])
+    check("sync-crash-report", sync_crash_report, needs=["sync-online-uploads"])
+    check(
+        "sync-personal-dictionaries",
+        sync_personal_dictionaries,
+        needs=["sync-setup"],
+    )
+    check("sync-credentials-private", sync_credentials_private, needs=["sync-setup"])
+    check(
+        "sync-delete-on-server",
+        sync_delete_on_server,
+        needs=["sync-personal-dictionaries"],
+    )
 finally:
     stop_sync_server()
 

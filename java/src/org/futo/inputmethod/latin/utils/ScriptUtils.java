@@ -16,9 +16,6 @@
 
 package org.futo.inputmethod.latin.utils;
 
-import java.util.Locale;
-import java.util.TreeMap;
-
 /**
  * A class to help with handling different writing scripts.
  */
@@ -46,37 +43,8 @@ public class ScriptUtils {
     public static final int SCRIPT_TELUGU = 16;
     public static final int SCRIPT_THAI = 17;
 
-    private static final TreeMap<String, Integer> mLanguageCodeToScriptCode;
-
-    static {
-        mLanguageCodeToScriptCode = new TreeMap<>();
-        mLanguageCodeToScriptCode.put("", SCRIPT_LATIN); // default
-        mLanguageCodeToScriptCode.put("ar", SCRIPT_ARABIC);
-        mLanguageCodeToScriptCode.put("hy", SCRIPT_ARMENIAN);
-        mLanguageCodeToScriptCode.put("bn", SCRIPT_BENGALI);
-        mLanguageCodeToScriptCode.put("bg", SCRIPT_CYRILLIC);
-        mLanguageCodeToScriptCode.put("sr", SCRIPT_CYRILLIC);
-        mLanguageCodeToScriptCode.put("ru", SCRIPT_CYRILLIC);
-        mLanguageCodeToScriptCode.put("ka", SCRIPT_GEORGIAN);
-        mLanguageCodeToScriptCode.put("el", SCRIPT_GREEK);
-        mLanguageCodeToScriptCode.put("iw", SCRIPT_HEBREW);
-        mLanguageCodeToScriptCode.put("km", SCRIPT_KHMER);
-        mLanguageCodeToScriptCode.put("lo", SCRIPT_LAO);
-        mLanguageCodeToScriptCode.put("ml", SCRIPT_MALAYALAM);
-        mLanguageCodeToScriptCode.put("my", SCRIPT_MYANMAR);
-        mLanguageCodeToScriptCode.put("si", SCRIPT_SINHALA);
-        mLanguageCodeToScriptCode.put("ta", SCRIPT_TAMIL);
-        mLanguageCodeToScriptCode.put("te", SCRIPT_TELUGU);
-        mLanguageCodeToScriptCode.put("th", SCRIPT_THAI);
-    }
-
     /*
-     * Returns whether the code point is a letter that makes sense for the specified
-     * locale for this spell checker.
-     * The dictionaries supported by Latin IME are described in res/xml/spellchecker.xml
-     * and is limited to EFIGS languages and Russian.
-     * Hence at the moment this explicitly tests for Cyrillic characters or Latin characters
-     * as appropriate, and explicitly excludes CJK, Arabic and Hebrew characters.
+     * Returns whether the code point is a letter of the specified script.
      */
     public static boolean isLetterPartOfScript(final int codePoint, final int scriptId) {
         switch (scriptId) {
@@ -176,20 +144,5 @@ public class ScriptUtils {
             // Should never come here
             throw new RuntimeException("Impossible value of script: " + scriptId);
         }
-    }
-
-    /**
-     * @param locale spell checker locale
-     * @return internal Latin IME script code that maps to a language code
-     * {@see http://en.wikipedia.org/wiki/List_of_ISO_639-1_codes}
-     */
-    public static int getScriptFromSpellCheckerLocale(final Locale locale) {
-        String language = locale.getLanguage();
-        Integer script = mLanguageCodeToScriptCode.get(language);
-        if (script == null) {
-            // Default to Latin.
-            script = mLanguageCodeToScriptCode.get("");
-        }
-        return script;
     }
 }

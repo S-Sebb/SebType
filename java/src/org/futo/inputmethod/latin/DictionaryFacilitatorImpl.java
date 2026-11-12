@@ -19,19 +19,16 @@ package org.futo.inputmethod.latin;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.Log;
-import android.util.LruCache;
 
 import androidx.annotation.NonNull;
 
 import org.futo.inputmethod.annotations.UsedForTesting;
 import org.futo.inputmethod.keyboard.Keyboard;
 import org.futo.inputmethod.keyboard.KeyboardId;
-import org.futo.inputmethod.keyboard.KeyboardLayout;
 import org.futo.inputmethod.latin.NgramContext.WordInfo;
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import org.futo.inputmethod.latin.common.ComposedData;
 import org.futo.inputmethod.latin.common.Constants;
-import org.futo.inputmethod.latin.common.StringUtils;
 import org.futo.inputmethod.latin.personalization.UserHistoryDictionary;
 import org.futo.inputmethod.latin.settings.Settings;
 import org.futo.inputmethod.latin.settings.SettingsValues;
@@ -60,9 +57,6 @@ import javax.annotation.Nullable;
  * Facilitates interaction with different kinds of dictionaries. Provides APIs
  * to instantiate and select the correct dictionaries (based on language or account),
  * update entries and fetch suggestions.
- *
- * Currently AndroidSpellCheckerService and LatinIME both use DictionaryFacilitator as
- * a client for interacting with dictionaries.
  */
 public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     // TODO: Consolidate dictionaries in native code.
@@ -92,21 +86,8 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     private static final Class<?>[] DICT_FACTORY_METHOD_ARG_TYPES =
             new Class[] { Context.class, Locale.class, File.class, String.class, String.class };
 
-    private LruCache<String, Boolean> mValidSpellingWordReadCache;
-    private LruCache<String, Boolean> mValidSpellingWordWriteCache;
-
     public static void onAnyBinaryDictionaryClosed() {
         // SebType: nothing to do, the glide typing decoder that kept dictionary tries is gone (#6)
-    }
-
-    @Override
-    public void setValidSpellingWordReadCache(final LruCache<String, Boolean> cache) {
-        mValidSpellingWordReadCache = cache;
-    }
-
-    @Override
-    public void setValidSpellingWordWriteCache(final LruCache<String, Boolean> cache) {
-        mValidSpellingWordWriteCache = cache;
     }
 
     @Override
@@ -365,8 +346,8 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         final HashSet<String> subDictTypesToUse = new HashSet<>();
         subDictTypesToUse.add(Dictionary.TYPE_USER);
 
-        // SebType has no contacts dictionary (it never asks for READ_CONTACTS, #178); useContactsDict is
-        // kept for FUTO's spell checker.
+        // SebType has no contacts dictionary (it never asks for READ_CONTACTS, #178), so useContactsDict
+        // is ignored.
         if (usePersonalizedDicts) {
             subDictTypesToUse.add(Dictionary.TYPE_USER_HISTORY);
         }
@@ -464,10 +445,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             }
         } finally {
             UserHistoryDictionary.forceUncleanClose = false;
-        }
-
-        if (mValidSpellingWordWriteCache != null) {
-            mValidSpellingWordWriteCache.evictAll();
         }
     }
 
@@ -664,10 +641,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     public void addToUserHistory(final String suggestion, final boolean wasAutoCapitalized,
             @Nonnull final NgramContext ngramContext, final long timeStampInSeconds,
             final boolean blockPotentiallyOffensive) {
-        // Update the spelling cache before learning. Words that are not yet added to user history
-        // and appear in no other language model are not considered valid.
-        putWordIntoValidSpellingWordCache("addToUserHistory", suggestion);
-
         final String[] words = suggestion.split(Constants.WORD_SEPARATOR);
         NgramContext ngramContextForCurrentWord = ngramContext;
 
@@ -684,29 +657,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             ngramContextForCurrentWord =
                     ngramContextForCurrentWord.getNextNgramContext(new WordInfo(currentWord));
         }
-    }
-
-    private void putWordIntoValidSpellingWordCache(
-            @Nonnull final String caller,
-            @Nonnull final String originalWord) {
-        if (mValidSpellingWordWriteCache == null) {
-            return;
-        }
-
-        final String lowerCaseWord = originalWord.toLowerCase(getPrimaryLocale());
-        final boolean lowerCaseValid = isValidSpellingWord(lowerCaseWord);
-        mValidSpellingWordWriteCache.put(lowerCaseWord, lowerCaseValid);
-
-        final String capitalWord =
-                StringUtils.capitalizeFirstAndDowncaseRest(originalWord, getPrimaryLocale());
-        final boolean capitalValid;
-        if (lowerCaseValid) {
-            // The lower case form of the word is valid, so the upper case must be valid.
-            capitalValid = true;
-        } else {
-            capitalValid = isValidSpellingWord(capitalWord);
-        }
-        mValidSpellingWordWriteCache.put(capitalWord, capitalValid);
     }
 
     private void addWordToUserHistory(final DictionaryGroup dictionaryGroup,
@@ -780,10 +730,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         if (eventType != Constants.EVENT_BACKSPACE) {
             removeWord(Dictionary.TYPE_USER_HISTORY, word);
         }
-
-        // Update the spelling cache after unlearning. Words that are removed from user history
-        // and appear in no other language model are not considered valid.
-        putWordIntoValidSpellingWordCache("unlearnFromUserHistory", word.toLowerCase());
     }
 
     @NonNull
@@ -879,17 +825,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
             }
         }
         return suggestionResults;
-    }
-
-    public boolean isValidSpellingWord(final String word) {
-        if (mValidSpellingWordReadCache != null) {
-            final Boolean cachedValue = mValidSpellingWordReadCache.get(word);
-            if (cachedValue != null) {
-                return cachedValue;
-            }
-        }
-
-        return isValidWord(word, ALL_DICTIONARY_TYPES);
     }
 
     public boolean isValidSuggestionWord(final String word) {

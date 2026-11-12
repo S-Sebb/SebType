@@ -3,7 +3,6 @@ package org.futo.inputmethod.latin.xlm;
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.lifecycle.LifecycleCoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -32,7 +31,6 @@ import org.futo.inputmethod.latin.common.ComposedData
 import org.futo.inputmethod.latin.inputlogic.InputLogic
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.SettingsKey
-import org.futo.inputmethod.latin.uix.USE_TRANSFORMER_FINETUNING
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.utils.SuggestionResults
 import kotlin.math.ceil
@@ -46,11 +44,6 @@ val AutocorrectThresholdSetting = SettingsKey(
 val BinaryDictTransformerWeightSetting = SettingsKey(
     floatPreferencesKey("binary_dict_result_weight"),
     3.4f
-)
-
-val AllowTransformerOnNonQWERTYLayouts = SettingsKey(
-    booleanPreferencesKey("allow_transformer_lm_on_non_qwerty"),
-    false
 )
 
 internal fun SuggestedWordInfo.add(other: SuggestedWordInfo): SuggestedWordInfo {
@@ -477,9 +470,7 @@ public class LanguageModelFacilitator(
                 2
             )
 
-            if(wordComposer.isComposingWord
-                && !context.getSetting(AllowTransformerOnNonQWERTYLayouts)
-            ) {
+            if(wordComposer.isComposingWord) {
                 // Check we are on a supported layout
                 if(prevAcceptedLayout != keyboardSwitcher.keyboard) {
                     if(keyboardSwitcher.keyboard?.mId?.mKeyboardLayoutSetName == "qwerty") {

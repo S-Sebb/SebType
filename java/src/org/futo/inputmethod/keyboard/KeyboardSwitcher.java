@@ -158,7 +158,6 @@ public final class KeyboardSwitcher implements SwitchActions {
                 settingsValues.mIsNumberRowEnabled,
                 settingsValues.mNumberRowMode,
                 settingsValues.mUseLocalNumbers,
-                settingsValues.mIsArrowRowEnabled,
                 settingsValues.mIsUsingAlternativePeriodKey,
                 sizingCalculator.calculateGap(),
                 settingsValues.mShowsActionKey ? settingsValues.mActionKeyId : null,

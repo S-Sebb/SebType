@@ -161,7 +161,7 @@ public class LayoutCustomizer extends AbstractLayoutBase {
      * @return the array of {@link ExpectedKey} that should be placed as an enter key.
      */
     public ExpectedKey getEnterKey(final boolean isPhone) {
-        return key(ENTER_KEY, SWITCH_LANGUAGE_KEY, TEXT_EDIT_KEY, CLIPBOARD_HISTORY_KEY, EMOJI_KEY,
+        return key(ENTER_KEY, SWITCH_LANGUAGE_KEY, CLIPBOARD_HISTORY_KEY, EMOJI_KEY,
                 UNDO_KEY, REDO_KEY);
     }
 

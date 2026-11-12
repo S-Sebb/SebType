@@ -8,6 +8,9 @@ SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
   librime/LICENSE).
 - fcitx5-rime/: SebType's fcitx5-rime (fcitx5-rime with SebType's changes), under fcitx5-rime's licence
   (LGPL-2.1-or-later, fcitx5-rime/LICENSES/).
-- linux/mozc/fcitx5-mozc.spec, linux/rime/librime.spec and linux/rime/fcitx5-rime.spec: Fedora's specs with
+- fcitx5/: SebType's Fcitx5 (Fcitx5 with SebType's changes), under Fcitx5's licence (LGPL-2.1-or-later,
+  fcitx5/LICENSES/); fcitx5/third_party/yoga/ keeps its own (MIT, its LICENSE).
+- linux/mozc/fcitx5-mozc.spec, linux/rime/librime.spec, linux/rime/fcitx5-rime.spec and linux/rime/fcitx5.spec,
+  and linux/rime/fcitx5-xinput and linux/rime/fcitx5.sh: Fedora's specs and files with
   SebType's changes, under Fedora's licence for spec files (MIT).
 - icons/: the glyph outlines are from Noto Sans CJK and Nunito, under the SIL Open Font License 1.1.

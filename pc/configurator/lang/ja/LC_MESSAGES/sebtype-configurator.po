@@ -85,9 +85,6 @@ msgstr "{} にエクスポートしました"
 msgid "Imported"
 msgstr "インポートしました"
 
-msgid "Redeployed"
-msgstr "再デプロイしました"
-
 msgid "This file wasn't exported by SebType Configurator"
 msgstr "これは SebType 設定でエクスポートしたファイルではありません"
 
@@ -262,15 +259,6 @@ msgstr "日本語の候補ウィンドウは Mozc が描くので、そのまま
 msgid "The candidate windows of 中文 and 日本語 both use this style."
 msgstr "中文と日本語の候補ウィンドウはどちらもこのスタイルです。"
 
-msgid "Tray icons"
-msgstr "トレイアイコン"
-
-msgid "SebType's key icons"
-msgstr "SebType のキーのアイコン"
-
-msgid "EN, 中, あ, ア, and a / A (Caps Lock) in the English mode of 中文 and 日本語"
-msgstr "EN、中、あ、ア、そして中文と日本語の英字モードの a / A（Caps Lock）"
-
 msgid "Learn from my typing"
 msgstr "入力から学習"
 
@@ -384,12 +372,6 @@ msgstr "ヘルプとフィードバック"
 
 msgid "SebType's issues on GitHub"
 msgstr "GitHub の SebType の Issues ページ"
-
-msgid "Redeploy"
-msgstr "再デプロイ"
-
-msgid "Applies every setting again; 中文 takes a few seconds"
-msgstr "すべての設定を適用し直します。中文は数秒かかります"
 
 msgid "Licence and credits"
 msgstr "ライセンスとクレジット"

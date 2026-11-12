@@ -16,7 +16,6 @@ class KeyboardLayoutSetV2Tests : AndroidTestCase() {
         locale = Locale.ENGLISH,
         editorInfo = EditorInfo(),
         numberRow = false,
-        arrowRow = false,
         bottomActionKey = null,
         multilingualTypingLocales = emptyList(),
         numberRowMode = 0,
