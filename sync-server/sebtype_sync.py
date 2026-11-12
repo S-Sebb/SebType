@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""SebType's sync server and its PC client (#12): a self-hostable home for Rime's sync folders.
+"""SebType's sync server and its PC client (#12, #14): a self-hostable home for Rime's sync folders.
 
 Rime syncs learned words through a folder, `sync/<installation id>/`: every device writes only its own
 folder and merges in everyone else's, so a server that keeps one copy of each device's folder per user
-is all sync needs (study report on #3, section 6). The server stores the `*.userdb.txt` files and the
-phone's crash reports (#33) and nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
+is all sync needs (study report on #3, section 6). The same folders carry each device's Japanese and
+English personal dictionaries (#14). The server stores these files and the phone's crash reports (#33)
+and nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
 HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give it a certificate.
 
     sebtype_sync.py serve   --data DIR [--host H] [--port P] [--tls-cert F --tls-key F]
     sebtype_sync.py adduser --data DIR NAME [--password-stdin]
     sebtype_sync.py deluser --data DIR NAME          (also deletes the user's files and crash reports)
-    sebtype_sync.py pull|push --server URL --user NAME --password-file F --rime-dir DIR
+    sebtype_sync.py pull|push --server URL --user NAME --password-file F --rime-dir DIR [--mozc-db F]
 
 API, all with HTTP Basic auth:
     GET    /v1/files                  {"files": [{"device", "name", "size", "sha256"}]}
@@ -24,6 +25,7 @@ Python 3.9+, standard library only.
 
 import argparse
 import base64
+import contextlib
 import getpass
 import hashlib
 import hmac
@@ -43,11 +45,19 @@ import urllib.request
 NAME = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
 )  # users and devices (Rime's ids are UUIDs)
-FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.userdb\.txt")
+RIME_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.userdb\.txt")
+# A device's Japanese personal dictionary in Mozc's export format, and its other (English) words in
+# FUTO's userdictionary.json format, which only phones have.
+MOZC_FILE, WORDS_FILE = "mozc_dictionary.txt", "userdictionary.json"
 MAX_FILE = 64 << 20  # a userdb snapshot of years of typing is a few MB
 CRASH = re.compile(r"crash-\d{8}-\d{6}-[0-9a-f]{6}\.txt")
 MAX_CRASH = 256 << 10  # a report is a stack trace and 200 log lines, a few dozen KB
 SCRYPT = {"n": 1 << 14, "r": 8, "p": 1}
+
+
+def synced(name):
+    """Whether a file name is one the server keeps."""
+    return bool(RIME_FILE.fullmatch(name)) or name in (MOZC_FILE, WORDS_FILE)
 
 
 # --- Users ---
@@ -139,7 +149,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parts = self.path.split("?")[0].split("/")
         if len(parts) == 5 and parts[:3] == ["", "v1", "files"]:
             device, name = parts[3], parts[4]
-            if NAME.fullmatch(device) and FILE.fullmatch(name):
+            if NAME.fullmatch(device) and synced(name):
                 return device, name
         return None
 
@@ -156,7 +166,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             for device in sorted(os.listdir(root)) if os.path.isdir(root) else []:
                 for name in sorted(os.listdir(os.path.join(root, device))):
                     path = os.path.join(root, device, name)
-                    if FILE.fullmatch(name):  # not an upload in progress
+                    if synced(name):  # not an upload in progress
                         files.append(
                             {
                                 "device": device,
@@ -242,7 +252,7 @@ def serve(args):
     server.serve_forever()
 
 
-# --- PC client: Rime's sync folder <-> the server ---
+# --- PC client ---
 
 
 def rime_installation(rime_dir):
@@ -278,37 +288,273 @@ def sha256_of(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def pull(client, device, sync_dir):
-    """Downloads every other device's changed files into sync_dir/<device>/; returns how many."""
-    count = 0
+# --- Mozc's user dictionary (user_dictionary.db, a UserDictionaryStorage protobuf; #14) ---
+
+# Mozc's parts of speech, in the order of its PosType enum, by the names its export and import use.
+POS = [
+    "品詞なし",
+    "名詞",
+    "短縮よみ",
+    "サジェストのみ",
+    "固有名詞",
+    "人名",
+    "姓",
+    "名",
+    "組織",
+    "地名",
+    "名詞サ変",
+    "名詞形動",
+    "数",
+    "アルファベット",
+    "記号",
+    "顔文字",
+    "副詞",
+    "連体詞",
+    "接続詞",
+    "感動詞",
+    "接頭語",
+    "助数詞",
+    "接尾一般",
+    "接尾人名",
+    "接尾地名",
+    "動詞ワ行五段",
+    "動詞カ行五段",
+    "動詞サ行五段",
+    "動詞タ行五段",
+    "動詞ナ行五段",
+    "動詞マ行五段",
+    "動詞ラ行五段",
+    "動詞ガ行五段",
+    "動詞バ行五段",
+    "動詞ハ行四段",
+    "動詞一段",
+    "動詞カ変",
+    "動詞サ変",
+    "動詞ザ変",
+    "動詞ラ変",
+    "形容詞",
+    "終助詞",
+    "句読点",
+    "独立語",
+    "抑制単語",
+]
+NOUN = 1  # an entry's part of speech when it has none, and for a name Mozc doesn't know
+SYNC_DICTIONARY = "SebType sync"  # where words from other devices go
+
+
+def varint(data, i):
+    n = shift = 0
+    while True:
+        b = data[i]
+        n |= (b & 0x7F) << shift
+        i += 1
+        if b < 0x80:
+            return n, i
+        shift += 7
+
+
+def pb_fields(data):
+    """A protobuf message's fields as (number, value, start, end): value is an int or the bytes of a
+    length-delimited field; start and end span the field's whole encoding, to copy it unchanged."""
+    i, fields = 0, []
+    while i < len(data):
+        start = i
+        tag, i = varint(data, i)
+        number, kind = tag >> 3, tag & 7
+        if kind == 0:
+            value, i = varint(data, i)
+        elif kind == 2:
+            size, i = varint(data, i)
+            value, i = data[i : i + size], i + size
+        elif kind in (1, 5):
+            value, i = (
+                data[i : i + (8 if kind == 1 else 4)],
+                i + (8 if kind == 1 else 4),
+            )
+        else:
+            raise ValueError(f"protobuf wire type {kind}")
+        fields.append((number, value, start, i))
+    return fields
+
+
+def pb_varint(n):
+    out = bytearray()
+    while n >= 0x80:
+        out.append(n & 0x7F | 0x80)
+        n >>= 7
+    return bytes(out + bytes([n]))
+
+
+def pb_field(number, value):
+    if isinstance(value, int):
+        return pb_varint(number << 3) + pb_varint(value)
+    value = value.encode() if isinstance(value, str) else value
+    return pb_varint(number << 3 | 2) + pb_varint(len(value)) + value
+
+
+def mozc_words(db):
+    """(reading, word, part of speech, comment) of every word the user registered: in enabled
+    dictionaries, not removed, and not one Mozc registered by itself."""
+    words = []
+    for number, dictionary, _, _ in pb_fields(db):
+        d = {n: v for n, v, _, _ in pb_fields(dictionary)} if number == 2 else {}
+        if number != 2 or not d.get(2, 1) or d.get(5):
+            continue
+        for n, entry, _, _ in pb_fields(dictionary):
+            e = {k: v for k, v, _, _ in pb_fields(entry)} if n == 4 else {}
+            if n == 4 and not e.get(10) and not e.get(11) and e.get(1) and e.get(2):
+                pos = e.get(5, NOUN)
+                words.append(
+                    (
+                        e[1].decode(),
+                        e[2].decode(),
+                        pos if pos < len(POS) else NOUN,
+                        e.get(4, b"").decode(),
+                    )
+                )
+    return words
+
+
+def mozc_text(words):
+    """Mozc's export format, sorted so an unchanged dictionary uploads nothing."""
+    lines = (
+        "\t".join([r, w, POS[p]] + ([c] if c else [])) + "\n" for r, w, p, c in words
+    )
+    return "".join(sorted(lines)).encode()
+
+
+def parse_mozc_text(data):
+    words = set()
+    for line in data.decode("utf-8", "replace").lstrip("\ufeff").splitlines():
+        f = line.split("\t")
+        if len(f) >= 3 and f[0] and f[1] and not line.startswith("#"):
+            words.add((f[0], f[1], POS.index(f[2]) if f[2] in POS else NOUN))
+    return words
+
+
+def mozc_add(db, words):
+    """db with words added to its SebType sync dictionary, made if missing; the rest kept unchanged."""
+    entries = b"".join(
+        pb_field(4, pb_field(1, r) + pb_field(2, w) + pb_field(5, p))
+        for r, w, p in words
+    )
+    out = bytearray()
+    for number, dictionary, start, end in pb_fields(db):
+        d = {n: v for n, v, _, _ in pb_fields(dictionary)} if number == 2 else {}
+        if entries and d.get(3) == SYNC_DICTIONARY.encode() and not d.get(5):
+            out += pb_field(2, dictionary + entries)
+            entries = b""
+        else:
+            out += db[start:end]
+    if entries:
+        # Mozc's dictionary ids are random, unique and not 0.
+        out += pb_field(
+            2,
+            pb_field(1, secrets.randbits(63) | 1)
+            + pb_field(2, 1)
+            + pb_field(3, SYNC_DICTIONARY)
+            + entries,
+        )
+    return bytes(out)
+
+
+@contextlib.contextmanager
+def mozc_lock(db):
+    """Mozc's own lock on its dictionary (Linux): held while its dictionary tool is open."""
+    try:
+        import fcntl
+    except ImportError:  # Windows: close the dictionary tool first
+        yield
+        return
+    path = os.path.join(os.path.dirname(db), "." + os.path.basename(db) + ".lock")
+    with open(path, "a") as f:
+        try:
+            fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            sys.exit("Mozc's dictionary tool is open: close it, then run pull again")
+        yield
+
+
+def read_mozc(db_path):
+    """Mozc saves its dictionary by renaming a new file over it, so a read needs no lock."""
+    try:
+        with open(db_path, "rb") as f:
+            return f.read()
+    except FileNotFoundError:  # no word registered yet
+        return b""
+
+
+def mozc_take_in(db_path, new, old):
+    """Adds the words another device's Mozc file gained since its previous copy, and that this
+    dictionary lacks, to Mozc's dictionary; returns how many."""
+    with mozc_lock(db_path):
+        db = read_mozc(db_path)
+        have = {(r, w, p) for r, w, p, _ in mozc_words(db)}
+        words = sorted(parse_mozc_text(new) - parse_mozc_text(old or b"") - have)
+        if words:
+            if db:
+                shutil.copyfile(db_path, db_path + ".sebtype-backup")
+            write_file(db_path, mozc_add(db, words))
+        return len(words)
+
+
+# --- PC client: pull and push ---
+
+
+def write_file(path, body):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".")
+    with os.fdopen(fd, "wb") as out:
+        out.write(body)
+    os.replace(tmp, path)
+
+
+def pull(client, device, sync_dir, mozc_db=None):
+    """Downloads every other device's changed files into sync_dir/<device>/, and with mozc_db adds
+    their new Japanese words to Mozc; returns (files, words)."""
+    count = words = 0
     for f in client.files():
-        if f["device"] == device or not (
-            NAME.fullmatch(f["device"]) and FILE.fullmatch(f["name"])
+        name = f["name"]
+        # The copy kept of a Mozc file is what its next download is compared with: it is taken only
+        # along with its words. Nothing on a PC uses another device's English words.
+        if (
+            f["device"] == device
+            or not (NAME.fullmatch(f["device"]) and synced(name))
+            or name == WORDS_FILE
+            or (name == MOZC_FILE and not mozc_db)
         ):
             continue
-        path = os.path.join(sync_dir, f["device"], f["name"])
-        if os.path.isfile(path) and sha256_of(path) == f["sha256"]:
-            continue
-        body = client.request("GET", f"/v1/files/{f['device']}/{f['name']}")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
-        with os.fdopen(fd, "wb") as out:
-            out.write(body)
-        os.replace(tmp, path)
+        path = os.path.join(sync_dir, f["device"], name)
+        old = None
+        if os.path.isfile(path):
+            with open(path, "rb") as fh:
+                old = fh.read()
+            if hashlib.sha256(old).hexdigest() == f["sha256"]:
+                continue
+        body = client.request("GET", f"/v1/files/{f['device']}/{name}")
+        if name == MOZC_FILE:
+            words += mozc_take_in(mozc_db, body, old)
+        write_file(path, body)
         count += 1
-    return count
+    return count, words
 
 
-def push(client, device, sync_dir):
-    """Uploads this device's changed snapshots (learned words only, not Rime's yaml backups); returns how many."""
+def push(client, device, sync_dir, mozc_db=None):
+    """Uploads this device's changed snapshots (learned words, not Rime's yaml backups) and with
+    mozc_db its Japanese dictionary; returns how many."""
     remote = {f["name"]: f["sha256"] for f in client.files() if f["device"] == device}
+    files = {}
     folder = os.path.join(sync_dir, device)
-    count = 0
     for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
-        path = os.path.join(folder, name)
-        if FILE.fullmatch(name) and remote.get(name) != sha256_of(path):
-            with open(path, "rb") as f:
-                client.request("PUT", f"/v1/files/{device}/{name}", f.read())
+        if RIME_FILE.fullmatch(name):
+            with open(os.path.join(folder, name), "rb") as f:
+                files[name] = f.read()
+    if mozc_db:
+        files[MOZC_FILE] = mozc_text(mozc_words(read_mozc(mozc_db)))
+    count = 0
+    for name, body in files.items():
+        if remote.get(name) != hashlib.sha256(body).hexdigest():
+            client.request("PUT", f"/v1/files/{device}/{name}", body)
             count += 1
     return count
 
@@ -319,12 +565,15 @@ def run_client(args):
     device, sync_dir = rime_installation(args.rime_dir)
     client = Client(args.server, args.user, password)
     try:
-        n = (pull if args.command == "pull" else push)(client, device, sync_dir)
+        if args.command == "pull":
+            files, words = pull(client, device, sync_dir, args.mozc_db)
+            print(f"pull: {files} file(s), {words} new word(s) for Mozc")
+        else:
+            print(f"push: {push(client, device, sync_dir, args.mozc_db)} file(s)")
     except urllib.error.HTTPError as e:
         sys.exit(f"{args.command}: the server said {e.code}")
     except OSError as e:
         sys.exit(f"{args.command}: can't reach the server ({type(e).__name__})")
-    print(f"{args.command}: {n} file(s)")
 
 
 def main():
@@ -349,6 +598,9 @@ def main():
         c.add_argument("--password-file", required=True)
         c.add_argument(
             "--rime-dir", required=True, help="Rime's user dir, with installation.yaml"
+        )
+        c.add_argument(
+            "--mozc-db", help="Mozc's user_dictionary.db, to sync its Japanese words"
         )
     args = p.parse_args()
 
