@@ -70,7 +70,7 @@ check icon-names-differ-beyond-case icon_case
 # Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (and
 # SebType's fcitx5-mozc and fcitx5-rime, until the user says yes to their sudo install; the typo keyboard
 # line, #46; #92/#93's Win+Space toggle, 日本語 and English names and Japanese's menu icon; #102/#117's
-# Chinese data and Alt+` keymap; and #182's add-on hotkeys and kcm-fcitx5 removal, until setup reruns).
+# Chinese data and Alt+` keymap; and #182's add-on hotkeys and the removal of Fcitx5's own settings, until setup reruns).
 live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
@@ -78,7 +78,7 @@ live_dry() {
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e '^would: install packages librime-octagram ' \
     -e 'English ⇄ the last other language' -e 'install SebType.s tray icons' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
-    -e "turn off Fcitx5's .* hotkeys" -e '^would: remove kcm-fcitx5' && return 1
+    -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
@@ -90,10 +90,11 @@ fake=$(mktemp -d /tmp/sebtype/setup-ime-fake.XXXX)
 trap 'rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
-# fcitx5-mozc (and kcm-fcitx5) is installed only when $FAKE/<package> holds its version-release; fcitx5-rime is
+# fcitx5-mozc (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release; fcitx5-rime is
 # installed, as $FAKE/fcitx5-rime's version-release once that file exists, and not while it is empty. The fake sudo logs and applies
-# dnf's install of SebType's RPMs and their distro-sync back to Fedora's.
-stub rpm 'p=${*: -1}; [[ $p == fcitx5-mozc || $p == kcm-fcitx5 || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
+# dnf's install of SebType's RPMs and their distro-sync back to Fedora's, and the removal and install of
+# Fcitx5's own settings.
+stub rpm 'p=${*: -1}; [[ $p == fcitx5-mozc || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
 stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
   'dnf install -y '*/$MOZC_RPM) echo -n '$MOZC_VERSION-$SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
@@ -103,6 +104,8 @@ case \"\$*\" in
   'dnf install -y '*/fcitx5-$FCITX5_VERSION-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$FCITX5_VERSION-*}\"; done ;;
   'dnf distro-sync -y fcitx5'|'dnf distro-sync -y fcitx5 '*) for p in \"\${@:4}\"; do echo -n '$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
   'dnf install -y '*/librime-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
+  'dnf remove -y '*) for p in \"\${@:4}\"; do : > \"\$FAKE/\$p\"; done ;;
+  'dnf install -y kcm-fcitx5'*|'dnf install -y fcitx5-configtool'*) for p in \"\${@:4}\"; do echo -n 5.1.16-1.fc44 > \"\$FAKE/\$p\"; done ;;
   'dnf install -y librime-octagram') echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/librime-octagram\" ;;
   'dnf distro-sync -y librime '*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
@@ -719,7 +722,8 @@ own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup chec
     o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) && [[ -z $o ]] || return 1
   echo -n 9.9.9-1.fc45 > "$fake/$p"
   o=$(fake_run < /dev/null) || return 1; echo "$o"
-  grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(wc -l < "$fake/sudo.log") == 2 ]]
+  # --undo-fcitx5 may also put back Fcitx5's own settings (fcitx5-settings-removed-and-restored)
+  grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(grep -cv 'fcitx5-configtool$' "$fake/sudo.log") == 2 ]]
 }
 check mozc-install-and-undo own_swap "$MOZC_FEDORA" fcitx5-mozc "$h/.cache/sebtype/mozc/rpms/$MOZC_RPM"
 check rime-install-and-undo own_swap "$RIME_VERSION-$RIME_FEDORA_RELEASE" fcitx5-rime "$h/.cache/sebtype/fcitx5-rime/$RIME_RPM"
@@ -734,6 +738,24 @@ check fcitx5-install-and-undo own_swap "$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE" 
   fcitx5 "$f5-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.x86_64.rpm" \
   fcitx5-libs "$f5-libs-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.x86_64.rpm" \
   fcitx5-data "$f5-data-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.noarch.rpm"
+# Fcitx5's own settings (#182): setup removes kcm-fcitx5 and fcitx5-configtool after a yes, a rerun
+# leaves it, and --undo-fcitx5 puts both back.
+fcitx5_settings() {
+  local o p
+  for p in kcm-fcitx5 fcitx5-configtool; do echo -n 5.1.16-1.fc44 > "$fake/$p"; done; rm -f "$fake/sudo.log"
+  # Installed, so the one `y` answers this question (as in own_swap)
+  [[ -s $fake/fcitx5-mozc ]] || echo -n "$MOZC_VERSION-$SEBTYPE_RELEASE" > "$fake/fcitx5-mozc"
+  [[ -s $fake/fcitx5-rime ]] || echo -n "$RIME_VERSION-$RIME_SEBTYPE_RELEASE" > "$fake/fcitx5-rime"
+  o=$(echo y | fake_run) || return 1; echo "$o"
+  grep -q "^change: remove kcm-fcitx5 fcitx5-configtool, Fcitx5's own settings" <<<"$o" &&
+    [[ $(head -1 "$fake/sudo.log") == 'sudo dnf remove -y kcm-fcitx5 fcitx5-configtool' && ! -s $fake/kcm-fcitx5 && ! -s $fake/fcitx5-configtool ]] || return 1
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  ! grep -q "remove kcm-fcitx5" <<<"$o" || return 1
+  o=$(fake_run --undo-fcitx5 < /dev/null) || return 1; echo "$o"
+  grep -q 'sudo dnf install -y kcm-fcitx5 fcitx5-configtool' "$fake/sudo.log" && [[ -s $fake/kcm-fcitx5 && -s $fake/fcitx5-configtool ]] || return 1
+  : > "$fake/kcm-fcitx5"; : > "$fake/fcitx5-configtool"  # removed again, so the later checks' `y` isn't taken
+}
+check fcitx5-settings-removed-and-restored fcitx5_settings
 # The grammar plugin (#127): a missing librime-octagram is installed, Fedora's beside Fedora's librime and
 # SebType's build beside SebType's (Fedora's requires Fedora's librime).
 octagram() {

@@ -18,7 +18,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Step | Change | Fixes |
 |---|---|---|
 | Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `fcitx5-rime`, `librime-octagram`, `fcitx5-mozc`; `librime-octagram` from SebType's librime build once librime is SebType's | The engines, and the modules XWayland and older apps load. `librime-octagram` reads the Chinese data's grammar file, so Chinese candidates come in the phone's and Windows' order: `beirendingwei` gives 被认定为, not 被人定位 (#127) |
-| Fcitx5's settings page | Removes `kcm-fcitx5` (Fcitx5's own page in System Settings), after asking, with sudo | SebType's settings are in the Configurator; Fcitx5's own page set things SebType's setup then overrode (Decisions #2, #182) |
+| Fcitx5's own settings | Removes `kcm-fcitx5` (Fcitx5's page in System Settings) and `fcitx5-configtool` (the Fcitx 5 Configuration app), after asking, with sudo. `--undo-fcitx5` puts them back | SebType's settings are in the Configurator; Fcitx5's own were a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182) |
 | SebType's fcitx5-mozc | Replaces Fedora's `fcitx5-mozc` with SebType's build of the same version (`mozc/`), after asking, with sudo | Japanese's English mode shows **A** while Caps Lock is on, like Chinese's, and its tray menu has one switch, あ → ア (#117) |
 | SebType's fcitx5-rime | Replaces Fedora's `fcitx5-rime` with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese's tray menu has one switch, 简 → 繁, with no schema list, Deploy or Synchronize (#117) |
 | SebType's librime | Replaces Fedora's `librime` and its installed plugins (`librime-lua`, …) with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese typo correction also fixes a slip onto the key above or below, which librime's own neighbour map lacks: `xkaoshi` gives 小时 (#101) |
@@ -175,7 +175,9 @@ To undo: `pc/linux/setup-ime.sh --undo-rime`.
 Fedora's Fcitx5 ends its tray menu with Input Method Settings, which opens Fcitx5's own settings
 window. SebType's Fcitx5, `pc/fcitx5` (5.1.23), leaves that item out of both tray menus, the
 StatusNotifier one Plasma shows (`notificationitem/dbusmenu.cpp`) and the X11 one
-(`classicui/xcbtraywindow.cpp`): SebType's settings are in the Configurator (#182). `rime/build.sh fcitx5`
+(`classicui/xcbtraywindow.cpp`), and doesn't install the `fcitx5-configtool` launcher or its Fcitx 5
+Configuration app entry, nor recommend the `fcitx5-configtool` package: SebType's settings are in the
+Configurator (#182). `rime/build.sh fcitx5`
 builds it with `rime/fcitx5.spec` (Fedora's spec) and all its subpackages, which must match. Its release
 `1.sebtype1.fc44` sorts above Fedora's `1.fc44`. To undo: `pc/linux/setup-ime.sh --undo-fcitx5`.
 

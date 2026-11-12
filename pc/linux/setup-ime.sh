@@ -5,7 +5,7 @@
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
 # from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc, --undo-rime,
 # --undo-librime and --undo-fcitx5 put Fedora's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 back in
-# place of SebType's builds.
+# place of SebType's builds; --undo-fcitx5 also puts back Fcitx5's own settings (kcm-fcitx5, fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
@@ -159,10 +159,21 @@ undo_build() { # package [packages built with it...]
 librime_installed() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
 # Fcitx5's packages here: Fcitx5 and its subpackages, which must come from the same build
 fcitx5_installed() { local p; for p in "${FCITX5_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
+# Fcitx5's own settings, a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182):
+# its page in System Settings and its "Fcitx 5 Configuration" app. Setup removes them; --undo-fcitx5 puts them back.
+fcitx5_settings=(kcm-fcitx5 fcitx5-configtool)
+fcitx5_settings_installed() { local p; for p in "${fcitx5_settings[@]}"; do rpm -q "$p" >/dev/null 2>&1 && echo "$p"; done; true; }
 ((undo_mozc)) && undo_build fcitx5-mozc
 ((undo_rime)) && undo_build fcitx5-rime
 ((undo_librime)) && { mapfile -t librime_pkgs < <(librime_installed); undo_build "${librime_pkgs[@]}"; }
-((undo_fcitx5)) && { mapfile -t fcitx5_pkgs < <(fcitx5_installed); undo_build "${fcitx5_pkgs[@]}"; }
+if ((undo_fcitx5)); then
+  missing=(); for p in "${fcitx5_settings[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
+  if ((${#missing[@]})); then
+    echo "change: install ${missing[*]}, Fcitx5's own settings"
+    sudo dnf install -y "${missing[@]}"
+  fi
+  mapfile -t fcitx5_pkgs < <(fcitx5_installed); undo_build "${fcitx5_pkgs[@]}"
+fi
 
 # 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-octagram is the Rime plugin
 # that reads the Chinese data's grammar file, as the phone and Windows do (#127); fcitx5-mozc is the
@@ -187,11 +198,12 @@ if ((${#missing[@]})); then
     else warn "packages not installed: ${missing[*]}"; fi
   fi
 fi
-# Fcitx5's own settings page in System Settings is not SebType's (Decisions #2, #182): the Configurator is.
-if rpm -q kcm-fcitx5 >/dev/null 2>&1 && change "remove kcm-fcitx5, Fcitx5's own page in System Settings (asks before using sudo)"; then
-  read -rp "Remove kcm-fcitx5 with 'sudo dnf remove'? [y/N] " answer || answer=
-  if [[ $answer == [yY]* ]]; then sudo dnf remove -y kcm-fcitx5
-  else warn "kcm-fcitx5 stays installed"; fi
+# Fcitx5's own settings go (above); the Configurator holds SebType's settings.
+mapfile -t settings < <(fcitx5_settings_installed)
+if ((${#settings[@]})) && change "remove ${settings[*]}, Fcitx5's own settings (asks before using sudo)"; then
+  read -rp "Remove ${settings[*]} with 'sudo dnf remove'? [y/N] " answer || answer=
+  if [[ $answer == [yY]* ]]; then sudo dnf remove -y "${settings[@]}"
+  else warn "${settings[*]} stay installed"; fi
 fi
 
 # 1b. SebType's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 in place of Fedora's, built from SebType's source by

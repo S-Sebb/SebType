@@ -1,21 +1,18 @@
 add_subdirectory(icon)
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fcitx5-configtool.desktop.in.in
-               ${CMAKE_CURRENT_BINARY_DIR}/fcitx5-configtool.desktop.in @ONLY)
+# SebType: no fcitx5-configtool launcher or "Fcitx 5 Configuration" app entry; SebType Configurator
+# holds the settings (#182).
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/org.fcitx.Fcitx5.desktop.in.in
                ${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.desktop.in @ONLY)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/fcitx5-diagnose.sh
                ${CMAKE_CURRENT_BINARY_DIR}/fcitx5-diagnose ESCAPE_QUOTES @ONLY)
 
-fcitx5_translate_desktop_file(${CMAKE_CURRENT_BINARY_DIR}/fcitx5-configtool.desktop.in
-                              fcitx5-configtool.desktop)
 fcitx5_translate_desktop_file(${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.desktop.in
                               org.fcitx.Fcitx5.desktop)
 fcitx5_translate_desktop_file(org.fcitx.Fcitx5.metainfo.xml.in
                               org.fcitx.Fcitx5.metainfo.xml XML)
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.desktop"
-              "${CMAKE_CURRENT_BINARY_DIR}/fcitx5-configtool.desktop"
         DESTINATION "${FCITX_INSTALL_DATADIR}/applications")
 
 if (ENABLE_XDGAUTOSTART)
@@ -24,8 +21,6 @@ endif()
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.metainfo.xml" DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 
-install(FILES fcitx5-configtool.sh RENAME fcitx5-configtool DESTINATION "${FCITX_INSTALL_BINDIR}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/fcitx5-diagnose" DESTINATION "${FCITX_INSTALL_BINDIR}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
 GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 

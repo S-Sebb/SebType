@@ -1,6 +1,7 @@
 # SebType's Fcitx5 (#182): SebType's Fcitx5 in pc/fcitx5, packaged as Fedora 44's packages fcitx5
 # 5.1.23-1 (this is Fedora's spec, MIT licence, with fcitx5-xinput and fcitx5.sh beside it). build.sh
-# sets the version and release from versions.sh.
+# sets the version and release from versions.sh. SebType's changes: no fcitx5-configtool launcher or
+# desktop entry, and no Recommends of fcitx5-configtool (#182).
 
 %global _xinputconf %{_sysconfdir}/X11/xinit/xinput.d/fcitx5.conf
 %global __provides_exclude_from ^%{_libdir}/%{name}/.*\\.so$
@@ -60,7 +61,6 @@ Requires(postun):   %{_sbindir}/alternatives
 Recommends:       (fcitx5-gtk if (gtk2 or gtk3 or gtk4))
 Recommends:       (fcitx5-qt if (qt5-qtbase or qt6-qtbase))
 Recommends:       (fcitx5-qt-module if (qt5-qtbase or qt6-qtbase))
-Recommends:       fcitx5-configtool
 
 %description
 Fcitx 5 is a generic input method framework released under LGPL-2.1+.
@@ -114,10 +114,6 @@ install -d                %{buildroot}%{_datadir}/%{name}/inputmethod
 install -d                %{buildroot}%{_datadir}/%{name}/table
 desktop-file-install --delete-original \
   --dir %{buildroot}%{_datadir}/applications \
-  %{buildroot}%{_datadir}/applications/%{name}-configtool.desktop
-
-desktop-file-install --delete-original \
-  --dir %{buildroot}%{_datadir}/applications \
   %{buildroot}%{_datadir}/applications/org.fcitx.Fcitx5.desktop
 
 desktop-file-install --delete-original \
@@ -153,7 +149,6 @@ fi
 %doc README.md
 %config %{_xinputconf}
 %{_bindir}/%{name}
-%{_bindir}/%{name}-configtool
 %{_bindir}/%{name}-remote
 %{_bindir}/%{name}-diagnose
 %{_libdir}/%{name}/
@@ -179,7 +174,6 @@ fi
 %{_datadir}/dbus-1/services/org.fcitx.Fcitx5.service
 %{_datadir}/applications/org.fcitx.Fcitx5.desktop
 %{_metainfodir}/org.fcitx.Fcitx5.metainfo.xml
-%{_datadir}/applications/%{name}-configtool.desktop
 %{_datadir}/applications/%{name}-wayland-launcher.desktop
 %{_datadir}/icons/hicolor/*/apps/*
 
