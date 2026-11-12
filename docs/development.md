@@ -45,10 +45,15 @@ What it builds from source, and the caches that make a rebuild quick:
 | Part | Built by | Cache |
 |---|---|---|
 | Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle`, shared by every worktree |
-| The app's C++ (`libjni_latinime.so`) and Rime (`librime-jni.so`, from `engines/librime` with librime-lua, octagram and predict) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/.cache/sebtype/rime-android` |
-| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/mozc/build-native.sh`) | Gradle's build cache, and Bazel's disk cache in `~/.cache/sebtype/mozc-android` |
+| The app's C++ (`libjni_latinime.so`) and Rime (`librime-jni.so`, from `engines/librime` with librime-lua, octagram and predict) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/sebtype/cache/rime-android` |
+| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/mozc/build-native.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/sebtype/cache/mozc-android` |
 | The Chinese data | `data/rime/build.sh` | `~/.cache/sebtype/rime-data-*.zip` |
 | Mozc's dictionary | `android/app/res-bundle/download-bundles.py` | `android/app/res-bundle/` |
+
+Scripts write their test, perf and release outputs to `~/scratch/sebtype/` and their development-only
+caches to `~/scratch/sebtype/cache/` (`SCRATCH` in `tools/lib.sh`), not to `/tmp` or `~/.cache`. Only
+what the Linux setup builds for the person installing SebType (its RPMs and the Chinese data zip) stays
+in `${XDG_CACHE_HOME:-~/.cache}/sebtype`.
 
 `android/release.sh` builds the release from main and publishes it ([install.md](install.md)).
 
@@ -79,7 +84,7 @@ What it builds from source, and the caches that make a rebuild quick:
 | `pc/configurator/test.sh` | The Configurator in nested sessions |
 | `pc/windows/setup/test-tcsbackend.sh`, `pc/windows/mozc/test-tcsbackend.sh` | SebType's installer and Mozc on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
 
-Each writes one line per check to a results file under `/tmp/sebtype/`, and its logs next to it.
+Each writes one line per check to a results file under `~/scratch/sebtype/`, and its logs next to it.
 
 ### Which checks a run takes
 
@@ -178,7 +183,7 @@ Mozc. Each typing set runs `RUNS` times (default 3), each time in a fresh test f
 gives the median and the 95th percentile over all keys. English types after one keyboard restart,
 because the transformer can stay off in the first process after install.
 
-Results, in `/tmp/sebtype/perf-<checkout>/` (or `PERF_OUT`): `perf.md` (the table), `results.txt`
+Results, in `~/scratch/sebtype/perf-<checkout>/` (or `PERF_OUT`): `perf.md` (the table), `results.txt`
 (one line per check), and traces and logs in `run/`. Open a `.pftrace` in https://ui.perfetto.dev to see where
 the time goes.
 
@@ -252,8 +257,8 @@ It never touches the running Fcitx5 session:
   `ps` and `/proc`.
 
 It needs gcc, python3, librime with librime-lua, and fcitx5-mozc. It compiles against
-`engines/librime`'s headers. Results: `/tmp/sebtype/pc-perf.md` and
-`/tmp/sebtype/pc-perf-results.txt`.
+`engines/librime`'s headers. Results: `~/scratch/sebtype/pc-perf.md` and
+`~/scratch/sebtype/pc-perf-results.txt`.
 
 ### Build and test times (#58)
 

@@ -2,14 +2,14 @@
 # Checks the build speed-ups of #58 (docs/development.md, "Build and test times") on this checkout's commit:
 # a debug build in a new worktree comes from the shared caches, a Kotlin change compiles incrementally,
 # and the release APK is the same from two checkouts, with or without the caches.
-# Uses a scratch worktree in ~/.cache/sebtype/test-build-wt, deleted at the end; builds take the build lock.
-# One line per check in /tmp/sebtype/test-build-results.txt; logs next to it. Exit 0 only if all pass.
+# Uses a scratch worktree in ~/scratch/sebtype/cache/test-build-wt, deleted at the end; builds take the build lock.
+# One line per check in ~/scratch/sebtype/test-build-results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
-out=/tmp/sebtype; mkdir -p "$out"
+out=$HOME/scratch/sebtype; mkdir -p "$out"
 results=$out/test-build-results.txt; : > "$results"
-wt=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/test-build-wt
+wt=$HOME/scratch/sebtype/cache/test-build-wt
 # Checks run under `timeout` in a subshell: the functions and what they read must be exported.
 export out wt
 

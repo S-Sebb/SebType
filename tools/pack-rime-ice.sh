@@ -24,7 +24,7 @@ ZIP_FORMAT_VERSION=1
 
 personal=${1:-}
 out=$(realpath -m "${2:-$(dirname "$0")/../out/rime-ice-futo.dict}")
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
+cache=$HOME/scratch/sebtype/cache
 mkdir -p "$cache" "$(dirname "$out")"
 
 fetch() { # url sha256 -> prints cached path

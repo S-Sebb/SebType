@@ -2,7 +2,7 @@
 # shellcheck disable=SC2016  # stub bodies are single-quoted; they expand when the stub runs
 # Checks pc/linux/setup-ime.sh: ShellCheck, a read-only --dry-run on this PC, and a full run on a
 # fake fresh account (stubbed packages, systemd, Fcitx5 and KWin calls) that must be idempotent.
-# Changes nothing in the real session. One line per check in /tmp/sebtype/test-setup-ime-results.txt.
+# Changes nothing in the real session. One line per check in ~/scratch/sebtype/test-setup-ime-results.txt.
 # Check names as arguments run only those (fresh-apply, which the later checks build on, always runs).
 # Typing in real apps is the manual checklist in pc/linux/README.md.
 set -uo pipefail
@@ -14,7 +14,7 @@ source ../../tools/lib.sh
 [[ -n ${HOLDING-} ]] || exec env HOLDING=1 devq -w 1800 -m 10 -n "sebtype test-setup-ime ($(git branch --show-current))" \
   /tmp/agent-locks/devices/nobara-pc.lock bash "$script" "$@"
 
-out=/tmp/sebtype; mkdir -p "$out"
+out=$SCRATCH; mkdir -p "$out"
 selected=("$@")
 results=$out/test-setup-ime-results.txt; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
@@ -88,7 +88,7 @@ live_dry() {
 check live-dry-run live_dry
 
 # Fake fresh account.
-fake=$(mktemp -d /tmp/sebtype/setup-ime-fake.XXXX)
+fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
 trap 'rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
