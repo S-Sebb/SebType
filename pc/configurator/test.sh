@@ -58,6 +58,11 @@ cleanup() {
   sleep 1; rm -rf "$sb"
 }
 trap cleanup EXIT
+# Each private D-Bus session gets its own throwaway runtime dir, removed with the sandbox (#176): in the
+# user's, anything that touches the Documents portal starts a second xdg-document-portal on the user's
+# $XDG_RUNTIME_DIR/doc, and the user's mount goes when it ends, so Flatpak apps no longer start.
+runtime_dir() { mktemp -d "$sb/run.XXXX"; }  # 0700
+export -f runtime_dir
 sandbox() {
   mkdir -p "$sb/config" "$sb/data/fcitx5"
   cp -r ~/.config/fcitx5 "$sb/config/"
@@ -98,7 +103,7 @@ done
 echo all-screens-ok
 SH
   chmod +x "$sb/shots.sh"
-  env -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" dbus-run-session -- \
+  env -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" dbus-run-session -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
@@ -109,7 +114,7 @@ check every-screen-in-every-language 400 shots
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
 # shellcheck disable=SC2016  # the inner script gets its paths as arguments
 private_fcitx5() {
-  env -i PATH="$PATH" HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" \
+  env -i PATH="$PATH" HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" \
     CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
     dbus-run-session -- bash -c '
       fcitx5 -k --disable=all --enable=dbus,keyboard,rime,mozc > "$1/fcitx5.log" 2>&1 & f=$!
@@ -142,7 +147,7 @@ for o in horizontal vertical; do
 done
 SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
-  env -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" dbus-run-session -- \
+  env -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" dbus-run-session -- \
     kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 2 ]]

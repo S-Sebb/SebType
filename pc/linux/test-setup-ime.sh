@@ -254,6 +254,28 @@ undo_configurator() {
     o=$(fake_run < /dev/null) && grep -q '^change: install SebType Configurator' <<<"$o" && configurator
 }
 
+# A private D-Bus session for one fake account, with its own throwaway runtime dir
+# (#176): in the user's, anything that touches the Documents portal starts a second xdg-document-portal
+# on the user's $XDG_RUNTIME_DIR/doc, and the user's mount goes when it ends, so Flatpak apps no longer start.
+private_bus() { # home, timeout seconds, command...
+  local rt rc; rt=$(mktemp -d "$fake/run.XXXX")  # 0700
+  env -i PATH="$PATH" HOME="$1" XDG_CONFIG_HOME="$1/.config" XDG_DATA_HOME="$1/.local/share" XDG_RUNTIME_DIR="$rt" \
+    timeout "$2" dbus-run-session -- "${@:3}"
+  rc=$?; rm -rf "$rt"; return $rc
+}
+# The issue's repro: a private session asks for the Documents portal, and the user's mount stays. Not
+# under bwrap (own_fcitx), where the private portal can't mount at all.
+portal_mount() {
+  local h=$fake/portal; mkdir -p "$h"
+  private_bus "$h" 20 gdbus call --session --dest org.freedesktop.portal.Documents --object-path /org/freedesktop/portal/documents \
+    --method org.freedesktop.portal.Documents.GetMountPoint || return 1
+  mount | grep " on $XDG_RUNTIME_DIR/doc type fuse.portal "
+}
+if [[ -n ${XDG_RUNTIME_DIR-} ]] && mount | grep -q " on $XDG_RUNTIME_DIR/doc type fuse.portal "; then
+  check private-bus-keeps-document-portal portal_mount
+else result SKIP private-bus-keeps-document-portal "the user's xdg-document-portal isn't mounted"
+fi
+
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
 # can't see it) running SebType's Mozc on a second fake account set up by setup-ime.sh: Shift tap toggles
 # あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` toggles あ ⇄ ア and leaves
@@ -266,8 +288,7 @@ mozc_keys() {
   fake_run < /dev/null > /dev/null || return 1
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=mozc\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
-  env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
-    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 60 "${own_fcitx[@]}" dbus-run-session -- python3 - "$fake/fcitx5.log" <<'PY'
+  private_bus "$h" 60 "${own_fcitx[@]}" python3 - "$fake/fcitx5.log" <<'PY'
 import re, subprocess, sys, time
 from gi.repository import Gio, GLib
 
@@ -387,8 +408,7 @@ rime_label() {
   grep -q '^  menu/page_size: 6 ' "$r/default.custom.yaml" || { echo "default.custom.yaml has no page size 6"; return 1; }
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
-  env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
-    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 90 "${own_fcitx[@]}" dbus-run-session -- python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
+  private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
 import os, subprocess, sys, time
 from gi.repository import Gio, GLib
 
@@ -514,8 +534,7 @@ win_space() {
   fake_run < /dev/null > /dev/null || return 1
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[Groups/0/Items/2]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
-  env -i PATH="$PATH" HOME="$h" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
-    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR-}" timeout 120 "${own_fcitx[@]}" dbus-run-session -- python3 -W ignore - "$fake/fcitx5-menu.log" <<'PY'
+  private_bus "$h" 120 "${own_fcitx[@]}" python3 -W ignore - "$fake/fcitx5-menu.log" <<'PY'
 import subprocess, sys, time
 from gi.repository import Gio, GLib
 
