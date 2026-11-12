@@ -2,13 +2,14 @@
 # Runs SebType's instrumented typing tests (android/app/src/androidTest/java/.../LiveSpacingTests) on a free emulator (android/emulator.sh),
 # typing through the live keyboard with fresh-install settings.
 # One line per test in /tmp/sebtype/test-typing-results.txt; logs next to it. Exit 0 only if all pass.
-# The debug build replaces any installed SebType (same package); test-emulator.sh reinstalls the release.
+# The debug build replaces any installed SebType (same package); emulator.sh reinstalls the release.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
+source tools/lib.sh
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-typing-results.txt; : > "$results"
-adb=${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb
+adb=$ANDROID_HOME/platform-tools/adb
 tests=( # LiveSpacingTests methods
   spaceThenPeriodStaysPut pickedSuggestionThenPeriod sentenceThenCapital storedFutoDefaultMigratesOnce # #39
 )

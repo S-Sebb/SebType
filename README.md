@@ -34,7 +34,7 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 
 - What it must do: [Requirements (#1)](https://github.com/S-Sebb/sebtype/issues/1)
 - Settled choices: [Decisions (#2)](https://github.com/S-Sebb/sebtype/issues/2)
-- Device tests and the emulator: [docs/testing.md](docs/testing.md)
+- Build, test and measure (Android and PCs, the build lock, the emulator): [docs/development.md](docs/development.md)
 - Sync 中文's learned words and your Japanese and English personal dictionaries with your own server: [sync-server/README.md](sync-server/README.md)
 - Install on a phone (Obtainium, GitHub releases): [docs/install.md](docs/install.md)
 - Bring in your own words (Rime word lists and learned words, Japanese and English dictionaries): [docs/import.md](docs/import.md)
@@ -78,12 +78,7 @@ If you want to contribute layouts, check out the [layouts repo](https://github.c
 
 ## Building
 
-`android/build.sh` builds SebType's APKs (`release`, `debug`, and the x86_64 emulator builds); see its header.
-Android Studio or plain Gradle work too:
-```
-./gradlew assembleDebug
-./gradlew assembleRelease
-```
+SebType: see [docs/development.md](docs/development.md).
 
 ## APK signing
 

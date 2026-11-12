@@ -2,6 +2,7 @@
 # Builds the signed arm64 release APK from main and publishes it as a GitHub release of this repo,
 # where Obtainium picks it up (docs/install.md). Run from a clean checkout of origin/main.
 set -euo pipefail
+source "$(dirname "$0")/../tools/lib.sh"
 cd "$(dirname "$0")/.."
 
 git fetch -q origin main
@@ -17,7 +18,7 @@ asset=/tmp/sebtype/SebType-$version-arm64-v8a.apk
 mkdir -p /tmp/sebtype && cp "$apk" "$asset"
 
 # Refuse an APK that isn't signed with the SebType key: Android would refuse it as an update anyway.
-apksigner=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/apksigner | tail -1)
+apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
 "$apksigner" verify --print-certs "$asset" | grep -q 'CN=SebType' || { echo "release: APK not signed with the SebType key" >&2; exit 1; }
 
 gh release create "$tag" "$asset" --target "$(git rev-parse HEAD)" --title "SebType $version" \

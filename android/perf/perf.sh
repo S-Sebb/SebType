@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measures SebType's size, memory and speed on an Android device (#45); docs/perf.md says how to read it.
+# Measures SebType's size, memory and speed on an Android device (#45); docs/development.md says how to read it.
 #   android/perf/perf.sh          builds the release APK, then measures on a free emulator (android/emulator.sh)
 # APK=<path> skips the build; ANDROID_SERIAL=<serial> measures on that device instead (the only way to
 # pick a phone); RUNS (default 3) repeats each typing set.
@@ -10,10 +10,11 @@
 # from Perfetto traces of framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
+source tools/lib.sh
 self=$PWD/android/perf/perf.sh
 
 export out=${PERF_OUT:-/tmp/sebtype/perf-$(basename "$PWD")}; export work=$out/run
-export sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+export sdk=$ANDROID_HOME
 export adb=$sdk/platform-tools/adb
 export runs=${RUNS:-3}
 # Idle memory is read this long after the keyboard opens: a new process's start-up garbage (about

@@ -225,4 +225,4 @@ pc/configurator/test.sh`: this server on the PC with a throwaway login, a privat
 and Mozc in a sandbox, made-up words both ways, and delete. The phone side is
 checked on the emulator by `SEBTYPE_CHECKS=first-install,sync android/test/emulator.sh`
 (`sync-crash-report` crashes SebType and finds the report in the crash folder)
-([docs/testing.md](../docs/testing.md)).
+([docs/development.md](../docs/development.md)).

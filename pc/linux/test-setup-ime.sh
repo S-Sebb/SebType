@@ -8,6 +8,8 @@
 set -uo pipefail
 script=$(readlink -f "$0")
 cd "$(dirname "$script")" || exit 1
+# shellcheck source=../../tools/lib.sh
+source ../../tools/lib.sh
 # Its private Fcitx5 instances run on this PC: one test at a time, in the shared device queue.
 [[ -n ${HOLDING-} ]] || exec env HOLDING=1 devq -w 1800 -m 10 -n "sebtype test-setup-ime ($(git branch --show-current))" \
   /tmp/agent-locks/devices/nobara-pc.lock bash "$script" "$@"
@@ -28,9 +30,9 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
 # The fake account has no Rust: setup-ime.sh copies the Configurator built here.
-# Under the shared build lock with half the cores, like every heavy local build.
-devq -m 30 -n "configurator build for test-setup-ime" /tmp/agent-locks/sebtype/build.lock \
-  env CARGO_BUILD_JOBS=8 cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
+# In the shared build lock (tools/lib.sh), like every heavy local build.
+build_lock 30 "configurator build for test-setup-ime" \
+  env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
   { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
 # Nor does it build SebType's Chinese data: each fake account's cache links the zip built here.
 ../../data/rime/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||

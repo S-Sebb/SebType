@@ -5,12 +5,13 @@
 # Exit 0 only if all pass. Typing on the emulator ("gi" -> GitHub, autocorrect) is checked by hand.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
+source tools/lib.sh
 
 out=/tmp/sebtype; mkdir -p "$out"
 results=$out/test-en-dict-results.txt; : > "$results"
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
 dict=android/app/src/main/res/raw/main_en.dict
-sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+sdk=$ANDROID_HOME
 bt=$(ls -d "$sdk"/build-tools/* 2>/dev/null | tail -1)
 # Benchmark text, as in the #40 study: OpenAssistant oasst1 prompts (Apache-2.0) and Wikipedia's
 # machine-readable common misspellings (CC BY-SA 4.0) at a fixed revision.

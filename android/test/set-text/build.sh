@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Builds test-settings.py's set-text helper APK (debug-signed, no Gradle):  build.sh OUT.apk
+# Builds settings.py's set-text helper APK (debug-signed, no Gradle):  build.sh OUT.apk
 set -euo pipefail
+source "$(dirname "$0")/../../../tools/lib.sh"
 src=$(cd "$(dirname "$0")" && pwd) out=$1
-sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+sdk=$ANDROID_HOME
 bt=$(ls -d "$sdk"/build-tools/* | tail -1) jar=$(ls "$sdk"/platforms/android-*/android.jar | tail -1)
-jdk=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* | tail -1)}
+jdk=$JDK21
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 "$jdk/bin/javac" --release 11 -cp "$jar" -d "$work/classes" "$src"/dev/sebb/sebtype/settext/SetText.java
 JAVA_HOME=$jdk "$bt/d8" --min-api 26 --lib "$jar" --output "$work" $(find "$work/classes" -name '*.class')

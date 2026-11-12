@@ -3,7 +3,7 @@
 private and URL fields (#30), the 简/繁 menu switch (#36), then Japanese's あ ⇄ ア mode chip (#38), its
 cold starts (#97) and its idle unload (#56), and that English's model waits for the first letter (#56).
 
-    test-chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
+    chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
 APK is the release build; BUMPED_APK is the same APK with a different bundled data version marker,
 installed over it as an update; MAIN_APK (optional) is main's release build, which learns a word before

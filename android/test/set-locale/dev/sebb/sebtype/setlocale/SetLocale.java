@@ -4,7 +4,7 @@ import android.content.res.Configuration;
 import android.os.LocaleList;
 
 /**
- * test-emulator.sh's helper (#103): sets the system's language list the way Settings does, with no
+ * emulator.sh's helper (#103): sets the system's language list the way Settings does, with no
  * restart, and prints the list it replaced.
  * Run as the shell user, which holds CHANGE_CONFIGURATION:
  * app_process -cp set-locale.dex / dev.sebb.sebtype.setlocale.SetLocale en-US
