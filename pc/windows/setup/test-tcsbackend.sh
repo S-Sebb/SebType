@@ -6,6 +6,8 @@
 # ONLY=picnic runs only the Picnic candidate window's pictures (#162), with TCSBackEnd's own checks.
 # ONLY=sync runs only sync with your own server (#180): a local sebtype_sync.py with a throwaway login,
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
+# ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
+# SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
 # It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
 # else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
@@ -108,7 +110,7 @@ grep -q '^folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a Seb
 grep -qE '^users: \S*\bsebtype-test\b' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
 
 # shellcheck disable=SC2016
-sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}${ONLY:+ -Only $ONLY}/" > "$out/run.ps1" <<'EOF'
+sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}${ONLY:+ -Only $ONLY}${SOAK_MIN:+ -SoakMinutes $SOAK_MIN}${COMPARE_IMES:+ -CompareImes $COMPARE_IMES}/" > "$out/run.ps1" <<'EOF'
 $d = 'C:\sebtype-setup-test'
 Start-Transcript "$d\run.log" | Out-Null
 try {
