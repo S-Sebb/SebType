@@ -58,7 +58,7 @@ if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
 $pc = Join-Path $PSScriptRoot '..\..'
 New-Item -ItemType Directory -Force (Split-Path $Work) | Out-Null
 Copy-Item -Recurse (Join-Path $pc 'weasel') $Work
-Copy-Item -Recurse (Join-Path $pc 'librime') (Join-Path $Work 'librime')
+Copy-Item -Recurse (Join-Path $PSScriptRoot '..\..\..\engines\librime') (Join-Path $Work 'librime')
 Push-Location $Work
 try {
   foreach ($d in $RimeDeps) { Get-Commit $d.Repo $d.Commit "librime\$($d.Dir)" }

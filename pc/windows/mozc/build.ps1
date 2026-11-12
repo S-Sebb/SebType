@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $v = Import-PowerShellDataFile "$PSScriptRoot\versions.psd1"
 $icons = Resolve-Path "$PSScriptRoot\..\..\icons"
-$source = Resolve-Path "$PSScriptRoot\..\..\mozc"
+$source = Resolve-Path "$PSScriptRoot\..\..\..\engines\mozc"
 
 # Preflight: the tools Mozc needs and doesn't fetch.
 $missing = @()

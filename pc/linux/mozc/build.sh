@@ -14,7 +14,7 @@ source "$here/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=../rpm-sources.sh
 source "$here/../rpm-sources.sh"
 mkdir -p "$MOZC_CACHE"/{rpms,work,sources}
-pack_source "$here/../../mozc" "$MOZC_CACHE/sources/mozc.tar.gz"
+pack_source "$here/../../../engines/mozc" "$MOZC_CACHE/sources/mozc.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies and Bazelisk. Built once per pin and spec.
 image=localhost/sebtype-mozc-builder:$(cat "$here/fcitx5-mozc.spec" - <<<"$MOZC_BUILD_IMAGE $BAZELISK_SHA256" | sha256sum | head -c 12)

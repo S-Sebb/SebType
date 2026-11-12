@@ -36,7 +36,7 @@ for x in gcc python3; do command -v $x >/dev/null || { echo "preflight: $x missi
 [[ -f $librime ]] || { echo "preflight: $librime missing (install librime)"; exit 1; }
 [[ -f $rime_dir/rime_ice.schema.yaml ]] || { echo "preflight: no rime-ice in $rime_dir (set RIME_DIR)"; exit 1; }
 [[ -x $mozc_server ]] || { echo "preflight: $mozc_server missing (install fcitx5-mozc)"; exit 1; }
-gcc -O2 -I"$here/../librime/src" -o "$work/perf-rime" "$here/perf-rime.c" "$librime" -ldl 2> "$out/pc-perf-build.log" ||
+gcc -O2 -I"$here/../../engines/librime/src" -o "$work/perf-rime" "$here/perf-rime.c" "$librime" -ldl 2> "$out/pc-perf-build.log" ||
   { echo "preflight: perf-rime.c doesn't build, see $out/pc-perf-build.log"; exit 1; }
 
 # Generic phrases only: abbreviations (ranh, lh), words and a long sentence.
