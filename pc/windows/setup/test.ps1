@@ -5,8 +5,9 @@ session (test-tcsbackend.sh does that on TCSBackEnd and opens the Remote Desktop
 
     powershell -File C:\sebtype-setup-test\test.ps1
 
-The folder holds this script, TsfHost.cs (../mozc), windows.rs (the Configurator's Picnic scheme), perf-rime.ps1 and perf-rime.exe (../, from the
-Weasel build) and SebType-setup-*.exe. The test creates a local
+The folder holds this script, TsfHost.cs (../mozc), perf-rime.ps1 and perf-rime.exe (../, from the
+librime build) and SebType-setup-*.exe; for -Only upgrade also old\SebType-setup-*.exe, the SebType before
+#190 (Weasel and Mozc's own text services). The test creates a local
 admin user, sebtype-test, and runs everything as that user in a Remote Desktop session of its own, so
 nobody's own input settings change, then removes the user and its profile:
 
@@ -23,8 +24,10 @@ nobody's own input settings change, then removes the user and its profile:
    Chinese (Japanese and its learned words go), uninstall.
 
 -Only picnic: only a silent install, the Picnic window's pictures and a silent uninstall (#162).
--Only startmenu: only the Start menu (#192): a silent install, a silent update over an older install whose
-   Weasel left its own Start menu folder (which must go, leaving only SebType's shortcut), a silent uninstall.
+-Only upgrade: only the update from the SebType before #190 (#190, #192): that one installed silently with
+   all languages, learned words and a Picnic Weasel style, then this one over it: Weasel and Mozc gone with
+   their Start menu entries, SebType's text service in their place, the learned words and the Picnic look
+   kept; then typing and a silent uninstall.
 -Only sync: only sync with your own server (#180): a silent install; sebtype_sync.py serving on this PC's
    localhost, run by a copy of the Python Setup packs, with a throwaway login; the login saved as the
    Configurator's Save does (sebtype-configurator --save-login: Credential Manager, the task); made-up
@@ -39,7 +42,7 @@ nobody's own input settings change, then removes the user and its profile:
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
 #>
-param([string]$Driver, [string]$Typing, [switch]$PerfRun, [string]$Only, [int]$SoakMinutes = 12, [string]$CompareImes = 'weasel,weasel-inline,mspinyin,mozc,msime')
+param([string]$Driver, [string]$Typing, [switch]$PerfRun, [string]$Only, [int]$SoakMinutes = 12, [string]$CompareImes = 'sebtype-zh,mspinyin,sebtype-ja,msime')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 $out = "$root\out"
@@ -62,10 +65,14 @@ function Wait-Until([int]$seconds, [scriptblock]$cond) {
 $user = 'sebtype-test'
 $AppKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5C1E7A52-3D8B-4F7E-9E0B-7B3B5A1C7354}_is1'
 $App = "$env:ProgramFiles\SebType"
+# SebType's text service (windows/src/tip/tip.h), and the Weasel and Mozc SebType installed before #190.
+$Clsid = '{D4E5C593-4F73-475F-936C-0E29A6FE7A02}'
+$ZhProfile = '{8AA7DDAC-A4B8-4437-9C0B-8698879EC987}'
+$JaProfile = '{B148FB02-C235-45D6-996C-672C783ECD48}'
+$ZhTip = "0804:$Clsid$ZhProfile"
+$JaTip = "0411:$Clsid$JaProfile"
 $WeaselClsid = '{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}'
-$WeaselTip = "0804:${WeaselClsid}{3D02CAB6-2B8E-4781-BA20-1C9267529467}"
 $MozcClsid = '{10A67BC8-22FA-4A59-90DC-2546652C56BF}'
-$MozcTip = "0411:$MozcClsid{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}"
 $WeaselKey = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Weasel'
 function Mozc-Installed { [bool](Get-ChildItem HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { $_.GetValue('DisplayName') -eq 'Mozc' }) }
 function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)[$($_.InputMethodTips -join ',')]" }) -join ' ' }
@@ -97,10 +104,9 @@ if ($Typing) {
     if ($Typing -like 'compare-*') {
       $ime = $Typing -replace '^compare-'
       $IMES = @{
-        weasel = 0x804, $WeaselClsid, '{3D02CAB6-2B8E-4781-BA20-1C9267529467}'
-        'weasel-inline' = 0x804, $WeaselClsid, '{3D02CAB6-2B8E-4781-BA20-1C9267529467}'
+        'sebtype-zh' = 0x804, $Clsid, $ZhProfile
         mspinyin = 0x804, '{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}', '{FA550B04-5AD7-411F-A5AC-CA038EC515D7}'
-        mozc = 0x411, $MozcClsid, '{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}'
+        'sebtype-ja' = 0x411, $Clsid, $JaProfile
         msime = 0x411, '{03B5835F-F03C-411B-9CE2-AA23E1171E36}', '{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}'
       }
       $pinyin = -split 'nihao ranhou ranh lh zhongguo women xiexie zaijian shurufa dianhua kaihui wozhidaole meiguanxi jintiantianqizenmeyang'
@@ -111,7 +117,7 @@ if ($Typing) {
       function Mem($tag) {  # this process (the IME's in-process part) and the input methods' own processes
         $me = Get-Process -Id $PID
         Out "${tag}_host_private_kb" ([int]($me.PrivateMemorySize64 / 1KB)); Out "${tag}_host_ws_kb" ([int]($me.WorkingSet64 / 1KB))
-        Get-Process | Where-Object { $_.SessionId -eq $session -and $_.Name -match '^(WeaselServer|mozc_server|mozc_renderer|mozc_broker|ChsIME|IMEJP.*|TextInputHost|InputApp|ctfmon)$' } |
+        Get-Process | Where-Object { $_.SessionId -eq $session -and $_.Name -match '^(sebtype-server|mozc_server|mozc_renderer|mozc_broker|ChsIME|IMEJP.*|TextInputHost|InputApp|ctfmon)$' } |
           ForEach-Object { Out "${tag}_proc" "$($_.Name) pid $($_.Id) ws_kb $([int]($_.WorkingSet64 / 1KB)) private_kb $([int]($_.PrivateMemorySize64 / 1KB))" }
       }
       function Use($name) {
@@ -137,15 +143,9 @@ if ($Typing) {
         }
       }
       function Pct($v, $q) { $s = @($v | Sort-Object); if ($s) { '{0:F1}' -f $s[[math]::Min($s.Count - 1, [math]::Round($q * ($s.Count - 1)))] } }
-      $zh = $ime -in 'weasel', 'weasel-inline', 'mspinyin'
-      # Weasel shows what is typed in its own window, not in the field, so only the first key of a word
-      # changes the field. weasel-inline puts it in the field (inline preedit, for this test's host
-      # alone), as Microsoft Pinyin does, so its keys time like Microsoft's.
-      if ($ime -eq 'weasel-inline') {
-        [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]]@('patch:', '  app_options/powershell.exe: {inline_preedit: true}'))
-        $p = [Diagnostics.Process]::Start((Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe), '/deploy')
-        if (-not $p.WaitForExit(120000)) { throw "Weasel's redeploy took over 2 minutes" }
-      }
+      # SebType's Chinese shows the pinyin in its own window, not in the field, so its keys change the
+      # field less than Microsoft Pinyin's.
+      $zh = $ime -in 'sebtype-zh', 'mspinyin'
       $words = if ($zh) { $pinyin } else { $romaji }
       $tail = if ($zh) { @('Escape') } else { @('space', 'Escape', 'Escape') }
       $tsf::Start(); $tsf::StartTiming()
@@ -157,12 +157,12 @@ if ($Typing) {
           $pids = @{}; $restarts = @(); $n = 0; $next = Get-Date
           while ((Get-Date) -lt $end) {
             $isZh = $n % 2 -eq 0
-            Use $(if ($isZh) { 'weasel' } else { 'mozc' })
+            Use $(if ($isZh) { 'sebtype-zh' } else { 'sebtype-ja' })
             if ($n % 20 -eq 0) { $tsf::Clear() }
             $w = if ($isZh) { $pinyin[$n % $pinyin.Count] } else { $romaji[$n % $romaji.Count] }
             Keys (@($w.ToCharArray() | ForEach-Object { "$_" }) + $(if ($isZh) { 'space' } else { 'space', 'Return' }))
             $n++
-            foreach ($p in Get-Process WeaselServer, mozc_server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ $session) {
+            foreach ($p in Get-Process sebtype-server, mozc_server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ $session) {
               if ($pids[$p.Name] -and $pids[$p.Name] -ne $p.Id) { $restarts += "$($p.Name) $($pids[$p.Name]) -> $($p.Id) at $([int]((Get-Date) - $start).TotalSeconds) s" }
               $pids[$p.Name] = $p.Id
             }
@@ -196,35 +196,34 @@ if ($Typing) {
       } finally { $tsf::Stop() }
       return
     }
-    # Chinese in the test's own TSF text field (TsfHost.cs, started), after Weasel's first key there.
-    function Weasel-Field {
+    # A language of SebType's in the test's own TSF text field (TsfHost.cs, started).
+    function Field($lang) {
       if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
-      $tsf::Activate(0x804, [Guid]$WeaselClsid, [Guid]'{3D02CAB6-2B8E-4781-BA20-1C9267529467}')
-      $tsf::Clear(); TypeText 'ni'; Start-Sleep 1; Keys Escape
+      if ($lang -eq 'zh') { $tsf::Activate(0x804, [Guid]$Clsid, [Guid]$ZhProfile) } else { $tsf::Activate(0x411, [Guid]$Clsid, [Guid]$JaProfile) }
+      $tsf::Settle(500); $tsf::Clear()
     }
-    # The Picnic window with SebType's pig (#94, #162), as the Configurator writes it (its scheme from
-    # windows.rs), at 14 pt, in Weasel-Field: pictures 162-weasel-horizontal.png and -vertical.png.
+    # The Picnic window with SebType's pig (#94, #162), as the Configurator writes it (sebtype.conf), at
+    # 14 pt: pictures 162-sebtype-horizontal.png and -vertical.png, and the same for Japanese.
     $picnic = {
-      $rs = (((Get-Content "$root\windows.rs" -Encoding utf8 -Raw) -split 'const PICNIC_SCHEME')[1] -split '\];')[0]
-      $scheme = [regex]::Matches($rs, '"(    [^"]+)"') | ForEach-Object { $_.Groups[1].Value }
-      $deployer = Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe
-      $sizes = foreach ($o in 'horizontal', 'vertical') {
-        [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]](@('patch:',
-          "  style/horizontal: $($o -eq 'horizontal')".ToLower(), '  style/font_point: 14', '  style/color_scheme: sebtype_picnic',
-          '  style/sebtype_logo: true', '  preset_color_schemes/sebtype_picnic:') + $scheme))
-        # Not Start-Process: its trailing space makes the deployer open its settings window (setup.ps1)
-        $p = [Diagnostics.Process]::Start($deployer, '/deploy')
-        if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's redeploy ($o) took over a minute" }
-        $tsf::Clear(); TypeText 'nihao'; Start-Sleep 2
-        $size = $tsf::CandidateWindow("$out\162-weasel-$o.png"); Keys Escape
-        if (-not $size) { throw "no candidate window ($o)" }
-        "$o $size"
+      $conf = "$env:APPDATA\SebType\sebtype.conf"
+      New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
+      $sizes = foreach ($lang in 'zh', 'ja') {
+        Field $lang
+        foreach ($o in 'horizontal', 'vertical') {
+          Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'vertical'))", 'FontSize=14', 'Picnic=1'
+          $tsf::Clear(); if ($lang -eq 'zh') { TypeText 'nihao' } else { TypeText 'nihongo'; Keys space space }
+          Start-Sleep 2
+          $size = $tsf::CandidateWindow("$out\162-sebtype-$lang-$o.png"); Keys Escape Escape
+          if (-not $size) { throw "no candidate window ($lang, $o)" }
+          "$lang $o $size"
+        }
       }
+      Remove-Item $conf
       $sizes -join ', '
     }
     if ($Typing -eq 'picnic') {
       $tsf::Start()
-      try { Check 'chinese-picnic-window' { Weasel-Field; & $picnic } } finally { $tsf::Stop() }
+      try { Check 'picnic-window' $picnic } finally { $tsf::Stop() }
       return
     }
     $np = Start-Process notepad -PassThru
@@ -232,7 +231,7 @@ if ($Typing) {
       $null = $np.WaitForInputIdle(10000)
       $h = $np.MainWindowHandle
       if (-not $tsf::Foreground($h)) { throw 'Notepad did not come to the front' }
-      # Notepad's IME open status, conversion mode (its low bit: Weasel's 中 1, English 0) and language at each change, in
+      # Notepad's IME open status, conversion mode (its low bit: 中 1, English 0) and language at each change, in
       # ime-*.txt next to the keys sent, keys-*.txt: says when a flaky Chinese check found English (#129).
       $null = Start-Job -ArgumentList $h.ToInt64(), "$out\ime-$Typing.txt" {
         param($h, $file)
@@ -268,7 +267,7 @@ if ($Typing) {
         }
         Check 'chinese-pinyin' {
           To-Language '0804'
-          Keys n i; Start-Sleep 3; Keys Escape  # the first key starts WeaselServer
+          Keys n i; Start-Sleep 3; Keys Escape  # the first key starts sebtype-server when none runs
           $t = Typed 'ranhou '
           if ($t -ne '然后') { throw "ranhou + Space gave '$t'" }
           $t
@@ -314,26 +313,36 @@ if ($Typing) {
       }
     } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue }
     # The tray menu (#117) of the test's own TSF text field, where the input mode button can be
-    # right-clicked: Chinese's one switch, 简 → 繁, with its key. Japanese's is in mozc/test.ps1. A picture
-    # of each, 117-menu-*.png.
+    # right-clicked: each language's one switch with its key, 简 → 繁 and あ → ア. A picture of each,
+    # 117-menu-*.png.
     if ($Typing -eq 'all') {
       $tsf::Start()
       try {
         Check 'chinese-tray-menu' {
-          Weasel-Field
-          function Field($s) { $tsf::Clear(); TypeText $s; Start-Sleep 1; $tsf::Text().Trim() }
-          $m = $tsf::TrayPopup($true, "$out\117-menu-zh-hans.png"); $hant = Field 'houlai '
-          $m2 = $tsf::TrayPopup($true, "$out\117-menu-zh-hant.png"); $hans = Field 'houlai '
+          Field zh
+          function Typed($s) { $tsf::Clear(); TypeText $s; Start-Sleep 1; $tsf::Text().Trim() }
+          $m = $tsf::TrayPopup($true, "$out\117-menu-zh-hans.png"); $hant = Typed 'houlai '
+          $m2 = $tsf::TrayPopup($true, "$out\117-menu-zh-hant.png"); $hans = Typed 'houlai '
           if ($m -ne "简 → 繁`tCtrl+Shift+F" -or $hant -ne '後來' -or $m2 -ne "繁 → 简`tCtrl+Shift+F" -or $hans -ne '后来') {
             throw "menu '$m', then houlai gave '$hant'; menu '$m2', then '$hans'"
           }
           'menu 简 → 繁 (後來), then 繁 → 简 (后来)'
         }
-        Check 'chinese-picnic-window' $picnic
+        Check 'japanese-tray-menu' {
+          Field ja
+          function Typed($s) { $tsf::Clear(); TypeText $s; Keys Return; Start-Sleep 1; $tsf::Text().Trim() }
+          if ((Typed 'a') -eq 'a') { Keys Shift_L }
+          $m = $tsf::TrayPopup($true, "$out\117-menu-ja-hira.png"); $kata = Typed 'a'
+          $m2 = $tsf::TrayPopup($true, "$out\117-menu-ja-kata.png"); $hira = Typed 'a'
+          if ($m -ne "あ → ア`tAlt+``" -or $kata -ne 'ア' -or $m2 -ne "ア → あ`tAlt+``" -or $hira -ne 'あ') {
+            throw "menu '$m', then a gave '$kata'; menu '$m2', then '$hira'"
+          }
+          'menu あ → ア (ア), then ア → あ (あ)'
+        }
+        Check 'picnic-window' $picnic
       } finally { $tsf::Stop() }
     }
   } catch { Result "typing-$Typing" FAIL $_.Exception.Message } finally {
-    Copy-Item "$env:TEMP\rime.weasel" "$out\weasel-log-$Typing" -Recurse -ErrorAction SilentlyContinue  # Weasel's own log (#129)
     New-Item -ItemType File -Force "$out\typing-$Typing-done" | Out-Null
   }
   exit
@@ -447,7 +456,7 @@ namespace SebTypeSetupTest {
     $h
   }
   # Setup's processes (the stub, its .tmp copy in %TEMP%) and the uninstaller's (unins000, its .tmp copy),
-  # not the Weasel installer Setup runs from its folder there.
+  # not the Weasel installer the SebType before #190 runs from its folder there.
   $forms = [string[]]('TWizardForm', 'TSelectLanguageForm', 'TUninstallProgressForm', 'TApplication')
   function Find-Message {
     $pids = @(Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins*' } | ForEach-Object Id)
@@ -470,8 +479,8 @@ namespace SebTypeSetupTest {
   function Save-MachineLog($what) { Copy-Item "$App\setup.log" "$out\machine-$what.log" -ErrorAction SilentlyContinue }
   # A Setup or uninstaller started here and left showing is stopped, with the temporary copy it runs.
   function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
-  function Silent($what, [string[]]$arguments) {
-    $p = Start-Process $setup -PassThru -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\setup-$what.log`"") + $arguments)
+  function Silent($what, [string[]]$arguments, $exe = $setup) {
+    $p = Start-Process $exe -PassThru -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\setup-$what.log`"") + $arguments)
     if (-not $p.WaitForExit(900000)) { throw "Setup ($what) ran over 15 minutes" }
     Save-MachineLog $what
     if ($p.ExitCode) { throw "Setup ($what) exited with $($p.ExitCode) (logs: out\setup-$what.log, out\machine-$what.log, out\user-setup.log)" }
@@ -533,12 +542,14 @@ namespace SebTypeSetupTest {
       $entry = Get-ItemProperty $AppKey
       if ($missing) { throw "missing: $($missing -join ', ')" }
       if ($entry.DisplayName -ne 'SebType' -or $entry.DisplayIcon -notlike '*sebtype.ico') { throw "Apps lists '$($entry.DisplayName)' with icon $($entry.DisplayIcon)" }
-      $w = Get-ItemProperty $WeaselKey -ErrorAction SilentlyContinue
-      if (('zh' -in $langs) -ne [bool]($w -and $w.PSObject.Properties['SebType'])) { throw "SebType's Weasel installed: $([bool]$w), wanted: $('zh' -in $langs)" }
-      if (('ja' -in $langs) -ne (Mozc-Installed)) { throw "Mozc installed: $(Mozc-Installed), wanted: $('ja' -in $langs)" }
+      if ((Test-Path $WeaselKey) -or (Mozc-Installed)) { throw "Weasel ($(Test-Path $WeaselKey)) or Mozc ($(Mozc-Installed)) is installed" }
+      $missing = @("$App\sebtype-server.exe", "$App\sebtype.dll", "$App\x86\sebtype.dll", "$App\rime.dll", "$App\mozc_server.exe" | Where-Object { -not (Test-Path $_) })
+      if ($missing) { throw "missing: $($missing -join ', ')" }
+      $dll = (Get-ItemProperty "Registry::HKEY_CLASSES_ROOT\CLSID\$Clsid\InprocServer32" -ErrorAction SilentlyContinue).'(default)'
+      if ($dll -ne "$App\sebtype.dll") { throw "the text service is registered as '$dll'" }
       $menu = Start-Menu
       if ($menu -notmatch '^SebType[^,]*\.lnk$') { throw "the Start menu has '$menu', want only SebType's settings shortcut" }
-      "$(Split-Path -Leaf $setup) in $App; Weasel $('zh' -in $langs), Mozc $('ja' -in $langs); Start menu: $menu"
+      "$(Split-Path -Leaf $setup) in $App; SebType's text service registered, no Weasel or Mozc; Start menu: $menu"
     }
     Check "$round-input-methods" {
       $l = Languages
@@ -552,10 +563,10 @@ namespace SebTypeSetupTest {
     }
     if ('zh' -in $langs) {
       Check "$round-chinese" {
-        $name = (Get-Item "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid\LanguageProfile\0x00000804\{3D02CAB6-2B8E-4781-BA20-1C9267529467}").GetValue('Description')
+        $name = (Get-Item "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000804\$ZhProfile").GetValue('Description')
         $patch = Get-Content "$env:APPDATA\Rime\rime_ice.custom.yaml" -Encoding utf8 -ErrorAction SilentlyContinue
         $pages = @(Get-Content "$env:APPDATA\Rime\default.custom.yaml" -Encoding utf8 -ErrorAction SilentlyContinue) -match '^  menu/page_size:'
-        if ($name -ne '中文') { throw "Weasel's input method reads '$name'" }
+        if ($name -ne '中文') { throw "the Chinese input method reads '$name'" }
         if (-not (Test-Path "$env:APPDATA\Rime\build\rime_ice.schema.yaml") -or -not ($patch -match 'schema/name: 中文') -or -not ($patch -match 'sebtype_typo/keyboard: pc')) { throw 'the Chinese data is not deployed with SebType''s patches' }
         if ($pages.Count -ne 1 -or $pages[0] -notmatch "^  menu/page_size: $pageSize\b") { throw "default.custom.yaml's page size: '$($pages -join ' | ')', want $pageSize (#163)" }
         "named 中文; rime-ice and 白霜 deployed with the 中文 name, PC typo correction and $pageSize candidates per page"
@@ -563,9 +574,9 @@ namespace SebTypeSetupTest {
     }
     if ('ja' -in $langs) {
       Check "$round-japanese" {
-        $name = (Get-Item "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid\LanguageProfile\0x00000411\{186F700C-71CF-43FE-A00E-AACB1D9E6D3D}").GetValue('Description')
+        $name = (Get-Item "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000411\$JaProfile").GetValue('Description')
         $db = "$env:USERPROFILE\AppData\LocalLow\Mozc\config1.db"
-        if ($name -ne '日本語') { throw "Mozc's input method reads '$name'" }
+        if ($name -ne '日本語') { throw "the Japanese input method reads '$name'" }
         if (-not (Test-Path $db) -or -not ([Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($db)) -match '(?s)IMEOn.*InputModeSwitchKanaType')) { throw 'no SebType keymap in config1.db' }
         'named 日本語, with SebType''s keymap (Shift tap for English, Alt+` for ア)'
       }
@@ -588,8 +599,8 @@ namespace SebTypeSetupTest {
       }
       # Microsoft's input methods back next to SebType's, in each language's list.
       $ll = New-WinUserLanguageList en-US
-      $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage zh-Hans-CN)); $ll[1].InputMethodTips.Clear(); $ll[1].InputMethodTips.Add($WeaselTip); $ll[1].InputMethodTips.Add('0804:{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}{FA550B04-5AD7-411F-A5AC-CA038EC515D7}')
-      $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage ja)); $ll[2].InputMethodTips.Clear(); $ll[2].InputMethodTips.Add($MozcTip); $ll[2].InputMethodTips.Add('0411:{03B5835F-F03C-411B-9CE2-AA23E1171E36}{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}')
+      $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage zh-Hans-CN)); $ll[1].InputMethodTips.Clear(); $ll[1].InputMethodTips.Add($ZhTip); $ll[1].InputMethodTips.Add('0804:{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}{FA550B04-5AD7-411F-A5AC-CA038EC515D7}')
+      $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage ja)); $ll[2].InputMethodTips.Clear(); $ll[2].InputMethodTips.Add($JaTip); $ll[2].InputMethodTips.Add('0411:{03B5835F-F03C-411B-9CE2-AA23E1171E36}{A76C93D9-5523-4E90-AAFA-4DB112F9AC76}')
       Set-WinUserLanguageList $ll -Force -WarningAction SilentlyContinue
       Result compare-languages INFO (Languages)
       foreach ($ime in $CompareImes -split ',') { Typing "compare-$ime" }
@@ -615,22 +626,35 @@ namespace SebTypeSetupTest {
       }
       return
     }
-    if ($Only -eq 'startmenu') {
-      # Only the Start menu (#192): a silent install, an update over an older SebType whose Weasel left its
-      # own Start menu folder, a silent uninstall. The older install is this one with Weasel's build mark
-      # set back and the folder it made put back, so the update reinstalls Weasel as it would.
-      Check 'startmenu-install' { Silent startmenu-install @(); 'silent' }
-      Check-Installed startmenu en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
-      Set-ItemProperty $WeaselKey SebType '0.0.0.0'
-      New-Item -Force "$startMenu\小狼毫输入法\卸载小狼毫.lnk" | Out-Null
-      Check 'startmenu-update' { Silent startmenu-update @(); 'silent, over an older Weasel with its Start menu folder' }
-      Check-Installed startmenu-updated en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
-      Check 'startmenu-uninstall' {
+    if ($Only -eq 'upgrade') {
+      # The update from the SebType before #190 (Weasel and Mozc): that one silently with all languages,
+      # learned words and the Picnic look as its Configurator wrote it, then this one over it.
+      $old = (Get-ChildItem "$root\old\SebType-setup-*.exe" | Select-Object -First 1).FullName
+      Check 'upgrade-old-install' {
+        Silent upgrade-old-install @() $old
+        if (-not (Test-Path $WeaselKey) -or -not (Mozc-Installed)) { throw "$(Split-Path -Leaf $old) installed no Weasel or Mozc" }
+        "$(Split-Path -Leaf $old): Weasel and Mozc"
+      }
+      $learned | ForEach-Object { New-Item -Force $_ | Out-Null }
+      [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]]@('patch:', '  style/horizontal: true', '  style/font_point: 16', '  style/color_scheme: sebtype_picnic'))
+      Check 'upgrade-install' { Silent upgrade-install @(); 'silent, over the SebType with Weasel and Mozc' }
+      Check-Installed upgrade en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$ZhTip] ja[$JaTip]"
+      Check 'upgrade-keeps-learned-words-and-look' {
+        $gone = @($learned | Where-Object { -not (Test-Path $_) })
+        if ($gone) { throw "gone: $($gone -join ', ')" }
+        $conf = (Get-Content "$env:APPDATA\SebType\sebtype.conf" -Encoding utf8 -ErrorAction SilentlyContinue) -join ' '
+        if ($conf -ne '[Candidates] Vertical=0 FontSize=16 Picnic=1') { throw "sebtype.conf: '$conf'" }
+        $old = @("HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid", "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid", "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" | Where-Object { Test-Path $_ })
+        if ($old) { throw "left: $($old -join ', ')" }
+        'Rime and Mozc learned words kept; Weasel''s Picnic look in sebtype.conf; Weasel''s and Mozc''s registrations gone'
+      }
+      Typing all
+      Check 'upgrade-uninstall' {
         Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
         if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
         'silent'
       }
-      Check-AsBefore startmenu
+      Check-AsBefore upgrade
       return
     }
     if ($Only -eq 'sync') {
@@ -660,10 +684,9 @@ namespace SebTypeSetupTest {
       $syncJson = "$env:LOCALAPPDATA\SebType\sync.json"
       $rime = "$env:APPDATA\Rime"
       $mozcDb = "$env:USERPROFILE\AppData\LocalLow\Mozc\user_dictionary.db"
-      $deployer = Join-Path (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot WeaselDeployer.exe
-      function Rime-Sync {  # Weasel's 用户资料同步; not Start-Process (its trailing space, see $picnic)
-        $p = [Diagnostics.Process]::Start($deployer, '/sync')
-        if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's sync took over 2 minutes" }
+      function Rime-Sync {  # Rime's 用户资料同步 in SebType's server, as the Configurator runs it
+        $p = Start-Process -PassThru "$App\sebtype-server.exe" '/sync'
+        if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "Rime's sync took over 2 minutes" }
       }
       # A script as this admin, not elevated, in a one-off task as the Configurator's tray runs: the elevated
       # driver's token from Task Scheduler has an empty Credential Manager (its cmdkey /list lists none).
@@ -803,27 +826,26 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       'welcome, languages, installing, finish'
     }
     Save-MachineLog round1-install; Stop-Setup
-    Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
+    Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$ZhTip] ja[$JaTip]"
     Typing all
-    # Rime per key on the installed librime and data (perf-rime.exe from the Weasel build; #133). A timing
+    # Rime per key on the installed librime and data (perf-rime.exe from the librime build; #133). A timing
     # check: only in the final performance run (Decisions #2, 2026-11-11).
     if ($PerfRun) {
     Check 'round1-rime-p95' {
       if (-not (Test-Path "$root\perf-rime.exe")) { throw 'no perf-rime.exe next to test.ps1' }
-      $weasel = (Get-ItemProperty HKLM:\SOFTWARE\WOW6432Node\Rime\Weasel).WeaselRoot
       # The child's stderr says why when it says nothing else; 'Stop' here would drop it.
       $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-      $said = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $weasel -Rime "$App\rime-data.zip" 2>&1
+      $said = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $App -Rime "$App\rime-data.zip" 2>&1
       $ErrorActionPreference = $eap
       $line = @($said) | Where-Object { "$_" -like '*rime-p95-under-10ms*' } | Select-Object -Last 1
-      if ($line -notlike 'PASS *') { throw "perf-rime.ps1 (Weasel at '$weasel') exit $LASTEXITCODE said: $($said -join ' | ')" }
+      if ($line -notlike 'PASS *') { throw "perf-rime.ps1 (librime in '$App') exit $LASTEXITCODE said: $($said -join ' | ')" }
       $line -replace '^PASS rime-p95-under-10ms: '
     }
     }
     # What it learned stays through an upgrade: a mark in each learned-words folder.
     $learned | ForEach-Object { New-Item -Force $_ | Out-Null }
     Check 'round1-upgrade' { Silent round1-upgrade @(); 'silent, same languages' }
-    Check-Installed round1-upgraded en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
+    Check-Installed round1-upgraded en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$ZhTip] ja[$JaTip]"
     Check 'round1-upgrade-keeps-learned-words' {
       $gone = @($learned | Where-Object { -not (Test-Path $_) })
       if ($gone) { throw "gone: $($gone -join ', ')" }
@@ -859,14 +881,14 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
 
     # ------------------------------------------------------- round 2: silent, languages optional
     Check 'round2-install-without-english' { Silent round2-install @('/TASKS="zh,ja"'); 'silent, 中文 and 日本語' }
-    Check-Installed round2 zh, ja "zh-Hans-CN[$WeaselTip] ja[$MozcTip] en-US[0409:00000409]"
+    Check-Installed round2 zh, ja "zh-Hans-CN[$ZhTip] ja[$JaTip] en-US[0409:00000409]"
     New-Item -Force $learned[1] | Out-Null
     # A page size of the user's own (the Configurator's line) stays through the upgrade (#163).
     $defaults = "$env:APPDATA\Rime\default.custom.yaml"
     [IO.File]::WriteAllLines($defaults, @(@(Get-Content $defaults -Encoding utf8) -replace '^  menu/page_size: .*', '  menu/page_size: 8'))
     Check 'round2-upgrade-drops-japanese' { Silent round2-upgrade @('/TASKS="en,zh"'); 'silent, English and 中文' }
-    Check-Installed round2-upgraded en, zh "en-US[0409:00000409] zh-Hans-CN[$WeaselTip]" 8
-    Check 'round2-japanese-words-deleted' { if (Test-Path $learned[1]) { throw "kept: $($learned[1])" }; 'Japanese left out: Mozc and its learned words gone' }
+    Check-Installed round2-upgraded en, zh "en-US[0409:00000409] zh-Hans-CN[$ZhTip]" 8
+    Check 'round2-japanese-words-deleted' { if (Test-Path $learned[1]) { throw "kept: $($learned[1])" }; 'Japanese left out: its learned words gone' }
     Check 'round2-uninstall' {
       Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\uninstall-round2.log`""
       if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
@@ -890,6 +912,7 @@ elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'in session 0 (services): star
 elseif ((Get-CimInstance Win32_OperatingSystem).ProductType -eq 1) { 'not Windows Server: the test needs a second Remote Desktop session' }
 elseif (Get-LocalUser $user -ErrorAction SilentlyContinue) { "a local user $user exists already" }
 elseif ((Test-Path $AppKey) -or (Test-Path $WeaselKey) -or (Mozc-Installed)) { 'SebType, Weasel or Mozc is installed already: the test starts without them' }
+elseif ($Only -eq 'upgrade' -and -not (Get-ChildItem "$root\old\SebType-setup-*.exe" -ErrorAction SilentlyContinue)) { "no old\SebType-setup-*.exe in $root (the SebType before #190)" }
 if ($preflight) { Result preflight BLOCKED $preflight; exit 1 }
 
 # The admin's own input settings, which must end as they began (Windows gives every logged-on user an
@@ -939,10 +962,10 @@ try {
 Get-Content -Encoding utf8 "$out\driver-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Add-Content -Encoding utf8 $results $_; Write-Host $_ }
 
 Check 'machine-as-before' {
-  $left = @($App, $AppKey, $WeaselKey, 'HKLM:\SOFTWARE\SebType', "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid", "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid", 'HKLM:\SOFTWARE\WOW6432Node\Rime' | Where-Object { Test-Path $_ })
+  $left = @($App, $AppKey, $WeaselKey, 'HKLM:\SOFTWARE\SebType', "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$Clsid", "Registry::HKEY_CLASSES_ROOT\CLSID\$Clsid", "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid", "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid", 'HKLM:\SOFTWARE\WOW6432Node\Rime' | Where-Object { Test-Path $_ })
   if (Mozc-Installed) { $left += 'Mozc' }
   if ($left) { throw "left: $($left -join ', ')" }
-  'SebType, Weasel, Mozc and their registrations gone'
+  'SebType, its text service, and any Weasel or Mozc gone'
 }
 # Windows' entries for this admin of the text services the run registered: not SebType's own, removed.
 $extra = @((Get-ChildItem HKCU:\Software\Microsoft\CTF\TIP -ErrorAction SilentlyContinue).PSChildName | Where-Object { $_ -notin ($adminBefore.tipKeys -split ',') })
@@ -952,7 +975,7 @@ Check 'admin-input-as-before' {
   if ((Languages) -ne $adminBefore.languages) { throw "this admin's input methods are $(Languages), were $($adminBefore.languages)" }
   'this admin''s input methods untouched'
 }
-foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'japanese-all', 'japanese-alt-grave',
+foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'japanese-all', 'japanese-alt-grave', 'chinese-tray-menu', 'japanese-tray-menu', 'picnic-window',
   'round1-upgrade', 'japanese-after-language-change', 'round1-uninstall-pages', 'round1-everything-as-before', 'round2-upgrade-drops-japanese', 'round2-everything-as-before') {
   if (-not $Only -and -not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
 }

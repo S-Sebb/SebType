@@ -370,6 +370,8 @@ foreach ($p in @(if ('zh' -in $want) { "0x00000804\$ZhProfile" }) + @(if ('ja' -
   New-Item -Force $profileKey | Out-Null
   Set-ItemProperty $profileKey Enable 1 -Type DWord
 }
+# The settings Windows kept for the Weasel and Mozc SebType had before, which the machine step removed.
+Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
 # Windows can take a while to apply a language list right after another change (over 10 s for a new
 # account's first one, on TCSBackEnd).
 for ($i = 0; $i -lt 120 -and (Format-Languages (Get-Languages)) -ne (Format-Languages $list); $i++) { Start-Sleep -Milliseconds 500 }
