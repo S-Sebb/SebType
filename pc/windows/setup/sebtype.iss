@@ -452,14 +452,20 @@ end;
 procedure MoveOut(Dir: String);
 var
   F: TFindRec;
+  N: Integer;
 begin
+  N := 0;
   if FindFirst(Dir + '\*', F) then
     try
       repeat
         if (F.Attributes and FILE_ATTRIBUTE_DIRECTORY = 0) and (Pos('unins', F.Name) <> 1) and
            not DeleteFile(Dir + '\' + F.Name) then
-          if not RenameFile(Dir + '\' + F.Name, ExpandConstant('{%TEMP}\SebType-') + IntToStr(GetTickCount) + '-' + F.Name) then
+        begin
+          N := N + 1;
+          if not RenameFile(Dir + '\' + F.Name, ExpandConstant('{%TEMP}\SebType-') +
+              GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + IntToStr(N) + '-' + F.Name) then
             Log('could not move out ' + Dir + '\' + F.Name);
+        end;
       until not FindNext(F);
     finally
       FindClose(F);

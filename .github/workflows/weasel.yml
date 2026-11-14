@@ -45,11 +45,20 @@ jobs:
         with:
           name: weasel-icons
           path: out/icons
+      # What a build makes depends only on the paths that start this workflow: a push that changes none of
+      # them takes the last build's output (#190: the build is half of windows-setup.yml's time).
       - uses: actions/cache@v4
+        id: built
+        with:
+          path: out/weasel
+          key: weasel-build-${{ hashFiles('pc/windows/weasel/**', 'pc/weasel/**', 'engines/librime/**', 'pc/icons/**', 'windows/data/**', 'pc/linux/perf-rime.c', '.github/workflows/weasel.yml') }}
+      - uses: actions/cache@v4
+        if: steps.built.outputs.cache-hit != 'true'
         with:
           path: ${{ env.BOOST_ROOT }}
           key: boost-1.84.0-msvc-14.3-weasel-0.17.4
       - name: Build
+        if: steps.built.outputs.cache-hit != 'true'
         shell: pwsh
         run: pc/windows/weasel/build.ps1 -Icons out/icons -Out out/weasel
       - uses: actions/upload-artifact@v4
