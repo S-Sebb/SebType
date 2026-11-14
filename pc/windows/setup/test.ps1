@@ -479,14 +479,19 @@ namespace SebTypeSetupTest {
     if ($r -is [IntPtr]) { $win::Shot($r, "$out\failed-$(Get-Date -Format HHmmss).png"); throw "Setup says: $($win::Texts($r))" }
     if (-not $r) { throw "no '$text' in $seconds s; window shows: $($win::Texts($h))" }
   }
-  function Save-MachineLog($what) { Copy-Item "$App\setup.log" "$out\machine-$what.log" -ErrorAction SilentlyContinue }
+  # Each run's logs: the machine's and this user's setup steps, and the server's Rime log.
+  function Save-MachineLog($what) {
+    Copy-Item "$App\setup.log" "$out\machine-$what.log" -ErrorAction SilentlyContinue
+    Copy-Item "$env:LOCALAPPDATA\SebType\setup.log" "$out\user-$what.log" -ErrorAction SilentlyContinue
+    Copy-Item "$env:TEMP\rime.sebtype" "$out\rime-log-$what" -Recurse -ErrorAction SilentlyContinue
+  }
   # A Setup or uninstaller started here and left showing is stopped, with the temporary copy it runs.
   function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
   function Silent($what, [string[]]$arguments, $exe = $setup) {
     $p = Start-Process $exe -PassThru -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\setup-$what.log`"") + $arguments)
     if (-not $p.WaitForExit(900000)) { throw "Setup ($what) ran over 15 minutes" }
     Save-MachineLog $what
-    if ($p.ExitCode) { throw "Setup ($what) exited with $($p.ExitCode) (logs: out\setup-$what.log, out\machine-$what.log, out\user-setup.log)" }
+    if ($p.ExitCode) { throw "Setup ($what) exited with $($p.ExitCode) (logs: out\setup-$what.log, out\machine-$what.log, out\user-$what.log)" }
   }
   # The uninstaller finishes in its copy, %TEMP%\is-*-uninstall.tmp\_unins.tmp.
   function Uninstalled { -not (Test-Path $AppKey) -and -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\*-uninstall.tmp\*" }) }

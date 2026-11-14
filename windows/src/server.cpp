@@ -5,7 +5,9 @@
 //
 //   sebtype-server.exe                       serves (started at logon, or by the text service)
 //   sebtype-server.exe /deploy|/sync|/quit   tells the server (/deploy and /sync start one when none runs,
-//                                            and return when Rime is done), for setup and the Configurator
+//                                            and return when Rime is done), for setup and the Configurator;
+//                                            exit codes: 2 no server started, 3 it didn't answer, 4 it
+//                                            didn't take the request, 5 Rime still busy after 5 minutes
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
@@ -38,8 +40,15 @@ std::filesystem::path exeDir() {
 std::string u8(const std::filesystem::path &p) { return utf8(p.wstring()); }
 
 std::unique_ptr<Engine> makeEngine(Lang lang) {
-  // The folders SebType's Weasel and Mozc used, so learned words and settings carry over.
-  if (lang == Lang::Chinese) return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")});
+  // The folders SebType's Weasel and Mozc used, so learned words and settings carry over. Rime logs where
+  // Weasel did, in %TEMP% (#129): the server has no console.
+  if (lang == Lang::Chinese) {
+    wchar_t temp[MAX_PATH];
+    const std::filesystem::path log = std::filesystem::path(std::wstring(temp, GetTempPathW(MAX_PATH, temp))) / L"rime.sebtype";
+    std::error_code e;
+    std::filesystem::create_directories(log, e);
+    return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(log)});
+  }
   if (lang == Lang::Japanese)
     return makeMozc({u8(exeDir() / L"mozc_server.exe"), u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc")});
   return nullptr;
@@ -186,7 +195,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
     PROCESS_INFORMATION pi{};
     std::wstring cmd = L"\"" + std::wstring(self) + L"\"";
     if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &si, &pi))
-      return 1;
+      return 2;
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     bool sent = false;
@@ -194,12 +203,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
       Sleep(100);
       sent = call(Request{Op::State}, r, 5000);
     }
-    if (!sent) return 1;
+    if (!sent) return 3;
   }
-  if (!call(q, r, 5000)) return 1;
+  if (!call(q, r, 5000, 60000)) return 4;
   // Until Rime is done: setup's typing and the Configurator's next step need it.
   for (DWORD start = GetTickCount(); r.busy; Sleep(200)) {
-    if (GetTickCount() - start > 300000 || !call(Request{Op::State}, r, 5000)) return 1;
+    if (GetTickCount() - start > 300000) return 5;
+    if (!call(Request{Op::State}, r, 5000)) return 3;
   }
   return 0;
 }

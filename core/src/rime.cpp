@@ -41,7 +41,7 @@ class Rime final : public Engine {
     traits.distribution_code_name = "fcitx-rime";
     traits.distribution_version = "5.1.15";
 #endif
-    traits.log_dir = "";  // stderr only
+    traits.log_dir = paths_.logDir.c_str();
     traits.min_log_level = 2;
     static bool setUp = false;
     if (!setUp) {

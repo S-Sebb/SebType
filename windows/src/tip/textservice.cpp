@@ -435,6 +435,7 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
 
 bool TextService::send(const Request &request) {
   if (call(request, reply_)) return true;
+  if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that took the key but hangs
   // No server: start it (Windows' Run key starts it at logon; this is for after it stopped), then wait a
   // little for its pipe. Not again for a while, so a server that can't start doesn't slow every key.
   const DWORD now = GetTickCount();

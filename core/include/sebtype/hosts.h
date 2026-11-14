@@ -12,6 +12,7 @@ namespace sebtype {
 struct RimePaths {
   std::string sharedDir;  // the system's rime-data, for files the user folder lacks
   std::string userDir;    // learned words, SebType's data and the *.custom.yaml the Configurator writes
+  std::string logDir;     // Rime's log files; empty: stderr only
 };
 std::unique_ptr<Engine> makeRime(const RimePaths &paths);
 
