@@ -4,14 +4,17 @@
 // Xuetian; fcitx/mozc's src/unix/fcitx5), so this file keeps its licence: see core/README.md.
 #include <sebtype/hosts.h>
 
+#ifndef _WIN32
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -20,6 +23,12 @@
 
 #include "ipc/ipc.pb.h"
 #include "protocol/commands.pb.h"
+
+#ifdef _WIN32  // after the protocol's headers: its macros (DELETE, GetMessage) would clash with them
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace sebtype {
 
@@ -90,8 +99,9 @@ bool translate(const Key &k, KeyEvent &out) {
   return true;
 }
 
-// Mozc's IPC on Linux: an abstract Unix socket named after the key the server writes to
-// <profile>/.session.ipc; one connection per call, the request ends at the write shutdown.
+// Mozc's IPC: one connection per call to the server named after the key it writes to
+// <profile>/.session.ipc. On Linux an abstract Unix socket, the request ending at the write shutdown; on
+// Windows a message-mode named pipe, one message each way (Mozc's ipc/win32_ipc.cc).
 class Ipc {
  public:
   explicit Ipc(MozcPaths paths) : paths_(std::move(paths)) {}
@@ -113,11 +123,58 @@ class Ipc {
   }
 
  private:
-  bool send(const std::string &request, std::string &reply) {
-    std::ifstream f(paths_.profileDir + "/.session.ipc", std::ios::binary);
+  std::string key() {
+    std::ifstream f(std::filesystem::u8path(paths_.profileDir + "/.session.ipc"), std::ios::binary);
     mozc::ipc::IPCPathInfo info;
-    if (!f || !info.ParseFromIstream(&f) || info.key().empty()) return false;
-    const std::string name = "tmp/.mozc." + info.key() + ".session";
+    if (!f || !info.ParseFromIstream(&f)) return {};
+    return info.key();
+  }
+
+#ifdef _WIN32
+  bool send(const std::string &request, std::string &reply) {
+    const std::string key = this->key();
+    if (key.empty()) return false;
+    const std::string name = "\\\\.\\pipe\\mozc." + key + ".session";
+    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                              SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) return false;
+    DWORD mode = PIPE_READMODE_MESSAGE, n = 0;
+    bool ok = SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr) &&
+              WriteFile(pipe, request.data(), static_cast<DWORD>(request.size()), &n, nullptr) &&
+              n == request.size();
+    reply.clear();
+    char buf[65536];
+    for (bool more = ok; more;) {
+      more = false;
+      if (ReadFile(pipe, buf, sizeof(buf), &n, nullptr)) {
+        reply.append(buf, n);
+      } else if (GetLastError() == ERROR_MORE_DATA) {
+        reply.append(buf, n);
+        more = true;
+      } else {
+        ok = false;
+      }
+    }
+    CloseHandle(pipe);
+    return ok;
+  }
+
+  // Starts mozc_server on its own, as Mozc's client does: it outlives the host and stops when idle.
+  void launch() {
+    std::wstring cmd = L"\"" + std::filesystem::u8path(paths_.server).wstring() + L"\"";
+    STARTUPINFOW si{sizeof(si)};
+    PROCESS_INFORMATION pi{};
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
+                       CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_DEFAULT_ERROR_MODE, nullptr, nullptr, &si, &pi)) {
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+    }
+  }
+#else
+  bool send(const std::string &request, std::string &reply) {
+    const std::string key = this->key();
+    if (key.empty()) return false;
+    const std::string name = "tmp/.mozc." + key + ".session";
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return false;
     sockaddr_un addr{};
@@ -157,6 +214,7 @@ class Ipc {
     }
     if (pid > 0) waitpid(pid, nullptr, 0);
   }
+#endif
 
   MozcPaths paths_;
 };
