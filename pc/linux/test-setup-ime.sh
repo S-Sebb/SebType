@@ -401,6 +401,77 @@ if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.reposito
 else result SKIP mozc-shift-tap-and-alt-grave "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
+# The popup's mode words follow the system language (#205): a private Fcitx5 (as above) on its own fake
+# account, started once with each LANGUAGE, shows 日本語 (Hiragana), 日本語（平假名） and 日本語（ひらがな）
+# on a switch to 日本語. What it showed goes to popup-words.txt next to the results.
+popup_words() {
+  local h=$fake/popup p
+  mkdir -p "$h/.config/fcitx5"
+  fake_run < /dev/null > /dev/null || return 1
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-popup.log" "$out/popup-words.txt" <<'PY2'
+import os, subprocess, sys, time
+from gi.repository import Gio, GLib
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+def wait(cond, secs):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        GLib.MainContext.default().iteration(False); time.sleep(0.02)
+    return cond()
+def up():
+    try: call('/controller', 'org.fcitx.Fcitx.Controller1', 'CurrentInputMethod'); return True
+    except GLib.Error: return False
+IC, SEBTYPE = 'org.fcitx.Fcitx.InputContext1', ('/sebtype', 'org.sebtype.Core1')
+
+def popup(language):  # the popup a Fcitx5 started with LANGUAGE=language shows on a switch to 日本語
+    fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
+                             env={**os.environ, 'LANGUAGE': language}, stdout=subprocess.DEVNULL,
+                             stderr=open(sys.argv[1], 'a'))
+    try:
+        wait(up, 10)
+        ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+                     '(a(ss))', [('program', 'sebtype-test')])
+        popups = []
+        def on_signal(_c, _s, _p, _i, name, params):
+            if name == 'UpdateClientSideUI':
+                text = ''.join(s for s, _ in params.unpack()[2])
+                if text: popups.append(text)
+        sub = bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+        call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+        call(ic, IC, 'FocusIn')
+        call(*SEBTYPE, 'SetLanguage', '(s)', 'en'); wait(lambda: False, 0.2)
+        popups.clear(); call(*SEBTYPE, 'SetLanguage', '(s)', 'ja')
+        wait(lambda: popups, 5); wait(lambda: False, 0.2)
+        bus.signal_unsubscribe(sub)
+        return popups[-1] if popups else None
+    finally:
+        fcitx.terminate(); fcitx.wait(10)
+
+ok = True
+with open(sys.argv[2], 'w') as f:
+    for language, want in (('en', '日本語 (Hiragana)'), ('zh_CN', '日本語（平假名）'), ('ja', '日本語（ひらがな）')):
+        got = popup(language)
+        f.write(f'{language}\t{got}\n')
+        ok &= got == want
+        print('PASS' if got == want else 'FAIL', f'LANGUAGE={language} popup', '' if got == want else f'got {got!r}, want {want!r}')
+sys.exit(0 if ok else 1)
+PY2
+  local rc=$?
+  for p in $(pgrep -x fcitx5) $(pgrep -x mozc_server); do
+    grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"
+  done
+  return $rc
+}
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+  check popup-words popup_words
+else result SKIP popup-words "needs fcitx5, dbus-run-session and python3-gobject"
+fi
+
 # Chinese label (#69) and SebType's Chinese data (#102): a private Fcitx5 (as above) running SebType's input method (#190) on a
 # third fake account set up by setup-ime.sh, which installs SebType's Chinese data there. Switching to it
 # must show 中文 in the popup, both the long one and the compact one (the reference PC's setting; it shows

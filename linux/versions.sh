@@ -3,7 +3,7 @@
 # by sebtype.spec. Sourced by build.sh, pc/linux/setup-ime.sh and the tests. Bump SEBTYPE_RPM_RELEASE when
 # core/, linux/ or engines/mozc changes.
 SEBTYPE_VERSION=0.1.0
-SEBTYPE_RPM_RELEASE=1.fc44
+SEBTYPE_RPM_RELEASE=2.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/sebtype
 

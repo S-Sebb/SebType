@@ -203,6 +203,27 @@ TEST_F(CoreTest, CtrlShiftFTogglesTraditionalInChineseOnly) {
   EXPECT_FALSE(press('f', mod::Ctrl));  // Ctrl+F stays Find
 }
 
+TEST(SystemLanguage, FirstLocaleSetPicksItLikeTheConfigurator) {
+  auto pick = [](std::map<std::string, const char *> env) {
+    return systemLanguage([&](const char *var) { return env.contains(var) ? env[var] : nullptr; });
+  };
+  EXPECT_EQ(pick({}), Lang::English);
+  EXPECT_EQ(pick({{"LANG", "zh_CN.UTF-8"}}), Lang::Chinese);
+  EXPECT_EQ(pick({{"LANGUAGE", "ja:en"}, {"LANG", "zh_CN.UTF-8"}}), Lang::Japanese);
+  EXPECT_EQ(pick({{"LANGUAGE", ""}, {"LC_ALL", "de_DE.UTF-8"}, {"LANG", "ja_JP.UTF-8"}}), Lang::English);
+  EXPECT_EQ(pick({{"LC_MESSAGES", "zh_TW.UTF-8"}, {"LANG", "C.UTF-8"}}), Lang::Chinese);
+}
+
+TEST_F(CoreTest, PopupWordsFollowTheSystemLanguage) {
+  core.setUiLanguage(Lang::Chinese);
+  core.selectLanguage(Lang::Japanese);
+  EXPECT_EQ(core.takeNotice(false), "日本語（平假名）");
+  core.setUiLanguage(Lang::Japanese);
+  core.selectLanguage(Lang::Chinese);
+  shiftTap();
+  EXPECT_EQ(core.takeNotice(false), "中文（英字）");
+}
+
 TEST_F(CoreTest, AltGraveSwitchesKanaBeforeTypingAndNotInEnglish) {
   core.selectLanguage(Lang::Japanese);
   EXPECT_EQ(core.takeNotice(true), "あ (Hiragana)");
