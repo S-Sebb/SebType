@@ -11,6 +11,8 @@ namespace sebtype::win {
 namespace {
 
 constexpr DWORD kCookie = 1;  // one sink at a time
+// The taskbar's input indicator shows the button with this id; Windows' headers don't name it.
+constexpr GUID kLbiInputMode = {0x2c77a81e, 0x41cc, 0x4178, {0xa3, 0xa7, 0x5f, 0x8a, 0x98, 0x75, 0x68, 0xe6}};
 
 int iconId(std::string_view name) {
   if (name == "zh-a") return IDI_ZH_A;
@@ -47,7 +49,7 @@ STDMETHODIMP_(ULONG) LangBarButton::Release() {
 
 STDMETHODIMP LangBarButton::GetInfo(TF_LANGBARITEMINFO *info) {
   info->clsidService = kClsid;
-  info->guidItem = GUID_LBI_INPUTMODE;  // the taskbar's input indicator shows this one
+  info->guidItem = kLbiInputMode;
   info->dwStyle = TF_LBI_STYLE_BTN_BUTTON | TF_LBI_STYLE_BTN_MENU | TF_LBI_STYLE_SHOWNINTRAY;
   info->ulSort = 0;
   wcsncpy_s(info->szDescription, title(service_.reply()).c_str(), _TRUNCATE);
