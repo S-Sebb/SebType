@@ -11,14 +11,15 @@
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
-# It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
-# else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
+# It takes SebType-setup-*.exe (and for PERF_RUN perf-rime.exe) from the "Windows setup" CI run of this
+# commit, which TCSBackEnd downloads itself (its uploads are capped at about 3 Mbit/s), or else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
 # (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
 # ImageMagick and `ssh TCSBackEnd`. Output: one line per check; logs in $out, the installer's pages in
-# ~/scratch/SebType/<issue>/73-*.png (117-*, 162-*, 205-*: the tray menus, the candidate window, the popup). Takes the device lock; exit 0 only if every check passes and TCSBackEnd ends
-# as found.
+# ~/scratch/SebType/<issue>/73-*.png (117-*, 162-*, 205-*: the tray menus, the candidate window, the popup).
+# Where the time went: $out/times.txt and logs/*-times.txt. Takes the device lock; exit 0 only if every check
+# passes and TCSBackEnd ends as found.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
@@ -43,15 +44,14 @@ command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v 
 head=$(git -C "$repo" rev-parse HEAD)
 run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$branch" --status success --json databaseId,headSha \
   -q "map(select(.headSha == \"$head\"))[0].databaseId // empty" 2>/dev/null)
+exe= perf=
 if [ -n "$run" ]; then
-  gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
-  exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
-  # perf-rime.exe (from the librime build), for the Rime per-key check against the librime the setup installed (#133)
-  gh run download -R S-Sebb/SebType "$run" -n sebtype-weasel -D "$out/in" >/dev/null 2>&1
+  exe="sebtype-setup of CI run $run"
 else
   exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
+  # perf-rime.exe (from the librime build), for the Rime per-key check against the librime the setup installed (#133)
+  [ -n "${PERF_RUN:-}" ] && perf=$(ls "$repo"/build/weasel/perf-rime.exe 2>/dev/null | head -1)
 fi
-perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/weasel/perf-rime.exe 2>/dev/null | head -1)
 [ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
 old=
 if [ "${ONLY:-}" = upgrade ]; then
@@ -59,13 +59,12 @@ if [ "${ONLY:-}" = upgrade ]; then
   for r in $(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch main --status success --limit 50 \
       --json databaseId,headSha -q '.[] | "\(.databaseId):\(.headSha)"' 2>/dev/null); do
     git -C "$repo" cat-file -e "${r#*:}:windows/build.ps1" 2>/dev/null && continue
-    gh run download -R S-Sebb/SebType "${r%%:*}" -n sebtype-setup -D "$out/old" >/dev/null 2>&1 && old=$(ls "$out"/old/SebType-setup-*.exe 2>/dev/null | head -1)
+    old=${r%%:*}
     break
   done
   [ -n "$old" ] || missing=${missing:-'no setup of the SebType before #190 from a main run'}
 fi
-echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
-mark 'CI artifacts downloaded'
+echo "setup: $exe${old:+; old setup: sebtype-setup of CI run $old}" > "$out/input.txt"
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 [ -n "$missing" ] && { echo "BLOCKED preflight: $missing"; exit 1; }
 
@@ -73,6 +72,21 @@ tps() {  # Windows PowerShell 5.1 on TCSBackEnd, script on stdin; output as text
   local enc
   enc=$( (echo '[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference="SilentlyContinue"'; cat) | iconv -t UTF-16LE | base64 -w0)
   timeout "${T:-120}" ssh TCSBackEnd "powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $enc" 2>&1 | grep -av '^#< CLIXML\|^<Objs' | tr -d '\r'
+}
+# A CI artifact unpacked into C:\sebtype-setup-test\<folder>: TCSBackEnd downloads it through its signed link
+# (valid for a minute, needs no token there).
+fetch_on_tcs() {  # run artifact folder
+  local id url
+  id=$(gh api "repos/S-Sebb/SebType/actions/runs/$1/artifacts" -q ".artifacts[] | select(.name == \"$2\") | .id" 2>/dev/null)
+  [ -n "$id" ] || return 1
+  url=$(curl -sS -o /dev/null -w '%{redirect_url}' -H "Authorization: Bearer $(gh auth token)" \
+    "https://api.github.com/repos/S-Sebb/SebType/actions/artifacts/$id/zip")
+  [ -n "$url" ] || return 1
+  T=600 tps <<EOF | grep -q '^ok$'
+\$z = 'C:\sebtype-setup-test\artifact.zip'
+curl.exe -sSfL -o \$z '$url'
+if (\$LASTEXITCODE -eq 0) { New-Item -Force -ItemType Directory 'C:\sebtype-setup-test\\$3' | Out-Null; tar.exe -xf \$z -C 'C:\sebtype-setup-test\\$3'; if (\$LASTEXITCODE -eq 0) { 'ok' }; Remove-Item \$z }
+EOF
 }
 state() {
   tps <<'EOF'
@@ -146,15 +160,22 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\old | Out-Null' | tps
-if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
-  echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
+if [ -n "$run" ]; then
+  fetch_on_tcs "$run" sebtype-setup . || { echo "FAIL prepare: TCSBackEnd's download of sebtype-setup from run $run failed"; cleanup; exit 1; }
+  if [ -n "${PERF_RUN:-}" ]; then
+    fetch_on_tcs "$run" sebtype-weasel weasel && echo 'Move-Item C:\sebtype-setup-test\weasel\perf-rime.exe C:\sebtype-setup-test\' | tps
+  fi
 fi
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if [ -n "$old" ] && ! fetch_on_tcs "$old" sebtype-setup old; then
+  echo "FAIL prepare: TCSBackEnd's download of the old setup from run $old failed"; cleanup; exit 1
+fi
+mark 'CI artifacts downloaded on TCSBackEnd'
+[ -n "$run" ] && exe=
+if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} ${exe:+"$exe"} "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
-
-mark 'inputs uploaded'
+mark 'scripts uploaded'
 # test.ps1 in the Administrator session, elevated, through a one-off task (ssh runs outside it).
 tps <<'EOF'
 $a = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\sebtype-setup-test\run.ps1'
@@ -191,16 +212,18 @@ if [ -n "${logon:-}" ]; then
 fi
 mark 'Remote Desktop started'
 finished=
-for i in $(seq 1 360); do
+for i in $(seq 1 720); do
   [ "$(echo 'Test-Path C:\sebtype-setup-test\done' | tps | tr -d '\r')" = True ] && { finished=1; break; }
-  sleep 10
+  sleep 5
 done
 [ -n "$rdp" ] && { pkill -f "$here/../mozc/rdp-keys.py"; pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
 [ -n "$tunnel" ] && kill "$tunnel" 2>/dev/null
 
 mark 'test.ps1 done'
 mkdir -p "$out/logs"
-scp -q -r 'TCSBackEnd:C:/sebtype-setup-test/out/*' 'TCSBackEnd:C:/sebtype-setup-test/run.log' "$out/logs/" 2>/dev/null
+# One file: scp pays a round trip per file, which made 60 files take a minute.
+echo 'tar -cf C:\sebtype-setup-test\logs.tar -C C:\sebtype-setup-test\out . -C C:\sebtype-setup-test run.log' | tps >/dev/null
+scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" 2>/dev/null && tar -xf "$out/logs.tar" -C "$out/logs" && rm "$out/logs.tar"
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
 for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"

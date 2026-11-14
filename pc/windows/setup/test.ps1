@@ -512,6 +512,7 @@ namespace SebTypeSetupTest {
 
   # Windows Server opens Server Manager at an admin's logon, in front of whatever the test shows.
   if (Wait-Until 45 { Get-Process ServerManager -ErrorAction SilentlyContinue }) { Start-Sleep 5; Get-Process ServerManager | Stop-Process -Force }
+  Mark 'Server Manager closed (or 45 s without it)'
 
   # How this account is before SebType: English and Chinese (Microsoft Pinyin), as on a Chinese PC.
   $ll = New-WinUserLanguageList en-US
