@@ -4,6 +4,8 @@
 #   pc/windows/setup/test-tcsbackend.sh
 # PERF_RUN=1 adds the timing check (round1-rime-p95), for the final performance run only (#54).
 # ONLY=picnic runs only the Picnic candidate window's pictures (#162), with TCSBackEnd's own checks.
+# ONLY=startmenu runs only install, update over an older install with Weasel's Start menu folder, and
+# uninstall (#192), with TCSBackEnd's own checks.
 # ONLY=sync runs only sync with your own server (#180): a local sebtype_sync.py with a throwaway login,
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
 # It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or

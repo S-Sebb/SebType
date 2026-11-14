@@ -34,7 +34,7 @@ $PlumCommit = 'cab9ed35289f2022b6888503750d2dfb1851dbe0'  # Weasel $WeaselVersio
 $LuaSourceCommit = '9e5bb71db1544913f8005dadc3df8439c00d08b7'  # librime-lua's thirdparty branch
 $BoostVersion = '1.84.0'
 # Bump on every change to what this builds; setup-ime.ps1 reinstalls when the installed one differs.
-$SebTypeBuild = 4
+$SebTypeBuild = 5
 
 function Invoke-Checked([string]$what, [scriptblock]$cmd) {
   & $cmd
