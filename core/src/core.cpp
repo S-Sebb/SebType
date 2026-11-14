@@ -19,6 +19,15 @@ constexpr auto kShiftTap = std::chrono::milliseconds(500);
 bool isShift(uint32_t sym) { return sym == ks::Shift_L || sym == ks::Shift_R; }
 // Shift, Ctrl, Caps Lock, Meta, Alt, Super, Hyper (0xffe1 to 0xffee) and AltGr.
 bool isModifier(uint32_t sym) { return (sym >= 0xffe1 && sym <= 0xffee) || sym == ks::ISO_Level3_Shift; }
+
+// The popup's mode words in English, 中文 and 日本語 (#205), worded as the Configurator words them where it
+// names the same mode: English letters (英文字母, 英字) and hiragana (平假名, ひらがな).
+struct Words {
+  const char *en, *zh, *ja;
+  const char *in(Lang ui) const { return ui == Lang::Chinese ? zh : ui == Lang::Japanese ? ja : en; }
+};
+constexpr Words kRimeLatin{"Latin Mode", "英文字母", "英字"}, kMozcLatin{"Direct", "英文字母", "英字"},
+    kKatakana{"Full Katakana", "片假名", "カタカナ"}, kHiragana{"Hiragana", "平假名", "ひらがな"};
 }  // namespace
 
 const char *langId(Lang lang) {
@@ -35,6 +44,17 @@ std::string langName(Lang lang) {
     case Lang::Japanese: return "日本語";
     default: return "English";
   }
+}
+
+Lang systemLanguage(const std::function<const char *(const char *)> &getenv) {
+  for (const char *var : {"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"}) {
+    const char *v = getenv(var);
+    std::string_view locale = v ? v : "";
+    locale = locale.substr(0, locale.find(':'));  // LANGUAGE lists several, the first preferred
+    if (locale.empty()) continue;
+    return locale.starts_with("zh") ? Lang::Chinese : locale.starts_with("ja") ? Lang::Japanese : Lang::English;
+  }
+  return Lang::English;
 }
 
 Settings Settings::parse(std::string_view ini) {
@@ -178,14 +198,16 @@ std::string Core::takeNotice(bool compact) {
   if (!std::exchange(notice_, false)) return {};
   Engine *e = current();
   std::string name = compact ? (lang_ == Lang::English ? "en" : lang_ == Lang::Japanese ? "あ" : "中文") : langName(lang_);
-  std::string subMode;
+  const Words *subMode = nullptr;
   if (e && lang_ == Lang::Chinese && e->latin()) {
     if (compact) return capsLock_ ? "ABC" : "abc";
-    subMode = "Latin Mode";
+    subMode = &kRimeLatin;
   } else if (e && lang_ == Lang::Japanese) {
-    subMode = e->latin() ? "Direct" : e->alternate() ? "Full Katakana" : "Hiragana";
+    subMode = e->latin() ? &kMozcLatin : e->alternate() ? &kKatakana : &kHiragana;
   }
-  return subMode.empty() ? name : name + " (" + subMode + ")";
+  if (!subMode) return name;
+  // Full-width brackets in 中文 and 日本語, as the Configurator writes 读音（平假名）.
+  return ui_ == Lang::English ? name + " (" + subMode->en + ")" : name + "（" + subMode->in(ui_) + "）";
 }
 
 std::string Core::takeCommit() { return std::exchange(commit_, {}); }

@@ -141,6 +141,7 @@ void Service::setLanguage(const std::string &id) {
 
 SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
     : instance_(instance), core_(std::make_unique<Core>(makeEngine, readSettings())) {
+  core_->setUiLanguage(systemLanguage());
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
     service_ = std::make_unique<Service>(this);
     dbus->call<fcitx::IDBusModule::bus>()->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);

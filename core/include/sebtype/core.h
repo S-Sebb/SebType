@@ -6,6 +6,7 @@
 #include <sebtype/types.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
@@ -26,6 +27,9 @@ struct Settings {
 
 const char *langId(Lang lang);  // en, zh, ja
 std::string langName(Lang lang);  // English, 中文, 日本語
+// The system's language, as the Configurator picks it (#118): the first locale set in LANGUAGE, LC_ALL,
+// LC_MESSAGES or LANG, when it is 中文 or 日本語; English for any other.
+Lang systemLanguage(const std::function<const char *(const char *)> &getenv = std::getenv);
 
 class Core {
  public:
@@ -65,6 +69,8 @@ class Core {
   // The popup after a switch of language or of 中文's English mode, once, as Fcitx5 showed it
   // (compact: its CompactInputMethodInformation); empty when there is none.
   std::string takeNotice(bool compact);
+  // The language the popup's words are in (#205); English until set.
+  void setUiLanguage(Lang lang) { ui_ = lang; }
 
   // The engine of a language, started on first use; nullptr for English.
   Engine *engine(Lang lang);
@@ -80,6 +86,7 @@ class Core {
   Clock clock_;
   std::map<Lang, std::unique_ptr<Engine>> engines_;
   Lang lang_ = Lang::English;
+  Lang ui_ = Lang::English;
   Lang lastOther_ = Lang::English;
   bool capsLock_ = false;
   uint32_t shiftDown_ = 0;  // the Shift key pressed alone, until another key comes
