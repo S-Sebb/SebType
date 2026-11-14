@@ -5,7 +5,7 @@
 # pick a phone); RUNS (default 3) repeats each typing set.
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in results.txt, the table in perf.md, traces and logs in run/, all in
-# /tmp/sebtype/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
+# ~/scratch/sebtype/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
 # so runs from parallel worktrees don't overwrite each other. Exit 0 unless a check fails. Timing comes
 # from Perfetto traces of framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail
@@ -13,7 +13,7 @@ cd "$(dirname "$0")/../.."
 source tools/lib.sh
 self=$PWD/android/perf/perf.sh
 
-export out=${PERF_OUT:-/tmp/sebtype/perf-$(basename "$PWD")}; export work=$out/run
+export out=${PERF_OUT:-$SCRATCH/perf-$(basename "$PWD")}; export work=$out/run
 export sdk=$ANDROID_HOME
 export adb=$sdk/platform-tools/adb
 export runs=${RUNS:-3}
@@ -23,7 +23,7 @@ export settle=${SETTLE_S:-30}
 export pkg=dev.sebb.sebtype field=dev.sebb.sebtype.perffield
 export ime_id=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
 export field_act=dev.sebb.sebtype.perffield/.PerfField
-export tp=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/trace_processor_shell-v59.1
+export tp=$SCRATCH/cache/trace_processor_shell-v59.1
 export keys_sql=$PWD/android/perf/keys.sql opens_sql=$PWD/android/perf/opens.sql
 results=$out/results.txt
 

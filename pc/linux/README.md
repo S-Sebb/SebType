@@ -112,7 +112,7 @@ candidate window look that Picnic replaced. Settings made with it stay.
 
 `pc/configurator/test.sh` checks it without touching the session: unit tests, that every string the
 window shows has its 中文 and 日本語, every screen opened in each of the three languages in a nested
-virtual KWin (screenshots in `/tmp/sebtype/configurator-shots`), a private Fcitx5 and Rime on
+virtual KWin (screenshots in `~/scratch/sebtype/configurator-shots`), a private Fcitx5 and Rime on
 a copy of this account's rime-ice taking the languages and Chinese settings the app writes, and
 `test-setup-ime.sh`. The Windows build is the `sebtype-configurator` artifact of the Configurator
 workflow.

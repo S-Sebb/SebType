@@ -4,7 +4,7 @@
 # and for SebType's data from data/rime/build.sh. The two typo sets (#46, make-typos.py) are
 # typed with the phone's and the PCs' keyboard model. Run it before changing the Chinese data and put
 # the table in the PR. Takes about 7 minutes.
-#   data/rime/bench/bench.sh      table in /tmp/sebtype/rime-bench.md, ranks in /tmp/sebtype/rime-bench/
+#   data/rime/bench/bench.sh      table in ~/scratch/sebtype/rime-bench.md, ranks in ~/scratch/sebtype/rime-bench/
 # Needs gcc, librime and librime-lua 1.16.1 (Fedora) and dnf (for librime-octagram, unpacked, not installed).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -12,8 +12,8 @@ cd "$here/../../.."
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 
-out=/tmp/sebtype/rime-bench; mkdir -p "$out"
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
+out=$HOME/scratch/sebtype/rime-bench
+cache=$HOME/scratch/sebtype/cache; mkdir -p "$out" "$cache"
 librime=/usr/lib64/librime.so.1 lua=/usr/lib64/rime-plugins/librime-lua.so
 OLD_URL=https://github.com/iDvel/rime-ice/releases/download/2026.06.30/full_compiled.zip
 OLD_SHA256=ae810e0023f28d3eb45ff98a7c58830dd0b505c2272638a321fa6d5a6f5d5418

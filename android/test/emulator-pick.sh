@@ -2,12 +2,12 @@
 # Checks android/emulator.sh's queue for its one emulator (#170): a run starts at once when guide35's lock
 # is free, and waits for it when held. Uses its own lock directory and a stub adb that reports guide35
 # booted, so it touches no real emulator or lock and takes about half a minute.
-# One line per check in /tmp/sebtype/test-emulator-pick-results.txt; exit 0 only if all pass.
+# One line per check in ~/scratch/sebtype/test-emulator-pick-results.txt; exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 command -v devq > /dev/null || { echo "preflight: devq missing"; exit 1; }
 
-out=/tmp/sebtype; mkdir -p "$out"
+out=$HOME/scratch/sebtype; mkdir -p "$out"
 results=$out/test-emulator-pick-results.txt; : > "$results"
 tmp=$(mktemp -d); holders=()
 trap 'kill "${holders[@]}" 2> /dev/null; rm -rf "$tmp"' EXIT
