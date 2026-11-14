@@ -407,17 +407,15 @@ if (-not $Undo) {
     }
   }
 
-  # Rime builds the data and patches when it redeploys, in SebType's server. The server runs as this user
-  # (Setup runs this step as the person who started it), where every app reaches it: /deploy starts it
-  # when none runs, and returns when Rime is done.
+  # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
+  # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it
+  # would be out of the apps' reach): the text service starts it at the first key, the Run key at logon.
   if ($redeploy) {
     $t = [Diagnostics.Stopwatch]::StartNew()
     $p = Start-Process -PassThru -FilePath $Server -ArgumentList '/deploy'
     if (-not $p.WaitForExit(330000)) { Stop-Process -Id $p.Id -Force; throw "Rime's redeploy took over 5 minutes" }
     if ($p.ExitCode) { throw "Rime's redeploy failed ($($p.ExitCode))" }
     Write-Output "user: Rime redeployed in $([int]$t.Elapsed.TotalSeconds) s"
-  } elseif ($want | Where-Object { $_ -ne 'en' }) {
-    if (-not (Get-Server)) { Start-Process -FilePath $Server }
   }
   $state.Chosen = $want
   Save-State

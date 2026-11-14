@@ -136,17 +136,32 @@ class Ipc {
     if (key.empty()) return false;
     const std::string name = "\\\\.\\pipe\\mozc." + key + ".session";
     HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
-                              SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+                              FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
     if (pipe == INVALID_HANDLE_VALUE) return false;
+    // Overlapped, for the 5 s Linux's socket has: a server that hangs mustn't hold up every app.
+    OVERLAPPED o{};
+    o.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    const DWORD start = GetTickCount();
+    auto finish = [&](BOOL done, DWORD &n) {
+      if (done || GetLastError() != ERROR_IO_PENDING) return done != FALSE;
+      const DWORD spent = GetTickCount() - start;
+      if (WaitForSingleObject(o.hEvent, spent < 5000 ? 5000 - spent : 0) != WAIT_OBJECT_0) {
+        CancelIo(pipe);
+        GetOverlappedResult(pipe, &o, &n, TRUE);
+        SetLastError(ERROR_TIMEOUT);
+        return false;
+      }
+      return GetOverlappedResult(pipe, &o, &n, FALSE) != FALSE;
+    };
     DWORD mode = PIPE_READMODE_MESSAGE, n = 0;
     bool ok = SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr) &&
-              WriteFile(pipe, request.data(), static_cast<DWORD>(request.size()), &n, nullptr) &&
+              finish(WriteFile(pipe, request.data(), static_cast<DWORD>(request.size()), &n, &o), n) &&
               n == request.size();
     reply.clear();
     char buf[65536];
     for (bool more = ok; more;) {
       more = false;
-      if (ReadFile(pipe, buf, sizeof(buf), &n, nullptr)) {
+      if (finish(ReadFile(pipe, buf, sizeof(buf), &n, &o), n)) {
         reply.append(buf, n);
       } else if (GetLastError() == ERROR_MORE_DATA) {
         reply.append(buf, n);
@@ -155,6 +170,7 @@ class Ipc {
         ok = false;
       }
     }
+    CloseHandle(o.hEvent);
     CloseHandle(pipe);
     return ok;
   }

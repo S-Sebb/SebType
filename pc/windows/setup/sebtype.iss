@@ -210,6 +210,9 @@ Filename: "{app}\sebtype-configurator.exe"; Description: "{cm:OpenConfigurator}"
 Type: files; Name: "{app}\setup.log"
 Type: files; Name: "{app}\sebtype.dll.*.old"
 Type: files; Name: "{app}\x86\sebtype.dll.*.old"
+Type: files; Name: "{app}\sebtype-server.exe.*.old"
+Type: files; Name: "{app}\rime.dll.*.old"
+Type: files; Name: "{app}\mozc_server.exe.*.old"
 
 [Code]
 const
