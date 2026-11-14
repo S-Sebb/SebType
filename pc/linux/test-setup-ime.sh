@@ -410,6 +410,8 @@ popup_words() {
   fake_run < /dev/null > /dev/null || return 1
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
+  # Fedora's Fcitx5 shows the compact popup (あ) by default; the words checked below are the long popup's.
+  kwriteconfig6 --file "$h/.config/fcitx5/config" --group Behavior --key CompactInputMethodInformation False
   private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-popup.log" "$out/popup-words.txt" <<'PY2'
 import os, subprocess, sys, time
 from gi.repository import Gio, GLib
