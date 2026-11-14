@@ -171,8 +171,8 @@ Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; The text service (64-bit, and 32-bit for 32-bit apps), its server, librime with Rime's shared data, and
 ; Mozc's server. An app that has the text service loaded keeps it until it closes.
 Source: "{#Service}\sebtype-server.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Service}\sebtype.dll"; DestDir: "{app}"; Flags: ignoreversion regserver uninsrestartdelete
-Source: "{#Service}\x86\sebtype.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit uninsrestartdelete
+Source: "{#Service}\sebtype.dll"; DestDir: "{app}"; Flags: ignoreversion regserver
+Source: "{#Service}\x86\sebtype.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit
 Source: "{#Rime}\rime.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Rime}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
 Source: "{#In}\mozc-server\mozc_server.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -375,8 +375,9 @@ begin
   Exec('taskkill.exe', '/f /im mozc_server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 // A loaded file can't be replaced but can be renamed: the new one goes in its place, apps load it when they
-// next start, and the old one is deleted at the next restart (or by the next Setup). Servers count too: a
-// running app's text service starts its server again at its next key.
+// next start, and the next Setup deletes the old one. Servers count too: a running app's text service starts
+// its server again at its next key. Not deleted at the next restart: a rename pending in its folder makes
+// the next Setup ask for a restart first.
 procedure MoveAside(Path: String);
 var
   Old: String;
@@ -389,9 +390,7 @@ begin
     N := N + 1;
     Old := Path + '.' + IntToStr(N) + '.old';
   until not FileExists(Old) or DeleteFile(Old);
-  if RenameFile(Path, Old) then
-    MoveFileEx(Old, '', 4)  // MOVEFILE_DELAY_UNTIL_REBOOT
-  else
+  if not RenameFile(Path, Old) then
     Log('could not move aside ' + Path);
 end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -448,10 +447,34 @@ begin
   Restyle(UninstallProgressForm.StatusLabel, '', 0, Ink);
 end;
 
+// What apps still have loaded (the text service, until they close) goes to %TEMP%, as a rename on the same
+// drive can: no restart, and nothing pending in the folder to stop a new Setup.
+procedure MoveOut(Dir: String);
+var
+  F: TFindRec;
+begin
+  if FindFirst(Dir + '\*', F) then
+    try
+      repeat
+        if (F.Attributes and FILE_ATTRIBUTE_DIRECTORY = 0) and (Pos('unins', F.Name) <> 1) and
+           not DeleteFile(Dir + '\' + F.Name) then
+          if not RenameFile(Dir + '\' + F.Name, ExpandConstant('{%TEMP}\SebType-') + IntToStr(GetTickCount) + '-' + F.Name) then
+            Log('could not move out ' + Dir + '\' + F.Name);
+      until not FindNext(F);
+    finally
+      FindClose(F);
+    end;
+end;
+
 // The uninstaller runs elevated as the person removing SebType, whose account it puts back. The servers
 // stop first: a running one writes its folder again, so the account is put back only once they are gone.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usPostUninstall then begin
+    MoveOut(ExpandConstant('{app}\x86'));
+    MoveOut(ExpandConstant('{app}'));
+    RemoveDir(ExpandConstant('{app}\x86'));  // the uninstaller removes {app} with its own files
+  end;
   if CurUninstallStep <> usUninstall then
     Exit;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('Undoing');

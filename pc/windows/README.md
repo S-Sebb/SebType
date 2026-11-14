@@ -85,7 +85,7 @@ Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 | Switch keys | `HKCU\Keyboard Layout\Toggle`: Hotkey, Language Hotkey and Layout Hotkey = 3 (none), applied at once | Alt+Shift and Ctrl+Shift no longer switch language |
 | Per-window input | "Let me use a different input method for each app window" off | One language for every window, as on Linux |
 | Candidate window | Once, over a SebType from before #190: Weasel's `style/horizontal`, `font_point` and Picnic colour scheme from `weasel.custom.yaml` into `%APPDATA%\SebType\sebtype.conf` `[Candidates]` | The look the person chose in the Configurator stays |
-| Redeploy | Runs `sebtype-server.exe /deploy` as the person when the Chinese data or patches changed; it returns when Rime is done | Rime builds the data once. The server runs as the person, not elevated, so every app reaches it; `/deploy` starts it when none runs |
+| Redeploy | Runs `sebtype-server.exe /deploy` as the person when the Chinese data or patches changed; it returns when Rime is done | Rime builds the data once. With no server running, `/deploy` runs Rime itself and starts none: one started from an elevated Setup would be out of the apps' reach. The text service starts the server at the first key |
 
 Inside Chinese, a Shift tap types English and Shift again goes back, as on Linux (SebType's core). Caps Lock in Chinese switches to English capitals (rime-ice's `good_old_caps_lock`).
 

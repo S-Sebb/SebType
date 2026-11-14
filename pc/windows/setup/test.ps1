@@ -53,9 +53,16 @@ function Result($name, $status, $why = '') {
   $line = "$status $name$(if ($why) { ": $why" })"
   Add-Content -Encoding utf8 $results $line; Write-Host $line
 }
+# Where a run's time goes: out\times-<part>.txt, a line per check and step.
+$timesStart = Get-Date
+function Mark($what, $seconds = $null) {
+  Add-Content -Encoding utf8 ($results -replace '-results\.txt$', '-times.txt') "$(Get-Date -f HH:mm:ss) +$([int]((Get-Date) - $timesStart).TotalSeconds)s $what$(if ($null -ne $seconds) { " ($seconds s)" })"
+}
 function Check($name, [scriptblock]$body) {
   if ($Typing) { Add-Content "$out\keys-$Typing.txt" "$(Get-Date -f HH:mm:ss.fff) CHECK $name" }  # with ime-*.txt (#129)
+  $t = Get-Date
   try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
+  Mark $name ([int]((Get-Date) - $t).TotalSeconds)
 }
 function Wait-Until([int]$seconds, [scriptblock]$cond) {
   $deadline = (Get-Date).AddSeconds($seconds)
@@ -354,6 +361,7 @@ if ($Typing) {
 
 # ==================================================== the driver, as the test user, elevated as Setup
 if ($Driver) {
+  Mark 'driver started: the test user is logged on'
   Add-Type -ReferencedAssemblies System.Drawing @'
 using System; using System.Text; using System.Collections.Generic; using System.Drawing; using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -947,10 +955,12 @@ try {
     -Principal (New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited) -Force | Out-Null
   New-Item -ItemType Directory -Force (Split-Path $rdp) | Out-Null
   Set-Content $rdp $user, $password
+  Mark 'test user made, its logon written'
   if (-not (Wait-Until 3000 { Test-Path "$out\driver-done" })) {
     Result driver FAIL $(if (Test-Path "$out\driver-results.txt") { 'the run took over 50 minutes' } else { "no Remote Desktop logon of $user in 50 minutes" })
   }
 } catch { Result admin FAIL $_.Exception.Message } finally {
+  Mark 'driver done'
   Remove-Item -Recurse (Split-Path $rdp) -ErrorAction SilentlyContinue
   'SebType-setup-driver', 'SebType-setup-typing', 'SebType sync' | ForEach-Object { Unregister-ScheduledTask $_ -Confirm:$false -ErrorAction SilentlyContinue }
   # A run that died may leave SebType installed: its own uninstaller, then the session, profile and user.
@@ -967,6 +977,7 @@ try {
     else { if ($prof) { $prof | Remove-CimInstance }; Remove-LocalUser $user }
   }
 }
+Mark 'test user removed'
 Get-Content -Encoding utf8 "$out\driver-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Add-Content -Encoding utf8 $results $_; Write-Host $_ }
 
 Check 'machine-as-before' {

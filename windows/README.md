@@ -9,7 +9,9 @@ says what it sets up.
   it, and every app reaches it over a named pipe, `\\.\pipe\SebType.<session>.<user>` (`src/pipe.h`,
   `src/protocol.h`). One process means one writer for Rime's learned words and one language for every
   window. `sebtype-server.exe /deploy`, `/sync` and `/quit` are for Setup and the Configurator; `/deploy`
-  and `/sync` return when Rime is done.
+  and `/sync` return when Rime is done, and run Rime themselves when no server runs (as Weasel's deployer
+  did), so a Setup started elevated leaves no server the apps can't reach. Rime's log and the server's
+  (`server.log`: starts, requests over a second, the commands' failures) are in `%TEMP%\rime.sebtype`.
 - `sebtype.dll` (`src/tip/`): the text service, one COM class with a 中文 (zh-CN) and a 日本語 (ja-JP)
   profile. It sends each key to the server and shows its reply:
   - Chinese keeps the pinyin in the candidate window, Japanese types inline with Mozc's underlines

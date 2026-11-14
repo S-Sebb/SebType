@@ -30,6 +30,10 @@ if [ -z "${HOLDING:-}" ]; then
   exec env HOLDING=1 devq -w 3600 -m 75 -n "sebtype installer test on TCSBackEnd ($branch)" "$lock" bash "$0"
 fi
 mkdir -p "$out"; rm -rf "${out:?}"/*
+# Where a run's time goes: $out/times.txt here, logs/*-times.txt from test.ps1.
+t0=$(date +%s)
+mark() { echo "$(date +%T) +$(( $(date +%s) - t0 ))s $*" >> "$out/times.txt"; }
+mark start
 
 missing=
 command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v magick >/dev/null && python3 -c 'import Xlib' 2>/dev/null ||
@@ -61,6 +65,7 @@ if [ "${ONLY:-}" = upgrade ]; then
   [ -n "$old" ] || missing=${missing:-'no setup of the SebType before #190 from a main run'}
 fi
 echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
+mark 'CI artifacts downloaded'
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 [ -n "$missing" ] && { echo "BLOCKED preflight: $missing"; exit 1; }
 
@@ -83,6 +88,8 @@ $u = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\SOFTWAR
 "users: $((Get-LocalUser).Name -join ',')  profiles: $((Get-CimInstance Win32_UserProfile).LocalPath -join ',')"
 "administrators: $((Get-LocalGroupMember -SID S-1-5-32-544).Name -join ',')  remote desktop users: $((Get-LocalGroupMember -SID S-1-5-32-555).Name -join ',')"
 "tasks: $((Get-ScheduledTask -TaskName SebType* -ErrorAction SilentlyContinue).TaskName -join ',')"
+# A rename left pending in SebType's folder makes the next Setup ask for a restart, which TCSBackEnd never gets.
+"pending renames in SebType's folder: $(@((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager').PendingFileRenameOperations | Where-Object { $_ -like '*\Program Files\SebType*' }).Count)"
 EOF
 }
 cleanup() {  # what a run that died may leave: its session, user, profile, SebType, Weasel, Mozc, tasks and files
@@ -120,9 +127,11 @@ EOF
 }
 
 state > "$out/before.txt"
+mark 'state before read'
 grep -q '^installed: .' "$out/before.txt" && { echo "BLOCKED preflight: SebType, Weasel or Mozc is installed on TCSBackEnd already ($(grep '^installed:' "$out/before.txt"))"; exit 1; }
 grep -q '^folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a SebType or test folder exists on TCSBackEnd already ($(grep '^folders:' "$out/before.txt"))"; exit 1; }
 grep -qE '^users: \S*\bsebtype-test\b' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
+grep -qE "^pending renames in SebType's folder: [1-9]" "$out/before.txt" && { echo "BLOCKED preflight: renames pending in C:\\Program Files\\SebType until a restart (Setup would ask for one)"; exit 1; }
 
 # shellcheck disable=SC2016
 sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}${ONLY:+ -Only $ONLY}${SOAK_MIN:+ -SoakMinutes $SOAK_MIN}${COMPARE_IMES:+ -CompareImes $COMPARE_IMES}/" > "$out/run.ps1" <<'EOF'
@@ -145,6 +154,7 @@ if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1"
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 
+mark 'inputs uploaded'
 # test.ps1 in the Administrator session, elevated, through a one-off task (ssh runs outside it).
 tps <<'EOF'
 $a = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\sebtype-setup-test\run.ps1'
@@ -161,6 +171,7 @@ for i in $(seq 1 60); do
   [ "$(echo 'Test-Path C:\sebtype-setup-test\done' | tps | tr -d '\r')" = True ] && break
   sleep 5
 done
+mark 'test user logon read'
 if [ -n "${logon:-}" ]; then
   # Remote Desktop one way; the other way, the typing checks reach rdp-keys.py, which types into FreeRDP
   # on gamescope's display, so the keys reach Windows as a keyboard's scancodes.
@@ -178,6 +189,7 @@ if [ -n "${logon:-}" ]; then
     /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /audio-mode:none -clipboard \
     >"$out/freerdp.log" 2>&1 & rdp=$!
 fi
+mark 'Remote Desktop started'
 finished=
 for i in $(seq 1 360); do
   [ "$(echo 'Test-Path C:\sebtype-setup-test\done' | tps | tr -d '\r')" = True ] && { finished=1; break; }
@@ -186,6 +198,7 @@ done
 [ -n "$rdp" ] && { pkill -f "$here/../mozc/rdp-keys.py"; pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
 [ -n "$tunnel" ] && kill "$tunnel" 2>/dev/null
 
+mark 'test.ps1 done'
 mkdir -p "$out/logs"
 scp -q -r 'TCSBackEnd:C:/sebtype-setup-test/out/*' 'TCSBackEnd:C:/sebtype-setup-test/run.log' "$out/logs/" 2>/dev/null
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
@@ -194,8 +207,11 @@ for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$ou
 done
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
 [ -s "$out/results.txt" ] || echo "FAIL results: test.ps1 wrote no results (logs: $out/logs)"
+mark 'logs fetched'
 cleanup > "$out/cleanup.txt"
+mark 'cleaned up'
 state > "$out/after.txt"
+mark 'state after read'
 if diff <(grep -v '^tasks' "$out/before.txt") <(grep -v '^tasks' "$out/after.txt") > "$out/state.diff"; then
   echo "PASS tcsbackend-as-found"
 else
