@@ -118,10 +118,13 @@ emulators ran the PC out of memory (Decisions #2, #170). `android/emulator.sh` q
 It holds that lock for the whole device part of the run, so no other run reinstalls SebType in the
 middle of it; `android/test/emulator-pick.sh` checks the queue with stub locks, no emulator needed. If
 the emulator isn't running it is started headless, and the run waits until it has settled (about 2
-minutes after a cold boot). It then stays up: other projects (SebChat) use it through the same lock and
-expect it running. On the emulator it also turns on `hide_error_dialogs`: under load an app can be slow
-enough to get an "isn't responding" dialog, which covers the screen and fails every UI check after it.
-With the setting on, Android closes that app instead. `ANDROID_SERIAL=<serial>` picks the device
+minutes after a cold boot). The run that started it stops it when its command ends, unless another run
+waits in the lock's queue: then the last run of that queue stops it (#194). An idle emulator holds about
+1 GB of RAM and swap. An emulator that `emulator.sh` didn't start (one started by hand or by another
+project) is left running. Other projects' scripts (SebChat) that need it start it themselves. On the
+emulator it also turns on `hide_error_dialogs`: under load an app can be slow enough to get an "isn't
+responding" dialog, which covers the screen and fails every UI check after it. With the setting on,
+Android closes that app instead. `ANDROID_SERIAL=<serial>` picks the device
 instead, a phone included.
 
 Once it holds the lock, `android/test/emulator.sh` sets the emulator's language list to `en-US` alone
