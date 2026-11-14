@@ -491,7 +491,11 @@ namespace SebTypeSetupTest {
   function Save-MachineLog($what) {
     Copy-Item "$App\setup.log" "$out\machine-$what.log" -ErrorAction SilentlyContinue
     Copy-Item "$env:LOCALAPPDATA\SebType\setup.log" "$out\user-$what.log" -ErrorAction SilentlyContinue
-    Copy-Item "$env:TEMP\rime.sebtype" "$out\rime-log-$what" -Recurse -ErrorAction SilentlyContinue
+    # Rime's and the server's logs from every temporary folder: a Remote Desktop session's is Temp\<session>.
+    New-Item -Force -ItemType Directory "$out\rime-log-$what" | Out-Null
+    Get-ChildItem "$env:LOCALAPPDATA\Temp" -Depth 1 -Directory -Filter rime.sebtype -ErrorAction SilentlyContinue | ForEach-Object {
+      Copy-Item $_.FullName "$out\rime-log-$what\$($_.Parent.Name)" -Recurse -ErrorAction SilentlyContinue
+    }
   }
   # A Setup or uninstaller started here and left showing is stopped, with the temporary copy it runs.
   function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
@@ -511,7 +515,10 @@ namespace SebTypeSetupTest {
   }
 
   # Windows Server opens Server Manager at an admin's logon, in front of whatever the test shows.
-  if (Wait-Until 45 { Get-Process ServerManager -ErrorAction SilentlyContinue }) { Start-Sleep 5; Get-Process ServerManager | Stop-Process -Force }
+  if (Wait-Until 45 { Get-Process ServerManager -ErrorAction SilentlyContinue }) {
+    Mark 'Server Manager opened'
+    Start-Sleep 5; Get-Process ServerManager | Stop-Process -Force
+  }
   Mark 'Server Manager closed (or 45 s without it)'
 
   # How this account is before SebType: English and Chinese (Microsoft Pinyin), as on a Chinese PC.

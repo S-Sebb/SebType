@@ -15,6 +15,7 @@
 
 #include <sddl.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 
 #include <filesystem>
 #include <fstream>
@@ -57,6 +58,21 @@ void note(const std::string &line) {
   snprintf(stamp, sizeof(stamp), "%02d-%02d %02d:%02d:%02d.%03d %lu ", t.wMonth, t.wDay, t.wHour, t.wMinute,
            t.wSecond, t.wMilliseconds, GetCurrentProcessId());
   std::ofstream(logDir() / L"server.log", std::ios::app) << stamp << line << "\n";
+}
+
+// Which program started this one, for server.log.
+std::string parent() {
+  const DWORD self = GetCurrentProcessId();
+  DWORD ppid = 0;
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  PROCESSENTRY32W e{sizeof(e)};
+  for (BOOL ok = Process32FirstW(snap, &e); ok && !ppid; ok = Process32NextW(snap, &e))
+    if (e.th32ProcessID == self) ppid = e.th32ParentProcessID;
+  std::string name = "?";
+  for (BOOL ok = Process32FirstW(snap, &e); ok; ok = Process32NextW(snap, &e))
+    if (e.th32ProcessID == ppid) name = utf8(e.szExeFile);
+  CloseHandle(snap);
+  return name + " " + std::to_string(ppid);
 }
 
 std::unique_ptr<Engine> makeEngine(Lang lang) {
@@ -191,7 +207,7 @@ int run() {
     GetTokenInformation(token, TokenElevation, &elevated, sizeof(elevated), &n);
     CloseHandle(token);
   }
-  note(std::string("server started") + (elevated.TokenIsElevated ? ", elevated" : ""));
+  note(std::string("server started") + (elevated.TokenIsElevated ? ", elevated" : "") + ", by " + parent());
   Core host(makeEngine);
   core = &host;
   // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
@@ -236,10 +252,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
     HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
     if (!single) return failed(2, "no mutex");
     if (GetLastError() != ERROR_ALREADY_EXISTS) {
+      const DWORD start = GetTickCount();
       Engine *rime = makeEngine(Lang::Chinese).release();  // never finalized: exiting ends Rime's thread
       q.op == Op::Deploy ? rime->deploy() : rime->save();
-      for (DWORD start = GetTickCount(); rime->busy(); Sleep(200))
+      for (; rime->busy(); Sleep(200))
         if (GetTickCount() - start > 300000) return failed(5, "Rime still busy after 5 minutes");
+      note(utf8(arg) + " in this process: " + std::to_string((GetTickCount() - start) / 1000) + " s");
       return 0;
     }
     // A server is starting: until it answers.
