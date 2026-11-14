@@ -7,7 +7,7 @@
 # Fedora's for that Fcitx5 alone with bwrap, as test-setup-ime.sh does. Data: stock Rime gets rime-ice's
 # release (what users of fcitx5-rime install), SebType its own Chinese data (data/rime/build.sh) with
 # setup-ime.sh's patches. Mozc starts with an empty profile in both. Nothing is learned in the timed sets.
-# Results: ~/scratch/sebtype/linux-compare/<setup>.out (key=value) and .log; exit 0 when every run finished.
+# Results: ~/scratch/SebType/linux-compare/<setup>.out (key=value) and .log; exit 0 when every run finished.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 source "$here/../../tools/lib.sh"; source "$here/rime/versions.sh"; source "$here/mozc/versions.sh"
