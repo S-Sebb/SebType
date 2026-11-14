@@ -17,7 +17,7 @@
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
 # (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
 # ImageMagick and `ssh TCSBackEnd`. Output: one line per check; logs in $out, the installer's pages in
-# ~/scratch/SebType/<issue>/73-*.png (117-*, 162-*: the tray menus, the candidate window). Takes the device lock; exit 0 only if every check passes and TCSBackEnd ends
+# ~/scratch/SebType/<issue>/73-*.png (117-*, 162-*, 205-*: the tray menus, the candidate window, the popup). Takes the device lock; exit 0 only if every check passes and TCSBackEnd ends
 # as found.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -189,7 +189,7 @@ done
 mkdir -p "$out/logs"
 scp -q -r 'TCSBackEnd:C:/sebtype-setup-test/out/*' 'TCSBackEnd:C:/sebtype-setup-test/run.log' "$out/logs/" 2>/dev/null
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
-for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png; do
+for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
 done
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"

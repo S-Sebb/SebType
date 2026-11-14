@@ -209,6 +209,9 @@ if ($Typing) {
       New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
       $sizes = foreach ($lang in 'zh', 'ja') {
         Field $lang
+        if ($lang -eq 'zh') {  # the popup a Shift tap shows, a picture only (#205): 205-popup-zh.png
+          Keys Shift_L; $null = $tsf::CandidateWindow("$out\205-popup-zh.png"); Keys Shift_L; Start-Sleep 2
+        }
         foreach ($o in 'horizontal', 'vertical') {
           Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'vertical'))", 'FontSize=14', 'Picnic=1'
           $tsf::Clear(); if ($lang -eq 'zh') { TypeText 'nihao' } else { TypeText 'nihongo'; Keys space space }
