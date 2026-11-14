@@ -11,7 +11,7 @@ BUILD_JOBS=$(( $(nproc) / 2 ))
 BUILD_MEMORY_GB=8
 
 # Test, perf and release outputs, and in cache/ the development-only caches, shared by every worktree.
-SCRATCH=$HOME/scratch/sebtype
+SCRATCH=$HOME/scratch/SebType
 
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy build at a time), waiting up
 # to an hour for it, under the memory cap. The queue rank is DEVQ_RANK (default 2), so a script run by a

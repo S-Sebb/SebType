@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks SebType's English dictionary (#47): the dictionary codec, that the committed main_en.dict is what
 # build.sh makes from the pinned sources, the #40 benchmark against FUTO's dictionary, and that the release
-# APK ships it. One line per check in ~/scratch/sebtype/test-en-dict-results.txt; logs next to it.
+# APK ships it. One line per check in ~/scratch/SebType/test-en-dict-results.txt; logs next to it.
 # Exit 0 only if all pass. Typing on the emulator ("gi" -> GitHub, autocorrect) is checked by hand.
 set -uo pipefail
 cd "$(dirname "$0")/../.."

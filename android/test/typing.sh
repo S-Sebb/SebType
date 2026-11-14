@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs SebType's instrumented typing tests (android/app/src/androidTest/java/.../LiveSpacingTests) on a free emulator (android/emulator.sh),
 # typing through the live keyboard with fresh-install settings.
-# One line per test in ~/scratch/sebtype/test-typing-results.txt; logs next to it. Exit 0 only if all pass.
+# One line per test in ~/scratch/SebType/test-typing-results.txt; logs next to it. Exit 0 only if all pass.
 # The debug build replaces any installed SebType (same package); emulator.sh reinstalls the release.
 set -uo pipefail
 cd "$(dirname "$0")/../.."

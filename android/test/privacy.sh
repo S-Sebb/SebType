@@ -2,7 +2,7 @@
 # Privacy checks for #29 on the release APK: no typed-text logs compiled in, no backup or device transfer,
 # no cleartext traffic and only system certificate authorities (#12),
 # the "try typing here" popup not exported, and (on a free emulator, android/emulator.sh) the installed app's backup flags.
-# One line per check in ~/scratch/sebtype/test-privacy-results.txt; logs next to it. Exit 0 only if all pass.
+# One line per check in ~/scratch/SebType/test-privacy-results.txt; logs next to it. Exit 0 only if all pass.
 # Typing in all three languages while watching logcat is checked by hand through T3's device tools.
 set -uo pipefail
 cd "$(dirname "$0")/../.."

@@ -2,7 +2,7 @@
 # shellcheck disable=SC2016  # stub bodies are single-quoted; they expand when the stub runs
 # Checks pc/linux/setup-ime.sh: ShellCheck, a read-only --dry-run on this PC, and a full run on a
 # fake fresh account (stubbed packages, systemd, Fcitx5 and KWin calls) that must be idempotent.
-# Changes nothing in the real session. One line per check in ~/scratch/sebtype/test-setup-ime-results.txt.
+# Changes nothing in the real session. One line per check in ~/scratch/SebType/test-setup-ime-results.txt.
 # Check names as arguments run only those (fresh-apply, which the later checks build on, always runs).
 # Typing in real apps is the manual checklist in pc/linux/README.md.
 set -uo pipefail
