@@ -2,8 +2,9 @@
 # Runs CMD on a device under that device's lock, held for all of CMD:
 #   android/emulator.sh [devq options] -- CMD [ARGS...]
 # Without ANDROID_SERIAL it queues for SebType's one emulator, guide35: one emulator at a time, two ran
-# the PC out of memory (Decisions #2, #170). If it isn't running it is started headless, and it stays up
-# for the other projects (SebChat) and scripts that expect it running. ANDROID_SERIAL picks the device instead: an
+# the PC out of memory (Decisions #2, #170). If it isn't running it is started headless, and stopped when
+# CMD ends unless another run waits in the lock's queue, which then stops it in turn (#194). An emulator
+# this script didn't start is left running. ANDROID_SERIAL picks the device instead: an
 # emulator by its AVD's lock, a phone by the lock of the PC it's plugged into, which other projects
 # (SebChat) take for the phone (#76). CMD gets ANDROID_SERIAL; the exit status is CMD's, or devq's 1
 # if the lock's turn didn't come.
@@ -15,6 +16,9 @@ adb=$sdk/platform-tools/adb
 locks=${EMULATOR_LOCKS:-/tmp/agent-locks/devices} # another directory only for android/test/emulator-pick.sh
 # AVD and console port: a fixed port gives the emulator a stable serial, emulator-<port>.
 avd=guide35 port=5554
+# The InvocationID of the emulator's unit when this script started it: whichever run ends with nobody
+# waiting stops it. A unit started any other way has another ID.
+started_by_us=$locks/emulator-$avd.lock.started
 
 serial_of() { # AVD -> serial of its running emulator, booted or not
   local s
@@ -22,6 +26,19 @@ serial_of() { # AVD -> serial of its running emulator, booted or not
     [[ $("$adb" -s "$s" emu avd name 2>/dev/null | head -1 | tr -d '\r') == "$1" ]] && { echo "$s"; return; }
   done
   return 1
+}
+
+# Stops the emulator if this script started it and no other run waits for it (a ticket of a live devq).
+stop_if_unused() {
+  local t pid
+  [[ -s $started_by_us && $(< "$started_by_us") == $(systemctl --user show -p InvocationID --value "$unit") ]] || return 0
+  for t in "$locks/emulator-$avd.lock.queue"/*; do
+    [[ -e $t ]] && read -r pid _ < "$t" && kill -0 "$pid" 2> /dev/null && return 0
+  done
+  rm -f "$started_by_us"
+  "$adb" -s "emulator-$port" emu kill > /dev/null 2>&1
+  timeout 30 bash -c 'while systemctl --user is-active --quiet "$0"; do sleep 1; done' "$unit" ||
+    systemctl --user stop "$unit"
 }
 
 if [[ ${1:-} == --run ]]; then # under the lock
@@ -39,8 +56,11 @@ if [[ ${1:-} == --run ]]; then # under the lock
         # saved either: it would write the RAM to disk at every stop.
         systemd-run --user --collect --quiet --unit="$unit" sh -c "exec '$sdk/emulator/emulator' -avd $avd -port $port \
           -no-window -no-audio -no-snapshot-load -no-snapshot-save -no-boot-anim > $SCRATCH/emulator-$avd.log 2>&1"
+        systemctl --user show -p InvocationID --value "$unit" > "$started_by_us"
       fi
     fi
+    # Also when the boot fails or the run is interrupted. TERM and INT would skip the EXIT trap.
+    trap stop_if_unused EXIT; trap 'exit 143' TERM; trap 'exit 130' INT
     export ANDROID_SERIAL
     timeout 600 bash -c 'until [[ $("$0" shell getprop sys.boot_completed 2>/dev/null | tr -d "\r") == 1 ]]; do
       [[ $1 == "" ]] || systemctl --user is-active --quiet "$1" || exit 1; sleep 3; done' "$adb" "${started:+$unit}" ||
@@ -53,7 +73,8 @@ if [[ ${1:-} == --run ]]; then # under the lock
   # An app too slow to answer under load (a cold boot) gets an "isn't responding"
   # dialog that covers the screen and fails every UI check after it; hidden, Android closes the app.
   [[ $ANDROID_SERIAL == emulator-* ]] && "$adb" shell settings put global hide_error_dialogs 1
-  exec "$@"
+  "$@"
+  exit
 fi
 
 opts=()
