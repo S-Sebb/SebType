@@ -64,7 +64,6 @@ cleanup() {
 }
 trap cleanup EXIT
 # Each private D-Bus session runs through private_dbus (tools/lib.sh), its files removed with the sandbox.
-# The nested KWins start no input method (--inputmethod ''): KWin's default, plasma-keyboard, isn't needed (#203).
 export -f private_dbus
 sandbox() { # [dir], $sb by default
   local sb=${1:-$sb}
@@ -108,7 +107,7 @@ echo all-screens-ok
 SH
   chmod +x "$sb/shots.sh"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
-    kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --inputmethod '' --exit-with-session \
+    kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
@@ -152,7 +151,7 @@ done
 SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
-    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --inputmethod '' --exit-with-session \
+    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 2 ]]
 }
