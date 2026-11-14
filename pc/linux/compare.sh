@@ -50,11 +50,9 @@ profile() { # setup -> a throwaway HOME with Fcitx5's profile (EN, rime, mozc) a
   fi
   echo "$h"
 }
-private() { # home timeout command...: a private D-Bus session with its own runtime dir
-  local rt rc; rt=$(mktemp -d "$work/run.XXXX")
-  env -i PATH="$PATH" HOME="$1" XDG_CONFIG_HOME="$1/.config" XDG_DATA_HOME="$1/.local/share" XDG_RUNTIME_DIR="$rt" \
-    timeout "$2" dbus-run-session -- "${@:3}"
-  rc=$?; rm -rf "$rt"; return $rc
+private() { # home timeout command...: a private D-Bus session (tools/lib.sh)
+  private_dbus "$work" -i PATH="$PATH" HOME="$1" XDG_CONFIG_HOME="$1/.config" XDG_DATA_HOME="$1/.local/share" -- \
+    timeout "$2" "${@:3}"
 }
 run() { # name timeout [bwrap...] -- args for compare-keys.py, words file last
   local name=$1 t=$2 words=${*: -1}; shift 2

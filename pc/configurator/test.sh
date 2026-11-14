@@ -55,18 +55,17 @@ bin=$PWD/target/release/sebtype-configurator
 
 # A sandbox account: copies of this account's engine settings, without Rime's and Mozc's learned words.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
-# The nested sessions' portal and ksecretd outlive their D-Bus: stop whatever still runs in the sandbox.
+# What the nested sessions start (ksecretd, the Documents portal) outlives their D-Bus: stop whatever
+# still runs in the sandbox.
 cleanup() {
   local p
   for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
   sleep 1; rm -rf "$sb"
 }
 trap cleanup EXIT
-# Each private D-Bus session gets its own throwaway runtime dir, removed with the sandbox (#176): in the
-# user's, anything that touches the Documents portal starts a second xdg-document-portal on the user's
-# $XDG_RUNTIME_DIR/doc, and the user's mount goes when it ends, so Flatpak apps no longer start.
-runtime_dir() { mktemp -d "$sb/run.XXXX"; }  # 0700
-export -f runtime_dir
+# Each private D-Bus session runs through private_dbus (tools/lib.sh), its files removed with the sandbox.
+# The nested KWins start no input method (--inputmethod ''): KWin's default, plasma-keyboard, isn't needed (#203).
+export -f private_dbus
 sandbox() { # [dir], $sb by default
   local sb=${1:-$sb}
   mkdir -p "$sb/config" "$sb/data/fcitx5"
@@ -108,8 +107,8 @@ done
 echo all-screens-ok
 SH
   chmod +x "$sb/shots.sh"
-  env -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" dbus-run-session -- \
-    kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
+  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
+    kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --inputmethod '' --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
@@ -119,9 +118,9 @@ check every-screen-in-every-language 400 shots
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
 # shellcheck disable=SC2016  # the inner script gets its paths as arguments
 private_fcitx5() {
-  env -i PATH="$PATH" HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" \
+  private_dbus "$sb" -i PATH="$PATH" HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" \
     CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
-    dbus-run-session -- bash -c '
+    -- bash -c '
       fcitx5 -k --disable=all --enable=dbus,keyboard,rime,mozc > "$1/fcitx5.log" 2>&1 & f=$!
       for _ in $(seq 50); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.2; done
       cargo test --release --manifest-path "$2/Cargo.toml" -- --ignored --exact linux::tests::private_fcitx5_takes_languages_and_chinese_settings
@@ -152,8 +151,8 @@ for o in horizontal vertical; do
 done
 SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
-  env -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" XDG_RUNTIME_DIR="$(runtime_dir)" dbus-run-session -- \
-    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --exit-with-session \
+  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
+    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --inputmethod '' --exit-with-session \
     "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 2 ]]
 }
@@ -172,9 +171,9 @@ private_sync() {
   sed -i 's|translator/enable_user_dict: false|translator/enable_user_dict: true|' "$rime/rime_ice.custom.yaml" 2>/dev/null
   rm -f "$d/config/mozc/user_dictionary.db"  # only made-up Japanese words
   port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-  env -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" XDG_RUNTIME_DIR="$(runtime_dir)" \
+  private_dbus "$sb" -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
     CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
-    dbus-run-session -- bash -c '
+    -- bash -c '
       d=$1 here=$2 port=$3 server=$2/../../sync-server/sebtype_sync.py
       SEBTYPE_TEST_SYNC_PASSWORD=$(head -c 18 /dev/urandom | base64)
       printf "%s\n" "$SEBTYPE_TEST_SYNC_PASSWORD" | python3 -I "$server" adduser --data "$d/server" --password-stdin sebtype-test || exit 1
