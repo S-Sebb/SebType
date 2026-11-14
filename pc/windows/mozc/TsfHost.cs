@@ -229,6 +229,7 @@ namespace SebType {
     public int GetWnd(uint view, out IntPtr hwnd) { hwnd = Hwnd; return S_OK; }
 
     TS_TEXTCHANGE Replace(int start, int end, string s) {
+      TsfHost.Mark(TsfHost.edits);
       Text.Remove(start, end - start).Insert(start, s);
       SelStart = SelEnd = start + s.Length;
       return new TS_TEXTCHANGE { start = start, oldEnd = end, newEnd = start + s.Length };
@@ -282,6 +283,49 @@ namespace SebType {
     static readonly Guid GUID_LBI_INPUTMODE = new Guid("2C77A81E-41CC-4178-A3A7-5F8A987568E6");
 
     static uint threadId;
+
+    // Timing for compare.ps1 (#54): when each key went down, from a low-level keyboard hook that sees it
+    // as it enters the session's input, and when the text store changed (the input method's composition
+    // or commit), on one Stopwatch clock.
+    internal static readonly List<long> keys = new List<long>(), edits = new List<long>();
+    internal static void Mark(List<long> l) { var t = System.Diagnostics.Stopwatch.GetTimestamp(); lock (l) l.Add(t); }
+    delegate IntPtr HookProc(int code, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern IntPtr SetWindowsHookExW(int id, HookProc f, IntPtr mod, uint thread);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr h, int code, IntPtr w, IntPtr l);
+    static HookProc hookProc;  // kept alive while the hook is set
+    public static void StartTiming() {
+      var ready = new ManualResetEvent(false);
+      var t = new Thread(() => {
+        hookProc = (code, w, l) => {
+          if (code >= 0 && ((int)w == 0x100 || (int)w == 0x104)) Mark(keys);  // WM_KEYDOWN, WM_SYSKEYDOWN
+          return CallNextHookEx(IntPtr.Zero, code, w, l);
+        };
+        SetWindowsHookExW(13 /* WH_KEYBOARD_LL */, hookProc, GetModuleHandleW(null), 0);
+        ready.Set();
+        MSG m;
+        while (GetMessageW(out m, IntPtr.Zero, 0, 0)) { }
+      });
+      t.IsBackground = true;
+      t.Start();
+      ready.WaitOne(5000);
+    }
+    [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr h);
+    [DllImport("imm32.dll")] static extern bool ImmSetOpenStatus(IntPtr imc, bool open);
+    [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr h, IntPtr imc);
+    // Turns the active input method on (its own language's mode, not English), as its on/off key would.
+    public static void Open() {
+      OnUi(() => { var c = ImmGetContext(store.Hwnd); ImmSetOpenStatus(c, true); ImmReleaseContext(store.Hwnd, c); return 0; });
+    }
+    // The key-down and text-change times since the last call, in ms on one clock: "keys|edits", comma-separated.
+    public static string TakeTimes() {
+      Func<List<long>, string> f = l => {
+        lock (l) {
+          var s = string.Join(",", l.ConvertAll(t => (t * 1000.0 / System.Diagnostics.Stopwatch.Frequency).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)));
+          l.Clear(); return s;
+        }
+      };
+      return f(keys) + "|" + f(edits);
+    }
     static readonly BlockingCollection<Action> queue = new BlockingCollection<Action>();
     static TextStore store;
     static ITfThreadMgr threadMgr;
