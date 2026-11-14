@@ -23,6 +23,8 @@ nobody's own input settings change, then removes the user and its profile:
    Chinese (Japanese and its learned words go), uninstall.
 
 -Only picnic: only a silent install, the Picnic window's pictures and a silent uninstall (#162).
+-Only startmenu: only the Start menu (#192): a silent install, a silent update over an older install whose
+   Weasel left its own Start menu folder (which must go, leaving only SebType's shortcut), a silent uninstall.
 -Only sync: only sync with your own server (#180): a silent install; sebtype_sync.py serving on this PC's
    localhost, run by a copy of the Python Setup packs, with a throwaway login; the login saved as the
    Configurator's Save does (sebtype-configurator --save-login: Credential Manager, the task); made-up
@@ -490,6 +492,9 @@ namespace SebTypeSetupTest {
   $ll = New-WinUserLanguageList en-US
   $ll.Add((New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage zh-Hans-CN))
   Set-WinUserLanguageList $ll -Force
+  # SebType's and Weasel's entries in the Start menu (Weasel's own folder must never be there, #192).
+  $startMenu = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs"
+  function Start-Menu { (Get-ChildItem $startMenu -ErrorAction SilentlyContinue | Where-Object Name -match '^(SebType|小狼毫|Weasel)').Name -join ', ' }
   function Snapshot {
     $toggle = Get-Item 'HKCU:\Keyboard Layout\Toggle' -ErrorAction SilentlyContinue
     [ordered]@{
@@ -508,7 +513,7 @@ namespace SebTypeSetupTest {
       weasel = Test-Path $WeaselKey
       mozcInstalled = Mozc-Installed
       machineKey = Test-Path HKLM:\SOFTWARE\SebType
-      startMenu = [bool](Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Filter 'SebType*' -ErrorAction SilentlyContinue)
+      startMenu = Start-Menu
     }
   }
   $before = Snapshot
@@ -531,7 +536,9 @@ namespace SebTypeSetupTest {
       $w = Get-ItemProperty $WeaselKey -ErrorAction SilentlyContinue
       if (('zh' -in $langs) -ne [bool]($w -and $w.PSObject.Properties['SebType'])) { throw "SebType's Weasel installed: $([bool]$w), wanted: $('zh' -in $langs)" }
       if (('ja' -in $langs) -ne (Mozc-Installed)) { throw "Mozc installed: $(Mozc-Installed), wanted: $('ja' -in $langs)" }
-      "$(Split-Path -Leaf $setup) in $App; Weasel $('zh' -in $langs), Mozc $('ja' -in $langs)"
+      $menu = Start-Menu
+      if ($menu -notmatch '^SebType[^,]*\.lnk$') { throw "the Start menu has '$menu', want only SebType's settings shortcut" }
+      "$(Split-Path -Leaf $setup) in $App; Weasel $('zh' -in $langs), Mozc $('ja' -in $langs); Start menu: $menu"
     }
     Check "$round-input-methods" {
       $l = Languages
@@ -606,6 +613,24 @@ namespace SebTypeSetupTest {
         if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
         'silent'
       }
+      return
+    }
+    if ($Only -eq 'startmenu') {
+      # Only the Start menu (#192): a silent install, an update over an older SebType whose Weasel left its
+      # own Start menu folder, a silent uninstall. The older install is this one with Weasel's build mark
+      # set back and the folder it made put back, so the update reinstalls Weasel as it would.
+      Check 'startmenu-install' { Silent startmenu-install @(); 'silent' }
+      Check-Installed startmenu en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
+      Set-ItemProperty $WeaselKey SebType '0.0.0.0'
+      New-Item -Force "$startMenu\小狼毫输入法\卸载小狼毫.lnk" | Out-Null
+      Check 'startmenu-update' { Silent startmenu-update @(); 'silent, over an older Weasel with its Start menu folder' }
+      Check-Installed startmenu-updated en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$WeaselTip] ja[$MozcTip]"
+      Check 'startmenu-uninstall' {
+        Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+        if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
+        'silent'
+      }
+      Check-AsBefore startmenu
       return
     }
     if ($Only -eq 'sync') {
