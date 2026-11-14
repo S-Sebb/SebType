@@ -1,8 +1,8 @@
-//! Windows: SebType's Weasel (小狼毫) for Chinese and Mozc for Japanese, set up by SebType's installer
-//! (pc/windows/setup, #73). Weasel's look is its weasel.custom.yaml; the languages are the Windows
-//! user language list.
+//! Windows: SebType's text service (windows/, #190) with Rime for Chinese and Mozc for Japanese, set up by
+//! SebType's installer (pc/windows/setup, #73). The candidate window's look is sebtype.conf's
+//! [Candidates]; the languages are the Windows user language list.
 
-use crate::{patch, Candidates};
+use crate::Candidates;
 use std::{
     env, fs, io,
     os::windows::process::CommandExt,
@@ -20,27 +20,13 @@ pub fn ui_font(lang: &str) -> &'static str {
     }
 }
 const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW: no console flashes up for helper programs
-const WEASEL_TIP: &str =
-    "0804:{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}{3D02CAB6-2B8E-4781-BA20-1C9267529467}";
+/// SebType's text service: its 中文 and 日本語 profiles (windows/src/tip/tip.h).
+const ZH_TIP: &str =
+    "0804:{D4E5C593-4F73-475F-936C-0E29A6FE7A02}{8AA7DDAC-A4B8-4437-9C0B-8698879EC987}";
+const JA_TIP: &str =
+    "0411:{D4E5C593-4F73-475F-936C-0E29A6FE7A02}{B148FB02-C235-45D6-996C-672C783ECD48}";
 /// SebType's languages as Windows language tags.
 const TAGS: [(&str, &str); 3] = [("en", "en-US"), ("zh", "zh-Hans-CN"), ("ja", "ja")];
-const STYLE: &str = "weasel.custom.yaml";
-const PICNIC: &str = "sebtype_picnic";
-/// Weasel colours are 0xBBGGRR. Picnic: cream panel, brown text and border, key-pink highlight.
-const PICNIC_SCHEME: [&str; 12] = [
-    "    name: SebType Picnic",
-    "    author: SebType",
-    "    text_color: 0x222f4a",
-    "    back_color: 0xe8f7ff",
-    "    border_color: 0x1c335b",
-    "    shadow_color: 0x00000000",
-    "    hilited_text_color: 0x222f4a",
-    "    hilited_back_color: 0xe6e0fd",
-    "    hilited_candidate_text_color: 0xffffff",
-    "    hilited_candidate_back_color: 0x6a50c2",
-    "    candidate_text_color: 0x222f4a",
-    "    comment_text_color: 0x3f5373",
-];
 
 fn appdata(var: &str) -> PathBuf {
     PathBuf::from(env::var_os(var).unwrap_or_default())
@@ -48,15 +34,12 @@ fn appdata(var: &str) -> PathBuf {
 pub fn rime_dir() -> PathBuf {
     appdata("APPDATA").join("Rime")
 }
-/// SebType's own Mozc (#65) keeps Mozc's folder; until then Google 日本語入力's has the same files.
 pub fn mozc_dir() -> PathBuf {
-    let low = appdata("USERPROFILE").join("AppData\\LocalLow");
-    let own = low.join("Mozc");
-    if own.exists() {
-        own
-    } else {
-        low.join("Google\\Google Japanese Input")
-    }
+    appdata("USERPROFILE").join("AppData\\LocalLow\\Mozc")
+}
+/// sebtype.conf, which the text service reads its candidate window from.
+fn conf() -> PathBuf {
+    appdata("APPDATA").join("SebType\\sebtype.conf")
 }
 
 fn run(program: &str, args: &[&str]) -> io::Result<String> {
@@ -85,20 +68,13 @@ fn powershell(script: &str) -> io::Result<String> {
     )
 }
 
-fn weasel_root() -> Option<PathBuf> {
-    let out = run(
-        "reg",
-        &[
-            "query",
-            "HKLM\\SOFTWARE\\WOW6432Node\\Rime\\Weasel",
-            "/v",
-            "WeaselRoot",
-        ],
-    )
-    .ok()?;
-    out.lines()
-        .find_map(|l| l.split_once("REG_SZ"))
-        .map(|(_, v)| PathBuf::from(v.trim()))
+/// SebType's server, next to the Configurator: it hosts Rime and talks to Mozc for the text service.
+fn server(arg: &str) -> io::Result<()> {
+    Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
+        .arg(arg)
+        .creation_flags(NO_WINDOW)
+        .status()?;
+    Ok(())
 }
 
 // --- Languages ---
@@ -144,17 +120,15 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
     };
     for (id, _) in langs.iter().filter(|(_, on)| *on) {
         let tag = TAGS.iter().find(|(i, _)| i == id).unwrap().1;
-        // A language turned back on gets the keyboard SebType set up: Weasel for Chinese.
+        // A language turned back on gets SebType's text service.
         let tips = list
             .iter()
             .find(|(t, _)| t == tag)
             .map(|(_, tips)| tips.clone());
-        let tips = tips.unwrap_or_else(|| {
-            if id == "zh" {
-                WEASEL_TIP.into()
-            } else {
-                String::new()
-            }
+        let tips = tips.unwrap_or_else(|| match id.as_str() {
+            "zh" => ZH_TIP.into(),
+            "ja" => JA_TIP.into(),
+            _ => String::new(),
         });
         add(tag, &tips);
     }
@@ -168,108 +142,87 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
     powershell(&lines.join("; ")).map(|_| ())
 }
 
-// --- The candidate window: Weasel's style, in weasel.custom.yaml ---
-
-fn style_text() -> String {
-    fs::read_to_string(rime_dir().join(STYLE)).unwrap_or_default()
-}
+// --- The candidate window: sebtype.conf's [Candidates], which the text service reads ---
 
 pub fn candidates() -> Candidates {
-    let s = style_text();
-    let shipped = fs::read_to_string(rime_dir().join("weasel.yaml")).unwrap_or_default();
+    let text = fs::read_to_string(conf()).unwrap_or_default();
+    let get = |key| conf_value(&text, key);
     Candidates {
-        vertical: patch::value(&s, "style/horizontal") != Some("true"),
-        font_size: patch::value(&s, "style/font_point")
-            .and_then(|v| v.parse().ok())
-            .or_else(|| {
-                shipped.lines().find_map(|l| {
-                    l.trim()
-                        .strip_prefix("font_point:")?
-                        .split('#')
-                        .next()?
-                        .trim()
-                        .parse()
-                        .ok()
-                })
-            })
-            .unwrap_or(14),
-        picnic: patch::value(&s, "style/color_scheme") == Some(PICNIC),
+        vertical: get("Vertical") != Some("0"),
+        font_size: get("FontSize").and_then(|v| v.parse().ok()).unwrap_or(14),
+        picnic: get("Picnic") == Some("1"),
     }
 }
 
-/// weasel.custom.yaml `old` with the candidate window settings `c`.
-fn candidate_style(old: &str, c: &Candidates) -> String {
-    let keys = [
-        "style/horizontal",
-        "style/font_point",
-        "style/color_scheme",
-        "style/sebtype_logo",
-        "preset_color_schemes/sebtype_picnic",
-    ];
-    let mut entries = vec![
-        format!("  style/horizontal: {}", !c.vertical),
-        format!("  style/font_point: {}", c.font_size),
-    ];
-    if c.picnic {
-        entries.push(format!("  style/color_scheme: {PICNIC}"));
-        // SebType's Weasel draws the pig at the start of the window (#94)
-        entries.push("  style/sebtype_logo: true".into());
-        entries.push(format!("  preset_color_schemes/{PICNIC}:"));
-        entries.extend(PICNIC_SCHEME.iter().map(|l| l.to_string()));
-    }
-    patch::set(old, &keys, &entries)
+/// A key of sebtype.conf's [Candidates].
+fn conf_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    text.lines()
+        .skip_while(|l| l.trim() != "[Candidates]")
+        .skip(1)
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .find_map(|l| l.strip_prefix(key)?.strip_prefix('='))
+        .map(str::trim)
 }
 
+/// sebtype.conf `old` with the candidate window settings `c`, its other sections kept.
+fn candidate_conf(old: &str, c: &Candidates) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let mut lines = old.lines().peekable();
+    while let Some(l) = lines.next() {
+        if l.trim() == "[Candidates]" {
+            while lines
+                .peek()
+                .is_some_and(|n| !n.trim_start().starts_with('['))
+            {
+                lines.next();
+            }
+        } else {
+            out.push(l);
+        }
+    }
+    let section = format!(
+        "[Candidates]\nVertical={}\nFontSize={}\nPicnic={}\n",
+        c.vertical as u8, c.font_size, c.picnic as u8
+    );
+    let rest = out.join("\n");
+    let rest = rest.trim();
+    if rest.is_empty() {
+        section
+    } else {
+        format!("{rest}\n{section}")
+    }
+}
+
+/// The text service reads the window's look when it next shows it: nothing to restart.
 pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
-    let old = style_text();
-    let new = candidate_style(&old, c);
+    let old = fs::read_to_string(conf()).unwrap_or_default();
+    let new = candidate_conf(&old, c);
     if new == old {
         return Ok(false);
     }
-    fs::create_dir_all(rime_dir())?;
-    fs::write(rime_dir().join(STYLE), new)?;
-    redeploy_rime()?;
+    fs::create_dir_all(conf().parent().unwrap())?;
+    fs::write(conf(), new)?;
     Ok(true)
 }
 
 // --- Engines ---
 
+/// Returns when Rime is done.
 pub fn redeploy_rime() -> io::Result<()> {
-    let Some(root) = weasel_root() else {
-        return Ok(());
-    };
-    // The exact argument "/deploy": with anything else the deployer opens its settings window instead.
-    Command::new(root.join("WeaselDeployer.exe"))
-        .arg("/deploy")
-        .creation_flags(NO_WINDOW)
-        .status()?;
-    Ok(())
+    server("/deploy")
 }
 
 pub fn forget_rime() -> io::Result<usize> {
-    let root = weasel_root();
-    if let Some(r) = &root {
-        let _ = Command::new(r.join("WeaselServer.exe"))
-            .arg("/q")
-            .creation_flags(NO_WINDOW)
-            .status();
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
+    // The server holds the learned words open; /deploy starts it again.
+    server("/quit")?;
     let n = crate::rime::forget(&rime_dir());
-    if let Some(r) = &root {
-        Command::new(r.join("WeaselServer.exe"))
-            .creation_flags(NO_WINDOW)
-            .spawn()?;
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
     redeploy_rime()?;
     n
 }
 
 fn stop_mozc() {
-    for exe in ["mozc_server.exe", "GoogleIMEJaConverter.exe"] {
-        let _ = run("taskkill", &["/F", "/IM", exe]);
-    }
+    // SebType's server starts it again when Japanese is next typed.
+    let _ = run("taskkill", &["/F", "/IM", "mozc_server.exe"]);
 }
 pub fn restart_mozc() {
     stop_mozc();
@@ -297,15 +250,10 @@ pub fn python() -> Command {
     c
 }
 
-/// Weasel's 用户资料同步: Rime merges the other devices' snapshots into the learned words and writes
-/// this PC's. The deployer returns when it is done.
+/// Rime's 用户资料同步, in SebType's server: Rime merges the other devices' snapshots into the learned
+/// words and writes this PC's. Returns when it is done.
 pub fn sync_rime(_own: &Path) {
-    if let Some(root) = weasel_root() {
-        let _ = Command::new(root.join("WeaselDeployer.exe"))
-            .arg("/sync")
-            .creation_flags(NO_WINDOW)
-            .status();
-    }
+    let _ = server("/sync");
 }
 
 const SYNC_TASK: &str = "SebType sync";
@@ -338,17 +286,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn picnic_turns_the_logo_on_and_the_system_look_off() {
-        let c = |picnic| Candidates {
+    fn candidate_conf_replaces_its_section_and_keeps_the_rest() {
+        let c = Candidates {
             vertical: false,
-            font_size: 14,
-            picnic,
+            font_size: 16,
+            picnic: true,
         };
-        let user = "patch:\n  style/inline_preedit: true\n";
-        let picnic = candidate_style(user, &c(true));
-        assert_eq!(patch::value(&picnic, "style/sebtype_logo"), Some("true"));
-        let system = candidate_style(&picnic, &c(false));
-        assert_eq!(patch::value(&system, "style/sebtype_logo"), None);
-        assert_eq!(patch::value(&system, "style/inline_preedit"), Some("true"));
+        let old = "[Other]\nA=1\n[Candidates]\nVertical=1\nFontSize=14\n[Later]\nB=2\n";
+        let new = candidate_conf(old, &c);
+        assert_eq!(
+            new,
+            "[Other]\nA=1\n[Later]\nB=2\n[Candidates]\nVertical=0\nFontSize=16\nPicnic=1\n"
+        );
+        assert_eq!(conf_value(&new, "FontSize"), Some("16"));
+        assert_eq!(conf_value(&new, "A"), None);
+        assert_eq!(candidate_conf(&new, &c), new);
     }
 }

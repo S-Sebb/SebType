@@ -1,6 +1,7 @@
 # SebType's Windows installer (#73): SebType-setup-<version>.exe, built with Inno Setup from
-# pc/windows/setup/sebtype.iss. It packs SebType's Weasel (weasel.yml), the Chinese data
-# (data/rime/build.sh), SebType's Mozc (engines/mozc, built by pc/windows/mozc/build.ps1), the Configurator
+# pc/windows/setup/sebtype.iss. It packs SebType's text service and server (windows/, over core/, #190)
+# with the librime that weasel.yml builds and Rime's shared data, the Chinese data (data/rime/build.sh),
+# Mozc's server from SebType's Mozc (engines/mozc, built by pc/windows/mozc/build.ps1), the Configurator
 # (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
 # run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
 name: Windows setup
@@ -9,6 +10,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths: &paths
+      - windows/**
+      - core/**
       - pc/windows/**
       - pc/weasel/**
       - engines/librime/**
@@ -38,6 +41,35 @@ jobs:
 
   configurator:
     uses: ./.github/workflows/configurator.yml
+
+  service:
+    needs: weasel
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sebtype-rime
+          path: in/rime
+      # vcpkg's protobuf build takes most of a cold run; its packages depend only on the runner's vcpkg.
+      - run: New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-protobuf-x64-windows-static-${{ runner.os }}-${{ hashFiles('windows/build.ps1') }}
+          restore-keys: vcpkg-protobuf-x64-windows-static-${{ runner.os }}-
+      - name: Build
+        run: windows/build.ps1 -Rime in/rime -Out out/service
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-service
+          path: out/service
+          if-no-files-found: error
 
   rime-data:
     runs-on: ubuntu-24.04
@@ -133,7 +165,7 @@ jobs:
           if-no-files-found: error
 
   setup:
-    needs: [weasel, configurator, rime-data, pictures, mozc]
+    needs: [weasel, configurator, rime-data, pictures, mozc, service]
     runs-on: windows-2022
     defaults:
       run:
@@ -150,6 +182,16 @@ jobs:
           key: python-embed-${{ hashFiles('pc/windows/setup/python.ps1') }}
       - name: Python
         run: pc/windows/setup/python.ps1 -Dir in/python
+      # Japanese needs only Mozc's server: SebType's text service replaces Mozc's own (#190).
+      - name: Mozc's server
+        run: |
+          $msi = (Get-Item in/sebtype-mozc/*.msi).FullName
+          $p = Start-Process -Wait -PassThru msiexec "/a `"$msi`" /qn TARGETDIR=`"$PWD\in\mozc-msi`""
+          if ($p.ExitCode) { throw "msiexec /a failed ($($p.ExitCode))" }
+          $server = Get-ChildItem -Recurse in/mozc-msi -Filter mozc_server.exe | Select-Object -First 1
+          if (-not $server) { throw "no mozc_server.exe in $msi" }
+          New-Item -ItemType Directory -Force in/mozc-server | Out-Null
+          Copy-Item $server.FullName in/mozc-server/
       - name: Inno Setup
         run: |
           $exe = "$env:RUNNER_TEMP\innosetup.exe"

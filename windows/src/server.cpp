@@ -4,7 +4,8 @@
 // MIT, SebType.
 //
 //   sebtype-server.exe                       serves (started at logon, or by the text service)
-//   sebtype-server.exe /deploy|/sync|/quit   tells the running server, for setup and the Configurator
+//   sebtype-server.exe /deploy|/sync|/quit   tells the server (/deploy and /sync start one when none runs,
+//                                            and return when Rime is done), for setup and the Configurator
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
@@ -58,6 +59,7 @@ Reply state(bool taken, std::string commit = {}) {
   r.icon = core->icon();
   r.menu = core->menu();
   r.notice = core->takeNotice(true);
+  core->forEachEngine([&](Engine &e) { r.busy = r.busy || e.busy(); });
   return r;
 }
 
@@ -88,8 +90,13 @@ Reply handle(const Request &q) {
       }
       break;
     case Op::State: break;
-    case Op::Deploy: core->forEachEngine([](Engine &e) { e.deploy(); }); break;
-    case Op::Sync: core->forEachEngine([](Engine &e) { e.save(); }); break;
+    case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet
+      core->engine(Lang::Chinese)->deploy();
+      break;
+    case Op::Sync:
+      core->engine(Lang::Chinese);
+      core->forEachEngine([](Engine &e) { e.save(); });
+      break;
     case Op::Quit: break;
   }
   return state(taken, commit);
@@ -167,5 +174,28 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
   else if (arg == L"/quit") q.op = Op::Quit;
   else return run();
   Reply r;
-  return call(q, r, 5000) || q.op == Op::Quit ? 0 : 1;
+  if (q.op == Op::Quit) return call(q, r, 5000), 0;
+  if (!call(q, r, 5000)) {
+    // No server: start one as this user, as a text service would.
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    STARTUPINFOW si{sizeof(si)};
+    PROCESS_INFORMATION pi{};
+    std::wstring cmd = L"\"" + std::wstring(self) + L"\"";
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &si, &pi))
+      return 1;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    bool sent = false;
+    for (int i = 0; i < 100 && !sent; ++i) {
+      Sleep(100);
+      sent = call(q, r, 5000);
+    }
+    if (!sent) return 1;
+  }
+  // Until Rime is done: setup's typing and the Configurator's next step need it.
+  for (DWORD start = GetTickCount(); r.busy; Sleep(200)) {
+    if (GetTickCount() - start > 300000 || !call(Request{Op::State}, r, 5000)) return 1;
+  }
+  return 0;
 }

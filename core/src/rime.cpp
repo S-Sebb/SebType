@@ -194,6 +194,7 @@ class Rime final : public Engine {
     endSession();
     api_->sync_user_data();
   }
+  bool busy() override { return api_->is_maintenance_mode(); }
 
  private:
   void start(bool fullCheck) {

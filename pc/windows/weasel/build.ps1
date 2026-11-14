@@ -6,7 +6,8 @@
 # runner has them all; .github/workflows/weasel.yml runs this). The third-party code SebType doesn't
 # change is fetched at pinned commits: librime's dependencies and plugins, and plum. Boost is downloaded
 # into $env:BOOST_ROOT when it isn't there yet. Writes sebtype-weasel-<version>-installer.exe to -Out, and
-# perf-rime.exe (pc/linux/perf-rime.c) for pc/windows/perf-rime.ps1.
+# perf-rime.exe (pc/linux/perf-rime.c) for pc/windows/perf-rime.ps1, and rime\ (librime and Rime's shared data)
+# for windows/build.ps1 and SebType's setup.
 param(
   [Parameter(Mandatory = $true)][string]$Icons,
   [string]$Out = (Join-Path $PSScriptRoot '..\..\..\build\weasel'),
@@ -101,6 +102,15 @@ try {
   Invoke-Checked 'build weasel and installer' { cmd /c build.bat installer }
   $installer = "output\archives\weasel-$WeaselVersion.$SebTypeBuild-installer.exe"
   Copy-Item $installer (Join-Path $Out "sebtype-weasel-$WeaselVersion.$SebTypeBuild-installer.exe") -Force
+  # The 64-bit librime and Rime's shared data (OpenCC's included), for SebType's own text service
+  # (windows/build.ps1) and SebType's setup.
+  $rime = Join-Path $Out 'rime'
+  New-Item -ItemType Directory -Force "$rime\lib", "$rime\include" | Out-Null
+  Copy-Item output\rime.dll $rime -Force
+  Copy-Item lib64\rime.lib "$rime\lib" -Force
+  Copy-Item include\rime_*.h "$rime\include" -Force
+  if (Test-Path "$rime\data") { Remove-Item -Recurse -Force "$rime\data" }
+  Copy-Item -Recurse output\data "$rime\data"
 
   # 64-bit, like the rime.dll Weasel installs on a 64-bit PC (its 32-bit one is for 32-bit Windows).
   $vcvars = & $vswhere -latest -find 'VC\Auxiliary\Build\vcvarsall.bat' | Select-Object -First 1
