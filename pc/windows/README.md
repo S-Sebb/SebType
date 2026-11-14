@@ -1,8 +1,9 @@
 # SebType on Windows
 
-On Windows, SebType's Chinese is Weasel (小狼毫) with the phone's Chinese data: rime-ice's schema and Lua
-with 白霜's dictionary. English is Windows' plain US layout. Japanese is SebType's own Mozc (see Japanese
-below). One installer, `SebType-setup-<version>.exe`, installs, upgrades and removes all of it.
+On Windows, SebType is one text service with two input methods, 中文 and 日本語, over SebType's core
+([`windows/`](../../windows), #190): Chinese is Rime with the phone's Chinese data (rime-ice's schema and
+Lua with 白霜's dictionary), Japanese is SebType's Mozc (see Japanese below). English is Windows' plain US
+layout. One installer, `SebType-setup-<version>.exe`, installs, upgrades and removes all of it.
 
 ## The installer (#73)
 
@@ -10,9 +11,10 @@ below). One installer, `SebType-setup-<version>.exe`, installs, upgrades and rem
 `sebtype-setup`. It is Inno Setup 6.7.4 (`setup/sebtype.iss`, as SebChat's), in SebType's Picnic look: the
 checkered cloth behind every page, the cream card with the pig, Jersey 10 and Nunito for English, and the
 phone's icon at every Windows size. `setup/pictures.py` draws the pictures from `art/make-icon.py` and
-`pc/icons`. The run builds what the installer packs in parallel jobs: SebType's Weasel (`weasel.yml`), the
-Chinese data (`data/rime/build.sh`, on Fedora for librime 1.16.1), SebType's Mozc (`mozc/build.ps1`,
-cached until its inputs change) and the Configurator (`configurator.yml`).
+`pc/icons`. The run builds what the installer packs in parallel jobs: SebType's librime (`weasel.yml`, which still
+builds it with Weasel), the text service and its server (`windows/build.ps1`), the Chinese data
+(`data/rime/build.sh`, on Fedora for librime 1.16.1), SebType's Mozc (`mozc/build.ps1`, cached until its
+inputs change; Setup takes only its `mozc_server.exe`) and the Configurator (`configurator.yml`).
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
 first dialog lets the person pick. Its pages are the welcome, the languages (English, 中文 and 日本語, each
@@ -26,15 +28,15 @@ SebType-setup-0.1.0.exe /VERYSILENT /TASKS="en,zh,ja"          # silent; /TASKS 
 ```
 
 Installing needs admin: Windows' text services read their registration only from HKLM, so a per-user
-Weasel or Mozc isn't offered as an input method (and Windows deletes a per-user one when the language list
+text service isn't offered as an input method (and Windows deletes a per-user one when the language list
 changes; tried on YukaROG). Setup runs elevated, does the machine's part, then sets up the account of the
 person who started it, not elevated (`setup/setup.ps1`):
 
 ```powershell
-setup.ps1 -User -Save                                                                    # as the person, first
-setup.ps1 -Machine -Languages en,zh,ja -Weasel <installer.exe> -Mozc <msi> -Log <file>   # elevated
-setup.ps1 -User -Languages en,zh,ja                                                      # as the person
-setup.ps1 -Machine -Undo; setup.ps1 -User -Undo                                          # uninstall
+setup.ps1 -User -Save                                  # as the person, first
+setup.ps1 -Machine -Languages en,zh,ja -Log <file>     # elevated
+setup.ps1 -User -Languages en,zh,ja                    # as the person
+setup.ps1 -Machine -Undo; setup.ps1 -User -Undo        # uninstall
 ```
 
 It runs in Windows PowerShell 5.1, which every Windows has; PowerShell 7's language list cmdlets fail on
@@ -45,11 +47,15 @@ some (seen on Server 2022). A step that fails says so with its log (`C:\Program 
 uninstall, with its learned words. So an upgrade can add or drop Chinese or Japanese. Setup remembers
 the choice for the next upgrade.
 
-**Upgrade.** Running a newer (or the same) Setup again reinstalls Weasel or Mozc only when its version
-changed, replaces the Chinese data and keeps everything learned: Rime's `*.userdb`, `*.custom.yaml` and
-`custom_phrase.txt`, and Mozc's user dictionary and history.
+**Upgrade.** Running a newer (or the same) Setup again replaces the program files, the text service and
+the Chinese data, and keeps everything learned: Rime's `*.userdb`, `*.custom.yaml` and
+`custom_phrase.txt`, and Mozc's user dictionary and history. Apps that have the text service loaded keep
+the old DLL until they close: Setup moves it aside (`sebtype.dll.<n>.old`, deleted at the next restart)
+and never asks to close apps. Over a SebType from before #190, Setup uninstalls its Weasel and Mozc;
+their learned words are in the same folders, and Weasel's candidate window settings move to
+`sebtype.conf`.
 
-**Uninstall** removes Weasel, Mozc, SebType's folder and the Start menu entry, then puts the account back
+**Uninstall** removes the text service, SebType's folder and the Start menu entry, then puts the account back
 as it was before the first install. The first install saves, before the engines' installers run
 (`-User -Save`), to `%LOCALAPPDATA%\SebType\setup.json` and `backup\` the language list, the default input
 method, the switch keys, the per-window setting, the input hotkeys and text service settings, and copies
@@ -68,72 +74,41 @@ Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 
 | Step | Change | Why |
 |---|---|---|
-| SebType's Weasel | Machine: installs `sebtype-weasel-<version>-installer.exe` silently when it isn't already the installed one. It replaces any other Weasel | SebType's Weasel (Weasel 0.17.4 with SebType's changes) and icons, see below |
-| SebType's Mozc | Machine: installs `SebType-Mozc-<version>.msi` when it isn't already the installed one, and enables its 日本語 profile by default for every user (`HKLM\SOFTWARE\Microsoft\CTF\TIP\<Mozc>\LanguageProfile\0x00000411\<profile>`, `Enable=1`) | See Japanese below. Mozc registers its profile without enabling it by default, so Windows turned it off for the user when the language list changed later (#65) |
-| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and Weasel it deployed | The zip the phone bundles (`data/rime/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, Weasel's too. librime uses its prebuilt tables as they are when their sources are missing, so Weasel never compiles the dictionary. SebType's librime has librime-lua built in |
-| Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's schema menu (F4, Ctrl+\`) and Weasel's status read 中文, not 雾凇拼音 (#69). Weasel shows the whole name, so no `.` prefix as on Linux. The schema id stays `rime_ice`, so learned words stay |
+| Text service | Machine: Setup registers `sebtype.dll` (64-bit, and `x86\sebtype.dll` for 32-bit apps) with both profiles enabled by default (`HKLM\SOFTWARE\Microsoft\CTF\TIP\<SebType>\LanguageProfile\…`), and starts `sebtype-server.exe` at every logon (`HKLM\…\Run`). It removes the Weasel and Mozc SebType installed before #190 | See [`windows/`](../../windows). Profiles enabled by default stay on when the language list changes later (#65) |
+| Chinese data | Unzips `rime-data.zip` into `%APPDATA%\Rime`, and removes dictionary sources (`*.dict.yaml`) the zip has prebuilt tables for. Its files are replaced; learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. `sebtype-data.txt` there notes which data and librime it deployed | The zip the phone bundles (`data/rime/build.sh`): rime-ice's schemas and Lua with 白霜's dictionary, compiled with librime 1.16.1, SebType's too. librime uses its prebuilt tables as they are when their sources are missing, so it never compiles the dictionary. SebType's librime has librime-lua built in |
+| Chinese name | `schema/name: 中文` in `rime_ice.custom.yaml`, keeping the file's other patches | Rime's status reads 中文, not 雾凇拼音 (#69). The schema id stays `rime_ice`, so learned words stay |
 | Typo correction | `sebtype_typo/keyboard: pc` in `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
 | Candidates per page | `menu/page_size: 6` in `default.custom.yaml`, only when it has no page size yet | 6 Chinese candidates per page instead of rime-ice's 5 (Decisions #2, #163). A page size of the user's own, which the Configurator writes there too, stays |
-| Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept; then the account's running Mozc stops, as its server reads the keymap only when it starts | A Shift tap toggles あ ⇄ English, and Alt+\` あ ⇄ ア, as on Linux (#117). Windows adds a newly installed Mozc to every logged-on user's list, which can start their Mozc before Setup writes the keymap (#123) |
-| Input methods | Language list: the chosen ones first, EN (US layout first) → 中文 (Weasel only) → 日本語 (Mozc only), then the account's other languages. Other Chinese and Japanese IMEs are taken off those two languages, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |
+| Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept; then the account's running `mozc_server` stops, as it reads the keymap only when it starts | The same keymap as on Linux; the core handles the Shift tap (あ ⇄ English) and Alt+\` (あ ⇄ ア) itself (#117) |
+| Input methods | Language list: the chosen ones first, EN (US layout first) → 中文 (SebType's only) → 日本語 (SebType's only), then the account's other languages. Other Chinese and Japanese IMEs are taken off those two languages, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |
 | Switch keys | `HKCU\Keyboard Layout\Toggle`: Hotkey, Language Hotkey and Layout Hotkey = 3 (none), applied at once | Alt+Shift and Ctrl+Shift no longer switch language |
 | Per-window input | "Let me use a different input method for each app window" off | One language for every window, as on Linux |
-| Redeploy | Stops WeaselServer and runs `WeaselDeployer.exe /deploy` when the Chinese data or patches changed | Weasel builds the data once. WeaselServer isn't started by Setup, which would run it elevated, where apps can't reach it: Weasel's text service starts it at the first key, at the app's level |
+| Candidate window | Once, over a SebType from before #190: Weasel's `style/horizontal`, `font_point` and Picnic colour scheme from `weasel.custom.yaml` into `%APPDATA%\SebType\sebtype.conf` `[Candidates]` | The look the person chose in the Configurator stays |
+| Redeploy | Runs `sebtype-server.exe /deploy` as the person when the Chinese data or patches changed; it returns when Rime is done | Rime builds the data once. The server runs as the person, not elevated, so every app reaches it; `/deploy` starts it when none runs |
 
-Inside Chinese, a Shift tap types English (rime-ice's `Shift_L: commit_code`) and Shift again goes back,
-as on Linux. Caps Lock in Chinese switches to English capitals (rime-ice's `good_old_caps_lock`).
+Inside Chinese, a Shift tap types English and Shift again goes back, as on Linux (SebType's core). Caps Lock in Chinese switches to English capitals (rime-ice's `good_old_caps_lock`).
 
 Everything Rime learns stays in `%APPDATA%\Rime`, so sync (#12) can add a `sync_dir` to `installation.yaml` there.
 
-### SebType's Weasel
+### The text service
 
-`weasel/build.ps1` builds SebType's Weasel, `pc/weasel` (Weasel 0.17.4), with SebType's librime,
-`engines/librime` (1.16.1, the version SebType's Android build uses and the one Linux runs), and the
-plugins (librime-lua, librime-octagram, librime-predict) librime's own 1.16.1 release merges in, at the
-same commits. With SebType's librime, Chinese typo correction also fixes a slip onto the key above or
-below, so `xkaoshi` gives 小时 first (#101, #133). librime's dependencies and plum (which fetches Rime's
-data) stay upstream's, fetched at pinned commits. `.github/workflows/weasel.yml` runs it on GitHub's
-Windows runner whenever something under `pc/weasel/`, `engines/librime/`, `pc/windows/weasel/` or `pc/icons/`
-changes; the installer is that run's artifact `sebtype-weasel`. Locally it needs Visual Studio 2022 with C++ and ATL, git, 7-Zip, NSIS and Git's bash.
-
-SebType's changes to Weasel, about 90 lines:
-
-- The input method is named **中文**, so Windows' Win+Space switcher shows 中文(简体，中国) / 中文 rather
-  than 小狼毫 (#69).
-- English mode shows **A** instead of **a** while Caps Lock is on, and the icon redraws when Caps Lock
-  changes (Decisions #2, "Everywhere").
-- The menu of the tray icon (right-click) is Chinese's one switch with its key, `简 → 繁 Ctrl+Shift+F`
-  (`繁 → 简` while traditional), as on Linux (#117), instead of Weasel's settings, dictionary manager,
-  sync, folders, help, deploy, restart and exit. Rime's state reaches the text service as a new
-  `status.traditional`, and the click sets `traditionalization` through WeaselServer. No key opens
-  Rime's switcher (F4 and Ctrl+\` reach the app, #182), and Weasel hides a switch without `states`:
-  SebType's Chinese data keeps them only on traditionalization.
-- The installer marks the build (`SebType` in Weasel's uninstall entry, which `setup.ps1` checks) and
-  never turns on Weasel's update check, which would replace SebType's build with upstream's.
-
-Its icons are SebType's Set E keycaps (`pc/icons`), made into `.ico` files by `weasel/make-icons.py`
-with each size's own drawing (16, 20, 24, 32 px; 40–64 px from the 48 px one):
-
-| Weasel state | Icon | Weasel resource |
-|---|---|---|
-| Chinese | 中 | `zh.ico` |
-| Chinese, English mode | a | `en.ico` |
-| Chinese, English mode with Caps Lock | A | `en_caps.ico` (new) |
-
-Windows shows them in the taskbar's input indicator, where Weasel's language bar button sits, and Weasel
-shows them in its status tip. Windows draws the indicator for the US layout itself (ENG), so plain English
-can't show SebType's EN key there.
+[`windows/`](../../windows) has the text service and its server, and how they are built. `pc/windows/weasel/build.ps1`
+still builds SebType's librime (`engines/librime`, 1.16.1, with librime-lua, -octagram and -predict at
+the commits librime's own release merges in) with Weasel; its `sebtype-rime` artifact is what the text
+service's server links. With SebType's librime, Chinese typo correction also fixes a slip onto the key
+above or below, so `xkaoshi` gives 小时 first (#101, #133). Weasel itself and Mozc's Windows text service
+are no longer installed; step 4 of #190 removes their sources.
 
 What Windows itself shows and SebType can't change (#117): the input indicator's left-click list of
 input methods (with "More keyboard settings"), Windows' own items in the Win+Space switcher, and, in the
-optional floating language bar, Windows' own buttons (Help, Options, Restore). The engines' items are
-gone from all of them.
+optional floating language bar, Windows' own buttons (Help, Options, Restore).
 
 ### Test
 
 ```sh
 pc/windows/setup/test-tcsbackend.sh   # from nobara-pc; this commit's sebtype-setup artifact, or build/SebType-setup-*.exe
+ONLY=upgrade pc/windows/setup/test-tcsbackend.sh   # the update from the SebType before #190
 ```
 
 Like Mozc's test (below), it runs on TCSBackEnd under its device lock, in the background, and puts
@@ -146,23 +121,28 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 |---|---|
 | `language-follows-windows` | Setup's language dialog offers Windows' display language (简体中文 on TCSBackEnd) |
 | `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`~/scratch/SebType/<issue>/73-*.png`): welcome in all three languages, languages, installing, finish |
-| `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, Weasel and Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
+| `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, its text service registered and no Weasel or Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
 | `chinese-typo-xkaoshi` | SebType's librime corrects a slip onto the key under i: `xkaoshi` → 小时, and `kaoshi` stays 考试 (#133) |
-| `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`../perf-rime.ps1` with the Weasel build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
+| `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`../perf-rime.ps1` with the librime build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
 | `japanese-alt-grave` | In Notepad, in 日本語: Alt+\` types ア, again あ; after a Shift tap to English, Alt+\` still types `a`, and a Shift tap is あ again |
-| `chinese-tray-menu` | In a TSF text field of the test's own: the tray icon's menu is the one item `简 → 繁 Ctrl+Shift+F`; picking it makes `houlai` → 後來, and the menu then reads `繁 → 简 Ctrl+Shift+F` and goes back (`~/scratch/SebType/<issue>/117-menu-zh-*.png`) |
+| `chinese-tray-menu`, `japanese-tray-menu` | In a TSF text field of the test's own: the tray icon's menu is the one item `简 → 繁 Ctrl+Shift+F`; picking it makes `houlai` → 後來, and the menu then reads `繁 → 简 Ctrl+Shift+F` and goes back; the same with ``あ → ア Alt+` `` and `a` (`~/scratch/SebType/<issue>/117-menu-*.png`) |
+| `picnic-window` | The Picnic candidate window with the pig, across and down, for 中文 and 日本語 at 14 pt (`~/scratch/SebType/<issue>/162-sebtype-*.png`) |
 | `round1-upgrade`, `-upgrade-keeps-learned-words` | A silent rerun exits 0 and keeps the Rime and Mozc learned-word folders |
 | `japanese-after-language-change` | After a language is added and removed, Japanese still types |
-| `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; Weasel, Mozc and SebType gone |
-| `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Mozc and its words go) keeping a page size of 8 set before it, uninstall; as before |
+| `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; SebType gone |
+| `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Japanese's words go) keeping a page size of 8 set before it, uninstall; as before |
+| `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words and a Picnic Weasel style, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept, the look in `sebtype.conf`; typing as in round 1; uninstall; as before |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
 
 ## Japanese: SebType's Mozc (#65)
 
 Windows Japanese is open-source [Mozc](https://github.com/google/mozc), built by SebType, instead of
 Google 日本語入力, whose tray icons are fixed in its signed program (#63). It is the same engine as on
-Linux and the phone, with SebType's changes:
+Linux and the phone. Since #190 SebType's text service talks to Mozc's server, `mozc_server.exe`, for it,
+as the Linux add-on does; the MSI below is still built, and Setup unpacks only `mozc_server.exe` from it.
+What follows describes Mozc's own Windows text service in that MSI, which SebType no longer installs
+(step 4 of #190 removes it); the tray, keys and menu now come from the text service and the core:
 
 - **Tray icons:** the Set E keycaps from `pc/icons`: あ (hiragana), ア (katakana, full and half
   width), **a** in English (direct input, half and full width alphanumeric) and **A** in English while

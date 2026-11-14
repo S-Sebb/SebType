@@ -148,6 +148,9 @@ int run() {
   if (!single || GetLastError() == ERROR_ALREADY_EXISTS) return 0;
   Core host(makeEngine);
   core = &host;
+  // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
+  const LANGID ui = PRIMARYLANGID(GetUserDefaultUILanguage());
+  host.setUiLanguage(ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
   const std::wstring name = pipeName();
   for (;;) {
     HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX,

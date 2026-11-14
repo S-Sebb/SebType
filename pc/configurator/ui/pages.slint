@@ -558,7 +558,7 @@ component AboutPage inherits Page {
     Card {
         Row { title: "雾凇拼音 rime-ice · 白霜拼音 rime-frost"; detail: "GPL-3.0"; }
         Divider { }
-        Row { title: "Rime (librime)" + (State.system == "Windows" ? " · 小狼毫 Weasel" : " · Fcitx5 · fcitx5-rime"); detail: State.system == "Windows" ? "BSD-3-Clause · GPL-3.0" : "BSD-3-Clause · LGPL-2.1+"; }
+        Row { title: State.system == "Windows" ? "Rime (librime)" : "Rime (librime) · Fcitx5 · fcitx5-rime"; detail: State.system == "Windows" ? "BSD-3-Clause" : "BSD-3-Clause · LGPL-2.1+"; }
         Divider { }
         Row { title: "Mozc"; detail: "BSD-3-Clause"; }
         Divider { }

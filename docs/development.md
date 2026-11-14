@@ -9,7 +9,8 @@ describe what each PC part does and list what each of its checks verifies.
 |---|---|
 | `android/` | The Gradle build: `app/` (the keyboard, FUTO Keyboard with SebType's changes), `mozc/` (Mozc's Android client and `libmozc.so`), `rime/` (RimeJni, librime's bindings, and `librime-jni.so`), the build and release scripts, `test/` and `perf/` |
 | `engines/` | `mozc/` and `librime/`: the one source of each engine, built for the phone and both PCs |
-| `pc/` | Linux (Fcitx5) and Windows (Weasel, Mozc's installer, SebType's installer), and the Configurator |
+| `core/`, `linux/`, `windows/` | SebType's shared core and its frontends: the Fcitx5 add-on, the Windows text service and server |
+| `pc/` | Linux (Fcitx5) and Windows (librime's build, Mozc's installer, SebType's installer), and the Configurator |
 | `data/` | The Chinese data (`rime/`) and the English dictionary (`en-dict/`), built from pinned sources |
 | `art/` | The icon, the fonts and the script that draws the launcher icons |
 | `sync-server/` | The sync server you run yourself |
@@ -65,7 +66,7 @@ Nothing goes to `/tmp` or `~/.cache`.
 | `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's server from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
 | `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
 | `cargo build --release` in `pc/configurator` | the Configurator |
-| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/weasel/build.ps1` | Mozc's installer and Weasel, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
+| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/weasel/build.ps1`, `windows/build.ps1` | Mozc's installer, SebType's librime (with Weasel) and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 
 `pc/linux/setup-ime.sh` builds what it installs itself ([pc/linux/README.md](../pc/linux/README.md)).
 
