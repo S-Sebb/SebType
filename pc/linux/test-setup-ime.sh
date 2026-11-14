@@ -40,30 +40,27 @@ build_lock 30 "configurator build for test-setup-ime" \
 mapfile -t rime_zips < <(for z in ~/.cache/sebtype/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
 ((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/.cache/sebtype"; exit 1; }
 rime_data=$out/rime-data/rime/rime-data.zip
-# SebType's fcitx5-rime, librime, fcitx5-mozc and Fcitx5 (#66, #117, #101, #182), built once and cached. The private
-# Fcitx5s below run them without installing them: bwrap mounts their files over Fedora's for that Fcitx5 alone.
+# SebType's input method (#190) and librime (#101), built once and cached. The private Fcitx5s below run them
+# without installing them: Fcitx5 finds the add-on in $own (sebtype_env), and bwrap mounts librime over
+# Fedora's for that Fcitx5 alone.
 # shellcheck source=mozc/versions.sh
 source mozc/versions.sh
 # shellcheck source=rime/versions.sh
 source rime/versions.sh
-own=$out/own-builds; rm -rf "$own"; mkdir -p "$own"
-for b in "$MOZC_CACHE/rpms/$MOZC_RPM mozc/build.sh" "$RIME_CACHE/$RIME_RPM rime/build.sh" \
-  "$(librime_rpm librime) rime/build.sh librime" "$(librime_rpm librime-lua) rime/build.sh librime" \
-  "$(librime_rpm librime-octagram) rime/build.sh librime" "$(fcitx5_rpm fcitx5) rime/build.sh fcitx5"; do
-  read -r rpm build <<<"$b"
-  # shellcheck disable=SC2086  # word-split: a script and its arguments
-  [[ -f $rpm ]] || ./$build >/dev/null || { echo "preflight: pc/linux/$build failed"; exit 1; }
+# shellcheck source=../../linux/versions.sh
+source ../../linux/versions.sh
+own=$out/own-builds
+sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
+for p in librime librime-lua librime-octagram; do
+  rpm=$(librime_rpm "$p")
+  [[ -f $rpm ]] || rime/build.sh librime >/dev/null || { echo "preflight: pc/linux/rime/build.sh librime failed"; exit 1; }
   rpm2cpio "$rpm" | (cd "$own" && cpio -idm --quiet) || { echo "preflight: can't unpack $rpm"; exit 1; }
 done
-own_fcitx=(bwrap --dev-bind / / --ro-bind "$own/usr/lib64/fcitx5/librime.so" /usr/lib64/fcitx5/librime.so
-  --ro-bind "$own/usr/lib64/librime.so.$LIBRIME_VERSION" "/usr/lib64/librime.so.$LIBRIME_VERSION"
-  --ro-bind "$own/usr/lib64/rime-plugins" /usr/lib64/rime-plugins
-  --ro-bind "$own/usr/lib64/fcitx5/fcitx5-mozc.so" /usr/lib64/fcitx5/fcitx5-mozc.so
-  --ro-bind "$own/usr/libexec/fcitx5-mozc" /usr/libexec/fcitx5-mozc
-  --ro-bind "$own/usr/lib64/fcitx5/libnotificationitem.so" /usr/lib64/fcitx5/libnotificationitem.so
-  --ro-bind "$own/usr/lib64/fcitx5/libclassicui.so" /usr/lib64/fcitx5/libclassicui.so)
+read -ra own_env <<<"$(sebtype_env "$own")"
+own_fcitx=(env "${own_env[@]}" bwrap --dev-bind / / --ro-bind "$own/usr/lib64/librime.so.$LIBRIME_VERSION" "/usr/lib64/librime.so.$LIBRIME_VERSION"
+  --ro-bind "$own/usr/lib64/rime-plugins" /usr/lib64/rime-plugins)
 
-check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh rime/build.sh
+check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh rime/build.sh ../../linux/build.sh
 
 # No two icon files differ only by case: a Windows checkout would keep one of them (#77).
 icon_case() { ! git ls-files ../icons | tr '[:upper:]' '[:lower:]' | sort | uniq -d | grep .; }
@@ -72,17 +69,19 @@ check icon-names-differ-beyond-case icon_case
 # Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (and
 # SebType's fcitx5-mozc and fcitx5-rime, until the user says yes to their sudo install; the typo keyboard
 # line, #46; #92/#93's Win+Space toggle, 日本語 and English names and Japanese's menu icon; #102/#117's
-# Chinese data and Alt+` keymap; and #182's add-on hotkeys and the removal of Fcitx5's own settings, until setup reruns).
+# Chinese data and Alt+` keymap; #182's add-on hotkeys and the removal of Fcitx5's own settings; and #190's
+# input method, its Super+Space and its tray, until setup reruns).
 live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
-    ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
+    ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e '^would: install packages librime-octagram ' \
     -e 'English ⇄ the last other language' -e 'install SebType.s tray icons' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
-    -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" && return 1
+    -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" -e "^would: install SebType's input method" \
+    -e "^would: show SebType's tray menu" -e '^would: install packages librime-lua' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
-    ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
+    ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
 }
 check live-dry-run live_dry
@@ -92,13 +91,14 @@ fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
 trap 'rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
-# fcitx5-mozc (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release; fcitx5-rime is
+# sebtype, fcitx5-mozc (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release; fcitx5-rime is
 # installed, as $FAKE/fcitx5-rime's version-release once that file exists, and not while it is empty. The fake sudo logs and applies
 # dnf's install of SebType's RPMs and their distro-sync back to Fedora's, and the removal and install of
 # Fcitx5's own settings.
-stub rpm 'p=${*: -1}; [[ $p == fcitx5-mozc || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
+stub rpm 'p=${*: -1}; [[ $p == sebtype || $p == fcitx5-mozc || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
 stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
+  'dnf install -y '*/$SEBTYPE_RPM) echo -n '$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE' > \"\$FAKE/sebtype\" ;;
   'dnf install -y '*/$MOZC_RPM) echo -n '$MOZC_VERSION-$SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
   'dnf install -y '*/$RIME_RPM) echo -n '$RIME_VERSION-$RIME_SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
   'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_FEDORA' > \"\$FAKE/fcitx5-mozc\" ;;
@@ -123,8 +123,9 @@ stub busctl 'case "$*" in
   *shortcutKeys*) if [[ -e $FAKE/kga.log ]]; then echo "a(ai) 1 4 268435552 0 0 0"
     else echo "a(ai) 2 4 268435552 0 0 0 4 134217824 0 0 0"; fi ;;
   *ReloadConfig*) echo reload >> "$FAKE/reload.log" ;;
+  *AvailableInputMethods*) echo "a(ssssssb) 2 \"keyboard-us\" \"English\" \"\" \"\" \"\" \"en\" false \"sebtype\" \"SebType\" \"\" \"\" \"\" \"\" false" ;;
   *SetInputMethodGroupInfo*) echo "$*" > "$FAKE/set.log"
-    echo "sa(ss) \"us\" 3 \"keyboard-us\" \"\" \"rime\" \"\" \"mozc\" \"\"" > "$FAKE/group" ;;
+    echo "sa(ss) \"us\" 1 \"sebtype\" \"\"" > "$FAKE/group" ;;
   *InputMethodGroups*) echo "as 1 \"Default\"" ;;
   *InputMethodGroupInfo*) cat "$FAKE/group" 2>/dev/null || echo "sa(ss) \"us\" 1 \"keyboard-us\" \"\"" ;;
 esac'
@@ -140,14 +141,15 @@ printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 # setup-ime.sh rebuilds the Configurator with cargo when its sources are newer, so cargo needs this
 # account's Rust (rustup's toolchains) even though the fake account has its own HOME.
-fake_run() { mkdir -p "$h/.cache/sebtype"; ln -sf "${rime_zips[@]}" "$h/.cache/sebtype/"
+fake_run() { mkdir -p "$h/.cache/sebtype/sebtype"; ln -sf "${rime_zips[@]}" "$h/.cache/sebtype/"
+  touch "$h/.cache/sebtype/sebtype/$SEBTYPE_RPM"  # a placeholder: the fake sudo installs nothing
   env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
   timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 20 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 21 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && ! -e $fake/deploy.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -160,7 +162,8 @@ fresh_apply() {
     grep -q '^Exec=env QT_IM_MODULE=fcitx /usr/bin/wechat' "$h/.local/share/applications/wechat.desktop" &&
     [[ ! -e $h/.local/share/flatpak/overrides/com.qq.QQ ]] &&
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
-    grep -q 'Default us 3 keyboard-us  rime  mozc' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
+    grep -q 'Default us 1 sebtype $' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
+    cmp ../../linux/data/notificationitem.conf "$h/.local/share/fcitx5/addon/notificationitem.conf" &&
     fcitx_hotkeys && mozc_keymap && tray_icons && grep -qx 'Label=中文' "$h/.local/share/fcitx5/inputmethod/rime.conf" &&
     grep -qx 'Name=日本語' "$h/.local/share/fcitx5/inputmethod/mozc.conf" &&
     grep -qx 'Name=English' "$h/.local/share/fcitx5/inputmethod/keyboard-us.conf" &&
@@ -177,12 +180,12 @@ configurator() {
     desktop-file-validate "$d/applications/sebtype-configurator.desktop" &&
     [[ -f $d/icons/hicolor/192x192/apps/sebtype-configurator.png ]]
 }
-# Super+Space is the only switch (the trigger key, no enumerating), all windows share one state, the
-# other settings stay, Fcitx5's clipboard, Unicode and quick phrase hotkeys are empty, and Fcitx5 reloaded it.
+# Fcitx5's own switchers are empty, so Super+Space reaches SebType's input method (#190), all windows share
+# one state, the other settings stay, Fcitx5's clipboard, Unicode and quick phrase hotkeys are empty, and Fcitx5 reloaded it.
 fcitx_hotkeys() {
   local c=$h/.config/fcitx5/config
-  [[ $(sed -n '/^\[Hotkey\/TriggerKeys\]/,/^$/p' "$c") == $'[Hotkey/TriggerKeys]\n0=Super+space' ]] &&
-    ! grep -qE 'Shift_L|^\[Hotkey/(EnumerateForward|AltTrigger)Keys' "$c" && grep -qx 'AltTriggerKeys=' "$c" &&
+  grep -qx 'TriggerKeys=' "$c" && ! grep -q 'Super+space' "$c" &&
+    ! grep -qE 'Shift_L|^\[Hotkey/(EnumerateForward|AltTrigger|Trigger)Keys' "$c" && grep -qx 'AltTriggerKeys=' "$c" &&
     grep -qx 'EnumerateForwardKeys=' "$c" && [[ $(grep -c '^EnumerateWithTriggerKeys=' "$c") == 1 ]] &&
     grep -qx 'EnumerateWithTriggerKeys=False' "$c" &&
     grep -qx 'EnumerateGroupForwardKeys=' "$c" && grep -qx 'ActiveByDefault=False' "$c" &&
@@ -196,7 +199,7 @@ rime_data() {
   local r=$h/.local/share/fcitx5/rime
   [[ $(cat "$r/sebtype-data.txt") == "$(sha256sum "$rime_data" | cut -d' ' -f1)" && -f $r/build/rime_ice.table.bin ]] &&
     ! ls "$r"/double_pinyin* "$r"/t9* 2>/dev/null &&
-    [[ $(cat "$fake/deploy.log") == '--user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/rime/deploy s ' ]]
+    [[ $(cat "$fake/deploy.log") == '--user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ' ]]
 }
 # The keymap replaces fields 41 and 42 in place; fields 1 and 43 are kept. Alt+` switches あ ⇄ ア
 # (Precomposition), and nothing else: the Shift tap is the only way to English (#117).
@@ -207,14 +210,15 @@ mozc_keymap() {
     [[ $(grep -caF 'Alt `' "$db") == 1 ]] &&
     ls "$h"/.local/share/sebtype/backup/*/config1.db
 }
-# SebType's icon theme inherits the theme that was active, holds every Fcitx5 status name at each size,
+# SebType's icon theme inherits the theme that was active, holds every status name at each size,
 # is active, and the running apps were told.
 tray_icons() {
   local t=$h/.local/share/icons/SebType d n
   [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == SebType ]] &&
     grep -qx 'Inherits=Fluent-dark' "$t/index.theme" && grep -q iconChanged "$fake/emit.log" || return 1
   for d in 16 20 22 24 32 scalable; do
-    for n in input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps fcitx_mozc:hira fcitx_mozc_hiragana:hira \
+    for n in sebtype-en:en sebtype-zh:zh sebtype-zh-a:zh-a sebtype-zh-caps:zh-caps sebtype-hira:hira sebtype-kata:kata \
+      sebtype-ja-a:ja-a sebtype-ja-caps:ja-caps input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps fcitx_mozc:hira fcitx_mozc_hiragana:hira \
       fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a fcitx_mozc_direct_upper:ja-caps; do
       cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
     done
@@ -287,7 +291,7 @@ else result SKIP private-bus-keeps-document-portal "the user's xdg-document-port
 fi
 
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
-# can't see it) running SebType's Mozc on a second fake account set up by setup-ime.sh: Shift tap toggles
+# can't see it) running SebType's input method (#190) on a second fake account set up by setup-ime.sh: Shift tap toggles
 # あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` toggles あ ⇄ ア and leaves
 # English alone (#117); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
 # checked on the desktop (pc/linux/README.md). Its fcitx5 and
@@ -296,7 +300,7 @@ mozc_keys() {
   local h=$fake/jp
   mkdir -p "$h/.config/fcitx5"
   fake_run < /dev/null > /dev/null || return 1
-  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=mozc\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 60 "${own_fcitx[@]}" python3 - "$fake/fcitx5.log" <<'PY'
 import re, subprocess, sys, time
@@ -308,13 +312,13 @@ KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'Alt_L': (0xffe9, 64
         'K': (0x4b, 45), 'grave': (0x60, 49), 'Katakana': (0xff26, 101), 'Hiragana': (0xff25, 102)}
 MODS = {'Shift_L': SHIFT, 'Control_L': CTRL, 'Alt_L': ALT}
 
-fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,mozc,kimpanel'],
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype,kimpanel'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
 Gio.bus_own_name_on_connection(bus, 'org.kde.impanel', 0, None, None)
 tray = ['']
 def on_tray(_c, _s, _p, _i, name, params):
-    if name == 'UpdateProperty': tray[0] = (re.findall(r'fcitx_mozc_\w+', str(params.unpack())) or tray)[0]
+    if name == 'UpdateProperty': tray[0] = (re.findall(r'sebtype-[\w-]+', str(params.unpack())) or tray)[0]
 bus.signal_subscribe(None, None, 'UpdateProperty', None, None, 0, on_tray)
 def call(path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
     return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
@@ -332,7 +336,8 @@ def on_signal(_c, _s, _p, _i, name, params):
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
 call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)  # preedit, formatted, client-side panel
 call(ic, IC, 'FocusIn')
-call(*CONTROLLER, 'SetCurrentIM', '(s)', 'mozc')
+SEBTYPE = ('/sebtype', 'org.sebtype.Core1')
+call(*SEBTYPE, 'SetLanguage', '(s)', 'ja')
 
 def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
     sym, code = KEYS[name]
@@ -350,8 +355,8 @@ def mode():  # 'あ' or 'ア' when "a" starts a kana preedit (then cleared), 'A'
         got = preedit[0] if preedit[0] in ('あ', 'ア') else f'preedit {preedit[0]!r}'
         tap('Escape')
     else: got = 'A'
-    im = call(*CONTROLLER, 'CurrentInputMethod')[0]
-    return got if im == 'mozc' else f'Fcitx5 switched to {im}'
+    lang = call(*SEBTYPE, 'State')[0]
+    return got if lang == 'ja' else f'SebType switched to {lang}'
 
 ok = True
 def check(name, got, want):
@@ -360,10 +365,10 @@ def check(name, got, want):
     print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
 
 check('starts in あ', mode(), 'あ')
-check('tray icon in あ', tray[0], 'fcitx_mozc_hiragana')
-tap('Shift_L'); check('tray icon in English', tray[0], 'fcitx_mozc_direct'); tap('Shift_L')
-tap('Katakana'); check('tray icon in ア', tray[0], 'fcitx_mozc_katakana_full'); tap('Hiragana')
-check('tray icon back in あ', tray[0], 'fcitx_mozc_hiragana')
+check('tray icon in あ', tray[0], 'sebtype-hira')
+tap('Shift_L'); check('tray icon in English', tray[0], 'sebtype-ja-a'); tap('Shift_L')
+tap('Katakana'); check('tray icon in ア', tray[0], 'sebtype-kata'); tap('Hiragana')
+check('tray icon back in あ', tray[0], 'sebtype-hira')
 for state, keys in [('composing', 'ka'), ('converting', ['k', 'a', 'space']), ('predicting', ['k', 'a', 'Tab']),
                     ('after a commit', ['k', 'a', 'Return'])]:
     for k in keys: tap(k)
@@ -377,11 +382,11 @@ check('Shift+K starts an English run', preedit[0], 'K')
 tap('Escape'); check('Shift+K stays in あ', mode(), 'あ')
 key('Control_L'); key('Shift_L', CTRL); key('Shift_L', CTRL | SHIFT, True); key('Control_L', CTRL, True)
 check('Ctrl+Shift stays in あ', mode(), 'あ')
-chord('Alt_L', 'grave'); check('Alt+` is ア', (mode(), tray[0]), ('ア', 'fcitx_mozc_katakana_full'))
+chord('Alt_L', 'grave'); check('Alt+` is ア', (mode(), tray[0]), ('ア', 'sebtype-kata'))
 shift_tap(); check('Shift tap in ア turns English on', mode(), 'A')
 chord('Alt_L', 'grave'); check('Alt+` in English stays English', mode(), 'A')
 shift_tap(); check('Shift tap in English is ア again', mode(), 'ア')
-chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'fcitx_mozc_hiragana'))
+chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'sebtype-hira'))
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
@@ -391,16 +396,15 @@ PY
   done
   return $rc
 }
-if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/mozc.conf ]] &&
-  python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
   check mozc-shift-tap-and-alt-grave mozc_keys
-else result SKIP mozc-shift-tap-and-alt-grave "needs fcitx5, fcitx5-mozc, dbus-run-session and python3-gobject"
+else result SKIP mozc-shift-tap-and-alt-grave "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
-# Chinese label (#69) and SebType's Chinese data (#102): a private Fcitx5 (as above) running SebType's Rime on a
+# Chinese label (#69) and SebType's Chinese data (#102): a private Fcitx5 (as above) running SebType's input method (#190) on a
 # third fake account set up by setup-ime.sh, which installs SebType's Chinese data there. Switching to it
 # must show 中文 in the popup, both the long one and the compact one (the reference PC's setting; it shows
-# the label the tray text uses), and the schema id must stay rime_ice. The same Fcitx5 checks the
+# the label the tray text uses), as fcitx5-rime's did. The same Fcitx5 checks the
 # Ctrl+Shift+F key (#36): 后来 comes out as 後來 and back, and Ctrl+F reaches the app; and typo correction
 # (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first, and so does xkaoshi (k for
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
@@ -416,13 +420,13 @@ rime_label() {
   grep -qx '  translator/spelling_hints: 9' "$r/rime_ice.custom.yaml" || { echo "rime_ice.custom.yaml lost its patch"; return 1; }
   grep -q '^  schema_list:' "$r/default.custom.yaml" || { echo "default.custom.yaml lost its patch"; return 1; }
   grep -q '^  menu/page_size: 6 ' "$r/default.custom.yaml" || { echo "default.custom.yaml has no page size 6"; return 1; }
-  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
 import os, subprocess, sys, time
 from gi.repository import Gio, GLib
 
-fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,rime'],
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
 def call(path, iface, method, sig=None, *args):
@@ -483,9 +487,10 @@ bus.signal_subscribe(None, IC, None, ic, None, 0, on_preedit)
 def rime_ready():  # Rime deploys on first use and takes no keys until then: n shows a preedit once it does
     tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
 
+SEBTYPE = ('/sebtype', 'org.sebtype.Core1')
 def switch():  # the popup text shown when switching from English to Chinese
-    call(*CONTROLLER, 'SetCurrentIM', '(s)', 'keyboard-us'); wait(lambda: False, 0.2)
-    popups.clear(); call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+    call(*SEBTYPE, 'SetLanguage', '(s)', 'en'); wait(lambda: False, 0.2)
+    popups.clear(); call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
     wait(lambda: popups, 2); wait(lambda: False, 0.2)
     return popups[-1] if popups else None
 
@@ -501,9 +506,6 @@ check('long popup reads 中文', switch(), '中文')
 with open(sys.argv[3], 'a') as f: f.write('\n[Behavior]\nCompactInputMethodInformation=True\n')
 call(*CONTROLLER, 'ReloadConfig')
 check('compact popup reads 中文', switch(), '中文')
-schema = lambda: call('/rime', 'org.fcitx.Fcitx.Rime1', 'GetCurrentSchema')[0]
-wait(lambda: schema(), 30)  # the reload reloads Rime, which loads rime-ice's tables again
-check('schema id stays rime_ice', schema(), 'rime_ice')
 check('simplified at first', houlai(), '后来')
 check('Ctrl+Shift+F is taken', ctrl('F', shift=True), True)
 check('traditional after Ctrl+Shift+F', houlai(), '後來')
@@ -525,17 +527,17 @@ PY
   for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
   return $rc
 }
-if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/rime.conf ]] &&
-  python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
   check rime-label-and-zh-hant-key rime_label
-else result SKIP rime-label-and-zh-hant-key "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
+else result SKIP rime-label-and-zh-hant-key "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
-# Win+Space and the tray menu (#92, #93, #117): a private Fcitx5 (as above) with English and SebType's
-# Rime (SebType's Chinese data) and Mozc on a fourth fake account set up by setup-ime.sh, and a stand-in
-# for Plasma's tray (a StatusNotifierWatcher on that bus) that reads and clicks Fcitx5's menu. The menu
+# Win+Space and the tray menu (#92, #93, #117): a private Fcitx5 (as above) with SebType's input method
+# (#190; SebType's Chinese data) on a fourth fake account set up by setup-ime.sh, which also puts SebType's
+# tray in place of Fcitx5's, and a stand-in for Plasma's tray (a StatusNotifierWatcher on that bus) that
+# reads and clicks the menu. The menu
 # reads English · 中文 · 日本語 with SebType's icon names, then the active language's one switch with its
-# key (中文 简 → 繁, 日本語 あ → ア, English none), which a click flips, then Fcitx5's own items; Fcitx5's clipboard,
+# key (日本語 あ → ア only, as before), which a click flips, then Fcitx5's Restart and Exit; Fcitx5's clipboard,
 # Unicode and quick phrase hotkeys reach the app (#182); Win+Space toggles English and the last other language, also
 # while Super stays held; a menu pick becomes the one Win+Space returns to; Rime's Shift tap still
 # switches its English mode, and a Shift tap in English switches nothing.
@@ -543,7 +545,7 @@ win_space() {
   local h=$fake/menu
   mkdir -p "$h/.config/fcitx5"
   fake_run < /dev/null > /dev/null || return 1
-  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[Groups/0/Items/2]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 120 "${own_fcitx[@]}" python3 -W ignore - "$fake/fcitx5-menu.log" <<'PY'
 import subprocess, sys, time
@@ -561,8 +563,8 @@ def on_prop(_c, _s, _p, _i, name):
     return GLib.Variant('b', True) if name == 'IsStatusNotifierHostRegistered' else GLib.Variant('i', 0)
 bus.register_object('/StatusNotifierWatcher', WATCHER, on_method, on_prop, None)
 Gio.bus_own_name_on_connection(bus, 'org.kde.StatusNotifierWatcher', 0, None, None)
-# classicui is what turns the tray item (notificationitem) on.
-fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,rime,mozc,classicui,notificationitem,clipboard,unicode,quickphrase'],
+# classicui is what turns the tray item (notificationitem, SebType's by the fake account's add-on entry) on.
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype,classicui,notificationitem,clipboard,unicode,quickphrase'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
 def wait(cond, secs):  # cond may type a key, so it runs once per try: asking again after a hit would undo it
     end = time.time() + secs
@@ -588,7 +590,9 @@ bus.signal_subscribe(None, IC, None, ic, None, 0, on_preedit)
 call(FCITX, ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
 call(FCITX, ic, IC, 'FocusIn')
 SUPER, SHIFT = 0x40, 1
-im = lambda: call(*CONTROLLER, 'CurrentInputMethod')[0]
+SEBTYPE = (FCITX, '/sebtype', 'org.sebtype.Core1')
+IMS = {'en': 'keyboard-us', 'zh': 'rime', 'ja': 'mozc'}  # the language, by the input method it was before
+im = lambda: IMS[call(*SEBTYPE, 'State')[0]]
 def key(sym, code, state=0, release=False):  # True when Fcitx5 took the key
     taken = call(FCITX, ic, IC, 'ProcessKeyEvent', '(uuubu)', sym, code, state, release, 0)[0]
     wait(lambda: False, 0.05)
@@ -620,7 +624,7 @@ def menu_items():  # (id, properties) of the menu's items
     return [(i, p) for i, p, _ in call(sni, menu, MENU, 'GetLayout', '(iias)', 0, 1, [])[1][2]]
 def entries():  # (id, label, icon) of the menu's input methods: the items with a radio mark
     return [(i, p.get('label'), p.get('icon-name')) for i, p in menu_items() if 'toggle-state' in p]
-# SebType's Fcitx5 has no Input Method Settings item (#182)
+# SebType's tray has no Input Method Settings item (#182, #190)
 LANGUAGES, FCITX_OWN = ['English', '中文', '日本語', '-'], ['Restart', 'Exit']
 def switches():  # labels between the input methods and Fcitx5's own items, '-' for a separator
     labels = [p.get('label', '-') for _, p in menu_items()]
@@ -638,7 +642,7 @@ def pick(name):  # clicks the input method in the tray menu
     return im()
 
 check('menu reads English · 中文 · 日本語 with SebType icon names', [e[1:] for e in entries()],
-      [('English', 'input-keyboard'), ('中文', 'fcitx-rime'), ('日本語', 'fcitx_mozc')])
+      [('English', 'sebtype-en'), ('中文', 'sebtype-zh'), ('日本語', 'sebtype-hira')])
 check('starts in English', im(), 'keyboard-us')
 CTRL, ALT = 4, 8
 check("Fcitx5's own hotkeys reach the app: Ctrl+; Ctrl+Alt+Shift+U Ctrl+Shift+U Super+` Super+;",
@@ -655,8 +659,13 @@ check('Win+Space returns to 日本語', win_space(), 'mozc')
 check('menu picks 中文', pick('rime'), 'rime')
 check('Win+Space from 中文 is English', win_space(), 'keyboard-us')
 check('Win+Space returns to 中文', win_space(), 'rime')
+# The input method's language is the current one, as rime's (zh) and mozc's (ja) were: classicui draws the
+# Chinese or Japanese forms of a glyph by it
+lang_code = lambda: next(m[5] for m in call(*CONTROLLER, 'AvailableInputMethods')[0] if m[0] == 'sebtype')
+check('its language is zh in 中文', lang_code(), 'zh')
 pick('mozc'); pick('keyboard-us')
 check('after picking 日本語 then English, Win+Space returns to 日本語', win_space(), 'mozc')
+check('its language is ja in 日本語', lang_code(), 'ja')
 KANA, HIRA = 'あ → ア\tAlt+`', 'ア → あ\tAlt+`'
 check('日本語 has one switch, あ → ア', switches(), [KANA, '-'])
 check('clicking it switches to ア', click(KANA), [HIRA, '-'])
@@ -667,11 +676,8 @@ def rime_ready():  # Rime deploys on first use and takes no keys until then: n s
     return wait(lambda: preedit[0] == 'n', 0.5)
 check('Rime deployed', wait(rime_ready, 60), True)
 key(0xff1b, 9); key(0xff1b, 9, 0, True)
-HANT, HANS = '简 → 繁\tCtrl+Shift+F', '繁 → 简\tCtrl+Shift+F'
-check('中文 has one switch, 简 → 繁', switches(), [HANT, '-'])
-check('clicking it switches to 繁', click(HANT), [HANS, '-'])
-check('clicking again is 简', click(HANS), [HANT, '-'])
-ascii_mode = lambda: call(FCITX, '/rime', 'org.fcitx.Fcitx.Rime1', 'IsAsciiMode')[0]
+check('中文 has no switch, as fcitx5-rime had none', switches(), [])
+ascii_mode = lambda: call(*SEBTYPE, 'State')[1]
 shift_tap(); check('Shift tap in 中文 turns its English mode on', (ascii_mode(), im()), (True, 'rime'))
 shift_tap(); check('Shift tap again turns it off', (ascii_mode(), im()), (False, 'rime'))
 fcitx.terminate(); fcitx.wait(10)
@@ -683,32 +689,67 @@ PY
   done
   return $rc
 }
-if command -v fcitx5 dbus-run-session >/dev/null && [[ -f /usr/share/fcitx5/addon/rime.conf && -f /usr/share/fcitx5/addon/mozc.conf ]] &&
-  python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
   check win-space-and-tray-menu win_space
-else result SKIP win-space-and-tray-menu "needs fcitx5, fcitx5-rime, fcitx5-mozc, dbus-run-session and python3-gobject"
+else result SKIP win-space-and-tray-menu "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
 rerun() {
   echo 'XMODIFIERS=@im=fcitx' > "$fake/session-env"
   local o; o=$(fake_run < /dev/null) || return 1; echo "$o"
-  grep -q '^done: 1 change(s)' <<<"$o" && grep -q 'install packages fcitx5-mozc' <<<"$o"
+  grep -q '^done: 1 change(s)' <<<"$o" && grep -q "install SebType's input method" <<<"$o"
 }
 check rerun-only-asks-for-missing-package rerun
 
-# SebType's fcitx5-mozc (#66), fcitx5-rime (#117), librime (#101) and Fcitx5 (#182) replace Fedora's after
-# a yes, a rerun leaves them, --undo-mozc, --undo-rime, --undo-librime and --undo-fcitx5 bring back Fedora's once, and a package
-# of another version is left alone with a warning. The RPMs are placeholders, so nothing is built.
+# SebType's input method (#190) is installed after a yes, and a rerun leaves it. The RPM is a placeholder.
+sebtype_install() {
+  local o; rm -f "$fake/sudo.log"; : > "$fake/sebtype"
+  o=$(echo y | fake_run) || return 1; echo "$o"
+  grep -q "^change: install SebType's input method" <<<"$o" &&
+    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $h/.cache/sebtype/sebtype/$SEBTYPE_RPM" &&
+      $(cat "$fake/sebtype") == "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" ]] || return 1
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  ! grep -q "SebType's input method" <<<"$o"
+}
+check sebtype-install sebtype_install
+
+# An older setup's SebType Fcitx5 (#182) goes back to Fedora's after a yes (#190), as SebType's tray needs no
+# change to Fcitx5, and a rerun leaves it.
+fcitx5_fedora() {
+  local o p; rm -f "$fake/sudo.log"
+  for p in fcitx5 fcitx5-libs fcitx5-data; do echo -n "$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE" > "$fake/$p"; done
+  o=$(echo y | fake_run) || return 1; echo "$o"
+  grep -q "^change: replace SebType's Fcitx5 build with Fedora's" <<<"$o" &&
+    [[ $(cat "$fake/sudo.log") == 'sudo dnf distro-sync -y fcitx5 fcitx5-libs fcitx5-data' &&
+      $(cat "$fake/fcitx5") == "$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE" ]] || return 1
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  ! grep -q "Fcitx5 build" <<<"$o"
+}
+check fcitx5-back-to-fedora fcitx5_fedora
+
+# An older setup's SebType fcitx5-mozc (#66) and fcitx5-rime (#117): --undo-mozc and --undo-rime bring back
+# Fedora's once.
+old_undo() { # package Fedora's-version-release SebType's-version-release
+  local o; rm -f "$fake/sudo.log"; echo -n "$3" > "$fake/$1"
+  o=$(fake_run "--undo-${1#fcitx5-}" < /dev/null) || return 1; echo "$o"
+  [[ $(cat "$fake/sudo.log") == "sudo dnf distro-sync -y $1" && $(cat "$fake/$1") == "$2" ]] &&
+    o=$(fake_run "--undo-${1#fcitx5-}" < /dev/null) && [[ -z $o ]]
+}
+check mozc-undo old_undo fcitx5-mozc "$MOZC_FEDORA" "$MOZC_VERSION-$SEBTYPE_RELEASE"
+check rime-undo old_undo fcitx5-rime "$RIME_VERSION-$RIME_FEDORA_RELEASE" "$RIME_VERSION-$RIME_SEBTYPE_RELEASE"
+
+# SebType's librime (#101) replaces Fedora's after a yes, a rerun leaves it, --undo-librime brings back
+# Fedora's once, and a package of another version is left alone with a warning. The RPMs are placeholders,
+# so nothing is built.
 own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup checks the first package
   local fedora=$1 pkgs=() rpms=() p o
   shift
   while (($#)); do pkgs+=("$1"); rpms+=("$2"); shift 2; done
   for o in "${rpms[@]}"; do mkdir -p "${o%/*}"; : > "$o"; done; rm -f "$fake/sudo.log"
   for p in "${pkgs[@]}"; do echo -n "$fedora" > "$fake/$p"; done
-  # The checks before this one install these when the full set runs, but a selected run leaves them
-  # missing: setup would then ask for them too and take the one `y` that answers this package's question.
-  [[ -s $fake/fcitx5-mozc ]] || echo -n "$MOZC_VERSION-$SEBTYPE_RELEASE" > "$fake/fcitx5-mozc"
-  [[ -s $fake/fcitx5-rime ]] || echo -n "$RIME_VERSION-$RIME_SEBTYPE_RELEASE" > "$fake/fcitx5-rime"
+  # The checks before this one install it when the full set runs, but a selected run leaves it
+  # missing: setup would then ask for it too and take the one `y` that answers this package's question.
+  [[ -s $fake/sebtype ]] || echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$fake/sebtype"
   p=${pkgs[0]}
   o=$(echo y | fake_run) || return 1; echo "$o"
   grep -q "^change: replace $p .* with SebType's build" <<<"$o" &&
@@ -720,30 +761,20 @@ own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup chec
     o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) && [[ -z $o ]] || return 1
   echo -n 9.9.9-1.fc45 > "$fake/$p"
   o=$(fake_run < /dev/null) || return 1; echo "$o"
-  # --undo-fcitx5 may also put back Fcitx5's own settings (fcitx5-settings-removed-and-restored)
-  grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(grep -cv 'fcitx5-configtool$' "$fake/sudo.log") == 2 ]]
+  grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(wc -l < "$fake/sudo.log") == 2 ]]
 }
-check mozc-install-and-undo own_swap "$MOZC_FEDORA" fcitx5-mozc "$h/.cache/sebtype/mozc/rpms/$MOZC_RPM"
-check rime-install-and-undo own_swap "$RIME_VERSION-$RIME_FEDORA_RELEASE" fcitx5-rime "$h/.cache/sebtype/fcitx5-rime/$RIME_RPM"
 # librime with its Lua plugin, which must be the same build
 check librime-install-and-undo own_swap "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" \
   librime "$h/.cache/sebtype/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
   librime-lua "$h/.cache/sebtype/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
   librime-octagram "$h/.cache/sebtype/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
-# Fcitx5 with its libraries and data, which must be the same build
-f5=$h/.cache/sebtype/fcitx5/fcitx5
-check fcitx5-install-and-undo own_swap "$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE" \
-  fcitx5 "$f5-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.x86_64.rpm" \
-  fcitx5-libs "$f5-libs-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.x86_64.rpm" \
-  fcitx5-data "$f5-data-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.noarch.rpm"
 # Fcitx5's own settings (#182): setup removes kcm-fcitx5 and fcitx5-configtool after a yes, a rerun
 # leaves it, and --undo-fcitx5 puts both back.
 fcitx5_settings() {
   local o p
   for p in kcm-fcitx5 fcitx5-configtool; do echo -n 5.1.16-1.fc44 > "$fake/$p"; done; rm -f "$fake/sudo.log"
   # Installed, so the one `y` answers this question (as in own_swap)
-  [[ -s $fake/fcitx5-mozc ]] || echo -n "$MOZC_VERSION-$SEBTYPE_RELEASE" > "$fake/fcitx5-mozc"
-  [[ -s $fake/fcitx5-rime ]] || echo -n "$RIME_VERSION-$RIME_SEBTYPE_RELEASE" > "$fake/fcitx5-rime"
+  [[ -s $fake/sebtype ]] || echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$fake/sebtype"
   o=$(echo y | fake_run) || return 1; echo "$o"
   grep -q "^change: remove kcm-fcitx5 fcitx5-configtool, Fcitx5's own settings" <<<"$o" &&
     [[ $(head -1 "$fake/sudo.log") == 'sudo dnf remove -y kcm-fcitx5 fcitx5-configtool' && ! -s $fake/kcm-fcitx5 && ! -s $fake/fcitx5-configtool ]] || return 1

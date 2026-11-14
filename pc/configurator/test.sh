@@ -33,20 +33,28 @@ for c in cargo dbus-run-session kwin_wayland spectacle fcitx5 desktop-file-valid
 done
 python3 -c 'import dbus, Xlib, PIL, numpy' 2>/dev/null || { echo "preflight: python3-dbus, python3-xlib, python3-pillow and python3-numpy needed"; exit 1; }
 command -v xrdb >/dev/null || { echo "preflight: xrdb missing"; exit 1; }
-[[ -f /usr/share/fcitx5/addon/rime.conf && -f ~/.local/share/fcitx5/rime/rime_ice.schema.yaml ]] ||
-  { echo "preflight: fcitx5-rime and rime-ice (pc/linux/setup-ime.sh) needed"; exit 1; }
+[[ -f ~/.local/share/fcitx5/rime/rime_ice.schema.yaml ]] ||
+  { echo "preflight: rime-ice (pc/linux/setup-ime.sh) needed"; exit 1; }
+# SebType's input method (#190), built once and cached, runs uninstalled in the private Fcitx5s below.
+# shellcheck source=../../linux/versions.sh
+source ../../linux/versions.sh
+own=$out/configurator-own
 
 command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
 
 # The nested sessions and setup-ime's test run under this PC's lock (devq), after a build under the
 # shared build lock (tools/lib.sh), so builds never run side by side.
 if [[ -z ${HOLDING-} ]]; then
+  sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
   build_lock 30 "sebtype configurator test build ($(git branch --show-current))" \
     env CARGO_BUILD_JOBS="$BUILD_JOBS" bash -c 'cargo build --release && cargo test --release --no-run' > "$out/configurator-test-build.log" 2>&1 ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
 fi
+
+own_env=$(sebtype_env "$own")  # word-split where it is used: Fcitx5 finds SebType's add-on there
+export own_env
 
 check unit-tests 900 cargo test --release
 check every-string-translated 300 cargo test --release every_string_is_translated
@@ -71,7 +79,7 @@ sandbox() { # [dir], $sb by default
   cp -r ~/.config/fcitx5 "$sb/config/"
   [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db ~/.config/mozc "$sb/config/"
   rsync -a --exclude='*.userdb' --exclude='*.userdb.txt' --exclude=sync ~/.local/share/fcitx5/rime "$sb/data/fcitx5/"
-  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[Groups/0/Items/2]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$sb/config/fcitx5/profile"
 }
 sandbox
@@ -115,12 +123,12 @@ export -f shots; export out sb bin
 check every-screen-in-every-language 400 shots
 
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
-# shellcheck disable=SC2016  # the inner script gets its paths as arguments
+# shellcheck disable=SC2016,SC2086  # the inner script gets its paths as arguments; own_env is split
 private_fcitx5() {
-  private_dbus "$sb" -i PATH="$PATH" HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" \
+  private_dbus "$sb" -i PATH="$PATH" $own_env HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" \
     CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
     -- bash -c '
-      fcitx5 -k --disable=all --enable=dbus,keyboard,rime,mozc > "$1/fcitx5.log" 2>&1 & f=$!
+      fcitx5 -k --disable=all --enable=dbus,keyboard,sebtype > "$1/fcitx5.log" 2>&1 & f=$!
       for _ in $(seq 50); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.2; done
       cargo test --release --manifest-path "$2/Cargo.toml" -- --ignored --exact linux::tests::private_fcitx5_takes_languages_and_chinese_settings
       rc=$?; kill $f; wait $f; exit $rc' _ "$sb" "$PWD"
@@ -140,7 +148,7 @@ echo "Xft.dpi: 96" | xrdb -merge
 ui=$sb/config/fcitx5/conf/classicui.conf
 for o in horizontal vertical; do
   sed -i "s/^Vertical Candidate List=.*/Vertical Candidate List=$([[ $o == vertical ]] && echo True || echo False)/" "$ui"
-  fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,rime > "$out/configurator-picnic-fcitx5-$o.log" 2>&1 & f=$!
+  fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,sebtype > "$out/configurator-picnic-fcitx5-$o.log" 2>&1 & f=$!
   for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
   sleep 3  # Rime loads its schema
   read -r size pink tab < <(python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png")
@@ -150,7 +158,8 @@ for o in horizontal vertical; do
 done
 SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
-  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
+  # shellcheck disable=SC2086  # own_env is split
+  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY $own_env HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 2 ]]
@@ -161,7 +170,7 @@ check picnic-candidate-window 120 picnic_window
 # Sync (#180) with a sebtype_sync.py server on this PC, both ways, then delete on the server: a sandbox
 # of its own (the checks above turn learning off), with a made-up device id and no sync_dir, so Rime
 # writes only there, a throwaway login in a private keyring (gnome-keyring), and made-up words.
-# shellcheck disable=SC2016  # the inner script gets its paths as arguments
+# shellcheck disable=SC2016,SC2086  # the inner script gets its paths as arguments; own_env is split
 private_sync() {
   local d=$sb/sync-account rime port
   sandbox "$d"; mkdir -p "$d/server"
@@ -170,7 +179,7 @@ private_sync() {
   sed -i 's|translator/enable_user_dict: false|translator/enable_user_dict: true|' "$rime/rime_ice.custom.yaml" 2>/dev/null
   rm -f "$d/config/mozc/user_dictionary.db"  # only made-up Japanese words
   port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-  private_dbus "$sb" -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
+  private_dbus "$sb" -i PATH="$PATH" $own_env HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
     CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
     -- bash -c '
       d=$1 here=$2 port=$3 server=$2/../../sync-server/sebtype_sync.py
@@ -178,7 +187,7 @@ private_sync() {
       printf "%s\n" "$SEBTYPE_TEST_SYNC_PASSWORD" | python3 -I "$server" adduser --data "$d/server" --password-stdin sebtype-test || exit 1
       python3 -I "$server" serve --data "$d/server" --port "$port" > "$d/server.log" 2>&1 & s=$!
       head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
-      fcitx5 -k --disable=all --enable=dbus,dbusfrontend,keyboard,rime,mozc > "$d/fcitx5.log" 2>&1 & f=$!
+      fcitx5 -k --disable=all --enable=dbus,dbusfrontend,keyboard,sebtype > "$d/fcitx5.log" 2>&1 & f=$!
       for _ in $(seq 50); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.2; done
       # Rime opens its learned words (rime_ice.userdb) once 中文 is in use: one key in a private input context.
       python3 - <<"PY"
@@ -190,11 +199,12 @@ def call(path, iface, method, sig=None, *args):
                          None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
 ic, _ = call("/org/freedesktop/portal/inputmethod", "org.fcitx.Fcitx.InputMethod1", "CreateInputContext", "(a(ss))", [("program", "sebtype-test")])
 call(ic, "org.fcitx.Fcitx.InputContext1", "FocusIn")
-for _ in range(100):  # the rime addon loads a moment after Fcitx5 is on the bus
-    call("/controller", "org.fcitx.Fcitx.Controller1", "SetCurrentIM", "(s)", "rime")
-    if call("/controller", "org.fcitx.Fcitx.Controller1", "CurrentInputMethod")[0] == "rime":
+for _ in range(100):  # the sebtype add-on loads a moment after Fcitx5 is on the bus
+    try:
+        call("/sebtype", "org.sebtype.Core1", "SetLanguage", "(s)", "zh")
         break
-    time.sleep(0.2)
+    except GLib.Error:
+        time.sleep(0.2)
 # Rime takes no keys while it deploys after its start: "a" and Escape until its learned words are open.
 userdb = os.path.join(os.environ["XDG_DATA_HOME"], "fcitx5/rime/rime_ice.userdb")
 for _ in range(60):

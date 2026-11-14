@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# SebType Linux setup: Fcitx5 input (Chinese with Rime, Japanese with Mozc, plain English) in every app
-# on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
+# SebType Linux setup: Fcitx5 input with SebType's input method (English, Chinese with Rime, Japanese with
+# Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
 # from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc, --undo-rime,
 # --undo-librime and --undo-fcitx5 put Fedora's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 back in
-# place of SebType's builds; --undo-fcitx5 also puts back Fcitx5's own settings (kcm-fcitx5, fcitx5-configtool).
+# place of SebType's builds (an older setup installed them); --undo-fcitx5 also puts back Fcitx5's own
+# settings (kcm-fcitx5, fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
@@ -120,7 +121,7 @@ rime_before=$data/sebtype/rime-before rime_marker=$rime_dir/sebtype-data.txt
 deploy_rime() {
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 || return 0
   echo "Rime deploys the changes in the background"
-  busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/rime/deploy s '' || true
+  busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s '' || true
 }
 if ((undo_chinese_data)); then
   if [[ -f $rime_before/files.txt ]]; then
@@ -138,8 +139,11 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's fcitx5-mozc (#66), fcitx5-rime (#117), librime (#101) and Fcitx5 (#182): SebType's source in pc/, packaged
-# as Fedora's packages (mozc/ and rime/). The undo goes back to the Fedora release in the repositories.
+# SebType's input method (#190): linux/, packaged by linux/build.sh. SebType's librime (#101): engines/librime,
+# packaged as Fedora's package (rime/). SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and Fcitx5 (#182),
+# which an older setup installed, have their undo here. The undo goes back to the Fedora release in the repositories.
+# shellcheck source-path=SCRIPTDIR source=../../linux/versions.sh
+source "$here/../../linux/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
 source "$here/mozc/versions.sh"
 # shellcheck source-path=SCRIPTDIR source=rime/versions.sh
@@ -175,11 +179,11 @@ if ((undo_fcitx5)); then
   mapfile -t fcitx5_pkgs < <(fcitx5_installed); undo_build "${fcitx5_pkgs[@]}"
 fi
 
-# 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-octagram is the Rime plugin
-# that reads the Chinese data's grammar file, as the phone and Windows do (#127); fcitx5-mozc is the
-# Japanese engine.
+# 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-lua runs rime-ice's Lua and
+# librime-octagram is the Rime plugin that reads the Chinese data's grammar file, as the phone and Windows
+# do (#127). SebType's input method itself is step 1b.
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
-  fcitx5-rime librime-octagram fcitx5-mozc)
+  librime-lua librime-octagram)
 missing=()
 for p in "${pkgs[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if ((${#missing[@]})); then
@@ -206,9 +210,19 @@ if ((${#settings[@]})) && change "remove ${settings[*]}, Fcitx5's own settings (
   else warn "${settings[*]} stay installed"; fi
 fi
 
-# 1b. SebType's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 in place of Fedora's, built from SebType's source by
-# mozc/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or five). Each
-# replaces one Fedora release; Fedora's update to another one warns until <dir>/versions.sh follows it.
+# 1b. SebType's input method (#190) and SebType's librime in place of Fedora's, built from SebType's source by
+# linux/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or five).
+# SebType's librime replaces one Fedora release; Fedora's update to another one warns until rime/versions.sh follows it.
+sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
+if [[ $sebtype_now != "$sebtype_want" ]] &&
+  change "install SebType's input method $sebtype_want, which hosts Rime and Mozc in place of fcitx5-rime and fcitx5-mozc (asks before using sudo)"; then
+  read -rp "Build SebType's input method if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
+  if [[ $answer == [yY]* ]]; then
+    [[ -f $SEBTYPE_CACHE/$SEBTYPE_RPM ]] || "$here/../../linux/build.sh" >/dev/null
+    sudo dnf install -y "$SEBTYPE_CACHE/$SEBTYPE_RPM"
+    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "SebType input method"), then run this again"
+  else warn "SebType's input method isn't installed, so typing stays as it was"; fi
+fi
 # own_build <package> <Fedora's version-release> <SebType's version-release> <build command> <what it adds>
 #   <what is missing without it> <rpm...>: the package's RPM first, then any built with it
 own_build() {
@@ -230,23 +244,23 @@ own_build() {
     *) warn "$pkg $now isn't the version SebType's build is for ($fedora): $without until pc/linux/$(basename "$(dirname "${build%% *}")")/versions.sh follows it" ;;
   esac
 }
-own_build fcitx5-mozc "$MOZC_FEDORA" "$MOZC_VERSION-$SEBTYPE_RELEASE" "$here/mozc/build.sh" \
-  "a Caps Lock icon and Japanese's one menu switch, あ → ア" "Japanese shows a, not A, with Caps Lock on, and its menu keeps Mozc's input modes and tools" \
-  "$MOZC_CACHE/rpms/$MOZC_RPM"
-own_build fcitx5-rime "$RIME_VERSION-$RIME_FEDORA_RELEASE" "$RIME_VERSION-$RIME_SEBTYPE_RELEASE" "$here/rime/build.sh" \
-  "Chinese's one menu switch, 简 → 繁" "Chinese's menu keeps Rime's schema list, Deploy and Synchronize" "$RIME_CACHE/$RIME_RPM"
 # librime's typo correction knows a PC keyboard's vertical neighbours too (engines/librime), so
 # a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
 librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
 own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/rime/build.sh librime" \
   "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
-# Fcitx5's tray menu has no Input Method Settings item: the Configurator holds SebType's settings
-# (pc/fcitx5, Decisions #2, #182). Its subpackages are rebuilt with it.
-fcitx5_rpms=()
-while read -r p; do fcitx5_rpms+=("$(fcitx5_rpm "$p")"); done < <(fcitx5_installed)
-own_build fcitx5 "$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE" "$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE" "$here/rime/build.sh fcitx5" \
-  "a tray menu without Input Method Settings" "the tray menu keeps Input Method Settings, Fcitx5's own settings" "${fcitx5_rpms[@]}"
+# Fcitx5 is Fedora's again (#190): SebType's tray (step 11b) leaves out Input Method Settings without
+# changing Fcitx5, so SebType's build of it (#182), which an older setup installed, goes.
+mapfile -t fcitx5_pkgs < <(fcitx5_installed)
+if [[ $(installed fcitx5) == *.sebtype* ]] &&
+  change "replace SebType's Fcitx5 build with Fedora's, as SebType's tray no longer needs it (asks before using sudo)"; then
+  read -rp "Put Fedora's ${fcitx5_pkgs[*]} back with 'sudo dnf distro-sync'? [y/N] " answer || answer=
+  if [[ $answer == [yY]* ]]; then
+    sudo dnf distro-sync -y "${fcitx5_pkgs[@]}"
+    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note fcitx5)"
+  else warn "fcitx5 stays SebType's build"; fi
+fi
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
@@ -318,37 +332,43 @@ for app in "${wayland_ime_apps[@]}"; do
     "add --enable-wayland-ime to ${id%.desktop}"
 done
 
-# 7. Input methods: English, Chinese, Japanese in the first Fcitx5 group (EN → 中 → 日), keeping any others.
+# 7. Input methods: SebType's one input method, which switches English, Chinese and Japanese itself (#190),
+# first in the first Fcitx5 group, in place of keyboard-us, rime and mozc; any others stay. Fcitx5 knows
+# it once it has restarted after step 1b.
 if busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; then
   call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
   group=$(call InputMethodGroups | awk '{print $3}' | tr -d '"')
   # Quoted strings of the reply: <layout> then <im> <im layout> pairs.
   mapfile -t q < <(call InputMethodGroupInfo s "$group" | grep -o '"[^"]*"' | tr -d '"')
-  layout=${q[0]} ims=()
-  for ((i = 1; i < ${#q[@]}; i += 2)); do ims+=("${q[i]}"); done
-  add=()
-  for im in keyboard-us rime mozc; do [[ " ${ims[*]} " == *" $im "* ]] || add+=("$im"); done
-  if ((${#add[@]})) && change "add ${add[*]} to Fcitx5 input method group $group"; then
-    args=()
-    for im in "${ims[@]}" "${add[@]}"; do args+=("$im" ""); done
-    call SetInputMethodGroupInfo 'ssa(ss)' "$group" "$layout" $((${#args[@]} / 2)) "${args[@]}"
-    call Save
+  layout=${q[0]} now=() ims=(sebtype)
+  for ((i = 1; i < ${#q[@]}; i += 2)); do
+    now+=("${q[i]}")
+    [[ " sebtype keyboard-us rime mozc " == *" ${q[i]} "* ]] || ims+=("${q[i]}")
+  done
+  if [[ "${now[*]}" != "${ims[*]}" ]]; then
+    if ! call AvailableInputMethods | grep -q '"sebtype"'; then
+      warn "Fcitx5 doesn't know SebType's input method yet: $(restart_note "SebType input method"), then run this again"
+    elif change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc"; then
+      args=()
+      for im in "${ims[@]}"; do args+=("$im" ""); done
+      call SetInputMethodGroupInfo 'ssa(ss)' "$group" "$layout" $((${#args[@]} / 2)) "${args[@]}"
+      call Save
+    fi
   fi
 else
   warn "Fcitx5 isn't running; log out and in again, then rerun to set up its input methods"
 fi
 
 # 8. Super+Space is the only language switch, and it toggles English and the last other language (#93):
-# it is Fcitx5's trigger key, which switches between the group's first input method (English) and the
-# one used last, and a pick from the tray menu becomes that one. EnumerateWithTriggerKeys=False keeps
-# it a toggle while Super stays held. Fcitx5's other switchers are cleared: Shift_L (AltTriggerKeys),
-# Control+Shift+Shift_L (EnumerateForwardKeys), and the group switch, which defaults to Super+Space too.
-# Rime still handles its own Shift tap for English inside Chinese.
+# SebType's input method takes it (#190), so Fcitx5's own switchers are cleared: its trigger key (which
+# an older setup made Super+Space), Shift_L (AltTriggerKeys), Control+Shift+Shift_L (EnumerateForwardKeys),
+# and the group switch, which defaults to Super+Space too. EnumerateWithTriggerKeys=False is what an older
+# setup wrote. The Shift tap for English is SebType's input method's too.
 # ShareInputState=All: one language for every window, as on Windows (#42), not one per window.
 fcitx_conf=$config/fcitx5/config
 fcitx_global() { # prints the config with those settings, keeping everything else
-  awk -v cleared='AltTriggerKeys EnumerateForwardKeys EnumerateBackwardKeys EnumerateGroupForwardKeys EnumerateGroupBackwardKeys' '
-    BEGIN { n = split(cleared " TriggerKeys EnumerateWithTriggerKeys", keys, " ")
+  awk -v cleared='TriggerKeys AltTriggerKeys EnumerateForwardKeys EnumerateBackwardKeys EnumerateGroupForwardKeys EnumerateGroupBackwardKeys' '
+    BEGIN { n = split(cleared " EnumerateWithTriggerKeys", keys, " ")
       for (i = 1; i <= n; i++) { own["[Hotkey/" keys[i] "]"] = 1; own[keys[i]] = 1 }
       gsub(" ", "=\n", cleared); cleared = cleared "=\nEnumerateWithTriggerKeys=False" }
     /^\[/ { sec = $0; skip = (sec in own) }
@@ -358,14 +378,13 @@ fcitx_global() { # prints the config with those settings, keeping everything els
     $0 == "[Hotkey]" { hotkey = 1; print cleared }
     $0 == "[Behavior]" { behavior = 1; print "ShareInputState=All" }
     END { if (!hotkey) print "[Hotkey]\n" cleared
-      if (!behavior) print "\n[Behavior]\nShareInputState=All"
-      print "\n[Hotkey/TriggerKeys]\n0=Super+space" }' "$@"
+      if (!behavior) print "\n[Behavior]\nShareInputState=All" }' "$@"
 }
 canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
 src=$fcitx_conf; [[ -f $src ]] || src=/dev/null
 want=$(fcitx_global "$src")
 if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
-  change "make Super+Space the only language switch (English ⇄ the last other language), shared by all windows, in $fcitx_conf (backup in $backup)"; then
+  change "leave Super+Space, the only language switch, to SebType's input method (English ⇄ the last other language), shared by all windows, in $fcitx_conf (backup in $backup)"; then
   [[ -f $fcitx_conf ]] && save "$fcitx_conf"
   mkdir -p "${fcitx_conf%/*}"; printf '%s\n' "$want" > "$fcitx_conf"
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadConfig 2>/dev/null || true
@@ -460,9 +479,11 @@ fi
 # Fcitx5 asks for these names (fcitx_mozc is Japanese's entry in the tray menu); input-keyboard (EN) and
 # fcitx-rime come from the active theme, so only a
 # theme of our own set as active overrides them. fcitx_rime_latin_upper is what fcitx5-rime asks for in
-# English with Caps Lock on; SebType's fcitx5-mozc build (step 1b) asks for <English mode icon>_upper.
+# English with Caps Lock on; SebType's fcitx5-mozc build asked for <English mode icon>_upper. SebType's input
+# method (#190) asks for sebtype-<file name> in the tray and its menu.
 icons=$here/../icons
-icon_names=(input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps
+icon_names=(sebtype-en:en sebtype-zh:zh sebtype-zh-a:zh-a sebtype-zh-caps:zh-caps sebtype-hira:hira
+  sebtype-kata:kata sebtype-ja-a:ja-a sebtype-ja-caps:ja-caps input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps
   fcitx_mozc:hira fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
   fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a
   fcitx_mozc_direct_upper:ja-caps fcitx_mozc_alpha_half_upper:ja-caps fcitx_mozc_alpha_full_upper:ja-caps)
@@ -486,6 +507,16 @@ if { ! diff -rq "$want_theme" "$theme" >/dev/null 2>&1 || [[ $(icon_theme) != Se
   set_icon_theme SebType
 fi
 rm -r "$want_theme"
+
+# 11b. SebType's tray item and menu (#190, Decisions #2): SebType's input method brings it as Fcitx5's
+# notificationitem add-on, by this account's add-on entry over Fedora's. Fcitx5's classic UI then leaves
+# out its own tray icon, as it does for Fcitx5's item, so its menu with Input Method Settings never shows.
+tray_conf=$data/fcitx5/addon/notificationitem.conf
+if ! cmp -s "$here/../../linux/data/notificationitem.conf" "$tray_conf" &&
+  change "show SebType's tray menu in place of Fcitx5's with $tray_conf"; then
+  mkdir -p "${tray_conf%/*}"; cp "$here/../../linux/data/notificationitem.conf" "$tray_conf"
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "SebType tray")"
+fi
 
 rime_changed=0  # steps 12 to 13b set it; 13c deploys
 # 12. Chinese reads 中文 in the switch popup and the tray text (#69). fcitx5-rime's label is the first

@@ -1,7 +1,8 @@
 # SebType on Linux (KDE Plasma, Wayland)
 
-On Linux, SebType typing is Fcitx5 with Rime (Chinese, rime-ice), Mozc (Japanese, the same engine as
-on the phone) and plain English. `setup-ime.sh` sets it up so that it works in every app on a KDE
+On Linux, SebType typing is Fcitx5 with SebType's input method (`linux/`, #190): one Fcitx5 add-on over
+SebType's core (`core/`), which hosts Rime (Chinese, rime-ice), Mozc (Japanese, the same engine as on the
+phone) and plain English, and switches between them itself. `setup-ime.sh` sets it up so that it works in every app on a KDE
 Plasma Wayland session, XWayland apps included, with nothing set by hand. It targets Fedora-family
 systems (Nobara, Fedora).
 
@@ -17,31 +18,32 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 
 | Step | Change | Fixes |
 |---|---|---|
-| Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `fcitx5-rime`, `librime-octagram`, `fcitx5-mozc`; `librime-octagram` from SebType's librime build once librime is SebType's | The engines, and the modules XWayland and older apps load. `librime-octagram` reads the Chinese data's grammar file, so Chinese candidates come in the phone's and Windows' order: `beirendingwei` gives 被认定为, not 被人定位 (#127) |
+| Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `librime-lua`, `librime-octagram`; `librime-octagram` from SebType's librime build once librime is SebType's | Rime's plugins, and the modules XWayland and older apps load. `librime-octagram` reads the Chinese data's grammar file, so Chinese candidates come in the phone's and Windows' order: `beirendingwei` gives 被认定为, not 被人定位 (#127) |
 | Fcitx5's own settings | Removes `kcm-fcitx5` (Fcitx5's page in System Settings) and `fcitx5-configtool` (the Fcitx 5 Configuration app), after asking, with sudo. `--undo-fcitx5` puts them back | SebType's settings are in the Configurator; Fcitx5's own were a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182) |
-| SebType's fcitx5-mozc | Replaces Fedora's `fcitx5-mozc` with SebType's build of the same version (`mozc/`), after asking, with sudo | Japanese's English mode shows **A** while Caps Lock is on, like Chinese's, and its tray menu has one switch, あ → ア (#117) |
-| SebType's fcitx5-rime | Replaces Fedora's `fcitx5-rime` with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese's tray menu has one switch, 简 → 繁, with no schema list, Deploy or Synchronize (#117) |
+| SebType's input method | Installs the `sebtype` RPM (`linux/build.sh`: the Fcitx5 add-on and Mozc's server), after asking, with sudo. Fcitx5 loads it once it restarts; then rerun setup | English, 中文 and 日本語 in one input method with SebType's own switching, popups, candidate pages and tray menu, in place of fcitx5-rime's and fcitx5-mozc's frontends (#190). See [SebType's input method](#sebtypes-input-method) |
+| SebType's fcitx5-mozc and fcitx5-rime | No longer installed (an older setup replaced Fedora's with them). `--undo-mozc` and `--undo-rime` still put Fedora's back | SebType's input method does what they did (#117) |
 | SebType's librime | Replaces Fedora's `librime` and its installed plugins (`librime-lua`, …) with SebType's build of the same version (`rime/`), after asking, with sudo | Chinese typo correction also fixes a slip onto the key above or below, which librime's own neighbour map lacks: `xkaoshi` gives 小时 (#101) |
-| SebType's Fcitx5 | Replaces Fedora's `fcitx5` and its installed subpackages (`fcitx5-libs`, `fcitx5-data`, …) with SebType's build of the same version (`rime/`), after asking, with sudo | The tray menu ends with Restart and Exit, without Input Method Settings, Fcitx5's own settings window (#182) |
+| Fedora's Fcitx5 | When an older setup installed SebType's build of `fcitx5` and its subpackages, puts Fedora's back with `dnf distro-sync`, after asking, with sudo | SebType's tray (below) leaves out Input Method Settings without changing Fcitx5 (#190) |
 | KWin input method | `kwinrc` `[Wayland] InputMethod` = Fcitx 5 (System Settings → Keyboard → Virtual Keyboard) | Every native Wayland app (GTK, Qt, Electron) through text-input, with no environment variables. Takes effect at the next login if Fcitx5 isn't already running under KWin |
 | XWayland | `XMODIFIERS=@im=fcitx` in `~/.config/environment.d/90-sebtype-im.conf`, only if the session doesn't already have it | XIM apps on XWayland: Steam, WINE/Proton, Java, Xlib/SDL games |
 | Global IM modules | Warns about any global `*_IM_MODULE` (`/etc/environment`, `environment.d`, Plasma env scripts, shell profiles) and doesn't edit it | A global `GTK_IM_MODULE`/`QT_IM_MODULE` overrides Wayland text-input and makes candidate windows flicker |
 | Dead Flatpak overrides | Removes `~/.local/share/flatpak/overrides/com.qq.QQ` and `com.tencent.WeChat` when those Flatpaks aren't installed | Leftovers of older QQ/WeChat input fixes |
 | WeChat | `env QT_IM_MODULE=fcitx` in the user's WeChat launcher | WeChat bundles its own Qt on X11 and only finds Fcitx when named |
 | Chromium/Electron | `--enable-wayland-ime` in the user's launcher, only for apps the checklist below shows need it. None do today | Apps on native Wayland that don't turn on text-input by themselves |
-| Input methods | Adds `keyboard-us`, `rime`, `mozc` (EN → 中 → 日) to the first Fcitx5 group, keeping any others | Chinese and Japanese ready to switch to |
-| Language switch | In `~/.config/fcitx5/config`: `ShareInputState=All`, so every window shares one language, as on Windows. Super+Space is the trigger key with `EnumerateWithTriggerKeys=False`, and Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L (enumerate) and the group-switch keys are cleared. Fcitx5 reloads its config | Super+Space is the only language switch and toggles English ⇄ the last other language (中文 or 日本語), also while Super stays held; the other one is picked from the tray menu, and then it is the one Super+Space returns to (#93). Rime's own Shift tap still switches English inside Chinese |
-| Japanese あ ⇄ English | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus a Shift tap (あ ⇄ direct English) and Alt+\` (あ ⇄ ア, before typing). Other Mozc settings are kept. A running `mozc_server` is stopped; fcitx5-mozc starts it again on the next key. The Shift tap from English back to あ works once Fcitx5 restarts (fcitx5-mozc reads the keys that work in direct mode only then): log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on, which makes KWin restart Fcitx5 | A Shift tap switches Japanese like Rime's Shift tap in Chinese, the only switch to English letters, and Alt+\` switches hiragana and katakana as on Windows (#117). Shift+letter, F6–F10 and Space work as in Mozc's default keymap |
+| Input methods | Makes `sebtype` the first Fcitx5 group's input method in place of `keyboard-us`, `rime` and `mozc`, keeping any others, once the running Fcitx5 knows it | English, Chinese and Japanese in one input method; their order (EN → 中 → 日) is SebType's setting, which the Configurator writes to `~/.config/sebtype/sebtype.conf` |
+| Language switch | In `~/.config/fcitx5/config`: `ShareInputState=All`, so every window shares one language, as on Windows. Fcitx5's trigger key (Super+Space after an older setup), Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L (enumerate) and the group-switch keys are cleared. Fcitx5 reloads its config | Super+Space reaches SebType's input method, the only language switch: it toggles English ⇄ the last other language (中文 or 日本語), also while Super stays held; the other one is picked from the tray menu, and then it is the one Super+Space returns to (#93). A Shift tap switches English letters inside Chinese and Japanese |
+| Japanese keymap | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus a Shift tap (あ ⇄ direct English) and Alt+\` (あ ⇄ ア, before typing). Other Mozc settings are kept. A running `mozc_server` is stopped; fcitx5-mozc starts it again on the next key. The Shift tap from English back to あ works once Fcitx5 restarts (fcitx5-mozc reads the keys that work in direct mode only then): log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on, which makes KWin restart Fcitx5 | Mozc's MS-IME keys: Shift+letter, F6–F10 and Space work as in Mozc's default keymap. SebType's input method now takes the Shift tap and Alt+\` itself (#190), so the keymap's Shift and Alt+\` lines are no longer used |
 | Fcitx5's add-on hotkeys | Empties the keys of Fcitx5's clipboard history (Ctrl+;), Unicode input (Ctrl+Alt+Shift+U, Ctrl+Shift+U) and quick phrase (Super+\`, Super+;) in `~/.config/fcitx5/conf/clipboard.conf`, `unicode.conf` and `quickphrase.conf`, keeping their other settings, and Fcitx5 reloads them. The add-ons stay loaded: fcitx5-mozc reads the clipboard through one | These keys reach the app instead of opening Fcitx5 popups SebType doesn't offer (Decisions #2, #182) |
 | Alt+\` in Plasma | Removes Alt+\` from KWin's "Walk Through Windows of Current Application", which keeps Meta+` | Plasma would otherwise take Alt+\` before Mozc sees it |
 | Tray icons | Installs `~/.local/share/icons/SebType`, an icon theme that holds only SebType's tray icons (`pc/icons`) and inherits the theme that was active, then makes it the active icon theme. Plasma reloads icons at once | The tray shows SebType's keycaps instead of the icon theme's keyboard, Rime logo and Mozc squares |
+| SebType's tray | `~/.local/share/fcitx5/addon/notificationitem.conf`: this account's entry for Fcitx5's tray add-on, which loads SebType's tray from SebType's input method instead. Shows once Fcitx5 restarts | SebType's tray menu (below) in place of Fcitx5's, without Input Method Settings (Decisions #2, #182). Fcitx5's classic UI leaves out its own X11 tray icon while a tray item is up, as it does for Fcitx5's, so Fcitx5's menu never shows (#190) |
 | Chinese name | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. |
 | Japanese and English names | `mozc.conf` named 日本語 and `keyboard-us.conf` named English in the same `inputmethod` folder. Show once Fcitx5 restarts | The tray menu and the Super+Space popup read English · 中文 · 日本語 instead of Keyboard - English (US) · Rime · Mozc (#92). An entry there also renames the keyboard addon's built-in `keyboard-us`; its layout still comes from the id |
 | Typo correction | `sebtype_typo/keyboard: pc` in the same `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | Chinese data | Builds SebType's Chinese data with `data/rime/build.sh` (cached in `~/.cache/sebtype`; the first build needs gcc, g++ and OpenCC and takes about a minute) and unzips it into `~/.local/share/fcitx5/rime` over the files of the same name, then removes the dictionary sources (`*.dict.yaml`) it has prebuilt tables for. Learned words, `*.custom.yaml` and an existing `custom_phrase.txt` stay. Every file it replaces or removes is kept first in `~/.local/share/sebtype/rime-before`, and `sebtype-data.txt` in Rime's folder names the data installed. Rime then deploys it (Rime deploy, below) | Chinese on Linux types with the same data as the phone and Windows: rime-ice's schemas and Lua with 白霜's dictionary, and SebType's typo correction (#46, #102), so `xoaoshi` gives 小时 first. Full pinyin is its only scheme, and 简 → 繁 its only menu switch: punctuation, emoji, half-width and the other switches stay at their defaults (#117) |
 | 简/繁 key | Ctrl+Shift+F toggles rime-ice's `traditionalization` option at any time, added to `key_binder/bindings` in `~/.local/share/fcitx5/rime/default.custom.yaml`, keeping the file's other patches | Chinese switches between simplified and traditional output, as with Weasel on Windows. Only the output changes, so learned words stay shared; Ctrl+F alone stays Find in apps |
 | Candidates per page | `menu/page_size: 6` in the same `default.custom.yaml`, only when it has no page size yet | 6 Chinese candidates per page instead of rime-ice's 5 (Decisions #2, #163). A page size of the user's own, which the Configurator writes there too, stays |
-| Rime deploy | When any of the Chinese steps changed something and Fcitx5 runs, asks it over D-Bus to redeploy Rime, which it does in the background | The changes apply without Rime's Deploy menu entry, which SebType's fcitx5-rime doesn't have |
+| Rime deploy | When any of the Chinese steps changed something and Fcitx5 runs, asks it over D-Bus to redeploy Rime, which it does in the background | The changes apply without a Deploy menu entry, which SebType's tray menu doesn't have |
 | SebType Configurator | Builds `pc/configurator` with Rust's `cargo` when its sources changed, and installs it in `~/.local/share/sebtype/configurator` with the app-menu entry **SebType Configurator** (`sebtype-configurator.desktop`) and the phone's pig as its icon. Without Rust it only warns | SebType's settings without editing YAML: see [SebType Configurator](#sebtype-configurator) |
 
 `mozc-keymap.tsv` is Mozc's `src/data/keymap/ms-ime.tsv` (BSD-3-Clause, Google) with Alt+\` (あ ⇄ ア) and Shift
@@ -58,16 +60,16 @@ fcitx5-mozc keep it. If Mozc's settings are ever reset, rerun `setup-ime.sh`. To
 
 ### Tray icons
 
-| State | Icon | Fcitx5 asks for |
-|---|---|---|
-| English (US layout) | EN | `input-keyboard` |
-| Chinese | 中 | `fcitx-rime` |
-| Chinese, English mode | a | `fcitx_rime_latin` |
-| Chinese, English mode with Caps Lock | A | `fcitx_rime_latin_upper` |
-| Japanese hiragana, and Japanese in the tray menu | あ | `fcitx_mozc_hiragana`, `fcitx_mozc` |
-| Japanese katakana (full and half width) | ア | `fcitx_mozc_katakana_full`, `fcitx_mozc_katakana_half` |
-| Japanese, English mode (direct, half and full ASCII) | a | `fcitx_mozc_direct`, `fcitx_mozc_alpha_half`, `fcitx_mozc_alpha_full` |
-| Japanese, English mode with Caps Lock | A | the same names with `_upper` (SebType's fcitx5-mozc) |
+| State | Icon | SebType's input method asks for | fcitx5-rime and fcitx5-mozc asked for |
+|---|---|---|---|
+| English (US layout) | EN | `sebtype-en` | `input-keyboard` |
+| Chinese | 中 | `sebtype-zh` | `fcitx-rime` |
+| Chinese, English mode | a | `sebtype-zh-a` | `fcitx_rime_latin` |
+| Chinese, English mode with Caps Lock | A | `sebtype-zh-caps` | `fcitx_rime_latin_upper` |
+| Japanese hiragana, and Japanese in the tray menu | あ | `sebtype-hira` | `fcitx_mozc_hiragana`, `fcitx_mozc` |
+| Japanese katakana | ア | `sebtype-kata` | `fcitx_mozc_katakana_full`, `fcitx_mozc_katakana_half` |
+| Japanese, English mode | a | `sebtype-ja-a` | `fcitx_mozc_direct`, `fcitx_mozc_alpha_half`, `fcitx_mozc_alpha_full` |
+| Japanese, English mode with Caps Lock | A | `sebtype-ja-caps` | the same names with `_upper` (SebType's fcitx5-mozc) |
 
 `input-keyboard` and `fcitx-rime` come from the active icon theme, so only a theme of SebType's own
 replaces them, and other apps that show `input-keyboard` get the EN key too. Every other icon still
@@ -128,11 +130,27 @@ for the active language with its key, and nothing else from the engines.
 | 中文 | 简 → 繁 (繁 → 简 while traditional) | Ctrl+Shift+F |
 | 日本語 | あ → ア (ア → あ while katakana) | Alt+\` |
 
-Fcitx5's own Restart and Exit stay at the end: they are Fcitx5's, not an engine's. SebType's Fcitx5
-(below) leaves out Input Method Settings, and no key opens Rime's switcher: F4 and Ctrl+\` reach the
-app (#182).
+Fcitx5's own Restart and Exit stay at the end: they are Fcitx5's, not an engine's. SebType's tray
+leaves out Input Method Settings, and no key opens Rime's switcher: F4 and Ctrl+\` reach the app (#182).
+
+### SebType's input method
+
+`linux/` is one Fcitx5 add-on, `sebtype`, over SebType's core (`core/`, the same on every platform,
+#190): the core hosts librime for 中文 and Mozc's server for 日本語, passes English through, and owns the
+switching (Win+Space, the Shift tap, Ctrl+Shift+F, Alt+\`), the popups, the candidate pages and the tray
+menu. The add-on draws what the core says with Fcitx5's own candidate window (classicui, so the Picnic
+theme and the Configurator's settings apply to both languages) and shows its popups as Fcitx5 did. Its
+tray, `linux/src/tray.cpp`, is Fcitx5's notificationitem trimmed to SebType's menu, loaded under that
+add-on's name (step "SebType's tray"), so Fedora's Fcitx5 needs no change. Rime keeps fcitx5-rime's user
+folder (`~/.local/share/fcitx5/rime`) and names, and Mozc its profile, so learned words stay.
+
+`linux/build.sh` builds the `sebtype` RPM in the pinned Fedora container fcitx5-mozc builds in, sharing
+its Bazel caches for Mozc's server (`/usr/libexec/sebtype/mozc_server`), and runs the core's unit tests.
 
 ### SebType's fcitx5-mozc
+
+An older setup installed it; SebType's input method (#190) does without it now, and setup no longer
+installs it. Its source and packaging go in #190's last step.
 
 Fedora's fcitx5-mozc picks the tray icon from the input mode alone, so Japanese's English mode can't show
 **A** for Caps Lock. SebType's fcitx5-mozc, built from `engines/mozc` (Mozc 3.35.6354, the same
@@ -160,6 +178,9 @@ package), then restart Fcitx5 the same way.
 
 ### SebType's fcitx5-rime
 
+An older setup installed it; SebType's input method (#190) does without it now, and setup no longer
+installs it. Its source and packaging go in #190's last step.
+
 Fedora's fcitx5-rime puts Rime's schema list, Latin Mode, Deploy and Synchronize into the tray menu, and
 every switch the schema has. SebType's fcitx5-rime, `pc/fcitx5-rime` (5.1.15), leaves out the schema list, Deploy and Synchronize, and
 adds each switch's key to its menu entry (read from Rime's `default.yaml` key bindings, so the entry
@@ -171,6 +192,9 @@ and the image pinned in `rime/versions.sh`, in about a minute. Its release `1.se
 To undo: `pc/linux/setup-ime.sh --undo-rime`.
 
 ### SebType's Fcitx5
+
+An older setup installed it; SebType's input method (#190) does without it now, and setup no longer
+installs it. Its source and packaging go in #190's last step.
 
 Fedora's Fcitx5 ends its tray menu with Input Method Settings, which opens Fcitx5's own settings
 window. SebType's Fcitx5, `pc/fcitx5` (5.1.23), leaves that item out of both tray menus, the
@@ -208,12 +232,12 @@ restarts. At the end it checks that Fcitx5 runs under KWin and that the session 
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the install and undo of the icon theme, SebType's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 and the Configurator,
+rerun run on a fake fresh account including the install of SebType's input method, Fedora's Fcitx5 back in place of SebType's, the install and undo of the icon theme, SebType's librime and the Configurator, the undo of an older setup's fcitx5-mozc and fcitx5-rime,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
-text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) and 6 candidates per page (a page size of the user's own kept) in a private Fcitx5 running Rime on SebType's
+text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) and 6 candidates per page (a page size of the user's own kept) in a private Fcitx5 running SebType's input method on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
-icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's builds without installing them: `bwrap`
-mounts their files over Fedora's for that Fcitx5 alone. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
+icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method and librime without installing them:
+Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`, and `bwrap` mounts librime over Fedora's for that Fcitx5 alone. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
 
 ## App checklist
 

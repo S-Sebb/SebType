@@ -5,7 +5,7 @@ has the details):
   (LICENSE.md).
 - The original AOSP keyboard code: the Apache License 2.0 below.
 - Code from other projects that FUTO vendored: each project's own licence, in its folder.
-- SebType's own code in pc/, art/, data/, docs/, sync-server/, tools/ and .github/workflows/, and SebType's own
+- SebType's own code in core/, linux/, pc/, art/, data/, docs/, sync-server/, tools/ and .github/workflows/, and SebType's own
   files in android/ (android/LICENSE lists them): the MIT licence in LICENSE-SebType, Copyright (c) 2026 S-Sebb.
   These files in those folders are not SebType's own and keep their licence (each folder's LICENSE file lists
   them):
@@ -22,6 +22,9 @@ has the details):
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - SebType's fcitx5-rime in pc/fcitx5-rime/: fcitx5-rime's LGPL-2.1-or-later.
   - SebType's Fcitx5 in pc/fcitx5/: Fcitx5's LGPL-2.1-or-later.
+  - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's
+    notificationitem: LGPL-2.1-or-later.
+  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend): Mozc's BSD-3-Clause licence.
   - The RPM specs in pc/linux/: Fedora's, MIT.
   - android/rime/: RimeJni (MIT) with SebType's changes, under RimeJni's licence (android/rime/LICENSE).
   - android/mozc/src/: FUTO's mozc-lib, Google's Mozc Android client (BSD-3-Clause) with FUTO's and
