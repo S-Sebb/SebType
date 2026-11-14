@@ -61,6 +61,7 @@ in `${XDG_CACHE_HOME:-~/.cache}/sebtype`.
 
 | Command | Builds |
 |---|---|
+| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's server from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
 | `pc/linux/mozc/build.sh` | SebType's fcitx5-mozc RPM from `engines/mozc`, in a pinned Fedora container |
 | `pc/linux/rime/build.sh [fcitx5-rime\|librime\|fcitx5]` | the fcitx5-rime, librime (from `engines/librime`) or Fcitx5 RPMs |
 | `cargo build --release` in `pc/configurator` | the Configurator |
@@ -80,7 +81,8 @@ in `${XDG_CACHE_HOME:-~/.cache}/sebtype`.
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
 | `cd android && ./gradlew :app:testDebugUnitTest` | The app's unit tests |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
-| `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account ([pc/linux/README.md](../pc/linux/README.md)) |
+| `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
+| `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account, and SebType's input method in private Fcitx5s ([pc/linux/README.md](../pc/linux/README.md)) |
 | `pc/configurator/test.sh` | The Configurator in nested sessions |
 | `pc/windows/setup/test-tcsbackend.sh`, `pc/windows/mozc/test-tcsbackend.sh` | SebType's installer and Mozc on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
 

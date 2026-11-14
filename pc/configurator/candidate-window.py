@@ -4,7 +4,7 @@
     candidate-window.py OUT.png [KEYS]        # needs python3-dbus, python3-xlib, Pillow, NumPy; KEYS: nihao
 
 Runs inside a nested KWin with Xwayland, where Fcitx5 draws with X11 (classicui on xcb). It talks to
-Fcitx5 as an app would (an input context with inline preedit, on Rime), waits for the window's size to
+Fcitx5 as an app would (an input context with inline preedit, in SebType's 中文), waits for the window's size to
 settle, saves its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS TAB`: the pink pixels
 where the Picnic theme draws SebType's pig, left of the candidates, and 1 if the window's top is a tab
 (#162): drawn at the left, clear at the right.
@@ -32,10 +32,9 @@ ic.SetCapability(
 )  # Preedit | FormattedPreedit: the app shows the preedit
 ic.FocusIn()
 ic.SetCursorRect(60, 60, 1, 20)
-controller = dbus.Interface(
-    bus.get_object("org.fcitx.Fcitx5", "/controller"), "org.fcitx.Fcitx.Controller1"
-)
-controller.SetCurrentIM("rime")
+dbus.Interface(
+    bus.get_object("org.fcitx.Fcitx5", "/sebtype"), "org.sebtype.Core1"
+).SetLanguage("zh")
 
 
 def type_keys(keysyms):

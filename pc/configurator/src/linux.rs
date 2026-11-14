@@ -1,5 +1,6 @@
-//! Linux: Fcitx5 with fcitx5-rime and fcitx5-mozc, set up by pc/linux/setup-ime.sh. A running Fcitx5
-//! is told over D-Bus (busctl); without one, its files are written and read when it starts.
+//! Linux: Fcitx5 with SebType's input method (linux/, #190), which hosts Rime and Mozc, set up by
+//! pc/linux/setup-ime.sh. A running Fcitx5 is told over D-Bus (busctl); without one, the files are
+//! written and read when it starts.
 
 use crate::Candidates;
 use std::{
@@ -84,8 +85,8 @@ fn panel_outline(tab_w: i32, tab_h: i32, w: i32, h: i32) -> String {
         i = yd - r,
     )
 }
-/// SebType's languages as Fcitx5 input methods.
-const IMS: [(&str, &str); 3] = [("en", "keyboard-us"), ("zh", "rime"), ("ja", "mozc")];
+/// SebType's languages, as its settings name them.
+const LANGS: [&str; 3] = ["en", "zh", "ja"];
 
 fn xdg(var: &str, fallback: &str) -> PathBuf {
     env::var_os(var)
@@ -104,14 +105,12 @@ pub fn rime_dir() -> PathBuf {
 pub fn mozc_dir() -> PathBuf {
     config().join("mozc")
 }
-fn profile() -> PathBuf {
-    config().join("fcitx5/profile")
+/// SebType's own settings, which its input method reads (core/: Settings).
+fn settings() -> PathBuf {
+    config().join("sebtype/sebtype.conf")
 }
 fn classicui() -> PathBuf {
     config().join("fcitx5/conf/classicui.conf")
-}
-fn mozc_conf() -> PathBuf {
-    config().join("fcitx5/conf/mozc.conf")
 }
 fn theme_dir() -> PathBuf {
     data().join("fcitx5/themes").join(PICNIC)
@@ -147,7 +146,7 @@ fn reload_addon(addon: &str) {
     }
 }
 
-// --- INI files (Fcitx5's profile and addon configs) ---
+// --- INI files (SebType's settings and Fcitx5's addon configs) ---
 
 fn ini_get(text: &str, key: &str) -> Option<String> {
     text.lines()
@@ -186,78 +185,19 @@ fn write_if_changed(path: &PathBuf, text: &str) -> io::Result<bool> {
     Ok(true)
 }
 
-// --- Languages: the first input method group, in Super+Space order ---
+// --- Languages: SebType's settings, in Super+Space order (the first is home) ---
 
-struct Group {
-    name: String,
-    layout: String,
-    items: Vec<(String, String)>, // input method, layout
-}
-
-fn group() -> io::Result<Group> {
-    if fcitx_running() {
-        let name: serde_json::Value =
-            serde_json::from_str(&controller("CurrentInputMethodGroup", &[])?)?;
-        let name = name["data"][0].as_str().unwrap_or("Default").to_string();
-        let info: serde_json::Value =
-            serde_json::from_str(&controller("InputMethodGroupInfo", &["s", &name])?)?;
-        let d = &info["data"];
-        let items = d[1]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|i| (s(&i[0]), s(&i[1])))
-            .collect();
-        return Ok(Group {
-            name,
-            layout: s(&d[0]),
-            items,
-        });
-    }
-    // The profile: [Groups/0] Name= / Default Layout=, then [Groups/0/Items/N] Name= / Layout=.
-    let text = fs::read_to_string(profile()).unwrap_or_default();
-    let mut g = Group {
-        name: "Default".into(),
-        layout: "us".into(),
-        items: vec![],
-    };
-    let mut section = String::new();
-    for line in text.lines() {
-        if let Some(s) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            section = s.to_string();
-            if section.starts_with("Groups/0/Items/") {
-                g.items.push((String::new(), String::new()));
-            }
-        } else if let Some((k, v)) = line.split_once('=') {
-            match (section.as_str(), k) {
-                ("Groups/0", "Name") => g.name = v.into(),
-                ("Groups/0", "Default Layout") => g.layout = v.into(),
-                (s, "Name") if s.starts_with("Groups/0/Items/") => {
-                    g.items.last_mut().unwrap().0 = v.into()
-                }
-                (s, "Layout") if s.starts_with("Groups/0/Items/") => {
-                    g.items.last_mut().unwrap().1 = v.into()
-                }
-                _ => {}
-            }
+/// SebType's three languages, those on first in their order, then those off. Without settings all are on.
+pub fn langs() -> io::Result<Vec<(String, bool)>> {
+    let text = fs::read_to_string(settings()).unwrap_or_default();
+    let order = ini_get(&text, "Order").unwrap_or_else(|| LANGS.join(","));
+    let mut out: Vec<(String, bool)> = Vec::new();
+    for id in order.split(',').filter(|id| LANGS.contains(id)) {
+        if !out.iter().any(|(i, _)| i == id) {
+            out.push((id.to_string(), true));
         }
     }
-    Ok(g)
-}
-fn s(v: &serde_json::Value) -> String {
-    v.as_str().unwrap_or_default().to_string()
-}
-
-/// SebType's three languages, those on first in their order, then those off.
-pub fn langs() -> io::Result<Vec<(String, bool)>> {
-    let g = group()?;
-    let mut out: Vec<(String, bool)> = g
-        .items
-        .iter()
-        .filter_map(|(im, _)| IMS.iter().find(|(_, n)| n == im))
-        .map(|(id, _)| (id.to_string(), true))
-        .collect();
-    for (id, _) in IMS {
+    for id in LANGS {
         if !out.iter().any(|(i, _)| i == id) {
             out.push((id.to_string(), false));
         }
@@ -266,62 +206,19 @@ pub fn langs() -> io::Result<Vec<(String, bool)>> {
 }
 
 pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
-    let g = group()?;
-    let layout_of = |im: &str| {
-        g.items
-            .iter()
-            .find(|(n, _)| n == im)
-            .map(|(_, l)| l.clone())
-            .unwrap_or_default()
-    };
-    let mut items: Vec<(String, String)> = langs
+    let on: Vec<&str> = langs
         .iter()
         .filter(|(_, on)| *on)
-        .filter_map(|(id, _)| IMS.iter().find(|(i, _)| i == id))
-        .map(|(_, im)| (im.to_string(), layout_of(im)))
+        .map(|(id, _)| id.as_str())
         .collect();
-    // Input methods that aren't SebType's stay, after SebType's.
-    items.extend(
-        g.items
-            .iter()
-            .filter(|(im, _)| !IMS.iter().any(|(_, n)| n == im))
-            .cloned(),
-    );
-    if fcitx_running() {
-        let n = items.len().to_string();
-        let mut args = vec!["ssa(ss)", &g.name, &g.layout, &n];
-        for (im, layout) in &items {
-            args.push(im);
-            args.push(layout);
-        }
-        controller("SetInputMethodGroupInfo", &args)?;
-        return Ok(());
+    let text = format!("[Languages]\nOrder={}\n", on.join(","));
+    if write_if_changed(&settings(), &text)? {
+        reload_addon("sebtype");
     }
-    // Fcitx5 not running: rewrite the group's items in its profile.
-    let text = fs::read_to_string(profile()).unwrap_or_default();
-    let mut out = String::new();
-    let mut skip = false;
-    for line in text.lines() {
-        if let Some(s) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            skip = s.starts_with("Groups/0/Items/");
-            if skip {
-                continue;
-            }
-        }
-        if !skip {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    for (i, (im, layout)) in items.iter().enumerate() {
-        out.push_str(&format!(
-            "\n[Groups/0/Items/{i}]\nName={im}\nLayout={layout}\n"
-        ));
-    }
-    write_if_changed(&profile(), &out).map(|_| ())
+    Ok(())
 }
 
-// --- The candidate window: Fcitx5's classic UI draws it for Rime and Mozc alike ---
+// --- The candidate window: Fcitx5's classic UI draws it for Chinese and Japanese alike ---
 
 pub fn candidates() -> Candidates {
     let ui = fs::read_to_string(classicui()).unwrap_or_default();
@@ -380,28 +277,21 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
             &ini_get(&prev, "DarkTheme").unwrap_or("default".into()),
         );
     }
-    let mut changed = write_if_changed(&path, &ui)? | theme_changed;
-    // fcitx5-mozc lays out its own candidates (its Vertical option, on by default).
-    let mozc = fs::read_to_string(mozc_conf()).unwrap_or_default();
-    let mozc_changed = write_if_changed(&mozc_conf(), &ini_set(&mozc, "Vertical", tf(c.vertical)))?;
+    let changed = write_if_changed(&path, &ui)? | theme_changed;
     if changed {
         reload_addon("classicui");
     }
-    if mozc_changed {
-        reload_addon("mozc");
-    }
-    changed |= mozc_changed;
     Ok(changed)
 }
 
 // --- Engines ---
 
-/// fcitx5-rime's deploy (its 重新部署 menu entry): Rime rereads its files and rebuilds what changed.
+/// Rime's deploy, by SebType's input method: Rime rereads its files and rebuilds what changed.
 pub fn redeploy_rime() -> io::Result<()> {
     if fcitx_running() {
         controller(
             "SetConfig",
-            &["sv", "fcitx://config/addon/rime/deploy", "s", ""],
+            &["sv", "fcitx://config/addon/sebtype/deploy", "s", ""],
         )?;
     }
     Ok(())
@@ -425,7 +315,7 @@ fn stop_mozc() {
         }
     }
 }
-/// mozc_server reads its config and dictionaries when it starts; fcitx5-mozc starts it on the next key.
+/// mozc_server reads its config and dictionaries when it starts; SebType's input method starts it on the next key.
 pub fn restart_mozc() {
     stop_mozc();
 }
@@ -446,7 +336,7 @@ pub fn python() -> Command {
     Command::new("python3")
 }
 
-/// Rime's sync, which fcitx5-rime runs when Fcitx5 saves: it merges the other devices' snapshots into
+/// Rime's sync, which SebType's input method runs when Fcitx5 saves: it merges the other devices' snapshots into
 /// the learned words and writes this PC's into `own`. Rime skips it while it is busy (deploying after
 /// a start), so it is asked again every 5 s until it has written, at most 30 s; without a running
 /// Fcitx5 there is nothing to wait for.
@@ -594,7 +484,7 @@ mod tests {
     }
 
     /// The real Fcitx5 and Rime take what the app writes: run by test.sh in a private D-Bus session with
-    /// its own Fcitx5 on a copy of rime-ice (keyboard-us, rime and mozc in its group), never the desktop's.
+    /// its own Fcitx5 with SebType's input method on a copy of rime-ice, never the desktop's.
     #[test]
     #[ignore]
     fn private_fcitx5_takes_languages_and_chinese_settings() {
