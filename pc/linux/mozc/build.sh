@@ -20,15 +20,9 @@ pack_source "$here/../../../engines/mozc" "$MOZC_CACHE/sources/mozc.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies and Bazelisk. Built once per pin and spec.
 image=localhost/sebtype-mozc-builder:$(cat "$here/fcitx5-mozc.spec" - <<<"$MOZC_BUILD_IMAGE $BAZELISK_SHA256" | sha256sum | head -c 12)
-if ! podman image exists "$image"; then
-  podman build -q -t "$image" -v "$here/fcitx5-mozc.spec:/pkg.spec:ro,Z" -f - "$MOZC_CACHE" <<EOF2 >/dev/null
-FROM $MOZC_BUILD_IMAGE
-RUN dnf -y install rpm-build 'dnf5-command(builddep)' && \
-  dnf -y builddep -D 'sebtype_version 0' -D 'sebtype_release 0' /pkg.spec && dnf clean all && \
-  curl -sfL --retry 3 -o /usr/local/bin/bazel $BAZELISK_URL && \
-  echo '$BAZELISK_SHA256  /usr/local/bin/bazel' | sha256sum -c --status && chmod +x /usr/local/bin/bazel
-EOF2
-fi
+builder_image "$image" "$MOZC_BUILD_IMAGE" "$here/fcitx5-mozc.spec" "$MOZC_CACHE" \
+  "curl -sfL --retry 3 -o /usr/local/bin/bazel $BAZELISK_URL && \
+  echo '$BAZELISK_SHA256  /usr/local/bin/bazel' | sha256sum -c --status && chmod +x /usr/local/bin/bazel"
 
 inner=$(cat <<'EOF2'
 set -euo pipefail

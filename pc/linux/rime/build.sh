@@ -31,16 +31,9 @@ fetch_lookaside "$pkg" "$cache/sources" "${sources[@]}"
 pack_source "$src" "$cache/sources/$pkg.tar.gz"
 [[ $pkg != fcitx5 ]] || cp "$here/fcitx5-xinput" "$here/fcitx5.sh" "$cache/sources/"
 
-# Builder image: the pinned Fedora with the spec's build dependencies. Built once per pin and spec;
-# --no-cache, as podman's layer cache doesn't see the mounted spec and would reuse another spec's image.
+# Builder image: the pinned Fedora with the spec's build dependencies. Built once per pin and spec.
 image=localhost/sebtype-rime-builder:$(cat "$spec" - <<<"$RIME_BUILD_IMAGE 2" | sha256sum | head -c 12)
-if ! podman image exists "$image"; then
-  podman build -q --no-cache -t "$image" -v "$spec:/pkg.spec:ro,Z" -f - "$cache" <<EOF >/dev/null
-FROM $RIME_BUILD_IMAGE
-RUN dnf -y install rpm-build 'dnf5-command(builddep)' && \
-  dnf -y builddep -D 'sebtype_version 0' -D 'sebtype_release 0' /pkg.spec && dnf clean all
-EOF
-fi
+builder_image "$image" "$RIME_BUILD_IMAGE" "$spec" "$cache"
 
 inner=$(cat <<'EOF'
 set -euo pipefail

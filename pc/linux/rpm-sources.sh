@@ -24,3 +24,24 @@ pack_source() {
     gzip -n >"$2.part"
   mv "$2.part" "$2"
 }
+
+# builder_image <image> <base> <spec> <context> [<command>]: makes sure the builder image <image> exists:
+# <base> with rpm-build, <spec>'s build dependencies and anything <command> adds. dnf builddep once left
+# an image without them and it stayed tagged (#193), so the build checks them before tagging and a
+# reused image is checked again. The check compares names only: rpm -q --whatprovides ignores versions.
+# --no-cache, as podman's layer cache doesn't see the mounted spec and would reuse another spec's layer.
+builder_image() {
+  local image=$1 base=$2 spec=$3 context=$4 extra=${5:+" && $5"}
+  local check="rpmspec -q --buildrequires -D 'sebtype_version 0' -D 'sebtype_release 0' /pkg.spec | \
+    sed 's/ .*//' | xargs -d '\n' rpm -q --whatprovides | { ! grep '^no package provides'; } >&2"
+  if podman image exists "$image"; then
+    podman run --rm -v "$spec:/pkg.spec:ro,Z" "$image" bash -c "$check" && return
+    echo "rebuilding $image: build dependencies missing" >&2
+  fi
+  podman build -q --no-cache -t "$image" -v "$spec:/pkg.spec:ro,Z" -f - "$context" <<EOF >/dev/null
+FROM $base
+RUN dnf -y install rpm-build 'dnf5-command(builddep)' && \\
+  dnf -y builddep -D 'sebtype_version 0' -D 'sebtype_release 0' /pkg.spec && dnf clean all && \\
+  $check$extra
+EOF
+}
