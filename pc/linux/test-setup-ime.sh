@@ -268,14 +268,10 @@ undo_configurator() {
     o=$(fake_run < /dev/null) && grep -q '^change: install SebType Configurator' <<<"$o" && configurator
 }
 
-# A private D-Bus session for one fake account, with its own throwaway runtime dir
-# (#176): in the user's, anything that touches the Documents portal starts a second xdg-document-portal
-# on the user's $XDG_RUNTIME_DIR/doc, and the user's mount goes when it ends, so Flatpak apps no longer start.
+# A private D-Bus session for one fake account (private_dbus, tools/lib.sh).
 private_bus() { # home, timeout seconds, command...
-  local rt rc; rt=$(mktemp -d "$fake/run.XXXX")  # 0700
-  env -i PATH="$PATH" HOME="$1" XDG_CONFIG_HOME="$1/.config" XDG_DATA_HOME="$1/.local/share" XDG_RUNTIME_DIR="$rt" \
-    timeout "$2" dbus-run-session -- "${@:3}"
-  rc=$?; rm -rf "$rt"; return $rc
+  private_dbus "$fake" -i PATH="$PATH" HOME="$1" XDG_CONFIG_HOME="$1/.config" XDG_DATA_HOME="$1/.local/share" -- \
+    timeout "$2" "${@:3}"
 }
 # The issue's repro: a private session asks for the Documents portal, and the user's mount stays. Not
 # under bwrap (own_fcitx), where the private portal can't mount at all.
