@@ -436,6 +436,19 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
 bool TextService::send(const Request &request) {
   if (call(request, reply_)) return true;
   if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that took the key but hangs
+  // An app UAC elevated (Setup, an admin console) starts none: the server would be elevated too, and out of
+  // reach of the person's other apps. It uses the one they start.
+  static const bool elevated = [] {
+    HANDLE token = nullptr;
+    TOKEN_ELEVATION_TYPE type = TokenElevationTypeDefault;
+    DWORD n = 0;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+      GetTokenInformation(token, TokenElevationType, &type, sizeof(type), &n);
+      CloseHandle(token);
+    }
+    return type == TokenElevationTypeFull;
+  }();
+  if (elevated) return false;
   // No server: start it (Windows' Run key starts it at logon; this is for after it stopped), then wait a
   // little for its pipe. Not again for a while, so a server that can't start doesn't slow every key.
   const DWORD now = GetTickCount();

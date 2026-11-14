@@ -111,6 +111,10 @@ class Ipc {
     in.SerializeToString(&request);
     std::string reply;
     if (!send(request, reply)) {
+      // Not waited for again soon after a start it didn't answer: a broken server would cost every call 3 s.
+      const auto now = std::chrono::steady_clock::now();
+      if (now - launched_ < std::chrono::seconds(10)) return false;
+      launched_ = now;
       launch();
       bool sent = false;
       for (int i = 0; i < 60 && !sent; ++i) {  // up to 3 s for a fresh server
@@ -124,9 +128,22 @@ class Ipc {
 
  private:
   std::string key() {
-    std::ifstream f(std::filesystem::u8path(paths_.profileDir + "/.session.ipc"), std::ios::binary);
     mozc::ipc::IPCPathInfo info;
+#ifdef _WIN32
+    // session.ipc, no dot on Windows; the server holds it open to delete on close, so it opens only with
+    // FILE_SHARE_DELETE (Mozc's ipc/ipc_path_manager.cc).
+    HANDLE f = CreateFileW(std::filesystem::u8path(paths_.profileDir + "/session.ipc").c_str(), GENERIC_READ,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return {};
+    char buf[2096];
+    DWORD n = 0;
+    const bool read = ReadFile(f, buf, sizeof(buf), &n, nullptr);
+    CloseHandle(f);
+    if (!read || !info.ParseFromArray(buf, static_cast<int>(n))) return {};
+#else
+    std::ifstream f(std::filesystem::u8path(paths_.profileDir + "/.session.ipc"), std::ios::binary);
     if (!f || !info.ParseFromIstream(&f)) return {};
+#endif
     return info.key();
   }
 
@@ -176,15 +193,28 @@ class Ipc {
   }
 
   // Starts mozc_server on its own, as Mozc's client does: it outlives the host and stops when idle.
+  // mozc_server refuses to run (exit 3) unless its main thread starts with an impersonation token, which
+  // Mozc's launcher sets (server_launcher.cc, win_sandbox.cc). We hand it a copy of our own: the server
+  // never runs elevated, so Mozc's further restrictions (no Administrators group) would change nothing.
   void launch() {
     std::wstring cmd = L"\"" + std::filesystem::u8path(paths_.server).wstring() + L"\"";
+    HANDLE self = nullptr, impersonation = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE, &self)) return;
+    const bool copied = DuplicateTokenEx(self, TOKEN_IMPERSONATE | TOKEN_QUERY, nullptr, SecurityImpersonation,
+                                         TokenImpersonation, &impersonation);
+    CloseHandle(self);
+    if (!copied) return;
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
     if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
-                       CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_DEFAULT_ERROR_MODE, nullptr, nullptr, &si, &pi)) {
+                       CREATE_SUSPENDED | CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_DEFAULT_ERROR_MODE, nullptr,
+                       nullptr, &si, &pi)) {
+      if (SetThreadToken(&pi.hThread, impersonation)) ResumeThread(pi.hThread);
+      else TerminateProcess(pi.hProcess, 1);
       CloseHandle(pi.hThread);
       CloseHandle(pi.hProcess);
     }
+    CloseHandle(impersonation);
   }
 #else
   bool send(const std::string &request, std::string &reply) {
@@ -233,6 +263,7 @@ class Ipc {
 #endif
 
   MozcPaths paths_;
+  std::chrono::steady_clock::time_point launched_{};
 };
 
 class Mozc final : public Engine {
