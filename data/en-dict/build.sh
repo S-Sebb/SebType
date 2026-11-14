@@ -35,7 +35,7 @@ fetch() { # url sha256 -> prints cached path
   echo "$f"
 }
 
-stage=$(mktemp -d)
+stage=$(mktemp -d "$cache/en-dict.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 FUTO_DICT=$(fetch "$FUTO_DICT_URL" "$FUTO_DICT_SHA256")
 wordfreq=$(fetch "$WORDFREQ_URL" "$WORDFREQ_SHA256")

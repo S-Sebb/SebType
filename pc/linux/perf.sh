@@ -4,12 +4,13 @@
 #     and a full deploy of that copy with its build/ removed (what an update or a new PC costs);
 #   - Mozc: per-key and conversion time through a private mozc_server with its own empty profile;
 #   - memory of the running Fcitx5 and mozc_server, read-only from ps and /proc.
-# One line per check in ~/scratch/SebType/pc-perf-results.txt, the table in ~/scratch/SebType/pc-perf.md.
+# One line per check in ~/scratch/SebType/<issue>/pc-perf-results.txt, the table in pc-perf.md next to it.
 # Exit 0 only if every check passes. RUNS (default 5) repeats each typing set.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 
-out=$HOME/scratch/SebType; mkdir -p "$out"
+source "$here/../../tools/lib.sh"
+out=$TASK_OUT; mkdir -p "$out"
 results=$out/pc-perf-results.txt; : > "$results"
 table=$out/pc-perf.md
 runs=${RUNS:-5}

@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
   traits.app_name = "rime.sebtype-perf";
   traits.modules = modules;
   traits.min_log_level = 3;
+  traits.log_dir = ""; // stderr only, no log files in /tmp (#211)
   api->setup(&traits);
   api->initialize(&traits);
   double t = now_us();

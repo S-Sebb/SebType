@@ -172,10 +172,9 @@ mod tests {
 
     #[test]
     fn config_and_dictionary_round_trip_keeping_other_data() {
-        let d = std::env::temp_dir().join(format!(
-            "sebtype-configurator-test-mozc-{}",
-            std::process::id()
-        ));
+        // In the crate's target/, not /tmp (#211); removed when the test passes.
+        let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/test-tmp/mozc-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         // A config with setup-ime's keymap fields (41, 42) and another dictionary made by Mozc's tool.
@@ -231,5 +230,6 @@ mod tests {
         );
         assert!(all.starts_with(&storage));
         assert!(valid_word("せぶ", "SebType") && !valid_word("seb", "SebType"));
+        fs::remove_dir_all(&d).unwrap();
     }
 }

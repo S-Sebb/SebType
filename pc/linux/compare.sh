@@ -7,17 +7,17 @@
 # Fedora's for that Fcitx5 alone with bwrap, as test-setup-ime.sh does. Data: stock Rime gets rime-ice's
 # release (what users of fcitx5-rime install), SebType its own Chinese data (data/rime/build.sh) with
 # setup-ime.sh's patches. Mozc starts with an empty profile in both. Nothing is learned in the timed sets.
-# Results: ~/scratch/SebType/linux-compare/<setup>.out (key=value) and .log; exit 0 when every run finished.
+# Results: ~/scratch/SebType/<issue>/linux-compare/<setup>.out (key=value) and .log; exit 0 when every run finished.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 source "$here/../../tools/lib.sh"; source "$here/rime/versions.sh"; source "$here/mozc/versions.sh"
-out=${COMPARE_OUT:-$SCRATCH/linux-compare}; rm -rf "$out"; mkdir -p "$out"
+out=${COMPARE_OUT:-$TASK_OUT/linux-compare}; rm -rf "$out"; mkdir -p "$out"
 runs=${RUNS:-5} soak=${SOAK_MIN:-12}
-work=$(mktemp -d "$SCRATCH/linux-compare.XXXXXX"); trap 'rm -rf "$work"' EXIT
+work=$(mktemp -d "$TASK_OUT/linux-compare.XXXXXX"); trap 'rm -rf "$work"' EXIT
 
 for x in fcitx5 bwrap dbus-run-session rpm2cpio unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
-ice=$(ls ~/.cache/sebtype/*-full.zip 2>/dev/null | head -1) # rime-ice's release, fetched by data/rime/build.sh
-[[ -f $ice ]] || { echo "preflight: no rime-ice full.zip in ~/.cache/sebtype (run data/rime/build.sh)"; exit 1; }
+ice=$(ls "$SCRATCH"/cache/*-full.zip 2>/dev/null | head -1) # rime-ice's release, fetched by data/rime/build.sh
+[[ -f $ice ]] || { echo "preflight: no rime-ice full.zip in ~/scratch/SebType/cache (run data/rime/build.sh)"; exit 1; }
 "$here/../../data/rime/build.sh" "$work/data" > "$out/data-build.log" 2>&1 || { echo "preflight: data/rime/build.sh failed"; exit 1; }
 own=$work/own; mkdir -p "$own"
 for rpm in "$MOZC_CACHE/rpms/$MOZC_RPM" "$RIME_CACHE/$RIME_RPM" "$(librime_rpm librime)" "$(librime_rpm librime-lua)" \

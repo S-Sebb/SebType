@@ -10,4 +10,4 @@ BAZELISK_URL=https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/ba
 BAZELISK_SHA256=a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8
 SEBTYPE_RELEASE=1.sebtype.fc44
 MOZC_RPM=fcitx5-mozc-$MOZC_VERSION-$SEBTYPE_RELEASE.x86_64.rpm
-MOZC_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/mozc
+MOZC_CACHE=$HOME/scratch/SebType/cache/mozc

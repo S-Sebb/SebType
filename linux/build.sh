@@ -2,9 +2,9 @@
 # Builds SebType's Linux input method RPM (#190): the Fcitx5 add-on over core/ and Mozc's server, with
 # sebtype.spec in the pinned Fedora container fcitx5-mozc builds in. Prints the RPM's path.
 #
-#   linux/build.sh    # -> ~/.cache/sebtype/sebtype/sebtype-<version>-<release>.x86_64.rpm
+#   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.x86_64.rpm
 #
-# Mozc's Bazel caches are fcitx5-mozc's (~/.cache/sebtype/mozc/work), so its server compiles once for
+# Mozc's Bazel caches are fcitx5-mozc's (~/scratch/SebType/cache/mozc/work), so its server compiles once for
 # both. Runs in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
 set -euo pipefail
 

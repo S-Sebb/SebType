@@ -5,7 +5,7 @@
 SEBTYPE_VERSION=0.1.0
 SEBTYPE_RPM_RELEASE=2.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
-SEBTYPE_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/sebtype
+SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
 
 # sebtype_unpack <dir>: SebType's RPM (built first if it isn't cached) unpacked into <dir>, for a private
 # Fcitx5 that runs it uninstalled with sebtype_env's variables.

@@ -3,9 +3,9 @@
 # engines/librime or pc/fcitx5 with fcitx5-rime.spec, librime.spec or fcitx5.spec, as Fedora builds its
 # packages, in a pinned Fedora container. Prints the RPMs' paths.
 #
-#   pc/linux/rime/build.sh            # -> ~/.cache/sebtype/fcitx5-rime/fcitx5-rime-<version>-<release>.x86_64.rpm
-#   pc/linux/rime/build.sh librime    # -> ~/.cache/sebtype/librime/librime{,-lua,...}-<version>-<release>.x86_64.rpm
-#   pc/linux/rime/build.sh fcitx5     # -> ~/.cache/sebtype/fcitx5/fcitx5{,-libs,...}-<version>-<release>.<arch>.rpm
+#   pc/linux/rime/build.sh            # -> ~/scratch/SebType/cache/fcitx5-rime/fcitx5-rime-<version>-<release>.x86_64.rpm
+#   pc/linux/rime/build.sh librime    # -> ~/scratch/SebType/cache/librime/librime{,-lua,...}-<version>-<release>.x86_64.rpm
+#   pc/linux/rime/build.sh fcitx5     # -> ~/scratch/SebType/cache/fcitx5/fcitx5{,-libs,...}-<version>-<release>.<arch>.rpm
 #
 # One to five minutes, in the shared build lock (tools/lib.sh), the container on the lock's cores and
 # memory.

@@ -3,13 +3,14 @@
 # a debug build in a new worktree comes from the shared caches, a Kotlin change compiles incrementally,
 # and the release APK is the same from two checkouts, with or without the caches.
 # Uses a scratch worktree in ~/scratch/SebType/cache/test-build-wt, deleted at the end; builds take the build lock.
-# One line per check in ~/scratch/SebType/test-build-results.txt; logs next to it. Exit 0 only if all pass.
+# One line per check in ~/scratch/SebType/<issue>/test-build-results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
-out=$HOME/scratch/SebType; mkdir -p "$out"
+source tools/lib.sh
+out=$TASK_OUT; mkdir -p "$out"
 results=$out/test-build-results.txt; : > "$results"
-wt=$HOME/scratch/SebType/cache/test-build-wt
+wt=$SCRATCH/cache/test-build-wt
 # Checks run under `timeout` in a subshell: the functions and what they read must be exported.
 export out wt
 
@@ -68,7 +69,7 @@ same_release() {
   local a b nosc
   a=$(android/build.sh release) || return 1
   sed -i 's/^org.gradle.caching=true/org.gradle.caching=false/' "$wt/android/gradle.properties"
-  nosc=$(mktemp -d) && ln -s "$(command -v devq)" "$nosc/devq"
+  nosc=$(mktemp -d "$out/nosc.XXXX") && ln -s "$(command -v devq)" "$nosc/devq"
   b=$(cd "$wt" && rm -rf android/app/.cxx android/rime/.cxx && PATH=$nosc:$(tr : '\n' <<<"$PATH" | grep -vx "$(dirname "$(command -v sccache)")" | paste -sd:) \
     android/build.sh release); local rc=$?
   rm -rf "$nosc"; git -C "$wt" checkout -q -- android/gradle.properties

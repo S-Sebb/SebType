@@ -9,7 +9,7 @@
 #                                    memory over time and keyboard restarts
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in results.txt, the table in perf.md, traces and logs in run/, all in
-# ~/scratch/SebType/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
+# ~/scratch/SebType/<issue>/perf/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
 # so runs from parallel worktrees don't overwrite each other. Exit 0 unless a check fails. Timing comes
 # from Perfetto traces of framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail
@@ -17,7 +17,7 @@ cd "$(dirname "$0")/../.."
 source tools/lib.sh
 self=$PWD/android/perf/perf.sh
 
-export out=${PERF_OUT:-$SCRATCH/perf-$(basename "$PWD")}; export work=$out/run
+export out=${PERF_OUT:-$TASK_OUT/perf}; export work=$out/run
 export sdk=$ANDROID_HOME
 export adb=$sdk/platform-tools/adb
 export runs=${RUNS:-3}

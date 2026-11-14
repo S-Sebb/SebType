@@ -50,12 +50,12 @@ if [[ ${1:-} == --run ]]; then # under the lock
       ANDROID_SERIAL=emulator-$port
       if ! systemctl --user is-active --quiet "$unit"; then # else it's booting
         started=1
-        mkdir -p "$SCRATCH"
+        mkdir -p "$TASK_OUT"
         # A unit of the user's systemd, not a child of this shell: an emulator in an agent's process
         # tree stops when that agent's session ends, under whoever holds its lock then. No snapshot
         # saved either: it would write the RAM to disk at every stop.
         systemd-run --user --collect --quiet --unit="$unit" sh -c "exec '$sdk/emulator/emulator' -avd $avd -port $port \
-          -no-window -no-audio -no-snapshot-load -no-snapshot-save -no-boot-anim > $SCRATCH/emulator-$avd.log 2>&1"
+          -no-window -no-audio -no-snapshot-load -no-snapshot-save -no-boot-anim > $TASK_OUT/emulator-$avd.log 2>&1"
         systemctl --user show -p InvocationID --value "$unit" > "$started_by_us"
       fi
     fi
@@ -64,7 +64,7 @@ if [[ ${1:-} == --run ]]; then # under the lock
     export ANDROID_SERIAL
     timeout 600 bash -c 'until [[ $("$0" shell getprop sys.boot_completed 2>/dev/null | tr -d "\r") == 1 ]]; do
       [[ $1 == "" ]] || systemctl --user is-active --quiet "$1" || exit 1; sleep 3; done' "$adb" "${started:+$unit}" ||
-      { echo "emulator $avd ($ANDROID_SERIAL) didn't boot, see $SCRATCH/emulator-$avd.log" >&2; exit 1; }
+      { echo "emulator $avd ($ANDROID_SERIAL) didn't boot, see $TASK_OUT/emulator-$avd.log" >&2; exit 1; }
     # A cold boot keeps the guest busy for about a minute after it says it's booted (load up to 13),
     # too slow for the UI checks: wait until its 1-minute load is below 3, about 2 minutes.
     [[ -n $started ]] && timeout 300 bash -c 'until (( $("$0" shell cat /proc/loadavg | cut -d. -f1) < 3 )); do
