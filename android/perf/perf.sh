@@ -5,7 +5,7 @@
 # pick a phone); RUNS (default 3) repeats each typing set.
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
 # One line per check in results.txt, the table in perf.md, traces and logs in run/, all in
-# ~/scratch/sebtype/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
+# ~/scratch/SebType/perf-<checkout>/ (PERF_OUT=<dir> to put them elsewhere: a run writes ~350 MB of traces),
 # so runs from parallel worktrees don't overwrite each other. Exit 0 unless a check fails. Timing comes
 # from Perfetto traces of framework slices and frame timelines: nothing typed is recorded.
 set -uo pipefail

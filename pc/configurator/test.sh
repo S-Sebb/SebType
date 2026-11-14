@@ -5,7 +5,7 @@
 # Rime taking what the app writes, the Picnic candidate window it writes drawn with SebType's pig (#94),
 # its sync with a local sebtype_sync.py server both ways (#180), and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
-# ~/scratch/sebtype/configurator-test-results.txt; logs and screenshots next to it.
+# ~/scratch/SebType/configurator-test-results.txt; logs and screenshots next to it.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b (picnic-candidate-window draws
 # what private-fcitx5-and-rime wrote, so it needs that one named too).
 set -uo pipefail
