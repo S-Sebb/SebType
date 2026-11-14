@@ -7,7 +7,7 @@
   vector. FUTO's code also uses this drawable as a tinted silhouette (setup screen, notifications).
 - Legacy icons (mipmap-*/ic_launcher.png and ic_launcher_round.png, 48dp): the visible 72dp of the adaptive
   icon, in a rounded square and a circle.
-- PC candidate window logo (#94): pc/windows/weasel/sebtype-logo.png and pc/configurator/fcitx5-theme/logo.svg.
+- PC candidate window logo (#94): windows/data/sebtype-logo.png and pc/configurator/fcitx5-theme/logo.svg.
 
 `make-icon.py --windows DIR` writes DIR/sebtype.ico (the legacy icon at every Windows size, 16-256 px) and
 DIR/pig.png (the cut-out pig) for the Windows installer and Configurator (#73) instead.
@@ -155,7 +155,7 @@ for row in range(GRID):
 print(f"subject radius {radius:.0f}px -> {SAFE_RADIUS}dp; monochrome {len(paths)} runs")
 
 # PC candidate windows (#94): the subject cut to its bounding box, LOGO_HEIGHT px tall. Weasel draws the PNG
-# (pc/windows/weasel/sebtype-logo.png); Fcitx5's Picnic theme gets it inside an SVG, so it stays sharp at any
+# (windows/data/sebtype-logo.png); Fcitx5's Picnic theme gets it inside an SVG, so it stays sharp at any
 # size and DPI, whose @WIDTH@ and @HEIGHT@ the Configurator sets from the font size.
 LOGO_HEIGHT = 160
 box = (xs.min(), ys.min(), xs.max() + 1, ys.max() + 1)
@@ -163,7 +163,7 @@ pig = rgba.crop(box)
 pig = pig.resize(
     (round(pig.width * LOGO_HEIGHT / pig.height), LOGO_HEIGHT), Image.LANCZOS
 )
-pig.save(root / "pc/windows/weasel/sebtype-logo.png", optimize=True)
+pig.save(root / "windows/data/sebtype-logo.png", optimize=True)
 png = io.BytesIO()
 pig.save(png, "PNG", optimize=True)
 (root / "pc/configurator/fcitx5-theme/logo.svg").write_text(

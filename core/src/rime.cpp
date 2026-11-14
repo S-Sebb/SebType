@@ -28,11 +28,19 @@ class Rime final : public Engine {
     RIME_STRUCT(RimeTraits, traits);
     traits.shared_data_dir = paths_.sharedDir.c_str();
     traits.user_data_dir = paths_.userDir.c_str();
-    // fcitx5-rime's names: Rime's installation.yaml and sync folders keep them.
+    // The names of the frontend each platform had before (fcitx5-rime, SebType's Weasel): Rime's
+    // installation.yaml and sync folders keep them.
+#ifdef _WIN32
+    traits.app_name = "rime.weasel";
+    traits.distribution_name = "中文";
+    traits.distribution_code_name = "Weasel";
+    traits.distribution_version = "0.17.4";
+#else
     traits.app_name = "rime.fcitx-rime";
     traits.distribution_name = "Rime";
     traits.distribution_code_name = "fcitx-rime";
     traits.distribution_version = "5.1.15";
+#endif
     traits.log_dir = "";  // stderr only
     traits.min_log_level = 2;
     static bool setUp = false;

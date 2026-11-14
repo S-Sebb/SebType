@@ -67,7 +67,7 @@ try {
   foreach ($icon in 'zh.ico', 'en.ico', 'en_caps.ico') { Copy-Item (Join-Path $Icons $icon) resource\ -Force }
   # The pig at the start of the candidate window, which WeaselServer finds next to itself (#94; made by
   # art/make-icon.py).
-  Copy-Item (Join-Path $PSScriptRoot 'sebtype-logo.png') output\ -Force
+  Copy-Item (Join-Path $PSScriptRoot '..\..\..\windows\data\sebtype-logo.png') output\ -Force
 
   Copy-Item env.vs2022.bat env.bat
   if (-not $env:BOOST_ROOT) { $env:BOOST_ROOT = Join-Path $Work "deps\boost_$($BoostVersion -replace '\.', '_')" }
