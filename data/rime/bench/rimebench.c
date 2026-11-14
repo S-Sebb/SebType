@@ -35,6 +35,7 @@ int main(int argc, char **argv) {
   traits.app_name = "rime.sebtype-bench";
   traits.modules = modules;
   traits.min_log_level = 3;
+  traits.log_dir = ""; // stderr only, no log files in /tmp (#211)
   api->setup(&traits);
   api->initialize(&traits);
   if (api->start_maintenance(True)) api->join_maintenance_thread();

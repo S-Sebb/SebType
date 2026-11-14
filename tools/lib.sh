@@ -10,8 +10,11 @@ JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | ta
 BUILD_JOBS=$(( $(nproc) / 2 ))
 BUILD_MEMORY_GB=8
 
-# Test, perf and release outputs, and in cache/ the development-only caches, shared by every worktree.
+# Files made outside the checkout; in cache/ the caches every worktree shares (the Linux setup's too).
 SCRATCH=$HOME/scratch/SebType
+# The running task's test, perf and release outputs: ~/scratch/SebType/<ISSUE>/ (ISSUE=211 <script>),
+# or without ISSUE the checkout's folder name.
+TASK_OUT=$SCRATCH/${ISSUE:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")}
 
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy build at a time), waiting up
 # to an hour for it, under the memory cap. The queue rank is DEVQ_RANK (default 2), so a script run by a

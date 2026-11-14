@@ -4,13 +4,13 @@
 # made-up words only and never touches the screen lock. Afterwards SebType and the test field are
 # uninstalled, Gboard is the keyboard again and the home screen shows. The clipboard check needs a root
 # shell, so it SKIPs on a phone.
-# One line per check in ~/scratch/SebType/test-incognito-phone/results.txt; logs and screenshots next to it.
+# One line per check in ~/scratch/SebType/<issue>/test-incognito-phone/results.txt; logs and screenshots next to it.
 # Exit 0 only if nothing fails.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
 
-out=$SCRATCH/test-incognito-phone; rm -rf "$out"; mkdir -p "$out"
+out=$TASK_OUT/test-incognito-phone; rm -rf "$out"; mkdir -p "$out"
 results=$out/results.txt; : > "$results"
 sdk=$ANDROID_HOME
 adb=$sdk/platform-tools/adb

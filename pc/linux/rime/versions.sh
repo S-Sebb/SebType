@@ -7,7 +7,7 @@ RIME_FEDORA_RELEASE=1.fc44
 RIME_BUILD_IMAGE=registry.fedoraproject.org/fedora@sha256:a90c26f38ee1fb33444bbec8b598d8cc9aec7cc6455f8163df7d050e5d073a4f
 RIME_SEBTYPE_RELEASE=1.sebtype1.fc44  # sorts above Fedora's 1.fc44 and below its next update
 RIME_RPM=fcitx5-rime-$RIME_VERSION-$RIME_SEBTYPE_RELEASE.x86_64.rpm
-RIME_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/fcitx5-rime
+RIME_CACHE=$HOME/scratch/SebType/cache/fcitx5-rime
 
 # librime.spec also builds librime-lua and the other plugins, which must match the librime they run on:
 # setup replaces every librime package installed.
@@ -21,7 +21,7 @@ LIBRIME_SOURCES=(
 )
 LIBRIME_SEBTYPE_RELEASE=2.sebtype3.fc44
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
-LIBRIME_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/librime
+LIBRIME_CACHE=$HOME/scratch/SebType/cache/librime
 librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package
 
 # fcitx5.spec builds Fcitx5 and its subpackages, which must match each other: setup replaces every one
@@ -30,7 +30,7 @@ FCITX5_VERSION=5.1.23
 FCITX5_FEDORA_RELEASE=1.fc44
 FCITX5_SEBTYPE_RELEASE=1.sebtype1.fc44
 FCITX5_PACKAGES=(fcitx5 fcitx5-libs fcitx5-data fcitx5-devel fcitx5-autostart)
-FCITX5_CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/fcitx5
+FCITX5_CACHE=$HOME/scratch/SebType/cache/fcitx5
 fcitx5_rpm() { # package
   local arch=x86_64; [[ $1 == fcitx5-data || $1 == fcitx5-autostart ]] && arch=noarch
   echo "$FCITX5_CACHE/$1-$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE.$arch.rpm"

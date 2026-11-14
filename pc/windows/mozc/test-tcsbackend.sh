@@ -11,7 +11,8 @@
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
-out=$HOME/scratch/SebType/mozc-tcsbackend
+source "$repo/tools/lib.sh"
+out=$TASK_OUT/mozc-tcsbackend
 lock=/tmp/agent-locks/devices/tcsbackend.lock
 if [ -z "${HOLDING:-}" ]; then
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype mozc test on TCSBackEnd ($(git -C "$repo" branch --show-current))" "$lock" bash "$0"

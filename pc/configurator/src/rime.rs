@@ -273,10 +273,9 @@ mod tests {
     use super::*;
 
     fn temp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "sebtype-configurator-test-{name}-{}",
-            std::process::id()
-        ));
+        // In the crate's target/, not /tmp (#211); each test removes its folder when it passes.
+        let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/test-tmp/{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
@@ -324,6 +323,7 @@ mod tests {
         )
         .unwrap());
         assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
@@ -352,5 +352,6 @@ mod tests {
         fs::write(d.join("sync/abc/rime_ice.userdb.txt"), "x").unwrap();
         assert_eq!(forget(&d).unwrap(), 2);
         assert!(!d.join("rime_ice.userdb").exists() && d.join(PHRASES).exists());
+        fs::remove_dir_all(&d).unwrap();
     }
 }

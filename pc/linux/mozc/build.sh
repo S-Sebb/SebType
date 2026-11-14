@@ -2,9 +2,9 @@
 # Builds SebType's fcitx5-mozc RPM (#66): engines/mozc with fcitx5-mozc.spec, as Fedora builds its package,
 # in a pinned Fedora container. Prints the RPM's path.
 #
-#   pc/linux/mozc/build.sh    # -> ~/.cache/sebtype/mozc/rpms/fcitx5-mozc-<version>-<release>.x86_64.rpm
+#   pc/linux/mozc/build.sh    # -> ~/scratch/SebType/cache/mozc/rpms/fcitx5-mozc-<version>-<release>.x86_64.rpm
 #
-# Bazel's caches stay in ~/.cache/sebtype/mozc/work, so a rebuild compiles only what changed. Runs in the
+# Bazel's caches stay in ~/scratch/SebType/cache/mozc/work, so a rebuild compiles only what changed. Runs in the
 # shared build lock (tools/lib.sh), the container on the lock's cores and memory.
 set -euo pipefail
 

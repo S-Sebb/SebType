@@ -54,7 +54,8 @@ locked=$run/locked # when the build lock was taken
 # when it first configures a checkout). A private server per build hashes paths relative to the checkout's root,
 # and build.gradle keeps them out of the objects, so every worktree shares the cache.
 if command -v sccache >/dev/null; then
-  SCCACHE_SERVER_UDS=$(mktemp -u /tmp/sebtype-sccache.XXXXXX)
+  mkdir -p "$SCRATCH/cache"
+  SCCACHE_SERVER_UDS=$(mktemp -u "$SCRATCH/cache/sccache.XXXXXX")  # well under a socket path's 108 bytes
   export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=${PWD%/*} \
     SCCACHE_SERVER_UDS
   sccache --start-server >/dev/null

@@ -2,7 +2,7 @@
 # shellcheck disable=SC2016  # stub bodies are single-quoted; they expand when the stub runs
 # Checks pc/linux/setup-ime.sh: ShellCheck, a read-only --dry-run on this PC, and a full run on a
 # fake fresh account (stubbed packages, systemd, Fcitx5 and KWin calls) that must be idempotent.
-# Changes nothing in the real session. One line per check in ~/scratch/SebType/test-setup-ime-results.txt.
+# Changes nothing in the real session. One line per check in ~/scratch/SebType/<issue>/test-setup-ime-results.txt.
 # Check names as arguments run only those (fresh-apply, which the later checks build on, always runs).
 # Typing in real apps is the manual checklist in pc/linux/README.md.
 set -uo pipefail
@@ -14,7 +14,7 @@ source ../../tools/lib.sh
 [[ -n ${HOLDING-} ]] || exec env HOLDING=1 devq -w 1800 -m 10 -n "sebtype test-setup-ime ($(git branch --show-current))" \
   /tmp/agent-locks/devices/nobara-pc.lock bash "$script" "$@"
 
-out=$SCRATCH; mkdir -p "$out"
+out=$TASK_OUT; mkdir -p "$out"
 selected=("$@")
 results=$out/test-setup-ime-results.txt; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
@@ -37,8 +37,8 @@ build_lock 30 "configurator build for test-setup-ime" \
 # Nor does it build SebType's Chinese data: each fake account's cache links the zip built here.
 ../../data/rime/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||
   { echo "preflight: SebType's Chinese data does not build (see $out/test-setup-ime-rime-data.log)"; exit 1; }
-mapfile -t rime_zips < <(for z in ~/.cache/sebtype/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
-((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/.cache/sebtype"; exit 1; }
+mapfile -t rime_zips < <(for z in "$SCRATCH"/cache/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
+((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/scratch/SebType/cache"; exit 1; }
 rime_data=$out/rime-data/rime/rime-data.zip
 # SebType's input method (#190) and librime (#101), built once and cached. The private Fcitx5s below run them
 # without installing them: Fcitx5 finds the add-on in $own (sebtype_env), and bwrap mounts librime over
@@ -141,8 +141,8 @@ printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 # setup-ime.sh rebuilds the Configurator with cargo when its sources are newer, so cargo needs this
 # account's Rust (rustup's toolchains) even though the fake account has its own HOME.
-fake_run() { mkdir -p "$h/.cache/sebtype/sebtype"; ln -sf "${rime_zips[@]}" "$h/.cache/sebtype/"
-  touch "$h/.cache/sebtype/sebtype/$SEBTYPE_RPM"  # a placeholder: the fake sudo installs nothing
+fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "${rime_zips[@]}" "$h/scratch/SebType/cache/"
+  touch "$h/scratch/SebType/cache/sebtype/$SEBTYPE_RPM"  # a placeholder: the fake sudo installs nothing
   env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
   timeout 60 ./setup-ime.sh "$@"; }
@@ -779,7 +779,7 @@ sebtype_install() {
   local o; rm -f "$fake/sudo.log"; : > "$fake/sebtype"
   o=$(echo y | fake_run) || return 1; echo "$o"
   grep -q "^change: install SebType's input method" <<<"$o" &&
-    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $h/.cache/sebtype/sebtype/$SEBTYPE_RPM" &&
+    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $h/scratch/SebType/cache/sebtype/$SEBTYPE_RPM" &&
       $(cat "$fake/sebtype") == "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" ]] || return 1
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   ! grep -q "SebType's input method" <<<"$o"
@@ -838,9 +838,9 @@ own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup chec
 }
 # librime with its Lua plugin, which must be the same build
 check librime-install-and-undo own_swap "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" \
-  librime "$h/.cache/sebtype/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
-  librime-lua "$h/.cache/sebtype/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
-  librime-octagram "$h/.cache/sebtype/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
+  librime "$h/scratch/SebType/cache/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
+  librime-lua "$h/scratch/SebType/cache/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
+  librime-octagram "$h/scratch/SebType/cache/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
 # Fcitx5's own settings (#182): setup removes kcm-fcitx5 and fcitx5-configtool after a yes, a rerun
 # leaves it, and --undo-fcitx5 puts both back.
 fcitx5_settings() {
@@ -861,7 +861,7 @@ check fcitx5-settings-removed-and-restored fcitx5_settings
 # The grammar plugin (#127): a missing librime-octagram is installed, Fedora's beside Fedora's librime and
 # SebType's build beside SebType's (Fedora's requires Fedora's librime).
 octagram() {
-  local ours=$h/.cache/sebtype/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm release o
+  local ours=$h/scratch/SebType/cache/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm release o
   for release in "$LIBRIME_FEDORA_RELEASE" "$LIBRIME_SEBTYPE_RELEASE"; do
     echo -n "$LIBRIME_VERSION-$release" > "$fake/librime"; : > "$fake/librime-octagram"; rm -f "$fake/sudo.log"
     o=$(echo y | fake_run) || return 1; echo "$o"

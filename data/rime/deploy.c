@@ -16,6 +16,7 @@ int main(int argc, char **argv) {
   traits.user_data_dir = argv[2];
   traits.app_name = "rime.sebtype-build";
   traits.min_log_level = 1; // warnings and errors, to stderr
+  traits.log_dir = "";      // and no log files in /tmp (#211)
   api->setup(&traits);
   api->initialize(&traits);
   if (api->start_maintenance(True)) api->join_maintenance_thread();

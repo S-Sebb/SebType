@@ -44,7 +44,7 @@ headers=$PWD/engines/librime/src
 BUNDLE_REVISION=6
 
 out=${1:-build/sebtype-assets}/rime
-cache=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype
+cache=$HOME/scratch/SebType/cache
 librime=/usr/lib64/librime.so.1
 libopencc=/usr/lib64/libopencc.so.1.1
 mkdir -p "$cache" "$out"

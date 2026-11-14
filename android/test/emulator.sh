@@ -14,13 +14,13 @@
 # install and the locale always, and chinese.py's earlier checks they depend on. A PR runs the checks
 # for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
 # which only the final performance run uses (#54, Decisions #2 2026-11-11).
-# One line per check in ~/scratch/SebType/test-emulator-<checkout>/results.txt; logs next to it (one directory
-# per checkout, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
+# One line per check in ~/scratch/SebType/<issue>/test-emulator/results.txt; logs next to it (one directory
+# per task, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
 
-out=$SCRATCH/test-emulator-$(basename "$PWD"); mkdir -p "$out"
+out=$TASK_OUT/test-emulator; mkdir -p "$out"
 results=$out/results.txt; : > "$results"
 sdk=$ANDROID_HOME
 adb=$sdk/platform-tools/adb

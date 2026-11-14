@@ -37,7 +37,7 @@ fetch() { # url sha256 -> prints cached path
   echo "$f"
 }
 
-stage=$(mktemp -d)
+stage=$(mktemp -d "$cache/pack-rime-ice.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 unzip -q "$(fetch "$RIME_ICE_URL" "$RIME_ICE_SHA256")" -d "$stage"
 unzip -q -n "$(fetch "$ZIDIAN_URL" "$ZIDIAN_SHA256")" 'opencc/*' -d "$stage"
