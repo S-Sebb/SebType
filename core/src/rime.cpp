@@ -184,6 +184,9 @@ class Rime final : public Engine {
   }
 
   void deploy() override {
+    // One that runs already (a new engine's first start) takes in the files as they are: restarting it
+    // would wait for it, then build everything again.
+    if (api_->is_maintenance_mode()) return;
     endSession();
     api_->finalize();
     start(true);

@@ -357,18 +357,23 @@ begin
 end;
 
 // The servers stop so their files can be replaced: SebType's saves the learned words first, for the
-// person running Setup; other users' stop as they are (Rime writes learned words as they come).
-procedure StopServers;
+// person running Setup (the uninstaller runs as them, and can't run anything as the original user);
+// other users' stop as they are (Rime writes learned words as they come).
+procedure StopServers(AsOriginalUser: Boolean);
 var
   Code: Integer;
 begin
   if FileExists(ExpandConstant('{app}\sebtype-server.exe')) then
-    ExecAsOriginalUser(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    if AsOriginalUser then
+      ExecAsOriginalUser(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code)
+    else
+      Exec(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec('taskkill.exe', '/f /im sebtype-server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec('taskkill.exe', '/f /im mozc_server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
-// A loaded DLL can't be replaced but can be renamed: the new one goes in its place, apps load it when they
-// next start, and the old one is deleted at the next restart (or by the next Setup).
+// A loaded file can't be replaced but can be renamed: the new one goes in its place, apps load it when they
+// next start, and the old one is deleted at the next restart (or by the next Setup). Servers count too: a
+// running app's text service starts its server again at its next key.
 procedure MoveAside(Path: String);
 var
   Old: String;
@@ -388,9 +393,12 @@ begin
 end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  StopServers;
+  StopServers(True);
   MoveAside(ExpandConstant('{app}\sebtype.dll'));
   MoveAside(ExpandConstant('{app}\x86\sebtype.dll'));
+  MoveAside(ExpandConstant('{app}\sebtype-server.exe'));
+  MoveAside(ExpandConstant('{app}\rime.dll'));
+  MoveAside(ExpandConstant('{app}\mozc_server.exe'));
   Result := '';
 end;
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -398,6 +406,7 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
   WizardForm.StatusLabel.Caption := CustomMessage('Engines');
+  StopServers(True);  // one an app started again from the old files since PrepareToInstall
   // How the account is before SebType, saved before the machine step changes it.
   Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
   Step('-Machine', '-Machine -Languages ' + Chosen + ' -Log "' + ExpandConstant('{app}\setup.log') + '"',
@@ -443,7 +452,7 @@ begin
   if CurUninstallStep <> usUninstall then
     Exit;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('Undoing');
-  StopServers;
+  StopServers(False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max div 3;
   Step('-Machine -Undo', '-Machine -Undo -Log "' + ExpandConstant('{app}\setup.log') + '"', ExpandConstant('{app}\setup.log'), False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max * 2 div 3;

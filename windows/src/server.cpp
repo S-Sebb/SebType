@@ -178,7 +178,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
   else return run();
   Reply r;
   if (q.op == Op::Quit) return call(q, r, 5000), 0;
-  if (!call(q, r, 5000)) {
+  if (!call(Request{Op::State}, r, 5000)) {
     // No server: start one as this user, as a text service would.
     wchar_t self[MAX_PATH];
     GetModuleFileNameW(nullptr, self, MAX_PATH);
@@ -192,10 +192,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
     bool sent = false;
     for (int i = 0; i < 100 && !sent; ++i) {
       Sleep(100);
-      sent = call(q, r, 5000);
+      sent = call(Request{Op::State}, r, 5000);
     }
     if (!sent) return 1;
   }
+  if (!call(q, r, 5000)) return 1;
   // Until Rime is done: setup's typing and the Configurator's next step need it.
   for (DWORD start = GetTickCount(); r.busy; Sleep(200)) {
     if (GetTickCount() - start > 300000 || !call(Request{Op::State}, r, 5000)) return 1;
