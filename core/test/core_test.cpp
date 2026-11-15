@@ -194,7 +194,7 @@ TEST_F(CoreTest, CtrlShiftFTogglesTraditionalInChineseOnly) {
   chord(mod::Ctrl | mod::Shift, 'F');
   EXPECT_TRUE(core.alternate());
   EXPECT_EQ(core.takeNotice(false), "");  // no popup, as before
-  EXPECT_EQ(menuLabels(), (std::vector<std::string>{"English", "中文", "日本語", "-"}));
+  EXPECT_EQ(menuLabels(), (std::vector<std::string>{"English", "中文", "日本語", "-", "繁 → 简\tCtrl+Shift+F", "-"}));
   chord(mod::Ctrl | mod::Shift, 'f');  // Shift may send the lowercase keysym
   EXPECT_FALSE(core.alternate());
   shiftTap();  // also in its English mode

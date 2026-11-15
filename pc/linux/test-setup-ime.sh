@@ -610,7 +610,7 @@ fi
 # tray in place of Fcitx5's, and a stand-in for Plasma's tray (a StatusNotifierWatcher on that bus) that
 # reads and clicks the menu. The menu
 # reads English · 中文 · 日本語 with SebType's icon names, then the active language's one switch with its
-# key (日本語 あ → ア only, as before), which a click flips, then Fcitx5's Restart and Exit; Fcitx5's clipboard,
+# key (中文 简 → 繁, 日本語 あ → ア, English none), which a click flips, then Fcitx5's Restart and Exit; Fcitx5's clipboard,
 # Unicode and quick phrase hotkeys reach the app (#182); Win+Space toggles English and the last other language, also
 # while Super stays held; a menu pick becomes the one Win+Space returns to; Rime's Shift tap still
 # switches its English mode, and a Shift tap in English switches nothing.
@@ -749,7 +749,10 @@ def rime_ready():  # Rime deploys on first use and takes no keys until then: n s
     return wait(lambda: preedit[0] == 'n', 0.5)
 check('Rime deployed', wait(rime_ready, 60), True)
 key(0xff1b, 9); key(0xff1b, 9, 0, True)
-check('中文 has no switch, as fcitx5-rime had none', switches(), [])
+HANT, HANS = '简 → 繁\tCtrl+Shift+F', '繁 → 简\tCtrl+Shift+F'
+check('中文 has one switch, 简 → 繁', switches(), [HANT, '-'])
+check('clicking it switches to 繁', click(HANT), [HANS, '-'])
+check('clicking again is 简', click(HANS), [HANT, '-'])
 ascii_mode = lambda: call(*SEBTYPE, 'State')[1]
 shift_tap(); check('Shift tap in 中文 turns its English mode on', (ascii_mode(), im()), (True, 'rime'))
 shift_tap(); check('Shift tap again turns it off', (ascii_mode(), im()), (False, 'rime'))

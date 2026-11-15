@@ -282,9 +282,12 @@ std::vector<MenuItem> Core::menu() {
                      l == lang_, l});
   }
   items.push_back({});
-  // Only 日本語 lists its switch, as fcitx5-mozc's menu did; fcitx5-rime's had no 简/繁 item.
-  if (lang_ == Lang::Japanese) {
-    items.push_back({MenuItem::Switch, alternate() ? "ア → あ\tAlt+`" : "あ → ア\tAlt+`"});
+  // The language's one switch with its key (#117).
+  std::string label;
+  if (lang_ == Lang::Chinese) label = alternate() ? "繁 → 简\tCtrl+Shift+F" : "简 → 繁\tCtrl+Shift+F";
+  if (lang_ == Lang::Japanese) label = alternate() ? "ア → あ\tAlt+`" : "あ → ア\tAlt+`";
+  if (!label.empty()) {
+    items.push_back({MenuItem::Switch, label});
     items.push_back({});
   }
   return items;
