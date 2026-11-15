@@ -13,6 +13,7 @@
 #endif
 
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -268,7 +269,7 @@ class Ipc {
 
 class Mozc final : public Engine {
  public:
-  explicit Mozc(const MozcPaths &paths) : ipc_(paths) {}
+  explicit Mozc(const MozcPaths &paths) : ipc_(paths), rimeUserDir_(paths.rimeUserDir) {}
 
   ~Mozc() override {
     if (!session_) return;
@@ -335,6 +336,11 @@ class Mozc final : public Engine {
     command(c);
   }
 
+  // The candidates per page 中文 has, for Mozc's own pages (its default is 9).
+  void deploy() override {
+    if (session_) setRequest();
+  }
+
   void save() override {
     Input in;
     in.set_type(Input::SYNC_DATA);
@@ -343,8 +349,29 @@ class Mozc final : public Engine {
   }
 
  private:
+  int rimePageSize() const {
+    std::ifstream f(std::filesystem::u8path(rimeUserDir_ + "/default.custom.yaml"));
+    for (std::string line; std::getline(f, line);) {
+      const auto at = line.find("menu/page_size:");
+      if (at != std::string::npos && line.find_first_not_of(' ') == at) {
+        const int n = std::atoi(line.c_str() + at + 15);
+        if (n > 0 && n <= 10) return n;
+      }
+    }
+    return 6;
+  }
+  // For the whole server, and sessions made after it.
+  void setRequest() {
+    Input in;
+    in.set_type(Input::SET_REQUEST);
+    in.mutable_request()->set_candidate_page_size(rimePageSize());
+    Output out;
+    ipc_.call(in, out);
+  }
+
   bool ensureSession() {
     if (session_) return true;
+    setRequest();
     Input in;
     in.set_type(Input::CREATE_SESSION);
     in.mutable_capability()->set_text_deletion(mozc::commands::Capability::DELETE_PRECEDING_TEXT);
@@ -463,6 +490,7 @@ class Mozc final : public Engine {
   }
 
   Ipc ipc_;
+  std::string rimeUserDir_;
   uint64_t session_ = 0;
   bool direct_ = false;
   CompositionMode kana_ = mozc::commands::HIRAGANA;

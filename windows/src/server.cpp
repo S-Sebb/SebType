@@ -81,7 +81,8 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
   if (lang == Lang::Chinese)
     return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(logDir())});
   if (lang == Lang::Japanese)
-    return makeMozc({u8(exeDir() / L"mozc_server.exe"), u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc")});
+    return makeMozc({u8(exeDir() / L"mozc_server.exe"), u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"),
+                     u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")});
   return nullptr;
 }
 
@@ -151,8 +152,9 @@ Reply handle(const Request &q) {
       }
       break;
     case Op::State: break;
-    case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet
-      core->engine(Lang::Chinese)->deploy();
+    case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet; Mozc's page size
+      core->engine(Lang::Chinese);
+      core->forEachEngine([](Engine &e) { e.deploy(); });
       break;
     case Op::Sync:
       core->engine(Lang::Chinese);

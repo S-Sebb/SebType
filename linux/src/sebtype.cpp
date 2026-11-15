@@ -52,12 +52,12 @@ std::string mozcProfile() {
 }
 
 std::unique_ptr<Engine> makeEngine(Lang lang) {
+  const auto rimeUser = fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "rime";
   if (lang == Lang::Chinese) {
-    const auto user = fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "rime";
-    fs::create_directories(user);
-    return makeRime({RIME_DATA_DIR, user.string()});
+    fs::create_directories(rimeUser);
+    return makeRime({RIME_DATA_DIR, rimeUser.string()});
   }
-  return makeMozc({env("SEBTYPE_MOZC_SERVER", SEBTYPE_MOZC_SERVER), mozcProfile()});
+  return makeMozc({env("SEBTYPE_MOZC_SERVER", SEBTYPE_MOZC_SERVER), mozcProfile(), rimeUser.string()});
 }
 
 Lang langFromId(const std::string &id) {
@@ -204,7 +204,8 @@ void SebTypeEngine::save() {
 
 void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig &) {
   if (path == "deploy") {
-    if (auto *rime = core_->engine(Lang::Chinese)) rime->deploy();
+    core_->engine(Lang::Chinese);
+    core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
   }
 }
 
