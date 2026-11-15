@@ -1,6 +1,8 @@
 // english-harness SET.tsv OUT.tsv STACK_ARG...: types each item of a test set (make_sets.py) into one stack,
 // letter by letter as the keyboard asks for suggestions on every key, and writes for each item what a space
-// commits, the top 3 of the strip and the time each key took.
+// commits, the top 3 of the strip, the time each key took, and after how many keys the word was first among
+// the top 3 (0: never).
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -50,6 +52,7 @@ int main(int argc, char **argv) {
         // Every key: the letters so far. A next-word item is one call with nothing typed.
         std::vector<long> micros;
         harness::Output result;
+        size_t shownAfter = 0;
         for (size_t n = item.typed.empty() ? 0 : 1; n <= item.typed.size(); n++) {
             harness::Item prefix{item.context, item.typed.substr(0, n),
                                  item.target,
@@ -59,12 +62,15 @@ int main(int argc, char **argv) {
             result = stack->run(prefix);
             micros.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
                                  std::chrono::steady_clock::now() - start).count());
+            const auto top = result.strip.begin() + std::min<size_t>(3, result.strip.size());
+            if (!shownAfter && n > 0 && std::find(result.strip.begin(), top, item.target) != top) shownAfter = n;
         }
 
         std::string top3, times;
         for (size_t i = 0; i < result.strip.size() && i < 3; i++) top3 += (i ? "," : "") + result.strip[i];
         for (size_t i = 0; i < micros.size(); i++) times += (i ? "," : "") + std::to_string(micros[i]);
-        out << item.typed << '\t' << item.target << '\t' << result.committed << '\t' << top3 << '\t' << times << '\n';
+        out << item.typed << '\t' << item.target << '\t' << result.committed << '\t' << top3 << '\t' << times << '\t'
+            << shownAfter << '\n';
     }
     return 0;
 }

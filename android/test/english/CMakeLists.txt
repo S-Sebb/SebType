@@ -1,6 +1,7 @@
 # The English harness's two host executables (#231); bench.sh configures it.
 #   english-today: FUTO's decoder and transformer, compiled in place from android/app/src/main/cpp.
 #   english-aosp:  pristine AOSP LatinIME's decoder, from AOSP_JNI (bench.sh fetches it into the cache).
+#   english-sebtype: the same decoder with SebType's own model (engines/sebtype-lm on llama.cpp, LLAMA_DIR).
 cmake_minimum_required(VERSION 3.22)
 project(english_harness C CXX)
 
@@ -43,3 +44,20 @@ target_compile_options(aosp_latinime PRIVATE -w)
 add_executable(english-aosp ${HARNESS_SRC} src/aosp.cpp)
 target_include_directories(english-aosp PRIVATE ${JNI_INCLUDE})
 target_link_libraries(english-aosp PRIVATE -Wl,--whole-archive aosp_latinime -Wl,--no-whole-archive pthread dl m)
+
+# SebType's: AOSP's decoder and engines/sebtype-lm on llama.cpp, built for the CPU as the other two are.
+if(LLAMA_DIR)
+  foreach(off LLAMA_BUILD_TESTS LLAMA_BUILD_TOOLS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_SERVER LLAMA_CURL
+              BUILD_SHARED_LIBS GGML_NATIVE GGML_OPENMP GGML_AVX512 GGML_BACKEND_DL)
+    set(${off} OFF CACHE BOOL "" FORCE)
+  endforeach()
+  foreach(on GGML_AVX GGML_AVX2 GGML_FMA GGML_F16C GGML_BMI2)
+    set(${on} ON CACHE BOOL "" FORCE)
+  endforeach()
+  add_subdirectory(${LLAMA_DIR} llama EXCLUDE_FROM_ALL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../engines/sebtype-lm sebtype-lm)
+  add_executable(english-sebtype ${HARNESS_SRC} src/sebtype.cpp)
+  target_include_directories(english-sebtype PRIVATE ${JNI_INCLUDE})
+  target_link_libraries(english-sebtype PRIVATE -Wl,--whole-archive aosp_latinime -Wl,--no-whole-archive
+                        sebtype_lm pthread dl m)
+endif()

@@ -3,3 +3,5 @@ The input engines the phone and both PCs share, each under its project's licence
   (BSD-3-Clause, Google; each folder's LICENSE, and the licences of the data in src/data/).
 - librime/: SebType's librime (librime with SebType's changes), under librime's licence (BSD-3-Clause,
   librime/LICENSE).
+- sebtype-lm/: SebType's English model loader, SebType's own code under the MIT licence (LICENSE-SebType
+  at the repository's root). It builds on llama.cpp (MIT), which it fetches and doesn't copy.

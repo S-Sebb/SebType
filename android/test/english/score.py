@@ -3,11 +3,15 @@
   score.py RUN_DIR             a JSON summary of every STACK.SET.tsv in RUN_DIR
   score.py --compare S1 S2     exit 0 if two summaries' quality numbers are equal and per-key p50 within 25 %
   score.py --table S1 S2       the baseline table in Markdown, run 1's numbers with run 2's latency next to them
+  score.py --bar S             exit 0 if SebType's model passes the plan's quality bar (§2) against today's
 
-Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key.
+Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key, and after
+how many keys the target was first in the top 3 (0: never).
 - Typo sets (phone-typos, misspellings): fixed = a space commits the intended word; top1 / top3 = the
   intended word is first / among the first three suggestions.
-- clean: changed = a space commits something other than the correct word that was typed.
+- clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
+  saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
+  and the space; the tap adds the space).
 - next-chat, next-news: top3 = the next word is among the three predictions with nothing typed.
 Rates are percentages with one decimal. Latency: per key p50 / p95 and per word (all its keys) p50 / p95,
 in milliseconds, over the typed sets; per prediction for the next-word sets.
@@ -32,6 +36,7 @@ STACKS = (
     ("today", "Today: FUTO's decoder + transformer"),
     ("aosp", "Pristine AOSP decoder + AOSP's dictionary"),
     ("aosp-sebdict", "Pristine AOSP decoder + SebType's dictionary"),
+    ("sebtype", "Pristine AOSP decoder + SebType's model"),
 )
 
 
@@ -95,6 +100,11 @@ def table(s1, s2):
             s,
             lambda x, y: f"{x['top3']} %",
         )
+    row(
+        "Keystrokes saved by tapping the word once in the top 3 (clean words)",
+        "clean",
+        lambda x, y: f"{x['saved']} %",
+    )
     lat = lambda p50, p95: lambda x, y: f"{x[p50]} / {x[p95]} ({y[p50]} / {y[p95]})"
     for s, name in (("clean", "clean words"), ("phone-typos", "phone typos")):
         row(
@@ -112,6 +122,55 @@ def table(s1, s2):
         "next-chat",
         lat("ms_p50", "ms_p95"),
     )
+
+
+def bar(path):
+    """The plan's quality bar (§2): SebType's model against today's, one line per gated row."""
+    s = json.loads(Path(path).read_text())
+    today, ours = s["today"], s["sebtype"]
+    checks = []
+    for set_name in ("phone-typos", "misspellings"):
+        for k in ("fixed", "top1", "top3"):
+            checks.append(
+                (
+                    f"{set_name} {k} >= today - 2",
+                    ours[set_name][k],
+                    today[set_name][k] - 2,
+                    1,
+                )
+            )
+    checks.append(
+        (
+            "clean changed <= today",
+            ours["clean"]["changed"],
+            today["clean"]["changed"],
+            -1,
+        )
+    )
+    for set_name in ("next-chat", "next-news"):
+        checks.append(
+            (
+                f"{set_name} top3 >= 90 % of today",
+                ours[set_name]["top3"],
+                round(0.9 * today[set_name]["top3"], 1),
+                1,
+            )
+        )
+    for set_name in ("clean", "phone-typos"):
+        checks.append(
+            (
+                f"{set_name} per-key p95 <= today",
+                ours[set_name]["key_ms_p95"],
+                today[set_name]["key_ms_p95"],
+                -1,
+            )
+        )
+    ok = True
+    for name, value, limit, sign in checks:
+        passed = (value - limit) * sign >= 0
+        ok &= passed
+        print(f"{'PASS' if passed else 'FAIL'} {name}: {value} (bar {limit})")
+    return ok
 
 
 def main(run_dir):
@@ -132,6 +191,9 @@ def main(run_dir):
         else:
             if set_name == "clean":
                 s["changed"] = pct(sum(r[2] != r[1] for r in rows), len(rows))
+                full = sum(len(r[1]) + 1 for r in rows)
+                spent = sum(int(r[5]) + 1 if int(r[5]) else len(r[1]) + 1 for r in rows)
+                s["saved"] = pct(full - spent, full)
             else:
                 s["fixed"] = pct(sum(r[2] == r[1] for r in rows), len(rows))
                 s["top1"] = pct(
@@ -151,6 +213,8 @@ def main(run_dir):
 if __name__ == "__main__":
     if sys.argv[1] == "--compare":
         sys.exit(0 if compare(*sys.argv[2:4]) else 1)
+    elif sys.argv[1] == "--bar":
+        sys.exit(0 if bar(sys.argv[2]) else 1)
     elif sys.argv[1] == "--table":
         table(*sys.argv[2:4])
     else:
