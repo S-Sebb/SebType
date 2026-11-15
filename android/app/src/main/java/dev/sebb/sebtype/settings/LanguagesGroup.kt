@@ -29,8 +29,7 @@ import androidx.navigation.NavHostController
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.map
 import org.futo.inputmethod.engine.general.ChineseIMESettings
-import dev.sebb.sebtype.chinese.ChineseOptions
-import org.futo.inputmethod.engine.general.JapaneseIMESettings
+import dev.sebb.sebtype.SebTypeConf
 import org.futo.inputmethod.latin.R
 import dev.sebb.sebtype.SebTypeLanguages
 import org.futo.inputmethod.latin.Subtypes
@@ -236,15 +235,15 @@ fun LanguagesScreen(navController: NavHostController) {
                 style = NavigationItemStyle.Misc,
                 navigate = { navController.navigate("zhFuzzy") }
             )
-            SettingToggleDataStore(
+            SettingToggleConf(
                 title = stringResource(R.string.sebtype_settings_zh_emoji),
                 subtitle = stringResource(R.string.sebtype_settings_zh_emoji_subtitle),
-                setting = ChineseOptions.EmojiInCandidates
+                option = SebTypeConf.Option.Emoji
             )
-            SettingToggleDataStore(
+            SettingToggleConf(
                 title = stringResource(R.string.sebtype_settings_zh_punctuation),
                 subtitle = stringResource(R.string.sebtype_settings_zh_punctuation_subtitle),
-                setting = ChineseOptions.FullWidthPunctuation
+                option = SebTypeConf.Option.FullWidthPunctuation
             )
             NavigationItem(
                 title = stringResource(R.string.sebtype_settings_my_words),
@@ -256,10 +255,10 @@ fun LanguagesScreen(navController: NavHostController) {
 
         ScreenTitle("日本語")
         SettingsCard {
-            SettingToggleDataStore(
+            SettingToggleConf(
                 title = stringResource(R.string.japanese_settings_toggle_halfwidth_space),
                 subtitle = stringResource(R.string.japanese_settings_toggle_halfwidth_space_subtitle),
-                setting = JapaneseIMESettings.HalfWidthSpace
+                option = SebTypeConf.Option.HalfWidthSpace
             )
             NavigationItem(
                 title = stringResource(R.string.sebtype_settings_my_words),
@@ -289,4 +288,13 @@ fun FuzzyPinyinScreen(navController: NavHostController) {
         }
         BottomSpacer()
     }
+}
+
+/** A switch for one of sebtype.conf's options ([SebTypeConf]), which core/ applies at once. */
+@Composable
+private fun SettingToggleConf(title: String, subtitle: String, option: SebTypeConf.Option) {
+    val context = LocalContext.current
+    val conf by SebTypeConf.text.collectAsState()
+    val on = remember(conf) { SebTypeConf.get(context, option) }
+    SettingToggleRaw(title, on, { SebTypeConf.set(context, option, it) }, subtitle)
 }

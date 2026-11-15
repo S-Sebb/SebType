@@ -345,6 +345,9 @@ def check(name, fn, needs=()):
         StopIteration,
     ) as e:
         result("FAIL", name, str(e))
+        # The system log since the last restart, for what the app was doing (a hang shows its threads here).
+        with open(os.path.join(logdir, f"{name}.logcat"), "w") as f:
+            f.write(adb("logcat", "-d", check=False))
 
 
 def fresh_install():
@@ -428,7 +431,8 @@ def fresh_install():
 def expect_first(text, word):
     def run():
         got = candidates_for(text)
-        if not got or got[0] != word:
+        # rime-ice's spelling hints (［ran hou］) show only when its Lua filters aren't running.
+        if not got or got[0] != word or any(c.startswith("［") for c in got):
             raise Fail(f"{text} -> {got[:6]}")
         return f"{text} -> {got[:6]}"
 

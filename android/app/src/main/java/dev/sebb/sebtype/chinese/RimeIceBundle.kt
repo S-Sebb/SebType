@@ -17,9 +17,9 @@ import org.futo.inputmethod.engine.general.ChineseIME
 object RimeIceBundle {
     const val SCHEMA = "rime_ice"
 
-    // Self-test after deploy: plain abbreviated pinyin, no Lua or learned words involved.
+    // Self-test after deploy: plain abbreviated pinyin, no Lua or learned words involved. 繁 may already be on.
     const val SELF_TEST_INPUT = "ranh"
-    const val SELF_TEST_WORD = "然后"
+    val SELF_TEST_WORDS = setOf("然后", "然後")
 
     private const val INSTALLED_VERSION = ".sebtype-bundle-version"
 

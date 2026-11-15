@@ -22,13 +22,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
-import com.google.common.base.Optional
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dev.sebb.sebtype.chinese.ChineseLearnedWords
 import dev.sebb.sebtype.chinese.RimeIceSetup
-import org.futo.inputmethod.engine.general.initJniDictLocations
+import dev.sebb.sebtype.core.NativeCore
+import org.futo.inputmethod.engine.general.setMozcData
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.personalization.PersonalizationHelper
 import org.futo.inputmethod.latin.settings.Settings
@@ -54,8 +54,6 @@ import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
 import org.futo.inputmethod.latin.uix.settings.SettingToggleSharedPrefs
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
-import org.futo.inputmethod.nativelib.mozc.session.SessionExecutor
-import org.futo.inputmethod.nativelib.mozc.session.SessionHandlerFactory
 
 // SebType's Privacy and Sync & backup groups (#41). Keyboard is KeyboardSettingsMenu (Typing.kt),
 // About is AboutMenu (Help.kt), Languages is LanguagesGroup.kt.
@@ -167,13 +165,11 @@ object LearnedWords {
                 if(wasReady) RimeIceSetup.prepareInBackground(app)
             }
             "ja" -> {
-                // The process's Mozc, shared with the Japanese keyboard when it is running.
-                initJniDictLocations(app)
-                SessionExecutor.getInstanceInitializedIfNecessary(SessionHandlerFactory(Optional.absent()), app).apply {
-                    clearUserHistory()
-                    clearUserPrediction()
-                    syncData()
-                }
+                // The process's Mozc, shared with the Japanese keyboard; loaded for this if it wasn't running.
+                setMozcData(app)
+                val running = NativeCore.running(NativeCore.JAPANESE)
+                NativeCore.forget(NativeCore.JAPANESE)
+                if(!running) NativeCore.stop(NativeCore.JAPANESE)
             }
         }
     }

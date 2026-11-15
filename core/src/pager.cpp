@@ -32,6 +32,13 @@ Page Engine::page() {
   return page;
 }
 
+std::vector<Candidate> Engine::candidates(int max) {
+  std::vector<Candidate> list;
+  Candidate c;
+  for (int i = 0; i < max && candidateAt(i, c); ++i) list.push_back(std::move(c));
+  return list;
+}
+
 void Engine::select(int indexOnPage) { selectAt(pageStart(*this) + indexOnPage); }
 
 void Engine::changePage(bool next) {

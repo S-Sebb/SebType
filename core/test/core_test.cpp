@@ -1,5 +1,5 @@
-// The core's riskiest paths with stand-in engines: language switching, the Shift tap, 简/繁, あ ⇄ ア and
-// paging 6 to a page.
+// The core's riskiest paths with stand-in engines: language switching, the Shift tap, 简/繁, あ ⇄ ア,
+// paging 6 to a page, and the phone's 🌐, list and fields.
 #include <sebtype/core.h>
 
 #include <gtest/gtest.h>
@@ -56,6 +56,10 @@ struct FakeEngine : Engine {
   }
   bool alternate() override { return alt; }
   void setAlternate(bool on) override { alt = on; }
+  Field field = Field::Text;
+  bool learning = true;
+  void setField(Field f) override { field = f; }
+  void applySettings(const Settings &, bool learn) override { learning = learn; }
 };
 
 struct CoreTest : testing::Test {
@@ -270,3 +274,72 @@ TEST_F(CoreTest, PagesSixCandidatesAndAClickPicksOnThePage) {
 }
 
 }  // namespace
+
+TEST_F(CoreTest, GlobeCyclesTheLanguagesThatAreOnAndDropsWhatIsTyped) {
+  Settings phone = Settings::parse("[Languages]\nOrder=en,ja,zh\n");
+  phone.commitOnSwitch = false;  // the user's choice: 🌐 throws unchosen pinyin away
+  core.setSettings(phone);
+  core.cycleLanguage();
+  EXPECT_EQ(core.language(), Lang::Japanese);
+  core.cycleLanguage();
+  EXPECT_EQ(core.language(), Lang::Chinese);
+  type("ni");
+  core.cycleLanguage();  // after the last back to the first
+  EXPECT_EQ(core.language(), Lang::English);
+  EXPECT_EQ(core.takeCommit(), "");
+  EXPECT_FALSE(engines[Lang::Chinese]->composing());
+
+  phone.languages = {Lang::Chinese, Lang::English};
+  core.setSettings(phone);
+  core.cycleLanguage();
+  EXPECT_EQ(core.language(), Lang::Chinese);
+  core.cycleLanguage();
+  EXPECT_EQ(core.language(), Lang::English);
+  EXPECT_FALSE(engines.contains(Lang::Japanese));  // a language that is off never starts
+}
+
+TEST_F(CoreTest, TheBarListsCandidatesUnpagedAndATapCommitsOne) {
+  core.selectLanguage(Lang::Chinese);
+  EXPECT_TRUE(core.candidates(100).empty());
+  type("ni");
+  const auto all = core.candidates(100);
+  ASSERT_EQ(all.size(), 20u);  // past the 6 of a page
+  EXPECT_EQ(all[7].text, "ni7");
+  EXPECT_EQ(core.candidates(3).size(), 3u);
+  EXPECT_EQ(core.highlighted(), 0);
+  core.selectCandidate(13);
+  EXPECT_EQ(core.takeCommit(), "ni13");
+  EXPECT_TRUE(core.candidates(100).empty());
+}
+
+TEST_F(CoreTest, AFieldThatMustNotLearnTurnsLearningOffInEveryEngine) {
+  core.selectLanguage(Lang::Chinese);
+  core.key({'a'});
+  core.setField(Field::Password, false);
+  EXPECT_EQ(engines[Lang::Chinese]->field, Field::Password);
+  EXPECT_FALSE(engines[Lang::Chinese]->learning);
+  core.selectLanguage(Lang::Japanese);  // started later: told too
+  core.key({'a'});
+  EXPECT_EQ(engines[Lang::Japanese]->field, Field::Password);
+  EXPECT_FALSE(engines[Lang::Japanese]->learning);
+  core.setField(Field::Text, true);
+  EXPECT_TRUE(engines[Lang::Chinese]->learning);
+  Settings incognito;
+  incognito.learning = false;  // the setting wins over a field that may learn
+  core.setSettings(incognito);
+  EXPECT_FALSE(engines[Lang::Japanese]->learning);
+}
+
+TEST(SettingsTest, KeepsOnlyTheOptionsThatAreSet) {
+  EXPECT_EQ(Settings{}.serialize(), "[Languages]\nOrder=en,zh,ja\n");
+  const std::string conf =
+      "[Languages]\nOrder=en,zh\n[Chinese]\nTraditional=true\nEmoji=false\n[Japanese]\nHalfWidthSpace=true\n"
+      "[Learning]\nOn=false\n";
+  const Settings s = Settings::parse(conf);
+  EXPECT_EQ(s.traditional, true);
+  EXPECT_FALSE(s.fullWidthPunctuation.has_value());
+  EXPECT_EQ(s.emoji, false);
+  EXPECT_EQ(s.halfWidthSpace, true);
+  EXPECT_FALSE(s.learning);
+  EXPECT_EQ(s.serialize(), conf);
+}

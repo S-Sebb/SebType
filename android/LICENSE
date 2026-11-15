@@ -9,12 +9,15 @@ Apache License 2.0, ../NOTICE), with SebType's edits inside it counting as FUTO-
 
 SebType's own files, under the MIT licence in ../LICENSE-SebType:
 - build.gradle, build.sh, release.sh, emulator.sh, upstream-version, test/, perf/, tools/trim-emoji.sh,
-  mozc/build.gradle and mozc/build-native.sh, and rime/build.gradle.
+  and native/'s own files (native/NOTICE.md lists them).
 
 Other projects' code SebType builds here keeps its licence:
-- mozc/src/: see mozc/LICENSE.
-- rime/, except rime/build.gradle: RimeJni (MIT, rime/LICENSE) with SebType's changes; its NOTICE.md and
-  src/main/assets/licenses/ list the libraries it builds.
+- native/src/main/cpp/cmake/: RimeJni's build scripts (MIT, native/src/main/cpp/cmake/LICENSE) with
+  SebType's changes; native/NOTICE.md and native/src/main/assets/licenses/ list the libraries it builds.
+- app/src/main/java/org/futo/inputmethod/engine/general/mozc/SelectionTracker.java: from FUTO's mozc-lib
+  (https://gitlab.futo.org/keyboard/mozc-lib at 872ec075), Mozc's Android client that Google wrote
+  (BSD-3-Clause, in its header and ../engines/mozc/LICENSE) with FUTO's changes, which count as FUTO
+  Keyboard's code, and SebType's.
 - In test/english/ (the English harness): src/today.cpp restates FUTO's Kotlin and Java around its English
   model, so it is FUTO-derived (FUTO Source First License 1.1, ../LICENSE.md); the test sets in sets/ keep
   their sources' licences (sets/LICENSE). The pristine AOSP LatinIME it builds (Apache-2.0) is fetched at

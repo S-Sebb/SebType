@@ -1,22 +1,29 @@
 # SebType core
 
 One C++ library for every platform's frontend (#190): it hosts librime for 中文 (`src/rime.cpp`) and Mozc's
-server for 日本語 (`src/mozc.cpp`, over Mozc's IPC), and passes English through. It owns what SebType's
+for 日本語 (`src/mozc.cpp`), and passes English through. Mozc runs one of two ways (`src/mozc_transport.h`):
+the PCs talk to its own `mozc_server` over Mozc's IPC (`src/mozc_ipc.cpp`); the phone runs Mozc's session
+handler in its own process (`src/mozc_inprocess.cpp`) through the C interface in `src/sebtype_mozc.h`, which
+the phone's `libmozc.so` exports. CMake picks the second when `SEBTYPE_MOZC_LIB` names that library; the PCs
+move to it in #233. It owns what SebType's
 languages share:
 
 - the languages and switching: Win+Space (home ⇄ the last other language), the Shift tap for English
   letters, Ctrl+Shift+F for 简/繁 and Alt+` for あ ⇄ ア (`src/core.cpp`);
-- the candidate list and paging (`src/pager.cpp`; Rime pages 6 at a time, as its settings say);
-- the settings the Configurator writes (`~/.config/sebtype/sebtype.conf` on Linux: `[Languages] Order=`);
+- the candidate list and paging (`src/pager.cpp`; Rime pages 6 at a time, as its settings say), and the
+  phone's unpaged list and touch paths (pick a candidate by index, retype, move the cursor);
+- what 🌐 does to unchosen text: the PCs commit it, the phone drops it (`commitOnSwitch`);
+- the settings (`sebtype.conf`: `~/.config/sebtype/` on Linux, the app's files on the phone);
 - the tray: its icon names (the files in `pc/icons/`) and its menu.
 
 A frontend feeds it keys and draws what it says: on Linux the Fcitx5 add-on in [`linux/`](../linux), on
-Windows the text service and its server in [`windows/`](../windows).
+Windows the text service and its server in [`windows/`](../windows), on Android the app through JNI in
+[`android/native/`](../android/native).
 
 ## Tests
 
 `test/core_test.cpp` checks the riskiest paths with stand-in engines: language switching, the Shift tap,
-简/繁, あ ⇄ ア, the popups and paging 6 to a page. `linux/build.sh` runs them in its container on every
+简/繁, あ ⇄ ア, the popups and paging 6 to a page, the touch paths and both `commitOnSwitch` values. `linux/build.sh` runs them in its container on every
 build (`%check` in `linux/sebtype.spec`).
 
 ## Licences and credits
@@ -27,6 +34,7 @@ build (`%check` in `linux/sebtype.spec`).
     ([LICENSE-LGPL-2.1](../LICENSE-LGPL-2.1)).
   - `src/mozc.cpp` follows fcitx5-mozc, the Fcitx 5 frontend of [fcitx/mozc](https://github.com/fcitx/mozc)
     (`src/unix/fcitx5`, Copyright 2010-2018 Google Inc. and 2017 Weng Xuetian): BSD-3-Clause, like Mozc.
+    `src/mozc_ipc.cpp`, moved out of it, keeps that licence.
 - The protocol it speaks to Mozc's server is generated from Mozc's own `.proto` files in `engines/mozc`
   (BSD-3-Clause).
 - The engines keep their licences: librime BSD-3-Clause, Mozc BSD-3-Clause.

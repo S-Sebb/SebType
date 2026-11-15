@@ -21,11 +21,13 @@ has the details):
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's
     notificationitem: LGPL-2.1-or-later (LICENSE-LGPL-2.1).
-  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend): Mozc's BSD-3-Clause licence.
+  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend), and core/src/mozc_ipc.cpp, moved
+    out of it: Mozc's BSD-3-Clause licence.
   - linux/librime.spec: Fedora's spec, MIT.
-  - android/rime/: RimeJni (MIT) with SebType's changes, under RimeJni's licence (android/rime/LICENSE).
-  - android/mozc/src/: FUTO's mozc-lib, Google's Mozc Android client (BSD-3-Clause) with FUTO's and
-    SebType's changes (android/mozc/LICENSE).
+  - android/native/src/main/cpp/cmake/: RimeJni's build scripts (MIT) with SebType's changes, under RimeJni's
+    licence (android/native/src/main/cpp/cmake/LICENSE).
+  - android/app/src/main/java/org/futo/inputmethod/engine/general/mozc/SelectionTracker.java: from FUTO's
+    mozc-lib, Google's Mozc Android client (BSD-3-Clause, in its header) with FUTO's and SebType's changes.
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause. On Windows, mozc_server.exe comes with the
   Microsoft Visual C++ runtime files of the Visual Studio that built it (msvcp140*.dll, vcruntime140*.dll),

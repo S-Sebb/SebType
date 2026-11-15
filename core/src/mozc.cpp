@@ -1,29 +1,27 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// SebType core: 日本語 through Mozc's own mozc_server, over Mozc's IPC. The key translation, the candidate
-// window and the server's protocol use follow fcitx5-mozc (Copyright 2010-2018 Google Inc. and 2017 Weng
-// Xuetian; fcitx/mozc's src/unix/fcitx5), so this file keeps its licence: see core/README.md.
+// SebType core: 日本語 through Mozc, the same protocol on every platform; mozc_transport.h says how it is
+// reached. The key translation, the candidate window and the protocol use follow fcitx5-mozc (Copyright
+// 2010-2018 Google Inc. and 2017 Weng Xuetian; fcitx/mozc's src/unix/fcitx5), and the touch keyboard's
+// requests and settings follow Mozc's Android client (Copyright 2010-2018 Google Inc.), so this file keeps
+// their licence: see core/README.md.
 #include <sebtype/hosts.h>
 
 #ifndef _WIN32
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
-#include <chrono>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
-#include <thread>
 #include <utility>
 
-#include "ipc/ipc.pb.h"
+#include "mozc_transport.h"
 #include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 
 #ifdef _WIN32  // after the protocol's headers: its macros (DELETE, GetMessage) would clash with them
 #define NOMINMAX
@@ -100,176 +98,47 @@ bool translate(const Key &k, KeyEvent &out) {
   return true;
 }
 
-// Mozc's IPC: one connection per call to the server named after the key it writes to
-// <profile>/.session.ipc. On Linux an abstract Unix socket, the request ending at the write shutdown; on
-// Windows a message-mode named pipe, one message each way (Mozc's ipc/win32_ipc.cc).
-class Ipc {
- public:
-  explicit Ipc(MozcPaths paths) : paths_(std::move(paths)) {}
-
-  bool call(const Input &in, Output &out) {
-    std::string request;
-    in.SerializeToString(&request);
-    std::string reply;
-    if (!send(request, reply)) {
-      // Not waited for again soon after a start it didn't answer: a broken server would cost every call 3 s.
-      const auto now = std::chrono::steady_clock::now();
-      if (now - launched_ < std::chrono::seconds(10)) return false;
-      launched_ = now;
-      launch();
-      bool sent = false;
-      for (int i = 0; i < 60 && !sent; ++i) {  // up to 3 s for a fresh server
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        sent = send(request, reply);
-      }
-      if (!sent) return false;
-    }
-    return out.ParseFromString(reply);
+// A touch keyboard's key as Mozc's Android client sent it: a character's code point, or one of the keys it
+// has, Enter and the arrows being the virtual ones.
+bool translateTouch(const Key &k, KeyEvent &out) {
+  switch (k.sym) {
+    case 0x20: out.set_special_key(KeyEvent::SPACE); return true;
+    case 0xff08: out.set_special_key(KeyEvent::BACKSPACE); return true;
+    case 0xff0d: out.set_special_key(KeyEvent::VIRTUAL_ENTER); return true;
+    case 0xff51: out.set_special_key(KeyEvent::VIRTUAL_LEFT); return true;
+    case 0xff53: out.set_special_key(KeyEvent::VIRTUAL_RIGHT); return true;
   }
+  // Characters only (charSym): Latin-1 printables and Unicode keysyms.
+  const bool latin1 = (k.sym > 0x20 && k.sym < 0x7f) || (k.sym >= 0xa0 && k.sym < 0x100);
+  if (!latin1 && k.sym < 0x1000000) return false;
+  out.set_key_code(latin1 ? k.sym : k.sym - 0x1000000);
+  return true;
+}
 
- private:
-  std::string key() {
-    mozc::ipc::IPCPathInfo info;
-#ifdef _WIN32
-    // session.ipc, no dot on Windows; the server holds it open to delete on close, so it opens only with
-    // FILE_SHARE_DELETE (Mozc's ipc/ipc_path_manager.cc).
-    HANDLE f = CreateFileW(std::filesystem::u8path(paths_.profileDir + "/session.ipc").c_str(), GENERIC_READ,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return {};
-    char buf[2096];
-    DWORD n = 0;
-    const bool read = ReadFile(f, buf, sizeof(buf), &n, nullptr);
-    CloseHandle(f);
-    if (!read || !info.ParseFromArray(buf, static_cast<int>(n))) return {};
-#else
-    std::ifstream f(std::filesystem::u8path(paths_.profileDir + "/.session.ipc"), std::ios::binary);
-    if (!f || !info.ParseFromIstream(&f)) return {};
-#endif
-    return info.key();
-  }
-
-#ifdef _WIN32
-  bool send(const std::string &request, std::string &reply) {
-    const std::string key = this->key();
-    if (key.empty()) return false;
-    const std::string name = "\\\\.\\pipe\\mozc." + key + ".session";
-    HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
-                              FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
-    if (pipe == INVALID_HANDLE_VALUE) return false;
-    // Overlapped, for the 5 s Linux's socket has: a server that hangs mustn't hold up every app.
-    OVERLAPPED o{};
-    o.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    const DWORD start = GetTickCount();
-    auto finish = [&](BOOL done, DWORD &n) {
-      if (done || GetLastError() != ERROR_IO_PENDING) return done != FALSE;
-      const DWORD spent = GetTickCount() - start;
-      if (WaitForSingleObject(o.hEvent, spent < 5000 ? 5000 - spent : 0) != WAIT_OBJECT_0) {
-        CancelIo(pipe);
-        GetOverlappedResult(pipe, &o, &n, TRUE);
-        SetLastError(ERROR_TIMEOUT);
-        return false;
-      }
-      return GetOverlappedResult(pipe, &o, &n, FALSE) != FALSE;
-    };
-    DWORD mode = PIPE_READMODE_MESSAGE, n = 0;
-    bool ok = SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr) &&
-              finish(WriteFile(pipe, request.data(), static_cast<DWORD>(request.size()), &n, &o), n) &&
-              n == request.size();
-    reply.clear();
-    char buf[65536];
-    for (bool more = ok; more;) {
-      more = false;
-      if (finish(ReadFile(pipe, buf, sizeof(buf), &n, &o), n)) {
-        reply.append(buf, n);
-      } else if (GetLastError() == ERROR_MORE_DATA) {
-        reply.append(buf, n);
-        more = true;
-      } else {
-        ok = false;
-      }
-    }
-    CloseHandle(o.hEvent);
-    CloseHandle(pipe);
-    return ok;
-  }
-
-  // Starts mozc_server on its own, as Mozc's client does: it outlives the host and stops when idle.
-  // mozc_server refuses to run (exit 3) unless its main thread starts with an impersonation token, which
-  // Mozc's launcher sets (server_launcher.cc, win_sandbox.cc). We hand it a copy of our own: the server
-  // never runs elevated, so Mozc's further restrictions (no Administrators group) would change nothing.
-  void launch() {
-    std::wstring cmd = L"\"" + std::filesystem::u8path(paths_.server).wstring() + L"\"";
-    HANDLE self = nullptr, impersonation = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE, &self)) return;
-    const bool copied = DuplicateTokenEx(self, TOKEN_IMPERSONATE | TOKEN_QUERY, nullptr, SecurityImpersonation,
-                                         TokenImpersonation, &impersonation);
-    CloseHandle(self);
-    if (!copied) return;
-    STARTUPINFOW si{sizeof(si)};
-    PROCESS_INFORMATION pi{};
-    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
-                       CREATE_SUSPENDED | CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_DEFAULT_ERROR_MODE, nullptr,
-                       nullptr, &si, &pi)) {
-      if (SetThreadToken(&pi.hThread, impersonation)) ResumeThread(pi.hThread);
-      else TerminateProcess(pi.hProcess, 1);
-      CloseHandle(pi.hThread);
-      CloseHandle(pi.hProcess);
-    }
-    CloseHandle(impersonation);
-  }
-#else
-  bool send(const std::string &request, std::string &reply) {
-    const std::string key = this->key();
-    if (key.empty()) return false;
-    const std::string name = "tmp/.mozc." + key + ".session";
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) return false;
-    sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    std::memcpy(addr.sun_path + 1, name.data(), std::min(name.size(), sizeof(addr.sun_path) - 1));
-    const socklen_t len = sizeof(addr.sun_family) + 1 + name.size();
-    timeval timeout{5, 0};
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    bool ok = connect(fd, reinterpret_cast<sockaddr *>(&addr), len) == 0;
-    for (size_t sent = 0; ok && sent < request.size();) {
-      ssize_t n = write(fd, request.data() + sent, request.size() - sent);
-      ok = n > 0;
-      sent += ok ? n : 0;
-    }
-    ok = ok && shutdown(fd, SHUT_WR) == 0;
-    reply.clear();
-    char buf[65536];
-    for (ssize_t n; ok && (n = read(fd, buf, sizeof(buf))) != 0;) {
-      ok = n > 0;
-      if (ok) reply.append(buf, n);
-    }
-    close(fd);
-    return ok;
-  }
-
-  // Starts mozc_server on its own, as Mozc's client does: it outlives Fcitx5 and stops when idle.
-  void launch() {
-    pid_t pid = fork();
-    if (pid == 0) {
-      if (fork() == 0) {
-        setsid();
-        int null = open("/dev/null", O_RDWR);
-        dup2(null, 0), dup2(null, 1), dup2(null, 2);
-        execl(paths_.server.c_str(), paths_.server.c_str(), static_cast<char *>(nullptr));
-      }
-      _exit(0);
-    }
-    if (pid > 0) waitpid(pid, nullptr, 0);
-  }
-#endif
-
-  MozcPaths paths_;
-  std::chrono::steady_clock::time_point launched_{};
+// The touch keyboards Mozc's Android client asked for (its Keyboard.KeyboardSpecification): QWERTY in
+// romaji, QWERTY letters, and the symbols and numbers.
+struct TouchKeyboard {
+  const char *name;
+  CompositionMode mode;
+  mozc::commands::Request::SpecialRomanjiTable table;
+  mozc::commands::Request::SpaceOnAlphanumeric space;
+  mozc::commands::Request::CrossingEdgeBehavior edge;
 };
+const TouchKeyboard &touchKeyboard(Keys keys) {
+  using R = mozc::commands::Request;
+  static const TouchKeyboard kana{"QWERTY_KANA-0.4.0", mozc::commands::HIRAGANA, R::QWERTY_MOBILE_TO_HIRAGANA,
+                                  R::SPACE_OR_CONVERT_KEEPING_COMPOSITION, R::DO_NOTHING},
+      letters{"QWERTY_ALPHABET-0.5.0", mozc::commands::HALF_ASCII, R::QWERTY_MOBILE_TO_HALFWIDTHASCII, R::COMMIT,
+              R::COMMIT_WITHOUT_CONSUMING},
+      symbols{"TWELVE_KEY_SYMBOL_NUMBER-0.1.0", mozc::commands::HALF_ASCII, R::QWERTY_MOBILE_TO_HALFWIDTHASCII,
+              R::COMMIT, R::DO_NOTHING};
+  return keys == Keys::Letters ? letters : keys == Keys::Symbols ? symbols : kana;
+}
 
 class Mozc final : public Engine {
  public:
-  explicit Mozc(const MozcPaths &paths) : ipc_(paths), rimeUserDir_(paths.rimeUserDir) {}
+  explicit Mozc(const MozcPaths &paths)
+      : mozc_(makeMozcTransport(paths)), rimeUserDir_(paths.rimeUserDir), touch_(paths.touch) {}
 
   ~Mozc() override {
     if (!session_) return;
@@ -277,28 +146,31 @@ class Mozc final : public Engine {
     in.set_type(Input::DELETE_SESSION);
     in.set_id(session_);
     Output out;
-    ipc_.call(in, out);
+    mozc_->call(in, out);
   }
 
   bool key(const Key &k) override {
     if (k.release) return false;
     Input in;
     in.set_type(Input::SEND_KEY);
-    if (!translate(k, *in.mutable_key())) return false;
+    if (!(touch_ ? translateTouch(k, *in.mutable_key()) : translate(k, *in.mutable_key()))) return false;
     // In English letters only the keys that may turn Japanese on (Hankaku/Zenkaku, Kana…) go to the server.
     if (direct_ && !isImeKey(in.key())) return false;
-    in.mutable_key()->set_mode(kana_);
+    if (!touch_) in.mutable_key()->set_mode(kana_);
     return send(in);
   }
 
   std::string takeCommit() override { return std::exchange(commit_, {}); }
+  Edit takeEdit() override { return std::exchange(edit_, {}); }
   Preedit preedit() override { return preedit_; }
   std::string aux() override { return aux_; }
   bool composing() override { return !preedit_.empty(); }
 
   void flush() override { command(SessionCommand::SUBMIT); }
   void clear() override {
-    if (!preedit_.empty() || !page_.empty()) command(SessionCommand::REVERT);
+    // The phone also forgets the text before the cursor that Mozc predicts from (its client's resetContext).
+    if (touch_) command(SessionCommand::RESET_CONTEXT);
+    else if (!preedit_.empty() || !page_.empty()) command(SessionCommand::REVERT);
   }
 
   Page page() override { return page_; }
@@ -313,6 +185,50 @@ class Mozc final : public Engine {
     command(next ? SessionCommand::CONVERT_NEXT_PAGE : SessionCommand::CONVERT_PREV_PAGE);
   }
 
+  // The phone's list: Mozc's all candidate words, a tap submitting one.
+  std::vector<Candidate> candidates(int max) override {
+    return {list_.begin(), list_.begin() + std::min<size_t>(list_.size(), std::max(max, 0))};
+  }
+  int highlighted() override { return focused_; }
+  void selectAt(int index) override {
+    if (index < 0 || index >= static_cast<int>(listIds_.size())) return;
+    SessionCommand c;
+    c.set_type(SessionCommand::SUBMIT_CANDIDATE);
+    c.set_id(listIds_[index]);
+    command(c);
+  }
+
+  void setField(Field field) override {
+    using mozc::commands::Context;
+    field_ = field == Field::Password ? Context::PASSWORD
+             : field == Field::Phone  ? Context::TEL
+             : field == Field::Number ? Context::NUMBER
+                                      : Context::NORMAL;
+    if (!touch_ || !session_) return;
+    Input in;
+    in.set_type(Input::SEND_COMMAND);
+    in.mutable_command()->set_type(SessionCommand::SWITCH_INPUT_FIELD_TYPE);
+    in.mutable_context()->set_input_field_type(field_);
+    send(in);
+  }
+
+  void setKeys(Keys keys, bool landscape) override {
+    keys_ = keys;
+    landscape_ = landscape;
+    if (session_) {
+      setTouchRequest();
+      switchMode();
+    }
+  }
+
+  void moveCursor(int chars) override {
+    SessionCommand c;
+    c.set_type(SessionCommand::MOVE_CURSOR);
+    c.set_cursor_position(chars);
+    command(c);
+  }
+  bool undo() override { return command(SessionCommand::UNDO_OR_REWIND); }
+
   bool latin() override {
     ensureSession();
     return direct_;
@@ -325,27 +241,58 @@ class Mozc final : public Engine {
   }
 
   bool alternate() override {
+    if (touch_) return katakana_;
     ensureSession();
     return kana_ == mozc::commands::FULL_KATAKANA || kana_ == mozc::commands::HALF_KATAKANA;
   }
-  // あ ⇄ ア, from English letters too (the menu switch).
+  // あ ⇄ ア, from English letters too (the menu switch). On the phone, the bar's chip: ア types katakana on
+  // the romaji keys (#38).
   void setAlternate(bool on) override {
+    if (touch_) {
+      katakana_ = on;
+      if (session_) switchMode();
+      return;
+    }
     SessionCommand c;
     c.set_type(direct_ ? SessionCommand::TURN_ON_IME : SessionCommand::SWITCH_COMPOSITION_MODE);
     c.set_composition_mode(on ? mozc::commands::FULL_KATAKANA : mozc::commands::HIRAGANA);
     command(c);
   }
 
-  // The candidates per page 中文 has, for Mozc's own pages (its default is 9).
+  // The phone's settings are SebType's: Mozc's own config tool is a PC thing.
+  void applySettings(const Settings &s, bool learning) override {
+    learning_ = learning;
+    if (s.halfWidthSpace) halfWidthSpace_ = *s.halfWidthSpace;
+    if (touch_ && session_) setConfig();
+  }
+
+  void forget() override {
+    for (auto type : {Input::CLEAR_USER_HISTORY, Input::CLEAR_USER_PREDICTION, Input::SYNC_DATA}) {
+      Input in;
+      in.set_type(type);
+      Output out;
+      mozc_->call(in, out);
+    }
+  }
+
+  // The PCs: the candidates per page 中文 has, for Mozc's own pages (its default is 9). The phone: the user
+  // dictionaries it wrote (Mozc reads them again).
   void deploy() override {
-    if (session_) setRequest();
+    if (touch_) {
+      Input in;
+      in.set_type(Input::RELOAD);
+      Output out;
+      mozc_->call(in, out);
+    } else if (session_) {
+      setRequest();
+    }
   }
 
   void save() override {
     Input in;
     in.set_type(Input::SYNC_DATA);
     Output out;
-    ipc_.call(in, out);
+    mozc_->call(in, out);
   }
 
  private:
@@ -366,29 +313,96 @@ class Mozc final : public Engine {
     in.set_type(Input::SET_REQUEST);
     in.mutable_request()->set_candidate_page_size(rimePageSize());
     Output out;
-    ipc_.call(in, out);
+    mozc_->call(in, out);
+  }
+
+  // The touch keyboard's request, as Mozc's Android client made it for a software keyboard.
+  void setTouchRequest() {
+    const TouchKeyboard &kb = touchKeyboard(keys_);
+    Input in;
+    in.set_type(Input::SET_REQUEST);
+    in.set_id(session_);
+    auto &r = *in.mutable_request();
+    r.set_mixed_conversion(true);
+    r.set_zero_query_suggestion(true);
+    r.set_update_input_mode_from_surrounding_text(false);
+    r.set_auto_partial_suggestion(true);
+    r.set_keyboard_name(std::string(kb.name) + (landscape_ ? "-LANDSCAPE" : "-PORTRAIT"));
+    r.set_special_romanji_table(kb.table);
+    r.set_space_on_alphanumeric(kb.space);
+    r.set_kana_modifier_insensitive_conversion(false);
+    r.set_crossing_edge_behavior(kb.edge);
+    Output out;
+    mozc_->call(in, out);
+  }
+
+  void setConfig() {
+    using C = mozc::config::Config;
+    Input in;
+    in.set_type(Input::SET_CONFIG);
+    C &c = *in.mutable_config();
+    c.set_session_keymap(C::MOBILE);
+    c.set_selection_shortcut(C::NO_SHORTCUT);
+    c.set_use_emoji_conversion(true);
+    c.set_space_character_form(halfWidthSpace_ ? C::FUNDAMENTAL_HALF_WIDTH : C::FUNDAMENTAL_INPUT_MODE);
+    c.set_use_kana_modifier_insensitive_conversion(true);
+    c.set_use_typing_correction(true);
+    c.set_yen_sign_character(C::YEN_SIGN);
+    // While incognito Mozc still suggests from its history but adds nothing to it (#31, #158).
+    c.set_history_learning_level(learning_ ? C::DEFAULT_HISTORY : C::READ_ONLY);
+    c.mutable_general_config()->set_upload_usage_stats(false);
+    Output out;
+    mozc_->call(in, out);
+  }
+
+  // The keys' mode, or katakana on the romaji keys while the chip says ア.
+  void switchMode() {
+    const CompositionMode mode = touchKeyboard(keys_).mode;
+    SessionCommand c;
+    c.set_type(SessionCommand::SWITCH_COMPOSITION_MODE);
+    c.set_composition_mode(katakana_ && mode == mozc::commands::HIRAGANA ? mozc::commands::FULL_KATAKANA : mode);
+    command(c);
   }
 
   bool ensureSession() {
     if (session_) return true;
-    setRequest();
+    if (!touch_) setRequest();
     Input in;
     in.set_type(Input::CREATE_SESSION);
     in.mutable_capability()->set_text_deletion(mozc::commands::Capability::DELETE_PRECEDING_TEXT);
-    in.mutable_application_info()->set_process_id(getpid());
+    if (!touch_) in.mutable_application_info()->set_process_id(
+#ifdef _WIN32
+        GetCurrentProcessId()
+#else
+        getpid()
+#endif
+    );
     Output out;
-    if (!ipc_.call(in, out) || !out.has_id()) return false;
+    if (!mozc_->call(in, out) || !out.has_id()) return false;
     session_ = out.id();
+    if (touch_) {
+      setTouchRequest();
+      setConfig();
+      Input field;
+      field.set_type(Input::SEND_COMMAND);
+      field.set_id(session_);
+      field.mutable_command()->set_type(SessionCommand::SWITCH_INPUT_FIELD_TYPE);
+      field.mutable_context()->set_input_field_type(field_);
+      Output ignored;
+      mozc_->call(field, ignored);
+      switchMode();
+      return true;
+    }
     SessionCommand on;  // Japanese starts in あ
     on.set_type(SessionCommand::TURN_ON_IME);
     on.set_composition_mode(mozc::commands::HIRAGANA);
     return command(on);
   }
 
-  void command(SessionCommand::CommandType type) {
+  bool command(SessionCommand::CommandType type) {
     SessionCommand c;
     c.set_type(type);
-    command(c);
+    return command(c);
   }
   bool command(const SessionCommand &c) {
     Input in;
@@ -403,13 +417,14 @@ class Mozc final : public Engine {
       if (!ensureSession()) return false;
       in.set_id(session_);
       Output out;
-      if (ipc_.call(in, out) && out.error_code() == Output::SESSION_SUCCESS) return parse(out);
+      if (mozc_->call(in, out) && out.error_code() == Output::SESSION_SUCCESS) return parse(out);
       session_ = 0;
     }
     return false;
   }
 
-  // fcitx5-mozc's MozcResponseParser.
+  // fcitx5-mozc's MozcResponseParser; on the phone also what Mozc's Android client read: the whole list,
+  // the text to delete and where the cursor goes after a commit.
   bool parse(const Output &out) {
     // A status may carry only undo_available (Session::MaybeSetUndoStatus, after a commit): its unset
     // activated would read as English letters, as on a switch away from 日本語 after typing (#190).
@@ -420,8 +435,29 @@ class Mozc final : public Engine {
       direct_ = out.mode() == mozc::commands::DIRECT;
       if (!direct_) kana_ = out.mode();
     }
+    if (touch_) {
+      // A key Mozc passes on may still commit (crossing the edge of the letters keyboard).
+      if (out.has_result()) takeResult(out.result());
+      list_.clear();
+      listIds_.clear();
+      focused_ = -1;
+    }
     if (!out.consumed()) return false;
-    if (out.has_result()) commit_ += out.result().value();
+    if (touch_) {
+      if (out.has_deletion_range() && out.deletion_range().offset() <= 0) {
+        const int before = -out.deletion_range().offset();
+        edit_.deleteBefore = before;
+        edit_.deleteAfter = std::max(0, out.deletion_range().length() - before);
+      }
+      for (const auto &c : out.all_candidate_words().candidates()) {
+        list_.push_back({c.value(), c.annotation().has_description() ? c.annotation().description() : ""});
+        listIds_.push_back(c.id());
+      }
+      if (out.has_candidate_window() && out.candidate_window().has_focused_index())
+        focused_ = static_cast<int>(out.candidate_window().focused_index());
+    } else if (out.has_result()) {
+      commit_ += out.result().value();
+    }
     preedit_ = {};
     if (out.has_preedit()) {
       std::string text;
@@ -430,8 +466,9 @@ class Mozc final : public Engine {
         preedit_.segments.push_back({s.value(), s.annotation() == mozc::commands::Preedit::Segment::UNDERLINE,
                                      s.annotation() == mozc::commands::Preedit::Segment::HIGHLIGHT});
       }
-      const uint32_t pos = out.preedit().has_highlighted_position() ? out.preedit().highlighted_position()
-                                                                    : out.preedit().cursor();
+      // The phone draws its own cursor in the field's text; fcitx5-mozc puts it at the highlighted segment.
+      const uint32_t pos = !touch_ && out.preedit().has_highlighted_position() ? out.preedit().highlighted_position()
+                                                                               : out.preedit().cursor();
       preedit_.cursor = byteOffset(text, pos);
     }
     page_ = {};
@@ -439,6 +476,13 @@ class Mozc final : public Engine {
     aux_.clear();
     if (out.has_candidate_window()) parseCandidates(out.candidate_window());
     return true;
+  }
+
+  void takeResult(const mozc::commands::Result &r) {
+    commit_ += r.value();
+    // The cursor before the text (a pair of brackets): only "at its start" is kept, as the phone did.
+    const int chars = static_cast<int>(charCount(r.value()));
+    if (r.cursor_offset() != 0 && r.cursor_offset() == -chars) edit_.cursor = -chars;
   }
 
   void parseCandidates(const mozc::commands::CandidateWindow &w) {
@@ -489,8 +533,15 @@ class Mozc final : public Engine {
     return i <= s.size() ? static_cast<int>(i) : -1;
   }
 
-  Ipc ipc_;
+  static size_t charCount(const std::string &s) {
+    size_t n = 0;
+    for (unsigned char c : s) n += (c & 0xc0) != 0x80;
+    return n;
+  }
+
+  std::unique_ptr<MozcTransport> mozc_;
   std::string rimeUserDir_;
+  const bool touch_;
   uint64_t session_ = 0;
   bool direct_ = false;
   CompositionMode kana_ = mozc::commands::HIRAGANA;
@@ -498,6 +549,14 @@ class Mozc final : public Engine {
   Preedit preedit_;
   Page page_;
   std::vector<int32_t> ids_;
+  // The phone's
+  Keys keys_ = Keys::Kana;
+  bool landscape_ = false, katakana_ = false, learning_ = true, halfWidthSpace_ = false;
+  mozc::commands::Context::InputFieldType field_ = mozc::commands::Context::NORMAL;
+  std::vector<Candidate> list_;
+  std::vector<int32_t> listIds_;
+  int focused_ = -1;
+  Edit edit_;
 };
 
 }  // namespace
