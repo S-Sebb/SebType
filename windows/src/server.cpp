@@ -122,23 +122,6 @@ Reply handle(const Request &q) {
   } slow{q, asked, started};
   bool taken = false;
   std::string commit;
-  // Diagnostic (#190): which request changes 日本語 between あ and English letters.
-  const auto ja = [] { return core->language() != Lang::Japanese ? 0 : core->latin() ? 2 : 1; };
-  const int jaBefore = ja();
-  struct JaNote {
-    const Request &q;
-    int before;
-    decltype(ja) &now;
-    ~JaNote() {
-      const int after = now();
-      if (before && after && before != after)
-        note("ja " + std::to_string(before) + "->" + std::to_string(after) + " by op " + std::to_string(static_cast<int>(q.op)) +
-             " lang " + std::to_string(static_cast<int>(q.lang)) + " key " + std::to_string(q.key.sym) + "/" +
-             std::to_string(q.key.mods) + (q.key.release ? " up" : ""));
-      else if (!before && after == 2)
-        note("ja entered in English letters by op " + std::to_string(static_cast<int>(q.op)));
-    }
-  } jaNote{q, jaBefore, ja};
   switch (q.op) {
     case Op::Key:  // in the app's language: the apps share one core, and another app's focus may have moved it
       if (core->language() != q.lang) {
