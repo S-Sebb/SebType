@@ -182,6 +182,7 @@ if ($Typing) {
         }
         Mem base
         Use $ime
+        Out conversion_mode $tsf::Mode()  # TSF's, after Use: its low bit is 中 or かな
         $first = @(Word $words[0] $tail)
         Out first_key_ms ('{0:F1}' -f $first[0].ms)
         $all = @()

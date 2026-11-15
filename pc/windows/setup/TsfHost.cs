@@ -323,15 +323,18 @@ namespace SebType {
     public static void Open() {
       OnUi(() => {
         var c = ImmGetContext(store.Hwnd); ImmSetOpenStatus(c, true); ImmReleaseContext(store.Hwnd, c);
-        var guid = GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION;
-        ITfCompartment mode;
-        ((ITfCompartmentMgr)threadMgr).GetCompartment(ref guid, out mode);
-        object v; mode.GetValue(out v);
-        int conv = v is int ? (int)v : 0;
-        if ((conv & 1 /* TF_CONVERSIONMODE_NATIVE */) == 0) { object n = conv | 1; mode.SetValue(clientId, ref n); }
+        int conv = ConversionMode();
+        if ((conv & 1 /* TF_CONVERSIONMODE_NATIVE */) == 0) { object n = conv | 1; ConversionCompartment().SetValue(clientId, ref n); }
         return 0;
       });
     }
+    static ITfCompartment ConversionCompartment() {
+      var guid = GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION;
+      ITfCompartment c; ((ITfCompartmentMgr)threadMgr).GetCompartment(ref guid, out c); return c;
+    }
+    // TSF's conversion mode for this thread (TF_CONVERSIONMODE_*; bit 1 native: 中 or かな, not English).
+    static int ConversionMode() { object v; ConversionCompartment().GetValue(out v); return v is int ? (int)v : 0; }
+    public static int Mode() { return OnUi(ConversionMode); }
     // The key-down and text-change times since the last call, in ms on one clock: "keys|edits", comma-separated.
     public static string TakeTimes() {
       Func<List<long>, string> f = l => {
