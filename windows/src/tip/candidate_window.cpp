@@ -356,10 +356,11 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   cells_.clear();
   for (size_t i = 0; i < reply.page.items.size(); ++i) {
     Cell c;
-    if (i < reply.page.labels.size()) {  // the core's labels end in Fcitx's space; Weasel showed "%s."
+    // The core's labels end in Fcitx's space, Rime's as "1 " and Mozc's as "1. "; Weasel showed "%s.".
+    if (i < reply.page.labels.size()) {
       c.label = utf16(reply.page.labels[i]);
       while (!c.label.empty() && c.label.back() == L' ') c.label.pop_back();
-      if (!c.label.empty()) c.label += L".";
+      if (!c.label.empty() && c.label.back() != L'.') c.label += L".";
     }
     c.text = utf16(reply.page.items[i].text);
     c.comment = utf16(reply.page.items[i].comment);
