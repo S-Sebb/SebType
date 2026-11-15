@@ -5,7 +5,6 @@
 // Statically linked plugins register only if something references them.
 extern void rime_require_module_lua();
 extern void rime_require_module_octagram();
-extern void rime_require_module_predict();
 
 using namespace rime::jni;
 using std::string, std::vector;
@@ -232,7 +231,6 @@ extern "C" {
     JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
         rime_require_module_lua();
         rime_require_module_octagram();
-        rime_require_module_predict();
 
         JNIEnv * env { nullptr };
         if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK)
