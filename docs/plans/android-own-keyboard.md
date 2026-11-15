@@ -17,15 +17,15 @@ perf runs call it 103–105 MB).
 - **Build a new app and don't touch FUTO's.** It is written from scratch in Kotlin on top of `core/`, inside
   `dev.sebb.sebtype`. English uses the pristine AOSP LatinIME decoder (Apache-2.0), taken from AOSP's own repo,
   not FUTO's copy. The phone runs librime and Mozc in-process, behind the same `core/` engines the PCs use.
-- **FUTO's English model stays for now** (the user, 2026-11-15). The new keyboard keeps the model file and only
-  the FUTO code that runs it, as one isolated module. SebType's own model is trained later on yanglab16 and
-  replaces it (stage 7), once it passes the quality bar in §2.
+- **SebType's own English model ships at stage 6** (the user, 2026-11-15, Decisions 7). It passed §2's bar
+  (#236) before stage 2 started, so the new keyboard never carries FUTO's model or its runner. Stage 6's
+  release has no FUTO code or data. Sections below that still say "until stage 7" describe the earlier plan;
+  where they differ, Decisions 7 wins.
 - **The size comes from data, not UI code.** The APK is 42 % Mozc's dictionary, 28 % FUTO's English model and
   19 % Rime's data. All the UI and engine code together is under 9 %. A new UI saves about 2 MB. The memory and
   speed gains come from one keyboard window without FUTO's framework and from one JNI call per key.
-- **FUTO's licence stays until stage 7.** At stage 6 only FUTO's English model module, its English dictionary and
-  the payment screens are FUTO's. The payment screen, the unpaid notice and FUTO's licence notice stay until the
-  model swap removes the last FUTO file.
+- **FUTO's licence ends with stage 6.** The new app ships no FUTO code or data, so the payment screen, the
+  unpaid notice and FUTO's licence notice leave with the old app. The app on the phone keeps them until then.
 - **Releases are held until stage 6** (the user, 2026-11-15). The app on the phone stays as it is until the new
   keyboard replaces it.
 - **About 32–47 delegate-days for stages 0–6, then 8–12 days plus training time on yanglab16 for stage 7.**
@@ -311,12 +311,12 @@ Builds run on yanglab16 (§3, Build). A delegate-day is one delegate's day of te
 |---|---|---|---|---|
 | 0 | **English harness and baseline.** Host build of today's decoder plus transformer and of the pristine AOSP decoder; the sets from #46 plus next-word sentences; a baseline table in `docs/perf/` | unchanged | the harness itself; numbers reproducible across two runs | 2–3 days |
 | 1 | **`core/` on Android (#190 step 3).** `:native` module, Mozc in-process transport, Rime prebuilt mode, `cycleLanguage`, `commitOnSwitch`, the unpaged list, settings in `sebtype.conf`. FUTO's `ChineseIME` and `JapaneseIME` call `core/` through JNI; `android/mozc/src` and `android/rime` go | the same app; 中 and 日 run through `core/` | `core_test` (new touch paths, both `commitOnSwitch` values); `emulator.sh` `chinese-run` (ranh, lh-in-bar, learn-*, zh-hant-*, ja-*), `settings-zh-*`, `incognito-zh`, `incognito-ja`; Linux and Windows `core_test` still pass | 5–7 days |
-| 2 | **English engine.** `engines/latinime/` (pristine AOSP), `engines/futo-lm/` (FUTO's model and its runner), `core/src/english.cpp`, learned words, blocked words, email domains | unchanged (still FUTO's English) | the harness: the new stack is near today (§2's bar); `core_test` for the English engine | 4–6 days |
+| 2 | **English engine.** `engines/latinime/` (pristine AOSP), `engines/sebtype-lm/` (SebType's own model, #236; Decisions 7), the English dictionary rebuilt from AOSP's `en_US` list, `core/src/english.cpp`, learned words, blocked words, email domains | unchanged (still FUTO's English) | the harness: the new stack is near today (§2's bar); `core_test` for the English engine | 4–6 days |
 | 3 | **New keyboard, typing core.** `SebTypeIme`, `Editor`, `KeyboardView` with the 3 layouts, symbols and number row, 🌐 cycle and long-press picker, candidate bar with chip and 简/繁 menu, field kinds and incognito, Picnic look, accessibility labels. Built as a test-only `dev.sebb.sebtype.next` package beside the app | unchanged (new keyboard in the test package) | `chinese.py` and `settings.py` gain a `SEBTYPE_PACKAGE` switch; run `chinese-run`, `incognito-*`, the four #39 period checks, `uniform-layouts`, and a new check that pinyin is dropped on 🌐; screenshots next to today's for the user | 8–12 days |
 | 4 | **New keyboard, the rest.** Action bar and editor, All Actions, emoji picker (CLDR names), clipboard and quick clips, inline autofill, keyboard modes and height, spacebar and backspace swipes, haptics and key sounds | unchanged (test package) | new checks: `emoji-picks`, `clipboard-paste`, `quick-clip`, `modes-*`, `swipe-*`; screenshots for the user | 6–9 days |
 | 5 | **Settings and data.** Compose settings in 6 groups with pixel frames, setup wizard, export and import, PC words, sync and crash reports, credits, FUTO's payment screens with #112's note; **migration** of an installed FUTO-based SebType's data on update (DataStore keys, learned English words, Rime userdb and Mozc profile kept in place) | unchanged (test package) | `settings-run` in full (including `settings-payment-note`), `sync-*`, `settings-backup-*`, a new `update-from-futo-app` check (learned words in all 3 languages survive) | 5–7 days |
-| 6 | **Switch and release.** The new app becomes `dev.sebb.sebtype`; FUTO's code goes except §4's list; licence files and README updated; perf run on the phone (#54 style); **the first release since the hold** | **the new app, released** | full `emulator.sh`, `typing.sh`, `android/perf/perf.sh`, the harness; `trimmed` gains a check that the only `org.futo` classes and FUTO files in the APK are §4's list | 2–3 days |
-| 7 | **SebType's own English model** (later). Corpus and training scripts in `tools/english-lm/`, training on yanglab16, `engines/sebtype-lm/` loader, dictionary rebuilt from AOSP's `en_US`; swap in once the harness passes §2's bar; then FUTO's last files, the payment screens and FUTO's notices go | the app with no FUTO code, released | the harness against §2's bar; `emulator.sh` English checks (`en-model-waits-for-letter`, `incognito-en`, the #39 checks); `trimmed` checks that no `org.futo` class or FUTO file is left; phone perf run | 8–12 days + GPU time |
+| 6 | **Switch and release.** The new app becomes `dev.sebb.sebtype`; all of FUTO's code and data goes, with the payment screens and FUTO's notices (Decisions 7); licence files and README updated; perf run on the phone (#54 style); **the first release since the hold** | **the new app, released** | full `emulator.sh`, `typing.sh`, `android/perf/perf.sh`, the harness; `trimmed` gains a check that no `org.futo` class or FUTO file is left; phone perf run including English | 2–3 days |
+| 7 | **SebType's own English model** (training done in #236; the swap moved into stages 2 and 6 by Decisions 7, so what's left here is optional model upgrades). Corpus and training scripts in `tools/english-lm/`, training on yanglab16, `engines/sebtype-lm/` loader, dictionary rebuilt from AOSP's `en_US`; swap in once the harness passes §2's bar; then FUTO's last files, the payment screens and FUTO's notices go | the app with no FUTO code, released | the harness against §2's bar; `emulator.sh` English checks (`en-model-waits-for-letter`, `incognito-en`, the #39 checks); `trimmed` checks that no `org.futo` class or FUTO file is left; phone perf run | 8–12 days + GPU time |
 
 Stages 0–6 take about 32–47 delegate-days. Stages 2 and 3 can run in parallel after stage 1. Stage 7 can start
 its corpus and training work on yanglab16 any time after stage 0, since only the swap depends on stage 6.
@@ -349,3 +349,8 @@ its corpus and training work on yanglab16 any time after stage 0, since only the
 6. **Licence of SebType's English model:** "CC BY-SA 4.0". Part of its training text is share-alike (Wikipedia,
    Dolly), so the model file ships under CC BY-SA 4.0 with every source credited in NOTICE, like the English
    dictionary's frequencies. The code that trains and runs it stays MIT (§4).
+7. **Own English model in the first release:** "Ship our own model". SebType's model passed §2's bar (#236) before
+   stage 2, so stage 2 builds the English engine on it and the stage 6 release ships it, with no FUTO code or
+   data. This replaces Decision 1's "Keep FUTO's ... English model's necessary code in this release". Before
+   release, the model is re-tested on the phone and against the "correct words wrongly changed" bar, which it
+   meets with no margin.
