@@ -1,7 +1,7 @@
 # SebType's Windows installer (#73): SebType-setup-<version>.exe, built with Inno Setup from
 # pc/windows/setup/sebtype.iss. It packs SebType's text service and server (windows/, over core/, #190)
-# with the librime that weasel.yml builds and Rime's shared data, the Chinese data (data/rime/build.sh),
-# Mozc's server from SebType's Mozc (engines/mozc, built by pc/windows/mozc/build.ps1), the Configurator
+# with SebType's librime and Rime's shared data (pc/windows/rime/build.ps1), the Chinese data
+# (data/rime/build.sh), Mozc's server (engines/mozc, built with its C++ runtime by pc/windows/mozc/build.ps1), the Configurator
 # (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
 # run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
 name: Windows setup
@@ -13,7 +13,6 @@ on:
       - windows/**
       - core/**
       - pc/windows/**
-      - pc/weasel/**
       - engines/librime/**
       - engines/mozc/**
       - pc/icons/**
@@ -25,7 +24,6 @@ on:
       - art/fonts/**
       - art/icon.png
       - .github/workflows/windows-setup.yml
-      - .github/workflows/weasel.yml
       - .github/workflows/configurator.yml
       - .github/apt-install.sh
   push:
@@ -36,14 +34,47 @@ permissions:
   contents: read
 
 jobs:
-  weasel:
-    uses: ./.github/workflows/weasel.yml
+  # SebType's librime with its plugins, Rime's shared data, and perf-rime.exe for the performance runs (#54).
+  rime:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      BOOST_ROOT: ${{ github.workspace }}\deps\boost_1_84_0
+    steps:
+      - uses: actions/checkout@v4
+      # What the build makes depends only on these: a run that changes none of them takes the last build's.
+      - uses: actions/cache@v4
+        id: built
+        with:
+          path: out/rime
+          key: rime-build-${{ hashFiles('pc/windows/rime/**', 'engines/librime/**', 'pc/linux/perf-rime.c') }}
+      # librime takes only Boost's headers on Windows.
+      - uses: actions/cache@v4
+        if: steps.built.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.BOOST_ROOT }}
+          key: boost-1.84.0-headers
+      - name: Build
+        if: steps.built.outputs.cache-hit != 'true'
+        run: pc/windows/rime/build.ps1 -Out out/rime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-rime
+          path: out/rime/rime
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf-rime
+          path: out/rime/perf-rime.exe
+          if-no-files-found: error
 
   configurator:
     uses: ./.github/workflows/configurator.yml
 
   service:
-    needs: weasel
+    needs: rime
     runs-on: windows-2022
     defaults:
       run:
@@ -73,7 +104,7 @@ jobs:
 
   rime-data:
     runs-on: ubuntu-24.04
-    # Fedora has librime 1.16.1, the version Weasel and the phone run, so they take the tables as built.
+    # Fedora has librime 1.16.1, the version SebType's Windows librime and the phone run, so they take the tables as built.
     container: fedora:44
     steps:
       - run: dnf install -q -y git librime librime-lua opencc gcc gcc-c++ curl unzip zip python3 diffutils findutils
@@ -104,33 +135,19 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
-      # The MSI depends only on these; a run with the same ones reuses it, a PR's run main's.
+      # The server depends only on these; a run with the same ones reuses it, a PR's run main's.
       - id: inputs
         run: |
-          "hash=${{ hashFiles('engines/mozc/**', 'pc/windows/mozc/versions.psd1', 'pc/windows/mozc/build.ps1', 'pc/windows/mozc/make_icons.py', 'pc/icons/**') }}" >> $env:GITHUB_OUTPUT
+          "hash=${{ hashFiles('engines/mozc/**', 'pc/windows/mozc/**') }}" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         id: cache
         with:
-          path: out/mozc
-          key: mozc-msi-${{ steps.inputs.outputs.hash }}
+          path: out/mozc-server
+          key: mozc-server-${{ steps.inputs.outputs.hash }}
       - uses: actions/setup-python@v5
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           python-version: '3.13'
-      # Building Qt takes most of a cold build (#154), and Qt depends only on Mozc's Qt pin and
-      # build_qt.py: the key is theirs, read from engines/mozc.
-      - name: Qt's key
-        id: qt
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          $pin = (Select-String -Path engines/mozc/src/build_tools/update_deps.py -Pattern 'qtbase-everywhere-src').Line
-          $key = $pin + (Get-Content -Raw engines/mozc/src/build_tools/build_qt.py)
-          "key=mozc-qt-$([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($key))))" >> $env:GITHUB_OUTPUT
-      - uses: actions/cache@v4
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: D:\m\mozc\src\third_party\qt
-          key: ${{ steps.qt.outputs.key }}
       # Bazel's caches from main's last build, so a change to engines/mozc recompiles only what it touches.
       - uses: actions/cache/restore@v4
         if: steps.cache.outputs.cache-hit != 'true'
@@ -142,9 +159,9 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           $start = Get-Date
-          $msi = pc/windows/mozc/build.ps1 -WorkDir D:\m -BazelCache D:\m\bazel-cache | Select-Object -Last 1
-          New-Item -ItemType Directory -Force out/mozc | Out-Null
-          Copy-Item $msi out/mozc/
+          $server = pc/windows/mozc/build.ps1 -WorkDir D:\m -BazelCache D:\m\bazel-cache | Select-Object -Last 1
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item -Recurse $server out/mozc-server
           # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and
           # would only grow the saved cache.
           $old = Get-ChildItem -Recurse -File D:\m\bazel-cache\disk | Where-Object LastWriteTime -lt $start
@@ -160,12 +177,12 @@ jobs:
           key: mozc-bazel-${{ steps.inputs.outputs.hash }}
       - uses: actions/upload-artifact@v4
         with:
-          name: sebtype-mozc
-          path: out/mozc/*.msi
+          name: mozc-server
+          path: out/mozc-server
           if-no-files-found: error
 
   setup:
-    needs: [weasel, configurator, rime-data, pictures, mozc, service]
+    needs: [rime, configurator, rime-data, pictures, mozc, service]
     runs-on: windows-2022
     defaults:
       run:
@@ -182,19 +199,6 @@ jobs:
           key: python-embed-${{ hashFiles('pc/windows/setup/python.ps1') }}
       - name: Python
         run: pc/windows/setup/python.ps1 -Dir in/python
-      # Japanese needs only Mozc's server: SebType's text service replaces Mozc's own (#190).
-      - name: Mozc's server
-        run: |
-          $msi = (Get-Item in/sebtype-mozc/*.msi).FullName
-          $p = Start-Process -Wait -PassThru msiexec "/a `"$msi`" /qn TARGETDIR=`"$PWD\in\mozc-msi`""
-          if ($p.ExitCode) { throw "msiexec /a failed ($($p.ExitCode))" }
-          $server = Get-ChildItem -Recurse in/mozc-msi -Filter mozc_server.exe | Select-Object -First 1
-          if (-not $server) { throw "no mozc_server.exe in $msi" }
-          New-Item -ItemType Directory -Force in/mozc-server | Out-Null
-          # With the C++ runtime it was built with, which Mozc installs next to it: Windows' own may be older,
-          # and mozc_server then never starts (TCSBackEnd's is).
-          Copy-Item $server.FullName, "$($server.DirectoryName)\msvcp140*.dll", "$($server.DirectoryName)\vcruntime140*.dll" in/mozc-server/
-          if (-not (Test-Path in/mozc-server/vcruntime140.dll)) { throw "no C++ runtime next to mozc_server.exe in $msi" }
       - name: Inno Setup
         run: |
           $exe = "$env:RUNNER_TEMP\innosetup.exe"

@@ -66,7 +66,7 @@ Nothing goes to `/tmp` or `~/.cache`.
 | `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's server from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
 | `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
 | `cargo build --release` in `pc/configurator` | the Configurator |
-| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/weasel/build.ps1`, `windows/build.ps1` | Mozc's installer, SebType's librime (with Weasel) and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
+| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's server, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 
 `pc/linux/setup-ime.sh` builds what it installs itself ([pc/linux/README.md](../pc/linux/README.md)).
 
@@ -85,7 +85,7 @@ Nothing goes to `/tmp` or `~/.cache`.
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
 | `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account, and SebType's input method in private Fcitx5s ([pc/linux/README.md](../pc/linux/README.md)) |
 | `pc/configurator/test.sh` | The Configurator in nested sessions |
-| `pc/windows/setup/test-tcsbackend.sh`, `pc/windows/mozc/test-tcsbackend.sh` | SebType's installer and Mozc on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
+| `pc/windows/setup/test-tcsbackend.sh` | SebType's installer and input methods on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
 
 Each writes one line per check to a results file under `~/scratch/SebType/<issue>/`, and its logs next to it.
 
@@ -104,7 +104,7 @@ depends on (its `needs`, so `SEBTYPE_CHECKS=ranh` also runs `first-install`). Th
 check that relies on Chinese being set up runs with `first-install` named too.
 
 Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in
-`pc/windows/setup/test-tcsbackend.sh`; `mozc-speed-and-dictionary` in `pc/windows/mozc/test.ps1`) measure
+`pc/windows/setup/test-tcsbackend.sh`) measure
 speed, so they run only in the final performance run (#54, Decisions #2 2026-11-11), with `PERF_RUN=1`
 (`-PerfRun` for the PowerShell scripts). Without it they write no result line, unless `SEBTYPE_CHECKS` names
 one: then it reports SKIP and says why. `android/perf/perf.sh` is a measurement of its own, run only then too.

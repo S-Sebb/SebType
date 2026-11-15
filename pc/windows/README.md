@@ -11,10 +11,10 @@ layout. One installer, `SebType-setup-<version>.exe`, installs, upgrades and rem
 `sebtype-setup`. It is Inno Setup 6.7.4 (`setup/sebtype.iss`, as SebChat's), in SebType's Picnic look: the
 checkered cloth behind every page, the cream card with the pig, Jersey 10 and Nunito for English, and the
 phone's icon at every Windows size. `setup/pictures.py` draws the pictures from `art/make-icon.py` and
-`pc/icons`. The run builds what the installer packs in parallel jobs: SebType's librime (`weasel.yml`, which still
-builds it with Weasel), the text service and its server (`windows/build.ps1`), the Chinese data
-(`data/rime/build.sh`, on Fedora for librime 1.16.1), SebType's Mozc (`mozc/build.ps1`, cached until its
-inputs change; Setup takes only its `mozc_server.exe`) and the Configurator (`configurator.yml`).
+`pc/icons`. The run builds what the installer packs in parallel jobs: SebType's librime (`rime/build.ps1`), the text
+service and its server (`windows/build.ps1`), the Chinese data (`data/rime/build.sh`, on Fedora for librime
+1.16.1), Mozc's server (`mozc/build.ps1`, cached until its inputs change) and the Configurator
+(`configurator.yml`).
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
 first dialog lets the person pick. Its pages are the welcome, the languages (English, 中文 and 日本語, each
@@ -52,8 +52,8 @@ the Chinese data, and keeps everything learned: Rime's `*.userdb`, `*.custom.yam
 `custom_phrase.txt`, and Mozc's user dictionary and history. Apps that have the text service loaded keep
 the old DLL until they close: Setup moves it aside (`sebtype.dll.<n>.old`, deleted at the next restart)
 and never asks to close apps. Over a SebType from before #190, Setup uninstalls its Weasel and Mozc;
-their learned words are in the same folders, and Weasel's candidate window settings move to
-`sebtype.conf`.
+their learned words are in the same folders and stay. The candidate window starts in its default look
+there; the Configurator sets it again.
 
 **Uninstall** removes the text service, SebType's folder and the Start menu entry, then puts the account back
 as it was before the first install. The first install saves, before the engines' installers run
@@ -84,7 +84,6 @@ Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 | Input methods | Language list: the chosen ones first, EN (US layout first) → 中文 (SebType's only) → 日本語 (SebType's only), then the account's other languages. Other Chinese and Japanese IMEs are taken off those two languages, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |
 | Switch keys | `HKCU\Keyboard Layout\Toggle`: Hotkey, Language Hotkey and Layout Hotkey = 3 (none), applied at once | Alt+Shift and Ctrl+Shift no longer switch language |
 | Per-window input | "Let me use a different input method for each app window" off | One language for every window, as on Linux |
-| Candidate window | Once, over a SebType from before #190: Weasel's `style/horizontal`, `font_point` and Picnic colour scheme from `weasel.custom.yaml` into `%APPDATA%\SebType\sebtype.conf` `[Candidates]` | The look the person chose in the Configurator stays |
 | Redeploy | Runs `sebtype-server.exe /deploy` as the person when the Chinese data or patches changed; it returns when Rime is done | Rime builds the data once. With no server running, `/deploy` runs Rime itself and starts none: one started from an elevated Setup would be out of the apps' reach. The text service starts the server at the first key |
 
 Inside Chinese, a Shift tap types English and Shift again goes back, as on Linux (SebType's core). Caps Lock in Chinese switches to English capitals (rime-ice's `good_old_caps_lock`).
@@ -93,12 +92,12 @@ Everything Rime learns stays in `%APPDATA%\Rime`, so sync (#12) can add a `sync_
 
 ### The text service
 
-[`windows/`](../../windows) has the text service and its server, and how they are built. `pc/windows/weasel/build.ps1`
-still builds SebType's librime (`engines/librime`, 1.16.1, with librime-lua, -octagram and -predict at
-the commits librime's own release merges in) with Weasel; its `sebtype-rime` artifact is what the text
-service's server links. With SebType's librime, Chinese typo correction also fixes a slip onto the key
-above or below, so `xkaoshi` gives 小时 first (#101, #133). Weasel itself and Mozc's Windows text service
-are no longer installed; step 4 of #190 removes their sources.
+[`windows/`](../../windows) has the text service and its server, and how they are built. `rime/build.ps1`
+builds SebType's librime (`engines/librime`, 1.16.1, with librime-lua, -octagram and -predict at the
+commits librime's own release merges in) with librime's own `build.bat`, Rime's shared data (plum's
+preset) and `perf-rime.exe`; its `sebtype-rime` artifact is what the text service's server links. With
+SebType's librime, Chinese typo correction also fixes a slip onto the key above or below, so `xkaoshi`
+gives 小时 first (#101, #133).
 
 What Windows itself shows and SebType can't change (#117): the input indicator's left-click list of
 input methods (with "More keyboard settings"), Windows' own items in the Win+Space switcher, and, in the
@@ -111,11 +110,11 @@ pc/windows/setup/test-tcsbackend.sh   # from nobara-pc; this commit's sebtype-se
 ONLY=upgrade pc/windows/setup/test-tcsbackend.sh   # the update from the SebType before #190
 ```
 
-Like Mozc's test (below), it runs on TCSBackEnd under its device lock, in the background, and puts
-TCSBackEnd back as it found it. `setup/test.ps1` creates a local admin, `sebtype-test` (the person
+It runs on TCSBackEnd under its device lock, in the background, and puts TCSBackEnd back as it found it
+(the typing needs a Windows Server, which allows a second Remote Desktop session). `setup/test.ps1` creates a local admin, `sebtype-test` (the person
 installing SebType is an admin), whose Remote Desktop session nobara-pc opens in a headless gamescope; a
 logon task there runs Setup elevated, as UAC would, and drives its pages through their window messages.
-The typing runs in a second task, not elevated, as apps run. The keys are real (`mozc/rdp-keys.py`).
+The typing runs in a second task, not elevated, as apps run. The keys are real (`setup/rdp-keys.py`, below).
 
 | Check | What passes |
 |---|---|
@@ -124,7 +123,7 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, its text service registered and no Weasel or Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
 | `chinese-typo-xkaoshi` | SebType's librime corrects a slip onto the key under i: `xkaoshi` → 小时, and `kaoshi` stays 考试 (#133) |
-| `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`../perf-rime.ps1` with the librime build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
+| `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`perf-rime.ps1` with the librime build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
 | `japanese-alt-grave` | In Notepad, in 日本語: Alt+\` types ア, again あ; after a Shift tap to English, Alt+\` still types `a`, and a Shift tap is あ again |
 | `chinese-tray-menu`, `japanese-tray-menu` | In a TSF text field of the test's own: the tray icon's menu is the one item `简 → 繁 Ctrl+Shift+F`; picking it makes `houlai` → 後來, and the menu then reads `繁 → 简 Ctrl+Shift+F` and goes back; the same with ``あ → ア Alt+` `` and `a` (`~/scratch/SebType/<issue>/117-menu-*.png`) |
 | `picnic-window` | The Picnic candidate window with the pig, across and down, for 中文 and 日本語 at 14 pt (`~/scratch/SebType/<issue>/162-sebtype-*.png`) |
@@ -132,127 +131,53 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `japanese-after-language-change` | After a language is added and removed, Japanese still types |
 | `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; SebType gone |
 | `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Japanese's words go) keeping a page size of 8 set before it, uninstall; as before |
-| `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words and a Picnic Weasel style, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept, the look in `sebtype.conf`; typing as in round 1; uninstall; as before |
+| `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept; typing as in round 1; uninstall; as before |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
+
+The keys are real input: `setup/rdp-keys.py` presses them through XTEST in the gamescope display that
+FreeRDP runs in, FreeRDP sends their scancodes to the test user's session like any keyboard, and the
+typing checks ask for them through a reverse SSH tunnel. So they reach SebType the way a person's keys do,
+through the session's input queue, the window's message loop and TSF's keystroke manager. Feeding keys
+to TSF directly (`ITfKeystrokeMgr` with a faked key state) made the Shift tap fail where real keys work.
+The window in front gets the keys: Notepad, read back through its edit control, or a text field of the
+test's own (`setup/TsfHost.cs`), whose text store shows what was composed and committed and whose
+language bar item shows the tray icon. Both run in the test user's own Remote Desktop session, started by
+a logon task: a process started as another user inside someone else's session fails to start
+(0xC0000142).
 
 ## Japanese: SebType's Mozc (#65)
 
 Windows Japanese is open-source [Mozc](https://github.com/google/mozc), built by SebType, instead of
 Google 日本語入力, whose tray icons are fixed in its signed program (#63). It is the same engine as on
-Linux and the phone. Since #190 SebType's text service talks to Mozc's server, `mozc_server.exe`, for it,
-as the Linux add-on does; the MSI below is still built, and Setup unpacks only `mozc_server.exe` from it.
-What follows describes Mozc's own Windows text service in that MSI, which SebType no longer installs
-(step 4 of #190 removes it); the tray, keys and menu now come from the text service and the core:
-
-- **Tray icons:** the Set E keycaps from `pc/icons`: あ (hiragana), ア (katakana, full and half
-  width), **a** in English (direct input, half and full width alphanumeric) and **A** in English while
-  Caps Lock is on (Decisions #2, "Everywhere").
-- **Keys:** a Shift tap toggles あ ⇄ English, as Shift does in Chinese, and Alt+\` あ ⇄ ア before typing
-  (#117); Win+Space is the only language switch and cycles EN → 中 → 日. The keymap is Linux's,
-  `pc/linux/mozc-keymap.tsv`; SebType's Mozc makes Mozc's kana switch a two-way あ ⇄ ア, without the
-  half-width katakana step, and keeps Alt on the Kanji key (半角/全角). Windows passes Alt+\` on as
-  that key, and upstream dropped Alt from it, so Alt+\` always turned English on and off; the keymap's
-  `Alt Hankaku/Zenkaku` line now makes it あ ⇄ ア.
-- **Menu:** the tray icon's menu (right-click) is Japanese's one switch with its key, ``あ → ア Alt+` ``
-  (`ア → あ` in katakana), as on Linux (#117), instead of Mozc's six input modes, dictionary tool, word
-  registration, properties, about and help. The floating language bar loses Mozc's Tool button and
-  Help items too.
+Linux and the phone: SebType's text service talks to Mozc's server, `mozc_server.exe`, as the Linux add-on
+does, and the tray, keys and menu come from the text service and the core. Setup writes SebType's keymap,
+`pc/linux/mozc-keymap.tsv`, into Mozc's settings (above). Mozc's own Windows text service, renderer and
+installer are not built: SebType's text service replaces them (#190).
 
 ### Build
 
 ```powershell
-pwsh pc/windows/mozc/build.ps1 -WorkDir D:\sebtype-mozc   # -> D:\sebtype-mozc\out\SebType-Mozc-<version>-sebtype<n>.msi
+pwsh pc/windows/mozc/build.ps1 -WorkDir D:\sebtype-mozc   # -> D:\sebtype-mozc\out\mozc-server\
 ```
 
-It builds on Windows, because Mozc's Windows build needs MSVC's headers and libraries, ATL and the
-Windows SDK, which don't cross-build from Linux. The build machine needs Visual Studio 2022 or its Build
-Tools (C++ x64 tools, ATL, a Windows 11 SDK), Python 3.12+ and a .NET 8+ SDK; the preflight says which is
-missing and prints the `winget` line to install it (as admin). Everything else is fetched and pinned:
-`mozc/versions.psd1` pins Bazelisk, resvg (the
-SVG renderer for the icons) and a portable CMake (for Qt; the Build Tools lack it). Mozc's
-`update_deps.py` pins LLVM, MSYS2, Ninja, Qt and WiX. The build itself needs no admin rights and no
-Developer Mode (Bazel runs without symlinks).
+It builds on Windows, because Mozc's Windows build needs MSVC's headers and libraries and the Windows SDK,
+which don't cross-build from Linux. The build machine needs Visual Studio 2022 or its Build Tools (C++ x64
+tools, a Windows 11 SDK) and Python 3.12+; the preflight says which is missing and prints the `winget` line
+to install it (as admin). Everything else is fetched and pinned: `mozc/versions.psd1` pins Bazelisk, and
+Mozc's `update_deps.py` pins LLVM and MSYS2. The build itself needs no admin rights and no Developer Mode
+(Bazel runs without symlinks).
 
 The script copies SebType's Mozc, `engines/mozc` (Mozc 3.35.6354 with SebType's changes), over the kept
-tree in `-WorkDir`, writes the icons with `make_icons.py`,
-builds Qt once, then Mozc's installer with Bazel (8 jobs). A rebuild compiles only what changed. On
-YukaROG the first build took about 40 minutes (update_deps 4, Qt 14, Bazel 22) and 9 GB, after about
-40 minutes for the Build Tools install.
-
-| SebType's change in `engines/mozc` | What it does |
-|---|---|
-| Caps Lock icon | The English modes' tray icon shows **A** while Caps Lock is on, and the tray redraws when Caps Lock toggles (`win32/tip`, about 35 lines) |
-| Shift tap | A Shift tap in English turns あ back on. Mozc's text service passes only key presses to the server in English, so the keymap's `DirectInput Shift IMEOn` never ran; now a bare Shift's release goes, as it does in あ, and its press doesn't (`win32/base/keyevent_handler.cc`, 6 lines). Without it the Shift tap in Notepad and in the test's field both fail (#65) |
-| Japanese's name | Japanese reads **日本語** in Win+Space and the language settings, not "Mozc" (Decisions #2, #92), as Chinese reads 中文 (`win32/tip/tip_resource.rc`, `win32/base/tsf_registrar.cc`) |
-
-`make_icons.py` replaces Mozc's mode icons with `.ico` files holding a PNG for each tray size from
-100 % to 400 % scaling: pc/icons' hand-drawn 16, 20, 24 and 32 px drawings, and the 48 px drawing for
-40, 48 and 64 px.
-
-### Install
-
-SebType's installer installs the MSI for the machine and sets each person's keymap and language list
-(`setup.ps1`, above). `mozc/test.ps1` sets up its test user with `setup.ps1 -User` too.
-
-Google 日本語入力, if installed, stays installed; SebType takes it off Japanese's input methods, and
-uninstalling SebType puts it back.
-
-### Test
-
-```sh
-pc/windows/mozc/test-tcsbackend.sh   # from nobara-pc; the newest MSI from build/ or ~/Downloads/xfer
-```
-
-The typing needs a Windows Server, which allows a second Remote Desktop session, so the script runs
-`test.ps1` on TCSBackEnd under its device lock and puts TCSBackEnd back as it found it. It copies the
-repo, the MSI and an embeddable Python there, starts `test.ps1` elevated, in the background, and logs
-the test user on over Remote Desktop from nobara-pc (FreeRDP in a headless gamescope, through an SSH
-tunnel), so nothing shows on any screen and no key on any real keyboard is read or sent. `test.ps1` checks
-Mozc's key and conversion times through its own server (`pc/linux/perf-mozc.py`; Decisions #2:
-p95 ≤ 5 ms) and the dictionary (below), installs the MSI for the machine, then runs the typing checks as
-a local standard user it creates for the run (`sebtype-test`):
-
-- `setup.ps1 -User -Languages en,ja` for that user: Japanese after English, Chinese where it was;
-- the name Windows shows for Japanese, 日本語;
-- typing in Notepad: Win+Space to 日本語, `nihongo` → 日本語, and the Shift tap there and back;
-- typing in its own text field: `nihongo` → 日本語, the tray menu's one item ``あ → ア Alt+` `` and back
-  (a picture of each, `menu-ja-*.png`), Alt+\` for あ ⇄ ア and nothing in English, the Shift tap for
-  English, Shift+letter staying Japanese in あ and English in English, and the tray icon in each mode
-  and with Caps Lock;
-- `setup.ps1 -User -Undo` for that user.
-
-After that it removes the user, its profile and Mozc. Last, it checks that your own language list,
-default input method, hotkeys, text service settings and Caps Lock are as they were, and that no test
-user or profile is left. One line per check goes to `%LOCALAPPDATA%\SebType\test\mozc-results.txt`.
-
-The keys are real input: `mozc/rdp-keys.py` presses them through XTEST in the gamescope display that
-FreeRDP runs in, FreeRDP sends their scancodes to the test user's session like any keyboard, and the
-typing checks ask for them through a reverse SSH tunnel. So they reach Mozc the way a person's keys do,
-through the session's input queue, the window's message loop and TSF's keystroke manager. Feeding keys
-to TSF directly (`ITfKeystrokeMgr` with a faked key state, the first version of this test) made the
-Shift tap fail where real keys work. The window in front gets the keys: first Notepad, read back
-through its edit control, then a text field of the test's own (`mozc/TsfHost.cs`), whose text store
-shows what Mozc composed and committed and whose language bar item shows Mozc's tray icon. Both run in
-the test user's own Remote Desktop session, started by a logon task: a process started as another user
-inside someone else's session fails to start (0xC0000142). Running it as a separate user keeps the
-input settings of the person at the PC untouched. After the run the script logs the test user off,
-waits for its profile to unload, then removes the profile and the user.
-
-Windows deleted Mozc's per-user profile key when the language list changed later (for example when
-a language is added in Settings), which left Japanese without a working input method (seen on
-TCSBackEnd). The installer enables the profile by default for the machine; the installer's test checks
-Japanese still types after such a change.
+tree in `-WorkDir` and builds `//server:mozc_server_win` with Bazel (8 jobs). A rebuild compiles only what
+changed. `mozc_server.exe` loads the C++ runtime from its own folder, so the script puts the runtime DLLs of
+the Visual Studio that built it next to it, as Mozc's installer did: Windows' own may be older, and
+`mozc_server` then never starts (TCSBackEnd's is).
 
 ### Dictionary
 
-`mozc/dict-words.tsv` holds 104 common words and phrases (everyday words, place and family names,
-verbs and adjectives, loanwords, recent words, a classic homophone sentence) with the conversion
-they should give. The test types each and counts how often Mozc's first candidate is that one.
-
-On YukaROG (Mozc 3.35.6354, 2026-11-10): key p50/p95/max 0.39/1.38/3.34 ms, Space 0.42/0.73/2.25 ms,
-server start 124 ms, 31 MB RAM; top-1 97/104. The misses are reasonable first guesses that need one
-more Space: kodomo → 子ども (子供), kinou → 機能 (昨日), satou → 砂糖 (佐藤), suzuki → スズキ (鈴木),
-yamada → ヤマダ (山田), takahashi → 高梁 (高橋), and the homophone sentence
-(記者の記者が記者で帰社した for 貴社の記者が汽車で帰社した). Linux's fcitx5-mozc 2.30 got 100/104 with
-the same list (it missed kinou, satou, suzuki and the sentence). Google 日本語入力 wasn't compared:
-the test commits each word, which would teach it to the user's own Google 日本語入力 profile.
+On YukaROG (Mozc 3.35.6354, 2026-11-10, through Mozc's own text service): key p50/p95/max
+0.39/1.38/3.34 ms, Space 0.42/0.73/2.25 ms, server start 124 ms, 31 MB RAM; top-1 97 of 104 common words
+and phrases. The misses were reasonable first guesses that need one more Space: kodomo → 子ども (子供),
+kinou → 機能 (昨日), satou → 砂糖 (佐藤), suzuki → スズキ (鈴木), yamada → ヤマダ (山田), takahashi → 高梁
+(高橋), and the homophone sentence (記者の記者が記者で帰社した for 貴社の記者が汽車で帰社した). The
+engine is the same on Linux, where `pc/linux/perf.sh` measures it.

@@ -3,7 +3,7 @@
 // Prints key=value lines: deploy_ms (maintenance at start-up; a full deploy when USER_DIR has no
 // build/), session_ms, first_key_us, key_p50_us, key_p95_us, key_max_us, keys, rss_kb, peak_rss_kb.
 // Built by perf.sh against librime's public headers; nothing is committed, so nothing is learned.
-// On Windows (built 32-bit with Weasel, pc/windows/weasel/build.ps1) it loads Weasel's rime.dll from PATH.
+// On Windows (built 64-bit by pc/windows/rime/build.ps1) it loads SebType's rime.dll from PATH.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +52,7 @@ static int cmp(const void *a, const void *b) {
 
 int main(int argc, char **argv) {
   if (argc != 5) { fprintf(stderr, "usage: perf-rime SHARED USER SCHEMA RUNS < inputs\n"); return 2; }
-  // rime-ice needs librime-lua, which Fcitx5's Rime also loads; Weasel's rime.dll has it built in.
+  // rime-ice needs librime-lua, which Fcitx5's Rime also loads; SebType's Windows rime.dll has it built in.
   const char *modules[] = {"default", "plugins", "lua", NULL};
 #ifdef _WIN32
   HMODULE rime = LoadLibraryA("rime.dll");

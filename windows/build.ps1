@@ -1,6 +1,6 @@
 # Builds SebType's Windows text service and server (windows/, over core/):
 #   windows/build.ps1 -Rime <dir> [-Out <dir>] [-Work <dir>]
-# -Rime holds SebType's librime as pc/windows/weasel/build.ps1 leaves it (include\, lib\rime.lib,
+# -Rime holds SebType's librime as pc/windows/rime/build.ps1 leaves it (include\, lib\rime.lib,
 # rime.dll). Needs Visual Studio 2022 with C++, vcpkg ($env:VCPKG_INSTALLATION_ROOT), Python and curl
 # (GitHub's windows-2022 runner has them; .github/workflows/windows-setup.yml runs this). Writes
 # sebtype-server.exe and sebtype.dll (64-bit) and x86\sebtype.dll (for 32-bit apps) to -Out.
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# The tray icons' renderer, as pc/windows/mozc/versions.psd1 pins it.
+# The tray icons' renderer, pinned.
 $ResvgUrl = 'https://github.com/linebender/resvg/releases/download/v0.49.0/resvg-win-x86_64.zip'
 $ResvgSha256 = '38af9631b37e61118a32a5ef31e6be6af083eda63b4c17ffc4fdc63e449277df'
 

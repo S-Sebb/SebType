@@ -281,7 +281,7 @@ filegroup(
         default = [],
         linux = ["//unix:package"],
         macos = ["//mac:package"],
-        windows = ["//win32/installer"],
+        windows = ["//server:mozc_server_win"],  # SebType: only the server; SebType's own text service replaces the rest (#190)
     ),
 )
 

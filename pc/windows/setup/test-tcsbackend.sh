@@ -16,7 +16,7 @@
 # runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
-# (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
+# (rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
 # ImageMagick and `ssh TCSBackEnd`. Output: one line per check; logs in $out, the installer's pages in
 # ~/scratch/SebType/<issue>/73-*.png (117-*, 162-*, 205-*: the tray menus, the candidate window, the popup).
 # Where the time went: $out/times.txt and logs/*-times.txt. Takes the device lock; exit 0 only if every check
@@ -50,11 +50,11 @@ if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
   exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
   # perf-rime.exe (from the librime build), for the Rime per-key check against the librime the setup installed (#133)
-  [ -n "${PERF_RUN:-}" ] && gh run download -R S-Sebb/SebType "$run" -n sebtype-weasel -D "$out/in" >/dev/null 2>&1
+  [ -n "${PERF_RUN:-}" ] && gh run download -R S-Sebb/SebType "$run" -n perf-rime -D "$out/in" >/dev/null 2>&1
 else
   exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
 fi
-[ -n "${PERF_RUN:-}" ] && perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/weasel/perf-rime.exe 2>/dev/null | head -1)
+[ -n "${PERF_RUN:-}" ] && perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/rime/perf-rime.exe 2>/dev/null | head -1)
 [ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
 old=
 if [ "${ONLY:-}" = upgrade ]; then
@@ -152,7 +152,7 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! scp -q "$here/test.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
@@ -187,7 +187,7 @@ if [ -n "${logon:-}" ]; then
   done
   # The password is this run's own, for a user test.ps1 removes when it ends.
   gamescope --backend headless -W 1280 -H 800 -- bash -c 'python3 "$1" 47812 >"$2" 2>&1 & shift 2; exec xfreerdp "$@"' \
-    _ "$here/../mozc/rdp-keys.py" "$out/rdp-keys.log" /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \
+    _ "$here/rdp-keys.py" "$out/rdp-keys.log" /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \
     /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /audio-mode:none -clipboard \
     >"$out/freerdp.log" 2>&1 & rdp=$!
 fi
@@ -197,7 +197,7 @@ for i in $(seq 1 720); do
   [ "$(echo 'Test-Path C:\sebtype-setup-test\done' | tps | tr -d '\r')" = True ] && { finished=1; break; }
   sleep 5
 done
-[ -n "$rdp" ] && { pkill -f "$here/../mozc/rdp-keys.py"; pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
+[ -n "$rdp" ] && { pkill -f "$here/rdp-keys.py"; pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
 [ -n "$tunnel" ] && kill "$tunnel" 2>/dev/null
 
 mark 'test.ps1 done'

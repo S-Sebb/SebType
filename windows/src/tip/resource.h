@@ -1,7 +1,7 @@
 // SebType on Windows: the text service's resources. MIT, SebType.
 #pragma once
 
-// The tray icons, one per state, named as in pc/icons (made by windows/make-icons.py).
+// The tray icons, one per state, named as in pc/icons (made by windows/make_icons.py).
 #define IDI_ZH 101
 #define IDI_ZH_A 102
 #define IDI_ZH_CAPS 103

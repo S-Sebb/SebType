@@ -4,7 +4,7 @@
 ;   ISCC /DIn=<folder of the workflow's artifacts> [/DBuild=<n>] pc/windows/setup/sebtype.iss
 ; It installs SebType's text service and server (windows/, #190) with librime, Rime's shared data and
 ; Mozc's server. The steps themselves are setup.ps1's: -Machine (elevated) removes the Weasel and Mozc
-; that SebType installed before, -User (as the person who runs Setup) sets up their account. Why each step
+; that SebType installed before #190, -User (as the person who runs Setup) sets up their account. Why each step
 ; exists: ../README.md.
 
 #ifndef Version
@@ -25,10 +25,10 @@
 #endif
 #define Rime In + "\sebtype-rime"
 #if !FileExists(Rime + "\rime.dll")
-  #error SebType's librime (pc/windows/weasel/build.ps1) is missing from /DIn
+  #error SebType's librime (pc/windows/rime/build.ps1) is missing from /DIn
 #endif
 #if !FileExists(In + "\mozc-server\mozc_server.exe")
-  #error Mozc's server, from SebType's Mozc MSI, is missing from /DIn\mozc-server
+  #error Mozc's server (pc/windows/mozc/build.ps1) is missing from /DIn\mozc-server
 #endif
 
 ; Python's embeddable package, for the Configurator's sync (#180): python.ps1 puts it in In\python.

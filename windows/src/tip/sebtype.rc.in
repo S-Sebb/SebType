@@ -1,7 +1,7 @@
 // SebType on Windows: the text service's resources (CMake fills in the paths). MIT, SebType.
 #include "resource.h"
 
-// The tray icons windows/make-icons.py made from pc/icons.
+// The tray icons windows/make_icons.py made from pc/icons.
 IDI_ZH ICON "@ICONS@/zh.ico"
 IDI_ZH_A ICON "@ICONS@/zh-a.ico"
 IDI_ZH_CAPS ICON "@ICONS@/zh-caps.ico"

@@ -393,24 +393,6 @@ if (-not $Undo) {
   $bar = Get-WinLanguageBarOption
   if ($bar.IsLegacySwitchingMode) { Set-WinLanguageBarOption -UseLegacySwitchMode:$false -UseLegacyLanguageBar:$bar.IsLegacyLanguageBar }
 
-  # The candidate window's look, which Weasel kept in weasel.custom.yaml, moves to SebType's own
-  # settings once (the Configurator writes them there now).
-  $conf = Join-Path $env:APPDATA 'SebType\sebtype.conf'
-  $weaselStyle = Join-Path $RimeUser 'weasel.custom.yaml'
-  if ((Test-Path $weaselStyle) -and -not (@(Get-Content $conf -Encoding utf8 -ErrorAction SilentlyContinue) -contains '[Candidates]')) {
-    $style = @{}
-    foreach ($l in Get-Content $weaselStyle -Encoding utf8) {
-      if ($l -match '^  style/(horizontal|font_point|color_scheme):\s*(\S+)') { $style[$Matches[1]] = $Matches[2] }
-    }
-    if ($style.Count) {
-      New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
-      $font = if ($style.font_point -match '^\d+$') { $style.font_point } else { '14' }
-      Add-Content $conf -Encoding ascii @('[Candidates]', "Vertical=$(if ($style.horizontal -eq 'true') { 0 } else { 1 })",
-        "FontSize=$font", "Picnic=$(if ($style.color_scheme -eq 'sebtype_picnic') { 1 } else { 0 })")
-      Write-Output 'user: candidate window settings from Weasel'
-    }
-  }
-
   # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
   # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it
   # would be out of the apps' reach): the text service starts it at the first key, the Run key at logon.

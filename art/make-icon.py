@@ -154,9 +154,9 @@ for row in range(GRID):
 """)
 print(f"subject radius {radius:.0f}px -> {SAFE_RADIUS}dp; monochrome {len(paths)} runs")
 
-# PC candidate windows (#94): the subject cut to its bounding box, LOGO_HEIGHT px tall. Weasel draws the PNG
-# (windows/data/sebtype-logo.png); Fcitx5's Picnic theme gets it inside an SVG, so it stays sharp at any
-# size and DPI, whose @WIDTH@ and @HEIGHT@ the Configurator sets from the font size.
+# PC candidate windows (#94): the subject cut to its bounding box, LOGO_HEIGHT px tall. SebType's Windows
+# text service draws the PNG (windows/data/sebtype-logo.png); Fcitx5's Picnic theme gets it inside an SVG,
+# so it stays sharp at any size and DPI, whose @WIDTH@ and @HEIGHT@ the Configurator sets from the font size.
 LOGO_HEIGHT = 160
 box = (xs.min(), ys.min(), xs.max() + 1, ys.max() + 1)
 pig = rgba.crop(box)
