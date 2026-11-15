@@ -370,7 +370,13 @@ class Mozc final : public Engine {
     Input in;
     in.set_type(Input::CREATE_SESSION);
     in.mutable_capability()->set_text_deletion(mozc::commands::Capability::DELETE_PRECEDING_TEXT);
-    if (!touch_) in.mutable_application_info()->set_process_id(getpid());
+    if (!touch_) in.mutable_application_info()->set_process_id(
+#ifdef _WIN32
+        GetCurrentProcessId()
+#else
+        getpid()
+#endif
+    );
     Output out;
     if (!mozc_->call(in, out) || !out.has_id()) return false;
     session_ = out.id();
