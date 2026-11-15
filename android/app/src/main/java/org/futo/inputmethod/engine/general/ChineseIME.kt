@@ -244,24 +244,26 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         }
     }
 
-    /** A key Rime didn't take ([sym]; [codePoint] for a character), with [preedit] what was typed. */
-    private fun passBy(sym: Int, codePoint: Int, preedit: String) {
+    /** A key Rime didn't take ([sym]; [codePoint] for a character) goes to the app. */
+    private fun passBy(sym: Int, codePoint: Int) {
         when (sym) {
             XK_BackSpace -> sendDownUpKeyEvent(KeyEvent.KEYCODE_DEL, 0)
             XK_Tab       -> sendDownUpKeyEvent(KeyEvent.KEYCODE_TAB, 0)
             XK_Return    -> sendDownUpKeyEvent(KeyEvent.KEYCODE_ENTER, 0)
-            else -> {
-                if (!ready || preedit.isEmpty() || editingState.active) {
-                    connect?.commitText(String(Character.toChars(codePoint)), 1)
-                } else {
-                    // Commits what is typed, then the key again.
-                    show(NativeCore.flush())
-                    val state = NativeCore.key(sym, 0)
-                    show(state)
-                    if (!state.taken) passBy(sym, codePoint, state.preedit)
-                }
-            }
+            else -> connect?.commitText(String(Character.toChars(codePoint)), 1)
         }
+    }
+
+    /**
+     * On the engine thread: a key, and the states it goes through. A character Rime doesn't take while
+     * something is typed commits that first, then goes in again, in the same step, so no key typed
+     * meanwhile comes between.
+     */
+    private fun typeKey(sym: Int): List<NativeState> {
+        val state = NativeCore.key(sym, 0)
+        if (state.taken || state.preedit.isEmpty() || sym == XK_BackSpace || sym == XK_Tab || sym == XK_Return)
+            return listOf(state)
+        return listOf(state, NativeCore.flush(), NativeCore.key(sym, 0))
     }
 
     // What the preedit and the bar last showed of Rime's: each is drawn again only when it changes.
@@ -305,7 +307,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         if(!ready) return
         val converted = safeguardInputStringForSimulation(string)
         rawInput.replace(converted)
-        show(NativeCore.type(converted))
+        NativeCore.post({ type(converted) }, ::show)
     }
 
     override fun onFinishEdit(string: String, candidateWord: String?, candidateIndex: Int?) {
@@ -315,15 +317,16 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         if(ready) {
             val converted = safeguardInputStringForSimulation(string)
             rawInput.replace(converted)
-            val typed = NativeCore.type(converted)
-            editingState = EditingState.NotEditing
-            // The candidate picked in the floating preedit, if it is still there
-            show(if(candidateIndex != null && typed.candidates.getOrNull(candidateIndex) == candidateWord)
-                NativeCore.selectCandidate(candidateIndex) else typed)
+            NativeCore.post({
+                val typed = type(converted)
+                // The candidate picked in the floating preedit, if it is still there
+                if(candidateIndex != null && typed.candidates.getOrNull(candidateIndex) == candidateWord)
+                    selectCandidate(candidateIndex) else typed
+            }, ::show)
         }
         editingState = EditingState.NotEditing
 
-        if(string.isEmpty()) {
+        if(string.isEmpty()) NativeCore.after {
             showSuggestionStrip(
                 SuggestedWords(
                     ArrayList(emptyList()),
@@ -400,7 +403,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         RimeIceSetup.setInUse(helper.context, false)
     }
 
-    override fun onLanguageLeft() = RimeIceSetup.setInUse(helper.context, false)
+    override fun onLanguageLeft() {
+        NativeCore.drain()
+        RimeIceSetup.setInUse(helper.context, false)
+    }
 
     // SebType (#30): password and PIN fields, and fields that ask for no suggestions, get plain letters:
     // Rime never sees the keys, so there is no preedit, no candidates and nothing to learn. Private
@@ -414,8 +420,12 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         plainField = attrs.mIsPasswordField || !attrs.mShouldShowSuggestions
         noLearning = attrs.mNoLearning || attrs.mIsUriField || attrs.mIsEmailField || Incognito.toggledOn(helper.context)
         SebTypeConf.ensure(helper.context)
-        NativeCore.selectLanguage(CHINESE)
-        NativeCore.setField(if(plainField) NativeCore.FIELD_PLAIN else NativeCore.FIELD_TEXT, !noLearning)
+        val field = if(plainField) NativeCore.FIELD_PLAIN else NativeCore.FIELD_TEXT
+        val learning = !noLearning
+        NativeCore.post {
+            selectLanguage(CHINESE)
+            setField(field, learning)
+        }
         RimeIceSetup.setInUse(helper.context, true)
         showSetupState(RimeIceSetup.state.value)
         updateConfig()
@@ -519,9 +529,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     }
 
     override fun onFinishInput() {
+        NativeCore.drain()
         if(editingState.active || !ready) return
         rawInput.clear()
-        show(NativeCore.clear())
+        NativeCore.post({ clear() }, ::show)
     }
 
     override fun onFinishSlidingInput() {
@@ -530,11 +541,13 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
     private fun interruptInput(text: CharSequence? = null) {
         if(ready) {
             rawInput.clear()
-            show(NativeCore.clear())
+            NativeCore.post({ clear() }, ::show)
         }
-        connect?.finishComposingText()
-        if (text != null) {
-            connect?.commitText(text, 1)
+        NativeCore.after {
+            connect?.finishComposingText()
+            if (text != null) {
+                connect?.commitText(text, 1)
+            }
         }
     }
 
@@ -556,15 +569,16 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
             )
         )
     }
+    // An action runs after what the keys before it typed has shown.
     private fun triggerIfIsAction(keyCode: Int): Boolean {
         if (Constants.CODE_ACTION_0 <= keyCode && keyCode <= Constants.CODE_ACTION_MAX) {
             val actionId: Int = keyCode - Constants.CODE_ACTION_0
-            helper.triggerAction(actionId, false)
+            NativeCore.after { helper.triggerAction(actionId, false) }
             return true
         }
         if (Constants.CODE_ALT_ACTION_0 <= keyCode && keyCode <= Constants.CODE_ALT_ACTION_MAX) {
             val actionId: Int = keyCode - Constants.CODE_ALT_ACTION_0
-            helper.triggerAction(actionId, true)
+            NativeCore.after { helper.triggerAction(actionId, true) }
             return true
         }
         return false
@@ -589,7 +603,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 }
 
                 if(!ready || plainField || editingState.active) {
-                    passBy(sym, codePoint, shownPreedit)
+                    NativeCore.after { passBy(sym, codePoint) }
                 } else {
                     // Only update outside editing state. We cannot update inside editing state,
                     // because the cursor position is unknown and we assume it's always at the end
@@ -601,9 +615,10 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                         rawInput.append(event.mCodePoint)
                     }
 
-                    val state = NativeCore.key(sym, 0)
-                    show(state)
-                    if(!state.taken) passBy(sym, codePoint, state.preedit)
+                    NativeCore.post({ typeKey(sym) }) { states ->
+                        states.forEach(::show)
+                        if(!states.last().taken) passBy(sym, codePoint)
+                    }
                 }
             }
 
@@ -613,9 +628,9 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                     // The setup notice; only the failure notice does something.
                     if (RimeIceSetup.state.value == RimeIceSetup.State.Failed) retryAfterFailure()
                 } else if (suggestion.isKindOf(SuggestedWordInfo.KIND_UNDO)) {
-                    connect?.commitText(suggestion.word, 1)
+                    NativeCore.after { connect?.commitText(suggestion.word, 1) }
                 } else {
-                    show(NativeCore.selectCandidate(suggestion.mCandidateIndex))
+                    NativeCore.post({ selectCandidate(suggestion.mCandidateIndex) }, ::show)
                 }
             }
 
@@ -635,7 +650,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                         return
                     }
                 }
-                sendDownUpKeyEvent(event.mKeyCode, event.mX)
+                NativeCore.after { sendDownUpKeyEvent(event.mKeyCode, event.mX) }
             }
 
             else -> {}
@@ -683,6 +698,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
         connect?.setSelection(lBound, currentMovingCursor)
     }
     override fun onUpWithDeletePointerActive() {
+        NativeCore.drain() // the preedit as the keys before typed it
         anchorOutOfDate = true
         val selection: CharSequence? = connect?.getSelectedText(0)
         if (selection == null) {
@@ -708,7 +724,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 }
             }
             rawInput.clear()
-            if(ready) show(NativeCore.clear())
+            if(ready) NativeCore.post({ clear() }, ::show)
             val info = arrayListOf(SuggestedWordInfo(
                 reserved,
                 "",
@@ -718,7 +734,8 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 0,
                 0
             ))
-            showSuggestionStrip(SuggestedWords(
+            // After the cleared bar
+            NativeCore.after { showSuggestionStrip(SuggestedWords(
                 info,
                 null,
                 null,
@@ -727,7 +744,7 @@ class ChineseIME(val helper: IMEHelper) : IMEInterface, SuggestionStripViewAcces
                 false,
                 0,
                 0
-            ))
+            )) }
         }
     }
 

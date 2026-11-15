@@ -199,8 +199,22 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
     `commitOnSwitch` (true on the PCs, false on Android), so the rule stays in `core/` instead of in a frontend.
 
   `core/test/core_test.cpp` covers each of these, including both values of `commitOnSwitch`.
-- **Threads.** Typing runs on the main thread, as today: each engine takes about 2 ms per key. Next-word
-  suggestions are computed on one worker thread and posted back, so a key never waits for them.
+- **Threads.** The engines run on one engine thread (`NativeCore.post`, #241). Through `core/` a key takes
+  more than a frame on the guide35 emulator, not the 2 ms assumed here: a 中 key 24 ms (Rime's key 7 ms, its
+  128 candidates 12 ms, the JNI state 5 ms), a 日 key 10 ms and up to 66 ms at p95 (all of it Mozc's eval).
+  - The main thread posts each call and shows its result when it comes back. Calls run in the order they
+    were posted, and their results show in that order, so keys typed faster than the engines answer are
+    neither lost nor reordered.
+  - What depends on a key's result runs in the same step on the engine thread (a key Rime doesn't take
+    commits what is typed and goes in again), or on the main thread after the results before it have shown
+    (`NativeCore.after`: actions, keys sent to the app).
+  - Before a field closes or another language takes over, the main thread waits for the results still to
+    come (`NativeCore.drain`), so they land in their own field.
+  - The background setup (`RimeIceSetup`) and the settings call `NativeCore` directly from their own
+    threads. One lock keeps them and the engine thread apart; the main thread never takes it, so a keyboard
+    opening while Rime starts (0.6–1.9 s) no longer waits for it.
+
+  Next-word suggestions are computed on one worker thread and posted back, so a key never waits for them.
 - **Settings shared with the PCs.** `core::Settings` grows from `[Languages] Order=` to everything both
   sides set:
   - which languages are on and their order (the PCs' order is Win+Space's home; the phone's is the 🌐 cycle);

@@ -233,7 +233,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     private fun setKatakana(on: Boolean) {
         katakana.value = on
         helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(if(on) "ア" else null)
-        NativeCore.setAlternate(on)
+        NativeCore.post { setAlternate(on) }
     }
 
     // SebType's Japanese layout is QWERTY: romaji on its letters, the letters themselves on its second
@@ -251,25 +251,29 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
 
     // Mozc's config (learning, the space's width) comes from the field and sebtype.conf: core/ sets it.
     private fun updateConfig(resetSelectionTracker: Boolean = true) {
-        keys = getCurrentKeys()
-        NativeCore.setKeys(keys, helper.context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+        val keys = getCurrentKeys().also { keys = it }
+        val landscape = helper.context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        NativeCore.post { setKeys(keys, landscape) }
         if(resetSelectionTracker) selectionTracker.onConfigurationChanged()
     }
 
     internal fun mozcInit() {
         idleUnload?.cancel()
         unloaded = false
-        setMozcData(helper.context)
-        // Loaded afresh, as Mozc's Android client did: the dictionary file may have been replaced.
-        NativeCore.stop(JAPANESE)
-        NativeCore.start(JAPANESE)
+        val context = helper.context
+        val unlocked = context.isDirectBootUnlocked
+        NativeCore.post {
+            setMozcData(context)
+            // Loaded afresh, as Mozc's Android client did: the dictionary file may have been replaced.
+            NativeCore.stop(JAPANESE)
+            NativeCore.start(JAPANESE)
+            if(unlocked) {
+                NativeCore.save(JAPANESE)
+                refreshMozcDictionaries(context, onlyIfChanged = true)
+            }
+        }
 
         updateConfig()
-
-        if(helper.context.isDirectBootUnlocked) {
-            NativeCore.save(JAPANESE)
-            refreshMozcDictionaries(helper.context, onlyIfChanged = true)
-        }
     }
 
     override fun onCreate() {
@@ -281,7 +285,8 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                         mozcInit()
                     }
                     IMEMessage.ReloadPersonalDict -> withContext(Dispatchers.Main) {
-                        refreshMozcDictionaries(helper.context)
+                        val context = helper.context
+                        NativeCore.post { refreshMozcDictionaries(context) }
                     }
                     else -> {}
                 }
@@ -297,19 +302,22 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     private var unloaded = false
 
     override fun onLanguageLeft() {
+        NativeCore.drain()
         idleUnload?.cancel()
         idleUnload = helper.lifecycleScope.launch {
             delay(ENGINE_IDLE_MS)
-            NativeCore.stop(JAPANESE)
             unloaded = true
-            Log.w(TAG, "Mozc unloaded after ${ENGINE_IDLE_MS / 1000} s in another language")
-            withContext(Dispatchers.Default) { JniUtils.releaseFreedMemory() }
+            NativeCore.post {
+                stop(JAPANESE)
+                Log.w(TAG, "Mozc unloaded after ${ENGINE_IDLE_MS / 1000} s in another language")
+                JniUtils.releaseFreedMemory()
+            }
         }
     }
 
     override fun onDestroy() {
         idleUnload?.cancel()
-        NativeCore.save(JAPANESE)
+        NativeCore.post { save(JAPANESE) }
     }
 
     override fun onDeviceUnlocked() {
@@ -348,21 +356,22 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         if(unloaded) {
             val t0 = SystemClock.elapsedRealtime()
             mozcInit()
-            Log.w(TAG, "Mozc loaded again in ${SystemClock.elapsedRealtime() - t0} ms")
+            NativeCore.post { Log.w(TAG, "Mozc loaded again in ${SystemClock.elapsedRealtime() - t0} ms") }
         }
-        NativeCore.selectLanguage(JAPANESE)
         // From the field itself: at its start the settings still hold the previous field's attributes.
         // SebType (#31, #158): while incognito Mozc still suggests from its history but adds nothing to it.
         val incognito = Incognito.inField(helper.context, helper.getCurrentEditorInfo())
-        NativeCore.setField(
-            helper.getCurrentEditorInfo()?.let { fieldOf(it) } ?: NativeCore.FIELD_TEXT,
-            !incognito && Settings.getInstance().current.isPersonalizationEnabled
-        )
-        NativeCore.clear()
+        val field = helper.getCurrentEditorInfo()?.let { fieldOf(it) } ?: NativeCore.FIELD_TEXT
+        val learning = !incognito && Settings.getInstance().current.isPersonalizationEnabled
+        NativeCore.post {
+            selectLanguage(JAPANESE)
+            setField(field, learning)
+            clear()
+            setAlternate(false)
+        }
         setNeutralSuggestionStrip()
         katakana.value = false
         helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(null)
-        NativeCore.setAlternate(false)
         updateConfig()
         initSelectionTracker()
     }
@@ -372,10 +381,15 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     override fun onFinishInput() {
+        NativeCore.drain()
         helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(null)
-        NativeCore.save(JAPANESE)
+        NativeCore.post {
+            save(JAPANESE)
+            clear()
+        }
         selectionTracker.onFinishInput()
-        resetContextAndCommitText()
+        // Now, in the field that is finishing
+        finishAndCommit(null)
     }
 
     override fun onUpdateSelection(
@@ -399,14 +413,15 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             SelectionTracker.DO_NOTHING -> {}
             SelectionTracker.RESET_CONTEXT -> {
                 if(BuildConfig.DEBUG) Log.d(TAG, "Asked to reset context.")
-                NativeCore.clear()
-                helper.getCurrentInputConnection()?.finishComposingText()
-                setNeutralSuggestionStrip()
+                NativeCore.post({ clear() }) {
+                    helper.getCurrentInputConnection()?.finishComposingText()
+                    setNeutralSuggestionStrip()
+                }
             }
 
             else -> {
                 if(updateStatus < 0) throw IllegalStateException("Invalid updateStatus $updateStatus")
-                render(NativeCore.moveCursor(updateStatus), null)
+                NativeCore.post({ moveCursor(updateStatus) }) { render(it, null) }
             }
         }
     }
@@ -443,9 +458,14 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         return true
     }
 
-    private fun resetContextAndCommitText(text: CharSequence? = null) {
-        NativeCore.clear()
+    /** Drops what Mozc has, then ends the composition in the field, commits [text] and runs [then]. */
+    private fun resetContextAndCommitText(text: CharSequence? = null, then: () -> Unit = {}) =
+        NativeCore.post({ clear() }) {
+            finishAndCommit(text)
+            then()
+        }
 
+    private fun finishAndCommit(text: CharSequence?) {
         val ic = helper.getCurrentInputConnection() ?: return
         ic.finishComposingText()
 
@@ -469,18 +489,21 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             } else if(isEditorAction) {
                 ic.performEditorAction(imeOptionsActionId)
             } else {
-                resetContextAndCommitText(StringUtils.newSingleCodePointString(Constants.CODE_ENTER))
+                finishAndCommit(StringUtils.newSingleCodePointString(Constants.CODE_ENTER))
             }
 
             Unit
         }
 
         else -> {
-            resetContextAndCommitText(StringUtils.newSingleCodePointString(codePoint))
+            finishAndCommit(StringUtils.newSingleCodePointString(codePoint))
         }
     }
 
-    /** Handles a key Mozc didn't take: [keyCode] a key or action, or else [codePoint] a character. */
+    /**
+     * Handles a key Mozc didn't take: [keyCode] a key or action, or else [codePoint] a character. Mozc was
+     * cleared in the key's own step (onEvent), so no key typed meanwhile is dropped.
+     */
     private fun sendKey(keyCode: Int, codePoint: Int) {
         if(keyCode == Event.NOT_A_KEY_CODE) {
             sendCodePoint(codePoint)
@@ -701,7 +724,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                     updateConfig(false)
                 }
 
-                val key = event.mKeyCode to event.mCodePoint
+                val pressed = event.mKeyCode to event.mCodePoint
                 val sym = when (event.mCodePoint) {
                     Constants.CODE_SPACE -> ' '.code
                     Constants.CODE_ENTER -> NativeCore.XK_Return
@@ -711,13 +734,16 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                         ArrowLeftAction.keyCode -> NativeCore.XK_Left
                         ArrowRightAction.keyCode -> NativeCore.XK_Right
                         UndoAction.keyCode -> {
-                            render(NativeCore.undo(), key)
+                            NativeCore.post({ undo() }) { render(it, pressed) }
                             return
                         }
 
                         else -> {
-                            if(!maybeHandleAction(event.mKeyCode)) {
-                                if(BuildConfig.DEBUG) Log.e(TAG, "Unknown keycode for that event (${event.mCodePoint} ${event.mKeyCode})")
+                            // After what the keys before it typed has shown
+                            NativeCore.after {
+                                if(!maybeHandleAction(event.mKeyCode)) {
+                                    if(BuildConfig.DEBUG) Log.e(TAG, "Unknown keycode for that event (${event.mCodePoint} ${event.mKeyCode})")
+                                }
                             }
                             null
                         }
@@ -726,12 +752,14 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                     else -> NativeCore.charSym(event.mCodePoint)
                 }
 
-                if(sym != null) render(NativeCore.key(sym, 0), key)
+                // A character Mozc doesn't take ends what it had (sendCodePoint), in the same step.
+                val character = event.mKeyCode == Event.NOT_A_KEY_CODE
+                if(sym != null) NativeCore.post({ key(sym, 0).also { if(!it.taken && character) clear() } }) { render(it, pressed) }
             }
 
             Event.EVENT_TYPE_SUGGESTION_PICKED -> {
                 val suggestion = event.mSuggestedWordInfo ?: return
-                render(NativeCore.selectCandidate(suggestion.mCandidateIndex), null)
+                NativeCore.post({ selectCandidate(suggestion.mCandidateIndex) }) { render(it, null) }
             }
 
             Event.EVENT_TYPE_SOFTWARE_GENERATED_STRING -> {
@@ -740,9 +768,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
 
             Event.EVENT_TYPE_DOWN_UP_KEYEVENT -> {
                 // TODO: Should we be calling this here just to be sure?
-                resetContextAndCommitText()
-
-                sendDownUpKeyEvent(event.mKeyCode, event.mX)
+                resetContextAndCommitText { sendDownUpKeyEvent(event.mKeyCode, event.mX) }
             }
 
             else -> {
@@ -804,7 +830,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     override fun clearUserHistoryDictionaries() {
-        if(helper.context.isDirectBootUnlocked) NativeCore.forget(JAPANESE)
+        if(helper.context.isDirectBootUnlocked) NativeCore.post { forget(JAPANESE) }
     }
 
     private var prevSuggestions: SuggestedWords? = null

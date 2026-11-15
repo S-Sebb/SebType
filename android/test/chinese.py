@@ -229,6 +229,29 @@ def type_keys(text):
     time.sleep(1.5)
 
 
+def field_text():
+    return next((n[0] for n in nodes() if n[4] == "android.widget.EditText"), "")
+
+
+def type_fast(text, gap_ms=10):
+    """Types text (letters and spaces) with monkey taps gap_ms apart, faster than the engines answer
+    (10-60 ms a key, #241); then waits for them to catch up."""
+    k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+    left, top, right, bottom = keyboard_frame
+    space = (int(left + 5.5 * (right - left) / 10), row_y(top, bottom, 3))
+    script = "type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\n" + "".join(
+        f"Tap({x},{y})\nUserWait({gap_ms})\n"
+        for x, y in (space if ch == " " else k[ch][:2] for ch in text)
+    )
+    path = os.path.join(logdir, "fast-taps.txt")
+    with open(path, "w") as f:
+        f.write(script)
+    adb("push", path, "/data/local/tmp/sebtype-fast-taps.txt")
+    adb("shell", "monkey", "-f", "/data/local/tmp/sebtype-fast-taps.txt", "1")
+    adb("shell", "rm", "/data/local/tmp/sebtype-fast-taps.txt")
+    time.sleep(3)
+
+
 def open_field(kind=None):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
     a password, pin, private, url or email field (#30)."""
@@ -640,6 +663,19 @@ def nothing_external():
 check("fresh-nothing-external", nothing_external, needs=["first-install"])
 check("ranh", expect_first("ranh", "然后"), needs=["first-install"])
 check("lh-in-bar", lh_in_top, needs=["first-install"])
+
+
+def fast_typing_zh():
+    # Each space commits ranh's first candidate (然后, the ranh check); a key lost or out of order
+    # would commit something else.
+    open_field()
+    type_fast("ranh ranh ranh ranh ")
+    if (text := field_text()) != "然后" * 4:
+        raise Fail(f"typed 'ranh ' four times, 10 ms apart; the field shows {text!r}")
+    return f"'ranh ' × 4, 10 ms apart -> {text!r}"
+
+
+check("fast-typing-zh", fast_typing_zh, needs=["ranh"])
 check("rq-date", rq_date, needs=["first-install"])
 check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 # Typo correction (#46): o for i, its neighbour on the phone grid, still gives 小时 first.
@@ -794,10 +830,6 @@ def tap_chip(expect):
     )
 
 
-def field_text():
-    return next((n[0] for n in nodes() if n[4] == "android.widget.EditText"), "")
-
-
 def to_japanese():
     # Mozc's native code can crash a few times in a row when Japanese starts on the emulator (#35); a
     # field opened while the keyboard is down never gets it back, so the app is restarted and the field
@@ -863,6 +895,18 @@ check("ja-chip", to_japanese, needs=["first-install"])
 check("ja-katakana-candidate", katakana_candidate, needs=["ja-chip"])
 check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
 check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
+
+
+def fast_typing_ja():
+    # The romaji stays in the field as Mozc's composition: every key, in order, or other kana.
+    open_field()
+    type_fast("konnichihasekai")
+    if (text := field_text()) != "こんにちはせかい":
+        raise Fail(f"typed konnichihasekai 10 ms apart in 日; the field shows {text!r}")
+    return f"konnichihasekai, 10 ms apart -> {text!r}"
+
+
+check("fast-typing-ja", fast_typing_ja, needs=["ja-chip"])
 
 
 def no_switch_in_japanese():
