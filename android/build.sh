@@ -6,6 +6,8 @@
 #   android/build.sh test-x86_64   debug APK, then its instrumented-test APK, for an x86_64 emulator
 #   android/build.sh debug         debug arm64-v8a APK, the one the emulator tests run (through the
 #                                  emulator's ARM translation), as the phone does
+#   android/build.sh next          signed arm64-v8a release APK of next/, the new keyboard (#191, test-only)
+#   android/build.sh next-debug    debug arm64-v8a APK of next/
 # Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here), and copies
 # the APKs back. A release comes back unsigned and is signed here: the key never leaves this PC.
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
@@ -18,7 +20,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source ../tools/lib.sh
 
-kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64}
+kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64|next|next-debug}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
 apksigner() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner "$@"; }
 # A release is built unsigned, here or on the build host, and signed the same way in both cases, as Gradle
@@ -35,7 +37,8 @@ sign_release() {
 }
 # SEBTYPE_UNSIGNED=1: a release left unsigned (on the build host, for the PC to sign).
 unsigned=${SEBTYPE_UNSIGNED:-}
-if [[ $kind == release ]]; then
+signed=; [[ $kind == release || $kind == next ]] && signed=1
+if [[ -n $signed ]]; then
   VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} build=$VERSION_CODE
   [[ -n $unsigned || ( -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ) ]] ||
     { echo "build: keystore missing in $keydir" >&2; exit 1; }
@@ -47,7 +50,7 @@ find app/build/runs -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
 
 if build_host_ready; then
   apks=$(build_remotely VERSION_CODE="$VERSION_CODE" SEBTYPE_UNSIGNED=1 android/build.sh "$kind")
-  [[ $kind != release || -n $unsigned ]] || apks=$(sign_release "$apks")
+  [[ -z $signed || -n $unsigned ]] || apks=$(sign_release "$apks")
   echo "$apks"
   exit
 fi
@@ -76,6 +79,10 @@ case $kind in
     task="assembleDebug assembleDebugAndroidTest" abis=x86_64 out=app/build/outputs/apk/debug ;;
   debug)
     task=assembleDebug abis=arm64-v8a out=app/build/outputs/apk/debug ;;
+  next)
+    task=":next:assembleRelease" abis=arm64-v8a out=next/build/outputs/apk/release ;;
+  next-debug)
+    task=":next:assembleDebug" abis=arm64-v8a out=next/build/outputs/apk/debug ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
 # This run's APKs, hard links to Gradle's (which the next build replaces, not overwrites).
@@ -112,7 +119,7 @@ build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${containe
   if [[ $KIND == test-x86_64 ]]; then mkdir "$RUN/androidTest" && cp -l app/build/outputs/apk/androidTest/debug/*.apk "$RUN/androidTest/"; fi
 ' build $task -PsebtypeAbis="$abis"
 apk=$(echo "$run"/*.apk)
-[[ $kind != release || -n $unsigned ]] || apk=$(sign_release "$apk")
+[[ -z $signed || -n $unsigned ]] || apk=$(sign_release "$apk")
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - $(cat "$locked") ))s after $(( $(cat "$locked") - start ))s in the lock queue, $(du -h "$apk" | cut -f1)" >&2
 echo "$apk"
 [[ $kind != test-x86_64 ]] || echo "$run"/androidTest/*.apk

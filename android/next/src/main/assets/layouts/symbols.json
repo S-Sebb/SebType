@@ -1,0 +1,9 @@
+{
+  "about": "The symbols page, Gboard's (?123). MIT, SebType.",
+  "rows": [
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+    ["@", "#", {"currency": true, "more": ["$", "¢", "£", "€", "¥", "₹"]}, "_", "&", "-", "+", "(", ")", "/"],
+    [{"code": "symbols2", "label": "=\\<", "width": 1.5}, "*", "\"", "'", ":", ";", "!", "?", {"code": "delete", "width": 1.5}],
+    [{"code": "letters", "label": "ABC", "width": 1.5}, {"text": ",", "zh": {"label": "，", "more": ["、"]}, "ja": {"label": "、", "more": [{"label": "ー", "text": "-"}]}}, {"code": "globe"}, {"code": "space", "width": 4}, {"text": ".", "more": [",", "?", "!", "'", "\"", ":", ";", "-", "/", "@", "&", "(", ")", "#", "%", "+"], "zh": {"label": "。", "more": ["？", "！", "：", "；", "…", "—"]}, "ja": {"label": "。", "more": [{"label": "？", "text": "?"}, {"label": "！", "text": "!"}]}}, {"code": "enter", "width": 1.5}]
+  ]
+}

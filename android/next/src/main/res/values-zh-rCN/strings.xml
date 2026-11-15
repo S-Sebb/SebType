@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="open_menu">打开操作栏</string>
+    <string name="close_menu">关闭操作栏</string>
+    <string name="incognito">无痕模式</string>
+    <string name="incognito_on">无痕模式已开，点按关闭</string>
+    <string name="incognito_field">此输入框为无痕模式</string>
+    <string name="more_candidates">更多候选词</string>
+    <string name="fewer_candidates">收起候选词</string>
+    <string name="chinese_preparing">正在准备中文…</string>
+    <string name="chinese_failed">中文输入启动失败，点此重试</string>
+    <string name="key_shift">Shift</string>
+    <string name="key_shift_on">Shift 已开</string>
+    <string name="key_caps_lock">大写锁定</string>
+    <string name="key_delete">删除</string>
+    <string name="key_symbols">符号</string>
+    <string name="key_more_symbols">更多符号</string>
+    <string name="key_letters">字母</string>
+    <string name="key_language">下一种语言</string>
+    <string name="key_space">空格</string>
+    <string name="key_enter">换行</string>
+    <string name="key_search">搜索</string>
+    <string name="key_send">发送</string>
+    <string name="key_go">前往</string>
+    <string name="key_next">下一项</string>
+    <string name="key_previous">上一项</string>
+    <string name="key_done">完成</string>
+</resources>

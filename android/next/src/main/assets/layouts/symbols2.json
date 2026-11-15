@@ -1,0 +1,9 @@
+{
+  "about": "The second symbols page (=\\<). MIT, SebType.",
+  "rows": [
+    ["~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆"],
+    ["£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\"],
+    [{"code": "symbols", "label": "?123", "width": 1.5}, "%", {"text": "©", "more": ["©", "™"]}, "®", "[", "]", "<", ">", {"code": "delete", "width": 1.5}],
+    [{"code": "letters", "label": "ABC", "width": 1.5}, {"text": ",", "zh": {"label": "，", "more": ["、"]}, "ja": {"label": "、", "more": [{"label": "ー", "text": "-"}]}}, {"code": "globe"}, {"code": "space", "width": 4}, {"text": ".", "more": [",", "?", "!", "'", "\"", ":", ";", "-", "/", "@", "&", "(", ")", "#", "%", "+"], "zh": {"label": "。", "more": ["？", "！", "：", "；", "…", "—"]}, "ja": {"label": "。", "more": [{"label": "？", "text": "?"}, {"label": "！", "text": "!"}]}}, {"code": "enter", "width": 1.5}]
+  ]
+}
