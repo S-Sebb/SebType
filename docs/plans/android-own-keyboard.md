@@ -267,7 +267,8 @@ The README keeps FUTO Keyboard in its components list, as its English model.
   them);
 - the README drops FUTO Keyboard from its components;
 - `android/LICENSE` and NOTICE list Apache-2.0 for `engines/latinime/`, MIT for llama.cpp/ggml, BSD-3 for Mozc
-  and librime, LGPL-2.1 for `core/src/rime.cpp`, and GPL-3.0 for the Chinese data.
+  and librime, LGPL-2.1 for `core/src/rime.cpp`, GPL-3.0 for the Chinese data, and CC BY-SA 4.0 for SebType's
+  English model, crediting its training sources (`tools/english-lm/SOURCES.md`; Decisions 6).
 
 ## 5. Size and performance targets
 
@@ -345,3 +346,6 @@ its corpus and training work on yanglab16 any time after stage 0, since only the
 4. **Pinyin when leaving 中文 on the phone:** "Throw it away", as the phone does today. The PCs keep committing it,
    so `core/` gets a per-platform setting, `commitOnSwitch` (§3).
 5. **Builds:** SebType's heavy agent builds run on yanglab16 from now on (§3, Build).
+6. **Licence of SebType's English model:** "CC BY-SA 4.0". Part of its training text is share-alike (Wikipedia,
+   Dolly), so the model file ships under CC BY-SA 4.0 with every source credited in NOTICE, like the English
+   dictionary's frequencies. The code that trains and runs it stays MIT (§4).

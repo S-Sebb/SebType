@@ -23,6 +23,6 @@ was downloaded at the revision below, and its licence was checked there (`fetch.
 Wikipedia's list of common misspellings, which the harness's misspellings set comes from, isn't used. The
 spelling mistakes in training are made by rule (`noise.py`).
 
-**The model's licence** is not settled here. Part of the data is under share-alike licences (CC BY-SA), and
-whether that reaches a model trained on it is the maintainer's decision before the model file is committed or
-shipped.
+**The model's licence** is CC BY-SA 4.0 (the user, 2026-11-15; docs/plans/android-own-keyboard.md, Decisions 6),
+because part of the data is share-alike. When the model file ships, NOTICE credits every source above. The
+scripts in this folder stay MIT.
