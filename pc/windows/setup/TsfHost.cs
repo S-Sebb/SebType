@@ -305,9 +305,19 @@ namespace SebType {
     [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr h);
     [DllImport("imm32.dll")] static extern bool ImmSetOpenStatus(IntPtr imc, bool open);
     [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr h, IntPtr imc);
-    // Turns the active input method on (its own language's mode, not English), as its on/off key would.
+    [DllImport("imm32.dll")] static extern bool ImmGetConversionStatus(IntPtr imc, out uint conv, out uint sentence);
+    [DllImport("imm32.dll")] static extern bool ImmSetConversionStatus(IntPtr imc, uint conv, uint sentence);
+    // Turns the active input method on in its own language's mode, not English, as its on/off key would:
+    // open, and the conversion mode's native bit, which Microsoft Pinyin keeps off when it remembers English.
     public static void Open() {
-      OnUi(() => { var c = ImmGetContext(store.Hwnd); ImmSetOpenStatus(c, true); ImmReleaseContext(store.Hwnd, c); return 0; });
+      OnUi(() => {
+        var c = ImmGetContext(store.Hwnd);
+        ImmSetOpenStatus(c, true);
+        uint conv, sentence;
+        if (ImmGetConversionStatus(c, out conv, out sentence) && (conv & 1 /* IME_CMODE_NATIVE */) == 0)
+          ImmSetConversionStatus(c, conv | 1, sentence);
+        ImmReleaseContext(store.Hwnd, c); return 0;
+      });
     }
     // The key-down and text-change times since the last call, in ms on one clock: "keys|edits", comma-separated.
     public static string TakeTimes() {
