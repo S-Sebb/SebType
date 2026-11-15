@@ -71,7 +71,9 @@ VERSION_NAME="$(cat upstream-version)-sebtype.$build"
 export VERSION_CODE VERSION_NAME
 case $kind in
   release)
-    task=assembleRelease abis=arm64-v8a out=app/build/outputs/apk/release ;;
+    # Kotlin compiles a release from scratch: an incremental compile infers Compose's stability of some
+    # lambdas differently, so the dex (and baseline.prof) depended on what was built before (#223, #229).
+    task="assembleRelease -Pkotlin.incremental=false" abis=arm64-v8a out=app/build/outputs/apk/release ;;
   debug-x86_64)
     task=assembleDebug abis=x86_64 out=app/build/outputs/apk/debug ;;
   test-x86_64)
