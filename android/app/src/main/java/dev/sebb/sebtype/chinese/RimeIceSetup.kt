@@ -253,5 +253,5 @@ object RimeIceSetup {
     }
 
     private fun selfTest() =
-        RimeIceBundle.SELF_TEST_WORD in NativeCore.tryTyping(CHINESE, RimeIceBundle.SELF_TEST_INPUT)
+        NativeCore.tryTyping(CHINESE, RimeIceBundle.SELF_TEST_INPUT).any { it in RimeIceBundle.SELF_TEST_WORDS }
 }

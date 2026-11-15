@@ -428,7 +428,8 @@ def fresh_install():
 def expect_first(text, word):
     def run():
         got = candidates_for(text)
-        if not got or got[0] != word:
+        # rime-ice's spelling hints (［ran hou］) show only when its Lua filters aren't running.
+        if not got or got[0] != word or any(c.startswith("［") for c in got):
             raise Fail(f"{text} -> {got[:6]}")
         return f"{text} -> {got[:6]}"
 

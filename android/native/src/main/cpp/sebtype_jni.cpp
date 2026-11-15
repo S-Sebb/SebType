@@ -13,6 +13,11 @@
 
 using namespace sebtype;
 
+// librime's plugins are linked in statically, and a static plugin registers only if something references it
+// (as the old RimeJni did): rime-ice's Lua filters and the octagram grammar.
+extern void rime_require_module_lua();
+extern void rime_require_module_octagram();
+
 namespace {
 
 constexpr int kMaxCandidates = 128;  // what the bar scrolls through, as RimeJni gave it
@@ -294,6 +299,8 @@ jbyteArray importUserDictionary(JNIEnv *env, jclass, jbyteArray text) {
 }  // namespace
 
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) {
+  rime_require_module_lua();
+  rime_require_module_octagram();
   JNIEnv *env;
   if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
   constexpr const char *S = "Ldev/sebb/sebtype/core/NativeState;";
