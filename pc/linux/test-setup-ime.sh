@@ -417,6 +417,7 @@ def popup(language):  # the popup a Fcitx5 started with LANGUAGE=language shows 
     fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
                              env={**os.environ, 'LANGUAGE': language}, stdout=subprocess.DEVNULL,
                              stderr=open(sys.argv[1], 'a'))
+    started = time.monotonic()
     try:
         wait(up, 10)
         ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
@@ -429,12 +430,14 @@ def popup(language):  # the popup a Fcitx5 started with LANGUAGE=language shows 
         sub = bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
         call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
         call(ic, IC, 'FocusIn')
-        # Fcitx5 shows its own popup (SebType (English)) once after it starts: its group-changed timer fires 30 ms
-        # later plus up to sd-event's default 250 ms accuracy. Switching before that let it land just after
-        # SebType's 日本語 popup and replace it (#221), so the switch waits until it has passed.
-        call(*SEBTYPE, 'SetLanguage', '(s)', 'en'); wait(lambda: False, 0.5)
+        # Fcitx5 shows its own popup (SebType (English)) once after it starts, to a focused input context: its
+        # group-changed timer fires 30 ms later plus up to sd-event's default 250 ms accuracy. Switching before
+        # that let it land just after SebType's 日本語 popup and replace it (#221), so the switch waits for it,
+        # or for 1 s after the start when it came before the focus.
+        call(*SEBTYPE, 'SetLanguage', '(s)', 'en')
+        wait(lambda: popups or time.monotonic() - started > 1, 5)
         popups.clear(); call(*SEBTYPE, 'SetLanguage', '(s)', 'ja')
-        wait(lambda: popups, 5); wait(lambda: False, 0.2)
+        wait(lambda: popups, 5); wait(lambda: False, 0.3)  # and any popup that replaces it
         bus.signal_unsubscribe(sub)
         if len(popups) > 1: print(f'LANGUAGE={language}: popups {popups!r}')
         return popups[-1] if popups else None
