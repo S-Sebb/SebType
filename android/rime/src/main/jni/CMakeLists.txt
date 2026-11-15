@@ -14,6 +14,9 @@ list(APPEND CMAKE_MODULE_PATH ${RIME_JNI_ROOT}/cmake)
 set(DOWNLOAD_PATH "${RIME_DEPS_CACHE}/downloads")
 set(JNI_DEPS_DIR "${RIME_DEPS_CACHE}/deps")
 set(JNI_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include")
+# Headers copied here are named in the debug info; AGP names the folder after a per-checkout hash, which
+# went into the build ID (#223). Last on the command line, so it wins over build.gradle's checkout map.
+add_compile_options("-ffile-prefix-map=${CMAKE_BINARY_DIR}/=rime-build/")
 file(MAKE_DIRECTORY ${DOWNLOAD_PATH} ${JNI_DEPS_DIR} ${JNI_INCLUDE_DIR})
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
