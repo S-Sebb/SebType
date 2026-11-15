@@ -11,7 +11,7 @@ download_and_extract(
 
 set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 
-add_subdirectory(${BOOST_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/boost_cmake_build EXCLUDE_FROM_ALL)
+add_subdirectory(${BOOST_SOURCE_DIR} ${RIME_JNI_BUILD_DIR}/boost_cmake_build EXCLUDE_FROM_ALL)
 
 file(GLOB BOOST_INCLUDE_DIRS ${BOOST_SOURCE_DIR}/libs/*/include)
 set(EXCLUDED

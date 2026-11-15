@@ -1,6 +1,6 @@
 set(LIBRIME_CMAKE_DIR ${CMAKE_MODULE_PATH}/librime_cmakelists_override)
 set(RIME_SOURCE_DIR ${LIBRIME_SOURCE_DIR})
-set(RIME_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/librime_build)
+set(RIME_BUILD_DIR ${RIME_JNI_BUILD_DIR}/librime_build)
 
 set(RIME_PLUGINS_DIR "rime-plugins" CACHE STRING "Target directory for externally built Rime plugins")
 
