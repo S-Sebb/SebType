@@ -36,21 +36,24 @@ export JAVA_HOME=${JAVA_HOME:-$JDK21}  # for jni.h
 mkdir -p "$out"
 rm -f "$out"/*.tsv
 build=$here/build
-# SebType's own model (tools/english-lm), when SEBTYPE_MODEL names its GGUF file on this machine: llama.cpp
-# (MIT) is fetched at a pinned commit too.
-llama=${SEBTYPE_MODEL:+$(engines/sebtype-lm/fetch-llama.sh)}
+# SebType's own model: the committed one (engines/sebtype-lm/english.gguf), or SEBTYPE_MODEL, a GGUF file on
+# this machine (tools/english-lm). llama.cpp (MIT) is fetched at a pinned commit too.
+model=${SEBTYPE_MODEL:-engines/sebtype-lm/english.gguf}
+llama=$(engines/sebtype-lm/fetch-llama.sh)
 cmake -S $here -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAOSP_JNI="$aosp/native/jni" -DLLAMA_DIR="$llama" \
   > "$out/build.log"
 ninja -C $build -j "$BUILD_JOBS" >> "$out/build.log"
 
 # Stacks: name, executable, its files. aosp-sebdict runs AOSP's decoder on the dictionary SebType ships,
-# so the comparison with today's isolates the decoder and the model.
+# so the comparison with today's isolates the decoder and the model; core is the new keyboard's English
+# (core/src/english.cpp on the rebuilt dictionary, #244), which the plan's bar gates.
 raw=android/app/src/main/res/raw
 stacks=(
   "today english-today $here/layout.tsv $raw/main_en.dict $raw/ml4_q6_k.gguf"
   "aosp english-aosp $here/layout.tsv $aosp/java/res/raw/main_en.dict"
   "aosp-sebdict english-aosp $here/layout.tsv $raw/main_en.dict"
-  ${SEBTYPE_MODEL:+"sebtype english-sebtype $here/layout.tsv $aosp/java/res/raw/main_en.dict $SEBTYPE_MODEL"}
+  "sebtype english-sebtype $here/layout.tsv $aosp/java/res/raw/main_en.dict $model"
+  "core english-core $here/layout.tsv data/en-dict/en_US.dict $model"
 )
 # One process per stack and set; each runs on one thread (the model's own setting), BUILD_JOBS at a time.
 jobs=()

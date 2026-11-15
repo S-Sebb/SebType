@@ -2,6 +2,7 @@
 #   english-today: FUTO's decoder and transformer, compiled in place from android/app/src/main/cpp.
 #   english-aosp:  pristine AOSP LatinIME's decoder, from AOSP_JNI (bench.sh fetches it into the cache).
 #   english-sebtype: the same decoder with SebType's own model (engines/sebtype-lm on llama.cpp, LLAMA_DIR).
+#   english-core: the new keyboard's English, core/src/english.cpp (#244), with the same model.
 cmake_minimum_required(VERSION 3.22)
 project(english_harness C CXX)
 
@@ -60,4 +61,12 @@ if(LLAMA_DIR)
   target_include_directories(english-sebtype PRIVATE ${JNI_INCLUDE})
   target_link_libraries(english-sebtype PRIVATE -Wl,--whole-archive aosp_latinime -Wl,--no-whole-archive
                         sebtype_lm pthread dl m)
+  # The new keyboard's: core/'s English engine (core/src/english.cpp) on the rebuilt dictionary.
+  set(SEBTYPE_CJK OFF CACHE BOOL "" FORCE)
+  set(SEBTYPE_ENGLISH ON CACHE BOOL "" FORCE)
+  set(SEBTYPE_TESTS OFF CACHE BOOL "" FORCE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../core core)
+  add_executable(english-core src/main.cpp src/core.cpp)
+  set_target_properties(english-core PROPERTIES CXX_STANDARD 20)
+  target_link_libraries(english-core PRIVATE sebtype-english pthread)
 endif()

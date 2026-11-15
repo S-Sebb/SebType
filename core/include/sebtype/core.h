@@ -67,6 +67,10 @@ class Core {
   // The cursor moved inside what is being typed (to a character from its start); the keys on screen; undo of a commit.
   void moveCursor(int chars);
   void setKeys(Keys keys, bool landscape);
+  // English: the keys' rectangles, and the field's text before the cursor when it changed other than by
+  // what was typed (Engine::setLayout, Engine::setContext).
+  void setLayout(const Layout &layout);
+  void setContext(const std::string &before);
   bool undo();
   // Stops a language's engine (the phone frees an idle one); the next use starts it again.
   void stop(Lang lang);
@@ -113,6 +117,7 @@ class Core {
   bool fieldLearning_ = true;
   Keys keys_ = Keys::Kana;
   bool landscape_ = false;
+  Layout layout_;
 };
 
 }  // namespace sebtype

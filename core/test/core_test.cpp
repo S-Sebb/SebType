@@ -4,6 +4,15 @@
 
 #include <gtest/gtest.h>
 
+#ifdef SEBTYPE_ENGLISH
+#include <sebtype/hosts.h>
+
+#include <condition_variable>
+#include <filesystem>
+#include <mutex>
+#include <thread>
+#endif
+
 using namespace sebtype;
 using namespace std::chrono_literals;
 
@@ -65,7 +74,8 @@ struct FakeEngine : Engine {
 struct CoreTest : testing::Test {
   std::chrono::steady_clock::time_point now{};
   std::map<Lang, FakeEngine *> engines;
-  Core core{[this](Lang l) {
+  Core core{[this](Lang l) -> std::unique_ptr<Engine> {
+              if (l == Lang::English) return nullptr;  // the PCs' English: keys go to the app
               auto e = std::make_unique<FakeEngine>();
               engines[l] = e.get();
               return e;
@@ -343,3 +353,165 @@ TEST(SettingsTest, KeepsOnlyTheOptionsThatAreSet) {
   EXPECT_FALSE(s.learning);
   EXPECT_EQ(s.serialize(), conf);
 }
+
+#ifdef SEBTYPE_ENGLISH
+// The English engine on the rebuilt dictionary and the committed model, typing at the keys' centres.
+struct EnglishTest : testing::Test {
+  std::mutex mutex;
+  std::condition_variable cv;
+  int readies = 0;
+  std::unique_ptr<Engine> en;
+
+  void SetUp() override {
+    std::filesystem::remove_all(EN_USER_DIR);
+    std::filesystem::create_directories(EN_USER_DIR);
+    start();
+  }
+  void start(std::string model = EN_MODEL) {
+    en.reset();
+    en = makeEnglish({EN_DICT, 0, 0, model, EN_USER_DIR}, [this] {
+      std::lock_guard g(mutex);
+      readies++;
+      cv.notify_all();
+    });
+  }
+  // Waits for next words after the READY call AFTER, up to a minute (the model loads first).
+  bool ready(int after) {
+    std::unique_lock l(mutex);
+    return cv.wait_for(l, std::chrono::minutes(1), [&] { return readies > after; });
+  }
+  int readyCount() {
+    std::lock_guard g(mutex);
+    return readies;
+  }
+  bool type(const std::string &s) {
+    bool taken = true;
+    for (char c : s) taken &= en->key({static_cast<uint32_t>(c), 0, false});
+    return taken;
+  }
+  std::vector<std::string> list() {
+    std::vector<std::string> out;
+    for (const auto &c : en->candidates(20)) out.push_back(c.text);
+    return out;
+  }
+  bool lists(const std::string &word) { return indexOf(word) >= 0; }
+  int indexOf(const std::string &word) {
+    const auto l = list();
+    const auto at = std::ranges::find(l, word);
+    return at == l.end() ? -1 : int(at - l.begin());
+  }
+};
+
+TEST_F(EnglishTest, SpaceCorrectsTyposAndKeepsWords) {
+  // Without the model (before it has loaded), AOSP's own rule decides.
+  start("");
+  type("teh ");
+  EXPECT_EQ(en->takeCommit(), "the ");
+  type("their ");
+  EXPECT_EQ(en->takeCommit(), "their ");
+  // With the model: "becuase" is corrected, a capital kept, and the correction listed first, highlighted.
+  start();
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  type("Becuase");
+  EXPECT_EQ(en->highlighted(), 0);
+  EXPECT_EQ(list().at(0), "Because");
+  EXPECT_EQ(list().at(1), "Becuase");
+  type(" ");
+  EXPECT_EQ(en->takeCommit(), "Because ");
+  type("is ");
+  EXPECT_EQ(en->takeCommit(), "is ");
+  // A word typed right after a period ("file.py") stays as typed.
+  en->setContext("open file.");
+  type("pu ");
+  EXPECT_EQ(en->takeCommit(), "pu ");
+}
+
+TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
+  en->setContext("Thank you very ");
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  EXPECT_EQ(readyCount(), 0);  // no model yet: nothing typed
+  type("m");
+  en->key({0xff08, 0, false});  // BackSpace: nothing typed after "very " again
+  ASSERT_TRUE(ready(0));
+  EXPECT_TRUE(lists("much")) << testing::PrintToString(list());
+  // Text changed meanwhile: the words for the old text don't show.
+  en->setContext("Thank you very much. See you ");
+  EXPECT_FALSE(lists("much"));
+}
+
+TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
+  type("zorbly");
+  en->selectAt(indexOf("zorbly"));
+  EXPECT_EQ(en->takeCommit(), "zorbly ");
+  en->setContext("");
+  type("zorbl");
+  EXPECT_TRUE(lists("zorbly")) << testing::PrintToString(list());
+  // Incognito: picked words are still used but not learned.
+  en->applySettings({}, false);
+  en->setContext("");
+  type("quoxtil");
+  en->selectAt(indexOf("quoxtil"));
+  en->takeCommit();
+  en->setContext("");
+  type("quoxti");
+  EXPECT_FALSE(lists("quoxtil"));
+  // Saved on the engine's end, and read back by the next one.
+  start("");
+  type("zorbl");
+  EXPECT_TRUE(lists("zorbly"));
+  en->forget();
+  type("zorbl");
+  EXPECT_FALSE(lists("zorbly"));
+}
+
+TEST_F(EnglishTest, OffensiveWordsAreNeverSuggestedOrLearned) {
+  type("fuc");
+  EXPECT_FALSE(lists("fuck")) << testing::PrintToString(list());
+  en->selectAt(indexOf("fuc"));
+  en->takeCommit();
+  type("fuck");
+  en->selectAt(indexOf("fuck"));  // typed out and picked: still not learned
+  en->takeCommit();
+  en->setContext("");
+  type("fuc");
+  EXPECT_FALSE(lists("fuck"));
+}
+
+TEST_F(EnglishTest, EmailDomainsFollowTheAt) {
+  // In a text field: the domain after "@", never corrected, and no space after it.
+  type("me");
+  EXPECT_FALSE(type("@"));
+  EXPECT_EQ(en->takeCommit(), "me");
+  type("gm");
+  EXPECT_EQ(list().at(0), "gmail.com");
+  EXPECT_EQ(en->highlighted(), -1);
+  en->selectAt(0);
+  EXPECT_EQ(en->takeCommit(), "gmail.com");
+  // In an e-mail field the keys go to the app; the pick replaces what was typed after "@".
+  en->setField(Field::Plain);
+  EXPECT_FALSE(type("a@ou"));
+  EXPECT_EQ(list().at(0), "outlook.com");
+  en->selectAt(0);
+  EXPECT_EQ(en->takeEdit().deleteBefore, 2);
+  EXPECT_EQ(en->takeCommit(), "outlook.com");
+  en->setField(Field::Password);
+  EXPECT_FALSE(type("teh"));
+  EXPECT_TRUE(list().empty());
+}
+
+TEST_F(EnglishTest, PunctuationAfterAPickJoinsTheWord) {  // #39
+  type("hello");
+  en->selectAt(indexOf("hello"));
+  EXPECT_EQ(en->takeCommit(), "hello ");
+  EXPECT_TRUE(type("."));
+  EXPECT_EQ(en->takeEdit().deleteBefore, 1);
+  EXPECT_EQ(en->takeCommit(), ". ");
+  type("ok ");
+  en->takeCommit();
+  EXPECT_TRUE(type("."));  // a space typed by hand keeps the period where it is
+  EXPECT_EQ(en->takeEdit().deleteBefore, 0);
+  EXPECT_EQ(en->takeCommit(), ".");
+}
+#endif

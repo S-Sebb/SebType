@@ -37,6 +37,7 @@ STACKS = (
     ("aosp", "Pristine AOSP decoder + AOSP's dictionary"),
     ("aosp-sebdict", "Pristine AOSP decoder + SebType's dictionary"),
     ("sebtype", "Pristine AOSP decoder + SebType's model"),
+    ("core", "New keyboard: core/'s English + rebuilt dictionary"),
 )
 
 
@@ -125,9 +126,9 @@ def table(s1, s2):
 
 
 def bar(path):
-    """The plan's quality bar (§2): SebType's model against today's, one line per gated row."""
+    """The plan's quality bar (§2): the new keyboard's English against today's, one line per gated row."""
     s = json.loads(Path(path).read_text())
-    today, ours = s["today"], s["sebtype"]
+    today, ours = s["today"], s["core"]
     checks = []
     for set_name in ("phone-typos", "misspellings"):
         for k in ("fixed", "top1", "top3"):

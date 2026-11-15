@@ -32,6 +32,9 @@ public:
     // The strip and the committed word once ITEM's letters are typed. Called for each letter in turn, as
     // the keyboard asks on every key; a new context means a new item.
     virtual Output run(const Item &item) = 0;
+    // Before the first letter of a typed item, untimed: what the keyboard does before the user types (the
+    // core stack sets the field's text and lets its next words come).
+    virtual void begin(const Item & /*item*/) {}
 };
 
 // Made by today.cpp or aosp.cpp, whichever the executable is built with. ARGS: the files it loads.

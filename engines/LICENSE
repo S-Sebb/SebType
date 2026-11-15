@@ -5,3 +5,8 @@ The input engines the phone and both PCs share, each under its project's licence
   librime/LICENSE).
 - sebtype-lm/: SebType's English model loader, SebType's own code under the MIT licence (LICENSE-SebType
   at the repository's root). It builds on llama.cpp (MIT), which it fetches and doesn't copy.
+- latinime/: AOSP LatinIME's decoder, unchanged, under the Apache License 2.0 (latinime/NOTICE).
+- sebtype-lm/english.gguf: SebType's English model (tools/english-lm, release r2), under the Creative
+  Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/), because
+  part of its training text is share-alike. Its sources are credited in ../NOTICE and
+  ../tools/english-lm/SOURCES.md.

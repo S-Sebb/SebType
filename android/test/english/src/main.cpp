@@ -53,6 +53,7 @@ int main(int argc, char **argv) {
         std::vector<long> micros;
         harness::Output result;
         size_t shownAfter = 0;
+        if (!item.typed.empty()) stack->begin(item);
         for (size_t n = item.typed.empty() ? 0 : 1; n <= item.typed.size(); n++) {
             harness::Item prefix{item.context, item.typed.substr(0, n),
                                  item.target,

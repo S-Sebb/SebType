@@ -4,6 +4,7 @@
 #include <sebtype/engine.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -43,5 +44,19 @@ std::unique_ptr<Engine> makeMozc(const MozcPaths &paths);
 // serialized mozc.user_dictionary.UserDictionary; entries Mozc can't read are skipped.
 std::string importMozcUserDictionary(std::string_view text);
 #endif
+
+// English on the phone (#244): pristine AOSP LatinIME's decoder (engines/latinime) finds the words near the
+// letters typed, SebType's model (engines/sebtype-lm) ranks them, decides what a space corrects and predicts the
+// next words. The PCs keep plain English (their factories return no English engine).
+struct EnglishPaths {
+  // The main dictionary (data/en-dict/en_US.dict), a region of a file (length 0: all of it).
+  std::string dictionary;
+  int64_t dictionaryOffset = 0, dictionaryLength = 0;
+  std::string model;    // SebType's model (engines/sebtype-lm/english.gguf); loaded on the first letter typed
+  std::string userDir;  // learned words: AOSP's user-history dictionary in userDir/en_history
+};
+// READY runs on the engine's worker thread when next words for the text so far are ready: the frontend posts
+// it to its own thread and reads candidates() there.
+std::unique_ptr<Engine> makeEnglish(const EnglishPaths &paths, std::function<void()> ready);
 
 }  // namespace sebtype
