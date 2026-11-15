@@ -1,4 +1,4 @@
-﻿# SebType's Windows Mozc server (#65, #190): engines/mozc, and the tool that builds it.
+﻿# SebType's Windows Mozc (#65, #190, #233): engines/mozc, and the tool that builds it.
 # Read by build.ps1.
 @{
     BazeliskUrl     = 'https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-windows-amd64.exe'

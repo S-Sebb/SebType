@@ -47,7 +47,6 @@ mozc_cc_library(
     hdrs = ["data_manager.h"],
     visibility = [
         "//:__subpackages__",
-        "//android/jni:__pkg__",
         "//converter:__pkg__",
         "//data_manager:__subpackages__",
         "//dictionary:__pkg__",

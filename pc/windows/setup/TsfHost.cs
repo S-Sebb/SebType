@@ -412,7 +412,7 @@ namespace SebType {
       T r = default(T); Exception err = null; var done = new ManualResetEvent(false);
       queue.Add(() => { try { r = f(); } catch (Exception e) { err = e; } done.Set(); });
       PostThreadMessageW(threadId, WM_APP, IntPtr.Zero, IntPtr.Zero);
-      // The first key starts Mozc's server for this user, which can take a while.
+      // The first key starts SebType's server (and Mozc in it) for this user, which can take a while.
       if (!done.WaitOne(60000)) throw new TimeoutException("the TSF thread didn't answer in a minute");
       if (err != null) throw err;
       return r;

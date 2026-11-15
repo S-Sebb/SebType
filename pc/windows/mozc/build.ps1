@@ -1,7 +1,8 @@
 ﻿<#
-Builds SebType's Mozc server for Windows (#65, #190): mozc_server.exe from engines/mozc (Mozc 3.35.6354 with
-SebType's changes), and the C++ runtime DLLs it was built with, into WorkDir\out\mozc-server. SebType's text
-service (windows/) talks to it; nothing else of Mozc's Windows client is built. Prints the folder's path.
+Builds SebType's Mozc for Windows (#65, #190, #233): sebtype-mozc.dll from engines/mozc (Mozc 3.35.6354 with
+SebType's changes; engines/mozc/src/sebtype), into WorkDir\out\mozc. SebType's server (windows/) runs it in
+its process, through the C interface in core/src/sebtype_mozc.h; the C++ runtime is linked in. Nothing else of
+Mozc's Windows client is built. Prints the folder's path.
 
     pwsh pc/windows/mozc/build.ps1 [-WorkDir D:\sebtype-mozc] [-BazelCache <dir>]
 
@@ -56,11 +57,11 @@ $start = Get-Date
 $env:BAZEL_VC = "$vs\VC"
 Push-Location $src
 try {
-    # Mozc's pinned LLVM and MSYS2; the server needs none of its Qt, Ninja (Qt's build) or WiX (the MSI).
+    # Mozc's pinned LLVM and MSYS2; the DLL needs none of its Qt, Ninja (Qt's build) or WiX (the MSI).
     python build_tools/update_deps.py --nondk --noqt --noninja --nowix
     $cache = if ($BazelCache) { "--disk_cache=$BazelCache\disk", "--repository_cache=$BazelCache\repo" }
     # Mozc's .bazelrc turns on --windows_enable_symlinks, which needs Developer Mode or admin rights.
-    & $bazelisk "--output_user_root=$WorkDir\bazel" --nowindows_enable_symlinks build //server:mozc_server_win --config release_build `
+    & $bazelisk "--output_user_root=$WorkDir\bazel" --nowindows_enable_symlinks build //sebtype:sebtype_mozc_win --config release_build `
         --jobs=8 --platforms=//:windows-x86_64 @cache *> "$WorkDir\out\build.log"
 } catch {
     # To the host: the caller keeps only the folder's path from the output.
@@ -68,14 +69,9 @@ try {
     throw
 } finally { Pop-Location }
 
-# mozc_server.exe links the C++ runtime dynamically and loads it from its own folder (build_defs.bzl), so
-# the DLLs of the toolset that built it go next to it, as Mozc's MSI put them: Windows' own may be older.
-$out = "$WorkDir\out\mozc-server"
+$out = "$WorkDir\out\mozc"
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force $out | Out-Null
-Copy-Item "$src\bazel-bin\server\mozc_server_win.exe" "$out\mozc_server.exe"
-$crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
-if (-not $crt) { throw "no C++ runtime in $vs\VC\Redist\MSVC" }
-Copy-Item "$($crt.FullName)\msvcp140*.dll", "$($crt.FullName)\vcruntime140*.dll" $out
-Write-Host "built in $([int]((Get-Date) - $start).TotalMinutes) min (log: $WorkDir\out\build.log; C++ runtime from $($crt.FullName))"
+Copy-Item "$src\bazel-bin\sebtype\sebtype_mozc_win.dll" "$out\sebtype-mozc.dll"
+Write-Host "built in $([int]((Get-Date) - $start).TotalMinutes) min (log: $WorkDir\out\build.log)"
 $out

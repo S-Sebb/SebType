@@ -153,7 +153,7 @@ pub fn valid_word(reading: &str, word: &str) -> bool {
             .all(|c| ('\u{3041}'..='\u{309f}').contains(&c) || c == 'ー')
 }
 
-/// Deletes Mozc's history files; mozc_server must be stopped first, or it writes them back.
+/// Deletes Mozc's history files; Mozc must be stopped first, or it writes them back.
 pub fn forget(dir: &Path) -> io::Result<usize> {
     let mut n = 0;
     for f in HISTORY {

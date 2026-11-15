@@ -1,0 +1,9 @@
+; SebType: sebtype-mozc.dll exports only SebType's C interface (sebtype_mozc.cc, core/src/sebtype_mozc.h).
+; windows/CMakeLists.txt makes the import library sebtype-server.exe links from this file too.
+LIBRARY sebtype-mozc.dll
+EXPORTS
+  sebtype_mozc_open
+  sebtype_mozc_eval
+  sebtype_mozc_free
+  sebtype_mozc_close
+  sebtype_mozc_import_user_dictionary

@@ -3,7 +3,7 @@
 ; .github/workflows/windows-setup.yml:
 ;   ISCC /DIn=<folder of the workflow's artifacts> [/DBuild=<n>] pc/windows/setup/sebtype.iss
 ; It installs SebType's text service and server (windows/, #190) with librime, Rime's shared data and
-; Mozc's server. The steps themselves are setup.ps1's: -Machine (elevated) removes the Weasel and Mozc
+; Mozc (sebtype-mozc.dll, which the server runs, #233). The steps themselves are setup.ps1's: -Machine (elevated) removes the Weasel and Mozc
 ; that SebType installed before #190, -User (as the person who runs Setup) sets up their account. Why each step
 ; exists: ../README.md.
 
@@ -27,8 +27,8 @@
 #if !FileExists(Rime + "\rime.dll")
   #error SebType's librime (pc/windows/rime/build.ps1) is missing from /DIn
 #endif
-#if !FileExists(In + "\mozc-server\mozc_server.exe")
-  #error Mozc's server (pc/windows/mozc/build.ps1) is missing from /DIn\mozc-server
+#if !FileExists(In + "\mozc\sebtype-mozc.dll")
+  #error Mozc (pc/windows/mozc/build.ps1) is missing from /DIn\mozc
 #endif
 
 ; Python's embeddable package, for the Configurator's sync (#180): python.ps1 puts it in In\python.
@@ -169,13 +169,13 @@ Name: "desktopicon"; Description: "{cm:Desktop}"; GroupDescription: "{cm:Shortcu
 [Files]
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; The text service (64-bit, and 32-bit for 32-bit apps), its server, librime with Rime's shared data, and
-; Mozc's server. An app that has the text service loaded keeps it until it closes.
+; Mozc. An app that has the text service loaded keeps it until it closes.
 Source: "{#Service}\sebtype-server.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Service}\sebtype.dll"; DestDir: "{app}"; Flags: ignoreversion regserver
 Source: "{#Service}\x86\sebtype.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit
 Source: "{#Rime}\rime.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Rime}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
-Source: "{#In}\mozc-server\*"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#In}\mozc\sebtype-mozc.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Repo}\pc\linux\mozc-keymap.tsv"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\rime-data\rime-data.zip"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\sebtype-configurator\sebtype-configurator.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -206,12 +206,20 @@ Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\sebtype-configurator.exe"; Description: "{cm:OpenConfigurator}"; Flags: nowait postinstall skipifsilent
 
+; What SebType installed before #233 for Mozc's own server (its C++ runtime too), left by PrepareToInstall
+; where it was still loaded.
+[InstallDelete]
+Type: files; Name: "{app}\mozc_server.exe*"
+Type: files; Name: "{app}\msvcp140*.dll*"
+Type: files; Name: "{app}\vcruntime140*.dll*"
+
 [UninstallDelete]
 Type: files; Name: "{app}\setup.log"
 Type: files; Name: "{app}\sebtype.dll.*.old"
 Type: files; Name: "{app}\x86\sebtype.dll.*.old"
 Type: files; Name: "{app}\sebtype-server.exe.*.old"
 Type: files; Name: "{app}\rime.dll.*.old"
+Type: files; Name: "{app}\sebtype-mozc.dll.*.old"
 Type: files; Name: "{app}\mozc_server.exe.*.old"
 Type: files; Name: "{app}\msvcp140*.dll.*.old"
 Type: files; Name: "{app}\vcruntime140*.dll.*.old"
@@ -375,6 +383,7 @@ begin
       Exec(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec('taskkill.exe', '/f /im sebtype-server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Log('taskkill sebtype-server.exe: ' + IntToStr(Code));  // 0 stopped, 128 none running
+  // Mozc's own server, from SebType before #233: SebType's /quit above had it save the learned words.
   Exec('taskkill.exe', '/f /im mozc_server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Log('taskkill mozc_server.exe: ' + IntToStr(Code));
 end;
@@ -404,8 +413,9 @@ begin
   MoveAside(ExpandConstant('{app}\x86\sebtype.dll'));
   MoveAside(ExpandConstant('{app}\sebtype-server.exe'));
   MoveAside(ExpandConstant('{app}\rime.dll'));
+  MoveAside(ExpandConstant('{app}\sebtype-mozc.dll'));
+  // Mozc's own server and its C++ runtime, from SebType before #233 ([InstallDelete] deletes them)
   MoveAside(ExpandConstant('{app}\mozc_server.exe'));
-  // mozc_server's C++ runtime, which rime.dll may have loaded too
   MoveAside(ExpandConstant('{app}\msvcp140.dll'));
   MoveAside(ExpandConstant('{app}\msvcp140_1.dll'));
   MoveAside(ExpandConstant('{app}\msvcp140_2.dll'));

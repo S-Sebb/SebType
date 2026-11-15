@@ -73,7 +73,7 @@ mozc_cc_library(
     ],
     hdrs = ["session_handler.h"],
     visibility = [
-        "//android/jni:__pkg__",
+        "//sebtype:__pkg__",
     ],
     deps = [
         ":keymap",

@@ -2,8 +2,9 @@
 # Measures the engines of SebType's input method (#45, #190) without touching the live Fcitx5 session:
 #   - Rime with rime-ice, on SebType's librime: per-key time (key, then read the menu) on a copy of the
 #     Fcitx5 Rime folder, and a full deploy of that copy with its build/ removed (what an update or a new PC costs);
-#   - Mozc: per-key and conversion time through a private copy of SebType's mozc_server with its own empty profile;
-#   - memory of the running Fcitx5 and mozc_server, read-only from ps and /proc, when they are SebType's.
+#   - Mozc: per-key and conversion time through SebType's Mozc library, in this process as in Fcitx5, with its
+#     own empty profile;
+#   - memory of the running Fcitx5 (with Rime and Mozc), read-only from ps and /proc, when it runs SebType's.
 # SebType's builds (linux/build.sh, build-librime.sh) are unpacked here, librime mounted over Fedora's with
 # bwrap for perf-rime alone, as compare.sh does.
 # One line per check in ~/scratch/SebType/<issue>/pc-perf-results.txt, the table in pc-perf.md next to it.
@@ -23,7 +24,7 @@ librime=/usr/lib64/librime.so.1
 # The copy holds the user's learned words: it stays in a private temp dir, removed on exit.
 work=$(mktemp -d "$out/pc-perf.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-own=$work/own mozc_server=$work/own/usr/libexec/sebtype/mozc_server
+own=$work/own mozc_lib=$work/own/usr/lib64/sebtype/libsebtype-mozc.so
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name timeout command...: PASS with the command's key=value output, or FAIL with its log
@@ -59,10 +60,9 @@ rm -rf "$work/rime/build"
 # A full deploy peaks near 1 GB; the cap keeps it from pushing the desktop into swap.
 check rime-deploy 600 systemd-run --user --scope -q -p MemoryMax=3G \
   "${own_rime[@]}" "$work/perf-rime" /usr/share/rime-data "$work/rime" rime_ice 1 < "$work/pinyin.txt"
-mkdir -p "$work/mozc-home"
-check mozc-keys 120 python3 -I "$here/perf-mozc.py" "$mozc_server" "$work/mozc-home" "$runs" < "$work/romaji.txt"
+check mozc-keys 120 python3 -I "$here/perf-mozc.py" "$mozc_lib" "$work/mozc-profile" "$runs" < "$work/romaji.txt"
 
-# Live processes, read-only. SebType's Rime runs inside the fcitx5 process; Mozc in its own server. Skipped
+# Live processes, read-only. SebType's Rime and Mozc run inside the fcitx5 process. Skipped
 # while the session runs another input method or none.
 live() { # name, file only SebType's process maps -> "rss_kb=.. pss_kb=.." for the user's process of that name
   local pid; pid=$(pgrep -u "$USER" -x "$1" | head -1)
@@ -83,7 +83,6 @@ live_check() { # check name, process name, file only SebType's process maps
   esac
 }
 live_check fcitx5-memory fcitx5 /fcitx5/sebtype.so
-live_check mozc-server-memory mozc_server /usr/libexec/sebtype/mozc_server
 
 {
   echo "SebType PC baseline ($(hostname), $(date -I), $runs runs; Rime keys from $(val rime-keys keys) keystrokes)"
@@ -97,9 +96,8 @@ live_check mozc-server-memory mozc_server /usr/libexec/sebtype/mozc_server
   echo "| Rime RSS after typing (built) | $(mb "$(val rime-keys rss_kb)") |"
   echo "| Mozc key → suggestions, median / p95 / max | $(val mozc-keys key_p50_ms) / $(val mozc-keys key_p95_ms) / $(val mozc-keys key_max_ms) ms |"
   echo "| Mozc Space → conversion, median / p95 / max | $(val mozc-keys convert_p50_ms) / $(val mozc-keys convert_p95_ms) / $(val mozc-keys convert_max_ms) ms |"
-  echo "| Mozc server start (empty profile) / RSS | $(val mozc-keys start_ms) ms / $(mb "$(val mozc-keys rss_kb)") |"
-  echo "| Live Fcitx5 (incl. SebType and Rime) RSS / PSS / swapped out | $(mb "$(val fcitx5-memory rss_kb)") / $(mb "$(val fcitx5-memory pss_kb)") / $(mb "$(val fcitx5-memory swap_kb)") |"
-  echo "| Live mozc_server RSS / PSS / swapped out | $(mb "$(val mozc-server-memory rss_kb)") / $(mb "$(val mozc-server-memory pss_kb)") / $(mb "$(val mozc-server-memory swap_kb)") |"
+  echo "| Mozc start (empty profile) / RSS of Python with it | $(val mozc-keys start_ms) ms / $(mb "$(val mozc-keys rss_kb)") |"
+  echo "| Live Fcitx5 (incl. SebType, Rime and Mozc) RSS / PSS / swapped out | $(mb "$(val fcitx5-memory rss_kb)") / $(mb "$(val fcitx5-memory pss_kb)") / $(mb "$(val fcitx5-memory swap_kb)") |"
 } > "$table"
 cat "$table"
 

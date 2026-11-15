@@ -68,7 +68,7 @@ fn powershell(script: &str) -> io::Result<String> {
     )
 }
 
-/// SebType's server, next to the Configurator: it hosts Rime and talks to Mozc for the text service.
+/// SebType's server, next to the Configurator: it hosts Rime and Mozc for the text service.
 fn server(arg: &str) -> io::Result<()> {
     Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
         .arg(arg)
@@ -220,16 +220,13 @@ pub fn forget_rime() -> io::Result<usize> {
     n
 }
 
-fn stop_mozc() {
-    // SebType's server starts it again when Japanese is next typed.
-    let _ = run("taskkill", &["/F", "/IM", "mozc_server.exe"]);
-}
+/// Mozc, in SebType's server, reads its config and dictionaries when it starts: it saves and closes (before
+/// the server's command returns), and the next Japanese key starts it again.
 pub fn restart_mozc() {
-    stop_mozc();
+    let _ = server("/mozc");
 }
 pub fn forget_mozc() -> io::Result<usize> {
-    stop_mozc();
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    restart_mozc(); // or it would write the history back
     crate::mozc::forget(&mozc_dir())
 }
 

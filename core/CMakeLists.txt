@@ -34,18 +34,12 @@ else()
   set(PROTOC_OUT)
 endif()
 
-# Mozc runs in this process when SEBTYPE_MOZC_LIB names a Mozc library with the C interface in
-# src/sebtype_mozc.h (the phone's libmozc.so, #220); without one, core/ talks to mozc_server over Mozc's IPC
-# (the PCs, until #233).
-set(SEBTYPE_MOZC_LIB "" CACHE FILEPATH "A Mozc library to run in this process instead of mozc_server")
+# Mozc runs in this process (#220, #233): SEBTYPE_MOZC_LIB names the Mozc library with the C interface in
+# src/sebtype_mozc.h, built from engines/mozc/src/sebtype (libsebtype-mozc.so on Linux, the import library of
+# sebtype-mozc.dll on Windows, the phone's libmozc.so).
+set(SEBTYPE_MOZC_LIB "" CACHE FILEPATH "The Mozc library with SebType's C interface")
 set(MOZC_PROTOS protocol/commands.proto protocol/candidate_window.proto protocol/config.proto
   protocol/engine_builder.proto)
-if(SEBTYPE_MOZC_LIB)
-  set(MOZC_TRANSPORT src/mozc_inprocess.cpp)
-else()
-  set(MOZC_TRANSPORT src/mozc_ipc.cpp)
-  list(APPEND MOZC_PROTOS ipc/ipc.proto)
-endif()
 
 # Mozc's protocol, from the one Mozc source (engines/mozc).
 set(MOZC_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../engines/mozc/src)
@@ -60,13 +54,9 @@ foreach(p ${MOZC_PROTOS})
     DEPENDS ${MOZC_SRC}/${p})
 endforeach()
 
-add_library(sebtype-core STATIC src/rime.cpp src/mozc.cpp ${MOZC_TRANSPORT} ${PROTO_SRCS})
+add_library(sebtype-core STATIC src/rime.cpp src/mozc.cpp src/mozc_inprocess.cpp ${PROTO_SRCS})
 target_include_directories(sebtype-core PRIVATE ${PROTO_OUT})
-target_link_libraries(sebtype-core PUBLIC sebtype-logic ${RIME_TARGET} ${PROTOBUF_TARGET})
-if(SEBTYPE_MOZC_LIB)
-  target_compile_definitions(sebtype-core PUBLIC SEBTYPE_MOZC_INPROC)
-  target_link_libraries(sebtype-core PUBLIC ${SEBTYPE_MOZC_LIB})
-endif()
+target_link_libraries(sebtype-core PUBLIC sebtype-logic ${RIME_TARGET} ${PROTOBUF_TARGET} ${SEBTYPE_MOZC_LIB})
 endif()
 
 # English: AOSP LatinIME's decoder, untouched (Apache-2.0), called without Java, and SebType's model on

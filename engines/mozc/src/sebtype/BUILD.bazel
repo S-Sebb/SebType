@@ -1,0 +1,98 @@
+# Copyright 2010-2021, Google Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following disclaimer
+# in the documentation and/or other materials provided with the
+# distribution.
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# SebType: Mozc in SebType's process (#220, #233), behind the C interface in core/src/sebtype_mozc.h: the
+# phone's libmozc.so (//android/jni:mozc), the Fcitx5 add-on's libsebtype-mozc.so and sebtype-server.exe's
+# sebtype-mozc.dll. Each library exports only that interface, so Mozc's protobuf and Abseil stay inside it.
+
+load(
+    "//:build_defs.bzl",
+    "mozc_cc_binary",
+    "mozc_cc_library",
+    "mozc_select",
+    "mozc_win32_cc_prod_binary",
+)
+
+exports_files(["sebtype_mozc.map"])
+
+mozc_cc_library(
+    name = "sebtype_mozc",
+    srcs = ["sebtype_mozc.cc"],
+    linkopts = mozc_select(
+        android = ["-llog"],
+    ),
+    visibility = ["//android/jni:__pkg__"],
+    deps = [
+        "//base:system_util",
+        "//client/user_dictionary:user_dictionary_importer",
+        "//config:config_handler",
+        "//data_manager",
+        "//engine",
+        "//protocol:commands_cc_proto",
+        "//protocol:user_dictionary_storage_cc_proto",
+        "//session:session_handler",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ] + mozc_select(
+        # The PCs' dictionary is built in; the phone's is a file in the APK.
+        android = [],
+        default = ["//engine:engine_factory"],
+    ),
+    alwayslink = 1,
+)
+
+# Linux: installed as %{_libdir}/sebtype/libsebtype-mozc.so (linux/sebtype.spec).
+mozc_cc_binary(
+    name = "libsebtype-mozc.so",
+    additional_linker_inputs = ["sebtype_mozc.map"],
+    linkopts = [
+        "-Wl,--version-script=$(location sebtype_mozc.map)",
+        "-Wl,--gc-sections",
+        "-Wl,-soname,libsebtype-mozc.so",
+    ],
+    linkshared = 1,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":sebtype_mozc"],
+)
+
+# Windows: sebtype-mozc.dll next to sebtype-server.exe (pc/windows/mozc/build.ps1). The C++ runtime is
+# linked in, so the DLL needs nothing but Windows' own.
+mozc_win32_cc_prod_binary(
+    name = "sebtype_mozc_win",
+    executable_name_map = {
+        "Mozc": "sebtype-mozc.dll",
+    },
+    linkshared = True,
+    static_crt = True,
+    win_def_file = "sebtype_mozc.def",
+    deps = [":sebtype_mozc"],
+)

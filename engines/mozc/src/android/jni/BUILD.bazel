@@ -31,40 +31,12 @@ load(
     "//:build_defs.bzl",
     "MOZC_TAGS",
     "mozc_cc_binary",
-    "mozc_cc_library",
-    "mozc_select",
 )
 load(":cross_build_binary.bzl", "cross_build_binary")
 
 _TARGET_COMPATIBLE_WITH = [
     "@platforms//os:android",
 ]
-
-mozc_cc_library(
-    name = "mozcjni",
-    srcs = ["mozcjni.cc"],
-    linkopts = mozc_select(
-        android = ["-llog"],
-    ),
-    tags = MOZC_TAGS.ANDROID_ONLY,
-    # Scheuklappen: keep
-    visibility = ["//visibility:private"],
-    deps = [
-        "//base:system_util",
-        "//client/user_dictionary:user_dictionary_importer",
-        "//data_manager",
-        "//engine",
-        "//protocol:commands_cc_proto",
-        "//protocol:user_dictionary_storage_cc_proto",
-        "//session:session_handler",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-    ],
-    alwayslink = 1,
-)
 
 mozc_cc_binary(
     name = "mozc",
@@ -73,18 +45,19 @@ mozc_cc_binary(
         # 16 KB page size support is a requirement to target Android 15+.
         # https://developer.android.com/guide/practices/page-sizes
         "-Wl,-z,max-page-size=16384",
-        "-Wl,--version-script=$(location libmozc.map)",
+        "-Wl,--version-script=$(location //sebtype:sebtype_mozc.map)",
         "-Wl,--gc-sections",
         # SebType: libsebtype.so links to it by this name.
         "-Wl,-soname,libmozc.so",
     ],
-    additional_linker_inputs = ["libmozc.map"],
+    additional_linker_inputs = ["//sebtype:sebtype_mozc.map"],
     linkshared = 1,
     tags = MOZC_TAGS.ANDROID_ONLY,
     target_compatible_with = _TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:private"],
     deps = [
-        ":mozcjni",
+        # SebType: the C interface core/ calls (engines/mozc/src/sebtype).
+        "//sebtype:sebtype_mozc",
     ],
 )
 
