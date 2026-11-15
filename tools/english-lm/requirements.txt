@@ -1,0 +1,8 @@
+torch
+transformers
+sentencepiece
+pyarrow
+numpy
+safetensors
+mwparserfromhell
+huggingface_hub

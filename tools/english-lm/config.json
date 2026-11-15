@@ -1,0 +1,15 @@
+{
+ "name": "r2",
+ "seed": 236,
+ "context": 256,
+ "model": {"hidden_size": 512, "intermediate_size": 1536, "num_hidden_layers": 8, "num_attention_heads": 8,
+           "num_key_value_heads": 8, "rms_norm_eps": 1e-5, "rope_theta": 10000.0},
+ "train": ["train.0.bin", "train.1.bin", "train.2.bin"],
+ "tokens": 8e9,
+ "micro_batch": 256,
+ "accum": 8,
+ "lr": 2e-3,
+ "warmup": 300,
+ "weight_decay": 0.1,
+ "eval_every": 500
+}

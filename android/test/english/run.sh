@@ -8,6 +8,8 @@
 # One line per check in ~/scratch/SebType/<issue>/test-english-results.txt, and the baseline table (the
 # docs/perf/ format) in english/table.md next to it; logs in english/run1/ and run2/. Exit 0 only if all pass.
 # A run takes about 15 minutes on yanglab16. It never runs on nobara-pc unless SEBTYPE_BUILD_HOST=local.
+# SEBTYPE_MODEL=PATH (a GGUF file on the build host, tools/english-lm) adds SebType's own model as a fourth
+# stack, and a check that it passes the plan's quality bar.
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
 source tools/lib.sh
@@ -32,7 +34,7 @@ bench() { # run name: builds and runs on the build host (or here), copying its s
   if [[ $BUILD_HOST == local ]]; then
     timeout 5400 $here/bench.sh "$1"
   else
-    timeout 5400 bash -c "source tools/lib.sh; build_remotely $here/bench.sh $1"
+    timeout 5400 bash -c "source tools/lib.sh; build_remotely ${SEBTYPE_MODEL:+SEBTYPE_MODEL=$SEBTYPE_MODEL} $here/bench.sh $1"
   fi
 }
 for run in run1 run2; do
@@ -52,6 +54,10 @@ if [[ -s $s1 && -s $s2 ]]; then
   fi
   python3 -I $here/score.py --table "$s1" "$s2" > "$out/english/table.md" &&
     result PASS table "$out/english/table.md" || result FAIL table
+  if [[ ${SEBTYPE_MODEL:-} ]]; then
+    python3 -I $here/score.py --bar "$s1" > "$out/english/bar.txt" &&
+      result PASS bar "$out/english/bar.txt" || result FAIL bar "$(grep -c ^FAIL "$out/english/bar.txt") rows miss, $out/english/bar.txt"
+  fi
 else
   result FAIL reproducible "a run has no summary"
 fi
