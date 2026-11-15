@@ -337,7 +337,7 @@ its corpus and training work on yanglab16 any time after stage 0, since only the
 
 ## Decisions (the user, 2026-11-15)
 
-1. **English prediction:** "Keep FUTO's app and English model's necessary code in this release, train our own
+1. **English prediction** (replaced by 7)**:** "Keep FUTO's app and English model's necessary code in this release, train our own
    model later on yanglab16 where there are tons of GPUs and RAM and CPUs." The new keyboard keeps FUTO's model
    and only the code it needs (§2, §4); SebType's own model replaces it at stage 7.
 2. **Quality bar:** "Near today": typo fixes within 2 points, no more correct words wrongly changed, next word in
