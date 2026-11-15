@@ -13,7 +13,7 @@
 namespace sebtype::win {
 
 enum class Op : uint8_t {
-  Key,       // key: true in reply.taken when the core took it
+  Key,       // key, lang (the app's): true in reply.taken when the core took it
   Select,    // index: a click on a candidate of the page
   Page,      // next: the window's page arrows
   FocusIn,   // lang: focus came to a text field of an app in this language

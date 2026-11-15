@@ -123,7 +123,13 @@ Reply handle(const Request &q) {
   bool taken = false;
   std::string commit;
   switch (q.op) {
-    case Op::Key: taken = core->key(q.key); break;
+    case Op::Key:  // in the app's language: the apps share one core, and another app's focus may have moved it
+      if (core->language() != q.lang) {
+        core->selectLanguage(q.lang);
+        core->takeNotice(true);
+      }
+      taken = core->key(q.key);
+      break;
     case Op::Select: core->select(q.index); break;
     case Op::Page: core->changePage(q.next); break;
     case Op::FocusOut: core->focusOut(); break;
@@ -190,7 +196,10 @@ void serve(HANDLE pipe) {
     if (q.op == Op::Quit) {
       std::lock_guard<std::mutex> hold(lock);
       core->forEachEngine([](Engine &e) { e.save(); });
-      ExitProcess(0);
+      // Not ExitProcess: its DLL detach and librime's static destructors run after the other threads are
+      // gone and could wait for one forever. A process stuck exiting can't be terminated (taskkill fails)
+      // and keeps the Rime tables mapped, so Setup couldn't replace them (#190).
+      TerminateProcess(GetCurrentProcess(), 0);
     }
   }
   DisconnectNamedPipe(pipe);

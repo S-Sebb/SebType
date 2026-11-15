@@ -414,7 +414,9 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
   if (state[VK_SHIFT] & 0x80) mods |= mod::Shift;
   if (state[VK_CONTROL] & 0x80) mods |= mod::Ctrl;
   if (state[VK_MENU] & 0x80) mods |= mod::Alt;
-  if ((state[VK_LWIN] | state[VK_RWIN]) & 0x80) mods |= mod::Super;
+  // Keys with Win held are Windows' own shortcuts: Win+Space switches the input method itself, and the
+  // core's own Win+Space switch would switch a second time.
+  if ((state[VK_LWIN] | state[VK_RWIN]) & 0x80) return false;
   if (state[VK_CAPITAL] & 1) mods |= mod::Lock;
   if (vk == VK_CAPITAL && !release) mods ^= mod::Lock;  // the state before this press, as X11 says it
 
@@ -489,6 +491,7 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   tested_.pending = false;
   if (!context || password(context)) return true;
   Request q{Op::Key};
+  q.lang = lang_;
   if (!key(wParam, lParam, release, q.key) || !send(q)) return true;
   *eaten = reply_.taken;
   if (test) tested_ = {wParam, release, reply_.taken, true};
