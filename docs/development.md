@@ -47,8 +47,9 @@ the device tests and setup use it as before. One command, run on nobara-pc as al
    `sebtype-bazel` on yanglab16's local disk: Bazel refuses a folder it doesn't own, and on the NAS every
    file belongs to the NAS's user.
 
-A release APK is built unsigned on yanglab16 (`SEBTYPE_UNSIGNED=1`) and signed on nobara-pc with
-`apksigner`, the way Gradle signs it (scheme v2 alone, RSA), so the signing key never leaves nobara-pc.
+A release APK is built unsigned, on yanglab16 (`SEBTYPE_UNSIGNED=1`) or on nobara-pc, and signed on
+nobara-pc with `apksigner` (scheme v2 alone, RSA), so the signing key never leaves nobara-pc and a release
+is the same file from either.
 
 `SEBTYPE_BUILD_HOST=local <script>` builds on nobara-pc. `android/test/build.sh` always does: it checks
 nobara-pc's own caches. Everything else builds on nobara-pc only when yanglab16 can't be reached; the
@@ -366,7 +367,7 @@ daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproduc
 | release, nothing cached | 175 s | 170 s |
 | release, first build in a new worktree | about 175 s (a clean build) | 16–22 s |
 | release, nothing changed | 12 s | 8–17 s |
-| release, one Kotlin file changed | 163 s | 91–101 s (R8 shrinking the whole app is ~80 s of it) |
+| release, one Kotlin file changed | 163 s | 91–101 s (R8 shrinking the whole app is ~80 s of it; since #223 a release compiles all its Kotlin) |
 | test-x86_64, clean | 130 s | 46 s |
 | test-x86_64, one Kotlin file changed | 65 s | 27–29 s |
 | peak memory, debug / release | 4.5 GB / 3.8 GB | 4.2 GB / 4.3–5.5 GB |
@@ -400,9 +401,14 @@ What made the difference, each measured on its own:
 - **Configuration cache**: Gradle reuses the configured build (nothing changed 11 → 6 s, one Kotlin file
   24 → 17 s). `build.gradle`'s git calls go through `providers.exec`, which it allows.
 
-Release builds stay reproducible: a release built with no build cache and no sccache in one worktree and
-one built from the caches in another have the same APK entries (outside the signature). Before, they
-differed between checkouts (folder name in the dex, checkout path in `libjni_latinime.so`).
+Release builds stay reproducible: a release built with no build cache and no sccache in one worktree, one
+built from the caches in another and one built on yanglab16 are the same file. Before, they differed
+between checkouts (folder name in the dex, checkout path in `libjni_latinime.so`; #223: AGP's per-checkout
+`.cxx/<hash>/` folder, and Rime's third-party builds in it, in the libraries' debug info and so their
+build IDs) and between machines (#229: the NDK's path; Rime's recorded file times and the zip's local
+times in `rime-data.zip`; Compose code from an incremental Kotlin compile, so a release compiles Kotlin
+from scratch; R8 marking one method differently in `baseline.prof` with 48 threads, so it runs on 4; and
+Gradle signing a local release but `apksigner` a remote one, which aligned the entries differently).
 
 Tried and not kept:
 

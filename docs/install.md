@@ -57,11 +57,9 @@ Releases are signed with SebType's own key, which never goes into the repo or a 
 Android only accepts updates signed with the same key: losing it means uninstalling SebType and
 reinstalling it, which wipes its learned words and settings.
 
-`android/build.sh release` passes the key to Gradle in the build's own environment
-(`SEBTYPE_KEYSTORE`, `SEBTYPE_KEYSTORE_PASSWORD`), so parallel builds can't take each other's away. A
-release build (`assembleRelease` and the like) without them stops with a line naming them; it is
-never signed with Android's public test key (`android/app/shared.keystore`).
-`-PunsignedRelease` builds it unsigned instead.
+Gradle builds a release unsigned, never with Android's public test key (`android/app/shared.keystore`).
+`android/build.sh release` then signs it with `apksigner` on this PC, the same way whether it was built
+here or on the build host, so a release is the same file from either.
 
 ## Publishing a release
 
