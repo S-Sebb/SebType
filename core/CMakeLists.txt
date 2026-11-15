@@ -4,8 +4,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(Rime REQUIRED IMPORTED_TARGET rime)
+# librime: pkg-config on Linux; on Windows RIME_ROOT holds include/rime_api.h and lib/rime.lib (the
+# rime.dll SebType's Weasel build makes, engines/librime).
+if(WIN32)
+  add_library(rime SHARED IMPORTED)
+  set_target_properties(rime PROPERTIES IMPORTED_IMPLIB ${RIME_ROOT}/lib/rime.lib
+    INTERFACE_INCLUDE_DIRECTORIES ${RIME_ROOT}/include)
+  set(RIME_TARGET rime)
+else()
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(Rime REQUIRED IMPORTED_TARGET rime)
+  set(RIME_TARGET PkgConfig::Rime)
+endif()
 find_package(Protobuf REQUIRED)
 
 # Mozc's protocol, from the one Mozc source (engines/mozc).
@@ -29,7 +39,7 @@ target_include_directories(sebtype-logic PUBLIC include)
 
 add_library(sebtype-core STATIC src/rime.cpp src/mozc.cpp ${PROTO_SRCS})
 target_include_directories(sebtype-core PRIVATE ${PROTO_OUT})
-target_link_libraries(sebtype-core PUBLIC sebtype-logic PkgConfig::Rime protobuf::libprotobuf)
+target_link_libraries(sebtype-core PUBLIC sebtype-logic ${RIME_TARGET} protobuf::libprotobuf)
 
 option(SEBTYPE_TESTS "Build the core's unit tests" ON)
 if(SEBTYPE_TESTS)

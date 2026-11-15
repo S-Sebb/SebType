@@ -28,12 +28,20 @@ class Rime final : public Engine {
     RIME_STRUCT(RimeTraits, traits);
     traits.shared_data_dir = paths_.sharedDir.c_str();
     traits.user_data_dir = paths_.userDir.c_str();
-    // fcitx5-rime's names: Rime's installation.yaml and sync folders keep them.
+    // The names of the frontend each platform had before (fcitx5-rime, SebType's Weasel): Rime's
+    // installation.yaml and sync folders keep them.
+#ifdef _WIN32
+    traits.app_name = "rime.weasel";
+    traits.distribution_name = "中文";
+    traits.distribution_code_name = "Weasel";
+    traits.distribution_version = "0.17.4";
+#else
     traits.app_name = "rime.fcitx-rime";
     traits.distribution_name = "Rime";
     traits.distribution_code_name = "fcitx-rime";
     traits.distribution_version = "5.1.15";
-    traits.log_dir = "";  // stderr only
+#endif
+    traits.log_dir = paths_.logDir.c_str();
     traits.min_log_level = 2;
     static bool setUp = false;
     if (!setUp) {
@@ -176,6 +184,9 @@ class Rime final : public Engine {
   }
 
   void deploy() override {
+    // One that runs already (a new engine's first start) takes in the files as they are: restarting it
+    // would wait for it, then build everything again.
+    if (api_->is_maintenance_mode()) return;
     endSession();
     api_->finalize();
     start(true);
@@ -186,6 +197,7 @@ class Rime final : public Engine {
     endSession();
     api_->sync_user_data();
   }
+  bool busy() override { return api_->is_maintenance_mode(); }
 
  private:
   void start(bool fullCheck) {

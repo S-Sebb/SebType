@@ -1,9 +1,11 @@
-; SebType's Windows installer (#73): one SebType-setup-<version>.exe that installs, upgrades and
+﻿; SebType's Windows installer (#73): one SebType-setup-<version>.exe that installs, upgrades and
 ; uninstalls everything SebType needs on Windows, in the Picnic look (Decisions #2). Built by
 ; .github/workflows/windows-setup.yml:
 ;   ISCC /DIn=<folder of the workflow's artifacts> [/DBuild=<n>] pc/windows/setup/sebtype.iss
-; The steps themselves are setup.ps1's: -Machine (elevated) installs SebType's Weasel and Mozc,
-; -User (as the person who runs Setup) sets up their account. Why each step exists: ../README.md.
+; It installs SebType's text service and server (windows/, #190) with librime, Rime's shared data and
+; Mozc's server. The steps themselves are setup.ps1's: -Machine (elevated) removes the Weasel and Mozc
+; that SebType installed before, -User (as the person who runs Setup) sets up their account. Why each step
+; exists: ../README.md.
 
 #ifndef Version
   #define Version "0.1.0"
@@ -17,19 +19,17 @@
 #define Pictures In + "\setup-pictures"
 #define Repo SourcePath + "\..\..\.."
 
-; The engines' files, by name: their names say their versions, which setup.ps1 compares.
-#define Handle FindFirst(In + "\sebtype-weasel\sebtype-weasel-*-installer.exe", 0)
-#if !Handle
-  #error SebType's Weasel installer is missing from /DIn
+#define Service In + "\sebtype-service"
+#if !FileExists(Service + "\sebtype-server.exe") || !FileExists(Service + "\x86\sebtype.dll")
+  #error SebType's text service (windows/build.ps1) is missing from /DIn
 #endif
-#define WeaselExe FindGetFileName(Handle)
-#expr FindClose(Handle)
-#define Handle FindFirst(In + "\sebtype-mozc\SebType-Mozc-*.msi", 0)
-#if !Handle
-  #error SebType's Mozc MSI is missing from /DIn
+#define Rime In + "\sebtype-rime"
+#if !FileExists(Rime + "\rime.dll")
+  #error SebType's librime (pc/windows/weasel/build.ps1) is missing from /DIn
 #endif
-#define MozcMsi FindGetFileName(Handle)
-#expr FindClose(Handle)
+#if !FileExists(In + "\mozc-server\mozc_server.exe")
+  #error Mozc's server, from SebType's Mozc MSI, is missing from /DIn\mozc-server
+#endif
 
 ; Python's embeddable package, for the Configurator's sync (#180): python.ps1 puts it in In\python.
 #define PythonDir In + "\python"
@@ -49,8 +49,10 @@ DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 DisableWelcomePage=no
-; Windows loads text services registered for the whole PC only, so Weasel and Mozc install as admin.
+; Windows loads text services registered for the whole PC only, so SebType installs as admin.
 PrivilegesRequired=admin
+; Apps keep the text service loaded; PrepareToInstall moves it aside instead of asking to close them.
+CloseApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
@@ -79,9 +81,9 @@ Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
 en.WelcomeLabel1=Hi! Let's set up SebType
 zh.WelcomeLabel1=你好！来装 SebType 吧
 ja.WelcomeLabel1=こんにちは！SebType をはじめよう
-en.WelcomeLabel2=SebType types Chinese, Japanese and English on this PC, just like on your phone.%n%nIt sets up Chinese (Weasel with SebType's dictionary), Japanese (SebType's Mozc) and the SebType Configurator, and makes Win+Space the one key that switches language.%n%nAlready have SebType? This updates it and keeps every word it has learned.
-zh.WelcomeLabel2=SebType 让这台电脑像你的手机一样输入中文、日本語和英文。%n%n它会装好中文（小狼毫和 SebType 的词库）、日本語（SebType 的 Mozc）和 SebType 设置，并让 Win+Space 成为切换语言的唯一按键。%n%n已经装过 SebType？这次会更新它，并保留它学会的每一个词。
-ja.WelcomeLabel2=SebType で、この PC でもスマホと同じように中国語・日本語・英語を入力できます。%n%n中国語（小狼毫と SebType の辞書）、日本語（SebType の Mozc）と SebType 設定をインストールし、言語の切り替えを Win+Space ひとつにします。%n%nSebType をもうお使いですか？アップデートしても、覚えた言葉はそのまま残ります。
+en.WelcomeLabel2=SebType types Chinese, Japanese and English on this PC, just like on your phone.%n%nIt sets up Chinese (Rime with SebType's dictionary), Japanese (SebType's Mozc) and the SebType Configurator, and makes Win+Space the one key that switches language.%n%nAlready have SebType? This updates it and keeps every word it has learned.
+zh.WelcomeLabel2=SebType 让这台电脑像你的手机一样输入中文、日本語和英文。%n%n它会装好中文（Rime 和 SebType 的词库）、日本語（SebType 的 Mozc）和 SebType 设置，并让 Win+Space 成为切换语言的唯一按键。%n%n已经装过 SebType？这次会更新它，并保留它学会的每一个词。
+ja.WelcomeLabel2=SebType で、この PC でもスマホと同じように中国語・日本語・英語を入力できます。%n%n中国語（Rime と SebType の辞書）、日本語（SebType の Mozc）と SebType 設定をインストールし、言語の切り替えを Win+Space ひとつにします。%n%nSebType をもうお使いですか？アップデートしても、覚えた言葉はそのまま残ります。
 en.WizardSelectTasks=Your languages
 zh.WizardSelectTasks=你的语言
 ja.WizardSelectTasks=使う言語
@@ -124,9 +126,9 @@ ja.Languages=言語（Win+Space で切り替え）
 en.English=English (the US keyboard)
 zh.English=English（美式键盘）
 ja.English=English（US キーボード）
-en.Chinese=中文 Chinese (小狼毫 Weasel with SebType's dictionary)
-zh.Chinese=中文（小狼毫和 SebType 的词库）
-ja.Chinese=中文 中国語（小狼毫と SebType の辞書）
+en.Chinese=中文 Chinese (Rime with SebType's dictionary)
+zh.Chinese=中文（Rime 和 SebType 的词库）
+ja.Chinese=中文 中国語（Rime と SebType の辞書）
 en.Japanese=日本語 Japanese (SebType's Mozc)
 zh.Japanese=日本語（SebType 的 Mozc）
 ja.Japanese=日本語（SebType の Mozc）
@@ -166,6 +168,14 @@ Name: "desktopicon"; Description: "{cm:Desktop}"; GroupDescription: "{cm:Shortcu
 
 [Files]
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; The text service (64-bit, and 32-bit for 32-bit apps), its server, librime with Rime's shared data, and
+; Mozc's server. An app that has the text service loaded keeps it until it closes.
+Source: "{#Service}\sebtype-server.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Service}\sebtype.dll"; DestDir: "{app}"; Flags: ignoreversion regserver
+Source: "{#Service}\x86\sebtype.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit
+Source: "{#Rime}\rime.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Rime}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
+Source: "{#In}\mozc-server\*"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Repo}\pc\linux\mozc-keymap.tsv"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\rime-data\rime-data.zip"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\sebtype-configurator\sebtype-configurator.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -184,18 +194,27 @@ Source: "{#Repo}\art\fonts\Jersey10-Regular.ttf"; Flags: dontcopy
 Source: "{#Repo}\art\fonts\Nunito-Bold.ttf"; Flags: dontcopy
 Source: "{#Pictures}\finish-1.png"; Flags: dontcopy
 Source: "{#Pictures}\finish-2.png"; Flags: dontcopy
-Source: "{#In}\sebtype-weasel\{#WeaselExe}"; Flags: dontcopy
-Source: "{#In}\sebtype-mozc\{#MozcMsi}"; Flags: dontcopy
 
 [Icons]
 Name: "{autoprograms}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"
 Name: "{autodesktop}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"; Tasks: desktopicon
+
+[Registry]
+; The server starts at logon, as each user; the text service also starts it when it isn't running.
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SebType"; ValueData: """{app}\sebtype-server.exe"""; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\sebtype-configurator.exe"; Description: "{cm:OpenConfigurator}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: files; Name: "{app}\setup.log"
+Type: files; Name: "{app}\sebtype.dll.*.old"
+Type: files; Name: "{app}\x86\sebtype.dll.*.old"
+Type: files; Name: "{app}\sebtype-server.exe.*.old"
+Type: files; Name: "{app}\rime.dll.*.old"
+Type: files; Name: "{app}\mozc_server.exe.*.old"
+Type: files; Name: "{app}\msvcp140*.dll.*.old"
+Type: files; Name: "{app}\vcruntime140*.dll.*.old"
 
 [Code]
 const
@@ -210,6 +229,8 @@ function AddFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): I
   external 'AddFontResourceExW@gdi32.dll stdcall';
 function RemoveFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
   external 'RemoveFontResourceExW@gdi32.dll stdcall';
+function MoveFileEx(Existing: String; New: String; Flags: Cardinal): Boolean;
+  external 'MoveFileExW@kernel32.dll stdcall';
 
 // SebType's languages Setup sets up, as setup.ps1 -Languages takes them.
 function Chosen: String;
@@ -340,32 +361,72 @@ begin
     WizardForm.WizardBitmapImage2.PngImage.LoadFromFile(ExpandConstant('{tmp}\finish-' + Scale + '.png'));
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+// The servers stop so their files can be replaced: SebType's saves the learned words first, for the
+// person running Setup (the uninstaller runs as them, and can't run anything as the original user);
+// other users' stop as they are (Rime writes learned words as they come).
+procedure StopServers(AsOriginalUser: Boolean);
 var
-  Weasel, Mozc: String;
+  Code: Integer;
+begin
+  if FileExists(ExpandConstant('{app}\sebtype-server.exe')) then
+    if AsOriginalUser then
+      ExecAsOriginalUser(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code)
+    else
+      Exec(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec('taskkill.exe', '/f /im sebtype-server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Log('taskkill sebtype-server.exe: ' + IntToStr(Code));  // 0 stopped, 128 none running
+  Exec('taskkill.exe', '/f /im mozc_server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Log('taskkill mozc_server.exe: ' + IntToStr(Code));
+end;
+// A loaded file can't be replaced but can be renamed: the new one goes in its place, apps load it when they
+// next start, and the next Setup deletes the old one. Servers count too: a running app's text service starts
+// its server again at its next key. Not deleted at the next restart: a rename pending in its folder makes
+// the next Setup ask for a restart first.
+procedure MoveAside(Path: String);
+var
+  Old: String;
+  N: Integer;
+begin
+  if not FileExists(Path) then
+    Exit;
+  N := 0;
+  repeat
+    N := N + 1;
+    Old := Path + '.' + IntToStr(N) + '.old';
+  until not FileExists(Old) or DeleteFile(Old);
+  if not RenameFile(Path, Old) then
+    Log('could not move aside ' + Path);
+end;
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopServers(True);
+  MoveAside(ExpandConstant('{app}\sebtype.dll'));
+  MoveAside(ExpandConstant('{app}\x86\sebtype.dll'));
+  MoveAside(ExpandConstant('{app}\sebtype-server.exe'));
+  MoveAside(ExpandConstant('{app}\rime.dll'));
+  MoveAside(ExpandConstant('{app}\mozc_server.exe'));
+  // mozc_server's C++ runtime, which rime.dll may have loaded too
+  MoveAside(ExpandConstant('{app}\msvcp140.dll'));
+  MoveAside(ExpandConstant('{app}\msvcp140_1.dll'));
+  MoveAside(ExpandConstant('{app}\msvcp140_2.dll'));
+  MoveAside(ExpandConstant('{app}\vcruntime140.dll'));
+  MoveAside(ExpandConstant('{app}\vcruntime140_1.dll'));
+  Result := '';
+end;
+procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
   WizardForm.StatusLabel.Caption := CustomMessage('Engines');
-  // How the account is before SebType, saved before the engines' installers touch it.
+  StopServers(True);  // one an app started again from the old files since PrepareToInstall
+  // How the account is before SebType, saved before the machine step changes it.
   Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
-  if WizardIsTaskSelected('zh') then
-  begin
-    ExtractTemporaryFile('{#WeaselExe}');
-    Weasel := ' -Weasel "' + ExpandConstant('{tmp}\{#WeaselExe}') + '"';
-  end;
-  if WizardIsTaskSelected('ja') then
-  begin
-    ExtractTemporaryFile('{#MozcMsi}');
-    Mozc := ' -Mozc "' + ExpandConstant('{tmp}\{#MozcMsi}') + '"';
-  end;
-  Step('-Machine', '-Machine -Languages ' + Chosen + Weasel + Mozc + ' -Log "' + ExpandConstant('{app}\setup.log') + '"',
+  Step('-Machine', '-Machine -Languages ' + Chosen + ' -Log "' + ExpandConstant('{app}\setup.log') + '"',
     ExpandConstant('{app}\setup.log'), False);
   // The account of the person who started Setup, not the administrator's it may run as.
   WizardForm.StatusLabel.Caption := CustomMessage('Account');
   Step('-User', '-User -Languages ' + Chosen, '%LOCALAPPDATA%\SebType\setup.log', True);
 end;
-
 function GetCustomSetupExitCode: Integer;
 begin
   Result := FailCode;
@@ -396,18 +457,73 @@ begin
   Restyle(UninstallProgressForm.StatusLabel, '', 0, Ink);
 end;
 
-// The uninstaller runs elevated as the person removing SebType, whose account it puts back. The engines
-// go first: removing Mozc adds an empty Japanese to the account's languages, and a running Weasel or
-// Mozc writes its folder again, so the account is put back only once they are gone.
+// What apps still have loaded (the text service, until they close) goes to %TEMP%, as a rename on the same
+// drive can: no restart, and nothing pending in the folder to stop a new Setup.
+procedure MoveOut(Dir: String);
+var
+  F: TFindRec;
+  N: Integer;
+begin
+  N := 0;
+  if FindFirst(Dir + '\*', F) then
+    try
+      repeat
+        if (F.Attributes and FILE_ATTRIBUTE_DIRECTORY = 0) and (Pos('unins', F.Name) <> 1) and
+           not DeleteFile(Dir + '\' + F.Name) then
+        begin
+          N := N + 1;
+          if not RenameFile(Dir + '\' + F.Name, ExpandConstant('{%TEMP}\SebType-') +
+              GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + IntToStr(N) + '-' + F.Name) then
+            Log('could not move out ' + Dir + '\' + F.Name);
+        end;
+      until not FindNext(F);
+    finally
+      FindClose(F);
+    end;
+end;
+
+// The text service an app has loaded can't be deleted, which the uninstaller would report as not removed: it
+// moves out to %TEMP% where the app keeps it, and an unloaded copy takes its place for the uninstaller to
+// unregister and delete. Where no app has it, the moved one is deleted at once.
+procedure MoveOutLoaded(Path, Tag: String);
+var
+  Old: String;
+begin
+  Old := ExpandConstant('{%TEMP}\SebType-') + GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + Tag + ExtractFileName(Path);
+  if FileExists(Path) and RenameFile(Path, Old) then begin
+    if not FileCopy(Old, Path, False) then
+      Log('could not copy back ' + Path);
+    DeleteFile(Old);
+  end;
+end;
+
+// The uninstaller runs elevated as the person removing SebType, whose account it puts back. The servers
+// stop first: a running one writes its folder again, so the account is put back only once they are gone.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usPostUninstall then begin
+    StopServers(False);
+    DeleteFile(ExpandConstant('{app}\uninstalling'));
+    MoveOut(ExpandConstant('{app}\x86'));
+    MoveOut(ExpandConstant('{app}'));
+    // The uninstaller tried to remove {app} before this step, while those files were still in it.
+    RemoveDir(ExpandConstant('{app}\x86'));
+    RemoveDir(ExpandConstant('{app}'));
+  end;
   if CurUninstallStep <> usUninstall then
     Exit;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('Undoing');
+  // Apps' text services start no server from here on (an app did while the account was put back, and the
+  // server and Mozc's were running when their files were deleted).
+  SaveStringToFile(ExpandConstant('{app}\uninstalling'), '', False);
+  StopServers(False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max div 3;
   Step('-Machine -Undo', '-Machine -Undo -Log "' + ExpandConstant('{app}\setup.log') + '"', ExpandConstant('{app}\setup.log'), False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max * 2 div 3;
   Step('-User -Undo', '-User -Undo', '%LOCALAPPDATA%\SebType\setup.log', False);
+  StopServers(False);
+  MoveOutLoaded(ExpandConstant('{app}\sebtype.dll'), '');
+  MoveOutLoaded(ExpandConstant('{app}\x86\sebtype.dll'), 'x86-');
 end;
 
 procedure DeinitializeUninstall;

@@ -4,20 +4,23 @@
 #   pc/windows/setup/test-tcsbackend.sh
 # PERF_RUN=1 adds the timing check (round1-rime-p95), for the final performance run only (#54).
 # ONLY=picnic runs only the Picnic candidate window's pictures (#162), with TCSBackEnd's own checks.
-# ONLY=startmenu runs only install, update over an older install with Weasel's Start menu folder, and
-# uninstall (#192), with TCSBackEnd's own checks.
+# ONLY=upgrade runs only the update from the SebType before #190 (Weasel and Mozc; its setup from the
+# newest successful "Windows setup" run on main without windows/build.ps1), typing and uninstall, with
+# TCSBackEnd's own checks.
 # ONLY=sync runs only sync with your own server (#180): a local sebtype_sync.py with a throwaway login,
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
-# It takes SebType-setup-*.exe and perf-rime.exe from the "Windows setup" CI run of this commit (gh), or
-# else from build/, runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
+# It takes SebType-setup-*.exe (and for PERF_RUN perf-rime.exe) from the "Windows setup" CI run of this
+# commit (gh), or else from build/, and pushes them (TCSBackEnd's downloads are fast, its uploads capped),
+# runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
 # touched) and opens the test user's Remote Desktop session in FreeRDP inside headless gamescope (no
 # window here, no sound) through an SSH tunnel, typing the typing checks' keys into FreeRDP
 # (../mozc/rdp-keys.py) so they arrive as a keyboard's. Needs gh, gamescope, xfreerdp, python3-xlib,
 # ImageMagick and `ssh TCSBackEnd`. Output: one line per check; logs in $out, the installer's pages in
-# ~/scratch/SebType/<issue>/73-*.png. Takes the device lock; exit 0 only if every check passes and TCSBackEnd ends
-# as found.
+# ~/scratch/SebType/<issue>/73-*.png (117-*, 162-*, 205-*: the tray menus, the candidate window, the popup).
+# Where the time went: $out/times.txt and logs/*-times.txt. Takes the device lock; exit 0 only if every check
+# passes and TCSBackEnd ends as found.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
@@ -29,6 +32,10 @@ if [ -z "${HOLDING:-}" ]; then
   exec env HOLDING=1 devq -w 3600 -m 75 -n "sebtype installer test on TCSBackEnd ($branch)" "$lock" bash "$0"
 fi
 mkdir -p "$out"; rm -rf "${out:?}"/*
+# Where a run's time goes: $out/times.txt here, logs/*-times.txt from test.ps1.
+t0=$(date +%s)
+mark() { echo "$(date +%T) +$(( $(date +%s) - t0 ))s $*" >> "$out/times.txt"; }
+mark start
 
 missing=
 command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v magick >/dev/null && python3 -c 'import Xlib' 2>/dev/null ||
@@ -38,17 +45,30 @@ command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v 
 head=$(git -C "$repo" rev-parse HEAD)
 run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$branch" --status success --json databaseId,headSha \
   -q "map(select(.headSha == \"$head\"))[0].databaseId // empty" 2>/dev/null)
+perf=
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
   exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
-  # perf-rime.exe, for the Rime per-key check against the librime the setup installed (#133)
-  gh run download -R S-Sebb/SebType "$run" -n sebtype-weasel -D "$out/in" >/dev/null 2>&1
+  # perf-rime.exe (from the librime build), for the Rime per-key check against the librime the setup installed (#133)
+  [ -n "${PERF_RUN:-}" ] && gh run download -R S-Sebb/SebType "$run" -n sebtype-weasel -D "$out/in" >/dev/null 2>&1
 else
   exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
 fi
-perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/weasel/perf-rime.exe 2>/dev/null | head -1)
+[ -n "${PERF_RUN:-}" ] && perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/weasel/perf-rime.exe 2>/dev/null | head -1)
 [ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
+old=
+if [ "${ONLY:-}" = upgrade ]; then
+  git -C "$repo" fetch -q origin main
+  for r in $(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch main --status success --limit 50 \
+      --json databaseId,headSha -q '.[] | "\(.databaseId):\(.headSha)"' 2>/dev/null); do
+    git -C "$repo" cat-file -e "${r#*:}:windows/build.ps1" 2>/dev/null && continue
+    gh run download -R S-Sebb/SebType "${r%%:*}" -n sebtype-setup -D "$out/old" >/dev/null 2>&1 && old=$(ls "$out"/old/SebType-setup-*.exe 2>/dev/null | head -1)
+    break
+  done
+  [ -n "$old" ] || missing=${missing:-'no setup of the SebType before #190 from a main run'}
+fi
 echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
+mark 'CI artifacts downloaded'
 timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 [ -n "$missing" ] && { echo "BLOCKED preflight: $missing"; exit 1; }
 
@@ -71,6 +91,8 @@ $u = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\SOFTWAR
 "users: $((Get-LocalUser).Name -join ',')  profiles: $((Get-CimInstance Win32_UserProfile).LocalPath -join ',')"
 "administrators: $((Get-LocalGroupMember -SID S-1-5-32-544).Name -join ',')  remote desktop users: $((Get-LocalGroupMember -SID S-1-5-32-555).Name -join ',')"
 "tasks: $((Get-ScheduledTask -TaskName SebType* -ErrorAction SilentlyContinue).TaskName -join ',')"
+# A rename left pending in SebType's folder makes the next Setup ask for a restart, which TCSBackEnd never gets.
+"pending renames in SebType's folder: $(@((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager').PendingFileRenameOperations | Where-Object { $_ -like '*\Program Files\SebType*' }).Count)"
 EOF
 }
 cleanup() {  # what a run that died may leave: its session, user, profile, SebType, Weasel, Mozc, tasks and files
@@ -108,9 +130,11 @@ EOF
 }
 
 state > "$out/before.txt"
+mark 'state before read'
 grep -q '^installed: .' "$out/before.txt" && { echo "BLOCKED preflight: SebType, Weasel or Mozc is installed on TCSBackEnd already ($(grep '^installed:' "$out/before.txt"))"; exit 1; }
 grep -q '^folders: .*True' "$out/before.txt" && { echo "BLOCKED preflight: a SebType or test folder exists on TCSBackEnd already ($(grep '^folders:' "$out/before.txt"))"; exit 1; }
 grep -qE '^users: \S*\bsebtype-test\b' "$out/before.txt" && { echo "BLOCKED preflight: a sebtype-test user exists on TCSBackEnd already"; exit 1; }
+grep -qE "^pending renames in SebType's folder: [1-9]" "$out/before.txt" && { echo "BLOCKED preflight: renames pending in C:\\Program Files\\SebType until a restart (Setup would ask for one)"; exit 1; }
 
 # shellcheck disable=SC2016
 sed "s/ PERFRUN/${PERF_RUN:+ -PerfRun}${ONLY:+ -Only $ONLY}${SOAK_MIN:+ -SoakMinutes $SOAK_MIN}${COMPARE_IMES:+ -CompareImes $COMPARE_IMES}/" > "$out/run.ps1" <<'EOF'
@@ -124,12 +148,15 @@ try {
     New-Item "$d\done" | Out-Null
 }
 EOF
-echo 'New-Item -ItemType Directory C:\sebtype-setup-test | Out-Null' | tps
-if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$repo/pc/configurator/src/windows.rs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\old | Out-Null' | tps
+if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
+  echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
+fi
+if ! scp -q "$here/test.ps1" "$here/../mozc/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
-
+mark 'inputs uploaded'
 # test.ps1 in the Administrator session, elevated, through a one-off task (ssh runs outside it).
 tps <<'EOF'
 $a = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\sebtype-setup-test\run.ps1'
@@ -146,6 +173,7 @@ for i in $(seq 1 60); do
   [ "$(echo 'Test-Path C:\sebtype-setup-test\done' | tps | tr -d '\r')" = True ] && break
   sleep 5
 done
+mark 'test user logon read'
 if [ -n "${logon:-}" ]; then
   # Remote Desktop one way; the other way, the typing checks reach rdp-keys.py, which types into FreeRDP
   # on gamescope's display, so the keys reach Windows as a keyboard's scancodes.
@@ -163,24 +191,31 @@ if [ -n "${logon:-}" ]; then
     /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /audio-mode:none -clipboard \
     >"$out/freerdp.log" 2>&1 & rdp=$!
 fi
+mark 'Remote Desktop started'
 finished=
-for i in $(seq 1 360); do
+for i in $(seq 1 720); do
   [ "$(echo 'Test-Path C:\sebtype-setup-test\done' | tps | tr -d '\r')" = True ] && { finished=1; break; }
-  sleep 10
+  sleep 5
 done
 [ -n "$rdp" ] && { pkill -f "$here/../mozc/rdp-keys.py"; pkill -P "$rdp" 2>/dev/null; kill "$rdp" 2>/dev/null; }
 [ -n "$tunnel" ] && kill "$tunnel" 2>/dev/null
 
+mark 'test.ps1 done'
 mkdir -p "$out/logs"
-scp -q -r 'TCSBackEnd:C:/sebtype-setup-test/out/*' 'TCSBackEnd:C:/sebtype-setup-test/run.log' "$out/logs/" 2>/dev/null
+# One file: scp pays a round trip per file, which made 60 files take a minute.
+echo 'tar -cf C:\sebtype-setup-test\logs.tar -C C:\sebtype-setup-test\out . -C C:\sebtype-setup-test run.log' | tps >/dev/null
+scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" 2>/dev/null && tar -xf "$out/logs.tar" -C "$out/logs" && rm "$out/logs.tar"
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
-for png in "$out"/logs/73-*.png "$out"/logs/117-*.png; do
+for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
 done
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
 [ -s "$out/results.txt" ] || echo "FAIL results: test.ps1 wrote no results (logs: $out/logs)"
+mark 'logs fetched'
 cleanup > "$out/cleanup.txt"
+mark 'cleaned up'
 state > "$out/after.txt"
+mark 'state after read'
 if diff <(grep -v '^tasks' "$out/before.txt") <(grep -v '^tasks' "$out/after.txt") > "$out/state.diff"; then
   echo "PASS tcsbackend-as-found"
 else

@@ -2,13 +2,14 @@
 SebType's Windows setup steps (#73), run by SebType's installer (sebtype.iss), which installs this file
 in SebType's folder. Why each step exists: pc/windows/README.md.
 
-  setup.ps1 -Machine -Languages en,zh,ja [-Weasel <installer.exe>] [-Mozc <msi>]   # elevated: the engines
-  setup.ps1 -User -Save                                                            # as the user, first
-  setup.ps1 -User -Languages en,zh,ja                                              # as the user: settings
-  setup.ps1 -Machine -Undo / -User -Undo                                           # uninstall
+  setup.ps1 -Machine -Languages en,zh,ja        # elevated: replaces the Weasel and Mozc SebType had before
+  setup.ps1 -User -Save                         # as the user, first
+  setup.ps1 -User -Languages en,zh,ja           # as the user: settings
+  setup.ps1 -Machine -Undo / -User -Undo        # uninstall
 
--Languages lists SebType's languages to set up: en (the US layout first), zh (SebType's Weasel with the
-Chinese data) and ja (SebType's Mozc). A language set up before and left out now is removed as at
+-Languages lists SebType's languages to set up: en (the US layout first), zh (SebType's 中文: Rime with the
+Chinese data) and ja (SebType's 日本語: Mozc). Both are profiles of SebType's text service (windows/, #190),
+which Setup installs and registers next to this file with its server. A language set up before and left out now is removed as at
 uninstall, its learned words deleted. Safe to rerun: an upgrade reruns both with the new files and keeps
 learned words. -User saves how the account was before its first run (%LOCALAPPDATA%\SebType\setup.json
 and backup\), and -User -Undo puts that back. -User logs to %LOCALAPPDATA%\SebType\setup.log; -Machine
@@ -21,8 +22,6 @@ param(
   [string]$Languages = '',
   [switch]$Undo,
   [switch]$Save,
-  [string]$Weasel,
-  [string]$Mozc,
   [string]$RimeData = '',
   [string]$Log
 )
@@ -33,7 +32,14 @@ Set-StrictMode -Version Latest
 $want = @(if (-not $Undo) { $Languages -split '[, ]+' | Where-Object { $_ } })
 if ($want | Where-Object { $_ -notin 'en', 'zh', 'ja' }) { throw "-Languages takes en, zh and ja, not '$Languages'" }
 
-# Weasel's TSF ids (WeaselTSF/Globals.cpp) for Simplified Chinese; Mozc's OSS text service and profile.
+# SebType's text service and its 中文 and 日本語 profiles (windows/src/tip/tip.h).
+$Clsid = '{D4E5C593-4F73-475F-936C-0E29A6FE7A02}'
+$ZhProfile = '{8AA7DDAC-A4B8-4437-9C0B-8698879EC987}'
+$JaProfile = '{B148FB02-C235-45D6-996C-672C783ECD48}'
+$ZhTip = "0804:$Clsid$ZhProfile"
+$JaTip = "0411:$Clsid$JaProfile"
+# What SebType installed before #190: Weasel's TSF ids (WeaselTSF/Globals.cpp) for Simplified Chinese, and
+# Mozc's OSS text service and profile.
 $WeaselClsid = '{A3F4CDED-B1E9-41EE-9CA6-7B4D0DE6CB0A}'
 $WeaselTip = "0804:${WeaselClsid}{3D02CAB6-2B8E-4781-BA20-1C9267529467}"
 $MozcClsid = '{10A67BC8-22FA-4A59-90DC-2546652C56BF}'
@@ -65,35 +71,33 @@ function Get-MozcProduct {  # the OSS Mozc MSI's product code, if installed
     Where-Object { $_.GetValue('DisplayName') -eq 'Mozc' } | Select-Object -First 1
   if ($key) { $key.PSChildName }
 }
-function Stop-WeaselServer($w) {
-  if (Get-Process WeaselServer -ErrorAction SilentlyContinue) {
-    & (Join-Path $w.Root 'WeaselServer.exe') /quit
-    Wait-Process -Name WeaselServer -Timeout 10 -ErrorAction SilentlyContinue  # until it lets go of the Rime folder
-    Stop-Process -Name WeaselServer -Force -ErrorAction SilentlyContinue
+$Server = Join-Path $PSScriptRoot 'sebtype-server.exe'
+# This session's SebType server: /quit saves the learned words, and it lets go of the Rime folder.
+function Get-Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId }
+function Stop-Server {
+  if (Get-Server) {
+    (Start-Process -PassThru -FilePath $Server -ArgumentList '/quit').WaitForExit()
+    Get-Server | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+    Get-Server | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Server | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue  # until it lets go of its mapped files
   }
 }
-# Mozc's server and renderer hold its text service and files; without admin, only this user's own stop.
-function Stop-Mozc { Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\Mozc\*' } | Stop-Process -Force -ErrorAction SilentlyContinue }
+# Mozc's server holds its files (SebType's, next to this file, or the Mozc SebType had before); without
+# admin, only this user's own stop.
+function Stop-Mozc {
+  Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\Mozc\*' -or $_.Path -like "$PSScriptRoot\*" } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+}
 
 
 # ===================================================================================== the machine
 if ($Machine) {
   if ($Log) { Start-Transcript -Append $Log | Out-Null }
   if (-not (Test-Path $MachineKey)) { New-Item $MachineKey | Out-Null }  # -Force would wipe an existing key's values
-  # Chinese: SebType's Weasel (pc/windows/weasel), which replaces any other Weasel.
+  # SebType's text service (registered by Setup) replaces the Weasel and Mozc SebType installed before
+  # #190. Their learned words stay in the folders the text service uses.
   $w = Get-Weasel
-  if ('zh' -in $want) {
-    if ((Split-Path -Leaf $Weasel) -notmatch '^sebtype-weasel-(.+)-installer\.exe$') { throw "not SebType's Weasel installer: $Weasel" }
-    if (-not $w -or $w.SebType -ne $Matches[1]) {
-      Write-Output "installing SebType's Weasel $($Matches[1])"
-      # WaitForExit, not -Wait: -Wait also waits for the WeaselServer the installer leaves running.
-      (Start-Process -PassThru -FilePath $Weasel -ArgumentList '/S').WaitForExit()
-      $w = Get-Weasel
-      if (-not $w -or $w.SebType -ne $Matches[1]) { throw "Weasel's installer didn't install SebType's Weasel $($Matches[1])" }
-    }
-    # Its installer starts WeaselServer as administrator; -User starts it again as the user.
-    Stop-Process -Name WeaselServer -Force -ErrorAction SilentlyContinue
-  } elseif ($w -and $w.SebType) {
+  if ($w -and $w.SebType) {
     Write-Output "removing SebType's Weasel $($w.SebType)"
     Stop-Process -Name WeaselServer -Force -ErrorAction SilentlyContinue
     # -Wait here: the uninstaller reruns itself from %TEMP%, and -Wait waits for that copy too.
@@ -104,26 +108,9 @@ if ($Machine) {
     Remove-Item "HKLM:\SOFTWARE\Classes\CLSID\$WeaselClsid", "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid", 'HKLM:\SOFTWARE\WOW6432Node\Rime' -Recurse -ErrorAction SilentlyContinue
     Get-Item (Split-Path $w.Root) -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item
   }
-
-  # Japanese: SebType's Mozc (pc/windows/mozc). Its MSI name says the build, so a new one replaces the old.
   $product = Get-MozcProduct
   $installed = Get-RegValue $MachineKey Mozc
-  if ('ja' -in $want) {
-    $package = Split-Path -Leaf $Mozc
-    if (-not $product -or $installed -ne $package) {
-      Stop-Mozc
-      if ($product) { Write-Output "removing Mozc $installed"; msiexec /x $product /qn /norestart | Out-Null }
-      Write-Output "installing $package"
-      $msiLog = Join-Path ([IO.Path]::GetTempPath()) 'sebtype-mozc-msi.log'
-      msiexec /i $Mozc /qn /norestart /l*v $msiLog | Out-Null
-      if (-not (Get-MozcProduct)) { throw "the MSI didn't install Mozc (log: $msiLog)" }
-      Set-ItemProperty $MachineKey Mozc $package
-    }
-    # Mozc registers its profile without "enabled by default", so Windows turns it off for a user
-    # whenever their language list changes (#65); this is what EnableLanguageProfileByDefault writes.
-    $profileKey = "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid\LanguageProfile\0x00000411\$MozcProfile"
-    if (Test-Path $profileKey) { Set-ItemProperty $profileKey Enable 1 -Type DWord }
-  } elseif ($product -and $installed) {
+  if ($product -and $installed) {
     Write-Output "removing Mozc $installed"
     Stop-Mozc
     msiexec /x $product /qn /norestart | Out-Null
@@ -246,7 +233,7 @@ if (Test-Path $StateFile) {
     Chosen = @()  # the languages SebType set up last time
     # Without SebType's own input methods: Windows adds a newly registered text service to every
     # logged-on user's list, so the machine step has put them there already.
-    Languages = @(Get-Languages | ForEach-Object { $_.Tips = @($_.Tips | Where-Object { $_ -notin $WeaselTip, $MozcTip }); $_ } | Where-Object { $_.Tips })
+    Languages = @(Get-Languages | ForEach-Object { $_.Tips = @($_.Tips | Where-Object { $_ -notin $ZhTip, $JaTip, $WeaselTip, $MozcTip }); $_ } | Where-Object { $_.Tips })
     DefaultInputMethod = if ($default) { $default.InputMethodTip } else { $null }
     LegacySwitchingMode = (Get-WinLanguageBarOption).IsLegacySwitchingMode
     Toggle = [pscustomobject]@{}
@@ -254,7 +241,7 @@ if (Test-Path $StateFile) {
     RegBackups = @(@((Export-Key 'HKCU\Control Panel\Input Method\Hot Keys' "$backup\hotkeys.reg"),
         (Export-Key 'HKCU\Software\Microsoft\CTF\TIP' "$backup\tip.reg")) | Where-Object { $_ })
     # The text services the account had settings for, without SebType's (see Languages).
-    TipKeys = @((Get-ChildItem 'HKCU:\Software\Microsoft\CTF\TIP' -ErrorAction SilentlyContinue).PSChildName | Where-Object { $_ -notin $WeaselClsid, $MozcClsid })
+    TipKeys = @((Get-ChildItem 'HKCU:\Software\Microsoft\CTF\TIP' -ErrorAction SilentlyContinue).PSChildName | Where-Object { $_ -notin $Clsid, $WeaselClsid, $MozcClsid })
     RimeSettingsExisted = Test-Path 'HKCU:\Software\Rime'
     # Another Rime or Mozc's folders from before SebType: the user's own, put back when SebType goes.
     RimeBackup = if (Test-Path $RimeUser) { "$backup\Rime" } else { $null }
@@ -266,11 +253,10 @@ if (Test-Path $StateFile) {
 }
 function Save-State { $state | ConvertTo-Json -Depth 5 | Set-Content $StateFile -Encoding utf8 }
 Save-State
-# -Save, before the machine step: Weasel's and Mozc's installers make their folders and settings for the
-# account they run as, which would otherwise look like the account's own from before SebType.
+# -Save, before the machine step: removing the Weasel and Mozc SebType had before changes the account's
+# settings, which would otherwise look like the account's own from before SebType.
 if ($Save) { Write-Output 'user: saved how the account is before SebType'; Stop-Transcript | Out-Null; exit 0 }
 $removed = @($state.Chosen | Where-Object { $_ -notin $want })
-$w = Get-Weasel
 
 # Sync (#180): if sync was ever on, this account's learned words and dictionary go to the server first,
 # before the steps below delete them (Decisions #2, #73). The Configurator's sync does it, with the
@@ -282,40 +268,25 @@ if ($removed -and (Test-Path $SyncFile)) {
   Write-Output "user: synced before learned words are deleted (exit $($p.ExitCode))"
 }
 
-# Chinese gone: its learned words with it; a Rime folder from before SebType comes back.
-if ('zh' -in $removed) {
-  if ($w) { Stop-WeaselServer $w }
-  Remove-Item $RimeUser -Recurse -Force -ErrorAction SilentlyContinue
-  if ($state.RimeBackup) { Copy-Item $state.RimeBackup $RimeUser -Recurse }
-  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid" -Recurse -ErrorAction SilentlyContinue
-  if (-not $state.RimeSettingsExisted) { Remove-Item 'HKCU:\Software\Rime' -Recurse -ErrorAction SilentlyContinue }
-  Write-Output 'user: Chinese removed, its learned words deleted'
-}
-if ('ja' -in $removed) {
-  Stop-Mozc
-  Remove-Item $MozcUser -Recurse -Force -ErrorAction SilentlyContinue
-  if ($state.MozcBackup) { Copy-Item $state.MozcBackup $MozcUser -Recurse }
-  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
-  Write-Output 'user: Japanese removed, its learned words deleted'
-}
-
 # Chinese: the data the phone bundles (data/rime/build.sh), rime-ice's schemas and Lua with 白霜's
 # dictionary, its tables prebuilt. librime uses them as they are because their sources aren't there.
 # Learned words (*.userdb), *.custom.yaml and the user's custom_phrase.txt stay. The marker names the data
-# and the Weasel it was deployed with, so a new Weasel redeploys it too.
+# and the librime it was deployed with, so a new librime redeploys it too.
 $redeploy = $false
 if ('zh' -in $want) {
-  if (-not $w -or -not $w.SebType) { throw "SebType's Weasel isn't installed (setup.ps1 -Machine first)" }
+  if (-not (Test-Path $Server)) { throw "SebType's text service isn't installed next to setup.ps1" }
   $marker = Join-Path $RimeUser 'sebtype-data.txt'
-  $dataId = "$((Get-FileHash $RimeData -Algorithm SHA256).Hash) $($w.SebType)"
+  $dataId = "$((Get-FileHash $RimeData -Algorithm SHA256).Hash) $((Get-FileHash (Join-Path $PSScriptRoot 'rime.dll') -Algorithm SHA256).Hash)"
   if ((Get-Content $marker -ErrorAction SilentlyContinue) -ne $dataId) {
     Write-Output "user: Chinese data into $RimeUser"
-    Stop-WeaselServer $w
+    Stop-Server
     $tmp = Join-Path ([IO.Path]::GetTempPath()) "sebtype-rime-$PID"
     Expand-Archive $RimeData $tmp -Force
     if (Test-Path (Join-Path $RimeUser 'custom_phrase.txt')) { Remove-Item (Join-Path $tmp 'custom_phrase.txt') -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force $RimeUser | Out-Null
-    Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force
+    # An app's text service may start a server again meanwhile, which maps the tables (#190): once more.
+    try { Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
+    catch { Write-Output "user: copy again after: $_"; Stop-Server; Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
     # An older dictionary source (the user's own rime-ice) would be compiled instead of the prebuilt table.
     Get-ChildItem (Join-Path $tmp 'build\*.table.bin') | ForEach-Object {
       Remove-Item (Join-Path $RimeUser "$($_.BaseName -replace '\.table$').dict.yaml") -ErrorAction SilentlyContinue }
@@ -323,7 +294,7 @@ if ('zh' -in $want) {
     Set-Content $marker $dataId
     $redeploy = $true
   }
-  # Chinese reads 中文, not 雾凇拼音, in Rime's schema menu and Weasel's status (#69). The schema id stays
+  # Chinese reads 中文, not 雾凇拼音, in Rime's schema menu (#69). The schema id stays
   # rime_ice, so learned words stay. Typo correction (#46) weighs a PC keyboard's neighbour keys.
   $redeploy = (Set-RimePatch 'rime_ice.custom.yaml' '^  (schema/name|sebtype_typo/keyboard):' @(
       '  schema/name: 中文  # SebType: Chinese reads 中文, not 雾凇拼音 (#69)'
@@ -343,11 +314,10 @@ if ('zh' -in $want) {
 
 # Japanese: Mozc's keymap gets a Shift tap for あ ⇄ English and Alt+` for あ ⇄ ア (pc/linux/mozc-keymap.tsv,
 # Decisions #2, #117); every other setting stays. Mozc's server reads it only when it starts, and the account's
-# server may run already: Windows adds a newly installed Mozc to every logged-on user's list, which can
-# start it (#123). So a changed keymap stops this account's Mozc; the next key starts it again with the
-# new keymap. Mozc's text service reads it once per app, when the app first loads it.
+# server may run already. So a changed keymap stops this account's Mozc; the next key starts it again with
+# the new keymap.
 if ('ja' -in $want) {
-  if (-not (Get-MozcProduct)) { throw "SebType's Mozc isn't installed (setup.ps1 -Machine first)" }
+  if (-not (Test-Path (Join-Path $PSScriptRoot 'mozc_server.exe'))) { throw "Mozc's server isn't installed next to setup.ps1" }
   $db = Join-Path $MozcUser 'config1.db'
   # A new account has no config1.db yet. (An empty array from an if would arrive as $null.)
   $data = [byte[]]::new(0)
@@ -361,16 +331,16 @@ if ('ja' -in $want) {
   }
 }
 
-# The language list: SebType's languages first, EN (US layout first) → 中 (Weasel only) → 日 (Mozc
-# only), which Win+Space cycles in this order; then the list from before SebType without them, then any
+# The language list: SebType's languages first, EN (US layout first) → 中 (SebType's 中文 only) → 日
+# (SebType's 日本語 only), which Win+Space cycles in this order; then the list from before SebType without them, then any
 # language added since. -Undo puts the list from before back.
 $now = Get-Languages
 $sebtype = @($want | ForEach-Object { $Tags[$_] })
 $en = $now | Where-Object Tag -EQ 'en-US'
 $entry = @{
   en = [pscustomobject]@{ Tag = 'en-US'; Tips = @($UsTip) + @(if ($en) { $en.Tips | Where-Object { $_ -ne $UsTip } }) }
-  zh = [pscustomobject]@{ Tag = 'zh-Hans-CN'; Tips = @($WeaselTip) }
-  ja = [pscustomobject]@{ Tag = 'ja'; Tips = @($MozcTip) }
+  zh = [pscustomobject]@{ Tag = 'zh-Hans-CN'; Tips = @($ZhTip) }
+  ja = [pscustomobject]@{ Tag = 'ja'; Tips = @($JaTip) }
 }
 $list = @(foreach ($l in 'en', 'zh', 'ja') { if ($l -in $want) { $entry[$l] } }) +
   @($state.Languages | Where-Object { $_.Tag -notin $sebtype }) +
@@ -379,17 +349,37 @@ if ((Format-Languages $now) -ne (Format-Languages $list)) {
   Write-Output "user: input methods $(Format-Languages $list) (were $(Format-Languages $now))"
   Set-Languages $list
 }
-if ('ja' -in $want) {
-  # Windows adds a new text service's profile for this user disabled, and a disabled one gets no keys
-  # and no tray icon (seen on Server 2022).
-  $profileKey = "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid\LanguageProfile\0x00000411\$MozcProfile"
+# Windows adds a new text service's profile for this user disabled, and a disabled one gets no keys and
+# no tray icon (seen with Mozc on Server 2022).
+foreach ($p in @(if ('zh' -in $want) { "0x00000804\$ZhProfile" }) + @(if ('ja' -in $want) { "0x00000411\$JaProfile" })) {
+  $profileKey = "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\$p"
   New-Item -Force $profileKey | Out-Null
   Set-ItemProperty $profileKey Enable 1 -Type DWord
 }
+# The settings Windows kept for the Weasel and Mozc SebType had before, which the machine step removed.
+Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
 # Windows can take a while to apply a language list right after another change (over 10 s for a new
 # account's first one, on TCSBackEnd).
 for ($i = 0; $i -lt 120 -and (Format-Languages (Get-Languages)) -ne (Format-Languages $list); $i++) { Start-Sleep -Milliseconds 500 }
 if ($i -eq 120) { throw "Windows didn't take the input methods $(Format-Languages $list)" }
+
+# Chinese gone: its learned words with it; a Rime folder from before SebType comes back. After the list
+# above: until then apps' text service would start the server again, which writes the Rime folder anew.
+if ('zh' -in $removed) {
+  Stop-Server
+  Remove-Item $RimeUser -Recurse -Force -ErrorAction SilentlyContinue
+  if ($state.RimeBackup) { Copy-Item $state.RimeBackup $RimeUser -Recurse }
+  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000804", "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid" -Recurse -ErrorAction SilentlyContinue
+  if (-not $state.RimeSettingsExisted) { Remove-Item 'HKCU:\Software\Rime' -Recurse -ErrorAction SilentlyContinue }
+  Write-Output 'user: Chinese removed, its learned words deleted'
+}
+if ('ja' -in $removed) {
+  Stop-Mozc
+  Remove-Item $MozcUser -Recurse -Force -ErrorAction SilentlyContinue
+  if ($state.MozcBackup) { Copy-Item $state.MozcBackup $MozcUser -Recurse }
+  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000411", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
+  Write-Output 'user: Japanese removed, its learned words deleted'
+}
 
 if (-not $Undo) {
   # Win+Space is the only language switch: no Alt+Shift / Ctrl+Shift switch keys (3 = none), and one
@@ -403,18 +393,33 @@ if (-not $Undo) {
   $bar = Get-WinLanguageBarOption
   if ($bar.IsLegacySwitchingMode) { Set-WinLanguageBarOption -UseLegacySwitchMode:$false -UseLegacyLanguageBar:$bar.IsLegacyLanguageBar }
 
-  # Weasel builds the data and patches when it redeploys. WeaselServer isn't started here: Weasel's text
-  # service starts it at the first key, as the app's own user and level. Started from Setup it would run
-  # elevated, where apps can't reach it.
+  # The candidate window's look, which Weasel kept in weasel.custom.yaml, moves to SebType's own
+  # settings once (the Configurator writes them there now).
+  $conf = Join-Path $env:APPDATA 'SebType\sebtype.conf'
+  $weaselStyle = Join-Path $RimeUser 'weasel.custom.yaml'
+  if ((Test-Path $weaselStyle) -and -not (@(Get-Content $conf -Encoding utf8 -ErrorAction SilentlyContinue) -contains '[Candidates]')) {
+    $style = @{}
+    foreach ($l in Get-Content $weaselStyle -Encoding utf8) {
+      if ($l -match '^  style/(horizontal|font_point|color_scheme):\s*(\S+)') { $style[$Matches[1]] = $Matches[2] }
+    }
+    if ($style.Count) {
+      New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
+      $font = if ($style.font_point -match '^\d+$') { $style.font_point } else { '14' }
+      Add-Content $conf -Encoding ascii @('[Candidates]', "Vertical=$(if ($style.horizontal -eq 'true') { 0 } else { 1 })",
+        "FontSize=$font", "Picnic=$(if ($style.color_scheme -eq 'sebtype_picnic') { 1 } else { 0 })")
+      Write-Output 'user: candidate window settings from Weasel'
+    }
+  }
+
+  # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
+  # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it
+  # would be out of the apps' reach): the text service starts it at the first key, the Run key at logon.
   if ($redeploy) {
-    Stop-WeaselServer $w
     $t = [Diagnostics.Stopwatch]::StartNew()
-    # Not Start-Process: it passes '/deploy ' with a trailing space, and the deployer then opens its
-    # settings window instead of deploying (it compares the argument exactly).
-    $p = [Diagnostics.Process]::Start((Join-Path $w.Root 'WeaselDeployer.exe'), '/deploy')
-    if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; throw "Weasel's redeploy took over 5 minutes" }
-    if ($p.ExitCode) { throw "Weasel's redeploy failed ($($p.ExitCode))" }
-    Write-Output "user: Weasel redeployed in $([int]$t.Elapsed.TotalSeconds) s"
+    $p = Start-Process -PassThru -FilePath $Server -ArgumentList '/deploy'
+    if (-not $p.WaitForExit(330000)) { Stop-Process -Id $p.Id -Force; throw "Rime's redeploy took over 5 minutes" }
+    if ($p.ExitCode) { throw "Rime's redeploy failed ($($p.ExitCode))" }
+    Write-Output "user: Rime redeployed in $([int]$t.Elapsed.TotalSeconds) s"
   }
   $state.Chosen = $want
   Save-State
@@ -444,6 +449,10 @@ if ($bar.IsLegacySwitchingMode -ne $state.LegacySwitchingMode) {
 & { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType sync' /f 2>&1 | Out-Null }
 [void][SebType.User32]::CredDeleteW('login.SebType sync', 1, 0)  # CRED_TYPE_GENERIC
 Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
+# SebType's own settings (the candidate window's).
+$conf = Join-Path $env:APPDATA 'SebType\sebtype.conf'
+Remove-Item $conf -ErrorAction SilentlyContinue
+Get-Item (Split-Path $conf) -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item
 Remove-Item $StateFile, $state.Backup -Recurse -Force
 Write-Output 'user: undone; input methods, switch keys and per-window setting as before SebType'
 Remove-UserFolder

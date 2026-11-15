@@ -371,7 +371,8 @@ namespace SebType {
     // the Remote Desktop client's keys go. Windows lets a process take the foreground right after it sent
     // input: an Alt tap first.
     public static bool Foreground(IntPtr h) {
-      for (int i = 0; i < 5 && GetForegroundWindow() != h; i++) {
+      // Up to 6 s: right after another window closes, Windows can refuse for a while (seen on TCSBackEnd).
+      for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) {
         keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero);
         SetForegroundWindow(h);
         Thread.Sleep(300);

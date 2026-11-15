@@ -10,7 +10,8 @@ languages share:
 - the settings the Configurator writes (`~/.config/sebtype/sebtype.conf` on Linux: `[Languages] Order=`);
 - the tray: its icon names (the files in `pc/icons/`) and its menu.
 
-A frontend feeds it keys and draws what it says: on Linux the Fcitx5 add-on in [`linux/`](../linux).
+A frontend feeds it keys and draws what it says: on Linux the Fcitx5 add-on in [`linux/`](../linux), on
+Windows the text service and its server in [`windows/`](../windows).
 
 ## Tests
 
