@@ -20,8 +20,20 @@ source ../tools/lib.sh
 
 kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
-signed_by_sebtype() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner verify --print-certs "$1" 2>/dev/null | grep -q 'CN=SebType'; }
-# SEBTYPE_UNSIGNED=1: a release without the key (on the build host, for the PC to sign).
+apksigner() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner "$@"; }
+# A release is built unsigned, here or on the build host, and signed the same way in both cases, as Gradle
+# would: APK Signature Scheme v2 alone (minSdk 24), with an RSA key, so the same bytes from either (#229).
+sign_release() {
+  local apk=${1%-unsigned.apk}.apk
+  apksigner sign --ks "$keydir/sebtype-release.jks" --ks-key-alias sebtype --ks-pass "file:$keydir/keystore.password" \
+    --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false --v4-signing-enabled false \
+    --out "$apk" "$1" 2>/dev/null
+  rm "$1"
+  apksigner verify --print-certs "$apk" 2>/dev/null | grep -q 'CN=SebType' ||
+    { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
+  echo "$apk"
+}
+# SEBTYPE_UNSIGNED=1: a release left unsigned (on the build host, for the PC to sign).
 unsigned=${SEBTYPE_UNSIGNED:-}
 if [[ $kind == release ]]; then
   VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} build=$VERSION_CODE
@@ -35,16 +47,7 @@ find app/build/runs -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
 
 if build_host_ready; then
   apks=$(build_remotely VERSION_CODE="$VERSION_CODE" SEBTYPE_UNSIGNED=1 android/build.sh "$kind")
-  if [[ $kind == release ]]; then
-    # As Gradle signs it: APK Signature Scheme v2 alone (minSdk 24), with an RSA key, so the same bytes.
-    apk=${apks%-unsigned.apk}.apk
-    "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner sign --ks "$keydir/sebtype-release.jks" \
-      --ks-key-alias sebtype --ks-pass "file:$keydir/keystore.password" --v1-signing-enabled false \
-      --v2-signing-enabled true --v3-signing-enabled false --v4-signing-enabled false --out "$apk" "$apks" 2>/dev/null
-    rm "$apks"
-    signed_by_sebtype "$apk" || { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
-    apks=$apk
-  fi
+  [[ $kind != release || -n $unsigned ]] || apks=$(sign_release "$apks")
   echo "$apks"
   exit
 fi
@@ -71,7 +74,9 @@ VERSION_NAME="$(cat upstream-version)-sebtype.$build"
 export VERSION_CODE VERSION_NAME
 case $kind in
   release)
-    task=assembleRelease abis=arm64-v8a out=app/build/outputs/apk/release ;;
+    # Kotlin compiles a release from scratch: an incremental compile infers Compose's stability of some
+    # lambdas differently, so the dex (and baseline.prof) depended on what was built before (#223, #229).
+    task="assembleRelease -Pkotlin.incremental=false" abis=arm64-v8a out=app/build/outputs/apk/release ;;
   debug-x86_64)
     task=assembleDebug abis=x86_64 out=app/build/outputs/apk/debug ;;
   test-x86_64)
@@ -96,11 +101,9 @@ if command -v sccache >/dev/null; then
 fi
 
 start=$(date +%s)
-# A release build gets SebType's key through its own environment, so builds in parallel or in the same
-# checkout can't take each other's signing away, and Gradle stops without it (#149, #178).
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
-export SEBTYPE_KEY_DIR=$keydir KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS UNSIGNED=$unsigned
+export KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS
 build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${container[@]}" bash -c '
   set -e
   date +%s > "$RUN/locked"
@@ -109,19 +112,13 @@ build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${containe
     trap "sccache --stop-server >/dev/null; rm -f $SCCACHE_SERVER_UDS" EXIT
   fi
   rm -rf "$OUT" app/build/outputs/apk/androidTest
-  if [[ $KIND == release && -z $UNSIGNED ]]; then
-    export SEBTYPE_KEYSTORE=$SEBTYPE_KEY_DIR/sebtype-release.jks
-    SEBTYPE_KEYSTORE_PASSWORD=$(cat "$SEBTYPE_KEY_DIR/keystore.password"); export SEBTYPE_KEYSTORE_PASSWORD
-  fi
   ./gradlew --no-daemon --max-workers="$GRADLE_WORKERS" -PsebtypeJobs="$BUILD_JOBS" -Dorg.gradle.jvmargs=-Xmx3g \
     -Pkotlin.compiler.execution.strategy=daemon -Pkotlin.daemon.jvmargs=-Xmx2g --console=plain -q "$@" >&2
   cp -l "$OUT"/*.apk "$RUN/"
   if [[ $KIND == test-x86_64 ]]; then mkdir "$RUN/androidTest" && cp -l app/build/outputs/apk/androidTest/debug/*.apk "$RUN/androidTest/"; fi
-' build $task -PsebtypeAbis="$abis" ${unsigned:+-PunsignedRelease}
+' build $task -PsebtypeAbis="$abis"
 apk=$(echo "$run"/*.apk)
-if [[ $kind == release && -z $unsigned ]]; then
-  signed_by_sebtype "$apk" || { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
-fi
+[[ $kind != release || -n $unsigned ]] || apk=$(sign_release "$apk")
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - $(cat "$locked") ))s after $(( $(cat "$locked") - start ))s in the lock queue, $(du -h "$apk" | cut -f1)" >&2
 echo "$apk"
 [[ $kind != test-x86_64 ]] || echo "$run"/androidTest/*.apk

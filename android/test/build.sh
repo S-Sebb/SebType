@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks the build speed-ups of #58 (docs/development.md, "Build and test times") on this checkout's commit:
 # a debug build in a new worktree comes from the shared caches, a Kotlin change compiles incrementally,
-# and the release APK is the same from two checkouts, with or without the caches.
+# and the release APK is the same file from two checkouts, with or without the caches, and from yanglab16.
 # Uses a scratch worktree in ~/scratch/SebType/cache/test-build-wt, deleted at the end; builds take the build lock.
 # One line per check in ~/scratch/SebType/<issue>/test-build-results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail
@@ -60,10 +60,13 @@ kotlin_incremental() {
 export -f kotlin_incremental
 check kotlin-incremental kotlin_incremental
 
-entries() { # name and CRC of every APK entry outside the signature
+same_apk() { # the same file, or the entries (name and CRC) that differ
+  cmp -s "$1" "$2" && echo "same file: $1 and $2" && return
+  diff <(entries "$1") <(entries "$2"); echo "$1 and $2 differ"; return 1
+}
+entries() {
   python3 -I -c 'import sys, zipfile
-for i in sorted(zipfile.ZipFile(sys.argv[1]).infolist(), key=lambda i: i.filename):
-    i.filename.startswith("META-INF/") or print(i.filename, i.CRC)' "$1"
+for i in sorted(zipfile.ZipFile(sys.argv[1]).infolist(), key=lambda i: i.filename): print(i.filename, i.CRC)' "$1"
 }
 # The checkout's release comes from the caches; the worktree's is built without them (no build cache,
 # no sccache on PATH), so the caches change nothing in it.
@@ -75,9 +78,18 @@ same_release() {
   b=$(cd "$wt" && rm -rf android/app/.cxx android/rime/.cxx && PATH=$nosc:$(tr : '\n' <<<"$PATH" | grep -vx "$(dirname "$(command -v sccache)")" | paste -sd:) \
     android/build.sh release); local rc=$?
   rm -rf "$nosc"; git -C "$wt" checkout -q -- android/gradle.properties
-  ((rc == 0)) && diff <(entries "$a") <(entries "$b") && echo "same entries: $a and $b"
+  ((rc == 0)) && same_apk "$a" "$b"
 }
-export -f entries same_release
+export -f same_apk entries same_release
 check release-same-in-two-checkouts same_release
+
+# Built on yanglab16 (other paths, CPU count, time zone and NDK folder) and signed here (#229).
+same_on_build_host() {
+  local a b
+  ssh -o ConnectTimeout=10 -o BatchMode=yes yanglab16 true || { echo "yanglab16 unreachable"; return 1; }
+  a=$(android/build.sh release) && b=$(SEBTYPE_BUILD_HOST=yanglab16 android/build.sh release) && same_apk "$a" "$b"
+}
+export -f same_on_build_host
+check release-same-on-yanglab16 same_on_build_host
 
 ! grep -qv '^PASS' "$results"

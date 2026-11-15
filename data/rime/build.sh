@@ -188,6 +188,11 @@ import_tables:
 ...
 EOF
 
+  # Rime records its sources' modification times in the compiled files (the phone puts them back, see
+  # RimeIceBundle), and unzip sets them in the local time zone: one fixed time makes the zip the same on
+  # every machine (#229).
+  stamp() { find "$s" -exec touch -h -d @1735689600 {} +; }
+  stamp
   # Compile, as the keyboard's own first deploy would; then the tables go into the shared dir's build/.
   "$work/deploy" "$s" "$work/user" rime_ice ranh > "$work/deploy.out" 2> "$work/deploy.log" ||
     { tail -5 "$work/deploy.log" >&2; exit 1; }
@@ -256,7 +261,8 @@ https://github.com/BYVoid/OpenCC/tree/ver.$OPENCC_VERSION/data): s2t.json as it 
 compiled from their .txt sources to OpenCC's binary format.
 EOF
   rm -f "$zip.part"
-  (cd "$s" && zip -qr -X -9 "$zip.part" .)
+  stamp # and in a fixed order, with times stored as UTC (zip stores local time)
+  (cd "$s" && find . -mindepth 1 | LC_ALL=C sort | TZ=UTC zip -q -X -9 "$zip.part" -@)
   mv "$zip.part" "$zip"
   echo "rime-data: built $zip ($(du -h "$zip" | cut -f1); compiled build/ $(du -sh "$s/build" | cut -f1))" >&2
 fi

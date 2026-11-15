@@ -12,7 +12,7 @@ download_and_extract(
 set(LEVELDB_BUILD_TESTS OFF CACHE BOOL "Build LevelDB's unit tests")
 set(LEVELDB_BUILD_BENCHMARKS OFF CACHE BOOL "Build LevelDB's benchmarks")
 
-add_subdirectory(${LEVELDB_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/leveldb_build EXCLUDE_FROM_ALL)
+add_subdirectory(${LEVELDB_SOURCE_DIR} ${RIME_JNI_BUILD_DIR}/leveldb_build EXCLUDE_FROM_ALL)
 
 unset(LEVELDB_BUILD_TESTS)
 unset(LEVELDB_BUILD_BENCHMARKS)
