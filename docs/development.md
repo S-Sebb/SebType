@@ -3,6 +3,14 @@
 Every build, test and measurement command, what it needs and where its results go. The READMEs in `pc/`
 describe what each PC part does and list what each of its checks verifies.
 
+- What SebType must do: [Requirements (#1)](https://github.com/S-Sebb/SebType/issues/1)
+- Settled choices: [Decisions (#2)](https://github.com/S-Sebb/SebType/issues/2)
+- Which licence covers which part: the README's [Licences](../README.md#credits-and-licences)
+- Build and publish a release: `android/release.sh` ([install.md](install.md#publishing-a-release))
+- The Chinese data: [`data/rime/build.sh`](../data/rime/build.sh) builds it from rime-ice's and
+  rime-frost's pinned releases, and `data/rime/bench/bench.sh` measures its accuracy, on the host's
+  librime with Lua, the same version as `engines/librime`.
+
 ## Layout
 
 | Folder | What |
