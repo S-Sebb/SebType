@@ -146,6 +146,7 @@ SebType's own model with today's stack (FUTO's decoder with its transformer) on 
 | Keystroke savings with 3 suggestions (simulated taps on a suggestion once it appears) | same sentences | reported, not gated |
 | Per-key time p95, engine alone | same | ≤ today |
 
+Today's numbers are in [docs/perf/2026-11-15-english.md](../perf/2026-11-15-english.md) (stage 0, #231).
 SebType's model replaces FUTO's only when every gated row passes. The same harness also checks the stage 2 stack
 (AOSP decoder + FUTO's model) against today, so the rewrite itself doesn't lose quality.
 
