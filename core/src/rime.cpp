@@ -6,6 +6,10 @@
 
 #include <rime_api.h>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -187,11 +191,17 @@ class Rime final : public Engine {
   void start(bool fullCheck) {
     api_->initialize(&traits_);
     api_->start_maintenance(fullCheck);
+    trim_ = true;
   }
 
   // Rime takes no keys while it deploys (in its own thread) after a start.
   bool ready() {
     if (api_->is_maintenance_mode()) return false;
+#ifdef __GLIBC__
+    // A deploy frees hundreds of MB, but glibc keeps the pages: Fcitx5 stayed near 100 MB RSS after a
+    // fresh profile, against about 40 MB after a second start (#214).
+    if (std::exchange(trim_, false)) malloc_trim(0);
+#endif
     if (!session_ || !api_->find_session(session_)) {
       session_ = api_->create_session();
       cache_.clear();
@@ -260,6 +270,7 @@ class Rime final : public Engine {
   RimeApi *api_;
   RimeTraits traits_{};
   RimeSessionId session_ = 0;
+  bool trim_ = false;  // a start (perhaps a deploy) ran since the last trim
   std::string commit_, tapStyle_ = "commit_code";
   std::vector<Candidate> cache_;
   int cacheStart_ = 0;
