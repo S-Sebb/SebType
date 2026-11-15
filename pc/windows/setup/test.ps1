@@ -310,7 +310,6 @@ if ($Typing) {
       function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
       Check "japanese-$Typing" {
         To-Language '0411'
-        if ((Committed 'a') -eq 'a') { Keys Shift_L }
         $t = Committed 'nihongo '
         if ($t -ne '日本語') { throw "nihongo + Space + Enter gave '$t'" }
         $t
@@ -346,7 +345,6 @@ if ($Typing) {
         Check 'japanese-tray-menu' {
           Field ja
           function Typed($s) { $tsf::Clear(); TypeText $s; Keys Return; Start-Sleep 1; $tsf::Text().Trim() }
-          if ((Typed 'a') -eq 'a') { Keys Shift_L }
           $m = $tsf::TrayPopup($true, "$out\117-menu-ja-hira.png"); $kata = Typed 'a'
           $m2 = $tsf::TrayPopup($true, "$out\117-menu-ja-kata.png"); $hira = Typed 'a'
           if ($m -ne "あ → ア`tAlt+``" -or $kata -ne 'ア' -or $m2 -ne "ア → あ`tAlt+``" -or $hira -ne 'あ') {

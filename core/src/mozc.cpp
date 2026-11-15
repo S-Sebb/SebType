@@ -384,7 +384,9 @@ class Mozc final : public Engine {
 
   // fcitx5-mozc's MozcResponseParser.
   bool parse(const Output &out) {
-    if (out.has_status()) {
+    // A status may carry only undo_available (Session::MaybeSetUndoStatus, after a commit): its unset
+    // activated would read as English letters, as on a switch away from 日本語 after typing (#190).
+    if (out.has_status() && out.status().has_activated()) {
       direct_ = !out.status().activated();
       if (out.status().mode() != mozc::commands::DIRECT) kana_ = out.status().mode();
     } else if (out.has_mode()) {

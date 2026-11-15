@@ -482,6 +482,21 @@ begin
     end;
 end;
 
+// The text service an app has loaded can't be deleted, which the uninstaller would report as not removed: it
+// moves out to %TEMP% where the app keeps it, and an unloaded copy takes its place for the uninstaller to
+// unregister and delete. Where no app has it, the moved one is deleted at once.
+procedure MoveOutLoaded(Path, Tag: String);
+var
+  Old: String;
+begin
+  Old := ExpandConstant('{%TEMP}\SebType-') + GetDateTimeString('yyyymmddhhnnss', #0, #0) + '-' + Tag + ExtractFileName(Path);
+  if FileExists(Path) and RenameFile(Path, Old) then begin
+    if not FileCopy(Old, Path, False) then
+      Log('could not copy back ' + Path);
+    DeleteFile(Old);
+  end;
+end;
+
 // The uninstaller runs elevated as the person removing SebType, whose account it puts back. The servers
 // stop first: a running one writes its folder again, so the account is put back only once they are gone.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -502,6 +517,8 @@ begin
   Step('-Machine -Undo', '-Machine -Undo -Log "' + ExpandConstant('{app}\setup.log') + '"', ExpandConstant('{app}\setup.log'), False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max * 2 div 3;
   Step('-User -Undo', '-User -Undo', '%LOCALAPPDATA%\SebType\setup.log', False);
+  MoveOutLoaded(ExpandConstant('{app}\sebtype.dll'), '');
+  MoveOutLoaded(ExpandConstant('{app}\x86\sebtype.dll'), 'x86-');
 end;
 
 procedure DeinitializeUninstall;
