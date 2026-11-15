@@ -100,22 +100,19 @@ Bringing words from elsewhere (a Rime word list, Rime's learned words, Mozc or M
 
 ## Credits and licences
 
-SebType stands on these projects:
+SebType is its own keyboard for Android, Linux and Windows. It builds on these projects' components:
 
-- **[FUTO Keyboard](https://github.com/futo-org/android-keyboard)**, the base of the phone app, itself
-  built on AOSP's LatinIME
-- **[Rime](https://rime.im)** ([librime](https://github.com/rime/librime), librime-lua, octagram) and its Android bindings RimeJni
-- **[rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)** and **[白霜拼音 (rime-frost)](https://github.com/gaboolic/rime-frost)**, the Chinese data
-- **[Mozc](https://github.com/google/mozc)**, Japanese on every device
-- **[Fcitx5](https://github.com/fcitx/fcitx5)**, [fcitx5-rime](https://github.com/fcitx/fcitx5-rime) and [fcitx5-mozc](https://github.com/fcitx/mozc), on Linux; [Weasel](https://github.com/rime/weasel), whose candidate window the Windows one takes its layout from
-- **[wordfreq](https://github.com/rspeer/wordfreq)** and [SCOWL](https://wordlist.aspell.net), the English dictionary's frequencies and checks
-- **Nunito**, **Pixelify Sans**, **Jersey 10** and **Noto Sans CJK**, the fonts
+- **[Rime](https://rime.im)** ([librime](https://github.com/rime/librime), librime-lua, octagram) and its Android bindings RimeJni: Chinese input
+- **[rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)** and **[白霜拼音 (rime-frost)](https://github.com/gaboolic/rime-frost)**: the Chinese data
+- **[Mozc](https://github.com/google/mozc)**: Japanese on every device
+- **[FUTO Keyboard](https://github.com/futo-org/android-keyboard)** (built on AOSP's LatinIME): the phone app's keyboard UI, English suggestions and layouts, which SebType modifies
+- **[Fcitx5](https://github.com/fcitx/fcitx5)**, [fcitx5-rime](https://github.com/fcitx/fcitx5-rime) and [fcitx5-mozc](https://github.com/fcitx/mozc): input on Linux; [Weasel](https://github.com/rime/weasel): the layout of the Windows candidate window
+- **[wordfreq](https://github.com/rspeer/wordfreq)** and [SCOWL](https://wordlist.aspell.net): the English dictionary's frequencies and checks
+- **Nunito**, **Pixelify Sans**, **Jersey 10** and **Noto Sans CJK**: the fonts
 
-SebType is a **modified version of FUTO Keyboard**. It is not made, endorsed or supported by FUTO;
-please don't report SebType problems to FUTO.
-
-The Android app is FUTO's code with SebType's changes, under FUTO's
-[FUTO Source First License 1.1](LICENSE.md) (see also [NOTICE](NOTICE)). That licence makes it
+**The Android app contains FUTO Keyboard's code, modified by SebType, under FUTO's
+[FUTO Source First License 1.1](LICENSE.md)** (see also [NOTICE](NOTICE)). SebType is not made,
+endorsed or supported by FUTO; please don't report SebType problems to FUTO. That licence makes it
 source-available, not open source: anyone may use it, but it may be modified only for non-commercial
 purposes and shared only free of charge and non-commercially, with FUTO's payment features and notices
 left in. SebType keeps FUTO's payment screen, with a note on SebType's licence. SebType's own code
