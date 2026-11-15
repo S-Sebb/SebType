@@ -467,6 +467,9 @@ bool TextService::send(const Request &request) {
   // little for its pipe. Not again for a while, so a server that can't start doesn't slow every key.
   const DWORD now = GetTickCount();
   if (serverStarted_ && now - serverStarted_ < 10000) return false;
+  // SebType is being uninstalled (the uninstaller's mark): its files are about to go.
+  if (GetFileAttributesW((serverPath().parent_path() / L"uninstalling").c_str()) != INVALID_FILE_ATTRIBUTES)
+    return false;
   serverStarted_ = now;
   STARTUPINFOW si{sizeof(si)};
   PROCESS_INFORMATION pi{};

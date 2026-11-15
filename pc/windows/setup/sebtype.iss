@@ -502,7 +502,8 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then begin
-    StopServers(False);  // one an app's text service started again while the account was put back
+    StopServers(False);
+    DeleteFile(ExpandConstant('{app}\uninstalling'));
     MoveOut(ExpandConstant('{app}\x86'));
     MoveOut(ExpandConstant('{app}'));
     // The uninstaller tried to remove {app} before this step, while those files were still in it.
@@ -512,11 +513,15 @@ begin
   if CurUninstallStep <> usUninstall then
     Exit;
   UninstallProgressForm.StatusLabel.Caption := CustomMessage('Undoing');
+  // Apps' text services start no server from here on (an app did while the account was put back, and the
+  // server and Mozc's were running when their files were deleted).
+  SaveStringToFile(ExpandConstant('{app}\uninstalling'), '', False);
   StopServers(False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max div 3;
   Step('-Machine -Undo', '-Machine -Undo -Log "' + ExpandConstant('{app}\setup.log') + '"', ExpandConstant('{app}\setup.log'), False);
   UninstallProgressForm.ProgressBar.Position := UninstallProgressForm.ProgressBar.Max * 2 div 3;
   Step('-User -Undo', '-User -Undo', '%LOCALAPPDATA%\SebType\setup.log', False);
+  StopServers(False);
   MoveOutLoaded(ExpandConstant('{app}\sebtype.dll'), '');
   MoveOutLoaded(ExpandConstant('{app}\x86\sebtype.dll'), 'x86-');
 end;
