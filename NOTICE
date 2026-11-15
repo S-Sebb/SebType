@@ -28,7 +28,8 @@ has the details):
     SebType's changes (android/mozc/LICENSE).
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, Weasel GPL-3.0, fcitx5-rime
-  LGPL-2.1-or-later.
+  LGPL-2.1-or-later. On Windows, mozc_server.exe comes with the Microsoft Visual C++ runtime files Mozc's
+  own installer ships next to it (msvcp140*.dll, vcruntime140*.dll), under Microsoft's terms for them.
 
 FUTO's NOTICE follows unchanged, then the credits for SebType's English dictionary.
 

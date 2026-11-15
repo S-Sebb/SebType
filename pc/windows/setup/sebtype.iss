@@ -175,7 +175,7 @@ Source: "{#Service}\sebtype.dll"; DestDir: "{app}"; Flags: ignoreversion regserv
 Source: "{#Service}\x86\sebtype.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit
 Source: "{#Rime}\rime.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Rime}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
-Source: "{#In}\mozc-server\mozc_server.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#In}\mozc-server\*"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Repo}\pc\linux\mozc-keymap.tsv"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\rime-data\rime-data.zip"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\sebtype-configurator\sebtype-configurator.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -213,6 +213,8 @@ Type: files; Name: "{app}\x86\sebtype.dll.*.old"
 Type: files; Name: "{app}\sebtype-server.exe.*.old"
 Type: files; Name: "{app}\rime.dll.*.old"
 Type: files; Name: "{app}\mozc_server.exe.*.old"
+Type: files; Name: "{app}\msvcp140*.dll.*.old"
+Type: files; Name: "{app}\vcruntime140*.dll.*.old"
 
 [Code]
 const
@@ -401,6 +403,12 @@ begin
   MoveAside(ExpandConstant('{app}\sebtype-server.exe'));
   MoveAside(ExpandConstant('{app}\rime.dll'));
   MoveAside(ExpandConstant('{app}\mozc_server.exe'));
+  // mozc_server's C++ runtime, which rime.dll may have loaded too
+  MoveAside(ExpandConstant('{app}\msvcp140.dll'));
+  MoveAside(ExpandConstant('{app}\msvcp140_1.dll'));
+  MoveAside(ExpandConstant('{app}\msvcp140_2.dll'));
+  MoveAside(ExpandConstant('{app}\vcruntime140.dll'));
+  MoveAside(ExpandConstant('{app}\vcruntime140_1.dll'));
   Result := '';
 end;
 procedure CurStepChanged(CurStep: TSetupStep);

@@ -191,7 +191,10 @@ jobs:
           $server = Get-ChildItem -Recurse in/mozc-msi -Filter mozc_server.exe | Select-Object -First 1
           if (-not $server) { throw "no mozc_server.exe in $msi" }
           New-Item -ItemType Directory -Force in/mozc-server | Out-Null
-          Copy-Item $server.FullName in/mozc-server/
+          # With the C++ runtime it was built with, which Mozc installs next to it: Windows' own may be older,
+          # and mozc_server then never starts (TCSBackEnd's is).
+          Copy-Item $server.FullName, "$($server.DirectoryName)\msvcp140*.dll", "$($server.DirectoryName)\vcruntime140*.dll" in/mozc-server/
+          if (-not (Test-Path in/mozc-server/vcruntime140.dll)) { throw "no C++ runtime next to mozc_server.exe in $msi" }
       - name: Inno Setup
         run: |
           $exe = "$env:RUNNER_TEMP\innosetup.exe"

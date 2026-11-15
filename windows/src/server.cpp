@@ -14,6 +14,7 @@
 #include "pipe.h"
 
 #include <sddl.h>
+#include <shellapi.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
 
@@ -207,7 +208,8 @@ int run() {
     GetTokenInformation(token, TokenElevation, &elevated, sizeof(elevated), &n);
     CloseHandle(token);
   }
-  note(std::string("server started") + (elevated.TokenIsElevated ? ", elevated" : "") + ", by " + parent());
+  note(std::string("server started") + (elevated.TokenIsElevated ? ", elevated" : "") + ", by " + parent() + ": " +
+       utf8(GetCommandLineW()));
   Core host(makeEngine);
   core = &host;
   // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
@@ -230,14 +232,19 @@ int run() {
 }  // namespace
 }  // namespace sebtype::win
 
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR args, int) {
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   using namespace sebtype;
   using namespace sebtype::win;
-  const std::wstring arg = args ? args : L"";
+  // From the whole command line: wWinMain's own argument came differently on Windows than under Wine, and
+  // /deploy from setup.ps1 started a server that never returned.
+  int argc = 0;
+  wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  const std::wstring arg = argv && argc > 1 ? argv[1] : L"";
+  LocalFree(argv);
   Request q;
-  if (arg == L"/deploy") q.op = Op::Deploy;
-  else if (arg == L"/sync") q.op = Op::Sync;
-  else if (arg == L"/quit") q.op = Op::Quit;
+  if (_wcsicmp(arg.c_str(), L"/deploy") == 0) q.op = Op::Deploy;
+  else if (_wcsicmp(arg.c_str(), L"/sync") == 0) q.op = Op::Sync;
+  else if (_wcsicmp(arg.c_str(), L"/quit") == 0) q.op = Op::Quit;
   else return run();
   Reply r;
   if (q.op == Op::Quit) return call(q, r, 5000), 0;
