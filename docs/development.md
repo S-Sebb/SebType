@@ -63,8 +63,7 @@ Nothing goes to `/tmp` or `~/.cache`.
 | Command | Builds |
 |---|---|
 | `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's server from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
-| `pc/linux/mozc/build.sh` | SebType's fcitx5-mozc RPM from `engines/mozc`, in a pinned Fedora container |
-| `pc/linux/rime/build.sh [fcitx5-rime\|librime\|fcitx5]` | the fcitx5-rime, librime (from `engines/librime`) or Fcitx5 RPMs |
+| `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
 | `cargo build --release` in `pc/configurator` | the Configurator |
 | `pwsh pc/windows/mozc/build.ps1`, `pc/windows/weasel/build.ps1` | Mozc's installer and Weasel, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 
@@ -155,13 +154,13 @@ Take its lock while you use it (`devq -m <minutes> /tmp/agent-locks/devices/emul
 Two scripts measure SebType the same way every time (#45). They run in the final performance run of a
 batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional.
 Each final run's report is in `docs/perf/`; the first, next to other IMEs, is
-[2026-11-12](perf/2026-11-12.md).
+[2026-11-12](perf/2026-11-12.md), and Linux's SebType add-on (#190) is in [2026-11-15](perf/2026-11-15.md).
 
 Next to other IMEs, the same way (#54), with a 12-minute mixed-typing run (`SOAK_MIN`) for leaks and crashes:
 
 - Android: `android/perf/perf.sh --compare` (another installed keyboard: `IME_PKG`, `IME_ID`, `KEY_ROWS`,
   `KEY_SPACE`) and `--soak` (SebType as installed); `--compare-device` and `--soak-device` on a phone.
-- Linux: `pc/linux/compare.sh` (stock fcitx5-rime and fcitx5-mozc, each in a private Fcitx5).
+- Linux: `pc/linux/compare.sh` (SebType's input method next to Fedora's fcitx5-rime and fcitx5-mozc, each in a private Fcitx5).
 - Windows: `ONLY=compare pc/windows/setup/test-tcsbackend.sh` (Microsoft Pinyin and Japanese IME;
   `COMPARE_IMES` narrows it).
 
@@ -263,15 +262,16 @@ pc/linux/perf.sh                    # RUNS (default 5) repeats each typing set
 It never touches the running Fcitx5 session:
 
 - **Rime with rime-ice:** times each key followed by reading the candidate menu (as Fcitx5 does)
-  through librime, on a temporary copy of `~/.local/share/fcitx5/rime` (or `RIME_DIR`), deleted on
+  through SebType's librime, on a temporary copy of `~/.local/share/fcitx5/rime` (or `RIME_DIR`), deleted on
   exit. Then it deletes the copy's `build/` and times a full deploy with its peak memory.
-- **Mozc:** starts a private `mozc_server` with its own empty profile and talks to it over Mozc's
+- **Mozc:** starts a private copy of SebType's `mozc_server` with its own empty profile and talks to it over Mozc's
   IPC (`pc/linux/perf-mozc.py`): suggestions per key, and conversion with Space. Each word is
   reverted, so nothing is learned.
 - **Memory:** RSS, PSS and swapped-out size of the running `fcitx5` and `mozc_server`, read from
-  `ps` and `/proc`.
+  `ps` and `/proc`; skipped while the session runs another input method than SebType's.
 
-It needs gcc, python3, librime with librime-lua, and fcitx5-mozc. It compiles against
+It needs gcc, python3, bwrap, and librime with librime-lua; it unpacks SebType's input method and librime
+(built first when they aren't cached) and times their Rime and Mozc. It compiles against
 `engines/librime`'s headers. Results: `~/scratch/SebType/<issue>/pc-perf.md` and
 `pc-perf-results.txt`.
 
@@ -301,7 +301,7 @@ daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproduc
 
 | Other builds and tests | Before | After |
 |---|---|---|
-| `pc/linux/mozc/build.sh`, nothing changed / after a source change / first build | 11 s / 323 s / 490 s | unchanged |
+| Mozc's Linux build (now in `linux/build.sh`), nothing changed / after a source change / first build | 11 s / 323 s / 490 s | unchanged |
 | `pc/linux/test-setup-ime.sh` | 15 s | unchanged (mostly Fcitx5 and a Rime deploy starting) |
 | `android/test/privacy.sh` (release rebuild + checks) | 13 s | 8 s |
 | `android/test/typing.sh` (test APKs + 4 tests on the emulator) | 22 s build + about 55 s device | 7 s build, 58 s in all |

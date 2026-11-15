@@ -16,16 +16,13 @@ has the details):
     wordfreq's frequencies under CC BY-SA 4.0 (credits at the end).
   - android/app/src/main/res/font/sebtype_nunito_extrabold.ttf and sebtype_pixelify_semibold.ttf, the fonts in
     art/fonts/, and the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
-  - SebType's Mozc in engines/mozc/ (with fcitx/mozc's Fcitx 5 frontend), and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause
-    licence.
+  - SebType's Mozc in engines/mozc/, and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause licence.
   - SebType's Weasel in pc/weasel/: Weasel's GPL-3.0.
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
-  - SebType's fcitx5-rime in pc/fcitx5-rime/: fcitx5-rime's LGPL-2.1-or-later.
-  - SebType's Fcitx5 in pc/fcitx5/: Fcitx5's LGPL-2.1-or-later.
   - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's
-    notificationitem: LGPL-2.1-or-later.
+    notificationitem: LGPL-2.1-or-later (LICENSE-LGPL-2.1).
   - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend): Mozc's BSD-3-Clause licence.
-  - The RPM specs in pc/linux/: Fedora's, MIT.
+  - linux/librime.spec: Fedora's spec, MIT.
   - android/rime/: RimeJni (MIT) with SebType's changes, under RimeJni's licence (android/rime/LICENSE).
   - android/mozc/src/: FUTO's mozc-lib, Google's Mozc Android client (BSD-3-Clause) with FUTO's and
     SebType's changes (android/mozc/LICENSE).

@@ -35,7 +35,7 @@ like the one above, puts it first.
   list with no words.
 - **Linux:** copy the file to `~/.local/share/fcitx5/rime/sebtype_words.dict.yaml`, then tell Rime to
   deploy:
-  `busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/rime/deploy s ''`
+  `busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ''`
 - **Windows:** copy the file to `%APPDATA%\Rime\sebtype_words.dict.yaml`, then run
   `WeaselDeployer.exe /deploy` from Weasel's folder (`WeaselRoot` in
   `HKLM\SOFTWARE\WOW6432Node\Rime\Weasel`).
@@ -52,7 +52,8 @@ Nothing the phone learned is lost.
 
 1. On the PC, have Rime write its sync files. This also merges in anything already in its sync
    folder, as a sync always does.
-   - Linux: `busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/rime/sync s ''`
+   - Linux: `busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Save` (SebType's input
+     method saves Rime's data with Rime's sync)
    - Windows: `WeaselDeployer.exe /sync` from Weasel's folder.
 2. Take `sync/<installation id>/rime_ice.userdb.txt` from Rime's user folder (the id is in
    `installation.yaml` there) and import it on the phone.

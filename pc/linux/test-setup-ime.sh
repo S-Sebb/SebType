@@ -41,34 +41,23 @@ mapfile -t rime_zips < <(for z in "$SCRATCH"/cache/rime-data-*.zip; do cmp -s "$
 ((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/scratch/SebType/cache"; exit 1; }
 rime_data=$out/rime-data/rime/rime-data.zip
 # SebType's input method (#190) and librime (#101), built once and cached. The private Fcitx5s below run them
-# without installing them: Fcitx5 finds the add-on in $own (sebtype_env), and bwrap mounts librime over
-# Fedora's for that Fcitx5 alone.
-# shellcheck source=mozc/versions.sh
-source mozc/versions.sh
-# shellcheck source=rime/versions.sh
-source rime/versions.sh
+# without installing them: bwrap mounts them from $own for that Fcitx5 alone (sebtype_run).
 # shellcheck source=../../linux/versions.sh
 source ../../linux/versions.sh
 own=$out/own-builds
 sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
-for p in librime librime-lua librime-octagram; do
-  rpm=$(librime_rpm "$p")
-  [[ -f $rpm ]] || rime/build.sh librime >/dev/null || { echo "preflight: pc/linux/rime/build.sh librime failed"; exit 1; }
-  rpm2cpio "$rpm" | (cd "$own" && cpio -idm --quiet) || { echo "preflight: can't unpack $rpm"; exit 1; }
-done
-read -ra own_env <<<"$(sebtype_env "$own")"
-own_fcitx=(env "${own_env[@]}" bwrap --dev-bind / / --ro-bind "$own/usr/lib64/librime.so.$LIBRIME_VERSION" "/usr/lib64/librime.so.$LIBRIME_VERSION"
-  --ro-bind "$own/usr/lib64/rime-plugins" /usr/lib64/rime-plugins)
+librime_unpack "$own" || { echo "preflight: linux/build-librime.sh failed"; exit 1; }
+read -ra own_fcitx <<<"$(sebtype_run "$own")"
 
-check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh mozc/build.sh rime/build.sh ../../linux/build.sh
+check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh perf.sh compare.sh \
+  ../../linux/build.sh ../../linux/build-librime.sh
 
 # No two icon files differ only by case: a Windows checkout would keep one of them (#77).
 icon_case() { ! git ls-files ../icons | tr '[:upper:]' '[:lower:]' | sort | uniq -d | grep .; }
 check icon-names-differ-beyond-case icon_case
 
-# Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (and
-# SebType's fcitx5-mozc and fcitx5-rime, until the user says yes to their sudo install; the typo keyboard
-# line, #46; #92/#93's Win+Space toggle, 日本語 and English names and Japanese's menu icon; #102/#117's
+# Live dry run: must not touch the account, and on a set-up PC only the agreed cleanups remain (the typo
+# keyboard line, #46; #92/#93's Win+Space toggle, 日本語 and English names and Japanese's menu icon; #102/#117's
 # Chinese data and Alt+` keymap; #182's add-on hotkeys and the removal of Fcitx5's own settings; and #190's
 # input method, its Super+Space and its tray, until setup reruns).
 live_dry() {
@@ -91,20 +80,14 @@ fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
 trap 'rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
-# sebtype, fcitx5-mozc (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release; fcitx5-rime is
-# installed, as $FAKE/fcitx5-rime's version-release once that file exists, and not while it is empty. The fake sudo logs and applies
-# dnf's install of SebType's RPMs and their distro-sync back to Fedora's, and the removal and install of
-# Fcitx5's own settings.
-stub rpm 'p=${*: -1}; [[ $p == sebtype || $p == fcitx5-mozc || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
+# sebtype (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release;
+# any other package is installed, as $FAKE/<package>'s version-release once that file exists, and not while
+# it is empty. The fake sudo logs and applies dnf's install of SebType's RPMs and their distro-sync back to
+# Fedora's, and the removal and install of Fcitx5's own settings.
+stub rpm 'p=${*: -1}; [[ $p == sebtype || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
 stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
   'dnf install -y '*/$SEBTYPE_RPM) echo -n '$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE' > \"\$FAKE/sebtype\" ;;
-  'dnf install -y '*/$MOZC_RPM) echo -n '$MOZC_VERSION-$SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-mozc\" ;;
-  'dnf install -y '*/$RIME_RPM) echo -n '$RIME_VERSION-$RIME_SEBTYPE_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
-  'dnf distro-sync -y fcitx5-mozc') echo -n '$MOZC_FEDORA' > \"\$FAKE/fcitx5-mozc\" ;;
-  'dnf distro-sync -y fcitx5-rime') echo -n '$RIME_VERSION-$RIME_FEDORA_RELEASE' > \"\$FAKE/fcitx5-rime\" ;;
-  'dnf install -y '*/fcitx5-$FCITX5_VERSION-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$FCITX5_VERSION-*}\"; done ;;
-  'dnf distro-sync -y fcitx5'|'dnf distro-sync -y fcitx5 '*) for p in \"\${@:4}\"; do echo -n '$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
   'dnf install -y '*/librime-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
   'dnf remove -y '*) for p in \"\${@:4}\"; do : > \"\$FAKE/\$p\"; done ;;
   'dnf install -y kcm-fcitx5'*|'dnf install -y fcitx5-configtool'*) for p in \"\${@:4}\"; do echo -n 5.1.16-1.fc44 > \"\$FAKE/\$p\"; done ;;
@@ -219,7 +202,7 @@ tray_icons() {
   for d in 16 20 22 24 32 scalable; do
     for n in sebtype-en:en sebtype-zh:zh sebtype-zh-a:zh-a sebtype-zh-caps:zh-caps sebtype-hira:hira sebtype-kata:kata \
       sebtype-ja-a:ja-a sebtype-ja-caps:ja-caps input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps fcitx_mozc:hira fcitx_mozc_hiragana:hira \
-      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a fcitx_mozc_direct_upper:ja-caps; do
+      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a; do
       cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
     done
   done
@@ -789,31 +772,6 @@ sebtype_install() {
 }
 check sebtype-install sebtype_install
 
-# An older setup's SebType Fcitx5 (#182) goes back to Fedora's after a yes (#190), as SebType's tray needs no
-# change to Fcitx5, and a rerun leaves it.
-fcitx5_fedora() {
-  local o p; rm -f "$fake/sudo.log"
-  for p in fcitx5 fcitx5-libs fcitx5-data; do echo -n "$FCITX5_VERSION-$FCITX5_SEBTYPE_RELEASE" > "$fake/$p"; done
-  o=$(echo y | fake_run) || return 1; echo "$o"
-  grep -q "^change: replace SebType's Fcitx5 build with Fedora's" <<<"$o" &&
-    [[ $(cat "$fake/sudo.log") == 'sudo dnf distro-sync -y fcitx5 fcitx5-libs fcitx5-data' &&
-      $(cat "$fake/fcitx5") == "$FCITX5_VERSION-$FCITX5_FEDORA_RELEASE" ]] || return 1
-  o=$(fake_run < /dev/null) || return 1; echo "$o"
-  ! grep -q "Fcitx5 build" <<<"$o"
-}
-check fcitx5-back-to-fedora fcitx5_fedora
-
-# An older setup's SebType fcitx5-mozc (#66) and fcitx5-rime (#117): --undo-mozc and --undo-rime bring back
-# Fedora's once.
-old_undo() { # package Fedora's-version-release SebType's-version-release
-  local o; rm -f "$fake/sudo.log"; echo -n "$3" > "$fake/$1"
-  o=$(fake_run "--undo-${1#fcitx5-}" < /dev/null) || return 1; echo "$o"
-  [[ $(cat "$fake/sudo.log") == "sudo dnf distro-sync -y $1" && $(cat "$fake/$1") == "$2" ]] &&
-    o=$(fake_run "--undo-${1#fcitx5-}" < /dev/null) && [[ -z $o ]]
-}
-check mozc-undo old_undo fcitx5-mozc "$MOZC_FEDORA" "$MOZC_VERSION-$SEBTYPE_RELEASE"
-check rime-undo old_undo fcitx5-rime "$RIME_VERSION-$RIME_FEDORA_RELEASE" "$RIME_VERSION-$RIME_SEBTYPE_RELEASE"
-
 # SebType's librime (#101) replaces Fedora's after a yes, a rerun leaves it, --undo-librime brings back
 # Fedora's once, and a package of another version is left alone with a warning. The RPMs are placeholders,
 # so nothing is built.
@@ -832,9 +790,9 @@ own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup chec
     [[ $(cat "$fake/sudo.log") == "sudo dnf install -y ${rpms[*]}" && $(cat "$fake/$p") == *.sebtype* ]] || return 1
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   ! grep -q " $p " <<<"$o" || return 1
-  o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) || return 1; echo "$o"
+  o=$(fake_run "--undo-$p" < /dev/null) || return 1; echo "$o"
   [[ $(tail -1 "$fake/sudo.log") == "sudo dnf distro-sync -y ${pkgs[*]}" && $(cat "$fake/$p") == "$fedora" ]] &&
-    o=$(fake_run "--undo-${p#fcitx5-}" < /dev/null) && [[ -z $o ]] || return 1
+    o=$(fake_run "--undo-$p" < /dev/null) && [[ -z $o ]] || return 1
   echo -n 9.9.9-1.fc45 > "$fake/$p"
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   grep -q "^warning: $p 9.9.9-1.fc45 isn't the version" <<<"$o" && [[ $(wc -l < "$fake/sudo.log") == 2 ]]

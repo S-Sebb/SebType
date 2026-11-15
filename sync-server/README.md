@@ -151,7 +151,7 @@ read them. On Windows the Configurator runs it with the Python that Setup instal
 words on the PC stay. Uninstalling SebType, or leaving a language out in Setup, never deletes anything on
 the server: if sync was ever on, Setup syncs first (Decisions #2), then removes the schedule and the login.
 
-## By hand on a Linux PC (fcitx5-rime)
+## By hand on a Linux PC
 
 This is what the Configurator does; without it, the client runs like this.
 
@@ -175,7 +175,7 @@ write the PC's own, upload that. Put the password in a file only you can read
 R=~/.local/share/fcitx5/rime
 python3 sebtype_sync.py pull --server https://sync.example.com --user alice \
     --password-file ~/.config/sebtype-sync-password --rime-dir "$R"
-# fcitx5 saves its addons' data on this call, and fcitx5-rime's save is Rime's sync
+# fcitx5 saves its addons' data on this call, and SebType's input method saves Rime's with Rime's sync
 gdbus call --session --dest org.fcitx.Fcitx5 --object-path /controller \
     --method org.fcitx.Fcitx.Controller1.Save
 sleep 5   # Rime merges in the background
@@ -199,7 +199,7 @@ new Japanese words to it. They go into a dictionary of their own, "SebType sync"
 tool. The PC still needs Rime, for its device id. English words stay on the phones: a PC has no English
 personal dictionary to put them in.
 
-On Linux (fcitx5-mozc) the dictionary is `~/.config/mozc/user_dictionary.db`. Add the option to both
+On Linux the dictionary is `~/.config/mozc/user_dictionary.db`. Add the option to both
 commands above:
 
 ```sh
@@ -209,7 +209,7 @@ python3 sebtype_sync.py push ... --rime-dir "$R" --mozc-db ~/.config/mozc/user_d
 
 If Mozc's dictionary tool is open, `pull` stops without changing anything and says so. Before it changes the dictionary it keeps the old one as `user_dictionary.db.sebtype-backup`.
 Mozc reads its dictionary when it starts, so new words come up once `mozc_server` restarts, at the
-next login or after `kill $(pidof mozc_server)` (fcitx5 starts it again at the next key).
+next login or after `kill $(pidof mozc_server)` (SebType's input method starts it again at the next key).
 
 On Windows, Google 日本語入力 is the same engine with the same dictionary file,
 `%USERPROFILE%\AppData\LocalLow\Google\Google Japanese Input\user_dictionary.db`. Close its

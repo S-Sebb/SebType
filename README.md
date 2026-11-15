@@ -22,14 +22,12 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 | `android/app/src/main/res/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) | FUTO Source First License 1.1 |
 | `android/app/src/main/res/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
 | The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([art/fonts/OFL-Nunito.txt](art/fonts/OFL-Nunito.txt), [art/fonts/OFL-PixelifySans.txt](art/fonts/OFL-PixelifySans.txt)) |
-| SebType's Mozc (`engines/mozc/`: Mozc with fcitx/mozc's Fcitx 5 frontend and SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
+| SebType's Mozc (`engines/mozc/`: Mozc with SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
 | SebType's Weasel (`pc/weasel/`: Weasel with SebType's changes) | GPL-3.0, like Weasel |
-| SebType's fcitx5-rime (`pc/fcitx5-rime/`: fcitx5-rime with SebType's changes) | LGPL-2.1-or-later, like fcitx5-rime |
-| SebType's Fcitx5 (`pc/fcitx5/`: Fcitx5 with SebType's changes) | LGPL-2.1-or-later, like Fcitx5 |
-| `core/src/rime.cpp` (follows fcitx5-rime) and SebType's tray in `linux/src/tray.*` (ported from Fcitx5's notificationitem) | LGPL-2.1-or-later, like fcitx5-rime and Fcitx5 |
+| `core/src/rime.cpp` (follows fcitx5-rime) and SebType's tray in `linux/src/tray.*` (ported from Fcitx5's notificationitem) | LGPL-2.1-or-later, like fcitx5-rime and Fcitx5 ([LICENSE-LGPL-2.1](LICENSE-LGPL-2.1)) |
 | `core/src/mozc.cpp` (follows fcitx5-mozc, Mozc's Fcitx 5 frontend) | BSD-3-Clause, like Mozc |
 | SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
-| Fedora's RPM specs with SebType's changes (`pc/linux/mozc/*.spec`, `pc/linux/rime/*.spec`) | MIT, like Fedora's specs |
+| Fedora's librime spec with SebType's changes (`linux/librime.spec`) | MIT, like Fedora's specs |
 | RimeJni with SebType's changes (`android/rime/`: the Kotlin and JNI bindings to librime; its bundled libraries' licences are in `android/rime/src/main/assets/licenses/`) | MIT, like RimeJni |
 | librime | BSD-3-Clause |
 | The rime-ice and 白霜 data in the APK and on the PCs (see Chinese below) | GPL-3.0 |
