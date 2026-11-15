@@ -1,6 +1,6 @@
 # Plan: SebType's own Android keyboard on core/ (#191, #190 step 3)
 
-Status: a plan for the user to approve. Nothing here is built yet.
+Status: the user's choices are recorded at the end. Nothing here is built yet.
 
 The user's goal (2026-11-15): "I want to make sure as much of these components are our own code in consistent
 form, so everything is easier to maintain and we can clean up things as much as possible while reducing final
@@ -17,16 +17,18 @@ perf runs call it 103–105 MB).
 - **Build a new app and don't touch FUTO's.** It is written from scratch in Kotlin on top of `core/`, inside
   `dev.sebb.sebtype`. English uses the pristine AOSP LatinIME decoder (Apache-2.0), taken from AOSP's own repo,
   not FUTO's copy. The phone runs librime and Mozc in-process, behind the same `core/` engines the PCs use.
+- **FUTO's English model stays for now** (the user, 2026-11-15). The new keyboard keeps the model file and only
+  the FUTO code that runs it, as one isolated module. SebType's own model is trained later on yanglab16 and
+  replaces it (stage 7), once it passes the quality bar in §2.
 - **The size comes from data, not UI code.** The APK is 42 % Mozc's dictionary, 28 % FUTO's English model and
-  19 % Rime's data. All the UI and engine code together is under 9 %. A new UI saves about 2 MB. Dropping FUTO's
-  model saves 31 MB and about 70 MB of PSS while typing English.
-- **The main risk is English next-word prediction.** FUTO's model is FUTO-licensed and has to go (#108). The plan
-  first measures today's English offline. It then replaces the model with the AOSP decoder and SebType's own
-  n-gram dictionary, and only trains a small model of SebType's own if the measured quality falls short.
-- **No FUTO code ships after stage 6.** The payment screen, the unpaid notice and FUTO's licence notice go in the
-  same release.
-- **About 33–48 delegate-days in 7 stages**, plus 6–10 if a model of SebType's own is needed. Every stage keeps the released app shippable. Until stage 6 the
-  release is still the FUTO-based app.
+  19 % Rime's data. All the UI and engine code together is under 9 %. A new UI saves about 2 MB. The memory and
+  speed gains come from one keyboard window without FUTO's framework and from one JNI call per key.
+- **FUTO's licence stays until stage 7.** At stage 6 only FUTO's English model module, its English dictionary and
+  the payment screens are FUTO's. The payment screen, the unpaid notice and FUTO's licence notice stay until the
+  model swap removes the last FUTO file.
+- **Releases are held until stage 6** (the user, 2026-11-15). The app on the phone stays as it is until the new
+  keyboard replaces it.
+- **About 32–47 delegate-days for stages 0–6, then 8–12 days plus training time on yanglab16 for stage 7.**
 
 ## 1. Inventory
 
@@ -56,8 +58,8 @@ Java is FUTO's, 39 % AOSP's and 3 % SebType's.
 | Multi-engine layer and globe switching | `engine/IMEManager.kt`, `GeneralIME.kt`, `IMEInterface.kt` | ~1,350 | code | **Rewrite**: `core/` owns languages and switching |
 | Floating pre-edit (pinyin above the keys) | `latin/uix/FloatingPreEdit.kt` | 176 | code | **Rewrite** as part of the candidate bar |
 | English decoder: completion and autocorrect (about 70 % of phone typos fixed, #46) | `cpp/src/dictionary`, `cpp/src/suggest` (AOSP plus 1,395 lines of FUTO's), `latin/Suggest.java` and dictionaries | 28,500 C++ + 3,900 Java | part of latinime 1.0 % | **Reuse pristine AOSP** native decoder (Apache-2.0, 29,950 lines at AOSP `127336e`) in `engines/latinime/`. **Rewrite** the glue in `core/` |
-| English transformer (next-word, completion re-ranking) | `latin/xlm/`, the LanguageModel JNI, ggml, sentencepiece | 1,265 Kotlin + 1,315 + 218k vendored | model 28.2 % + part of latinime 1.0 % | **Drop** FUTO's model and its code. Replace per §2 |
-| English dictionary (FUTO's words, wordfreq frequencies, SCOWL-checked modern words; #40) | `res/raw/main_en.dict` (FUTO's licence + CC BY-SA 4.0) | data | 1.0 % | **Rewrite** the build: AOSP `en_US` wordlist (Apache-2.0) + wordfreq (CC BY-SA 4.0) + SCOWL words + n-grams (§2) |
+| English transformer (next-word, completion re-ranking) | `latin/xlm/`, the LanguageModel JNI, ggml (MIT), sentencepiece (Apache-2.0) | 1,265 Kotlin + 1,315 + 218k vendored | model 28.2 % + part of latinime 1.0 % | **Reuse until stage 7** (§2): the model file and FUTO's native runner only, in `engines/futo-lm/` under FUTO's licence. FUTO's Kotlin around it is **rewritten**. **Drop** at stage 7 for SebType's own model |
+| English dictionary (FUTO's words, wordfreq frequencies, SCOWL-checked modern words; #40) | `res/raw/main_en.dict` (FUTO's licence + CC BY-SA 4.0) | data | 1.0 % | **Reuse until stage 7**. Then **rewrite** the build from AOSP's `en_US` wordlist (Apache-2.0) + wordfreq (CC BY-SA 4.0) + SCOWL words |
 | Learned English words and personal dictionary | `UserBinaryDictionary`, `personalization/` | 511 | code | **Reuse** AOSP's user-history format through its native code. **Rewrite** the glue |
 | Blocked-words filter (fixed on, #41) | `BadWords.kt`, `SuggestionBlacklist.kt` | ~150 | code | **Rewrite**: a word list applied in the English engine |
 | Email domain suggestions (kept, #53 B10) | `latin/EmailDictionary.kt` | 28 | code | **Rewrite** |
@@ -94,42 +96,67 @@ Java is FUTO's, 39 % AOSP's and 3 % SebType's.
 | Chinese data setup (bundled compiled data, no deploy) | `dev/sebb/sebtype/chinese/` | 524 | Rime data 19.2 % | **Reuse**. The data is unchanged, GPL-3.0, shipped as now |
 | Mozc dictionary | `libmozc` data (`res/gj.dict`, stored uncompressed for mmap) | data | 41.7 % | **Reuse** unchanged (BSD-3 and its data licences). Shrinking it is out of scope (see §5) |
 | Licences and credits screen | `settings/pages/credits/` | 2,176 | code | **Rewrite**: one generated list of components |
-| Payment screen, thank-you screen, unpaid notice (#112) | `settings/pages/Payment.kt`, `latin/payment/`, `UixManager` notices | 814 | code | **Stays until stage 6, then Drop** (§4) |
+| Payment screen, thank-you screen, unpaid notice (#112) | `settings/pages/Payment.kt`, `latin/payment/`, `UixManager` notices | 814 | code | **Reuse until stage 7** (FUTO's licence), carried into the new settings with #112's note. **Drop** at stage 7 (§4) |
 | FUTO's translations (ja, zh-CN strings) | `res/values-ja/`, `values-zh-rCN/` | ~2,000 strings | part of arsc | **Rewrite** SebType's own strings in 3 languages, fewer of them |
 | `libc++_shared.so` workaround (#62) | build | – | 0.4 % | **Reuse** until #62 finds the real cause. The new app has its own native library to load anyway, so the workaround may not be needed (stage 6 measures it) |
 | Developer mode, WordStyles, text editor pad, spell checker, memory overlay (removed, #53) | gone | 0 | 0 | **Drop** (already gone) |
 | Voice input, other languages, update checks (removed, #59) | gone | 0 | 0 | **Drop**. Russian stays possible: the layout format and English engine take any alphabet and AOSP ships a Russian wordlist (Apache-2.0) |
 
-## 2. English without FUTO's code
+## 2. English
 
-**What to beat.** Requirements #1 asks for "Good recommended (next-word and completion) suggestions" and a space
-after a picked word. #46 found that English autocorrect fixes about 70 % of phone typos. Today all three come
-from AOSP's decoder plus FUTO's tweaks plus FUTO's transformer.
+**What to keep meeting.** Requirements #1 asks for "Good recommended (next-word and completion) suggestions" and
+a space after a picked word. #46 found that English autocorrect fixes about 70 % of phone typos. Today all three
+come from AOSP's decoder plus FUTO's tweaks plus FUTO's transformer.
 
-**Options weighed:**
+**Until stage 7: FUTO's model, the least FUTO code that runs it** (the user, 2026-11-15: "Keep FUTO's app and
+English model's necessary code in this release, train our own model later on yanglab16").
 
-| Option | Next-word | Completion and autocorrect | Size, PSS, latency | Licence | Verdict |
-|---|---|---|---|---|---|
-| **A. Pristine AOSP decoder + SebType's own dictionary with n-grams** | Up to 3-gram contexts from a built corpus, plus learned words. Weaker than a transformer on long context | AOSP's proximity decoder: the same core as today's 70 % | dict ~5–15 MB; no model in RAM; a few ms per key | Apache-2.0 code; dictionary from Apache, CC BY-SA and openly licensed text | **First** |
-| B. SebType-trained small transformer (~20–36M parameters) on llama.cpp/ggml (MIT), re-ranking A's candidates | Close to today if trained well. Community models trained from scratch exist (Greek, Albanian, Danish) | Adds context-aware re-ranking on top of A | +15–30 MB APK, +40–70 MB PSS, tens of ms per key | Own weights, MIT. Training data must be openly licensed | **Only if A misses the bar** |
-| C. Keep FUTO's `ml4_q6_k.gguf` | Today's | Today's | Today's | FUTO's licence. No published licence lets it leave FUTO's app (#108) | **No**: FUTO code would still ship |
-| D. Rime-based English (rime-ice's English words) | None (no context) | Prefix completion only, no proximity correction | small | GPL-3.0 data | **No** |
-| E. A general open model (SmolLM2-135M, Apache-2.0) | Good | – | 3× FUTO's model, too slow per key | Apache-2.0 | **No** |
+- `engines/latinime/`: the pristine AOSP decoder (Apache-2.0) for completion, autocorrect and learned words.
+- `engines/futo-lm/`: FUTO's `ml4_q6_k.gguf` and the native code that runs it. That is FUTO's `LanguageModel`,
+  `context` and model-metadata code and its JNI entry points, about 2,000 lines of FUTO's, with ggml/llama.cpp
+  (MIT) and sentencepiece (Apache-2.0). It re-ranks the decoder's candidates and gives next words, as today.
+- FUTO's decoder tweaks (1,395 lines in `suggest/`) come along only if the harness shows the model needs them to
+  stay at today's quality. Stage 2 tries without them first.
+- FUTO's Kotlin around the model (`latin/xlm/`, `LanguageModelFacilitator`) is not kept. `core/src/english.cpp`
+  calls the module directly. The model still loads on the first letter typed (Decisions #2, 2026-11-11).
 
-**Measurable bar.** A host harness lives in the repo (`android/test/english/`). It builds the English engine
-for the PC and drives it through a stub, as #46 did, with no emulator. It runs the same sets against today's
-stack (FUTO's decoder with its transformer) and the new one:
+So the module has one interface, and SebType's own model later plugs into the same place.
 
-| Metric | Set | Bar (recommended) |
+**Stage 7: SebType's own model, trained on yanglab16.**
+
+- **Data:** openly licensed English text in a typing register, such as chat (oasst1, Apache-2.0), Wikipedia
+  (CC BY-SA) and subtitles or forums with permissive licences. Each source's licence is checked before training.
+- **Training:** a small Llama-style transformer of FUTO's size (about 36M parameters, 8 layers), trained from
+  scratch, never fine-tuned from FUTO's weights. Training-time typo noise (the #46 error mix) teaches it to
+  correct as well as predict.
+- **Format:** GGUF on llama.cpp (MIT), with SebType's own tokenizer and metadata. The loader in
+  `engines/futo-lm/` is rewritten as `engines/sebtype-lm/`, SebType's own code (MIT).
+- **Where:** training runs on yanglab16. The scripts and the training config go in the repo (`tools/english-lm/`);
+  the corpus and checkpoints go in yanglab16's scratch, never in the repo.
+
+**The quality bar** (the user, 2026-11-15: "Near today"). A host harness in the repo (`android/test/english/`)
+builds the English engine for the PC and drives it through a stub, as #46 did, with no emulator. It compares
+SebType's own model with today's stack (FUTO's decoder with its transformer) on the same sets:
+
+| Metric | Set | Bar |
 |---|---|---|
 | Autocorrect, typo fixed at rank 1 / in the top 3 | #46's 1,000 phone typos (Palin et al. error mix) and 1,500 Wikipedia misspellings | ≥ today − 2 points |
 | Correct words wrongly changed | #46's 1,000 clean words | ≤ today (1–2 %) |
-| Next word in the 3 suggestions, empty prefix | held-out chat and news sentences (oasst1 prompts, Apache-2.0, plus a news set) | ≥ 90 % of today's rate |
-| Keystroke savings with 3 suggestions (simulated taps on a suggestion once it appears) | same sentences | ≥ today − 3 points |
-| Per-key time p95, engine alone | same | ≤ 10 ms |
+| Next word in the 3 suggestions, empty prefix | held-out chat and news sentences, never in the training data | ≥ 90 % of today's rate |
+| Keystroke savings with 3 suggestions (simulated taps on a suggestion once it appears) | same sentences | reported, not gated |
+| Per-key time p95, engine alone | same | ≤ today |
 
-The harness reports the numbers in a table checked into `docs/perf/`. The new English replaces today's only when
-every row passes. If next-word or keystroke savings miss and the rest pass, option B starts.
+SebType's model replaces FUTO's only when every gated row passes. The same harness also checks the stage 2 stack
+(AOSP decoder + FUTO's model) against today, so the rewrite itself doesn't lose quality.
+
+**Options not taken:**
+
+| Option | Why not |
+|---|---|
+| AOSP decoder with only a word-pair dictionary, no model | Weaker next-word suggestions than today; the user chose to keep the model and train SebType's own |
+| Rime-based English (rime-ice's English words) | No context and no proximity correction |
+| A general open model (SmolLM2-135M, Apache-2.0) | 3× FUTO's model in size and too slow per key |
+| Fine-tuning FUTO's model | The result would still be FUTO's licence |
 
 ## 3. Architecture
 
@@ -141,7 +168,7 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
 │  KeyboardView (Canvas, one View) │                   │  ├ rime.cpp ─ librime (engines/librime) │
 │  CandidateBar, ActionBar, chip   │ ◀──────────────── │  ├ mozc.cpp ─ in-process transport ──┐   │
 │  Emoji / Clipboard / More panels │                   │  └ english.cpp ─ engines/latinime    │   │
-│  Settings (Compose activity)     │                   │     (AOSP decoder, Apache-2.0)       │   │
+│  Settings (Compose activity)     │                   │     (AOSP) + engines/futo-lm (model) │   │
 │  sync/, crash/, chinese/ (reused)│                   └──────────────────────────────────────┼───┘
 └──────────────────────────────────┘                      libmozc.so (Bazel, engines/mozc) ◀──┘
 ```
@@ -163,8 +190,11 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
   - A candidate list that is not paged (the phone scrolls up to 128). This reuses `Engine::candidateAt`.
   - Keys sent as characters: a tap of "a" is keysym `a`.
   - The phone's field kinds: password and private disable learning.
+  - What happens to typed text when the language changes. The PCs commit it (Win+Space leaves 中文 with the
+    preedit typed out); the phone drops it (the user, 2026-11-15: "Throw it away"). `Settings` gets
+    `commitOnSwitch` (true on the PCs, false on Android), so the rule stays in `core/` instead of in a frontend.
 
-  `core/test/core_test.cpp` covers each of these.
+  `core/test/core_test.cpp` covers each of these, including both values of `commitOnSwitch`.
 - **Threads.** Typing runs on the main thread, as today: each engine takes about 2 ms per key. Next-word
   suggestions are computed on one worker thread and posted back, so a key never waits for them.
 - **Settings shared with the PCs.** `core::Settings` grows from `[Languages] Order=` to everything both
@@ -181,15 +211,22 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
 - **UI toolkit.** The keyboard window uses plain Views, not Compose: cold open and PSS matter there (cold open is
   456 ms p50 today). The settings activity keeps Compose for the pixel-frame look (#87), so Compose loads only
   when settings open.
-- **Package.** The new code goes under `android/app/src/main/java/dev/sebb/sebtype/`, the only package left
-  after stage 6. Gradle modules: `:app` and `:native` (CMake for `core/`, librime, latinime; the Bazel task for
-  Mozc). `:rime` and `:mozc` go.
+- **Package.** The new code goes under `android/app/src/main/java/dev/sebb/sebtype/`, the only Kotlin package
+  left after stage 6. Gradle modules: `:app` and `:native` (CMake for `core/`, librime, latinime and the model
+  module; the Bazel task for Mozc). `:rime` and `:mozc` go.
+
+### Build
+
+From now on SebType's heavy agent builds (Gradle with the NDK, Mozc's Bazel build, librime, and the model
+training of stage 7) run on yanglab16, which a separate setup task prepares. nobara-pc keeps the emulator runs
+(one emulator at a time) and installs the APKs yanglab16 builds. Each stage's PRs build there and their tests run
+on nobara-pc's emulator. ggml and sentencepiece stay in `:native` with FUTO's model until stage 7.
 
 ## 4. Licence
 
-FUTO's licence (LICENSE.md) applies to any copy that contains FUTO's code. It requires the payment functionality
-to stay and FUTO's notices to be kept. Once a release contains no FUTO code, neither applies to that release.
-Rules for the rewrite (#108):
+FUTO's licence (LICENSE.md) applies to any copy that contains FUTO's code or data. It requires the payment
+functionality to stay and FUTO's notices to be kept. Once a release contains no FUTO code or data, neither
+applies to that release. Rules for the rewrite (#108):
 
 - Write each part from a behaviour description: the requirements, the decisions and the emulator checks. Don't
   read or translate FUTO's file while writing its replacement. Ideas and behaviour are free; copied expression
@@ -198,95 +235,112 @@ Rules for the rewrite (#108):
   FUTO's tree. FUTO's edits to AOSP files are FUTO's.
 - SebType's 2,847 lines inside FUTO's files count as FUTO-derived, so they are rewritten too. Their behaviour is
   SebType's spec.
+- FUTO's code that stays is copied as it is into clearly marked places, never mixed into SebType's files.
 
-**What has to be gone for a FUTO-free release:**
+**FUTO's code and data in the stage 6 release** (the first release of the new keyboard):
 
-- `android/app/src/main/java/org/futo/**`
-- `android/app/src/main/cpp` (FUTO's native code and its vendored copies)
-- `android/mozc/src` (FUTO's mozc-lib)
-- FUTO's Gradle files and `android/tools/` scripts
-- `.github/ISSUE_TEMPLATE/`
-- `ml4_q6_k.gguf`, `main_en.dict`, `emoji_i18n.jsondlgz`, FUTO's translations
-- FUTO's layouts. They are Apache-2.0 and could stay, but the new format replaces them.
+| What | Where | Why it stays |
+|---|---|---|
+| FUTO's English model `ml4_q6_k.gguf` | `engines/futo-lm/` | the user's choice, until stage 7 |
+| FUTO's native code that runs it (`LanguageModel`, `context`, model metadata, JNI), about 2,000 lines | `engines/futo-lm/` | needed by the model |
+| FUTO's decoder tweaks in `suggest/`, 1,395 lines, only if the harness shows the model needs them | `engines/futo-lm/` | needed by the model |
+| `main_en.dict`, FUTO's English word list with wordfreq frequencies | `engines/futo-lm/` | rebuilt from AOSP's list at stage 7 |
+| The payment screen, the thank-you screen and the unpaid notice, with #112's note | `android/app/src/main/java/org/futo/payment/` | FUTO's licence: payment functionality may not be removed |
+| `LICENSE.md`, FUTO's NOTICE section and the one-sentence modification notice (Decisions #2, 2026-11-15) | repo and the app's licence screen | FUTO's licence |
 
-That happens at **stage 6**. In the same release:
+Everything else of FUTO's goes at stage 6:
+
+- `android/app/src/main/java/org/futo/**` other than the payment screens;
+- the rest of `android/app/src/main/cpp`;
+- `android/mozc/src` (FUTO's mozc-lib);
+- FUTO's Gradle files, `android/tools/` scripts and `.github/ISSUE_TEMPLATE/`;
+- `emoji_i18n.jsondlgz` and FUTO's translations;
+- FUTO's layouts (Apache-2.0, but the new format replaces them).
+
+The README keeps FUTO Keyboard in its components list, as its English model.
+
+**At stage 7** SebType's own model and dictionary replace the last FUTO files. In that release:
 
 - the payment screen, thank-you screen and unpaid notice go;
 - `LICENSE.md` and FUTO's NOTICE section leave the shipped app and the repo's current tree (git history keeps
   them);
 - the README drops FUTO Keyboard from its components;
-- `android/LICENSE` and NOTICE list Apache-2.0 for `engines/latinime/`, BSD-3 for Mozc and librime, LGPL-2.1 for
-  `core/src/rime.cpp`, and GPL-3.0 for the Chinese data.
-
-**Until then everything stays as today:** the payment screen with #112's note, the unpaid notice, LICENSE.md and
-the one-sentence modification notice (Decisions #2, 2026-11-15). The new app is built beside FUTO's (stages 3–5),
-but it ships only at stage 6, so no release mixes the two.
+- `android/LICENSE` and NOTICE list Apache-2.0 for `engines/latinime/`, MIT for llama.cpp/ggml, BSD-3 for Mozc
+  and librime, LGPL-2.1 for `core/src/rime.cpp`, and GPL-3.0 for the Chinese data.
 
 ## 5. Size and performance targets
 
 Today's numbers are from the phone run (Nothing A001, 2026-11-12). The budgets are provisional (Decisions #2,
-2026-11-11), so these are targets to measure against, not gates.
+2026-11-11), so these are targets to measure against, not gates. The stage 6 column keeps FUTO's model. The
+stage 7 column assumes SebType's model is no bigger than FUTO's (36M parameters, about 31 MB).
 
-| Metric | Today | Target with option A | With option B |
+| Metric | Today | Stage 6 (FUTO's model kept) | Stage 7 (own model) |
 |---|---|---|---|
-| APK | 108.8 MB (103.8 MiB) | ≤ 85 MB (model −30.7, emoji font −1.1, native −0.6, dex −1.3; English dictionary with n-grams +5–10) | ≤ 110 MB |
-| `classes.dex` | 2.8 MB | ≤ 1.5 MB | same |
-| Native code | 4.6 MB | ≤ 4.0 MB | ≤ 4.5 MB |
-| PSS idle, fresh / after use | 74 / 109 MB | ≤ 60 / 80 MB | same |
-| PSS after typing EN | 204 MB | ≤ 110 MB | ≤ 170 MB |
+| APK | 108.8 MB (103.8 MiB) | ≤ 106 MB (emoji font −1.1, dex −1.3, native −0.5) | ≤ 106 MB |
+| `classes.dex` | 2.8 MB | ≤ 1.5 MB | ≤ 1.5 MB |
+| Native code | 4.6 MB | ≤ 4.5 MB | ≤ 4.5 MB |
+| PSS idle, fresh / after use | 74 / 109 MB | ≤ 60 / 85 MB | same |
+| PSS after typing EN (model loaded) | 204 MB | ≤ 180 MB | ≤ 180 MB |
 | PSS after 中 / 日 alone | 133 / 146 MB | ≤ 120 / 135 MB | same |
-| PSS with all three | 267 MB | ≤ 200 MB | ≤ 250 MB |
+| PSS with all three | 267 MB | ≤ 240 MB | ≤ 240 MB |
 | Key handling p95, EN / 中 / 日 | 7 / 6 / 4 ms | ≤ 5 ms each | same |
 | Key → text p95, EN / 日 | 22 / 41 ms | ≤ 20 / 35 ms | same |
-| Key → candidates p95, EN / 中 / 日 | 78 / 65 / 52 ms | ≤ 30 / 50 / 45 ms | EN ≤ 70 ms |
+| Key → candidates p95, EN / 中 / 日 | 78 / 65 / 52 ms | ≤ 70 / 50 / 45 ms | EN ≤ 70 ms |
 | Warm / cold open p50 | 68 / 456 ms | ≤ 60 / 300 ms | same |
 | Late frames at 10 keys/s, empty field | 1 in 701 | ≤ 1 in 700 | same |
-| Gradle release build, clean (#58) | sentencepiece and ggml compile every clean build | −218k lines of C++ to compile | same |
 
-Not in this plan: Mozc's 45 MB dictionary is the biggest file left after the model goes. A smaller Mozc data
-set (for example without the zip-code dictionary) would be its own issue. Decisions #2 (2026-11-10) says nothing
-is compressed for size, and that rule stays.
+Most of the memory saving comes from the keyboard window: plain Views instead of Compose and FUTO's UI framework,
+and no FUTO settings, theme or action classes loaded while typing. The model's own memory (about 70 MB once
+loaded) stays until stage 7, and SebType's model is expected to need about the same.
+
+Not in this plan: Mozc's 45 MB dictionary is the biggest file in the APK. A smaller Mozc data set (for example
+without the zip-code dictionary) would be its own issue. Decisions #2 (2026-11-10) says nothing is compressed for
+size, and that rule stays.
 
 ## 6. Stages
 
-Each stage is one or more PRs and keeps the released app shippable. Tests are `android/test/emulator.sh` checks
-(`SEBTYPE_CHECKS=` for the stage's own), `core_test`, and the English harness. A delegate-day is one delegate's
-day of tested work, about 1,000–1,500 lines (#108's measure).
+Each stage is one or more PRs. Releases are held until stage 6 (the user, 2026-11-15), so stages 0–5 merge to
+main without a release, and main's app keeps passing `emulator.sh` after every merge. Tests are
+`android/test/emulator.sh` checks (`SEBTYPE_CHECKS=` for the stage's own), `core_test`, and the English harness.
+Builds run on yanglab16 (§3, Build). A delegate-day is one delegate's day of tested work, about 1,000–1,500 lines
+(#108's measure).
 
-| # | Stage | What ships to the user | Tests | Effort |
+| # | Stage | What main's app does after it | Tests | Effort |
 |---|---|---|---|---|
-| 0 | **English harness and baseline.** Host build of today's decoder plus transformer and of the pristine AOSP decoder; the sets from #46 plus next-word sentences; a baseline table in `docs/perf/` | nothing | the harness itself; numbers reproducible across two runs | 2–3 days |
-| 1 | **`core/` on Android (#190 step 3).** `:native` module, Mozc in-process transport, Rime prebuilt mode, `cycleLanguage`, the unpaged list, settings in `sebtype.conf`. FUTO's `ChineseIME` and `JapaneseIME` call `core/` through JNI; `android/mozc/src` and `android/rime` go | the same app; 中 and 日 now run through `core/` | `core_test` (new touch paths); `emulator.sh` `chinese-run` (ranh, lh-in-bar, learn-*, zh-hant-*, ja-*), `settings-zh-*`, `incognito-zh`, `incognito-ja`; Linux and Windows `core_test` still pass | 5–7 days |
-| 2 | **English engine.** `engines/latinime/` (pristine AOSP), `core/src/english.cpp`, the dictionary build (AOSP en_US + wordfreq + SCOWL + n-grams), learned words, blocked words, email domains | nothing (the app still uses FUTO's English) | the harness against §2's bar; `core_test` for the English engine | 5–7 days |
-| 2b | *Only if stage 2 misses next-word or keystroke savings:* train a SebType model on openly licensed text, run it on llama.cpp (MIT) as a re-ranker inside `english.cpp` | nothing | the harness again; per-key time | 6–10 days + GPU time |
-| 3 | **New keyboard, typing core.** `SebTypeIme`, `Editor`, `KeyboardView` with the 3 layouts, symbols and number row, 🌐 cycle and long-press picker, candidate bar with chip and 简/繁 menu, field kinds and incognito, Picnic look, accessibility labels. Built as a test-only `dev.sebb.sebtype.next` package beside the release | nothing (test package only) | `chinese.py` and `settings.py` gain a `SEBTYPE_PACKAGE` switch; run `chinese-run`, `incognito-*`, the four #39 period checks, `uniform-layouts`; screenshots next to today's for the user | 8–12 days |
-| 4 | **New keyboard, the rest.** Action bar and editor, All Actions, emoji picker (CLDR names), clipboard and quick clips, inline autofill, keyboard modes and height, spacebar and backspace swipes, haptics and key sounds | nothing (test package) | new checks: `emoji-picks`, `clipboard-paste`, `quick-clip`, `modes-*`, `swipe-*`; screenshots for the user | 6–9 days |
-| 5 | **Settings and data.** Compose settings in 6 groups with pixel frames, setup wizard, export and import, PC words, sync and crash reports wired to the new app, credits; **migration** of an installed FUTO-based SebType's data on update (DataStore keys, learned English words, Rime userdb and Mozc profile kept in place) | nothing (test package) | `settings-run` in full, `sync-*`, `settings-backup-*`, a new `update-from-futo-app` check (learned words in all 3 languages survive) | 5–7 days |
-| 6 | **Switch.** The new app becomes `dev.sebb.sebtype`; FUTO's code, model, payment screens and notices are deleted; licence files and README updated; perf run on the phone (#54 style) | **the new app** | full `emulator.sh`, `typing.sh`, `android/perf/perf.sh`, the harness; `trimmed` gains a check that no `org.futo` class or FUTO file is in the APK | 2–3 days |
+| 0 | **English harness and baseline.** Host build of today's decoder plus transformer and of the pristine AOSP decoder; the sets from #46 plus next-word sentences; a baseline table in `docs/perf/` | unchanged | the harness itself; numbers reproducible across two runs | 2–3 days |
+| 1 | **`core/` on Android (#190 step 3).** `:native` module, Mozc in-process transport, Rime prebuilt mode, `cycleLanguage`, `commitOnSwitch`, the unpaged list, settings in `sebtype.conf`. FUTO's `ChineseIME` and `JapaneseIME` call `core/` through JNI; `android/mozc/src` and `android/rime` go | the same app; 中 and 日 run through `core/` | `core_test` (new touch paths, both `commitOnSwitch` values); `emulator.sh` `chinese-run` (ranh, lh-in-bar, learn-*, zh-hant-*, ja-*), `settings-zh-*`, `incognito-zh`, `incognito-ja`; Linux and Windows `core_test` still pass | 5–7 days |
+| 2 | **English engine.** `engines/latinime/` (pristine AOSP), `engines/futo-lm/` (FUTO's model and its runner), `core/src/english.cpp`, learned words, blocked words, email domains | unchanged (still FUTO's English) | the harness: the new stack is near today (§2's bar); `core_test` for the English engine | 4–6 days |
+| 3 | **New keyboard, typing core.** `SebTypeIme`, `Editor`, `KeyboardView` with the 3 layouts, symbols and number row, 🌐 cycle and long-press picker, candidate bar with chip and 简/繁 menu, field kinds and incognito, Picnic look, accessibility labels. Built as a test-only `dev.sebb.sebtype.next` package beside the app | unchanged (new keyboard in the test package) | `chinese.py` and `settings.py` gain a `SEBTYPE_PACKAGE` switch; run `chinese-run`, `incognito-*`, the four #39 period checks, `uniform-layouts`, and a new check that pinyin is dropped on 🌐; screenshots next to today's for the user | 8–12 days |
+| 4 | **New keyboard, the rest.** Action bar and editor, All Actions, emoji picker (CLDR names), clipboard and quick clips, inline autofill, keyboard modes and height, spacebar and backspace swipes, haptics and key sounds | unchanged (test package) | new checks: `emoji-picks`, `clipboard-paste`, `quick-clip`, `modes-*`, `swipe-*`; screenshots for the user | 6–9 days |
+| 5 | **Settings and data.** Compose settings in 6 groups with pixel frames, setup wizard, export and import, PC words, sync and crash reports, credits, FUTO's payment screens with #112's note; **migration** of an installed FUTO-based SebType's data on update (DataStore keys, learned English words, Rime userdb and Mozc profile kept in place) | unchanged (test package) | `settings-run` in full (including `settings-payment-note`), `sync-*`, `settings-backup-*`, a new `update-from-futo-app` check (learned words in all 3 languages survive) | 5–7 days |
+| 6 | **Switch and release.** The new app becomes `dev.sebb.sebtype`; FUTO's code goes except §4's list; licence files and README updated; perf run on the phone (#54 style); **the first release since the hold** | **the new app, released** | full `emulator.sh`, `typing.sh`, `android/perf/perf.sh`, the harness; `trimmed` gains a check that the only `org.futo` classes and FUTO files in the APK are §4's list | 2–3 days |
+| 7 | **SebType's own English model** (later). Corpus and training scripts in `tools/english-lm/`, training on yanglab16, `engines/sebtype-lm/` loader, dictionary rebuilt from AOSP's `en_US`; swap in once the harness passes §2's bar; then FUTO's last files, the payment screens and FUTO's notices go | the app with no FUTO code, released | the harness against §2's bar; `emulator.sh` English checks (`en-model-waits-for-letter`, `incognito-en`, the #39 checks); `trimmed` checks that no `org.futo` class or FUTO file is left; phone perf run | 8–12 days + GPU time |
 
-Total about 33–48 delegate-days, or 39–58 with stage 2b. Stages 2 and 3 can run in parallel after stage 1.
-Stage 1 can merge and release on its own, since it is #190 step 3.
+Stages 0–6 take about 32–47 delegate-days. Stages 2 and 3 can run in parallel after stage 1. Stage 7 can start
+its corpus and training work on yanglab16 any time after stage 0, since only the swap depends on stage 6.
 
 ## 7. Risks
 
 | Risk | Effect | How the plan handles it |
 |---|---|---|
-| English next-word quality drops without the transformer | Requirements #1's "good suggestions" get worse | Stage 0 measures first, the bar in §2 gates the switch, and stage 2b is ready |
+| SebType's own model doesn't reach "near today" | FUTO's licence and payment screen stay longer | Stage 7 swaps only when §2's bar passes; until then FUTO's model keeps working. Training can be repeated on yanglab16 with more data or a larger model |
+| The new English stack (AOSP decoder + FUTO's model, without FUTO's Kotlin) is worse than today | Weaker English from stage 6 | Stage 2's harness compares it with today; FUTO's decoder tweaks come along if needed |
 | Text-field quirks FUTO fixed (Chrome, WebView, Termux, apps that reset composing text) come back | Lost or doubled characters in some apps | `Editor` is guided by pristine AOSP's `RichInputConnection`; stage 3 adds checks typing into Chrome and a WebView on the emulator |
 | Mozc's in-process session behaves differently from FUTO's client (focus, timeouts, prediction) | 日本語 regressions | Stage 1 lands it inside today's app, so the existing `ja-*` checks catch it before any UI change |
 | Data loss on the update at stage 6 | Learned words gone | Stage 5's `update-from-futo-app` check; Rime and Mozc keep their files where they are |
-| Clean-room discipline slips: a delegate translates a FUTO file | The release is still FUTO-derived | Briefs forbid opening FUTO's file for the part being written; the reviewer checks new files against FUTO's with a similarity scan before stage 6 |
-| Weeks of work while the release is held (#191, 2026-11-15) | Nothing reaches the phone for weeks | Each stage keeps the app shippable, and stage 1 can release on its own (question 3 below) |
+| Clean-room discipline slips: a delegate translates a FUTO file | The release is still FUTO-derived after stage 7 | Briefs forbid opening FUTO's file for the part being written; the reviewer checks new files against FUTO's with a similarity scan before stages 6 and 7 |
+| Weeks without a release (held until stage 6) | Fixes and improvements wait; a bug found on the phone can't be shipped | The user chose this. A blocking bug can still be fixed on a branch from the last release tag if the user asks |
 | Accessibility and long-tail behaviours nobody listed (key repeat, cursor-control edge cases, landscape) | Small regressions | Stage 3–4 checklist from today's app; the user tries the test package before stage 6 |
-| Training option B needs a GPU and clean data | Extra time and a data-licence check | Only started if stage 2 misses the bar, after its own question |
+| yanglab16 isn't set up or reachable (Zscaler) | Builds and training stall | Its setup is a separate task; until it is ready, builds stay on nobara-pc under the build lock |
 
-## Decisions the plan needs
+## Decisions (the user, 2026-11-15)
 
-1. **English prediction.** Recommended: option A first (AOSP decoder + own n-gram dictionary), training an own
-   model (B) only if the bar is missed. Alternatives: commit to B now, or accept A's quality whatever it measures.
-2. **The quality bar** in §2. Recommended: autocorrect within 2 points of today, no more wrong changes, next-word
-   at least 90 % of today's. Alternative: match or beat today on every row (makes B much more likely).
-3. **The release hold.** Recommended: release after stage 1 and keep releasing the FUTO-based app until stage 6.
-   Alternative: hold every release until stage 6.
-4. **Leaving 中文 with typed pinyin on the phone.** Recommended: commit what is typed, as the PCs do (one rule in
-   `core/`). Alternative: keep the phone's drop.
+1. **English prediction:** "Keep FUTO's app and English model's necessary code in this release, train our own
+   model later on yanglab16 where there are tons of GPUs and RAM and CPUs." The new keyboard keeps FUTO's model
+   and only the code it needs (§2, §4); SebType's own model replaces it at stage 7.
+2. **Quality bar:** "Near today": typo fixes within 2 points, no more correct words wrongly changed, next word in
+   the top 3 at least 90 % as often. It gates the swap to SebType's own model (§2).
+3. **Releases:** "Hold until stage 6". No releases during the rewrite (§6).
+4. **Pinyin when leaving 中文 on the phone:** "Throw it away", as the phone does today. The PCs keep committing it,
+   so `core/` gets a per-platform setting, `commitOnSwitch` (§3).
+5. **Builds:** SebType's heavy agent builds run on yanglab16 from now on (§3, Build).
