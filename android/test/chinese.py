@@ -345,6 +345,9 @@ def check(name, fn, needs=()):
         StopIteration,
     ) as e:
         result("FAIL", name, str(e))
+        # The system log since the last restart, for what the app was doing (a hang shows its threads here).
+        with open(os.path.join(logdir, f"{name}.logcat"), "w") as f:
+            f.write(adb("logcat", "-d", check=False))
 
 
 def fresh_install():
