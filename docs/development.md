@@ -26,14 +26,53 @@ describe what each PC part does and list what each of its checks verifies.
 
 ## Building
 
+### Where builds run
+
+`android/build.sh`, `linux/build.sh` and `linux/build-librime.sh` build on yanglab16, the lab's machine
+(96 threads), not on nobara-pc (#225), and copy what they built back to the same path on nobara-pc, so
+the device tests and setup use it as before. One command, run on nobara-pc as always:
+
+1. `build_host_ready` (`tools/lib.sh`) checks that `ssh yanglab16` answers. If it doesn't, it starts
+   Zscaler (`gtk-launch ZSTray`) and tries once more; if it still doesn't, it says so on stderr and the
+   build runs on nobara-pc.
+2. `build_remotely` rsyncs the checkout, uncommitted changes included and what git ignores left out,
+   to `~/scratch/SebType/<task>/<checkout>/` on yanglab16 (`<task>`: `ISSUE`, or the checkout's folder),
+   runs the same script there, and copies back each file it prints. What git ignores stays on yanglab16,
+   so its next build of the checkout is incremental.
+3. On yanglab16 the script runs as on nobara-pc, in yanglab16's own build lock, with its tools from
+   `~/scratch/SebType/cache/` on the NAS: the Android SDK and NDK, JDK 21 and sccache, pinned and installed
+   on first use by `tools/android-tools.sh`, and Gradle's cache. The Android build runs in the pinned
+   Fedora 44 (`linux/versions.sh`) with Fedora's librime and OpenCC, as on nobara-pc; the Linux builds use
+   their own Fedora container as before. Bazel's output roots (Mozc's builds) are in the podman volume
+   `sebtype-bazel` on yanglab16's local disk: Bazel refuses a folder it doesn't own, and on the NAS every
+   file belongs to the NAS's user.
+
+A release APK is built unsigned on yanglab16 (`SEBTYPE_UNSIGNED=1`) and signed on nobara-pc with
+`apksigner`, the way Gradle signs it (scheme v2 alone, RSA), so the signing key never leaves nobara-pc.
+
+`SEBTYPE_BUILD_HOST=local <script>` builds on nobara-pc. `android/test/build.sh` always does: it checks
+nobara-pc's own caches. Everything else builds on nobara-pc only when yanglab16 can't be reached; the
+Configurator's test builds (`pc/configurator/test.sh`, `pc/linux/test-setup-ime.sh`) stay local, small and
+in the build lock. CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the
+lab's machine. The Windows build runs only in CI (MSVC on GitHub's Windows runners).
+
 ### The build lock
 
-Every heavy local build runs through `build_lock` in `tools/lib.sh`: one at a time in the shared queue
-`/tmp/agent-locks/sebtype/build.lock` (`devq status <lock>` shows it), waiting up to an hour, on half
-the PC's threads (`BUILD_JOBS`) and capped at 8 GB (`BUILD_MEMORY_GB`), so a build never takes the memory
-the emulator and the person at the PC need. The queue rank is `DEVQ_RANK` (default 2, lower goes first):
-set it once and every build the script starts, however nested, queues at that rank. A build that
-starts other builds runs them inside its own lock, not through `build_lock` again.
+Every heavy build runs through `build_lock` in `tools/lib.sh`: one SebType build at a time per machine,
+in the queue `/tmp/agent-locks/sebtype/build.lock` (`devq status <lock>` shows it), waiting up to an
+hour. The queue rank is `DEVQ_RANK` (default 2, lower goes first; it orders the queue, the lock still
+lets one build in at a time): set it once and every build the script starts, however nested, queues at
+that rank. A build that starts other builds runs them inside its own lock, not through `build_lock`
+again.
+
+Inside the lock a build runs at the lowest CPU and I/O priority (`nice -n 19 ionice -c 3`), capped in CPU
+time and memory:
+
+| | nobara-pc (16 threads, 15 GB, shared with the emulator, the person at it and other projects) | yanglab16 (96 threads, shared by the lab) |
+|---|---|---|
+| CPU (`BUILD_JOBS`) | 6 cores' worth: 6 compile jobs for Ninja, Bazel and cargo | 48 |
+| Gradle workers (`GRADLE_WORKERS`) | 4 | 48 |
+| Memory (`BUILD_MEMORY_GB`) | 8 GB | 32 GB |
 
 ### Android
 
@@ -47,15 +86,15 @@ android/build.sh test-x86_64    # debug APK and its instrumented-test APK
 It prints the APK's path last. Each run gets its own folder in `android/app/build/runs/` (hard links,
 kept a day), so builds run at the same time in one checkout never hand each other's APK out. Debug
 builds have a fixed version (`…-sebtype.dev`, code 1); release builds count main's commits. Android
-Studio or `cd android && ./gradlew assembleDebug` work too, outside the lock.
+Studio or `cd android && ./gradlew assembleDebug` work too, on nobara-pc and outside the lock.
 
 What it builds from source, and the caches that make a rebuild quick:
 
 | Part | Built by | Cache |
 |---|---|---|
-| Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle`, shared by every worktree |
+| Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle` (on yanglab16 `~/scratch/SebType/cache/gradle`), shared by every worktree |
 | The app's C++ (`libjni_latinime.so`) and Rime (`librime-jni.so`, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
-| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/mozc/build-native.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` |
+| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/mozc/build-native.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
 | Mozc's dictionary | `android/app/res-bundle/download-bundles.py` | `android/app/res-bundle/` |
 
@@ -63,7 +102,7 @@ Scripts write their test, perf and release outputs to the running task's folder,
 `~/scratch/SebType/<issue>/` (`TASK_OUT` in `tools/lib.sh`): run them as `ISSUE=211 <script>`. Without
 `ISSUE` the folder is named after the checkout's folder. Caches, the Linux setup's RPMs and Chinese data
 zip included, go to `~/scratch/SebType/cache/` (`SCRATCH` in `tools/lib.sh`), shared by every worktree.
-Nothing goes to `/tmp` or `~/.cache`.
+Nothing goes to `/tmp` or `~/.cache`, on either machine.
 
 `android/release.sh` builds the release from main and publishes it ([install.md](install.md)).
 
@@ -283,6 +322,30 @@ It needs gcc, python3, bwrap, and librime with librime-lua; it unpacks SebType's
 (built first when they aren't cached) and times their Rime and Mozc. It compiles against
 `engines/librime`'s headers. Results: `~/scratch/SebType/<issue>/pc-perf.md` and
 `pc-perf-results.txt`.
+
+### Build times on yanglab16 and nobara-pc (#225)
+
+Measured on 2026-11-15 from nobara-pc. "yanglab16" includes the rsync there and copying the result back
+("build" is the script's own time on yanglab16); nobara-pc's builds ran under the caps above, at nice 19,
+beside other agents' builds.
+
+| Build | yanglab16: build / in all | nobara-pc |
+|---|---|---|
+| `android/build.sh debug`, first build there (empty caches, the SDK just installed) | 62 s / 74 s | |
+| debug, a new checkout copy (shared caches warm) | 81 s / 101 s | 14–15 s with warm caches (#58), 196 s measured in #223 |
+| debug, nothing changed | 19 s in all | 7–8 s (#58) |
+| debug, one Kotlin file changed | 27 s / 32 s | 17–31 s (#58, at 8 threads) |
+| `android/build.sh release`, first build there | 128 s / 135 s | 298 s from the caches |
+| release, nothing changed | 15 s / 23 s | 8–17 s (#58) |
+| `linux/build.sh`, first build (Mozc from scratch, the builder image too) | 87 s / 120 s | 490 s (#58, at 8 threads) |
+| `linux/build.sh`, nothing changed | 30 s in all | 11 s (#58) |
+
+On nobara-pc a build also waits for the lock behind other agents' builds: 2 and 9 minutes for the two
+measured here.
+
+Built both ways from the same commit, the RPMs have the same files, byte for byte; their headers differ in
+build host and time, as two local builds do. The release APKs have the same entries except four:
+`libjni_latinime.so` and `librime-jni.so` (#223), and `rime-data.zip` and `baseline.prof` (#229).
 
 ### Build and test times (#58)
 

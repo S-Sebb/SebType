@@ -24,6 +24,10 @@ android {
             arguments "-DLIBRIME_SOURCE_DIR=${repoRoot}/engines/librime",
                 "-DRIME_DEPS_CACHE=${System.getProperty('user.home')}/scratch/SebType/cache/rime-android",
                 '-DCMAKE_BUILD_TYPE=Release'
+            // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
+            if (findProperty('sebtypeJobs')) {
+                arguments "-DCMAKE_JOB_POOLS=jobs=${findProperty('sebtypeJobs')}", '-DCMAKE_JOB_POOL_COMPILE=jobs', '-DCMAKE_JOB_POOL_LINK=jobs'
+            }
             cFlags "-ffile-prefix-map=${repoRoot}/="
             cppFlags '-Wno-deprecated', '-fpermissive', '-fno-char8_t', "-ffile-prefix-map=${repoRoot}/="
         }

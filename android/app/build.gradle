@@ -124,6 +124,10 @@ android {
         // SebType (#58): native code names its source files relative to the checkout, so the libraries are
         // the same in every worktree and sccache (build.sh) can share objects between them.
         externalNativeBuild.cmake {
+            // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
+            if (findProperty('sebtypeJobs')) {
+                arguments "-DCMAKE_JOB_POOLS=jobs=${findProperty('sebtypeJobs')}", '-DCMAKE_JOB_POOL_COMPILE=jobs', '-DCMAKE_JOB_POOL_LINK=jobs'
+            }
             cFlags "-ffile-prefix-map=${rootDir.parent}/="
             cppFlags "-ffile-prefix-map=${rootDir.parent}/="
         }

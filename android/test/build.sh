@@ -8,6 +8,8 @@ set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
 source tools/lib.sh
+# It checks this PC's caches and builds (#225 builds elsewhere by default).
+export SEBTYPE_BUILD_HOST=local
 out=$TASK_OUT; mkdir -p "$out"
 results=$out/test-build-results.txt; : > "$results"
 wt=$SCRATCH/cache/test-build-wt

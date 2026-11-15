@@ -13,8 +13,6 @@ BUILD_IMAGE=registry.fedoraproject.org/fedora@sha256:a90c26f38ee1fb33444bbec8b59
 # Bazelisk, which runs the Bazel version engines/mozc/src/.bazeliskrc names (android/mozc uses it too).
 BAZELISK_URL=https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64
 BAZELISK_SHA256=a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8
-# Bazel's caches for Mozc's server, so a rebuild compiles only what changed.
-MOZC_CACHE=$HOME/scratch/SebType/cache/mozc
 
 # librime.spec also builds librime-lua and the other plugins, which must match the librime they run on:
 # setup replaces every librime package installed.

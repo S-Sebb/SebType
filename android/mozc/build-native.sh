@@ -5,7 +5,7 @@
 #
 # Gradle runs it (build.gradle) inside android/build.sh's build lock, so it takes no lock itself, and uses
 # the lock's share of the cores. Bazel's
-# output stays in ~/scratch/SebType/cache/mozc-android, its disk cache shared by every worktree; its server
+# output stays in ~/scratch/SebType/cache/mozc-android (BAZEL_CACHE in tools/lib.sh), its disk cache shared by every worktree; its server
 # exits soon after the build.
 set -euo pipefail
 out=$1; shift
@@ -14,7 +14,7 @@ export SEBTYPE_ANDROID_NDK=${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must name the ap
 # The Bazelisk the Linux build pins; it runs the Bazel version engines/mozc/src/.bazeliskrc names.
 source "$src/../../../linux/versions.sh"
 source "$src/../../../tools/lib.sh"
-cache=$SCRATCH/cache/mozc-android
+cache=$BAZEL_CACHE/mozc-android
 bazelisk=$cache/bazelisk-${BAZELISK_SHA256:0:12}
 if [[ ! -x $bazelisk ]]; then
   mkdir -p "$cache"

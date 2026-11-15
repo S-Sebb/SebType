@@ -5,6 +5,8 @@
 #   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.x86_64.rpm
 #
 # Mozc's Bazel caches stay in ~/scratch/SebType/cache/mozc/work, so a rebuild compiles only what changed. Runs in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
+# Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here) and copies
+# the RPM back to the same path here.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -15,6 +17,9 @@ source "$here/versions.sh"
 source "$here/rpm-sources.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$root/tools/lib.sh"
+if build_host_ready; then build_remotely linux/build.sh; exit; fi
+# Bazel's caches for Mozc's server, so a rebuild compiles only what changed.
+MOZC_CACHE=$BAZEL_CACHE/mozc
 mkdir -p "$SEBTYPE_CACHE/sources" "$MOZC_CACHE"/{work,sources}
 pack_source "$root/engines/mozc" "$SEBTYPE_CACHE/sources/mozc.tar.gz"
 tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c core linux |
@@ -43,7 +48,7 @@ EOF2
 )
 start=$SECONDS
 build_lock 120 "sebtype build" \
-  podman run --rm --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -e BAZELISK_HOME=/work/bazelisk -v "$MOZC_CACHE/work:/work:Z" \
+  podman run --rm --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -e BAZELISK_HOME=/work/bazelisk -v "$MOZC_CACHE/work:/work:Z" \
   -v "$SEBTYPE_CACHE/sources:/sources:ro,Z" -v "$here/sebtype.spec:/pkg.spec:ro,Z" "$image" \
   bash -c "$inner" inner "$SEBTYPE_VERSION" "$SEBTYPE_RPM_RELEASE" "$BUILD_JOBS"
 cp "$MOZC_CACHE/work/sebtype-top/RPMS/x86_64/$SEBTYPE_RPM" "$SEBTYPE_CACHE/"
