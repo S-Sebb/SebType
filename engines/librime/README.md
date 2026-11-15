@@ -32,9 +32,10 @@ Features
 
 Install
 ===
-Follow the instructions to build librime on platforms other than Linux:
-  - [macOS](https://github.com/rime/librime/tree/master/README-mac.md)
-  - [Windows](https://github.com/rime/librime/tree/master/README-windows.md)
+SebType builds this librime itself (#219 removed upstream's other build scripts, tests and sample):
+  - Linux: `linux/build-librime.sh` (`linux/librime.spec`)
+  - Windows: `pc/windows/rime/build.ps1` (`build.bat`)
+  - Android: `android/rime` (CMake)
 
 Build dependencies
 ---
@@ -46,7 +47,6 @@ Build dependencies
   - libmarisa
   - libopencc>=1.0.2
   - libyaml-cpp>=0.5
-  - libgtest (optional)
 
 Runtime dependencies
 ---
@@ -56,13 +56,6 @@ Runtime dependencies
   - libmarisa
   - libopencc
   - libyaml-cpp
-
-Build and install on Linux
----
-```
-make
-sudo make install
-```
 
 Packaging status
 ---
@@ -125,7 +118,6 @@ We are grateful to the makers of the following open source libraries:
 
   - [Boost C++ Libraries](http://www.boost.org/) (Boost Software License)
   - [google-glog](https://github.com/google/glog) (The 3-Clause BSD License)
-  - [Google Test](https://github.com/google/googletest) (The 3-Clause BSD License)
   - [LevelDB](https://github.com/google/leveldb) (The 3-Clause BSD License)
   - [marisa-trie](https://github.com/s-yata/marisa-trie) (BSD 2-Clause License, LGPL 2.1)
   - [OpenCC](https://github.com/BYVoid/OpenCC) (Apache License 2.0)

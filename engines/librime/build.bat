@@ -30,7 +30,6 @@ set build_config=Release
 set build_deps=0
 set build_librime=0
 set build_shared=ON
-set build_test=OFF
 set clean=0
 set enable_logging=ON
 
@@ -46,10 +45,6 @@ if "%1" == "static" (
 )
 if "%1" == "shared" (
   set build_shared=ON
-)
-if "%1" == "test" (
-  set build_librime=1
-  set build_test=ON
 )
 if "%1" == "debug" (
   if not defined build_dir set build_dir=debug
@@ -82,7 +77,6 @@ if not defined rime_install_prefix set rime_install_prefix=%RIME_ROOT%\dist
 if %clean% == 1 (
  rmdir /s /q %build_dir%
   rmdir /s /q deps\glog\%build_dir%
-  rmdir /s /q deps\googletest\%build_dir%
   rmdir /s /q deps\leveldb\%build_dir%
   rmdir /s /q deps\marisa-trie\%build_dir%
   rmdir /s /q deps\opencc\%build_dir%
@@ -145,15 +139,6 @@ if %build_deps% == 1 (
   if errorlevel 1 goto error
   popd
 
-  echo building gtest.
-  pushd deps\googletest
-  cmake . -B%build_dir% %deps_cmake_flags%^
-  -DBUILD_GMOCK:BOOL=OFF
-  if errorlevel 1 goto error
-  cmake --build %build_dir% --config %build_config% --target install
-  if errorlevel 1 goto error
-  popd
-
   echo building marisa.
   pushd deps\marisa-trie
   cmake . -B%build_dir% %deps_cmake_flags%^
@@ -180,7 +165,6 @@ if %build_librime% == 0 goto exit
 set rime_cmake_flags=%common_cmake_flags%^
  -DBUILD_STATIC=ON^
  -DBUILD_SHARED_LIBS=%build_shared%^
- -DBUILD_TEST=%build_test%^
  -DENABLE_LOGGING=%enable_logging%^
  -DCMAKE_PREFIX_PATH:PATH="%deps_install_prefix%"^
  -DCMAKE_INSTALL_PREFIX:PATH="%rime_install_prefix%"
@@ -197,12 +181,6 @@ echo on
 cmake --build %build_dir% --config %build_config% --target install
 @echo off
 if errorlevel 1 goto error
-
-if "%build_test%" == "ON" (
-  copy /y %rime_install_prefix%\lib\rime.dll %build_dir%\test
-  ctest --test-dir %build_dir%\test -C %build_config%  --output-on-failure
-  if errorlevel 1 goto error
-)
 
 echo.
 echo ready.

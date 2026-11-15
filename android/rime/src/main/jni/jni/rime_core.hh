@@ -10,7 +10,7 @@
 
 namespace rime::jni {
 
-    static char const * modules[] =      { "lua", "predict" };
+    static char const * modules[] =      { "lua" };
     static char distribution_name[]      { "Rime for Android" };
     static char distribution_code_name[] { "Android" };
     static char distribution_version[]   { RIME_VERSION };

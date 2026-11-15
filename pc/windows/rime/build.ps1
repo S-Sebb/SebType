@@ -1,6 +1,6 @@
 # Builds SebType's librime for Windows: engines/librime (librime $RimeVersion, the version SebType's Android
-# and Linux builds use too; #101, #133), 64-bit, with librime-lua, -octagram and -predict merged into rime.dll
-# as librime's own Windows release does, and Rime's shared data.
+# and Linux builds use too; #101, #133), 64-bit, with librime-lua and -octagram merged into rime.dll
+# as librime's own Windows release does (without -predict, which no schema SebType ships uses, #219), and Rime's shared data.
 #   pc/windows/rime/build.ps1 [-Out <dir>] [-Work <dir>]
 # Needs Visual Studio 2022 with C++, git, 7z and Git's bash (GitHub's windows-2022 runner has them all;
 # .github/workflows/windows-setup.yml runs this). The third-party code SebType doesn't change is fetched at
@@ -20,14 +20,12 @@ $RimeVersion = '1.16.1'
 # rime.dll, at the commits its version-info.txt names (rime-ice's Lua needs librime-lua).
 $RimeDeps = @(
   @{ Dir = 'deps\glog'; Repo = 'google/glog'; Commit = '7b134a5c82c0c0b5698bb6bf7a835b230c5638e4' }
-  @{ Dir = 'deps\googletest'; Repo = 'google/googletest'; Commit = 'f8d7d77c06936315286eb55f8de22cd23c188571' }
   @{ Dir = 'deps\leveldb'; Repo = 'google/leveldb'; Commit = '99b3c03b3284f5886f9ef9a4ef703d57373e61be' }
   @{ Dir = 'deps\marisa-trie'; Repo = 's-yata/marisa-trie'; Commit = '3e87d53b78e15f2f43783d5e376561a8c9722051' }
   @{ Dir = 'deps\opencc'; Repo = 'BYVoid/OpenCC'; Commit = '556ed22496d650bd0b13b6c163be9814637970ae' }
   @{ Dir = 'deps\yaml-cpp'; Repo = 'jbeder/yaml-cpp'; Commit = '2f86d13775d119edbb69af52e5f566fd65c6953b' }
   @{ Dir = 'plugins\lua'; Repo = 'hchunhui/librime-lua'; Commit = '68f9c364a2d25a04c7d4794981d7c796b05ab627' }
   @{ Dir = 'plugins\octagram'; Repo = 'lotem/librime-octagram'; Commit = 'dfcc15115788c828d9dd7b4bff68067d3ce2ffb8' }
-  @{ Dir = 'plugins\predict'; Repo = 'rime/librime-predict'; Commit = '920bd41ebf6f9bf6855d14fbe80212e54e749791' }
 )
 # rime/plum at the commit Weasel 0.17.4 pinned, which fetches Rime's preset data, as SebType shipped it before #190.
 $PlumCommit = 'cab9ed35289f2022b6888503750d2dfb1851dbe0'

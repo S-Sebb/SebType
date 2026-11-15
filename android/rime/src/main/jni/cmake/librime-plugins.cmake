@@ -24,11 +24,3 @@ download_and_extract(
     "https://github.com/lotem/librime-octagram/archive/57d18b9f58e5284bd891d559f6bdd16cf60341e9.tar.gz"
     "7b9c77bcf17566b64204791b72cdb1b4471e22efec5eef9b79ca764ab99a1576"
 )
-
-download_and_extract(
-    "librime-predict"
-    "920bd41ebf6f9bf6855d14fbe80212e54e749791"
-    ".tar.gz"
-    "https://github.com/rime/librime-predict/archive/920bd41ebf6f9bf6855d14fbe80212e54e749791.tar.gz"
-    "38b2f32254e1a35ac04dba376bc8999915c8fbdb35be489bffdf09079983400c"
-)
