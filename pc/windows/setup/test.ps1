@@ -349,12 +349,16 @@ if ($Typing) {
         Check 'japanese-tray-menu' {
           Field ja
           function Typed($s) { $tsf::Clear(); TypeText $s; Keys Return; Start-Sleep 1; $tsf::Text().Trim() }
-          $m = $tsf::TrayPopup($true, "$out\117-menu-ja-hira.png"); $kata = Typed 'a'
-          $m2 = $tsf::TrayPopup($true, "$out\117-menu-ja-kata.png"); $hira = Typed 'a'
-          if ($m -ne "あ → ア`tAlt+``" -or $kata -ne 'ア' -or $m2 -ne "ア → あ`tAlt+``" -or $hira -ne 'あ') {
-            throw "menu '$m', then a gave '$kata'; menu '$m2', then '$hira'"
+          $m = $tsf::TrayPopup($true, "$out\117-menu-ja-hira.png"); $first = Typed 'a'
+          $m2 = $tsf::TrayPopup($true, "$out\117-menu-ja-kata.png"); $second = Typed 'a'
+          # From the mode the earlier checks left in the apps' one core (ア after a failed japanese-alt-grave,
+          # #222): each pick switches to what its menu said.
+          $toKata = "あ → ア`tAlt+``"; $toHira = "ア → あ`tAlt+``"
+          if (-not (($m -eq $toKata -and $first -eq 'ア' -and $m2 -eq $toHira -and $second -eq 'あ') -or
+                    ($m -eq $toHira -and $first -eq 'あ' -and $m2 -eq $toKata -and $second -eq 'ア'))) {
+            throw "menu '$m', then a gave '$first'; menu '$m2', then '$second'"
           }
-          'menu あ → ア (ア), then ア → あ (あ)'
+          "menu $($m -replace '\t.*') ($first), then $($m2 -replace '\t.*') ($second)"
         }
         Check 'picnic-window' $picnic
       } finally { $tsf::Stop() }

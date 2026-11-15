@@ -33,6 +33,15 @@ def keycode(name):
 
 def chord(names):
     codes = [keycode(n) for n in names]
+    if names in (["Shift_L"], ["Shift_R"]):
+        # A Shift tap switches only when its release comes within 500 ms of its press (core/). FreeRDP, short
+        # of CPU on a busy PC, sent the release of an 80 ms tap up to 444 ms late, and in a release run past
+        # 500 ms (#222): the press and release go in one flush, so they leave together.
+        xtest.fake_input(x, X.KeyPress, codes[0])
+        xtest.fake_input(x, X.KeyRelease, codes[0])
+        x.sync()
+        time.sleep(GAP)
+        return
     for c in codes:
         xtest.fake_input(x, X.KeyPress, c)
         x.sync()
