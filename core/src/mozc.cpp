@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // SebType core: 日本語 through Mozc's own mozc_server, over Mozc's IPC. The key translation, the candidate
 // window and the server's protocol use follow fcitx5-mozc (Copyright 2010-2018 Google Inc. and 2017 Weng
-// Xuetian; engines/mozc/src/unix/fcitx5), so this file keeps its licence: see core/README.md.
+// Xuetian; fcitx/mozc's src/unix/fcitx5), so this file keeps its licence: see core/README.md.
 #include <sebtype/hosts.h>
 
 #include <fcntl.h>

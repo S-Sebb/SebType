@@ -1,7 +1,10 @@
 """Types into a private Fcitx5 through its D-Bus frontend and times it, the same way for any engine (#54).
 
-    python3 -I compare-keys.py keys IM RUNS LOG < words.txt     # per-key times and memory
-    python3 -I compare-keys.py soak MINUTES LOG < words.txt     # mixed rime/mozc typing, memory over time
+    python3 -I compare-keys.py keys IM RUNS LOG < words.txt            # per-key times and memory
+    python3 -I compare-keys.py soak MINUTES ZH JA LOG < words.txt      # mixed 中文/日本語 typing, memory over time
+
+IM is a Fcitx5 input method (rime, mozc), or sebtype:zh or sebtype:ja for a language of SebType's input
+method (#190), switched over its D-Bus interface.
 
 Run it inside a private D-Bus session (compare.sh), with HOME set to a throwaway profile. Each key is a
 press and a release, as from a keyboard. Per key: "reply" is the press's ProcessKeyEvent round trip (the
@@ -68,7 +71,7 @@ def start(log):
                 "fcitx5",
                 "-k",
                 "--disable=all",
-                "--enable=dbus,dbusfrontend,keyboard,rime,mozc",
+                "--enable=dbus,dbusfrontend,keyboard,rime,mozc,sebtype",
             ],
             stdout=subprocess.DEVNULL,
             stderr=err,
@@ -120,7 +123,10 @@ def key(ic, name):  # -> (reply_ms, ui_ms or None)
 
 
 def use(im):
-    call(*CONTROLLER, "SetCurrentIM", "(s)", im)
+    name, _, lang = im.partition(":")
+    call(*CONTROLLER, "SetCurrentIM", "(s)", name)
+    if lang:
+        call("/sebtype", "org.sebtype.Core1", "SetLanguage", "(s)", lang)
     pump(0.05)
 
 
@@ -205,7 +211,7 @@ if mode == "keys":
                 nkeys += 1
                 if s is not None:
                     shown.append(s)
-            if im == "mozc":
+            if im in ("mozc", "sebtype:ja"):
                 r, s = key(ic, "space")
                 convert.append(s if s is not None else r)
                 key(ic, "Escape")
@@ -225,23 +231,28 @@ if mode == "keys":
         os.kill(m, 15)
 
 elif mode == "soak":
-    minutes, log = float(sys.argv[2]), sys.argv[3]
+    minutes, zh_im, ja_im, log = (
+        float(sys.argv[2]),
+        sys.argv[3],
+        sys.argv[4],
+        sys.argv[5],
+    )
     proc, ic, t0, _ = start(log)
     zh = [w for w in words if not w.startswith("ja:")]
     ja = [w[3:] for w in words if w.startswith("ja:")]
-    for im in ("mozc", "rime"):
+    for im in (ja_im, zh_im):
         use(im)
         ready(ic, time.perf_counter())
     mozc0, nkeys, samples, crashes = mozc_pid(), 0, [], []
     end, next_sample, i = time.time() + minutes * 60, 0, 0
     while time.time() < end:
-        im, w = ("rime", zh[i % len(zh)]) if i % 2 == 0 else ("mozc", ja[i % len(ja)])
+        im, w = (zh_im, zh[i % len(zh)]) if i % 2 == 0 else (ja_im, ja[i % len(ja)])
         use(im)
         for c in w:
             key(ic, c)
             nkeys += 1
         key(ic, "space")  # Rime commits the first candidate, Mozc converts
-        if im == "mozc":
+        if im == ja_im:
             key(ic, "Return")
         i += 1
         if proc.poll() is not None:

@@ -1,5 +1,5 @@
 # SebType's Linux input method (#190): one Fcitx5 add-on over SebType's core (core/, linux/), which hosts
-# librime for 中文 and Mozc's server for 日本語 (engines/mozc), in place of fcitx5-rime and fcitx5-mozc.
+# librime for 中文 and Mozc's server for 日本語 (engines/mozc).
 # build.sh sets the version, release and Bazel's folders.
 
 %global __provides_exclude_from ^%{_libdir}/fcitx5/.*\\.so$
@@ -9,7 +9,7 @@ Version:        %{sebtype_version}
 Release:        %{sebtype_release}
 Summary:        SebType: English, 中文 and 日本語 in one Fcitx5 input method
 # SebType's code MIT; core/src/rime.cpp and the tray LGPL-2.1-or-later (fcitx5-rime's, Fcitx5's); core/src/mozc.cpp
-# and Mozc's server as fcitx5-mozc.spec (core/README.md).
+# and Mozc's server BSD-3-Clause, with the licences of Mozc's data and third-party code (core/README.md).
 License:        MIT and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0
 URL:            https://github.com/S-Sebb/SebType
 
@@ -48,7 +48,7 @@ mkdir -p engines && mv mozc engines/
 cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DCMAKE_INSTALL_LIBDIR=%{_lib}
 ninja -C build -j %{_smp_build_ncpus}
-# Mozc's server, as fcitx5-mozc.spec builds it (its caches are shared).
+# Mozc's server, with Bazel (its caches are kept between builds).
 pushd engines/mozc/src
 bazel --output_user_root=%{bazel_root} build --disk_cache=%{bazel_root}/disk-cache \
   --repository_cache=%{bazel_root}/repository-cache --jobs=%{_smp_build_ncpus} --show_progress_rate_limit=60 \

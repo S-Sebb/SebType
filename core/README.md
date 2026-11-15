@@ -22,9 +22,10 @@ build (`%check` in `linux/sebtype.spec`).
 
 - SebType's own code here is MIT ([LICENSE-SebType](../LICENSE-SebType)), but for these files:
   - `src/rime.cpp` follows [fcitx5-rime](https://github.com/fcitx/fcitx5-rime) (Copyright 2017 Xuetian
-    Weng and contributors): LGPL-2.1-or-later, like fcitx5-rime.
-  - `src/mozc.cpp` follows fcitx5-mozc, the Fcitx 5 frontend in `engines/mozc/src/unix/fcitx5`
-    (Copyright 2010-2018 Google Inc. and 2017 Weng Xuetian): BSD-3-Clause, like Mozc.
+    Weng and contributors): LGPL-2.1-or-later, like fcitx5-rime
+    ([LICENSE-LGPL-2.1](../LICENSE-LGPL-2.1)).
+  - `src/mozc.cpp` follows fcitx5-mozc, the Fcitx 5 frontend of [fcitx/mozc](https://github.com/fcitx/mozc)
+    (`src/unix/fcitx5`, Copyright 2010-2018 Google Inc. and 2017 Weng Xuetian): BSD-3-Clause, like Mozc.
 - The protocol it speaks to Mozc's server is generated from Mozc's own `.proto` files in `engines/mozc`
   (BSD-3-Clause).
 - The engines keep their licences: librime BSD-3-Clause, Mozc BSD-3-Clause.

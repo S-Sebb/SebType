@@ -3,10 +3,9 @@
 # Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
-# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-mozc, --undo-rime,
-# --undo-librime and --undo-fcitx5 put Fedora's fcitx5-mozc, fcitx5-rime, librime and Fcitx5 back in
-# place of SebType's builds (an older setup installed them); --undo-fcitx5 also puts back Fcitx5's own
-# settings (kcm-fcitx5, fcitx5-configtool).
+# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-librime puts Fedora's
+# librime back in place of SebType's build. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
+# fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
@@ -14,19 +13,17 @@
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_mozc=0 undo_rime=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
+dry=0 undo_icons=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
   --undo-icons) undo_icons=1 ;;
-  --undo-mozc) undo_mozc=1 ;;
-  --undo-rime) undo_rime=1 ;;
   --undo-librime) undo_librime=1 ;;
   --undo-fcitx5) undo_fcitx5=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
   --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-mozc | --undo-rime | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -140,14 +137,9 @@ fi
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
 # SebType's input method (#190): linux/, packaged by linux/build.sh. SebType's librime (#101): engines/librime,
-# packaged as Fedora's package (rime/). SebType's fcitx5-mozc (#66), fcitx5-rime (#117) and Fcitx5 (#182),
-# which an older setup installed, have their undo here. The undo goes back to the Fedora release in the repositories.
+# packaged as Fedora's package by linux/build-librime.sh. Its undo goes back to the Fedora release in the repositories.
 # shellcheck source-path=SCRIPTDIR source=../../linux/versions.sh
 source "$here/../../linux/versions.sh"
-# shellcheck source-path=SCRIPTDIR source=mozc/versions.sh
-source "$here/mozc/versions.sh"
-# shellcheck source-path=SCRIPTDIR source=rime/versions.sh
-source "$here/rime/versions.sh"
 installed() { rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
 restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
 undo_build() { # package [packages built with it...]
@@ -161,14 +153,10 @@ undo_build() { # package [packages built with it...]
 }
 # librime's packages here: librime and its plugins, which must come from the same build
 librime_installed() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
-# Fcitx5's packages here: Fcitx5 and its subpackages, which must come from the same build
-fcitx5_installed() { local p; for p in "${FCITX5_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
 # Fcitx5's own settings, a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182):
 # its page in System Settings and its "Fcitx 5 Configuration" app. Setup removes them; --undo-fcitx5 puts them back.
 fcitx5_settings=(kcm-fcitx5 fcitx5-configtool)
 fcitx5_settings_installed() { local p; for p in "${fcitx5_settings[@]}"; do rpm -q "$p" >/dev/null 2>&1 && echo "$p"; done; true; }
-((undo_mozc)) && undo_build fcitx5-mozc
-((undo_rime)) && undo_build fcitx5-rime
 ((undo_librime)) && { mapfile -t librime_pkgs < <(librime_installed); undo_build "${librime_pkgs[@]}"; }
 if ((undo_fcitx5)); then
   missing=(); for p in "${fcitx5_settings[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
@@ -176,7 +164,7 @@ if ((undo_fcitx5)); then
     echo "change: install ${missing[*]}, Fcitx5's own settings"
     sudo dnf install -y "${missing[@]}"
   fi
-  mapfile -t fcitx5_pkgs < <(fcitx5_installed); undo_build "${fcitx5_pkgs[@]}"
+  exit 0
 fi
 
 # 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-lua runs rime-ice's Lua and
@@ -193,7 +181,7 @@ if ((${#missing[@]})); then
       # librime's plugins come from librime's own build: SebType's, once librime is (1b)
       if [[ " ${missing[*]} " == *" librime-octagram "* && $(installed librime) == *.sebtype* ]]; then
         octagram_rpm=$(librime_rpm librime-octagram)
-        [[ -f $octagram_rpm ]] || "$here/rime/build.sh" librime >/dev/null
+        [[ -f $octagram_rpm ]] || "$here/../../linux/build-librime.sh" >/dev/null
         missing=("${missing[@]/#librime-octagram/$octagram_rpm}")
       fi
       sudo dnf install -y "${missing[@]}"
@@ -211,11 +199,11 @@ if ((${#settings[@]})) && change "remove ${settings[*]}, Fcitx5's own settings (
 fi
 
 # 1b. SebType's input method (#190) and SebType's librime in place of Fedora's, built from SebType's source by
-# linux/build.sh (about an hour the first time, in a container) and rime/build.sh (a minute or five).
-# SebType's librime replaces one Fedora release; Fedora's update to another one warns until rime/versions.sh follows it.
+# linux/build.sh (about an hour the first time, in a container) and linux/build-librime.sh (a minute or five).
+# SebType's librime replaces one Fedora release; Fedora's update to another one warns until linux/versions.sh follows it.
 sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
 if [[ $sebtype_now != "$sebtype_want" ]] &&
-  change "install SebType's input method $sebtype_want, which hosts Rime and Mozc in place of fcitx5-rime and fcitx5-mozc (asks before using sudo)"; then
+  change "install SebType's input method $sebtype_want, which hosts Rime and Mozc (asks before using sudo)"; then
   read -rp "Build SebType's input method if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
   if [[ $answer == [yY]* ]]; then
     [[ -f $SEBTYPE_CACHE/$SEBTYPE_RPM ]] || "$here/../../linux/build.sh" >/dev/null
@@ -232,7 +220,7 @@ own_build() {
   case $now in
     "$ours" | '') ;;
     "$fedora" | *.sebtype*)
-      if change "replace $pkg $now with SebType's build $ours, Fedora's plus $adds (asks before using sudo; undo: $0 --undo-${pkg#fcitx5-})"; then
+      if change "replace $pkg $now with SebType's build $ours, Fedora's plus $adds (asks before using sudo; undo: $0 --undo-$pkg)"; then
         read -rp "Build SebType's $pkg if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
         if [[ $answer == [yY]* ]]; then
           # shellcheck disable=SC2086  # word-split: a script and its arguments
@@ -241,26 +229,15 @@ own_build() {
           busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "$pkg")"
         else warn "$pkg stays Fedora's: $without"; fi
       fi ;;
-    *) warn "$pkg $now isn't the version SebType's build is for ($fedora): $without until pc/linux/$(basename "$(dirname "${build%% *}")")/versions.sh follows it" ;;
+    *) warn "$pkg $now isn't the version SebType's build is for ($fedora): $without until linux/versions.sh follows it" ;;
   esac
 }
 # librime's typo correction knows a PC keyboard's vertical neighbours too (engines/librime), so
 # a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
 librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
-own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/rime/build.sh librime" \
+own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/../../linux/build-librime.sh" \
   "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
-# Fcitx5 is Fedora's again (#190): SebType's tray (step 11b) leaves out Input Method Settings without
-# changing Fcitx5, so SebType's build of it (#182), which an older setup installed, goes.
-mapfile -t fcitx5_pkgs < <(fcitx5_installed)
-if [[ $(installed fcitx5) == *.sebtype* ]] &&
-  change "replace SebType's Fcitx5 build with Fedora's, as SebType's tray no longer needs it (asks before using sudo)"; then
-  read -rp "Put Fedora's ${fcitx5_pkgs[*]} back with 'sudo dnf distro-sync'? [y/N] " answer || answer=
-  if [[ $answer == [yY]* ]]; then
-    sudo dnf distro-sync -y "${fcitx5_pkgs[@]}"
-    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note fcitx5)"
-  else warn "fcitx5 stays SebType's build"; fi
-fi
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
@@ -391,8 +368,8 @@ if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
 fi
 
 # 8b. Fcitx5's own add-on hotkeys are off (Decisions #2, #182): clipboard history (Ctrl+;), Unicode input
-# (Ctrl+Alt+Shift+U, Ctrl+Shift+U) and quick phrase (Super+`, Super+;). The add-ons stay loaded, as
-# fcitx5-mozc reads the clipboard through one; only their key lists are emptied (Key= before any section).
+# (Ctrl+Alt+Shift+U, Ctrl+Shift+U) and quick phrase (Super+`, Super+;). The add-ons stay loaded; only their
+# key lists are emptied (Key= before any section).
 addon_keys_off() { # file keys...: prints the add-on's config with those key lists empty, keeping the rest
   local f=$1; shift
   awk -v keys="$*" '
@@ -415,13 +392,15 @@ for spec in "clipboard TriggerKey" "unicode TriggerKey DirectUnicodeMode" "quick
 done
 
 # 9. Japanese: a Shift tap toggles あ and direct English, and Alt+` あ and ア (Decisions #2, menu hotkeys),
-# in Mozc's own keymap. fcitx5-mozc sends Mozc a bare Shift only when it is released with no other key
-# pressed since, so Shift+letter (Mozc's English run) and Shift in shortcuts never match it. Alt+` is
-# Mozc's InputModeSwitchKanaType, which SebType's build (engines/mozc) makes a two-way switch.
+# in Mozc's own keymap, as before SebType's input method (#190), which now takes both keys itself: its
+# Shift tap is a Shift released with no other key pressed since, so Shift+letter (Mozc's English run) and
+# Shift in shortcuts never match it. Alt+` is Mozc's InputModeSwitchKanaType, which SebType's build
+# (engines/mozc) makes a two-way switch.
 # Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
 # Shift lines for each state and Alt+` (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
-# kept. Mozc reads it at start, so a running mozc_server is stopped; fcitx5-mozc restarts it on the next key.
+# kept. Mozc reads it at start, so a running mozc_server is stopped; SebType's input method restarts it on
+# the next key.
 mozc_db=$config/mozc/config1.db
 mozc_want=$(python3 - "$mozc_db" "$here/mozc-keymap.tsv" <<'PY' | base64 -w0
 import sys
@@ -460,9 +439,6 @@ if [[ $(base64 -w0 "$mozc_db" 2>/dev/null) != "$mozc_want" ]] &&
   mkdir -p "${mozc_db%/*}"; base64 -d <<<"$mozc_want" > "$mozc_db"
   mapfile -t pids < <(pgrep -u "$(id -u)" -x mozc_server)
   ((${#pids[@]})) && kill "${pids[@]}"
-  # fcitx5-mozc reads the keys that work in direct English mode once, when Fcitx5 starts.
-  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-    warn "the Shift tap from English back to あ works once Fcitx5 restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
 fi
 
 # 10. Plasma binds Alt+` (and Meta+`) to "Walk Through Windows of Current Application", so Mozc would
@@ -476,17 +452,15 @@ if [[ " $(kga shortcutKeys as 4 "${walk[@]}" 2>/dev/null) " == *" $alt_grave "* 
 fi
 
 # 11. Tray icons: SebType's Set E keycaps for EN, 中, あ, ア, and a / A (Caps Lock) in the English modes.
-# Fcitx5 asks for these names (fcitx_mozc is Japanese's entry in the tray menu); input-keyboard (EN) and
-# fcitx-rime come from the active theme, so only a
-# theme of our own set as active overrides them. fcitx_rime_latin_upper is what fcitx5-rime asks for in
-# English with Caps Lock on; SebType's fcitx5-mozc build asked for <English mode icon>_upper. SebType's input
-# method (#190) asks for sebtype-<file name> in the tray and its menu.
+# SebType's input method (#190) asks for sebtype-<file name> in the tray and its menu. The other names are
+# what Fcitx5's keyboard (input-keyboard), Rime and Mozc input methods ask for (fcitx_rime_latin_upper in
+# Rime's English with Caps Lock on); they come from the active theme, so only a theme of our own set as
+# active overrides them.
 icons=$here/../icons
 icon_names=(sebtype-en:en sebtype-zh:zh sebtype-zh-a:zh-a sebtype-zh-caps:zh-caps sebtype-hira:hira
   sebtype-kata:kata sebtype-ja-a:ja-a sebtype-ja-caps:ja-caps input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps
   fcitx_mozc:hira fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
-  fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a
-  fcitx_mozc_direct_upper:ja-caps fcitx_mozc_alpha_half_upper:ja-caps fcitx_mozc_alpha_full_upper:ja-caps)
+  fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a)
 want_theme=$(mktemp -d)
 dirs=(16 20 22 24 32 scalable)
 {

@@ -1,0 +1,4 @@
+SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
+- src/tray.h and src/tray.cpp: ported from Fcitx5's notificationitem, under Fcitx5's licence
+  (LGPL-2.1-or-later, ../LICENSE-LGPL-2.1).
+- librime.spec: Fedora's librime spec with SebType's changes, under Fedora's licence for spec files (MIT).

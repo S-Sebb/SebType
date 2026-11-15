@@ -12,7 +12,7 @@ out=$1; shift
 src=$(cd "$(dirname "$0")/../../engines/mozc/src" && pwd)
 export SEBTYPE_ANDROID_NDK=${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must name the app\'s NDK}
 # The Bazelisk the Linux build pins; it runs the Bazel version engines/mozc/src/.bazeliskrc names.
-source "$src/../../../pc/linux/mozc/versions.sh"
+source "$src/../../../linux/versions.sh"
 source "$src/../../../tools/lib.sh"
 cache=$SCRATCH/cache/mozc-android
 bazelisk=$cache/bazelisk-${BAZELISK_SHA256:0:12}
