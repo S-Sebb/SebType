@@ -107,7 +107,7 @@ SebType stands on these projects:
 - **[Rime](https://rime.im)** ([librime](https://github.com/rime/librime), librime-lua, octagram) and its Android bindings RimeJni
 - **[rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)** and **[白霜拼音 (rime-frost)](https://github.com/gaboolic/rime-frost)**, the Chinese data
 - **[Mozc](https://github.com/google/mozc)**, Japanese on every device
-- **[Fcitx5](https://github.com/fcitx/fcitx5)**, [fcitx5-rime](https://github.com/fcitx/fcitx5-rime) and [fcitx5-mozc](https://github.com/fcitx/mozc), on Linux; [Weasel](https://github.com/rime/weasel), which builds librime for Windows
+- **[Fcitx5](https://github.com/fcitx/fcitx5)**, [fcitx5-rime](https://github.com/fcitx/fcitx5-rime) and [fcitx5-mozc](https://github.com/fcitx/mozc), on Linux; [Weasel](https://github.com/rime/weasel), whose candidate window the Windows one takes its layout from
 - **[wordfreq](https://github.com/rspeer/wordfreq)** and [SCOWL](https://wordlist.aspell.net), the English dictionary's frequencies and checks
 - **Nunito**, **Pixelify Sans**, **Jersey 10** and **Noto Sans CJK**, the fonts
 
