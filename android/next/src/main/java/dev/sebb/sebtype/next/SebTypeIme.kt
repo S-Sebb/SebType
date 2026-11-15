@@ -131,6 +131,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         enterLanguage()
         keyboard.enter = kind.enter
         refresh()
+        autoShift()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

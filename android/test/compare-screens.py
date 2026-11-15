@@ -154,12 +154,32 @@ def chinese_ready(app, k):
     raise SystemExit(f"{app}: no 你好 for nihao")
 
 
+def menu(app):
+    if app == "new":
+        tap_label("Open Action Bar")
+        return
+    labels = {t for t, _, _ in nodes()}
+    # The expanded bar is a saved setting: it may be open, with All Actions showing, already.
+    if "All Actions" not in labels:
+        tap_label("Open Action Bar")
+    tap_label("All Actions")
+
+
 def run(app, mode):
     k = open_field(app)
     top = k.t - 520  # the bar, the floating pinyin and some of the field above the keys
-    shot(f"{mode}-en-{app}", top)
-    k.bottom(0.75)  # ?123
-    shot(f"{mode}-symbols-{app}", top)
+
+    def step(state, do):
+        """One screenshot; a state that fails is noted in the page instead of stopping the run."""
+        try:
+            do()
+            shot(f"{mode}-{state}-{app}", top)
+        except (SystemExit, KeyError, ValueError, subprocess.SubprocessError) as e:
+            failed[f"{mode}-{state}-{app}"] = str(e)
+            print(f"{mode}-{state}-{app}: {e}", flush=True)
+
+    step("en", lambda: None)
+    step("symbols", lambda: k.bottom(0.75))  # ?123
     k.bottom(0.75)  # ABC
     x, y = k.letter("e")
     hold = subprocess.Popen(
@@ -174,32 +194,19 @@ def run(app, mode):
             "2500",
         ]
     )
-    time.sleep(1.4)
-    shot(f"{mode}-long-press-{app}", top)
+    step("long-press", lambda: time.sleep(1.4))
     hold.wait()
     open_field(app)
     k.bottom(3)  # 🌐: EN -> 中
-    k = chinese_ready(app, k)
-    shot(f"{mode}-zh-{app}", top)
-    open_field(app)
-    if app == "today":
-        if not any(t in ("All Actions",) for t, _, _ in nodes()):
-            tap_label("Open Action Bar")
-        tap_label("All Actions")
-    else:
-        tap_label("Open Action Bar")
-    shot(f"{mode}-zh-menu-{app}", top)
-    tap_label("Back" if app == "today" else "Close Action Bar")
-    k = open_field(app)
+    step("zh", lambda: chinese_ready(app, k))
+    step("zh-menu", lambda: (open_field(app), menu(app)))
+    open_field(app)  # a new field closes the menu
     k.bottom(3)  # 中 -> 日
-    k = open_field(app)
-    k.type("nihongo")
-    time.sleep(2)
-    shot(f"{mode}-ja-{app}", top)
-    k = open_field(app)
-    k.bottom(3)  # 日 -> EN for the next run
+    step("ja", lambda: (open_field(app).type("nihongo"), time.sleep(2)))
+    open_field(app).bottom(3)  # 日 -> EN for the next run
 
 
+failed = {}
 os.makedirs(outdir, exist_ok=True)
 adb("install", "-r", field_apk, timeout=300)
 for app, (pkg, ime, _, apk) in APPS.items():
@@ -222,7 +229,12 @@ finally:
 
 rows = "\n".join(
     f"<tr><th>{label}<br><small>{mode}</small></th>"
-    + "".join(f'<td><img src="{mode}-{state}-{app}.png"></td>' for app in APPS)
+    + "".join(
+        f"<td>not taken: {failed[n]}</td>"
+        if (n := f"{mode}-{state}-{app}") in failed
+        else f'<td><img src="{n}.png"></td>'
+        for app in APPS
+    )
     + "</tr>"
     for mode in ("light", "dark")
     for state, label in STATES
