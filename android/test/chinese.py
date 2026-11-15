@@ -900,10 +900,12 @@ check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
 def fast_typing_ja():
     # The romaji stays in the field as Mozc's composition: every key, in order, or other kana.
     open_field()
-    type_fast("konnichihasekai")
-    if (text := field_text()) != "こんにちはせかい":
-        raise Fail(f"typed konnichihasekai 10 ms apart in 日; the field shows {text!r}")
-    return f"konnichihasekai, 10 ms apart -> {text!r}"
+    type_fast("watashihanihongowohanasu")
+    if (text := field_text()) != "わたしはにほんごをはなす":
+        raise Fail(
+            f"typed watashihanihongowohanasu 10 ms apart in 日; the field shows {text!r}"
+        )
+    return f"watashihanihongowohanasu, 10 ms apart -> {text!r}"
 
 
 check("fast-typing-ja", fast_typing_ja, needs=["ja-chip"])
