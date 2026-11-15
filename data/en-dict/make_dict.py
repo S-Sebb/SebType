@@ -1,12 +1,14 @@
-"""Builds SebType's English main dictionary from FUTO's, wordfreq and SCOWL (configuration chosen in #47).
+"""Builds SebType's English main dictionary from a base word list, wordfreq and SCOWL (configuration chosen
+in #47).
 
-  make_dict.py FUTO_MAIN_EN_DICT WORDFREQ_LARGE_EN_MSGPACK_GZ SCOWL_HUNSPELL_DIR OUT_DICT OUT_COMBINED_GZ
+  make_dict.py BASE WORDFREQ_LARGE_EN_MSGPACK_GZ SCOWL_HUNSPELL_DIR OUT_DICT OUT_COMBINED_GZ
 
-- Words: all of FUTO's, plus wordfreq's frequent words (top 200 k) that FUTO lacks and that SCOWL's
+BASE is FUTO's main_en.dict (today's app) or AOSP's en_US_wordlist.combined.gz (the new keyboard, #244).
+- Words: all of the base's, plus wordfreq's frequent words (top 200 k) that it lacks and that SCOWL's
   en_US-large spell checker accepts, as written, capitalised, or in SCOWL's own mixed case (GitHub).
-  All-caps forms are left out, as FUTO removed acronyms on purpose.
-- Weights: wordfreq's, mapped onto FUTO's 0-255 scale by rank over the words both lists share.
-  FUTO words that wordfreq lacks keep FUTO's weight; FUTO's typo entries (not_a_word, e.g. "wierd"
+  All-caps forms are left out, as the base lists leave out acronyms.
+- Weights: wordfreq's, mapped onto the base's 0-255 scale by rank over the words both lists share.
+  Base words that wordfreq lacks keep their weight; the typo entries (not_a_word, e.g. "wierd"
   -> "weird") and shortcuts are kept as they are.
 """
 
@@ -38,6 +40,13 @@ ATTRS = {
     "locale": "en",
     "version": "54",
     "description": "English (FUTO words, wordfreq weights, SCOWL-checked modern words)",
+}
+AOSP_ATTRS = {
+    "date": "1763164800",
+    "dictionary": "main:en_us",
+    "locale": "en_US",
+    "version": "1",
+    "description": "English (AOSP words, wordfreq weights, SCOWL-checked modern words)",
 }
 
 
@@ -92,6 +101,29 @@ def wordfreq_large_en(path):
     }
 
 
+def read_combined(path):
+    """AOSP's word list (dicttool's .combined format), as v202.decode gives a dictionary's words."""
+    words, word = {}, None
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        next(f)  # the header line
+        for line in f:
+            fields = dict(kv.split("=", 1) for kv in line.strip().split(","))
+            if line.startswith(" word="):
+                word = fields["word"]
+                words[word] = (
+                    int(fields["f"]),
+                    fields.get("not_a_word") == "true",
+                    fields.get("possibly_offensive") == "true",
+                    [],
+                )
+            elif line.startswith("  shortcut="):
+                f_ = fields["f"]
+                words[word][3].append(
+                    (fields["shortcut"], 15 if f_ == "whitelist" else int(f_))
+                )
+    return words
+
+
 def rescale(src, ref):
     """Maps src scores onto ref's scale by rank (quantile mapping over shared words)."""
     shared = sorted(set(src) & set(ref))
@@ -139,35 +171,41 @@ def scowl_spellings(words, hunspell_dir):
     return {w: (s, stems.get(s, {s})) for w, s in spelling.items()}
 
 
-def main(futo_dict, wordfreq_path, hunspell_dir, out_dict, out_combined):
-    _, futo = v202.decode(Path(futo_dict).read_bytes())
-    # FUTO's real words on one lowercase scale, as the #40 benchmark compares them.
+def main(base_path, wordfreq_path, hunspell_dir, out_dict, out_combined):
+    aosp = base_path.endswith(".combined.gz")
+    base = (
+        read_combined(base_path)
+        if aosp
+        else v202.decode(Path(base_path).read_bytes())[1]
+    )
+    attrs = AOSP_ATTRS if aosp else ATTRS
+    # The base's real words on one lowercase scale, as the #40 benchmark compares them.
     ref = {}
-    for w, (f, not_a_word, offensive, _) in futo.items():
+    for w, (f, not_a_word, offensive, _) in base.items():
         if not not_a_word and not offensive:
             ref[w.lower()] = max(ref.get(w.lower(), 0), f)
     all_wf = wordfreq_large_en(wordfreq_path)
     wf = {w: z for w, z in all_wf.items() if WORD_RE.fullmatch(w)}
     weight = rescale(wf, ref)
 
-    # Case variants share one wordfreq count (us/US): only FUTO's most frequent variant takes it.
-    words = dict(futo)
+    # Case variants share one wordfreq count (us/US): only the base's most frequent variant takes it.
+    words = dict(base)
     top = {}
-    for w, (f, not_a_word, _, _) in futo.items():
+    for w, (f, not_a_word, _, _) in base.items():
         if (
             not not_a_word
             and w.lower() in weight
-            and f >= futo.get(top.get(w.lower()), (-1,))[0]
+            and f >= base.get(top.get(w.lower()), (-1,))[0]
         ):
             top[w.lower()] = w
     for k, w in top.items():
-        words[w] = (weight[k], *futo[w][1:])
+        words[w] = (weight[k], *base[w][1:])
 
-    known = {w.lower() for w in futo}
+    known = {w.lower() for w in base}
     # A contraction typed without its apostrophe ("ive") must stay a typo that autocorrect fixes.
     contractions = {
         w.lower().replace("'", "")
-        for w in futo
+        for w in base
         if "'" in w and not w.lower().endswith("'s")
     }
     candidates = [
@@ -179,7 +217,7 @@ def main(futo_dict, wordfreq_path, hunspell_dir, out_dict, out_combined):
         and (len(w) > 2 or w in SHORT_WORDS)
         and w not in FRAGMENTS
     ]
-    # Offensive by SCOWL (NOSUGGEST stems), by FUTO (same stem flagged) or by our own list.
+    # Offensive by SCOWL (NOSUGGEST stems), by the base (same stem flagged) or by our own list.
     nosuggest = {
         l.split("/")[0]
         for l in Path(f"{hunspell_dir}/en_US-large.dic")
@@ -187,7 +225,7 @@ def main(futo_dict, wordfreq_path, hunspell_dir, out_dict, out_combined):
         .splitlines()
         if "/" in l and "!" in l.split("/")[1]
     }
-    offensive = {w.lower() for w, v in futo.items() if v[2]} | set(
+    offensive = {w.lower() for w, v in base.items() if v[2]} | set(
         (Path(__file__).resolve().parent / "offensive.txt").read_text().split()
     )
     added = scowl_spellings(candidates, hunspell_dir)
@@ -197,15 +235,15 @@ def main(futo_dict, wordfreq_path, hunspell_dir, out_dict, out_combined):
         )
         words[spelling] = (weight[w], False, flagged, [])
     print(
-        f"FUTO words {len(futo)}, reweighted {sum(words[w] != futo[w] for w in futo)}, added {len(added)} "
+        f"base words {len(base)}, reweighted {sum(words[w] != base[w] for w in base)}, added {len(added)} "
         f"({sum(words[s][2] for s, _ in added.values())} marked offensive), total {len(words)}",
         file=sys.stderr,
     )
 
-    data = v202.encode(ATTRS, words)
+    data = v202.encode(attrs, words)
     Path(out_dict).write_bytes(data)
     with gzip.open(out_combined, "wt", encoding="utf-8") as out:
-        out.write(",".join(f"{k}={v}" for k, v in ATTRS.items()) + "\n")
+        out.write(",".join(f"{k}={v}" for k, v in attrs.items()) + "\n")
         for w, (f, not_a_word, offensive, shortcuts) in sorted(
             words.items(), key=lambda x: (-x[1][0], x[0])
         ):

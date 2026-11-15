@@ -16,12 +16,26 @@ struct Key {
   uint32_t sym = 0;
   uint32_t mods = 0;
   bool release = false;
+  // Where a touch keyboard's key was tapped, in the pixels of the Layout it gave the engine; -1: not known
+  // (the key's centre is taken).
+  int x = -1, y = -1;
 };
 // A touch keyboard sends characters: a tap of "a" is keysym a. Latin-1 keysyms are their code points, any
 // other character is X11's Unicode keysym.
 constexpr uint32_t charSym(char32_t c) { return c < 0x100 ? c : 0x1000000 + c; }
 
 enum class Lang { English, Chinese, Japanese };
+
+// A touch keyboard's keys, for engines that correct taps near another key (English): each character key's
+// rectangle in the keyboard's pixels.
+struct KeyRect {
+  char32_t code = 0;
+  int x = 0, y = 0, width = 0, height = 0;
+};
+struct Layout {
+  int width = 0, height = 0;
+  std::vector<KeyRect> keys;
+};
 
 // What the text field takes, as a touch keyboard learns it from the field (the PCs type in Text).
 // Plain: a field that wants no suggestions (URLs, e-mail addresses), where 中文 types letters.

@@ -127,7 +127,6 @@ void Core::setSettings(Settings settings) {
 }
 
 Engine *Core::engine(Lang lang) {
-  if (lang == Lang::English) return nullptr;
   auto &e = engines_[lang];
   if (!e) {
     e = factory_(lang);
@@ -135,6 +134,7 @@ Engine *Core::engine(Lang lang) {
     e->applySettings(settings_, settings_.learning && fieldLearning_);
     e->setField(field_);
     e->setKeys(keys_, landscape_);
+    if (!layout_.keys.empty()) e->setLayout(layout_);
   }
   return e.get();
 }
@@ -218,6 +218,15 @@ void Core::setKeys(Keys keys, bool landscape) {
   keys_ = keys;
   landscape_ = landscape;
   forEachEngine([&](Engine &e) { e.setKeys(keys, landscape); });
+}
+
+void Core::setLayout(const Layout &layout) {
+  layout_ = layout;
+  forEachEngine([&](Engine &e) { e.setLayout(layout); });
+}
+
+void Core::setContext(const std::string &before) {
+  if (auto *e = current()) e->setContext(before);
 }
 
 bool Core::undo() {

@@ -52,6 +52,7 @@ std::string mozcProfile() {
 }
 
 std::unique_ptr<Engine> makeEngine(Lang lang) {
+  if (lang == Lang::English) return nullptr;  // keys go to the app as typed
   const auto rimeUser = fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "rime";
   if (lang == Lang::Chinese) {
     fs::create_directories(rimeUser);

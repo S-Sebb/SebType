@@ -17,6 +17,9 @@ has the details):
     wordfreq's frequencies under CC BY-SA 4.0 (credits at the end).
   - android/app/src/main/res/font/sebtype_nunito_extrabold.ttf and sebtype_pixelify_semibold.ttf, the fonts in
     art/fonts/, and the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
+  - data/en-dict/en_US.dict: AOSP's en_US word list (Apache-2.0) with wordfreq's frequencies under
+    CC BY-SA 4.0 (credits at the end).
+  - engines/sebtype-lm/english.gguf: SebType's English model, CC BY-SA 4.0 (credits at the end).
   - SebType's Mozc in engines/mozc/, and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause licence.
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's
@@ -28,13 +31,14 @@ has the details):
     licence (android/native/src/main/cpp/cmake/LICENSE).
   - android/app/src/main/java/org/futo/inputmethod/engine/general/mozc/SelectionTracker.java: from FUTO's
     mozc-lib, Google's Mozc Android client (BSD-3-Clause, in its header) with FUTO's and SebType's changes.
+- AOSP LatinIME's decoder in engines/latinime/, unchanged: the Apache License 2.0 (engines/latinime/NOTICE).
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause. On Windows, mozc_server.exe comes with the
   Microsoft Visual C++ runtime files of the Visual Studio that built it (msvcp140*.dll, vcruntime140*.dll),
   under Microsoft's terms for them. The Windows candidate window takes its layout numbers and aqua colours
   from Weasel (GPL-3.0) as settings, not its code (windows/README.md).
 
-FUTO's NOTICE follows unchanged, then the credits for SebType's English dictionary.
+FUTO's NOTICE follows unchanged, then the credits for SebType's English dictionaries and model.
 
 
 The license below applies only to the original AOSP keyboard code, which is
@@ -234,11 +238,12 @@ up to commit d847619a2b48945465f840b8d81644fa455cc115.
 Includes Dictionaries © Lexiteria LLC.  Used by permission.
 
 
-SebType's English dictionary (android/app/src/main/res/raw/main_en.dict, built by data/en-dict/build.sh)
-takes its word frequencies from wordfreq by Robyn Speer (https://github.com/rspeer/wordfreq), whose
+SebType's English dictionaries (android/app/src/main/res/raw/main_en.dict and data/en-dict/en_US.dict, built
+by data/en-dict/build.sh) take its word frequencies from wordfreq by Robyn Speer (https://github.com/rspeer/wordfreq), whose
 data is under the Creative Commons Attribution-ShareAlike 4.0 licence
-(https://creativecommons.org/licenses/by-sa/4.0/); the dictionary's frequencies are shared under the
-same licence. wordfreq contains data from Google Books Ngrams (http://books.google.com/ngrams), the
+(https://creativecommons.org/licenses/by-sa/4.0/); the dictionaries' frequencies are shared under the
+same licence. en_US.dict's words come from AOSP LatinIME's en_US word list
+(dictionaries/en_US_wordlist.combined.gz, Copyright The Android Open Source Project, Apache-2.0). wordfreq contains data from Google Books Ngrams (http://books.google.com/ngrams), the
 Leeds Internet Corpus, Wikipedia, ParaCrawl, OPUS OpenSubtitles 2018 (originally from the OpenSubtitles
 project, http://www.opensubtitles.org/), Twitter, and the SUBTLEX word lists by Marc Brysbaert et al.
 (http://crr.ugent.be/programs-data/subtitle-frequencies), which are freely available data.
@@ -253,3 +258,15 @@ Its added words were checked against SCOWL's en_US-large word list (https://word
   copyright notice and this notice appear in supporting documentation.  Kevin
   Atkinson makes no representations about the suitability of this database for
   any purpose.  It is provided "as is" without express or implied warranty.
+
+
+SebType's English model (engines/sebtype-lm/english.gguf, trained by tools/english-lm) is licensed under the
+Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/). It was
+trained on, and is adapted from, these openly licensed texts (tools/english-lm/SOURCES.md has the revisions):
+
+- English Wikipedia and Simple English Wikipedia (dumps of 2023-11-01, via the wikimedia/wikipedia dataset),
+  by Wikipedia's contributors: CC BY-SA.
+- OpenAssistant oasst2 (2023-11-05), by the OpenAssistant contributors: Apache-2.0.
+- SODA, by the Allen Institute for AI: CC BY 4.0.
+- databricks-dolly-15k, by Databricks: CC BY-SA 3.0.
+- English Wikinews (dump of 2026-11-01), by Wikinews's contributors: CC BY 2.5.

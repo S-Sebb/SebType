@@ -1,4 +1,5 @@
-// SebType core: what the core needs from a conversion engine (Rime for 中文, Mozc for 日本語). MIT, SebType.
+// SebType core: what the core needs from an engine (Rime for 中文, Mozc for 日本語, English on the phone). MIT,
+// SebType.
 #pragma once
 
 #include <sebtype/settings.h>
@@ -51,6 +52,10 @@ class Engine {
   virtual std::vector<Candidate> candidates(int max);
   virtual void setField(Field /*field*/) {}
   virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}
+  // English: the keys' rectangles, and the field's text before the cursor whenever it changed other than by
+  // this engine's commits and the keys it was given (focus, a cursor move, the app's own edit).
+  virtual void setLayout(const Layout & /*layout*/) {}
+  virtual void setContext(const std::string & /*before*/) {}
   virtual void moveCursor(int /*chars*/) {}
   virtual bool undo() { return false; }
   virtual Edit takeEdit() { return {}; }
