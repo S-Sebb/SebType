@@ -122,14 +122,16 @@ android {
             abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
         }
         // SebType (#58): native code names its source files relative to the checkout, so the libraries are
-        // the same in every worktree and sccache (build.sh) can share objects between them.
+        // the same in every worktree and sccache (build.sh) can share objects between them. The compile
+        // folder is AGP's .cxx/<hash>/, whose hash differs per checkout: it went into the debug info and so
+        // into the library's build ID (#223). So did the NDK's path, which differs between machines (#229).
         externalNativeBuild.cmake {
             // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
             if (findProperty('sebtypeJobs')) {
                 arguments "-DCMAKE_JOB_POOLS=jobs=${findProperty('sebtypeJobs')}", '-DCMAKE_JOB_POOL_COMPILE=jobs', '-DCMAKE_JOB_POOL_LINK=jobs'
             }
-            cFlags "-ffile-prefix-map=${rootDir.parent}/="
-            cppFlags "-ffile-prefix-map=${rootDir.parent}/="
+            cFlags "-ffile-prefix-map=${rootDir.parent}/=", "-ffile-prefix-map=${android.sdkDirectory}/=android-sdk/", '-ffile-compilation-dir=.'
+            cppFlags "-ffile-prefix-map=${rootDir.parent}/=", "-ffile-prefix-map=${android.sdkDirectory}/=android-sdk/", '-ffile-compilation-dir=.'
         }
         // SebType speaks English, Chinese and Japanese only (#6); add 'ru' back with Russian.
         resConfigs 'en', 'ja', 'zh-rCN'
