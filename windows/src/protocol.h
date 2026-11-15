@@ -65,6 +65,7 @@ class Reader {
  public:
   explicit Reader(const std::string &in) : in_(in) {}
   bool ok() const { return ok_; }
+  bool more() const { return ok_ && pos_ < in_.size(); }
   uint32_t u32() {
     uint32_t v = 0;
     if (!take(4)) return 0;
@@ -95,6 +96,7 @@ inline std::string encode(const Request &r) {
   w.u32(static_cast<uint32_t>(r.op));
   w.u32(r.key.sym), w.u32(r.key.mods), w.b(r.key.release);
   w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang));
+  w.u32(r.key.time);  // last: an app still running the text service from before it (#222) leaves it out
   return w.out;
 }
 
@@ -103,6 +105,7 @@ inline bool decode(const std::string &in, Request &r) {
   r.op = static_cast<Op>(rd.u32());
   r.key.sym = rd.u32(), r.key.mods = rd.u32(), r.key.release = rd.b();
   r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32());
+  if (rd.more()) r.key.time = rd.u32();
   return rd.ok();
 }
 
