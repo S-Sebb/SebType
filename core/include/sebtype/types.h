@@ -17,8 +17,24 @@ struct Key {
   uint32_t mods = 0;
   bool release = false;
 };
+// A touch keyboard sends characters: a tap of "a" is keysym a. Latin-1 keysyms are their code points, any
+// other character is X11's Unicode keysym.
+constexpr uint32_t charSym(char32_t c) { return c < 0x100 ? c : 0x1000000 + c; }
 
 enum class Lang { English, Chinese, Japanese };
+
+// What the text field takes, as a touch keyboard learns it from the field (the PCs type in Text).
+// Plain: a field that wants no suggestions (URLs, e-mail addresses), where 中文 types letters.
+enum class Field { Text, Plain, Number, Phone, Password };
+// Mozc's request for the keys on screen: kana (romaji), letters or symbols.
+enum class Keys { Kana, Letters, Symbols };
+// What a touch keyboard does to the field's text around a commit, in characters: the text to delete
+// around the cursor first (Mozc's deletion range), and where the cursor goes after it (0: after the
+// commit; -n: n characters back, as Mozc puts it inside a pair of brackets).
+struct Edit {
+  int deleteBefore = 0, deleteAfter = 0;
+  int cursor = 0;
+};
 
 struct Segment {
   std::string text;

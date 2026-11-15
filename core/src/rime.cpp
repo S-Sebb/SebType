@@ -35,6 +35,12 @@ class Rime final : public Engine {
     traits.distribution_name = "中文";
     traits.distribution_code_name = "Weasel";
     traits.distribution_version = "0.17.4";
+#elif defined(__ANDROID__)
+    // RimeJni's, which the phone had before.
+    traits.app_name = "dev.sebb.sebtype";
+    traits.distribution_name = "Rime for Android";
+    traits.distribution_code_name = "Android";
+    traits.distribution_version = api_->get_version();
 #else
     traits.app_name = "rime.fcitx-rime";
     traits.distribution_name = "Rime";
@@ -58,7 +64,7 @@ class Rime final : public Engine {
   }
 
   bool key(const Key &k) override {
-    if (!ready()) return false;
+    if (plain_ || !ready()) return false;
     uint32_t mask = k.mods & (mod::Shift | mod::Lock | mod::Ctrl | mod::Alt);
     if (k.mods & mod::Super) mask |= mod::Super | kRimeSuper;
     if (k.release) mask |= kRimeRelease;
@@ -116,6 +122,34 @@ class Rime final : public Engine {
       if (c.menu.num_candidates) h = c.menu.page_no * c.menu.page_size + c.menu.highlighted_candidate_index;
     });
     return h;
+  }
+
+  std::vector<Candidate> candidates(int max) override {
+    std::vector<Candidate> list;
+    RimeCandidateListIterator it{};
+    if (!ready() || !api_->candidate_list_begin(session_, &it)) return list;
+    while (static_cast<int>(list.size()) < max && api_->candidate_list_next(&it)) {
+      list.push_back({it.candidate.text ? it.candidate.text : "", it.candidate.comment ? it.candidate.comment : ""});
+    }
+    api_->candidate_list_end(&it);
+    return list;
+  }
+
+  // Password fields (and on the phone fields that want no suggestions) get plain letters: Rime never sees
+  // the keys, so there is nothing to show or learn (#30).
+  void setField(Field field) override {
+    plain_ = field == Field::Password || field == Field::Plain;
+    if (plain_) clear();
+  }
+
+  void applySettings(const Settings &s, bool learning) override {
+    options_.clear();
+    if (s.traditional) options_.emplace_back("traditionalization", *s.traditional);
+    if (s.fullWidthPunctuation) options_.emplace_back("ascii_punct", !*s.fullWidthPunctuation);
+    if (s.emoji) options_.emplace_back("emoji", *s.emoji);
+    // SebType's librime option (Memory::OnCommit in engines/librime): learns nothing from commits while on.
+    options_.emplace_back("no_learning", !learning);
+    if (session_ && !api_->is_maintenance_mode() && api_->find_session(session_)) setOptions();
   }
 
   bool candidateAt(int index, Candidate &out) override {
@@ -180,6 +214,9 @@ class Rime final : public Engine {
   void setAlternate(bool on) override {
     if (!ready()) return;
     api_->set_option(session_, "traditionalization", on);
+    // Kept for the next session, as a setting would be.
+    for (auto &[name, value] : options_)
+      if (name == "traditionalization") value = on;
     cache_.clear();
   }
 
@@ -202,7 +239,7 @@ class Rime final : public Engine {
  private:
   void start(bool fullCheck) {
     api_->initialize(&traits_);
-    api_->start_maintenance(fullCheck);
+    if (fullCheck || !paths_.prebuilt) api_->start_maintenance(fullCheck);
     trim_ = true;
   }
 
@@ -217,8 +254,12 @@ class Rime final : public Engine {
     if (!session_ || !api_->find_session(session_)) {
       session_ = api_->create_session();
       cache_.clear();
+      if (!session_) return false;
+      // Selecting a schema resets its switches, so the options come after.
+      if (!paths_.schema.empty()) api_->select_schema(session_, paths_.schema.c_str());
+      setOptions();
     }
-    return session_ != 0;
+    return true;
   }
 
   void endSession() {
@@ -243,6 +284,10 @@ class Rime final : public Engine {
     if (!api_->get_context(session_, &context)) return;
     f(context);
     api_->free_context(&context);
+  }
+
+  void setOptions() {
+    for (const auto &[name, value] : options_) api_->set_option(session_, name.c_str(), value);
   }
 
   bool option(const char *name) { return ready() && api_->get_option(session_, name); }
@@ -283,6 +328,8 @@ class Rime final : public Engine {
   RimeTraits traits_{};
   RimeSessionId session_ = 0;
   bool trim_ = false;  // a start (perhaps a deploy) ran since the last trim
+  bool plain_ = false;
+  std::vector<std::pair<std::string, bool>> options_;
   std::string commit_, tapStyle_ = "commit_code";
   std::vector<Candidate> cache_;
   int cacheStart_ = 0;

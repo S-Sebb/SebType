@@ -61,19 +61,33 @@ Settings Settings::parse(std::string_view ini) {
   Settings s;
   std::istringstream in{std::string(ini)};
   std::string line, section;
+  auto flag = [](std::string_view v) { return v == "true"; };
   while (std::getline(in, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.size() > 1 && line.front() == '[' && line.back() == ']') {
       section = line.substr(1, line.size() - 2);
-    } else if (section == "Languages" && line.starts_with("Order=")) {
+      continue;
+    }
+    const auto eq = line.find('=');
+    if (eq == std::string::npos) continue;
+    const std::string key = line.substr(0, eq), value = line.substr(eq + 1);
+    if (section == "Languages" && key == "Order") {
       s.languages.clear();
-      std::istringstream ids(line.substr(6));
+      std::istringstream ids(value);
       for (std::string id; std::getline(ids, id, ',');) {
         for (Lang l : {Lang::English, Lang::Chinese, Lang::Japanese}) {
           if (id == langId(l) && std::ranges::find(s.languages, l) == s.languages.end()) s.languages.push_back(l);
         }
       }
       if (s.languages.empty()) s.languages.push_back(Lang::English);
+    } else if (section == "Chinese") {
+      if (key == "Traditional") s.traditional = flag(value);
+      else if (key == "FullWidthPunctuation") s.fullWidthPunctuation = flag(value);
+      else if (key == "Emoji") s.emoji = flag(value);
+    } else if (section == "Japanese" && key == "HalfWidthSpace") {
+      s.halfWidthSpace = flag(value);
+    } else if (section == "Learning" && key == "On") {
+      s.learning = flag(value);
     }
   }
   return s;
@@ -82,7 +96,17 @@ Settings Settings::parse(std::string_view ini) {
 std::string Settings::serialize() const {
   std::string order;
   for (Lang l : languages) order += (order.empty() ? "" : ",") + std::string(langId(l));
-  return "[Languages]\nOrder=" + order + "\n";
+  std::string out = "[Languages]\nOrder=" + order + "\n", chinese;
+  auto put = [&](const char *key, const std::optional<bool> &v) {
+    if (v) chinese += std::string(key) + "=" + (*v ? "true" : "false") + "\n";
+  };
+  put("Traditional", traditional);
+  put("FullWidthPunctuation", fullWidthPunctuation);
+  put("Emoji", emoji);
+  if (!chinese.empty()) out += "[Chinese]\n" + chinese;
+  if (halfWidthSpace) out += std::string("[Japanese]\nHalfWidthSpace=") + (*halfWidthSpace ? "true" : "false") + "\n";
+  if (!learning) out += "[Learning]\nOn=false\n";
+  return out;
 }
 
 Core::Core(EngineFactory factory, Settings settings, Clock clock)
@@ -93,6 +117,7 @@ Core::Core(EngineFactory factory, Settings settings, Clock clock)
 
 void Core::setSettings(Settings settings) {
   settings_ = std::move(settings);
+  forEachEngine([&](Engine &e) { e.applySettings(settings_, settings_.learning && fieldLearning_); });
   if (settings_.languages.empty()) settings_.languages.push_back(Lang::English);
   const auto &on = settings_.languages;
   const Lang home = on.front();
@@ -104,8 +129,19 @@ void Core::setSettings(Settings settings) {
 Engine *Core::engine(Lang lang) {
   if (lang == Lang::English) return nullptr;
   auto &e = engines_[lang];
-  if (!e) e = factory_(lang);
+  if (!e) {
+    e = factory_(lang);
+    if (!e) return nullptr;
+    e->applySettings(settings_, settings_.learning && fieldLearning_);
+    e->setField(field_);
+    e->setKeys(keys_, landscape_);
+  }
   return e.get();
+}
+
+Engine *Core::running(Lang lang) {
+  auto it = engines_.find(lang);
+  return it == engines_.end() ? nullptr : it->second.get();
 }
 
 void Core::forEachEngine(const std::function<void(Engine &)> &fn) {
@@ -115,10 +151,8 @@ void Core::forEachEngine(const std::function<void(Engine &)> &fn) {
 
 void Core::switchTo(Lang lang) {
   if (lang == lang_) return;
-  if (auto *e = current()) {
-    e->flush();
-    commit_ += e->takeCommit();
-  }
+  if (settings_.commitOnSwitch) flush();
+  else if (auto *e = running(lang_)) e->clear();
   lang_ = lang;
   if (lang != settings_.languages.front()) lastOther_ = lang;
   notice_ = true;
@@ -131,6 +165,69 @@ void Core::toggleLanguage() {
   if (lang_ != home) switchTo(home);
   else if (lastOther_ != home) switchTo(lastOther_);
 }
+
+void Core::cycleLanguage() {
+  const auto &on = settings_.languages;
+  auto it = std::ranges::find(on, lang_);
+  switchTo(it == on.end() || ++it == on.end() ? on.front() : *it);
+}
+
+void Core::flush() {
+  if (auto *e = running(lang_)) {
+    e->flush();
+    commit_ += e->takeCommit();
+  }
+}
+
+std::vector<Candidate> Core::candidates(int max) {
+  auto *e = current();
+  return e ? e->candidates(max) : std::vector<Candidate>{};
+}
+
+int Core::highlighted() {
+  auto *e = current();
+  return e ? e->highlighted() : -1;
+}
+
+void Core::selectCandidate(int index) {
+  if (auto *e = current()) {
+    e->selectAt(index);
+    commit_ += e->takeCommit();
+  }
+}
+
+void Core::setField(Field field, bool learning) {
+  field_ = field;
+  fieldLearning_ = learning;
+  forEachEngine([&](Engine &e) {
+    e.setField(field);
+    e.applySettings(settings_, settings_.learning && learning);
+  });
+}
+
+Edit Core::takeEdit() {
+  auto *e = running(lang_);
+  return e ? e->takeEdit() : Edit{};
+}
+
+void Core::moveCursor(int chars) {
+  if (auto *e = current()) e->moveCursor(chars);
+}
+
+void Core::setKeys(Keys keys, bool landscape) {
+  keys_ = keys;
+  landscape_ = landscape;
+  forEachEngine([&](Engine &e) { e.setKeys(keys, landscape); });
+}
+
+bool Core::undo() {
+  auto *e = current();
+  if (!e || !e->undo()) return false;
+  commit_ += e->takeCommit();
+  return true;
+}
+
+void Core::stop(Lang lang) { engines_.erase(lang); }
 
 bool Core::key(const Key &k) {
   if (k.sym == ks::Caps_Lock) {

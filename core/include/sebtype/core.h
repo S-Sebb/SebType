@@ -3,6 +3,7 @@
 #pragma once
 
 #include <sebtype/engine.h>
+#include <sebtype/settings.h>
 #include <sebtype/types.h>
 
 #include <chrono>
@@ -15,15 +16,6 @@
 #include <vector>
 
 namespace sebtype {
-
-// The settings the Configurator writes for the core (Rime's and Mozc's own stay in their files).
-struct Settings {
-  // Languages that are on, in tray-menu order. The first is Win+Space's home language (#93).
-  std::vector<Lang> languages{Lang::English, Lang::Chinese, Lang::Japanese};
-
-  static Settings parse(std::string_view ini);
-  std::string serialize() const;
-};
 
 const char *langId(Lang lang);  // en, zh, ja
 std::string langName(Lang lang);  // English, 中文, 日本語
@@ -46,6 +38,8 @@ class Core {
   void selectLanguage(Lang lang);
   // Win+Space: the home language ⇄ the last other one.
   void toggleLanguage();
+  // The phone's 🌐: the next language that is on, after the last back to the first.
+  void cycleLanguage();
   const Settings &settings() const { return settings_; }
   void setSettings(Settings settings);
 
@@ -57,6 +51,24 @@ class Core {
   void changePage(bool next);
   // Focus left the text field: what is being typed is dropped.
   void focusOut();
+  // Commits what is being typed, as leaving the language with commitOnSwitch does.
+  void flush();
+
+  // Touch keyboards (the phone): the candidates as one list, not paged (the bar scrolls up to max), the
+  // highlighted one in it, and a tap on one.
+  std::vector<Candidate> candidates(int max);
+  int highlighted();
+  void selectCandidate(int index);
+  // The text field: its kind, and whether what is typed in it may be learned (private fields, incognito).
+  void setField(Field field, bool learning);
+  // The current engine's edit around its last commit.
+  Edit takeEdit();
+  // The cursor moved inside what is being typed, in characters; the keys on screen; undo of a commit.
+  void moveCursor(int chars);
+  void setKeys(Keys keys, bool landscape);
+  bool undo();
+  // Stops a language's engine (the phone frees an idle one); the next use starts it again.
+  void stop(Lang lang);
 
   bool latin();
   bool alternate();
@@ -74,6 +86,8 @@ class Core {
 
   // The engine of a language, started on first use; nullptr for English.
   Engine *engine(Lang lang);
+  // The engine only when it runs.
+  Engine *running(Lang lang);
   // Every started engine.
   void forEachEngine(const std::function<void(Engine &)> &fn);
 
@@ -94,6 +108,10 @@ class Core {
   std::vector<uint32_t> swallow_;  // releases of keys the core took on press
   std::string commit_;
   bool notice_ = false;
+  Field field_ = Field::Text;
+  bool fieldLearning_ = true;
+  Keys keys_ = Keys::Kana;
+  bool landscape_ = false;
 };
 
 }  // namespace sebtype

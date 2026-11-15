@@ -1,9 +1,11 @@
 // SebType core: what the core needs from a conversion engine (Rime for 中文, Mozc for 日本語). MIT, SebType.
 #pragma once
 
+#include <sebtype/settings.h>
 #include <sebtype/types.h>
 
 #include <string>
+#include <vector>
 
 namespace sebtype {
 
@@ -42,6 +44,21 @@ class Engine {
   // The language's one switch: 简 → 繁 in 中文, あ → ア in 日本語.
   virtual bool alternate() = 0;
   virtual void setAlternate(bool on) = 0;
+
+  // Touch keyboards: the whole list up to max (by default from candidateAt), the field, the keys on screen,
+  // the cursor moved inside the preedit (in characters, + right, - left), undo, and the edit around a
+  // commit.
+  virtual std::vector<Candidate> candidates(int max);
+  virtual void setField(Field /*field*/) {}
+  virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}
+  virtual void moveCursor(int /*chars*/) {}
+  virtual bool undo() { return false; }
+  virtual Edit takeEdit() { return {}; }
+
+  // The settings the engine applies itself; learning is off when the settings or the field say so.
+  virtual void applySettings(const Settings & /*settings*/, bool /*learning*/) {}
+  // Forgets what was learned from typing, where the engine keeps it itself (Mozc's history).
+  virtual void forget() {}
 
   // Applies changed settings or data (Rime's deploy) and saves learned words (Rime's sync).
   virtual void deploy() {}
