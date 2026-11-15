@@ -128,6 +128,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
 | `cd android && ./gradlew :app:testDebugUnitTest` | The app's unit tests |
+| `android/test/english/run.sh` | English quality next to pristine AOSP, on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
 | `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account, and SebType's input method in private Fcitx5s ([pc/linux/README.md](../pc/linux/README.md)) |

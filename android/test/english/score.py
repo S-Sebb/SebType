@@ -1,0 +1,157 @@
+"""Scores the English harness's runs.
+
+  score.py RUN_DIR             a JSON summary of every STACK.SET.tsv in RUN_DIR
+  score.py --compare S1 S2     exit 0 if two summaries' quality numbers are equal and per-key p50 within 25 %
+  score.py --table S1 S2       the baseline table in Markdown, run 1's numbers with run 2's latency next to them
+
+Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key.
+- Typo sets (phone-typos, misspellings): fixed = a space commits the intended word; top1 / top3 = the
+  intended word is first / among the first three suggestions.
+- clean: changed = a space commits something other than the correct word that was typed.
+- next-chat, next-news: top3 = the next word is among the three predictions with nothing typed.
+Rates are percentages with one decimal. Latency: per key p50 / p95 and per word (all its keys) p50 / p95,
+in milliseconds, over the typed sets; per prediction for the next-word sets.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+
+def pct(n, d):
+    return round(100 * n / d, 1) if d else None
+
+
+def quantile(v, q):
+    v = sorted(v)
+    return round(v[min(len(v) - 1, int(q * len(v)))] / 1000, 2) if v else None
+
+
+QUALITY = ("changed", "fixed", "top1", "top3", "items")
+STACKS = (
+    ("today", "Today: FUTO's decoder + transformer"),
+    ("aosp", "Pristine AOSP decoder + AOSP's dictionary"),
+    ("aosp-sebdict", "Pristine AOSP decoder + SebType's dictionary"),
+)
+
+
+def compare(s1, s2):
+    a, b = json.loads(Path(s1).read_text()), json.loads(Path(s2).read_text())
+    problems = []
+    for stack in sorted(set(a) | set(b)):
+        for set_name in sorted(set(a.get(stack, {})) | set(b.get(stack, {}))):
+            x, y = (
+                a.get(stack, {}).get(set_name, {}),
+                b.get(stack, {}).get(set_name, {}),
+            )
+            for k in QUALITY:
+                if x.get(k) != y.get(k):
+                    problems.append(f"{stack} {set_name} {k}: {x.get(k)} vs {y.get(k)}")
+            for k in ("key_ms_p50", "ms_p50"):
+                if k in x and k in y and max(x[k], y[k]) > 1.25 * min(x[k], y[k]):
+                    problems.append(f"{stack} {set_name} {k}: {x[k]} vs {y[k]} ms")
+    print("\n".join(problems) or "the runs agree")
+    return not problems
+
+
+def table(s1, s2):
+    a, b = json.loads(Path(s1).read_text()), json.loads(Path(s2).read_text())
+    cols = [k for k, _ in STACKS if k in a]
+
+    def row(label, set_name, fmt):
+        cells = []
+        for k in cols:
+            x, y = a[k].get(set_name), b[k].get(set_name)
+            cells.append(fmt(x, y) if x else "–")
+        print(f"| {label} | " + " | ".join(cells) + " |")
+
+    n = lambda s: f"{a[cols[0]][s]['items']:,}"
+    print(
+        "| Measure (set, items) | " + " | ".join(dict(STACKS)[k] for k in cols) + " |"
+    )
+    print("|---|" + "---|" * len(cols))
+    for s, name in (
+        ("phone-typos", "phone typos"),
+        ("misspellings", "Wikipedia misspellings"),
+    ):
+        row(
+            f"Typo fixed: a space commits the intended word ({name}, {n(s)})",
+            s,
+            lambda x, y: f"{x['fixed']} %",
+        )
+        row(
+            f"Intended word first / in the top 3 ({name})",
+            s,
+            lambda x, y: f"{x['top1']} / {x['top3']} %",
+        )
+    row(
+        f"Correct word wrongly changed (clean words, {n('clean')})",
+        "clean",
+        lambda x, y: f"{x['changed']} %",
+    )
+    for s, name in (("next-chat", "chat"), ("next-news", "news")):
+        row(
+            f"Next word in the top 3, nothing typed ({name} sentences, {n(s)} words)",
+            s,
+            lambda x, y: f"{x['top3']} %",
+        )
+    lat = lambda p50, p95: lambda x, y: f"{x[p50]} / {x[p95]} ({y[p50]} / {y[p95]})"
+    for s, name in (("clean", "clean words"), ("phone-typos", "phone typos")):
+        row(
+            f"Per key, ms p50 / p95 ({name}; run 2 in brackets)",
+            s,
+            lat("key_ms_p50", "key_ms_p95"),
+        )
+        row(
+            f"Per word, all its keys, ms p50 / p95 ({name})",
+            s,
+            lat("word_ms_p50", "word_ms_p95"),
+        )
+    row(
+        "Per next-word prediction, ms p50 / p95 (chat)",
+        "next-chat",
+        lat("ms_p50", "ms_p95"),
+    )
+
+
+def main(run_dir):
+    summary = {}
+    for f in sorted(Path(run_dir).glob("*.tsv")):
+        stack, set_name = f.name.split(".")[:2]
+        rows = [line.split("\t") for line in f.read_text().splitlines()]
+        keys = [int(t) for r in rows for t in r[4].split(",")]
+        words = [sum(int(t) for t in r[4].split(",")) for r in rows]
+        top3 = [r[3].split(",") if r[3] else [] for r in rows]
+        s = {"items": len(rows)}
+        if set_name.startswith("next-"):
+            s["top3"] = pct(
+                sum(r[1].lower() in [w.lower() for w in t] for r, t in zip(rows, top3)),
+                len(rows),
+            )
+            s["ms_p50"], s["ms_p95"] = quantile(keys, 0.5), quantile(keys, 0.95)
+        else:
+            if set_name == "clean":
+                s["changed"] = pct(sum(r[2] != r[1] for r in rows), len(rows))
+            else:
+                s["fixed"] = pct(sum(r[2] == r[1] for r in rows), len(rows))
+                s["top1"] = pct(
+                    sum(t[:1] == [r[1]] for r, t in zip(rows, top3)), len(rows)
+                )
+                s["top3"] = pct(sum(r[1] in t for r, t in zip(rows, top3)), len(rows))
+            s["key_ms_p50"], s["key_ms_p95"] = quantile(keys, 0.5), quantile(keys, 0.95)
+            s["word_ms_p50"], s["word_ms_p95"] = (
+                quantile(words, 0.5),
+                quantile(words, 0.95),
+            )
+        summary.setdefault(stack, {})[set_name] = s
+    json.dump(summary, sys.stdout, indent=1, sort_keys=True)
+    print()
+
+
+if __name__ == "__main__":
+    if sys.argv[1] == "--compare":
+        sys.exit(0 if compare(*sys.argv[2:4]) else 1)
+    elif sys.argv[1] == "--table":
+        table(*sys.argv[2:4])
+    else:
+        main(sys.argv[1])

@@ -15,6 +15,10 @@ Other projects' code SebType builds here keeps its licence:
 - mozc/src/: see mozc/LICENSE.
 - rime/, except rime/build.gradle: RimeJni (MIT, rime/LICENSE) with SebType's changes; its NOTICE.md and
   src/main/assets/licenses/ list the libraries it builds.
+- In test/english/ (the English harness): src/today.cpp restates FUTO's Kotlin and Java around its English
+  model, so it is FUTO-derived (FUTO Source First License 1.1, ../LICENSE.md); the test sets in sets/ keep
+  their sources' licences (sets/LICENSE). The pristine AOSP LatinIME it builds (Apache-2.0) is fetched at
+  build time, not kept here.
 - In app/: src/main/java/dev/sebb/sebtype/, src/test/java/dev/sebb/sebtype/, the strings-sebtype.xml files,
   src/main/res/xml/sebtype_network_security.xml, and the launcher icon (src/main/res/mipmap-*/ic_launcher*,
   drawable/ic_launcher_foreground.xml, values/ic_launcher_background.xml), with these exceptions:

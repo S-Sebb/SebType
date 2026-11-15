@@ -1,0 +1,11 @@
+The English harness's test sets, made by ../make_sets.py from openly licensed text. None of it is the user's own
+words or learned data. Each file keeps its sources' licences:
+
+- next-chat.tsv, and the chat sentences in clean.tsv and phone-typos.tsv: prompts from OpenAssistant's oasst1
+  (https://huggingface.co/datasets/OpenAssistant/oasst1, 2023-04-12 release), Apache License 2.0.
+- next-news.tsv, and the news sentences in clean.tsv and phone-typos.tsv: English Wikinews articles
+  (https://en.wikinews.org, the last 200 published; wikinews-articles.tsv lists each one's revision), Creative
+  Commons Attribution 2.5, by Wikinews's contributors.
+- misspellings.tsv: Wikipedia's "Lists of common misspellings/For machines" (revision 1199637275), Creative Commons
+  Attribution-ShareAlike 4.0, by Wikipedia's contributors; this file is under the same licence.
+- The touch points and typos in every file are generated (MIT, ../../../../LICENSE-SebType).
