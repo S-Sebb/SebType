@@ -33,7 +33,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -51,38 +50,6 @@ mozc_cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_library(
-    name = "dictionary_file_builder",
-    srcs = ["dictionary_file_builder.cc"],
-    hdrs = ["dictionary_file_builder.h"],
-    deps = [
-        ":codec",
-        ":section",
-        "//base:file_stream",
-        "//base/container:arena",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "dictionary_file_test",
-    size = "small",
-    srcs = ["dictionary_file_test.cc"],
-    deps = [
-        ":codec",
-        ":dictionary_file",
-        ":dictionary_file_builder",
-        "//base:file_util",
-        "//base/file:temp_dir",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
     ],
 )
 
@@ -109,24 +76,4 @@ mozc_cc_library(
     hdrs = ["section.h"],
     visibility = ["//dictionary:__subpackages__"],
     deps = ["@com_google_absl//absl/strings"],
-)
-
-mozc_cc_test(
-    name = "codec_test",
-    size = "small",
-    srcs = ["codec_test.cc"],
-    deps = [
-        ":codec",
-        ":section",
-        "//base:file_stream",
-        "//base:file_util",
-        "//base/file:temp_dir",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
 )

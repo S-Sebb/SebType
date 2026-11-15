@@ -43,19 +43,15 @@ See also: https://bazel.build/rules/bzl-style#rules
 """
 
 load("@bazel_skylib//rules:select_file.bzl", "select_file")
-load("@build_bazel_rules_apple//apple:macos.bzl", "macos_application", "macos_bundle", "macos_unit_test")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@windows_sdk//:windows_sdk_rules.bzl", "windows_resource")
 load(
     "//:config.bzl",
     "BAZEL_TOOLS_PREFIX",
     "BRANDING",
-    "MACOS_BUNDLE_ID_PREFIX",
-    "MACOS_MIN_OS_VER",
 )
 load("//bazel:run_build_tool.bzl", "mozc_run_build_tool")
 load("//bazel:stubs.bzl", "pytype_strict_binary", "pytype_strict_library", "register_extension_info")
@@ -144,29 +140,6 @@ def mozc_cc_binary(deps = [], copts = [], linkopts = [], enable_win32_default_ma
 
 register_extension_info(
     extension = mozc_cc_binary,
-    label_regex_for_dep = "{extension_name}",
-)
-
-def mozc_cc_test(name, tags = [], deps = [], copts = [], **kwargs):
-    """cc_test wrapper adding //:macro dependecny.
-
-    Args:
-      name: name for cc_test.
-      tags: targs for cc_test.
-      deps: deps for cc_test.  //:macro is added.
-      copts: copts for cc_test.
-      **kwargs: other args for cc_test.
-    """
-    cc_test(
-        name = name,
-        tags = tags,
-        deps = deps + ["//:macro"] + _win32_default_manifest_deps(),
-        copts = copts + _copts_unsigned_char(),
-        **kwargs
-    )
-
-register_extension_info(
-    extension = mozc_cc_test,
     label_regex_for_dep = "{extension_name}",
 )
 
@@ -618,39 +591,6 @@ register_extension_info(
     label_regex_for_dep = "{extension_name}",
 )
 
-def mozc_infoplist(name, srcs = [], outs = []):
-    mozc_run_build_tool(
-        name = name,
-        srcs = {
-            "--input": srcs,
-            "--version_file": ["//base:mozc_version_txt"],
-        },
-        args = [
-            "--branding",
-            BRANDING,
-        ],
-        outs = {
-            "--output": outs[0],
-        },
-        tool = "//build_tools:tweak_info_plist",
-    )
-
-def mozc_infoplist_strings(name, srcs = [], outs = []):
-    mozc_run_build_tool(
-        name = name,
-        srcs = {
-            "--input": srcs,
-        },
-        outs = {
-            "--output": outs[0],
-        },
-        args = [
-            "--branding",
-            BRANDING,
-        ],
-        tool = "//build_tools:tweak_info_plist_strings",
-    )
-
 def mozc_objc_library(
         name,
         srcs = [],
@@ -678,148 +618,6 @@ def mozc_objc_library(
 
 register_extension_info(
     extension = mozc_objc_library,
-    label_regex_for_dep = "{extension_name}",
-)
-
-def _snake_case_camel_case(id):
-    # Don't capitalize if it's just one word.
-    if id.find("_") < 0:
-        return id
-    components = id.split("_")
-    return "".join([s.capitalize() for s in components])
-
-def mozc_objc_test(
-        name,
-        bundle_id = None,
-        size = None,
-        visibility = None,
-        tags = [],
-        **kwargs):
-    """A wrapper for objc_library and macos_unit_test.
-
-    This macro internally creates two targets: mozc_objc_library and macos_unit_test because the
-    macos_unit_test rule doesn't take source files directly.
-
-    Args:
-      name: name for the macos_unit_test target
-      bundle_id: optional. Test bundle id for macos_unit_test. The default value is
-          MACOS_BUNDLE_ID_PREFIX.package.name.CamelCasedName.
-      size: optional. passed to macos_unit_test.
-      visibility: optional. Visibility for the unit test target.
-      tags: optional. Tags for both the library and unit test targets.
-      **kwargs: other arguments passed to mozc_objc_library.
-    """
-    lib_name = name + "_lib"
-    default_bundle_id = ".".join([
-        MACOS_BUNDLE_ID_PREFIX,
-        _snake_case_camel_case(native.package_name().replace("/", ".")),
-        _snake_case_camel_case(name),
-    ])
-    mozc_objc_library(
-        name = lib_name,
-        testonly = True,
-        alwayslink = True,
-        visibility = ["//visibility:private"],
-        tags = ["manual"] + tags,
-        **kwargs
-    )
-    macos_unit_test(
-        name = name,
-        minimum_os_version = MACOS_MIN_OS_VER,
-        bundle_id = bundle_id or default_bundle_id,
-        deps = [lib_name],
-        size = size,
-        visibility = visibility,
-        target_compatible_with = ["@platforms//os:macos"],
-        tags = MOZC_TAGS.MAC_ONLY + tags,
-    )
-
-register_extension_info(
-    extension = mozc_objc_test,
-    label_regex_for_dep = "{extension_name}",
-)
-
-def _tweak_infoplists(name, infoplists):
-    tweaked_infoplists = []
-    for i, plist in enumerate(infoplists):
-        plist_name = "%s_plist%d" % (name, i)
-        mozc_infoplist(
-            name = plist_name,
-            srcs = [plist],
-            outs = [plist.replace(".plist", "_tweaked.plist")],
-        )
-        tweaked_infoplists.append(plist_name)
-    return tweaked_infoplists
-
-def _tweak_strings(name, strings):
-    tweaked_strings = []
-    for i, string in enumerate(strings):
-        string_name = "%s_string%d" % (name, i)
-        mozc_infoplist_strings(
-            name = string_name,
-            srcs = [string],
-            outs = ["tweaked/" + string],
-        )
-        tweaked_strings.append(string_name)
-    return tweaked_strings
-
-def mozc_macos_application(name, bundle_name, infoplists, strings = [], bundle_id = None, tags = [], **kwargs):
-    """Rule to create .app for macOS.
-
-    Args:
-      name: name for macos_application.
-      bundle_name: bundle_name for macos_application.
-      infoplists: infoplists are tweaked and applied to macos_application.
-      strings: strings are tweaked and applied to macos_application.
-      bundle_id: bundle_id for macos_application.
-      tags: tags for macos_application.
-      **kwargs: other arguments for macos_application.
-    """
-    macos_application(
-        name = name,
-        bundle_id = bundle_id or (MACOS_BUNDLE_ID_PREFIX + "." + bundle_name),
-        bundle_name = bundle_name,
-        infoplists = _tweak_infoplists(name, infoplists),
-        strings = _tweak_strings(name, strings),
-        minimum_os_version = MACOS_MIN_OS_VER,
-        version = "//:version_macos",
-        target_compatible_with = ["@platforms//os:macos"],
-        tags = tags + MOZC_TAGS.MAC_ONLY,
-        **kwargs
-    )
-
-register_extension_info(
-    extension = mozc_macos_application,
-    label_regex_for_dep = "{extension_name}",
-)
-
-def mozc_macos_bundle(name, bundle_name, infoplists, strings = [], bundle_id = None, tags = [], **kwargs):
-    """Rule to create .bundle for macOS.
-
-    Args:
-      name: name for macos_bundle.
-      bundle_name: bundle_name for macos_bundle.
-      infoplists: infoplists are tweaked and applied to macos_bundle.
-      strings: strings are tweaked and applied to macos_bundle.
-      bundle_id: bundle_id for macos_bundle.
-      tags: tags for macos_bundle.
-      **kwargs: other arguments for macos_bundle.
-    """
-    macos_bundle(
-        name = name,
-        bundle_id = bundle_id or (MACOS_BUNDLE_ID_PREFIX + "." + bundle_name),
-        bundle_name = bundle_name,
-        infoplists = _tweak_infoplists(name, infoplists),
-        strings = _tweak_strings(name, strings),
-        minimum_os_version = MACOS_MIN_OS_VER,
-        version = "//:version_macos",
-        target_compatible_with = ["@platforms//os:macos"],
-        tags = tags + MOZC_TAGS.MAC_ONLY,
-        **kwargs
-    )
-
-register_extension_info(
-    extension = mozc_macos_bundle,
     label_regex_for_dep = "{extension_name}",
 )
 

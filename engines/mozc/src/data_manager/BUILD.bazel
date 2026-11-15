@@ -33,12 +33,9 @@ load(
     "//:build_defs.bzl",
     "mozc_cc_binary",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_py_binary",
     "mozc_py_library",
-    "mozc_select",
 )
-load("//bazel:stubs.bzl", "bzl_library")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -55,7 +52,6 @@ mozc_cc_library(
         "//data_manager:__subpackages__",
         "//dictionary:__pkg__",
         "//engine:__pkg__",
-        "//ios:__pkg__",
         "//rewriter:__pkg__",
         "//session:__pkg__",
     ],
@@ -73,40 +69,6 @@ mozc_cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_library(
-    name = "data_manager_test_base",
-    testonly = True,
-    srcs = [
-        "data_manager_test_base.cc",
-    ],
-    hdrs = ["data_manager_test_base.h"],
-    visibility = [
-        "//data_manager:__subpackages__",
-    ],
-    deps = [
-        ":connection_file_reader",
-        ":data_manager",
-        "//base:file_stream",
-        "//base:util",
-        "//base/container:serialized_string_array",
-        "//base/container:tuple",
-        "//converter:connector",
-        "//converter:node",
-        "//converter:segmenter",
-        "//dictionary:pos_matcher",
-        "//prediction:suggestion_filter",
-        "//testing:gunit",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -129,23 +91,6 @@ mozc_py_binary(
     deps = [
         ":gen_connection_data_lib",
         "//build_tools:code_generator_util",
-    ],
-)
-
-mozc_cc_library(
-    name = "connection_file_reader",
-    srcs = ["connection_file_reader.cc"],
-    hdrs = ["connection_file_reader.h"],
-    visibility = [
-        "//:__subpackages__",
-        "//converter:__subpackages__",
-    ],
-    deps = [
-        "//base:file_stream",
-        "//base:number_util",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -172,23 +117,6 @@ mozc_cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "dataset_writer_test",
-    srcs = ["dataset_writer_test.cc"],
-    deps = [
-        ":dataset_cc_proto",
-        ":dataset_writer",
-        "//base:file_util",
-        "//base:obfuscator_support",
-        "//base:util",
-        "//base/file:temp_dir",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -228,22 +156,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "dataset_reader_test",
-    srcs = ["dataset_reader_test.cc"],
-    deps = [
-        ":dataset_cc_proto",
-        ":dataset_reader",
-        ":dataset_writer",
-        "//base:random",
-        "//base:util",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/random:distributions",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
 mozc_py_library(
     name = "gen_data_version_lib",
     srcs = ["gen_data_version.py"],
@@ -255,7 +167,6 @@ mozc_py_binary(
     srcs = ["gen_data_version.py"],
     visibility = [
         "//data_manager:__subpackages__",
-        "//tools:__subpackages__",
     ],
     deps = [":gen_data_version_lib"],
 )
@@ -278,45 +189,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
     ],
-)
-
-mozc_cc_test(
-    name = "serialized_dictionary_test",
-    srcs = ["serialized_dictionary_test.cc"],
-    deps = [
-        ":serialized_dictionary",
-        "//base/container:serialized_string_array",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_library(
-    name = "pos_list_provider",
-    srcs = ["pos_list_provider.cc"],
-    hdrs = ["pos_list_provider.h"],
-    textual_hdrs = mozc_select(
-        android = ["//data_manager/android:pos_list.inc"],
-        client = ["//data_manager/google:pos_list.inc"],
-        default = [],
-        oss = ["//data_manager/oss:pos_list.inc"],
-        prod = ["//data_manager/google:pos_list.inc"],
-    ),
-    visibility = ["//gui:__subpackages__"],
-    deps = [
-        "//base:embedded_file",
-        "//base/container:serialized_string_array",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-bzl_library(
-    name = "mozc_data_bzl",
-    srcs = ["mozc_data.bzl"],
-    test_size = "small",
-    visibility = ["//data_manager:__subpackages__"],
-    deps = ["@rules_cc//cc:core_rules"],
 )
 
 mozc_cc_library(

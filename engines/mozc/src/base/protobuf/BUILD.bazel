@@ -41,15 +41,6 @@ mozc_cc_library(
 )
 
 mozc_cc_library(
-    name = "descriptor",
-    hdrs = ["descriptor.h"],
-    deps = [
-        ":protobuf",
-        "@com_google_protobuf//:protobuf",
-    ],
-)
-
-mozc_cc_library(
     name = "message",
     hdrs = ["message.h"],
     deps = [
@@ -88,15 +79,6 @@ mozc_cc_library(
 mozc_cc_library(
     name = "repeated_ptr_field",
     hdrs = ["repeated_ptr_field.h"],
-    deps = [
-        ":protobuf",
-        "@com_google_protobuf//:protobuf",
-    ],
-)
-
-mozc_cc_library(
-    name = "text_format",
-    hdrs = ["text_format.h"],
     deps = [
         ":protobuf",
         "@com_google_protobuf//:protobuf",

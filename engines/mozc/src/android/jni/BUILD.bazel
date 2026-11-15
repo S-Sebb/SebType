@@ -32,7 +32,6 @@ load(
     "MOZC_TAGS",
     "mozc_cc_binary",
     "mozc_cc_library",
-    "mozc_py_binary",
     "mozc_select",
 )
 load(":cross_build_binary.bzl", "cross_build_binary")
@@ -130,52 +129,9 @@ cross_build_binary(
 )
 
 cross_build_binary(
-    name = "mozc.arm32",
-    cpu = "armv7",
-    platform = ":armeabi-v7a",
-    tags = MOZC_TAGS.ANDROID_ONLY,
-    target = ":mozc",
-)
-
-cross_build_binary(
     name = "mozc.x86_64",
     cpu = "x86_64",
     platform = ":x86_64",
     tags = MOZC_TAGS.ANDROID_ONLY,
     target = ":mozc",
-)
-
-cross_build_binary(
-    name = "mozc.x86_32",
-    cpu = "x86_32",
-    platform = ":x86_32",
-    tags = MOZC_TAGS.ANDROID_ONLY,
-    target = ":mozc",
-)
-
-mozc_py_binary(
-    name = "make_archive",
-    srcs = ["make_archive.py"],
-)
-
-genrule(
-    name = "native_libs",
-    srcs = [
-        ":mozc.arm64",
-        ":mozc.arm32",
-        ":mozc.x86_64",
-        ":mozc.x86_32",
-    ],
-    outs = ["native_libs.zip"],
-    cmd = " ".join([
-        "$(location :make_archive)",
-        "--arm64=$(location :mozc.arm64)",
-        "--arm32=$(location :mozc.arm32)",
-        "--x86_64=$(location :mozc.x86_64)",
-        "--x86_32=$(location :mozc.x86_32)",
-        "--output $@",
-    ]),
-    tags = MOZC_TAGS.ANDROID_ONLY,
-    tools = [":make_archive"],
-    visibility = ["//:__subpackages__"],
 )

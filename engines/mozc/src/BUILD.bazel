@@ -32,7 +32,6 @@
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("@build_bazel_rules_apple//apple:versioning.bzl", "apple_bundle_version")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(
     "//:build_defs.bzl",
@@ -41,8 +40,6 @@ load(
     "mozc_select_enable_supplemental_model",
     "mozc_select_enable_usage_rewriter",
 )
-load("//:version.bzl", "DEFAULT_BUILD_LABEL_MACOS")
-load("//bazel:stubs.bzl", "bzl_library")
 
 package(default_visibility = ["//:__subpackages__"])
 
@@ -221,68 +218,7 @@ exports_files(
     visibility = [
         "//base:__pkg__",
         "//data_manager:__subpackages__",
-        "//tools:__subpackages__",
-        "//tools/release:__pkg__",
     ],
-)
-
-# The version can be specifyed by the --embed_label flag.
-# e.g. bazel build --embed_label="2.32.5994.101" package
-# The default version is specified by DEFAULT_BUILD_LABEL_MACOS in version.bzl.
-# LINT.IfChange
-apple_bundle_version(
-    name = "version_macos",
-    build_label_pattern = "{version}.{revision}",  # e.g. 2.32.5994.101
-    build_version = "{version}.{revision}",  # e.g. 2.32.5994.101
-    capture_groups = {
-        "version": "\\d+\\.\\d+\\.\\d+",  # e.g. 2.32.5994
-        "revision": "\\d+",  # e.g. 101
-    },
-    fallback_build_label = DEFAULT_BUILD_LABEL_MACOS,  # e.g. 2.32.5994.101
-    short_version_string = "{version}",  # e.g. 2.32.5994
-    visibility = ["//:__subpackages__"],
-)
-# LINT.ThenChange(//version.bzl)
-
-bzl_library(
-    name = "build_defs_bzl",
-    srcs = ["build_defs.bzl"],
-    test_size = "small",
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":config_bzl",
-        "//bazel:run_build_tool_bzl",
-        "//bazel:stubs.bzl",
-        "//devtools/build_cleaner/skylark:build_defs_lib",
-        "@bazel_skylib//rules:select_file",
-        "@build_bazel_rules_apple//apple:macos",
-        "@rules_cc//cc:core_rules",
-    ],
-)
-
-bzl_library(
-    name = "config_bzl",
-    srcs = ["config.bzl"],
-    test_size = "small",
-    visibility = ["//:__subpackages__"],
-)
-
-bzl_library(
-    name = "version_bzl",
-    srcs = ["version.bzl"],
-    test_size = "small",
-    visibility = ["//visibility:private"],
-)
-
-filegroup(
-    name = "package",
-    srcs = mozc_select(
-        android = ["//android/jni:native_libs"],
-        default = [],
-        linux = ["//unix:package"],
-        macos = ["//mac:package"],
-        windows = ["//server:mozc_server_win"],  # SebType: only the server; SebType's own text service replaces the rest (#190)
-    ),
 )
 
 selects.config_setting_group(

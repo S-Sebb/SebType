@@ -34,7 +34,6 @@ load(
     "//:build_defs.bzl",
     "mozc_cc_binary",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_py_binary",
     "mozc_select_enable_usage_rewriter",
 )
@@ -51,23 +50,6 @@ mozc_cc_library(
     deps = [
         "//converter:segments",
         "//request:conversion_request",
-    ],
-)
-
-mozc_cc_test(
-    name = "merger_rewriter_test",
-    size = "small",
-    srcs = ["merger_rewriter_test.cc"],
-    deps = [
-        ":merger_rewriter",
-        ":rewriter_interface",
-        "//converter:segments",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -95,23 +77,6 @@ mozc_cc_library(
         "@com_google_absl//absl/types:span",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "collocation_rewriter_test",
-    srcs = ["collocation_rewriter_test.cc"],
-    deps = [
-        ":collocation_rewriter",
-        "//base/container:tuple",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ],
 )
 
 mozc_cc_library(
@@ -145,43 +110,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "user_segment_history_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["user_segment_history_rewriter_test.cc"],
-    deps = [
-        ":number_rewriter",
-        ":user_segment_history_rewriter",
-        "//base:clock",
-        "//base:clock_mock",
-        "//base:file_util",
-        "//base:number_util",
-        "//base:system_util",
-        "//base/container:tuple",
-        "//config:character_form_manager",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_group",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "//transliteration",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-    ],
-)
-
 mozc_cc_library(
     name = "user_boundary_history_rewriter",
     srcs = ["user_boundary_history_rewriter.cc"],
@@ -201,26 +129,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "user_boundary_history_rewriter_test",
-    size = "small",
-    srcs = ["user_boundary_history_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":user_boundary_history_rewriter",
-        "//base:file_util",
-        "//base:system_util",
-        "//config:config_handler",
-        "//converter:segments",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
 )
 
 mozc_cc_library(
@@ -257,34 +165,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "date_rewriter_test",
-    size = "small",
-    srcs = ["date_rewriter_test.cc"],
-    deps = [
-        ":date_rewriter",
-        ":rewriter_interface",
-        "//base:clock",
-        "//base:clock_mock",
-        "//base:util",
-        "//composer",
-        "//composer:table",
-        "//converter:converter_mock",
-        "//converter:segments",
-        "//converter:segments_matchers",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_mock",
-        "//dictionary:dictionary_token",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:options",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "number_rewriter",
     srcs = [
@@ -317,35 +197,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "number_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["number_rewriter_test.cc"],
-    deps = [
-        ":number_rewriter",
-        ":rewriter_interface",
-        "//base:number_util",
-        "//base/container:tuple",
-        "//base/strings:assign",
-        "//config:character_form_manager",
-        "//converter:attribute",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//converter:segments_matchers",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
 mozc_cc_library(
     name = "small_letter_rewriter",
     srcs = ["small_letter_rewriter.cc"],
@@ -362,26 +213,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "small_letter_rewriter_test",
-    size = "small",
-    srcs = ["small_letter_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":small_letter_rewriter",
-        "//base/strings:assign",
-        "//converter:segments",
-        "//engine",
-        "//engine:mock_data_engine_factory",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -414,33 +245,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "transliteration_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["transliteration_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":transliteration_rewriter",
-        "//composer",
-        "//composer:table",
-        "//config:config_handler",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//transliteration",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
 mozc_cc_library(
     name = "language_aware_rewriter",
     srcs = [
@@ -464,30 +268,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "language_aware_rewriter_test",
-    size = "small",
-    srcs = ["language_aware_rewriter_test.cc"],
-    deps = [
-        ":language_aware_rewriter",
-        ":rewriter_interface",
-        "//composer",
-        "//composer:table",
-        "//converter:attribute",
-        "//converter:segments",
-        "//converter:segments_matchers",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_mock",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "version_rewriter",
     srcs = ["version_rewriter.cc"],
@@ -504,22 +284,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "version_rewriter_test",
-    size = "small",
-    srcs = ["version_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":version_rewriter",
-        "//converter:segments",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -548,29 +312,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "symbol_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["symbol_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":symbol_rewriter",
-        "//base:util",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "emoticon_rewriter",
     srcs = ["emoticon_rewriter.cc"],
@@ -591,26 +332,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "emoticon_rewriter_test",
-    size = "small",
-    srcs = ["emoticon_rewriter_test.cc"],
-    deps = [
-        ":emoticon_rewriter",
-        ":rewriter_interface",
-        "//config:config_handler",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -637,33 +358,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "variants_rewriter_test",
-    size = "small",
-    srcs = ["variants_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":variants_rewriter",
-        "//base:japanese_util",
-        "//base:number_util",
-        "//base:util",
-        "//config:character_form_manager",
-        "//converter:attribute",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:options",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "english_variants_rewriter",
     srcs = ["english_variants_rewriter.cc"],
@@ -681,26 +375,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "english_variants_rewriter_test",
-    size = "small",
-    srcs = ["english_variants_rewriter_test.cc"],
-    deps = [
-        ":english_variants_rewriter",
-        ":rewriter_interface",
-        "//converter:attribute",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -722,21 +396,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "fortune_rewriter_test",
-    size = "small",
-    srcs = ["fortune_rewriter_test.cc"],
-    deps = [
-        ":fortune_rewriter",
-        "//converter:segments",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "dice_rewriter",
     srcs = ["dice_rewriter.cc"],
@@ -752,20 +411,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "dice_rewriter_test",
-    size = "small",
-    srcs = ["dice_rewriter_test.cc"],
-    deps = [
-        ":dice_rewriter",
-        "//converter:segments",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -789,29 +434,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "calculator_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["calculator_rewriter_test.cc"],
-    deps = [
-        ":calculator_rewriter",
-        ":rewriter_interface",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//converter:segments",
-        "//converter:segments_matchers",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//rewriter/calculator",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "unicode_rewriter",
     srcs = ["unicode_rewriter.cc"],
@@ -831,29 +453,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "unicode_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["unicode_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":unicode_rewriter",
-        "//composer",
-        "//converter:attribute",
-        "//converter:segments",
-        "//engine",
-        "//engine:mock_data_engine_factory",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
 mozc_cc_library(
     name = "user_dictionary_rewriter",
     srcs = ["user_dictionary_rewriter.cc"],
@@ -866,22 +465,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "user_dictionary_rewriter_test",
-    size = "small",
-    srcs = ["user_dictionary_rewriter_test.cc"],
-    deps = [
-        ":user_dictionary_rewriter",
-        "//converter:attribute",
-        "//converter:segments",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -897,20 +480,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-mozc_cc_test(
-    name = "dictionary_generator_test",
-    size = "small",
-    srcs = ["dictionary_generator_test.cc"],
-    deps = [
-        ":dictionary_generator",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//dictionary:user_pos",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -998,32 +567,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "emoji_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["emoji_rewriter_test.cc"],
-    deps = [
-        ":emoji_rewriter",
-        ":rewriter_interface",
-        ":variants_rewriter",
-        "//base/container:serialized_string_array",
-        "//config:config_handler",
-        "//converter:segments",
-        "//data_manager:emoji_data",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/container:btree",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "single_kanji_rewriter",
     srcs = ["single_kanji_rewriter.cc"],
@@ -1070,27 +613,6 @@ mozc_cc_binary(
     ],
 )
 
-mozc_cc_test(
-    name = "single_kanji_rewriter_test",
-    size = "small",
-    srcs = ["single_kanji_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":single_kanji_rewriter",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
 mozc_py_binary(
     name = "gen_counter_suffix_array",
     srcs = ["gen_counter_suffix_array.py"],
@@ -1126,25 +648,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "focus_candidate_rewriter_test",
-    size = "small",
-    srcs = ["focus_candidate_rewriter_test.cc"],
-    deps = [
-        ":focus_candidate_rewriter",
-        ":rewriter_interface",
-        "//base:number_util",
-        "//base/container:tuple",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//transliteration",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "zipcode_rewriter",
     srcs = [
@@ -1163,26 +666,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "zipcode_rewriter_test",
-    size = "small",
-    srcs = [
-        "zipcode_rewriter_test.cc",
-    ],
-    deps = [
-        ":zipcode_rewriter",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -1204,29 +687,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "t13n_promotion_rewriter_test",
-    size = "small",
-    srcs = ["t13n_promotion_rewriter_test.cc"],
-    deps = [
-        ":rewriter_interface",
-        ":t13n_promotion_rewriter",
-        ":transliteration_rewriter",
-        "//composer",
-        "//config:config_handler",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//transliteration",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "command_rewriter",
     srcs = ["command_rewriter.cc"],
@@ -1241,23 +701,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "command_rewriter_test",
-    size = "small",
-    srcs = ["command_rewriter_test.cc"],
-    deps = [
-        ":command_rewriter",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//converter:segments",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
     ],
 )
 
@@ -1285,30 +728,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "environmental_filter_rewriter_test",
-    size = "small",
-    srcs = ["environmental_filter_rewriter_test.cc"],
-    deps = [
-        ":emoji_rewriter",
-        ":environmental_filter_rewriter",
-        "//base:text_normalizer",
-        "//base:util",
-        "//base/container:serialized_string_array",
-        "//converter:attribute",
-        "//converter:segments",
-        "//data_manager:emoji_data",
-        "//data_manager/testing:mock_data_manager",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/container:btree",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 mozc_cc_library(
     name = "remove_redundant_candidate_rewriter",
     srcs = ["remove_redundant_candidate_rewriter.cc"],
@@ -1318,21 +737,6 @@ mozc_cc_library(
         "//converter:segments",
         "//protocol:commands_cc_proto",
         "//request:conversion_request",
-    ],
-)
-
-mozc_cc_test(
-    name = "remove_redundant_candidate_rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["remove_redundant_candidate_rewriter_test.cc"],
-    deps = [
-        ":remove_redundant_candidate_rewriter",
-        ":rewriter_interface",
-        "//converter:segments",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
     ],
 )
 
@@ -1379,35 +783,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "usage_rewriter_test",
-    size = "small",
-    srcs = ["usage_rewriter_test.cc"],
-    tags = ["noandroid"],
-    target_compatible_with = mozc_select_enable_usage_rewriter(
-        off = ["@platforms//:incompatible"],
-    ),
-    deps = [
-        ":rewriter_interface",
-        ":usage_rewriter",
-        "//base/container:tuple",
-        "//config:config_handler",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//dictionary:user_dictionary",
-        "//dictionary:user_pos",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//protocol:user_dictionary_storage_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_py_binary(
     name = "gen_reading_correction_data",
     srcs = ["gen_reading_correction_data.py"],
@@ -1441,31 +816,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "correction_rewriter_test",
-    size = "small",
-    srcs = ["correction_rewriter_test.cc"],
-    deps = [
-        ":correction_rewriter",
-        ":rewriter_interface",
-        "//base/container:serialized_string_array",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//engine:modules",
-        "//engine:supplemental_model_mock",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 mozc_cc_library(
     name = "a11y_description_rewriter",
     srcs = ["a11y_description_rewriter.cc"],
@@ -1490,22 +840,6 @@ mozc_py_binary(
     deps = [
         "//build_tools:code_generator_util",
         "//build_tools:serialized_string_array_builder",
-    ],
-)
-
-mozc_cc_test(
-    name = "a11y_description_rewriter_test",
-    size = "small",
-    srcs = ["a11y_description_rewriter_test.cc"],
-    deps = [
-        ":a11y_description_rewriter",
-        ":rewriter_interface",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -1565,30 +899,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "rewriter_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["rewriter_test.cc"],
-    deps = [
-        "rewriter",
-        ":rewriter_interface",
-        "//config:character_form_manager",
-        "//converter:attribute",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//engine:modules",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:reflection",
-        "@com_google_absl//absl/log:check",
-    ],
-)
-
 mozc_cc_library(
     name = "collocation_util",
     srcs = ["collocation_util.cc"],
@@ -1596,16 +906,6 @@ mozc_cc_library(
     deps = [
         "//base:util",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "collocation_util_test",
-    size = "small",
-    srcs = ["collocation_util_test.cc"],
-    deps = [
-        ":collocation_util",
-        "//testing:gunit_main",
     ],
 )
 
@@ -1686,20 +986,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "number_compound_util_test",
-    srcs = ["number_compound_util_test.cc"],
-    deps = [
-        ":number_compound_util",
-        "//base/container:serialized_string_array",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "rewriter_util",
     srcs = ["rewriter_util.cc"],
@@ -1707,19 +993,6 @@ mozc_cc_library(
     deps = [
         "//converter:attribute",
         "//converter:segments",
-    ],
-)
-
-mozc_cc_test(
-    name = "rewriter_util_test",
-    srcs = ["rewriter_util_test.cc"],
-    deps = [
-        ":rewriter_util",
-        "//converter:attribute",
-        "//converter:segments",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -1734,16 +1007,5 @@ mozc_cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "ivs_variants_rewriter_test",
-    srcs = ["ivs_variants_rewriter_test.cc"],
-    deps = [
-        ":ivs_variants_rewriter",
-        "//converter:segments",
-        "//request:conversion_request",
-        "//testing:gunit_main",
     ],
 )

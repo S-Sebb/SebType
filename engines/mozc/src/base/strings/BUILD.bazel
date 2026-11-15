@@ -32,7 +32,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_select",
 )
 
@@ -44,16 +43,6 @@ mozc_cc_library(
     deps = ["@com_google_absl//absl/strings"],
 )
 
-mozc_cc_test(
-    name = "assign_test",
-    srcs = ["assign_test.cc"],
-    deps = [
-        ":assign",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "pfchar",
     hdrs = ["pfchar.h"],
@@ -62,17 +51,6 @@ mozc_cc_library(
     ] + mozc_select(
         windows = ["//base/win32:wide_char"],
     ),
-)
-
-mozc_cc_test(
-    name = "pfchar_test",
-    size = "small",
-    srcs = ["pfchar_test.cc"],
-    deps = [
-        ":pfchar",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
 )
 
 mozc_cc_library(
@@ -89,34 +67,11 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "japanese_test",
-    size = "small",
-    srcs = [
-        "japanese_test.cc",
-    ],
-    deps = [
-        ":japanese",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
 mozc_cc_library(
     name = "strip",
     srcs = ["strip.cc"],
     hdrs = ["strip.h"],
     deps = ["@com_google_absl//absl/strings:string_view"],
-)
-
-mozc_cc_test(
-    name = "strip_test",
-    size = "small",
-    srcs = ["strip_test.cc"],
-    deps = [
-        ":strip",
-        "//testing:gunit_main",
-    ],
 )
 
 mozc_cc_library(
@@ -129,30 +84,6 @@ mozc_cc_library(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "unicode_benchmark_test",
-    size = "small",
-    srcs = ["unicode_benchmark_test.cc"],
-    tags = ["manual"],
-    deps = [
-        ":unicode",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "unicode_test",
-    size = "small",
-    srcs = ["unicode_test.cc"],
-    deps = [
-        ":unicode",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
     ],
 )

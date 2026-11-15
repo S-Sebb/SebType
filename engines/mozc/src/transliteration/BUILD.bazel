@@ -33,7 +33,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -50,15 +49,5 @@ mozc_cc_library(
         "//request:__pkg__",
         "//rewriter:__pkg__",
         "//session:__pkg__",
-    ],
-)
-
-mozc_cc_test(
-    name = "transliteration_test",
-    size = "small",
-    srcs = ["transliteration_test.cc"],
-    deps = [
-        ":transliteration",
-        "//testing:gunit_main",
     ],
 )

@@ -30,7 +30,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 load(
     "//data_manager:mozc_data.bzl",
@@ -131,25 +130,5 @@ mozc_cc_library(
         "//data_manager",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "oss_data_manager_test",
-    size = "large",
-    srcs = [
-        "oss_data_manager_test.cc",
-        ":mozc_dataset_for_oss@segmenter_inl_header",
-    ],
-    data = [
-        "//data/dictionary_oss:connection_single_column.txt",
-        "//data/dictionary_oss:dictionary_data",
-        "//data/dictionary_oss:suggestion_filter.txt",
-    ],
-    deps = [
-        ":oss_data_manager",
-        "//data_manager:data_manager_test_base",
-        "//testing:gunit_main",
-        "//testing:mozctest",
     ],
 )

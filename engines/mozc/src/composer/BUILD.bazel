@@ -29,9 +29,7 @@
 
 load(
     "//:build_defs.bzl",
-    "mozc_cc_binary",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -86,30 +84,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "composer_test",
-    size = "small",
-    srcs = ["composer_test.cc"],
-    deps = [
-        ":composer",
-        ":key_parser",
-        ":table",
-        "//base:clock_mock",
-        "//base:util",
-        "//config:character_form_manager",
-        "//config:config_handler",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//testing:gunit_main",
-        "//testing:test_peer",
-        "//transliteration",
-        "@com_google_absl//absl/container:btree",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 mozc_cc_library(
     name = "table",
     srcs = ["table.cc"],
@@ -141,37 +115,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_binary(
-    name = "composer_main",
-    srcs = ["composer_main.cc"],
-    deps = [
-        ":composer",
-        ":table",
-        "//base:init_mozc",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//transliteration",
-        "@com_google_absl//absl/flags:flag",
-    ],
-)
-
-mozc_cc_test(
-    name = "table_test",
-    size = "small",
-    srcs = ["table_test.cc"],
-    deps = [
-        ":special_key",
-        ":table",
-        "//config:config_handler",
-        "//data_manager/testing:mock_data_manager",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "key_event_util",
     srcs = ["key_event_util.cc"],
@@ -179,26 +122,11 @@ mozc_cc_library(
     visibility = [
         "//client:__pkg__",
         "//session:__pkg__",
-        "//win32/base:__pkg__",
     ],
     deps = [
         "//protocol:commands_cc_proto",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
-    ],
-)
-
-mozc_cc_test(
-    name = "key_event_util_test",
-    size = "small",
-    srcs = ["key_event_util_test.cc"],
-    deps = [
-        ":key_event_util",
-        ":key_parser",
-        "//protocol:commands_cc_proto",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -208,9 +136,7 @@ mozc_cc_library(
     hdrs = ["key_parser.h"],
     visibility = [
         "//client:__pkg__",
-        "//gui/config_dialog:__pkg__",
         "//session:__pkg__",
-        "//unix/emacs:__pkg__",
     ],
     deps = [
         "//base:util",
@@ -222,19 +148,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "key_parser_test",
-    size = "small",
-    srcs = ["key_parser_test.cc"],
-    deps = [
-        ":key_event_util",
-        ":key_parser",
-        "//protocol:commands_cc_proto",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -281,36 +194,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "transliterators_test",
-    size = "small",
-    srcs = [
-        "transliterators_test.cc",
-    ],
-    deps = [
-        ":transliterators",
-        "//testing:gunit_main",
-    ],
-)
-
-mozc_cc_test(
-    name = "char_chunk_test",
-    size = "small",
-    srcs = [
-        "char_chunk_test.cc",
-    ],
-    deps = [
-        ":char_chunk",
-        ":composition_input",
-        ":table",
-        ":transliterators",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/container:btree",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "composition_input",
     srcs = ["composition_input.cc"],
@@ -324,21 +207,6 @@ mozc_cc_library(
         "//protocol:commands_cc_proto",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "composition_input_test",
-    size = "small",
-    srcs = [
-        "composition_input_test.cc",
-    ],
-    deps = [
-        ":composition_input",
-        ":table",
-        "//base/protobuf:repeated_ptr_field",
-        "//protocol:commands_cc_proto",
-        "//testing:gunit_main",
     ],
 )
 
@@ -365,53 +233,12 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "composition_test",
-    size = "small",
-    srcs = [
-        "composition_test.cc",
-    ],
-    deps = [
-        ":char_chunk",
-        ":composition",
-        ":composition_input",
-        ":table",
-        ":transliterators",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-mozc_cc_binary(
-    name = "composition_main",
-    srcs = ["composition_main.cc"],
-    deps = [
-        ":composition",
-        ":table",
-        "//base:init_mozc",
-        "@com_google_absl//absl/flags:flag",
-    ],
-)
-
 mozc_cc_library(
     name = "mode_switching_handler",
     srcs = ["mode_switching_handler.cc"],
     hdrs = ["mode_switching_handler.h"],
     deps = [
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "mode_switching_handler_test",
-    size = "small",
-    srcs = ["mode_switching_handler_test.cc"],
-    deps = [
-        ":mode_switching_handler",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -425,15 +252,5 @@ mozc_cc_library(
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "special_key_test",
-    srcs = ["special_key_test.cc"],
-    deps = [
-        ":special_key",
-        ":table",
-        "//testing:gunit_main",
     ],
 )

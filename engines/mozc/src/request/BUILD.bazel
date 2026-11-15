@@ -30,7 +30,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -75,23 +74,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "conversion_request_test",
-    srcs = ["conversion_request_test.cc"],
-    deps = [
-        ":conversion_request",
-        "//composer",
-        "//composer:table",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//prediction:result",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "request_util",
     hdrs = ["request_util.h"],
@@ -106,33 +88,5 @@ mozc_cc_library(
         "//composer",
         "//protocol:commands_cc_proto",
         "//transliteration",
-    ],
-)
-
-mozc_cc_library(
-    name = "request_test_util",
-    testonly = 1,
-    srcs = ["request_test_util.cc"],
-    hdrs = ["request_test_util.h"],
-    visibility = [
-        "//:__subpackages__",
-        "//converter:__pkg__",
-        "//engine:__pkg__",
-        "//prediction:__pkg__",
-        "//rewriter:__pkg__",
-        "//session:__pkg__",
-    ],
-    deps = [
-        "//protocol:commands_cc_proto",
-    ],
-)
-
-mozc_cc_test(
-    name = "request_test_util_test",
-    srcs = ["request_test_util_test.cc"],
-    deps = [
-        ":request_test_util",
-        "//protocol:commands_cc_proto",
-        "//testing:gunit_main",
     ],
 )

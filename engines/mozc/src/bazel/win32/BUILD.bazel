@@ -33,7 +33,6 @@
 #  - (that's it for now)
 
 load("//:build_defs.bzl", "MOZC_TAGS", "mozc_win32_resource")
-load("//bazel:stubs.bzl", "bzl_library")
 load("//bazel/win32:internal.bzl", "mozc_win32_lib")
 
 package(default_visibility = ["//:__subpackages__"])
@@ -47,22 +46,6 @@ mozc_win32_resource(
     manifests = ["win32_default.manifest"],
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
-)
-
-bzl_library(
-    name = "build_defs_bzl",
-    srcs = ["build_defs.bzl"],
-    test_size = "small",
-    visibility = ["//visibility:private"],
-    deps = ["//:build_defs_bzl"],
-)
-
-bzl_library(
-    name = "internal_bzl",
-    srcs = ["internal.bzl"],
-    test_size = "small",
-    visibility = ["//visibility:private"],
-    deps = ["//:build_defs_bzl"],
 )
 
 mozc_win32_lib(

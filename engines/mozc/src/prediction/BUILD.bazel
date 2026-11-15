@@ -36,7 +36,6 @@ load(
     "//:build_defs.bzl",
     "mozc_cc_binary",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_py_binary",
     "mozc_py_library",
 )
@@ -100,29 +99,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "user_history_storage_test",
-    size = "small",
-    srcs = ["user_history_storage_test.cc"],
-    tags = [
-        "nowin",
-    ],  # TODO(yuryu): depends on //base:encryptor
-    deps = [
-        ":user_history_storage",
-        "//base:file_util",
-        "//base:number_util",
-        "//base:thread",
-        "//base/file:temp_dir",
-        "//config:character_form_manager",
-        "//protocol:config_cc_proto",
-        "//storage:encrypted_string_storage",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "user_history_predictor",
     srcs = ["user_history_predictor.cc"],
@@ -165,63 +141,6 @@ mozc_cc_library(
         "@com_google_absl//absl/types:span",
     ],
     alwayslink = 1,
-)
-
-mozc_cc_test(
-    name = "user_history_predictor_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = ["user_history_predictor_test.cc"],
-    tags = [
-        "nowin",
-    ],  # TODO(yuryu): depends on //base:encryptor
-    deps = [
-        ":realtime_decoder",
-        ":result",
-        ":user_history_predictor",
-        ":user_history_predictor_cc_proto",
-        ":user_history_storage",
-        "//base:clock_mock",
-        "//base:file_util",
-        "//base:random",
-        "//base:system_util",
-        "//base:util",
-        "//base/container:trie",
-        "//base/file:temp_dir",
-        "//base/strings:unicode",
-        "//composer",
-        "//composer:query",
-        "//composer:table",
-        "//config:character_form_manager",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//converter:inner_segment",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_mock",
-        "//dictionary:dictionary_token",
-        "//engine:modules",
-        "//engine:supplemental_model_mock",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:options",
-        "//request:request_test_util",
-        "//storage:encrypted_string_storage",
-        "//storage:lru_cache",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "//transliteration",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/time",
-        "@com_google_absl//absl/types:span",
-    ],
 )
 
 mozc_cc_library(
@@ -293,16 +212,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "result_test",
-    srcs = ["result_test.cc"],
-    deps = [
-        ":result",
-        "//converter:attribute",
-        "//testing:gunit_main",
-    ],
-)
-
 mozc_cc_library(
     name = "result_filter",
     srcs = ["result_filter.cc"],
@@ -324,76 +233,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "result_filter_test",
-    srcs = ["result_filter_test.cc"],
-    deps = [
-        ":result",
-        ":result_filter",
-        ":suggestion_filter",
-        "//converter:connector",
-        "//request:conversion_request",
-        "//storage:existence_filter",
-        "//testing:gunit",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "dictionary_predictor_test",
-    size = "small",
-    timeout = "moderate",
-    srcs = [
-        "dictionary_predictor_test.cc",
-    ],
-    deps = [
-        ":dictionary_predictor",
-        ":realtime_decoder",
-        ":result",
-        ":zero_query_dict",
-        "//base:util",
-        "//base/container:serialized_string_array",
-        "//base/strings:assign",
-        "//composer",
-        "//composer:query",
-        "//composer:table",
-        "//config:character_form_manager",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//converter:connector",
-        "//converter:inner_segment",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_mock",
-        "//dictionary:dictionary_token",
-        "//dictionary:pos_matcher",
-        "//dictionary:single_kanji_dictionary",
-        "//engine:modules",
-        "//engine:supplemental_model_interface",
-        "//engine:supplemental_model_mock",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:options",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "//transliteration",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 mozc_cc_library(
     name = "single_kanji_decoder",
     srcs = [
@@ -412,33 +251,6 @@ mozc_cc_library(
         "//request:conversion_request",
         "//request:request_util",
         "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "single_kanji_decoder_test",
-    srcs = [
-        "single_kanji_decoder_test.cc",
-    ],
-    deps = [
-        ":result",
-        ":single_kanji_decoder",
-        "//base/strings:unicode",
-        "//composer",
-        "//composer:table",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//dictionary:single_kanji_dictionary",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
@@ -476,34 +288,6 @@ mozc_cc_library(
     alwayslink = 1,
 )
 
-mozc_cc_test(
-    name = "predictor_test",
-    srcs = ["predictor_test.cc"],
-    deps = [
-        ":dictionary_predictor",
-        ":predictor",
-        ":predictor_interface",
-        ":result",
-        ":user_history_predictor",
-        "//composer",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_mock",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "//testing:test_peer",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 mozc_cc_library(
     name = "suggestion_filter",
     srcs = ["suggestion_filter.cc"],
@@ -539,18 +323,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "zero_query_dict_test",
-    srcs = ["zero_query_dict_test.cc"],
-    deps = [
-        ":zero_query_dict",
-        "//base/container:serialized_string_array",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 mozc_cc_library(
     name = "decoder_util",
     srcs = ["decoder_util.cc"],
@@ -570,22 +342,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "decoder_util_test",
-    srcs = ["decoder_util_test.cc"],
-    deps = [
-        ":decoder_util",
-        ":result",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_token",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/container:btree",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -612,29 +368,6 @@ mozc_cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "zero_query_decoder_test",
-    srcs = ["zero_query_decoder_test.cc"],
-    deps = [
-        ":result",
-        ":zero_query_decoder",
-        ":zero_query_dict",
-        "//base:clock_mock",
-        "//base/container:serialized_string_array",
-        "//converter:attribute",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/time",
     ],
 )
 
@@ -703,30 +436,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "english_decoder_test",
-    srcs = ["english_decoder_test.cc"],
-    deps = [
-        ":english_decoder",
-        ":result",
-        "//base:util",
-        "//composer",
-        "//composer:table",
-        "//config:config_handler",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_mock",
-        "//dictionary:dictionary_token",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "//transliteration",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
 mozc_cc_library(
     name = "dictionary_decoder",
     srcs = ["dictionary_decoder.cc"],
@@ -751,31 +460,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "dictionary_decoder_test",
-    srcs = ["dictionary_decoder_test.cc"],
-    deps = [
-        ":dictionary_decoder",
-        ":result",
-        "//base:util",
-        "//composer",
-        "//composer:table",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_mock",
-        "//dictionary:dictionary_token",
-        "//dictionary:pos_matcher",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
 mozc_cc_library(
     name = "number_decoder",
     srcs = ["number_decoder.cc"],
@@ -795,24 +479,6 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
-mozc_cc_test(
-    name = "number_decoder_test",
-    srcs = ["number_decoder_test.cc"],
-    deps = [
-        ":number_decoder",
-        ":result",
-        "//base:util",
-        "//converter:attribute",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:pos_matcher",
-        "//engine:modules",
-        "//request:conversion_request",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -845,25 +511,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "realtime_decoder_test",
-    srcs = ["realtime_decoder_test.cc"],
-    deps = [
-        ":realtime_decoder",
-        ":result",
-        "//converter:attribute",
-        "//converter:converter_mock",
-        "//converter:immutable_converter_interface",
-        "//converter:inner_segment",
-        "//converter:segments",
-        "//data_manager/testing:mock_data_manager",
-        "//request:conversion_request",
-        "//request:options",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "handwriting_decoder",
     srcs = ["handwriting_decoder.cc"],
@@ -884,31 +531,5 @@ mozc_cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "handwriting_decoder_test",
-    srcs = ["handwriting_decoder_test.cc"],
-    deps = [
-        ":handwriting_decoder",
-        ":realtime_decoder",
-        ":result",
-        "//base:util",
-        "//composer",
-        "//composer:table",
-        "//config:config_handler",
-        "//converter:attribute",
-        "//data_manager/testing:mock_data_manager",
-        "//dictionary:dictionary_interface",
-        "//dictionary:dictionary_mock",
-        "//dictionary:dictionary_token",
-        "//engine:modules",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//request:conversion_request",
-        "//request:request_test_util",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
