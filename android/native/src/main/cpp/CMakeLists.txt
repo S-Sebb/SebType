@@ -1,6 +1,6 @@
 # libsebtype.so, the phone's native library (#191 stage 1): core/ with librime (engines/librime, built by
 # RimeJni's scripts in cmake/, MIT, see cmake/LICENSE) and protobuf-lite for Mozc's protocol, and the JNI
-# glue NativeCore.kt calls. Mozc itself is libmozc.so (Bazel, ../../../build-mozc.sh), which core/ loads.
+# glue NativeCore.kt calls. Mozc itself is libmozc.so (Bazel, ../../../build-mozc.sh), which it links to.
 cmake_minimum_required(VERSION 3.22)
 project(sebtype-native CXX C)
 
@@ -35,8 +35,10 @@ include(OpenCC)
 include(librime)
 include(protobuf)
 
-# core/, as the PCs build it; its CMake takes these targets on Android.
+# core/, as the PCs build it; its CMake takes these targets on Android, and runs Mozc in this process from
+# libmozc.so (MOZC_LIBS_DIR: build.gradle's buildMozcNative output, one folder per ABI).
 set(RIME_TARGET rime-static)
+set(SEBTYPE_MOZC_LIB ${MOZC_LIBS_DIR}/${ANDROID_ABI}/libmozc.so CACHE FILEPATH "" FORCE)
 set(SEBTYPE_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${SEBTYPE_CORE_DIR} ${RIME_JNI_BUILD_DIR}/core)
 

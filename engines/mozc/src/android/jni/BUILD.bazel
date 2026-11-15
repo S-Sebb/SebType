@@ -75,6 +75,8 @@ mozc_cc_binary(
         "-Wl,-z,max-page-size=16384",
         "-Wl,--version-script=$(location libmozc.map)",
         "-Wl,--gc-sections",
+        # SebType: libsebtype.so links to it by this name.
+        "-Wl,-soname,libmozc.so",
     ],
     additional_linker_inputs = ["libmozc.map"],
     linkshared = 1,

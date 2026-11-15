@@ -37,7 +37,7 @@ OPENCC_S2T_SHA256=710bb970e406d9c0a3dd33c609248686cf1c5578d064b7b7fc89e70fbb9ea7
 OPENCC_PHRASES_SHA256=17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b
 OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41
 # The tables are compiled with the host's librime, which must be engines/librime's version (the one the
-# phone builds, android/rime), so the phone takes the compiled files as they are.
+# phone builds, android/native), so the phone takes the compiled files as they are.
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.

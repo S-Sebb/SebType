@@ -37,6 +37,7 @@ import org.futo.inputmethod.engine.GlobalIMEMessage
 import org.futo.inputmethod.engine.IMEMessage
 import org.futo.inputmethod.engine.general.ChineseIME
 import org.futo.inputmethod.engine.general.mozcUserProfileDir
+import dev.sebb.sebtype.SebTypeConf
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.utils.readAllBytesCompat
 import org.futo.inputmethod.latin.uix.PreferenceUtils.getDefaultSharedPreferences
@@ -185,6 +186,7 @@ object SettingsExporter {
     private const val personalDictFileName = "userdictionary.json"
     // Rime's installation_id names this phone's folder on the sync server (#12): never copied to another phone (#169)
     private const val RIME_INSTALLATION = "user/installation.yaml"
+    private const val SEBTYPE_CONF = "sebtype.conf"
 
     suspend fun exportSettings(
         context: Context,
@@ -299,6 +301,11 @@ object SettingsExporter {
             subfile.inputStream().use { it.copyTo(zipOut) }
             zipOut.closeEntry()
         }
+
+        // The settings shared with the PCs (#191)
+        zipOut.putNextEntry(ZipEntry(SEBTYPE_CONF))
+        zipOut.write(SebTypeConf.ensure(context).toByteArray())
+        zipOut.closeEntry()
     }
 
     private fun String.splitSlash(): String = split("/", limit = 2)[1]
@@ -344,6 +351,7 @@ object SettingsExporter {
             clipboardCleared = true
         }
         var clipboardImported = false
+        var confImported = false
         if (destructive) {
             // delete all transformers
             transformersDir.listFiles()?.forEach {
@@ -384,6 +392,11 @@ object SettingsExporter {
                     readSharedPrefs(editor, zipIn)
                     @SuppressLint("ApplySharedPref")
                     editor.commit()
+                }
+
+                entry.name == SEBTYPE_CONF -> {
+                    SebTypeConf.replace(context, zipIn.readAllBytesCompat().decodeToString())
+                    confImported = true
                 }
 
                 entry.name == personalDictFileName -> {
@@ -430,6 +443,9 @@ object SettingsExporter {
             zipIn.closeEntry()
             entry = zipIn.nextEntry
         }
+
+        // Older backups keep these settings in the DataStore they carry.
+        if (!confImported) SebTypeConf.replace(context, SebTypeConf.migrated(context))
 
         // After the loop, so the clipboard/ files its entries point to are already there
         if (clipboardImported) onClipboardImportedFlow.emit(clipboardFile)

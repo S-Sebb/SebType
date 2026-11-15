@@ -8,10 +8,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # and lib/rime.lib (the rime.dll pc/windows/rime/build.ps1 makes, engines/librime). On Android the app's
 # android/native builds both (protobuf-lite) and sets RIME_TARGET, PROTOBUF_TARGET and PROTOC first.
 if(ANDROID)
-  # The phone runs Mozc in its process (libmozc.so): no IPC, and the lite runtime.
-  set(MOZC_TRANSPORT src/mozc_inprocess.cpp)
-  set(MOZC_PROTOS protocol/commands.proto protocol/candidate_window.proto protocol/config.proto
-    protocol/engine_builder.proto)
   set(PROTOC_OUT lite:)
 else()
   if(WIN32)
@@ -27,11 +23,20 @@ else()
   find_package(Protobuf REQUIRED)
   set(PROTOBUF_TARGET protobuf::libprotobuf)
   set(PROTOC protobuf::protoc)
-  # The PCs talk to mozc_server over Mozc's IPC.
-  set(MOZC_TRANSPORT src/mozc_ipc.cpp)
-  set(MOZC_PROTOS protocol/commands.proto protocol/candidate_window.proto protocol/config.proto
-    protocol/engine_builder.proto ipc/ipc.proto)
   set(PROTOC_OUT)
+endif()
+
+# Mozc runs in this process when SEBTYPE_MOZC_LIB names a Mozc library with the C interface in
+# src/sebtype_mozc.h (the phone's libmozc.so, #220); without one, core/ talks to mozc_server over Mozc's IPC
+# (the PCs, until #233).
+set(SEBTYPE_MOZC_LIB "" CACHE FILEPATH "A Mozc library to run in this process instead of mozc_server")
+set(MOZC_PROTOS protocol/commands.proto protocol/candidate_window.proto protocol/config.proto
+  protocol/engine_builder.proto)
+if(SEBTYPE_MOZC_LIB)
+  set(MOZC_TRANSPORT src/mozc_inprocess.cpp)
+else()
+  set(MOZC_TRANSPORT src/mozc_ipc.cpp)
+  list(APPEND MOZC_PROTOS ipc/ipc.proto)
 endif()
 
 # Mozc's protocol, from the one Mozc source (engines/mozc).
@@ -54,8 +59,9 @@ target_include_directories(sebtype-logic PUBLIC include)
 add_library(sebtype-core STATIC src/rime.cpp src/mozc.cpp ${MOZC_TRANSPORT} ${PROTO_SRCS})
 target_include_directories(sebtype-core PRIVATE ${PROTO_OUT})
 target_link_libraries(sebtype-core PUBLIC sebtype-logic ${RIME_TARGET} ${PROTOBUF_TARGET})
-if(ANDROID)
-  target_link_libraries(sebtype-core PRIVATE ${CMAKE_DL_LIBS})
+if(SEBTYPE_MOZC_LIB)
+  target_compile_definitions(sebtype-core PUBLIC SEBTYPE_MOZC_INPROC)
+  target_link_libraries(sebtype-core PUBLIC ${SEBTYPE_MOZC_LIB})
 endif()
 
 option(SEBTYPE_TESTS "Build the core's unit tests" ON)

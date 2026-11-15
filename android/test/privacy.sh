@@ -44,7 +44,7 @@ check network-config bash -c "grep -q 'networkSecurityConfig' '$out/test-privacy
   x=\$('$bt/aapt2' dump xmltree --file '$netcfg' '$apk') && grep -q 'cleartextTrafficPermitted.*=false' <<<\"\$x\" &&
   [[ \$(grep -c 'E: certificates' <<<\"\$x\") -eq 1 ]] && grep -q 'src.*=\"system\"' <<<\"\$x\""
 
-# Release dex: the typed-text log strings are gone (R8 strips Log.d/v/i, incl. RimeJni's per-key log).
+# Release dex: the typed-text log strings are gone (R8 strips Log.d/v/i, incl. any per-key log).
 dexdir=$out/test-privacy-dex; rm -rf "$dexdir"; mkdir -p "$dexdir"
 unzip -q -o "$apk" 'classes*.dex' -d "$dexdir"
 strings_in_dex() { cat "$dexdir"/*.dex | strings -n 6; }

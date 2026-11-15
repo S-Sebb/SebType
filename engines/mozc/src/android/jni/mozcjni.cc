@@ -27,8 +27,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// SebType: the phone's entry points to SessionHandler, which SebType's core (core/src/mozc_inprocess.cpp)
-// calls in the same process: serialized commands in and out, as the Java client's JNI evalCommand did.
+// SebType: the phone's Mozc as a library with SebType's C interface (core/src/sebtype_mozc.h), which
+// SebType's core (core/src/mozc_inprocess.cpp) calls in the same process: serialized commands in and out,
+// as the Java client's JNI evalCommand did.
 
 #ifdef __ANDROID__
 
@@ -57,14 +58,14 @@ namespace mozc {
 namespace jni {
 namespace {
 
-// The process's Mozc, loaded by SebTypeMozcLoad.
+// The process's Mozc, loaded by sebtype_mozc_open.
 std::unique_ptr<SessionHandler> g_session_handler;
 
-// A copy the caller frees with SebTypeMozcFree.
-size_t Copy(absl::string_view s, char** out) {
+// A copy the caller frees with sebtype_mozc_free.
+void Copy(absl::string_view s, char** out, size_t* out_size) {
   *out = static_cast<char*>(std::malloc(s.size() ? s.size() : 1));
   std::memcpy(*out, s.data(), s.size());
-  return s.size();
+  *out_size = s.size();
 }
 
 // SebType: a data file length of 0 maps the whole file; otherwise the data set is the region
@@ -108,7 +109,7 @@ extern "C" {
 
 // Loads Mozc with this user profile and data set (an empty path: Mozc's minimal engine). A later call
 // replaces the SessionHandler, so the keyboard can reload Mozc with another data file or user profile.
-__attribute__((visibility("default"))) bool SebTypeMozcLoad(
+__attribute__((visibility("default"))) int sebtype_mozc_open(
     const char* profile_dir, const char* data_file, int64_t offset,
     int64_t length) {
   using mozc::jni::g_session_handler;
@@ -123,35 +124,37 @@ __attribute__((visibility("default"))) bool SebTypeMozcLoad(
   if (!g_session_handler) {
     mozc::SystemUtil::SetUserProfileDirectory(original_dir);
     LOG(DFATAL) << "Failed to create Mozc session handler";
-    return false;
+    return 0;
   }
-  return true;
+  return 1;
 }
 
-// Frees the engine (its dictionary and caches) until the next load.
-__attribute__((visibility("default"))) void SebTypeMozcUnload() {
+// Saves learned words (SessionHandler's destructor) and frees the engine, its dictionary and caches, until
+// the next open.
+__attribute__((visibility("default"))) void sebtype_mozc_close() {
   mozc::jni::g_session_handler.reset();
 }
 
-// Evaluates a serialized mozc.commands.Command and returns it with its output.
-__attribute__((visibility("default"))) size_t SebTypeMozcEval(const void* in,
-                                                              size_t size,
-                                                              char** out) {
+// Evaluates a serialized mozc.commands.Input and returns its serialized Output.
+__attribute__((visibility("default"))) int sebtype_mozc_eval(const char* in,
+                                                            size_t in_size,
+                                                            char** out,
+                                                            size_t* out_size) {
+  if (!mozc::jni::g_session_handler) return 0;
   mozc::commands::Command command;
-  command.ParseFromArray(in, static_cast<int>(size));
-  if (mozc::jni::g_session_handler) {
-    mozc::jni::g_session_handler->EvalCommand(&command);
-  } else {
-    LOG(DFATAL) << "Mozc session handler is not yet initialized";
+  if (!command.mutable_input()->ParseFromArray(in, static_cast<int>(in_size))) {
+    return 0;
   }
-  return mozc::jni::Copy(command.SerializeAsString(), out);
+  if (!mozc::jni::g_session_handler->EvalCommand(&command)) return 0;
+  mozc::jni::Copy(command.output().SerializeAsString(), out, out_size);
+  return 1;
 }
 
 // SebType: parses a user dictionary file the user imported (Mozc, MS-IME, ATOK or Kotoeri text) into a
 // serialized UserDictionary, skipping entries it can't read. The phone writes user_dictionary.db with it,
 // since Mozc no longer takes user dictionary commands.
-__attribute__((visibility("default"))) size_t SebTypeMozcImportUserDictionary(
-    const char* text, size_t size, char** out) {
+__attribute__((visibility("default"))) int sebtype_mozc_import_user_dictionary(
+    const char* text, size_t size, char** out, size_t* out_size) {
   const std::string input(text, size);
   mozc::user_dictionary::StringTextLineIterator iter(input);
   mozc::user_dictionary::UserDictionary dictionary;
@@ -160,10 +163,11 @@ __attribute__((visibility("default"))) size_t SebTypeMozcImportUserDictionary(
       !status.ok()) {
     LOG(WARNING) << "User dictionary import: " << status;
   }
-  return mozc::jni::Copy(dictionary.SerializeAsString(), out);
+  mozc::jni::Copy(dictionary.SerializeAsString(), out, out_size);
+  return 1;
 }
 
-__attribute__((visibility("default"))) void SebTypeMozcFree(char* bytes) {
+__attribute__((visibility("default"))) void sebtype_mozc_free(char* bytes) {
   std::free(bytes);
 }
 

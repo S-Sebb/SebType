@@ -212,11 +212,12 @@ class Rime final : public Engine {
 
   bool alternate() override { return option("traditionalization"); }
   void setAlternate(bool on) override {
+    // Kept for the next session, as a setting would be.
+    auto kept = std::ranges::find(options_, std::string("traditionalization"), &std::pair<std::string, bool>::first);
+    if (kept != options_.end()) kept->second = on;
+    else options_.emplace_back("traditionalization", on);
     if (!ready()) return;
     api_->set_option(session_, "traditionalization", on);
-    // Kept for the next session, as a setting would be.
-    for (auto &[name, value] : options_)
-      if (name == "traditionalization") value = on;
     cache_.clear();
   }
 

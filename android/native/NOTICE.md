@@ -2,7 +2,12 @@
 
 ## Project License
 
-This project is licensed under the terms of the [MIT License](LICENSE).
+`:native`, the phone's native library (#191): SebType's own files (build.gradle, build-mozc.sh,
+src/main/cpp/CMakeLists.txt, src/main/cpp/cmake/protobuf.cmake, src/main/cpp/sebtype_jni.cpp and
+src/main/java/) are under the MIT licence in ../../LICENSE-SebType. The other files in src/main/cpp/cmake/
+are RimeJni's build scripts with SebType's changes, under RimeJni's [MIT License](src/main/cpp/cmake/LICENSE).
+It links core/ (../../core, see its README for its files' licences) and Mozc's libmozc.so, built from
+../../engines/mozc under Mozc's licence (BSD-3-Clause).
 
 ## Third-party License
 
@@ -19,5 +24,6 @@ This project is licensed under the terms of the [MIT License](LICENSE).
 | Librime-Octagram | [Librime-octagram-LICENSE.txt](src/main/assets/licenses/Librime-octagram-LICENSE.txt) | BSD-3-Clause |
 | Lua | [Lua-LICENSE.txt](src/main/assets/licenses/Lua-LICENSE.txt) | MIT |
 | Marisa-Trie | [Marisa-trie-LICENSE.txt](src/main/assets/licenses/Marisa-trie-LICENSE.txt) | BSD-2-Clause (CHOSEN) |
+| Protobuf (protobuf-lite 3.21.12) | [Protobuf-LICENSE.txt](src/main/assets/licenses/Protobuf-LICENSE.txt) | BSD-3-Clause |
 | OpenCC | [OpenCC-LICENSE.txt](src/main/assets/licenses/OpenCC-LICENSE.txt) | Apache-2.0 |
 | Yaml-cpp | [Yaml-cpp-LICENSE.txt](src/main/assets/licenses/Yaml-cpp-LICENSE.txt) | MIT |

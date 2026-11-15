@@ -39,6 +39,8 @@ object NativeCore {
     @JvmStatic external fun key(sym: Int, mods: Int): NativeState
     /** Clears the composition and types [text]'s letters. */
     @JvmStatic external fun type(text: String): NativeState
+    /** A language's candidates for [text], typed without making it the current language (the setup's self-test). */
+    @JvmStatic external fun tryTyping(lang: Int, text: String): Array<String>
     @JvmStatic external fun selectCandidate(index: Int): NativeState
     /** Moves the cursor inside the preedit to [position] characters from its start. */
     @JvmStatic external fun moveCursor(position: Int): NativeState

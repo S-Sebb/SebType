@@ -1,75 +1,71 @@
-// SebType core: the phone's way to Mozc (mozc_transport.h). Mozc's session handler runs in this process, in
-// libmozc.so (engines/mozc's android/jni, built by Bazel): its exports take and return serialized commands,
-// as its Java client's evalCommand did. MIT, SebType.
-#include <dlfcn.h>
-
+// SebType core: Mozc's session handler in this process (mozc_transport.h, #220), through the C interface of a
+// Mozc built into a library (sebtype_mozc.h): the same serialized commands the IPC carries, without the
+// server. Used on the phone; the PCs follow in #233. MIT, SebType.
+#include <chrono>
 #include <cstddef>
-#include <cstdint>
-#include <cstdlib>
+#include <string>
 
 #include "mozc_transport.h"
+#include "sebtype_mozc.h"
 
 namespace sebtype {
 
 namespace {
 
-// libmozc.so's exports (mozcjni.cc).
-struct Mozc {
-  bool (*load)(const char *profileDir, const char *dataFile, int64_t offset, int64_t length);
-  void (*unload)();
-  size_t (*eval)(const void *in, size_t size, char **out);
-  size_t (*importUserDictionary)(const char *text, size_t size, char **out);
-  void (*free)(char *bytes);
-};
+using Clock = std::chrono::steady_clock;
 
-const Mozc *mozc() {
-  static const Mozc *m = [] () -> const Mozc * {
-    void *lib = dlopen("libmozc.so", RTLD_NOW);
-    if (!lib) return nullptr;
-    static Mozc fns{
-        reinterpret_cast<decltype(Mozc::load)>(dlsym(lib, "SebTypeMozcLoad")),
-        reinterpret_cast<decltype(Mozc::unload)>(dlsym(lib, "SebTypeMozcUnload")),
-        reinterpret_cast<decltype(Mozc::eval)>(dlsym(lib, "SebTypeMozcEval")),
-        reinterpret_cast<decltype(Mozc::importUserDictionary)>(dlsym(lib, "SebTypeMozcImportUserDictionary")),
-        reinterpret_cast<decltype(Mozc::free)>(dlsym(lib, "SebTypeMozcFree")),
-    };
-    return fns.load && fns.unload && fns.eval && fns.importUserDictionary && fns.free ? &fns : nullptr;
-  }();
-  return m;
-}
+// mozc_server's watchdog saved learned words every 180 s; in-process nothing does, so this transport saves
+// that often after a commit. The frontend still saves when it stops or hides (Engine::save).
+constexpr auto kSaveEvery = std::chrono::seconds(180);
 
-std::string take(const Mozc &m, char *bytes, size_t size) {
+std::string take(char *bytes, size_t size) {
   std::string s(bytes, size);
-  m.free(bytes);
+  sebtype_mozc_free(bytes);
   return s;
 }
 
-// One session handler for the process: the 日本語 engine's, loaded with it and unloaded when the core stops
-// it (the phone frees an idle Mozc).
+bool eval(const mozc::commands::Input &in, mozc::commands::Output &out) {
+  const std::string request = in.SerializeAsString();
+  char *reply = nullptr;
+  size_t size = 0;
+  if (!sebtype_mozc_eval(request.data(), request.size(), &reply, &size)) return false;
+  return out.ParseFromString(take(reply, size));
+}
+
+// One engine per process, the 日本語 engine's: loaded with it and closed when the core stops it (the phone
+// frees an idle Mozc).
 class InProcess final : public MozcTransport {
  public:
-  explicit InProcess(const MozcPaths &paths) {
-    const Mozc *m = mozc();
-    loaded_ = m && m->load(paths.profileDir.c_str(), paths.dataFile.c_str(), paths.dataOffset, paths.dataLength);
-  }
+  explicit InProcess(const MozcPaths &paths)
+      : open_(sebtype_mozc_open(paths.profileDir.c_str(), paths.dataFile.c_str(), paths.dataOffset,
+                                paths.dataLength) != 0) {}
   ~InProcess() override {
-    if (loaded_) mozc()->unload();
+    if (open_) sebtype_mozc_close();
   }
 
   bool call(const mozc::commands::Input &in, mozc::commands::Output &out) override {
-    if (!loaded_) return false;
-    mozc::commands::Command command;
-    *command.mutable_input() = in;
-    const std::string bytes = command.SerializeAsString();
-    char *answer = nullptr;
-    const size_t size = mozc()->eval(bytes.data(), bytes.size(), &answer);
-    if (!command.ParseFromString(take(*mozc(), answer, size))) return false;
-    out = command.output();
+    if (!open_ || !eval(in, out)) return false;
+    if (in.type() == mozc::commands::Input::SYNC_DATA) {
+      unsaved_ = false;
+      savedAt_ = Clock::now();
+    } else if (out.has_result()) {
+      unsaved_ = true;
+    }
+    if (unsaved_ && Clock::now() - savedAt_ >= kSaveEvery) {
+      mozc::commands::Input sync;
+      sync.set_type(mozc::commands::Input::SYNC_DATA);
+      mozc::commands::Output ignored;
+      eval(sync, ignored);
+      unsaved_ = false;
+      savedAt_ = Clock::now();
+    }
     return true;
   }
 
  private:
-  bool loaded_ = false;
+  bool open_;
+  bool unsaved_ = false;
+  Clock::time_point savedAt_ = Clock::now();
 };
 
 }  // namespace
@@ -79,11 +75,10 @@ std::unique_ptr<MozcTransport> makeMozcTransport(const MozcPaths &paths) {
 }
 
 std::string importMozcUserDictionary(std::string_view text) {
-  const Mozc *m = mozc();
-  if (!m) return {};
   char *out = nullptr;
-  const size_t size = m->importUserDictionary(text.data(), text.size(), &out);
-  return take(*m, out, size);
+  size_t size = 0;
+  if (!sebtype_mozc_import_user_dictionary(text.data(), text.size(), &out, &size)) return {};
+  return take(out, size);
 }
 
 }  // namespace sebtype

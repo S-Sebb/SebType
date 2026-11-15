@@ -1,37 +1,24 @@
 package dev.sebb.sebtype.chinese
 
 import android.content.Context
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import icu.astronot233.rime.Rime
-import org.futo.inputmethod.latin.uix.SettingsKey
-import org.futo.inputmethod.latin.uix.getSetting
+import dev.sebb.sebtype.SebTypeConf
 import java.io.File
 import java.io.InputStream
 import org.futo.inputmethod.engine.general.ChineseIME
 
 /**
- * SebType's Chinese options and personal data (#41): two of rime-ice's switches, set at run time so no
- * deploy is needed; the user's own words, kept in rime-ice's custom_phrase; and forgetting what Rime
- * learned while keeping those words.
+ * SebType's Chinese options and personal data (#41): two of rime-ice's switches, kept in sebtype.conf
+ * ([SebTypeConf]) and set by core/ at run time, so no deploy is needed; the user's own words, kept in
+ * rime-ice's custom_phrase; and forgetting what Rime learned while keeping those words.
  */
 object ChineseOptions {
-    val EmojiInCandidates = SettingsKey(booleanPreferencesKey("sebtype_zh_emoji"), true)
-    val FullWidthPunctuation = SettingsKey(booleanPreferencesKey("sebtype_zh_full_width_punctuation"), true)
-
     // The layout's punctuation keys type full-width marks themselves, which Rime passes through.
     private val halfWidth = mapOf('，' to ',', '。' to '.', '？' to '?', '！' to '!', '：' to ':', '；' to ';')
         .entries.associate { it.key.code to it.value.code }
-    @Volatile private var fullWidth = true
-
-    /** Selecting a schema resets rime-ice's switches, so this runs for every new text field. */
-    suspend fun apply(context: Context, rime: Rime) {
-        fullWidth = context.getSetting(FullWidthPunctuation)
-        rime.setOption("emoji", context.getSetting(EmojiInCandidates))
-        rime.setOption("ascii_punct", !fullWidth)
-    }
 
     /** A key's code point as Chinese types it: the layout's full-width marks become ASCII ones when off. */
-    fun punctuation(codePoint: Int) = if(fullWidth) codePoint else halfWidth[codePoint] ?: codePoint
+    fun punctuation(context: Context, codePoint: Int) =
+        if(SebTypeConf.get(context, SebTypeConf.Option.FullWidthPunctuation)) codePoint else halfWidth[codePoint] ?: codePoint
 }
 
 data class ChineseWord(val word: String, val pinyin: String)

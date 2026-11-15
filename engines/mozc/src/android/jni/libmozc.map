@@ -1,6 +1,6 @@
-# SebType: libmozc exports only the entry points SebType's core calls (mozcjni.cc), so the linker drops
-# the C++ symbol table.
+# SebType: libmozc exports only SebType's C interface (mozcjni.cc, core/src/sebtype_mozc.h), so the linker
+# drops the C++ symbol table and Mozc's protobuf and Abseil stay inside.
 {
-  global: SebTypeMozc*;
+  global: sebtype_mozc_*;
   local: *;
 };

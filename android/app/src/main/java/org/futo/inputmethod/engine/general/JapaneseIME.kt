@@ -1,7 +1,7 @@
 package org.futo.inputmethod.engine.general
 
-import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.icu.text.BreakIterator
 import android.os.SystemClock
 import android.text.InputType
@@ -17,8 +17,10 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import androidx.compose.runtime.mutableStateOf
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import com.google.android.apps.inputmethod.libs.mozc.session.MozcJni
-import com.google.common.base.Optional
+import dev.sebb.sebtype.SebTypeConf
+import dev.sebb.sebtype.core.NativeCore
+import dev.sebb.sebtype.core.NativeCore.JAPANESE
+import dev.sebb.sebtype.core.NativeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +34,7 @@ import org.futo.inputmethod.engine.IMEInterface
 import org.futo.inputmethod.engine.IMEMessage
 import org.futo.inputmethod.engine.ModeChip
 import org.futo.inputmethod.engine.StateHint
+import org.futo.inputmethod.engine.general.mozc.SelectionTracker
 import org.futo.inputmethod.event.Event
 import org.futo.inputmethod.keyboard.KeyboardId
 import org.futo.inputmethod.keyboard.internal.KeyboardLayoutKind
@@ -63,41 +66,12 @@ import org.futo.inputmethod.latin.uix.settings.pages.pdict.decodeJapanesePersona
 import org.futo.inputmethod.latin.utils.Dictionaries
 import org.futo.inputmethod.latin.utils.InputTypeUtils
 import org.futo.inputmethod.latin.utils.JniUtils
-import org.futo.inputmethod.nativelib.mozc.KeycodeConverter
-import org.futo.inputmethod.nativelib.mozc.KeycodeConverter.KeyEventInterface
-import org.futo.inputmethod.nativelib.mozc.KeycodeConverter.getMozcKeyEvent
-import org.futo.inputmethod.nativelib.mozc.MozcLog
-import org.futo.inputmethod.nativelib.mozc.MozcUtil
-import org.futo.inputmethod.nativelib.mozc.keyboard.Keyboard
-import org.futo.inputmethod.nativelib.mozc.model.SelectionTracker
-import org.futo.inputmethod.nativelib.mozc.session.SessionExecutor
-import org.futo.inputmethod.nativelib.mozc.session.SessionHandlerFactory
 import org.futo.inputmethod.v2keyboard.KeyboardLayoutSetV2
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCandidateWindow
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Context.InputFieldType
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.Preedit
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoCommands.SessionCommand
-import org.mozc.android.inputmethod.japanese.protobuf.ProtoConfig
 import org.mozc.android.inputmethod.japanese.protobuf.ProtoUserDictionaryStorage
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
-
-object JapaneseIMESettings {
-    val FlickOnly = SettingsKey(
-        booleanPreferencesKey("ime_ja_flick_only"),
-        false
-    )
-
-    val HalfWidthSpace = SettingsKey(
-        booleanPreferencesKey("ime_ja_half_width_space"),
-        false
-    )
-
-}
 
 // Focused segment's attribute.
 private val SPAN_CONVERT_HIGHLIGHT = BackgroundColorSpan(0x66EF3566)
@@ -118,31 +92,26 @@ private val SPAN_PARTIAL_SUGGESTION_COLOR = BackgroundColorSpan(0x194DB6AC)
 // Underline.
 private val SPAN_UNDERLINE = UnderlineSpan()
 
-internal fun getInputFieldType(attribute: EditorInfo): InputFieldType {
+// The field's kind, as Mozc's Android client told Mozc (MozcUtil.isPasswordField and getInputFieldType).
+internal fun fieldOf(attribute: EditorInfo): Int {
     val inputType = attribute.inputType
-    if (MozcUtil.isPasswordField(inputType)) {
-        return InputFieldType.PASSWORD
-    }
     val inputClass = inputType and InputType.TYPE_MASK_CLASS
-    if (inputClass == InputType.TYPE_CLASS_PHONE) {
-        return InputFieldType.TEL
+    val variation = inputType and InputType.TYPE_MASK_VARIATION
+    return when {
+        inputClass == InputType.TYPE_CLASS_TEXT && (variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) -> NativeCore.FIELD_PASSWORD
+        inputClass == InputType.TYPE_CLASS_PHONE -> NativeCore.FIELD_PHONE
+        inputClass == InputType.TYPE_CLASS_NUMBER -> NativeCore.FIELD_NUMBER
+        else -> NativeCore.FIELD_TEXT
     }
-    return if (inputClass == InputType.TYPE_CLASS_NUMBER) {
-        InputFieldType.NUMBER
-    } else InputFieldType.NORMAL
 }
 
 fun mozcUserProfileDir(context: Context) = File(context.applicationInfo.dataDir, ".mozc")
 
-fun initJniDictLocations(context: Context) {
-    if(!context.isDirectBootUnlocked) {
-        val tmpDir = File("/tmp/.mozc")
-        tmpDir.mkdirs()
-        MozcJni.load(
-            tmpDir.absolutePath,
-            "", 0, 0
-        )
-    }
+/** Tells core/ where Mozc's profile and dictionary are; Mozc loads them when 日本語 next starts. */
+fun setMozcData(context: Context) {
+    SebTypeConf.ensure(context)
 
     // Ensure the user profile directory exists.
     val userProfileDirectory = mozcUserProfileDir(context)
@@ -152,7 +121,7 @@ fun initJniDictLocations(context: Context) {
             // Failed to create a directory. The mozc conversion engine will be able to run
             // even in this case, but no persistent data (e.g. user history, user dictionary)
             // will be stored, so some fuctions using them won't work well.
-            MozcLog.e("Failed to create user profile directory: " + userProfileDirectory.absolutePath)
+            Log.e(TAG, "Failed to create user profile directory: " + userProfileDirectory.absolutePath)
         }
     }
 
@@ -186,34 +155,21 @@ fun initJniDictLocations(context: Context) {
     }
 
     when {
-        dictFile != null -> {
-            MozcJni.load(
-                userProfileDirectory.absolutePath,
-                dictFile.absolutePath,
-                0, 0
-            )
-        }
-        fallbackFile != null -> {
-            MozcJni.load(
-                userProfileDirectory.absolutePath,
-                fallbackFile.mFilename,
-                fallbackFile.mOffset,
-                fallbackFile.mLength
-            )
-        }
-        else -> {
-            MozcJni.load(
-                userProfileDirectory.absolutePath,
-                "", 0, 0
-            )
-        }
+        dictFile != null -> NativeCore.setMozcData(userProfileDirectory.absolutePath, dictFile.absolutePath, 0, 0)
+        fallbackFile != null -> NativeCore.setMozcData(
+            userProfileDirectory.absolutePath,
+            fallbackFile.mFilename,
+            fallbackFile.mOffset,
+            fallbackFile.mLength
+        )
+        else -> NativeCore.setMozcData(userProfileDirectory.absolutePath, "", 0, 0)
     }
 }
 
 private const val MOZC_DICT_NAME = "FUTO_UserDict"
 private fun sha256(text: String) =
     MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
-fun refreshMozcDictionaries(context: Context, executor: SessionExecutor, onlyIfChanged: Boolean = false) {
+fun refreshMozcDictionaries(context: Context, onlyIfChanged: Boolean = false) {
     val importedDictionaries = getImportedUserDictFilesForLocale(context, Locale.JAPANESE)
     val words = UserDictionaryIO(context).get()
         .filter { it.locale?.let { localeFromString(it) }?.language == "ja" }
@@ -234,7 +190,7 @@ fun refreshMozcDictionaries(context: Context, executor: SessionExecutor, onlyIfC
     val storage = ProtoUserDictionaryStorage.UserDictionaryStorage.newBuilder()
     importedDictionaries.forEach { (file, _) ->
         storage.addDictionaries(
-            ProtoUserDictionaryStorage.UserDictionary.parseFrom(MozcJni.importUserDictionary(file.readBytes()))
+            ProtoUserDictionaryStorage.UserDictionary.parseFrom(NativeCore.importMozcUserDictionary(file.readBytes()))
                 .toBuilder().setId(storage.dictionariesCount + 1L).setName(file.nameWithoutExtension)
         )
     }
@@ -251,21 +207,20 @@ fun refreshMozcDictionaries(context: Context, executor: SessionExecutor, onlyIfC
     val written = File(db.path + ".new")
     written.writeBytes(storage.build().toByteArray())
     if(!written.renameTo(db)) throw IOException("Can't write ${db.path}")
-    executor.reload()
+    // A Mozc that isn't running reads them when it starts.
+    if(NativeCore.running(JAPANESE)) NativeCore.deploy(JAPANESE)
     stamp.writeText(source)
 }
 
 private const val SUGGESTION_ID_INVERSION = 10000
 private const val TAG = "JapaneseIME"
 class JapaneseIME(val helper: IMEHelper) : IMEInterface {
-    companion object { init { MozcLog.forceLoggable = BuildConfig.DEBUG }}
-
     val selectionTracker = SelectionTracker()
-    lateinit var executor: SessionExecutor
 
     var layoutHint: String? = null
     var configId: KeyboardId? = null
-    var configSpec: Keyboard.KeyboardSpecification? = null
+    // The keys on screen, as core/ tells Mozc (NativeCore.KEYS_*)
+    private var keys = NativeCore.KEYS_KANA
 
     // SebType (#38): the bar's あ ⇄ ア chip turns hiragana composition into full-width katakana.
     // Katakana forms also come as candidates in あ. Each new field starts in あ.
@@ -278,130 +233,42 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     private fun setKatakana(on: Boolean) {
         katakana.value = on
         helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(if(on) "ア" else null)
-        configSpec?.let { switchCompositionMode(it) }
+        NativeCore.setAlternate(on)
     }
 
-    private fun switchCompositionMode(spec: Keyboard.KeyboardSpecification) {
-        val mode = when {
-            katakana.value && spec.compositionMode == ProtoCommands.CompositionMode.HIRAGANA ->
-                ProtoCommands.CompositionMode.FULL_KATAKANA
-            else -> spec.compositionMode
-        }
-        executor.switchInputMode(
-            Optional.of(KeycodeConverter.getKeyEventInterface(0)),
-            mode,
-            resettableEvaluationCallback
-        )
-    }
-
-    private fun getCurrentConfigSpec(): Keyboard.KeyboardSpecification {
-        val useFlickOnly = helper.context.getSetting(JapaneseIMESettings.FlickOnly)
+    // SebType's Japanese layout is QWERTY: romaji on its letters, the letters themselves on its second
+    // page, and the symbols and numbers.
+    private fun getCurrentKeys(): Int {
         val id = helper.keyboardSwitcher.keyboard?.mId
-
         configId = id
-
-        val keyboardSpecification = when {
-            id?.mElement?.kind == KeyboardLayoutKind.Symbols ||
-                    id?.mElement?.kind == KeyboardLayoutKind.Number ||
-                    id?.mElement?.kind == KeyboardLayoutKind.NumberBasic ||
-                    id?.mElement?.kind == KeyboardLayoutKind.Phone ->
-                Keyboard.KeyboardSpecification.SYMBOL_NUMBER
-
-            id?.mElement?.kind == KeyboardLayoutKind.Alphabet0 && layoutHint == "qwerty" ->
-                Keyboard.KeyboardSpecification.QWERTY_KANA
-
-            id?.mElement?.kind == KeyboardLayoutKind.Alphabet1 && layoutHint == "qwerty" ->
-                Keyboard.KeyboardSpecification.QWERTY_ALPHABET
-
-            id?.mElement?.kind == KeyboardLayoutKind.Alphabet1 ||
-                    id?.mElement?.kind == KeyboardLayoutKind.Alphabet2 ||
-                    id?.mElement?.kind == KeyboardLayoutKind.Alphabet3 ->
-                if(!useFlickOnly)
-                    Keyboard.KeyboardSpecification.TWELVE_KEY_TOGGLE_FLICK_ALPHABET
-                else
-                    Keyboard.KeyboardSpecification.TWELVE_KEY_FLICK_ALPHABET
-
-            useFlickOnly -> Keyboard.KeyboardSpecification.TWELVE_KEY_FLICK_KANA
-            else -> Keyboard.KeyboardSpecification.TWELVE_KEY_TOGGLE_FLICK_KANA
+        return when(id?.mElement?.kind) {
+            KeyboardLayoutKind.Symbols, KeyboardLayoutKind.Number, KeyboardLayoutKind.NumberBasic,
+            KeyboardLayoutKind.Phone -> NativeCore.KEYS_SYMBOLS
+            KeyboardLayoutKind.Alphabet1, KeyboardLayoutKind.Alphabet2, KeyboardLayoutKind.Alphabet3 -> NativeCore.KEYS_LETTERS
+            else -> NativeCore.KEYS_KANA
         }
-
-        return keyboardSpecification
     }
 
+    // Mozc's config (learning, the space's width) comes from the field and sebtype.conf: core/ sets it.
     private fun updateConfig(resetSelectionTracker: Boolean = true) {
-        val settings = Settings.getInstance().current
-        val halfWidthOnly = helper.context.getSetting(JapaneseIMESettings.HalfWidthSpace)
-        // From the field itself: at its start the settings still hold the previous field's attributes.
-        val incognito = Incognito.inField(helper.context, helper.getCurrentEditorInfo())
-
-        executor.config = ProtoConfig.Config.newBuilder().apply {
-            sessionKeymap = ProtoConfig.Config.SessionKeymap.MOBILE
-            selectionShortcut = ProtoConfig.Config.SelectionShortcut.NO_SHORTCUT
-            useEmojiConversion = true
-
-            spaceCharacterForm = when {
-                halfWidthOnly -> ProtoConfig.Config.FundamentalCharacterForm.FUNDAMENTAL_HALF_WIDTH
-                else -> ProtoConfig.Config.FundamentalCharacterForm.FUNDAMENTAL_INPUT_MODE
-            }
-            useKanaModifierInsensitiveConversion = true
-            useTypingCorrection = true
-
-            yenSignCharacter = ProtoConfig.Config.YenSignCharacter.YEN_SIGN
-
-            // SebType (#31, #158): while incognito Mozc still suggests from its history but adds nothing to it.
-            historyLearningLevel = when {
-                incognito || !settings.isPersonalizationEnabled ->
-                    ProtoConfig.Config.HistoryLearningLevel.READ_ONLY
-
-                //BuildConfig.DEBUG ->
-                //    ProtoConfig.Config.HistoryLearningLevel.READ_ONLY
-
-                else ->
-                    ProtoConfig.Config.HistoryLearningLevel.DEFAULT_HISTORY
-            }
-            generalConfig = ProtoConfig.GeneralConfig.newBuilder().apply {
-                uploadUsageStats = false
-            }.build()
-        }.build()
-
-
-        val keyboardSpecification = getCurrentConfigSpec()
-        configSpec = keyboardSpecification
-
-        val keyboardRequest = MozcUtil.getRequestBuilder(keyboardSpecification, helper.context.resources.configuration, 3).build()
-        executor.updateRequest(
-            keyboardRequest,
-            emptyList()
-        )
-        switchCompositionMode(keyboardSpecification)
-
+        keys = getCurrentKeys()
+        NativeCore.setKeys(keys, helper.context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
         if(resetSelectionTracker) selectionTracker.onConfigurationChanged()
     }
 
     internal fun mozcInit() {
         idleUnload?.cancel()
         unloaded = false
-        initJniDictLocations(helper.context)
-
-        if(!::executor.isInitialized) {
-            executor = SessionExecutor.getInstanceInitializedIfNecessary(
-                SessionHandlerFactory(Optional.absent()),
-                helper.context
-            )
-        } else {
-            executor.reset(
-                SessionHandlerFactory(Optional.absent()),
-                helper.context
-            )
-        }
-
-        executor.setLogging(BuildConfig.DEBUG == true)
+        setMozcData(helper.context)
+        // Loaded afresh, as Mozc's Android client did: the dictionary file may have been replaced.
+        NativeCore.stop(JAPANESE)
+        NativeCore.start(JAPANESE)
 
         updateConfig()
 
         if(helper.context.isDirectBootUnlocked) {
-            executor.syncData()
-            refreshMozcDictionaries(helper.context, executor, onlyIfChanged = true)
+            NativeCore.save(JAPANESE)
+            refreshMozcDictionaries(helper.context, onlyIfChanged = true)
         }
     }
 
@@ -414,7 +281,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                         mozcInit()
                     }
                     IMEMessage.ReloadPersonalDict -> withContext(Dispatchers.Main) {
-                        refreshMozcDictionaries(helper.context, executor)
+                        refreshMozcDictionaries(helper.context)
                     }
                     else -> {}
                 }
@@ -425,8 +292,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     // SebType (#56): Mozc's engine (its dictionary and caches) unloads ENGINE_IDLE_MS after 日 was left,
-    // and the next 日 field loads it again. Loading again with no data file swaps in Mozc's minimal
-    // engine, which frees the full one (its JNI has no unload); finishing input synced the user data.
+    // and the next 日 field loads it again; finishing input synced the user data.
     private var idleUnload: Job? = null
     private var unloaded = false
 
@@ -434,7 +300,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         idleUnload?.cancel()
         idleUnload = helper.lifecycleScope.launch {
             delay(ENGINE_IDLE_MS)
-            MozcJni.load(mozcUserProfileDir(helper.context).absolutePath, "", 0, 0)
+            NativeCore.stop(JAPANESE)
             unloaded = true
             Log.w(TAG, "Mozc unloaded after ${ENGINE_IDLE_MS / 1000} s in another language")
             withContext(Dispatchers.Default) { JniUtils.releaseFreedMemory() }
@@ -443,12 +309,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
 
     override fun onDestroy() {
         idleUnload?.cancel()
-        executor.syncData()
-        // Might need to edit mozc library to add a reset function not just for tests
-        // This is necessary because reinit JNI after onDestroy -> onCreate and the old
-        // session executor is no longer valid
-        @SuppressLint("VisibleForTests")
-        SessionExecutor.setInstanceForTest(Optional.absent())
+        NativeCore.save(JAPANESE)
     }
 
     override fun onDeviceUnlocked() {
@@ -489,15 +350,21 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             mozcInit()
             Log.w(TAG, "Mozc loaded again in ${SystemClock.elapsedRealtime() - t0} ms")
         }
-        executor.removePendingEvaluations()
-        executor.resetContext()
+        NativeCore.selectLanguage(JAPANESE)
+        // From the field itself: at its start the settings still hold the previous field's attributes.
+        // SebType (#31, #158): while incognito Mozc still suggests from its history but adds nothing to it.
+        val incognito = Incognito.inField(helper.context, helper.getCurrentEditorInfo())
+        NativeCore.setField(
+            helper.getCurrentEditorInfo()?.let { fieldOf(it) } ?: NativeCore.FIELD_TEXT,
+            !incognito && Settings.getInstance().current.isPersonalizationEnabled
+        )
+        NativeCore.clear()
         setNeutralSuggestionStrip()
         katakana.value = false
         helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(null)
+        NativeCore.setAlternate(false)
         updateConfig()
         initSelectionTracker()
-
-        helper.getCurrentEditorInfo()?.let { executor.switchInputFieldType(getInputFieldType(it)) }
     }
 
     override fun onOrientationChanged() {
@@ -506,7 +373,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
 
     override fun onFinishInput() {
         helper.keyboardSwitcher.mainKeyboardView?.setSpacebarMode(null)
-        executor.syncData()
+        NativeCore.save(JAPANESE)
         selectionTracker.onFinishInput()
         resetContextAndCommitText()
     }
@@ -532,14 +399,14 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
             SelectionTracker.DO_NOTHING -> {}
             SelectionTracker.RESET_CONTEXT -> {
                 if(BuildConfig.DEBUG) Log.d(TAG, "Asked to reset context.")
-                executor.resetContext()
+                NativeCore.clear()
                 helper.getCurrentInputConnection()?.finishComposingText()
                 setNeutralSuggestionStrip()
             }
 
             else -> {
                 if(updateStatus < 0) throw IllegalStateException("Invalid updateStatus $updateStatus")
-                executor.moveCursor(updateStatus, evaluationCallback)
+                render(NativeCore.moveCursor(updateStatus), null)
             }
         }
     }
@@ -549,25 +416,6 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     override fun getStateHint(imeHint: String?): StateHint = if(imeHint == "12key") StateHint(true, true) else StateHint()
-
-    private fun createKeyEvent(
-        original: KeyEvent,
-        eventTime: Long,
-        action: Int,
-        repeatCount: Int,
-    ): KeyEvent {
-        return KeyEvent(
-            original.downTime,
-            eventTime,
-            action,
-            original.keyCode,
-            repeatCount,
-            original.metaState,
-            original.deviceId,
-            original.scanCode,
-            original.flags,
-        )
-    }
 
     private fun maybeProcessDelete(keyCode: Int): Boolean {
         if(keyCode != Constants.CODE_DELETE) return false
@@ -596,7 +444,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     private fun resetContextAndCommitText(text: CharSequence? = null) {
-        executor.resetContext()
+        NativeCore.clear()
 
         val ic = helper.getCurrentInputConnection() ?: return
         ic.finishComposingText()
@@ -632,55 +480,16 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         }
     }
 
-    /** Sends the `KeyEvent`, which is not consumed by the mozc server. */
-    private fun sendKeyEvent(keyEvent: KeyEventInterface?) {
-        if (keyEvent == null) {
+    /** Handles a key Mozc didn't take: [keyCode] a key or action, or else [codePoint] a character. */
+    private fun sendKey(keyCode: Int, codePoint: Int) {
+        if(keyCode == Event.NOT_A_KEY_CODE) {
+            sendCodePoint(codePoint)
             return
         }
-        val keyCode = keyEvent.keyCode
         // Some keys have a potential to be consumed from mozc client.
-        if (maybeProcessDelete(keyCode)) {
-            // The key event is consumed.
-            return
-        }
-
-        if(maybeHandleAction(keyCode)) return
-
-        // Following code is to fallback to target activity.
-        val nativeKeyEvent = keyEvent.nativeEvent
-        val inputConnection = helper.getCurrentInputConnection()
-        if (nativeKeyEvent.isPresent && inputConnection != null) {
-            // Meta keys are from this.onKeyDown/Up so fallback each time.
-            if (KeycodeConverter.isMetaKey(nativeKeyEvent.get())) {
-                inputConnection.sendKeyEvent(
-                    createKeyEvent(
-                        nativeKeyEvent.get(),
-                        SystemClock.uptimeMillis(),
-                        nativeKeyEvent.get().action,
-                        nativeKeyEvent.get().repeatCount,
-                    )
-                )
-                return
-            }
-
-            // Other keys are from this.onKeyDown so create dummy Down/Up events.
-            inputConnection.sendKeyEvent(
-                createKeyEvent(nativeKeyEvent.get(), SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, 0)
-            )
-            inputConnection.sendKeyEvent(
-                createKeyEvent(nativeKeyEvent.get(), SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, 0)
-            )
-            return
-        }
-
-        // Otherwise, just delegates the key event to the connected application.
-        // However space key needs special treatment because it is expected to produce space character
-        // instead of sending ACTION_DOWN/UP pair.
-        if (keyCode == KeyEvent.KEYCODE_SPACE) {
-            inputConnection?.commitText(" ", 0)
-        } else {
-            sendDownUpKeyEvent(keyCode, 0)
-        }
+        if (maybeProcessDelete(keyCode)) return
+        if (maybeHandleAction(keyCode)) return
+        sendDownUpKeyEvent(keyCode, 0)
     }
 
     // TODO: Code duplication between InputLogic and here
@@ -703,151 +512,90 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
 
-    private fun maybeDeleteSurroundingText(output: ProtoCommands.Output, inputConnection: InputConnection) {
-        if (!output.hasDeletionRange()) {
-            return
-        }
-        val range = output.deletionRange
-        val leftRange = -range.offset
-        val rightRange = range.length - leftRange
-        if (leftRange < 0 || rightRange < 0) {
-            // If the range does not include the current position, do nothing
-            // because Android's API does not expect such situation.
-            Log.w(TAG, "Deletion range has unsupported parameters: $range")
-            return
-        }
-        if (!inputConnection.deleteSurroundingText(leftRange, rightRange)) {
-            Log.e(TAG, "Failed to delete surrounding text.")
-        }
-    }
-
-    private fun maybeCommitText(output: ProtoCommands.Output, inputConnection: InputConnection) {
-        if (!output.hasResult()) {
-            return
-        }
-        val outputText = output.result.value
-        if (outputText == "") {
-            // Do nothing for an empty result string.
-            return
-        }
-        var position = MozcUtil.CURSOR_POSITION_TAIL
-        if (output.result.hasCursorOffset() && output.result.cursorOffset != 0) {
-            if (output.result.cursorOffset == -outputText.codePointCount(0, outputText.length)) {
-                position = MozcUtil.CURSOR_POSITION_HEAD
-            } else {
-                if(BuildConfig.DEBUG) Log.e(TAG, "Unsupported position: " + output.result.toString())
-            }
-        }
-        if (!inputConnection.commitText(outputText, position)) {
+    private fun maybeCommitText(state: NativeState, inputConnection: InputConnection) {
+        if (state.commit.isEmpty()) return
+        // Mozc's cursor after the commit: at its end, or (a pair of brackets) at its start
+        val position = if (state.commitCursor != 0) 0 else 1
+        if (!inputConnection.commitText(state.commit, position)) {
             Log.e(TAG, "Failed to commit text.")
         }
     }
 
     private var hasPreedit = false
-    internal fun renderInputConnection(command: ProtoCommands.Command, keyEvent: KeyEventInterface?) {
-        val inputConnection = helper.getCurrentInputConnection() ?: return
-        val output = command.output
-        if(!output.hasConsumed() || !output.consumed) {
-            maybeCommitText(output, inputConnection)
 
-            if(keyEvent?.nativeEvent?.isPresent == true) {
-                sendKeyEvent(keyEvent)
-            } else if(keyEvent?.keyCode != null) {
-                sendCodePoint(keyEvent.keyCode)
-            }
+    /** Shows what a call to Mozc did in the field and the bar; [key] is the key's code and code point. */
+    private fun render(state: NativeState, key: Pair<Int, Int>?) {
+        val inputConnection = helper.getCurrentInputConnection() ?: return
+        if(!state.taken) {
+            maybeCommitText(state, inputConnection)
+            key?.let { (keyCode, codePoint) -> sendKey(keyCode, codePoint) }
+            showCandidates(state)
             return
         }
 
-        // Meta key may invoke a command for Mozc server like SWITCH_COMPOSITION_MODE session command. In this
-        // case, the command is consumed by Mozc server and the application cannot get the key event.
-        // To avoid such situation, we should send the key event back to application. b/13238551
-        // The command itself is consumed by Mozc server, so we should NOT put a return statement here.
-        if (
-            keyEvent != null &&
-            keyEvent.nativeEvent.isPresent &&
-            KeycodeConverter.isMetaKey(keyEvent.nativeEvent.get())
-        ) {
-            sendKeyEvent(keyEvent)
-        }
-
         // Here the key is consumed by the Mozc server.
+        val deleted = state.deleteBefore > 0 || state.deleteAfter > 0
+        val preedit = state.preedit
         inputConnection.beginBatchEdit()
         try {
-            maybeDeleteSurroundingText(output, inputConnection)
-            maybeCommitText(output, inputConnection)
-            setComposingText(command, inputConnection)
-            maybeSetSelection(output, inputConnection)
+            if (deleted && !inputConnection.deleteSurroundingText(state.deleteBefore, state.deleteAfter)) {
+                Log.e(TAG, "Failed to delete surrounding text.")
+            }
+            maybeCommitText(state, inputConnection)
+            setComposingText(state, inputConnection)
+            maybeSetSelection(state, inputConnection)
             selectionTracker.onRender(
-                if (output.hasDeletionRange()) output.deletionRange else null,
-                if (output.hasResult()) output.result.value else null,
-                if (output.hasPreedit()) output.preedit else null,
+                if (deleted) -state.deleteBefore else null,
+                state.commit.ifEmpty { null },
+                preedit.ifEmpty { null },
+                state.cursor,
             )
-            if(BuildConfig.DEBUG) Log.d(TAG, "onRender selectionTracker ${if (output.hasDeletionRange()) output.deletionRange else null}, ${if (output.hasResult()) output.result.value else null}, ${if (output.hasPreedit()) output.preedit else null}")
         } finally {
             inputConnection.endBatchEdit()
         }
 
-        hasPreedit = output.hasPreedit()
+        hasPreedit = preedit.isNotEmpty()
         helper.keyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState())
+        showCandidates(state)
     }
 
     // We use the "shift" alphabet state to show the language switch key
     override fun getCurrentAutoCapsState() = when {
-        !hasPreedit && layoutHint == "12key" && !evalPending.get() -> TextUtils.CAP_MODE_CHARACTERS
+        !hasPreedit && layoutHint == "12key" -> TextUtils.CAP_MODE_CHARACTERS
         else -> Constants.TextUtils.CAP_MODE_OFF
     }
 
-    private fun setComposingText(command: ProtoCommands.Command, inputConnection: InputConnection) {
-        val output = command.output
+    private fun setComposingText(state: NativeState, inputConnection: InputConnection) {
+        helper.updateUiInputState(state.preedit.isEmpty())
 
-        helper.updateUiInputState(!output.hasPreedit())
-
-        if (!output.hasPreedit()) {
+        if (state.preedit.isEmpty()) {
             // If preedit field is empty, we should clear composing text in the InputConnection
             // because Mozc server asks us to do so.
-            // But there is special situation in Android.
-            // On onWindowShown, SWITCH_COMPOSITION_MODE command is sent as a step of initialization.
-            // In this case we reach here with empty preedit.
-            // As described above we should clear the composing text but if we do so
-            // texts in selection range (e.g., URL in OmniBox) is always cleared.
-            // To avoid from this issue, we don't clear the composing text if the input
-            // is SWITCH_COMPOSITION_MODE.
-            val input = command.input
-            if (
-                input.type != ProtoCommands.Input.CommandType.SEND_COMMAND ||
-                input.command.type != SessionCommand.CommandType.SWITCH_COMPOSITION_MODE
-            ) {
-                if (!inputConnection.setComposingText("", 0)) {
-                    Log.e(TAG, "Failed to set composing text.")
-                }
+            if (!inputConnection.setComposingText("", 0)) {
+                Log.e(TAG, "Failed to set composing text.")
             }
             return
         }
 
         // Builds preedit expression.
-        val preedit = output.preedit
         val builder = SpannableStringBuilder()
-        for (segment in preedit.segmentList) {
-            builder.append(segment.value)
+        for (segment in state.segments) {
+            builder.append(segment)
         }
 
         // Set underline for all the preedit text.
         builder.setSpan(SPAN_UNDERLINE, 0, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 
         // Draw cursor if in composition mode.
-        val cursor = preedit.cursor
+        val cursor = state.cursor
         val spanFlags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE or Spanned.SPAN_COMPOSING
-        if (
-            output.hasAllCandidateWords() &&
-            output.allCandidateWords.hasCategory() &&
-            output.allCandidateWords.category == ProtoCandidateWindow.Category.CONVERSION
-        ) {
+        // Converting: Mozc highlights the segment being converted.
+        if (state.highlighted.any { it }) {
             var offsetInString = 0
-            for (segment in preedit.segmentList) {
-                val length = segment.value.length
+            state.segments.forEachIndexed { i, segment ->
+                val length = segment.length
                 builder.setSpan(
-                    if (segment.hasAnnotation() && segment.annotation == Preedit.Segment.Annotation.HIGHLIGHT)
-                        SPAN_CONVERT_HIGHLIGHT
+                    if (state.highlighted[i]) SPAN_CONVERT_HIGHLIGHT
                     else BackgroundColorSpan(CONVERT_NORMAL_COLOR),
                     offsetInString,
                     offsetInString + length,
@@ -858,135 +606,73 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         } else {
             // We cannot show system cursor inside preedit here.
             // Instead we change text style before the preedit's cursor.
-            val cursorOffsetInString = builder.toString().offsetByCodePoints(0, cursor)
             if (cursor != builder.length) {
                 builder.setSpan(
                     SPAN_PARTIAL_SUGGESTION_COLOR,
-                    cursorOffsetInString,
+                    cursor,
                     builder.length,
                     spanFlags,
                 )
             }
             if (cursor > 0) {
-                builder.setSpan(SPAN_BEFORE_CURSOR, 0, cursorOffsetInString, spanFlags)
+                builder.setSpan(SPAN_BEFORE_CURSOR, 0, cursor, spanFlags)
             }
         }
 
         // System cursor will be moved to the tail of preedit.
         // It triggers onUpdateSelection again.
-        val cursorPosition = if (cursor > 0) MozcUtil.CURSOR_POSITION_TAIL else 0
+        val cursorPosition = if (cursor > 0) 1 else 0
         if (!inputConnection.setComposingText(builder, cursorPosition)) {
             Log.e(TAG, "Failed to set composing text.")
         }
     }
 
-    private fun getPreeditLength(preedit: Preedit): Int {
-        var result = 0
-        for (i in 0 until preedit.segmentCount) {
-            result += preedit.getSegment(i).valueLength
-        }
-        return result
-    }
-
-    private fun maybeSetSelection(output: ProtoCommands.Output, inputConnection: InputConnection) {
-        if (!output.hasPreedit()) {
-            return
-        }
-        val preedit = output.preedit
-        val cursor = preedit.cursor
-        if (cursor == 0 || cursor == getPreeditLength(preedit)) {
+    private fun maybeSetSelection(state: NativeState, inputConnection: InputConnection) {
+        val preedit = state.preedit
+        if (preedit.isEmpty()) return
+        val cursor = state.cursor
+        if (cursor == 0 || cursor == preedit.length) {
             // The cursor is at the beginning/ending of the preedit. So we don't anything about the
             // caret setting.
             return
         }
-        var caretPosition = selectionTracker.preeditStartPosition
-        if (output.hasDeletionRange()) {
-            caretPosition += output.deletionRange.offset
-        }
-        if (output.hasResult()) {
-            caretPosition += output.result.value.length
-        }
-        if (output.hasPreedit()) {
-            caretPosition += output.preedit.cursor
-        }
+        val caretPosition = selectionTracker.preeditStartPosition - state.deleteBefore + state.commit.length + cursor
         if (!inputConnection.setSelection(caretPosition, caretPosition)) {
             Log.e(TAG, "Failed to set selection.")
         }
     }
 
-    // If switch input mode fails for whatever reason, we'll try resetting mozc
-    private val resettableEvaluationCallback = object : SessionExecutor.EvaluationCallback {
-        override fun onCompleted(
-            command: Optional<ProtoCommands.Command>,
-            triggeringKeyEvent: Optional<KeyEventInterface>
-        ) {
-            if(!command.isPresent) return
-            val output = command.get().output
-            if(output.hasErrorCode() && output.errorCode == ProtoCommands.Output.ErrorCode.SESSION_FAILURE) {
-                mozcInit()
-            } else {
-                evaluationCallback.onCompleted(command, triggeringKeyEvent)
-            }
+    private fun showCandidates(state: NativeState) {
+        if(state.candidates.isEmpty()) {
+            setNeutralSuggestionStrip()
+            return
         }
-    }
+        val suggestedWordList = state.candidates.mapIndexed { index, word ->
+            SuggestedWordInfo(
+                word,
+                "",
+                SUGGESTION_ID_INVERSION - index,
+                1,
+                null,
+                SuggestedWordInfo.NOT_AN_INDEX,
+                SuggestedWordInfo.NOT_A_CONFIDENCE,
+                index,
+                state.comments[index].ifEmpty { null }
+            )
+        }.let { ArrayList(it) }
 
-    private val evalPending = AtomicBoolean(false)
-    private val evaluationCallback = object : SessionExecutor.EvaluationCallback {
-        override fun onCompleted(
-            command: Optional<ProtoCommands.Command>,
-            triggeringKeyEvent: Optional<KeyEventInterface>
-        ) {
-            evalPending.set(false)
-            if(!command.isPresent) return
-
-            renderInputConnection(command.get(), triggeringKeyEvent.orNull())
-
-            val output = command.get().output
-
-            if(output.allCandidateWords.candidatesCount == 0) {
-                setNeutralSuggestionStrip()
-            } else {
-                val candidateList = output.allCandidateWords.candidatesList
-                val selectedIndex = if(output.hasCandidateWindow()) {
-                    if(output.candidateWindow.hasFocusedIndex()) {
-                        output.candidateWindow.focusedIndex
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-                val suggestedWordList = candidateList.map {
-                    SuggestedWordInfo(
-                        it.value,
-                        "",
-                        SUGGESTION_ID_INVERSION - it.index,
-                        1,
-                        null,
-                        SuggestedWordInfo.NOT_AN_INDEX,
-                        SuggestedWordInfo.NOT_A_CONFIDENCE,
-                        it.id,
-                        if(it.hasAnnotation() && it.annotation.hasDescription()) {
-                            it.annotation.description
-                        } else { null }
-                    )
-                }.let { ArrayList(it) }
-
-                showSuggestionStrip(SuggestedWords(
-                        suggestedWordList,
-                        suggestedWordList,
-                        null,
-                        false,
-                        false,
-                        false,
-                        0,
-                        0,
-                        selectedIndex
-                    )
-                )
-            }
-        }
-
+        showSuggestionStrip(SuggestedWords(
+                suggestedWordList,
+                suggestedWordList,
+                null,
+                false,
+                false,
+                false,
+                0,
+                0,
+                state.selected.takeIf { it >= 0 }
+            )
+        )
     }
 
     // TODO: This rough code pattern appears 3 times in the codebase, probably time to make a util function
@@ -1011,43 +697,21 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
         when (event.eventType) {
             Event.EVENT_TYPE_INPUT_KEYPRESS,
             Event.EVENT_TYPE_INPUT_KEYPRESS_RESUMED -> {
-                if((helper.keyboardSwitcher.keyboard?.mId != configId)
-                            && (getCurrentConfigSpec() != configSpec))
-                {
+                if((helper.keyboardSwitcher.keyboard?.mId != configId) && (getCurrentKeys() != keys)) {
                     updateConfig(false)
                 }
 
-                val triggeringKeyEvent = if (event.mKeyCode != Event.NOT_A_KEY_CODE) {
-                    KeycodeConverter.getKeyEventInterface(
-                        KeyEvent(
-                            System.currentTimeMillis(),
-                            System.currentTimeMillis(),
-                            KeyEvent.ACTION_DOWN,
-                            event.mKeyCode,
-                            0,
-                            0,
-                            KeyCharacterMap.VIRTUAL_KEYBOARD,
-                            0,
-                            KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
-                        )
-                    )
-                } else {
-                    KeycodeConverter.getKeyEventInterface(event.mCodePoint)
-                }
-
-                val mozcEvent = when (event.mCodePoint) {
-                    Constants.CODE_SPACE -> KeycodeConverter.SPECIALKEY_SPACE
-                    Constants.CODE_ENTER -> KeycodeConverter.SPECIALKEY_VIRTUAL_ENTER
+                val key = event.mKeyCode to event.mCodePoint
+                val sym = when (event.mCodePoint) {
+                    Constants.CODE_SPACE -> ' '.code
+                    Constants.CODE_ENTER -> NativeCore.XK_Return
                     Constants.NOT_A_CODE -> when (event.mKeyCode) {
                         Constants.CODE_SWITCH_ALPHA_SYMBOL -> null
-                        Constants.CODE_DELETE -> KeycodeConverter.SPECIALKEY_BACKSPACE
-                        ArrowLeftAction.keyCode -> KeycodeConverter.SPECIALKEY_VIRTUAL_LEFT
-                        ArrowRightAction.keyCode -> KeycodeConverter.SPECIALKEY_VIRTUAL_RIGHT
+                        Constants.CODE_DELETE -> NativeCore.XK_BackSpace
+                        ArrowLeftAction.keyCode -> NativeCore.XK_Left
+                        ArrowRightAction.keyCode -> NativeCore.XK_Right
                         UndoAction.keyCode -> {
-                            // TODO: Should probably update mozc-lib to pass key event here explicitly instead of doing it like this
-                            executor.undoOrRewind(emptyList(), { command, _ ->
-                                evaluationCallback.onCompleted(command, Optional.of(triggeringKeyEvent))
-                            })
+                            render(NativeCore.undo(), key)
                             return
                         }
 
@@ -1059,27 +723,15 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
                         }
                     }
 
-                    else -> getMozcKeyEvent(event.mCodePoint)
+                    else -> NativeCore.charSym(event.mCodePoint)
                 }
 
-                val touchEvents = emptyList<ProtoCommands.Input.TouchEvent>()
-
-                if(mozcEvent != null) {
-                    evalPending.set(true)
-                    executor.sendKey(
-                        mozcEvent,
-                        triggeringKeyEvent,
-                        touchEvents,
-                        evaluationCallback
-                    )
-                }
+                if(sym != null) render(NativeCore.key(sym, 0), key)
             }
 
             Event.EVENT_TYPE_SUGGESTION_PICKED -> {
                 val suggestion = event.mSuggestedWordInfo ?: return
-                val mozcId = suggestion.mCandidateIndex
-                val rowIdx = SUGGESTION_ID_INVERSION - suggestion.mScore
-                executor.submitCandidate(mozcId, Optional.of(rowIdx), evaluationCallback)
+                render(NativeCore.selectCandidate(suggestion.mCandidateIndex), null)
             }
 
             Event.EVENT_TYPE_SOFTWARE_GENERATED_STRING -> {
@@ -1152,10 +804,7 @@ class JapaneseIME(val helper: IMEHelper) : IMEInterface {
     }
 
     override fun clearUserHistoryDictionaries() {
-        if(helper.context.isDirectBootUnlocked) {
-            executor.clearUserHistory()
-            executor.clearUserPrediction()
-        }
+        if(helper.context.isDirectBootUnlocked) NativeCore.forget(JAPANESE)
     }
 
     private var prevSuggestions: SuggestedWords? = null

@@ -35,7 +35,7 @@ Install
 SebType builds this librime itself (#219 removed upstream's other build scripts, tests and sample):
   - Linux: `linux/build-librime.sh` (`linux/librime.spec`)
   - Windows: `pc/windows/rime/build.ps1` (`build.bat`)
-  - Android: `android/rime` (CMake)
+  - Android: `android/native` (CMake)
 
 Build dependencies
 ---

@@ -15,7 +15,7 @@ describe what each PC part does and list what each of its checks verifies.
 
 | Folder | What |
 |---|---|
-| `android/` | The Gradle build: `app/` (the keyboard, FUTO Keyboard with SebType's changes), `mozc/` (Mozc's Android client and `libmozc.so`), `rime/` (RimeJni, librime's bindings, and `librime-jni.so`), the build and release scripts, `test/` and `perf/` |
+| `android/` | The Gradle build: `app/` (the keyboard, FUTO Keyboard with SebType's changes), `native/` (`libsebtype.so`: `core/` with librime and the JNI glue, and Mozc's `libmozc.so`, which it runs in-process), the build and release scripts, `test/` and `perf/` |
 | `engines/` | `mozc/` and `librime/`: the one source of each engine, built for the phone and both PCs |
 | `core/`, `linux/`, `windows/` | SebType's shared core and its frontends: the Fcitx5 add-on, the Windows text service and server |
 | `pc/` | Linux (Fcitx5) and Windows (librime's build, Mozc's installer, SebType's installer), and the Configurator |
@@ -94,8 +94,8 @@ What it builds from source, and the caches that make a rebuild quick:
 | Part | Built by | Cache |
 |---|---|---|
 | Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle` (on yanglab16 `~/scratch/SebType/cache/gradle`), shared by every worktree |
-| The app's C++ (`libjni_latinime.so`) and Rime (`librime-jni.so`, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
-| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/mozc/build-native.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
+| The app's C++ (`libjni_latinime.so`) and `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
+| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
 | Mozc's dictionary | `android/app/res-bundle/download-bundles.py` | `android/app/res-bundle/` |
 

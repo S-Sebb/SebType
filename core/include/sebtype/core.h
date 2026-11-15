@@ -61,6 +61,7 @@ class Core {
   void selectCandidate(int index);
   // The text field: its kind, and whether what is typed in it may be learned (private fields, incognito).
   void setField(Field field, bool learning);
+  Field field() const { return field_; }
   // The current engine's edit around its last commit.
   Edit takeEdit();
   // The cursor moved inside what is being typed (to a character from its start); the keys on screen; undo of a commit.

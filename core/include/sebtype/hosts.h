@@ -24,9 +24,9 @@ std::unique_ptr<Engine> makeRime(const RimePaths &paths);
 
 // 日本語: Mozc, which keeps the dictionary, learned words and settings in profileDir. On the PCs it runs in
 // its own mozc_server (SebType's build of engines/mozc), over Mozc's IPC; on the phone in this process
-// (libmozc.so, built from the same Mozc).
+// (libmozc.so, built from the same Mozc, SEBTYPE_MOZC_INPROC; the PCs follow in #233).
 struct MozcPaths {
-  std::string server;      // mozc_server, started when none runs
+  std::string server;      // mozc_server, started when none runs (IPC only)
   std::string profileDir;  // Mozc's profile: ~/.config/mozc on Linux
   // Rime's user folder: its default.custom.yaml's menu/page_size (setup's 6, the Configurator's setting) is
   // 日本語's candidates per page too (Decisions #2, "6 on both"); read again at each deploy.
@@ -38,7 +38,7 @@ struct MozcPaths {
   bool touch = false;
 };
 std::unique_ptr<Engine> makeMozc(const MozcPaths &paths);
-#ifdef __ANDROID__
+#ifdef SEBTYPE_MOZC_INPROC
 // The phone's user dictionaries: a file in any format Mozc imports (Mozc, MS-IME, ATOK, Kotoeri), as a
 // serialized mozc.user_dictionary.UserDictionary; entries Mozc can't read are skipped.
 std::string importMozcUserDictionary(std::string_view text);
