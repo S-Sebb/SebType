@@ -115,6 +115,13 @@ HRESULT unregisterServer() {
     for (const GUID *c : kCategories) categories->UnregisterCategory(kClsid, *c, kClsid);
     categories->Release();
   }
+  // The two above leave their emptied keys; this removes the text service's whole key, as Mozc and Weasel do.
+  ITfInputProcessorProfiles *tip = nullptr;
+  if (SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                                 IID_ITfInputProcessorProfiles, reinterpret_cast<void **>(&tip)))) {
+    tip->Unregister(kClsid);
+    tip->Release();
+  }
   RegDeleteTreeW(HKEY_CLASSES_ROOT, clsidKey().c_str());
   return S_OK;
 }

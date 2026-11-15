@@ -490,7 +490,9 @@ begin
     StopServers(False);  // one an app's text service started again while the account was put back
     MoveOut(ExpandConstant('{app}\x86'));
     MoveOut(ExpandConstant('{app}'));
-    RemoveDir(ExpandConstant('{app}\x86'));  // the uninstaller removes {app} with its own files
+    // The uninstaller tried to remove {app} before this step, while those files were still in it.
+    RemoveDir(ExpandConstant('{app}\x86'));
+    RemoveDir(ExpandConstant('{app}'));
   end;
   if CurUninstallStep <> usUninstall then
     Exit;

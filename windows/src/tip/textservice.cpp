@@ -339,6 +339,15 @@ void TextService::setLanguage(REFGUID profile) {
   if (button_) button_->update();
 }
 
+// The language of the thread's keyboard layout, which Windows switches with the profile. ActivateEx can read
+// the thread's previous SebType profile as the active one, and the activation notice for the new one can
+// come before our sink is there (#190): keys then went to the other language.
+void TextService::followLayout() {
+  const WORD lang = PRIMARYLANGID(LOWORD(reinterpret_cast<UINT_PTR>(GetKeyboardLayout(0))));
+  if (lang == LANG_JAPANESE && lang_ != Lang::Japanese) setLanguage(kProfileJa);
+  if (lang == LANG_CHINESE && lang_ != Lang::Chinese) setLanguage(kProfileZh);
+}
+
 // --- Focus ---
 
 STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focused, ITfDocumentMgr *) {
@@ -490,6 +499,7 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   }
   tested_.pending = false;
   if (!context || password(context)) return true;
+  followLayout();
   Request q{Op::Key};
   q.lang = lang_;
   if (!key(wParam, lParam, release, q.key) || !send(q)) return true;

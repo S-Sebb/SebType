@@ -101,6 +101,7 @@ class TextService final : public ITfTextInputProcessorEx,
   void apply(ITfContext *context);
   bool keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bool release, bool test, BOOL *eaten);
   void setLanguage(REFGUID profile);
+  void followLayout();
   // A password field, where keys go to the app as they are (as Mozc did); asked once per focus.
   bool password(ITfContext *context);
   void setOpen();
