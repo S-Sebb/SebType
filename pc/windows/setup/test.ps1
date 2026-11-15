@@ -182,7 +182,10 @@ if ($Typing) {
         }
         Mem base
         Use $ime
-        Out conversion_mode $tsf::Mode()  # TSF's, after Use: its low bit is 中 or かな
+        # Microsoft Pinyin on TCSBackEnd starts in English and ignores Open and a write of TSF's conversion
+        # mode; Shift, its own 中/英 key, switches it.
+        Out conversion_mode $tsf::Mode()  # TSF's: its low bit is 中 or かな
+        if ($ime -eq 'mspinyin' -and -not ($tsf::Mode() -band 1)) { Keys Shift_L; $tsf::Settle(300); Out conversion_mode_after_shift $tsf::Mode() }
         $first = @(Word $words[0] $tail)
         Out first_key_ms ('{0:F1}' -f $first[0].ms)
         $all = @()

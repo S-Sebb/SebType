@@ -82,7 +82,7 @@ namespace SebType {
 
   [ComImport, Guid("bb08f7a9-607a-4384-8623-056892b64371"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface ITfCompartment {
-    void SetValue(uint clientId, ref object value);
+    void SetValue(uint clientId, ref object value);  // unused; keeps GetValue's vtable slot
     void GetValue(out object value);
   }
 
@@ -316,24 +316,17 @@ namespace SebType {
     [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr h);
     [DllImport("imm32.dll")] static extern bool ImmSetOpenStatus(IntPtr imc, bool open);
     [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr h, IntPtr imc);
-    static readonly Guid GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION = new Guid("ccf05dd8-4a87-11d7-a6e2-00065b84435c");
-    // Turns the active input method on in its own language's mode, not English, as its on/off key would:
-    // open, and the native bit of TSF's conversion mode, which Microsoft Pinyin keeps off when it last
-    // typed English. This thread is TSF's own, so the mode is its compartment, not the IMM context's.
+    // Turns the active input method on (its own language's mode, not English), as its on/off key would.
     public static void Open() {
-      OnUi(() => {
-        var c = ImmGetContext(store.Hwnd); ImmSetOpenStatus(c, true); ImmReleaseContext(store.Hwnd, c);
-        int conv = ConversionMode();
-        if ((conv & 1 /* TF_CONVERSIONMODE_NATIVE */) == 0) { object n = conv | 1; ConversionCompartment().SetValue(clientId, ref n); }
-        return 0;
-      });
+      OnUi(() => { var c = ImmGetContext(store.Hwnd); ImmSetOpenStatus(c, true); ImmReleaseContext(store.Hwnd, c); return 0; });
     }
-    static ITfCompartment ConversionCompartment() {
+    static readonly Guid GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION = new Guid("ccf05dd8-4a87-11d7-a6e2-00065b84435c");
+    // TSF's conversion mode for this thread (TF_CONVERSIONMODE_*): its low bit is 中 or かな, 0 English.
+    static int ConversionMode() {
       var guid = GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION;
-      ITfCompartment c; ((ITfCompartmentMgr)threadMgr).GetCompartment(ref guid, out c); return c;
+      ITfCompartment c; ((ITfCompartmentMgr)threadMgr).GetCompartment(ref guid, out c);
+      object v; c.GetValue(out v); return v is int ? (int)v : 0;
     }
-    // TSF's conversion mode for this thread (TF_CONVERSIONMODE_*; bit 1 native: 中 or かな, not English).
-    static int ConversionMode() { object v; ConversionCompartment().GetValue(out v); return v is int ? (int)v : 0; }
     public static int Mode() { return OnUi(ConversionMode); }
     // The key-down and text-change times since the last call, in ms on one clock: "keys|edits", comma-separated.
     public static string TakeTimes() {
@@ -349,7 +342,6 @@ namespace SebType {
     static TextStore store;
     static ITfThreadMgr threadMgr;
     static ITfDocumentMgr docMgr;
-    static uint clientId;
     static IntPtr context;
 
     // Starts the thread, its hidden window (never shown) and the text field, with focus in TSF.
@@ -363,7 +355,7 @@ namespace SebType {
           // WS_OVERLAPPEDWINDOW | WS_VISIBLE: TSF passes keys on only while this thread has the keyboard focus
           store.Hwnd = CreateWindowExW(0, "STATIC", "SebType Mozc test", 0x10CF0000, 0, 0, 640, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
           threadMgr = (ITfThreadMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_ThreadMgr));
-          uint ec;
+          uint clientId, ec;
           threadMgr.Activate(out clientId);
           threadMgr.CreateDocumentMgr(out docMgr);
           docMgr.CreateContext(clientId, 0, store, out context, out ec);
