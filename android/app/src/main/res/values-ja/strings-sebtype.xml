@@ -4,7 +4,6 @@
     <string name="sebtype_chinese_preparing">中文を準備しています…</string>
     <string name="sebtype_chinese_preparing_percent">中文を準備しています… %d%%</string>
     <string name="sebtype_chinese_engine_failed">中文入力を開始できませんでした。タップして再試行</string>
-    <string name="sebtype_settings_subtitle">FUTO キーボードの改変版</string>
     <string name="sebtype_settings_languages">言語</string>
     <string name="sebtype_settings_autocorrect_on">自動修正オン</string>
     <string name="sebtype_settings_autocorrect_off">自動修正オフ</string>

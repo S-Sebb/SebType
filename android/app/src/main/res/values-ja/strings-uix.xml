@@ -259,7 +259,7 @@
   <!-- Setup configuration -->
     <string name="setup_step_1">"セットアップ - ステップ 1"</string>
     <string name="setup_step_2">"セットアップ - ステップ 2"</string>
-    <string name="setup_welcome_text">"SebType（FUTO キーボードの改変版）へようこそ。\n\n使い始めるには、SebType を入力方法で有効にしてください。"</string>
+    <string name="setup_welcome_text">"SebType へようこそ。\n\n使い始めるには、SebType を入力方法で有効にしてください。"</string>
     <string name="setup_open_input_settings">"入力方法の設定を開く"</string>
     <string name="setup_warning_multiple_versions">"警告： Play ストア版とスタンドアロン版の両方がインストールされているようです。どちらか一方のインストールのみを推奨します。"</string>
     <string name="setup_active_input_method">"入力方法に SebType を選択してください。"</string>

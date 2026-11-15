@@ -8,7 +8,8 @@
     <!-- Suggestion bar notice when Chinese (rime-ice) failed to set up; tapping it sets Chinese up again. -->
     <string name="sebtype_chinese_engine_failed">Chinese input failed to start. Tap to retry</string>
     <!-- Settings (#41): the five groups and their options. -->
-    <string name="sebtype_settings_subtitle">a modified FUTO Keyboard</string>
+    <!-- Under SebType on the settings home: its three languages, the same in every locale. -->
+    <string name="sebtype_settings_subtitle" translatable="false">中文 · 日本語 · English</string>
     <string name="sebtype_settings_languages">Languages</string>
     <string name="sebtype_settings_autocorrect_on">autocorrect on</string>
     <string name="sebtype_settings_autocorrect_off">autocorrect off</string>

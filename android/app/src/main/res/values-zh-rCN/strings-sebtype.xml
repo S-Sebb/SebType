@@ -3,7 +3,6 @@
     <string name="sebtype_chinese_preparing">正在准备中文…</string>
     <string name="sebtype_chinese_preparing_percent">正在准备中文… %d%%</string>
     <string name="sebtype_chinese_engine_failed">中文输入启动失败，点此重试</string>
-    <string name="sebtype_settings_subtitle">基于 FUTO Keyboard 修改</string>
     <string name="sebtype_settings_languages">语言</string>
     <string name="sebtype_settings_autocorrect_on">自动纠正已开</string>
     <string name="sebtype_settings_autocorrect_off">自动纠正已关</string>
