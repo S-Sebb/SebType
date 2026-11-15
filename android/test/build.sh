@@ -75,7 +75,7 @@ same_release() {
   a=$(android/build.sh release) || return 1
   sed -i 's/^org.gradle.caching=true/org.gradle.caching=false/' "$wt/android/gradle.properties"
   nosc=$(mktemp -d "$out/nosc.XXXX") && ln -s "$(command -v devq)" "$nosc/devq"
-  b=$(cd "$wt" && rm -rf android/app/.cxx android/rime/.cxx && PATH=$nosc:$(tr : '\n' <<<"$PATH" | grep -vx "$(dirname "$(command -v sccache)")" | paste -sd:) \
+  b=$(cd "$wt" && rm -rf android/app/.cxx android/native/.cxx && PATH=$nosc:$(tr : '\n' <<<"$PATH" | grep -vx "$(dirname "$(command -v sccache)")" | paste -sd:) \
     android/build.sh release); local rc=$?
   rm -rf "$nosc"; git -C "$wt" checkout -q -- android/gradle.properties
   ((rc == 0)) && same_apk "$a" "$b"

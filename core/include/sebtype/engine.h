@@ -46,7 +46,7 @@ class Engine {
   virtual void setAlternate(bool on) = 0;
 
   // Touch keyboards: the whole list up to max (by default from candidateAt), the field, the keys on screen,
-  // the cursor moved inside the preedit (in characters, + right, - left), undo, and the edit around a
+  // the cursor moved inside the preedit (to a character from its start), undo, and the edit around a
   // commit.
   virtual std::vector<Candidate> candidates(int max);
   virtual void setField(Field /*field*/) {}

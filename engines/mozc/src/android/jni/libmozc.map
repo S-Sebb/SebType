@@ -1,5 +1,6 @@
-# SebType: libmozc exports only its JNI entry point, so the linker drops the C++ symbol table.
+# SebType: libmozc exports only the entry points SebType's core calls (mozcjni.cc), so the linker drops
+# the C++ symbol table.
 {
-  global: Java_*;
+  global: SebTypeMozc*;
   local: *;
 };

@@ -51,7 +51,6 @@ mozc_cc_library(
     visibility = ["//visibility:private"],
     deps = [
         "//base:system_util",
-        "//base:util",
         "//client/user_dictionary:user_dictionary_importer",
         "//data_manager",
         "//engine",
@@ -60,7 +59,6 @@ mozc_cc_library(
         "//session:session_handler",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",

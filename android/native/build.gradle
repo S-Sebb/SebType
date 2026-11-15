@@ -1,0 +1,100 @@
+// SebType's native library for the phone (#191): libsebtype.so, core/ (the PCs' engine code) with librime
+// (engines/librime, with librime-lua and octagram) and the JNI glue NativeCore.kt calls; and libmozc.so,
+// built from engines/mozc with Bazel, the same Mozc the PCs run, which core/ calls in-process.
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.protobuf'
+}
+
+final def repoRoot = rootDir.parentFile
+final def depsCache = "${System.getProperty('user.home')}/scratch/SebType/cache/rime-android"
+final def mozcSrc = file('../../engines/mozc/src')
+final def abis = (findProperty('sebtypeAbis') ?: 'arm64-v8a').split(',') as List
+final def mozcLibs = layout.buildDirectory.dir('generated/mozc/jniLibs')
+
+android {
+    namespace 'dev.sebb.sebtype.core'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        minSdk 24
+        consumerProguardFiles 'consumer-rules.pro'
+        ndk {
+            abiFilters(*abis)
+        }
+        externalNativeBuild.cmake {
+            // The third-party sources librime and protobuf build from are downloaded (pinned,
+            // checksum-checked) once into a cache every worktree shares.
+            arguments "-DLIBRIME_SOURCE_DIR=${repoRoot}/engines/librime",
+                "-DSEBTYPE_CORE_DIR=${repoRoot}/core",
+                "-DRIME_DEPS_CACHE=${depsCache}",
+                '-DCMAKE_BUILD_TYPE=Release'
+            // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
+            if (findProperty('sebtypeJobs')) {
+                arguments "-DCMAKE_JOB_POOLS=jobs=${findProperty('sebtypeJobs')}", '-DCMAKE_JOB_POOL_COMPILE=jobs', '-DCMAKE_JOB_POOL_LINK=jobs'
+            }
+            // Paths relative to the checkout, the deps cache and the SDK, and no per-checkout compile folder (as
+            // in app/build.gradle): the library is the same from every checkout and machine (#223, #229).
+            final def prefixMaps = ["-ffile-prefix-map=${repoRoot}/=", "-ffile-prefix-map=${depsCache}/=rime-android/",
+                                    "-ffile-prefix-map=${android.sdkDirectory}/=android-sdk/",
+                                    '-ffile-compilation-dir=.']
+            cFlags(*prefixMaps)
+            cppFlags('-Wno-deprecated', *prefixMaps)
+        }
+    }
+    buildTypes {
+        // librime is slow unoptimized, so debug builds compile it as Release too (above).
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+        }
+    }
+    sourceSets {
+        main {
+            jniLibs.srcDirs = [mozcLibs]
+            // Mozc's user dictionary file, which the keyboard writes (JapaneseIME's refreshMozcDictionaries).
+            proto {
+                srcDir mozcSrc
+                include 'protocol/user_dictionary_storage.proto'
+            }
+        }
+    }
+}
+
+// Bazel builds only when engines/mozc changes; Gradle's build cache serves the result to every worktree.
+tasks.register('buildMozcNative', Exec) {
+    inputs.files(fileTree(mozcSrc) { exclude 'bazel-*' }).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file('build-mozc.sh').withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property('abis', abis)
+    outputs.dir mozcLibs
+    outputs.cacheIf { true }
+    environment 'ANDROID_NDK_HOME', android.ndkDirectory.absolutePath
+    commandLine(['bash', file('build-mozc.sh').absolutePath, mozcLibs.get().asFile.absolutePath] + abis)
+}
+preBuild.dependsOn 'buildMozcNative'
+
+protobuf {
+    protoc { artifact = 'com.google.protobuf:protoc:3.8.0' }
+    generateProtoTasks {
+        all().each { task ->
+            task.builtins { java { option 'lite' } }
+        }
+    }
+}
+
+dependencies {
+    api 'com.google.protobuf:protobuf-javalite:3.8.0'
+}

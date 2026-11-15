@@ -262,10 +262,7 @@ dependencies {
 
     implementation "com.charleskorn.kaml:kaml:0.61.0"
 
-    implementation project(':mozc')
-    implementation 'com.google.guava:guava:33.4.8-android'
-
-    implementation project(':rime')
+    implementation project(':native')
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 

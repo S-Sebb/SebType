@@ -63,7 +63,7 @@ class Core {
   void setField(Field field, bool learning);
   // The current engine's edit around its last commit.
   Edit takeEdit();
-  // The cursor moved inside what is being typed, in characters; the keys on screen; undo of a commit.
+  // The cursor moved inside what is being typed (to a character from its start); the keys on screen; undo of a commit.
   void moveCursor(int chars);
   void setKeys(Keys keys, bool landscape);
   bool undo();

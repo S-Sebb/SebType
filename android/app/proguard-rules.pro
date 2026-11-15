@@ -58,7 +58,7 @@
 # JSR 305 annotations are for embedding nullability information.
 -dontwarn javax.annotation.**
 
-# Keep mozc protobuf
+# Keep the protobuf classes of Mozc's user dictionary file (android/native)
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
     <fields>;
     <methods>;
@@ -66,7 +66,7 @@
 -keep class org.mozc.android.inputmethod.japanese.protobuf.** { *; }
 
 # SebType: no debug, verbose or info logs in release, so typed text can't reach logcat through them
-# (this also strips them from the library modules, e.g. RimeJni's per-key log).
+# (this also strips them from the library modules).
 -assumenosideeffects class android.util.Log {
     public static int d(...);
     public static int v(...);

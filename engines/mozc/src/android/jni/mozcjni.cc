@@ -27,26 +27,25 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// JNI wrapper for SessionHandler.
+// SebType: the phone's entry points to SessionHandler, which SebType's core (core/src/mozc_inprocess.cpp)
+// calls in the same process: serialized commands in and out, as the Java client's JNI evalCommand did.
 
 #ifdef __ANDROID__
 
-#include <jni.h>
-
-#include <iterator>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
-#include "absl/random/random.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "base/system_util.h"
-#include "base/util.h"
 #include "client/user_dictionary/user_dictionary_importer.h"
 #include "data_manager/data_manager.h"
 #include "engine/engine.h"
@@ -58,54 +57,14 @@ namespace mozc {
 namespace jni {
 namespace {
 
-// The global instance of Mozc system to be initialized in onPostLoad().
+// The process's Mozc, loaded by SebTypeMozcLoad.
 std::unique_ptr<SessionHandler> g_session_handler;
 
-std::string JbyteArrayToString(JNIEnv* env, jbyteArray array) {
-  std::string s(env->GetArrayLength(array), '\0');
-  env->GetByteArrayRegion(array, 0, s.size(), reinterpret_cast<jbyte*>(s.data()));
-  return s;
-}
-
-jbyteArray StringToJbyteArray(JNIEnv* env, absl::string_view s) {
-  jbyteArray array = env->NewByteArray(s.size());
-  env->SetByteArrayRegion(array, 0, s.size(),
-                          reinterpret_cast<const jbyte*>(s.data()));
-  return array;
-}
-
-// Concrete implementation for MozcJni.evalCommand
-jbyteArray JNICALL evalCommand(JNIEnv* env, jclass clazz,
-                               jbyteArray in_bytes_array) {
-  jbyte* in_bytes = env->GetByteArrayElements(in_bytes_array, nullptr);
-  const jsize in_size = env->GetArrayLength(in_bytes_array);
-  mozc::commands::Command command;
-  command.ParseFromArray(in_bytes, in_size);
-  if (g_session_handler) {
-    g_session_handler->EvalCommand(&command);
-  } else {
-    LOG(DFATAL) << "Mozc session handler is not yet initialized";
-  }
-
-  // Use JNI_ABORT because in_bytes is read only.
-  env->ReleaseByteArrayElements(in_bytes_array, in_bytes, JNI_ABORT);
-
-  const int out_size = command.ByteSizeLong();
-  jbyteArray out_bytes_array = env->NewByteArray(out_size);
-  jbyte* out_bytes = env->GetByteArrayElements(out_bytes_array, nullptr);
-  command.SerializeToArray(out_bytes, out_size);
-
-  // Use 0 to copy out_bytes to out_bytes_array.
-  env->ReleaseByteArrayElements(out_bytes_array, out_bytes, 0);
-
-  return out_bytes_array;
-}
-
-std::string JstringToCcString(JNIEnv* env, jstring j_string) {
-  const char* cstr = env->GetStringUTFChars(j_string, nullptr);
-  const std::string cc_string(cstr);
-  env->ReleaseStringUTFChars(j_string, cstr);
-  return cc_string;
+// A copy the caller frees with SebTypeMozcFree.
+size_t Copy(absl::string_view s, char** out) {
+  *out = static_cast<char*>(std::malloc(s.size() ? s.size() : 1));
+  std::memcpy(*out, s.data(), s.size());
+  return s.size();
 }
 
 // SebType: a data file length of 0 maps the whole file; otherwise the data set is the region
@@ -141,107 +100,71 @@ std::unique_ptr<EngineInterface> CreateMobileEngine(
   return *std::move(engine);
 }
 
-std::unique_ptr<SessionHandler> CreateSessionHandler(JNIEnv* env,
-                                                     jstring j_data_file_path,
-                                                     jlong offset,
-                                                     jlong length) {
-  if (env == nullptr) {
-    LOG(DFATAL) << "JNIEnv is null";
-    return nullptr;
-  }
-  std::unique_ptr<EngineInterface> engine;
-  if (j_data_file_path == nullptr) {
-    LOG(ERROR) << "j_data_file_path is null.  Fallback to minimal engine.";
-    engine = Engine::CreateEngine();
-  } else {
-    const std::string& data_file_path =
-        JstringToCcString(env, j_data_file_path);
-    engine = CreateMobileEngine(data_file_path, offset, length);
-  }
-  DCHECK(engine);
-  return std::make_unique<SessionHandler>(std::move(engine));
-}
-
-// Does post-load tasks.
-// Returns true if the task succeeded. SebType: a later call replaces the SessionHandler, so the
-// keyboard can reload Mozc with another data file or user profile.
-jboolean JNICALL onPostLoad(JNIEnv* env, jclass clazz,
-                            jstring user_profile_directory_path,
-                            jstring data_file_path, jlong data_file_offset,
-                            jlong data_file_length) {
-  g_session_handler.reset();
-
-  // First of all, set the user profile directory.
-  const std::string& original_dir = SystemUtil::GetUserProfileDirectory();
-  SystemUtil::SetUserProfileDirectory(
-      JstringToCcString(env, user_profile_directory_path));
-
-  // Initializes the global Mozc system.
-  g_session_handler = CreateSessionHandler(env, data_file_path,
-                                           data_file_offset, data_file_length);
-  if (!g_session_handler) {
-    SystemUtil::SetUserProfileDirectory(original_dir);
-    LOG(DFATAL) << "Failed to create Mozc session handler";
-    return false;
-  }
-
-  return true;
-}
-
-// SebType: parses a user dictionary file the user imported (Mozc, MS-IME, ATOK or Kotoeri text) into a
-// serialized UserDictionary, skipping entries it can't read. The phone writes user_dictionary.db with it,
-// since Mozc no longer takes user dictionary commands.
-jbyteArray JNICALL importUserDictionary(JNIEnv* env, jclass clazz,
-                                        jbyteArray j_text) {
-  const std::string text = JbyteArrayToString(env, j_text);
-  user_dictionary::StringTextLineIterator iter(text);
-  user_dictionary::UserDictionary dictionary;
-  if (absl::Status status = user_dictionary::ImportFromTextLineIterator(
-          user_dictionary::IME_AUTO_DETECT, &iter, &dictionary);
-      !status.ok()) {
-    LOG(WARNING) << "User dictionary import: " << status;
-  }
-  return StringToJbyteArray(env, dictionary.SerializeAsString());
-}
-
-jstring JNICALL getDataVersion(JNIEnv* env) {
-  std::string version = "";
-  if (g_session_handler) {
-    const absl::string_view version_sp = g_session_handler->GetDataVersion();
-    version.assign(version_sp.begin(), version_sp.end());
-  }
-  return env->NewStringUTF(version.c_str());
-}
-
 }  // namespace
 }  // namespace jni
 }  // namespace mozc
 
 extern "C" {
 
-JNIEXPORT jboolean JNICALL
-Java_com_google_android_apps_inputmethod_libs_mozc_session_MozcJni_initialize(
-    JNIEnv* env, jclass clazz) {
-  if (!env) {
-    // Fatal error. No way to recover.
+// Loads Mozc with this user profile and data set (an empty path: Mozc's minimal engine). A later call
+// replaces the SessionHandler, so the keyboard can reload Mozc with another data file or user profile.
+__attribute__((visibility("default"))) bool SebTypeMozcLoad(
+    const char* profile_dir, const char* data_file, int64_t offset,
+    int64_t length) {
+  using mozc::jni::g_session_handler;
+  g_session_handler.reset();
+  const std::string original_dir = mozc::SystemUtil::GetUserProfileDirectory();
+  mozc::SystemUtil::SetUserProfileDirectory(profile_dir);
+  std::unique_ptr<mozc::EngineInterface> engine =
+      *data_file ? mozc::jni::CreateMobileEngine(data_file, offset, length)
+                 : mozc::Engine::CreateEngine();
+  DCHECK(engine);
+  g_session_handler = std::make_unique<mozc::SessionHandler>(std::move(engine));
+  if (!g_session_handler) {
+    mozc::SystemUtil::SetUserProfileDirectory(original_dir);
+    LOG(DFATAL) << "Failed to create Mozc session handler";
     return false;
   }
-  const JNINativeMethod methods[] = {
-      {"evalCommand", "([B)[B",
-       reinterpret_cast<void*>(&mozc::jni::evalCommand)},
-      {"onPostLoad", "(Ljava/lang/String;Ljava/lang/String;JJ)Z",
-       reinterpret_cast<void*>(&mozc::jni::onPostLoad)},
-      {"importUserDictionary", "([B)[B",
-       reinterpret_cast<void*>(&mozc::jni::importUserDictionary)},
-      {"getDataVersion", "()Ljava/lang/String;",
-       reinterpret_cast<void*>(&mozc::jni::getDataVersion)},
-  };
-  if (env->RegisterNatives(clazz, methods, std::size(methods))) {
-    // Fatal error. No way to recover.
-    return false;
-  }
-
   return true;
+}
+
+// Frees the engine (its dictionary and caches) until the next load.
+__attribute__((visibility("default"))) void SebTypeMozcUnload() {
+  mozc::jni::g_session_handler.reset();
+}
+
+// Evaluates a serialized mozc.commands.Command and returns it with its output.
+__attribute__((visibility("default"))) size_t SebTypeMozcEval(const void* in,
+                                                              size_t size,
+                                                              char** out) {
+  mozc::commands::Command command;
+  command.ParseFromArray(in, static_cast<int>(size));
+  if (mozc::jni::g_session_handler) {
+    mozc::jni::g_session_handler->EvalCommand(&command);
+  } else {
+    LOG(DFATAL) << "Mozc session handler is not yet initialized";
+  }
+  return mozc::jni::Copy(command.SerializeAsString(), out);
+}
+
+// SebType: parses a user dictionary file the user imported (Mozc, MS-IME, ATOK or Kotoeri text) into a
+// serialized UserDictionary, skipping entries it can't read. The phone writes user_dictionary.db with it,
+// since Mozc no longer takes user dictionary commands.
+__attribute__((visibility("default"))) size_t SebTypeMozcImportUserDictionary(
+    const char* text, size_t size, char** out) {
+  const std::string input(text, size);
+  mozc::user_dictionary::StringTextLineIterator iter(input);
+  mozc::user_dictionary::UserDictionary dictionary;
+  if (absl::Status status = mozc::user_dictionary::ImportFromTextLineIterator(
+          mozc::user_dictionary::IME_AUTO_DETECT, &iter, &dictionary);
+      !status.ok()) {
+    LOG(WARNING) << "User dictionary import: " << status;
+  }
+  return mozc::jni::Copy(dictionary.SerializeAsString(), out);
+}
+
+__attribute__((visibility("default"))) void SebTypeMozcFree(char* bytes) {
+  std::free(bytes);
 }
 
 }  // extern "C"
