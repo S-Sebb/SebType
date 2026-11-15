@@ -271,9 +271,12 @@ if ($Typing) {
       if ($Typing -eq 'all') {
         Check 'win-space-cycle' {
           To-Language '0409'
-          # Each switch lands before the next press: the first to 中文 and 日本語 starts the server and loads
-          # the engine (about 2 s each after an install).
-          $seen = foreach ($i in 1..3) { $was = Lang; Keys 'Super_L+space'; $null = Wait-Until 5 { (Lang) -ne $was }; Lang }
+          # Each switch is done before the next press, as a person sees it done: the first to 中文 and 日本語
+          # starts the server and the engine (1 to 2 s after an install), and Windows' switcher counts from
+          # the language the app has finished switching to.
+          $seen = foreach ($i in 1..3) {
+            $was = Lang; Keys 'Super_L+space'; $null = Wait-Until 5 { (Lang) -ne $was }; $null = $np.WaitForInputIdle(5000); Lang
+          }
           if (($seen -join ' ') -ne '0804 0411 0409') { throw "from EN, Win+Space gave $($seen -join ' → ') (0804 中, 0411 日, 0409 EN)" }
           'EN → 中 → 日 → EN'
         }
