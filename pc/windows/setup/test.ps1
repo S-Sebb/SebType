@@ -5,8 +5,8 @@ session (test-tcsbackend.sh does that on TCSBackEnd and opens the Remote Desktop
 
     powershell -File C:\sebtype-setup-test\test.ps1
 
-The folder holds this script, TsfHost.cs (../mozc), perf-rime.ps1 and perf-rime.exe (../, from the
-librime build) and SebType-setup-*.exe; for -Only upgrade also old\SebType-setup-*.exe, the SebType before
+The folder holds this script, TsfHost.cs, perf-rime.ps1 (../) and perf-rime.exe (from the librime
+build) and SebType-setup-*.exe; for -Only upgrade also old\SebType-setup-*.exe, the SebType before
 #190 (Weasel and Mozc's own text services). The test creates a local
 admin user, sebtype-test, and runs everything as that user in a Remote Desktop session of its own, so
 nobody's own input settings change, then removes the user and its profile:
@@ -25,9 +25,9 @@ nobody's own input settings change, then removes the user and its profile:
 
 -Only picnic: only a silent install, the Picnic window's pictures and a silent uninstall (#162).
 -Only upgrade: only the update from the SebType before #190 (#190, #192): that one installed silently with
-   all languages, learned words and a Picnic Weasel style, then this one over it: Weasel and Mozc gone with
-   their Start menu entries, SebType's text service in their place, the learned words and the Picnic look
-   kept; then typing and a silent uninstall.
+   all languages and learned words, then this one over it: Weasel and Mozc gone with their Start menu
+   entries, SebType's text service in their place, the learned words kept; then typing and a silent
+   uninstall.
 -Only sync: only sync with your own server (#180): a silent install; sebtype_sync.py serving on this PC's
    localhost, run by a copy of the Python Setup packs, with a throwaway login; the login saved as the
    Configurator's Save does (sebtype-configurator --save-login: Credential Manager, the task); made-up
@@ -182,6 +182,10 @@ if ($Typing) {
         }
         Mem base
         Use $ime
+        # Microsoft Pinyin on TCSBackEnd starts in English and ignores Open and a write of TSF's conversion
+        # mode; Shift, its own 中/英 key, switches it.
+        Out conversion_mode $tsf::Mode()  # TSF's: its low bit is 中 or かな
+        if ($ime -eq 'mspinyin' -and -not ($tsf::Mode() -band 1)) { Keys Shift_L; $tsf::Settle(300); Out conversion_mode_after_shift $tsf::Mode() }
         $first = @(Word $words[0] $tail)
         Out first_key_ms ('{0:F1}' -f $first[0].ms)
         $all = @()
@@ -657,8 +661,8 @@ namespace SebTypeSetupTest {
       return
     }
     if ($Only -eq 'upgrade') {
-      # The update from the SebType before #190 (Weasel and Mozc): that one silently with all languages,
-      # learned words and the Picnic look as its Configurator wrote it, then this one over it.
+      # The update from the SebType before #190 (Weasel and Mozc): that one silently with all languages and
+      # learned words, then this one over it.
       $old = (Get-ChildItem "$root\old\SebType-setup-*.exe" | Select-Object -First 1).FullName
       Check 'upgrade-old-install' {
         Silent upgrade-old-install @() $old
@@ -666,17 +670,14 @@ namespace SebTypeSetupTest {
         "$(Split-Path -Leaf $old): Weasel and Mozc"
       }
       $learned | ForEach-Object { New-Item -Force $_ | Out-Null }
-      [IO.File]::WriteAllLines("$env:APPDATA\Rime\weasel.custom.yaml", [string[]]@('patch:', '  style/horizontal: true', '  style/font_point: 16', '  style/color_scheme: sebtype_picnic'))
       Check 'upgrade-install' { Silent upgrade-install @(); 'silent, over the SebType with Weasel and Mozc' }
       Check-Installed upgrade en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$ZhTip] ja[$JaTip]"
-      Check 'upgrade-keeps-learned-words-and-look' {
+      Check 'upgrade-keeps-learned-words' {
         $gone = @($learned | Where-Object { -not (Test-Path $_) })
         if ($gone) { throw "gone: $($gone -join ', ')" }
-        $conf = (Get-Content "$env:APPDATA\SebType\sebtype.conf" -Encoding utf8 -ErrorAction SilentlyContinue) -join ' '
-        if ($conf -ne '[Candidates] Vertical=0 FontSize=16 Picnic=1') { throw "sebtype.conf: '$conf'" }
         $old = @("HKLM:\SOFTWARE\Microsoft\CTF\TIP\$WeaselClsid", "HKLM:\SOFTWARE\Microsoft\CTF\TIP\$MozcClsid", "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" | Where-Object { Test-Path $_ })
         if ($old) { throw "left: $($old -join ', ')" }
-        'Rime and Mozc learned words kept; Weasel''s Picnic look in sebtype.conf; Weasel''s and Mozc''s registrations gone'
+        'Rime and Mozc learned words kept; Weasel''s and Mozc''s registrations gone'
       }
       Typing all
       Check 'upgrade-uninstall' {
@@ -937,7 +938,7 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
 # ========================================================================= the admin part
 $preflight = if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { 'not elevated (admin)' }
 elseif (-not (Get-ChildItem "$root\SebType-setup-*.exe" -ErrorAction SilentlyContinue)) { "no SebType-setup-*.exe in $root" }
-elseif (-not (Test-Path "$root\TsfHost.cs")) { "no TsfHost.cs in $root (pc/windows/mozc)" }
+elseif (-not (Test-Path "$root\TsfHost.cs")) { "no TsfHost.cs in $root (pc/windows/setup)" }
 elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'in session 0 (services): start it from a logged-on session' }
 elseif ((Get-CimInstance Win32_OperatingSystem).ProductType -eq 1) { 'not Windows Server: the test needs a second Remote Desktop session' }
 elseif (Get-LocalUser $user -ErrorAction SilentlyContinue) { "a local user $user exists already" }
@@ -959,7 +960,7 @@ try {
   Add-LocalGroupMember -SID S-1-5-32-555 -Member $user  # Remote Desktop Users
   & icacls.exe $root /grant "${user}:(OI)(CI)M" | Out-Null
   $run = { param($mode, $level) New-ScheduledTaskAction -Execute powershell.exe -WorkingDirectory $root `
-      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$root\test.ps1`" -$mode $mode$(if ($Only) { " -Only $Only -SoakMinutes $SoakMinutes -CompareImes $CompareImes" })" }
+      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$root\test.ps1`" -$mode $mode$(if ($PerfRun) { ' -PerfRun' })$(if ($Only) { " -Only $Only -SoakMinutes $SoakMinutes -CompareImes $CompareImes" })" }
   Register-ScheduledTask SebType-setup-driver -Action (& $run Driver) -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $user) `
     -Principal (New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest) -Force | Out-Null
   # The typing runs as apps do, not elevated; the driver starts it, its phase in out\typing-phase.txt.

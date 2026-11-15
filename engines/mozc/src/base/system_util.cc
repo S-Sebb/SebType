@@ -276,62 +276,20 @@ void SystemUtil::SetUserProfileDirectory(const std::string& path) {
   UserProfileDirectoryImpl::GetInstance()->SetDir(path);
 }
 
-#ifdef _WIN32
-namespace {
-constexpr wchar_t kMozcTipClsid[] =
-    L"SOFTWARE\\Classes\\CLSID\\"
-#ifdef GOOGLE_JAPANESE_INPUT_BUILD
-    L"{D5A86FD5-5308-47EA-AD16-9C4EB160EC3C}"
-#else   // GOOGLE_JAPANESE_INPUT_BUILD
-    L"{10A67BC8-22FA-4A59-90DC-2546652C56BF}"
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
-    L"\\InprocServer32";
-
-std::string GetMozcInstallDirFromRegistry() {
-  // TSF requires the path of "mozc_tip64.dll" to be registered in the registry,
-  // which tells us Mozc's installation directory.
-  HKEY key = nullptr;
-  LSTATUS result = ::RegOpenKeyExW(HKEY_LOCAL_MACHINE, kMozcTipClsid, 0,
-                                   KEY_READ | KEY_WOW64_64KEY, &key);
-  if (result != ERROR_SUCCESS) {
-    return "";
-  }
-
-  DWORD type = 0;
-  wchar_t buffer[MAX_PATH] = {};
-  DWORD buffer_size = sizeof(buffer);
-  result = ::RegQueryValueExW(key, nullptr, nullptr, &type,
-                              reinterpret_cast<LPBYTE>(buffer), &buffer_size);
-  ::RegCloseKey(key);
-  if (result != ERROR_SUCCESS || type != REG_SZ) {
-    return "";
-  }
-  return FileUtil::Dirname(win32::WideToUtf8(buffer));
-}
-
-}  // namespace
-#endif  // _WIN32
-
 std::string SystemUtil::GetServerDirectory() {
   if constexpr (port::IsLinuxBase() || port::IsWasm()) {
     return std::string(kMozcServerDir);
   }
 
 #ifdef _WIN32
-  const std::string install_dir_from_registry = GetMozcInstallDirFromRegistry();
-  if (!install_dir_from_registry.empty()) {
-    return install_dir_from_registry;
-  }
-  const std::optional<std::string>& program_files =
-      WinUtil::GetProgramFilesX86Path();
-  DCHECK(program_files.has_value());
-#if defined(GOOGLE_JAPANESE_INPUT_BUILD)
-  return FileUtil::JoinPath(
-      FileUtil::JoinPath(program_files.value_or(""), kCompanyNameInEnglish),
-      kProductNameInEnglish);
-#else   // GOOGLE_JAPANESE_INPUT_BUILD
-  return FileUtil::JoinPath(program_files.value_or(""), kProductNameInEnglish);
-#endif  // GOOGLE_JAPANESE_INPUT_BUILD
+  // SebType (#190): only mozc_server.exe ships, next to SebType's own server wherever Setup put it, and
+  // no Mozc text service is registered to say where Mozc is installed. The server's watchdog pings it
+  // and accepts only a server at this path, and aborts it otherwise, so this is the running program's
+  // own folder.
+  wchar_t exe[MAX_PATH] = {};
+  const DWORD len = ::GetModuleFileNameW(nullptr, exe, MAX_PATH);
+  DCHECK(len > 0 && len < MAX_PATH);
+  return FileUtil::Dirname(win32::WideToUtf8(std::wstring_view(exe, len)));
 
 #elif defined(__APPLE__)
   return MacUtil::GetServerDirectory();

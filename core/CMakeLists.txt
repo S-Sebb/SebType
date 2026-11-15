@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # librime: pkg-config on Linux; on Windows RIME_ROOT holds include/rime_api.h and lib/rime.lib (the
-# rime.dll SebType's Weasel build makes, engines/librime).
+# rime.dll pc/windows/rime/build.ps1 makes, engines/librime).
 if(WIN32)
   add_library(rime SHARED IMPORTED)
   set_target_properties(rime PROPERTIES IMPORTED_IMPLIB ${RIME_ROOT}/lib/rime.lib

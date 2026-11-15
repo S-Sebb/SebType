@@ -33,7 +33,7 @@ windows/build.ps1 -Rime <SebType's librime> -Out <dir>
 ```
 
 It needs Visual Studio 2022 with C++, vcpkg (protobuf, linked statically), Python and curl, and the librime
-that `pc/windows/weasel/build.ps1` leaves (CI's `sebtype-rime` artifact). `.github/workflows/windows-setup.yml`
+that `pc/windows/rime/build.ps1` leaves (CI's `sebtype-rime` artifact). `.github/workflows/windows-setup.yml`
 runs it on GitHub's Windows runner and packs the result into Setup. The C++ runtime is linked into each
 file, since the DLL loads into every app.
 

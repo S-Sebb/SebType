@@ -143,7 +143,7 @@ While sync is on, `sebtype-configurator --sync` runs every half hour, as on the 
 timer (`sebtype-sync.timer`, also two minutes after login) on Linux, a Task Scheduler task
 ("SebType sync", while you're logged on) on Windows. Each run is the three steps below with this
 `sebtype_sync.py`, built into the Configurator: `pull`, Rime's sync (Fcitx5's save on Linux,
-`WeaselDeployer /sync` on Windows), `push`, with the password on the client's stdin
+`sebtype-server.exe /sync` on Windows), `push`, with the password on the client's stdin
 (`--password-stdin`) and the Mozc dictionary included. When new Japanese words came in, Mozc restarts to
 read them. On Windows the Configurator runs it with the Python that Setup installs next to it.
 
@@ -189,8 +189,8 @@ own snapshot goes up. A Save while Rime is still busy (deploying after fcitx5 st
 the PC's snapshot didn't change, save again. `delete` (with the same login options, no Rime dir) deletes
 every device's files on the server. The client exits with 3 when the server refuses the login.
 
-On Windows (Weasel) the user dir is `%APPDATA%\Rime`, and the menu's 用户资料同步 is Rime's sync; the
-same `pull` and `push` work with `--rime-dir "%APPDATA%\Rime"`.
+On Windows the user dir is `%APPDATA%\Rime`; the same `pull` and `push` work with
+`--rime-dir "%APPDATA%\Rime"`.
 
 ## Japanese on a PC (Mozc)
 

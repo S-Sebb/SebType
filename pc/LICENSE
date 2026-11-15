@@ -1,5 +1,3 @@
 SebType's own code, under the MIT licence in ../LICENSE-SebType, except:
 - linux/mozc-keymap.tsv: Mozc's src/data/keymap/ms-ime.tsv with SebType's keys added, under Mozc's licence (BSD-3-Clause).
-- weasel/: SebType's Weasel (Weasel with SebType's changes), under Weasel's licence (GPL-3.0, weasel/LICENSE.txt);
-  the third-party programs in weasel/output/ keep their own (7-Zip, curl, WinSparkle).
 - icons/: the glyph outlines are from Noto Sans CJK and Nunito, under the SIL Open Font License 1.1.

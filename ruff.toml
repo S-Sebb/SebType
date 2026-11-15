@@ -1,4 +1,3 @@
 # FUTO's and the engines' own Python keeps its upstream style: never lint or reformat it.
 force-exclude = true
-extend-exclude = ["android/app", "android/tools/contributors.py", "android/tools/make-keyboard-text-py", "engines",
-  "pc/weasel"]
+extend-exclude = ["android/app", "android/tools/contributors.py", "android/tools/make-keyboard-text-py", "engines"]

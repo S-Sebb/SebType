@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 <#
 Times Rime per key (key, then read the candidates) on Windows with perf-rime.exe (pc/linux/perf-rime.c,
-built by weasel/build.ps1, in the CI artifact sebtype-weasel), against Weasel's rime.dll and on a private copy of the Chinese data, so nothing is
-learned. Budget: p95 ≤ 10 ms (Decisions #2).
+built by rime/build.ps1, in the CI artifact perf-rime), against SebType's rime.dll and on a private copy of the
+Chinese data, so nothing is learned. Budget: p95 ≤ 10 ms (Decisions #2).
 
-  perf-rime.ps1 -Root <Weasel folder: rime.dll, data\> -Rime <a Rime user folder, or rime-data.zip>
+  perf-rime.ps1 -Root <SebType's folder: rime.dll, data\> -Rime <a Rime user folder, or rime-data.zip>
 
 Prints the measurements and one line "PASS|FAIL rime-p95-under-10ms: …"; exit 0 on PASS.
-Without Weasel installed, -Root can be its installer unpacked with 7-Zip (`7z x <installer> -o<dir>`).
+Without SebType installed, -Root can be CI's sebtype-rime artifact.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Root,

@@ -23,7 +23,6 @@ files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence o
 | `android/app/src/main/res/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
 | The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([art/fonts/OFL-Nunito.txt](art/fonts/OFL-Nunito.txt), [art/fonts/OFL-PixelifySans.txt](art/fonts/OFL-PixelifySans.txt)) |
 | SebType's Mozc (`engines/mozc/`: Mozc with SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
-| SebType's Weasel (`pc/weasel/`: Weasel with SebType's changes) | GPL-3.0, like Weasel |
 | `core/src/rime.cpp` (follows fcitx5-rime) and SebType's tray in `linux/src/tray.*` (ported from Fcitx5's notificationitem) | LGPL-2.1-or-later, like fcitx5-rime and Fcitx5 ([LICENSE-LGPL-2.1](LICENSE-LGPL-2.1)) |
 | `core/src/mozc.cpp` (follows fcitx5-mozc, Mozc's Fcitx 5 frontend) | BSD-3-Clause, like Mozc |
 | SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |

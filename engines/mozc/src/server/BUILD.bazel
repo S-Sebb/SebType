@@ -70,7 +70,7 @@ mozc_win32_cc_prod_binary(
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
     visibility = [
-        "//win32:__subpackages__",
+        "//:__pkg__",
     ],
     deps = [
         ":mozc_server_lib",

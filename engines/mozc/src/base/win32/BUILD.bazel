@@ -175,9 +175,7 @@ mozc_cc_library(
     target_compatible_with = ["@platforms//os:windows"],
     visibility = [
         "//gui/tool:__subpackages__",
-        "//renderer/win32:__subpackages__",
         "//server:__pkg__",
-        "//win32/broker:__subpackages__",
         "//win32/cache_service:__subpackages__",
     ],
     deps = [
