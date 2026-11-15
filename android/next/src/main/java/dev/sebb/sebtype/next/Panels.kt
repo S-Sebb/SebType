@@ -143,7 +143,7 @@ class MenuPanel(context: Context, private val listener: Listener) : ItemsView(co
                 PixelFrame.CREAM.draw(canvas, r.left, r.top, r.right, r.bottom, px)
                 Icons.draw(canvas, Icons.Icon.INCOGNITO, r.left + 30 * density, r.centerY(), 24 * density, Picnic.INK)
                 canvas.drawText(item.label, r.left + 54 * density, cy, text)
-                drawSwitch(canvas, r.right - 52 * density, r.centerY(), item.checked == true)
+                drawSwitch(canvas, r.right - 68 * density, r.centerY(), item.checked == true)
             }
         }
     }

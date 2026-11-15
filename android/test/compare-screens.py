@@ -86,7 +86,9 @@ def tap_label(*labels):
             time.sleep(1.5)
             return
         time.sleep(1)
-    raise SystemExit(f"no {labels[0]}")
+    raise SystemExit(
+        f"no {labels[0]} among {sorted({t for t, _, _ in nodes() if t})[:40]}"
+    )
 
 
 class Keys:
@@ -158,11 +160,12 @@ def menu(app):
     if app == "new":
         tap_label("Open Action Bar")
         return
+    # Today's bar is labelled in the keyboard's language. The expanded bar is a saved setting: it may be
+    # open, with All Actions showing, already.
     labels = {t for t, _, _ in nodes()}
-    # The expanded bar is a saved setting: it may be open, with All Actions showing, already.
-    if "All Actions" not in labels:
-        tap_label("Open Action Bar")
-    tap_label("All Actions")
+    if not labels & {"All Actions", "所有操作项"}:
+        tap_label("Open Action Bar", "打开操作栏")
+    tap_label("All Actions", "所有操作项")
 
 
 def run(app, mode):

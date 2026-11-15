@@ -81,7 +81,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keyboard = KeyboardView(this, popups, this)
         grid = CandidateGrid(this) { onCandidate(it) }
         menu = MenuPanel(this, this)
-        val content = FrameLayout(this)
+        val content = KeysFrame(this)
         content.addView(keyboard, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         content.addView(grid, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         content.addView(menu, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -368,5 +368,16 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 class UpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) Engines.prepareChinese(context)
+    }
+}
+
+/** Holds the keys, and the expanded candidates and the menu over them at exactly the keys' height. */
+private class KeysFrame(context: Context) : FrameLayout(context) {
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val keys = getChildAt(0)
+        keys.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val exact = MeasureSpec.makeMeasureSpec(keys.measuredHeight, MeasureSpec.EXACTLY)
+        for (i in 1 until childCount) getChildAt(i).measure(widthMeasureSpec, exact)
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), keys.measuredHeight)
     }
 }
