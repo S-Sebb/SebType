@@ -174,17 +174,6 @@ TEST_F(CoreTest, ShiftTapTogglesEnglishLettersOnlyWhenAlone) {
   for (uint32_t s : engines[Lang::Chinese]->seen) EXPECT_NE(s, Shift_L);
 }
 
-TEST_F(CoreTest, ShiftTapGoesByTheKeysOwnTimes) {
-  core.selectLanguage(Lang::Japanese);
-  core.key({Shift_L, 0, false, 4294967200u});  // a tap of 100 ms across the clock's wrap,
-  now += 900ms;                                 // handed over late
-  core.key({Shift_L, mod::Shift, true, 4});
-  EXPECT_TRUE(core.latin());
-  core.key({Shift_L, 0, false, 1000});  // held 600 ms, handed over at once
-  core.key({Shift_L, mod::Shift, true, 1600});
-  EXPECT_TRUE(core.latin());
-}
-
 TEST_F(CoreTest, CapsLockShowsCapitalA) {
   core.selectLanguage(Lang::Japanese);
   shiftTap();

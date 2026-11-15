@@ -443,8 +443,7 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
     sym = ch[0] < 0x100 ? ch[0] : 0x01000000 | ch[0];
   }
   if (const uint32_t own = ownMod(sym)) mods = release ? mods | own : mods & ~own;
-  // The key message's own time: the app may hand it over late (#222).
-  out = {sym, mods, release, static_cast<uint32_t>(GetMessageTime())};
+  out = {sym, mods, release};
   return true;
 }
 

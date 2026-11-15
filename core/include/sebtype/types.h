@@ -16,9 +16,6 @@ struct Key {
   uint32_t sym = 0;
   uint32_t mods = 0;
   bool release = false;
-  // When the key was pressed or released, in ms on the platform's own clock (it may wrap), or 0 when the
-  // frontend doesn't know: the Shift tap is timed by it (#222).
-  uint32_t time = 0;
 };
 
 enum class Lang { English, Chinese, Japanese };

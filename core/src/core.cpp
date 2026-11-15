@@ -147,11 +147,7 @@ bool Core::key(const Key &k) {
     }
     if (isShift(k.sym) && shiftDown_ == k.sym) {
       shiftDown_ = 0;
-      // By the keys' own times when the frontend has them: a busy app or server, or Remote Desktop, can
-      // hand a quick tap over seconds late, or its press and release together (#222).
-      std::chrono::steady_clock::duration held = clock_() - shiftAt_;
-      if (k.time && shiftTime_) held = std::chrono::milliseconds(k.time - shiftTime_);
-      if (e && held <= kShiftTap && e->shiftTapSwitches(k.sym)) {
+      if (e && clock_() - shiftAt_ <= kShiftTap && e->shiftTapSwitches(k.sym)) {
         e->setLatin(!e->latin());
         commit_ += e->takeCommit();
         notice_ = lang_ == Lang::Chinese;
@@ -162,7 +158,6 @@ bool Core::key(const Key &k) {
   } else if (isShift(k.sym) && !(k.mods & (mod::Ctrl | mod::Alt | mod::Super))) {
     shiftDown_ = k.sym;
     shiftAt_ = clock_();
-    shiftTime_ = k.time;
   } else {
     shiftDown_ = 0;
   }

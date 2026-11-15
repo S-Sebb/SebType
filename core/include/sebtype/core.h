@@ -91,7 +91,6 @@ class Core {
   bool capsLock_ = false;
   uint32_t shiftDown_ = 0;  // the Shift key pressed alone, until another key comes
   std::chrono::steady_clock::time_point shiftAt_;
-  uint32_t shiftTime_ = 0;  // its Key::time
   std::vector<uint32_t> swallow_;  // releases of keys the core took on press
   std::string commit_;
   bool notice_ = false;
