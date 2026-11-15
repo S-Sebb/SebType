@@ -31,9 +31,7 @@
 
 load(
     "//:build_defs.bzl",
-    "mozc_cc_binary",
     "mozc_objc_library",
-    "mozc_objc_test",
     "mozc_select",
 )
 
@@ -98,31 +96,4 @@ mozc_objc_library(
         ios = [":UIKit"],
         macos = [":Carbon"],
     ),
-)
-
-mozc_objc_test(
-    name = "mac_util_test",
-    size = "small",
-    srcs = ["mac_util_test.mm"],
-    deps = [
-        ":mac_util",
-        "//testing:gunit_main_objc",
-    ],
-)
-
-# Only for macOS.
-mozc_cc_binary(
-    name = "mac_util_main",
-    srcs = [
-        "mac_util.h",
-        "mac_util_main.cc",
-    ],
-    target_compatible_with = ["@platforms//os:macos"],
-    deps = [
-        ":mac_util",
-        "//base:init_mozc",
-        "//base:util",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings",
-    ],
 )

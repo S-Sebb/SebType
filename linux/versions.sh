@@ -4,7 +4,7 @@
 # (build-librime.sh). Sourced by the build scripts, pc/linux/setup-ime.sh and the tests. Bump
 # SEBTYPE_RPM_RELEASE when core/, linux/ or engines/mozc changes, LIBRIME_SEBTYPE_RELEASE when engines/librime does.
 SEBTYPE_VERSION=0.1.0
-SEBTYPE_RPM_RELEASE=4.fc44
+SEBTYPE_RPM_RELEASE=5.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
 
@@ -26,7 +26,7 @@ LIBRIME_SOURCES=(
   librime-octagram.tar.gz cf0ebfa6af1d80607e0ef477145b8fcdaabbd6fdc3877a2fe7834509d6a327728dcf5397b19897b31b8e4a19defeeb0daabaa0790db8a5d8c13e3c2129eba537
   librime-predict.tar.gz 18886685d38efe8384d1c3d3c7c178f79b9cb9e32d5063586c332f1b1c7b559e869fd2623ede2d088e855ebd82a0368fe83bbffa78a793d660d233a5c82c71c8
 )
-LIBRIME_SEBTYPE_RELEASE=2.sebtype3.fc44
+LIBRIME_SEBTYPE_RELEASE=2.sebtype4.fc44
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
 LIBRIME_CACHE=$HOME/scratch/SebType/cache/librime
 librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package

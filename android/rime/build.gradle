@@ -1,5 +1,5 @@
 // Rime for the phone: RimeJni's Kotlin API and JNI (by Astronot233, see NOTICE.md) built against
-// engines/librime, the librime the PCs run, with librime-lua, octagram and predict.
+// engines/librime, the librime the PCs run, with librime-lua and octagram.
 plugins {
     id 'com.android.library'
     id 'org.jetbrains.kotlin.android'

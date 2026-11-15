@@ -93,7 +93,7 @@ Everything Rime learns stays in `%APPDATA%\Rime`, so sync (#12) can add a `sync_
 ### The text service
 
 [`windows/`](../../windows) has the text service and its server, and how they are built. `rime/build.ps1`
-builds SebType's librime (`engines/librime`, 1.16.1, with librime-lua, -octagram and -predict at the
+builds SebType's librime (`engines/librime`, 1.16.1, with librime-lua and -octagram at the
 commits librime's own release merges in) with librime's own `build.bat`, Rime's shared data (plum's
 preset) and `perf-rime.exe`; its `sebtype-rime` artifact is what the text service's server links. With
 SebType's librime, Chinese typo correction also fixes a slip onto the key above or below, so `xkaoshi`

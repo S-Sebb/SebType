@@ -32,84 +32,10 @@
 load(
     "//:build_defs.bzl",
     "MOZC_TAGS",
-    "mozc_cc_binary",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//:__subpackages__"])
-
-mozc_cc_library(
-    name = "scoped_com",
-    hdrs = ["scoped_com.h"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        "//bazel/win32:ole32",  # build_cleaner: keep
-    ],
-)
-
-mozc_cc_test(
-    name = "scoped_com_test",
-    srcs = ["scoped_com_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":scoped_com",
-        "//testing:gunit_main",
-    ],
-)
-
-mozc_cc_library(
-    name = "win_api_test_helper",
-    srcs = ["win_api_test_helper.cc"],
-    hdrs = ["win_api_test_helper.h"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    visibility = [
-        # For //base:update_util_test
-        "//base:__subpackages__",
-        # For //gui/base:stats_config_util_test
-        "//gui/base:__subpackages__",
-        # For //win32/base:omaha_util_test
-        "//win32/base:__subpackages__",
-    ],
-    deps = [
-        "//base:util",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "win_api_test_helper_test",
-    srcs = ["win_api_test_helper_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":win_api_test_helper",
-        "//testing:gunit_main",
-    ],
-)
-
-# TODO(yuryu): Move this target to renderer/win32.
-mozc_cc_library(
-    name = "win_font_test_helper",
-    testonly = True,
-    srcs = ["win_font_test_helper.cc"],
-    hdrs = ["win_font_test_helper.h"],
-    data = ["//data/test/renderer/win32:mozc_test_font"],
-    features = ["gdi"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":wide_char",
-        "//base:mmap",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log",
-    ],
-)
 
 mozc_cc_library(
     name = "win_sandbox",
@@ -127,45 +53,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "win_sandbox_test",
-    srcs = ["win_sandbox_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":win_sandbox",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/types:span",
-        "@com_microsoft_wil//:wil",
-    ],
-)
-
-mozc_cc_test(
-    name = "win_util_test",
-    size = "small",
-    srcs = ["win_util_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":win_util",
-        ":win_util_test_dll",  # fixdeps: keep
-        "//base:system_util",
-        "//testing:gunit_main",
-        "@com_microsoft_wil//:wil",
-    ],
-)
-
-mozc_cc_binary(
-    name = "win_util_test_dll",
-    testonly = True,
-    srcs = ["win_util_test_dll.cc"],
-    linkshared = True,
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    win_def_file = "win_util_test_dll.def",
-    deps = [":win_util"],
-)
-
 mozc_cc_library(
     name = "winmain",
     hdrs = ["winmain.h"],
@@ -174,9 +61,7 @@ mozc_cc_library(
     tags = MOZC_TAGS.WIN_ONLY,
     target_compatible_with = ["@platforms//os:windows"],
     visibility = [
-        "//gui/tool:__subpackages__",
         "//server:__pkg__",
-        "//win32/cache_service:__subpackages__",
     ],
     deps = [
         ":wide_char",
@@ -220,19 +105,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "wide_char_test",
-    size = "small",
-    srcs = ["wide_char_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":wide_char",
-        "//base:util",
-        "//testing:gunit_main",
-    ],
-)
-
 mozc_cc_library(
     name = "hresult",
     srcs = ["hresult.cc"],
@@ -243,108 +115,6 @@ mozc_cc_library(
         ":wide_char",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@com_microsoft_wil//:wil",
-    ],
-)
-
-mozc_cc_test(
-    name = "hresult_test",
-    size = "small",
-    srcs = ["hresult_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":hresult",
-        "//testing:gunit_main",
-    ],
-)
-
-mozc_cc_library(
-    name = "hresultor",
-    hdrs = ["hresultor.h"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":hresult",
-        ":hresultor_internal",
-        "//base:port",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/log:check",
-    ],
-)
-
-mozc_cc_library(
-    name = "hresultor_internal",
-    hdrs = ["hresultor_internal.h"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [":hresult"],
-)
-
-mozc_cc_test(
-    name = "hresultor_test",
-    size = "small",
-    srcs = ["hresultor_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":hresult",
-        ":hresultor",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_library(
-    name = "com",
-    hdrs = ["com.h"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":hresult",
-        ":hresultor",
-        "@com_google_absl//absl/base:nullability",
-        "@com_microsoft_wil//:wil",
-    ],
-)
-
-mozc_cc_test(
-    name = "com_test",
-    size = "small",
-    srcs = ["com_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":com",
-        ":com_implements",
-        ":scoped_com",
-        "//testing:gunit_main",
-        "@com_microsoft_wil//:wil",
-    ],
-)
-
-mozc_cc_library(
-    name = "com_implements",
-    srcs = ["com_implements.cc"],
-    hdrs = ["com_implements.h"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":com",
-        "@com_google_absl//absl/base",
-    ],
-)
-
-mozc_cc_test(
-    name = "com_implements_test",
-    size = "small",
-    srcs = ["com_implements_test.cc"],
-    tags = MOZC_TAGS.WIN_ONLY,
-    target_compatible_with = ["@platforms//os:windows"],
-    deps = [
-        ":com",
-        ":com_implements",
-        "//testing:gunit_main",
         "@com_microsoft_wil//:wil",
     ],
 )

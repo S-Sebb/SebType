@@ -35,7 +35,6 @@ load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_select",
 )
 
@@ -52,11 +51,7 @@ mozc_cc_library(
     hdrs = ["ipc.h"],
     visibility = [
         "//client:__pkg__",
-        "//gui:__subpackages__",
-        "//mac:__pkg__",
-        "//renderer:__subpackages__",
         "//session:__pkg__",
-        "//win32:__subpackages__",
     ],
     deps = [
         ":ipc_path_manager",
@@ -128,79 +123,12 @@ mozc_cc_library(
     ),
 )
 
-mozc_cc_test(
-    name = "ipc_path_manager_test",
-    size = "small",
-    srcs = ["ipc_path_manager_test.cc"],
-    deps = [
-        ":ipc",
-        ":ipc_cc_proto",
-        ":ipc_path_manager",
-        "//base:file_util",
-        "//base:port",
-        "//base:process_mutex",
-        "//base:system_util",
-        "//base:thread",
-        "//base:version",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-mozc_cc_library(
-    name = "ipc_mock",
-    testonly = True,
-    srcs = ["ipc_mock.cc"],
-    hdrs = ["ipc_mock.h"],
-    visibility = [
-        "//client:__pkg__",
-        "//win32/base:__pkg__",
-    ],
-    deps = [
-        ":ipc",
-        "//base:version",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-mozc_cc_library(
-    name = "ipc_test_util",
-    srcs = ["ipc_test_util.cc"],
-    hdrs = ["ipc_test_util.h"],
-    visibility = ["//renderer:__subpackages__"],
-    deps = [
-        ":ipc",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-mozc_cc_test(
-    name = "ipc_test",
-    size = "small",
-    srcs = ["ipc_test.cc"],
-    copts = ["$(STACK_FRAME_UNLIMITED)"],  # ipc_test.cc
-    deps = [
-        ":ipc",
-        ":ipc_test_util",
-        "//base:thread",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-    ],
-)
-
 mozc_cc_library(
     name = "named_event",
     srcs = ["named_event.cc"],
     hdrs = ["named_event.h"],
     visibility = [
         "//client:__pkg__",
-        "//renderer:__subpackages__",
         "//session:__pkg__",
     ],
     deps = [
@@ -216,43 +144,6 @@ mozc_cc_library(
         windows = [
             "//base/win32:win_sandbox",
             "//base/win32:wide_char",
-            "@com_microsoft_wil//:wil",
-        ],
-    ),
-)
-
-mozc_cc_test(
-    name = "named_event_test",
-    size = "small",
-    srcs = ["named_event_test.cc"],
-    deps = [
-        ":named_event",
-        "//base:clock",
-        "//base:thread",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-mozc_cc_library(
-    name = "process_watch_dog",
-    srcs = ["process_watch_dog.cc"],
-    hdrs = ["process_watch_dog.h"],
-    visibility = ["//renderer:__subpackages__"],
-    deps = [
-        "//base:port",
-        "//base:thread",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/functional:any_invocable",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-    ] + mozc_select(
-        windows = [
-            "//base:vlog",
-            "//base/win32:hresult",
             "@com_microsoft_wil//:wil",
         ],
     ),
@@ -277,28 +168,4 @@ mozc_cc_library(
             "@com_microsoft_wil//:wil",
         ],
     ),
-)
-
-mozc_cc_test(
-    name = "process_watch_dog_test",
-    size = "small",
-    srcs = ["process_watch_dog_test.cc"],
-    deps = [
-        ":process_watch_dog",
-        "//base:clock",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-proto_library(
-    name = "window_info_proto",
-    srcs = ["window_info.proto"],
-)
-
-cc_proto_library(
-    name = "window_info_cc_proto",
-    visibility = ["//gui:__subpackages__"],
-    deps = [":window_info_proto"],
 )

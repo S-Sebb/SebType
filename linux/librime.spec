@@ -15,12 +15,14 @@ Source0:        librime.tar.gz
 Source1:        librime-lua.tar.gz
 Source2:        librime-octagram.tar.gz
 Source3:        librime-predict.tar.gz
+# No schema SebType ships uses librime-predict (#219); it is built so that setup, which replaces every
+# librime package installed, can replace Fedora's too.
 
 BuildRequires:  gcc-c++
 BuildRequires:  cmake, opencc-devel
 BuildRequires:  boost-devel >= 1.46
 BuildRequires:  zlib-devel
-BuildRequires:  glog-devel, gtest-devel
+BuildRequires:  glog-devel
 BuildRequires:  yaml-cpp-devel
 BuildRequires:  gflags-devel
 BuildRequires:  marisa-devel

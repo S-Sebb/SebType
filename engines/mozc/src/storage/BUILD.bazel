@@ -33,7 +33,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//visibility:private"])
@@ -74,21 +73,11 @@ mozc_cc_library(
         "//prediction:__pkg__",
         "//rewriter:__pkg__",
         "//session:__pkg__",
-        "//unix/emacs:__pkg__",
     ],
     deps = [
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:check",
-    ],
-)
-
-mozc_cc_test(
-    name = "lru_cache_test",
-    srcs = ["lru_cache_test.cc"],
-    deps = [
-        ":lru_cache",
-        "//testing:gunit_main",
     ],
 )
 
@@ -115,41 +104,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "lru_storage_test",
-    size = "small",
-    srcs = ["lru_storage_test.cc"],
-    deps = [
-        ":lru_cache",
-        ":lru_storage",
-        "//base:clock_mock",
-        "//base:file_util",
-        "//base:random",
-        "//base/file:temp_dir",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/random",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-mozc_cc_test(
-    name = "existence_filter_test",
-    size = "small",
-    srcs = ["existence_filter_test.cc"],
-    deps = [
-        ":existence_filter",
-        "//base:hash",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "encrypted_string_storage",
     srcs = ["encrypted_string_storage.cc"],
@@ -167,22 +121,5 @@ mozc_cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "encrypted_string_storage_test",
-    size = "small",
-    srcs = ["encrypted_string_storage_test.cc"],
-    tags = [
-        "nowin",
-    ],  # TODO(yuryu): depends on //base:encryptor
-    deps = [
-        ":encrypted_string_storage",
-        "//base:file_stream",
-        "//base:file_util",
-        "//base:system_util",
-        "//testing:gunit_main",
-        "//testing:mozctest",
     ],
 )

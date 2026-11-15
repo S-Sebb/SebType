@@ -34,7 +34,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_select",
 )
 
@@ -61,20 +60,6 @@ mozc_cc_library(
     ),
 )
 
-mozc_cc_test(
-    name = "temp_dir_test",
-    srcs = ["temp_dir_test.cc"],
-    deps = [
-        ":temp_dir",
-        "//base:environ_mock",
-        "//base:file_util",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "recursive",
     srcs = ["recursive.cc"],
@@ -97,17 +82,4 @@ mozc_cc_library(
             "@com_microsoft_wil//:wil",
         ],
     ),
-)
-
-mozc_cc_test(
-    name = "recursive_test",
-    srcs = ["recursive_test.cc"],
-    deps = [
-        ":recursive",
-        ":temp_dir",
-        "//base:file_util",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-    ],
 )

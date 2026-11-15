@@ -2,6 +2,10 @@
 
 Directory of the source code.
 
+SebType keeps only what it builds (#219): the server (Linux and Windows) and
+`libmozc.so` for Android, with the libraries and data they use. Mozc's
+clients, renderer, GUI tools, unit tests and their build rules are removed.
+
 ## Overview of components and directories
 
 ```
@@ -24,15 +28,6 @@ requirements.
 *   [android/](android/)
     *   Android specific implementation.
     *   Note: Mozc does not contain the client UI implementation for Android.
-*   [unix/](unix/)
-    *   Linux specific implementation.
-*   [win32/](win32/)
-    *   Windows specific implementation.
-*   [mac/](mac/)
-    *   macOS specific implementation.
-*   [ios/](ios/)
-    *   iOS specific implementation.
-    *   Note: Mozc does not officially support iOS build.
 
 ### Build
 
@@ -49,8 +44,6 @@ requirements.
     *   Directory and subdirectories of data files.
 *   [third_party/](third_party/)
     *   Third party libraries (e.g. Abseil).
-*   [testing/](testing/)
-    *   Libraries for testing.
 *   [usage_stats/](usage_stats/)
     *   Libraries for usage statistics.
     *   Note: Mozc does not use usage statistics.
@@ -110,10 +103,3 @@ requirements.
     *   Libraries of dictionary lookup (e.g. Hiragana key to possible words).
 *   [storage/](storage/)
     *   Libraries of dictionary data storage (e.g. LOUDS, etc.).
-
-### UI
-
-*   [renderer/](renderer/)
-    *   UI application of candidate words.
-*   [gui/](gui/)
-    *   GUI applications for configurations.

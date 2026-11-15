@@ -32,7 +32,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
 )
 
 package(default_visibility = ["//:__subpackages__"])
@@ -46,29 +45,9 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "arena_test",
-    srcs = ["arena_test.cc"],
-    deps = [
-        ":arena",
-        "//testing:gunit_main",
-    ],
-)
-
 mozc_cc_library(
     name = "bitarray",
     hdrs = ["bitarray.h"],
-)
-
-mozc_cc_test(
-    name = "bitarray_test",
-    size = "small",
-    srcs = ["bitarray_test.cc"],
-    deps = [
-        ":bitarray",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/random",
-    ],
 )
 
 mozc_cc_library(
@@ -90,52 +69,12 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "flat_map_test",
-    srcs = ["flat_map_test.cc"],
-    deps = [
-        ":flat_map",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "flat_multimap",
     hdrs = ["flat_multimap.h"],
     deps = [
         ":flat_internal",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "flat_multimap_test",
-    srcs = ["flat_multimap_test.cc"],
-    deps = [
-        ":flat_multimap",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_library(
-    name = "flat_set",
-    hdrs = ["flat_set.h"],
-    deps = [
-        ":flat_internal",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-mozc_cc_test(
-    name = "flat_set_test",
-    srcs = ["flat_set_test.cc"],
-    deps = [
-        ":flat_set",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/base:log_severity",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -153,17 +92,6 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "serialized_string_array_test",
-    size = "small",
-    srcs = ["serialized_string_array_test.cc"],
-    deps = [
-        ":serialized_string_array",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "trie",
     hdrs = ["trie.h"],
@@ -173,19 +101,6 @@ mozc_cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_test(
-    name = "trie_test",
-    size = "small",
-    srcs = ["trie_test.cc"],
-    deps = [
-        ":trie",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -200,29 +115,7 @@ mozc_cc_library(
     ],
 )
 
-mozc_cc_test(
-    name = "flat_concurrent_cache_test",
-    size = "small",
-    srcs = ["flat_concurrent_cache_test.cc"],
-    deps = [
-        ":flat_concurrent_cache",
-        "//base:thread",
-        "//testing:gunit_main",
-        "@com_google_absl//absl/hash",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
 mozc_cc_library(
     name = "tuple",
     hdrs = ["tuple.h"],
-)
-
-mozc_cc_test(
-    name = "tuple_test",
-    srcs = ["tuple_test.cc"],
-    deps = [
-        ":tuple",
-        "//testing:gunit_main",
-    ],
 )

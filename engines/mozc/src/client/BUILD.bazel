@@ -30,7 +30,6 @@
 load(
     "//:build_defs.bzl",
     "mozc_cc_library",
-    "mozc_cc_test",
     "mozc_select",
 )
 
@@ -40,12 +39,8 @@ mozc_cc_library(
     name = "client_interface",
     hdrs = ["client_interface.h"],
     visibility = [
-        "//gui:__subpackages__",
-        "//mac:__pkg__",
-        "//renderer:__subpackages__",
         "//session:__pkg__",
         "//visibility:public",
-        "//win32:__subpackages__",
     ],
     deps = [
         "//ipc",
@@ -70,12 +65,8 @@ mozc_cc_library(
         oss = ["MOZC_USE_SVS_JAPANESE"],
     ),
     visibility = [
-        "//gui:__subpackages__",
-        "//mac:__pkg__",
         "//session:__pkg__",
-        "//unix:__subpackages__",
         "//visibility:public",
-        "//win32:__subpackages__",
     ],
     deps = [
         ":client_interface",
@@ -109,50 +100,4 @@ mozc_cc_library(
             "//base/win32:win_sandbox",
         ],
     ),
-)
-
-mozc_cc_test(
-    name = "client_test",
-    size = "small",
-    srcs = ["client_test.cc"],
-    deps = [
-        ":client",
-        ":client_interface",
-        "//base:number_util",
-        "//base:version",
-        "//base/strings:assign",
-        "//composer:key_parser",
-        "//config:config_handler",
-        "//ipc",
-        "//ipc:ipc_mock",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//testing:gunit_main",
-        "//testing:mozctest",
-        "//testing:test_peer",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-mozc_cc_library(
-    name = "client_mock",
-    testonly = True,
-    hdrs = ["client_mock.h"],
-    visibility = [
-        "//mac:__pkg__",
-        "//session:__pkg__",
-        "//unix:__subpackages__",
-        "//visibility:public",
-    ],
-    deps = [
-        ":client_interface",
-        "//ipc",
-        "//protocol:commands_cc_proto",
-        "//protocol:config_cc_proto",
-        "//testing:gunit",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/time",
-    ],
 )

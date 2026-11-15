@@ -211,55 +211,6 @@ use_repo(android_ndk_repository_extension, "androidndk")
 
 register_toolchains("@androidndk//:all")
 
-new_local_repository = use_repo_rule(
-    "@bazel_tools//tools/build_defs/repo:local.bzl",
-    "new_local_repository",
-)
-
-pkg_config_repository = use_repo_rule(
-    "@//bazel:pkg_config_repository.bzl",
-    "pkg_config_repository",
-)
-
-# iBus
-pkg_config_repository(
-    name = "ibus",
-    exec_os = ["linux"],
-    packages = [
-        "glib-2.0",
-        "gobject-2.0",
-        "ibus-1.0",
-    ],
-)
-
-# Qt for Linux
-pkg_config_repository(
-    name = "qt_linux",
-    exec_os = ["linux"],
-    packages = [
-        "Qt6Core",
-        "Qt6Gui",
-        "Qt6Widgets",
-    ],
-)
-
-# Qt for macOS
-qt_mac_repository = use_repo_rule("@//bazel:qt_mac_repository.bzl", "qt_mac_repository")
-
-QT_PATH = "third_party/qt"
-
-qt_mac_repository(
-    name = "qt_mac",
-    default_path = QT_PATH,  # can be replaced with MOZC_QT_PATH envvar.
-)
-
-# Qt for Windows
-new_local_repository(
-    name = "qt_win",
-    build_file = "@//bazel:BUILD.qt_win.bazel",
-    path = QT_PATH,  # Windows build requires the Qt source code to be in QT_PATH.
-)
-
 # Windows SDK
 windows_sdk_repository = use_repo_rule(
     "@//bazel:windows_sdk_repository.bzl",
@@ -268,74 +219,6 @@ windows_sdk_repository = use_repo_rule(
 
 windows_sdk_repository(
     name = "windows_sdk",
-)
-
-# dotnet tool repository (to load "wix")
-dotnet_tool_repository = use_repo_rule(
-    "@//bazel:dotnet_tool_repository.bzl",
-    "dotnet_tool_repository",
-)
-
-dotnet_tool_repository(
-    name = "wix",
-    version = "5.0.2",
-)
-
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
-# Material icons
-http_file(
-    name = "material_icon_dictionary_png",
-    downloaded_file_path = "dictionary.png",
-    sha256 = "6d2ac7befa038d4f32e07136293acaf5d8645a4daecb6d063f34be2ffea59b55",
-    urls = [
-        "https://raw.githubusercontent.com/google/material-design-icons/4.0.0/png/action/chrome_reader_mode/materialiconsoutlined/48dp/1x/outline_chrome_reader_mode_black_48dp.png",
-    ],
-)
-
-http_file(
-    name = "material_icon_dictionary_svg",
-    downloaded_file_path = "dictionary.svg",
-    sha256 = "a4c7b9bfb442a7497b72d74358c31034c4fef1ab2a50659834784580751ac04d",
-    urls = [
-        "https://raw.githubusercontent.com/google/material-design-icons/4.0.0/src/action/chrome_reader_mode/materialiconsoutlined/24px.svg",
-    ],
-)
-
-http_file(
-    name = "material_icon_properties_png",
-    downloaded_file_path = "properties.png",
-    sha256 = "c4ae8bb7992f43157be9d026f76a7039af6e0e3de0f220842208dfda8c38714a",
-    urls = [
-        "https://raw.githubusercontent.com/google/material-design-icons/4.0.0/png/action/settings/materialiconsround/48dp/1x/round_settings_black_48dp.png",
-    ],
-)
-
-http_file(
-    name = "material_icon_properties_svg",
-    downloaded_file_path = "properties.svg",
-    sha256 = "9b01b133be1caffc680f132d385d0e594262d6cfd29759a63c428050b83fe628",
-    urls = [
-        "https://raw.githubusercontent.com/google/material-design-icons/4.0.0/src/action/settings/materialiconsround/24px.svg",
-    ],
-)
-
-http_file(
-    name = "material_icon_tool_png",
-    downloaded_file_path = "tool.png",
-    sha256 = "269433bf6d6948a93ab6a57a73ceb5930870223046052cfffe01eeca37327d3e",
-    urls = [
-        "https://raw.githubusercontent.com/google/material-design-icons/4.0.0/png/action/build/materialicons/48dp/1x/baseline_build_black_48dp.png",
-    ],
-)
-
-http_file(
-    name = "material_icon_tool_svg",
-    downloaded_file_path = "tool.svg",
-    sha256 = "df34fba3d09778db69503a23b688761051dbf65b5bccb0d7b729c69ff61c3804",
-    urls = [
-        "https://raw.githubusercontent.com/google/material-design-icons/4.0.0/src/action/build/materialicons/24px.svg",
-    ],
 )
 
 # Note that there is also 'archive_override', which wraps 'http_archive'.
@@ -352,23 +235,6 @@ http_archive(
     sha256 = "f116af6cd96b8404d5e3cd6ef18853f7baa9c7d96930e741591fea8b5a3ef919",
     strip_prefix = "wil-1.0.230629.1",
     url = "https://github.com/microsoft/wil/archive/refs/tags/v1.0.230629.1.zip",
-)
-
-# Google Toolbox for Mac
-# https://github.com/google/google-toolbox-for-mac
-# We just need UnitTesting, so strip to the directory and skip dependencies.
-GTM_GIT_SHA = "8fbaae947b87c1e66c0934493168fc6d583ed889"
-
-http_archive(
-    name = "google_toolbox_for_mac",
-    build_file = "@//bazel:BUILD.google_toolbox_for_mac.bazel",
-    patch_args = ["-p2"],
-    patches = ["@//bazel:google_toolbox_for_mac.patch"],
-    sha256 = "424bca6571778496efa5328ffcca26edf083e282da7074d30b3e980516cea2a4",
-    strip_prefix = "google-toolbox-for-mac-%s/UnitTesting" % GTM_GIT_SHA,
-    urls = [
-        "https://github.com/google/google-toolbox-for-mac/archive/%s.zip" % GTM_GIT_SHA,
-    ],
 )
 
 # Japanese Usage Dictionary (2025-01-25)
