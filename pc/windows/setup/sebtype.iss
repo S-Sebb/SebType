@@ -1,4 +1,4 @@
-; SebType's Windows installer (#73): one SebType-setup-<version>.exe that installs, upgrades and
+﻿; SebType's Windows installer (#73): one SebType-setup-<version>.exe that installs, upgrades and
 ; uninstalls everything SebType needs on Windows, in the Picnic look (Decisions #2). Built by
 ; .github/workflows/windows-setup.yml:
 ;   ISCC /DIn=<folder of the workflow's artifacts> [/DBuild=<n>] pc/windows/setup/sebtype.iss
@@ -374,7 +374,9 @@ begin
     else
       Exec(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec('taskkill.exe', '/f /im sebtype-server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Log('taskkill sebtype-server.exe: ' + IntToStr(Code));  // 0 stopped, 128 none running
   Exec('taskkill.exe', '/f /im mozc_server.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Log('taskkill mozc_server.exe: ' + IntToStr(Code));
 end;
 // A loaded file can't be replaced but can be renamed: the new one goes in its place, apps load it when they
 // next start, and the next Setup deletes the old one. Servers count too: a running app's text service starts

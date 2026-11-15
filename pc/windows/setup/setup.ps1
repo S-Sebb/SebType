@@ -79,6 +79,7 @@ function Stop-Server {
     (Start-Process -PassThru -FilePath $Server -ArgumentList '/quit').WaitForExit()
     Get-Server | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
     Get-Server | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Server | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue  # until it lets go of its mapped files
   }
 }
 # Mozc's server holds its files (SebType's, next to this file, or the Mozc SebType had before); without
@@ -283,7 +284,9 @@ if ('zh' -in $want) {
     Expand-Archive $RimeData $tmp -Force
     if (Test-Path (Join-Path $RimeUser 'custom_phrase.txt')) { Remove-Item (Join-Path $tmp 'custom_phrase.txt') -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Force $RimeUser | Out-Null
-    Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force
+    # An app's text service may start a server again meanwhile, which maps the tables (#190): once more.
+    try { Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
+    catch { Write-Output "user: copy again after: $_"; Stop-Server; Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
     # An older dictionary source (the user's own rime-ice) would be compiled instead of the prebuilt table.
     Get-ChildItem (Join-Path $tmp 'build\*.table.bin') | ForEach-Object {
       Remove-Item (Join-Path $RimeUser "$($_.BaseName -replace '\.table$').dict.yaml") -ErrorAction SilentlyContinue }

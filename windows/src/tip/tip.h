@@ -39,8 +39,7 @@ class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
                           public ITfCompositionSink,
                           public ITfDisplayAttributeProvider,
-                          public ITfInputProcessorProfileActivationSink,
-                          public ITfCompartmentEventSink {
+                          public ITfInputProcessorProfileActivationSink {
  public:
   TextService();
   ~TextService();
@@ -84,9 +83,6 @@ class TextService final : public ITfTextInputProcessorEx,
   STDMETHODIMP OnActivated(DWORD profileType, LANGID langid, REFCLSID clsid, REFGUID catid, REFGUID profile,
                            HKL hkl, DWORD flags) override;
 
-  // ITfCompartmentEventSink: Windows' Japanese Alt+` turns "IME on" off and on instead of passing the key.
-  STDMETHODIMP OnChange(REFGUID guid) override;
-
   // The candidate window's clicks and the tray menu's picks.
   void select(int indexOnPage);
   void menu(int index);
@@ -108,14 +104,12 @@ class TextService final : public ITfTextInputProcessorEx,
   // A password field, where keys go to the app as they are (as Mozc did); asked once per focus.
   bool password(ITfContext *context);
   void setOpen();
-  ITfCompartment *openCompartment();
   void focus(ITfDocumentMgr *focus);
 
   std::atomic<long> refs_{1};
   ITfThreadMgr *threadMgr_ = nullptr;
   TfClientId clientId_ = TF_CLIENTID_NULL;
-  DWORD threadMgrCookie_ = TF_INVALID_COOKIE, activationCookie_ = TF_INVALID_COOKIE, openCookie_ = TF_INVALID_COOKIE;
-  bool settingOpen_ = false;  // our own change of "IME on", which OnChange leaves alone
+  DWORD threadMgrCookie_ = TF_INVALID_COOKIE, activationCookie_ = TF_INVALID_COOKIE;
   ITfComposition *composition_ = nullptr;
   ITfContext *context_ = nullptr;  // the focused one, for clicks and menu picks
   enum class Password { Unknown, No, Yes } password_ = Password::Unknown;

@@ -224,7 +224,7 @@ if ($Typing) {
           $tsf::Clear(); if ($lang -eq 'zh') { TypeText 'nihao' } else { TypeText 'nihongo'; Keys space space }
           Start-Sleep 2
           $size = $tsf::CandidateWindow("$out\162-sebtype-$lang-$o.png"); $text = $tsf::Text(); Keys Escape Escape
-          if (-not $size) { throw "no candidate window ($lang, $o), the field holds '$text'" }
+          if (-not $size) { throw "no candidate window ($lang, $o), the field holds '$text', active $($tsf::Active())" }
           "$lang $o $size"
         }
       }
@@ -271,7 +271,9 @@ if ($Typing) {
       if ($Typing -eq 'all') {
         Check 'win-space-cycle' {
           To-Language '0409'
-          $seen = foreach ($i in 1..3) { Keys 'Super_L+space'; Start-Sleep 1; Lang }
+          # Each switch lands before the next press: the first to 中文 and 日本語 starts the server and loads
+          # the engine (about 2 s each after an install).
+          $seen = foreach ($i in 1..3) { $was = Lang; Keys 'Super_L+space'; $null = Wait-Until 5 { (Lang) -ne $was }; Lang }
           if (($seen -join ' ') -ne '0804 0411 0409') { throw "from EN, Win+Space gave $($seen -join ' → ') (0804 中, 0411 日, 0409 EN)" }
           'EN → 中 → 日 → EN'
         }
