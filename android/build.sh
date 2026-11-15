@@ -6,6 +6,8 @@
 #   android/build.sh test-x86_64   debug APK, then its instrumented-test APK, for an x86_64 emulator
 #   android/build.sh debug         debug arm64-v8a APK, the one the emulator tests run (through the
 #                                  emulator's ARM translation), as the phone does
+# Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here), and copies
+# the APKs back. A release comes back unsigned and is signed here: the key never leaves this PC.
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
 # Each run copies its APKs, inside the lock, to a folder of its own in app/build/runs/, so builds run at the
 # same time in one checkout can't swap each other's APK (#182). Prints the APK path last (then, for
@@ -18,6 +20,46 @@ source ../tools/lib.sh
 
 kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
+signed_by_sebtype() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner verify --print-certs "$1" 2>/dev/null | grep -q 'CN=SebType'; }
+# SEBTYPE_UNSIGNED=1: a release without the key (on the build host, for the PC to sign).
+unsigned=${SEBTYPE_UNSIGNED:-}
+if [[ $kind == release ]]; then
+  VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} build=$VERSION_CODE
+  [[ -n $unsigned || ( -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ) ]] ||
+    { echo "build: keystore missing in $keydir" >&2; exit 1; }
+else VERSION_CODE=1 build=dev; fi
+
+# Runs older than a day are gone: a caller uses its APK within minutes.
+mkdir -p app/build/runs
+find app/build/runs -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
+
+if build_host_ready; then
+  apks=$(build_remotely VERSION_CODE="$VERSION_CODE" SEBTYPE_UNSIGNED=1 android/build.sh "$kind")
+  if [[ $kind == release ]]; then
+    # As Gradle signs it: APK Signature Scheme v2 alone (minSdk 24), with an RSA key, so the same bytes.
+    apk=${apks%-unsigned.apk}.apk
+    "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner sign --ks "$keydir/sebtype-release.jks" \
+      --ks-key-alias sebtype --ks-pass "file:$keydir/keystore.password" --v1-signing-enabled false \
+      --v2-signing-enabled true --v3-signing-enabled false --v4-signing-enabled false --out "$apk" "$apks" 2>/dev/null
+    rm "$apks"
+    signed_by_sebtype "$apk" || { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
+    apks=$apk
+  fi
+  echo "$apks"
+  exit
+fi
+
+# On yanglab16 the tools come pinned into the scratch cache, and the build runs in Fedora, as here: as
+# tony, with an empty home (Java takes it from the user, not HOME), its CPUs and memory capped, and the
+# scratch folder (under both its paths: Gradle takes the NAS's) and Bazel's cache mounted where they are.
+container=()
+if [[ $(hostname -s) == yanglab16 ]]; then
+  image=$(../tools/android-tools.sh)
+  nas=$(readlink -f "$SCRATCH")
+  container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
+    --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"
+    -v "$nas:$SCRATCH" -v "$nas:$nas" -v "$BAZEL_CACHE:$BAZEL_CACHE" -w "$PWD" "$image")
+fi
 export JAVA_HOME=$JDK21
 [[ -x $JAVA_HOME/bin/javac ]] || { echo "build: JDK 21 not found (set JAVA_HOME_21)" >&2; exit 1; }
 [[ -d $ANDROID_HOME/ndk/28.2.13676358 ]] || { echo "build: NDK 28.2.13676358 missing in $ANDROID_HOME" >&2; exit 1; }
@@ -25,15 +67,10 @@ export JAVA_HOME=$JDK21
 # Mozc's Japanese dictionary (pinned URL and sha256 in FUTO's script), bundled like FUTO's Play Store build.
 python3 app/res-bundle/download-bundles.py "$PWD/app/res-bundle" >&2
 
-if [[ $kind == release ]]; then
-  VERSION_CODE=$(git rev-list --first-parent --count HEAD) build=$VERSION_CODE
-else VERSION_CODE=1 build=dev; fi
 VERSION_NAME="$(cat upstream-version)-sebtype.$build"
 export VERSION_CODE VERSION_NAME
 case $kind in
   release)
-    [[ -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ]] ||
-      { echo "build: keystore missing in $keydir" >&2; exit 1; }
     task=assembleRelease abis=arm64-v8a out=app/build/outputs/apk/release ;;
   debug-x86_64)
     task=assembleDebug abis=x86_64 out=app/build/outputs/apk/debug ;;
@@ -43,23 +80,19 @@ case $kind in
     task=assembleDebug abis=arm64-v8a out=app/build/outputs/apk/debug ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
-# This run's APKs, hard links to Gradle's (which the next build replaces, not overwrites). Runs older than
-# a day are gone: a caller uses its APK within minutes.
-mkdir -p app/build/runs
-find app/build/runs -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
+# This run's APKs, hard links to Gradle's (which the next build replaces, not overwrites).
 run=$(mktemp -d "$PWD/app/build/runs/$kind.XXXXXX")
 locked=$run/locked # when the build lock was taken
 
 # Native objects come from sccache when it is installed (CMake takes the launcher from the environment
-# when it first configures a checkout). A private server per build hashes paths relative to the checkout's root,
-# and build.gradle keeps them out of the objects, so every worktree shares the cache.
+# when it first configures a checkout). A private server per build, started in the lock (and the container),
+# hashes paths relative to the checkout's real root, and build.gradle keeps them out of the objects, so every
+# worktree shares the cache.
 if command -v sccache >/dev/null; then
   mkdir -p "$SCRATCH/cache"
   SCCACHE_SERVER_UDS=$(mktemp -u "$SCRATCH/cache/sccache.XXXXXX")  # well under a socket path's 108 bytes
-  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=${PWD%/*} \
+  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=$(cd .. && pwd -P) \
     SCCACHE_SERVER_UDS
-  sccache --start-server >/dev/null
-  trap 'sccache --stop-server >/dev/null; rm -f "$SCCACHE_SERVER_UDS"' EXIT
 fi
 
 start=$(date +%s)
@@ -67,23 +100,27 @@ start=$(date +%s)
 # checkout can't take each other's signing away, and Gradle stops without it (#149, #178).
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
-export SEBTYPE_KEY_DIR=$keydir KIND=$kind OUT=$out RUN=$run BUILD_JOBS
-build_lock 30 "sebtype build ($kind, $(basename "$(git rev-parse --show-toplevel)"))" bash -c '
+export SEBTYPE_KEY_DIR=$keydir KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS UNSIGNED=$unsigned
+build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${container[@]}" bash -c '
+  set -e
   date +%s > "$RUN/locked"
+  if [[ -n ${SCCACHE_SERVER_UDS:-} ]]; then
+    sccache --start-server >/dev/null
+    trap "sccache --stop-server >/dev/null; rm -f $SCCACHE_SERVER_UDS" EXIT
+  fi
   rm -rf "$OUT" app/build/outputs/apk/androidTest
-  if [[ $KIND == release ]]; then
+  if [[ $KIND == release && -z $UNSIGNED ]]; then
     export SEBTYPE_KEYSTORE=$SEBTYPE_KEY_DIR/sebtype-release.jks
     SEBTYPE_KEYSTORE_PASSWORD=$(cat "$SEBTYPE_KEY_DIR/keystore.password"); export SEBTYPE_KEYSTORE_PASSWORD
   fi
-  ./gradlew --no-daemon --max-workers="$BUILD_JOBS" -Dorg.gradle.jvmargs=-Xmx3g \
+  ./gradlew --no-daemon --max-workers="$GRADLE_WORKERS" -PsebtypeJobs="$BUILD_JOBS" -Dorg.gradle.jvmargs=-Xmx3g \
     -Pkotlin.compiler.execution.strategy=daemon -Pkotlin.daemon.jvmargs=-Xmx2g --console=plain -q "$@" >&2
   cp -l "$OUT"/*.apk "$RUN/"
   if [[ $KIND == test-x86_64 ]]; then mkdir "$RUN/androidTest" && cp -l app/build/outputs/apk/androidTest/debug/*.apk "$RUN/androidTest/"; fi
-' build $task -PsebtypeAbis="$abis"
+' build $task -PsebtypeAbis="$abis" ${unsigned:+-PunsignedRelease}
 apk=$(echo "$run"/*.apk)
-if [[ $kind == release ]]; then
-  "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner verify --print-certs "$apk" 2>/dev/null | grep -q 'CN=SebType' ||
-    { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
+if [[ $kind == release && -z $unsigned ]]; then
+  signed_by_sebtype "$apk" || { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
 fi
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - $(cat "$locked") ))s after $(( $(cat "$locked") - start ))s in the lock queue, $(du -h "$apk" | cut -f1)" >&2
 echo "$apk"

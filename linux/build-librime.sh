@@ -5,6 +5,7 @@
 #   linux/build-librime.sh    # -> ~/scratch/SebType/cache/librime/librime{,-lua,...}-<version>-<release>.x86_64.rpm
 #
 # One to five minutes, in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
+# Runs on yanglab16 when it answers (tools/lib.sh, #225) and copies the RPMs back to the same paths here.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -14,6 +15,7 @@ source "$here/versions.sh"
 source "$here/rpm-sources.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$here/../tools/lib.sh"
+if build_host_ready; then build_remotely linux/build-librime.sh; exit; fi
 spec=$here/librime.spec cache=$LIBRIME_CACHE
 mkdir -p "$cache"/{work,sources}
 fetch_lookaside librime "$cache/sources" "${LIBRIME_SOURCES[@]}"
@@ -32,7 +34,7 @@ rpmbuild -bb --define '_topdir /work/top' --define '_sourcedir /sources' --defin
 EOF
 )
 build_lock 5 "librime build" \
-  podman run --rm --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -v "$cache/work:/work:Z" -v "$cache/sources:/sources:ro,Z" \
+  podman run --rm --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -v "$cache/work:/work:Z" -v "$cache/sources:/sources:ro,Z" \
   -v "$spec:/pkg.spec:ro,Z" "$image" bash -c "$inner" inner "$LIBRIME_VERSION" "$LIBRIME_SEBTYPE_RELEASE" "$BUILD_JOBS"
 for rpm in "$cache"/work/top/RPMS/*/*-"$LIBRIME_SEBTYPE_RELEASE".*.rpm; do
   cp "$rpm" "$cache/"
