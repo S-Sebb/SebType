@@ -68,9 +68,27 @@ STDMETHODIMP LangBarButton::GetTooltipString(BSTR *out) {
 
 STDMETHODIMP LangBarButton::GetText(BSTR *out) { return GetTooltipString(out); }
 
-STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT, const RECT *) {
+STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT pt, const RECT *) {
   if (click == TF_LBI_CLK_LEFT) service_.toggleLatin();
+  if (click == TF_LBI_CLK_RIGHT) popup(pt);
   return S_OK;
+}
+
+// A right-click on Windows' input indicator comes here, and the text service shows the menu itself (as
+// Mozc's did): the same items as InitMenu, the language bar's way. The owner is hidden and never
+// activated, so the app's text field keeps the keyboard.
+void LangBarButton::popup(POINT pt) {
+  HMENU menu = CreatePopupMenu();
+  const auto &items = service_.reply().menu;
+  for (size_t i = 0; i < items.size(); ++i)
+    if (items[i].kind == MenuItem::Switch)
+      AppendMenuW(menu, MF_STRING | (items[i].checked ? MF_CHECKED : 0), i + 1, utf16(items[i].label).c_str());
+  HWND owner = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", nullptr, WS_POPUP, pt.x, pt.y, 0, 0,
+                               nullptr, nullptr, dllInstance, nullptr);
+  const UINT id = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, pt.x, pt.y, owner, nullptr);
+  DestroyWindow(owner);
+  DestroyMenu(menu);
+  if (id) service_.menu(static_cast<int>(id - 1));
 }
 
 // The core's menu without its language list, which Windows shows itself: the language's switch.

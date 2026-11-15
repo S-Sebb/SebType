@@ -192,6 +192,8 @@ STDMETHODIMP TextService::QueryInterface(REFIID riid, void **out) {
     *out = static_cast<ITfDisplayAttributeProvider *>(this);
   else if (riid == IID_ITfInputProcessorProfileActivationSink)
     *out = static_cast<ITfInputProcessorProfileActivationSink *>(this);
+  else if (riid == IID_ITfCompartmentEventSink)
+    *out = static_cast<ITfCompartmentEventSink *>(this);
   else {
     *out = nullptr;
     return E_NOINTERFACE;
@@ -246,6 +248,14 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
     items->Release();
   }
   setOpen();
+  if (ITfCompartment *open = openCompartment()) {
+    ITfSource *openSource = nullptr;
+    if (SUCCEEDED(open->QueryInterface(IID_ITfSource, reinterpret_cast<void **>(&openSource)))) {
+      openSource->AdviseSink(IID_ITfCompartmentEventSink, static_cast<ITfCompartmentEventSink *>(this), &openCookie_);
+      openSource->Release();
+    }
+    open->Release();
+  }
 
   // The profile Windows activated us with: 中文 or 日本語.
   ITfInputProcessorProfileMgr *profiles = nullptr;
@@ -283,6 +293,15 @@ STDMETHODIMP TextService::Deactivate() {
     button_->Release();
     button_ = nullptr;
   }
+  if (ITfCompartment *open = openCompartment()) {
+    ITfSource *openSource = nullptr;
+    if (SUCCEEDED(open->QueryInterface(IID_ITfSource, reinterpret_cast<void **>(&openSource)))) {
+      openSource->UnadviseSink(openCookie_);
+      openSource->Release();
+    }
+    open->Release();
+  }
+  openCookie_ = TF_INVALID_COOKIE;
   ITfKeystrokeMgr *keys = nullptr;
   if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfKeystrokeMgr, reinterpret_cast<void **>(&keys)))) {
     keys->UnadviseKeyEventSink(clientId_);
@@ -301,19 +320,44 @@ STDMETHODIMP TextService::Deactivate() {
   return S_OK;
 }
 
-// Windows' "IME on": the input indicator shows the button's icon, not a crossed-out one.
-void TextService::setOpen() {
+ITfCompartment *TextService::openCompartment() {
   ITfCompartmentMgr *mgr = nullptr;
   ITfCompartment *open = nullptr;
-  if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfCompartmentMgr, reinterpret_cast<void **>(&mgr))) &&
-      SUCCEEDED(mgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &open))) {
+  if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfCompartmentMgr, reinterpret_cast<void **>(&mgr))))
+    mgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &open);
+  if (mgr) mgr->Release();
+  return open;
+}
+
+// Windows' "IME on": the input indicator shows the button's icon, not a crossed-out one.
+void TextService::setOpen() {
+  if (ITfCompartment *open = openCompartment()) {
     VARIANT v;
     v.vt = VT_I4;
     v.lVal = 1;
+    settingOpen_ = true;
     open->SetValue(clientId_, &v);
+    settingOpen_ = false;
+    open->Release();
   }
-  if (open) open->Release();
-  if (mgr) mgr->Release();
+}
+
+// Alt+` is SebType's ア key in 日本語 (Mozc's keymap, as on Linux), but Windows takes it as its Japanese
+// "IME on/off" key and only changes this compartment, as it did for Mozc's own text service. Changes
+// while Alt and ` are down are that key: it goes to the server as one, and "IME on" stays on. Others
+// (Windows' own, on a language switch) are left as they are.
+STDMETHODIMP TextService::OnChange(REFGUID guid) {
+  const auto down = [](int vk) { return ((GetKeyState(vk) | GetAsyncKeyState(vk)) & 0x8000) != 0; };
+  if (guid != GUID_COMPARTMENT_KEYBOARD_OPENCLOSE || settingOpen_ || !down(VK_MENU) || !down(VK_OEM_3))
+    return S_OK;
+  Request q{Op::Key};
+  q.key = {'`', mod::Alt, false};
+  bool sent = send(q);
+  q.key.release = true;
+  sent = send(q) || sent;
+  if (sent && context_) apply(context_);
+  setOpen();
+  return S_OK;
 }
 
 STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid, REFGUID, REFGUID profile, HKL,

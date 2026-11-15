@@ -223,8 +223,8 @@ if ($Typing) {
           Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'vertical'))", 'FontSize=14', 'Picnic=1'
           $tsf::Clear(); if ($lang -eq 'zh') { TypeText 'nihao' } else { TypeText 'nihongo'; Keys space space }
           Start-Sleep 2
-          $size = $tsf::CandidateWindow("$out\162-sebtype-$lang-$o.png"); Keys Escape Escape
-          if (-not $size) { throw "no candidate window ($lang, $o)" }
+          $size = $tsf::CandidateWindow("$out\162-sebtype-$lang-$o.png"); $text = $tsf::Text(); Keys Escape Escape
+          if (-not $size) { throw "no candidate window ($lang, $o), the field holds '$text'" }
           "$lang $o $size"
         }
       }
@@ -514,12 +514,15 @@ namespace SebTypeSetupTest {
     Get-Content -Encoding utf8 "$out\typing-$phase-results.txt" | Where-Object { $_ } | ForEach-Object { Add-Content -Encoding utf8 $results $_; Write-Host $_ }
   }
 
-  # Windows Server opens Server Manager at an admin's logon, in front of whatever the test shows.
-  if (Wait-Until 45 { Get-Process ServerManager -ErrorAction SilentlyContinue }) {
+  # Windows Server opens Server Manager at an admin's logon, in front of whatever the test shows, unless
+  # the machine's setting or policy says not to (TCSBackEnd's does: no 45 s wait for nothing there).
+  $quiet = (Get-ItemProperty HKLM:\SOFTWARE\Microsoft\ServerManager -ErrorAction SilentlyContinue).DoNotOpenServerManagerAtLogon -eq 1 -or
+    (Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\Server\ServerManager -ErrorAction SilentlyContinue).DoNotOpenAtLogon -eq 1
+  if (-not $quiet -and (Wait-Until 45 { Get-Process ServerManager -ErrorAction SilentlyContinue })) {
     Mark 'Server Manager opened'
     Start-Sleep 5; Get-Process ServerManager | Stop-Process -Force
   }
-  Mark 'Server Manager closed (or 45 s without it)'
+  Mark "Server Manager closed (or 45 s without it, or set not to open: $quiet)"
 
   # How this account is before SebType: English and Chinese (Microsoft Pinyin), as on a Chinese PC.
   $ll = New-WinUserLanguageList en-US

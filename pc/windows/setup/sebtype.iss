@@ -485,6 +485,7 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then begin
+    StopServers(False);  // one an app's text service started again while the account was put back
     MoveOut(ExpandConstant('{app}\x86'));
     MoveOut(ExpandConstant('{app}'));
     RemoveDir(ExpandConstant('{app}\x86'));  // the uninstaller removes {app} with its own files

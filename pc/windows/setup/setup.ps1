@@ -267,23 +267,6 @@ if ($removed -and (Test-Path $SyncFile)) {
   Write-Output "user: synced before learned words are deleted (exit $($p.ExitCode))"
 }
 
-# Chinese gone: its learned words with it; a Rime folder from before SebType comes back.
-if ('zh' -in $removed) {
-  Stop-Server
-  Remove-Item $RimeUser -Recurse -Force -ErrorAction SilentlyContinue
-  if ($state.RimeBackup) { Copy-Item $state.RimeBackup $RimeUser -Recurse }
-  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000804", "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid" -Recurse -ErrorAction SilentlyContinue
-  if (-not $state.RimeSettingsExisted) { Remove-Item 'HKCU:\Software\Rime' -Recurse -ErrorAction SilentlyContinue }
-  Write-Output 'user: Chinese removed, its learned words deleted'
-}
-if ('ja' -in $removed) {
-  Stop-Mozc
-  Remove-Item $MozcUser -Recurse -Force -ErrorAction SilentlyContinue
-  if ($state.MozcBackup) { Copy-Item $state.MozcBackup $MozcUser -Recurse }
-  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000411", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
-  Write-Output 'user: Japanese removed, its learned words deleted'
-}
-
 # Chinese: the data the phone bundles (data/rime/build.sh), rime-ice's schemas and Lua with 白霜's
 # dictionary, its tables prebuilt. librime uses them as they are because their sources aren't there.
 # Learned words (*.userdb), *.custom.yaml and the user's custom_phrase.txt stay. The marker names the data
@@ -376,6 +359,24 @@ Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid", "HKCU:\Software\Mic
 # account's first one, on TCSBackEnd).
 for ($i = 0; $i -lt 120 -and (Format-Languages (Get-Languages)) -ne (Format-Languages $list); $i++) { Start-Sleep -Milliseconds 500 }
 if ($i -eq 120) { throw "Windows didn't take the input methods $(Format-Languages $list)" }
+
+# Chinese gone: its learned words with it; a Rime folder from before SebType comes back. After the list
+# above: until then apps' text service would start the server again, which writes the Rime folder anew.
+if ('zh' -in $removed) {
+  Stop-Server
+  Remove-Item $RimeUser -Recurse -Force -ErrorAction SilentlyContinue
+  if ($state.RimeBackup) { Copy-Item $state.RimeBackup $RimeUser -Recurse }
+  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000804", "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid" -Recurse -ErrorAction SilentlyContinue
+  if (-not $state.RimeSettingsExisted) { Remove-Item 'HKCU:\Software\Rime' -Recurse -ErrorAction SilentlyContinue }
+  Write-Output 'user: Chinese removed, its learned words deleted'
+}
+if ('ja' -in $removed) {
+  Stop-Mozc
+  Remove-Item $MozcUser -Recurse -Force -ErrorAction SilentlyContinue
+  if ($state.MozcBackup) { Copy-Item $state.MozcBackup $MozcUser -Recurse }
+  Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000411", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
+  Write-Output 'user: Japanese removed, its learned words deleted'
+}
 
 if (-not $Undo) {
   # Win+Space is the only language switch: no Alt+Shift / Ctrl+Shift switch keys (3 = none), and one

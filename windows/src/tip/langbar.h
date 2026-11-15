@@ -25,7 +25,7 @@ class LangBarButton final : public ITfLangBarItemButton, public ITfSource {
   STDMETHODIMP GetTooltipString(BSTR *out) override;
 
   // ITfLangBarItemButton
-  STDMETHODIMP OnClick(TfLBIClick click, POINT, const RECT *) override;
+  STDMETHODIMP OnClick(TfLBIClick click, POINT pt, const RECT *) override;
   STDMETHODIMP InitMenu(ITfMenu *menu) override;
   STDMETHODIMP OnMenuSelect(UINT id) override;
   STDMETHODIMP GetIcon(HICON *out) override;
@@ -39,6 +39,8 @@ class LangBarButton final : public ITfLangBarItemButton, public ITfSource {
   void update();
 
  private:
+  void popup(POINT pt);
+
   TextService &service_;
   std::atomic<long> refs_{1};
   ITfLangBarItemSink *sink_ = nullptr;
