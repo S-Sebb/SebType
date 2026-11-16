@@ -1,0 +1,149 @@
+﻿<#
+Focus moving away mid-word types in what was being typed (#277), on a Windows PC with SebType installed,
+in the logged-on person's own desktop session (not elevated). One command:
+
+    powershell -ExecutionPolicy Bypass -File test-focus-out.ps1 [-Out <folder>] [-Trial]
+
+It makes no input of its own, so a screen that is off stays off (YukaROG's SebChat Night: any key or mouse
+input lights it): the field is TsfHost.cs's (beside this script), brought to the front without a key, and
+keys go to TSF's keystroke manager instead of the session's input. Moving away is TSF's focus going to
+another document and back, as a click into another field does. Checks: 中文 ranhou Space gives 然后; nihao,
+then away and back, leaves nihao, and ni Space after it gives 你 (nothing left over); 日本語 nihongo Space,
+then away, leaves 日本語. Windows' display state (GUID_CONSOLE_DISPLAY_STATE) is watched from the start:
+it must be off then and never turn on (display-stayed-off); once it is on, no more keys go.
+-Trial needs no SebType: the field to the front and one key, and the display watched, then nothing else.
+-WatchTo <file> only watches the display, for a whole session around this test (installing, uninstalling):
+each state goes into the file as Windows reports it, until <file>.stop exists (at most 60 minutes).
+Results: one line per check in <Out>\focus-out-results.txt; exit 0 only if all pass.
+#>
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\277", [switch]$Trial, [string]$WatchTo)
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSCommandPath
+New-Item -ItemType Directory -Force $Out | Out-Null
+$results = "$Out\focus-out-results.txt"
+Set-Content -Encoding utf8 $results ''
+function Result($name, $status, $why = '') {
+  $line = "$status $name$(if ($why) { ": $why" })"
+  Add-Content -Encoding utf8 $results $line; Write-Host $line
+}
+function Check($name, [scriptblock]$body) {
+  try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
+}
+
+$missing = if ($WatchTo) { $null }
+elseif (-not $Trial -and -not (Test-Path "$env:ProgramFiles\SebType\sebtype.dll")) { 'SebType is not installed' }
+elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'runs in session 0: start it in the desktop session' }
+elseif (-not (Test-Path "$root\TsfHost.cs")) { "no TsfHost.cs beside $PSCommandPath" }
+if ($missing) { Write-Host "BLOCKED preflight: $missing"; exit 1 }
+
+Add-Type @'
+using System; using System.Collections.Generic; using System.Runtime.InteropServices;
+namespace SebTypeFocus {
+  // Windows' display state as it reports it, at once on registering and at each change: 0 off, 1 on, 2 dimmed.
+  public static class Display {
+    delegate uint Callback(IntPtr context, uint type, IntPtr setting);
+    [StructLayout(LayoutKind.Sequential)] struct Recipient { public Callback callback; public IntPtr context; }
+    [DllImport("powrprof.dll")] static extern uint PowerSettingRegisterNotification(ref Guid setting, uint flags, IntPtr recipient, out IntPtr handle);
+    static Callback kept; static IntPtr recipient;
+    public static readonly List<string> States = new List<string>();
+    public static int Last = -1, Lit = 0;
+    public static void Watch() {
+      kept = (c, type, s) => {
+        if (type == 0x8013 /* PBT_POWERSETTINGCHANGE */ && s != IntPtr.Zero) {
+          int state = Marshal.ReadInt32(s, 20);  // after the GUID and DataLength
+          lock (States) { States.Add(DateTime.Now.ToString("HH:mm:ss.fff") + " " + state); Last = state; if (state != 0) Lit++; }
+        }
+        return 0;
+      };
+      recipient = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Recipient)));
+      Marshal.StructureToPtr(new Recipient { callback = kept }, recipient, false);
+      var guid = new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");
+      IntPtr handle;
+      uint err = PowerSettingRegisterNotification(ref guid, 2 /* DEVICE_NOTIFY_CALLBACK */, recipient, out handle);
+      if (err != 0) throw new Exception("PowerSettingRegisterNotification failed: " + err);
+    }
+  }
+}
+'@
+$display = [SebTypeFocus.Display]
+if ($WatchTo) {
+  $display::Watch(); $seen = 0; $end = (Get-Date).AddMinutes(60)
+  while (-not (Test-Path "$WatchTo.stop") -and (Get-Date) -lt $end) {
+    $now = @($display::States); if ($now.Count -gt $seen) { Add-Content $WatchTo $now[$seen..($now.Count - 1)]; $seen = $now.Count }
+    Start-Sleep -Milliseconds 200
+  }
+  exit 0
+}
+Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
+$tsf = [SebType.TsfHost]
+$tsf::NoInput = $true
+function States { $display::States -join ', ' }
+
+$display::Watch()
+for ($i = 0; $i -lt 20 -and $display::Last -lt 0; $i++) { Start-Sleep -Milliseconds 100 }
+if ($display::Last -lt 0) { Write-Host 'BLOCKED preflight: Windows reported no display state'; exit 1 }
+if ($display::Last -ne 0) { Write-Host "BLOCKED preflight: the display is on (state $($display::Last)): someone may be using the PC"; exit 1 }
+
+# Before each key: the display still off, and the field in front with TSF's focus.
+function Ready {
+  if ($display::Lit) { throw "the display turned on ($(States)): no more keys" }
+  if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
+}
+function Keys {
+  Ready
+  foreach ($k in $args) { $null = $tsf::Key($(switch ($k) { 'space' { 0x20 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); $tsf::Settle(150) }
+  $tsf::Settle(600)
+}
+function TypeText($s) { $chars = @($s.ToCharArray() | ForEach-Object { if ($_ -eq ' ') { 'space' } else { "$_" } }); Keys @chars }
+function Away { $tsf::Away($true); $tsf::Settle(800); $tsf::Away($false); $tsf::Settle(800) }
+function Lang($lang) {
+  $clsid = [Guid]'{D4E5C593-4F73-475F-936C-0E29A6FE7A02}'
+  if ($lang -eq 'zh') { $tsf::Activate(0x804, $clsid, [Guid]'{8AA7DDAC-A4B8-4437-9C0B-8698879EC987}') }
+  else { $tsf::Activate(0x411, $clsid, [Guid]'{B148FB02-C235-45D6-996C-672C783ECD48}') }
+  $tsf::Settle(500); $tsf::Clear()
+}
+
+$tsf::Start()
+try {
+  if ($Trial) {
+    Check 'trial-front-and-key' {
+      # The key goes even when the field isn't in front (it is no input either way), to show where it gets.
+      if ($display::Lit) { throw "the display turned on ($(States)): no key sent" }
+      $front = $tsf::Focus(); $state = $tsf::FocusState()
+      $eaten = $tsf::Key(0x41); $tsf::Settle(500); $t = $tsf::Text()
+      $why = "$state; one key through TSF (eaten: $eaten), the field holds '$t'"
+      if (-not $front -or $t -ne 'a') { throw $why }
+      $why
+    }
+  } else {
+    Lang zh
+    Check 'chinese-pinyin' {
+      TypeText 'ni'; Start-Sleep 3; Keys Escape  # the first key starts sebtype-server when none runs
+      $tsf::Clear(); TypeText 'ranhou '; $t = $tsf::Text()
+      if ($t -ne '然后') { throw "ranhou + Space gave '$t'" }
+      $t
+    }
+    Check 'chinese-focus-out' {
+      $tsf::Clear(); TypeText 'nihao'; Away; $away = $tsf::Text()
+      TypeText 'ni '; $t = $tsf::Text()
+      if ("$away $t" -ne 'nihao nihao你') { throw "nihao, then away and back, left '$away'; ni + Space after it gave '$t' (want nihao, nihao你)" }
+      "nihao stays; then $t"
+    }
+    Lang ja
+    Check 'japanese-focus-out' {
+      TypeText 'nihongo '; Away; $t = $tsf::Text()
+      if ($t -ne '日本語') { throw "nihongo + Space, then away, left '$t'" }
+      $t
+    }
+  }
+} finally {
+  if (-not $display::Lit) { try { Keys Escape Escape } catch { } }
+  $tsf::Stop()
+}
+Start-Sleep 6  # a wake from the last steps shows by now
+Check 'display-stayed-off' {
+  if ($display::Lit) { throw "the display turned on: $(States)" }
+  "off throughout: $(States)"
+}
+$failed = @(Get-Content $results | Where-Object { $_ -like 'FAIL *' }).Count
+exit [int]($failed -gt 0)

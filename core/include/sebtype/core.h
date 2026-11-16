@@ -49,8 +49,13 @@ class Core {
   std::string aux();
   void select(int indexOnPage);
   void changePage(bool next);
-  // Focus left the text field: what is being typed is dropped.
+  // Focus left the text field (the PCs, #277): what is being typed goes into it as it shows, as Microsoft's
+  // IMEs and Mozc do (pinyin as its letters, Japanese as converted).
   void focusOut();
+  // Drops what is being typed (the phone's focus changes, the app's reset on Linux).
+  void clear();
+  // What focusOut would type in.
+  std::string unfinished();
   // Commits what is being typed, as leaving the language with commitOnSwitch does.
   void flush();
 

@@ -174,9 +174,19 @@ void SebTypeEngine::activate(const fcitx::InputMethodEntry &, fcitx::InputContex
   update(event.inputContext());
 }
 
+// Focus moving away, or the app's reset (a click elsewhere in the text), types in what is being typed (#277):
+// the app, or Fcitx5 for it, types in the preedit it shows (update() marks what it leaves out), so the
+// core only drops it. A preedit in Fcitx5's own panel SebType types in itself.
 void SebTypeEngine::reset(const fcitx::InputMethodEntry &, fcitx::InputContextEvent &event) {
-  core_->focusOut();
+  core_->clear();
   update(event.inputContext());
+}
+
+void SebTypeEngine::deactivate(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) {
+  if (event.type() == fcitx::EventType::InputContextFocusOut &&
+      !event.inputContext()->capabilityFlags().test(fcitx::CapabilityFlag::Preedit))
+    core_->focusOut();
+  reset(entry, event);
 }
 
 std::string SebTypeEngine::subModeIconImpl(const fcitx::InputMethodEntry &, fcitx::InputContext &) {
@@ -221,12 +231,21 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     auto &panel = ic->inputPanel();
     panel.reset();
     const Preedit p = core_->preedit();
+    // What focus moving away types in leaves out some of what shows (Rime's spaces between syllables): those
+    // bytes don't commit. It is the rest of the preedit, in order.
+    const std::string typed = core_->unfinished();
+    size_t at = 0;
     fcitx::Text text;
     for (const auto &s : p.segments) {
       fcitx::TextFormatFlags flags;
       if (s.underline) flags |= fcitx::TextFormatFlag::Underline;
       if (s.highlight) flags |= fcitx::TextFormatFlag::HighLight;
-      text.append(s.text, flags);
+      for (size_t from = 0, to; from < s.text.size(); from = to) {
+        const bool kept = at < typed.size() && s.text[from] == typed[at];
+        for (to = from; to < s.text.size() && (at < typed.size() && s.text[to] == typed[at]) == kept; ++to)
+          if (kept) ++at;
+        text.append(s.text.substr(from, to - from), kept ? flags : flags | fcitx::TextFormatFlag::DontCommit);
+      }
     }
     text.setCursor(p.cursor);
     if (ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(text);

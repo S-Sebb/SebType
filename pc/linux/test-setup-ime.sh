@@ -558,6 +558,7 @@ fi
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
+# Focus moving away mid-word types the pinyin in (#277).
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
@@ -664,6 +665,20 @@ check('typo xoaoshi gives 小时 first', first('xoaoshi'), '小时')
 check('typo xkaoshi (k under i, SebType librime) gives 小时 first', first('xkaoshi'), '小时')
 check('typo nihap (p beside o) gives 你好 first', first('nihap'), '你好')
 check('beirendingwei gives 被认定为 first (the grammar file; without it 被人定位)', first('beirendingwei'), '被认定为')
+# #277: focus moving away mid-word types the pinyin in as its letters, without Rime's spaces between
+# syllables, and the next word starts fresh: through Fcitx5 for an app that shows the preedit itself, and
+# from SebType for one whose preedit is in Fcitx5's panel.
+def away(caps):
+    call(ic, IC, 'SetCapability', '(t)', caps)
+    committed.clear()
+    for c in 'nihao': tap(c)
+    call(ic, IC, 'FocusOut'); wait(lambda: committed, 2)
+    typed = ''.join(committed)
+    call(ic, IC, 'FocusIn')
+    return typed, first('ni')
+check('focus out types in nihao (the app shows the preedit)', away(1 << 1 | 1 << 4 | 1 << 39), ('nihao', '你'))
+check('focus out types in nihao (preedit in the panel)', away(1 << 39), ('nihao', '你'))
+call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
 def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
     wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n

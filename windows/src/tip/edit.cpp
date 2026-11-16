@@ -41,19 +41,22 @@ LONG length16(const std::string &text, size_t bytes) {
 
 }  // namespace
 
-HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
-  if (!composition_) return S_OK;
+void TextService::endComposition(TfEditCookie ec, ITfContext *context, ITfComposition *composition,
+                                 const std::wstring &text) {
   ITfRange *range = nullptr;
-  if (SUCCEEDED(composition_->GetRange(&range))) {
-    // Leave no pinyin or kana behind, and the caret after the text.
-    range->SetText(ec, 0, L"", 0);
+  if (SUCCEEDED(composition->GetRange(&range))) {
+    range->SetText(ec, 0, text.c_str(), static_cast<LONG>(text.size()));
     range->Collapse(ec, TF_ANCHOR_END);
     setSelection(ec, context, range);
     range->Release();
   }
-  composition_->EndComposition(ec);
-  composition_->Release();
-  composition_ = nullptr;
+  composition->EndComposition(ec);
+  composition->Release();
+}
+
+// Leaves no pinyin or kana behind.
+HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
+  if (composition_) endComposition(ec, context, std::exchange(composition_, nullptr), L"");
   return S_OK;
 }
 
@@ -66,16 +69,7 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
   // The committed text goes where the composition is, or at the caret.
   if (!commit.empty()) {
     if (composition_) {
-      ITfRange *range = nullptr;
-      if (SUCCEEDED(composition_->GetRange(&range))) {
-        range->SetText(ec, 0, commit.c_str(), static_cast<LONG>(commit.size()));
-        range->Collapse(ec, TF_ANCHOR_END);
-        setSelection(ec, context, range);
-        range->Release();
-      }
-      composition_->EndComposition(ec);
-      composition_->Release();
-      composition_ = nullptr;
+      endComposition(ec, context, std::exchange(composition_, nullptr), commit);
     } else {
       ITfInsertAtSelection *insert = nullptr;
       ITfRange *range = nullptr;

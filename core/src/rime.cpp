@@ -91,6 +91,13 @@ class Rime final : public Engine {
     return p;
   }
 
+  // The preedit without the spaces Rime shows between syllables: ni hao → nihao, 你 hao → 你hao.
+  std::string unfinished() override {
+    std::string s = preedit().text();
+    std::erase(s, ' ');
+    return s;
+  }
+
   bool composing() override {
     bool yes = false;
     withContext([&](const RimeContext &c) { yes = c.composition.length > 0; });

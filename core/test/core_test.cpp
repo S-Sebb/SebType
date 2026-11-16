@@ -158,6 +158,23 @@ TEST_F(CoreTest, SwitchingCommitsWhatIsTypedAndTheFirstLanguageIsHome) {
   EXPECT_EQ(Settings::parse("[Languages]\nOrder=ja,en,zh\n").serialize(), "[Languages]\nOrder=ja,en,zh\n");
 }
 
+// #277: on the PCs, focus moving away types in what is being typed, as it shows, and leaves nothing behind;
+// the phone's clear drops it.
+TEST_F(CoreTest, FocusMovingAwayTypesInWhatIsTypedAndClearDropsIt) {
+  core.selectLanguage(Lang::Chinese);
+  type("ni");
+  EXPECT_EQ(core.unfinished(), "ni");
+  core.focusOut();
+  EXPECT_EQ(core.takeCommit(), "ni");
+  EXPECT_FALSE(engines[Lang::Chinese]->composing());
+  core.focusOut();
+  EXPECT_EQ(core.takeCommit(), "");
+  type("hao");
+  core.clear();
+  EXPECT_EQ(core.takeCommit(), "");
+  EXPECT_FALSE(engines[Lang::Chinese]->composing());
+}
+
 TEST_F(CoreTest, ShiftTapTogglesEnglishLettersOnlyWhenAlone) {
   shiftTap();  // English: nothing to switch
   EXPECT_EQ(core.language(), Lang::English);

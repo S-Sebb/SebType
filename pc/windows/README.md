@@ -122,6 +122,7 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`~/scratch/SebType/<issue>/73-*.png`): welcome in all three languages, languages, installing, finish |
 | `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, its text service registered and no Weasel or Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
+| `chinese-focus-out` | In Notepad, `nihao` typed, a second Notepad brought to the front and back: `nihao` is in the text, and `ni` Space then gives `nihao你` (#277) |
 | `chinese-typo-xkaoshi` | SebType's librime corrects a slip onto the key under i: `xkaoshi` → 小时, and `kaoshi` stays 考试 (#133) |
 | `round1-rime-p95` | Rime per key on the installed librime and Chinese data (`perf-rime.ps1` with the librime build's `perf-rime.exe`): p95 ≤ 10 ms (Decisions #2); only with `PERF_RUN=1` (the final performance run, #54) |
 | `japanese-alt-grave` | In Notepad, in 日本語: Alt+\` types ア, again あ; after a Shift tap to English, Alt+\` still types `a`, and a Shift tap is あ again |
@@ -133,6 +134,12 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Japanese's words go) keeping a page size of 8 set before it, uninstall; as before |
 | `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept; typing as in round 1; uninstall; as before |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
+
+`setup/test-focus-out.ps1` checks, on a PC with SebType installed and in the logged-on person's session,
+that focus moving away mid-word types in what was typed (#277): `nihao` stays in the field after TSF's
+focus goes to another document and back, and Japanese stays as converted. It makes no input of its own
+(keys go to TSF's keystroke manager), so a screen that is off stays off, and it fails if Windows reports
+the display on (`-Trial` checks just that, without SebType; `-WatchTo` watches it around a whole session).
 
 The keys are real input: `setup/rdp-keys.py` presses them through XTEST in the gamescope display that
 FreeRDP runs in, FreeRDP sends their scancodes to the test user's session like any keyboard, and the
