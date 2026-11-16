@@ -244,8 +244,69 @@ out. A higher cap (110, or none) keeps the same words and only offers more of th
 adding them changes no harness number but text-typos' first and top-3 rates (+0.2 and +0.3 points). Typed on
 their own, they are kept 155 times of 182 instead of 127.
 
-**Not tried: the commit margin.** On the dev sets, `decide()`'s margin for letters that aren't a word
-(MARGIN_NON_WORD, 12) is far from the best for either model. At 6, dev misspellings fixed rises from 52 to 78 %
-(r2) and from 49 to 78 % (r3), with phone and text typos up too and changed correct words still 0.1 %. That is a
-change to the ranking, separate from this training, and needs the harness's own check (r1's looser weights
-changed more correct words), so it isn't part of this result (#291).
+**The commit margin** (`MARGIN_NON_WORD`, 12) was tried separately; see below.
+
+## Results: the commit margin, #291 (2026-11-16)
+
+`decide()` lets a space change letters that aren't a dictionary word only if the best candidate scores
+`MARGIN_NON_WORD` (12) above them. The bar: a setting is adopted only if no harness set gets worse beyond noise
+against main and core/ wrongly changes at most 0.2 % of the clean words; r3 then replaces r2 only if it is no worse
+on any set and better on the texting sets. **No setting passes: the margin stays 12 and the committed model
+stays r2.** Every lowered margin also corrects "js" to "us", a clean word the dictionary lacks.
+
+**Tuning on the dev sets** (`dev.sh`'s dumps, rebuilt as for r3; with `MARGIN_WORD` kept at 4). Correct
+words changed, out of 4,574: today's weights change 3.
+
+| DECODER_WEIGHT, MARGIN_NON_WORD | r2: misspellings / phone / text typos fixed | changed | r3: misspellings / phone / text typos fixed | changed |
+|---|---|---|---|---|
+| 1.5, 12 (main) | 52.3 / 85.5 / 61.9 % | 3 | 49.3 / 85.2 / 62.2 % | 3 |
+| 1.5, 10 | 62.5 / 87.0 / 66.3 % | 3 | 61.7 / 86.7 / 65.8 % | 3 |
+| 1, 7 | 64.3 / 87.9 / 67.6 % | 3 | 63.4 / 87.6 / 67.1 % | 2 |
+| 1, 5 | 73.5 / 88.6 / 69.3 % | 4 | 72.7 / 88.2 / 68.9 % | 4 |
+
+`tune.py`'s rule (at most 0.1 %, that is 4 words) picks (1, 5) for both models; the decoder weight goes down with
+the margin, as at 1.5 the margin can't go below 8 (r2) or 10 (r3) within the rule. (1, 5) failed the harness's clean-words bar,
+so I tried a stricter rule, no more dev words changed than today: (1, 7) for both models, and with the margin
+alone, (1.5, 10). Those two settings were picked after the first failed, which the harness numbers below should be
+read with.
+
+**The harness** (`run.sh` on yanglab16, core/'s stack, run 1; each run's two passes gave equal quality
+numbers; four runs missed `reproducible` on latency alone, as other jobs shared the machine). Paired: items only
+the first or only the second configuration gets right, with an exact sign test.
+
+| Set (items) | main (r2, 1.5, 12) | r2 at 1, 5 | r3 at 1, 5 | r2 at 1, 7 | r3 at 1, 7 | r2 at 1.5, 10 | r3 at 1.5, 10 |
+|---|---|---|---|---|---|---|---|
+| Typo fixed (phone typos, 1,000) | 83.5 % | 86.4 % | 86.3 % | 85.6 % | 85.7 % | 84.7 % | 84.9 % |
+| Typo fixed (phone typos in texts, 1,000) | 71.9 % | 77.0 % | 78.3 % | 75.7 % | 76.8 % | 74.9 % | 75.8 % |
+| Typo fixed (Wikipedia misspellings, 1,500) | 43.0 % | 66.5 % | 64.8 % | 56.0 % | 54.1 % | 55.0 % | 52.7 % |
+| **Correct word wrongly changed (clean, 1,000)** | 0.2 % | **0.4 %** | **0.4 %** | **0.4 %** | **0.4 %** | **0.3 %** | **0.3 %** |
+| Next word in the top 3 (chat, 2,701) | 41.7 % | 41.7 % | 41.9 % | 41.7 % | 41.9 % | 41.7 % | 41.9 % |
+| Next word in the top 3 (news, 1,927) | 43.7 % | 43.7 % | 43.7 % | 43.7 % | 43.7 % | 43.7 % | 43.7 % |
+| Next word in the top 3 (texts, 2,618) | 29.1 % | 29.1 % | 30.6 % | 29.1 % | 30.6 % | 29.1 % | 30.6 % |
+
+| Set | (1.5, 10): main / r2 only | main / r3 only | r2 / r3 only | (1, 5): r2 / r3 only |
+|---|---|---|---|---|
+| phone typos | 0 / 12, p 0.0005 | 15 / 29, p 0.05 | 18 / 20, p 0.87 | 19 / 18, p 1.0 |
+| typos in texts | 0 / 30, p 2e-9 | 23 / 62, p 3e-5 | 30 / 39, p 0.34 | 22 / 35, p 0.11 |
+| misspellings | 0 / 180, p 1e-54 | 82 / 227, p 7e-17 | 143 / 108, p 0.03 | 120 / 95, p 0.10 |
+| clean | 1 / 0, p 1.0 | 1 / 0, p 1.0 | 0 / 0 | 0 / 0 |
+| next-chat | 0 / 0 | 123 / 127, p 0.85 | 123 / 127, p 0.85 | same |
+| next-news | 0 / 0 | 82 / 81, p 1.0 | 82 / 81, p 1.0 | same |
+| next-texts | 0 / 0 | 123 / 160, p 0.03 | 123 / 160, p 0.03 | same |
+
+At (1, 5) and (1, 7), main against either model: the typo sets gain at p < 0.003, the next-word sets don't move
+for r2, and the clean set loses 2 words (p 0.5). Latency doesn't move: the margin only decides whether to commit.
+
+- **The margin helps every typo set, a lot**: at (1.5, 10), r2 fixes 12 points more misspellings, 3 more typos in
+  texts and 1.2 more phone typos, and gets no item wrong that main gets right. No setting makes any set worse
+  beyond noise.
+- **It fails only the clean-words bar, by one or two words.** Main changes "alex" (to "Alex") and "describd" (a
+  typo in the set). Every lowered margin also changes "js" to "us"; (1, 7) and (1, 5) change "orc" to "or" too.
+  Both are words the dictionary lacks, the risk #291 named. 0.3 % equals today's FUTO stack, so (1.5, 10) passes
+  the plan's own bar (§2: no more than today); it misses this task's stricter 0.2 %.
+- **r3 against r2**: at the same weights, r3 still fixes fewer misspellings (p 0.03 at (1.5, 10), 0.10 at
+  (1, 5)) and gains on next-texts (p 0.03); its gain on typos in texts is within noise. So it doesn't pass its
+  bar at any setting, and r2 would stay even if a margin were adopted. Lowering the margin narrows its
+  misspellings gap (3.4 points at 12, 1.7 at (1, 5)) but doesn't close it.
+
+r3's model and checkpoint stay in yanglab16's `~/scratch/SebType/cache/english-lm/` (`r3.gguf`, `r3-ckpt`).
