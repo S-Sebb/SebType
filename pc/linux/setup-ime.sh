@@ -401,7 +401,9 @@ done
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
 # kept. Mozc reads it at start, so a running Fcitx5 is asked to restart SebType's Mozc (it saves, closes and
 # starts again at the next key).
+# Mozc's profile by Mozc's own rule, as the input method and the Configurator use it (#274).
 mozc_db=$config/mozc/config1.db
+[[ -d $HOME/.mozc ]] && mozc_db=$HOME/.mozc/config1.db
 mozc_want=$(python3 - "$mozc_db" "$here/mozc-keymap.tsv" <<'PY' | base64 -w0
 import sys
 
