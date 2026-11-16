@@ -23,12 +23,18 @@ set(ICONS ${SEBTYPE_ICONS})
 set(PIG ${CMAKE_CURRENT_SOURCE_DIR}/data/sebtype-logo.png)
 configure_file(src/tip/sebtype.rc.in ${CMAKE_CURRENT_BINARY_DIR}/sebtype.rc @ONLY)
 add_library(sebtype SHARED src/tip/dll.cpp src/tip/textservice.cpp src/tip/edit.cpp src/tip/candidate_window.cpp
-  src/tip/langbar.cpp src/tip/sebtype.def ${CMAKE_CURRENT_BINARY_DIR}/sebtype.rc)
+  src/tip/candidate_layout.cpp src/tip/langbar.cpp src/tip/sebtype.def ${CMAKE_CURRENT_BINARY_DIR}/sebtype.rc)
 set_target_properties(sebtype PROPERTIES PREFIX "")
 target_include_directories(sebtype PRIVATE src/tip ../core/include)
 target_link_libraries(sebtype PRIVATE d2d1 dwrite windowscodecs shcore shlwapi ole32 oleaut32 uuid)
 if(NOT MSVC)
   target_link_options(sebtype PRIVATE -static)
+endif()
+
+# The candidate window's layout, tested without a screen (windows/build.ps1 runs it).
+if(NOT SEBTYPE_TIP_ONLY)
+  add_executable(candidate-layout-test test/candidate_layout_test.cpp src/tip/candidate_layout.cpp)
+  target_include_directories(candidate-layout-test PRIVATE src/tip)
 endif()
 
 # The server, with the core.

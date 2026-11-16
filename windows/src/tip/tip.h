@@ -83,8 +83,9 @@ class TextService final : public ITfTextInputProcessorEx,
   STDMETHODIMP OnActivated(DWORD profileType, LANGID langid, REFCLSID clsid, REFGUID catid, REFGUID profile,
                            HKL hkl, DWORD flags) override;
 
-  // The candidate window's clicks and the tray menu's picks.
+  // The candidate window's clicks and wheel, and the tray menu's picks.
   void select(int indexOnPage);
+  void page(bool next);
   void menu(int index);
   void toggleLatin();
   const Reply &reply() const { return reply_; }

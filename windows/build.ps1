@@ -43,6 +43,7 @@ Invoke-Checked 'configure x64' {
     -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON
 }
 Invoke-Checked 'build x64' { cmake --build "$Work\x64" --config Release --parallel }
+Invoke-Checked 'candidate layout test' { & "$Work\x64\Release\candidate-layout-test.exe" }
 # 32-bit apps load a 32-bit text service; it reaches the 64-bit server over its pipe.
 Invoke-Checked 'configure x86' { cmake -S $src -B "$Work\x86" -A Win32 @common -DSEBTYPE_TIP_ONLY=ON }
 Invoke-Checked 'build x86' { cmake --build "$Work\x86" --config Release --parallel }

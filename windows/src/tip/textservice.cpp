@@ -532,11 +532,17 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext *context, WPARAM wParam, LPARAM lPa
   return S_OK;
 }
 
-// --- The window's clicks and the button's picks ---
+// --- The window's clicks and wheel, and the button's picks ---
 
 void TextService::select(int indexOnPage) {
   Request q{Op::Select};
   q.index = indexOnPage;
+  if (send(q)) apply(context_);
+}
+
+void TextService::page(bool next) {
+  Request q{Op::Page};
+  q.next = next;
   if (send(q)) apply(context_);
 }
 

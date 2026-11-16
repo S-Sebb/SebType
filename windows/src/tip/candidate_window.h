@@ -1,8 +1,9 @@
 // SebType on Windows: the candidate window, drawn in the app like Weasel's: the pinyin row (Chinese), the
 // candidates across or down, in Weasel's default look or SebType's Picnic with the pig (#162). Also the short
-// popup after 中文's Shift switch. MIT, SebType.
+// popup after 中文's Shift switch. Page arrows, a click or the mouse wheel page (#276). MIT, SebType.
 #pragma once
 
+#include "candidate_layout.h"
 #include "tip.h"
 
 #include <d2d1.h>
@@ -26,16 +27,6 @@ class CandidateWindow {
   void hide();
 
  private:
-  // A rectangle in pixels.
-  struct Box {
-    float l = 0, t = 0, r = 0, b = 0;
-    bool empty() const { return r <= l; }
-    void move(float x, float y) { l += x, r += x, t += y, b += y; }
-  };
-  struct Cell {
-    std::wstring label, text, comment;
-    Box all, labelBox, textBox, commentBox;
-  };
   // The style: Weasel's layout and its aqua or SebType's Picnic colours, at the monitor's scale.
   struct Style {
     bool vertical = true, picnic = false;
@@ -46,9 +37,10 @@ class CandidateWindow {
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   bool create();
   void loadStyle(const RECT &caret);
-  void layout();
+  void layout(const RECT &caret);
   void draw();
   void place(const RECT &caret);
+  void page(bool next);
   IDWriteTextLayout *textLayout(const std::wstring &text);
   Box measure(const std::wstring &text, float x, float y);
   ID2D1Bitmap *pig();
@@ -57,21 +49,19 @@ class CandidateWindow {
   HWND hwnd_ = nullptr;
   Style style_;
   bool styleLoaded_ = false;
-  // What is shown.
-  std::vector<std::wstring> preedit_;  // segments
+  // What is shown and where.
+  CandidateLayout layout_;
   int preeditHighlight_ = -1;
-  std::wstring aux_;
-  std::vector<Cell> cells_;
   int cursor_ = -1;
-  // Its layout, in pixels.
-  float width_ = 0, height_ = 0;
-  std::vector<Box> preeditBoxes_;
-  Box auxBox_, pigBox_;
+  // The word whose pages are shown: they keep its first page's width.
+  std::wstring word_;
+  int wheel_ = 0;  // the wheel's turn not yet a page
   // Direct2D and DirectWrite, made once per window.
   ID2D1Factory *d2d_ = nullptr;
   IDWriteFactory *dwrite_ = nullptr;
   IDWriteTextFormat *format_ = nullptr;
   ID2D1DCRenderTarget *target_ = nullptr;
+  ID2D1StrokeStyle *round_ = nullptr;  // the arrows' round ends
   ID2D1Bitmap *pig_ = nullptr;
   float formatPx_ = 0;
 };
