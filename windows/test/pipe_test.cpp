@@ -52,21 +52,31 @@ void serve(HANDLE pipe) {
   CloseHandle(pipe);
 }
 
+HANDLE instance() {
+  return CreateNamedPipeW(pipeName().c_str(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                          PIPE_UNLIMITED_INSTANCES, 65536, 65536, 0, nullptr);
+}
+
+// The next instance is made as soon as a client connects, so the next call never finds no pipe (which is
+// a server that is gone, not one that hangs).
 void server() {
+  HANDLE pipe = instance();
   while (!stop) {
-    HANDLE pipe = CreateNamedPipeW(pipeName().c_str(), PIPE_ACCESS_DUPLEX,
-                                   PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES,
-                                   65536, 65536, 0, nullptr);
     if (ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED) {
+      HANDLE next = instance();
       if (stop) {
         CloseHandle(pipe);
+        pipe = next;
         break;
       }
       std::thread(serve, pipe).detach();
+      pipe = next;
     } else {
       CloseHandle(pipe);
+      pipe = instance();
     }
   }
+  CloseHandle(pipe);
 }
 
 Request key() {

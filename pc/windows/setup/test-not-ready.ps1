@@ -1,4 +1,4 @@
-<#
+﻿<#
 The tray key while 中文 or 日本語 isn't ready (#275), on a Windows PC with SebType installed, in the logged-on
 person's own desktop session (not elevated). One command:
 
@@ -9,12 +9,12 @@ field), so a screen that is off stays off, and it stops sending keys once Window
 Checks, each saving the input indicator's icon (<state>.png) and, for the popup, the window by the caret
 (<state>-popup.png) and the taskbar's right end (<state>-taskbar.png):
   ready: あ and 中 as usual;
-  chinese-preparing: while Rime deploys (sebtype-server.exe /deploy), 中 turns grey with "…", a key goes
+  chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
     in as typed and the popup says why; chinese-back: once Rime is done the key is 中 again, unasked;
   chinese-unavailable: a server that hangs (its process suspended): grey 中 with "!" after one key's wait,
     the key goes in as typed, the popup says why; japanese-unavailable: the same in 日本語 with its own popup;
   japanese-back: the server answers again (resumed): あ again within two seconds, unasked.
-The server is resumed in any case. Results: one line per check in <Out>\not-ready-results.txt; exit 0 only
+The server is resumed and Rime's build folder put back in any case. Results: one line per check in <Out>\not-ready-results.txt; exit 0 only
 if all pass.
 #>
 param([string]$Out = "$env:USERPROFILE\scratch\SebType\275\screens")
@@ -93,6 +93,7 @@ function WaitIcon($want, $secs) {
 }
 
 $suspended = $null
+$rimeBuild = "$env:APPDATA\Rime\build"
 $tsf::Start()
 try {
   Lang ja
@@ -103,9 +104,15 @@ try {
   $zh = Shot 'zh'
   Check 'ready' { if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }; 'あ and 中 differ' }
 
+  # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
+  # takes seconds. The build folder is put back as it was at the end.
+  Copy-Item -Recurse $rimeBuild "$Out\rime-build"
+  Remove-Item "$rimeBuild\*.prism.bin"
   $deploy = Start-Process $server '/deploy' -PassThru
-  Start-Sleep -Milliseconds 500
   Check 'chinese-preparing' {
+    $end = (Get-Date).AddSeconds(5)
+    do { $tsf::Settle(100); $tsf::ButtonIcon("$Out\poll.png") } while ([Convert]::ToBase64String([IO.File]::ReadAllBytes("$Out\poll.png")) -eq $zh -and (Get-Date) -lt $end)
+    Remove-Item "$Out\poll.png"
     $tsf::Clear(); $size = KeyWithPopup 'n' 'zh-wait'; $icon = Shot 'zh-wait'; $t = $tsf::Text()
     if ($icon -eq $zh) { throw 'the icon is still 中' }
     if ($t -ne 'n') { throw "the key gave '$t', not n as typed" }
@@ -144,6 +151,10 @@ try {
   }
 } finally {
   if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null }
+  if (Test-Path "$Out\rime-build") {
+    if ($deploy -and -not $deploy.HasExited) { $deploy.WaitForExit(300000) | Out-Null }
+    Remove-Item -Recurse $rimeBuild; Move-Item "$Out\rime-build" $rimeBuild
+  }
   if (-not $display::Lit) { try { Keys Escape Escape } catch { } }
   $tsf::Stop()
 }
