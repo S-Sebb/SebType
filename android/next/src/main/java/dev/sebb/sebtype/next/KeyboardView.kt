@@ -7,7 +7,10 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Bundle
 import android.os.SystemClock
+import android.media.AudioManager
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.view.ViewCompat
@@ -34,18 +37,46 @@ private operator fun RectF.component4() = bottom
 @SuppressLint("ViewConstructor")
 class KeyboardView(context: Context, private val popups: PopupLayer, private val listener: Listener) : View(context) {
     interface Listener {
-        /** A key: its text (Shift applied) for a text key */
-        fun onKey(code: Code, text: String)
+        /** A key: its text (Shift applied) for a text key, and where it was tapped (-1, -1: not tapped) */
+        fun onKey(code: Code, text: String, x: Int, y: Int)
         /** A long press on 🌐: the system's keyboard picker */
         fun onPickKeyboard()
+        /** The letter keys moved: five ints a key (its letter, x, y, width, height), for English's corrections */
+        fun onLayout(width: Int, height: Int, keys: IntArray)
+        /** The space bar swiped sideways: the cursor moves [by] characters (#53 B11) */
+        fun onCursor(by: Int)
+        /** Delete swiped left: [words] words before the cursor selected, deleted when [done] (#53 B11) */
+        fun onDeleteWords(words: Int, done: Boolean)
     }
 
     enum class Shift { OFF, ON, LOCKED }
 
     private val density = resources.displayMetrics.density
     private val px = Picnic.pixel(context).toFloat()
-    /** Rows are as far apart as Gboard's (#161) and today's keyboard */
-    private val rowHeight = 59.3f * density
+    /** Rows are as far apart as Gboard's (#161) and today's keyboard, times the height the user set */
+    private var rowHeight = ROW * density
+    /** The keyboard's height, 1 as today's default */
+    var heightScale = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            rowHeight = ROW * density * value
+            requestLayout()
+        }
+    /** Split mode: the keys in two halves, at the sides, with a gap between them */
+    var split = false
+        set(value) {
+            if (field == value) return
+            field = value
+            layoutCells()
+            invalidate()
+            a11y.invalidateRoot()
+        }
+    /** A buzz on each key press (the system's own touch feedback setting also applies) */
+    var haptics = true
+    /** A click on each key press */
+    var sounds = false
+    private val audio = context.getSystemService(AudioManager::class.java)
     private val sidePadding = 2 * density
     /** Space between the bar and the first row */
     private val topPadding = 4.2f * density
@@ -72,6 +103,15 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     private val a11y = Accessibility()
+
+    private companion object {
+        /** A row's height in dp at the default height */
+        const val ROW = 59.3f
+        /** Split: each half's share of the width */
+        const val SPLIT_HALF = 0.36f
+        /** Space swipe: key widths per character the cursor moves */
+        const val CURSOR_STEP = 0.4f
+    }
 
     init {
         ViewCompat.setAccessibilityDelegate(this, a11y)
@@ -108,19 +148,33 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private fun layoutCells() {
         val unit = (width - 2 * sidePadding) / 10f
+        // Split: each half keeps 5 key widths in SPLIT_HALF of the width; a key across the middle (space) is
+        // cut in two.
+        val half = SPLIT_HALF * (width - 2 * sidePadding) / 5f
+        fun place(u: Float) = sidePadding + if (!split) u * unit else if (u <= 5) u * half else width - 2 * sidePadding - (10 - u) * half
         var y = topPadding
         val out = ArrayList<Cell>()
         for (row in numberRow?.rows.orEmpty() + page?.rows.orEmpty()) {
             val h = row.height * rowHeight
-            var x = sidePadding
+            var u = 0f
             for (key in row.keys) {
-                val w = key.width * unit
-                if (key.code != Code.GAP) out += Cell(key, RectF(x, y, x + w, y + h))
-                x += w
+                val end = u + key.width
+                if (key.code != Code.GAP) {
+                    if (split && u < 5 && end > 5) {
+                        out += Cell(key, RectF(place(u), y, place(5f), y + h))
+                        out += Cell(key, RectF(place(5f), y, place(end), y + h))
+                    } else out += Cell(key, RectF(place(u), y, place(end), y + h))
+                }
+                u = end
             }
             y += h
         }
         cells = out
+        val letters = out.filter { it.key.code == Code.TEXT && it.key.text.length == 1 && it.key.text[0] in 'a'..'z' }
+        if (letters.isNotEmpty()) listener.onLayout(width, height, letters.flatMap {
+            val r = it.rect
+            listOf(it.key.text[0].code, r.left.roundToInt(), r.top.roundToInt(), r.width().roundToInt(), r.height().roundToInt())
+        }.toIntArray())
     }
 
     // --- Drawing ---
@@ -206,14 +260,20 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     // --- Touch ---
 
-    private class Pointer(val cell: Cell, val downAt: Long) {
+    private class Pointer(val cell: Cell, val downAt: Long, val downX: Float, val downY: Float) {
         var panel: List<Pair<RectF, Layout.Key>>? = null
         var chosen = 0
         /** Shift, held while another key is typed: off again when it is let go */
         var chorded = false
+        var x = downX
+        var y = downY
+        /** Space or Delete swiped sideways: the cursor steps or the words reported so far */
+        var swiping = false
+        var steps = 0
     }
 
     private val pointers = HashMap<Int, Pointer>()
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var lastShiftTap = 0L
     private val longPressMs = 350L
     private val repeatStartMs = 400L
@@ -222,8 +282,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private val longPress = Runnable { onLongPress() }
     private val repeat = object : Runnable {
         override fun run() {
-            if (pointers.values.none { it.cell.key.code == Code.DELETE }) return
-            listener.onKey(Code.DELETE, "")
+            if (pointers.values.none { it.cell.key.code == Code.DELETE && !it.swiping }) return
+            listener.onKey(Code.DELETE, "", -1, -1)
             postDelayed(this, repeatMs)
         }
     }
@@ -244,13 +304,16 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 for ((id, p) in pointers.toMap()) if (p.cell.key.code != Code.SHIFT) release(id, p)
                 val i = e.actionIndex
                 val cell = cellAt(e.getX(i), e.getY(i)) ?: return true
-                press(e.getPointerId(i), cell)
+                press(e.getPointerId(i), cell, e.getX(i), e.getY(i))
             }
             MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) {
                 val p = pointers[e.getPointerId(i)] ?: continue
+                p.x = e.getX(i)
+                p.y = e.getY(i)
+                if (p.panel == null) swipe(p)
                 p.panel?.let { panel ->
-                    val x = e.getX(i)
-                    val y = e.getY(i) + layerOffsetY()
+                    val x = e.getX(i) + layerOffset()[0]
+                    val y = e.getY(i) + layerOffset()[1]
                     val nearest = panel.indices.minByOrNull {
                         val r = panel[it].first
                         abs(r.centerX() - x) + abs(r.centerY() - y) * 0.5f
@@ -267,10 +330,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         return true
     }
 
-    private fun press(id: Int, cell: Cell) {
-        val p = Pointer(cell, SystemClock.uptimeMillis())
+    private fun press(id: Int, cell: Cell, x: Float, y: Float) {
+        val p = Pointer(cell, SystemClock.uptimeMillis(), x, y)
         pointers[id] = p
         removeCallbacks(longPress)
+        feedback(cell.key.code)
         when (cell.key.code) {
             Code.SHIFT -> {
                 val now = SystemClock.uptimeMillis()
@@ -282,7 +346,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 lastShiftTap = now
             }
             Code.DELETE -> {
-                listener.onKey(Code.DELETE, "")
+                listener.onKey(Code.DELETE, "", -1, -1)
                 postDelayed(repeat, repeatStartMs)
             }
             else -> {
@@ -302,20 +366,69 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         when {
             panel != null -> panel.getOrNull(p.chosen)?.let { type(it.second) }
             key.code == Code.SHIFT -> if (p.chorded) setShift(Shift.OFF)
-            key.code == Code.DELETE -> removeCallbacks(repeat)
+            key.code == Code.DELETE -> {
+                removeCallbacks(repeat)
+                if (p.swiping) listener.onDeleteWords(p.steps, true)
+            }
+            key.code == Code.SPACE && p.swiping -> {}
             key.code == Code.GLOBE && SystemClock.uptimeMillis() - p.downAt >= longPressMs -> {}
-            else -> type(key)
+            else -> type(key, p.x.roundToInt(), p.y.roundToInt())
         }
         if (pointers.isEmpty()) popups.clear()
         invalidate()
     }
 
-    private fun type(key: Layout.Key) {
+    private fun type(key: Layout.Key, x: Int = -1, y: Int = -1) {
         val text = text(key)
         // One Shift types one capital; locked, it stays. Held, it lasts until it is let go.
         if (key.code == Code.TEXT && shift == Shift.ON && pointers.values.none { it.cell.key.code == Code.SHIFT }) setShift(Shift.OFF)
-        listener.onKey(key.code, text)
+        listener.onKey(key.code, text, x, y)
         pointers.values.filter { it.cell.key.code == Code.SHIFT }.forEach { it.chorded = true }
+    }
+
+    /**
+     * Space swiped sideways moves the cursor a character for every [CURSOR_STEP] key widths; Delete swiped
+     * left selects a word for every key width, and deletes them when let go (#53 B11). Once a swipe starts,
+     * the key doesn't type or repeat.
+     */
+    private fun swipe(p: Pointer) {
+        val code = p.cell.key.code
+        if (code != Code.SPACE && code != Code.DELETE) return
+        val dx = p.x - p.downX
+        if (!p.swiping) {
+            if (abs(dx) < slop || (code == Code.DELETE && dx > 0)) return
+            p.swiping = true
+            removeCallbacks(longPress)
+            removeCallbacks(repeat)
+            popups.clear()
+        }
+        val unit = (width - 2 * sidePadding) / 10f
+        if (code == Code.SPACE) {
+            val steps = (dx / (CURSOR_STEP * unit)).toInt()
+            if (steps != p.steps) {
+                listener.onCursor(steps - p.steps)
+                p.steps = steps
+                feedback(Code.GAP)
+            }
+        } else {
+            val words = if (dx < -slop) 1 + ((-dx - slop) / unit).toInt() else 0
+            if (words != p.steps) {
+                p.steps = words
+                listener.onDeleteWords(words, false)
+                feedback(Code.GAP)
+            }
+        }
+    }
+
+    /** A key's buzz and click; [Code.GAP]: a swipe's step, a buzz only */
+    private fun feedback(code: Code) {
+        if (haptics) performHapticFeedback(if (code == Code.GAP) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.KEYBOARD_TAP)
+        if (sounds && code != Code.GAP) audio.playSoundEffect(when (code) {
+            Code.DELETE -> AudioManager.FX_KEYPRESS_DELETE
+            Code.ENTER -> AudioManager.FX_KEYPRESS_RETURN
+            Code.SPACE -> AudioManager.FX_KEYPRESS_SPACEBAR
+            else -> AudioManager.FX_KEYPRESS_STANDARD
+        }, -1f)
     }
 
     private fun cancelTouches() {
@@ -347,8 +460,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val left = min(cols - 1 - right, column)
         right = cols - 1 - left
         val order = (0 until cols * 2).map { if (it % 2 == 1) (it + 1) / 2 else -it / 2 }.filter { it in -left..right }
-        val x0 = r.centerX() - unit / 2
-        val bottom = r.top + layerOffsetY() - 17 * density
+        val x0 = r.centerX() - unit / 2 + layerOffset()[0]
+        val bottom = r.top + layerOffset()[1] - 17 * density
         p.panel = key.more.mapIndexed { i, more ->
             val x = x0 + order[i % cols] * unit
             val y = bottom - (i / cols + 1) * cellH
@@ -370,15 +483,15 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     /** The key, a row taller upwards, its label in the part above the key */
     private fun showPreview(cell: Cell) {
-        val f = face(cell.rect).apply { offset(0f, layerOffsetY()) }
+        val f = face(cell.rect).apply { offset(layerOffset()[0], layerOffset()[1]) }
         popups.showPreview(RectF(f.left, f.top - rowHeight, f.right, f.bottom), shown(cell.key), f.top - rowHeight / 2)
     }
 
-    /** This view's top in the popup layer's coordinates */
-    private fun layerOffsetY(): Float {
+    /** This view's top left in the popup layer's coordinates: it moves in one-handed and floating mode */
+    private fun layerOffset(): FloatArray {
         val mine = IntArray(2).also { getLocationInWindow(it) }
         val layer = IntArray(2).also { popups.getLocationInWindow(it) }
-        return (mine[1] - layer[1]).toFloat()
+        return floatArrayOf((mine[0] - layer[0]).toFloat(), (mine[1] - layer[1]).toFloat())
     }
 
     // --- Accessibility: each key is a virtual view labelled with what it types or does ---

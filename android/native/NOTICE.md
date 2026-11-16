@@ -7,7 +7,9 @@ src/main/cpp/CMakeLists.txt, src/main/cpp/cmake/protobuf.cmake, src/main/cpp/seb
 src/main/java/) are under the MIT licence in ../../LICENSE-SebType. The other files in src/main/cpp/cmake/
 are RimeJni's build scripts with SebType's changes, under RimeJni's [MIT License](src/main/cpp/cmake/LICENSE).
 It links core/ (../../core, see its README for its files' licences) and Mozc's libmozc.so, built from
-../../engines/mozc under Mozc's licence (BSD-3-Clause).
+../../engines/mozc under Mozc's licence (BSD-3-Clause). English (stage 4) builds in AOSP LatinIME's decoder
+(../../engines/latinime, Apache-2.0) and llama.cpp (MIT), which ../../engines/sebtype-lm/fetch-llama.sh
+fetches at build time.
 
 ## Third-party License
 
@@ -27,3 +29,5 @@ It links core/ (../../core, see its README for its files' licences) and Mozc's l
 | Protobuf (protobuf-lite 3.21.12) | [Protobuf-LICENSE.txt](src/main/assets/licenses/Protobuf-LICENSE.txt) | BSD-3-Clause |
 | OpenCC | [OpenCC-LICENSE.txt](src/main/assets/licenses/OpenCC-LICENSE.txt) | Apache-2.0 |
 | Yaml-cpp | [Yaml-cpp-LICENSE.txt](src/main/assets/licenses/Yaml-cpp-LICENSE.txt) | MIT |
+| llama.cpp | [Llama.cpp-LICENSE.txt](src/main/assets/licenses/Llama.cpp-LICENSE.txt) | MIT |
+| AOSP LatinIME's decoder | [AOSP-LatinIME-LICENSE.txt](src/main/assets/licenses/AOSP-LatinIME-LICENSE.txt) | Apache-2.0 |

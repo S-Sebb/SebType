@@ -8,8 +8,9 @@ import java.util.concurrent.CountDownLatch
 
 /**
  * The phone's way into SebType's core (core/ in the repository, the PCs' engine code): one process-wide
- * Core with 中文 (librime) and 日本語 (Mozc in this process), in libsebtype.so (sebtype_jni.cpp). Calls are
- * synchronous and take one lock, so the keyboard and the background setup can both call it.
+ * Core with 中文 (librime), 日本語 (Mozc in this process) and English (AOSP's decoder and SebType's model), in
+ * libsebtype.so (sebtype_jni.cpp). Calls are synchronous and take one lock, so the keyboard and the
+ * background setup can both call it.
  *
  * The keyboard calls it only through [post] (#241): a 中 or 日 key takes 10–60 ms in the engines, more
  * than a frame, so the main thread hands each call to one engine thread and shows its result when it
@@ -88,6 +89,11 @@ object NativeCore {
     @JvmStatic external fun setRimeSchema(schema: String)
     /** Mozc's profile and dictionary (a region of [file]; length 0: all of it); a change restarts 日本語. */
     @JvmStatic external fun setMozcData(profile: String, file: String, offset: Long, length: Long)
+    /**
+     * English's dictionary (a region of [dictionary]; length 0: all of it), its model file and where it keeps
+     * learned words; a change restarts English. Until this is called there is no English engine.
+     */
+    @JvmStatic external fun setEnglishPaths(dictionary: String, offset: Long, length: Long, model: String, userDir: String)
     @JvmStatic external fun setSettings(conf: String)
     @JvmStatic external fun settings(): String
 
@@ -97,6 +103,12 @@ object NativeCore {
 
     /** A key as an X11 keysym (a character's: [charSym]); [NativeState.taken] says whether the engine took it. */
     @JvmStatic external fun key(sym: Int, mods: Int): NativeState
+    /** [key] tapped at ([x], [y]) in the pixels of the keys given to [setLayout]. */
+    @JvmStatic external fun keyAt(sym: Int, mods: Int, x: Int, y: Int): NativeState
+    /** The letter keys, for English's correction: five ints a key, its character, x, y, width and height. */
+    @JvmStatic external fun setLayout(width: Int, height: Int, keys: IntArray)
+    /** The field's text before the cursor, when it changed other than by what the engine committed. */
+    @JvmStatic external fun setContext(before: String)
     /** Clears the composition and types [text]'s letters. */
     @JvmStatic external fun type(text: String): NativeState
     /** A language's candidates for [text], typed without making it the current language (the setup's self-test). */
@@ -126,6 +138,14 @@ object NativeCore {
 
     /** A user dictionary file in a format Mozc imports, as a serialized UserDictionary. */
     @JvmStatic external fun importMozcUserDictionary(text: ByteArray): ByteArray
+
+    /** Called on the main thread when English's next words for the text so far are ready. */
+    @Volatile @JvmStatic var onEnglishReady: Runnable? = null
+
+    /** From English's worker thread (sebtype_jni.cpp) */
+    @JvmStatic fun englishReady() {
+        main.post { onEnglishReady?.run() }
+    }
 
     /** X11's keysym for a character: Latin-1 as it is, the rest as Unicode keysyms. */
     @JvmStatic fun charSym(codePoint: Int) = if(codePoint < 0x100) codePoint else 0x1000000 + codePoint

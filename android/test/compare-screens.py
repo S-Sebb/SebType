@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Screenshots of today's keyboard (app/) next to the new one (next/, #191) on the emulator, for the
-user to judge the look by eye: English, symbols, a long press, 中文 with pinyin and candidates, its
-简/繁 menu, and 日本語, in the system's light and dark mode. Run under the emulator's lock:
+user to judge the look by eye: English with its suggestions and next words, caps lock, the action bar, All
+Actions and its emoji, clipboard and keyboard modes panels, the copied text offered, symbols, a long press,
+中文 with pinyin and candidates, its 简/繁 menu, and 日本語, in the system's light and dark mode. Run
+under the emulator's lock:
 
     android/emulator.sh -- android/test/compare-screens.py TODAY_APK NEW_APK FIELD_APK OUTDIR
 
@@ -33,6 +35,15 @@ APPS = {
 }
 STATES = [
     ("en", "English"),
+    ("en-words", "English: hel"),
+    ("en-next", "English: hello and a space, next words"),
+    ("caps", "Caps lock"),
+    ("action-bar", "The action bar"),
+    ("all-actions", "All Actions"),
+    ("emoji", "Emoji"),
+    ("clipboard", "Clipboard, with a copy"),
+    ("modes", "Keyboard modes"),
+    ("quick-clip", "Text just copied, in the bar"),
     ("symbols", "Symbols"),
     ("long-press", "Long press on e"),
     ("zh", "中文: nihao"),
@@ -118,12 +129,13 @@ class Keys:
         time.sleep(1.5)
 
 
-def open_field(app):
+def open_field(app, clip=None):
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     pkg, ime, _, _ = APPS[app]
     adb("shell", "ime", "set", f"{pkg}/{ime}")
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
+    extra = ["--es", "clip", clip] if clip else []
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
     time.sleep(1)
     return Keys(frame(app))
 
@@ -156,16 +168,31 @@ def chinese_ready(app, k):
     raise SystemExit(f"{app}: no 你好 for nihao")
 
 
+ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト", "すべての操作")
+
+
+def action_bar():
+    """Opens the action bar, unless it is open already: on both keyboards that is a saved setting."""
+    if not {t for t, _, _ in nodes()} & set(ALL_ACTIONS):
+        tap_label("Open Action Bar", "打开操作栏", "アクションバーを開く")
+
+
+def close_action_bar():
+    if {t for t, _, _ in nodes()} & set(ALL_ACTIONS):
+        tap_label("Close Action Bar", "关闭操作栏", "アクションバーを閉じる")
+
+
 def menu(app):
-    if app == "new":
-        tap_label("Open Action Bar")
-        return
-    # Today's bar is labelled in the keyboard's language. The expanded bar is a saved setting: it may be
-    # open, with All Actions showing, already.
-    labels = {t for t, _, _ in nodes()}
-    if not labels & {"All Actions", "所有操作项"}:
-        tap_label("Open Action Bar", "打开操作栏")
-    tap_label("All Actions", "所有操作项")
+    # The bar is labelled in the keyboard's language.
+    action_bar()
+    tap_label(*ALL_ACTIONS)
+
+
+def tile(app, *labels):
+    """All Actions' tile, by its name on either keyboard"""
+    open_field(app)
+    menu(app)
+    tap_label(*labels)
 
 
 def run(app, mode):
@@ -182,6 +209,37 @@ def run(app, mode):
             print(f"{mode}-{state}-{app}: {e}", flush=True)
 
     step("en", lambda: None)
+    step("en-words", lambda: k.type("hel"))
+    step("en-next", lambda: (k.type("lo"), k.bottom(5.5), time.sleep(3)))
+    k = open_field(app)
+
+    def caps():
+        tap(k.l + 0.75 * k.w, k.row(2))
+        tap(k.l + 0.75 * k.w, k.row(2))
+        time.sleep(1)
+
+    step("caps", caps)
+    step("action-bar", lambda: (open_field(app), action_bar()))
+    step("all-actions", lambda: (open_field(app), menu(app)))
+    step("emoji", lambda: tile(app, "Emojis", "Emoji", "表情符号"))
+
+    # Clipboard history on (it is off after an install), then a copy made in the field app
+    def clipboard():
+        tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
+        if {t for t, _, _ in nodes()} & {
+            "Clipboard history is off",
+            "Keep clipboard history",
+        }:
+            tap_label("Keep clipboard history")
+        open_field(app, clip="sebclip-example")
+        time.sleep(3)
+        tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
+
+    step("clipboard", clipboard)
+    step("modes", lambda: tile(app, "Keyboard Modes", "键盘模式"))
+    step("quick-clip", lambda: (open_field(app, clip="sebclip-quick"), time.sleep(3)))
+    k = open_field(app)
+    close_action_bar()
     step("symbols", lambda: k.bottom(0.75))  # ?123
     k.bottom(0.75)  # ABC
     x, y = k.letter("e")
@@ -245,7 +303,7 @@ rows = "\n".join(
 with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
     f.write(f"""<!doctype html><meta charset="utf-8"><title>SebType: today's keyboard and the new one</title>
 <style>body{{font-family:sans-serif;background:#eee}} td,th{{padding:6px;vertical-align:top}} img{{width:100%;max-width:480px;border:1px solid #ccc}}</style>
-<h1>Today's keyboard (left) and the new one (right), #242</h1>
+<h1>Today's keyboard (left) and the new one (right), #257</h1>
 <table><tr><th></th><th>Today (app/)</th><th>New (next/)</th></tr>
 {rows}
 </table>

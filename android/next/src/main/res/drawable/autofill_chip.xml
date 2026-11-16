@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An autofill suggestion's chip in the bar: the first candidate's flat pink, with the keys' brown outline. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFFDE0E6" />
+    <stroke android:width="2dp" android:color="#FF5B331C" />
+</shape>

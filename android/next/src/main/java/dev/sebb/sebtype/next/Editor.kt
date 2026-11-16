@@ -2,6 +2,7 @@ package dev.sebb.sebtype.next
 
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -14,6 +15,11 @@ import java.text.BreakIterator
  * is SebType's.
  */
 class Editor(private val ime: InputMethodService) {
+    private companion object {
+        /** Delete's swipe looks this far back for words */
+        const val MAX_SWIPE = 2000
+    }
+
     private val ic: InputConnection? get() = ime.currentInputConnection
     private var info: EditorInfo? = null
     private var kind = FieldKind.of(null)
@@ -85,11 +91,19 @@ class Editor(private val ime: InputMethodService) {
         if (selStart >= 0) expect(selStart - n)
     }
 
-    /** Mozc's edit around a commit: characters (code points) before and after the cursor. */
+    /** An engine's edit around a commit: characters (code points) before and after the cursor. */
     fun delete(before: Int, after: Int) {
         if (before == 0 && after == 0) return
-        ic?.deleteSurroundingTextInCodePoints(before, after)
+        val ic = ic ?: return
+        // The cursor moves back by the UTF-16 length of what goes.
+        val text = ic.getTextBeforeCursor(2 * before, 0) ?: ""
+        val gone = text.length - Character.offsetByCodePoints(text, text.length, -minOf(before, Character.codePointCount(text, 0, text.length)))
+        ic.deleteSurroundingTextInCodePoints(before, after)
+        if (selStart >= 0) expect(selStart - gone)
     }
+
+    /** The field's text before the cursor (up to [max] characters): English's context. */
+    fun textBefore(max: Int = 1000): String = ic?.getTextBeforeCursor(max, 0)?.toString().orEmpty()
 
     /** Moves the cursor [by] characters from where it is (Mozc puts it between a pair of brackets). */
     fun moveCursor(by: Int) {
@@ -97,6 +111,52 @@ class Editor(private val ime: InputMethodService) {
         val at = (selStart + by).coerceAtLeast(0)
         ic?.setSelection(at, at)
         expect(at)
+    }
+
+    /** Moves the cursor [by] characters (whole code points), as far as the text goes: the space bar's swipe. */
+    fun moveBy(by: Int) {
+        val ic = ic ?: return
+        if (selStart < 0) return
+        val at = if (by < 0) {
+            val before = ic.getTextBeforeCursor(-2 * by, 0) ?: return
+            selStart - (before.length - Character.offsetByCodePoints(before, before.length, -minOf(-by, Character.codePointCount(before, 0, before.length))))
+        } else {
+            val after = ic.getTextAfterCursor(2 * by, 0) ?: return
+            selEnd + Character.offsetByCodePoints(after, 0, minOf(by, Character.codePointCount(after, 0, after.length)))
+        }
+        ic.setSelection(at, at)
+        expect(at)
+    }
+
+    /** Delete's swipe: where it started (the cursor) and the text before it then */
+    private var swipeEnd = -1
+    private var swipeText = ""
+
+    /** Delete's swipe: selects [words] words before the cursor (none: back to the cursor), deleted when [done]. */
+    fun selectWordsBefore(words: Int, done: Boolean) {
+        val ic = ic ?: return
+        if (swipeEnd < 0) {
+            if (selStart < 0) return
+            swipeEnd = selStart
+            swipeText = ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString().orEmpty()
+        }
+        val end = swipeEnd
+        var i = swipeText.length
+        repeat(words) {
+            while (i > 0 && swipeText[i - 1].isWhitespace()) i--
+            while (i > 0 && !swipeText[i - 1].isWhitespace()) i--
+        }
+        val start = end - (swipeText.length - i)
+        if (!done) {
+            ic.setSelection(start, end)
+            return
+        }
+        swipeEnd = -1
+        if (start < end) {
+            ic.setSelection(start, end)
+            ic.commitText("", 1)
+            expect(start)
+        } else ic.setSelection(end, end)
     }
 
     fun enter() {
@@ -117,6 +177,17 @@ class Editor(private val ime: InputMethodService) {
     private fun key(code: Int) {
         ime.sendDownUpKeyEvents(code)
     }
+
+    /** Undo (Ctrl+Z) and redo (Ctrl+Shift+Z): the field's own, as a hardware keyboard sends them */
+    fun undo(redo: Boolean) {
+        val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON or (if (redo) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0)
+        val now = SystemClock.uptimeMillis()
+        ic?.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Z, 0, meta))
+        ic?.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Z, 0, meta))
+    }
+
+    /** Select all, cut, copy or paste ([android.R.id]'s), as the field's own menu does them */
+    fun menuAction(id: Int) = ic?.performContextMenuAction(id)
 
     private fun expect(at: Int) {
         selStart = at

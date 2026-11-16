@@ -20,7 +20,8 @@ import kotlin.math.roundToInt
 
 /**
  * A row or grid of tappable items drawn on a Canvas: the candidate bar, the expanded candidates and the menu.
- * Items scroll along one axis, except fixed ones (the bar's buttons); a tap picks one. Each item is a
+ * Items scroll along one axis, except fixed ones (the bar's buttons); a tap picks one, a long press may do
+ * more (an emoji's skin tones). Each item is a
  * virtual view labelled with its text, so TalkBack reads it and the emulator checks find it.
  */
 @SuppressLint("ViewConstructor")
@@ -50,6 +51,10 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
     private var downY = 0f
     private var lastPos = 0f
     private var dragging = false
+    private var longPressed = false
+    private val longPress = Runnable {
+        itemAt(downX, downY)?.let { longPressed = onLongPress(it) }
+    }
     private val a11y = Accessibility()
 
     init {
@@ -58,6 +63,16 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
 
     protected abstract fun onTap(item: Item)
     protected abstract fun drawItem(canvas: Canvas, item: Item)
+    /** A long press on [item]; true if it did something, and the touch then doesn't tap */
+    protected open fun onLongPress(item: Item) = false
+
+    /** Scrolls to [pos] along the scroll axis */
+    protected fun scrollTo(pos: Float) {
+        scroller.forceFinished(true)
+        scroll = pos.coerceIn(0f, maxScroll())
+        invalidate()
+        a11y.invalidateRoot()
+    }
 
     /** New items; [keepScroll] keeps the scroll position, otherwise it goes back to the start. */
     protected fun setItems(items: List<Item>, extent: Float, keepScroll: Boolean = false) {
@@ -113,11 +128,16 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
                 scroller.forceFinished(true)
                 downX = e.x; downY = e.y; lastPos = pos
                 dragging = false
+                longPressed = false
+                postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
                 velocity = VelocityTracker.obtain().apply { addMovement(e) }
             }
             MotionEvent.ACTION_MOVE -> {
                 velocity?.addMovement(e)
-                if (!dragging && abs(if (vertical) e.y - downY else e.x - downX) > slop) dragging = true
+                if (!dragging && abs(if (vertical) e.y - downY else e.x - downX) > slop) {
+                    dragging = true
+                    removeCallbacks(longPress)
+                }
                 if (dragging) {
                     scroll = (scroll + lastPos - pos).coerceIn(0f, maxScroll())
                     invalidate()
@@ -125,6 +145,7 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
                 lastPos = pos
             }
             MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
                 val v = velocity
                 if (dragging && v != null) {
                     v.addMovement(e)
@@ -137,10 +158,10 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
                         postInvalidateOnAnimation()
                     }
                     a11y.invalidateRoot()
-                } else if (!dragging) itemAt(e.x, e.y)?.let { onTap(it) }
+                } else if (!dragging && !longPressed) itemAt(e.x, e.y)?.let { onTap(it) }
                 velocity?.recycle(); velocity = null
             }
-            MotionEvent.ACTION_CANCEL -> { velocity?.recycle(); velocity = null }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); velocity?.recycle(); velocity = null }
         }
         return true
     }
@@ -178,6 +199,7 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
             node.setBoundsInParent(Rect(r.left.roundToInt(), r.top.roundToInt(), r.right.roundToInt(), r.bottom.roundToInt()))
             item.checked?.let { node.isCheckable = true; node.isChecked = it }
             node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
+            node.addAction(AccessibilityNodeInfoCompat.ACTION_LONG_CLICK)
         }
 
         override fun onPopulateEventForVirtualView(id: Int, event: AccessibilityEvent) {
@@ -186,9 +208,11 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
 
         override fun onPerformActionForVirtualView(id: Int, action: Int, arguments: Bundle?): Boolean {
             val item = items.getOrNull(id) ?: return false
-            if (action != AccessibilityNodeInfoCompat.ACTION_CLICK) return false
-            onTap(item)
-            return true
+            return when (action) {
+                AccessibilityNodeInfoCompat.ACTION_CLICK -> { onTap(item); true }
+                AccessibilityNodeInfoCompat.ACTION_LONG_CLICK -> onLongPress(item)
+                else -> false
+            }
         }
     }
 }

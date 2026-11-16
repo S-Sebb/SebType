@@ -1,4 +1,4 @@
-# libsebtype.so, the phone's native library (#191 stage 1): core/ with librime (engines/librime, built by
+# libsebtype.so, the phone's native library (#191 stage 1): core/ with English (stage 4), librime (engines/librime, built by
 # RimeJni's scripts in cmake/, MIT, see cmake/LICENSE) and protobuf-lite for Mozc's protocol, and the JNI
 # glue NativeCore.kt calls. Mozc itself is libmozc.so (Bazel, ../../../build-mozc.sh), which it links to.
 cmake_minimum_required(VERSION 3.22)
@@ -44,7 +44,7 @@ add_subdirectory(${SEBTYPE_CORE_DIR} ${RIME_JNI_BUILD_DIR}/core)
 
 add_library(sebtype SHARED sebtype_jni.cpp)
 set_target_properties(sebtype PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(sebtype PRIVATE sebtype-core c++_static log)
+target_link_libraries(sebtype PRIVATE sebtype-core sebtype-english c++_static log)
 target_link_options(sebtype PRIVATE
     -Wl,--gc-sections
     -Wl,--as-needed

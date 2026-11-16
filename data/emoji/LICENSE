@@ -1,0 +1,3 @@
+build.sh and make.py are SebType's own code, under the MIT licence in ../../LICENSE-SebType. The list they
+build, android/next/src/main/assets/emoji/emoji.txt, is not: it is made from Unicode's emoji-test.txt and
+Unicode CLDR's annotations, under the Unicode licence (see ../../NOTICE).
