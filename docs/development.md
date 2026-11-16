@@ -61,8 +61,10 @@ prints: the Configurator and its unit tests' executable (`pc/configurator/build.
 and `data/rime/bench/bench.sh`). In the container the checkout is at its nobara-pc path, so the paths Rust
 compiles into the tests hold on nobara-pc. Rust's cache there is `~/scratch/SebType/cache/cargo`.
 
-`SEBTYPE_BUILD_HOST=local <script>` builds on nobara-pc. `android/test/build.sh` always does: it checks
-nobara-pc's own caches. Everything else builds on nobara-pc only when yanglab16 can't be reached. CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the
+`SEBTYPE_BUILD_HOST=local <script>` builds on nobara-pc. Otherwise a build runs on nobara-pc only when
+yanglab16 can't be reached. `android/test/build.sh` is the exception: it checks yanglab16's caches and
+builds, so it needs yanglab16 and stops without it, and `SEBTYPE_BUILD_HOST=local` adds one release built
+on nobara-pc, to compare with yanglab16's (#250). CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the
 lab's machine. The Windows build runs only in CI (MSVC on GitHub's Windows runners).
 
 ### The build lock
