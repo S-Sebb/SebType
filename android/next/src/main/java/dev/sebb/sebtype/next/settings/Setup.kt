@@ -16,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -34,10 +33,9 @@ import dev.sebb.sebtype.next.R
 fun Setup(state: Pair<Boolean, Boolean>) = Column(Modifier.fillMaxSize().cloth()) {
     val context = LocalContext.current
     val step = if (state.first) 2 else 1
-    // Today's layout: the launcher icon's pig in ink fills the top three quarters (less the group below), and
-    // a quarter stays empty under the group.
-    Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.fillMaxWidth().weight(0.75f),
-        colorFilter = ColorFilter.tint(Ink))
+    // Today's layout: the launcher icon's pig, in its colours, fills the top three quarters (less the group
+    // below), and a quarter stays empty under the group.
+    Image(painterResource(R.mipmap.ic_launcher_pig), null, Modifier.fillMaxWidth().weight(0.75f))
     Column(Modifier.padding(32.dp)) {
         Column(Modifier.padding(16.dp)) {
             Text(stringResource(R.string.setup_step, step), fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
