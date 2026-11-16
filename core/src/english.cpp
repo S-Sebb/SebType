@@ -360,7 +360,10 @@ class English : public Engine {
   English(const EnglishPaths &paths, std::function<void()> ready) : paths_(paths), ready_(std::move(ready)) {
     main_ = Lexicon::open(paths.dictionary, paths.dictionaryOffset, paths.dictionaryLength, false);
     if (!main_) std::fprintf(stderr, "sebtype: can't open the English dictionary %s\n", paths.dictionary.c_str());
-    if (!paths.userDir.empty()) openHistory();
+    if (!paths.userDir.empty()) {
+      openHistory();
+      takeInLegacyHistory();
+    }
     setLayout(defaultLayout());
     worker_ = std::thread([this] { work(); });
   }
@@ -527,6 +530,28 @@ class English : public Engine {
 
  private:
   std::string historyPath() const { return paths_.userDir + "/en_history"; }
+
+  // Today's app (FUTO Keyboard's, before #191 stage 6) keeps English's learned words in this same AOSP format,
+  // in a folder of this name. The update moves that folder into userDir (android/next's Migration); its words
+  // are learned here once, as of now, so none has faded by the time the new keyboard first opens.
+  void takeInLegacyHistory() {
+    const std::string legacy = paths_.userDir + "/UserHistoryDictionary.en_US.dict";
+    struct stat st{};
+    if (stat(legacy.c_str(), &st) != 0) return;
+    if (auto old = Lexicon::open(legacy, 0, 0, false); old && history_) {
+      const latinime::NgramContext none;
+      std::vector<int> cps(kMaxWordLength);
+      int token = 0, count = 0;
+      do {
+        token = old->dict->getNextWordAndNextToken(token, cps.data(), &count);
+        if (count > 0)
+          history_->dict->updateEntriesForWordWithNgramContext(&none, latinime::CodePointArrayView(cps.data(), count),
+                                                               true, latinime::HistoricalInfo(int(std::time(nullptr)), 0, 1));
+      } while (token != 0);
+      save();
+    }
+    latinime::FileUtils::removeDirAndFiles(legacy.c_str());
+  }
 
   // AOSP's user-history dictionary: ver4 with a forgetting curve, so a word learned stays in the list while
   // it is used and fades after weeks without use.

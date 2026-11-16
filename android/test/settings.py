@@ -52,7 +52,8 @@ CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 REPEAT = int(os.environ.get("SEBTYPE_REPEAT") or 1)
 TIMING = {"settings-smooth-scrolling"}
 PKG = os.environ.get("SEBTYPE_PACKAGE") or "dev.sebb.sebtype"
-# The new keyboard (android/next, #191 stage 3): only the incognito checks run; it has no settings app yet.
+# The new keyboard and its settings (android/next, #191 stages 3 and 5), with the checks for what it doesn't
+# have yet skipped.
 NEXT = PKG == "dev.sebb.sebtype.next"
 IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
@@ -60,10 +61,17 @@ NEXT_SKIPS = {
     "incognito-private-en": "English learns in stage 2",
     "incognito-en": "English learns in stage 2",
     "incognito-off-learns-en": "English learns in stage 2",
-    "incognito-privacy-switch": "the settings app comes in stage 5",
     "incognito-clipboard": "clipboard history comes in stage 4",
+    "import-en-personal-dictionary": "English's suggestions come to the phone with #246's engine",
+    "settings-payment-note": "no FUTO payment screens in the new app (#191 Decisions 7)",
 }
-SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
+SETTINGS = (
+    f"{PKG}/dev.sebb.sebtype.next.settings.SettingsActivity"
+    if NEXT
+    else f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
+)
+IMPORT_ACTIVITY = "settings.ImportActivity" if NEXT else "ImportResourceActivity"
+BACKUP_FILES = "SebTypeSettings_*.backup" if NEXT else "FUTOKeyboardSettings_*.backup"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 PREPARING = ("正在准备中文", "Preparing Chinese")
 NOT_CANDIDATES = (*PREPARING, "中文输入启动失败", "Chinese input failed")
@@ -467,8 +475,6 @@ passed = set()
 
 
 def check(name, fn, needs=()):
-    if NEXT and not name.startswith("incognito-"):
-        return
     if (
         NEXT
         and name in NEXT_SKIPS
@@ -545,7 +551,9 @@ SCREENS = [
     (
         "keyboard",
         (HOME["keyboard"],),
-        labels("尺寸和位置", "Size and position", "サイズと位置"),
+        labels("显示数字行", "Show number row", "数字行を表示")
+        if NEXT
+        else labels("尺寸和位置", "Size and position", "サイズと位置"),
     ),
     (
         "resize",
@@ -593,6 +601,11 @@ SCREENS = [
         labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"),
     ),
 ]
+
+
+# Not in the new app yet: resizing and the action bar (stage 4); FUTO's payment page (#191 Decisions 7).
+if NEXT:
+    SCREENS = [s for s in SCREENS if s[0] not in ("resize", "action-bar", "payment")]
 
 
 def every_screen():
@@ -919,6 +932,8 @@ def nothing_shows(texts, swipes):
 def no_theme_choice():
     open_settings()
     nothing_shows(THEME, 2)
+    if NEXT:  # its action bar comes in stage 4
+        return "no Theme group on the home screen"
     go(
         HOME["keyboard"],
         labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
@@ -1432,7 +1447,7 @@ def export_backup(include_clipboard, name):
         tap_text(CLIP_BOX)
         if not is_checked(CLIP_BOX):
             raise Fail("tapping the clipboard checkbox doesn't tick it")
-    adb("shell", "rm -f /sdcard/Download/FUTOKeyboardSettings_*.backup")
+    adb("shell", f"rm -f /sdcard/Download/{BACKUP_FILES}")
     tap_text(EXPORT)
     wait_for("the save dialog", lambda: screen_has(SAVE), 20)
     if not screen_has(labels("下载", "Downloads", "Download")):
@@ -1442,7 +1457,7 @@ def export_backup(include_clipboard, name):
     path = wait_for(
         "the exported backup",
         lambda: adb(
-            "shell", "ls /sdcard/Download/FUTOKeyboardSettings_*.backup", check=False
+            "shell", f"ls /sdcard/Download/{BACKUP_FILES}", check=False
         ).strip(),
         60,
     )
@@ -2032,14 +2047,18 @@ def sync_personal_dictionaries():
         )
         to_language("nihongo", "日本語")
         ja = candidates_for("purumoni")
-        to_language("hello", "hello")
-        en = suggested_after(OTHER_EN.lower())
+        # The new keyboard has no English suggestions yet (#246): the word reaching the dictionary is all.
+        en = None
+        if not NEXT:
+            to_language("hello", "hello")
+            en = suggested_after(OTHER_EN.lower())
     finally:
         delete_words()
+    offered = "no English suggestions yet" if en is None else en[:4]
     detail = (
-        f"purumoni -> {ja[:4]}, plonk -> {en[:4]}; the phone's file: {mozc.strip()!r}"
+        f"purumoni -> {ja[:4]}, plonk -> {offered}; the phone's file: {mozc.strip()!r}"
     )
-    if OTHER_JA[1] not in ja or OTHER_EN.lower() not in en:
+    if OTHER_JA[1] not in ja or (en is not None and OTHER_EN.lower() not in en):
         raise Fail(detail)
     return detail
 
@@ -2092,15 +2111,20 @@ def english_strings():
 
     texts = {"Fuzzy Pinyin"}
     # SebType's strings, and FUTO's that SebType rewrote in place
-    for d, f, names in (
-        ("../app/src/main/res", "strings-sebtype.xml", None),
-        ("../app/src/main/res", "strings-appname.xml", {"english_ime_settings"}),
-        (
-            "../app/src/main/res",
-            "strings-uix.xml",
-            {"setup_welcome_text", "setup_active_input_method"},
-        ),
-    ):
+    sources = (
+        (("../next/src/main/res", "strings-settings.xml", None),)
+        if NEXT
+        else (
+            ("../app/src/main/res", "strings-sebtype.xml", None),
+            ("../app/src/main/res", "strings-appname.xml", {"english_ime_settings"}),
+            (
+                "../app/src/main/res",
+                "strings-uix.xml",
+                {"setup_welcome_text", "setup_active_input_method"},
+            ),
+        )
+    )
+    for d, f, names in sources:
         ja = strings(f"{d}/values-ja/{f}")
         for name, e in strings(f"{d}/values/{f}").items():
             if (
@@ -2303,7 +2327,7 @@ def import_done():
     counts; the dump keeps finished ones in other lists for a while."""
     dump = adb("shell", "dumpsys", "activity", "activities")
     resumed = [line for line in dump.splitlines() if "ResumedActivity" in line]
-    return resumed and not any("ImportResourceActivity" in line for line in resumed)
+    return resumed and not any(IMPORT_ACTIVITY in line for line in resumed)
 
 
 def drop_personal_word(word):

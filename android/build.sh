@@ -8,6 +8,7 @@
 #                                  emulator's ARM translation), as the phone does
 #   android/build.sh next          signed arm64-v8a release APK of next/, the new keyboard (#191, test-only)
 #   android/build.sh next-debug    debug arm64-v8a APK of next/
+#   android/build.sh next-update   next's signed release as dev.sebb.sebtype: an update over today's app (#254)
 # Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here), and copies
 # the APKs back. A release comes back unsigned and is signed here: the key never leaves this PC.
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
@@ -20,7 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source ../tools/lib.sh
 
-kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64|next|next-debug}
+kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64|next|next-debug|next-update}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
 apksigner() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner "$@"; }
 # A release is built unsigned, here or on the build host, and signed the same way in both cases, as Gradle
@@ -37,7 +38,7 @@ sign_release() {
 }
 # SEBTYPE_UNSIGNED=1: a release left unsigned (on the build host, for the PC to sign).
 unsigned=${SEBTYPE_UNSIGNED:-}
-signed=; [[ $kind == release || $kind == next ]] && signed=1
+signed=; [[ $kind == release || $kind == next || $kind == next-update ]] && signed=1
 if [[ -n $signed ]]; then
   VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} build=$VERSION_CODE
   [[ -n $unsigned || ( -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ) ]] ||
@@ -83,6 +84,8 @@ case $kind in
     task=":next:assembleRelease" abis=arm64-v8a out=next/build/outputs/apk/release ;;
   next-debug)
     task=":next:assembleDebug" abis=arm64-v8a out=next/build/outputs/apk/debug ;;
+  next-update)
+    task=":next:assembleRelease -PsebtypeAppId=dev.sebb.sebtype" abis=arm64-v8a out=next/build/outputs/apk/release ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
 # This run's APKs, hard links to Gradle's (which the next build replaces, not overwrites).

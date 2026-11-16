@@ -6,7 +6,7 @@
 # the setup screen after a fresh install (with its notice when 中 comes up first), learning, an update
 # over itself and recovery from a broken install, the 简/繁 menu switch (#36); then Japanese's あ ⇄ ア
 # mode chip (#38); with MAIN_APK (main's release APK), last an update from main that keeps a word
-# learned there; then every settings screen and SebType's own options (android/test/settings.py, #41),
+# learned there (for the new keyboard: update-from-futo-app, words learned in all three languages, #254); then every settings screen and SebType's own options (android/test/settings.py, #41),
 # incognito (#31), sync with a local sync-server (#12, #14), importing personal data (#11), and clipboard
 # history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
@@ -47,6 +47,13 @@ check() { # name, command...; timeout T seconds (default 180); only if SEBTYPE_C
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
 apk=$(android/build.sh "$([[ $next ]] && echo next || echo release)" 2> "$out/build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/build.log"; exit 1; }
+# The new keyboard as an update over today's app (MAIN_APK): dev.sebb.sebtype, one version above it (#254).
+if [[ $next && -n ${MAIN_APK:-} ]]; then
+  main_code=$("$bt/aapt2" dump badging "$MAIN_APK" | grep -o "versionCode='[0-9]*'" | tr -dc 0-9)
+  UPDATE_APK=$(VERSION_CODE=$((main_code + 1)) android/build.sh next-update 2> "$out/build-update.log" | tail -1)
+  [[ -f $UPDATE_APK ]] || { echo "preflight: next-update build failed, see $out/build-update.log"; exit 1; }
+  export UPDATE_APK
+fi
 # The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.
 field_apk=$out/field.apk
 android/perf/build-field.sh "$field_apk" > "$out/field.log" 2>&1 && [[ -f $field_apk ]] ||
