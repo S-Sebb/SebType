@@ -41,7 +41,8 @@ Settings readSettings() {
   return Settings::parse(s.str());
 }
 
-// Mozc's own profile folder (base/system_util.cc): ~/.mozc when it exists, else XDG's.
+// Mozc's own profile folder (base/system_util.cc): ~/.mozc when it exists, else XDG's. The Configurator
+// (pc/configurator/src/linux.rs) and setup-ime.sh use the same rule (#274).
 std::string mozcProfile() {
   fs::path old = fs::path(env("HOME", "")) / ".mozc";
   return fs::is_directory(old) ? old.string() : (configHome() / "mozc").string();

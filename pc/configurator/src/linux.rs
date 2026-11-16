@@ -88,10 +88,14 @@ fn panel_outline(tab_w: i32, tab_h: i32, w: i32, h: i32) -> String {
 /// SebType's languages, as its settings name them.
 const LANGS: [&str; 3] = ["en", "zh", "ja"];
 
+fn home() -> PathBuf {
+    PathBuf::from(env::var_os("HOME").unwrap_or_default())
+}
 fn xdg(var: &str, fallback: &str) -> PathBuf {
     env::var_os(var)
+        .filter(|v| !v.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env::var_os("HOME").unwrap_or_default()).join(fallback))
+        .unwrap_or_else(|| home().join(fallback))
 }
 fn config() -> PathBuf {
     xdg("XDG_CONFIG_HOME", ".config")
@@ -103,7 +107,17 @@ pub fn rime_dir() -> PathBuf {
     data().join("fcitx5/rime")
 }
 pub fn mozc_dir() -> PathBuf {
-    config().join("mozc")
+    mozc_profile(&home(), &config())
+}
+/// Mozc's own rule (engines/mozc: base/system_util.cc), which the input method follows too
+/// (linux/src/sebtype.cpp): ~/.mozc when an older Mozc made it, else XDG's mozc folder.
+fn mozc_profile(home: &Path, config: &Path) -> PathBuf {
+    let old = home.join(".mozc");
+    if old.is_dir() {
+        old
+    } else {
+        config.join("mozc")
+    }
 }
 /// SebType's own settings, which its input method reads (core/: Settings).
 fn settings() -> PathBuf {
@@ -464,6 +478,22 @@ mod tests {
                 top - 7
             );
         }
+    }
+
+    #[test]
+    fn mozc_profile_prefers_legacy_folder_like_mozc() {
+        // In the crate's target/, not /tmp (#211); removed when the test passes.
+        let home = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "target/test-tmp/mozc-profile-{}",
+            std::process::id()
+        ));
+        let config = home.join(".config");
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(config.join("mozc")).unwrap();
+        assert_eq!(mozc_profile(&home, &config), config.join("mozc"));
+        fs::create_dir(home.join(".mozc")).unwrap();
+        assert_eq!(mozc_profile(&home, &config), home.join(".mozc"));
+        fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

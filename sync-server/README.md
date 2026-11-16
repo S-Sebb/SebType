@@ -199,7 +199,8 @@ new Japanese words to it. They go into a dictionary of their own, "SebType sync"
 tool. The PC still needs Rime, for its device id. English words stay on the phones: a PC has no English
 personal dictionary to put them in.
 
-On Linux the dictionary is `~/.config/mozc/user_dictionary.db`. Add the option to both
+On Linux the dictionary is `~/.config/mozc/user_dictionary.db` (`~/.mozc/user_dictionary.db` if an older
+Mozc made that folder; Mozc uses it then). Add the option to both
 commands above:
 
 ```sh
