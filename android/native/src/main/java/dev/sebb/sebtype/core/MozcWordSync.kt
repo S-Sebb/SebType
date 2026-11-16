@@ -16,7 +16,8 @@ object MozcWordSync {
     private const val DELETED = "#-\t"
     /** Mozc's part of speech for a name it doesn't know. */
     const val NOUN = "名詞"
-    private val POS = setOf(
+    /** Mozc's parts of speech, by its `PosType` numbers, under the names its export uses. */
+    val POS = listOf(
         "品詞なし", "名詞", "短縮よみ", "サジェストのみ", "固有名詞", "人名", "姓", "名", "組織", "地名", "名詞サ変", "名詞形動", "数",
         "アルファベット", "記号", "顔文字", "副詞", "連体詞", "接続詞", "感動詞", "接頭語", "助数詞", "接尾一般", "接尾人名", "接尾地名",
         "動詞ワ行五段", "動詞カ行五段", "動詞サ行五段", "動詞タ行五段", "動詞ナ行五段", "動詞マ行五段", "動詞ラ行五段", "動詞ガ行五段",
@@ -61,21 +62,23 @@ object MozcWordSync {
 
     /**
      * This device's file [own] (null before its first sync) brought up to date with its [words], dating what
-     * changed since at [now]. A first sync dates nothing: what was deleted before it stays a local matter.
+     * changed since at [now]. A first sync dates nothing: what was deleted before it stays a local matter. A
+     * change is dated after the one it replaces, even one from a device whose clock ran ahead, so the later
+     * change wins everywhere.
      */
     fun stamp(own: Map<Pair<String, String>, Entry>?, words: List<Entry>, now: Long): MutableMap<Pair<String, String>, Entry> {
-        val time = if (own != null) now else 0
+        val time = { e: Entry? -> if (own == null) 0 else maxOf(now, (e?.time ?: -1) + 1) }
         val out = HashMap(own.orEmpty())
         val have = words.associateBy { it.key }
         for ((key, w) in have) {
             val e = out[key]
             out[key] = when {
-                e == null || e.deleted || e.pos != w.pos -> w.copy(time = time, deleted = false)
+                e == null || e.deleted || e.pos != w.pos -> w.copy(time = time(e), deleted = false)
                 else -> e.copy(comment = w.comment)
             }
         }
         for (entry in out.entries) entry.value.let { e ->
-            if (!e.deleted && entry.key !in have) entry.setValue(Entry(e.reading, e.word, NOUN, "", now, true))
+            if (!e.deleted && entry.key !in have) entry.setValue(Entry(e.reading, e.word, NOUN, "", time(e), true))
         }
         return out
     }

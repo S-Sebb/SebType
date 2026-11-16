@@ -421,11 +421,17 @@ def mozc_words(db):
 
 
 def mozc_add(db, words):
-    """db with words added to SebType's dictionary, the one the Configurator's My words shows (#273),
-    made if missing; the rest kept unchanged."""
+    """db with words, (reading, word, part of speech[, comment]), added to SebType's dictionary, the
+    one the Configurator's My words shows (#273), made if missing; the rest kept unchanged."""
     entries = b"".join(
-        pb_field(4, pb_field(1, r) + pb_field(2, w) + pb_field(5, p))
-        for r, w, p in words
+        pb_field(
+            4,
+            pb_field(1, r)
+            + pb_field(2, w)
+            + pb_field(5, p)
+            + b"".join(pb_field(4, c) for c in comment if c),
+        )
+        for r, w, p, *comment in words
     )
     out = bytearray()
     for number, dictionary, start, end in pb_fields(db):
@@ -545,23 +551,27 @@ def format_entries(entries):
 
 def stamp(own, words, now):
     """This device's file own (None before its first sync) brought up to date with its words, dating
-    what changed since. A first sync dates nothing: what was deleted before it stays a local matter."""
+    what changed since. A first sync dates nothing: what was deleted before it stays a local matter.
+    A change is dated after the one it replaces, even one from a device whose clock ran ahead, so the
+    later change wins everywhere."""
     if words is None:  # no dictionary (yet), so nothing to tell
         return dict(own or {})
-    when = now if own is not None else 0
+    first = own is None
     own = dict(own or {})
+
+    def when(e):
+        return 0 if first else max(now, e.time + 1) if e else now
+
     have = {(r, w): (p, c) for r, w, p, c in words}
     for key, (pos, comment) in have.items():
         e = own.get(key)
         if e is None or e.deleted or e.pos != pos:
-            own[key] = Entry(*key, pos, comment, when)
+            own[key] = Entry(*key, pos, comment, when(e))
         elif e.comment != comment:
             own[key] = Entry(*key, pos, comment, e.time)
     for key, e in list(own.items()):
         if not e.deleted and key not in have:
-            own[key] = Entry(
-                *key, NOUN, "", now, True
-            )  # a deletion has no part of speech
+            own[key] = Entry(*key, NOUN, "", when(e), True)  # no part of speech
     return own
 
 
@@ -633,15 +643,22 @@ def mozc_take_in(db_path, own_path, new, old, now=None):
         own = own_mozc(
             db_path, own_path, now
         )  # first dates this PC's own changes, so they can win
+        comments = {key: e.comment for key, e in own.items()}
         changes = merge(own, new, old)
         if changes:
             db = read_mozc(db_path) or b""
             if db:
                 shutil.copyfile(db_path, db_path + ".sebtype-backup")
             db = mozc_remove(db, {e.key for e in changes})
-            db = mozc_add(db, [(*e.key, e.pos) for e in changes if not e.deleted])
+            added = [e for e in changes if not e.deleted]
+            db = mozc_add(
+                db,
+                [(*e.key, e.pos, e.comment or comments.get(e.key, "")) for e in added],
+            )
             write_file(db_path, db)
-            write_file(own_path, format_entries(own))
+        # After the dictionary, so a sync cut off in between takes the file in again; always, since
+        # a deletion of a word this PC lacks changes only this.
+        write_file(own_path, format_entries(own))
         return len(changes)
 
 

@@ -312,6 +312,55 @@ class Server(unittest.TestCase):
             len(s.merge(gone, s.format_entries(tie), None)), 1, "an addition wins a tie"
         )
 
+    def take_in(self, db, own, *files, now=100):
+        """Another device's files taken in one after another, each with the one before as its old copy."""
+        old = None
+        for new in files:
+            s.mozc_take_in(db, own, new.encode(), old, now)
+            old = new.encode()
+        with open(db, "rb") as f:
+            return s.mozc_words(f.read())
+
+    def test_a_deletion_of_a_word_this_pc_lacks_is_kept(self):
+        """A PC that never had a word keeps another device's deletion of it, so an older addition
+        arriving later from a third device doesn't bring it back."""
+        folder = tempfile.mkdtemp(dir=self.data)
+        db, own = (
+            os.path.join(folder, "user_dictionary.db"),
+            os.path.join(folder, "own.txt"),
+        )
+        s.write_file(db, s.mozc_add(b"", [("もふ", "モフ", 1)]))
+        s.own_mozc(db, own, 1)
+        s.mozc_take_in(db, own, "#-\tぴぴ\tピピ\t\t\t20\n".encode(), None, 30)
+        words = self.take_in(db, own, "ぴぴ\tピピ\t名詞\t\t10\n", now=40)
+        self.assertEqual([w for _, w, _, _ in words], ["モフ"])
+
+    def test_an_edit_keeps_the_words_comment(self):
+        folder = tempfile.mkdtemp(dir=self.data)
+        db, own = (
+            os.path.join(folder, "user_dictionary.db"),
+            os.path.join(folder, "own.txt"),
+        )
+        entry = s.pb_field(1, "もふ") + s.pb_field(2, "モフ") + s.pb_field(5, 1)
+        storage = s.pb_field(3, s.DICTIONARY) + s.pb_field(
+            4, entry + s.pb_field(4, "made up")
+        )
+        s.write_file(db, s.pb_field(2, storage))
+        s.own_mozc(db, own, 1)
+        words = self.take_in(db, own, "もふ\tモフ\t人名\t\t50\n")
+        self.assertEqual(words, [("もふ", "モフ", 5, "made up")])
+
+    def test_a_change_after_one_dated_in_the_future_still_wins(self):
+        """Another device's clock ran ahead: a change made here after taking in its word is dated
+        after that word's change, so it wins everywhere."""
+        ahead = {("ぴぴ", "ピピ"): s.Entry("ぴぴ", "ピピ", 1, time=1000)}
+        self.assertEqual(s.stamp(ahead, [], 50)[("ぴぴ", "ピピ")].time, 1001)
+        edited = s.stamp(ahead, [("ぴぴ", "ピピ", 5, "")], 50)
+        self.assertEqual(edited[("ぴぴ", "ピピ")].time, 1001)
+        self.assertEqual(
+            s.stamp(ahead, [("ぴぴ", "ピピ", 1, "")], 50), ahead, "unchanged"
+        )
+
     def test_old_clients(self):
         """A client from before #273 still reads a new file's words, which keep Mozc's export columns,
         and skips its deletions; its own file's words come in only when it gained them, so a word

@@ -142,7 +142,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
 | `SEBTYPE_PACKAGE=dev.sebb.sebtype.next android/test/emulator.sh` | The same checks on the new keyboard (next/, #191); those for what it doesn't have yet SKIP with the stage that brings it |
 | `android/emulator.sh -- android/test/compare-screens.py TODAY_APK NEW_APK FIELD_APK OUTDIR` | Screenshots of today's keyboard and the new one side by side, light and dark, for judging the look |
-| `android/build.sh unit-tests` | The app's unit tests, and `next/` compiled (on yanglab16) |
+| `android/build.sh unit-tests` | The unit tests of the app and `next/` (on yanglab16) |
 | `android/test/english/run.sh` | English quality next to pristine AOSP, on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |

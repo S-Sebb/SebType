@@ -21,8 +21,9 @@ class PersonalDictionarySyncTest {
         fun file(now: Long) = MozcWordSync.format(PersonalDictionarySync.ownMozc(own, words, now).values)
 
         fun takeIn(other: ByteArray) {
-            val (removed, added) = PersonalDictionarySync.japaneseChanges(own, words, other, copy)
-            words = words - removed.toSet() + added
+            val changes = PersonalDictionarySync.japaneseChanges(own, words, other, copy)
+            words = words - changes.removed.toSet() + changes.added
+            changes.save()
             copy = other
         }
     }
@@ -79,6 +80,26 @@ class PersonalDictionarySyncTest {
             MozcWordSync.merge(mine, MozcWordSync.format(other.values), bytes)
             assertEquals(MozcWordSync.Entry("ぴよぽん", "ピヨポン丸", "人名", "", 30), mine.values.single())
         }
+    }
+
+    @Test
+    fun aSyncCutOffBeforeTheWordsAreSavedLosesNothing() {
+        val a = Phone(listOf(japanese))
+        val b = Phone(listOf())
+        b.file(1)
+        val file = a.file(1)
+        PersonalDictionarySync.japaneseChanges(b.own, b.words, file, null) // the process ends before the words are saved
+        assertEquals("nothing deleted on b", "", String(b.file(2)))
+        b.takeIn(file)
+        assertEquals(listOf(japanese), b.words)
+    }
+
+    @Test
+    fun aChangeAfterOneDatedInTheFutureWins() {
+        val ahead = mapOf(("ぴぴ" to "ピピ") to MozcWordSync.Entry("ぴぴ", "ピピ", "名詞", time = 1000))
+        assertEquals(1001L, MozcWordSync.stamp(ahead, listOf(), 50).values.single().time)
+        assertEquals(1001L, MozcWordSync.stamp(ahead, listOf(MozcWordSync.Entry("ぴぴ", "ピピ", "人名")), 50).values.single().time)
+        assertEquals(ahead, MozcWordSync.stamp(ahead, listOf(MozcWordSync.Entry("ぴぴ", "ピピ", "名詞")), 50))
     }
 
     @Test

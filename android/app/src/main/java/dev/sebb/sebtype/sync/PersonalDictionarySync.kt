@@ -71,16 +71,24 @@ object PersonalDictionarySync {
     }
 
     /**
-     * Takes another device's Japanese file into this phone's file [own] and its words [have]: the words to remove
-     * from the personal dictionary, and the ones to add.
+     * What another device's Japanese file changes here: [removed] and [added] go to the personal dictionary first,
+     * then [save] keeps the merged file. Saved before, a sync cut off in between would take the words not yet
+     * in the dictionary for ones deleted here.
      */
-    fun japaneseChanges(own: File, have: List<PersonalWord>, new: ByteArray, old: ByteArray?): Pair<List<PersonalWord>, List<PersonalWord>> {
+    class JapaneseChanges(
+        val removed: List<PersonalWord>, val added: List<PersonalWord>,
+        private val own: File, private val merged: Map<Pair<String, String>, MozcWordSync.Entry>,
+    ) {
+        fun save() = PersonalDictionarySync.save(own, merged)
+    }
+
+    /** Takes another device's Japanese file into this phone's file [own] and its words [have]. */
+    fun japaneseChanges(own: File, have: List<PersonalWord>, new: ByteArray, old: ByteArray?): JapaneseChanges {
         val entries = ownMozc(own, have)
         val changes = MozcWordSync.merge(entries, new, old)
-        save(own, entries)
         val keys = changes.map { it.key }.toSet()
-        return have.filter { japanese(it)?.let { j -> j.furigana to j.output } in keys } to
-            changes.filter { !it.deleted }.map { it.word() }
+        return JapaneseChanges(have.filter { japanese(it)?.let { j -> j.furigana to j.output } in keys },
+            changes.filter { !it.deleted }.map { it.word() }, own, entries)
     }
 
     private fun ownFile(context: Context) = File(context.noBackupFilesDir, "sync/$MOZC_FILE")
@@ -97,14 +105,16 @@ object PersonalDictionarySync {
             newWords(new, old, io.get()).takeIf { it.isNotEmpty() }?.let { io.put(it) }
             return
         }
-        val (removed, added) = japaneseChanges(ownFile(context), io.get(), new, old)
-        if(removed.isEmpty() && added.isEmpty()) return
-        // By reading too: UserDictionaryIO.remove would take every Japanese word spelled the same.
-        removed.forEach {
-            context.contentResolver.delete(UserDictionary.Words.CONTENT_URI,
-                "${UserDictionary.Words.WORD}=? AND ${UserDictionary.Words.SHORTCUT}=?", arrayOf(it.word, it.shortcut))
+        val changes = japaneseChanges(ownFile(context), io.get(), new, old)
+        if(changes.removed.isNotEmpty() || changes.added.isNotEmpty()) {
+            // By reading too: UserDictionaryIO.remove would take every Japanese word spelled the same.
+            changes.removed.forEach {
+                context.contentResolver.delete(UserDictionary.Words.CONTENT_URI,
+                    "${UserDictionary.Words.WORD}=? AND ${UserDictionary.Words.SHORTCUT}=?", arrayOf(it.word, it.shortcut))
+            }
+            io.put(changes.added)
+            GlobalIMEMessage.tryEmit(IMEMessage.ReloadPersonalDict)
         }
-        io.put(added)
-        GlobalIMEMessage.tryEmit(IMEMessage.ReloadPersonalDict)
+        changes.save()
     }
 }

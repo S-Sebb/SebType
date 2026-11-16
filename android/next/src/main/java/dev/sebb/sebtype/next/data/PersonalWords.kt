@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.provider.UserDictionary
 import android.util.Log
+import dev.sebb.sebtype.core.MozcWordSync
 import dev.sebb.sebtype.core.NativeCore
 import dev.sebb.sebtype.next.Engines
 import org.json.JSONArray
@@ -132,12 +133,7 @@ object PersonalWords {
 
 /** Mozc's names of its parts of speech, as its dictionary tool exports them (user_dictionary_storage.proto). */
 object MozcPos {
-    private val names = listOf(
-        "品詞なし", "名詞", "短縮よみ", "サジェストのみ", "固有名詞", "人名", "姓", "名", "組織", "地名", "名詞サ変", "名詞形動", "数",
-        "アルファベット", "記号", "顔文字", "副詞", "連体詞", "接続詞", "感動詞", "接頭語", "助数詞", "接尾一般", "接尾人名", "接尾地名",
-        "動詞ワ行五段", "動詞カ行五段", "動詞サ行五段", "動詞タ行五段", "動詞ナ行五段", "動詞マ行五段", "動詞ラ行五段", "動詞ガ行五段",
-        "動詞バ行五段", "動詞ハ行四段", "動詞一段", "動詞カ変", "動詞サ変", "動詞ザ変", "動詞ラ変", "形容詞", "終助詞", "句読点", "独立語",
-    )
+    private val names = MozcWordSync.POS
 
     fun name(pos: PosType) = names.getOrElse(pos.number) { names[1] }
 

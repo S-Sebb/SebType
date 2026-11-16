@@ -57,16 +57,24 @@ object PersonalDictionarySync {
     }
 
     /**
-     * Takes another device's 日本語 file into this phone's file [own] and its words [have]: the words to remove
-     * from the personal dictionary, and the ones to add.
+     * What another device's 日本語 file changes here: [removed] and [added] go to the personal dictionary first,
+     * then [save] keeps the merged file. Saved before, a sync cut off in between would take the words not yet
+     * in the dictionary for ones deleted here.
      */
-    fun japaneseChanges(own: File, have: List<PersonalWord>, new: ByteArray, old: ByteArray?): Pair<List<PersonalWord>, List<PersonalWord>> {
+    class JapaneseChanges(
+        val removed: List<PersonalWord>, val added: List<PersonalWord>,
+        private val own: File, private val merged: Map<Pair<String, String>, MozcWordSync.Entry>,
+    ) {
+        fun save() = PersonalDictionarySync.save(own, merged)
+    }
+
+    /** Takes another device's 日本語 file into this phone's file [own] and its words [have]. */
+    fun japaneseChanges(own: File, have: List<PersonalWord>, new: ByteArray, old: ByteArray?): JapaneseChanges {
         val entries = ownMozc(own, have)
         val changes = MozcWordSync.merge(entries, new, old)
-        save(own, entries)
         val keys = changes.map { it.key }.toSet()
-        return have.filter { it.japanese && it.reading to it.word in keys } to
-            changes.filter { !it.deleted }.map { PersonalWord.japanese(it.reading, it.word, MozcPos.of(it.pos)) }
+        return JapaneseChanges(have.filter { it.japanese && it.reading to it.word in keys },
+            changes.filter { !it.deleted }.map { PersonalWord.japanese(it.reading, it.word, MozcPos.of(it.pos)) }, own, entries)
     }
 
     private fun ownFile(context: Context) = File(context.noBackupFilesDir, "sync/$MOZC_FILE")
@@ -82,8 +90,9 @@ object PersonalDictionarySync {
             newWords(new, old, PersonalWords.all(context)).takeIf { it.isNotEmpty() }?.let { PersonalWords.add(context, it) }
             return
         }
-        val (removed, added) = japaneseChanges(ownFile(context), PersonalWords.all(context), new, old)
-        if (removed.isNotEmpty()) PersonalWords.delete(context, *removed.toTypedArray())
-        if (added.isNotEmpty()) PersonalWords.add(context, added)
+        val changes = japaneseChanges(ownFile(context), PersonalWords.all(context), new, old)
+        if (changes.removed.isNotEmpty()) PersonalWords.delete(context, *changes.removed.toTypedArray())
+        if (changes.added.isNotEmpty()) PersonalWords.add(context, changes.added)
+        changes.save()
     }
 }

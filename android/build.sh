@@ -9,7 +9,7 @@
 #   android/build.sh next          signed arm64-v8a release APK of next/, the new keyboard (#191, test-only)
 #   android/build.sh next-debug    debug arm64-v8a APK of next/
 #   android/build.sh next-update   next's signed release as dev.sebb.sebtype: an update over today's app (#254)
-#   android/build.sh unit-tests    the app's unit tests (JVM, no device), and next/ compiled; no APK
+#   android/build.sh unit-tests    the unit tests of the app and next/ (JVM, no device); no APK
 # Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here), and copies
 # the APKs back. A release comes back unsigned and is signed here: the key never leaves this PC.
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
@@ -88,7 +88,7 @@ case $kind in
   next-update)
     task=":next:assembleRelease -PsebtypeAppId=dev.sebb.sebtype" abis=arm64-v8a out=next/build/outputs/apk/release ;;
   unit-tests)
-    task=":app:testDebugUnitTest :next:compileDebugKotlin" abis=arm64-v8a out= ;;
+    task=":app:testDebugUnitTest :next:testDebugUnitTest --continue" abis=arm64-v8a out= ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
 # This run's APKs, hard links to Gradle's (which the next build replaces, not overwrites).
