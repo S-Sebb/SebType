@@ -185,6 +185,27 @@ SEBTYPE_MOZC_API int sebtype_mozc_eval(const char* in,
   return 1;
 }
 
+// SebType (#270): the PCs' learning in a private field. Not learning makes the history read-only (still
+// suggested, nothing added) in memory only, so config1.db keeps the user's settings and the Configurator's
+// own writes never race it. Learning off in config1.db (NO_HISTORY) stays.
+SEBTYPE_MOZC_API void sebtype_mozc_set_learning(int learning) {
+  using mozc::config::Config;
+  if (!mozc::sebtype::g_session_handler) return;
+  Config config = mozc::config::ConfigHandler::GetCopiedConfig();
+  const Config::HistoryLearningLevel want =
+      learning ? Config::DEFAULT_HISTORY : Config::READ_ONLY;
+  if (config.history_learning_level() == Config::NO_HISTORY ||
+      config.history_learning_level() == want) {
+    return;
+  }
+  config.set_history_learning_level(want);
+  mozc::config::ConfigHandler::SetImposedConfig(std::move(config));
+  // GET_CONFIG hands the new config to the sessions (SessionHandler::UpdateSessions).
+  mozc::commands::Command get;
+  get.mutable_input()->set_type(mozc::commands::Input::GET_CONFIG);
+  mozc::sebtype::g_session_handler->EvalCommand(&get);
+}
+
 // SebType: parses a user dictionary file the user imported (Mozc, MS-IME, ATOK or Kotoeri text) into a
 // serialized UserDictionary, skipping entries it can't read. The phone writes user_dictionary.db with it,
 // since Mozc no longer takes user dictionary commands.

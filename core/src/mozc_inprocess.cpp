@@ -63,6 +63,10 @@ class InProcess final : public MozcTransport {
     return true;
   }
 
+  void setLearning(bool learning) override {
+    if (open_) sebtype_mozc_set_learning(learning);
+  }
+
  private:
   bool open_;
   bool unsaved_ = false;

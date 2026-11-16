@@ -707,10 +707,14 @@ fi
 # Private fields (#270): a private Fcitx5 (as above) with SebType's input method on its own fake account. In a field
 # the app marks sensitive (Chromium's incognito windows, Qt's ImhSensitiveData), a word picked in 中文 and in
 # 日本語 is not learned, and what was learned before is still first; in a field that may learn the same pick is.
+# Mozc's settings file (here general_config and the MS-IME keymap) is never written for it.
 private_field() {
-  local h=$fake/private
+  local h=$fake/private before
   mkdir -p "$h/.config/fcitx5"
   fake_run < /dev/null > /dev/null || return 1
+  mkdir -p "$h/.config/mozc"
+  printf '\x0a\x02\x08\x01\xc8\x02\x02' > "$h/.config/mozc/config1.db"
+  before=$(stat -c '%Y.%y %s' "$h/.config/mozc/config1.db"; sha256sum < "$h/.config/mozc/config1.db")
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" <<'PY'
@@ -788,6 +792,9 @@ sys.exit(0 if ok else 1)
 PY
   local rc=$? p
   for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  if [[ $before != "$(stat -c '%Y.%y %s' "$h/.config/mozc/config1.db"; sha256sum < "$h/.config/mozc/config1.db")" ]]; then
+    echo "FAIL Mozc's config1.db was written"; rc=1
+  else echo "PASS Mozc's config1.db untouched"; fi
   return $rc
 }
 if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then

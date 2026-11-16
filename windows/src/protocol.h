@@ -68,6 +68,7 @@ class Reader {
  public:
   explicit Reader(const std::string &in) : in_(in) {}
   bool ok() const { return ok_; }
+  bool atEnd() const { return pos_ == in_.size(); }
   uint32_t u32() {
     uint32_t v = 0;
     if (!take(4)) return 0;
@@ -105,7 +106,10 @@ inline bool decode(const std::string &in, Request &r) {
   Reader rd(in);
   r.op = static_cast<Op>(rd.u32());
   r.key.sym = rd.u32(), r.key.mods = rd.u32(), r.key.release = rd.b();
-  r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32()), r.learning = rd.b();
+  r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32());
+  // The protocol has no version. An app that loaded the text service before an upgrade (#270) still sends
+  // the shorter request, without learning: it learns, as it did. An older server ignores the extra byte.
+  r.learning = rd.atEnd() || rd.b();
   return rd.ok();
 }
 
