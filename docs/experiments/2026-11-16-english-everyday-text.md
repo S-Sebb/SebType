@@ -244,15 +244,17 @@ out. A higher cap (110, or none) keeps the same words and only offers more of th
 adding them changes no harness number but text-typos' first and top-3 rates (+0.2 and +0.3 points). Typed on
 their own, they are kept 155 times of 182 instead of 127.
 
-**The commit margin** (`MARGIN_NON_WORD`, 12) was tried separately; see below.
+**The commit margin** (`MARGIN_NON_WORD`, 12) was retuned separately: it is now 10; see below.
 
 ## Results: the commit margin, #291 (2026-11-16)
 
 `decide()` lets a space change letters that aren't a dictionary word only if the best candidate scores
 `MARGIN_NON_WORD` (12) above them. The bar: a setting is adopted only if no harness set gets worse beyond noise
 against main and core/ wrongly changes at most 0.2 % of the clean words; r3 then replaces r2 only if it is no worse
-on any set and better on the texting sets. **No setting passes: the margin stays 12 and the committed model
-stays r2.** Every lowered margin also corrects "js" to "us", a clean word the dictionary lacks.
+on any set and better on the texting sets. **No setting passed that bar: every lowered margin also corrects "js"
+to "us", a clean word the dictionary lacks. The user accepted 0.3 % clean words changed, the same as today's
+FUTO stack, for the misspelling gains: `MARGIN_NON_WORD` is now 10 at DECODER_WEIGHT 1.5, and the committed
+model stays r2.**
 
 **Tuning on the dev sets** (`dev.sh`'s dumps, rebuilt as for r3; with `MARGIN_WORD` kept at 4). Correct
 words changed, out of 4,574: today's weights change 3.
@@ -310,3 +312,7 @@ for r2, and the clean set loses 2 words (p 0.5). Latency doesn't move: the margi
   misspellings gap (3.4 points at 12, 1.7 at (1, 5)) but doesn't close it.
 
 r3's model and checkpoint stay in yanglab16's `~/scratch/SebType/cache/english-lm/` (`r3.gguf`, `r3-ckpt`).
+
+**Outcome.** (1.5, 10) ships: 12 points more misspellings fixed, 3 more typos in texts and 1.2 more phone typos,
+nothing else moved, at the cost of "js" → "us". It passes the plan's §2 bar; the 0.2 % limit was loosened to 0.3 %
+by the user's choice. r2 stays, as r3 fixes fewer misspellings at this setting too.

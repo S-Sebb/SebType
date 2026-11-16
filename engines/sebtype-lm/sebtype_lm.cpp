@@ -19,10 +19,12 @@ constexpr int MAX_BRANCHES = 32;
 constexpr int NEXT_WORD_PIECES = 5;  // first pieces nextWords() follows to the end of their word
 constexpr size_t SCORED_CANDIDATES = 6;
 // decide()'s weights, tuned on tools/english-lm's own dev sets (tune.py), never on the harness's test sets.
+// MARGIN_NON_WORD: 10 changes no more dev words than 12 did; the harness's clean words changed 0.2 -> 0.3 %, accepted
+// for 12 points more misspellings fixed (#291).
 constexpr float DECODER_WEIGHT = 1.5f;  // of the log of the decoder's normalised score
 constexpr float MIN_DECODER_SCORE = 1e-3f;
 constexpr float MARGIN_WORD = 4.0f;     // how much likelier a correction must be than a typed dictionary word
-constexpr float MARGIN_NON_WORD = 12.0f;  // ... than typed letters that aren't a word
+constexpr float MARGIN_NON_WORD = 10.0f;  // ... than typed letters that aren't a word
 const std::string SPACE = "\xe2\x96\x81";  // "▁"
 
 bool sentenceStart(const std::string &context) {
