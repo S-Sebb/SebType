@@ -339,7 +339,9 @@ phase_compare-setup() { # the test field and the keyboard to measure, its APK si
   echo "version=$(sh dumpsys package "$pkg" | sed -n 's/.*versionName=//p' | head -1)"
   local f size=0; for f in $(sh pm path "$pkg" | cut -d: -f2); do size=$(( size + $(sh stat -c %s "$f") )); done
   echo "apk_mb=$(( size / 1048576 ))"
+  # A stopped keyboard stops being the selected one (the emulator falls back to Gboard): select it again.
   sh am force-stop "$pkg"; sleep 1
+  sh ime set "$ime_id" > /dev/null
 }
 phase_idle() { # opened in a fresh process, settled
   open_field
