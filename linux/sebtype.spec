@@ -15,7 +15,7 @@ Summary:        SebType: English, 中文 and 日本語 in one Fcitx5 input metho
 License:        MIT and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0
 URL:            https://github.com/S-Sebb/SebType
 
-# core/ and linux/, and engines/mozc, packed by build.sh
+# core/, linux/ and pc/icons, and engines/mozc, packed by build.sh
 Source0:        sebtype.tar.gz
 Source1:        mozc.tar.gz
 
@@ -35,6 +35,8 @@ BuildRequires:  unzip
 Requires:       fcitx5
 Requires:       fcitx5-data
 Requires:       librime-lua
+# The tray icons' folders; its file trigger updates hicolor's icon cache.
+Requires:       hicolor-icon-theme
 
 ExcludeArch:    ppc ppc64 sparcv9 sparc64 s390x %{ix86}
 
@@ -70,3 +72,4 @@ DESTDIR=%{buildroot} ninja -C build install
 %{_datadir}/fcitx5/addon/sebtype.conf
 %{_datadir}/sebtype/fcitx5/addon/notificationitem.conf
 %{_libdir}/sebtype
+%{_datadir}/icons/hicolor/*/status/sebtype-*.svg

@@ -63,7 +63,7 @@ live_dry() {
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e '^would: install packages librime-octagram ' \
-    -e 'English ⇄ the last other language' -e 'install SebType.s tray icons' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
+    -e 'English ⇄ the last other language' -e 'remove the old SebType icon theme' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
     -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" -e "^would: install SebType's input method" \
     -e "^would: show SebType's tray menu" -e '^would: install packages librime-lua' && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
@@ -127,7 +127,7 @@ fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 21 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 20 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && ! -e $fake/deploy.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -191,20 +191,21 @@ mozc_keymap() {
     [[ $(grep -caF 'Alt `' "$db") == 1 ]] &&
     ls "$h"/.local/share/sebtype/backup/*/config1.db
 }
-# SebType's icon theme inherits the theme that was active, holds every status name at each size,
-# is active, and the running apps were told.
+# Setup leaves the icon theme alone (#278): the tray icons come with SebType's RPM, in hicolor.
 tray_icons() {
-  local t=$h/.local/share/icons/SebType d n
-  [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == SebType ]] &&
-    grep -qx 'Inherits=Fluent-dark' "$t/index.theme" && grep -q iconChanged "$fake/emit.log" || return 1
-  for d in 16 20 22 24 32 scalable; do
-    for n in sebtype-en:en sebtype-zh:zh sebtype-zh-a:zh-a sebtype-zh-caps:zh-caps sebtype-hira:hira sebtype-kata:kata \
-      sebtype-ja-a:ja-a sebtype-ja-caps:ja-caps input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps fcitx_mozc:hira fcitx_mozc_hiragana:hira \
-      fcitx_mozc_katakana_full:kata fcitx_mozc_direct:ja-a; do
-      cmp "../icons/$d/${n#*:}.svg" "$t/$d/status/${n%%:*}.svg" || return 1
+  [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == Fluent-dark &&
+    ! -e $h/.local/share/icons/SebType && ! -e $fake/emit.log ]]
+}
+# The RPM has every icon the add-on asks for (sebtype-<state>, the states of pc/icons) at each hicolor size.
+rpm_icons() {
+  local d n
+  for d in 16x16 22x22 24x24 32x32 scalable; do
+    for n in en zh zh-a zh-caps hira kata ja-a ja-caps; do
+      cmp "../icons/${d%%x*}/$n.svg" "$own/usr/share/icons/hicolor/$d/status/sebtype-$n.svg" || return 1
     done
   done
 }
+check rpm-has-tray-icons rpm_icons
 check fresh-apply fresh_apply
 
 # A page size of the user's own (as the Configurator writes it) stays when setup runs again (#163).
@@ -216,13 +217,24 @@ page_size_kept() {
 }
 check page-size-kept page_size_kept
 
-# --undo-icons brings back the inherited theme and removes SebType's; a second undo changes nothing.
-undo_icons() {
-  local o; o=$(fake_run --undo-icons < /dev/null) || return 1; echo "$o"
-  [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == Fluent-dark &&
-    ! -e $h/.local/share/icons/SebType && $(grep -c '^change:' <<<"$o") == 2 ]] &&
-    o=$(fake_run --undo-icons < /dev/null) && [[ -z $o ]] &&
-    o=$(fake_run < /dev/null) && grep -q '^change: install SebType.s tray icons .* over Fluent-dark' <<<"$o" && tray_icons
+# Upgrade from the icon theme of an older setup (#278): the theme goes, and the theme it inherits is active
+# again; without an Inherits line the Theme key goes; a theme the user picked since stays. A rerun changes nothing.
+old_icon_theme() {
+  local t=$h/.local/share/icons/SebType g=$h/.config/kdeglobals o inherits want
+  for inherits in Fluent-dark '' picked; do
+    rm -f "$fake/emit.log"; mkdir -p "$t/16/status"; : > "$t/16/status/sebtype-en.svg"
+    printf '[Icon Theme]\nName=SebType\n%s' "${inherits:+Inherits=$inherits\n}" > "$t/index.theme"
+    printf '[General]\nColorScheme=BreezeDark\n\n[Icons]\nTheme=SebType\n' > "$g"
+    want=$inherits
+    if [[ $inherits == picked ]]; then sed -i 's/^Theme=SebType/Theme=Papirus/' "$g"; want=Papirus; fi
+    o=$(fake_run < /dev/null) || return 1; echo "$o"
+    grep -q '^change: remove the old SebType icon theme' <<<"$o" && [[ ! -e $t ]] &&
+      [[ $(kreadconfig6 --file "$g" --group Icons --key Theme) == "$want" ]] && grep -qx 'ColorScheme=BreezeDark' "$g" &&
+      if [[ $inherits == picked ]]; then [[ ! -e $fake/emit.log ]]; else grep -q iconChanged "$fake/emit.log"; fi || return 1
+    [[ -n $inherits ]] || ! grep -q '^Theme=' "$g" || return 1
+    o=$(fake_run < /dev/null) && ! grep -q 'icon theme' <<<"$o" || return 1
+  done
+  printf '[Icons]\nTheme=Fluent-dark\n' > "$g"; rm -f "$fake/emit.log"
 }
 
 # --undo-names removes the three renamed input method entries and the 中文 schema name, keeping the
@@ -913,7 +925,7 @@ octagram() {
   done
 }
 check grammar-plugin-install octagram
-check undo-icons-and-reinstall undo_icons
+check upgrade-from-old-icon-theme old_icon_theme
 check undo-configurator-and-reinstall undo_configurator
 check undo-names-and-rename undo_names
 

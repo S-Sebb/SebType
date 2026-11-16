@@ -22,7 +22,7 @@ if build_host_ready; then build_remotely linux/build.sh; exit; fi
 MOZC_CACHE=$BAZEL_CACHE/mozc
 mkdir -p "$SEBTYPE_CACHE/sources" "$MOZC_CACHE"/{work,sources}
 pack_source "$root/engines/mozc" "$SEBTYPE_CACHE/sources/mozc.tar.gz"
-tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c core linux |
+tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c core linux pc/icons |
   gzip -n > "$SEBTYPE_CACHE/sources/sebtype.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies and Bazelisk. Built once per pin and spec.

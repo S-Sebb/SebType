@@ -2,8 +2,7 @@
 # SebType Linux setup: Fcitx5 input with SebType's input method (English, Chinese with Rime, Japanese with
 # Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
-# Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-icons switches back
-# from SebType's tray icon theme to the one it inherits from, and removes it. --undo-librime puts Fedora's
+# Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-librime puts Fedora's
 # librime back in place of SebType's build. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
 # fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
@@ -13,17 +12,16 @@
 # Why each step exists, and the app checklist: pc/linux/README.md.
 set -euo pipefail
 
-dry=0 undo_icons=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
+dry=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
 case ${1-} in
   --dry-run) dry=1 ;;
-  --undo-icons) undo_icons=1 ;;
   --undo-librime) undo_librime=1 ;;
   --undo-fcitx5) undo_fcitx5=1 ;;
   --undo-configurator) undo_configurator=1 ;;
   --undo-names) undo_names=1 ;;
   --undo-chinese-data) undo_chinese_data=1 ;;
   '') ;;
-  *) echo "usage: $0 [--dry-run | --undo-icons | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--dry-run | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
 here=$(dirname "$0")
 
@@ -41,25 +39,6 @@ change() {
 }
 warn() { echo "warning: $1"; todo=$((todo + 1)); }
 save() { mkdir -p "$backup"; cp -p "$1" "$backup/"; }
-
-# Tray icons (#63): an icon theme "SebType" that holds only the Fcitx5 status icons (pc/icons, Set E) and
-# inherits everything else from the theme that was active, so other icons stay as they were.
-theme=$data/icons/SebType
-icon_theme() { kreadconfig6 --file kdeglobals --group Icons --key Theme; }
-set_icon_theme() { # writes kdeglobals and tells running KDE apps (the tray too) to reload their icons
-  kwriteconfig6 --file kdeglobals --group Icons --key Theme "$1"
-  busctl --user emit /KIconLoader org.kde.KIconLoader iconChanged i 0 2>/dev/null || true
-  busctl --user emit /KGlobalSettings org.kde.KGlobalSettings notifyChange ii 4 0 2>/dev/null || true
-}
-inherited=$(icon_theme)
-[[ $inherited == SebType ]] && inherited=$(sed -n 's/^Inherits=//p' "$theme/index.theme" 2>/dev/null)
-inherited=${inherited:-breeze}  # Plasma's default when kdeglobals names none
-
-if ((undo_icons)); then
-  if [[ $(icon_theme) == SebType ]]; then echo "change: icon theme back to $inherited"; set_icon_theme "$inherited"; fi
-  if [[ -d $theme ]]; then echo "change: remove $theme"; rm -r "$theme"; fi
-  exit 0
-fi
 
 # SebType Configurator (#72, step 14): the app, its launcher and icon, and the Picnic candidate window
 # theme it installs when 主题 → 候选窗 is Picnic. The theme remembers the look it replaced.
@@ -453,36 +432,21 @@ if [[ " $(kga shortcutKeys as 4 "${walk[@]}" 2>/dev/null) " == *" $alt_grave "* 
   kga setForeignShortcutKeys 'asa(ai)' 4 "${walk[@]}" 1 4 "$meta_grave" 0 0 0
 fi
 
-# 11. Tray icons: SebType's Set E keycaps for EN, 中, あ, ア, and a / A (Caps Lock) in the English modes.
-# SebType's input method (#190) asks for sebtype-<file name> in the tray and its menu. The other names are
-# what Fcitx5's keyboard (input-keyboard), Rime and Mozc input methods ask for (fcitx_rime_latin_upper in
-# Rime's English with Caps Lock on); they come from the active theme, so only a theme of our own set as
-# active overrides them.
-icons=$here/../icons
-icon_names=(sebtype-en:en sebtype-zh:zh sebtype-zh-a:zh-a sebtype-zh-caps:zh-caps sebtype-hira:hira
-  sebtype-kata:kata sebtype-ja-a:ja-a sebtype-ja-caps:ja-caps input-keyboard:en fcitx-rime:zh fcitx_rime_latin:zh-a fcitx_rime_latin_upper:zh-caps
-  fcitx_mozc:hira fcitx_mozc_hiragana:hira fcitx_mozc_katakana_full:kata fcitx_mozc_katakana_half:kata
-  fcitx_mozc_direct:ja-a fcitx_mozc_alpha_half:ja-a fcitx_mozc_alpha_full:ja-a)
-want_theme=$(mktemp -d)
-dirs=(16 20 22 24 32 scalable)
-{
-  printf '[Icon Theme]\nName=SebType\nComment=SebType tray icons over %s\nInherits=%s\nDirectories=%s\n' \
-    "$inherited" "$inherited" "$(IFS=,; echo "${dirs[*]/%//status}")"
-  for d in "${dirs[@]}"; do
-    if [[ $d == scalable ]]; then printf '\n[%s/status]\nSize=48\nMinSize=33\nMaxSize=512\nType=Scalable\nContext=Status\n' "$d"
-    else printf '\n[%s/status]\nSize=%s\nType=Fixed\nContext=Status\n' "$d" "$d"; fi
-  done
-} > "$want_theme/index.theme"
-for d in "${dirs[@]}"; do
-  mkdir -p "$want_theme/$d/status"
-  for n in "${icon_names[@]}"; do cp "$icons/$d/${n#*:}.svg" "$want_theme/$d/status/${n%%:*}.svg"; done
-done
-if { ! diff -rq "$want_theme" "$theme" >/dev/null 2>&1 || [[ $(icon_theme) != SebType ]]; } &&
-  change "install SebType's tray icons as icon theme $theme over $inherited, and make it active (undo: $0 --undo-icons)"; then
-  rm -rf "$theme"; mkdir -p "${theme%/*}"; cp -r "$want_theme" "$theme"; chmod 755 "$theme"
-  set_icon_theme SebType
+# 11. Tray icons: SebType's RPM installs its keycaps as sebtype-<state> in hicolor (#278). An older setup
+# (#63) put an icon theme "SebType" with them in front of the user's, inheriting the theme that was active;
+# that theme goes, and the one it inherits is active again. One the user picked since stays.
+old_theme=$data/icons/SebType
+if [[ -d $old_theme ]] && change "remove the old SebType icon theme $old_theme"; then
+  if [[ $(kreadconfig6 --file kdeglobals --group Icons --key Theme) == SebType ]]; then
+    inherited=$(sed -n 's/^Inherits=//p' "$old_theme/index.theme")
+    if [[ -n $inherited ]]; then kwriteconfig6 --file kdeglobals --group Icons --key Theme "$inherited"
+    else kwriteconfig6 --file kdeglobals --group Icons --key Theme --delete; fi
+    # Running KDE apps, the tray too, reload their icons.
+    busctl --user emit /KIconLoader org.kde.KIconLoader iconChanged i 0 2>/dev/null || true
+    busctl --user emit /KGlobalSettings org.kde.KGlobalSettings notifyChange ii 4 0 2>/dev/null || true
+  fi
+  rm -r "$old_theme"
 fi
-rm -r "$want_theme"
 
 # 11b. SebType's tray item and menu (#190, Decisions #2): SebType's input method brings it as Fcitx5's
 # notificationitem add-on, by this account's add-on entry over Fedora's. Fcitx5's classic UI then leaves

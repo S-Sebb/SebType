@@ -25,3 +25,18 @@ install(TARGETS sebtype DESTINATION "${CMAKE_INSTALL_LIBDIR}/fcitx5")
 install(PROGRAMS ${SEBTYPE_MOZC_LIB} DESTINATION "${CMAKE_INSTALL_LIBDIR}/sebtype")
 install(FILES data/sebtype.conf DESTINATION "${CMAKE_INSTALL_DATADIR}/fcitx5/addon")
 install(FILES data/notificationitem.conf DESTINATION "${CMAKE_INSTALL_DATADIR}/sebtype/fcitx5/addon")
+
+# The tray icons (../pc/icons) as sebtype-<state> in hicolor, where every icon theme looks last, so they
+# need no icon theme of SebType's (#278). hicolor has no 20 px folders: its 20 px drawings are Windows' alone.
+set(icons ${CMAKE_SOURCE_DIR}/../pc/icons)
+file(GLOB states RELATIVE ${icons}/scalable ${icons}/scalable/*.svg)
+foreach(size 16 22 24 32 scalable)
+  set(dir ${size}x${size})
+  if(size STREQUAL scalable)
+    set(dir scalable)
+  endif()
+  foreach(state ${states})
+    install(FILES ${icons}/${size}/${state} DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${dir}/status"
+      RENAME sebtype-${state})
+  endforeach()
+endforeach()
