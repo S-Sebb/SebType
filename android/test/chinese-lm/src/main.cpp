@@ -10,8 +10,8 @@
 // (0 first, -1 not in the first 10). OUT.keys gets each key's time in microseconds: the key, the candidates
 // read and, with a model, its work. Its last line is the process's peak RSS in kB.
 // NAME=VALUE sets a ranking weight (Options below), tuned on the dev sets (tune.py); dump=1 writes, after each
-// item's last key, every candidate the model scored to OUT.dump: item, Rime's rank (-1: the model's own), the
-// model's log probability, the text. profile=1 writes each key's time per step (zh_lm::Profile) to OUT.prof.
+// item's last key, every candidate the model scored to OUT.dump: item, Rime's rank (-1: the model's own, even
+// when Rime has it too, so tune.py can try fewer of Rime's), the model's log probability, the text. profile=1 writes each key's time per step (zh_lm::Profile) to OUT.prof.
 #include <sebtype/hosts.h>
 #include <unistd.h>
 
@@ -43,9 +43,9 @@ struct Options {
 };
 
 struct Scored {
-    std::vector<std::string> pool;
-    std::vector<int> rimeRank;  // -1: the model's own
+    std::vector<std::string> rime;  // in Rime's order
     std::vector<float> logProb;
+    std::vector<zh_lm::Text> generated;
 };
 
 std::vector<std::string> split(const std::string &s, char sep) {
@@ -69,25 +69,20 @@ std::vector<std::string> rerank(zh_lm::Model &model, const Options &opt, const s
     const size_t k = std::min<size_t>(opt.rerank, list.size());
     std::vector<std::string> pool(list.begin(), list.begin() + k);
     std::vector<float> prior;
-    std::vector<int> ranks;
-    for (size_t i = 0; i < k; i++) {
-        prior.push_back(-opt.rankWeight * std::log1p(static_cast<float>(i)));
-        ranks.push_back(static_cast<int>(i));
-    }
+    for (size_t i = 0; i < k; i++) prior.push_back(-opt.rankWeight * std::log1p(static_cast<float>(i)));
     if (pool.empty() && opt.generate == 0) return list;
     // Scoring first lets the beam reuse what it decoded.
     auto lp = model.score(context, typed, pool);
-    if (opt.generate > 0) {
-        for (const auto &g : model.generate(context, typed, opt.generate, static_cast<int>(typed.size())))
-            if (std::find(pool.begin(), pool.end(), g.text) == pool.end()) {
-                pool.push_back(g.text);
-                prior.push_back(-opt.rankWeight * std::log1p(opt.generatedRank));
-                ranks.push_back(-1);
-                lp.push_back(g.logProb);
-            }
-    }
+    std::vector<zh_lm::Text> generated;
+    if (opt.generate > 0) generated = model.generate(context, typed, opt.generate, static_cast<int>(typed.size()));
+    if (scored) *scored = {pool, lp, generated};
+    for (const auto &g : generated)
+        if (std::find(pool.begin(), pool.end(), g.text) == pool.end()) {
+            pool.push_back(g.text);
+            prior.push_back(-opt.rankWeight * std::log1p(opt.generatedRank));
+            lp.push_back(g.logProb);
+        }
     if (pool.empty()) return list;
-    if (scored) *scored = {pool, ranks, lp};
     std::vector<size_t> order(pool.size());
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return lp[a] + prior[a] > lp[b] + prior[b]; });
@@ -181,8 +176,9 @@ int main(int argc, char **argv) {
             if (model) model->profile = {};
             Scored scored;
             if (model) list = rerank(*model, opt, context, keys.substr(0, i + 1), list, last && opt.dump ? &scored : nullptr);
-            for (size_t j = 0; j < scored.pool.size(); j++)
-                dump << item << "\t" << scored.rimeRank[j] << "\t" << scored.logProb[j] << "\t" << scored.pool[j] << "\n";
+            for (size_t j = 0; j < scored.rime.size(); j++)
+                dump << item << "\t" << j << "\t" << scored.logProb[j] << "\t" << scored.rime[j] << "\n";
+            for (const auto &g : scored.generated) dump << item << "\t-1\t" << g.logProb << "\t" << g.text << "\n";
             keysOut << std::chrono::duration<double, std::micro>(clock::now() - t0).count() << "\n";
             if (prof.is_open()) {
                 prof << i + 1 << "\t" << rimeUs;

@@ -40,9 +40,9 @@ public:
     // For each of TEXTS, log P(text, then its end | CONTEXT, the letters TYPED): the model's pinyin example
     // "context <T>typed<S>text<E>".
     std::vector<float> score(const std::string &context, const std::string &typed, const std::vector<std::string> &texts);
-    // The model's own candidates for TYPED: a beam search of WIDTH from <S> to <E>, best first, each with its
-    // log probability as score() would give it. After score() with the same CONTEXT and TYPED, it decodes only
-    // the steps off the texts score() decoded.
+    // The model's own candidates for TYPED: a beam search of WIDTH from <S>, where every beam also ends at <E>,
+    // best first, each with its log probability as score() would give it. After score() with the same CONTEXT
+    // and TYPED, it decodes only the steps off the texts score() decoded.
     std::vector<Text> generate(const std::string &context, const std::string &typed, int width, int maxChars);
     // The N likeliest words (1 to 4 Han characters, ending where the model's <B> says a word ends) after CONTEXT.
     std::vector<Text> nextWords(const std::string &context, size_t n);
@@ -68,8 +68,7 @@ private:
     int mVocabSize = 0;
     int mT = -1, mS = -1, mE = -1, mB = -1, mBos = -1;
     std::vector<int> mLetter;  // a-z
-    std::vector<int> mHan;       // pieces that are one Han character
-    std::vector<int> mHanOrEnd;  // and <E>: generate()'s choices
+    std::vector<int> mHan;  // pieces that are one Han character
     std::vector<std::string> mText;
     std::map<std::string, int> mPiece;  // by its text in the vocabulary
     std::vector<int> mCached;

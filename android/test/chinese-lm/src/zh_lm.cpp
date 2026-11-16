@@ -98,10 +98,8 @@ Model::Model(const std::string &path, int threads) {
     };
     mT = id("<T>"), mS = id("<S>"), mE = id("<E>"), mB = id("<B>");
     for (char c = 'a'; c <= 'z'; c++) mLetter.push_back(id(std::string(1, c)));
-    for (int t = 0; t < mVocabSize; t++) {
+    for (int t = 0; t < mVocabSize; t++)
         if (han1[t]) mHan.push_back(t);
-        if (han1[t] || t == mE) mHanOrEnd.push_back(t);
-    }
 }
 
 Model::~Model() {
@@ -350,17 +348,13 @@ std::vector<Text> Model::generate(const std::string &context, const std::string 
         for (size_t i = 0; i < beams.size(); i++) {
             const float *l = beams[i].logits;
             const float norm = std::isnan(beams[i].norm) ? logNorm(l) : beams[i].norm;
-            std::vector<int> top = mHanOrEnd;
+            // Every beam's own end is a candidate, however its Han continuations rank against <E>.
+            if (!beams[i].tokens.empty()) done.push_back({beams[i].tokens, beams[i].logProb + l[mE] - norm});
+            if (step == maxChars) continue;
+            std::vector<int> top = mHan;
             const size_t k = std::min<size_t>(width, top.size());
             std::partial_sort(top.begin(), top.begin() + k, top.end(), [&](int a, int b) { return l[a] > l[b]; });
-            for (size_t j = 0; j < k; j++) {
-                const float lp = beams[i].logProb + l[top[j]] - norm;
-                if (top[j] != mE) {
-                    if (step < maxChars) options.push_back({i, top[j], lp});
-                } else if (!beams[i].tokens.empty()) {
-                    done.push_back({beams[i].tokens, lp});
-                }
-            }
+            for (size_t j = 0; j < k; j++) options.push_back({i, top[j], beams[i].logProb + l[top[j]] - norm});
         }
         std::sort(options.begin(), options.end(), [](const Option &a, const Option &b) { return a.logProb > b.logProb; });
         if (options.size() > static_cast<size_t>(width)) options.resize(width);

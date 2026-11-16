@@ -1,13 +1,14 @@
 """Scores the Chinese harness's results (#259).
 
 score.py OUT_DIR                 summary.json of one run (bench.sh's STACK.SET.tsv and .keys files)
-score.py --compare RUN1 RUN2     exit 1 unless the quality numbers are equal and per-key p50 within 25 %
+score.py --compare RUN1 RUN2     exit 1 unless every item's results are equal and per-key p50 and p95 within 25 %
 score.py --table RUN1 RUN2       the report's table: run 1, with run 2's latency in brackets
 score.py --profile OUT_DIR       where a key's time goes, per stack (zhbench's profile=1 .prof files)
 """
 
 import difflib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -96,26 +97,49 @@ def summarise(out):
     return summary
 
 
-def quality(s):
-    return {
-        st: {k: v for k, v in m.items() if not k.endswith("_ms")} for st, m in s.items()
-    }
+def same_item(x, y):
+    """Equal rows, but for candidates with digits: rime-ice offers the clock's time for sj (and the date for
+    rq), so those texts, and the model's order among them, change between runs."""
+    x, y = x.split("\t"), y.split("\t")
+    tx, ty = x[3].split("|"), y[3].split("|")
+    return (
+        x[:3] == y[:3]
+        and len(tx) == len(ty)
+        and all(
+            p == q or (re.search(r"\d", p) and re.search(r"\d", q))
+            for p, q in zip(tx, ty)
+        )
+    )
 
 
 def compare(a, b):
-    a, b = json.loads(Path(a).read_text()), json.loads(Path(b).read_text())
-    qa, qb = quality(a), quality(b)
-    for st in qa:
-        qa[st].pop("rss_mb", None), qb[st].pop("rss_mb", None)
-    if qa != qb:
-        print("quality differs between the runs")
+    """Every item's rank and first three candidates must match (so every count does), and p50 and p95 per key."""
+    da, db = Path(a).parent, Path(b).parent
+    fa = sorted(f.name for f in da.glob("*.*.tsv"))
+    if fa != sorted(f.name for f in db.glob("*.*.tsv")):
+        print("the runs have different sets")
         return 1
-    for st in a:
-        p1, p2 = a[st]["key_ms"][0], b[st]["key_ms"][0]
-        if abs(p1 - p2) > 0.25 * max(p1, p2):
-            print(f"{st}: per-key p50 {p1} vs {p2} ms")
-            return 1
-    print("same quality, per-key p50 within 25 %")
+    diff = []
+    for name in fa:
+        ra = (da / name).read_text(encoding="utf-8").splitlines()
+        rb = (db / name).read_text(encoding="utf-8").splitlines()
+        diff += [
+            f"{name} item {i}"
+            for i, (x, y) in enumerate(zip(ra, rb))
+            if not same_item(x, y)
+        ]
+        if len(ra) != len(rb):
+            diff.append(f"{name}: {len(ra)} vs {len(rb)} items")
+    if diff:
+        print(f"{len(diff)} items differ between the runs: " + ", ".join(diff[:5]))
+        return 1
+    sa, sb = json.loads(Path(a).read_text()), json.loads(Path(b).read_text())
+    for st in sa:
+        for p, (x, y) in zip(("p50", "p95"), zip(sa[st]["key_ms"], sb[st]["key_ms"])):
+            if abs(x - y) > 0.25 * max(x, y):
+                print(f"{st}: per-key {p} {x} vs {y} ms")
+                return 1
+    print("every item's results equal, per-key p50 and p95 within 25 %")
     return 0
 
 

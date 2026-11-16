@@ -52,7 +52,7 @@ done
 s1=$out/chinese/run1/summary.json s2=$out/chinese/run2/summary.json
 if [[ -s $s1 && -s $s2 ]]; then
   if python3 -I $here/score.py --compare "$s1" "$s2" > "$out/chinese/compare.txt"; then
-    result PASS reproducible "quality numbers equal, per-key p50 within 25 %"
+    result PASS reproducible "every item's results equal, per-key p50 and p95 within 25 %"
   else
     result FAIL reproducible "$(head -1 "$out/chinese/compare.txt")"
   fi
