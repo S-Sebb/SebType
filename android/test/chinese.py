@@ -263,11 +263,15 @@ def type_fast(text, gap_ms=10):
         ),
         (int(left + 5.5 * (right - left) / 10), row_y(top, bottom, 3)),
     )
+    # The bottom row's period, by its label
+    period = next(
+        ((x, y) for label, x, y, top_, cls in nodes() if label == "." and top_ >= top),
+        None,
+    )
     script = "type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\n" + "".join(
         f"Tap({x},{y})\nUserWait({gap_ms})\n"
         for x, y in (
-            space if ch == " " else key_spots()["."] if ch == "." else k[ch][:2]
-            for ch in text
+            space if ch == " " else period if ch == "." else k[ch][:2] for ch in text
         )
     )
     path = os.path.join(logdir, "fast-taps.txt")
