@@ -170,7 +170,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             JAPANESE -> {
                 // A new field (or 日本語 again) starts on あ (#38).
                 katakana = false
-                NativeCore.setAlternate(false)
+                // Mozc starts on あ by itself; asking a stopped one would load it here, on the main thread.
+                if (NativeCore.running(JAPANESE)) NativeCore.setAlternate(false)
                 Engines.prepareJapanese(this)
             }
         }
