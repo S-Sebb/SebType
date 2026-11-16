@@ -478,8 +478,9 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
 }
 
 bool TextService::send(const Request &request) {
-  if (call(request, reply_)) return true;
-  if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that took the key but hangs
+  static Guarded server;
+  if (server.call(request, reply_)) return true;
+  if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that hangs: the key goes to the app as typed
   // An app UAC elevated (Setup, an admin console) starts none: the server would be elevated too, and out of
   // reach of the person's other apps. It uses the one they start.
   static const bool elevated = [] {
@@ -508,12 +509,15 @@ bool TextService::send(const Request &request) {
                       nullptr, &si, &pi))
     return false;
   CloseHandle(pi.hThread);
-  CloseHandle(pi.hProcess);
-  for (int i = 0; i < 60; ++i) {
-    Sleep(50);
-    if (call(request, reply_)) return true;
+  // Until it answers, for at most 3 s; one that ends (it crashed, or another one runs) or hangs ends the wait.
+  bool up = false;
+  for (int i = 0; i < 60 && !up; ++i) {
+    const bool ended = WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0;
+    up = server.call(request, reply_);
+    if (ended || (!up && GetLastError() == ERROR_TIMEOUT)) break;
   }
-  return false;
+  CloseHandle(pi.hProcess);
+  return up;
 }
 
 void TextService::apply(ITfContext *context) {
