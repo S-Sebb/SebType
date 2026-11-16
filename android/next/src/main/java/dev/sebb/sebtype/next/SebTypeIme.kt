@@ -47,6 +47,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     ActionsPanel.Listener, EmojiPanel.Listener, ModesPanel.Listener {
     private companion object {
         val ENGLISH_KEYS = setOf(Code.TEXT, Code.SPACE, Code.ENTER, Code.DELETE)
+        /** Enough of the text before the cursor to tell where a sentence starts */
+        const val SHIFT_CONTEXT = 64
     }
 
     private enum class Page(val file: String) { LETTERS("letters"), SYMBOLS("symbols"), SYMBOLS2("symbols2"), DIGITS("digits") }
@@ -104,7 +106,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     // Whether the engine has something typed after its last call: read and written on the engine thread
     // only, so a key decides by what the keys before it typed, shown or not.
     private var engineComposing = false
-    private fun NativeState.recorded() = also { engineComposing = preedit.isNotEmpty() }
+    private var enginePreedit = ""
+    private fun NativeState.recorded() = also {
+        engineComposing = preedit.isNotEmpty()
+        enginePreedit = preedit
+    }
+    // English: the text before the cursor as the keys sent so far leave it, on the engine thread too, so a
+    // letter typed ahead of the engine gets the field's capital by the text it will follow (#241).
+    private val engineBefore = StringBuilder()
     private var keysSent: Int? = null
 
     override fun onCreate() {
@@ -257,6 +266,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             val before = editor.textBefore()
             NativeCore.post({
                 setContext(before)
+                engineBefore.setLength(0)
+                engineBefore.append(before)
                 state().recorded()
             }) { show(it, applyText = false) }
         }
@@ -274,7 +285,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             clear()
             selectLanguage(lang)
             setField(field, learning)
-            before?.let { setContext(it) }
+            engineBefore.setLength(0)
+            before?.let {
+                setContext(it)
+                engineBefore.append(it)
+            }
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
             // one would load it here, ahead of the keys.
             if (lang == JAPANESE && running(JAPANESE)) setAlternate(false)
@@ -320,7 +335,17 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Code.SHIFT, Code.GAP -> {}
         }
         // By the field as the keys before left it: once their results have shown
-        NativeCore.after { autoShift() }
+        NativeCore.after {
+            autoShift()
+            if (lang == ENGLISH && toEngine && NativeCore.idle) {
+                // All shown: the field is what the engine thread's copy should be (less the word typed).
+                val before = editor.textBefore(SHIFT_CONTEXT).dropLast(state?.preedit?.length ?: 0)
+                NativeCore.post {
+                    engineBefore.setLength(0)
+                    engineBefore.append(before)
+                }
+            }
+        }
     }
 
     private fun type(text: String) {
@@ -364,23 +389,46 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
      * word being typed. On the engine thread too, after the keys before it (#241).
      */
     private fun english(code: Code, text: String, x: Int, y: Int) {
-        fun send(sym: Int, otherwise: () -> Unit) =
-            NativeCore.post({ (if (x >= 0) keyAt(sym, 0, x, y) else key(sym, 0)).recorded() }) {
+        /**
+         * [sym] to the engine; if it doesn't take it, [otherwise] in the field, where [typed] goes on the
+         * engine thread's copy of the text (null: Delete's character comes off).
+         */
+        fun send(sym: () -> Int, typed: String?, otherwise: () -> Unit) =
+            NativeCore.post({
+                val s = sym()
+                val st = (if (x >= 0) keyAt(s, 0, x, y) else key(s, 0)).recorded()
+                if (st.deleteBefore > 0) engineBefore.setLength(maxOf(0, engineBefore.length - st.deleteBefore))
+                engineBefore.append(st.commit)
+                if (!st.taken) {
+                    if (typed != null) engineBefore.append(typed) else if (engineBefore.isNotEmpty()) engineBefore.setLength(engineBefore.length - 1)
+                }
+                st
+            }) {
                 show(it)
                 if (!it.taken) otherwise()
             }
         when (code) {
             Code.TEXT -> {
                 val cp = text.codePointAt(0)
-                if (Character.charCount(cp) == text.length) send(NativeCore.charSym(cp)) { editor.commit(text) }
-                else NativeCore.post({ flush().recorded() }) {
+                if (Character.charCount(cp) != text.length) return NativeCore.post({ flush().recorded() }) {
                     show(it)
                     editor.commit(text)
                 }
+                if (!Character.isLetter(cp) || keyboard.typedWithUserShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
+                // The field's capital, by the text this letter follows once the keys before it are in
+                val caps = editor.capsFlags
+                val lower = text.lowercase()
+                var cased = lower
+                send({
+                    val upper = caps != 0 &&
+                        android.text.TextUtils.getCapsMode("$engineBefore$enginePreedit", engineBefore.length + enginePreedit.length, caps) != 0
+                    cased = if (upper) lower.uppercase() else lower
+                    NativeCore.charSym(cased.codePointAt(0))
+                }, lower) { editor.commit(cased) }
             }
-            Code.SPACE -> send(' '.code) { editor.commit(" ") }
-            Code.ENTER -> send(NativeCore.XK_Return) { editor.enter() }
-            else -> send(NativeCore.XK_BackSpace) { editor.deleteBefore() }
+            Code.SPACE -> send({ ' '.code }, " ") { editor.commit(" ") }
+            Code.ENTER -> send({ NativeCore.XK_Return }, "\n") { editor.enter() }
+            else -> send({ NativeCore.XK_BackSpace }, null) { editor.deleteBefore() }
         }
     }
 

@@ -229,6 +229,20 @@ def type_keys(text):
     for ch in text:
         adb("shell", "input", "tap", str(k[ch][0]), str(k[ch][1]))
     time.sleep(1.5)
+    settle()
+
+
+def settle(seconds=30):
+    """The new keyboard's keys show when its engine thread answers (#241), which on the emulator can
+    take a second a key in English: waits until the field stops changing."""
+    if not NEXT:
+        return
+    last, end = None, time.time() + seconds
+    while time.time() < end:
+        if (text := field_text()) == last:
+            return
+        last = text
+        time.sleep(1)
 
 
 def field_text():
@@ -236,7 +250,7 @@ def field_text():
 
 
 def type_fast(text, gap_ms=10):
-    """Types text (letters and spaces) with monkey taps gap_ms apart, faster than the engines answer
+    """Types text (letters, spaces and periods) with monkey taps gap_ms apart, faster than the engines answer
     (10-60 ms a key, #241); then waits for them to catch up."""
     k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
     left, top, right, bottom = keyboard_frame
@@ -251,7 +265,10 @@ def type_fast(text, gap_ms=10):
     )
     script = "type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\n" + "".join(
         f"Tap({x},{y})\nUserWait({gap_ms})\n"
-        for x, y in (space if ch == " " else k[ch][:2] for ch in text)
+        for x, y in (
+            space if ch == " " else key_spots()["."] if ch == "." else k[ch][:2]
+            for ch in text
+        )
     )
     path = os.path.join(logdir, "fast-taps.txt")
     with open(path, "w") as f:
@@ -1082,11 +1099,11 @@ check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
 
 
 def fast_typing_en():
-    """English keys typed faster than the engine answers (#241) land in order, with the sentence's
-    capital: a key lost, out of order or shifted from a stale Shift would show here."""
+    """English keys typed faster than the engine answers (#241) land in order, with each sentence's
+    capital: a key lost, out of order or cased by a Shift the field hadn't caught up with shows here."""
     open_field()
-    type_fast("the cat sat on the mat ")
-    want = "The cat sat on the mat "
+    type_fast("the cat sat. on the mat ")
+    want = "The cat sat. On the mat "
     if (text := field_text()) != want:
         raise Fail(
             f"typed {want.lower()!r} 10 ms apart in EN; the field shows {text!r}"
@@ -1165,6 +1182,7 @@ def type_text(text):
     for ch in text:
         adb("shell", "input", "tap", *map(str, k[{" ": "Space"}.get(ch, ch)]))
     time.sleep(1.5)
+    settle()
 
 
 def to_english():

@@ -247,6 +247,20 @@ def type_keys(text):
     for ch in text:
         tap(k[ch][0], k[ch][1])
     time.sleep(1.5)
+    settle()
+
+
+def settle(seconds=30):
+    """The new keyboard's keys show when its engine thread answers (#241), which on the emulator can
+    take a second a key in English: waits until the field stops changing."""
+    if not NEXT:
+        return
+    last, end = None, time.time() + seconds
+    while time.time() < end:
+        if (text := field_text()) == last:
+            return
+        last = text
+        time.sleep(1)
 
 
 def open_field(kind=None, clip=None):

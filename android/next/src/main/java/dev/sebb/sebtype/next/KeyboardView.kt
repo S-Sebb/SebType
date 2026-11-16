@@ -130,7 +130,13 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         a11y.invalidateRoot()
     }
 
+    /** Whether the last letter was typed with Shift the user turned on (or locked), not the field's capital */
+    var typedWithUserShift = false
+        private set
+    private var userShift = false
+
     fun setShift(shift: Shift) {
+        userShift = false
         if (this.shift == shift) return
         this.shift = shift
         invalidate()
@@ -343,6 +349,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     shift == Shift.OFF -> Shift.ON
                     else -> Shift.OFF
                 })
+                userShift = shift != Shift.OFF
                 lastShiftTap = now
             }
             Code.DELETE -> {
@@ -380,6 +387,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private fun type(key: Layout.Key, x: Int = -1, y: Int = -1) {
         val text = text(key)
+        typedWithUserShift = userShift && shift != Shift.OFF
         // One Shift types one capital; locked, it stays. Held, it lasts until it is let go.
         if (key.code == Code.TEXT && shift == Shift.ON && pointers.values.none { it.cell.key.code == Code.SHIFT }) setShift(Shift.OFF)
         listener.onKey(key.code, text, x, y)

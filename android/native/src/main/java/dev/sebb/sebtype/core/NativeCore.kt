@@ -47,6 +47,9 @@ object NativeCore {
         }
     }
 
+    /** From the main thread: whether every result posted has shown */
+    val idle get() = steps.isEmpty()
+
     /** From the main thread: runs [action] there once the results posted before it have shown. */
     fun after(action: () -> Unit) {
         if(steps.isEmpty()) action() else steps.addLast(Step { action() }.apply { done = true })

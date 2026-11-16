@@ -166,12 +166,14 @@ class Editor(private val ime: InputMethodService) {
     }
 
     /** Whether the next letter starts a sentence (or a word, as the field asks): English's automatic Shift. */
-    fun capsMode(): Boolean {
-        val type = info?.inputType ?: return false
-        if (type and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
-        if (type and (InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_CAP_WORDS or
-                InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS) == 0) return false
-        return (ic?.getCursorCapsMode(type) ?: 0) != 0
+    fun capsMode(): Boolean = capsFlags != 0 && (ic?.getCursorCapsMode(info!!.inputType) ?: 0) != 0
+
+    /** The capitals the field asks for (TextUtils.getCapsMode's modes), 0 for none */
+    val capsFlags: Int get() {
+        val type = info?.inputType ?: return 0
+        if (type and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return 0
+        return type and (InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_CAP_WORDS or
+            InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS)
     }
 
     private fun key(code: Int) {
