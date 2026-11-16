@@ -1260,10 +1260,10 @@ if (
 elif not NEXT and (WANTED is None or "update-from-main" in WANTED):
     result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
 # --- An update from today's app (FUTO's, MAIN_APK) to the new keyboard built as dev.sebb.sebtype (#254) ---
-# UPDATE_APK is android/build.sh next-update's APK. Today's app learns a made-up English word and picks
-# lower candidates in 中文 and 日本語; after the update the new keyboard offers both picks first, English's
-# learned words wait in the English engine's folder (core_test checks that engine takes them in), and the
-# options' file is the one today's app wrote.
+# UPDATE_APK is android/build.sh next-update's APK. Today's app learns a made-up English word, picks
+# lower candidates in 中文 and 日本語 and changes options in its settings (autocorrect, fuzzy pinyin, learning);
+# after the update the new keyboard offers both picks first, English's learned words wait in the English
+# engine's folder (core_test checks that engine takes them in), and the options are kept.
 update_apk = os.environ.get("UPDATE_APK", "")
 OLD_PKG = "dev.sebb.sebtype"
 EN_WORD = "zorbleq"  # made up, so only learning can put it in the history
@@ -1300,6 +1300,31 @@ def learn_japanese():
     return got[2]
 
 
+def set_old_options():
+    """Autocorrect off, "z = zh" on and learning off in today's settings, as a user would; returns what it
+    stored, for the log."""
+    settings = f"{OLD_PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
+    for path in (
+        ("Languages", "Autocorrect"),
+        ("Languages", "Emoji suggestions"),
+        ("Languages", "Fuzzy Pinyin", "z = zh"),
+        ("Privacy", "Learn from my typing"),
+    ):
+        adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", settings)
+        for label in path:
+            for _ in range(4):
+                if any(n[0] == label for n in nodes()):
+                    break
+                adb("shell", "input", "swipe", "540", "1700", "540", "900", "400")
+                time.sleep(1)
+            tap_label((label,))
+    adb("shell", "am", "force-stop", OLD_PKG)
+    data = f"/data/user/0/{OLD_PKG}"
+    return root(
+        f"cat {data}/shared_prefs/*.xml; strings {data}/files/datastore/settings.preferences_pb; cat {data}/files/sebtype.conf"
+    )
+
+
 def old_files(path):
     return root(f"ls /data/user/0/{OLD_PKG}/{path} 2>/dev/null; true").split()
 
@@ -1331,12 +1356,12 @@ def update_from_futo_app():
             type_keys(EN_WORD)
             tap_space()
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
-        adb("shell", "am", "force-stop", OLD_PKG)
+        print("today's app stored:\n" + set_old_options())
         history = "files/UserHistoryDictionary.en_US.dict"
         if not old_files(history):
             raise Fail(f"today's app kept no English history in {history}")
         datastore = f"/data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
-        before = root(f"md5sum {datastore} 2>/dev/null; true").split()[:1]
+        before = set(root(f"strings {datastore}").split())
 
         adb("logcat", "-c")
         adb("install", "-r", update_apk, timeout=300)
@@ -1351,16 +1376,32 @@ def update_from_futo_app():
             raise Fail(
                 f"English's history not moved: left {old_files(history)}, moved {moved}"
             )
-        after = root(f"md5sum {datastore} 2>/dev/null; true").split()[:1]
-        if not before or before != after:
-            raise Fail(f"the options' file changed: {before} -> {after}")
+        lost = before - set(root(f"strings {datastore}").split())
+        if not before or lost:
+            raise Fail(f"the options' file lost {sorted(lost)[:10]}")
+        stored = root(
+            f"cat /data/user/0/{OLD_PKG}/files/sebtype.conf /data/user/0/{OLD_PKG}/files/rime/user/rime_ice.custom.yaml; "
+            f"strings /data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
+        )
+        print("the new app has:\n" + stored)
+        missing = [
+            o
+            for o, found in (
+                ("learning off", re.search(r"\[Learning\]\s*On=false", stored)),
+                ("z = zh", "derive/^zh/z/" in stored),
+                ("autocorrect off", "pref_key_auto_correction" in stored),
+            )
+            if not found
+        ]
+        if missing:
+            raise Fail(f"options lost in the update: {', '.join(missing)}")
         zh = expect_first("lh", "厉害")()
         to_japanese()
         got = candidates_for(JA_CODE)
         if got[0] != ja:
             raise Fail(f"after the update {JA_CODE} -> {got[:5]}, not {ja} first")
         return (
-            f"{zh}; {JA_CODE} -> {got[:3]}; English's history moved ({', '.join(moved)}); options' file kept;"
+            f"{zh}; {JA_CODE} -> {got[:3]}; English's history moved ({', '.join(moved)}); options kept;"
             f" keyboard {'still' if kept else 'no longer'} enabled after the update"
         )
     finally:

@@ -15,7 +15,7 @@ object Data {
  * An update over today's app (FUTO Keyboard's, before #191 stage 6) keeps the user's data (#254). Most of it is
  * already where the new app reads it: DataStore's `settings`, sebtype.conf, Rime's user folder (learned words,
  * My words, the word list, the sync folders) and Mozc's profile (learned words, its user dictionary). The rest
- * moves here once, the first time the app starts after the update; each step finds nothing to do afterwards.
+ * moves here once (the options in SharedPreferences: [Prefs]), the first time the app starts after the update; each step finds nothing to do afterwards.
  */
 object Migration {
     private const val TAG = "SebType"
@@ -24,6 +24,7 @@ object Migration {
     private const val ENGLISH_HISTORY = "UserHistoryDictionary.en_US.dict"
     private const val OLD_PREFS = "_preferences"
     private const val OLD_INCOGNITO = "pref_sebtype_incognito"
+    private const val OLD_LEARNING = "pref_key_use_personalized_dicts"
 
     fun run(context: Context) {
         // English's learned words: the same AOSP format; core/'s engine learns them anew on its first start.
@@ -33,8 +34,13 @@ object Migration {
             to.deleteRecursively()
             if (english.renameTo(to)) Log.w(TAG, "Moved English's learned words") else Log.w(TAG, "Can't move English's learned words")
         }
-        // Incognito (#31) stays on through the update.
         val old = context.getSharedPreferences(context.packageName + OLD_PREFS, Context.MODE_PRIVATE)
+        // Learning off (#31) is sebtype.conf's now, which the PCs share.
+        if (old.contains(OLD_LEARNING)) {
+            if (!old.getBoolean(OLD_LEARNING, true)) Engines.changeSettings(context, "[Learning]\nOn=false\n")
+            old.edit().remove(OLD_LEARNING).apply()
+        }
+        // Incognito (#31) stays on through the update.
         if (old.contains(OLD_INCOGNITO)) {
             context.getSharedPreferences("keyboard", Context.MODE_PRIVATE).edit()
                 .putBoolean("incognito", old.getBoolean(OLD_INCOGNITO, false)).apply()

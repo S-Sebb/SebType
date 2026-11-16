@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,7 @@ import kotlinx.coroutines.launch
 object Prefs {
     class Option<T>(val key: Preferences.Key<T>, val default: T)
 
-    // Today's app's own names (#254), so its values carry over as they are.
+    // Today's app's own names (#254), so its values carry over as they are ([OLD_SHARED]).
     val NUMBER_ROW = Option(booleanPreferencesKey("pref_number_row"), false) // hidden by default (#161)
     val KEY_POPUP = Option(booleanPreferencesKey("popup_on"), true)
     val VIBRATE = Option(booleanPreferencesKey("vibrate_on"), true)
@@ -37,7 +38,14 @@ object Prefs {
     /** [ChineseData.Fuzzy]'s names */
     val FUZZY = Option(stringSetPreferencesKey("sebtype_fuzzy_pinyin"), emptySet<String>())
 
-    private val Context.store by preferencesDataStore(name = "settings")
+    /** The options today's app keeps in Android's SharedPreferences, not DataStore; the first read takes them over. */
+    private val OLD_SHARED = listOf(KEY_POPUP, VIBRATE, SOUND, LONG_PRESS_MS, AUTOCORRECT, CAPITALISE, DOUBLE_SPACE_PERIOD)
+        .map { it.key.name }.toSet()
+
+    private val Context.store by preferencesDataStore(
+        name = "settings",
+        produceMigrations = { listOf(SharedPreferencesMigration(it, it.packageName + "_preferences", OLD_SHARED)) },
+    )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** The options as last read, for the keyboard, which never waits for the file. */
