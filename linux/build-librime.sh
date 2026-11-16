@@ -17,7 +17,10 @@ source "$here/rpm-sources.sh"
 source "$here/../tools/lib.sh"
 if build_host_ready; then build_remotely linux/build-librime.sh; exit; fi
 spec=$here/librime.spec cache=$LIBRIME_CACHE
-mkdir -p "$cache"/{work,sources}
+# rpmbuild's work folder, where Bazel's are (BAZEL_CACHE): on yanglab16 the container's root can't chown
+# what it unpacks on the NAS.
+work=$BAZEL_CACHE/librime/work
+mkdir -p "$cache/sources" "$work"
 stage=$(rpm_stage)
 trap 'rm -rf "$stage"' EXIT
 fetch_lookaside librime "$cache/sources" "${LIBRIME_SOURCES[@]}"
@@ -38,7 +41,7 @@ cp /work/top/RPMS/*/*.rpm /out/
 EOF
 )
 build_lock 5 "librime build" \
-  podman run --rm --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -v "$cache/work:/work:Z" -v "$stage/sources:/sources:ro,Z" \
+  podman run --rm --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -v "$work:/work:Z" -v "$stage/sources:/sources:ro,Z" \
   -v "$stage/rpms:/out:Z" -v "$spec:/pkg.spec:ro,Z" "$image" bash -c "$inner" inner "$LIBRIME_VERSION" "$LIBRIME_SEBTYPE_RELEASE" "$BUILD_JOBS"
 for rpm in "$stage"/rpms/*-"$LIBRIME_SEBTYPE_RELEASE".*.rpm; do
   cp "$rpm" "$cache/"

@@ -146,6 +146,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/english/run.sh` | English quality next to pristine AOSP, on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
+| `linux/test-parallel-build.sh` | Two RPM builds from different checkouts at once each package their own code (#305) |
 | `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account, and SebType's input method in private Fcitx5s ([pc/linux/README.md](../pc/linux/README.md)) |
 | `pc/configurator/test.sh` | The Configurator in nested sessions |
 | `pc/windows/setup/test-tcsbackend.sh` | SebType's installer and input methods on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
