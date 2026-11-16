@@ -1,11 +1,12 @@
-// SebType on Windows: the candidate window. Its sizes and colours are Weasel's defaults (weasel.yaml's style
-// and its aqua scheme) and SebType's Picnic scheme with the pig, as the Configurator set them for Weasel, so
-// the window looks as it did; the code is SebType's own. MIT, SebType.
+// SebType on Windows: the candidate window. Its sizes are Weasel's defaults (weasel.yaml's style); its colours
+// are Windows' own (light or dark mode, the accent, high contrast) or SebType's Picnic scheme with the pig, as
+// the Configurator set them for Weasel. The code is SebType's own. MIT, SebType.
 #include "candidate_window.h"
 
 #include "resource.h"
 
 #include <shellscalingapi.h>
+#include <winreg.h>
 #include <shlwapi.h>
 #include <wincodec.h>
 
@@ -22,9 +23,8 @@ constexpr UINT kNoticeMs = 1200;  // Weasel's show_notifications_time
 
 // weasel.yaml's look, in pixels at 100 % (its layout: candidate_layout.cpp).
 constexpr float kHilitePadding = 2, kRoundCorner = 4, kCornerRadius = 4, kBorder = 3;
-// The page arrows' chevrons: their height in a text row, and their stroke in the font's size (#276); the
-// arrow of a page that doesn't exist is drawn this faint.
-constexpr float kChevronHeight = 0.5f, kChevronStroke = 0.12f, kFaint = 0.25f;
+// The page arrows' chevrons: their height in a text row, and their stroke in the font's size (#276).
+constexpr float kChevronHeight = 0.5f, kChevronStroke = 0.12f;
 
 template <class T>
 void release(T *&p) {
@@ -32,10 +32,39 @@ void release(T *&p) {
   p = nullptr;
 }
 
-// Weasel's colours are 0xBBGGRR; Direct2D's ColorF takes 0xRRGGBB.
-constexpr UINT32 rgb(UINT32 bgr) { return ((bgr & 0xff) << 16) | (bgr & 0xff00) | ((bgr >> 16) & 0xff); }
+// Windows' COLORREF is 0xBBGGRR; Direct2D's ColorF takes 0xRRGGBB.
+constexpr UINT32 rgb(COLORREF bgr) { return ((bgr & 0xff) << 16) | (bgr & 0xff00) | ((bgr >> 16) & 0xff); }
 
-// sebtype.conf [Candidates], which the Configurator writes; Weasel's defaults otherwise: down, 14 pt, aqua.
+// Windows' colour settings, read on each showing so a change of theme shows on the next word. The registry
+// rather than WinRT's UISettings, which would need a WinRT apartment in every app the text service runs in.
+SystemColors systemColors() {
+  SystemColors c;
+  HIGHCONTRASTW hc{sizeof(hc)};
+  c.highContrast =
+      SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) && (hc.dwFlags & HCF_HIGHCONTRASTON);
+  c.window = rgb(GetSysColor(COLOR_WINDOW)), c.windowText = rgb(GetSysColor(COLOR_WINDOWTEXT));
+  c.highlight = rgb(GetSysColor(COLOR_HIGHLIGHT)), c.highlightText = rgb(GetSysColor(COLOR_HIGHLIGHTTEXT));
+  c.grayText = rgb(GetSysColor(COLOR_GRAYTEXT));
+  DWORD light = 1, size = sizeof(light);
+  RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+               L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size);
+  c.dark = light == 0;
+  // The accent's shades, R G B A each: light 3, 2, 1, the accent, dark 1, 2, 3, and one unused. Windows 11's
+  // default blue if it has none.
+  BYTE shades[32];
+  size = sizeof(shades);
+  const bool read =
+      RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent",
+                   L"AccentPalette", RRF_RT_REG_BINARY, nullptr, shades, &size) == ERROR_SUCCESS &&
+      size == sizeof(shades);
+  auto shade = [&](int i) { return UINT32(shades[i * 4]) << 16 | UINT32(shades[i * 4 + 1]) << 8 | shades[i * 4 + 2]; };
+  c.accentLight2 = read ? shade(1) : 0x4cc2ff;
+  c.accentDark1 = read ? shade(4) : 0x0067c0;
+  return c;
+}
+
+// sebtype.conf [Candidates], which the Configurator writes; Weasel's defaults otherwise: down, 14 pt, the
+// system look.
 struct Settings {
   bool vertical = true, picnic = false;
   int fontSize = 14;
@@ -103,17 +132,7 @@ void CandidateWindow::loadStyle(const RECT &caret) {
   st.picnic = s.picnic;
   st.scale = dpiX / 96.0f;
   st.fontPx = s.fontSize * 96.0f / 72.0f * st.scale;
-  if (s.picnic) {  // the Configurator's sebtype_picnic scheme (windows.rs)
-    st.text = rgb(0x222f4a), st.back = rgb(0xe8f7ff), st.border = rgb(0x1c335b);
-    st.hiliteText = rgb(0x222f4a), st.hiliteBack = rgb(0xe6e0fd);
-    st.candText = rgb(0x222f4a), st.comment = rgb(0x3f5373);
-    st.candHiliteText = rgb(0xffffff), st.candHiliteBack = rgb(0x6a50c2);
-  } else {  // Weasel's aqua
-    st.text = rgb(0x000000), st.back = rgb(0xeceeee), st.border = rgb(0xe0e0e0);
-    st.hiliteText = rgb(0x000000), st.hiliteBack = rgb(0xd4d4d4);
-    st.candText = rgb(0x000000), st.comment = st.candText;
-    st.candHiliteText = rgb(0xffffff), st.candHiliteBack = rgb(0xfa3a0a);
-  }
+  st.colors = s.picnic ? picnicPalette() : systemPalette(systemColors());
   if (format_ && formatPx_ != st.fontPx) release(format_);
   if (!format_ && SUCCEEDED(dwrite_->CreateTextFormat(kFont, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
                                                       DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
@@ -189,7 +208,7 @@ void CandidateWindow::draw() {
     ID2D1SolidColorBrush *brush = nullptr;
     target_->BeginDraw();
     target_->Clear(D2D1::ColorF(0, 0));
-    target_->CreateSolidColorBrush(D2D1::ColorF(style_.back), &brush);
+    target_->CreateSolidColorBrush(D2D1::ColorF(style_.colors.back), &brush);
     auto color = [&](UINT32 c) { brush->SetColor(D2D1::ColorF(c)); };
     auto fill = [&](const Box &b, float inflate, float radius, UINT32 c) {
       color(c);
@@ -209,33 +228,33 @@ void CandidateWindow::draw() {
     const auto card = D2D1::RoundedRect(
         D2D1::RectF(border / 2, border / 2, l.width - border / 2, l.height - border / 2), kCornerRadius * s,
         kCornerRadius * s);
-    color(style_.back);
+    color(style_.colors.back);
     target_->FillRoundedRectangle(card, brush);
-    color(style_.border);
+    color(style_.colors.border);
     target_->DrawRoundedRectangle(card, brush, border);
 
     for (size_t i = 0; i < l.preedit.size(); ++i) {
       const bool hi = static_cast<int>(i) == preeditHighlight_;
-      if (hi) fill(l.preeditBoxes[i], pad, kRoundCorner * s, style_.hiliteBack);
-      text(l.preedit[i], l.preeditBoxes[i], hi ? style_.hiliteText : style_.text);
+      if (hi) fill(l.preeditBoxes[i], pad, kRoundCorner * s, style_.colors.hiliteBack);
+      text(l.preedit[i], l.preeditBoxes[i], hi ? style_.colors.hiliteText : style_.colors.text);
     }
-    if (!l.aux.empty()) text(l.aux, l.auxBox, style_.text);
+    if (!l.aux.empty()) text(l.aux, l.auxBox, style_.colors.text);
     for (size_t i = 0; i < l.cells.size(); ++i) {
       const auto &c = l.cells[i];
       const bool hi = static_cast<int>(i) == cursor_;
-      if (hi) fill(c.all, pad, kRoundCorner * s, style_.candHiliteBack);
+      if (hi) fill(c.all, pad, kRoundCorner * s, style_.colors.candHiliteBack);
       // Labels take the candidate's colour, comments their own unless highlighted (Weasel's fallbacks).
-      const UINT32 fg = hi ? style_.candHiliteText : style_.candText;
+      const UINT32 fg = hi ? style_.colors.candHiliteText : style_.colors.candText;
       text(c.label, c.labelBox, fg);
       text(c.text, c.textBox, fg);
-      if (!c.comment.empty()) text(c.comment, c.commentBox, hi ? fg : style_.comment);
+      if (!c.comment.empty()) text(c.comment, c.commentBox, hi ? fg : style_.colors.comment);
     }
     // ‹ and ›: chevrons in the text's colour, faint where there is no page.
     auto chevron = [&](const Box &b, bool right, bool there) {
       if (b.empty()) return;
       const float half = std::round((b.b - b.t) * kChevronHeight / 2), cx = (b.l + b.r) / 2,
                   cy = (b.t + b.b) / 2, dx = half / 2 * (right ? 1 : -1);
-      brush->SetColor(D2D1::ColorF(style_.text, there ? 1 : kFaint));
+      color(there ? style_.colors.text : style_.colors.faint);
       const float stroke = std::max(1.5f, style_.fontPx * kChevronStroke);
       target_->DrawLine(D2D1::Point2F(cx - dx, cy - half), D2D1::Point2F(cx + dx, cy), brush, stroke, round_);
       target_->DrawLine(D2D1::Point2F(cx + dx, cy), D2D1::Point2F(cx - dx, cy + half), brush, stroke, round_);

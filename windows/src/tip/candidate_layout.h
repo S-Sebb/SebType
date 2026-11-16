@@ -2,6 +2,7 @@
 // (windows/test). The window measures text with DirectWrite and draws what this lays out. MIT, SebType.
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <string>
@@ -55,5 +56,23 @@ struct CandidateLayout {
 // syllable spaces and highlight as it pages (page 1's 你好 covers "ni hao", page 2's 拟 "ni" of "nihao");
 // Mozc's shows the focused candidate in the segment being converted (highlight), so only where that is.
 std::wstring pageWord(const std::vector<std::wstring> &segments, int highlight, bool pinyin);
+
+// The window's colours, 0xRRGGBB: the pinyin row (text, its highlighted segment), the candidates, and the
+// arrow of a page that doesn't exist (the others take text).
+struct Palette {
+  uint32_t text, back, border, hiliteText, hiliteBack, candText, comment, candHiliteText, candHiliteBack, faint;
+};
+// What Windows' colour settings are, as the window read them (#279).
+struct SystemColors {
+  bool highContrast = false, dark = false;
+  uint32_t accentLight2 = 0, accentDark1 = 0;  // the accent's shades Windows 11 fills selections with
+  // The high-contrast theme's own colours.
+  uint32_t window = 0, windowText = 0, highlight = 0, highlightText = 0, grayText = 0;
+};
+Palette picnicPalette();
+// The system look: Windows' light or dark mode with its accent, or the high-contrast theme's colours.
+Palette systemPalette(const SystemColors &colors);
+// WCAG's contrast ratio of two colours, 1 to 21.
+double contrast(uint32_t a, uint32_t b);
 
 }  // namespace sebtype::win

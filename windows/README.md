@@ -16,7 +16,7 @@ says what it sets up.
   profile. It sends each key to the server and shows its reply:
   - Chinese keeps the pinyin in the candidate window, Japanese types inline with Mozc's underlines
     (`edit.cpp`).
-  - The candidate window (`candidate_window.cpp`) has Weasel's layout and metrics, in Weasel's aqua colours
+  - The candidate window (`candidate_window.cpp`) has Weasel's layout and metrics, in Windows' own colours (light or dark mode, the accent, high contrast; #279)
     or SebType's Picnic with the pig at the start (#162), with the same space between the candidates and
     the pig as on Linux. `%APPDATA%\SebType\sebtype.conf` `[Candidates]` sets it (`Vertical`, `FontSize`,
     `Picnic`); the Configurator writes it, and the window reads it each time it shows.

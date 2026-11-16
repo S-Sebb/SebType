@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace sebtype::win {
 namespace {
@@ -14,6 +15,23 @@ constexpr float kMargin = 12, kSpacing = 10, kCandidateSpacing = 5, kHiliteSpaci
 constexpr float kPigWidth = 158, kPigHeight = 160, kPigGap = 9;
 // The page arrows: each as wide as this much of a text row, with this gap between them (#276).
 constexpr float kArrowWidth = 0.8f, kArrowGap = 4;
+
+// a over b, a's share t.
+uint32_t mix(uint32_t a, uint32_t b, float t) {
+  uint32_t out = 0;
+  for (int shift : {16, 8, 0})
+    out |= static_cast<uint32_t>(std::lround(((a >> shift) & 0xff) * t + ((b >> shift) & 0xff) * (1 - t))) << shift;
+  return out;
+}
+
+double luminance(uint32_t c) {
+  double l = 0;
+  for (auto [shift, weight] : {std::pair{16, 0.2126}, {8, 0.7152}, {0, 0.0722}}) {
+    const double v = ((c >> shift) & 0xff) / 255.0;
+    l += weight * (v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4));
+  }
+  return l;
+}
 
 }  // namespace
 
@@ -191,6 +209,33 @@ std::wstring pageWord(const std::vector<std::wstring> &segments, int highlight, 
     }
   }
   return key;
+}
+
+double contrast(uint32_t a, uint32_t b) {
+  const double la = luminance(a), lb = luminance(b);
+  return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+// The Configurator's sebtype_picnic scheme (windows.rs); its faint arrow is its text at a quarter.
+Palette picnicPalette() {
+  Palette p{0x4a2f22, 0xfff7e8, 0x5b331c, 0x4a2f22, 0xfde0e6, 0x4a2f22, 0x73533f, 0xffffff, 0xc2506a, 0};
+  p.faint = mix(p.text, p.back, 0.25f);
+  return p;
+}
+
+Palette systemPalette(const SystemColors &c) {
+  if (c.highContrast)  // the theme's colours as they are: its border and disabled text are meant to be seen
+    return {c.windowText, c.window,    c.windowText,    c.highlightText, c.highlight,
+            c.windowText, c.windowText, c.highlightText, c.highlight,     c.grayText};
+  // Windows 11's flyouts: text, secondary text and borders in its greys; the selection in the accent, with
+  // white or black on it, whichever reads better.
+  Palette p = c.dark ? Palette{0xffffff, 0x2c2c2c, 0x474747, 0xffffff, 0x484848, 0xffffff, 0xc8c8c8, 0, 0, 0}
+                     : Palette{0x1b1b1b, 0xf3f3f3, 0xd5d5d5, 0x1b1b1b, 0xd8d8d8, 0x1b1b1b, 0x5d5d5d, 0, 0, 0};
+  p.candHiliteBack = c.dark ? c.accentLight2 : c.accentDark1;
+  p.candHiliteText = contrast(0xffffff, p.candHiliteBack) >= contrast(0x000000, p.candHiliteBack) ? 0xffffff : 0;
+  // Faint, but still 3:1 on the card, so the arrow is seen to be there.
+  p.faint = mix(p.text, p.back, 0.5f);
+  return p;
 }
 
 }  // namespace sebtype::win
