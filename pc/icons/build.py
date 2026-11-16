@@ -4,7 +4,7 @@
 Each size is drawn on its own pixel grid: 16, 20, 22, 24 and 32 px are hand-tuned, and "scalable" is a 48 px
 drawing with the design's full proportions, for larger and HiDPI sizes. Glyphs are font outlines, so the
 SVGs need no font: Noto Sans CJK Black (中 あ ア, from the system's Noto Sans CJK VF) and Nunito ExtraBold
-(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools. Linux installs them as an icon theme (pc/linux/setup-ime.sh);
+(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools. Linux's RPM installs them in hicolor (linux/CMakeLists.txt);
 Windows reuses them (#13, #65).
 """
 

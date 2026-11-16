@@ -33,7 +33,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 | Japanese keymap | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus a Shift tap (あ ⇄ direct English) and Alt+\` (あ ⇄ ア, before typing). Other Mozc settings are kept. A running `mozc_server` is stopped; SebType's input method starts it again on the next key | Mozc's MS-IME keys: Shift+letter, F6–F10 and Space work as in Mozc's default keymap. SebType's input method now takes the Shift tap and Alt+\` itself (#190), so the keymap's Shift and Alt+\` lines are no longer used |
 | Fcitx5's add-on hotkeys | Empties the keys of Fcitx5's clipboard history (Ctrl+;), Unicode input (Ctrl+Alt+Shift+U, Ctrl+Shift+U) and quick phrase (Super+\`, Super+;) in `~/.config/fcitx5/conf/clipboard.conf`, `unicode.conf` and `quickphrase.conf`, keeping their other settings, and Fcitx5 reloads them. The add-ons stay loaded | These keys reach the app instead of opening Fcitx5 popups SebType doesn't offer (Decisions #2, #182) |
 | Alt+\` in Plasma | Removes Alt+\` from KWin's "Walk Through Windows of Current Application", which keeps Meta+` | Plasma would otherwise take Alt+\` before Mozc sees it |
-| Tray icons | Installs `~/.local/share/icons/SebType`, an icon theme that holds only SebType's tray icons (`pc/icons`) and inherits the theme that was active, then makes it the active icon theme. Plasma reloads icons at once | The tray shows SebType's keycaps instead of the icon theme's keyboard, Rime logo and Mozc squares |
+| Tray icons | Nothing of its own: SebType's input method package installs its tray icons (`pc/icons`) as `sebtype-<state>` in `/usr/share/icons/hicolor`, the theme every icon theme falls back to, so the active icon theme stays as it is. After an older setup that installed `~/.local/share/icons/SebType` and made it the active icon theme, setup removes it and makes the theme it inherits active again (one picked since stays); Plasma reloads icons at once | The tray shows SebType's keycaps in every state, whatever icon theme is active, and other apps keep their theme's keyboard icon (#278) |
 | SebType's tray | `~/.local/share/fcitx5/addon/notificationitem.conf`: this account's entry for Fcitx5's tray add-on, which loads SebType's tray from SebType's input method instead. Shows once Fcitx5 restarts | SebType's tray menu (below) in place of Fcitx5's, without Input Method Settings (Decisions #2, #182). Fcitx5's classic UI leaves out its own X11 tray icon while a tray item is up, as it does for Fcitx5's, so Fcitx5's menu never shows (#190) |
 | Chinese name | `~/.local/share/fcitx5/inputmethod/rime.conf`, this account's copy of Rime's input method entry, named and labelled 中文, and `schema/name: ".中文"` in `~/.local/share/fcitx5/rime/rime_ice.custom.yaml`, keeping the file's other patches. Shows once Fcitx5 restarts (log in again, or turn Virtual Keyboard off and back on), when Rime also redeploys | The Super+Space popup and the tray text read 中文 for Chinese instead of 雾. fcitx5-rime shows the schema name's first character (雾 of 雾凇拼音) unless the name starts with `.`; then Fcitx5 shows the entry's label. The schema id stays `rime_ice`, so learned words stay. |
 | Japanese and English names | `mozc.conf` named 日本語 and `keyboard-us.conf` named English in the same `inputmethod` folder. Show once Fcitx5 restarts | The tray menu and the Super+Space popup read English · 中文 · 日本語 instead of Keyboard - English (US) · Rime · Mozc (#92). An entry there also renames the keyboard addon's built-in `keyboard-us`; its layout still comes from the id |
@@ -56,24 +56,20 @@ are no longer used on Linux; Windows' Mozc still reads them. The keymap lives in
 
 ### Tray icons
 
-| State | Icon | SebType's input method asks for | Fedora's fcitx5-rime and fcitx5-mozc ask for |
-|---|---|---|---|
-| English (US layout) | EN | `sebtype-en` | `input-keyboard` |
-| Chinese | 中 | `sebtype-zh` | `fcitx-rime` |
-| Chinese, English mode | a | `sebtype-zh-a` | `fcitx_rime_latin` |
-| Chinese, English mode with Caps Lock | A | `sebtype-zh-caps` | `fcitx_rime_latin_upper` |
-| Japanese hiragana, and Japanese in the tray menu | あ | `sebtype-hira` | `fcitx_mozc_hiragana`, `fcitx_mozc` |
-| Japanese katakana | ア | `sebtype-kata` | `fcitx_mozc_katakana_full`, `fcitx_mozc_katakana_half` |
-| Japanese, English mode | a | `sebtype-ja-a` | `fcitx_mozc_direct`, `fcitx_mozc_alpha_half`, `fcitx_mozc_alpha_full` |
-| Japanese, English mode with Caps Lock | A | `sebtype-ja-caps` | the English mode's names (Fedora's fcitx5-mozc has no Caps Lock icon) |
+| State | Icon | SebType's input method asks for |
+|---|---|---|
+| English (US layout) | EN | `sebtype-en` |
+| Chinese | 中 | `sebtype-zh` |
+| Chinese, English mode | a | `sebtype-zh-a` |
+| Chinese, English mode with Caps Lock | A | `sebtype-zh-caps` |
+| Japanese hiragana, and Japanese in the tray menu | あ | `sebtype-hira` |
+| Japanese katakana | ア | `sebtype-kata` |
+| Japanese, English mode | a | `sebtype-ja-a` |
+| Japanese, English mode with Caps Lock | A | `sebtype-ja-caps` |
 
-`input-keyboard` and `fcitx-rime` come from the active icon theme, so only a theme of SebType's own
-replaces them, and other apps that show `input-keyboard` get the EN key too. Every other icon still
-comes from the theme SebType's inherits. If you pick another icon theme in System Settings, rerun
-`setup-ime.sh` to put SebType's on top of it.
-
-To undo: `pc/linux/setup-ime.sh --undo-icons`. It makes the inherited theme active again and removes
-`~/.local/share/icons/SebType`.
+SebType's names are its own, so any icon theme leaves them to hicolor, and the tray shows SebType's
+keycaps whatever theme is active; the other names stay the active theme's. hicolor has no 20 px size,
+so Linux uses the 16, 22, 24 and 32 px drawings and the scalable one; the 20 px drawings are for Windows.
 
 ### Names
 
@@ -177,7 +173,7 @@ restarts. At the end it checks that Fcitx5 runs under KWin and that the session 
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the install of SebType's input method, the install and undo of the icon theme, SebType's librime and the Configurator,
+rerun run on a fake fresh account including the install of SebType's input method, the removal of an older setup's icon theme, SebType's librime and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, the Chinese popup
 text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) and 6 candidates per page (a page size of the user's own kept) in a private Fcitx5 running SebType's input method on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
