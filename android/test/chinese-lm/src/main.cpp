@@ -10,8 +10,8 @@
 // (0 first, -1 not in the first 10). OUT.keys gets each key's time in microseconds: the key, the candidates
 // read and, with a model, its work. Its last line is the process's peak RSS in kB.
 // NAME=VALUE sets a ranking weight (Options below), tuned on the dev sets (tune.py); dump=1 writes, after each
-// item's last key, every candidate the model scored to OUT.dump: item, Rime's rank (-1: the model's own), the
-// model's log probability, the text.
+// item's last key, every candidate the model scored to OUT.dump: item, Rime's rank (-1: the model's own, even
+// when Rime has it too, so tune.py can try fewer of Rime's), the model's log probability, the text. profile=1 writes each key's time per step (zh_lm::Profile) to OUT.prof.
 #include <sebtype/hosts.h>
 #include <unistd.h>
 
@@ -38,12 +38,14 @@ struct Options {
     float generatedRank = 8;  // the Rime rank a generated candidate counts as
     int pageSize = 6;      // what the keyboard reads after each key
     int dump = 0;
+    int profile = 0;
+    int threads = 1;       // the model's
 };
 
 struct Scored {
-    std::vector<std::string> pool;
-    std::vector<int> rimeRank;  // -1: the model's own
+    std::vector<std::string> rime;  // in Rime's order
     std::vector<float> logProb;
+    std::vector<zh_lm::Text> generated;
 };
 
 std::vector<std::string> split(const std::string &s, char sep) {
@@ -67,22 +69,20 @@ std::vector<std::string> rerank(zh_lm::Model &model, const Options &opt, const s
     const size_t k = std::min<size_t>(opt.rerank, list.size());
     std::vector<std::string> pool(list.begin(), list.begin() + k);
     std::vector<float> prior;
-    std::vector<int> ranks;
-    for (size_t i = 0; i < k; i++) {
-        prior.push_back(-opt.rankWeight * std::log1p(static_cast<float>(i)));
-        ranks.push_back(static_cast<int>(i));
-    }
-    if (opt.generate > 0) {
-        for (const auto &g : model.generate(context, typed, opt.generate, static_cast<int>(typed.size())))
-            if (std::find(pool.begin(), pool.end(), g.text) == pool.end()) {
-                pool.push_back(g.text);
-                prior.push_back(-opt.rankWeight * std::log1p(opt.generatedRank));
-                ranks.push_back(-1);
-            }
-    }
+    for (size_t i = 0; i < k; i++) prior.push_back(-opt.rankWeight * std::log1p(static_cast<float>(i)));
+    if (pool.empty() && opt.generate == 0) return list;
+    // Scoring first lets the beam reuse what it decoded.
+    auto lp = model.score(context, typed, pool);
+    std::vector<zh_lm::Text> generated;
+    if (opt.generate > 0) generated = model.generate(context, typed, opt.generate, static_cast<int>(typed.size()));
+    if (scored) *scored = {pool, lp, generated};
+    for (const auto &g : generated)
+        if (std::find(pool.begin(), pool.end(), g.text) == pool.end()) {
+            pool.push_back(g.text);
+            prior.push_back(-opt.rankWeight * std::log1p(opt.generatedRank));
+            lp.push_back(g.logProb);
+        }
     if (pool.empty()) return list;
-    const auto lp = model.score(context, typed, pool);
-    if (scored) *scored = {pool, ranks, lp};
     std::vector<size_t> order(pool.size());
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return lp[a] + prior[a] > lp[b] + prior[b]; });
@@ -110,16 +110,17 @@ int main(int argc, char **argv) {
     }
     Options opt;
     std::unique_ptr<zh_lm::Model> model;
-    if (argc > 5) model = std::make_unique<zh_lm::Model>(argv[5], 1);
     for (int i = 6; i < argc; i++) {
         const auto kv = split(argv[i], '=');
         if (kv.size() != 2) return std::cerr << "bad option " << argv[i] << "\n", 2;
         const std::map<std::string, float *> floats{{"rankWeight", &opt.rankWeight}, {"generatedRank", &opt.generatedRank}};
-        const std::map<std::string, int *> ints{{"rerank", &opt.rerank}, {"generate", &opt.generate}, {"dump", &opt.dump}};
+        const std::map<std::string, int *> ints{{"rerank", &opt.rerank}, {"generate", &opt.generate}, {"dump", &opt.dump},
+                                              {"profile", &opt.profile}, {"threads", &opt.threads}};
         if (floats.count(kv[0])) *floats.at(kv[0]) = std::stof(kv[1]);
         else if (ints.count(kv[0])) *ints.at(kv[0]) = std::stoi(kv[1]);
         else return std::cerr << "unknown option " << kv[0] << "\n", 2;
     }
+    if (argc > 5) model = std::make_unique<zh_lm::Model>(argv[5], opt.threads);
 
     sebtype::RimePaths paths{argv[1], argv[2], "", false, "rime_ice"};
     auto rime = sebtype::makeRime(paths);
@@ -129,6 +130,13 @@ int main(int argc, char **argv) {
     std::ofstream out(argv[4]), keysOut(std::string(argv[4]) + ".keys");
     std::ofstream dump;
     if (opt.dump) dump.open(std::string(argv[4]) + ".dump");
+    std::ofstream prof;
+    if (opt.profile && model) {
+        prof.open(std::string(argv[4]) + ".prof");
+        prof << "letters\trime";
+        for (const char *name : zh_lm::Profile::names) prof << "\t" << name;
+        prof << "\tdecodes\ttokens\n";
+    }
     int item = -1;
     std::string line;
     using clock = std::chrono::steady_clock;
@@ -164,11 +172,19 @@ int main(int argc, char **argv) {
             rime->key(k);
             const bool last = i + 1 == keys.size();
             list = texts(rime->candidates(last ? 10 : std::max(opt.pageSize, model ? opt.rerank : 0)));
+            const double rimeUs = std::chrono::duration<double, std::micro>(clock::now() - t0).count();
+            if (model) model->profile = {};
             Scored scored;
             if (model) list = rerank(*model, opt, context, keys.substr(0, i + 1), list, last && opt.dump ? &scored : nullptr);
-            for (size_t j = 0; j < scored.pool.size(); j++)
-                dump << item << "\t" << scored.rimeRank[j] << "\t" << scored.logProb[j] << "\t" << scored.pool[j] << "\n";
+            for (size_t j = 0; j < scored.rime.size(); j++)
+                dump << item << "\t" << j << "\t" << scored.logProb[j] << "\t" << scored.rime[j] << "\n";
+            for (const auto &g : scored.generated) dump << item << "\t-1\t" << g.logProb << "\t" << g.text << "\n";
             keysOut << std::chrono::duration<double, std::micro>(clock::now() - t0).count() << "\n";
+            if (prof.is_open()) {
+                prof << i + 1 << "\t" << rimeUs;
+                for (double us : model->profile.us) prof << "\t" << us;
+                prof << "\t" << model->profile.decodes << "\t" << model->profile.tokens << "\n";
+            }
         }
         int rank = -1;
         for (size_t i = 0; i < list.size() && i < 10 && rank < 0; i++)

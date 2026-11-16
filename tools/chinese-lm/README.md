@@ -37,8 +37,10 @@ tools/chinese-lm/prepare.sh RUN_DIR                     # corpus, tokenizer, pac
 python tools/chinese-lm/overlap.py RUN_DIR              # the corpus doesn't hold the test items
 python tools/chinese-lm/train.py RUN_DIR tools/chinese-lm/config.json   # one GPU
 tools/chinese-lm/export.sh RUN_DIR/ckpt/NAME RUN_DIR/NAME.gguf
-android/test/chinese-lm/bench.sh --dev RUN_DIR/dev OUT RUN_DIR/NAME.gguf dump=1 rerank=10 generate=4
-python tools/chinese-lm/tune.py RUN_DIR/dev OUT         # the settings for the harness
+for w in 1 2 3 4; do                                    # a dump per beam width
+  android/test/chinese-lm/bench.sh --dev RUN_DIR/dev OUT-w$w RUN_DIR/NAME.gguf dump=1 rerank=10 generate=$w
+done
+python tools/chinese-lm/tune.py RUN_DIR/dev OUT-w1 OUT-w2 OUT-w3 OUT-w4   # the settings for the harness
 SEBTYPE_ZH_MODEL=RUN_DIR/NAME.gguf SEBTYPE_ZH_OPTIONS="..." android/test/chinese-lm/run.sh   # from nobara-pc
 ```
 

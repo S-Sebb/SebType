@@ -4,9 +4,12 @@
 #include "zh_lm.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 
 #include "llama.h"
@@ -15,7 +18,7 @@ namespace zh_lm {
 namespace {
 
 constexpr size_t CONTEXT_CHARS = 64;  // the field's text before the cursor the model reads, at most
-constexpr int MAX_BRANCHES = 48;  // also at least twice generate()'s width
+constexpr int MAX_BRANCHES = 48;  // score()'s texts and twice generate()'s width, at most
 constexpr int NEXT_FIRST = 8;   // first characters nextWords() follows
 constexpr int NEXT_BEAM = 6;    // word prefixes it keeps at each length
 constexpr int NEXT_MAX = 4;     // characters in a next word, at most
@@ -40,6 +43,13 @@ std::string lastChars(const std::string &s, size_t n) {
     }
     return s.substr(i);
 }
+
+// Adds the time until it goes out of scope to SLOT.
+struct Timer {
+    double &slot;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    ~Timer() { slot += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count(); }
+};
 
 float logSigmoid(float x) { return x >= 0 ? -std::log1p(std::exp(-x)) : x - std::log1p(std::exp(x)); }
 
@@ -70,25 +80,26 @@ Model::Model(const std::string &path, int threads) {
     mVocabSize = llama_vocab_n_tokens(mVocab);
     mBos = llama_vocab_bos(mVocab);
 
-    std::map<std::string, int> byText;
-    mHan.resize(mVocabSize);
+    std::vector<bool> han1(mVocabSize);
     mText.resize(mVocabSize);
     for (int t = 0; t < mVocabSize; t++) {
         const std::string raw = llama_vocab_get_text(mVocab, t);
-        byText.emplace(raw, t);
+        mPiece.emplace(raw, t);
         char buf[64];
         const int n = llama_token_to_piece(mVocab, t, buf, sizeof buf, 0, true);
         mText[t] = n > 0 ? std::string(buf, n) : "";
         const bool control = llama_vocab_is_control(mVocab, t) || llama_vocab_is_eog(mVocab, t);
-        mHan[t] = !control && han(codepoint(mText[t])) && mText[t].size() == 3;
+        han1[t] = !control && han(codepoint(mText[t])) && mText[t].size() == 3;
     }
     auto id = [&](const std::string &s) {
-        auto it = byText.find(s);
-        if (it == byText.end()) throw std::runtime_error("zh-lm: no piece " + s + ": not SebType's Chinese model");
+        auto it = mPiece.find(s);
+        if (it == mPiece.end()) throw std::runtime_error("zh-lm: no piece " + s + ": not SebType's Chinese model");
         return it->second;
     };
     mT = id("<T>"), mS = id("<S>"), mE = id("<E>"), mB = id("<B>");
     for (char c = 'a'; c <= 'z'; c++) mLetter.push_back(id(std::string(1, c)));
+    for (int t = 0; t < mVocabSize; t++)
+        if (han1[t]) mHan.push_back(t);
 }
 
 Model::~Model() {
@@ -96,14 +107,26 @@ Model::~Model() {
     if (mModel) llama_model_free(mModel);
 }
 
+// As training does it (tools/chinese-lm/pack.py): a piece per character, or its bytes'. Not llama_tokenize(),
+// which starts every text with a "▁" the model never saw: the GGUF says add_space_prefix, as llama.cpp's
+// converter writes for every SentencePiece model, though this one has add_dummy_prefix off.
 std::vector<int> Model::tokenize(const std::string &text) const {
-    std::vector<int> out(text.size() + 2);
-    int n = llama_tokenize(mVocab, text.data(), text.size(), out.data(), out.size(), false, false);
-    if (n < 0) {
-        out.resize(-n);
-        n = llama_tokenize(mVocab, text.data(), text.size(), out.data(), out.size(), false, false);
+    std::vector<int> out;
+    for (size_t i = 0; i < text.size();) {
+        const unsigned char c = text[i];
+        const size_t n = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 1;
+        const std::string ch = text.substr(i, n);
+        i += n;
+        if (auto it = mPiece.find(ch == " " ? "\u2581" : ch); it != mPiece.end()) {
+            out.push_back(it->second);
+            continue;
+        }
+        for (unsigned char b : ch) {
+            char hex[8];
+            snprintf(hex, sizeof hex, "<0x%02X>", b);
+            out.push_back(mPiece.at(hex));
+        }
     }
-    out.resize(std::max(n, 0));
     return out;
 }
 
@@ -124,10 +147,18 @@ std::vector<int> Model::examplePrefix(const std::string &context, const std::str
     return prefix;
 }
 
-const float *Model::advance(const std::vector<int> &prefix) {
+void Model::clearBranches() {
     llama_memory_t mem = llama_get_memory(mCtx);
     for (int s = 1; s <= mBranches; s++) llama_memory_seq_rm(mem, s, -1, -1);
     mBranches = 0;
+    mExample.clear();
+    mNodes.clear();
+}
+
+const float *Model::advance(const std::vector<int> &prefix) {
+    Timer timer{profile.us[Profile::Advance]};
+    clearBranches();
+    llama_memory_t mem = llama_get_memory(mCtx);
     size_t keep = 0;
     while (keep < mCached.size() && keep < prefix.size() && mCached[keep] == prefix[keep]) keep++;
     keep = std::min(keep, prefix.size() - 1);  // the last token is decoded again for its logits
@@ -144,6 +175,7 @@ const float *Model::advance(const std::vector<int> &prefix) {
             batch.seq_id[k][0] = 0;
             batch.logits[k] = i + 1 == prefix.size();
         }
+        profile.decodes++, profile.tokens += batch.n_tokens;
         if (llama_decode(mCtx, batch) != 0) {
             llama_batch_free(batch);
             mCached.clear();
@@ -156,42 +188,76 @@ const float *Model::advance(const std::vector<int> &prefix) {
     return llama_get_logits_ith(mCtx, -1);
 }
 
-std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> &followers) {
-    llama_memory_t mem = llama_get_memory(mCtx);
-    for (int s = 1; s <= mBranches; s++) llama_memory_seq_rm(mem, s, -1, -1);
-    mBranches = 0;
-    std::map<std::vector<int>, int> node;
-    std::vector<std::vector<int>> index(followers.size()), seqs;
-    std::vector<int> tokens;
-    std::vector<size_t> depth;
-    for (size_t i = 0; i < followers.size(); i++) {
-        if (followers[i].empty()) continue;
-        if (mBranches == MAX_BRANCHES) throw std::runtime_error("zh-lm: too many branches");
-        const int seq = ++mBranches;
-        llama_memory_seq_cp(mem, 0, seq, -1, -1);
+void Model::decodeExample(const std::vector<int> &prefix, const std::vector<std::vector<int>> &followers) {
+    std::optional<Timer> timer{{profile.us[Profile::BranchCache]}};
+    // The tree: a token for each distinct start of a follower, on the sequence of every follower through it.
+    std::map<std::vector<int>, size_t> at;
+    std::vector<std::vector<int>> paths, seqs;
+    int nSeqs = 0;
+    for (const auto &f : followers) {
+        if (f.empty()) continue;
+        if (++nSeqs > MAX_BRANCHES) throw std::runtime_error("zh-lm: too many branches");
         std::vector<int> path;
-        for (int t : followers[i]) {
+        for (int t : f) {
             path.push_back(t);
-            auto [it, added] = node.emplace(path, tokens.size());
-            if (added) tokens.push_back(t), depth.push_back(path.size() - 1), seqs.emplace_back();
-            seqs[it->second].push_back(seq);
-            index[i].push_back(it->second);
+            auto [it, added] = at.emplace(path, paths.size());
+            if (added) paths.push_back(path), seqs.emplace_back();
+            seqs[it->second].push_back(nSeqs);
         }
     }
-    if (tokens.empty()) return index;
-    llama_batch batch = llama_batch_init(tokens.size(), 0, mBranches);
-    for (size_t k = 0; k < tokens.size(); k++) {
-        batch.token[k] = tokens[k];
-        batch.pos[k] = mCached.size() + depth[k];
-        batch.n_seq_id[k] = seqs[k].size();
-        for (size_t j = 0; j < seqs[k].size(); j++) batch.seq_id[k][j] = seqs[k][j];
-        batch.logits[k] = true;
+    // The example's tokens the cache doesn't hold go first, on every sequence, then the tree, each node after
+    // its parent, in batches of at most n_batch: a node in a later batch reads its parent from the cache.
+    size_t keep = 0;
+    while (keep < mCached.size() && keep < prefix.size() && mCached[keep] == prefix[keep]) keep++;
+    keep = std::min(keep, prefix.size() - 1);  // the last token is decoded again for its logits
+    clearBranches();
+    llama_memory_t mem = llama_get_memory(mCtx);
+    llama_memory_seq_rm(mem, 0, keep, -1);
+    for (int s = 1; s <= nSeqs; s++) llama_memory_seq_cp(mem, 0, s, -1, -1);
+    mBranches = nSeqs;
+    const size_t tail = prefix.size() - keep, total = tail + paths.size();
+    const size_t nBatch = llama_n_batch(mCtx);
+    llama_batch batch = llama_batch_init(std::min(total, nBatch), 0, nSeqs + 1);
+    auto node = [&](const float *l, int seq) { return Node{seq, logNorm(l), std::vector<float>(l, l + mVocabSize)}; };
+    for (size_t first = 0; first < total; first += nBatch) {
+        const size_t last = std::min(total, first + nBatch);
+        batch.n_tokens = 0;
+        for (size_t i = first; i < last; i++) {
+            const int k = batch.n_tokens++;
+            if (i < tail) {
+                batch.token[k] = prefix[keep + i];
+                batch.pos[k] = keep + i;
+                batch.n_seq_id[k] = nSeqs + 1;
+                for (int s = 0; s <= nSeqs; s++) batch.seq_id[k][s] = s;
+                batch.logits[k] = i + 1 == tail;
+            } else {
+                const auto &path = paths[i - tail];
+                const auto &on = seqs[i - tail];
+                batch.token[k] = path.back();
+                batch.pos[k] = prefix.size() + path.size() - 1;
+                batch.n_seq_id[k] = on.size();
+                for (size_t s = 0; s < on.size(); s++) batch.seq_id[k][s] = on[s];
+                batch.logits[k] = true;
+            }
+        }
+        timer.emplace(profile.us[Profile::BranchDecode]);
+        profile.decodes++, profile.tokens += batch.n_tokens;
+        if (llama_decode(mCtx, batch) != 0) {
+            llama_batch_free(batch);
+            mCached.clear();
+            llama_memory_seq_rm(mem, 0, -1, -1);
+            throw std::runtime_error("zh-lm: decoding failed");
+        }
+        // The next decode overwrites the logits.
+        timer.emplace(profile.us[Profile::ScoreNorm]);
+        for (size_t i = std::max(first, tail - 1); i < last; i++) {
+            const float *l = llama_get_logits_ith(mCtx, i - first);
+            if (i < tail) mNodes.emplace(std::vector<int>{}, node(l, 0));
+            else mNodes.emplace(paths[i - tail], node(l, seqs[i - tail][0]));
+        }
     }
-    batch.n_tokens = tokens.size();
-    const int status = llama_decode(mCtx, batch);
     llama_batch_free(batch);
-    if (status != 0) throw std::runtime_error("zh-lm: decoding failed");
-    return index;
+    mCached = mExample = prefix;
 }
 
 float Model::logNorm(const float *logits) const {
@@ -208,43 +274,67 @@ float Model::logEnd(const float *logits) const { return logSigmoid(logits[mB]); 
 
 std::vector<float> Model::score(const std::string &context, const std::string &typed,
                                 const std::vector<std::string> &texts) {
-    const float *logits = advance(examplePrefix(context, typed));
-    const float norm = logNorm(logits);
-    std::vector<std::vector<int>> pieces;
-    std::vector<float> out;
+    std::optional<Timer> timer{{profile.us[Profile::Prefix]}};
+    const auto prefix = examplePrefix(context, typed);
+    std::vector<std::vector<int>> pieces, followers;
     for (const auto &text : texts) {
         pieces.push_back(tokenize(text));
+        followers.push_back(pieces.back());
         pieces.back().push_back(mE);
-        out.push_back(logits[pieces.back()[0]] - norm);
     }
-    std::vector<std::vector<int>> followers;
-    for (const auto &p : pieces) followers.emplace_back(p.begin(), p.end() - 1);
-    const auto index = branch(followers);
-    for (size_t i = 0; i < pieces.size(); i++)
-        for (size_t j = 0; j < index[i].size(); j++) {
-            const float *l = llama_get_logits_ith(mCtx, index[i][j]);
-            out[i] += l[pieces[i][j + 1]] - logNorm(l);
+    // The last key's own candidates go in the batch too, unscored: the beam often follows them again, and a
+    // token in this batch costs about half of one in a step of its own.
+    for (const auto &g : mGuesses)
+        if (std::find(followers.begin(), followers.end(), g) == followers.end()) followers.push_back(g);
+    timer.reset();
+    decodeExample(prefix, followers);
+    Timer norms{profile.us[Profile::ScoreNorm]};
+    std::vector<float> out;
+    for (const auto &p : pieces) {
+        std::vector<int> path;
+        for (size_t j = 0; j < p.size(); j++) {
+            const Node &n = mNodes.at(path);
+            const float lp = n.logits[p[j]] - n.norm;
+            if (j == 0) out.push_back(lp);
+            else out.back() += lp;
+            path.push_back(p[j]);
         }
+    }
     return out;
 }
 
-void Model::prime(const std::string &context) { advance(contextTokens(context)); }
+void Model::prime(const std::string &context) {
+    mGuesses.clear();
+    advance(contextTokens(context));
+}
 
 std::vector<Text> Model::generate(const std::string &context, const std::string &typed, int width, int maxChars) {
     // Each beam lives on a sequence of its own in the cache: a step copies its parent's (cells are shared) and
-    // decodes one token, so a step costs WIDTH tokens. Steps use sequences 1..WIDTH and WIDTH+1..2*WIDTH in turn.
+    // decodes one token, so a step costs a token per beam, but none for a beam that follows a text score()
+    // decoded (mNodes). Steps use the sequences after score()'s, WIDTH of them, and the WIDTH after those, in
+    // turn.
     struct Beam {
         std::vector<int> tokens;
         float logProb;
         int seq;
+        const float *logits;
+        float norm;
     };
+    std::optional<Timer> timer{{profile.us[Profile::Prefix]}};
     const auto prefix = examplePrefix(context, typed);
-    const float *first = advance(prefix);
+    timer.reset();
+    if (prefix != mExample) decodeExample(prefix, {});
+    const int first = mBranches + 1;
+    if (mBranches + 2 * width > MAX_BRANCHES) throw std::runtime_error("zh-lm: too many branches");
+    mBranches += 2 * width;  // the next decode clears them
     llama_memory_t mem = llama_get_memory(mCtx);
-    mBranches = 2 * width;  // the next advance() or branch() clears them
-    std::vector<Beam> beams{{{}, 0, 0}};
-    std::vector<const float *> logits{first};
-    std::vector<Text> done;
+    const Node &root = mNodes.at({});
+    std::vector<Beam> beams{{{}, 0, 0, root.logits.data(), root.norm}};
+    struct Done {
+        std::vector<int> tokens;
+        float logProb;
+    };
+    std::vector<Done> done;
     llama_batch batch = llama_batch_init(width, 0, 1);
     for (int step = 0; step <= maxChars && !beams.empty(); step++) {
         struct Option {
@@ -252,61 +342,77 @@ std::vector<Text> Model::generate(const std::string &context, const std::string 
             int token;
             float logProb;
         };
+        timer.emplace(profile.us[Profile::BeamNorm]);
         std::vector<Option> options;
         for (size_t i = 0; i < beams.size(); i++) {
-            const float *l = logits[i];
-            const float norm = logNorm(l);
-            std::vector<int> top;
-            for (int t = 0; t < mVocabSize; t++)
-                if (mHan[t] || t == mE) top.push_back(t);
+            const float *l = beams[i].logits;
+            const float norm = std::isnan(beams[i].norm) ? logNorm(l) : beams[i].norm;
+            // Every beam's own end is a candidate, however its Han continuations rank against <E>.
+            if (!beams[i].tokens.empty()) done.push_back({beams[i].tokens, beams[i].logProb + l[mE] - norm});
+            if (step == maxChars) continue;
+            std::vector<int> top = mHan;
             const size_t k = std::min<size_t>(width, top.size());
             std::partial_sort(top.begin(), top.begin() + k, top.end(), [&](int a, int b) { return l[a] > l[b]; });
-            for (size_t j = 0; j < k; j++) {
-                const float lp = beams[i].logProb + l[top[j]] - norm;
-                if (top[j] != mE) {
-                    if (step < maxChars) options.push_back({i, top[j], lp});
-                } else if (!beams[i].tokens.empty()) {
-                    std::string text;
-                    for (int t : beams[i].tokens) text += mText[t];
-                    done.push_back({text, lp});
-                }
-            }
+            for (size_t j = 0; j < k; j++) options.push_back({i, top[j], beams[i].logProb + l[top[j]] - norm});
         }
         std::sort(options.begin(), options.end(), [](const Option &a, const Option &b) { return a.logProb > b.logProb; });
         if (options.size() > static_cast<size_t>(width)) options.resize(width);
-        std::sort(done.begin(), done.end(), [](const Text &a, const Text &b) { return a.logProb > b.logProb; });
+        std::sort(done.begin(), done.end(), [](const Done &a, const Done &b) { return a.logProb > b.logProb; });
         // Extending a beam only lowers its probability: stop once WIDTH finished ones beat every beam left.
         if (options.empty() || (static_cast<int>(done.size()) >= width && done[width - 1].logProb > options[0].logProb)) break;
-        const int base = step % 2 ? width + 1 : 1;
+        timer.emplace(profile.us[Profile::BeamCache]);
+        const int base = step % 2 ? first + width : first;
         std::vector<Beam> next;
+        std::vector<size_t> decoded;  // the beams of NEXT the batch decodes
         batch.n_tokens = 0;
         for (size_t j = 0; j < options.size(); j++) {
             const Beam &parent = beams[options[j].beam];
+            std::vector<int> tokens = parent.tokens;
+            tokens.push_back(options[j].token);
+            if (auto it = mNodes.find(tokens); it != mNodes.end()) {
+                next.push_back({tokens, options[j].logProb, it->second.seq, it->second.logits.data(), it->second.norm});
+                continue;
+            }
+            // The parent's sequence may hold a text score() decoded past the parent: the copy leaves it out.
             const int seq = base + static_cast<int>(j);
+            const int pos = prefix.size() + parent.tokens.size();
             llama_memory_seq_rm(mem, seq, -1, -1);
             llama_memory_seq_cp(mem, parent.seq, seq, -1, -1);
-            next.push_back({parent.tokens, options[j].logProb, seq});
-            next.back().tokens.push_back(options[j].token);
+            llama_memory_seq_rm(mem, seq, pos, -1);
+            next.push_back({tokens, options[j].logProb, seq, nullptr, NAN});
+            decoded.push_back(next.size() - 1);
             const int k = batch.n_tokens++;
             batch.token[k] = options[j].token;
-            batch.pos[k] = prefix.size() + parent.tokens.size();
+            batch.pos[k] = pos;
             batch.n_seq_id[k] = 1;
             batch.seq_id[k][0] = seq;
             batch.logits[k] = true;
         }
         for (const Beam &b : beams)
-            if (b.seq != 0) llama_memory_seq_rm(mem, b.seq, -1, -1);
-        if (llama_decode(mCtx, batch) != 0) {
-            llama_batch_free(batch);
-            throw std::runtime_error("zh-lm: decoding failed");
+            if (b.seq >= first) llama_memory_seq_rm(mem, b.seq, -1, -1);
+        if (batch.n_tokens > 0) {
+            timer.emplace(profile.us[Profile::BeamDecode]);
+            profile.decodes++, profile.tokens += batch.n_tokens;
+            if (llama_decode(mCtx, batch) != 0) {
+                llama_batch_free(batch);
+                throw std::runtime_error("zh-lm: decoding failed");
+            }
+            for (size_t j = 0; j < decoded.size(); j++) next[decoded[j]].logits = llama_get_logits_ith(mCtx, j);
         }
         beams = std::move(next);
-        logits.clear();
-        for (size_t j = 0; j < beams.size(); j++) logits.push_back(llama_get_logits_ith(mCtx, j));
     }
+    timer.reset();
     llama_batch_free(batch);
     if (done.size() > static_cast<size_t>(width)) done.resize(width);
-    return done;
+    std::vector<Text> out;
+    mGuesses.clear();
+    for (const Done &d : done) {
+        std::string text;
+        for (int t : d.tokens) text += mText[t];
+        out.push_back({text, d.logProb});
+        mGuesses.push_back(d.tokens);
+    }
+    return out;
 }
 
 std::vector<Text> Model::nextWords(const std::string &context, size_t n) {
@@ -342,9 +448,7 @@ std::vector<Text> Model::nextWords(const std::string &context, size_t n) {
                 words.push_back({text, live[i].logProb + logEnd(l)});
             }
             const float norm = logNorm(l);
-            std::vector<int> top;
-            for (int t = 0; t < mVocabSize; t++)
-                if (mHan[t]) top.push_back(t);
+            std::vector<int> top = mHan;
             const size_t k = std::min<size_t>(live[i].tokens.empty() ? NEXT_FIRST : 2, top.size());
             std::partial_sort(top.begin(), top.begin() + k, top.end(), [&](int a, int b) { return l[a] > l[b]; });
             for (size_t j = 0; j < k; j++) options.push_back({i, top[j], live[i].logProb + goOn + l[top[j]] - norm});

@@ -1,12 +1,15 @@
 """Tunes how the model's scores and Rime's order combine, on the dev sets only (make_sets.py --dev), never on
 the harness's test sets.
 
-  tune.py DEV_DIR DUMP_DIR
+  tune.py DEV_DIR DUMP_DIR...
 
-DUMP_DIR holds zhbench's results for the dev sets with dump=1 and the widest settings (bench.sh --dev ...
-rerank=10 generate=W): for each item, every candidate the model scored, with Rime's rank (-1: the model's own)
-and its log probability. Prints the best rerank, rankWeight and generatedRank (as zhbench's NAME=VALUE) for the
-mean top-1 over the dev sets of typed text, and that mean, beside Rime's own order.
+Each DUMP_DIR holds zhbench's results for the dev sets with dump=1, rerank=10 and one beam width (bench.sh
+--dev ... rerank=10 generate=W): for each item, Rime's first 10 candidates and the model's own, each with the
+model's log probability. A smaller rerank is simulated by dropping Rime's later candidates and adding back the
+model's own that only those matched, as zhbench does; a beam width needs a dump of its own, as a wider search
+doesn't contain a narrower one's results. Prints, per DUMP_DIR, the best rerank, rankWeight and generatedRank
+(as zhbench's NAME=VALUE) for the mean top-1 over the dev sets of typed text, and that mean, beside Rime's own
+order and the best without the model's own candidates.
 """
 
 import itertools
@@ -37,15 +40,16 @@ def load(dev, dumps):
 
 
 def first(pool, rerank, weight, generated):
-    best, best_score = None, -math.inf
-    for rank, lp, text in pool:
-        if rank >= rerank or (rank < 0 and generated is None):
-            continue
-        r = generated if rank < 0 else rank
-        s = lp - weight * math.log1p(r)
-        if s > best_score:
-            best, best_score = text, s
-    return best
+    """zhbench's first candidate: the first best of Rime's first RERANK, then the model's own not among them."""
+    rime = [(lp - weight * math.log1p(r), t) for r, lp, t in pool if 0 <= r < rerank]
+    if generated is not None:
+        seen = {t for _, t in rime}
+        rime += [
+            (lp - weight * math.log1p(generated), t)
+            for r, lp, t in pool
+            if r < 0 and t not in seen
+        ]
+    return max(rime, key=lambda c: c[0], default=(0, None))[1]
 
 
 def mean_top1(sets, *args):
@@ -56,34 +60,36 @@ def mean_top1(sets, *args):
     return sum(per.values()) / len(per), per
 
 
-def main(dev, dumps):
-    sets = load(dev, dumps)
+def main(dev, *dumps):
+    base = load(dev, dumps[0])
     rime = {
         n: sum(any(r == 0 and x == t for r, _, x in p) for t, p in items) / len(items)
-        for n, items in sets.items()
+        for n, items in base.items()
     }
     print(
         f"Rime's order: mean top-1 {100 * sum(rime.values()) / len(rime):.1f} "
         + " ".join(f"{n} {100 * v:.1f}" for n, v in rime.items())
     )
-    grid = itertools.product(
-        [1, 2, 3, 4, 6, 8, 10],
-        [0, 0.5, 1, 1.5, 2, 3, 4, 6, 8],
-        [None, 0, 2, 4, 8, 12, 16],
-    )
-    best = max(grid, key=lambda g: mean_top1(sets, *g)[0])
-    m, per = mean_top1(sets, *best)
-    print(
-        f"best: rerank={best[0]} rankWeight={best[1]} generatedRank={best[2]} (None: without the model's own): mean top-1 {100 * m:.1f} "
-        + " ".join(f"{n} {100 * v:.1f}" for n, v in per.items())
-    )
+    for d in dumps:
+        sets = load(dev, d)
+        grid = itertools.product(
+            [1, 2, 3, 4, 6, 8, 10],
+            [0, 0.5, 1, 1.5, 2, 3, 4, 6, 8],
+            [0, 2, 4, 8, 12, 16],
+        )
+        best = max(grid, key=lambda g: mean_top1(sets, *g)[0])
+        m, per = mean_top1(sets, *best)
+        print(
+            f"{d}: rerank={best[0]} rankWeight={best[1]} generatedRank={best[2]}: mean top-1 {100 * m:.1f} "
+            + " ".join(f"{n} {100 * v:.1f}" for n, v in per.items())
+        )
     no_gen = max(
         itertools.product(
             [1, 2, 3, 4, 6, 8, 10], [0, 0.5, 1, 1.5, 2, 3, 4, 6, 8], [None]
         ),
-        key=lambda g: mean_top1(sets, *g)[0],
+        key=lambda g: mean_top1(base, *g)[0],
     )
-    m, per = mean_top1(sets, *no_gen)
+    m, per = mean_top1(base, *no_gen)
     print(
         f"best without the model's own: rerank={no_gen[0]} rankWeight={no_gen[1]}: mean top-1 {100 * m:.1f} "
         + " ".join(f"{n} {100 * v:.1f}" for n, v in per.items())
@@ -91,4 +97,4 @@ def main(dev, dumps):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    main(*sys.argv[1:])

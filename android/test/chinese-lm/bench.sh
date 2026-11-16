@@ -11,7 +11,7 @@
 #                                                                    dev sets in DEV_DIR (tune.py)
 #
 # Writes each stack's results per set and score.py's summary to ~/scratch/SebType/<issue>/chinese/RUN_NAME/
-# and prints the summary's path last.
+# and prints the results' paths, the summary's last.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 source tools/lib.sh
@@ -31,11 +31,12 @@ RUN dnf -y install $extra && dnf clean all" >/dev/null
   fi
   # llama.cpp (MIT) is fetched at its pinned commit out here: the container has no git.
   llama=$(engines/sebtype-lm/fetch-llama.sh)
-  # Only the summary's path goes to stdout (build_remotely copies what it names back).
+  # Only the results' paths go to stdout (build_remotely copies what it names back): each set's, which
+  # score.py --compare reads, and the summary's last.
   build_lock 120 chinese-harness "${container[@]}" env CHINESE_IN_CONTAINER=1 ISSUE="${ISSUE:-}" LLAMA_DIR="$llama" \
     $here/bench.sh "$@" >&2
   [[ $1 == --dev ]] && exit
-  echo "$TASK_OUT/chinese/$1/summary.json"
+  printf '%s\n' "$TASK_OUT/chinese/$1"/*.tsv "$TASK_OUT/chinese/$1/summary.json"
   exit
 fi
 
@@ -57,7 +58,8 @@ build=$TASK_OUT/chinese/build-$(pwd -P | sha256sum | head -c 8)
 zip=$(data/rime/build.sh "$work/assets" | tail -1)
 mkdir -p "$work/shared" && unzip -q "$zip" -d "$work/shared"
 cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR="$LLAMA_DIR" > "$out/build.log"
-ninja -C "$build" -j "$BUILD_JOBS" zhbench >> "$out/build.log"
+ninja -C "$build" -j "$BUILD_JOBS" zhbench zh_lm_test >> "$out/build.log"
+[[ $model ]] && "$build/zh_lm_test" "$model" | tee -a "$out/test.log" >&2
 
 # Rime deploys into the user folder on its first start (unzip keeps mtimes only to 2 s, so it rebuilds the
 # schema); every job then starts from a copy of that folder, so none of them measures the deploy.
@@ -80,6 +82,7 @@ for stack in "${stacks[@]}"; do
     jobs+=("cp -r $work/user $work/user-$stack-$name && $build/zhbench ${args[*]}")
   done
 done
-# Each job runs on one thread; 16 at a time leave most of the machine to others and the latencies steady.
-printf '%s\n' "${jobs[@]}" | xargs -P 16 -I{} sh -c '{} 2>>"$0/run.log"' "$out"
+# Each job runs on one thread (threads=N: N); 16 at a time (CHINESE_JOBS) leave most of the machine to others
+# and the latencies steady.
+printf '%s\n' "${jobs[@]}" | xargs -P "${CHINESE_JOBS:-16}" -I{} sh -c '{} 2>>"$0/run.log"' "$out"
 [[ $dev ]] || python3 -I $here/score.py "$out" > "$out/summary.json"
