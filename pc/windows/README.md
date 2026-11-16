@@ -67,7 +67,10 @@ Setup packs Python's embeddable package into `{app}\python` for it, since Window
 setup CI fetches it with `python.ps1`, which checks its SHA-256, and caches it. Just before a language's learned words are deleted
 (uninstall or a language left out), `setup.ps1` runs `sebtype-configurator.exe --sync-before-removal`:
 if sync was ever on since the last delete on the server, the account's words go to the server first.
-It never deletes anything on the server. `-User -Undo` then removes sync's scheduled task, its login in
+It never deletes anything on the server. If that sync fails (offline, a wrong password), the
+Configurator exits 1 and Setup keeps the language's folder in `%LOCALAPPDATA%\SebType\unsynced\`
+instead of deleting it, and says so (#271); setting up that language again moves it back, and the next
+sync sends its words. When sync was never on, the words are deleted as before. `-User -Undo` then removes sync's scheduled task, its login in
 Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 
 ### What it does, and why
@@ -115,6 +118,11 @@ It runs on TCSBackEnd under its device lock, in the background, and puts TCSBack
 installing SebType is an admin), whose Remote Desktop session nobara-pc opens in a headless gamescope; a
 logon task there runs Setup elevated, as UAC would, and drives its pages through their window messages.
 The typing runs in a second task, not elevated, as apps run. The keys are real (`setup/rdp-keys.py`, below).
+
+`setup/test-unsynced.ps1` checks the words kept when the sync before a removal fails (#271) on any
+Windows PC without installing SebType: `setup.ps1`'s account steps and the Configurator's sync, offline,
+synced and never on, as a throwaway local user it removes after. On YukaROG it runs elevated through
+`t3admin` (its header says what its folder holds).
 
 | Check | What passes |
 |---|---|

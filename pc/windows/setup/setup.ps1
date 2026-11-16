@@ -267,12 +267,41 @@ $removed = @($state.Chosen | Where-Object { $_ -notin $want })
 # Sync (#180): if sync was ever on, this account's learned words and dictionary go to the server first,
 # before the steps below delete them (Decisions #2, #73). The Configurator's sync does it, with the
 # login from Credential Manager. The server's copy is never deleted here; the Configurator's own button
-# does that.
+# does that. When that sync fails (offline, say), the words it couldn't send aren't deleted but moved to
+# $Unsynced (#271), and come back when their language is set up again; Setup's message says where (exit 2).
 $SyncFile = Join-Path $StateDir 'sync.json'
+$Unsynced = Join-Path $StateDir 'unsynced'
+$unsent = $kept = $false
 if ($removed -and (Test-Path $SyncFile)) {
   $p = Start-Process -Wait -PassThru (Join-Path $PSScriptRoot 'sebtype-configurator.exe') '--sync-before-removal'
-  Write-Output "user: synced before learned words are deleted (exit $($p.ExitCode))"
+  $unsent = $p.ExitCode -ne 0
+  Write-Output "user: $(if ($unsent) { 'sync failed' } else { 'synced' }) before learned words are deleted (exit $($p.ExitCode))"
 }
+# Removes a language's learned words, or keeps them in $Unsynced when the sync couldn't send them.
+function Remove-Words([string]$dir, [string]$name) {
+  if (-not $unsent) { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue; return 'deleted' }
+  if (-not (Test-Path $dir)) { return 'deleted' }
+  New-Item -ItemType Directory -Force $Unsynced | Out-Null
+  Move-Item $dir (Join-Path $Unsynced $name)
+  $script:kept = $true
+  "kept in $Unsynced\$name, not synced"
+}
+# Words kept that way come back when their language is set up again. They replace what is there: at most
+# the Rime or Mozc folder from before SebType, which SebType's folder started from, so it holds those too.
+foreach ($l in @(@('zh', $RimeUser, 'Rime'), @('ja', $MozcUser, 'Mozc'))) {
+  $from = Join-Path $Unsynced $l[2]
+  if ($l[0] -in $want -and (Test-Path $from)) {
+    if ($l[0] -eq 'zh') { Stop-Server } else { Restart-Mozc }
+    New-Item -ItemType Directory -Force $l[1] | Out-Null
+    Get-ChildItem $from -Force | ForEach-Object {
+      Remove-Item (Join-Path $l[1] $_.Name) -Recurse -Force -ErrorAction SilentlyContinue
+      Move-Item $_.FullName $l[1]
+    }
+    Remove-Item $from
+    Write-Output "user: learned words back from $from"
+  }
+}
+Get-Item $Unsynced -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item
 
 # Chinese: the data the phone bundles (data/rime/build.sh), rime-ice's schemas and Lua with 白霜's
 # dictionary, its tables prebuilt. librime uses them as they are because their sources aren't there.
@@ -373,18 +402,18 @@ if ($i -eq 120) { throw "Windows didn't take the input methods $(Format-Language
 # above: until then apps' text service would start the server again, which writes the Rime folder anew.
 if ('zh' -in $removed) {
   Stop-Server
-  Remove-Item $RimeUser -Recurse -Force -ErrorAction SilentlyContinue
+  $words = Remove-Words $RimeUser 'Rime'
   if ($state.RimeBackup) { Copy-Item $state.RimeBackup $RimeUser -Recurse }
   Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000804", "HKCU:\Software\Microsoft\CTF\TIP\$WeaselClsid" -Recurse -ErrorAction SilentlyContinue
   if (-not $state.RimeSettingsExisted) { Remove-Item 'HKCU:\Software\Rime' -Recurse -ErrorAction SilentlyContinue }
-  Write-Output 'user: Chinese removed, its learned words deleted'
+  Write-Output "user: Chinese removed, its learned words $words"
 }
 if ('ja' -in $removed) {
   Restart-Mozc
-  Remove-Item $MozcUser -Recurse -Force -ErrorAction SilentlyContinue
+  $words = Remove-Words $MozcUser 'Mozc'
   if ($state.MozcBackup) { Copy-Item $state.MozcBackup $MozcUser -Recurse }
   Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000411", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue
-  Write-Output 'user: Japanese removed, its learned words deleted'
+  Write-Output "user: Japanese removed, its learned words $words"
 }
 
 if (-not $Undo) {
@@ -412,6 +441,7 @@ if (-not $Undo) {
   $state.Chosen = $want
   Save-State
   Write-Output "user: done ($($want -join ','))"
+  if ($kept) { exit 2 }
   exit 0
 }
 
@@ -444,4 +474,5 @@ Get-Item (Split-Path $conf) -ErrorAction SilentlyContinue | Where-Object { -not 
 Remove-Item $StateFile, $state.Backup -Recurse -Force
 Write-Output 'user: undone; input methods, switch keys and per-window setting as before SebType'
 Remove-UserFolder
+if ($kept) { exit 2 }
 exit 0

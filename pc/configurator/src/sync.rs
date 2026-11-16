@@ -194,12 +194,16 @@ fn lock() -> io::Result<fs::File> {
 }
 
 /// Syncs if sync is on (or, before Setup deletes the learned words, was ever on), and keeps the
-/// outcome for the window.
-pub fn run(before_removal: bool) -> Sync {
-    let Ok(_lock) = lock() else { return load() };
+/// outcome for the window. Err when a sync was due and didn't go through: Setup then keeps the words
+/// (setup.ps1).
+pub fn run(before_removal: bool) -> Result<Sync, Sync> {
+    let lock = lock();
     let mut s = load();
     if !(s.enabled || before_removal && s.ever_on) || s.user.is_empty() {
-        return s;
+        return Ok(s);
+    }
+    if lock.is_err() {
+        return Err(s);
     }
     let mozc_db = platform::mozc_dir().join("user_dictionary.db");
     let mozc_db = platform::mozc_dir().is_dir().then_some(mozc_db.as_path());
@@ -214,7 +218,11 @@ pub fn run(before_removal: bool) -> Sync {
         Err(Failed::Offline) => Status::Offline,
     };
     let _ = save(&s);
-    s
+    if s.status == Status::Synced {
+        Ok(s)
+    } else {
+        Err(s)
+    }
 }
 
 /// Deletes every device's learned words and dictionaries on the server, and turns sync off; the words
@@ -343,7 +351,7 @@ mod tests {
             ..Sync::default()
         };
         save(&on).unwrap();
-        assert_eq!(run(false).status, Status::Synced);
+        assert_eq!(run(false).unwrap().status, Status::Synced);
 
         // A word on the PC reaches the server.
         assert!(get(&format!("/v1/files/{device}/rime_ice.userdb.txt")).contains("莫福姬"));
@@ -368,20 +376,72 @@ mod tests {
             .unwrap()
             .set_password("made-up-wrong-password")
             .unwrap();
-        assert_eq!(run(false).status, Status::LoginFailed);
+        assert_eq!(run(false).unwrap_err().status, Status::LoginFailed);
         keyring().unwrap().set_password(&password).unwrap();
 
         // Turned off, the schedule's sync does nothing; Setup's, before it deletes learned words, still
         // syncs, since sync was on.
         set_enabled(false).unwrap();
-        assert_eq!(run(false).status, Status::LoginFailed);
-        assert_eq!(run(true).status, Status::Synced);
+        assert_eq!(run(false).map(|s| s.status), Ok(Status::LoginFailed));
+        assert_eq!(run(true).unwrap().status, Status::Synced);
 
         // Delete clears the server and turns sync off; the PC's words stay.
         assert!(delete_on_server());
         assert_eq!(get("/v1/files").replace(' ', ""), "{\"files\":[]}");
         assert!(!load().enabled && !load().ever_on);
         assert!(fs::read_to_string(&pc_snapshot).unwrap().contains("莫福姬"));
+    }
+
+    /// Setup deletes learned words only when this says nothing is left unsynced (#271): a due sync that
+    /// doesn't go through is an error, and a sync that was never on is not. A private profile, a server
+    /// nobody listens on, and no keyring to read: never the account's own login.
+    #[test]
+    fn a_due_sync_that_fails_is_an_error() {
+        let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/test-tmp/sync-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        for var in [
+            "LOCALAPPDATA",
+            "APPDATA",
+            "USERPROFILE",
+            "XDG_DATA_HOME",
+            "XDG_CONFIG_HOME",
+        ] {
+            std::env::set_var(var, &d);
+        }
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+
+        let never_on = Sync {
+            server,
+            user: "made-up".into(),
+            ..Sync::default()
+        };
+        save(&never_on).unwrap();
+        assert!(run(true).is_ok(), "never on: nothing to sync");
+
+        save(&Sync {
+            ever_on: true,
+            ..never_on.clone()
+        })
+        .unwrap();
+        assert!(
+            run(false).is_ok(),
+            "off: the schedule's sync has nothing to do"
+        );
+        let failed = run(true).unwrap_err();
+        assert_ne!(failed.status, Status::Synced);
+        assert_eq!(load().status, failed.status, "kept for the window");
+
+        save(&Sync {
+            enabled: true,
+            ..never_on
+        })
+        .unwrap();
+        assert!(run(false).is_err());
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
