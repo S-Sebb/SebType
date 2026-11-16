@@ -27,11 +27,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// SebType: the phone's Mozc as a library with SebType's C interface (core/src/sebtype_mozc.h), which
-// SebType's core (core/src/mozc_inprocess.cpp) calls in the same process: serialized commands in and out,
-// as the Java client's JNI evalCommand did.
-
-#ifdef __ANDROID__
+// SebType: Mozc as a library with SebType's C interface (core/src/sebtype_mozc.h), which SebType's core
+// (core/src/mozc_inprocess.cpp) calls in the same process: serialized commands in and out, as the Java
+// client's JNI evalCommand did. The phone's libmozc.so, the Fcitx5 add-on's libsebtype-mozc.so and
+// sebtype-server.exe's sebtype-mozc.dll are this file (#220, #233).
 
 #include <cstddef>
 #include <cstdint>
@@ -48,14 +47,18 @@
 #include "absl/strings/string_view.h"
 #include "base/system_util.h"
 #include "client/user_dictionary/user_dictionary_importer.h"
+#include "config/config_handler.h"
 #include "data_manager/data_manager.h"
 #include "engine/engine.h"
+#ifndef __ANDROID__
+#include "engine/engine_factory.h"
+#endif
 #include "protocol/commands.pb.h"
 #include "protocol/user_dictionary_storage.pb.h"
 #include "session/session_handler.h"
 
 namespace mozc {
-namespace jni {
+namespace sebtype {
 namespace {
 
 // The process's Mozc, loaded by sebtype_mozc_open.
@@ -101,24 +104,51 @@ std::unique_ptr<EngineInterface> CreateMobileEngine(
   return *std::move(engine);
 }
 
+// The PCs' engine: the dictionary built into this library, as mozc_server had it.
+std::unique_ptr<EngineInterface> CreateDesktopEngine() {
+#ifdef __ANDROID__
+  return Engine::CreateEngine();
+#else
+  absl::StatusOr<std::unique_ptr<Engine>> engine = EngineFactory::Create();
+  if (!engine.ok()) {
+    LOG(ERROR) << "Failed to create the built-in engine: " << engine.status()
+               << ": Fallback to minimal engine";
+    return Engine::CreateEngine();
+  }
+  return *std::move(engine);
+#endif
+}
+
 }  // namespace
-}  // namespace jni
+}  // namespace sebtype
 }  // namespace mozc
+
+// Exported by sebtype_mozc.map on Linux and Android, by sebtype_mozc.def on Windows.
+#ifdef _WIN32
+#define SEBTYPE_MOZC_API
+#else
+#define SEBTYPE_MOZC_API __attribute__((visibility("default")))
+#endif
 
 extern "C" {
 
-// Loads Mozc with this user profile and data set (an empty path: Mozc's minimal engine). A later call
-// replaces the SessionHandler, so the keyboard can reload Mozc with another data file or user profile.
-__attribute__((visibility("default"))) int sebtype_mozc_open(
+SEBTYPE_MOZC_API void sebtype_mozc_close();
+
+// Loads Mozc with this user profile and data set (an empty path: the dictionary built in on the PCs,
+// Mozc's minimal engine on the phone). A later call replaces the SessionHandler, so the keyboard can reload
+// Mozc with another data file or user profile; the PCs reopen it to read the files the Configurator changed.
+SEBTYPE_MOZC_API int sebtype_mozc_open(
     const char* profile_dir, const char* data_file, int64_t offset,
     int64_t length) {
-  using mozc::jni::g_session_handler;
-  g_session_handler.reset();
+  using mozc::sebtype::g_session_handler;
+  sebtype_mozc_close();
   const std::string original_dir = mozc::SystemUtil::GetUserProfileDirectory();
   mozc::SystemUtil::SetUserProfileDirectory(profile_dir);
+  // The settings (config1.db) are kept per process, not per engine: read them again.
+  mozc::config::ConfigHandler::Reload();
   std::unique_ptr<mozc::EngineInterface> engine =
-      *data_file ? mozc::jni::CreateMobileEngine(data_file, offset, length)
-                 : mozc::Engine::CreateEngine();
+      *data_file ? mozc::sebtype::CreateMobileEngine(data_file, offset, length)
+                 : mozc::sebtype::CreateDesktopEngine();
   DCHECK(engine);
   g_session_handler = std::make_unique<mozc::SessionHandler>(std::move(engine));
   if (!g_session_handler) {
@@ -129,31 +159,36 @@ __attribute__((visibility("default"))) int sebtype_mozc_open(
   return 1;
 }
 
-// Saves learned words (SessionHandler's destructor) and frees the engine, its dictionary and caches, until
-// the next open.
-__attribute__((visibility("default"))) void sebtype_mozc_close() {
-  mozc::jni::g_session_handler.reset();
+// Saves learned words and frees the engine, its dictionary and caches, until the next open. Mozc's
+// destructors don't save its input history, so this syncs first, as mozc_server did on shutdown.
+SEBTYPE_MOZC_API void sebtype_mozc_close() {
+  using mozc::sebtype::g_session_handler;
+  if (!g_session_handler) return;
+  mozc::commands::Command sync;
+  sync.mutable_input()->set_type(mozc::commands::Input::SYNC_DATA);
+  g_session_handler->EvalCommand(&sync);
+  g_session_handler.reset();
 }
 
 // Evaluates a serialized mozc.commands.Input and returns its serialized Output.
-__attribute__((visibility("default"))) int sebtype_mozc_eval(const char* in,
+SEBTYPE_MOZC_API int sebtype_mozc_eval(const char* in,
                                                             size_t in_size,
                                                             char** out,
                                                             size_t* out_size) {
-  if (!mozc::jni::g_session_handler) return 0;
+  if (!mozc::sebtype::g_session_handler) return 0;
   mozc::commands::Command command;
   if (!command.mutable_input()->ParseFromArray(in, static_cast<int>(in_size))) {
     return 0;
   }
-  if (!mozc::jni::g_session_handler->EvalCommand(&command)) return 0;
-  mozc::jni::Copy(command.output().SerializeAsString(), out, out_size);
+  if (!mozc::sebtype::g_session_handler->EvalCommand(&command)) return 0;
+  mozc::sebtype::Copy(command.output().SerializeAsString(), out, out_size);
   return 1;
 }
 
 // SebType: parses a user dictionary file the user imported (Mozc, MS-IME, ATOK or Kotoeri text) into a
 // serialized UserDictionary, skipping entries it can't read. The phone writes user_dictionary.db with it,
 // since Mozc no longer takes user dictionary commands.
-__attribute__((visibility("default"))) int sebtype_mozc_import_user_dictionary(
+SEBTYPE_MOZC_API int sebtype_mozc_import_user_dictionary(
     const char* text, size_t size, char** out, size_t* out_size) {
   const std::string input(text, size);
   mozc::user_dictionary::StringTextLineIterator iter(input);
@@ -163,14 +198,12 @@ __attribute__((visibility("default"))) int sebtype_mozc_import_user_dictionary(
       !status.ok()) {
     LOG(WARNING) << "User dictionary import: " << status;
   }
-  mozc::jni::Copy(dictionary.SerializeAsString(), out, out_size);
+  mozc::sebtype::Copy(dictionary.SerializeAsString(), out, out_size);
   return 1;
 }
 
-__attribute__((visibility("default"))) void sebtype_mozc_free(char* bytes) {
+SEBTYPE_MOZC_API void sebtype_mozc_free(char* bytes) {
   std::free(bytes);
 }
 
 }  // extern "C"
-
-#endif  // __ANDROID__

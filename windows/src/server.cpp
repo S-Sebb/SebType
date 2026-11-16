@@ -1,13 +1,14 @@
-// SebType on Windows: the one server per user and session. It hosts the core (librime in this process,
-// Mozc through its own mozc_server) for the text service in every app, which reach it over a named pipe:
-// one process, so Rime's learned words have one writer, and one language and state for every window.
-// MIT, SebType.
+// SebType on Windows: the one server per user and session. It hosts the core (librime and Mozc in this
+// process; Mozc in sebtype-mozc.dll, loaded at the first 日本語 key) for the text service in every app, which
+// reach it over a named pipe: one process, so the learned words have one writer, and one language and state
+// for every window. MIT, SebType.
 //
-//   sebtype-server.exe                       serves (started at logon, or by the text service)
-//   sebtype-server.exe /deploy|/sync|/quit   tells the server (/deploy and /sync do it themselves when none
-//                                            runs, and return when Rime is done), for setup and the Configurator;
-//                                            exit codes: 2 no mutex, 3 the server didn't answer, 4 it
-//                                            didn't take the request, 5 Rime still busy after 5 minutes
+//   sebtype-server.exe                            serves (started at logon, or by the text service)
+//   sebtype-server.exe /deploy|/sync|/quit|/mozc  tells the server (/deploy and /sync do it themselves when
+//                                                 none runs, and return when Rime is done), for setup and the
+//                                                 Configurator; /mozc: Mozc reads its files again;
+//                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
+//                                                 didn't take the request, 5 Rime still busy after 5 minutes
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
@@ -77,12 +78,12 @@ std::string parent() {
 }
 
 std::unique_ptr<Engine> makeEngine(Lang lang) {
-  // The folders SebType's Weasel and Mozc used, so learned words and settings carry over.
+  // The folders SebType's Weasel and Mozc (and its mozc_server.exe before #233) used, so learned words and
+  // settings carry over.
   if (lang == Lang::Chinese)
     return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(logDir())});
   if (lang == Lang::Japanese)
-    return makeMozc({u8(exeDir() / L"mozc_server.exe"), u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"),
-                     u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")});
+    return makeMozc({u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")});
   return nullptr;
 }
 
@@ -161,6 +162,7 @@ Reply handle(const Request &q) {
       core->forEachEngine([](Engine &e) { e.save(); });
       break;
     case Op::Quit: break;
+    case Op::Mozc: core->stop(Lang::Japanese); break;
   }
   return state(taken, commit);
 }
@@ -256,9 +258,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   if (_wcsicmp(arg.c_str(), L"/deploy") == 0) q.op = Op::Deploy;
   else if (_wcsicmp(arg.c_str(), L"/sync") == 0) q.op = Op::Sync;
   else if (_wcsicmp(arg.c_str(), L"/quit") == 0) q.op = Op::Quit;
+  else if (_wcsicmp(arg.c_str(), L"/mozc") == 0) q.op = Op::Mozc;
   else return run();
   Reply r;
-  if (q.op == Op::Quit) return call(q, r, 5000), 0;
+  // No server: no Mozc to tell, and it reads its files when one starts.
+  if (q.op == Op::Quit || q.op == Op::Mozc) return call(q, r, 5000), 0;
   const auto failed = [&](int code, const char *what) {
     note(std::string(utf8(arg)) + ": " + what + " (error " + std::to_string(GetLastError()) + "), exit " + std::to_string(code));
     return code;

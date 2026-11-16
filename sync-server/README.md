@@ -208,8 +208,9 @@ python3 sebtype_sync.py push ... --rime-dir "$R" --mozc-db ~/.config/mozc/user_d
 ```
 
 If Mozc's dictionary tool is open, `pull` stops without changing anything and says so. Before it changes the dictionary it keeps the old one as `user_dictionary.db.sebtype-backup`.
-Mozc reads its dictionary when it starts, so new words come up once `mozc_server` restarts, at the
-next login or after `kill $(pidof mozc_server)` (SebType's input method starts it again at the next key).
+Mozc reads its dictionary when it starts, so new words come up once it restarts: the Configurator's sync
+restarts it, and by hand `busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig
+sv fcitx://config/addon/sebtype/mozc s ''` (Linux) or `sebtype-server.exe /mozc` (Windows) does.
 
 On Windows, Google 日本語入力 is the same engine with the same dictionary file,
 `%USERPROFILE%\AppData\LocalLow\Google\Google Japanese Input\user_dictionary.db`. Close its

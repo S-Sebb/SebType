@@ -13,7 +13,7 @@ checkered cloth behind every page, the cream card with the pig, Jersey 10 and Nu
 phone's icon at every Windows size. `setup/pictures.py` draws the pictures from `art/make-icon.py` and
 `pc/icons`. The run builds what the installer packs in parallel jobs: SebType's librime (`rime/build.ps1`), the text
 service and its server (`windows/build.ps1`), the Chinese data (`data/rime/build.sh`, on Fedora for librime
-1.16.1), Mozc's server (`mozc/build.ps1`, cached until its inputs change) and the Configurator
+1.16.1), Mozc (`mozc/build.ps1`, cached until its inputs change) and the Configurator
 (`configurator.yml`).
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
@@ -80,7 +80,7 @@ Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 | Typo correction | `sebtype_typo/keyboard: pc` in `rime_ice.custom.yaml` | Chinese typo correction (#46) weighs a PC keyboard's neighbour keys instead of the phone's touch grid |
 | 简/繁 | Ctrl+Shift+F toggles rime-ice's `traditionalization` option, in `default.custom.yaml` (both `f` and `F`, as Shift may send either) | Decisions #2 (#36). Only the output changes; Ctrl+F stays Find |
 | Candidates per page | `menu/page_size: 6` in `default.custom.yaml`, only when it has no page size yet | 6 Chinese candidates per page instead of rime-ice's 5 (Decisions #2, #163). A page size of the user's own, which the Configurator writes there too, stays |
-| Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept; then the account's running `mozc_server` stops, as it reads the keymap only when it starts | The same keymap as on Linux; the core handles the Shift tap (あ ⇄ English) and Alt+\` (あ ⇄ ア) itself (#117) |
+| Japanese keys | SebType's keymap (`pc/linux/mozc-keymap.tsv`) into Mozc's settings, `%USERPROFILE%\AppData\LocalLow\Mozc\config1.db`, its other settings kept; then `sebtype-server.exe /mozc` restarts Mozc, as it reads the keymap only when it starts | The same keymap as on Linux; the core handles the Shift tap (あ ⇄ English) and Alt+\` (あ ⇄ ア) itself (#117) |
 | Input methods | Language list: the chosen ones first, EN (US layout first) → 中文 (SebType's only) → 日本語 (SebType's only), then the account's other languages. Other Chinese and Japanese IMEs are taken off those two languages, not uninstalled | Win+Space cycles the list in this order. One input method per language, so Win+Space is the only switch |
 | Switch keys | `HKCU\Keyboard Layout\Toggle`: Hotkey, Language Hotkey and Layout Hotkey = 3 (none), applied at once | Alt+Shift and Ctrl+Shift no longer switch language |
 | Per-window input | "Let me use a different input method for each app window" off | One language for every window, as on Linux |
@@ -149,15 +149,15 @@ a logon task: a process started as another user inside someone else's session fa
 
 Windows Japanese is open-source [Mozc](https://github.com/google/mozc), built by SebType, instead of
 Google 日本語入力, whose tray icons are fixed in its signed program (#63). It is the same engine as on
-Linux and the phone: SebType's text service talks to Mozc's server, `mozc_server.exe`, as the Linux add-on
-does, and the tray, keys and menu come from the text service and the core. Setup writes SebType's keymap,
+Linux and the phone: `sebtype-server.exe` runs Mozc in its own process, from `sebtype-mozc.dll`, as the
+Linux add-on does (#233), and the tray, keys and menu come from the text service and the core. Setup writes SebType's keymap,
 `pc/linux/mozc-keymap.tsv`, into Mozc's settings (above). Mozc's own Windows text service, renderer and
 installer are not built: SebType's text service replaces them (#190).
 
 ### Build
 
 ```powershell
-pwsh pc/windows/mozc/build.ps1 -WorkDir D:\sebtype-mozc   # -> D:\sebtype-mozc\out\mozc-server\
+pwsh pc/windows/mozc/build.ps1 -WorkDir D:\sebtype-mozc   # -> D:\sebtype-mozc\out\mozc\sebtype-mozc.dll
 ```
 
 It builds on Windows, because Mozc's Windows build needs MSVC's headers and libraries and the Windows SDK,
@@ -168,10 +168,11 @@ Mozc's `update_deps.py` pins LLVM and MSYS2. The build itself needs no admin rig
 (Bazel runs without symlinks).
 
 The script copies SebType's Mozc, `engines/mozc` (Mozc 3.35.6354 with SebType's changes), over the kept
-tree in `-WorkDir` and builds `//server:mozc_server_win` with Bazel (8 jobs). A rebuild compiles only what
-changed. `mozc_server.exe` loads the C++ runtime from its own folder, so the script puts the runtime DLLs of
-the Visual Studio that built it next to it, as Mozc's installer did: Windows' own may be older, and
-`mozc_server` then never starts (TCSBackEnd's is).
+tree in `-WorkDir` and builds `//sebtype:sebtype_mozc_win` with Bazel (8 jobs). A rebuild compiles only what
+changed. The DLL exports only the C interface in `engines/mozc/src/sebtype/sebtype_mozc.def` and has the C++
+runtime built in (`/MT`), so it needs no runtime DLLs and shares no C++ types with the server, which loads
+it at the first 日本語 key (delay-loaded). The installer removes `mozc_server.exe` and its runtime DLLs from
+installs before #233.
 
 ### Dictionary
 

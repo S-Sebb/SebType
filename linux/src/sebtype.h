@@ -46,7 +46,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   void reloadConfig() override;
   // Saves learned words: Rime's sync, Mozc's.
   void save() override;
-  // fcitx://config/addon/sebtype/deploy: Rime applies changed settings and data.
+  // fcitx://config/addon/sebtype/deploy: Rime applies changed settings and data; .../mozc: Mozc starts again
+  // with the files the Configurator or setup changed (its settings, dictionaries and learned words).
   void setSubConfig(const std::string &path, const fcitx::RawConfig &) override;
 
   fcitx::Instance *instance() { return instance_; }

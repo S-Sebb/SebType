@@ -72,7 +72,8 @@ class Core {
   void setLayout(const Layout &layout);
   void setContext(const std::string &before);
   bool undo();
-  // Stops a language's engine (the phone frees an idle one); the next use starts it again.
+  // Stops a language's engine (the phone frees an idle one; the PCs restart Mozc to read its files again); the
+  // next use starts it again.
   void stop(Lang lang);
 
   bool latin();

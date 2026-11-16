@@ -119,10 +119,10 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 
 | Command | Builds |
 |---|---|
-| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's server from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
+| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's library from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
 | `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
 | `pc/configurator/build.sh` (`cargo build --release` in `pc/configurator`) | the Configurator and its unit tests' executable; `tools/build.sh` runs it on yanglab16 |
-| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's server, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
+| `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's DLL, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 
 `pc/linux/setup-ime.sh` builds what it installs itself ([pc/linux/README.md](../pc/linux/README.md)).
 
@@ -322,10 +322,10 @@ It never touches the running Fcitx5 session:
 - **Rime with rime-ice:** times each key followed by reading the candidate menu (as Fcitx5 does)
   through SebType's librime, on a temporary copy of `~/.local/share/fcitx5/rime` (or `RIME_DIR`), deleted on
   exit. Then it deletes the copy's `build/` and times a full deploy with its peak memory.
-- **Mozc:** starts a private copy of SebType's `mozc_server` with its own empty profile and talks to it over Mozc's
-  IPC (`pc/linux/perf-mozc.py`): suggestions per key, and conversion with Space. Each word is
+- **Mozc:** loads SebType's `libsebtype-mozc.so` into Python, with its own empty profile, as the add-on runs
+  it (`pc/linux/perf-mozc.py`): suggestions per key, and conversion with Space. Each word is
   reverted, so nothing is learned.
-- **Memory:** RSS, PSS and swapped-out size of the running `fcitx5` and `mozc_server`, read from
+- **Memory:** RSS, PSS and swapped-out size of the running `fcitx5` (Mozc included), read from
   `ps` and `/proc`; skipped while the session runs another input method than SebType's.
 
 It needs gcc, python3, bwrap, and librime with librime-lua; it unpacks SebType's input method and librime

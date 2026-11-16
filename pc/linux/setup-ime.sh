@@ -399,8 +399,8 @@ done
 # Mozc keeps a custom keymap only as a whole table, so mozc-keymap.tsv is Mozc's MS-IME keymap plus
 # Shift lines for each state and Alt+` (F6–F10 and Space stay as they are). It goes into Mozc's binary config, config1.db (a mozc.config.Config
 # protobuf): session_keymap (field 41) = CUSTOM (0) and custom_keymap_table (field 42), other settings
-# kept. Mozc reads it at start, so a running mozc_server is stopped; SebType's input method restarts it on
-# the next key.
+# kept. Mozc reads it at start, so a running Fcitx5 is asked to restart SebType's Mozc (it saves, closes and
+# starts again at the next key).
 mozc_db=$config/mozc/config1.db
 mozc_want=$(python3 - "$mozc_db" "$here/mozc-keymap.tsv" <<'PY' | base64 -w0
 import sys
@@ -437,8 +437,8 @@ if [[ $(base64 -w0 "$mozc_db" 2>/dev/null) != "$mozc_want" ]] &&
   change "set Mozc's keymap to MS-IME plus Shift tap for あ ⇄ English and Alt+\` for あ ⇄ ア in $mozc_db (backup in $backup)"; then
   [[ -f $mozc_db ]] && save "$mozc_db"
   mkdir -p "${mozc_db%/*}"; base64 -d <<<"$mozc_want" > "$mozc_db"
-  mapfile -t pids < <(pgrep -u "$(id -u)" -x mozc_server)
-  ((${#pids[@]})) && kill "${pids[@]}"
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
+    { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/mozc s '' || true; }
 fi
 
 # 10. Plasma binds Alt+` (and Meta+`) to "Walk Through Windows of Current Application", so Mozc would

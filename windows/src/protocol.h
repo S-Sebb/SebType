@@ -25,6 +25,8 @@ enum class Op : uint8_t {
   Deploy,    // setup or the Configurator changed Rime's settings or data; reply.busy until it is applied
   Sync,      // save learned words and merge the other devices' (Rime's sync); reply.busy until done
   Quit,      // the server exits (setup, the Configurator's forget)
+  Mozc,      // Mozc saves and closes, and starts again with its files at the next 日本語 key (setup, the
+             // Configurator)
 };
 
 struct Request {

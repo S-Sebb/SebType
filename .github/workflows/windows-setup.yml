@@ -1,7 +1,7 @@
 # SebType's Windows installer (#73): SebType-setup-<version>.exe, built with Inno Setup from
 # pc/windows/setup/sebtype.iss. It packs SebType's text service and server (windows/, over core/, #190)
 # with SebType's librime and Rime's shared data (pc/windows/rime/build.ps1), the Chinese data
-# (data/rime/build.sh), Mozc's server (engines/mozc, built with its C++ runtime by pc/windows/mozc/build.ps1), the Configurator
+# (data/rime/build.sh), Mozc (sebtype-mozc.dll from engines/mozc, by pc/windows/mozc/build.ps1), the Configurator
 # (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
 # run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
 name: Windows setup
@@ -135,15 +135,15 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
-      # The server depends only on these; a run with the same ones reuses it, a PR's run main's.
+      # The DLL depends only on these; a run with the same ones reuses it, a PR's run main's.
       - id: inputs
         run: |
           "hash=${{ hashFiles('engines/mozc/**', 'pc/windows/mozc/**') }}" >> $env:GITHUB_OUTPUT
       - uses: actions/cache@v4
         id: cache
         with:
-          path: out/mozc-server
-          key: mozc-server-${{ steps.inputs.outputs.hash }}
+          path: out/mozc
+          key: mozc-dll-${{ steps.inputs.outputs.hash }}
       - uses: actions/setup-python@v5
         if: steps.cache.outputs.cache-hit != 'true'
         with:
@@ -159,9 +159,9 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           $start = Get-Date
-          $server = pc/windows/mozc/build.ps1 -WorkDir D:\m -BazelCache D:\m\bazel-cache | Select-Object -Last 1
+          $mozc = pc/windows/mozc/build.ps1 -WorkDir D:\m -BazelCache D:\m\bazel-cache | Select-Object -Last 1
           New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item -Recurse $server out/mozc-server
+          Copy-Item -Recurse $mozc out/mozc
           # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and
           # would only grow the saved cache.
           $old = Get-ChildItem -Recurse -File D:\m\bazel-cache\disk | Where-Object LastWriteTime -lt $start
@@ -175,10 +175,17 @@ jobs:
         with:
           path: D:\m\bazel-cache
           key: mozc-bazel-${{ steps.inputs.outputs.hash }}
+      # The DLL loads in a process of its own and converts (as in sebtype-server.exe): its C interface, its
+      # built-in dictionary and Mozc's Windows code without mozc_server around it (#233).
+      - name: Convert
+        run: |
+          $o = "nihongo`t日本語", "toukyou`t東京" | python -I pc/linux/perf-mozc.py out/mozc/sebtype-mozc.dll "$env:RUNNER_TEMP\mozc-profile" 1
+          $o
+          if ($LASTEXITCODE -or -not ($o -contains 'top1=2/2')) { throw 'Mozc in sebtype-mozc.dll did not convert' }
       - uses: actions/upload-artifact@v4
         with:
-          name: mozc-server
-          path: out/mozc-server
+          name: mozc
+          path: out/mozc
           if-no-files-found: error
 
   setup:

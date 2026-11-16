@@ -169,7 +169,7 @@ if ($Typing) {
             $w = if ($isZh) { $pinyin[$n % $pinyin.Count] } else { $romaji[$n % $romaji.Count] }
             Keys (@($w.ToCharArray() | ForEach-Object { "$_" }) + $(if ($isZh) { 'space' } else { 'space', 'Return' }))
             $n++
-            foreach ($p in Get-Process sebtype-server, mozc_server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ $session) {
+            foreach ($p in Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ $session) {
               if ($pids[$p.Name] -and $pids[$p.Name] -ne $p.Id) { $restarts += "$($p.Name) $($pids[$p.Name]) -> $($p.Id) at $([int]((Get-Date) - $start).TotalSeconds) s" }
               $pids[$p.Name] = $p.Id
             }
@@ -581,7 +581,7 @@ namespace SebTypeSetupTest {
       if ($missing) { throw "missing: $($missing -join ', ')" }
       if ($entry.DisplayName -ne 'SebType' -or $entry.DisplayIcon -notlike '*sebtype.ico') { throw "Apps lists '$($entry.DisplayName)' with icon $($entry.DisplayIcon)" }
       if ((Test-Path $WeaselKey) -or (Mozc-Installed)) { throw "Weasel ($(Test-Path $WeaselKey)) or Mozc ($(Mozc-Installed)) is installed" }
-      $missing = @("$App\sebtype-server.exe", "$App\sebtype.dll", "$App\x86\sebtype.dll", "$App\rime.dll", "$App\mozc_server.exe" | Where-Object { -not (Test-Path $_) })
+      $missing = @("$App\sebtype-server.exe", "$App\sebtype.dll", "$App\x86\sebtype.dll", "$App\rime.dll", "$App\sebtype-mozc.dll" | Where-Object { -not (Test-Path $_) })
       if ($missing) { throw "missing: $($missing -join ', ')" }
       $dll = (Get-ItemProperty "Registry::HKEY_CLASSES_ROOT\CLSID\$Clsid\InprocServer32" -ErrorAction SilentlyContinue).'(default)'
       if ($dll -ne "$App\sebtype.dll") { throw "the text service is registered as '$dll'" }

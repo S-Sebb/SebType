@@ -24,8 +24,7 @@ has the details):
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's
     notificationitem: LGPL-2.1-or-later (LICENSE-LGPL-2.1).
-  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend), and core/src/mozc_ipc.cpp, moved
-    out of it: Mozc's BSD-3-Clause licence.
+  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend): Mozc's BSD-3-Clause licence.
   - linux/librime.spec: Fedora's spec, MIT.
   - android/native/src/main/cpp/cmake/: RimeJni's build scripts (MIT) with SebType's changes, under RimeJni's
     licence (android/native/src/main/cpp/cmake/LICENSE).
@@ -33,9 +32,7 @@ has the details):
     mozc-lib, Google's Mozc Android client (BSD-3-Clause, in its header) with FUTO's and SebType's changes.
 - AOSP LatinIME's decoder in engines/latinime/, unchanged: the Apache License 2.0 (engines/latinime/NOTICE).
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
-  librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause. On Windows, mozc_server.exe comes with the
-  Microsoft Visual C++ runtime files of the Visual Studio that built it (msvcp140*.dll, vcruntime140*.dll),
-  under Microsoft's terms for them. The Windows candidate window takes its layout numbers and aqua colours
+  librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause. The Windows candidate window takes its layout numbers and aqua colours
   from Weasel (GPL-3.0) as settings, not its code (windows/README.md).
 
 FUTO's NOTICE follows unchanged, then the credits for SebType's English dictionaries and model.

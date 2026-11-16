@@ -20,10 +20,6 @@
 #include "dbus_public.h"
 #include "tray.h"
 
-#ifndef SEBTYPE_MOZC_SERVER
-#define SEBTYPE_MOZC_SERVER "/usr/libexec/sebtype/mozc_server"
-#endif
-
 namespace sebtype {
 
 namespace {
@@ -58,7 +54,7 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
     fs::create_directories(rimeUser);
     return makeRime({RIME_DATA_DIR, rimeUser.string()});
   }
-  return makeMozc({env("SEBTYPE_MOZC_SERVER", SEBTYPE_MOZC_SERVER), mozcProfile(), rimeUser.string()});
+  return makeMozc({mozcProfile(), rimeUser.string()});
 }
 
 Lang langFromId(const std::string &id) {
@@ -207,6 +203,11 @@ void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig
   if (path == "deploy") {
     core_->engine(Lang::Chinese);
     core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
+  } else if (path == "mozc") {
+    // Mozc reads its settings and dictionaries when it starts: it saves and closes, and the next 日本語 key
+    // starts it again.
+    core_->stop(Lang::Japanese);
+    update(instance_->mostRecentInputContext());
   }
 }
 

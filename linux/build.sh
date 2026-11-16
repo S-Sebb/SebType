@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds SebType's Linux input method RPM (#190): the Fcitx5 add-on over core/ and Mozc's server, with
+# Builds SebType's Linux input method RPM (#190): the Fcitx5 add-on over core/ and Mozc's library, with
 # sebtype.spec in the pinned Fedora container (versions.sh). Prints the RPM's path.
 #
 #   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.x86_64.rpm
@@ -18,7 +18,7 @@ source "$here/rpm-sources.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$root/tools/lib.sh"
 if build_host_ready; then build_remotely linux/build.sh; exit; fi
-# Bazel's caches for Mozc's server, so a rebuild compiles only what changed.
+# Bazel's caches for Mozc, so a rebuild compiles only what changed.
 MOZC_CACHE=$BAZEL_CACHE/mozc
 mkdir -p "$SEBTYPE_CACHE/sources" "$MOZC_CACHE"/{work,sources}
 pack_source "$root/engines/mozc" "$SEBTYPE_CACHE/sources/mozc.tar.gz"

@@ -1,6 +1,6 @@
 // SebType core: Mozc's session handler in this process (mozc_transport.h, #220), through the C interface of a
 // Mozc built into a library (sebtype_mozc.h): the same serialized commands the IPC carries, without the
-// server. Used on the phone; the PCs follow in #233. MIT, SebType.
+// server. MIT, SebType.
 #include <chrono>
 #include <cstddef>
 #include <string>
@@ -15,7 +15,8 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 // mozc_server's watchdog saved learned words every 180 s; in-process nothing does, so this transport saves
-// that often after a commit. The frontend still saves when it stops or hides (Engine::save).
+// that often after a commit. The frontend still saves when it stops or hides (Engine::save), and closing
+// saves too.
 constexpr auto kSaveEvery = std::chrono::seconds(180);
 
 std::string take(char *bytes, size_t size) {
@@ -33,7 +34,7 @@ bool eval(const mozc::commands::Input &in, mozc::commands::Output &out) {
 }
 
 // One engine per process, the 日本語 engine's: loaded with it and closed when the core stops it (the phone
-// frees an idle Mozc).
+// frees an idle Mozc; the PCs reload one whose files the Configurator changed).
 class InProcess final : public MozcTransport {
  public:
   explicit InProcess(const MozcPaths &paths)

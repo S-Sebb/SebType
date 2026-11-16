@@ -82,11 +82,17 @@ function Stop-Server {
     Get-Server | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue  # until it lets go of its mapped files
   }
 }
-# Mozc's server holds its files (SebType's, next to this file, or the Mozc SebType had before); without
-# admin, only this user's own stop.
+# Mozc's server holds its files (SebType's from before #233, next to this file, or the Mozc SebType had
+# before); without admin, only this user's own stop.
 function Stop-Mozc {
   Get-Process mozc_* -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\Mozc\*' -or $_.Path -like "$PSScriptRoot\*" } |
     Stop-Process -Force -ErrorAction SilentlyContinue
+}
+# Mozc in this session's SebType server reads its settings when it starts: /mozc has it save and close, and
+# the next 日本語 key starts it again (no server: nothing to do).
+function Restart-Mozc {
+  if (Test-Path $Server) { (Start-Process -PassThru -FilePath $Server -ArgumentList '/mozc').WaitForExit() }
+  Stop-Mozc
 }
 
 
@@ -313,11 +319,11 @@ if ('zh' -in $want) {
 }
 
 # Japanese: Mozc's keymap gets a Shift tap for あ ⇄ English and Alt+` for あ ⇄ ア (pc/linux/mozc-keymap.tsv,
-# Decisions #2, #117); every other setting stays. Mozc's server reads it only when it starts, and the account's
-# server may run already. So a changed keymap stops this account's Mozc; the next key starts it again with
-# the new keymap.
+# Decisions #2, #117); every other setting stays. Mozc reads it only when it starts, and the account's
+# server may run it already. So a changed keymap restarts this account's Mozc; the next key starts it again
+# with the new keymap.
 if ('ja' -in $want) {
-  if (-not (Test-Path (Join-Path $PSScriptRoot 'mozc_server.exe'))) { throw "Mozc's server isn't installed next to setup.ps1" }
+  if (-not (Test-Path (Join-Path $PSScriptRoot 'sebtype-mozc.dll'))) { throw "Mozc isn't installed next to setup.ps1" }
   $db = Join-Path $MozcUser 'config1.db'
   # A new account has no config1.db yet. (An empty array from an if would arrive as $null.)
   $data = [byte[]]::new(0)
@@ -326,7 +332,7 @@ if ('ja' -in $want) {
   if ([Convert]::ToBase64String($data) -ne [Convert]::ToBase64String($new)) {
     New-Item -ItemType Directory -Force $MozcUser | Out-Null
     [IO.File]::WriteAllBytes($db, $new)
-    Stop-Mozc
+    Restart-Mozc
     Write-Output 'user: Mozc keymap'
   }
 }
@@ -374,7 +380,7 @@ if ('zh' -in $removed) {
   Write-Output 'user: Chinese removed, its learned words deleted'
 }
 if ('ja' -in $removed) {
-  Stop-Mozc
+  Restart-Mozc
   Remove-Item $MozcUser -Recurse -Force -ErrorAction SilentlyContinue
   if ($state.MozcBackup) { Copy-Item $state.MozcBackup $MozcUser -Recurse }
   Remove-Item "HKCU:\Software\Microsoft\CTF\TIP\$Clsid\LanguageProfile\0x00000411", "HKCU:\Software\Microsoft\CTF\TIP\$MozcClsid" -Recurse -ErrorAction SilentlyContinue

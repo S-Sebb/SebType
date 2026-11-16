@@ -2,12 +2,11 @@
 
 One C++ library for every platform's frontend (#190): it hosts librime for 中文 (`src/rime.cpp`) and Mozc's
 for 日本語 (`src/mozc.cpp`) and, for the phone, SebType's English (`src/english.cpp`, #244); on the PCs English
-passes through. Mozc runs one of two ways (`src/mozc_transport.h`):
-the PCs talk to its own `mozc_server` over Mozc's IPC (`src/mozc_ipc.cpp`); the phone runs Mozc's session
-handler in its own process (`src/mozc_inprocess.cpp`) through the C interface in `src/sebtype_mozc.h`, which
-the phone's `libmozc.so` exports. CMake picks the second when `SEBTYPE_MOZC_LIB` names that library; the PCs
-move to it in #233. It owns what SebType's
-languages share:
+passes through. Mozc's session handler runs in the frontend's own process (`src/mozc_inprocess.cpp`, behind
+`src/mozc_transport.h`), through the C interface in `src/sebtype_mozc.h`; `SEBTYPE_MOZC_LIB` names the
+library that exports it, built from `engines/mozc/src/sebtype`: `libsebtype-mozc.so` on Linux,
+`sebtype-mozc.dll` on Windows, and the phone's `libmozc.so` (#233). The transport saves Mozc's learned words
+after a commit, at most every 180 s, and when it closes. It owns what SebType's languages share:
 
 - the languages and switching: Win+Space (home ⇄ the last other language), the Shift tap for English
   letters, Ctrl+Shift+F for 简/繁 and Alt+` for あ ⇄ ア (`src/core.cpp`);
@@ -51,8 +50,7 @@ dictionary and model: `test/english.sh` builds and runs that on yanglab16. The E
     ([LICENSE-LGPL-2.1](../LICENSE-LGPL-2.1)).
   - `src/mozc.cpp` follows fcitx5-mozc, the Fcitx 5 frontend of [fcitx/mozc](https://github.com/fcitx/mozc)
     (`src/unix/fcitx5`, Copyright 2010-2018 Google Inc. and 2017 Weng Xuetian): BSD-3-Clause, like Mozc.
-    `src/mozc_ipc.cpp`, moved out of it, keeps that licence.
-- The protocol it speaks to Mozc's server is generated from Mozc's own `.proto` files in `engines/mozc`
+- The protocol it speaks to Mozc is generated from Mozc's own `.proto` files in `engines/mozc`
   (BSD-3-Clause).
 - The engines keep their licences: librime BSD-3-Clause, Mozc BSD-3-Clause, AOSP LatinIME's decoder
   Apache-2.0. SebType's English model is CC BY-SA 4.0 (`engines/LICENSE`, `NOTICE`).

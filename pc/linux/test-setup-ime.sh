@@ -93,7 +93,6 @@ case \"\$*\" in
 esac"
 stub systemctl 'cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
-stub pgrep 'exit 1'  # never finds (and stops) the real mozc_server
 stub qdbus6 'echo "qdbus $*" >> "$FAKE/qdbus.log"'
 stub busctl 'case "$*" in
   *" emit "*) echo "$*" >> "$FAKE/emit.log" ;;
@@ -173,12 +172,15 @@ fcitx_hotkeys() {
     [[ $(grep -cxE 'TriggerKey=|DirectUnicodeMode=' "${c%/*}/conf/unicode.conf") == 2 ]] &&
     ls "$h"/.local/share/sebtype/backup/*/config && [[ -e $fake/reload.log ]]
 }
-# SebType's Chinese data is in Rime's user folder with its marker, and the running Fcitx5 was asked to deploy.
+# SebType's Chinese data is in Rime's user folder with its marker, and the running Fcitx5 was asked to restart
+# Mozc (for its new keymap) and to deploy.
 rime_data() {
   local r=$h/.local/share/fcitx5/rime
   [[ $(cat "$r/sebtype-data.txt") == "$(sha256sum "$rime_data" | cut -d' ' -f1)" && -f $r/build/rime_ice.table.bin ]] &&
     ! ls "$r"/double_pinyin* "$r"/t9* 2>/dev/null &&
-    [[ $(cat "$fake/deploy.log") == '--user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ' ]]
+    [[ $(cat "$fake/deploy.log") == "$(printf '%s\n' \
+      '--user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/mozc s ' \
+      '--user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ')" ]]
 }
 # The keymap replaces fields 41 and 42 in place; fields 1 and 43 are kept. Alt+` switches あ ⇄ ア
 # (Precomposition), and nothing else: the Shift tap is the only way to English (#117).
@@ -273,8 +275,8 @@ fi
 # can't see it) running SebType's input method (#190) on a second fake account set up by setup-ime.sh: Shift tap toggles
 # あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` toggles あ ⇄ ア and leaves
 # English alone (#117); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
-# checked on the desktop (pc/linux/README.md). Its fcitx5 and
-# mozc_server are found by the fake HOME in their environment and stopped afterwards.
+# checked on the desktop (pc/linux/README.md). Its fcitx5 is found by the fake HOME in its environment and
+# stopped afterwards.
 mozc_keys() {
   local h=$fake/jp
   mkdir -p "$h/.config/fcitx5"
@@ -370,7 +372,7 @@ fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
   local rc=$? p
-  for p in $(pgrep -x fcitx5) $(pgrep -x mozc_server); do
+  for p in $(pgrep -x fcitx5); do
     grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"
   done
   return $rc
@@ -450,7 +452,7 @@ with open(sys.argv[2], 'w') as f:
 sys.exit(0 if ok else 1)
 PY2
   local rc=$?
-  for p in $(pgrep -x fcitx5) $(pgrep -x mozc_server); do
+  for p in $(pgrep -x fcitx5); do
     grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"
   done
   return $rc
@@ -458,6 +460,81 @@ PY2
 if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
   check popup-words popup_words
 else result SKIP popup-words "needs fcitx5, dbus-run-session and python3-gobject"
+fi
+
+# Upgrade from mozc_server (#233): a profile that SebType's last release with Mozc's own server learned in
+# (a conversion's second candidate, picked once) and a word in SebType's user dictionary still convert the
+# same in Mozc in Fcitx5's process. Both runs: a private Fcitx5 (as above) on a fourth fake account. The old
+# release's mozc_server is overlaid at the path it was built for (its watchdog checks it) and stopped after.
+old_rpm=$SEBTYPE_CACHE/sebtype-0.1.0-5.fc44.x86_64.rpm  # the last release before #233
+mozc_upgrade() {
+  local h=$fake/upgrade old=$fake/old-build p rc
+  mkdir -p "$h/.config/fcitx5" "$h/.config/mozc" "$old"
+  fake_run < /dev/null > /dev/null || return 1
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  # SebType's user dictionary as the Configurator writes it (pc/configurator/src/mozc.rs): もふてすと → モフ試験語, a noun.
+  python3 - "$h/.config/mozc/user_dictionary.db" <<'PY'
+import sys
+def f(n, v): return bytes([n << 3 | 2, len(v)]) + v if isinstance(v, bytes) else bytes([n << 3, v])
+entry = f(1, 'もふてすと'.encode()) + f(2, 'モフ試験語'.encode()) + f(5, 1)
+open(sys.argv[1], 'wb').write(f(2, f(1, 7) + f(3, b'SebType') + f(4, entry)))
+PY
+  rpm2cpio "$old_rpm" | (cd "$old" && cpio -idm --quiet) || return 1
+  local mounts; read -ra mounts <<<"$(librime_mounts "$own")"
+  local old_fcitx=(env "FCITX_ADDON_DIRS=$old/usr/lib64/fcitx5:/usr/lib64/fcitx5" "XDG_DATA_DIRS=$old/usr/share:/usr/share"
+    bwrap --dev-bind / / "${mounts[@]}" --overlay-src /usr/libexec --overlay-src "$old/usr/libexec" --ro-overlay /usr/libexec)
+  type_ja() { # mode (learn: kikai, Space, Space, Return; check: kikai and mofutesuto, Space, Return), command...
+    private_bus "$h" 60 "${@:2}" python3 - "$1" "$fake/fcitx5-upgrade-$1.log" <<'PY'
+import subprocess, sys, time
+from gi.repository import Gio, GLib
+KEYS = {'space': (0x20, 65), 'Return': (0xff0d, 36)} | {c: (ord(c), 0) for c in 'abcdefghijklmnopqrstuvwxyz'}
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
+                         stdout=subprocess.DEVNULL, stderr=open(sys.argv[2], 'w'))
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 20000, None).unpack()
+CONTROLLER, IC = ('/controller', 'org.fcitx.Fcitx.Controller1'), 'org.fcitx.Fcitx.InputContext1'
+for _ in range(100):
+    try: call(*CONTROLLER, 'CurrentInputMethod'); break
+    except GLib.Error: time.sleep(0.1)
+ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+             '(a(ss))', [('program', 'sebtype-test')])
+committed = []
+bus.signal_subscribe(None, IC, 'CommitString', ic, None, 0, lambda *a: committed.append(a[5].unpack()[0]))
+call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+call(ic, IC, 'FocusIn')
+call('/sebtype', 'org.sebtype.Core1', 'SetLanguage', '(s)', 'ja')
+def tap(name):
+    sym, code = KEYS[name]
+    for release in (False, True): call(ic, IC, 'ProcessKeyEvent', '(uuubu)', sym, code, 0, release, 0)
+    end = time.time() + 0.05
+    while time.time() < end: GLib.MainContext.default().iteration(False)
+def word(romaji, spaces):
+    committed.clear()
+    for k in list(romaji) + ['space'] * spaces + ['Return']: tap(k)
+    print(''.join(committed))
+if sys.argv[1] == 'learn': word('kikai', 2)
+else: word('kikai', 1); word('mofutesuto', 1)
+call(*CONTROLLER, 'Exit')  # Fcitx5 saves on the way out: SYNC_DATA
+fcitx.wait(20)
+PY
+  }
+  local learned now
+  learned=$(type_ja learn "${old_fcitx[@]}"); rc=$?
+  for p in $(pgrep -x mozc_server); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  if ((rc != 0)) || [[ -z $learned ]] || ! ls "$h/.config/mozc/segment.db"; then
+    echo "the old release learned nothing: '$learned'"; return 1
+  fi
+  now=$(type_ja check "${own_fcitx[@]}") || return 1
+  echo "picked with mozc_server: $learned; in-process now: ${now//$'\n'/, }"
+  [[ $now == "$learned"$'\n'モフ試験語 ]]
+}
+if [[ ! -f $old_rpm ]]; then result SKIP mozc-profile-from-mozc-server "no $old_rpm (the release before #233) cached"
+elif command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+  check mozc-profile-from-mozc-server mozc_upgrade
+else result SKIP mozc-profile-from-mozc-server "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
 # Chinese label (#69) and SebType's Chinese data (#102): a private Fcitx5 (as above) running SebType's input method (#190) on a
@@ -746,7 +823,7 @@ fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
   local rc=$? p
-  for p in $(pgrep -x fcitx5) $(pgrep -x mozc_server); do
+  for p in $(pgrep -x fcitx5); do
     grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"
   done
   return $rc

@@ -20,7 +20,7 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 |---|---|---|
 | Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `librime-lua`, `librime-octagram`; `librime-octagram` from SebType's librime build once librime is SebType's | Rime's plugins, and the modules XWayland and older apps load. `librime-octagram` reads the Chinese data's grammar file, so Chinese candidates come in the phone's and Windows' order: `beirendingwei` gives 被认定为, not 被人定位 (#127) |
 | Fcitx5's own settings | Removes `kcm-fcitx5` (Fcitx5's page in System Settings) and `fcitx5-configtool` (the Fcitx 5 Configuration app), after asking, with sudo. `--undo-fcitx5` puts them back | SebType's settings are in the Configurator; Fcitx5's own were a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182) |
-| SebType's input method | Installs the `sebtype` RPM (`linux/build.sh`: the Fcitx5 add-on and Mozc's server), after asking, with sudo. Fcitx5 loads it once it restarts; then rerun setup | English, 中文 and 日本語 in one input method with SebType's own switching, popups, candidate pages and tray menu, in place of fcitx5-rime's and fcitx5-mozc's frontends (#190). See [SebType's input method](#sebtypes-input-method) |
+| SebType's input method | Installs the `sebtype` RPM (`linux/build.sh`: the Fcitx5 add-on and Mozc), after asking, with sudo. Fcitx5 loads it once it restarts; then rerun setup | English, 中文 and 日本語 in one input method with SebType's own switching, popups, candidate pages and tray menu, in place of fcitx5-rime's and fcitx5-mozc's frontends (#190). See [SebType's input method](#sebtypes-input-method) |
 | SebType's librime | Replaces Fedora's `librime` and its installed plugins (`librime-lua`, …) with SebType's build of the same version (`linux/build-librime.sh`), after asking, with sudo | Chinese typo correction also fixes a slip onto the key above or below, which librime's own neighbour map lacks: `xkaoshi` gives 小时 (#101) |
 | KWin input method | `kwinrc` `[Wayland] InputMethod` = Fcitx 5 (System Settings → Keyboard → Virtual Keyboard) | Every native Wayland app (GTK, Qt, Electron) through text-input, with no environment variables. Takes effect at the next login if Fcitx5 isn't already running under KWin |
 | XWayland | `XMODIFIERS=@im=fcitx` in `~/.config/environment.d/90-sebtype-im.conf`, only if the session doesn't already have it | XIM apps on XWayland: Steam, WINE/Proton, Java, Xlib/SDL games |
@@ -52,7 +52,7 @@ The keymap binds a bare `Shift` (a Shift press and release with no other key in 
 sent it) to IMEOff (commit what is being typed, then direct English) in every typing state, and to IMEOn
 in direct English. SebType's input method (#190) now takes the Shift tap and Alt+\` itself, so those lines
 are no longer used on Linux; Windows' Mozc still reads them. The keymap lives in this account's Mozc config. If Mozc's settings are ever reset, rerun `setup-ime.sh`. To undo: copy `config` and `config1.db` back from the backup folder, then run
-`fcitx5-remote -r` and stop `mozc_server`. To bring back Alt+\` for the KWin action, use System Settings → Shortcuts.
+`fcitx5-remote -r`. To bring back Alt+\` for the KWin action, use System Settings → Shortcuts.
 
 ### Tray icons
 
@@ -132,7 +132,7 @@ leaves out Input Method Settings, and no key opens Rime's switcher: F4 and Ctrl+
 ### SebType's input method
 
 `linux/` is one Fcitx5 add-on, `sebtype`, over SebType's core (`core/`, the same on every platform,
-#190): the core hosts librime for 中文 and Mozc's server for 日本語, passes English through, and owns the
+#190): the core hosts librime for 中文 and Mozc for 日本語, both in Fcitx5's process (#233), passes English through, and owns the
 switching (Win+Space, the Shift tap, Ctrl+Shift+F, Alt+\`), the popups, the candidate pages and the tray
 menu. The add-on draws what the core says with Fcitx5's own candidate window (classicui, so the Picnic
 theme and the Configurator's settings apply to both languages) and shows its popups as Fcitx5 did. Its
@@ -140,8 +140,8 @@ tray, `linux/src/tray.cpp`, is Fcitx5's notificationitem trimmed to SebType's me
 add-on's name (step "SebType's tray"), so Fedora's Fcitx5 needs no change. Rime keeps fcitx5-rime's user
 folder (`~/.local/share/fcitx5/rime`) and names, and Mozc its profile, so learned words stay.
 
-`linux/build.sh` builds the `sebtype` RPM in a pinned Fedora container (`linux/versions.sh`), with Mozc's
-server (`/usr/libexec/sebtype/mozc_server`) built by Bazel (Bazelisk, pinned by checksum), which fetches the
+`linux/build.sh` builds the `sebtype` RPM in a pinned Fedora container (`linux/versions.sh`), with Mozc
+(`/usr/lib64/sebtype/libsebtype-mozc.so`, which the add-on links) built by Bazel (Bazelisk, pinned by checksum), which fetches the
 libraries `engines/mozc/src/MODULE.bazel` pins. Bazel's caches stay in `~/scratch/SebType/cache/mozc/work`,
 so a rebuild compiles only what changed. It runs the core's unit tests too.
 

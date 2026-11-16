@@ -172,6 +172,7 @@ mozc_cc_library(
     hdrs = ["engine_factory.h"],
     visibility = [
         "//converter:__pkg__",
+        "//sebtype:__pkg__",
         "//server:__pkg__",
         "//session:__pkg__",
     ],

@@ -304,24 +304,18 @@ pub fn forget_rime() -> io::Result<usize> {
     Ok(n)
 }
 
-fn stop_mozc() {
-    let user = env::var("USER").unwrap_or_default();
-    if let Ok(out) = Command::new("pgrep")
-        .args(["-x", "-u", &user, "mozc_server"])
-        .output()
-    {
-        for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
-            let _ = Command::new("kill").arg(pid).status();
-        }
+/// Mozc, in SebType's input method, reads its config and dictionaries when it starts: it saves and closes
+/// (before the call returns), and the next Japanese key starts it again.
+pub fn restart_mozc() {
+    if fcitx_running() {
+        let _ = controller(
+            "SetConfig",
+            &["sv", "fcitx://config/addon/sebtype/mozc", "s", ""],
+        );
     }
 }
-/// mozc_server reads its config and dictionaries when it starts; SebType's input method starts it on the next key.
-pub fn restart_mozc() {
-    stop_mozc();
-}
 pub fn forget_mozc() -> io::Result<usize> {
-    stop_mozc();
-    std::thread::sleep(std::time::Duration::from_millis(300)); // it saves its files on the way out
+    restart_mozc(); // or it would write the history back
     crate::mozc::forget(&mozc_dir())
 }
 
