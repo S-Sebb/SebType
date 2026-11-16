@@ -223,7 +223,7 @@ old_icon_theme() {
   local t=$h/.local/share/icons/SebType g=$h/.config/kdeglobals o inherits want
   for inherits in Fluent-dark '' picked; do
     rm -f "$fake/emit.log"; mkdir -p "$t/16/status"; : > "$t/16/status/sebtype-en.svg"
-    printf '[Icon Theme]\nName=SebType\n%s' "${inherits:+Inherits=$inherits\n}" > "$t/index.theme"
+    { printf '[Icon Theme]\nName=SebType\n'; [[ -n $inherits ]] && printf 'Inherits=%s\n' "$inherits"; } > "$t/index.theme"
     printf '[General]\nColorScheme=BreezeDark\n\n[Icons]\nTheme=SebType\n' > "$g"
     want=$inherits
     if [[ $inherits == picked ]]; then sed -i 's/^Theme=SebType/Theme=Papirus/' "$g"; want=Papirus; fi
