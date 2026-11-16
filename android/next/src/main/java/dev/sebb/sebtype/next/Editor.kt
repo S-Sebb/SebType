@@ -62,10 +62,10 @@ class Editor(private val ime: InputMethodService) {
     fun compose(text: CharSequence) {
         val ic = ic ?: return
         if (text.isEmpty() && !composing) return
-        // A new composing text starts at the cursor; its update tells where, later.
-        if (!composing) composeStart = selStart
+        if (!composing) composeStart = selStart // a new composing text starts at the cursor
         ic.setComposingText(text, 1)
         composing = text.isNotEmpty()
+        if (composeStart >= 0) expect(composeStart + text.length)
     }
 
     /** Leaves the composing text in the field as typed text. */
@@ -197,30 +197,26 @@ class Editor(private val ime: InputMethodService) {
         selStart = at
         selEnd = at
         expected.addLast(at)
-        if (expected.size > 8) expected.removeFirst()
+        if (expected.size > 64) expected.removeFirst()
     }
 
     /**
-     * The field's selection changed; true when the user moved it (or the app changed the text): away from
-     * the composing text, or to a place none of our recent edits put it.
+     * The field's selection changed; true when the user moved it (or the app changed the text): out of the
+     * composing text, or to a place none of our recent edits put it. Updates come late, in order: one for
+     * the last letter of a word can arrive after the word's commit, while the next word already composes.
      */
     fun selectionChanged(newStart: Int, newEnd: Int, candidatesStart: Int, candidatesEnd: Int): Boolean {
-        if (composing && candidatesStart >= 0) {
-            composeStart = candidatesStart
-            selStart = newStart
-            selEnd = newEnd
-            return newStart < candidatesStart || newEnd > candidatesEnd
-        }
-        // One of our own edits, its update arriving after later ones (a commit's, while the next word is
-        // already composing): the selection we track already follows those.
-        val ours = if (newStart == newEnd) expected.indexOf(newStart) else -1
+        val out = candidatesStart >= 0 && (newStart < candidatesStart || newEnd > candidatesEnd)
+        val ours = if (!out && newStart == newEnd) expected.indexOf(newStart) else -1
         if (ours >= 0) {
-            repeat(ours) { expected.removeFirst() }
+            repeat(ours) { expected.removeFirst() } // the edits before it were reported already
             return false
         }
         selStart = newStart
         selEnd = newEnd
-        return true
+        if (composing && candidatesStart >= 0) composeStart = candidatesStart
+        // A field that gave no cursor at the start: our composing text is where it says.
+        return out || !(composing && candidatesStart >= 0 && expected.isEmpty())
     }
 
     fun beginBatch() = ic?.beginBatchEdit()
