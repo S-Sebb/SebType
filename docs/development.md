@@ -149,6 +149,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `pc/linux/test-setup-ime.sh` | `setup-ime.sh` on a fake fresh account, and SebType's input method in private Fcitx5s ([pc/linux/README.md](../pc/linux/README.md)) |
 | `pc/configurator/test.sh` | The Configurator in nested sessions |
 | `pc/windows/setup/test-tcsbackend.sh` | SebType's installer and input methods on TCSBackEnd ([pc/windows/README.md](../pc/windows/README.md)) |
+| `pc/windows/setup/test-unsynced.ps1` | Uninstall and language removal keep the words their sync couldn't send, on a Windows PC ([pc/windows/README.md](../pc/windows/README.md)) |
 
 Each writes one line per check to a results file under `~/scratch/SebType/<issue>/`, and its logs next to it.
 

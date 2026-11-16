@@ -159,6 +159,9 @@ ja.Undoing=元のキーボードに戻しています…
 en.Failed=Something went wrong while setting up SebType (step "%1", code %2).%n%nThe details are in %3. Running Setup again usually fixes it.
 zh.Failed=安装 SebType 时出了点问题（步骤“%1”，代码 %2）。%n%n详情见 %3。再运行一次安装程序通常就好了。
 ja.Failed=SebType のセットアップ中に問題が起きました（手順「%1」、コード %2）。%n%n詳しくは %3 を見てください。もう一度セットアップを実行すると、たいてい直ります。
+en.Kept=SebType couldn't send the words it learned on this PC to your sync server, so it kept them in %1.%n%nThey come back when you set up SebType with that language again.
+zh.Kept=SebType 没能把它在这台电脑上学会的词发到你的同步服务器，所以把它们留在了 %1。%n%n下次装 SebType 时选上这个语言，它们就会回来。
+ja.Kept=この PC で SebType が覚えた言葉を同期サーバーに送れなかったので、%1 に残しました。%n%nもう一度その言語で SebType をセットアップすると戻ります。
 
 [Tasks]
 Name: "en"; Description: "{cm:English}"; GroupDescription: "{cm:Languages}"
@@ -265,7 +268,10 @@ begin
     Ok := ExecAsOriginalUser('powershell.exe', PowerShell(Arguments), '', SW_HIDE, ewWaitUntilTerminated, Code)
   else
     Ok := Exec('powershell.exe', PowerShell(Arguments), '', SW_HIDE, ewWaitUntilTerminated, Code);
-  if not Ok or (Code <> 0) then
+  // 2: done, but learned words the sync couldn't send were kept rather than deleted (setup.ps1, #271).
+  if Ok and (Code = 2) then
+    SuppressibleMsgBox(FmtMessage(CustomMessage('Kept'), ['%LOCALAPPDATA%\SebType\unsynced']), mbInformation, MB_OK, IDOK)
+  else if not Ok or (Code <> 0) then
   begin
     Log(Format('setup.ps1 %s failed: %d', [Arguments, Code]));
     FailCode := 1;

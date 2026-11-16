@@ -328,7 +328,7 @@ fn sync_job(
         let shown = s.clone();
         let _ = weak.upgrade_in_event_loop(move |app| show_sync(&app, &shown, shown.enabled));
         if s.enabled {
-            let s = sync::run(false);
+            let s = sync::run(false).unwrap_or_else(|s| s);
             let _ = weak.upgrade_in_event_loop(move |app| show_sync(&app, &s, false));
         }
     });
@@ -336,9 +336,9 @@ fn sync_job(
 
 fn main() -> Result<(), slint::PlatformError> {
     // The schedule's sync (platform::schedule), and Setup's before it deletes learned words: no window.
+    // Exit 1 when the sync was due and didn't go through: Setup then keeps the words (setup.ps1).
     if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
-        sync::run(a == "--sync-before-removal");
-        return Ok(());
+        std::process::exit(sync::run(a == "--sync-before-removal").map_or(1, |_| 0));
     }
     // For tests without a window (pc/windows/setup/test.ps1): the server, username and password on
     // stdin, one per line, saved as Server and login's Save does.
