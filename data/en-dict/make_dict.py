@@ -35,7 +35,7 @@ CANDIDATES = 200_000  # wordfreq ranks considered for new words
 # New two-letter words are mostly abbreviations and pieces of words (th, st, ll) that would stop
 # autocorrect from fixing them; "ai" is the modern word among them.
 SHORT_WORDS = {"ai"}
-FRAGMENTS = {"n't"}
+FRAGMENTS = {"n't"}  # what wordfreq's tokenizer leaves of contractions
 # Checked one by one: no frequent word is one neighbouring key away (so not "ty" or "jk"), except "i" from "u",
 # and a space never corrects a single letter. "ok" and "btw" are only in the base as "OK" and "BTW".
 TEXTING_WORDS = [
@@ -66,7 +66,7 @@ TEXTING_WORDS = [
     "lmk",
     "smh",
 ]
-TEXTING_MAX = 90  # about the 85th percentile of the list's weights  # what wordfreq's tokenizer leaves of contractions
+TEXTING_MAX = 90  # about the 85th percentile of the list's weights
 ATTRS = {
     "date": "1762646400",
     "dictionary": "main:en",
