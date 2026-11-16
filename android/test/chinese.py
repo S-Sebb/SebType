@@ -269,12 +269,27 @@ def open_field(kind=None):
     number_row = kind in ("password", "visible-password", "email")
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
-    adb("shell", "ime", "set", IME)
     # A new popup each time (new task, clear task): one left open would get the intent without showing
     # the keyboard again.
     extra = ["--es", "kind", kind] if kind else []
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
-    wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+
+    def show():
+        adb("shell", "ime", "set", IME)
+        adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
+
+    def up():
+        # A force-stop of the keyboard makes Android choose its default keyboard, and that can land
+        # just after `ime set`: SebType is then never started again (#258). Choose it again.
+        if (
+            adb("shell", "settings", "get", "secure", "default_input_method").strip()
+            != IME
+        ):
+            show()
+            return None
+        return keys(nodes())
+
+    show()
+    wait_for("the keyboard", up, KEYBOARD_WAIT)
 
 
 def candidates_for(text, expand=False, kind=None):
@@ -345,8 +360,7 @@ passed = {}
 def wanted():
     """With SEBTYPE_CHECKS (comma-separated name prefixes, as android/test/emulator.sh takes it), the
     checks named there and those they need; None runs all."""
-    prefixes = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
-    if not prefixes:
+    if not PREFIXES:
         return None
     needs = {}
     with open(__file__, encoding="utf-8") as f:
@@ -356,7 +370,7 @@ def wanted():
                 needs[node.args[0].value] = (
                     [e.value for e in kw["needs"].elts] if "needs" in kw else []
                 )
-    todo = [n for n in needs if any(n.startswith(c) for c in prefixes)]
+    todo = [n for n in needs if any(n.startswith(c) for c in PREFIXES)]
     run = set()
     while todo:
         n = todo.pop()
@@ -366,6 +380,10 @@ def wanted():
     return run
 
 
+PREFIXES = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
+# SEBTYPE_REPEAT=N runs each check SEBTYPE_CHECKS names (not those it needs) N times, a line per run:
+# for a check that fails only now and then (#258).
+REPEAT = int(os.environ.get("SEBTYPE_REPEAT") or 1)
 WANTED = wanted()
 if WANTED == set():  # none of the named checks is here
     sys.exit()
@@ -381,24 +399,28 @@ def check(name, fn, needs=()):
     if missing:
         result("SKIP", name, f"needs {', '.join(missing)}")
         return
-    try:
-        detail = fn()
-        passed[name] = True
-        result("PASS", name, detail or "")
-    # Each check reports on its own; the next ones still run.
-    except (
-        Fail,
-        RuntimeError,
-        subprocess.SubprocessError,
-        ET.ParseError,
-        LookupError,
-        ValueError,
-        StopIteration,
-    ) as e:
-        result("FAIL", name, str(e))
-        # The system log since the last restart, for what the app was doing (a hang shows its threads here).
-        with open(os.path.join(logdir, f"{name}.logcat"), "w") as f:
-            f.write(adb("logcat", "-d", check=False))
+    runs = REPEAT if any(name.startswith(c) for c in PREFIXES) else 1
+    for run in range(1, runs + 1):
+        of = f" (run {run}/{runs})" if runs > 1 else ""
+        try:
+            detail = fn()
+            passed[name] = True
+            result("PASS", name, (detail or "") + of)
+        # Each check reports on its own; the next ones still run.
+        except (
+            Fail,
+            RuntimeError,
+            subprocess.SubprocessError,
+            ET.ParseError,
+            LookupError,
+            ValueError,
+            StopIteration,
+        ) as e:
+            result("FAIL", name, str(e) + of)
+            # The system log since the last restart, for what the app was doing (a hang shows its threads here).
+            suffix = f"-{run}" if runs > 1 else ""
+            with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
+                f.write(adb("logcat", "-d", check=False))
 
 
 def fresh_install():

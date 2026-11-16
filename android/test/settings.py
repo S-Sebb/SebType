@@ -47,6 +47,9 @@ serial, results_path, logdir = sys.argv[1:4]
 # Only the checks whose names start with one of SEBTYPE_CHECKS (comma-separated, as emulator.sh takes it).
 CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 # Timing checks run only in the final performance run (#54, Decisions #2 2026-11-11): PERF_RUN=1.
+# SEBTYPE_REPEAT=N runs each check SEBTYPE_CHECKS names (not those it needs) N times, a line per run:
+# for a check that fails only now and then (#258).
+REPEAT = int(os.environ.get("SEBTYPE_REPEAT") or 1)
 TIMING = {"settings-smooth-scrolling"}
 PKG = os.environ.get("SEBTYPE_PACKAGE") or "dev.sebb.sebtype"
 # The new keyboard (android/next, #191 stage 3): only the incognito checks run; it has no settings app yet.
@@ -248,14 +251,35 @@ def open_field(kind=None, clip=None):
     field app copies to the clipboard a moment after it opens (android/perf/PerfField.java)."""
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
-    adb("shell", "ime", "set", IME)
-    # A slow emulator can show "System UI isn't responding" over everything; this closes it.
-    adb("shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS")
     extra = (["--es", "kind", kind] if kind else []) + (
         ["--es", "clip", clip] if clip else []
     )
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
-    wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+
+    def show():
+        adb("shell", "ime", "set", IME)
+        # A slow emulator can show "System UI isn't responding" over everything; this closes it.
+        adb(
+            "shell",
+            "am",
+            "broadcast",
+            "-a",
+            "android.intent.action.CLOSE_SYSTEM_DIALOGS",
+        )
+        adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
+
+    def up():
+        # A force-stop of the keyboard makes Android choose its default keyboard, and that can land
+        # just after `ime set`: SebType is then never started again (#258). Choose it again.
+        if (
+            adb("shell", "settings", "get", "secure", "default_input_method").strip()
+            != IME
+        ):
+            show()
+            return None
+        return keys(nodes())
+
+    show()
+    wait_for("the keyboard", up, KEYBOARD_WAIT)
 
 
 def candidates_for(text, expand=False, kind=None):
@@ -469,24 +493,28 @@ def check(name, fn, needs=()):
         if CHECKS:  # named, so say why it didn't run
             result("SKIP", name, "timing check, runs only with PERF_RUN=1 (#54)")
         return
-    try:
-        detail = fn()
-        passed.add(name)
-        result("PASS", name, detail or "")
-    except Skip as e:
-        result("SKIP", name, str(e))
-    except (
-        Fail,
-        RuntimeError,
-        subprocess.SubprocessError,
-        ET.ParseError,
-        LookupError,
-        ValueError,
-    ) as e:
-        result("FAIL", name, str(e))
-        # The system log, for what the keyboard was doing (a keyboard that never came up shows why here).
-        with open(os.path.join(logdir, f"{name}.logcat"), "w") as f:
-            f.write(adb("logcat", "-d", check=False))
+    runs = REPEAT if any(name.startswith(c) for c in CHECKS) else 1
+    for run in range(1, runs + 1):
+        of = f" (run {run}/{runs})" if runs > 1 else ""
+        try:
+            detail = fn()
+            passed.add(name)
+            result("PASS", name, (detail or "") + of)
+        except Skip as e:
+            result("SKIP", name, str(e) + of)
+        except (
+            Fail,
+            RuntimeError,
+            subprocess.SubprocessError,
+            ET.ParseError,
+            LookupError,
+            ValueError,
+        ) as e:
+            result("FAIL", name, str(e) + of)
+            # The system log, for what the keyboard was doing (a keyboard that never came up shows why here).
+            suffix = f"-{run}" if runs > 1 else ""
+            with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
+                f.write(adb("logcat", "-d", check=False))
 
 
 # Every screen: how to get there from home, and a text only it shows.
