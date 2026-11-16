@@ -233,8 +233,10 @@ namespace SebType {
     public int GetEndACP(out int acp) { acp = Text.Length; return (lockFlags & TS_LF_READ) == 0 ? TS_E_NOLOCK : S_OK; }
     public int GetActiveView(out uint view) { view = 1; return S_OK; }
     public int GetACPFromPoint(uint view, IntPtr pt, uint flags, out int acp) { acp = 0; return S_OK; }
+    // The text's place on the screen, where the input method puts its window (test-paging.ps1 moves it).
+    public static int CaretX = 20, CaretY = 20;
     public int GetTextExt(uint view, int start, int end, out RECT rc, out int clipped) {
-      rc = new RECT { left = 20, top = 20, right = 30, bottom = 40 }; clipped = 0; return S_OK;
+      rc = new RECT { left = CaretX, top = CaretY, right = CaretX + 10, bottom = CaretY + 20 }; clipped = 0; return S_OK;
     }
     public int GetScreenExt(uint view, out RECT rc) { rc = new RECT { right = 640, bottom = 200 }; return S_OK; }
     public int GetWnd(uint view, out IntPtr hwnd) { hwnd = Hwnd; return S_OK; }
