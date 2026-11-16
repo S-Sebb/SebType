@@ -484,6 +484,9 @@ def check(name, fn, needs=()):
         ValueError,
     ) as e:
         result("FAIL", name, str(e))
+        # The system log, for what the keyboard was doing (a keyboard that never came up shows why here).
+        with open(os.path.join(logdir, f"{name}.logcat"), "w") as f:
+            f.write(adb("logcat", "-d", check=False))
 
 
 # Every screen: how to get there from home, and a text only it shows.
