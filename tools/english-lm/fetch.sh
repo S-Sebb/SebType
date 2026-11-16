@@ -36,6 +36,20 @@ hf dolly databricks/databricks-dolly-15k bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1
   { mkdir -p nus-sms && curl -sfo nus-sms/en.zip \
       https://raw.githubusercontent.com/kite1988/nus-sms-corpus/bf0a365170d324e61e4025edf363d400f1edd1a6/smsCorpus_en_xml_2015.03.09_all.zip &&
     unzip -oq nus-sms/en.zip -d nus-sms && rm nus-sms/en.zip; } &
+# Blended Skill Talk as Hugging Face's parquet copy of ParlAI's release (its licence is in ParlAI, SOURCES.md).
+hf bst ParlAI/blended_skill_talk d7b0093243439fa5f0cd9663125cc47575ced2ea --include 'data/*.parquet' &
+[[ -s topical-chat/train.json ]] ||
+  { mkdir -p topical-chat && for f in train valid_freq valid_rare test_freq test_rare; do
+      curl -sfo topical-chat/$f.json \
+        https://raw.githubusercontent.com/alexa/Topical-Chat/7c939229cbcf6f55f6977b341a5a2f2fe982d53f/conversations/$f.json || exit 1
+    done; } &
+# Tatoeba replaces its export every week and keeps no old ones: the checked export is kept in the cache.
+tatoeba=$cache/english-lm/tatoeba-eng_sentences-20261114.tsv.bz2
+[[ -s $tatoeba ]] ||
+  { curl -sfo "$tatoeba.part" https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2 &&
+    echo "3b5b3ecfcac5037b09f81ef048fa16fedc4d24838db5b6fbeedca1dfab374cbf  $tatoeba.part" | sha256sum -c --status && mv "$tatoeba.part" "$tatoeba" ||
+    { echo "fetch: Tatoeba's export changed since 2026-11-14; check its licence and pin the new one" >&2; exit 1; }; }
+ln -sf "$tatoeba" tatoeba-eng_sentences.tsv.bz2
 [[ -s enwikinews-20261101.xml.bz2 ]] ||
   { curl -sfo wikinews.part https://dumps.wikimedia.org/enwikinews/20261101/enwikinews-20261101-pages-articles.xml.bz2 &&
     mv wikinews.part enwikinews-20261101.xml.bz2; } &
