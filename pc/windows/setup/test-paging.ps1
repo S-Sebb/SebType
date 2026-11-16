@@ -13,9 +13,13 @@ per check in <Out>\paging-results.txt, pictures <Out>\*.png; exit 0 only if all 
 
 -Colours instead takes pictures of the system look in Windows' light mode, dark mode and the high-contrast
 theme Night sky, across and down, and of Picnic for comparison (#279): the first page (faint ‹), the second
-and Japanese with Mozc's comments. Light/dark mode and high contrast go back as they were.
+and Japanese with Mozc's comments. Light/dark mode and high contrast go back as they were. It makes no input
+of its own, as test-focus-out.ps1 (#277): keys go to TSF's keystroke manager, so a screen that is off stays
+off. -Watch <file> is test-focus-out.ps1 -WatchTo's log of the display's state: the run stops once it shows
+the display on. -Trial needs no SebType: each mode switch, one key and a picture of the field, then the
+settings restored, to see that none of it lights the display and that pictures work with it off.
 #>
-param([string]$Out = "$env:USERPROFILE\scratch\SebType\276\screens", [switch]$Colours)
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\276\screens", [switch]$Colours, [switch]$Trial, [string]$Watch)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -29,7 +33,7 @@ function Check($name, [scriptblock]$body) {
   try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
 }
 
-$missing = if (-not (Test-Path "$env:ProgramFiles\SebType\sebtype.dll")) { 'SebType is not installed' }
+$missing = if (-not $Trial -and -not (Test-Path "$env:ProgramFiles\SebType\sebtype.dll")) { 'SebType is not installed' }
 elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'runs in session 0: start it in the desktop session' }
 elseif (-not (Test-Path "$root\TsfHost.cs")) { "no TsfHost.cs beside $PSCommandPath" }
 if ($missing) { Write-Host "BLOCKED preflight: $missing"; exit 1 }
@@ -70,6 +74,15 @@ namespace SebTypePaging {
       }, IntPtr.Zero);
       return found;
     }
+    // Whether a picture of the screen there shows anything (the display off may leave it blank).
+    public static bool Blank(int x, int y, int w, int h) {
+      using (var bmp = new Bitmap(w, h)) {
+        using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(x, y, 0, 0, bmp.Size);
+        var first = bmp.GetPixel(0, 0);
+        for (int i = 0; i < w; i += 4) for (int j = 0; j < h; j += 4) if (bmp.GetPixel(i, j) != first) return false;
+        return true;
+      }
+    }
     public static float Scale(IntPtr h) { return GetDpiForWindow(h) / 96f; }
     public static void Key(byte vk) { keybd_event(vk, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 2, UIntPtr.Zero); }
     public static void Click(int x, int y) { SetCursorPos(x, y); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
@@ -98,8 +111,10 @@ $null = $in::SetProcessDpiAwarenessContext([IntPtr]-4)
 $conf = "$env:APPDATA\SebType\sebtype.conf"
 $confBefore = if (Test-Path $conf) { Get-Content -Raw $conf }
 
-function Keys { foreach ($k in $args) { $in::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
+function Keys { foreach ($k in $args) { Dark; $(if ($Colours) { $tsf } else { $in })::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
 function TypeText($s) { $chars = @($s.ToCharArray() | ForEach-Object { "$_" }); Keys @chars }
+# With -Watch: stop once the display has been on.
+function Dark { if ($Watch -and (Get-Content $Watch -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch ' 0$' })) { throw "the display came on: $((Get-Content $Watch) -join ', ')" } }
 function Win { $h = $in::Window(); if ($h -eq [IntPtr]::Zero) { throw "no candidate window (the field holds '$($tsf::Text())', active $($tsf::Active()))" }; $h }
 function Rect($h) { $r = New-Object SebTypePaging.Input+RECT; $null = $in::GetWindowRect($h, [ref]$r); $r }
 function Size($h) { $r = Rect $h; "$($r.R - $r.L)x$($r.B - $r.T)" }
@@ -143,9 +158,19 @@ if ($Colours) {
     if (-not $on) { Set-ItemProperty $personalize AppsUseLightTheme ([int]($mode -eq 'light')) -Type DWord }
     if ((($in::HighContrast().flags -band 1) -ne 0) -ne $on) { throw "high contrast did not turn $(if ($on) { 'on' } else { 'off' })" }
   }
+  $tsf::NoInput = $true
   $tsf::Start()
   try {
-    foreach ($m in @('light', 'dark', 'high-contrast' | ForEach-Object { , @('system', $_) }) + , @('picnic', 'light')) {
+    if ($Trial) {
+      Check 'trial' {
+        Dark; Mode dark; Dark; Mode light; Dark; Mode high-contrast; Dark; Mode light; Dark
+        if (-not $tsf::Focus()) { throw "the field did not come to the front: $($tsf::FocusState())" }
+        Keys a; $tsf::Settle(500)
+        if ($in::Blank(0, 0, 640, 200)) { throw 'the picture of the field is blank' }
+        "modes switched, one key, the field's picture not blank"
+      }
+    }
+    foreach ($m in $(if ($Trial) { @() } else { @('light', 'dark', 'high-contrast' | ForEach-Object { , @('system', $_) }) + , @('picnic', 'light') })) {
       $look, $mode = $m
       foreach ($o in 'across', 'down') {
         $tag = "$look-$(if ($look -eq 'system') { "$mode-" })$o"
