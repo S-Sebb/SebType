@@ -59,6 +59,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
 
  private:
   fcitx::InputMethodEntry entry() const;
+  // Tells the core whether what is typed in ic may be learned.
+  void followField(fcitx::InputContext *ic);
 
   fcitx::Instance *instance_;
   std::unique_ptr<Core> core_;

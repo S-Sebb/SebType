@@ -130,6 +130,7 @@ Reply handle(const Request &q) {
         core->selectLanguage(q.lang);
         core->takeNotice(true);
       }
+      if (core->fieldLearning() != q.learning) core->setField(Field::Text, q.learning);
       taken = core->key(q.key);
       break;
     case Op::Select: core->select(q.index); break;

@@ -13,7 +13,7 @@
 namespace sebtype::win {
 
 enum class Op : uint8_t {
-  Key,       // key, lang (the app's): true in reply.taken when the core took it
+  Key,       // key, lang (the app's), learning (the field's): true in reply.taken when the core took it
   Select,    // index: a click on a candidate of the page
   Page,      // next: the window's page arrows
   FocusIn,   // lang: focus came to a text field of an app in this language
@@ -35,6 +35,7 @@ struct Request {
   int32_t index = 0;
   bool next = false;
   Lang lang = Lang::English;
+  bool learning = true;  // false in a private field (a browser's private window): nothing typed is learned
 };
 
 struct Reply {
@@ -96,7 +97,7 @@ inline std::string encode(const Request &r) {
   Writer w;
   w.u32(static_cast<uint32_t>(r.op));
   w.u32(r.key.sym), w.u32(r.key.mods), w.b(r.key.release);
-  w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang));
+  w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang)), w.b(r.learning);
   return w.out;
 }
 
@@ -104,7 +105,7 @@ inline bool decode(const std::string &in, Request &r) {
   Reader rd(in);
   r.op = static_cast<Op>(rd.u32());
   r.key.sym = rd.u32(), r.key.mods = rd.u32(), r.key.release = rd.b();
-  r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32());
+  r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32()), r.learning = rd.b();
   return rd.ok();
 }
 

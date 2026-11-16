@@ -263,7 +263,7 @@ class Mozc final : public Engine {
   void applySettings(const Settings &s, bool learning) override {
     learning_ = learning;
     if (s.halfWidthSpace) halfWidthSpace_ = *s.halfWidthSpace;
-    if (touch_ && session_) setConfig();
+    if (session_) touch_ ? setConfig() : setLearningLevel();
   }
 
   void forget() override {
@@ -351,6 +351,32 @@ class Mozc final : public Engine {
     // While incognito Mozc still suggests from its history but adds nothing to it (#31, #158).
     c.set_history_learning_level(learning_ ? C::DEFAULT_HISTORY : C::READ_ONLY);
     c.mutable_general_config()->set_upload_usage_stats(false);
+    setConfig(in);
+  }
+
+  // The PCs keep Mozc's own settings in its config1.db, where the Configurator turns learning off (NO_HISTORY).
+  // A field that must not learn (a private window, #270) makes it READ_ONLY, so Mozc still suggests from its
+  // history, until a field that may learn. The Configurator never writes READ_ONLY: one left there (SebType
+  // stopped in a private field) is put back too.
+  void setLearningLevel() {
+    using C = mozc::config::Config;
+    Input in;
+    in.set_type(Input::GET_CONFIG);
+    Output out;
+    if (!mozc_->call(in, out) || !out.has_config()) return;
+    const C::HistoryLearningLevel level = out.config().history_learning_level();
+    const C::HistoryLearningLevel want = learning_ ? C::DEFAULT_HISTORY : C::READ_ONLY;
+    if (level == C::NO_HISTORY || level == want) return;
+    in.set_type(Input::SET_CONFIG);
+    *in.mutable_config() = out.config();
+    in.mutable_config()->set_history_learning_level(want);
+    setConfig(in);
+  }
+
+  // A new config reloads the learned words from their file (UserHistoryPredictor::Reload), so the ones not
+  // saved yet are saved first.
+  void setConfig(const Input &in) {
+    save();
     Output out;
     mozc_->call(in, out);
   }
@@ -393,6 +419,7 @@ class Mozc final : public Engine {
       switchMode();
       return true;
     }
+    setLearningLevel();
     SessionCommand on;  // Japanese starts in あ
     on.set_type(SessionCommand::TURN_ON_IME);
     on.set_composition_mode(mozc::commands::HIRAGANA);

@@ -483,6 +483,39 @@ TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
   EXPECT_FALSE(lists("zorbly"));
 }
 
+// #270: a private field (a private browser window on the PCs, incognito on the phone), as every frontend tells
+// the core, uses the words learned before but learns no new ones; a field that may learn learns again.
+TEST_F(EnglishTest, APrivateFieldKeepsLearnedWordsAndLearnsNoNewOnes) {
+  Core core([this](Lang lang) { return lang == Lang::English ? std::move(en) : nullptr; });
+  auto typeIn = [&](const std::string &s) {
+    core.setContext("");
+    for (char c : s) core.key({static_cast<uint32_t>(c), 0, false});
+  };
+  auto listed = [&](const std::string &word) {
+    const auto all = core.candidates(20);
+    const auto at = std::ranges::find(all, word, &Candidate::text);
+    return at == all.end() ? -1 : int(at - all.begin());
+  };
+  auto pick = [&](const std::string &word) {
+    typeIn(word);
+    core.selectCandidate(listed(word));
+    EXPECT_EQ(core.takeCommit(), word + " ");
+  };
+  auto suggests = [&](const std::string &typed, const std::string &word) {
+    typeIn(typed);
+    return listed(word) >= 0;
+  };
+  pick("zorbly");
+  core.setField(Field::Text, false);
+  EXPECT_FALSE(core.fieldLearning());
+  EXPECT_TRUE(suggests("zorbl", "zorbly"));
+  pick("quoxtil");
+  EXPECT_FALSE(suggests("quoxti", "quoxtil"));
+  core.setField(Field::Text, true);
+  pick("quoxtil");
+  EXPECT_TRUE(suggests("quoxti", "quoxtil"));
+}
+
 // #254: an update from today's app brings its learned words (made up: "zorbleq", learned there by a test run).
 TEST_F(EnglishTest, TodaysLearnedWordsAreTakenInOnce) {
   en.reset();
