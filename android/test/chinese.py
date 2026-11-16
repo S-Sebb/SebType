@@ -1396,6 +1396,11 @@ def update_from_futo_app():
         adb("logcat", "-c")
         adb("install", "-r", update_apk, timeout=300)
         as_app(OLD_PKG, True)
+        wait_for(
+            "the update's keyboard to be listed",
+            lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+            30,
+        )
         # The old keyboard's service is gone: Android drops it from the enabled keyboards.
         kept = IME in adb("shell", "ime", "list", "-s")
         adb("shell", "ime", "enable", IME)
