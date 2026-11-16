@@ -1,5 +1,8 @@
 package dev.sebb.sebtype.next
 
+import dev.sebb.sebtype.next.data.PersonalWords
+import dev.sebb.sebtype.next.data.Prefs
+import dev.sebb.sebtype.next.sync.Sync
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -146,12 +149,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keyboard.enter = kind.enter
         refresh()
         autoShift()
+        Sync.onKeyboardShown()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         Engines.inUse(lang, false)
         Engines.saveJapanese()
+        Sync.onKeyboardHidden(this)
     }
 
     override fun onFinishInput() {
@@ -197,6 +202,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             CHINESE -> Engines.prepareChinese(this)
             JAPANESE -> {
                 katakana = false
+                // Words added elsewhere while Mozc was stopped (Android's settings) reach it as it starts (#97).
+                PersonalWords.refreshMozc(this, starting = true)
                 Engines.prepareJapanese(this)
             }
         }
@@ -306,6 +313,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             editor.beginBatch()
             if (st.deleteBefore > 0 || st.deleteAfter > 0) editor.delete(st.deleteBefore, st.deleteAfter)
             if (st.commit.isNotEmpty()) editor.commit(st.commit)
+            if (st.commit.isNotEmpty() && lang == CHINESE) Sync.onChineseCommit(this)
             if (st.commitCursor != 0) editor.moveCursor(st.commitCursor)
             if (lang == JAPANESE) editor.compose(composition(st))
             editor.endBatch()
@@ -333,7 +341,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         if (!views) return
         val code = when (lang) { CHINESE -> "zh"; JAPANESE -> "ja"; else -> "en" }
         val layout = Layout.load(this, kind.pad ?: page.file, code)
-        val numberRow = if (kind.numberRow && kind.pad == null && page == Page.LETTERS) Layout.load(this, "numbers", code) else null
+        val numberRow = if ((kind.numberRow || Prefs[Prefs.NUMBER_ROW]) && kind.pad == null && page == Page.LETTERS) Layout.load(this, "numbers", code) else null
         keyboard.setPage(layout, numberRow, if (lang == ENGLISH) "$" else "¥")
         keyboard.spaceLabel = when (lang) { CHINESE -> "中文"; JAPANESE -> "日本語"; else -> "English" }
         if (lang == JAPANESE) {

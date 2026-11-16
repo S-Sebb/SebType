@@ -466,6 +466,21 @@ TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
   EXPECT_FALSE(lists("zorbly"));
 }
 
+// #254: an update from today's app brings its learned words (made up: "zorbleq", learned there by a test run).
+TEST_F(EnglishTest, TodaysLearnedWordsAreTakenInOnce) {
+  en.reset();
+  const auto legacy = std::filesystem::path(EN_USER_DIR) / "UserHistoryDictionary.en_US.dict";
+  std::filesystem::copy(EN_LEGACY_HISTORY, legacy);
+  start("");
+  type("zorbl");
+  EXPECT_TRUE(lists("zorbleq")) << testing::PrintToString(list());
+  EXPECT_FALSE(std::filesystem::exists(legacy));
+  // Kept in the engine's own learned words from then on.
+  start("");
+  type("zorbl");
+  EXPECT_TRUE(lists("zorbleq"));
+}
+
 TEST_F(EnglishTest, OffensiveWordsAreNeverSuggestedOrLearned) {
   type("fuc");
   EXPECT_FALSE(lists("fuck")) << testing::PrintToString(list());

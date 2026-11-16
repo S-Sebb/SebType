@@ -21,6 +21,7 @@ import ast
 import datetime
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -35,7 +36,6 @@ IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.Latin
 FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
 # Checks the new keyboard can't pass yet, and why.
 NEXT_SKIPS = {
-    "ja-personal-word-after-restart": "Android's user dictionary reaches Mozc in stage 5",
     "en-model-waits-for-letter": "English's model comes in stage 2",
 }
 # The new keyboard's space bar, as its accessibility label reads in each system language.
@@ -72,7 +72,8 @@ def adb(*args, timeout=120, check=True):
 
 
 def root(cmd):
-    return adb("shell", f"su 0 {cmd}")
+    # Through sh -c: the whole of cmd runs as root, not only its first command.
+    return adb("shell", f"su 0 sh -c {shlex.quote(cmd)}")
 
 
 def external_files():
@@ -1242,7 +1243,9 @@ if NEXT:
     check("en-picked-suggestion-period", lambda: None)
     check("en-futo-default-migrates", lambda: None)
 
-if main_apk:
+if (
+    main_apk and not NEXT
+):  # the new keyboard's update from main is update-from-futo-app's
     check("main-learns", main_learns)
     check("update-from-main", update_from_main, needs=["main-learns"])
     check("update-from-main-moved", moved_from_external, needs=["update-from-main"])
@@ -1256,6 +1259,205 @@ if main_apk:
         expect_first("ranh", "然后"),
         needs=["update-from-main"],
     )
-elif WANTED is None or "update-from-main" in WANTED:
+elif not NEXT and (WANTED is None or "update-from-main" in WANTED):
     result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
+# --- An update from today's app (FUTO's, MAIN_APK) to the new keyboard built as dev.sebb.sebtype (#254) ---
+# UPDATE_APK is android/build.sh next-update's APK. Today's app learns a made-up English word, picks
+# lower candidates in 中文 and 日本語 and changes options in its settings (autocorrect, fuzzy pinyin, learning);
+# after the update the new keyboard offers both picks first, English's learned words wait in the English
+# engine's folder (core_test checks that engine takes them in), and the options are kept.
+update_apk = os.environ.get("UPDATE_APK", "")
+OLD_PKG = "dev.sebb.sebtype"
+EN_WORD = "zorbleq"  # made up, so only learning can put it in the history
+JA_CODE = "hashi"
+
+
+def as_app(pkg, new):
+    """Points the helpers at an installed app: today's (FUTO's keyboard) or the new one, in package pkg."""
+    global PKG, NEXT, IME, FRAME_ID, RIME_USER, RIME_SHARED
+    PKG, NEXT = pkg, new
+    # The new keyboard's classes keep their package when it is built as dev.sebb.sebtype, and Android
+    # names that service dev.sebb.sebtype/.next.SebTypeIme: the id `ime list` prints and `ime enable` takes.
+    IME = (
+        (f"{PKG}/.SebTypeIme" if PKG.endswith(".next") else f"{PKG}/.next.SebTypeIme")
+        if NEXT
+        else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+    )
+    FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
+    RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
+    RIME_SHARED = f"/data/user/0/{PKG}/no_backup/rime/shared"
+
+
+def tap_space():
+    left, top, right, bottom = keyboard_frame
+    adb("shell", "input", "tap", str((left + right) // 2), str(row_y(top, bottom, 3)))
+    time.sleep(1)
+
+
+def learn_japanese():
+    """Picks hashi's third candidate; it comes first the next time."""
+    to_japanese()
+    got = candidates_for(JA_CODE)
+    if len(got) < 3:
+        raise Fail(f"{JA_CODE} -> {got}")
+    tap_candidate(got[2])
+    to_japanese()
+    after = candidates_for(JA_CODE)
+    if after[0] != got[2]:
+        raise Fail(f"picked {got[2]} for {JA_CODE}; next {JA_CODE} -> {after[:5]}")
+    return got[2]
+
+
+def row(label, ns):
+    """A settings row's node, or None: a toggle's row reads "Title. " and its subtitle, others the title."""
+    return next(
+        (
+            n
+            for n in ns
+            if n[0] == label
+            or n[0].startswith((label + ".", label + ",", label + "\n"))
+        ),
+        None,
+    )
+
+
+def tap_row(label, timeout=10):
+    n = wait_for(label, lambda: row(label, nodes()), timeout)
+    adb("shell", "input", "tap", str(n[1]), str(n[2]))
+    time.sleep(1)
+
+
+def set_old_options():
+    """Autocorrect off, "z = zh" on and learning off in today's settings, as a user would; returns what it
+    stored, for the log."""
+    settings = f"{OLD_PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
+    for path in (
+        ("Languages", "Autocorrect"),
+        ("Languages", "Emoji suggestions"),
+        ("Languages", "Fuzzy Pinyin", "z = zh"),
+        ("Privacy", "Learn from my typing"),
+    ):
+        adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", settings)
+        for label in path:
+            for _ in range(4):
+                if row(label, nodes()):
+                    break
+                adb("shell", "input", "swipe", "540", "1700", "540", "900", "400")
+                time.sleep(1)
+            tap_row(label)
+    adb("shell", "am", "force-stop", OLD_PKG)
+    data = f"/data/user/0/{OLD_PKG}"
+    return root(
+        f"cat {data}/shared_prefs/*.xml; strings {data}/files/datastore/settings.preferences_pb; cat {data}/files/sebtype.conf"
+    )
+
+
+def old_files(path):
+    return root(f"ls /data/user/0/{OLD_PKG}/{path} 2>/dev/null; true").split()
+
+
+def update_from_futo_app():
+    adb("shell", "ime", "reset", check=False)
+    as_app(OLD_PKG, False)
+    try:
+        for p in (OLD_PKG, "dev.sebb.sebtype.next"):
+            adb("uninstall", p, check=False)
+        adb("install", main_apk, timeout=300)
+        wait_for(
+            "today's app to be listed",
+            lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+            30,
+        )
+        adb("shell", "ime", "enable", IME)
+        adb("logcat", "-c")
+        open_field()
+        tap_globe()  # a fresh install starts in EN
+        wait_set_up()
+        learn_lower_candidate()
+        ja = learn_japanese()
+        # English: a made-up word typed twice and the field closed, so the history saves it.
+        for _ in range(2):
+            open_field()
+            if chip(nodes()):
+                tap_globe()  # 日 -> EN
+            type_keys(EN_WORD)
+            tap_space()
+        adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+        print("today's app stored:\n" + set_old_options())
+        history = "files/UserHistoryDictionary.en_US.dict"
+        if not old_files(history):
+            raise Fail(f"today's app kept no English history in {history}")
+        datastore = f"/data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
+        before = set(root(f"strings {datastore}").split())
+
+        adb("logcat", "-c")
+        adb("install", "-r", update_apk, timeout=300)
+        as_app(OLD_PKG, True)
+        wait_for(
+            "the update's keyboard to be listed",
+            lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+            30,
+        )
+        # The old keyboard's service is gone: Android drops it from the enabled keyboards.
+        kept = IME in adb("shell", "ime", "list", "-s")
+        adb("shell", "ime", "enable", IME)
+        open_field()
+        wait_set_up()
+        moved = old_files("files/english/UserHistoryDictionary.en_US.dict")
+        if old_files(history) or not any(f.endswith(".body") for f in moved):
+            raise Fail(
+                f"English's history not moved: left {old_files(history)}, moved {moved}"
+            )
+        lost = before - set(root(f"strings {datastore}").split())
+        if not before or lost:
+            raise Fail(f"the options' file lost {sorted(lost)[:10]}")
+        stored = root(
+            f"cat /data/user/0/{OLD_PKG}/files/sebtype.conf /data/user/0/{OLD_PKG}/files/rime/user/rime_ice.custom.yaml; "
+            f"strings /data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
+        )
+        print("the new app has:\n" + stored)
+        missing = [
+            o
+            for o, found in (
+                ("learning off", re.search(r"\[Learning\]\s*On=false", stored)),
+                ("z = zh", "derive/^zh/z/" in stored),
+                ("autocorrect off", "pref_key_auto_correction" in stored),
+            )
+            if not found
+        ]
+        if missing:
+            raise Fail(f"options lost in the update: {', '.join(missing)}")
+        to_chinese()  # the update kept EN in use, as today's app was left
+        zh = expect_first("lh", "厉害")()
+        to_japanese()
+        got = candidates_for(JA_CODE)
+        if got[0] != ja:
+            raise Fail(f"after the update {JA_CODE} -> {got[:5]}, not {ja} first")
+        return (
+            f"{zh}; {JA_CODE} -> {got[:3]}; English's history moved ({', '.join(moved)}); options kept;"
+            f" keyboard {'still' if kept else 'no longer'} enabled after the update"
+        )
+    finally:
+        adb("uninstall", OLD_PKG, check=False)
+        # The new keyboard was uninstalled for the update: the checks after this one need it back.
+        adb("install", apk, timeout=300)
+        as_app(os.environ.get("SEBTYPE_PACKAGE") or OLD_PKG, NEXT_RUN)
+        wait_for(
+            "the new keyboard to be listed",
+            lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+            30,
+        )
+        adb("shell", "ime", "enable", IME)
+
+
+NEXT_RUN = NEXT
+if NEXT and main_apk and update_apk:
+    check("update-from-futo-app", update_from_futo_app)
+elif NEXT and (WANTED is None or "update-from-futo-app" in WANTED):
+    result(
+        "SKIP",
+        "update-from-futo-app",
+        "needs MAIN_APK and UPDATE_APK (android/build.sh next-update)",
+    )
+
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

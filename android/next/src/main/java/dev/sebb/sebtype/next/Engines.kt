@@ -252,4 +252,79 @@ object Engines {
 
     /** Saves what 日本語 learned (Mozc in this process saves only when asked). */
     fun saveJapanese() = japanese.execute { if (NativeCore.running(JAPANESE)) NativeCore.save(JAPANESE) }
+
+    // --- For the settings and the sync (#254) ---
+
+    /** Runs [block] on [lang]'s engine thread (English: 中文's), after what is queued there. */
+    fun onThread(lang: Int, block: () -> Unit) = (if (lang == JAPANESE) japanese else worker).execute(block)
+
+    /**
+     * Changes Rime's files with Rime stopped (its own words, forgetting, an import), then sets 中文 up again; a
+     * changed word list ([redeploy]) is compiled. [done] gets on the main thread whether 中文 is ready.
+     */
+    fun whileChineseStopped(context: Context, redeploy: Boolean = false, block: () -> Unit, done: (Boolean) -> Unit = {}) {
+        val app = context.applicationContext
+        worker.execute {
+            setChinese(Chinese.PREPARING)
+            configure(app)
+            NativeCore.stop(CHINESE)
+            try {
+                block()
+                if (redeploy) File(userDir(app), DEPLOYED).delete()
+            } finally {
+                setUpChinese(app)
+            }
+            main.post { done(chinese == Chinese.READY) }
+        }
+    }
+
+    /**
+     * Rime's sync: merges the snapshots in its sync folder (other devices', an import) into the learned words
+     * and writes this phone's own. Blocks until done; false when 中文 was never set up or Rime failed.
+     */
+    fun syncChinese(context: Context): Boolean = worker.submit<Boolean> {
+        val app = context.applicationContext
+        if (!File(sharedDir(app), INSTALLED).isFile) return@submit false
+        configure(app)
+        val wasRunning = NativeCore.running(CHINESE)
+        var ok = NativeCore.start(CHINESE)
+        if (ok) NativeCore.save(CHINESE)
+        val t0 = SystemClock.elapsedRealtime()
+        // The merge runs in Rime's own thread.
+        while (ok && NativeCore.busy(CHINESE)) {
+            if (SystemClock.elapsedRealtime() - t0 > 60_000L) ok = false else Thread.sleep(200)
+        }
+        Log.w(TAG, "Synced 中文's learned words in ${SystemClock.elapsedRealtime() - t0} ms, ${if (ok) "done" else "failed"}")
+        if (!wasRunning) NativeCore.stop(CHINESE)
+        ok
+    }.get()
+
+    fun mozcDir(context: Context) = mozcProfile(context.applicationContext)
+
+    /**
+     * Adds [ini] (sebtype.conf lines, the last of a key winning) to the settings and saves them, on the engine
+     * thread after the keys typed before (#241); [done] runs on the main thread after.
+     */
+    fun changeSettings(context: Context, ini: String, done: () -> Unit = {}) {
+        val app = context.applicationContext
+        NativeCore.post {
+            configure(app)
+            setSettings(settings() + ini)
+            write(confFile(app), settings())
+            main.post(done)
+        }
+    }
+
+    /** sebtype.conf as a whole, for a backup; [replaceSettings] takes one back. */
+    fun settingsFile(context: Context) = confFile(context.applicationContext)
+
+    /** As [changeSettings], with [ini] as the whole of them. */
+    fun replaceSettings(context: Context, ini: String) {
+        val app = context.applicationContext
+        NativeCore.post {
+            configure(app)
+            setSettings(ini)
+            write(confFile(app), settings())
+        }
+    }
 }

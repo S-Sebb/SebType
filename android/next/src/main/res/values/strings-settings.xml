@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings (#41): the five groups and their options. -->
+    <!-- Under SebType on the settings home: its three languages, the same in every locale. -->
+    <string name="sebtype_settings_subtitle" translatable="false">中文 · 日本語 · English</string>
+    <string name="sebtype_settings_languages">Languages</string>
+    <string name="sebtype_settings_autocorrect_on">autocorrect on</string>
+    <string name="sebtype_settings_autocorrect_off">autocorrect off</string>
+    <string name="sebtype_settings_privacy">Privacy</string>
+    <string name="sebtype_settings_learning_on">Learning on</string>
+    <string name="sebtype_settings_learning_off">Learning off</string>
+    <string name="sebtype_settings_clipboard_on">clipboard history on</string>
+    <string name="sebtype_settings_clipboard_off">clipboard history off</string>
+    <string name="sebtype_settings_backup">Sync &amp; backup</string>
+    <string name="sebtype_settings_backup_subtitle">Export and import settings</string>
+    <string name="sebtype_settings_about">About</string>
+    <string name="sebtype_settings_globe_order">Globe order</string>
+    <string name="sebtype_settings_globe_order_tip">The globe key switches between the languages that are on, in this order. Drag ≡ to reorder.</string>
+    <string name="sebtype_settings_drag">Drag to reorder</string>
+    <!-- The language rows in the globe order: the English UI adds the English name. -->
+    <string name="sebtype_settings_globe_zh">中文 Chinese</string>
+    <string name="sebtype_settings_globe_ja">日本語 Japanese</string>
+    <string name="sebtype_settings_zh_engine">rime-ice pinyin</string>
+    <string name="sebtype_settings_ja_engine">Mozc romaji</string>
+    <string name="sebtype_settings_autocorrect">Autocorrect</string>
+    <string name="sebtype_settings_capitalise">Capitalise sentences</string>
+    <string name="sebtype_settings_double_space">Double space types a period</string>
+    <string name="sebtype_settings_emoji_suggestions">Emoji suggestions</string>
+    <string name="sebtype_settings_my_words">My words</string>
+    <string name="sebtype_settings_my_words_en">Personal dictionary</string>
+    <string name="sebtype_settings_my_words_zh">Your own words, first when you type their pinyin</string>
+    <string name="sebtype_settings_my_words_ja">Mozc user dictionary</string>
+    <string name="sebtype_settings_off">Off</string>
+    <string name="sebtype_settings_zh_emoji">Emoji in candidates</string>
+    <string name="sebtype_settings_zh_emoji_subtitle">An emoji next to words that have one</string>
+    <string name="sebtype_settings_zh_punctuation">Full-width punctuation</string>
+    <string name="sebtype_settings_zh_punctuation_subtitle">，。？ instead of , . ?</string>
+    <string name="sebtype_settings_word">Word</string>
+    <string name="sebtype_settings_pinyin">Pinyin</string>
+    <string name="sebtype_settings_no_words">No words yet</string>
+    <string name="sebtype_settings_save">Save</string>
+    <string name="sebtype_settings_delete">Delete</string>
+    <string name="sebtype_settings_feedback">Feedback</string>
+    <string name="sebtype_settings_learn">Learn from my typing</string>
+    <string name="sebtype_settings_learn_subtitle">English, 中文 and 日本語 remember the words you pick</string>
+    <!-- Incognito (#31): the action bar button, the Privacy switch and the action bar badge. -->
+    <string name="sebtype_incognito">Incognito</string>
+    <string name="sebtype_incognito_subtitle">Learns no words and keeps no clipboard history until you turn it off. Password fields and private tabs are always incognito.</string>
+    <string name="sebtype_settings_clipboard">Clipboard history</string>
+    <string name="sebtype_settings_clipboard_keep_history">Keep clipboard history</string>
+    <string name="sebtype_settings_forget">Forget learned words</string>
+    <string name="sebtype_settings_forget_subtitle">Choose a language, then confirm</string>
+    <string name="sebtype_settings_forget_confirm">SebType forgets the words it learned from your typing in this language. Your own words stay.</string>
+    <string name="sebtype_settings_forget_button">Forget</string>
+    <string name="sebtype_settings_forgotten">Learned words forgotten</string>
+    <string name="sebtype_settings_settings_file">Settings file</string>
+    <string name="sebtype_settings_export">Export settings</string>
+    <string name="sebtype_settings_import">Import settings</string>
+    <string name="sebtype_settings_import_subtitle">Restore an exported backup, or bring in word lists, learned words and personal dictionaries.</string>
+    <string name="sebtype_settings_version">Version</string>
+    <string name="sebtype_settings_help">Help and feedback</string>
+    <string name="sebtype_settings_help_subtitle">SebType on GitHub</string>
+    <string name="sebtype_settings_credits">Licence and credits</string>
+    <!-- Clipboard history is left out of a backup unless ticked (#34) -->
+    <string name="sebtype_settings_export_clipboard">Include clipboard history</string>
+    <string name="sebtype_settings_export_subtitle">Back up your settings, learned words, resources and more</string>
+    <!-- Sync of the learned words with the user's own server (#12) -->
+    <string name="sebtype_settings_sync">Sync</string>
+    <string name="sebtype_settings_sync_toggle">Sync learned words and dictionaries</string>
+    <string name="sebtype_settings_sync_off">中文\'s learned words and your Japanese and English dictionaries, with your own server</string>
+    <string name="sebtype_settings_sync_not_yet">Not synced yet</string>
+    <string name="sebtype_settings_sync_syncing">Syncing…</string>
+    <string name="sebtype_settings_sync_synced">Last synced %s</string>
+    <string name="sebtype_settings_sync_offline">Can\'t reach the server. Syncs once it can</string>
+    <string name="sebtype_settings_sync_login_failed">Wrong username or password</string>
+    <string name="sebtype_settings_sync_login">Server and login</string>
+    <string name="sebtype_settings_sync_login_none">Not set</string>
+    <string name="sebtype_settings_sync_server">Server address</string>
+    <string name="sebtype_settings_sync_server_invalid">An https:// address</string>
+    <string name="sebtype_settings_sync_user">Username</string>
+    <string name="sebtype_settings_sync_password">Password</string>
+    <string name="sebtype_settings_sync_delete">Delete learned words and dictionaries on the server</string>
+    <string name="sebtype_settings_sync_delete_subtitle">The learned words and dictionaries on your devices stay</string>
+    <string name="sebtype_settings_sync_delete_confirm">Deletes the learned words and dictionaries of all your devices from the server and turns sync off. The learned words and dictionaries on this phone and your other devices stay. Turning sync on again uploads this phone\'s learned words and dictionaries.</string>
+    <string name="sebtype_settings_sync_delete_button">Delete</string>
+    <string name="sebtype_settings_sync_deleted">Learned words and dictionaries deleted on the server</string>
+    <string name="sebtype_settings_sync_delete_failed">Can\'t reach the server. Nothing was deleted</string>
+    <!-- The new app's own (#254) -->
+    <string name="settings_keyboard">Keyboard</string>
+    <string name="settings_keyboard_subtitle">Number row, sound and vibration</string>
+    <string name="settings_about_subtitle">Version, help, licences</string>
+    <string name="settings_credits_subtitle">rime-ice, Mozc and others</string>
+    <string name="settings_fuzzy">Fuzzy Pinyin</string>
+    <string name="settings_half_width_space">Use half-width space</string>
+    <string name="settings_half_width_space_subtitle">Always use half-width space</string>
+    <string name="settings_try_typing">Try typing here…</string>
+    <string name="settings_number_row">Show number row</string>
+    <string name="settings_number_row_subtitle">A row of numbers above the letters</string>
+    <string name="settings_key_popup">Popup on keypress</string>
+    <string name="settings_vibrate">Vibrate on keypress</string>
+    <string name="settings_sound">Sound on keypress</string>
+    <string name="settings_long_press">Long press duration</string>
+    <string name="settings_long_press_ms">%d ms</string>
+    <string name="settings_add">Add</string>
+    <string name="settings_import_file">Import</string>
+    <string name="settings_file">File</string>
+    <string name="settings_words">Words</string>
+    <string name="settings_reading">Reading</string>
+    <string name="settings_credits_intro">SebType is built on these projects. Thank you to everyone who made them.</string>
+    <string name="settings_credits_tag">Credits</string>
+    <string name="setup_step">Setup · step %1$d of 2</string>
+    <string name="setup_enable_text">Welcome to SebType.\n\nTo get started, turn SebType on in Android\'s list of keyboards.</string>
+    <string name="setup_choose_text">Now choose SebType as the keyboard you type with.</string>
+    <string name="setup_enable">Turn on SebType</string>
+    <string name="setup_choose">Choose SebType</string>
+    <string name="import_backup_subtitle">Replaces this phone\'s settings, learned words and dictionaries</string>
+    <string name="import_as">Import into %s</string>
+    <string name="import_unknown">SebType can\'t read this file</string>
+    <string name="import_done">Imported</string>
+    <string name="import_failed">Import failed</string>
+    <string name="export_done">Settings exported</string>
+    <string name="export_failed">Export failed</string>
+</resources>

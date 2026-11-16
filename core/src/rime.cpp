@@ -233,6 +233,9 @@ class Rime final : public Engine {
   // Saves learned words and merges the other devices' snapshots (Rime's sync, #12).
   void save() override {
     endSession();
+    // The sync is a deployer task, whose module only a maintenance loads: a start from prebuilt tables
+    // runs none, and without it Rime finds no such task and syncs nothing.
+    api_->deployer_initialize(nullptr);
     api_->sync_user_data();
   }
   bool busy() override { return api_->is_maintenance_mode(); }

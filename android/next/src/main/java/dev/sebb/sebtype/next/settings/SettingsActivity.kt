@@ -1,0 +1,205 @@
+package dev.sebb.sebtype.next.settings
+
+import android.content.Context
+import android.database.ContentObserver
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.sebb.sebtype.next.Engines
+import dev.sebb.sebtype.next.R
+import dev.sebb.sebtype.next.data.Prefs
+
+/**
+ * SebType's settings (#41, #254): a home screen of five groups (Languages, Keyboard, Privacy, Sync & backup,
+ * About) and their screens, or the setup wizard while SebType isn't the keyboard in use.
+ */
+class SettingsActivity : ComponentActivity() {
+    // Goes up when SebType is turned on or chosen, however that happens (Android's keyboard settings, the
+    // picker, another app), so the wizard goes on or ends.
+    private val changes = mutableIntStateOf(0)
+    private val keyboards = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) { changes.intValue++ }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        picnicEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        Engines.configure(this)
+        for (name in listOf(Settings.Secure.DEFAULT_INPUT_METHOD, Settings.Secure.ENABLED_INPUT_METHODS)) {
+            contentResolver.registerContentObserver(Settings.Secure.getUriFor(name), false, keyboards)
+        }
+        setContent { PicnicTheme { App(changes.intValue) } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        changes.intValue++
+    }
+
+    override fun onDestroy() {
+        contentResolver.unregisterContentObserver(keyboards)
+        super.onDestroy()
+    }
+}
+
+/** Whether SebType is on in Android's keyboards, and whether it is the one in use */
+fun keyboardState(context: Context): Pair<Boolean, Boolean> {
+    val imm = context.getSystemService(InputMethodManager::class.java)
+    val enabled = imm.enabledInputMethodList.any { it.packageName == context.packageName }
+    val current = Settings.Secure.getString(context.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        ?.substringBefore('/') == context.packageName
+    return enabled to current
+}
+
+/** sebtype.conf's options for the screens; [version] goes up on each change, so they read them again. */
+object Conf {
+    val version = mutableIntStateOf(0)
+
+    fun get(section: String, key: String, default: Boolean): Boolean {
+        version.intValue
+        return Engines.setting(section, key) ?: default
+    }
+
+    fun set(context: Context, section: String, key: String, on: Boolean) =
+        Engines.changeSettings(context, "[$section]\n$key=$on\n") { version.intValue++ }
+
+    /** The languages that are on, in 🌐's order: "en", "zh", "ja". */
+    fun languages(): List<String> {
+        version.intValue
+        return Engines.languages().map { LANGUAGES[it] }
+    }
+
+    fun setLanguages(context: Context, order: List<String>) =
+        Engines.changeSettings(context, "[Languages]\nOrder=${order.joinToString(",")}\n") { version.intValue++ }
+
+    val LANGUAGES = listOf("en", "zh", "ja")
+}
+
+@Composable
+private fun App(changes: Int) {
+    val context = LocalContext.current
+    val stack: SnapshotStateList<String> = rememberSaveable(
+        saver = androidx.compose.runtime.saveable.listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
+    ) { mutableListOf<String>().toMutableStateList() }
+    val state = remember(changes) { keyboardState(context) }
+    val nav = Nav(stack)
+    if (stack.isEmpty() && !(state.first && state.second)) return Setup(state)
+    BackHandler(stack.isNotEmpty()) { nav.back() }
+    when (stack.lastOrNull()) {
+        null -> Home(nav)
+        "languages" -> LanguagesScreen(nav)
+        "fuzzy" -> FuzzyScreen(nav)
+        "words/en" -> EnglishWordsScreen(nav)
+        "words/zh" -> ChineseWordsScreen(nav)
+        "words/ja" -> JapaneseWordsScreen(nav)
+        "keyboard" -> KeyboardScreen(nav)
+        "privacy" -> PrivacyScreen(nav)
+        "backup" -> BackupScreen(nav)
+        "about" -> AboutScreen(nav)
+        "credits" -> CreditsScreen(nav)
+    }
+}
+
+class Nav(private val stack: SnapshotStateList<String>) {
+    fun go(screen: String) = stack.add(screen)
+    fun back() = stack.removeAt(stack.lastIndex)
+}
+
+@Composable
+private fun Home(nav: Nav) {
+    val autocorrect by Prefs.flow(LocalContext.current, Prefs.AUTOCORRECT).collectAsState(Prefs[Prefs.AUTOCORRECT])
+    val clipboard by Prefs.flow(LocalContext.current, Prefs.CLIPBOARD_HISTORY).collectAsState(Prefs[Prefs.CLIPBOARD_HISTORY])
+    val learning = Conf.get("Learning", "On", true)
+    val short = mapOf("en" to "EN", "zh" to "中", "ja" to "日")
+    Screen(null, null) {
+        Row(Modifier.padding(start = 16.dp, top = 24.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.mipmap.ic_launcher_pig), null, Modifier.size(64.dp).clip(CircleShape))
+            Column(Modifier.padding(start = 12.dp)) {
+                Text("SebType", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = Ink)
+                Text(stringResource(R.string.sebtype_settings_subtitle), fontSize = 15.sp, color = Ink)
+            }
+        }
+        TryTyping()
+        Card {
+            NavItem(stringResource(R.string.sebtype_settings_languages),
+                Conf.languages().joinToString(" → ") { short.getValue(it) } + " · " +
+                    stringResource(if (autocorrect) R.string.sebtype_settings_autocorrect_on else R.string.sebtype_settings_autocorrect_off),
+                arrow = false, icon = { Badge(false) { Globe() } }) { nav.go("languages") }
+            NavItem(stringResource(R.string.settings_keyboard), stringResource(R.string.settings_keyboard_subtitle),
+                arrow = false, icon = { Badge(true) { KeyboardIcon() } }) { nav.go("keyboard") }
+        }
+        Card {
+            NavItem(stringResource(R.string.sebtype_settings_privacy),
+                stringResource(if (learning) R.string.sebtype_settings_learning_on else R.string.sebtype_settings_learning_off) + " · " +
+                    stringResource(if (clipboard) R.string.sebtype_settings_clipboard_on else R.string.sebtype_settings_clipboard_off),
+                arrow = false, icon = { Badge(false) { Icon(Icons.Filled.Lock, null, tint = Ink) } }) { nav.go("privacy") }
+            NavItem(stringResource(R.string.sebtype_settings_backup), stringResource(R.string.sebtype_settings_backup_subtitle),
+                arrow = false, icon = { Badge(true) { Icon(Icons.Filled.Refresh, null, tint = Color.White) } }) { nav.go("backup") }
+        }
+        Card {
+            NavItem(stringResource(R.string.sebtype_settings_about), stringResource(R.string.settings_about_subtitle),
+                arrow = false, icon = { Badge(false) { Icon(Icons.Filled.Info, null, tint = Ink) } }) { nav.go("about") }
+        }
+    }
+}
+
+/** A field to try the keyboard in, framed like a card */
+@Composable
+private fun TryTyping() {
+    var text by rememberSaveable { mutableStateOf("") }
+    val hint = stringResource(R.string.settings_try_typing)
+    BasicTextField(
+        text, { text = it },
+        textStyle = TextStyle(fontSize = 15.sp, color = Ink),
+        cursorBrush = SolidColor(Ink),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp).framed(),
+        decorationBox = { inner ->
+            Box(Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
+                if (text.isEmpty()) Text(hint, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Muted)
+                inner()
+            }
+        },
+    )
+}

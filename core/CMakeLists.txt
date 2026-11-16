@@ -98,7 +98,8 @@ if(SEBTYPE_TESTS)
     target_link_libraries(core-test sebtype-english)
     target_compile_definitions(core-test PRIVATE SEBTYPE_ENGLISH
       EN_DICT="${CMAKE_CURRENT_SOURCE_DIR}/../data/en-dict/en_US.dict"
-      EN_MODEL="${ENGINES}/sebtype-lm/english.gguf" EN_USER_DIR="${CMAKE_CURRENT_BINARY_DIR}/english-user")
+      EN_MODEL="${ENGINES}/sebtype-lm/english.gguf" EN_USER_DIR="${CMAKE_CURRENT_BINARY_DIR}/english-user"
+      EN_LEGACY_HISTORY="${CMAKE_CURRENT_SOURCE_DIR}/test/data/UserHistoryDictionary.en_US.dict")
   endif()
   add_test(NAME core-test COMMAND core-test)
 endif()
