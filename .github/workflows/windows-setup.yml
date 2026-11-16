@@ -221,3 +221,14 @@ jobs:
           name: sebtype-setup
           path: pc/windows/setup/out/*.exe
           if-no-files-found: error
+      # Setup run from a PowerShell 7 shell, as this step's is: the Windows PowerShell 5.1 its steps start
+      # must not take PowerShell 7's PSModulePath and fail to load its own modules (#299).
+      - name: Install from pwsh
+        run: |
+          $exe = Get-Item pc/windows/setup/out/*.exe
+          $p = Start-Process -Wait -PassThru $exe '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$env:RUNNER_TEMP\install.log"
+          if ($p.ExitCode) {
+            Get-Content "$env:RUNNER_TEMP\install.log" -Tail 40
+            Get-Content "$env:LOCALAPPDATA\SebType\setup.log", "$env:ProgramFiles\SebType\setup.log" -ErrorAction SilentlyContinue
+            throw "Setup failed ($($p.ExitCode))"
+          }
