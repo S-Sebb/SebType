@@ -5,12 +5,15 @@ import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -42,8 +45,13 @@ fun Setup(state: Pair<Boolean, Boolean>) = Column(
 ) {
     val context = LocalContext.current
     val step = if (state.first) 2 else 1
-    // The launcher icon's pig, a one-colour silhouette with room around it, in ink as today's.
-    Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(320.dp), colorFilter = ColorFilter.tint(Ink))
+    // The launcher icon's pig in ink, at today's size: the icon has wide margins around it, so it is drawn larger
+    // than the 180dp the pig takes up and spills over its box.
+    Box(Modifier.height(180.dp), contentAlignment = Alignment.Center) {
+        Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.requiredSize(410.dp),
+            colorFilter = ColorFilter.tint(Ink))
+    }
+    Spacer(Modifier.height(176.dp))
     Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.setup_step, step), fontSize = 12.sp, color = Ink)
         LinearProgressIndicator({ step / 2f }, Modifier.weight(1f).padding(start = 8.dp), color = Berry, trackColor = Line,
