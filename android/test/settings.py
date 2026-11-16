@@ -1395,12 +1395,19 @@ CLIP_JSON = (
 
 
 def is_checked(texts):
-    """The state of the checkbox or switch row showing one of texts."""
+    """The state of the checkbox or switch row showing one of texts (the new app's row carries its label
+    in a child node, not on the switch)."""
     adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
     xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
     for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
-        label = n.get("text") or n.get("content-desc") or ""
-        if n.get("checkable") == "true" and any(label.startswith(t) for t in texts):
+        if n.get("checkable") != "true":
+            continue
+        labels = [n.get("text") or n.get("content-desc") or ""] + [
+            c.get("text") or c.get("content-desc") or ""
+            for c in n.iter("node")
+            if c is not n
+        ]
+        if any(label.startswith(t) for label in labels for t in texts):
             return n.get("checked") == "true"
     raise Fail(f"no {texts[1]} checkbox or switch")
 
@@ -1854,7 +1861,14 @@ def sync_setup():
         90,
     )
     SYNC["device"] = devices[0]
-    wait_for("its snapshot", lambda: server_snapshot(SYNC["device"]), 30)
+    try:
+        wait_for("its snapshot", lambda: server_snapshot(SYNC["device"]), 30)
+    except Fail as e:
+        user = f"/data/user/0/{PKG}/files/rime/user"
+        raise Fail(
+            f"{e}; the phone has {root(f'ls -R {user}/sync; ls {user}').split()}, logged"
+            f" {[line for line in adb('logcat', '-d', '-s', 'SebType').splitlines() if 'ync' in line][-5:]}"
+        )
     wait_for("the status 'Last synced'", lambda: screen_contains(SYNC_SYNCED), 20)
     screenshot("12-sync-section")
     return f"login saved, sync on; the phone's folder {SYNC['device'][:8]}… arrived; status Last synced"
