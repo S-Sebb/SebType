@@ -1533,7 +1533,9 @@ def personal_word_en():
         )  # the field shows the keyboard again: it reads the words
     finally:
         root(f"content delete --uri {WORDS} --where \"word='zorblax'\"")
-    if "zorblax" not in got:
+    if "zorblax" not in [
+        c.lower() for c in got
+    ]:  # a sentence's first word has its capital
         raise Fail(f"zorbl -> {got[:6]}, without the personal word zorblax")
     return f"zorbl -> {got[:6]}"
 
