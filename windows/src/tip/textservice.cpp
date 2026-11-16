@@ -164,6 +164,14 @@ class AttributeEnum final : public IEnumTfDisplayAttributeInfo {
   std::atomic<long> refs_{1};
 };
 
+// The app's calls to the server (pipe.h): its threads share it.
+Guarded server;
+
+// The text service whose readiness timer runs on this thread: one per thread, the focused one.
+thread_local TextService *watching = nullptr;
+
+bool notReady(const std::string &icon) { return icon.ends_with("-wait") || icon.ends_with("-off"); }
+
 // The server next to this DLL, or one folder up from the 32-bit one in x86\.
 std::filesystem::path serverPath() {
   wchar_t p[MAX_PATH];
@@ -275,6 +283,7 @@ STDMETHODIMP TextService::Deactivate() {
     context_->Release();
     context_ = nullptr;
   }
+  stopWatching();
   window_.reset();
   if (button_) {
     ITfLangBarItemMgr *items = nullptr;
@@ -390,11 +399,13 @@ void TextService::focus(ITfDocumentMgr *focused) {
   }
   if (window_) window_->hide();
   field_ = Field::Unknown;
+  stopWatching();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
     q.lang = lang_;
     q.learning = field(context_) != Field::Private;
     send(q);
+    watchReadiness();
   }
   if (button_) button_->update();
 }
@@ -478,8 +489,10 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
 }
 
 bool TextService::send(const Request &request) {
-  static Guarded server;
-  if (server.call(request, reply_)) return true;
+  if (server.call(request, reply_)) {
+    warned_ = false;
+    return true;
+  }
   if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that hangs: the key goes to the app as typed
   // An app UAC elevated (Setup, an admin console) starts none: the server would be elevated too, and out of
   // reach of the person's other apps. It uses the one they start.
@@ -517,12 +530,56 @@ bool TextService::send(const Request &request) {
     if (ended || (!up && GetLastError() == ERROR_TIMEOUT)) break;
   }
   CloseHandle(pi.hProcess);
+  if (up) warned_ = false;
   return up;
+}
+
+void TextService::unavailable(ITfContext *context, const Key &k) {
+  const bool typed = !k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt));
+  const std::string icon = notReadyIcon(lang_, Readiness::Unavailable);
+  if (reply_.icon == icon && (!typed || warned_)) return;
+  reply_.lang = lang_;
+  reply_.icon = icon;
+  if (typed && !std::exchange(warned_, true)) {
+    const LANGID ui = PRIMARYLANGID(GetUserDefaultUILanguage());
+    reply_.notice = notReadyNotice(lang_, Readiness::Unavailable,
+                                   ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
+  }
+  apply(context);
+}
+
+void TextService::watchReadiness() {
+  if (poll_ || !notReady(reply_.icon)) return;
+  if (watching && watching != this) watching->stopWatching();
+  watching = this;
+  poll_ = SetTimer(nullptr, 0, 1000, [](HWND, UINT, UINT_PTR, DWORD) {
+    if (watching) watching->pollReadiness();
+  });
+}
+
+// As focus coming to the field asks; never starts a server (an idle app would wait for it), a key does.
+void TextService::pollReadiness() {
+  Request q{Op::FocusIn};
+  q.lang = lang_;
+  Reply r;
+  if (!server.call(q, r)) return;
+  warned_ = false;
+  reply_.lang = r.lang;
+  reply_.icon = r.icon;
+  if (button_) button_->update();
+  if (!notReady(r.icon)) stopWatching();
+}
+
+void TextService::stopWatching() {
+  if (poll_) KillTimer(nullptr, poll_);
+  poll_ = 0;
+  if (watching == this) watching = nullptr;
 }
 
 void TextService::apply(ITfContext *context) {
   if (context) editSession(context, clientId_, [this, context](TfEditCookie ec) { return update(ec, context); }, false);
   if (button_) button_->update();
+  watchReadiness();
 }
 
 // The core sees each key once: OnTestKeyDown asks it and keeps the answer for OnKeyDown, as Weasel did.
@@ -542,7 +599,11 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   Request q{Op::Key};
   q.lang = lang_;
   q.learning = f != Field::Private;
-  if (!key(wParam, lParam, release, q.key) || !send(q)) return true;
+  if (!key(wParam, lParam, release, q.key)) return true;
+  if (!send(q)) {
+    unavailable(context, q.key);
+    return true;
+  }
   *eaten = reply_.taken;
   if (test) tested_ = {wParam, release, reply_.taken, true};
   apply(context);

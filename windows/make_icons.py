@@ -15,7 +15,19 @@ from pathlib import Path
 
 DRAWN = (16, 20, 24, 32)
 SIZES = (16, 20, 24, 32, 40, 48, 64)
-STATES = ("zh", "zh-a", "zh-caps", "hira", "kata", "ja-a", "ja-caps")
+STATES = (
+    "zh",
+    "zh-a",
+    "zh-caps",
+    "hira",
+    "kata",
+    "ja-a",
+    "ja-caps",
+    "zh-wait",
+    "zh-off",
+    "hira-wait",
+    "hira-off",
+)
 
 
 def ico(pngs):

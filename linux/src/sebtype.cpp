@@ -225,6 +225,7 @@ void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig
   if (path == "deploy") {
     core_->engine(Lang::Chinese);
     core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
+    updateStatus(instance_->mostRecentInputContext());
   } else if (path == "mozc") {
     // Mozc reads its settings and dictionaries when it starts: it saves and closes, and the next 日本語 key
     // starts it again.
@@ -271,12 +272,31 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
         !notice.empty() && config.showInputMethodInformation())
       instance_->showCustomInputMethodInformation(ic, notice);
   }
-  // The tray and Plasma's input method panel read the icon and menu again.
-  if (auto icon = core_->icon(); ic && icon != lastIcon_) {
+  updateStatus(ic);
+}
+
+void SebTypeEngine::updateStatus(fcitx::InputContext *ic) {
+  const auto icon = core_->icon();
+  if (ic && icon != lastIcon_) {
     lastIcon_ = icon;
     ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
   }
   if (auto *tray = dynamic_cast<NotificationItem *>(instance_->addonManager().addon("notificationitem"))) tray->update();
+  if (!icon.ends_with("-wait") || (poll_ && poll_->isEnabled())) return;
+  if (poll_) {
+    poll_->setNextInterval(500000);
+    poll_->setOneShot();
+    return;
+  }
+  poll_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + 500000, 0, [this](fcitx::EventSourceTime *source, uint64_t) {
+        updateStatus(instance_->mostRecentInputContext());
+        if (core_->icon().ends_with("-wait")) {
+          source->setNextInterval(500000);
+          source->setOneShot();
+        }
+        return true;
+      });
 }
 
 class SebTypeFactory : public fcitx::AddonFactory {

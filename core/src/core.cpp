@@ -157,6 +157,7 @@ void Core::switchTo(Lang lang) {
   lang_ = lang;
   if (lang != settings_.languages.front()) lastOther_ = lang;
   notice_ = true;
+  warned_ = false;  // the new language says its own state
 }
 
 void Core::selectLanguage(Lang lang) { switchTo(lang); }
@@ -296,6 +297,16 @@ bool Core::key(const Key &k) {
     }
   }
   if (!e || (isModifier(k.sym) && k.sym != ks::Caps_Lock)) return false;
+  // A typed key while the language isn't ready goes to the app as typed; the popup says why, once (#275).
+  if (!k.release && !(k.mods & (mod::Ctrl | mod::Alt | mod::Super))) {
+    const Readiness r = readiness();
+    if (r == Readiness::Ready) {
+      warned_ = false;
+    } else if (!std::exchange(warned_, true)) {
+      notReady_ = r;
+      notice_ = true;
+    }
+  }
   const bool wasLatin = e->latin();
   const bool taken = e->key(k);
   commit_ += e->takeCommit();
@@ -308,6 +319,8 @@ bool Core::key(const Key &k) {
 // brackets. Only 中文's English mode had a short submode label, which compact mode shows alone.
 std::string Core::takeNotice(bool compact) {
   if (!std::exchange(notice_, false)) return {};
+  if (const Readiness r = std::exchange(notReady_, Readiness::Ready); r != Readiness::Ready)
+    return notReadyNotice(lang_, r, ui_);
   Engine *e = current();
   std::string name = compact ? (lang_ == Lang::English ? "en" : lang_ == Lang::Japanese ? "あ" : "中文") : langName(lang_);
   const Words *subMode = nullptr;
@@ -383,8 +396,16 @@ void Core::setAlternate(bool on) {
   }
 }
 
+Readiness Core::readiness() {
+  auto *e = current();
+  if (!e) return Readiness::Ready;
+  if (e->busy()) return Readiness::Preparing;
+  return e->available() ? Readiness::Ready : Readiness::Unavailable;
+}
+
 std::string Core::icon() {
   auto *e = current();
+  if (const Readiness r = readiness(); r != Readiness::Ready) return notReadyIcon(lang_, r);
   switch (lang_) {
     case Lang::Chinese:
       if (e && e->latin()) return capsLock_ ? "zh-caps" : "zh-a";

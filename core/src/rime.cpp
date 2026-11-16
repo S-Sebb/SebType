@@ -246,6 +246,7 @@ class Rime final : public Engine {
     api_->sync_user_data();
   }
   bool busy() override { return api_->is_maintenance_mode(); }
+  bool available() override { return busy() || ready(); }
 
  private:
   void start(bool fullCheck) {

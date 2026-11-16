@@ -21,6 +21,10 @@ int iconId(std::string_view name) {
   if (name == "kata") return IDI_KATA;
   if (name == "ja-a") return IDI_JA_A;
   if (name == "ja-caps") return IDI_JA_CAPS;
+  if (name == "zh-wait") return IDI_ZH_WAIT;
+  if (name == "zh-off") return IDI_ZH_OFF;
+  if (name == "hira-wait") return IDI_HIRA_WAIT;
+  if (name == "hira-off") return IDI_HIRA_OFF;
   return IDI_ZH;
 }
 

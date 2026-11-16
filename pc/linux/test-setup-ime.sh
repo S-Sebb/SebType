@@ -200,7 +200,7 @@ tray_icons() {
 rpm_icons() {
   local d n
   for d in 16x16 22x22 24x24 32x32 scalable; do
-    for n in en zh zh-a zh-caps hira kata ja-a ja-caps; do
+    for n in en zh zh-a zh-caps hira kata ja-a ja-caps zh-wait zh-off hira-wait hira-off; do
       cmp "../icons/${d%%x*}/$n.svg" "$own/usr/share/icons/hicolor/$d/status/sebtype-$n.svg" || return 1
     done
   done

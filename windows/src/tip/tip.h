@@ -6,6 +6,8 @@
 
 #include "../pipe.h"
 
+#include <sebtype/not_ready.h>
+
 #include <msctf.h>
 #include <ole2.h>
 
@@ -115,6 +117,12 @@ class TextService final : public ITfTextInputProcessorEx,
   Field field(ITfContext *context);
   void setOpen();
   void focus(ITfDocumentMgr *focus);
+  // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
+  void unavailable(ITfContext *context, const Key &key);
+  // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
+  void watchReadiness();
+  void pollReadiness();
+  void stopWatching();
 
   std::atomic<long> refs_{1};
   ITfThreadMgr *threadMgr_ = nullptr;
@@ -136,6 +144,8 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<CandidateWindow> window_;
   LangBarButton *button_ = nullptr;
   DWORD serverStarted_ = 0;  // GetTickCount of the last start, so a missing server isn't started every key
+  bool warned_ = false;      // the popup said the server doesn't answer, once until it does
+  UINT_PTR poll_ = 0;        // watchReadiness's timer
 };
 
 }  // namespace sebtype::win

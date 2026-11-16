@@ -69,6 +69,7 @@ INK, OUTLINE, STICKER, LIP, BLUSH = (
     "#F2899E",
 )
 BASE = {
+    "grey": ("#D9D3CE", "#AFA6A0"),  # a language that isn't ready (#275)
     "zh": ("#F6A9B9", "#E07A92"),
     "ja": ("#F9C252", "#EC962A"),
     "en": ("#CDBBF0", "#9D86D8"),
@@ -82,7 +83,15 @@ STATES = {  # state: language, (font, text)
     "kata": ("ja", ("jp", "ア")),
     "ja-a": ("ja", ("lat", "a")),  # Japanese, English mode
     "ja-caps": ("ja", ("lat", "A")),  # ... with Caps Lock
+    # Not ready (#275): the key in grey with a badge, "…" while it prepares (Rime deploying), "!" while it
+    # can't take keys (the server doesn't answer, Mozc didn't load).
+    "zh-wait": ("grey", ("sc", "中")),
+    "zh-off": ("grey", ("sc", "中")),
+    "hira-wait": ("grey", ("jp", "あ")),
+    "hira-off": ("grey", ("jp", "あ")),
 }
+BADGE = {"wait": "#C2506A", "off": "#B03030"}
+GREY_INK = "#7D706A"
 GLYPHS = {g: glyph(FONTS[g[0]], g[1]) for _, g in STATES.values()}
 SIZES = {"16": 16, "20": 20, "22": 22, "24": 24, "32": 32, "scalable": 48}
 
@@ -109,9 +118,37 @@ def trap(x0, y0, x1, y1, t, r):
     )
 
 
-def sticker(S, lang, g):
+def badge(S, kind):
+    """A round badge over the key's lower right corner, with a sticker-cream rim: three dots or "!"."""
+    r = max(S * 0.25, 4.5)
+    rim = max(1, round(S / 24)) if S < 48 else S * 0.04
+    cx, cy = S - r - 0.2, S - r - 0.2
+    o = [
+        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{STICKER}"/>',
+        f'<circle cx="{cx}" cy="{cy}" r="{r - rim}" fill="{BADGE[kind]}"/>',
+    ]
+    if kind == "wait":
+        d = (r - rim) * 0.5
+        for dx in (-d, 0, d):
+            o.append(
+                f'<circle cx="{cx + dx}" cy="{cy}" r="{max((r - rim) * 0.17, 0.55)}" fill="#FFFFFF"/>'
+            )
+    else:
+        w, h = (r - rim) * 0.36, (r - rim) * 1.4
+        o.append(
+            f'<rect x="{cx - w / 2}" y="{cy - h / 2}" width="{w}" height="{h * 0.62}" rx="{w / 2}" fill="#FFFFFF"/>'
+        )
+        o.append(
+            f'<circle cx="{cx}" cy="{cy + h / 2 - w / 2}" r="{w / 2}" fill="#FFFFFF"/>'
+        )
+    return "".join(o)
+
+
+def sticker(S, lang, g, state=""):
     sb, sh, bw, side, t, fi, lip = params(S)
-    blush = S >= 20  # at 16 px the cheeks would cost the glyph a pixel
+    blush = (
+        S >= 20 and lang != "grey"
+    )  # at 16 px the cheeks would cost the glyph a pixel
     H = S - sh
     r = S * 0.24
     top, bot = BASE[lang]
@@ -187,14 +224,19 @@ def sticker(S, lang, g):
             )
     box = (fx0 + margin, fy0 + fh * 0.04, fx1 - margin, fy1 - fh * 0.04)
     gh = fh * (0.8 if g[0] != "lat" else 0.66 if g[1] != "a" else 0.6)
+    ink = GREY_INK if lang == "grey" else INK
     o.append(
-        f'<g fill="{INK}" stroke="{INK}" stroke-linejoin="round" stroke-linecap="round">'
-        f"{place(GLYPHS[g], box, gh, 0.4 if S < 24 else S * 0.022)}</g></svg>\n"
+        f'<g fill="{ink}" stroke="{ink}" stroke-linejoin="round" stroke-linecap="round">'
+        f"{place(GLYPHS[g], box, gh, 0.4 if S < 24 else S * 0.022)}</g>"
     )
+    kind = state.rpartition("-")[2]
+    if kind in BADGE:
+        o.append(badge(S, kind))
+    o.append("</svg>\n")
     return "".join(o)
 
 
 for folder, S in SIZES.items():
     (HERE / folder).mkdir(exist_ok=True)
     for state, (lang, g) in STATES.items():
-        (HERE / folder / f"{state}.svg").write_text(sticker(S, lang, g))
+        (HERE / folder / f"{state}.svg").write_text(sticker(S, lang, g, state))

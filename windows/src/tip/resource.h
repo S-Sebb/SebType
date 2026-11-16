@@ -9,5 +9,9 @@
 #define IDI_KATA 105
 #define IDI_JA_A 106
 #define IDI_JA_CAPS 107
+#define IDI_ZH_WAIT 108
+#define IDI_ZH_OFF 109
+#define IDI_HIRA_WAIT 110
+#define IDI_HIRA_OFF 111
 // SebType's pig at the start of the Picnic candidate window (#94, #162).
 #define IDR_PIG 201

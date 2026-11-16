@@ -11,7 +11,8 @@ python3 pc/icons/build.py
 
 Each of 16, 20, 22, 24 and 32 px has its own drawing, so its lines land on whole pixels: no blush at
 16 px, blush cheeks from 20 px and the two-dash blush from 32 px. `scalable` is a 48 px drawing for
-larger and HiDPI sizes. States: `en`, `zh`, `zh-a`, `zh-caps`, `hira`, `kata`, `ja-a`, `ja-caps`.
+larger and HiDPI sizes. States: `en`, `zh`, `zh-a`, `zh-caps`, `hira`, `kata`, `ja-a`, `ja-caps`, and while 中文 or 日本語 isn't ready (#275)
+the key in grey with a badge: `zh-wait` and `hira-wait` ("…", preparing), `zh-off` and `hira-off` ("!", unavailable).
 
 Linux's RPM installs them as `sebtype-<state>` in hicolor (`linux/CMakeLists.txt`, see `pc/linux/README.md`). The glyphs are
 outlines from Noto Sans CJK Black (SIL Open Font License 1.1, Google) and Nunito ExtraBold

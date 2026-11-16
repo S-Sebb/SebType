@@ -3,6 +3,7 @@
 #pragma once
 
 #include <fcitx-utils/dbus/objectvtable.h>
+#include <fcitx-utils/event.h>
 #include <fcitx/addonfactory.h>
 #include <fcitx/addoninstance.h>
 #include <fcitx/addonmanager.h>
@@ -61,11 +62,15 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   fcitx::InputMethodEntry entry() const;
   // Tells the core whether what is typed in ic may be learned.
   void followField(fcitx::InputContext *ic);
+  // The tray and Plasma's input method panel read the icon and menu again when it changed, and while 中文 is
+  // preparing they look again every half second, so the key turns back to 中 when Rime is done (#275).
+  void updateStatus(fcitx::InputContext *ic);
 
   fcitx::Instance *instance_;
   std::unique_ptr<Core> core_;
   std::string lastIcon_;
   std::unique_ptr<Service> service_;
+  std::unique_ptr<fcitx::EventSourceTime> poll_;
 };
 
 }  // namespace sebtype

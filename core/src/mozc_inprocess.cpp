@@ -44,6 +44,8 @@ class InProcess final : public MozcTransport {
     if (open_) sebtype_mozc_close();
   }
 
+  bool open() const override { return open_; }
+
   bool call(const mozc::commands::Input &in, mozc::commands::Output &out) override {
     if (!open_ || !eval(in, out)) return false;
     if (in.type() == mozc::commands::Input::SYNC_DATA) {
