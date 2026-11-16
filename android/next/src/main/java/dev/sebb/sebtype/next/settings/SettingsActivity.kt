@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -37,11 +37,11 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -154,11 +154,14 @@ private fun Home(nav: Nav) {
     val learning = Conf.get("Learning", "On", true)
     val short = mapOf("en" to "EN", "zh" to "中", "ja" to "日")
     Screen(null, null) {
-        Row(Modifier.padding(start = 16.dp, top = 24.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.mipmap.ic_launcher_pig), null, Modifier.size(64.dp).clip(CircleShape))
+        // The launcher icon as Android draws it: the pig on its pink circle
+        val context = LocalContext.current
+        val icon = remember { context.packageManager.getApplicationIcon(context.packageName).toBitmap().asImageBitmap() }
+        Row(Modifier.padding(start = 16.dp, top = 40.dp, end = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Image(icon, null, Modifier.size(56.dp))
             Column(Modifier.padding(start = 12.dp)) {
-                Text("SebType", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = Ink)
-                Text(stringResource(R.string.sebtype_settings_subtitle), fontSize = 15.sp, color = Ink)
+                Text("SebType", style = HeadingText, color = Ink)
+                Text(stringResource(R.string.sebtype_settings_subtitle), style = SubtitleText.copy(lineHeight = 14.sp), color = Ink)
             }
         }
         TryTyping()
@@ -190,14 +193,17 @@ private fun Home(nav: Nav) {
 private fun TryTyping() {
     var text by rememberSaveable { mutableStateOf("") }
     val hint = stringResource(R.string.settings_try_typing)
+    // Today's text button in a card: a 48dp row, its label in Material's label style at 70% ink
+    val style = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp, fontWeight = FontWeight.Medium,
+        color = Ink.copy(alpha = 0.7f))
     BasicTextField(
         text, { text = it },
-        textStyle = TextStyle(fontSize = 15.sp, color = Ink),
+        textStyle = style.copy(color = Ink),
         cursorBrush = SolidColor(Ink),
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp).framed(),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp).framed(),
         decorationBox = { inner ->
-            Box(Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
-                if (text.isEmpty()) Text(hint, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Muted)
+            Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+                if (text.isEmpty()) Text(hint, style = style)
                 inner()
             }
         },

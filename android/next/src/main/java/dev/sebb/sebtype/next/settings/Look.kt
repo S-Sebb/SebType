@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
@@ -61,6 +62,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -85,11 +87,21 @@ private val Outline = Color(Picnic.OUTLINE)
 /** Material's parts (switches, dialogs, text fields) in Picnic's colours. */
 private val Colours = lightColorScheme(
     primary = Berry, onPrimary = Color.White, primaryContainer = Pink, onPrimaryContainer = Ink,
-    secondary = Berry, onSecondary = Color.White, secondaryContainer = Pink, onSecondaryContainer = Ink,
+    secondary = Berry, onSecondary = Color.White, secondaryContainer = Color(Picnic.BERRY_LOW), onSecondaryContainer = Color.White,
     background = Cloth, onBackground = Ink, surface = Cream, onSurface = Ink, onSurfaceVariant = Muted,
     surfaceContainerHighest = Color(Picnic.PINK_LOW), surfaceContainerHigh = Cream, surfaceContainer = Cream,
     outline = Outline, outlineVariant = Line, error = Color(Picnic.BERRY_LOW),
 )
+
+// Today's settings text (#267): no letter spacing, so text styles are given in full rather than taken from Material's.
+/** A row's title */
+val TitleText = TextStyle(fontSize = 20.sp, lineHeight = 30.sp)
+/** A row's subtitle */
+val SubtitleText = TextStyle(fontSize = 14.sp, lineHeight = 20.sp)
+/** A title bar's or a heading's text */
+val HeadingText = TextStyle(fontSize = 20.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+/** Body text: tips, explanations */
+val BodyText = TextStyle(fontSize = 16.sp, lineHeight = 24.sp)
 
 @Composable
 fun PicnicTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = Colours, content = content)
@@ -157,7 +169,7 @@ fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 @Composable
 fun SectionTag(title: String) = Text(
     title,
-    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink,
+    style = TextStyle(fontSize = 16.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold), color = Ink,
     modifier = Modifier
         .wrapContentWidth(Alignment.Start)
         .padding(start = 16.dp, top = 4.dp, bottom = 8.dp)
@@ -168,8 +180,8 @@ fun SectionTag(title: String) = Text(
 /** A tip in a pink frame */
 @Composable
 fun Tip(text: String) = Text(
-    text, fontSize = 14.sp, color = Ink,
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).framed(TagFrame, 10.dp, 6.dp),
+    text, style = BodyText, color = Ink,
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).framed(TagFrame, 8.dp, 8.dp),
 )
 
 /**
@@ -182,14 +194,19 @@ fun Screen(title: String?, onBack: (() -> Unit)?, content: @Composable () -> Uni
     Column(Modifier.fillMaxSize().cloth().windowInsetsPadding(WindowInsets.statusBars)) {
         if (title != null) Row(
             Modifier.fillMaxWidth().padding(bottom = 12.dp).background(Cream)
-                .drawBehind { drawRect(Outline, Offset(0f, size.height - w), Size(size.width, w.toFloat())) }
-                .heightIn(min = 56.dp),
+                .drawBehind { drawRect(Outline, Offset(0f, size.height - w), Size(size.width, w.toFloat())) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onBack != null) IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(android.R.string.cancel), tint = Ink)
-            } else Spacer(Modifier.size(16.dp))
-            Text(title, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Ink, modifier = Modifier.semantics { heading() })
+            // The arrow 16dp and the title 58dp from the edge, as today's
+            if (onBack != null) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(android.R.string.cancel), tint = Ink)
+                }
+                Spacer(Modifier.width(6.dp))
+            } else Spacer(Modifier.width(16.dp))
+            Text(title, style = HeadingText, color = Ink,
+                modifier = Modifier.padding(vertical = 16.dp).semantics { heading() })
         }
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
             content()
@@ -207,15 +224,19 @@ fun Item(
     icon: (@Composable () -> Unit)? = null,
     end: (@Composable () -> Unit)? = null,
 ) = Row(
-    modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 6.dp),
+    modifier.fillMaxWidth().heightIn(min = 68.dp)
+        .padding(start = if (icon != null) 20.dp else 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
 ) {
-    icon?.let { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { it() } }
-    Column(Modifier.weight(1f)) {
-        Text(title, fontSize = 18.sp, color = Ink)
-        if (!subtitle.isNullOrEmpty()) Text(subtitle, fontSize = 13.sp, color = Muted, lineHeight = 17.sp)
+    icon?.let {
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { it() }
+        Spacer(Modifier.width(12.dp))
     }
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = TitleText, color = Ink, modifier = Modifier.heightIn(min = 24.dp))
+        if (!subtitle.isNullOrEmpty()) Text(subtitle, style = SubtitleText, color = Muted)
+    }
+    Spacer(Modifier.width(4.dp))
     end?.invoke()
 }
 
@@ -235,13 +256,14 @@ fun SwitchItem(title: String, subtitle: String? = null, on: Boolean, enabled: Bo
 @Composable
 fun CheckItem(title: String, on: Boolean, onChange: (Boolean) -> Unit) =
     Item(title, null, Modifier.toggleable(on, true, Role.Checkbox, onChange)) {
-        Checkbox(checked = on, onCheckedChange = null)
+        // In a switch-wide box, so its centre lines up with the switches'
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Checkbox(checked = on, onCheckedChange = null) }
     }
 
 /** A home screen icon: a round badge, berry or pink */
 @Composable
 fun Badge(berry: Boolean, content: @Composable () -> Unit) = Box(
-    Modifier.size(44.dp).background(if (berry) Color(Picnic.BERRY_LOW) else Pink, androidx.compose.foundation.shape.CircleShape),
+    Modifier.size(40.dp).background(if (berry) Color(Picnic.BERRY_LOW) else Pink, androidx.compose.foundation.shape.CircleShape),
     contentAlignment = Alignment.Center,
 ) { content() }
 

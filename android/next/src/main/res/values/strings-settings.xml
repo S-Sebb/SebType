@@ -100,6 +100,7 @@
     <string name="settings_vibrate">Vibrate on keypress</string>
     <string name="settings_sound">Sound on keypress</string>
     <string name="settings_long_press">Long press duration</string>
+    <string name="settings_long_press_subtitle">How long a key needs to be pressed to be considered a long-press</string>
     <string name="settings_long_press_ms">%d ms</string>
     <string name="settings_add">Add</string>
     <string name="settings_import_file">Import</string>

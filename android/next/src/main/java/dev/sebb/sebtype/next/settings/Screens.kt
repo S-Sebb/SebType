@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -190,13 +189,16 @@ fun KeyboardScreen(nav: Nav) = Screen(stringResource(R.string.settings_keyboard)
     Card {
         PrefSwitch(stringResource(R.string.settings_number_row), stringResource(R.string.settings_number_row_subtitle), Prefs.NUMBER_ROW)
         val ms by Prefs.flow(context, Prefs.LONG_PRESS_MS).collectAsState(Prefs[Prefs.LONG_PRESS_MS])
-        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
-            Text(stringResource(R.string.settings_long_press), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Ink)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.settings_long_press_ms, ms), fontSize = 13.sp, color = Ink, modifier = Modifier.width(72.dp))
+        // Today's slider: a heading, the explanation, then the value and a slider in 25 ms steps
+        Column(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.settings_long_press), style = HeadingText, color = Ink, modifier = Modifier.padding(16.dp))
+            Text(stringResource(R.string.settings_long_press_subtitle), style = BodyText.copy(fontWeight = FontWeight.Medium), color = Ink,
+                modifier = Modifier.padding(horizontal = 12.dp))
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_long_press_ms, ms), style = SubtitleText, color = Ink, modifier = Modifier.weight(0.33f))
                 Slider(
-                    value = ms.toFloat(), valueRange = 100f..700f, steps = 11,
-                    onValueChange = { Prefs.set(context, Prefs.LONG_PRESS_MS, ((it / 50).roundToInt() * 50)) },
+                    value = ms.toFloat(), valueRange = 100f..700f, steps = 23, modifier = Modifier.weight(1f),
+                    onValueChange = { Prefs.set(context, Prefs.LONG_PRESS_MS, ((it / 25).roundToInt() * 25)) },
                 )
             }
         }
@@ -289,7 +291,7 @@ fun CreditsScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_cr
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .map { line -> line.split('\t').let { Component(it[0], it[1], it[2]) } }
     }
-    Text(stringResource(R.string.settings_credits_intro), fontSize = 15.sp, color = Ink,
+    Text(stringResource(R.string.settings_credits_intro), style = BodyText, color = Ink,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
     SectionTag(stringResource(R.string.settings_credits_tag))
     Card {

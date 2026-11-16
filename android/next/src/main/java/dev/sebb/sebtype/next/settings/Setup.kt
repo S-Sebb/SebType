@@ -4,23 +4,16 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -38,34 +31,28 @@ import dev.sebb.sebtype.next.R
  * once both are done. [state] is (on, chosen).
  */
 @Composable
-fun Setup(state: Pair<Boolean, Boolean>) = Column(
-    Modifier.fillMaxSize().cloth().padding(horizontal = 32.dp),
-    verticalArrangement = Arrangement.Center,
-    horizontalAlignment = Alignment.CenterHorizontally,
-) {
+fun Setup(state: Pair<Boolean, Boolean>) = Column(Modifier.fillMaxSize().cloth()) {
     val context = LocalContext.current
     val step = if (state.first) 2 else 1
-    // The launcher icon's pig in ink, at today's size: the icon has wide margins around it, so it is drawn larger
-    // than the 180dp the pig takes up and spills over its box.
-    Box(Modifier.height(180.dp), contentAlignment = Alignment.Center) {
-        Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.requiredSize(410.dp),
-            colorFilter = ColorFilter.tint(Ink))
+    // Today's layout: the launcher icon's pig in ink fills the top three quarters (less the group below), and
+    // a quarter stays empty under the group.
+    Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.fillMaxWidth().weight(0.75f),
+        colorFilter = ColorFilter.tint(Ink))
+    Column(Modifier.padding(32.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.setup_step, step), fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
+            LinearProgressIndicator({ step / 2f }, Modifier.fillMaxWidth(), color = Berry, gapSize = 0.dp, drawStopIndicator = {})
+        }
+        Text(stringResource(if (step == 1) R.string.setup_enable_text else R.string.setup_choose_text),
+            Modifier.fillMaxWidth(), color = Ink, textAlign = TextAlign.Center)
+        Button(
+            onClick = {
+                if (step == 1) context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                else context.getSystemService(InputMethodManager::class.java).showInputMethodPicker()
+            },
+            Modifier.fillMaxWidth().padding(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Berry, contentColor = Color.White),
+        ) { Text(stringResource(if (step == 1) R.string.setup_enable else R.string.setup_choose)) }
     }
-    Spacer(Modifier.height(176.dp))
-    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.setup_step, step), fontSize = 12.sp, color = Ink)
-        LinearProgressIndicator({ step / 2f }, Modifier.weight(1f).padding(start = 8.dp), color = Berry, trackColor = Line,
-            drawStopIndicator = {})
-    }
-    Text(stringResource(if (step == 1) R.string.setup_enable_text else R.string.setup_choose_text),
-        color = Ink, fontSize = 15.sp, textAlign = TextAlign.Center)
-    Button(
-        onClick = {
-            if (step == 1) context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            else context.getSystemService(InputMethodManager::class.java).showInputMethodPicker()
-        },
-        Modifier.fillMaxWidth().padding(top = 24.dp),
-        shape = RoundedCornerShape(50),
-        colors = ButtonDefaults.buttonColors(containerColor = Berry, contentColor = Color.White),
-    ) { Text(stringResource(if (step == 1) R.string.setup_enable else R.string.setup_choose)) }
+    Spacer(Modifier.weight(0.25f))
 }
