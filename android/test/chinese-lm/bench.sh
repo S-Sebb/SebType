@@ -80,6 +80,7 @@ for stack in "${stacks[@]}"; do
     jobs+=("cp -r $work/user $work/user-$stack-$name && $build/zhbench ${args[*]}")
   done
 done
-# Each job runs on one thread; 16 at a time leave most of the machine to others and the latencies steady.
-printf '%s\n' "${jobs[@]}" | xargs -P 16 -I{} sh -c '{} 2>>"$0/run.log"' "$out"
+# Each job runs on one thread (threads=N: N); 16 at a time (CHINESE_JOBS) leave most of the machine to others
+# and the latencies steady.
+printf '%s\n' "${jobs[@]}" | xargs -P "${CHINESE_JOBS:-16}" -I{} sh -c '{} 2>>"$0/run.log"' "$out"
 [[ $dev ]] || python3 -I $here/score.py "$out" > "$out/summary.json"

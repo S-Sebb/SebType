@@ -3,6 +3,7 @@
 score.py OUT_DIR                 summary.json of one run (bench.sh's STACK.SET.tsv and .keys files)
 score.py --compare RUN1 RUN2     exit 1 unless the quality numbers are equal and per-key p50 within 25 %
 score.py --table RUN1 RUN2       the report's table: run 1, with run 2's latency in brackets
+score.py --profile OUT_DIR       where a key's time goes, per stack (zhbench's profile=1 .prof files)
 """
 
 import difflib
@@ -176,10 +177,36 @@ def table(a, b):
     print("\n".join([head, "|---|" + "---|" * len(stacks)] + rows))
 
 
+def profile(out):
+    """Mean ms per key of each step, over all keys and over the slowest 5 %, and the decodes per key."""
+    for stack in STACKS:
+        rows = []
+        for f in sorted(Path(out).glob(f"{stack}.*.tsv.prof")):
+            lines = f.read_text().splitlines()
+            head = lines[0].split("\t")
+            rows += [dict(zip(head, map(float, l.split("\t")))) for l in lines[1:]]
+        if not rows:
+            continue
+        steps = head[1:-2]
+        for r in rows:
+            r["total"] = sum(r[s] for s in steps)
+        rows.sort(key=lambda r: r["total"])
+        slow = rows[int(len(rows) * 0.95) :]
+        print(f"{stack}: {len(rows)} keys, mean ms (slowest 5 %)")
+        for s in steps + ["total"]:
+            mean = lambda rs: sum(r[s] for r in rs) / len(rs) / 1000
+            print(f"  {s:14} {mean(rows):6.2f} ({mean(slow):6.2f})")
+        for s in ("decodes", "tokens"):
+            mean = lambda rs: sum(r[s] for r in rs) / len(rs)
+            print(f"  {s:14} {mean(rows):6.1f} ({mean(slow):6.1f})")
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "--compare":
         sys.exit(compare(*sys.argv[2:4]))
     if sys.argv[1] == "--table":
         table(*sys.argv[2:4])
+    elif sys.argv[1] == "--profile":
+        profile(sys.argv[2])
     else:
         print(json.dumps(summarise(sys.argv[1]), ensure_ascii=False, indent=1))
