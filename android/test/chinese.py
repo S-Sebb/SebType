@@ -1276,13 +1276,10 @@ def as_app(pkg, new):
     """Points the helpers at an installed app: today's (FUTO's keyboard) or the new one, in package pkg."""
     global PKG, NEXT, IME, FRAME_ID, RIME_USER, RIME_SHARED
     PKG, NEXT = pkg, new
-    # The new keyboard's classes keep their package when it is built as dev.sebb.sebtype.
+    # The new keyboard's classes keep their package when it is built as dev.sebb.sebtype, and Android
+    # names that service dev.sebb.sebtype/.next.SebTypeIme: the id `ime list` prints and `ime enable` takes.
     IME = (
-        (
-            f"{PKG}/.SebTypeIme"
-            if PKG.endswith(".next")
-            else f"{PKG}/dev.sebb.sebtype.next.SebTypeIme"
-        )
+        (f"{PKG}/.SebTypeIme" if PKG.endswith(".next") else f"{PKG}/.next.SebTypeIme")
         if NEXT
         else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
     )
@@ -1430,6 +1427,7 @@ def update_from_futo_app():
         ]
         if missing:
             raise Fail(f"options lost in the update: {', '.join(missing)}")
+        to_chinese()  # the update kept EN in use, as today's app was left
         zh = expect_first("lh", "厉害")()
         to_japanese()
         got = candidates_for(JA_CODE)
