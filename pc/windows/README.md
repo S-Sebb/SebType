@@ -135,9 +135,11 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 | `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept; typing as in round 1; uninstall; as before |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
 
-`setup/test-focus-out.ps1` checks, on a PC with SebType installed and in the logged-on person's session
-(real keys, so nobody uses it meanwhile), that focus moving away mid-word types in what was typed (#277):
-`nihao` stays in the field after a move to another field or window, and Japanese stays as converted.
+`setup/test-focus-out.ps1` checks, on a PC with SebType installed and in the logged-on person's session,
+that focus moving away mid-word types in what was typed (#277): `nihao` stays in the field after TSF's
+focus goes to another document and back, and Japanese stays as converted. It makes no input of its own
+(keys go to TSF's keystroke manager), so a screen that is off stays off, and it fails if Windows reports
+the display on (`-Trial` checks just that, without SebType; `-WatchTo` watches it around a whole session).
 
 The keys are real input: `setup/rdp-keys.py` presses them through XTEST in the gamescope display that
 FreeRDP runs in, FreeRDP sends their scancodes to the test user's session like any keyboard, and the

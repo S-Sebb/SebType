@@ -75,6 +75,17 @@ namespace SebType {
     void IsThreadFocus(out bool focus);
   }
 
+  [ComImport, Guid("aa80e7f0-2021-11d2-93e0-0060b067b86e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface ITfKeystrokeMgr {
+    void AdviseKeyEventSink(uint clientId, IntPtr sink, [MarshalAs(UnmanagedType.Bool)] bool foreground);
+    void UnadviseKeyEventSink(uint clientId);
+    void GetForeground(out Guid clsid);
+    void TestKeyDown(IntPtr w, IntPtr l, [MarshalAs(UnmanagedType.Bool)] out bool eaten);
+    void TestKeyUp(IntPtr w, IntPtr l, [MarshalAs(UnmanagedType.Bool)] out bool eaten);
+    void KeyDown(IntPtr w, IntPtr l, [MarshalAs(UnmanagedType.Bool)] out bool eaten);
+    void KeyUp(IntPtr w, IntPtr l, [MarshalAs(UnmanagedType.Bool)] out bool eaten);
+  }
+
   [ComImport, Guid("7dcf57ac-18ad-438b-824d-979bffb74b7c"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface ITfCompartmentMgr {
     void GetCompartment(ref Guid guid, out ITfCompartment compartment);
@@ -282,6 +293,7 @@ namespace SebType {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll", EntryPoint = "SetFocus")] static extern IntPtr SetWindowFocus(IntPtr h);
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] static extern uint MapVirtualKeyW(uint code, uint type);
     const uint WM_APP = 0x8000, WM_QUIT = 0x12, WM_CHAR = 0x102, WM_GETTEXT = 0xD;
     static readonly Guid CLSID_TF_ThreadMgr = new Guid("529a9e6b-6587-4f23-ab9e-9c7d683e3c50");
     static readonly Guid CLSID_TF_InputProcessorProfiles = new Guid("33c53a50-f456-4884-b049-85fd643ecfed");
@@ -387,11 +399,38 @@ namespace SebType {
     public static bool Foreground(IntPtr h) {
       // Up to 6 s: right after another window closes, Windows can refuse for a while (seen on TCSBackEnd).
       for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) {
-        keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero);
+        if (!NoInput) { keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero); }
         SetForegroundWindow(h);
         Thread.Sleep(300);
       }
       return GetForegroundWindow() == h;
+    }
+    // No input of the test's own (#277: a PC whose screen must stay off, which any input in the session
+    // lights): Foreground takes no Alt tap, which works once nobody has typed for a while (the foreground
+    // lock's time-out), and keys go through Key, to TSF's keystroke manager, not into the session's input.
+    public static bool NoInput;
+    // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter
+    // or space the input method lets through goes into the field. True when the input method took it.
+    public static bool Key(byte vk) {
+      return OnUi(() => {
+        var keys = (ITfKeystrokeMgr)threadMgr;
+        long scan = MapVirtualKeyW(vk, 0) << 16;
+        bool eaten, up;
+        keys.KeyDown((IntPtr)vk, (IntPtr)(1 | scan), out eaten);
+        keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
+        if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A)))
+          store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : (char)(vk + 32)).ToString());
+        return eaten;
+      });
+    }
+    static ITfDocumentMgr otherMgr;
+    // TSF's focus on another document and back, as a click into another field moves it.
+    public static void Away(bool away) {
+      OnUi(() => {
+        if (otherMgr == null) threadMgr.CreateDocumentMgr(out otherMgr);
+        threadMgr.SetFocus(away ? otherMgr : docMgr);
+        return 0;
+      });
     }
     // The text field's window in front, with the keyboard focus, and TSF's focus on its document.
     public static bool Focus() {
