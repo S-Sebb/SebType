@@ -28,9 +28,11 @@ describe what each PC part does and list what each of its checks verifies.
 
 ### Where builds run
 
-`android/build.sh`, `linux/build.sh` and `linux/build-librime.sh` build on yanglab16, the lab's machine
-(96 threads), not on nobara-pc (#225), and copy what they built back to the same path on nobara-pc, so
-the device tests and setup use it as before. One command, run on nobara-pc as always:
+Every SebType build runs on yanglab16, the lab's machine (96 threads), not on nobara-pc (#225, #248):
+`android/build.sh`, `linux/build.sh`, `linux/build-librime.sh`, and the builds test scripts need. Each
+copies what it built back to the same path on nobara-pc, so the device tests and setup use it as before.
+Only the tests themselves run on nobara-pc: the private Fcitx5 sessions, the emulator, the Configurator's
+screens. One command, run on nobara-pc as always:
 
 1. `build_host_ready` (`tools/lib.sh`) checks that `ssh yanglab16` answers. If it doesn't, it starts
    Zscaler (`gtk-launch ZSTray`) and tries once more; if it still doesn't, it says so on stderr and the
@@ -42,8 +44,8 @@ the device tests and setup use it as before. One command, run on nobara-pc as al
 3. On yanglab16 the script runs as on nobara-pc, in yanglab16's own build lock, with its tools from
    `~/scratch/SebType/cache/` on the NAS: the Android SDK and NDK, JDK 21 and sccache, pinned and installed
    on first use by `tools/android-tools.sh`, and Gradle's cache. The Android build runs in the pinned
-   Fedora 44 (`linux/versions.sh`) with Fedora's librime and OpenCC, as on nobara-pc; the Linux builds use
-   their own Fedora container as before. Bazel's output roots (Mozc's builds) are in the podman volume
+   Fedora 44 (`linux/versions.sh`) with Fedora's librime and OpenCC, as on nobara-pc (`fedora_container`
+   in `tools/lib.sh`); the Linux builds use their own Fedora container as before. Bazel's output roots (Mozc's builds) are in the podman volume
    `sebtype-bazel` on yanglab16's local disk: Bazel refuses a folder it doesn't own, and on the NAS every
    file belongs to the NAS's user.
 
@@ -51,10 +53,16 @@ A release APK is built unsigned, on yanglab16 (`SEBTYPE_UNSIGNED=1`) or on nobar
 nobara-pc with `apksigner` (scheme v2 alone, RSA), so the signing key never leaves nobara-pc and a release
 is the same file from either.
 
+Test scripts build through `tools/build.sh MINUTES NAME SCRIPT`, which runs SCRIPT on yanglab16 in that
+same Fedora container (yanglab16's Ubuntu has neither Rust nor librime) and copies back the files it
+prints: the Configurator and its unit tests' executable (`pc/configurator/build.sh`, for
+`pc/configurator/test.sh` and `pc/linux/test-setup-ime.sh`, which run that executable instead of
+`cargo test`), and the Chinese data (`data/rime/build.sh`, for `test-setup-ime.sh`, `pc/linux/compare.sh`
+and `data/rime/bench/bench.sh`). In the container the checkout is at its nobara-pc path, so the paths Rust
+compiles into the tests hold on nobara-pc. Rust's cache there is `~/scratch/SebType/cache/cargo`.
+
 `SEBTYPE_BUILD_HOST=local <script>` builds on nobara-pc. `android/test/build.sh` always does: it checks
-nobara-pc's own caches. Everything else builds on nobara-pc only when yanglab16 can't be reached; the
-Configurator's test builds (`pc/configurator/test.sh`, `pc/linux/test-setup-ime.sh`) stay local, small and
-in the build lock. CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the
+nobara-pc's own caches. Everything else builds on nobara-pc only when yanglab16 can't be reached. CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the
 lab's machine. The Windows build runs only in CI (MSVC on GitHub's Windows runners).
 
 ### The build lock
@@ -113,7 +121,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 |---|---|
 | `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's server from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
 | `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
-| `cargo build --release` in `pc/configurator` | the Configurator |
+| `pc/configurator/build.sh` (`cargo build --release` in `pc/configurator`) | the Configurator and its unit tests' executable; `tools/build.sh` runs it on yanglab16 |
 | `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's server, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 
 `pc/linux/setup-ime.sh` builds what it installs itself ([pc/linux/README.md](../pc/linux/README.md)).

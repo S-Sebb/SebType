@@ -52,17 +52,10 @@ if build_host_ready; then
   exit
 fi
 
-# On yanglab16 the tools come pinned into the scratch cache, and the build runs in Fedora, as here: as
-# tony, with an empty home (Java takes it from the user, not HOME), its CPUs and memory capped, and the
-# scratch folder (under both its paths: Gradle takes the NAS's) and Bazel's cache mounted where they are.
-container=()
-if [[ $(hostname -s) == yanglab16 ]]; then
-  image=$(../tools/android-tools.sh)
-  nas=$(readlink -f "$SCRATCH")
-  container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
-    --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"
-    -v "$nas:$SCRATCH" -v "$nas:$nas" -v "$BAZEL_CACHE:$BAZEL_CACHE" -w "$PWD" "$image")
-fi
+# On yanglab16 the tools come pinned into the scratch cache, and the build runs in Fedora, as here
+# (fedora_container), with Bazel's cache mounted where it is.
+[[ $(hostname -s) != yanglab16 ]] || ../tools/android-tools.sh
+fedora_container -v "$BAZEL_CACHE:$BAZEL_CACHE" -w "$PWD"
 export JAVA_HOME=$JDK21
 [[ -x $JAVA_HOME/bin/javac ]] || { echo "build: JDK 21 not found (set JAVA_HOME_21)" >&2; exit 1; }
 [[ -d $ANDROID_HOME/ndk/28.2.13676358 ]] || { echo "build: NDK 28.2.13676358 missing in $ANDROID_HOME" >&2; exit 1; }
@@ -104,6 +97,7 @@ start=$(date +%s)
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
 export KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS
+# shellcheck disable=SC2154  # container: set by fedora_container
 build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${container[@]}" bash -c '
   set -e
   date +%s > "$RUN/locked"

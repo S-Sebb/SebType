@@ -21,7 +21,8 @@ work=$(mktemp -d "$TASK_OUT/linux-compare.XXXXXX"); trap 'rm -rf "$work"' EXIT
 for x in fcitx5 bwrap dbus-run-session rpm2cpio unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 ices=("$SCRATCH"/cache/*-full.zip); ice=${ices[0]} # rime-ice's release, fetched by data/rime/build.sh
 [[ -f $ice ]] || { echo "preflight: no rime-ice full.zip in ~/scratch/SebType/cache (run data/rime/build.sh)"; exit 1; }
-"$here/../../data/rime/build.sh" "$work/data" > "$out/data-build.log" 2>&1 || { echo "preflight: data/rime/build.sh failed"; exit 1; }
+data=$("$here/../../tools/build.sh" 10 "rime data for compare" data/rime/build.sh 2> "$out/data-build.log") ||
+  { echo "preflight: data/rime/build.sh failed"; exit 1; }
 own=$work/own
 sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
 librime_unpack "$own" || { echo "preflight: linux/build-librime.sh failed"; exit 1; }
@@ -43,7 +44,7 @@ profile() { # setup -> a throwaway HOME with that setup's Fcitx5 profile and Rim
     printf '\n[GroupOrder]\n0=Default\n'; } > "$h/.config/fcitx5/profile"
   if [[ $1 == stock* ]]; then unzip -q "$ice" -d "$r"
   else
-    unzip -q "$work/data/rime/rime-data.zip" -d "$r"
+    unzip -q "$data" -d "$r"
     printf 'patch:\n  sebtype_typo/keyboard: pc\n' > "$r/rime_ice.custom.yaml"
     printf 'patch:\n  menu/page_size: 6\n' > "$r/default.custom.yaml"
   fi

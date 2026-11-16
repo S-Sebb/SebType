@@ -29,17 +29,14 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 # Preflight
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
-# The fake account has no Rust: setup-ime.sh copies the Configurator built here.
-# In the shared build lock (tools/lib.sh), like every heavy local build.
-build_lock 30 "configurator build for test-setup-ime" \
-  env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release --quiet --manifest-path ../configurator/Cargo.toml ||
-  { echo "preflight: the SebType Configurator does not build (pc/configurator)"; exit 1; }
-# Nor does it build SebType's Chinese data: each fake account's cache links the zip built here.
-../../data/rime/build.sh "$out/rime-data" > "$out/test-setup-ime-rime-data.log" 2>&1 ||
+# The fake account has no Rust: setup-ime.sh copies the Configurator built for it. Nor does it build
+# SebType's Chinese data: each fake account's cache links the zip built for it. Both build on yanglab16
+# (tools/build.sh), in the shared build lock.
+../../tools/build.sh 30 "configurator build for test-setup-ime" pc/configurator/build.sh > /dev/null 2> "$out/test-setup-ime-configurator-build.log" ||
+  { echo "preflight: the SebType Configurator does not build (see $out/test-setup-ime-configurator-build.log)"; exit 1; }
+rime_data=$(../../tools/build.sh 10 "rime data for test-setup-ime" data/rime/build.sh 2> "$out/test-setup-ime-rime-data.log") &&
+  [[ -f $rime_data ]] ||
   { echo "preflight: SebType's Chinese data does not build (see $out/test-setup-ime-rime-data.log)"; exit 1; }
-mapfile -t rime_zips < <(for z in "$SCRATCH"/cache/rime-data-*.zip; do cmp -s "$z" "$out/rime-data/rime/rime-data.zip" && echo "$z"; done)
-((${#rime_zips[@]})) || { echo "preflight: no cached zip of SebType's Chinese data in ~/scratch/SebType/cache"; exit 1; }
-rime_data=$out/rime-data/rime/rime-data.zip
 # SebType's input method (#190) and librime (#101), built once and cached. The private Fcitx5s below run them
 # without installing them: bwrap mounts them from $own for that Fcitx5 alone (sebtype_run).
 # shellcheck source=../../linux/versions.sh
@@ -122,13 +119,12 @@ mkdir -p "$h/.config/fcitx5" "$h/.config/mozc"
 printf '[Hotkey]\nEnumerateWithTriggerKeys=True\n\n[Hotkey/TriggerKeys]\n0=Super+space\n\n[Hotkey/AltTriggerKeys]\n0=Shift_L\n\n[Hotkey/EnumerateForwardKeys]\n0=Control+Shift+Shift_L\n\n[Behavior]\nActiveByDefault=False\nShareInputState=No\n' > "$h/.config/fcitx5/config"
 printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db"
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
-# setup-ime.sh rebuilds the Configurator with cargo when its sources are newer, so cargo needs this
-# account's Rust (rustup's toolchains) even though the fake account has its own HOME.
-fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "${rime_zips[@]}" "$h/scratch/SebType/cache/"
+# The fake account has no Rust either: the Configurator built above is newer than its sources, so
+# setup-ime.sh doesn't rebuild it.
+fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
   touch "$h/scratch/SebType/cache/sebtype/$SEBTYPE_RPM"  # a placeholder: the fake sudo installs nothing
   env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
-  XDG_DATA_HOME="$h/.local/share" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
-  timeout 60 ./setup-ime.sh "$@"; }
+  XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"

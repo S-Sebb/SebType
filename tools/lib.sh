@@ -21,7 +21,7 @@ if [[ $(hostname -s) == yanglab16 ]]; then
   BUILD_HOST=local BUILD_JOBS=$(( $(nproc) / 2 )) GRADLE_WORKERS=$(( $(nproc) / 2 )) BUILD_MEMORY_GB=32
   export ANDROID_HOME=$SCRATCH/cache/android-sdk JAVA_HOME_21=$SCRATCH/cache/jdks/jdk-21.0.13+9 \
     GRADLE_USER_HOME=$SCRATCH/cache/gradle ANDROID_USER_HOME=$SCRATCH/cache/android-user \
-    SCCACHE_DIR=$SCRATCH/cache/sccache PATH=$SCRATCH/cache/bin:$PATH
+    SCCACHE_DIR=$SCRATCH/cache/sccache CARGO_HOME=$SCRATCH/cache/cargo PATH=$SCRATCH/cache/bin:$PATH
   # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user.
   podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
   BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
@@ -70,6 +70,29 @@ build_remotely() {
     mkdir -p "$(dirname "$here")" && rsync -a "$BUILD_HOST:$f" "$here" || return 1
     echo "$here"
   done
+}
+
+# fedora_container [PODMAN_OPTION...]: on yanglab16, sets container to the command that runs a build there
+# in the pinned Fedora nobara-pc runs (linux/versions.sh), with what builds take from the system: Fedora's
+# librime and OpenCC for the Chinese data, gcc for Bazel's host tools, Rust and fontconfig for the
+# Configurator, python. It runs as tony with an empty home (Java takes it from the user, not HOME), its CPUs
+# and memory capped, and the scratch folder where it is (under both its paths: Gradle takes the NAS's).
+# Elsewhere, to nothing: the build runs on the host.
+fedora_container() {
+  container=()
+  [[ $(hostname -s) == yanglab16 ]] || return 0
+  local rpms='librime librime-lua opencc gcc gcc-c++ cargo rust fontconfig-devel python3 python-unversioned-command unzip zip diffutils findutils which'
+  local image nas
+  # shellcheck source=../linux/versions.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/../linux/versions.sh"
+  image=localhost/sebtype-fedora:$(sha256sum <<<"$BUILD_IMAGE $rpms" | head -c 12)
+  podman image exists "$image" ||
+    podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $BUILD_IMAGE
+RUN dnf -y install $rpms && dnf clean all" >/dev/null
+  nas=$(readlink -f "$SCRATCH")
+  container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
+    --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"
+    -v "$nas:$SCRATCH" -v "$nas:$nas" "$@" "$image")
 }
 
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy SebType build at a time),

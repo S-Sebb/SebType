@@ -28,7 +28,8 @@ work=$(mktemp -d "$cache/rime-bench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 # SebType's data, rime-ice as bundled before, and the octagram plugin.
-data/rime/build.sh "$work/assets" > "$work/build.log" 2>&1 || { echo "preflight: data/rime/build.sh failed, see below"; tail -3 "$work/build.log"; exit 1; }
+data=$(tools/build.sh 10 "rime data for bench" data/rime/build.sh 2> "$work/build.log") ||
+  { echo "preflight: data/rime/build.sh failed, see below"; tail -3 "$work/build.log"; exit 1; }
 old=$cache/rime-ice-2026.06.30-full_compiled.zip
 if ! echo "$OLD_SHA256  $old" | sha256sum -c --status 2>/dev/null; then
   curl -fsSL -o "$old.part" "$OLD_URL" && echo "$OLD_SHA256  $old.part" | sha256sum -c --status && mv "$old.part" "$old" ||
@@ -46,7 +47,7 @@ gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -ldl
 
 mkdir -p "$work/rime-ice" "$work/sebtype"
 unzip -q "$old" -d "$work/rime-ice"
-unzip -q "$work/assets/rime/rime-data.zip" -d "$work/sebtype"
+unzip -q "$data" -d "$work/sebtype"
 # unzip restores mtimes only to 2 s, so Rime sees changed sources and rebuilds the schemas and prisms in
 # the user dir (the app restores exact times: nothing is rebuilt there). One item first does that
 # rebuild, so the speed row measures typing, not compiling.
