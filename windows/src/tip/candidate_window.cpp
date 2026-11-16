@@ -220,7 +220,9 @@ void CandidateWindow::draw() {
       IDWriteTextLayout *layout = textLayout(t);
       if (!layout) return;
       color(c);
-      target_->DrawTextLayout(D2D1::Point2F(b.l, b.t), layout, brush);
+      // Emoji in their own colours (Segoe UI Emoji's colour layers); the brush still colours the rest.
+      // Colour only changes how glyphs are painted, not their advances, so measure() still matches.
+      target_->DrawTextLayout(D2D1::Point2F(b.l, b.t), layout, brush, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
       layout->Release();
     };
 
