@@ -1,5 +1,8 @@
 package dev.sebb.sebtype.next.settings
 
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -218,9 +221,9 @@ fun Item(
 
 /** A row that opens a screen, with an arrow at its end */
 @Composable
-fun NavItem(title: String, subtitle: String? = null, icon: (@Composable () -> Unit)? = null, onClick: () -> Unit) =
+fun NavItem(title: String, subtitle: String? = null, icon: (@Composable () -> Unit)? = null, arrow: Boolean = true, onClick: () -> Unit) =
     Item(title, subtitle, Modifier.clickable(onClick = onClick), icon) {
-        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Ink)
+        if (arrow) Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Ink)
     }
 
 @Composable
@@ -261,3 +264,9 @@ fun KeyboardIcon() = androidx.compose.foundation.Canvas(Modifier.size(26.dp, 18.
     for (row in 0..1) for (col in 0..4) drawRect(key, Offset(u * (1 + col * 2.4f), u * (1.5f + row * 2.5f)), Size(u * 1.6f, u * 1.6f))
     drawRect(key, Offset(u * 3.4f, u * 6.6f), Size(u * 6.2f, u * 1.4f))
 }
+
+/** Picnic stays light in the system's dark mode (#111), so the system bars keep their dark icons. */
+fun ComponentActivity.picnicEdgeToEdge() = enableEdgeToEdge(
+    SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+    SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+)

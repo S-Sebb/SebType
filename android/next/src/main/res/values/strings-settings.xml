@@ -108,11 +108,11 @@
     <string name="settings_reading">Reading</string>
     <string name="settings_credits_intro">SebType is built on these projects. Thank you to everyone who made them.</string>
     <string name="settings_credits_tag">Credits</string>
-    <string name="setup_title">Set up SebType</string>
+    <string name="setup_step">Setup · step %1$d of 2</string>
+    <string name="setup_enable_text">Welcome to SebType.\n\nTo get started, turn SebType on in Android\'s list of keyboards.</string>
+    <string name="setup_choose_text">Now choose SebType as the keyboard you type with.</string>
     <string name="setup_enable">Turn on SebType</string>
-    <string name="setup_enable_subtitle">In Android\'s list of keyboards</string>
     <string name="setup_choose">Choose SebType</string>
-    <string name="setup_choose_subtitle">Make it the keyboard you type with</string>
     <string name="import_backup_subtitle">Replaces this phone\'s settings, learned words and dictionaries</string>
     <string name="import_as">Import into %s</string>
     <string name="import_unknown">SebType can\'t read this file</string>

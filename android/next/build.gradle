@@ -33,7 +33,7 @@ android {
         minSdk 24
         targetSdk 35
         versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
-        versionName 'next'
+        versionName System.getenv('VERSION_NAME') ?: 'next'
         ndk {
             abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
         }

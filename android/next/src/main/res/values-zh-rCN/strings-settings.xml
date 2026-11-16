@@ -104,11 +104,11 @@
     <string name="settings_reading">读音</string>
     <string name="settings_credits_intro">SebType 基于这些项目构建，感谢所有制作它们的人。</string>
     <string name="settings_credits_tag">致谢</string>
-    <string name="setup_title">设置 SebType</string>
+    <string name="setup_step">设置 · 第 %1$d 步，共 2 步</string>
+    <string name="setup_enable_text">欢迎使用 SebType。\n\n首先，请在 Android 的键盘列表中启用 SebType。</string>
+    <string name="setup_choose_text">接下来，请选择 SebType 作为你正在使用的键盘。</string>
     <string name="setup_enable">启用 SebType</string>
-    <string name="setup_enable_subtitle">在 Android 的键盘列表中</string>
     <string name="setup_choose">选择 SebType</string>
-    <string name="setup_choose_subtitle">设为你正在使用的键盘</string>
     <string name="import_backup_subtitle">替换本机的设置、学到的词和词典</string>
     <string name="import_as">导入到%s</string>
     <string name="import_unknown">SebType 无法读取此文件</string>

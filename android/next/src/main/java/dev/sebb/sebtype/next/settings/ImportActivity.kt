@@ -7,7 +7,6 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -41,7 +40,7 @@ class ImportActivity : ComponentActivity() {
     private var importing by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        picnicEdgeToEdge()
         super.onCreate(savedInstanceState)
         Engines.configure(this)
         val uri = intent.data ?: intent.getParcelableExtraCompat()

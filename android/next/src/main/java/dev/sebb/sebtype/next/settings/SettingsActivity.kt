@@ -10,7 +10,6 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +64,7 @@ class SettingsActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        picnicEdgeToEdge()
         super.onCreate(savedInstanceState)
         Engines.configure(this)
         for (name in listOf(Settings.Secure.DEFAULT_INPUT_METHOD, Settings.Secure.ENABLED_INPUT_METHODS)) {
@@ -167,21 +166,21 @@ private fun Home(nav: Nav) {
             NavItem(stringResource(R.string.sebtype_settings_languages),
                 Conf.languages().joinToString(" → ") { short.getValue(it) } + " · " +
                     stringResource(if (autocorrect) R.string.sebtype_settings_autocorrect_on else R.string.sebtype_settings_autocorrect_off),
-                icon = { Badge(false) { Globe() } }) { nav.go("languages") }
+                arrow = false, icon = { Badge(false) { Globe() } }) { nav.go("languages") }
             NavItem(stringResource(R.string.settings_keyboard), stringResource(R.string.settings_keyboard_subtitle),
-                icon = { Badge(true) { KeyboardIcon() } }) { nav.go("keyboard") }
+                arrow = false, icon = { Badge(true) { KeyboardIcon() } }) { nav.go("keyboard") }
         }
         Card {
             NavItem(stringResource(R.string.sebtype_settings_privacy),
                 stringResource(if (learning) R.string.sebtype_settings_learning_on else R.string.sebtype_settings_learning_off) + " · " +
                     stringResource(if (clipboard) R.string.sebtype_settings_clipboard_on else R.string.sebtype_settings_clipboard_off),
-                icon = { Badge(false) { Icon(Icons.Filled.Lock, null, tint = Ink) } }) { nav.go("privacy") }
+                arrow = false, icon = { Badge(false) { Icon(Icons.Filled.Lock, null, tint = Ink) } }) { nav.go("privacy") }
             NavItem(stringResource(R.string.sebtype_settings_backup), stringResource(R.string.sebtype_settings_backup_subtitle),
-                icon = { Badge(true) { Icon(Icons.Filled.Refresh, null, tint = Color.White) } }) { nav.go("backup") }
+                arrow = false, icon = { Badge(true) { Icon(Icons.Filled.Refresh, null, tint = Color.White) } }) { nav.go("backup") }
         }
         Card {
             NavItem(stringResource(R.string.sebtype_settings_about), stringResource(R.string.settings_about_subtitle),
-                icon = { Badge(false) { Icon(Icons.Filled.Info, null, tint = Ink) } }) { nav.go("about") }
+                arrow = false, icon = { Badge(false) { Icon(Icons.Filled.Info, null, tint = Ink) } }) { nav.go("about") }
         }
     }
 }
