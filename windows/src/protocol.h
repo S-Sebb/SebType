@@ -16,7 +16,7 @@ enum class Op : uint8_t {
   Key,       // key, lang (the app's), learning (the field's): true in reply.taken when the core took it
   Select,    // index: a click on a candidate of the page
   Page,      // next: the window's page arrows
-  FocusIn,   // lang: focus came to a text field of an app in this language
+  FocusIn,   // lang, learning: focus came to a text field of an app in this language
   FocusOut,  // focus left it: what is being typed is dropped
   Language,  // lang: Windows switched to this language's profile
   Menu,      // index: a pick in the tray menu (an item of reply.menu)

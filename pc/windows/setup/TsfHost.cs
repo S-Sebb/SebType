@@ -21,6 +21,32 @@ namespace SebType {
     public IntPtr hklSubstitute; public uint caps; public IntPtr hkl; public uint flags;
   }
 
+  // The field's input scopes, as browsers give them (test-private.ps1, #270).
+  [ComVisible(true), Guid("fde1eaee-6924-4cdf-91e7-da38cff5559d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface ITfInputScope {
+    [PreserveSig] int GetInputScopes(out IntPtr scopes, out uint count);
+    [PreserveSig] int GetPhrase(out IntPtr phrases, out uint count);
+    [PreserveSig] int GetRegularExpression(out IntPtr regex);
+    [PreserveSig] int GetSRGS(out IntPtr srgs);
+    [PreserveSig] int GetXML(out IntPtr xml);
+  }
+  [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
+  public class InputScopes : ITfInputScope {
+    const int E_NOTIMPL = unchecked((int)0x80004001);
+    readonly int[] scopes;
+    public InputScopes(int[] scopes) { this.scopes = scopes; }
+    public int GetInputScopes(out IntPtr p, out uint count) {
+      count = (uint)scopes.Length;
+      p = Marshal.AllocCoTaskMem(4 * scopes.Length);
+      Marshal.Copy(scopes, 0, p, scopes.Length);
+      return 0;
+    }
+    public int GetPhrase(out IntPtr p, out uint count) { p = IntPtr.Zero; count = 0; return E_NOTIMPL; }
+    public int GetRegularExpression(out IntPtr s) { s = IntPtr.Zero; return E_NOTIMPL; }
+    public int GetSRGS(out IntPtr s) { s = IntPtr.Zero; return E_NOTIMPL; }
+    public int GetXML(out IntPtr s) { s = IntPtr.Zero; return E_NOTIMPL; }
+  }
+
   [ComImport, Guid("28888fe3-c2a0-483a-a3ea-8cb1ce51ff3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   public interface ITextStoreACP {
     [PreserveSig] int AdviseSink(ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] object sink, uint mask);
@@ -234,13 +260,36 @@ namespace SebType {
     public int InsertEmbeddedAtSelection(uint flags, IntPtr data, out int start, out int end, out TS_TEXTCHANGE change) {
       start = end = 0; change = new TS_TEXTCHANGE(); return E_NOTIMPL;
     }
-    public int RequestSupportedAttrs(uint flags, uint count, IntPtr attrs) { return S_OK; }
-    public int RequestAttrsAtPosition(int pos, uint count, IntPtr attrs, uint flags) { return S_OK; }
+    // The field's input scopes (GUID_PROP_INPUTSCOPE), the one attribute this store has: none while Scopes is
+    // null. TSF asks for attributes, then retrieves the ones asked for.
+    public static int[] Scopes;
+    static readonly Guid InputScopeAttr = new Guid("1713dd5a-68e7-4a5b-9af6-592a595c778d");
+    bool scopesAsked;
+    void Ask(uint count, IntPtr attrs) {
+      scopesAsked = false;
+      for (int i = 0; i < count; i++) {
+        var id = new byte[16];
+        Marshal.Copy(attrs + 16 * i, id, 0, 16);
+        if (new Guid(id) == InputScopeAttr) scopesAsked = Scopes != null;
+      }
+    }
+    public int RequestSupportedAttrs(uint flags, uint count, IntPtr attrs) { Ask(count, attrs); return S_OK; }
+    public int RequestAttrsAtPosition(int pos, uint count, IntPtr attrs, uint flags) { Ask(count, attrs); return S_OK; }
     public int RequestAttrsTransitioningAtPosition(int pos, uint count, IntPtr attrs, uint flags) { return S_OK; }
     public int FindNextAttrTransition(int start, int halt, uint count, IntPtr attrs, uint flags, out int next, out int found, out int offset) {
       next = halt; found = 0; offset = 0; return S_OK;
     }
-    public int RetrieveRequestedAttrs(uint count, IntPtr vals, out uint fetched) { fetched = 0; return S_OK; }
+    // TS_ATTRVAL: the attribute's GUID, an overlap id, then a VARIANT (here VT_UNKNOWN) at 8-byte alignment.
+    public int RetrieveRequestedAttrs(uint count, IntPtr vals, out uint fetched) {
+      fetched = 0;
+      if (!scopesAsked || count == 0) return S_OK;
+      scopesAsked = false;
+      Marshal.Copy(InputScopeAttr.ToByteArray(), 0, vals, 16);
+      Marshal.WriteInt32(vals + 16, 0);
+      Marshal.GetNativeVariantForObject(new UnknownWrapper(new InputScopes(Scopes)), vals + 24);
+      fetched = 1;
+      return S_OK;
+    }
     public int GetEndACP(out int acp) { acp = Text.Length; return (lockFlags & TS_LF_READ) == 0 ? TS_E_NOLOCK : S_OK; }
     public int GetActiveView(out uint view) { view = 1; return S_OK; }
     public int GetACPFromPoint(uint view, IntPtr pt, uint flags, out int acp) { acp = 0; return S_OK; }

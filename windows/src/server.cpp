@@ -108,6 +108,13 @@ Reply state(bool taken, std::string commit = {}) {
   return r;
 }
 
+// A private field (#270) learns nothing new. server.log notes each change, which the tests read.
+void followField(bool learning) {
+  if (core->fieldLearning() == learning) return;
+  core->setField(Field::Text, learning);
+  note(learning ? "field: learns" : "field: private, learns nothing");
+}
+
 Reply handle(const Request &q) {
   const DWORD asked = GetTickCount();
   std::lock_guard<std::mutex> hold(lock);
@@ -130,13 +137,15 @@ Reply handle(const Request &q) {
         core->selectLanguage(q.lang);
         core->takeNotice(true);
       }
-      if (core->fieldLearning() != q.learning) core->setField(Field::Text, q.learning);
+      followField(q.learning);
       taken = core->key(q.key);
       break;
     case Op::Select: core->select(q.index); break;
     case Op::Page: core->changePage(q.next); break;
     case Op::FocusOut: core->focusOut(); break;
     case Op::FocusIn:  // each app may have its own language (Windows' per-app input setting)
+      followField(q.learning);
+      [[fallthrough]];
     case Op::Language:
       if (core->language() != q.lang) core->selectLanguage(q.lang);
       core->takeNotice(true);  // Windows shows its own switcher
