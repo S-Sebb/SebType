@@ -13,7 +13,8 @@ per check in <Out>\paging-results.txt, pictures <Out>\*.png; exit 0 only if all 
 
 -Colours instead takes pictures of the system look in Windows' light mode, dark mode and the high-contrast
 theme Night sky, across and down, and of Picnic for comparison (#279): the first page (faint ‹), the second
-and Japanese with Mozc's comments. Light/dark mode and high contrast go back as they were. It makes no input
+and Japanese with Mozc's comments,
+and 你好 with its emoji 👋 (second) in colour, then highlighted (#300). Light/dark mode and high contrast go back as they were. It makes no input
 of its own, as test-focus-out.ps1 (#277): keys go to TSF's keystroke manager, so a screen that is off stays
 off. -Watch <file> is test-focus-out.ps1 -WatchTo's log of the display's state: the run stops once it shows
 the display on. -Trial needs no SebType: each mode switch, one key and a picture of the field, then the
@@ -118,7 +119,7 @@ $null = $in::SetProcessDpiAwarenessContext([IntPtr]-4)
 $conf = "$env:APPDATA\SebType\sebtype.conf"
 $confBefore = if (Test-Path $conf) { Get-Content -Raw $conf }
 
-function Keys { foreach ($k in $args) { Dark; $null = $(if ($Colours) { $tsf } else { $in })::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
+function Keys { foreach ($k in $args) { Dark; $null = $(if ($Colours) { $tsf } else { $in })::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Down' { 0x28 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
 function TypeText($s) { $chars = @($s.ToCharArray() | ForEach-Object { "$_" }); Keys @chars }
 # With -Watch: stop once the display has been on.
 function Dark { if ($Watch -and (Get-Content $Watch -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch ' 0$' })) { throw "the display came on: $((Get-Content $Watch) -join ', ')" } }
@@ -188,6 +189,8 @@ if ($Colours) {
           Mode $mode; Conf $look $o; Caret 20 20; Field zh
           Word 'nihao'; $null = Shot "$tag-1-first"
           Keys PageDown; $null = Shot "$tag-2-second"; Keys Escape Escape
+          # rime-ice's emoji filter puts 👋 right after 你好, so Down highlights it.
+          Word 'nihao'; $null = Shot "$tag-4-emoji"; Keys Down; $null = Shot "$tag-5-emoji-highlighted"; Keys Escape Escape
           Field ja; Keys Escape; $tsf::Clear(); TypeText 'kawaii'; Keys space space; Start-Sleep -Milliseconds 600
           $null = Shot "$tag-3-ja"; Keys Escape Escape Escape
           "window $('{0:x6}' -f $in::GetSysColor(5)), text $('{0:x6}' -f $in::GetSysColor(8)) (0xBBGGRR)"
