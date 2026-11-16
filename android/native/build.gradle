@@ -77,8 +77,10 @@ android {
 }
 
 // Bazel builds only when engines/mozc changes; Gradle's build cache serves the result to every worktree.
+// MODULE.bazel.lock is Bazel's own output (gitignored): only checkouts where Bazel already ran have it, so as
+// an input it made a new checkout miss the cache and run Bazel (#250).
 tasks.register('buildMozcNative', Exec) {
-    inputs.files(fileTree(mozcSrc) { exclude 'bazel-*' }).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(fileTree(mozcSrc) { exclude 'bazel-*', 'MODULE.bazel.lock' }).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file('build-mozc.sh').withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.property('abis', abis)
     outputs.dir mozcLibs
