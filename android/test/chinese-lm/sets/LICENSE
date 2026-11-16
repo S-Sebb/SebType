@@ -1,0 +1,9 @@
+The Chinese harness's test sets, made by ../make_sets.py from openly licensed text. None of it is the user's own
+words or userdb. Each file keeps its sources' licences:
+
+- The chat sets (*-chat.tsv, and the chat items in typo.tsv): the test split of LCCC base
+  (https://huggingface.co/datasets/silver/lccc, revision 5bd582fa), MIT License, Wang et al. 2020.
+- The news sets (*-news.tsv, and the news items in typo.tsv): Chinese Wikinews articles
+  (https://zh.wikinews.org, the 200 newest published in the dump of 2026-11-01; wikinews-articles.tsv lists
+  each one's page id), Creative Commons Attribution 2.5, by Wikinews's contributors.
+- The pinyin, abbreviations and typos in every file are generated (MIT, ../../../../LICENSE-SebType).
