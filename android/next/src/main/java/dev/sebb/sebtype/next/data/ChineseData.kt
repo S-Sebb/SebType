@@ -57,18 +57,24 @@ object ChineseData {
      * other spelling (Rime's `derive`, as in its documentation's fuzzy pinyin example).
      */
     enum class Fuzzy(val label: String, val rules: List<String>) {
-        Z("z = zh", listOf("derive/^zh/z/", "derive/^z([^h])/zh$1/")),
-        C("c = ch", listOf("derive/^ch/c/", "derive/^c([^h])/ch$1/")),
-        S("s = sh", listOf("derive/^sh/s/", "derive/^s([^h])/sh$1/")),
-        LN("l = n", listOf("derive/^n/l/", "derive/^l/n/")),
-        FH("f = h", listOf("derive/^f/h/", "derive/^h/f/")),
-        RL("r = l", listOf("derive/^r/l/", "derive/^l/r/")),
-        KG("k = g", listOf("derive/^k/g/", "derive/^g/k/")),
-        AN("an = ang", listOf("derive/ang$/an/", "derive/([^i])an$/$1ang/")),
-        EN("en = eng", listOf("derive/eng$/en/", "derive/en$/eng/")),
-        IN("in = ing", listOf("derive/ing$/in/", "derive/in$/ing/")),
-        IAN("ian = iang", listOf("derive/iang$/ian/", "derive/ian$/iang/")),
-        UAN("uan = uang", listOf("derive/uang$/uan/", "derive/uan$/uang/")),
+        Z_ZH("z = zh", listOf("derive/^zh/z/", "derive/^z([^h])/zh$1/")),
+        C_CH("c = ch", listOf("derive/^ch/c/", "derive/^c([^h])/ch$1/")),
+        S_SH("s = sh", listOf("derive/^sh/s/", "derive/^s([^h])/sh$1/")),
+        L_N("l = n", listOf("derive/^n/l/", "derive/^l/n/")),
+        F_H("f = h", listOf("derive/^f/h/", "derive/^h/f/")),
+        R_L("r = l", listOf("derive/^r/l/", "derive/^l/r/")),
+        K_G("k = g", listOf("derive/^k/g/", "derive/^g/k/")),
+        AN_ANG("an = ang", listOf("derive/ang$/an/", "derive/([^i])an$/$1ang/")),
+        EN_ENG("en = eng", listOf("derive/eng$/en/", "derive/en$/eng/")),
+        IN_ING("in = ing", listOf("derive/ing$/in/", "derive/in$/ing/")),
+        IAN_IANG("ian = iang", listOf("derive/iang$/ian/", "derive/ian$/iang/")),
+        UAN_UANG("uan = uang", listOf("derive/uang$/uan/", "derive/uan$/uang/"));
+
+        companion object {
+            /** [Prefs.FUZZY]'s value: the names, comma-separated, as today's app keeps them */
+            fun of(names: String) = names.split(",").mapNotNull { n -> entries.find { it.name == n.trim() } }.toSet()
+            fun names(fuzzy: Set<Fuzzy>) = entries.filter { it in fuzzy }.joinToString(",") { it.name }
+        }
     }
 
     // SebType's patch of rime-ice's schema; only fuzzy pinyin goes in it, so none is no file.
@@ -82,8 +88,10 @@ object ChineseData {
     }
 
     /** Writes the schema patch for [fuzzy] if it changed; true when it did, and 中文 must compile it again. */
+    fun patchFile(context: Context) = File(Engines.userDir(context), PATCH)
+
     fun writePatch(context: Context, fuzzy: Set<Fuzzy>): Boolean {
-        val file = File(Engines.userDir(context), PATCH)
+        val file = patchFile(context)
         val text = patch(fuzzy)
         if ((if (file.isFile) file.readText() else "") == text) return false
         if (text.isEmpty()) file.delete() else file.apply { parentFile!!.mkdirs() }.writeText(text)

@@ -21,6 +21,7 @@ import ast
 import datetime
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -71,7 +72,8 @@ def adb(*args, timeout=120, check=True):
 
 
 def root(cmd):
-    return adb("shell", f"su 0 {cmd}")
+    # Through sh -c: the whole of cmd runs as root, not only its first command.
+    return adb("shell", f"su 0 sh -c {shlex.quote(cmd)}")
 
 
 def external_files():
@@ -1274,7 +1276,16 @@ def as_app(pkg, new):
     """Points the helpers at an installed app: today's (FUTO's keyboard) or the new one, in package pkg."""
     global PKG, NEXT, IME, FRAME_ID, RIME_USER, RIME_SHARED
     PKG, NEXT = pkg, new
-    IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+    # The new keyboard's classes keep their package when it is built as dev.sebb.sebtype.
+    IME = (
+        (
+            f"{PKG}/.SebTypeIme"
+            if PKG.endswith(".next")
+            else f"{PKG}/dev.sebb.sebtype.next.SebTypeIme"
+        )
+        if NEXT
+        else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+    )
     FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
     RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
     RIME_SHARED = f"/data/user/0/{PKG}/no_backup/rime/shared"

@@ -47,4 +47,10 @@ object Migration {
             old.edit().remove(OLD_INCOGNITO).apply()
         }
     }
+
+    /** Once the options are read: today's fuzzy pinyin was its own; Rime gets it as SebType's schema patch. */
+    fun afterOptions(context: Context) {
+        val fuzzy = ChineseData.Fuzzy.of(Prefs[Prefs.FUZZY])
+        if (fuzzy.isNotEmpty() && !ChineseData.patchFile(context).exists()) ChineseData.setFuzzy(context, fuzzy)
+    }
 }

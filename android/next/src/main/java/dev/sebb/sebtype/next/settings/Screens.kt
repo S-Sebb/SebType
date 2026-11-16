@@ -148,7 +148,7 @@ fun LanguagesScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_
     Card {
         val fuzzy by Prefs.flow(context, Prefs.FUZZY).collectAsState(Prefs[Prefs.FUZZY])
         NavItem(stringResource(R.string.settings_fuzzy),
-            ChineseData.Fuzzy.entries.filter { it.name in fuzzy }.joinToString(", ") { it.label.replace(" ", "") }
+            ChineseData.Fuzzy.of(fuzzy).joinToString(", ") { it.label.replace(" ", "") }
                 .ifEmpty { stringResource(R.string.sebtype_settings_off) }) { nav.go("fuzzy") }
         ConfSwitch(stringResource(R.string.sebtype_settings_zh_emoji), stringResource(R.string.sebtype_settings_zh_emoji_subtitle),
             "Chinese", "Emoji", true)
@@ -169,13 +169,14 @@ fun LanguagesScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_
 @Composable
 fun FuzzyScreen(nav: Nav) = Screen(stringResource(R.string.settings_fuzzy), nav::back) {
     val context = LocalContext.current
-    val on by Prefs.flow(context, Prefs.FUZZY).collectAsState(Prefs[Prefs.FUZZY])
+    val value by Prefs.flow(context, Prefs.FUZZY).collectAsState(Prefs[Prefs.FUZZY])
+    val on = ChineseData.Fuzzy.of(value)
     Card {
         ChineseData.Fuzzy.entries.forEach { mode ->
-            SwitchItem(mode.label, null, mode.name in on) { enabled ->
-                val names = if (enabled) on + mode.name else on - mode.name
-                Prefs.set(context, Prefs.FUZZY, names)
-                ChineseData.setFuzzy(context, ChineseData.Fuzzy.entries.filter { it.name in names }.toSet())
+            SwitchItem(mode.label, null, mode in on) { enabled ->
+                val fuzzy = if (enabled) on + mode else on - mode
+                Prefs.set(context, Prefs.FUZZY, ChineseData.Fuzzy.names(fuzzy))
+                ChineseData.setFuzzy(context, fuzzy)
             }
         }
     }
