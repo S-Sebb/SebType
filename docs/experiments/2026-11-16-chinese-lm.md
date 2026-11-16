@@ -85,7 +85,10 @@ the text, so it reads them from the letters and the sentence before them.
 Fedora build container, with Fedora's librime 1.16 and its Lua and octagram plugins as on Linux. Each item
 starts from a fresh copy of a deployed user folder, so nothing is learned between items. `bench.sh` runs the
 three stacks over every set, 16 processes at a time, each on one thread. `score.py` scores them, and
-`run.sh` runs everything twice from nobara-pc and checks that the runs agree.
+`run.sh` runs everything twice from nobara-pc and checks that the runs agree item by item. The only
+exception is the time or date that rime-ice's own triggers (`sj`, `rq` and the like) put among the candidates.
+Before the sets, `bench.sh` runs `zh_lm_test`: a tree of 520 candidate characters, more than one batch, must
+score as each text alone.
 
 The sets (`make_sets.py`, committed in `sets/` with their licences) come from text training never sees:
 

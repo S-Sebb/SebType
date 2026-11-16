@@ -205,60 +205,59 @@ void Model::decodeExample(const std::vector<int> &prefix, const std::vector<std:
             seqs[it->second].push_back(nSeqs);
         }
     }
-    // The example's tokens the cache doesn't hold go in the same batch, on every sequence.
+    // The example's tokens the cache doesn't hold go first, on every sequence, then the tree, each node after
+    // its parent, in batches of at most n_batch: a node in a later batch reads its parent from the cache.
     size_t keep = 0;
     while (keep < mCached.size() && keep < prefix.size() && mCached[keep] == prefix[keep]) keep++;
     keep = std::min(keep, prefix.size() - 1);  // the last token is decoded again for its logits
-    std::vector<float> root;
-    if (prefix.size() - keep + paths.size() > static_cast<size_t>(llama_n_batch(mCtx))) {
-        timer.reset();
-        const float *l = advance(prefix);
-        timer.emplace(profile.us[Profile::BranchCache]);
-        root.assign(l, l + mVocabSize);
-        keep = prefix.size();
-    } else {
-        clearBranches();
-    }
+    clearBranches();
     llama_memory_t mem = llama_get_memory(mCtx);
     llama_memory_seq_rm(mem, 0, keep, -1);
     for (int s = 1; s <= nSeqs; s++) llama_memory_seq_cp(mem, 0, s, -1, -1);
     mBranches = nSeqs;
-    const size_t tail = prefix.size() - keep;
-    llama_batch batch = llama_batch_init(tail + paths.size(), 0, nSeqs + 1);
-    for (size_t i = keep; i < prefix.size(); i++) {
-        const int k = batch.n_tokens++;
-        batch.token[k] = prefix[i];
-        batch.pos[k] = i;
-        batch.n_seq_id[k] = nSeqs + 1;
-        for (int s = 0; s <= nSeqs; s++) batch.seq_id[k][s] = s;
-        batch.logits[k] = i + 1 == prefix.size();
-    }
-    for (size_t j = 0; j < paths.size(); j++) {
-        const int k = batch.n_tokens++;
-        batch.token[k] = paths[j].back();
-        batch.pos[k] = prefix.size() + paths[j].size() - 1;
-        batch.n_seq_id[k] = seqs[j].size();
-        for (size_t s = 0; s < seqs[j].size(); s++) batch.seq_id[k][s] = seqs[j][s];
-        batch.logits[k] = true;
-    }
-    int status = 0;
-    if (batch.n_tokens > 0) {
+    const size_t tail = prefix.size() - keep, total = tail + paths.size();
+    const size_t nBatch = llama_n_batch(mCtx);
+    llama_batch batch = llama_batch_init(std::min(total, nBatch), 0, nSeqs + 1);
+    auto node = [&](const float *l, int seq) { return Node{seq, logNorm(l), std::vector<float>(l, l + mVocabSize)}; };
+    for (size_t first = 0; first < total; first += nBatch) {
+        const size_t last = std::min(total, first + nBatch);
+        batch.n_tokens = 0;
+        for (size_t i = first; i < last; i++) {
+            const int k = batch.n_tokens++;
+            if (i < tail) {
+                batch.token[k] = prefix[keep + i];
+                batch.pos[k] = keep + i;
+                batch.n_seq_id[k] = nSeqs + 1;
+                for (int s = 0; s <= nSeqs; s++) batch.seq_id[k][s] = s;
+                batch.logits[k] = i + 1 == tail;
+            } else {
+                const auto &path = paths[i - tail];
+                const auto &on = seqs[i - tail];
+                batch.token[k] = path.back();
+                batch.pos[k] = prefix.size() + path.size() - 1;
+                batch.n_seq_id[k] = on.size();
+                for (size_t s = 0; s < on.size(); s++) batch.seq_id[k][s] = on[s];
+                batch.logits[k] = true;
+            }
+        }
         timer.emplace(profile.us[Profile::BranchDecode]);
         profile.decodes++, profile.tokens += batch.n_tokens;
-        status = llama_decode(mCtx, batch);
+        if (llama_decode(mCtx, batch) != 0) {
+            llama_batch_free(batch);
+            mCached.clear();
+            llama_memory_seq_rm(mem, 0, -1, -1);
+            throw std::runtime_error("zh-lm: decoding failed");
+        }
+        // The next decode overwrites the logits.
+        timer.emplace(profile.us[Profile::ScoreNorm]);
+        for (size_t i = std::max(first, tail - 1); i < last; i++) {
+            const float *l = llama_get_logits_ith(mCtx, i - first);
+            if (i < tail) mNodes.emplace(std::vector<int>{}, node(l, 0));
+            else mNodes.emplace(paths[i - tail], node(l, seqs[i - tail][0]));
+        }
     }
     llama_batch_free(batch);
-    if (status != 0) {
-        mCached.clear();
-        llama_memory_seq_rm(mem, 0, -1, -1);
-        throw std::runtime_error("zh-lm: decoding failed");
-    }
     mCached = mExample = prefix;
-    timer.emplace(profile.us[Profile::ScoreNorm]);
-    auto node = [&](const float *l, int seq) { return Node{seq, logNorm(l), std::vector<float>(l, l + mVocabSize)}; };
-    if (root.empty()) mNodes.emplace(std::vector<int>{}, node(llama_get_logits_ith(mCtx, tail - 1), 0));
-    else mNodes.emplace(std::vector<int>{}, node(root.data(), 0));
-    for (size_t j = 0; j < paths.size(); j++) mNodes.emplace(paths[j], node(llama_get_logits_ith(mCtx, tail + j), seqs[j][0]));
 }
 
 float Model::logNorm(const float *logits) const {

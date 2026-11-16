@@ -26,3 +26,6 @@ set(CORE ${CMAKE_CURRENT_SOURCE_DIR}/../../../core)
 add_executable(zhbench src/main.cpp src/zh_lm.cpp ${CORE}/src/rime.cpp ${CORE}/src/pager.cpp)
 target_include_directories(zhbench PRIVATE ${CORE}/include)
 target_link_libraries(zhbench PRIVATE PkgConfig::Rime llama pthread)
+
+add_executable(zh_lm_test src/zh_lm_test.cpp src/zh_lm.cpp)
+target_link_libraries(zh_lm_test PRIVATE llama pthread)

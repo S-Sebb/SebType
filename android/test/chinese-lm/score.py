@@ -97,27 +97,53 @@ def summarise(out):
     return summary
 
 
+# rime-ice's date_translator (rime_ice.schema.yaml, lua/date_translator.lua): the letters that give the clock's
+# time or the date, and the forms it writes them in. Only these texts may change between runs, and with them
+# the model's order.
+CLOCK = {
+    k: re.compile(v)
+    for k, v in {
+        "sj": r"(?:(?:早上|中午|下午|晚上|凌晨) )?\d\d:\d\d(?::\d\d)?(?: [AP]M)?",
+        "rq": r"\d{4}[-/.]?\d\d[-/.]?\d\d|\d{4}年\d{1,2}月\d{1,2}日",
+        "xq": r"(?:星期|礼拜|周)[日一二三四五六]",
+        "dt": r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)?|\d{14}",
+        "ts": r"\d{10}",
+        "rqzh": r"[〇零一二三四五六七八九]{4}年[一二三四五六七八九十]+月[一二三四五六七八九十]+日|\d{4}年\d{1,2}月\d{1,2}日",
+        "rqen": r"\d{1,2}(?:st|nd|rd|th)? [A-Z][a-z]+ \d{4}|[A-Z][a-z]+ \d{1,2}(?:st|nd|rd|th)?, \d{4}",
+    }.items()
+}
+
+
 def same_item(x, y):
-    """Equal rows, but for candidates with digits: rime-ice offers the clock's time for sj (and the date for
-    rq), so those texts, and the model's order among them, change between runs."""
+    """Equal rows, but where the letters are a clock or date trigger, the clock's texts may differ."""
     x, y = x.split("\t"), y.split("\t")
+    if x[:3] != y[:3]:
+        return False
     tx, ty = x[3].split("|"), y[3].split("|")
-    return (
-        x[:3] == y[:3]
-        and len(tx) == len(ty)
-        and all(
-            p == q or (re.search(r"\d", p) and re.search(r"\d", q))
-            for p, q in zip(tx, ty)
-        )
+    clock = lambda t: x[1] in CLOCK and CLOCK[x[1]].fullmatch(t)
+    return len(tx) == len(ty) and all(
+        p == q or (clock(p) and clock(q)) for p, q in zip(tx, ty)
     )
 
 
 def compare(a, b):
-    """Every item's rank and first three candidates must match (so every count does), and p50 and p95 per key."""
+    """Every item's rank and first three candidates must match (so every count does), and p50 and p95 per key.
+    Each run's folder must hold every set its summary scored, with every item."""
     da, db = Path(a).parent, Path(b).parent
+    sa, sb = json.loads(Path(a).read_text()), json.loads(Path(b).read_text())
+    for d, s in ((da, sa), (db, sb)):
+        for st, m in s.items():
+            for name, v in m.items():
+                f = d / f"{st}.{name}.tsv"
+                if isinstance(v, dict) and (
+                    not f.exists()
+                    or len(f.read_text(encoding="utf-8").splitlines()) != v["items"]
+                ):
+                    print(f"{f}: missing or not {v['items']} items")
+                    return 1
     fa = sorted(f.name for f in da.glob("*.*.tsv"))
-    if fa != sorted(f.name for f in db.glob("*.*.tsv")):
-        print("the runs have different sets")
+    if not fa or fa != sorted(f.name for f in db.glob("*.*.tsv")):
+        print("the runs have different or no sets")
         return 1
     diff = []
     for name in fa:
@@ -133,7 +159,6 @@ def compare(a, b):
     if diff:
         print(f"{len(diff)} items differ between the runs: " + ", ".join(diff[:5]))
         return 1
-    sa, sb = json.loads(Path(a).read_text()), json.loads(Path(b).read_text())
     for st in sa:
         for p, (x, y) in zip(("p50", "p95"), zip(sa[st]["key_ms"], sb[st]["key_ms"])):
             if abs(x - y) > 0.25 * max(x, y):
