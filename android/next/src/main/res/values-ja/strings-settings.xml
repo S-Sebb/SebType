@@ -97,6 +97,7 @@
     <string name="settings_vibrate">キー操作バイブレーション</string>
     <string name="settings_sound">キー操作音</string>
     <string name="settings_long_press">長押しの時間</string>
+    <string name="settings_long_press_subtitle">"長押しと見なされるまでのキーのプレス時間"</string>
     <string name="settings_long_press_ms">%d ミリ秒</string>
     <string name="settings_add">追加</string>
     <string name="settings_import_file">インポート</string>

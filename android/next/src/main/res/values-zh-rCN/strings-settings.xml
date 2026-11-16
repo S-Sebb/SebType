@@ -96,6 +96,7 @@
     <string name="settings_vibrate">按键振动</string>
     <string name="settings_sound">按键音</string>
     <string name="settings_long_press">长按时长</string>
+    <string name="settings_long_press_subtitle">"需要按下多长时间才应该被视为长按"</string>
     <string name="settings_long_press_ms">%d 毫秒</string>
     <string name="settings_add">添加</string>
     <string name="settings_import_file">导入</string>
