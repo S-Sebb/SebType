@@ -58,12 +58,19 @@ namespace SebTypePaging {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr c);
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct HIGHCONTRAST { public int size; public uint flags; public string scheme; }
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfoW(uint action, uint param, ref HIGHCONTRAST hc, uint winIni);
+    // The scheme's name as a pointer: Windows owns the string SPI_GETHIGHCONTRAST points it at.
+    [StructLayout(LayoutKind.Sequential)] struct HIGHCONTRAST { public int size; public uint flags; public IntPtr scheme; }
+    [DllImport("user32.dll")] static extern bool SystemParametersInfoW(uint action, uint param, ref HIGHCONTRAST hc, uint winIni);
     [DllImport("user32.dll")] public static extern uint GetSysColor(int index);
-    public static HIGHCONTRAST HighContrast() { var hc = new HIGHCONTRAST(); hc.size = Marshal.SizeOf(hc); SystemParametersInfoW(0x42, (uint)hc.size, ref hc, 0); return hc; }
+    static HIGHCONTRAST GetHighContrast() { var hc = new HIGHCONTRAST(); hc.size = Marshal.SizeOf(hc); SystemParametersInfoW(0x42, (uint)hc.size, ref hc, 0); return hc; }
+    public static uint HighContrastFlags() { return GetHighContrast().flags; }
+    public static string HighContrastScheme() { var p = GetHighContrast().scheme; return p == IntPtr.Zero ? null : Marshal.PtrToStringUni(p); }
     // SPI_SETHIGHCONTRAST, saved and broadcast as Settings does.
-    public static void SetHighContrast(HIGHCONTRAST hc) { hc.size = Marshal.SizeOf(hc); SystemParametersInfoW(0x43, (uint)hc.size, ref hc, 3); }
+    public static void SetHighContrast(uint flags, string scheme) {
+      var hc = new HIGHCONTRAST(); hc.size = Marshal.SizeOf(hc); hc.flags = flags;
+      hc.scheme = string.IsNullOrEmpty(scheme) ? IntPtr.Zero : Marshal.StringToHGlobalUni(scheme);
+      try { SystemParametersInfoW(0x43, (uint)hc.size, ref hc, 3); } finally { if (hc.scheme != IntPtr.Zero) Marshal.FreeHGlobal(hc.scheme); }
+    }
     // The visible candidate window (other apps with the text service have hidden ones).
     public static IntPtr Window() {
       IntPtr found = IntPtr.Zero;
@@ -111,7 +118,7 @@ $null = $in::SetProcessDpiAwarenessContext([IntPtr]-4)
 $conf = "$env:APPDATA\SebType\sebtype.conf"
 $confBefore = if (Test-Path $conf) { Get-Content -Raw $conf }
 
-function Keys { foreach ($k in $args) { Dark; $(if ($Colours) { $tsf } else { $in })::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
+function Keys { foreach ($k in $args) { Dark; $null = $(if ($Colours) { $tsf } else { $in })::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
 function TypeText($s) { $chars = @($s.ToCharArray() | ForEach-Object { "$_" }); Keys @chars }
 # With -Watch: stop once the display has been on.
 function Dark { if ($Watch -and (Get-Content $Watch -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch ' 0$' })) { throw "the display came on: $((Get-Content $Watch) -join ', ')" } }
@@ -145,25 +152,28 @@ function Conf($look, $o) {
 if ($Colours) {
   $personalize = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
   $lightBefore = (Get-ItemProperty $personalize -ErrorAction SilentlyContinue).AppsUseLightTheme
-  $hcBefore = $in::HighContrast()
+  $hcBefore = $in::HighContrastFlags(); $schemeBefore = $in::HighContrastScheme()
+  # Turning high contrast on saves its scheme's name here, and off leaves it.
+  $hcKey = 'HKCU:\Control Panel\Accessibility\HighContrast'
+  $schemeSaved = (Get-ItemProperty $hcKey -ErrorAction SilentlyContinue).'High Contrast Scheme'
   $themeBefore = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes').CurrentTheme
   function Mode($mode) {
-    $hc = $in::HighContrast()
+    $flags = $in::HighContrastFlags()
     $on = $mode -eq 'high-contrast'
-    if ((($hc.flags -band 1) -ne 0) -ne $on) {
-      $hc.flags = if ($on) { $hc.flags -bor 1 } else { $hc.flags -band -bnot 1 }
-      if ($on) { $hc.scheme = 'High Contrast Black' }
-      $in::SetHighContrast($hc); Start-Sleep 8
+    if ((($flags -band 1) -ne 0) -ne $on) {
+      if ($on) { $in::SetHighContrast(($flags -bor 1), 'High Contrast Black') } else { $in::SetHighContrast(($flags -band -bnot 1), $schemeBefore) }
+      Start-Sleep 8
     }
     if (-not $on) { Set-ItemProperty $personalize AppsUseLightTheme ([int]($mode -eq 'light')) -Type DWord }
-    if ((($in::HighContrast().flags -band 1) -ne 0) -ne $on) { throw "high contrast did not turn $(if ($on) { 'on' } else { 'off' })" }
+    if ((($in::HighContrastFlags() -band 1) -ne 0) -ne $on) { throw "high contrast did not turn $(if ($on) { 'on' } else { 'off' })" }
   }
   $tsf::NoInput = $true
   $tsf::Start()
   try {
     if ($Trial) {
       Check 'trial' {
-        Dark; Mode dark; Dark; Mode light; Dark; Mode high-contrast; Dark; Mode light; Dark
+        foreach ($m in 'dark', 'light', 'high-contrast', 'light') { Write-Host "trial: $m"; Mode $m; Dark }
+        Write-Host 'trial: one key'
         if (-not $tsf::Focus()) { throw "the field did not come to the front: $($tsf::FocusState())" }
         Keys a; $tsf::Settle(500)
         if ($in::Blank(0, 0, 640, 200)) { throw 'the picture of the field is blank' }
@@ -187,14 +197,16 @@ if ($Colours) {
   } finally {
     $tsf::Stop()
     if ($null -ne $confBefore) { Set-Content -NoNewline -Encoding utf8 $conf $confBefore } else { Remove-Item -ErrorAction SilentlyContinue $conf }
-    if ($in::HighContrast().flags -ne $hcBefore.flags) { $in::SetHighContrast($hcBefore); Start-Sleep 8 }
+    if ($in::HighContrastFlags() -ne $hcBefore) { $in::SetHighContrast($hcBefore, $schemeBefore); Start-Sleep 8 }
+    if ($null -ne $schemeSaved) { Set-ItemProperty $hcKey 'High Contrast Scheme' $schemeSaved } else { Remove-ItemProperty $hcKey 'High Contrast Scheme' -ErrorAction SilentlyContinue }
     if ($null -ne $lightBefore) { Set-ItemProperty $personalize AppsUseLightTheme $lightBefore -Type DWord } else { Remove-ItemProperty $personalize AppsUseLightTheme -ErrorAction SilentlyContinue }
     $themeAfter = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes').CurrentTheme
     Check 'settings-restored' {
-      if ($in::HighContrast().flags -ne $hcBefore.flags) { throw "high-contrast flags $($in::HighContrast().flags), were $($hcBefore.flags)" }
+      if ($in::HighContrastFlags() -ne $hcBefore) { throw "high-contrast flags $($in::HighContrastFlags()), were $hcBefore" }
       if ((Get-ItemProperty $personalize -ErrorAction SilentlyContinue).AppsUseLightTheme -ne $lightBefore) { throw 'AppsUseLightTheme differs' }
+      if ((Get-ItemProperty $hcKey -ErrorAction SilentlyContinue).'High Contrast Scheme' -ne $schemeSaved) { throw "High Contrast Scheme differs from '$schemeSaved'" }
       if ($themeAfter -ne $themeBefore) { throw "theme $themeAfter, was $themeBefore" }
-      "AppsUseLightTheme $lightBefore, high contrast flags $($hcBefore.flags), theme $themeBefore"
+      "AppsUseLightTheme $lightBefore, high contrast flags $hcBefore, theme $themeBefore"
     }
   }
   $failed = @(Get-Content $results | Where-Object { $_ -like 'FAIL *' }).Count
