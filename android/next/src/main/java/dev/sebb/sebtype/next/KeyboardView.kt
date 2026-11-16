@@ -105,6 +105,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private val a11y = Accessibility()
 
     private companion object {
+        /** A key's vibration, as short as a tap */
+        const val VIBRATE_MS = 12L
         /** A row's height in dp at the default height */
         const val ROW = 59.3f
         /** Split: each half's share of the width */
@@ -260,7 +262,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     canvas.drawText(s, cx, cy + label.textSize * 0.35f, label)
                 }
             }
-            key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
+            if (hints) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
         }
     }
 
@@ -284,6 +286,17 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     /** The settings' long-press time and key popup ([dev.sebb.sebtype.next.data.Prefs]) */
     var longPressMs = 300L
     var previews = true
+    var hints = true
+    /** The vibration's strength, 1–100 % */
+    var strength = 50
+    private val vibrator = context.getSystemService(android.os.Vibrator::class.java)
+
+    /** A short tap of the motor at [strength]; a swipe's steps get a lighter one. */
+    private fun vibrate(light: Boolean) {
+        val amplitude = (255 * strength / 100 / (if (light) 2 else 1)).coerceIn(1, 255)
+        if (vibrator?.hasAmplitudeControl() == true) vibrator.vibrate(android.os.VibrationEffect.createOneShot(VIBRATE_MS, amplitude))
+        else performHapticFeedback(if (light) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.KEYBOARD_TAP)
+    }
     private val repeatStartMs = 400L
     private val repeatMs = 50L
 
@@ -432,7 +445,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     /** A key's buzz and click; [Code.GAP]: a swipe's step, a buzz only */
     private fun feedback(code: Code) {
-        if (haptics) performHapticFeedback(if (code == Code.GAP) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.KEYBOARD_TAP)
+        if (haptics) vibrate(code == Code.GAP)
         if (sounds && code != Code.GAP) audio.playSoundEffect(when (code) {
             Code.DELETE -> AudioManager.FX_KEYPRESS_DELETE
             Code.ENTER -> AudioManager.FX_KEYPRESS_RETURN

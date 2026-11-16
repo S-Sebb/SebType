@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -30,6 +31,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -188,6 +190,8 @@ fun KeyboardScreen(nav: Nav) = Screen(stringResource(R.string.settings_keyboard)
     val context = LocalContext.current
     Card {
         PrefSwitch(stringResource(R.string.settings_number_row), stringResource(R.string.settings_number_row_subtitle), Prefs.NUMBER_ROW)
+        SizeAndPosition()
+        PrefSwitch(stringResource(R.string.sebtype_settings_hints), stringResource(R.string.sebtype_settings_hints_subtitle), Prefs.SHOW_HINTS)
         val ms by Prefs.flow(context, Prefs.LONG_PRESS_MS).collectAsState(Prefs[Prefs.LONG_PRESS_MS])
         // Today's slider: a heading, the explanation, then the value and a slider in 25 ms steps
         Column(Modifier.fillMaxWidth()) {
@@ -207,7 +211,40 @@ fun KeyboardScreen(nav: Nav) = Screen(stringResource(R.string.settings_keyboard)
     Card {
         PrefSwitch(stringResource(R.string.settings_key_popup), option = Prefs.KEY_POPUP)
         PrefSwitch(stringResource(R.string.settings_vibrate), option = Prefs.VIBRATE)
+        val strength by Prefs.flow(context, Prefs.VIBRATE_STRENGTH).collectAsState(Prefs[Prefs.VIBRATE_STRENGTH])
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Text(stringResource(R.string.sebtype_settings_vibrate_strength), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = Ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$strength %", fontSize = 13.sp, color = Ink, modifier = Modifier.width(72.dp))
+                Slider(
+                    value = strength.toFloat(), valueRange = 10f..100f, steps = 17,
+                    onValueChange = { Prefs.set(context, Prefs.VIBRATE_STRENGTH, ((it / 5).roundToInt() * 5)) },
+                )
+            }
+        }
         PrefSwitch(stringResource(R.string.settings_sound), option = Prefs.SOUND)
+    }
+}
+
+/**
+ * Size and position: a field under the row brings the keyboard up in its Keyboard Modes, where the modes
+ * and Resize Keyboard are (#257).
+ */
+@Composable
+private fun SizeAndPosition() {
+    val context = LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    NavItem(stringResource(R.string.sebtype_settings_size), stringResource(R.string.sebtype_settings_size_subtitle)) {
+        context.getSharedPreferences("keyboard", android.content.Context.MODE_PRIVATE).edit().putBoolean("open_modes", true).apply()
+        open = true
+    }
+    if (open) {
+        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+        var text by remember { mutableStateOf("") }
+        androidx.compose.material3.OutlinedTextField(text, { text = it },
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp).focusRequester(focus),
+            placeholder = { Text(stringResource(R.string.sebtype_settings_size_try)) })
+        LaunchedEffect(Unit) { focus.requestFocus() }
     }
 }
 

@@ -41,7 +41,7 @@ import kotlin.math.roundToInt
  * 中文's pinyin floats above the bar; English's word and 日本語's composition sit in the field. English's
  * next words come from its worker thread ([NativeCore.onEnglishReady]). Every engine call goes to
  * [NativeCore]'s engine thread and its result shows when it comes back, in the order the keys were typed (#241). The action bar, All Actions and
- * their panels (emoji, clipboard, keyboard modes) take the keys' place; the modes move and resize the keys.
+ * their panels (emoji, clipboard) take the keys' place; Keyboard Modes, a row over the keys, moves and resizes them.
  */
 class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Listener, ActionRow.Listener,
     ActionsPanel.Listener, EmojiPanel.Listener, ModesPanel.Listener {
@@ -101,6 +101,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         get() = prefs.getFloat("height_$orientation", 1f)
         set(value) = prefs.edit().putFloat("height_$orientation", value).apply()
     private val refreshClip = Runnable { refresh() }
+    /** Keyboard Modes shows the height in place of the modes (Resize Keyboard) */
+    private var resizing = false
     /** What the last shown result was typing; keys still on the engine thread may have changed it. */
     private val composing get() = state?.preedit?.isNotEmpty() == true
     // Whether the engine has something typed after its last call: read and written on the engine thread
@@ -162,13 +164,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keysRow.addView(side, LinearLayout.LayoutParams(0, MATCH_PARENT, 0f))
         val content = KeysFrame(this)
         content.addView(keysRow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        for (v in listOf(grid, actions, emoji, clips, modes)) content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        for (v in listOf(grid, actions, emoji, clips)) content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         val barFrame = FrameLayout(this)
         barFrame.addView(bar, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         barFrame.addView(autofill, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         panel.addView(handle, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(actionRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(barFrame, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        panel.addView(modes, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(content, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         stack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         stack.addView(strip, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -227,6 +230,13 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keyboard.sounds = Prefs[Prefs.SOUND]
         keyboard.previews = Prefs[Prefs.KEY_POPUP]
         keyboard.longPressMs = Prefs[Prefs.LONG_PRESS_MS].toLong()
+        keyboard.hints = Prefs[Prefs.SHOW_HINTS]
+        keyboard.strength = Prefs[Prefs.VIBRATE_STRENGTH]
+        // Settings' Size and position opened a field to show the keyboard in its Keyboard Modes
+        if (prefs.getBoolean("open_modes", false)) {
+            prefs.edit().putBoolean("open_modes", false).apply()
+            shown = Panel.MODES
+        }
         applyMode()
         refresh()
         autoShift()
@@ -578,7 +588,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Panel.EDIT -> CandidateBar.Header(texts[R.string.edit_shortcuts], texts[R.string.edit_done])
             Panel.EMOJI -> CandidateBar.Header(texts[R.string.action_emoji], null)
             Panel.CLIPBOARD -> CandidateBar.Header(texts[R.string.action_clipboard], null)
-            Panel.MODES -> CandidateBar.Header(texts[R.string.action_modes], null)
+            Panel.MODES -> CandidateBar.Header(texts[R.string.action_modes], texts[R.string.mode_resize])
         }
         // The text just copied, while nothing is typed
         val clip = clipboard.quickClip?.takeIf { !composing && kind.pad == null }
@@ -604,7 +614,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         when (shown) {
             Panel.ACTIONS, Panel.EDIT -> actions.show(traditional, on, Action.pinned(this), shown == Panel.EDIT)
             Panel.CLIPBOARD -> clips.show()
-            Panel.MODES -> modes.show(mode, heightScale)
+            Panel.MODES -> modes.show(mode, heightScale, resizing)
             else -> {}
         }
         grid.visibility = if (expanded) View.VISIBLE else View.GONE
@@ -614,7 +624,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         clips.visibility = if (over == Panel.CLIPBOARD) View.VISIBLE else View.GONE
         modes.visibility = if (over == Panel.MODES) View.VISIBLE else View.GONE
         // The keys keep their place (and the keyboard its height) under the grid and the panels.
-        keysRow.visibility = if (expanded || shown != Panel.NONE) View.INVISIBLE else View.VISIBLE
+        keysRow.visibility = if (expanded || (shown != Panel.NONE && shown != Panel.MODES)) View.INVISIBLE else View.VISIBLE
     }
 
     // --- Keyboard modes (#53 B5) ---
@@ -713,10 +723,15 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onAllActions() = open(Panel.ACTIONS)
 
-    override fun onHeaderButton() = open(if (shown == Panel.ACTIONS) Panel.EDIT else Panel.ACTIONS)
+    override fun onHeaderButton() {
+        if (shown != Panel.MODES) return open(if (shown == Panel.ACTIONS) Panel.EDIT else Panel.ACTIONS)
+        resizing = !resizing
+        refresh()
+    }
 
     private fun open(panel: Panel) {
         shown = panel
+        resizing = false
         expanded = false
         if (panel == Panel.EMOJI) emoji.open()
         refresh()

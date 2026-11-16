@@ -117,4 +117,10 @@
     <string name="import_failed">导入失败</string>
     <string name="export_done">已导出设置</string>
     <string name="export_failed">导出失败</string>
+    <string name="sebtype_settings_size">尺寸和位置</string>
+    <string name="sebtype_settings_size_subtitle">键盘模式和键盘高度</string>
+    <string name="sebtype_settings_size_try">在这里打字试试</string>
+    <string name="sebtype_settings_hints">显示提示</string>
+    <string name="sebtype_settings_hints_subtitle">按键角上的数字和符号</string>
+    <string name="sebtype_settings_vibrate_strength">振动强度</string>
 </resources>

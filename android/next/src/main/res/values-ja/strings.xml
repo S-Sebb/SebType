@@ -61,6 +61,7 @@
     <string name="mode_one_handed">片手</string>
     <string name="mode_split">分割</string>
     <string name="mode_floating">フローティング</string>
+    <string name="mode_resize">キーボードのサイズ変更</string>
     <string name="mode_height">高さ</string>
     <string name="mode_taller">高く</string>
     <string name="mode_shorter">低く</string>

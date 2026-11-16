@@ -121,4 +121,10 @@
     <string name="import_failed">Import failed</string>
     <string name="export_done">Settings exported</string>
     <string name="export_failed">Export failed</string>
+    <string name="sebtype_settings_size">Size and position</string>
+    <string name="sebtype_settings_size_subtitle">Keyboard modes and the keyboard\'s height</string>
+    <string name="sebtype_settings_size_try">Type here to try them</string>
+    <string name="sebtype_settings_hints">Show hints</string>
+    <string name="sebtype_settings_hints_subtitle">The digits and symbols in the keys\' corners</string>
+    <string name="sebtype_settings_vibrate_strength">Vibration strength</string>
 </resources>

@@ -61,6 +61,7 @@
     <string name="mode_one_handed">单手</string>
     <string name="mode_split">分离</string>
     <string name="mode_floating">悬浮</string>
+    <string name="mode_resize">调整键盘大小</string>
     <string name="mode_height">高度</string>
     <string name="mode_taller">调高</string>
     <string name="mode_shorter">调低</string>

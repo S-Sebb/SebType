@@ -35,8 +35,7 @@ NEXT = PKG == "dev.sebb.sebtype.next"
 IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
 # Checks the new keyboard can't pass yet, and why.
-NEXT_SKIPS = {
-}
+NEXT_SKIPS = {}
 # The new keyboard's space bar, as its accessibility label reads in each system language.
 SPACE_LABELS = ("Space", "空格", "スペース")
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
@@ -1272,6 +1271,7 @@ KEEP_CLIPBOARD = (
     "クリップボード履歴を残す",
 )
 QUICK_CLIP = ("Paste copied text", "粘贴复制的文字", "コピーしたテキストを貼り付け")
+RESIZE = ("Resize Keyboard", "调整键盘大小", "キーボードのサイズ変更")
 TALLER = ("Taller", "调高", "高く")
 SHORTER = ("Shorter", "调低", "低く")
 
@@ -1440,6 +1440,7 @@ def modes_height():
     before = b - t
     open_field()
     action(MODES_ACTION)
+    tap_label(RESIZE)
     tap_label(TALLER)
     tap_label(TALLER)
     open_field()
@@ -1447,6 +1448,7 @@ def modes_height():
     after = b - t
     open_field()
     action(MODES_ACTION)
+    tap_label(RESIZE)
     tap_label(SHORTER)
     tap_label(SHORTER)
     open_field()

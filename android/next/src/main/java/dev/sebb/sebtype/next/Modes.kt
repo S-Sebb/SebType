@@ -28,11 +28,11 @@ enum class Mode(val label: Int, val icon: Icon) {
 }
 
 /**
- * Keyboard Modes, in place of the keys: the four modes as tiles (the one in use pink), then the height with
- * − and + around it.
+ * Keyboard Modes, a row over the keys as today's (which stay to type on): the four modes as tabs, the one in
+ * use on pink. Resize Keyboard (the bar's button) puts the height, with − and + around it, in their place.
  */
 @SuppressLint("ViewConstructor")
-class ModesPanel(context: Context, private val texts: Texts, private val listener: Listener) : ItemsView(context, vertical = true) {
+class ModesPanel(context: Context, private val texts: Texts, private val listener: Listener) : ItemsView(context, vertical = false) {
     interface Listener {
         fun onMode(mode: Mode)
         fun onHeight(by: Float)
@@ -46,38 +46,46 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
     }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private var mode = Mode.STANDARD
-    private var height = 1f
+    private var scale = 1f
+    var resizing = false
+        private set
 
     private enum class Kind { HEIGHT, SHORTER, TALLER }
 
-    fun show(mode: Mode, height: Float) {
+    fun show(mode: Mode, height: Float, resizing: Boolean) {
         this.mode = mode
-        this.height = height
+        this.scale = height
+        this.resizing = resizing
         rebuild()
     }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) =
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (64 * density).toInt())
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = rebuild()
 
     private fun rebuild() {
         if (width == 0) return
-        val pad = 10 * density
-        val gap = 10 * density
+        val pad = 8 * density
+        val h = scale
+        val top = 4 * density
+        val bottom = height - 4 * density
         val out = ArrayList<Item>()
-        var y = 8 * density
-        val tile = (width - 2 * pad - 3 * gap) / 4
-        val tileH = 92 * density
-        Mode.entries.forEachIndexed { i, m ->
-            val l = pad + i * (tile + gap)
-            out += Item(RectF(l, y, l + tile, y + tileH), texts[m.label], "android.widget.RadioButton", checked = m == mode, tag = m)
+        if (resizing) {
+            val row = bottom - top
+            out += Item(RectF(pad, top, width - pad, bottom), "${texts[R.string.mode_height]} ${(h * 100).toInt()}%", "android.widget.TextView", fixed = true, tag = Kind.HEIGHT)
+            out += Item(RectF(pad, top, pad + row * 1.4f, bottom), texts[R.string.mode_shorter], "android.widget.Button", fixed = true, tag = Kind.SHORTER)
+            out += Item(RectF(width - pad - row * 1.4f, top, width - pad, bottom), texts[R.string.mode_taller], "android.widget.Button", fixed = true, tag = Kind.TALLER)
+            // The buttons over the height's card: a tap finds them first.
+            setItems(out.sortedBy { it.tag == Kind.HEIGHT }, 0f)
+            return
         }
-        y += tileH + 16 * density
-        val row = 56 * density
-        out += Item(RectF(pad, y, width - pad, y + row), "${texts[R.string.mode_height]} ${(height * 100).toInt()}%", "android.widget.TextView", tag = Kind.HEIGHT)
-        out += Item(RectF(pad, y, pad + row, y + row), texts[R.string.mode_shorter], "android.widget.Button", tag = Kind.SHORTER)
-        out += Item(RectF(width - pad - row, y, width - pad, y + row), texts[R.string.mode_taller], "android.widget.Button", tag = Kind.TALLER)
-        y += row + 16 * density
-        // The buttons over the height's card: a tap finds them first.
-        setItems(out.sortedBy { it.tag == Kind.HEIGHT }, y)
+        val tab = (width - 2 * pad) / Mode.entries.size
+        Mode.entries.forEachIndexed { i, m ->
+            val l = pad + i * tab
+            out += Item(RectF(l, top, l + tab, bottom), texts[m.label], "android.widget.RadioButton", fixed = true, checked = m == mode, tag = m)
+        }
+        setItems(out, 0f)
     }
 
     override fun onTap(item: Item) {
@@ -93,10 +101,12 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
         val radius = 15 * density
         when (val tag = item.tag) {
             is Mode -> {
-                fill.color = if (tag == mode) Picnic.PINK else Picnic.CREAM
-                canvas.drawRoundRect(r, radius, radius, fill)
-                Icons.draw(canvas, tag.icon, r.centerX(), r.top + 34 * density, 26 * density, Picnic.INK)
-                canvas.drawText(item.label, r.centerX(), r.top + 70 * density, label)
+                if (tag == mode) {
+                    fill.color = Picnic.PINK
+                    canvas.drawRoundRect(r.left + 3 * density, r.top, r.right - 3 * density, r.bottom, radius, radius, fill)
+                }
+                Icons.draw(canvas, tag.icon, r.centerX(), r.top + 20 * density, 22 * density, Picnic.INK)
+                canvas.drawText(item.label, r.centerX(), r.bottom - 9 * density, label)
             }
             Kind.HEIGHT -> {
                 fill.color = Picnic.CREAM
@@ -109,7 +119,7 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
     }
 
     private fun canTap(kind: Kind) =
-        if (kind == Kind.TALLER) height < Mode.MAX_HEIGHT - 0.001f else height > Mode.MIN_HEIGHT + 0.001f
+        if (kind == Kind.TALLER) scale < Mode.MAX_HEIGHT - 0.001f else scale > Mode.MIN_HEIGHT + 0.001f
 }
 
 /**

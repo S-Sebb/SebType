@@ -64,6 +64,7 @@
     <string name="mode_one_handed">One-handed</string>
     <string name="mode_split">Split</string>
     <string name="mode_floating">Floating</string>
+    <string name="mode_resize">Resize Keyboard</string>
     <string name="mode_height">Height</string>
     <string name="mode_taller">Taller</string>
     <string name="mode_shorter">Shorter</string>

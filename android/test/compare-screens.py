@@ -42,7 +42,12 @@ STATES = [
     ("all-actions", "All Actions"),
     ("emoji", "Emoji"),
     ("clipboard", "Clipboard, with a copy"),
+    ("edit-actions", "All Actions: Edit actions"),
     ("modes", "Keyboard modes"),
+    ("one-handed", "One-handed mode"),
+    ("split", "Split mode"),
+    ("floating", "Floating mode"),
+    ("resize", "Keyboard modes: Resize Keyboard"),
     ("quick-clip", "Text just copied, in the bar"),
     ("symbols", "Symbols"),
     ("long-press", "Long press on e"),
@@ -236,7 +241,27 @@ def run(app, mode):
         tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
 
     step("clipboard", clipboard)
+    step(
+        "edit-actions",
+        lambda: (open_field(app), menu(app), tap_label("Edit actions", "编辑快捷方式")),
+    )
     step("modes", lambda: tile(app, "Keyboard Modes", "键盘模式"))
+
+    def mode(*labels):
+        tile(app, "Keyboard Modes", "键盘模式")
+        tap_label(*labels)
+
+    for state, labels in (
+        ("one-handed", ("One Hand", "One-handed")),
+        ("split", ("Split",)),
+        ("floating", ("Float", "Floating")),
+    ):
+        step(state, lambda labels=labels: (mode(*labels), open_field(app)))
+        try:
+            mode("Standard")
+        except SystemExit as e:
+            print(f"{state}: back to Standard: {e}", flush=True)
+    step("resize", lambda: mode("Resize Keyboard"))
     step("quick-clip", lambda: (open_field(app, clip="sebclip-quick"), time.sleep(3)))
     k = open_field(app)
     close_action_bar()

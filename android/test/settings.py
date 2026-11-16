@@ -560,7 +560,12 @@ SCREENS = [
     (
         "resize",
         (HOME["keyboard"], labels("尺寸和位置", "Size and position", "サイズと位置")),
-        labels("调整键盘大小", "Resize Keyboard", "キーボードサイズ調整"),
+        labels(
+            "调整键盘大小",
+            "Resize Keyboard",
+            "キーボードサイズ調整",
+            "キーボードのサイズ変更",
+        ),
     ),
     (
         "action-bar",
@@ -605,9 +610,10 @@ SCREENS = [
 ]
 
 
-# Not in the new app yet: resizing and the action bar (stage 4); FUTO's payment page (#191 Decisions 7).
+# Not in the new app: the action bar's buttons screen (its keyboard edits them, #257); FUTO's payment
+# page (#191 Decisions 7).
 if NEXT:
-    SCREENS = [s for s in SCREENS if s[0] not in ("resize", "action-bar", "payment")]
+    SCREENS = [s for s in SCREENS if s[0] not in ("action-bar", "payment")]
 
 
 def every_screen():
