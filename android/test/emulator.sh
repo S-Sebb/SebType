@@ -14,6 +14,8 @@
 # install and the locale always, and chinese.py's earlier checks they depend on. A PR runs the checks
 # for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
 # which only the final performance run uses (#54, Decisions #2 2026-11-11).
+# SEBTYPE_PACKAGE=dev.sebb.sebtype.next tests the new keyboard (android/next, #191 stage 3) instead: its own
+# release APK, with the checks that are FUTO's app's alone (labels, the trim, its settings) left out.
 # One line per check in ~/scratch/SebType/<issue>/test-emulator/results.txt; logs next to it (one directory
 # per task, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
 set -uo pipefail
@@ -27,7 +29,9 @@ adb=$sdk/platform-tools/adb
 bt=$(ls -d "$sdk"/build-tools/* | tail -1)
 futo_apk=$SCRATCH/cache/futo-keyboard-0.1.30.apk; mkdir -p "$SCRATCH/cache"
 
-export SEBTYPE_CHECKS=${SEBTYPE_CHECKS:-} PERF_RUN=${PERF_RUN:-}
+export SEBTYPE_CHECKS=${SEBTYPE_CHECKS:-} PERF_RUN=${PERF_RUN:-} SEBTYPE_PACKAGE=${SEBTYPE_PACKAGE:-dev.sebb.sebtype}
+pkg=$SEBTYPE_PACKAGE next=; [[ $pkg == dev.sebb.sebtype.next ]] && next=1
+if [[ $next ]]; then ime=$pkg/.SebTypeIme; else ime=$pkg/org.futo.inputmethod.latin.LatinIME; fi
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, command...; timeout T seconds (default 180); only if SEBTYPE_CHECKS names it or it's a step all need
   local name=$1 c; shift
@@ -41,7 +45,7 @@ check() { # name, command...; timeout T seconds (default 180); only if SEBTYPE_C
 
 # Preflight
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
-apk=$(android/build.sh release 2> "$out/build.log" | tail -1)
+apk=$(android/build.sh "$([[ $next ]] && echo next || echo release)" 2> "$out/build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/build.log"; exit 1; }
 # The text field the Chinese checks type into: the app's own "try typing" popup isn't exported.
 field_apk=$out/field.apk
@@ -54,17 +58,20 @@ android/test/set-locale/build.sh "$locale_dex" > "$out/set-locale.log" 2>&1 ||
   { echo "preflight: can't download stock FUTO 0.1.30"; exit 1; }
 
 badging=$("$bt/aapt2" dump badging "$apk")
-check package-id grep -q "package: name='dev.sebb.sebtype'" <<<"$badging"
-check app-label grep -q "application-label:'SebType'" <<<"$badging"
+check package-id grep -q "package: name='$pkg'" <<<"$badging"
+[[ $next ]] || check app-label grep -q "application-label:'SebType'" <<<"$badging"
 check arm64-only bash -c "[[ \$(unzip -Z1 '$apk' 'lib/*' | cut -d/ -f2 | sort -u) == arm64-v8a ]]"
 check signed-sebtype bash -c "'$bt/apksigner' verify --print-certs '$apk' | grep -q 'CN=SebType'"
 # Japanese works with nothing imported only if Mozc's dictionary is in the APK, stored uncompressed (Mozc maps it).
 mozc_dict=$(grep -A3 'raw/builtin_mozc_data$' <<<"$("$bt/aapt2" dump resources "$apk")" | awk '$1 == "(ja)" {print $3}')
 check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_dict' | grep -q ' stor '"
-# SebType's uniform zh/ja layouts ship beside FUTO's English ones.
+# SebType's uniform zh/ja layouts ship beside FUTO's English ones; the new keyboard has one set of pages
+# for all three languages.
 assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
-check uniform-layouts bash -c 'for f in SebType/sebtype_zh SebType/sebtype_ja Default/qwerty; do
-  grep -qx "assets/layouts/$f.yaml" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets"
+if [[ $next ]]; then layouts="letters.json symbols.json symbols2.json numbers.json numpad.json phone.json"
+else layouts="SebType/sebtype_zh.yaml SebType/sebtype_ja.yaml Default/qwerty.yaml"; fi
+check uniform-layouts bash -c 'for f in $2; do
+  grep -qx "assets/layouts/$f" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets" "$layouts"
 # The Chinese data comes compiled (tables and 白霜's grammar), without the dictionary sources; its one
 # .dict.yaml is SebType's pack for the user's own word list (#11).
 rime_data=$out/rime-data.zip
@@ -97,7 +104,7 @@ check bumped-apk bash -c make_bumped
 # The trim (#6): no voice input, glide typing or other languages; only English, Japanese and Chinese
 # translations (#6, #178: the other languages' files aren't in the repo).
 dicts=$("$bt/aapt2" dump resources "$apk" | grep -o 'raw/main_[a-z_]*' | sort -u | tr '\n' ' ')
-check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -E "tiny_en_acft|futo-swipe|libswipe_jni|assets/layouts/(Cyrillic|LatinScript)/")
+[[ $next ]] || check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -E "tiny_en_acft|futo-swipe|libswipe_jni|assets/layouts/(Cyrillic|LatinScript)/")
   [[ -z $bad ]] || { echo "still in the APK: $bad"; exit 1; }
   ! grep -q RECORD_AUDIO <<<"$2" || { echo "RECORD_AUDIO permission"; exit 1; }
   grep -qx "locales: .--_--. .ja. .zh-CN." <<<"$2" || { grep "^locales" <<<"$2"; exit 1; }
@@ -108,13 +115,13 @@ check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -E "tiny_en_acft|futo-swipe|l
 device_checks() {
   "$adb" -s "$serial" shell pm path org.futo.inputmethod.latin >/dev/null || "$adb" -s "$serial" install "$futo_apk"
   # A fresh install, so nothing imported earlier (a dictionary, settings) hides what the APK ships with.
-  "$adb" -s "$serial" uninstall dev.sebb.sebtype >/dev/null
+  "$adb" -s "$serial" uninstall "$pkg" >/dev/null
   "$adb" -s "$serial" install "$apk" || return 1
   # The system lists a newly installed keyboard a few seconds after the install returns.
   local imes i
   for i in {1..15}; do
     imes=$("$adb" -s "$serial" shell ime list -a -s)
-    grep -q '^dev.sebb.sebtype/' <<<"$imes" && grep -q '^org.futo.inputmethod.latin/' <<<"$imes" && return 0
+    grep -q "^$pkg/" <<<"$imes" && grep -q '^org.futo.inputmethod.latin/' <<<"$imes" && return 0
     sleep 2
   done
   echo "keyboards listed: $imes"; return 1
@@ -167,12 +174,12 @@ device_suite() {
   # task can leave the emulator in Chinese (#106's second run: 13 checks failed for that alone).
   T=60 check locale bash -c set_locale && echo "locale en-US, $(grep -m1 '^locale was' "$out/locale.log")"
   T=300 check install-beside-futo bash -c device_checks
-  grep -q '^PASS install-beside-futo' "$results" && T=90 check first-start-settings bash -c first_start_settings
+  if [[ -z $next ]] && grep -q '^PASS install-beside-futo' "$results"; then T=90 check first-start-settings bash -c first_start_settings; fi
   if grep -q '^PASS install-beside-futo' "$results" && grep -q '^PASS bumped-apk' "$results"; then
     # first-install enables SebType and chinese.py installs the field app: a run of named checks
     # may run neither, so it does both here.
     if [[ -n $SEBTYPE_CHECKS ]]; then
-      "$adb" -s "$serial" shell ime enable "dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME" >/dev/null
+      "$adb" -s "$serial" shell ime enable "$ime" >/dev/null
       "$adb" -s "$serial" install -r "$field_apk" >/dev/null
     fi
     # chinese.py appends its own result lines; this line only records whether it ran to the end.
@@ -184,7 +191,8 @@ device_suite() {
     result SKIP chinese "needs install-beside-futo and bumped-apk"
   fi
 }
-export -f result check set_locale device_checks first_start_settings device_suite; export adb apk futo_apk field_apk locale_dex results
+export -f result check set_locale device_checks first_start_settings device_suite
+export adb apk futo_apk field_apk locale_dex results pkg next ime
 android/emulator.sh -P 1 -w 1800 -m 50 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "$(head -1 "$out/emulator.log")"

@@ -92,6 +92,8 @@ android/build.sh release        # signed arm64-v8a release APK (keystore in ~/.c
 android/build.sh debug          # debug arm64-v8a APK, the one the emulator tests run
 android/build.sh debug-x86_64   # debug APK for an x86_64 emulator
 android/build.sh test-x86_64    # debug APK and its instrumented-test APK
+android/build.sh next           # signed arm64-v8a APK of next/, the new keyboard (#191, test-only)
+android/build.sh next-debug     # its debug APK
 ```
 
 It prints the APK's path last. Each run gets its own folder in `android/app/build/runs/` (hard links,
@@ -138,6 +140,8 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
+| `SEBTYPE_PACKAGE=dev.sebb.sebtype.next android/test/emulator.sh` | The same checks on the new keyboard (next/, #191); those for what it doesn't have yet SKIP with the stage that brings it |
+| `android/emulator.sh -- android/test/compare-screens.py TODAY_APK NEW_APK FIELD_APK OUTDIR` | Screenshots of today's keyboard and the new one side by side, light and dark, for judging the look |
 | `cd android && ./gradlew :app:testDebugUnitTest` | The app's unit tests |
 | `android/test/english/run.sh` | English quality next to pristine AOSP, on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |

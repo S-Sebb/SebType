@@ -1,0 +1,6 @@
+{
+  "about": "The number row over the letters: hidden by default, shown in password and e-mail fields (#161). MIT, SebType.",
+  "rows": [
+    {"height": 0.9, "keys": [{"text": "1", "more": ["1", "¹", "½", "⅓", "¼", "⅛"]}, {"text": "2", "more": ["2", "²", "⅔"]}, {"text": "3", "more": ["3", "³", "¾", "⅜"]}, {"text": "4", "more": ["4", "⁴"]}, {"text": "5", "more": ["5", "⅝"]}, "6", {"text": "7", "more": ["7", "⅞"]}, "8", "9", {"text": "0", "more": ["0", "ⁿ", "∅"]}]}
+  ]
+}

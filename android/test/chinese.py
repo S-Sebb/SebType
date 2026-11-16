@@ -11,6 +11,10 @@ APK is installed over it; FIELD_APK is android/perf/build-field.sh's text field 
 supplies the box that gets typed into (the app's own "try typing" popup isn't exported). Types by
 tapping SebType's own keys (found with `uiautomator dump --windows`) and reads the candidate bar. One
 line per check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
+
+SEBTYPE_PACKAGE=dev.sebb.sebtype.next runs them against the new keyboard (#191 stage 3, android/next):
+the checks for what it doesn't have yet SKIP, and it gets its own: pinyin dropped on the globe, and
+English's spacing around a period (#39).
 """
 
 import ast
@@ -24,8 +28,16 @@ import xml.etree.ElementTree as ET
 
 serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
 main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
-PKG = "dev.sebb.sebtype"
-IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+PKG = os.environ.get("SEBTYPE_PACKAGE") or "dev.sebb.sebtype"
+# The new keyboard (android/next): its own service, keyboard view and log tag.
+NEXT = PKG == "dev.sebb.sebtype.next"
+IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
+# Checks the new keyboard can't pass yet, and why.
+NEXT_SKIPS = {
+    "ja-personal-word-after-restart": "Android's user dictionary reaches Mozc in stage 5",
+    "en-model-waits-for-letter": "English's model comes in stage 2",
+}
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 # Rime's data is private (#32): read through the emulator's root shell (su), as a release APK has no run-as.
 RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
@@ -112,7 +124,7 @@ def nodes():
         if m:
             x1, y1, x2, y2 = map(int, m.groups())
             out.append((label, (x1 + x2) // 2, (y1 + y2) // 2, y1, n.get("class")))
-            if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
+            if n.get("resource-id") == FRAME_ID:
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
         out += letter_keys(*frame)
@@ -144,11 +156,12 @@ def letter_keys(left, top, right, bottom):
 
 
 def keys(ns):
-    # The letter keys are the single lowercase letters; on SebType's QWERTY each appears once.
+    # The letter keys are the single lowercase letters; on SebType's QWERTY each appears once. The new
+    # keyboard labels them as shown, in capitals while Shift is on.
     return {
-        label: (x, y, top)
+        label.lower(): (x, y, top)
         for label, x, y, top, cls in ns
-        if re.fullmatch(r"[a-z]", label)
+        if re.fullmatch(r"[a-zA-Z]" if NEXT else r"[a-z]", label)
     }
 
 
@@ -252,6 +265,8 @@ def tap_candidate(word):
 
 def logcat():
     """The app's rime log lines; logcat's -s splits the filter on spaces, so it can't match the tag."""
+    if NEXT:
+        return adb("shell", "logcat -d -s SebType || true")
     return adb("shell", "logcat -d | grep -F 'ChineseIME (rime)' || true")
 
 
@@ -326,6 +341,9 @@ if WANTED == set():  # none of the named checks is here
 def check(name, fn, needs=()):
     if WANTED is not None and name not in WANTED:
         return
+    if NEXT and name in NEXT_SKIPS:
+        result("SKIP", name, f"new keyboard: {NEXT_SKIPS[name]}")
+        return
     missing = [n for n in needs if not passed.get(n)]
     if missing:
         result("SKIP", name, f"needs {', '.join(missing)}")
@@ -366,15 +384,17 @@ def fresh_install():
     open_field()
     q = keys(nodes())["q"]
     adb("shell", "input", "text", "hi")  # English works meanwhile
-    adb(
-        "shell",
-        "am",
-        "start",
-        "-W",
-        "-n",
-        f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
-    )
-    adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
+    # The new keyboard has no setup screen: it sets Chinese up as it first starts.
+    if not NEXT:
+        adb(
+            "shell",
+            "am",
+            "start",
+            "-W",
+            "-n",
+            f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
+        )
+        adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
     # Under load (the other emulator's suite) the keyboard can take seconds to come back.
     wait_for("the keyboard back in the field", lambda: keys(nodes()), KEYBOARD_WAIT)
     time.sleep(1)  # taps while the keyboard slides back in are dropped
@@ -655,9 +675,11 @@ check(
 )
 
 
-# The 简/繁 switch at the top of the keyboard menu (#36): Open Action Bar, then All Actions. Their
-# labels follow the system language (English, Chinese or Japanese).
+# The 简/繁 switch at the top of the keyboard menu (#36): Open Action Bar, then All Actions (the new
+# keyboard: its menu shows the switch at once, and Close Action Bar closes it). Their labels follow the
+# system language (English, Chinese or Japanese).
 OPEN_BAR = ("Open Action Bar", "打开操作栏", "アクションバーを開く")
+CLOSE_BAR = ("Close Action Bar", "关闭操作栏", "アクションバーを閉じる")
 ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト")
 BACK = ("Back", "返回", "戻る")
 
@@ -672,6 +694,9 @@ def tap_label(labels, timeout=10):
 
 def open_menu():
     open_field()
+    if NEXT:
+        tap_label(OPEN_BAR)
+        return
     # The expanded bar is a saved setting (ActionBarExpanded), so after it has been opened once, a new
     # keyboard comes up expanded: its toggle reads "Close Action Bar" and its tiles are already showing.
     if not any(n[0] in ALL_ACTIONS for n in nodes()):
@@ -680,7 +705,7 @@ def open_menu():
 
 
 def close_menu():
-    tap_label(BACK)
+    tap_label(CLOSE_BAR if NEXT else BACK)
 
 
 def menu_switch():
@@ -857,7 +882,8 @@ def sebtype_crashes():
     # A native crash names the process by its last 15 characters.
     return len(
         re.findall(
-            r"Fatal signal .*\(ev\.sebb\.sebtype\)|Process: dev\.sebb\.sebtype,", log
+            rf"Fatal signal .*\({re.escape(PKG[-15:])}\)|Process: {re.escape(PKG)},",
+            log,
         )
     )
 
@@ -922,7 +948,7 @@ check("ja-personal-word-after-restart", personal_word_after_restart, needs=["ja-
 
 
 def mozc_log():
-    return adb("shell", "logcat -d -s JapaneseIME || true")
+    return adb("shell", f"logcat -d -s {'SebType' if NEXT else 'JapaneseIME'} || true")
 
 
 def ja_unloads_when_idle():
@@ -1018,6 +1044,125 @@ def moved_from_external():
     nothing_external()
     return "learned words in private storage, nothing left in external files"
 
+
+# --- The new keyboard's own checks (SEBTYPE_PACKAGE=dev.sebb.sebtype.next) ---
+
+
+def key_spots():
+    """The new keyboard's keys by label, letters in lower case (its keys are all in the tree)."""
+    ns = nodes()
+    if not keyboard_frame:
+        return {}
+    left, top, right, bottom = keyboard_frame
+    return {
+        (label.lower() if re.fullmatch("[a-zA-Z]", label) else label): (x, y)
+        for label, x, y, t, cls in ns
+        if label and left <= x <= right and top <= y <= bottom
+    }
+
+
+def type_text(text):
+    """Taps text's keys: letters, Space and the bottom row's period. The keys keep their places."""
+    k = wait_for(
+        "the keyboard", lambda: "q" in (spots := key_spots()) and spots, KEYBOARD_WAIT
+    )
+    for ch in text:
+        adb("shell", "input", "tap", *map(str, k[{" ": "Space"}.get(ch, ch)]))
+    time.sleep(1.5)
+
+
+def to_english():
+    """Cycles the globe until x types a plain x: no chip, no candidates and no Chinese notice."""
+    for _ in range(4):
+        open_field()
+        type_keys("x")
+        ns = nodes()
+        notice = any(n[0].startswith(PREPARING) for n in ns)
+        if (
+            not chip(ns)
+            and not candidates(ns)
+            and not notice
+            and field_text().lower() == "x"
+        ):
+            return
+        tap_globe()
+        time.sleep(2)
+    raise Fail("no English after cycling the globe")
+
+
+def to_chinese():
+    """Cycles the globe until ni offers Chinese candidates (waiting while Chinese sets itself up)."""
+    for _ in range(6):
+        open_field()
+        type_keys("ni")
+        ns = nodes()
+        if candidates(ns) and not chip(ns):
+            return
+        if any(n[0].startswith(PREPARING) for n in ns):
+            time.sleep(5)
+            continue
+        tap_globe()
+        time.sleep(2)
+    raise Fail("no 中 after cycling the globe")
+
+
+def globe_drops_pinyin():
+    """The globe in the middle of a pinyin drops it: nothing reaches the field, and no candidates or
+    pinyin are left above the keys (core/ doesn't commit on a switch, Decisions #2)."""
+    to_chinese()
+    open_field()
+    type_keys("nihao")
+    before = candidates(nodes())
+    if not before:
+        raise Fail("typed nihao in 中; no candidates")
+    tap_globe()
+    time.sleep(2)
+    ns = nodes()
+    left = [n[0] for n in ns if n[0] in ("nihao", "ni hao")]
+    text = field_text()
+    if text or candidates(ns) or left:
+        raise Fail(
+            f"after the globe: field {text!r}, bar {candidates(ns)[:4]}, pinyin {left}"
+        )
+    return f"nihao -> {before[:3]}; after the globe the field is empty and the bar and pinyin are gone"
+
+
+def typed_as(text, want):
+    """#39's spacing: English types text as it is, with Shift only at the start of a sentence."""
+
+    def run():
+        to_english()
+        open_field()
+        type_text(text)
+        got = field_text()
+        if got != want:
+            raise Fail(f"typed {text!r}; the field shows {got!r}, not {want!r}")
+        return f"typed {text!r} -> {got!r}"
+
+    return run
+
+
+if NEXT:
+    NEXT_SKIPS["en-picked-suggestion-period"] = "English's suggestions come in stage 2"
+    NEXT_SKIPS["en-futo-default-migrates"] = (
+        "FUTO's stored settings have nothing to migrate to here"
+    )
+    check("zh-globe-drops-pinyin", globe_drops_pinyin, needs=["ranh"])
+    # #39's four period checks (LiveSpacingTests in app/): the two the new keyboard can run, as typing.
+    check(
+        "en-period-space-stays",
+        typed_as(
+            "open main .py see notebook .ipynb ", "Open main .py see notebook .ipynb "
+        ),
+        needs=["first-install"],
+    )
+    check(
+        "en-sentence-capital",
+        typed_as("hello. how", "Hello. How"),
+        needs=["first-install"],
+    )
+    check("en-picked-suggestion-period", lambda: None)
+    check("en-futo-default-migrates", lambda: None)
 
 if main_apk:
     check("main-learns", main_learns)

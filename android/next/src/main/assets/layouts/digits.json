@@ -1,0 +1,9 @@
+{
+  "about": "The numbers page the symbols page's 1 2 / 3 4 key opens, as today's keyboard has it. MIT, SebType.",
+  "rows": [
+    [{"text": "+", "pink": true, "width": 1.5}, {"text": "1", "width": 2.3333333333333335}, {"text": "2", "width": 2.3333333333333335}, {"text": "3", "width": 2.3333333333333335}, {"text": "%", "pink": true, "width": 1.5}],
+    [{"text": "-", "pink": true, "width": 1.5}, {"text": "4", "width": 2.3333333333333335}, {"text": "5", "width": 2.3333333333333335}, {"text": "6", "width": 2.3333333333333335}, {"code": "space", "label": "␣", "pink": true, "width": 1.5}],
+    [{"text": "*", "pink": true, "width": 1.5}, {"text": "7", "width": 2.3333333333333335}, {"text": "8", "width": 2.3333333333333335}, {"text": "9", "width": 2.3333333333333335}, {"code": "delete", "width": 1.5}],
+    [{"code": "letters", "label": "ABC", "width": 1.5}, {"text": ",", "pink": true}, {"code": "symbols", "label": "!?#", "width": 1.3333333333333333}, {"text": "0", "width": 2.3333333333333335}, {"text": "=", "pink": true, "width": 1.3333333333333333}, {"text": ".", "pink": true}, {"code": "enter", "width": 1.5}]
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "about": "The second symbols page (=\\<), as today's keyboard has it. MIT, SebType.",
+  "rows": [
+    ["~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆"],
+    [{"gap": 0.5}, "£", "¢", "€", "¥", "^", "°", "=", "{", "}", {"gap": 0.5}],
+    [{"code": "symbols", "label": "?123", "width": 1.5}, "\\", {"text": "©", "more": ["©", "™"]}, "®", "™", "%", "[", "]", {"code": "delete", "width": 1.5}],
+    [{"code": "letters", "label": "ABC", "width": 1.5}, {"text": ",", "pink": true, "zh": {"label": ",", "hint": "、", "more": ["、"]}, "ja": {"label": "、", "hint": "ー", "more": [{"label": "ー", "text": "-"}]}}, {"text": "<", "pink": true, "more": ["≤", "«", "‹"]}, {"code": "space", "width": 3}, {"text": ">", "pink": true, "more": ["≥", "»", "›"]}, {"text": ".", "pink": true, "more": [",", "?", "!", "'", "\"", ":", ";", "-", "/", "@", "&", "(", ")", "#", "%", "+"], "zh": {"label": "。", "hint": "？", "more": ["？", "！", "：", "；", "…", "—"]}, "ja": {"label": "。", "hint": "？", "more": [{"label": "？", "text": "?"}, {"label": "！", "text": "!"}]}}, {"code": "enter", "width": 1.5}]
+  ]
+}

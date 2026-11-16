@@ -48,8 +48,18 @@ serial, results_path, logdir = sys.argv[1:4]
 CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 # Timing checks run only in the final performance run (#54, Decisions #2 2026-11-11): PERF_RUN=1.
 TIMING = {"settings-smooth-scrolling"}
-PKG = "dev.sebb.sebtype"
-IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+PKG = os.environ.get("SEBTYPE_PACKAGE") or "dev.sebb.sebtype"
+# The new keyboard (android/next, #191 stage 3): only the incognito checks run; it has no settings app yet.
+NEXT = PKG == "dev.sebb.sebtype.next"
+IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
+NEXT_SKIPS = {
+    "incognito-private-en": "English learns in stage 2",
+    "incognito-en": "English learns in stage 2",
+    "incognito-off-learns-en": "English learns in stage 2",
+    "incognito-privacy-switch": "the settings app comes in stage 5",
+    "incognito-clipboard": "clipboard history comes in stage 4",
+}
 SETTINGS = f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 PREPARING = ("正在准备中文", "Preparing Chinese")
@@ -127,7 +137,7 @@ def nodes():
         if m:
             x1, y1, x2, y2 = map(int, m.groups())
             out.append((label, (x1 + x2) // 2, (y1 + y2) // 2, y1, n.get("class")))
-            if n.get("resource-id") == f"{PKG}:id/main_keyboard_frame":
+            if n.get("resource-id") == FRAME_ID:
                 frame = keyboard_frame = (x1, y1, x2, y2)
     if frame and not keys(out):
         out += letter_keys(*frame)
@@ -151,10 +161,11 @@ def letter_keys(left, top, right, bottom):
 
 
 def keys(ns):
+    # The new keyboard labels its letters as shown, in capitals while Shift is on.
     return {
-        label: (x, y, top)
+        label.lower(): (x, y, top)
         for label, x, y, top, cls in ns
-        if re.fullmatch(r"[a-z]", label)
+        if re.fullmatch(r"[a-zA-Z]" if NEXT else r"[a-z]", label)
     }
 
 
@@ -283,7 +294,16 @@ def to_language(probe, word):
             first = time.time() + 15
             while True:
                 ns = nodes()
-                if probe == "hello":  # English's words aren't TextViews: en_candidates
+                if (
+                    probe == "hello" and NEXT
+                ):  # no suggestions yet: hello typed as it is, no chip
+                    got = candidates(ns)
+                    english = not any(n[0] in ("あ", "ア") for n in ns)
+                    if english and not got and field_text().lower() == "hello":
+                        return
+                elif (
+                    probe == "hello"
+                ):  # English's words aren't TextViews: en_candidates
                     got = en_candidates(ns)
                     english = not any(
                         re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
@@ -423,6 +443,15 @@ passed = set()
 
 
 def check(name, fn, needs=()):
+    if NEXT and not name.startswith("incognito-"):
+        return
+    if (
+        NEXT
+        and name in NEXT_SKIPS
+        and (not CHECKS or any(name.startswith(c) for c in CHECKS))
+    ):
+        result("SKIP", name, f"new keyboard: {NEXT_SKIPS[name]}")
+        return
     # A named run of settings-japanese leaves the system in 日本語, and the file picker's labels the
     # checks after it read (Downloads, Show roots) are English: settings-locale-back always runs.
     if (

@@ -1,0 +1,84 @@
+// SebType's own keyboard (#191 stage 3), a test-only app beside app/ (dev.sebb.sebtype.next): its own
+// code on core/ through :native, with no FUTO code.
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// The Chinese data (data/rime/build.sh, cached) and the two OFL fonts app/ ships, shared with it.
+final def assetsDir = layout.buildDirectory.dir('sebtype-assets')
+tasks.register('buildRimeData', Exec) {
+    commandLine 'bash', file('../../data/rime/build.sh').absolutePath, assetsDir.get().asFile.absolutePath
+}
+final def fontsDir = layout.buildDirectory.dir('generated/sebtype-fonts')
+tasks.register('copyFonts', Sync) {
+    from('../app/src/main/res/font') { include 'sebtype_*.ttf' }
+    into fontsDir.map { it.dir('font') }
+}
+preBuild.dependsOn 'buildRimeData', 'copyFonts'
+
+android {
+    namespace 'dev.sebb.sebtype.next'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        applicationId 'dev.sebb.sebtype.next'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName 'next'
+        ndk {
+            abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
+        }
+        resConfigs 'en', 'ja', 'zh-rCN'
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('../app/shared.keystore')
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        // Built unsigned; build.sh signs it with SebType's key, as app/'s release.
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
+
+    sourceSets {
+        main {
+            res.srcDirs += ['../app/res-bundle', fontsDir] // Mozc's dictionary (build.sh downloads it); the fonts
+            assets.srcDirs += assetsDir
+        }
+    }
+
+    androidResources {
+        noCompress 'dict', 'zip' // Mozc maps its dictionary straight from the APK
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    implementation project(':native')
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.customview:customview:1.1.0'
+}

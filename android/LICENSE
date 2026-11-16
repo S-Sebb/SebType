@@ -9,7 +9,7 @@ Apache License 2.0, ../NOTICE), with SebType's edits inside it counting as FUTO-
 
 SebType's own files, under the MIT licence in ../LICENSE-SebType:
 - build.gradle, build.sh, release.sh, emulator.sh, upstream-version, test/, perf/, tools/trim-emoji.sh,
-  and native/'s own files (native/NOTICE.md lists them).
+  native/'s own files (native/NOTICE.md lists them), and next/ (the new keyboard, #191), all of it.
 
 Other projects' code SebType builds here keeps its licence:
 - native/src/main/cpp/cmake/: RimeJni's build scripts (MIT, native/src/main/cpp/cmake/LICENSE) with

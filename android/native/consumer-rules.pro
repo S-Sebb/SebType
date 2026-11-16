@@ -1,3 +1,4 @@
-# libsebtype.so builds NativeState through its constructor and finds NativeCore's natives by name.
+# libsebtype.so builds NativeState through its constructor and registers all of NativeCore's natives by
+# name (RegisterNatives fails on one missing), so none may be removed, even where an app calls only some.
 -keep class dev.sebb.sebtype.core.NativeState { <init>(...); }
--keepclasseswithmembernames class dev.sebb.sebtype.core.NativeCore { native <methods>; }
+-keep class dev.sebb.sebtype.core.NativeCore { native <methods>; }

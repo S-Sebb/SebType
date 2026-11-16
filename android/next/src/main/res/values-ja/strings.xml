@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="open_menu">アクションバーを開く</string>
+    <string name="close_menu">アクションバーを閉じる</string>
+    <string name="menu_title">すべての操作</string>
+    <string name="incognito">シークレットモード</string>
+    <string name="incognito_on">シークレットモード オン。タップでオフ</string>
+    <string name="incognito_field">この入力欄はシークレットモード</string>
+    <string name="more_candidates">候補をもっと見る</string>
+    <string name="fewer_candidates">候補を閉じる</string>
+    <string name="chinese_preparing">中国語を準備中…</string>
+    <string name="chinese_failed">中国語入力を開始できませんでした。タップして再試行</string>
+    <string name="key_shift">Shift</string>
+    <string name="key_shift_on">Shift オン</string>
+    <string name="key_caps_lock">Caps Lock</string>
+    <string name="key_delete">削除</string>
+    <string name="key_symbols">記号</string>
+    <string name="key_more_symbols">その他の記号</string>
+    <string name="key_digits">数字</string>
+    <string name="key_letters">文字</string>
+    <string name="key_language">次の言語</string>
+    <string name="key_space">スペース</string>
+    <string name="key_enter">改行</string>
+    <string name="key_search">検索</string>
+    <string name="key_send">送信</string>
+    <string name="key_go">移動</string>
+    <string name="key_next">次へ</string>
+    <string name="key_previous">前へ</string>
+    <string name="key_done">完了</string>
+</resources>
