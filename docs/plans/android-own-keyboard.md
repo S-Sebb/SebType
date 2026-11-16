@@ -26,6 +26,9 @@ perf runs call it 103–105 MB).
   speed gains come from one keyboard window without FUTO's framework and from one JNI call per key.
 - **FUTO's licence ends with stage 6.** The new app ships no FUTO code or data, so the payment screen, the
   unpaid notice and FUTO's licence notice leave with the old app. The app on the phone keeps them until then.
+- **The new keyboard looks close to today's** (the user, 2026-11-16: "Keyboard's looks should just look close to
+  what it's looking like now. That's it, simple."). Stages 3–5 match today's layout, keys, colours, fonts and
+  bars; screenshots next to today's are the check, and no redesign is in scope.
 - **Releases are held until stage 6** (the user, 2026-11-15). The app on the phone stays as it is until the new
   keyboard replaces it.
 - **About 32–47 delegate-days for stages 0–6, then 8–12 days plus training time on yanglab16 for stage 7.**
