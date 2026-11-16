@@ -18,7 +18,8 @@ import java.util.zip.ZipInputStream
 /**
  * The engines behind 中文 and 日本語, in core/ ([NativeCore]): their files, sebtype.conf (the settings the
  * phone shares with the PCs), Chinese's first-run setup, and stopping an engine nobody has used for a while.
- * Setup and engine starts run on one background thread; typing calls [NativeCore] on the main thread.
+ * Setup and engine starts run on background threads, one per engine, so 日本語 never waits behind 中文's
+ * setup; typing calls [NativeCore] on the main thread.
  */
 object Engines {
     const val TAG = "SebType"
@@ -34,7 +35,8 @@ object Engines {
     /** Called on the main thread when [chinese] changes */
     var onChange: (() -> Unit)? = null
 
-    private val worker = Executors.newSingleThreadExecutor { Thread(it, "SebType engines") }
+    private val worker = Executors.newSingleThreadExecutor { Thread(it, "SebType 中文") }
+    private val japanese = Executors.newSingleThreadExecutor { Thread(it, "SebType 日本語") }
     private val main = Handler(Looper.getMainLooper())
     private var configured = false
     private var japaneseStopped = false
@@ -211,7 +213,7 @@ object Engines {
     /** Starts 日本語 in the background, so its first key doesn't wait for Mozc to load. */
     fun prepareJapanese(context: Context) {
         val app = context.applicationContext
-        worker.execute {
+        japanese.execute {
             configure(app)
             if (NativeCore.running(JAPANESE)) return@execute
             val t0 = SystemClock.elapsedRealtime()
@@ -229,7 +231,7 @@ object Engines {
         if (used) return
         val stop = Runnable {
             idleStops.remove(lang)
-            worker.execute {
+            (if (lang == CHINESE) worker else japanese).execute {
                 if (!NativeCore.running(lang)) return@execute
                 if (lang == CHINESE) {
                     // Not ready first, so no key starts Rime again before the next setup.
@@ -249,5 +251,5 @@ object Engines {
     }
 
     /** Saves what 日本語 learned (Mozc in this process saves only when asked). */
-    fun saveJapanese() = worker.execute { if (NativeCore.running(JAPANESE)) NativeCore.save(JAPANESE) }
+    fun saveJapanese() = japanese.execute { if (NativeCore.running(JAPANESE)) NativeCore.save(JAPANESE) }
 }
