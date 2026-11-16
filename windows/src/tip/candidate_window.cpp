@@ -20,11 +20,11 @@ const wchar_t kFont[] = L"Microsoft YaHei";
 constexpr UINT_PTR kNoticeTimer = 1;
 constexpr UINT kNoticeMs = 1200;  // Weasel's show_notifications_time
 
-// weasel.yaml's layout, in pixels at 100 %.
-constexpr float kMargin = 12, kSpacing = 10, kCandidateSpacing = 5, kHiliteSpacing = 4, kHilitePadding = 2,
-                kRoundCorner = 4, kCornerRadius = 4, kBorder = 3, kMinWidth = 160;
-// The pig: its picture's size, and the gap between it and the candidates (as SebType's Weasel drew it, #162).
-constexpr float kPigWidth = 158, kPigHeight = 160, kPigGap = 9;
+// weasel.yaml's look, in pixels at 100 % (its layout: candidate_layout.cpp).
+constexpr float kHilitePadding = 2, kRoundCorner = 4, kCornerRadius = 4, kBorder = 3;
+// The page arrows' chevrons: their height in a text row, and their stroke in the font's size (#276); the
+// arrow of a page that doesn't exist is drawn this faint.
+constexpr float kChevronHeight = 0.5f, kChevronStroke = 0.12f, kFaint = 0.25f;
 
 template <class T>
 void release(T *&p) {
@@ -51,12 +51,28 @@ Settings readSettings() {
   return s;
 }
 
+// The work area of the caret's monitor, where the window has to stay.
+RECT workArea(const RECT &caret) {
+  MONITORINFO mi{sizeof(mi)};
+  GetMonitorInfoW(MonitorFromRect(&caret, MONITOR_DEFAULTTONEAREST), &mi);
+  return mi.rcWork;
+}
+
+// What stays the same over a word's pages: its pinyin (Rime's doesn't change as it pages); Mozc's shows the
+// focused candidate in the segment being converted, so only where that segment is.
+std::wstring word(const Preedit &preedit, bool pinyin) {
+  std::wstring key;
+  for (const Segment &seg : preedit.segments) key += (seg.highlight && !pinyin ? L"\x1" : utf16(seg.text)) + L'\x2';
+  return key;
+}
+
 }  // namespace
 
 CandidateWindow::~CandidateWindow() {
   if (hwnd_) DestroyWindow(hwnd_);
   release(pig_);
   release(target_);
+  release(round_);
   release(format_);
   release(dwrite_);
   release(d2d_);
@@ -81,7 +97,9 @@ bool CandidateWindow::create() {
   const auto props = D2D1::RenderTargetProperties(
       D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
       96, 96);  // so a unit is a pixel
-  return SUCCEEDED(d2d_->CreateDCRenderTarget(&props, &target_));
+  const auto round = D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND);
+  return SUCCEEDED(d2d_->CreateStrokeStyle(&round, nullptr, 0, &round_)) &&
+         SUCCEEDED(d2d_->CreateDCRenderTarget(&props, &target_));
 }
 
 void CandidateWindow::loadStyle(const RECT &caret) {
@@ -121,7 +139,7 @@ IDWriteTextLayout *CandidateWindow::textLayout(const std::wstring &text) {
   return layout;
 }
 
-CandidateWindow::Box CandidateWindow::measure(const std::wstring &text, float x, float y) {
+Box CandidateWindow::measure(const std::wstring &text, float x, float y) {
   DWRITE_TEXT_METRICS m{};
   if (IDWriteTextLayout *layout = textLayout(text)) {
     layout->GetMetrics(&m);
@@ -130,106 +148,12 @@ CandidateWindow::Box CandidateWindow::measure(const std::wstring &text, float x,
   return {x, y, x + std::ceil(m.widthIncludingTrailingWhitespace), y + std::ceil(m.height)};
 }
 
-void CandidateWindow::layout() {
-  const float s = style_.scale;
-  const float margin = std::round(kMargin * s), spacing = std::round(kSpacing * s),
-              candSpacing = std::round(kCandidateSpacing * s), space = std::round(kHiliteSpacing * s);
-  float width = 0, y = margin;
-  auto row = [&](float right) { width = std::max(width, right + margin); };
-
-  // The pinyin row, then Rime's or Mozc's note.
-  preeditBoxes_.clear();
-  if (!preedit_.empty()) {
-    float x = margin, h = 0;
-    for (const auto &seg : preedit_) {
-      const Box b = measure(seg, x, y);
-      preeditBoxes_.push_back(b);
-      x = b.r, h = std::max(h, b.b - b.t);
-    }
-    row(x);
-    y += h + spacing;
-  }
-  auxBox_ = {};
-  if (!aux_.empty()) {
-    auxBox_ = measure(aux_, margin, y);
-    row(auxBox_.r);
-    y += auxBox_.b - auxBox_.t + spacing;
-  }
-
-  if (cells_.empty()) {
-    width_ = width, height_ = y - spacing + margin;
-    pigBox_ = {};
-    return;
-  }
-  const float top = y;
-  if (style_.vertical) {
-    // One candidate a row: label, text, and the comments in a column of their own.
-    float textRight = 0;
-    for (size_t i = 0; i < cells_.size(); ++i) {
-      Cell &c = cells_[i];
-      if (i) y += candSpacing;
-      float x = margin;
-      c.labelBox = measure(c.label, x, y);
-      if (!c.label.empty()) x = c.labelBox.r + space;
-      c.textBox = measure(c.text, x, y);
-      textRight = std::max(textRight, c.textBox.r);
-      y = std::max({c.labelBox.b, c.textBox.b});
-    }
-    float commentRight = textRight;
-    for (Cell &c : cells_) {
-      c.commentBox = {};
-      if (c.comment.empty()) continue;
-      c.commentBox = measure(c.comment, textRight + space, c.textBox.t);
-      commentRight = std::max(commentRight, c.commentBox.r);
-    }
-    row(commentRight);
-    width = std::max(width, std::round(kMinWidth * s));
-    for (Cell &c : cells_) c.all = {margin, c.textBox.t, width - margin, std::max(c.textBox.b, c.labelBox.b)};
-  } else {
-    // All candidates in one row: label, text and comment, then the next.
-    float x = margin, h = 0;
-    for (size_t i = 0; i < cells_.size(); ++i) {
-      Cell &c = cells_[i];
-      if (i) x += candSpacing;
-      const float left = x;
-      c.labelBox = measure(c.label, x, y);
-      x = c.labelBox.r + space;
-      c.textBox = measure(c.text, x, y);
-      x = c.textBox.r;
-      c.commentBox = {};
-      if (!c.comment.empty()) {
-        c.commentBox = measure(c.comment, x + space, y);
-        x = c.commentBox.r;
-      }
-      c.all = {left, y, x, 0};
-      h = std::max({h, c.labelBox.b - y, c.textBox.b - y, c.commentBox.empty() ? 0 : c.commentBox.b - y});
-    }
-    for (Cell &c : cells_) c.all.b = y + h;
-    y += h;
-    row(x);
-    width = std::max(width, std::round(kMinWidth * s));
-    cells_.back().all.r = width - margin;
-  }
-  const float height = y + margin;
-
-  // The pig, left of the rows from the first one down: its height is the first candidate row's and a margin,
-  // by 10/7, within the window.
-  pigBox_ = {};
-  if (style_.picnic) {
-    const float rowH = cells_[0].all.b - cells_[0].all.t;
-    const float h = std::floor(std::min((rowH + margin) * 10 / 7, height));
-    const float w = std::floor(h * kPigWidth / kPigHeight);
-    float pigTop = preedit_.empty() && aux_.empty() ? top : margin;
-    pigTop = std::min(pigTop, height - h);
-    pigBox_ = {margin, pigTop, margin + w, pigTop + h};
-    const float shift = w + std::floor(margin / 2) + std::floor(kPigGap * s);
-    for (Box &b : preeditBoxes_) b.move(shift, 0);
-    auxBox_.move(shift, 0);
-    for (Cell &c : cells_)
-      for (Box *b : {&c.all, &c.labelBox, &c.textBox, &c.commentBox}) b->move(shift, 0);
-    width += shift;
-  }
-  width_ = width, height_ = height;
+void CandidateWindow::layout(const RECT &caret) {
+  const RECT work = workArea(caret);
+  CandidateLayout &l = layout_;
+  l.vertical = style_.vertical, l.picnic = style_.picnic, l.scale = style_.scale;
+  l.maxWidth = static_cast<float>(work.right - work.left);
+  l.run([this](const std::wstring &text, float x, float y) { return measure(text, x, y); });
 }
 
 ID2D1Bitmap *CandidateWindow::pig() {
@@ -258,7 +182,8 @@ ID2D1Bitmap *CandidateWindow::pig() {
 }
 
 void CandidateWindow::draw() {
-  const int w = static_cast<int>(std::ceil(width_)), h = static_cast<int>(std::ceil(height_));
+  const CandidateLayout &l = layout_;
+  const int w = static_cast<int>(std::ceil(l.width)), h = static_cast<int>(std::ceil(l.height));
   BITMAPINFO bi{};
   bi.bmiHeader = {sizeof(BITMAPINFOHEADER), w, -h, 1, 32, BI_RGB};
   void *bits = nullptr;
@@ -290,21 +215,21 @@ void CandidateWindow::draw() {
 
     // The card and its border.
     const auto card = D2D1::RoundedRect(
-        D2D1::RectF(border / 2, border / 2, width_ - border / 2, height_ - border / 2), kCornerRadius * s,
+        D2D1::RectF(border / 2, border / 2, l.width - border / 2, l.height - border / 2), kCornerRadius * s,
         kCornerRadius * s);
     color(style_.back);
     target_->FillRoundedRectangle(card, brush);
     color(style_.border);
     target_->DrawRoundedRectangle(card, brush, border);
 
-    for (size_t i = 0; i < preedit_.size(); ++i) {
+    for (size_t i = 0; i < l.preedit.size(); ++i) {
       const bool hi = static_cast<int>(i) == preeditHighlight_;
-      if (hi) fill(preeditBoxes_[i], pad, kRoundCorner * s, style_.hiliteBack);
-      text(preedit_[i], preeditBoxes_[i], hi ? style_.hiliteText : style_.text);
+      if (hi) fill(l.preeditBoxes[i], pad, kRoundCorner * s, style_.hiliteBack);
+      text(l.preedit[i], l.preeditBoxes[i], hi ? style_.hiliteText : style_.text);
     }
-    if (!aux_.empty()) text(aux_, auxBox_, style_.text);
-    for (size_t i = 0; i < cells_.size(); ++i) {
-      const Cell &c = cells_[i];
+    if (!l.aux.empty()) text(l.aux, l.auxBox, style_.text);
+    for (size_t i = 0; i < l.cells.size(); ++i) {
+      const auto &c = l.cells[i];
       const bool hi = static_cast<int>(i) == cursor_;
       if (hi) fill(c.all, pad, kRoundCorner * s, style_.candHiliteBack);
       // Labels take the candidate's colour, comments their own unless highlighted (Weasel's fallbacks).
@@ -313,8 +238,20 @@ void CandidateWindow::draw() {
       text(c.text, c.textBox, fg);
       if (!c.comment.empty()) text(c.comment, c.commentBox, hi ? fg : style_.comment);
     }
-    if (!pigBox_.empty() && pig())
-      target_->DrawBitmap(pig_, D2D1::RectF(pigBox_.l, pigBox_.t, pigBox_.r, pigBox_.b), 1,
+    // ‹ and ›: chevrons in the text's colour, faint where there is no page.
+    auto chevron = [&](const Box &b, bool right, bool there) {
+      if (b.empty()) return;
+      const float half = std::round((b.b - b.t) * kChevronHeight / 2), cx = (b.l + b.r) / 2,
+                  cy = (b.t + b.b) / 2, dx = half / 2 * (right ? 1 : -1);
+      brush->SetColor(D2D1::ColorF(style_.text, there ? 1 : kFaint));
+      const float stroke = std::max(1.5f, style_.fontPx * kChevronStroke);
+      target_->DrawLine(D2D1::Point2F(cx - dx, cy - half), D2D1::Point2F(cx + dx, cy), brush, stroke, round_);
+      target_->DrawLine(D2D1::Point2F(cx + dx, cy), D2D1::Point2F(cx - dx, cy + half), brush, stroke, round_);
+    };
+    chevron(l.prevBox, false, l.hasPrev);
+    chevron(l.nextBox, true, l.hasNext);
+    if (!l.pigBox.empty() && pig())
+      target_->DrawBitmap(pig_, D2D1::RectF(l.pigBox.l, l.pigBox.t, l.pigBox.r, l.pigBox.b), 1,
                           D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     release(brush);
     if (target_->EndDraw() == D2DERR_RECREATE_TARGET) release(pig_);
@@ -331,31 +268,31 @@ void CandidateWindow::draw() {
   ReleaseDC(nullptr, screen);
 }
 
-// Below the caret, or above it where the screen ends, as Weasel placed it.
+// Below the caret, or above it where the screen ends, as Weasel placed it; within the monitor's work area.
 void CandidateWindow::place(const RECT &caret) {
-  MONITORINFO mi{sizeof(mi)};
-  GetMonitorInfoW(MonitorFromRect(&caret, MONITOR_DEFAULTTONEAREST), &mi);
-  const RECT &work = mi.rcWork;
-  const int w = static_cast<int>(std::ceil(width_)), h = static_cast<int>(std::ceil(height_));
-  int x = std::clamp<int>(caret.left, work.left, std::max<int>(work.left, work.right - w));
+  const RECT work = workArea(caret);
+  const int w = static_cast<int>(std::ceil(layout_.width)), h = static_cast<int>(std::ceil(layout_.height));
+  const int x = std::clamp<int>(caret.left, work.left, std::max<int>(work.left, work.right - w));
   int y = caret.bottom;
-  if (y + h > work.bottom) y = std::max<int>(work.top, caret.top - h);
+  if (y + h > work.bottom) y = caret.top - h;
+  y = std::clamp<int>(y, work.top, std::max<int>(work.top, work.bottom - h));
   SetWindowPos(hwnd_, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
 }
 
 void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &caret) {
-  preedit_.clear();
+  CandidateLayout &l = layout_;
+  l.preedit.clear();
   preeditHighlight_ = -1;
   if (preeditRow) {
     for (const Segment &seg : reply.preedit.segments) {
-      if (seg.highlight) preeditHighlight_ = static_cast<int>(preedit_.size());
-      preedit_.push_back(utf16(seg.text));
+      if (seg.highlight) preeditHighlight_ = static_cast<int>(l.preedit.size());
+      l.preedit.push_back(utf16(seg.text));
     }
   }
-  aux_ = utf16(reply.aux);
-  cells_.clear();
+  l.aux = utf16(reply.aux);
+  l.cells.clear();
   for (size_t i = 0; i < reply.page.items.size(); ++i) {
-    Cell c;
+    CandidateLayout::Cell c;
     // The core's labels end in Fcitx's space, Rime's as "1 " and Mozc's as "1. "; Weasel showed "%s.".
     if (i < reply.page.labels.size()) {
       c.label = utf16(reply.page.labels[i]);
@@ -364,14 +301,19 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
     }
     c.text = utf16(reply.page.items[i].text);
     c.comment = utf16(reply.page.items[i].comment);
-    cells_.push_back(std::move(c));
+    l.cells.push_back(std::move(c));
   }
+  l.hasPrev = reply.page.hasPrev, l.hasNext = reply.page.hasNext;
   cursor_ = reply.page.cursor;
-  if (cells_.empty() && preedit_.empty() && aux_.empty()) return hide();
+  if (l.cells.empty() && l.preedit.empty() && l.aux.empty()) return hide();
   if (!create()) return;
   KillTimer(hwnd_, kNoticeTimer);
-  if (!styleLoaded_ || !IsWindowVisible(hwnd_)) loadStyle(caret);  // the Configurator's changes, once per showing
-  layout();
+  const bool shown = IsWindowVisible(hwnd_);
+  if (!styleLoaded_ || !shown) loadStyle(caret);  // the Configurator's changes, once per showing
+  std::wstring w = word(reply.preedit, preeditRow);
+  l.keepWidth = shown && w == word_ ? l.width : 0;
+  word_ = std::move(w);
+  layout(caret);
   place(caret);
   draw();
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
@@ -380,11 +322,15 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
 void CandidateWindow::notice(const std::string &text, const RECT &caret) {
   if (text.empty() || !create()) return;
   loadStyle(caret);
-  preedit_ = {utf16(text)};
+  CandidateLayout &l = layout_;
+  l.preedit = {utf16(text)};
   preeditHighlight_ = -1;
-  aux_.clear();
-  cells_.clear();
-  layout();
+  l.aux.clear();
+  l.cells.clear();
+  l.hasPrev = l.hasNext = false;
+  l.keepWidth = 0;
+  word_.clear();
+  layout(caret);
   place(caret);
   draw();
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
@@ -395,6 +341,12 @@ void CandidateWindow::hide() {
   if (!hwnd_) return;
   KillTimer(hwnd_, kNoticeTimer);
   ShowWindow(hwnd_, SW_HIDE);
+  word_.clear();
+  wheel_ = 0;
+}
+
+void CandidateWindow::page(bool next) {
+  if (next ? layout_.hasNext : layout_.hasPrev) service_.page(next);
 }
 
 LRESULT CALLBACK CandidateWindow::proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -406,13 +358,20 @@ LRESULT CALLBACK CandidateWindow::proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
       return 0;
     case WM_LBUTTONUP:
       if (self) {
-        const float x = static_cast<short>(LOWORD(lParam)), y = static_cast<short>(HIWORD(lParam));
-        for (size_t i = 0; i < self->cells_.size(); ++i) {
-          const Box &b = self->cells_[i].all;
-          if (x >= b.l && x < b.r && y >= b.t && y < b.b) {
-            self->service_.select(static_cast<int>(i));
-            break;
-          }
+        const int at = self->layout_.hit(static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)));
+        if (at >= 0) self->service_.select(at);
+        else if (at != CandidateLayout::kNone) self->page(at == CandidateLayout::kNext);
+      }
+      return 0;
+    // Windows sends the wheel to the window under the mouse (its default "scroll inactive windows"). A notch
+    // down is the next page; a touchpad's smaller turns add up to one.
+    case WM_MOUSEWHEEL:
+      if (self) {
+        self->wheel_ += GET_WHEEL_DELTA_WPARAM(wParam);
+        while (self->wheel_ >= WHEEL_DELTA || self->wheel_ <= -WHEEL_DELTA) {
+          const bool next = self->wheel_ < 0;
+          self->wheel_ += next ? WHEEL_DELTA : -WHEEL_DELTA;
+          self->page(next);
         }
       }
       return 0;
