@@ -49,6 +49,7 @@ namespace SebTypePaging {
     [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, int data, UIntPtr extra);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr c);
     // The visible candidate window (other apps with the text service have hidden ones).
     public static IntPtr Window() {
       IntPtr found = IntPtr.Zero;
@@ -81,11 +82,14 @@ namespace SebTypePaging {
 '@
 $tsf = [SebType.TsfHost]
 $in = [SebTypePaging.Input]
+# Per-monitor aware, as apps like Notepad are, before any window: else Windows stretches the window's
+# picture on a scaled screen and moves the mouse in scaled coordinates.
+$null = $in::SetProcessDpiAwarenessContext([IntPtr]-4)
 $conf = "$env:APPDATA\SebType\sebtype.conf"
 $confBefore = if (Test-Path $conf) { Get-Content -Raw $conf }
 
 function Keys { foreach ($k in $args) { $in::Key($(switch ($k) { 'space' { 0x20 } 'PageDown' { 0x22 } 'PageUp' { 0x21 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); Start-Sleep -Milliseconds 120 }; $tsf::Settle(400) }
-function TypeText($s) { Keys @($s.ToCharArray() | ForEach-Object { "$_" }) }
+function TypeText($s) { $chars = @($s.ToCharArray() | ForEach-Object { "$_" }); Keys @chars }
 function Win { $h = $in::Window(); if ($h -eq [IntPtr]::Zero) { throw "no candidate window (the field holds '$($tsf::Text())', active $($tsf::Active()))" }; $h }
 function Rect($h) { $r = New-Object SebTypePaging.Input+RECT; $null = $in::GetWindowRect($h, [ref]$r); $r }
 function Size($h) { $r = Rect $h; "$($r.R - $r.L)x$($r.B - $r.T)" }
@@ -160,7 +164,7 @@ try {
               if ($r.B - $r.T -gt $first.B - $first.T) {
                 $null = Shot "$tag-4-wrapped"
                 if ($r.R - $r.L -ne $first.R - $first.L) { throw "'$w' page $n wrapped but its width changed" }
-                return "'$w' page $n: $($first.B - $first.T) -> $($r.B - $r.T) px tall, $($r.R - $r.L) px wide"
+                return "'$w' page ${n}: $($first.B - $first.T) -> $($r.B - $r.T) px tall, $($r.R - $r.L) px wide"
               }
             }
           }
