@@ -4,7 +4,7 @@
 # (build-librime.sh). Sourced by the build scripts, pc/linux/setup-ime.sh and the tests. Bump
 # SEBTYPE_RPM_RELEASE when core/, linux/ or engines/mozc changes, LIBRIME_SEBTYPE_RELEASE when engines/librime does.
 SEBTYPE_VERSION=0.1.0
-SEBTYPE_RPM_RELEASE=13.fc44
+SEBTYPE_RPM_RELEASE=14.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
 

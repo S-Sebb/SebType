@@ -69,6 +69,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   fcitx::Instance *instance_;
   std::unique_ptr<Core> core_;
   std::string lastIcon_;
+  std::string shown_;        // the last popup by the caret (Instance::showCustomInputMethodInformation)
+  uint64_t shownUntil_ = 0;  // and when Fcitx5 hides it (CLOCK_MONOTONIC, µs)
   std::unique_ptr<Service> service_;
   std::unique_ptr<fcitx::EventSourceTime> poll_;
 };

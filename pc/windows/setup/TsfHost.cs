@@ -314,6 +314,31 @@ namespace SebType {
     }
   }
 
+  // Windows' display state as it reports it, at once on registering and at each change: 0 off, 1 on, 2 dimmed.
+  public static class Display {
+    delegate uint Callback(IntPtr context, uint type, IntPtr setting);
+    [StructLayout(LayoutKind.Sequential)] struct Recipient { public Callback callback; public IntPtr context; }
+    [DllImport("powrprof.dll")] static extern uint PowerSettingRegisterNotification(ref Guid setting, uint flags, IntPtr recipient, out IntPtr handle);
+    static Callback kept; static IntPtr recipient;
+    public static readonly List<string> States = new List<string>();
+    public static int Last = -1, Lit = 0;
+    public static void Watch() {
+      kept = (c, type, s) => {
+        if (type == 0x8013 /* PBT_POWERSETTINGCHANGE */ && s != IntPtr.Zero) {
+          int state = Marshal.ReadInt32(s, 20);  // after the GUID and DataLength
+          lock (States) { States.Add(DateTime.Now.ToString("HH:mm:ss.fff") + " " + state); Last = state; if (state != 0) Lit++; }
+        }
+        return 0;
+      };
+      recipient = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Recipient)));
+      Marshal.StructureToPtr(new Recipient { callback = kept }, recipient, false);
+      var guid = new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");
+      IntPtr handle;
+      uint err = PowerSettingRegisterNotification(ref guid, 2 /* DEVICE_NOTIFY_CALLBACK */, recipient, out handle);
+      if (err != 0) throw new Exception("PowerSettingRegisterNotification failed: " + err);
+    }
+  }
+
   public static class TsfHost {
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
@@ -331,6 +356,7 @@ namespace SebType {
     [DllImport("user32.dll", EntryPoint = "SendMessageW")] static extern IntPtr SendMessagePtr(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr h);
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool EnumThreadWindows(uint thread, EnumProc f, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
@@ -613,6 +639,28 @@ namespace SebType {
       int l = Math.Min(a.L, b.L), t = Math.Min(a.T, b.T);
       using (var bmp = new System.Drawing.Bitmap(Math.Max(a.R, b.R) - l, Math.Max(a.B, b.B) - t)) {
         using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(l, t, 0, 0, bmp.Size);
+        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+      }
+    }
+    // Saves the input mode button's icon (what the taskbar's input indicator shows) as a PNG, 64 px (#275).
+    public static void ButtonIcon(string path) {
+      OnUi(() => {
+        IntPtr h;
+        Marshal.ThrowExceptionForHR(InputModeButton().GetIcon(out h));
+        using (var icon = System.Drawing.Icon.FromHandle(h))
+        using (var bmp = new System.Drawing.Bitmap(64, 64)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, 64, 64));
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        DestroyIcon(h);
+        return 0;
+      });
+    }
+    // Saves the right end of the taskbar, with the input indicator, as a PNG (#275).
+    public static void Taskbar(string path, int width) {
+      RECT r; GetWindowRect(FindWindowExW(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null), out r);
+      using (var bmp = new System.Drawing.Bitmap(width, r.B - r.T)) {
+        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.R - width, r.T, 0, 0, bmp.Size);
         bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
       }
     }

@@ -342,13 +342,14 @@ STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid,
 void TextService::setLanguage(REFGUID profile) {
   const Lang lang = profile == kProfileJa ? Lang::Japanese : Lang::Chinese;
   const bool switched = lang != lang_;
+  if (switched) warned_ = false;  // the popup says it for each language
   lang_ = lang;
   Request q{Op::Language};
   q.lang = lang;
-  if (!send(q)) {  // no server: the button still shows the language
+  if (!send(q)) {  // no server: the button shows the language, unavailable
     reply_ = {};
     reply_.lang = lang;
-    reply_.icon = lang == Lang::Japanese ? "hira" : "zh";
+    reply_.icon = notReadyIcon(lang, Readiness::Unavailable);
   }
   // Between 中 and 日 what was being typed goes in as on focus loss (#301): the core's switch commits it,
   // and it replaces the composition. Switching to another input method comes as Deactivate instead, which drops it.

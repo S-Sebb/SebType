@@ -262,15 +262,24 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     text.setCursor(p.cursor);
     if (ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(text);
     else panel.setPreedit(text);
-    if (auto aux = core_->aux(); !aux.empty()) panel.setAuxUp(fcitx::Text(aux));
-    if (const Page page = core_->page(); !page.empty()) panel.setCandidateList(std::make_unique<List>(this, ic, page));
+    const auto aux = core_->aux();
+    const Page page = core_->page();
+    if (!aux.empty()) panel.setAuxUp(fcitx::Text(aux));
+    if (!page.empty()) panel.setCandidateList(std::make_unique<List>(this, ic, page));
+    // The key's release resets the panel too: a popup still showing over an empty panel stays for its
+    // second (Fcitx5 hides it only while it is the panel's sole text).
+    const uint64_t now = fcitx::now(CLOCK_MONOTONIC);
+    if (aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_) panel.setAuxUp(fcitx::Text(shown_));
     if (auto commit = core_->takeCommit(); !commit.empty()) ic->commitString(commit);
     ic->updatePreedit();
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
     const auto &config = instance_->globalConfig();
     if (auto notice = core_->takeNotice(config.compactInputMethodInformation());
-        !notice.empty() && config.showInputMethodInformation())
+        !notice.empty() && config.showInputMethodInformation()) {
       instance_->showCustomInputMethodInformation(ic, notice);
+      shown_ = notice;
+      shownUntil_ = now + 1000000;
+    }
   }
   updateStatus(ic);
 }
