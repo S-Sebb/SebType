@@ -263,10 +263,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     override fun onFinishInput() {
         super.onFinishInput()
         NativeCore.drain() // the results still to come land in this field
-        if (composing) NativeCore.post {
-            clear()
-            engineComposing = false
-        }
+        if (composing) NativeCore.post { clear().recorded() }
         editor.finishComposing()
         state = null
         if (views) strip.preedit = ""
@@ -335,7 +332,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
             // one would load it here, ahead of the keys.
             if (lang == JAPANESE && running(JAPANESE)) setAlternate(false)
+            // Nothing typed in the new field: the next letter's capital reads no word left from the last one
             engineComposing = false
+            enginePreedit = ""
         }
         keysSent = null
         when (lang) {
