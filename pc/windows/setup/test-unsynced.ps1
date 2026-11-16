@@ -14,7 +14,7 @@ out\unsynced-results.txt, logs next to it; exit 0 only if all pass. The user, it
 "SebType sync" task are removed at the end.
 -Part user is the throwaway user's own part, run by the task.
 #>
-param([string]$Part, [string]$Dir, [string]$Scenario, [string]$Server)
+param([string]$Part, [string]$Dir, [string]$Scenario, [string]$Server, [string]$SyncPassword)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 $out = "$root\out"
@@ -43,8 +43,7 @@ if ($Part -eq 'user') {
     $null = Py seed-rime $rime
     Py add-mozc "$mozc\user_dictionary.db" 'もふてすと' $jaWord
     if ($Server) {
-      $password = Get-Content "$out\password.txt" -Raw
-      "$Server`n$syncUser`n$password`n" | & "$Dir\sebtype-configurator.exe" --save-login 2>&1 | Out-String
+      "$Server`n$syncUser`n$SyncPassword`n" | & "$Dir\sebtype-configurator.exe" --save-login 2>&1 | Out-String
       "save-login=$LASTEXITCODE"
     }
     Setup '-User', '-Undo'
@@ -74,8 +73,24 @@ $why = if (-not $admin) { 'not elevated' } elseif ($missing) { "missing $($missi
 if ($why) { Write-Host "preflight: $why"; exit 1 }
 
 $name = 'sebtype-unsynced'
-$password = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ }) + 'aA1!'
-Set-Content -NoNewline "$out\password.txt" (-join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ }))
+$random = { -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ }) }
+$password = (& $random) + 'aA1!'
+$syncPassword = & $random  # throwaway, as the user's
+# The user's profile can stay loaded a while after its last task: unloads it, then deletes it. Also
+# for one an earlier run left.
+function Remove-Profiles {
+  for ($i = 0; $i -lt 40; $i++) {
+    $left = @(Get-CimInstance Win32_UserProfile | Where-Object LocalPath -Like "*\$name*")
+    if (-not $left) { return $true }
+    foreach ($p in $left) {
+      if ($p.Loaded) { foreach ($h in "$($p.SID)_Classes", $p.SID) { & reg.exe unload "HKU\$h" 2>&1 | Out-Null } }
+      try { $p | Remove-CimInstance } catch { }
+    }
+    Start-Sleep 3
+  }
+  $false
+}
+if (-not (Remove-Profiles)) { Write-Host "preflight: a $name profile from an earlier run is still loaded"; exit 1 }
 $free = { $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $l.Start(); $p = $l.LocalEndpoint.Port; $l.Stop(); $p }
 $offline = "http://127.0.0.1:$(& $free)"  # nothing listens there
 $port = & $free
@@ -90,7 +105,7 @@ Set-Content "$root\fix\mozc-keymap.tsv" "status`tkey`tcommand"
 function As-User([string]$variant, [string]$scenario, [string]$url = '') {
   $log = "$out\unsynced-$variant-$scenario.log"
   Remove-Item $log -ErrorAction SilentlyContinue
-  $a = "-NoProfile -ExecutionPolicy Bypass -Command & '$PSCommandPath' -Part user -Dir '$root\$variant' -Scenario $scenario -Server '$url' *> '$log'"
+  $a = "-NoProfile -ExecutionPolicy Bypass -Command & '$PSCommandPath' -Part user -Dir '$root\$variant' -Scenario $scenario -Server '$url' -SyncPassword '$syncPassword' *> '$log'"
   Register-ScheduledTask SebType-unsynced-test -Force -User $name -Password $password -RunLevel Limited `
     -Action (New-ScheduledTaskAction -Execute powershell.exe -Argument $a) | Out-Null
   try {
@@ -107,8 +122,8 @@ function As-User([string]$variant, [string]$scenario, [string]$url = '') {
   $r.sync = if ($text -match 'before learned words are deleted \(exit (-?\d+)\)') { $Matches[1] } else { 'none' }
   $r
 }
-function Check($name, [scriptblock]$body) {
-  try { Result $name PASS (& $body) } catch { Result $name FAIL $_.Exception.Message }
+function Check($check, [scriptblock]$body) {  # not $name: the body would see it as the user's
+  try { Result $check PASS (& $body) } catch { Result $check FAIL $_.Exception.Message }
 }
 function Expect($r, [hashtable]$want) {
   $bad = @($want.Keys | Sort-Object | Where-Object { "$($r[$_])" -ne "$($want[$_])" } | ForEach-Object { "$_ $($r[$_]), not $($want[$_])" })
@@ -139,7 +154,7 @@ try {
     Expect (As-User fix never) @{ sync = 'none'; exit = 0; 'rime-words' = $false; 'mozc-words' = $false; 'kept-rime' = $false; 'kept-mozc' = $false }
   }
   Check 'synced-uninstall-deletes-words' {
-    $null = Get-Content "$out\password.txt" -Raw | & $python -I "$root\sebtype_sync.py" adduser --data "$out\sync-server" --password-stdin $syncUser
+    $null = $syncPassword | & $python -I "$root\sebtype_sync.py" adduser --data "$out\sync-server" --password-stdin $syncUser
     $script:server = Start-Process $python -PassThru -NoNewWindow -RedirectStandardError "$out\unsynced-server.log" `
       -ArgumentList '-I', "`"$root\sebtype_sync.py`"", 'serve', '--data', "`"$out\sync-server`"", '--port', $port
     Start-Sleep 2
@@ -154,15 +169,10 @@ try {
   if ($user) {
     Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue | Where-Object { $_.Principal.UserId -like "*$name" } | Unregister-ScheduledTask -Confirm:$false
     Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object UserName -like "*\$name" | Stop-Process -Force -ErrorAction SilentlyContinue
-    for ($i = 0; $i -lt 10; $i++) {
-      $p = Get-CimInstance Win32_UserProfile | Where-Object SID -EQ $user.SID.Value
-      if (-not $p) { break }
-      try { $p | Remove-CimInstance } catch { Start-Sleep 3 }
-    }
     Remove-LocalUser $name
   }
-  Remove-Item "$out\password.txt", "$out\sync-server", "$root\fix\sebtype-mozc.dll", "$root\fix\mozc-keymap.tsv" -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not (Remove-Profiles)) { Result 'cleanup' FAIL "the $name profile is still loaded" }
+  Remove-Item "$out\sync-server", "$root\fix\sebtype-mozc.dll", "$root\fix\mozc-keymap.tsv" -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item "$root\main\python", "$root\fix\python" -Recurse -Force -ErrorAction SilentlyContinue
 }
-if (Get-CimInstance Win32_UserProfile | Where-Object LocalPath -like "*\$name*") { Result 'cleanup' FAIL "the $name profile is still there" }
 exit [int](Select-String -Path $results -Pattern '^FAIL' -Quiet)

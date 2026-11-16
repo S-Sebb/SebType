@@ -247,7 +247,8 @@ if (Test-Path $StateFile) {
     RegBackups = @(@((Export-Key 'HKCU\Control Panel\Input Method\Hot Keys' "$backup\hotkeys.reg"),
         (Export-Key 'HKCU\Software\Microsoft\CTF\TIP' "$backup\tip.reg")) | Where-Object { $_ })
     # The text services the account had settings for, without SebType's (see Languages).
-    TipKeys = @((Get-ChildItem 'HKCU:\Software\Microsoft\CTF\TIP' -ErrorAction SilentlyContinue).PSChildName | Where-Object { $_ -notin $Clsid, $WeaselClsid, $MozcClsid })
+    # A new account may have none yet (seen in #271's test user).
+    TipKeys = @(Get-ChildItem 'HKCU:\Software\Microsoft\CTF\TIP' -ErrorAction SilentlyContinue | ForEach-Object PSChildName | Where-Object { $_ -notin $Clsid, $WeaselClsid, $MozcClsid })
     RimeSettingsExisted = Test-Path 'HKCU:\Software\Rime'
     # Another Rime or Mozc's folders from before SebType: the user's own, put back when SebType goes.
     RimeBackup = if (Test-Path $RimeUser) { "$backup\Rime" } else { $null }
