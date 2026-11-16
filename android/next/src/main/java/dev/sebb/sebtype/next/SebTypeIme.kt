@@ -1,6 +1,7 @@
 package dev.sebb.sebtype.next
 
 import dev.sebb.sebtype.next.data.PersonalWords
+import dev.sebb.sebtype.next.settings.SettingsActivity
 import dev.sebb.sebtype.next.data.Prefs
 import dev.sebb.sebtype.next.sync.Sync
 import android.content.BroadcastReceiver
@@ -116,6 +117,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     // English: the text before the cursor as the keys sent so far leave it, on the engine thread too, so a
     // letter typed ahead of the engine gets the field's capital by the text it will follow (#241).
     private val engineBefore = StringBuilder()
+    // English's options and personal words as last sent to core/ (the engine thread's)
+    private var englishOptionsSent: Any? = null
+    /** The emoji English's word names, and its index in the bar (-1: none) */
+    private var emojiShown = ""
+    private var emojiAt = -1
     private var keysSent: Int? = null
 
     override fun onCreate() {
@@ -232,6 +238,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keyboard.longPressMs = Prefs[Prefs.LONG_PRESS_MS].toLong()
         keyboard.hints = Prefs[Prefs.SHOW_HINTS]
         keyboard.strength = Prefs[Prefs.VIBRATE_STRENGTH]
+        englishOptions()
         // Settings' Size and position opened a field to show the keyboard in its Keyboard Modes
         if (prefs.getBoolean("open_modes", false)) {
             prefs.edit().putBoolean("open_modes", false).apply()
@@ -274,16 +281,38 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             NativeCore.post({ clear().recorded() }) { show(it, applyText = false) }
         }
         // English reads the words before the cursor for its corrections and next words.
-        if (external && lang == ENGLISH && toEngine) {
-            val before = editor.textBefore()
-            NativeCore.post({
-                setContext(before)
-                engineBefore.setLength(0)
-                engineBefore.append(before)
-                state().recorded()
-            }) { show(it, applyText = false) }
-        }
+        if (external && lang == ENGLISH && toEngine) englishContext()
         if (views) autoShift()
+    }
+
+    /** English reads the text before the cursor again, after it changed other than by its keys. */
+    private fun englishContext() {
+        val before = editor.textBefore()
+        NativeCore.post({
+            setContext(before)
+            engineBefore.setLength(0)
+            engineBefore.append(before)
+            state().recorded()
+        }) { show(it, applyText = false) }
+    }
+
+    /**
+     * Settings' English options and the personal dictionary's English words (Android's user dictionary,
+     * read on the engine thread): core/ makes its dictionary of them again only when they changed.
+     */
+    private fun englishOptions() {
+        val autocorrect = Prefs[Prefs.AUTOCORRECT]
+        val period = Prefs[Prefs.DOUBLE_SPACE_PERIOD]
+        val app = applicationContext
+        if (Prefs[Prefs.EMOJI_SUGGESTIONS]) Thread { Emoji.forWord(app, "") }.start()
+        NativeCore.post {
+            val words = PersonalWords.all(app).filter { it.locale == null || it.locale.startsWith("en") }
+            val options = Triple(autocorrect, period, words.map { it.word to it.frequency })
+            if (options != englishOptionsSent) {
+                englishOptionsSent = options
+                setEnglishOptions(autocorrect, period, words.map { it.word }.toTypedArray(), words.map { it.frequency }.toIntArray())
+            }
+        }
     }
 
     /** The current language for this field: core/'s engine, its field kind, the keys. */
@@ -570,7 +599,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
         val st = state
         strip.preedit = if (lang == CHINESE) st?.preedit.orEmpty() else ""
-        val candidates = st?.candidates?.toList().orEmpty()
+        // English's word may name an emoji: it takes the bar's third place
+        val named = if (lang == ENGLISH && composing && kind.pad == null && Prefs[Prefs.EMOJI_SUGGESTIONS])
+            Emoji.forWord(this, st!!.preedit) else null
+        val candidates = (st?.candidates?.toMutableList() ?: mutableListOf()).also { list ->
+            emojiAt = if (named != null) minOf(2, list.size) else -1
+            if (named != null) list.add(emojiAt, named)
+            emojiShown = named.orEmpty()
+        }
         val notice = if (lang != CHINESE || kind.pad != null) null else when (Engines.chinese) {
             Engines.Chinese.PREPARING -> getString(R.string.chinese_preparing)
             Engines.Chinese.FAILED -> getString(R.string.chinese_failed)
@@ -707,7 +743,16 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onCandidate(index: Int) {
         expanded = false
-        NativeCore.post({ selectCandidate(index).recorded() }) { show(it) }
+        val emoji = emojiAt
+        if (emoji < 0 || index < emoji) return NativeCore.post({ selectCandidate(index).recorded() }) { show(it) }
+        if (index > emoji) return NativeCore.post({ selectCandidate(index - 1).recorded() }) { show(it) }
+        // The emoji in place of the word
+        val text = emojiShown
+        NativeCore.post({ clear().recorded() }) {
+            show(it)
+            editor.commit(text)
+            englishContext()
+        }
     }
 
     /** The bar's › and ^ (opening and closing the action bar), or ← over a panel (Edit actions goes back to All Actions) */
@@ -744,6 +789,10 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Action.MODES -> return open(Panel.MODES)
             Action.INCOGNITO -> return onIncognito(!incognito)
             Action.LANGUAGE -> nextLanguage()
+            Action.SETTINGS -> finishTyping {
+                startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                requestHideSelf(0)
+            }
             Action.UNDO, Action.REDO -> finishTyping { editor.undo(action == Action.REDO) }
             Action.SELECT_ALL, Action.CUT, Action.COPY, Action.PASTE -> finishTyping {
                 editor.menuAction(when (action) {

@@ -98,6 +98,8 @@ object NativeCore {
      */
     @JvmStatic external fun setEnglishPaths(dictionary: String, offset: Long, length: Long, model: String, userDir: String)
     @JvmStatic external fun setSettings(conf: String)
+    /** English's phone options: autocorrect, the double-space period, the personal dictionary's English words */
+    @JvmStatic external fun setEnglishOptions(autocorrect: Boolean, doubleSpacePeriod: Boolean, words: Array<String>, frequencies: IntArray)
     @JvmStatic external fun settings(): String
 
     @JvmStatic external fun selectLanguage(lang: Int)

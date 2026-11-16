@@ -27,6 +27,17 @@ std::unique_ptr<Core> core;
 RimePaths rimePaths;
 MozcPaths mozcPaths;
 EnglishPaths englishPaths;
+// The phone's own options over sebtype.conf's: 🌐 drops what is typed (the user, 2026-11-15), and English's
+// (setEnglishOptions).
+Settings phoneOptions;
+
+Settings forPhone(Settings s) {
+  s.commitOnSwitch = false;
+  s.autocorrect = phoneOptions.autocorrect;
+  s.doubleSpacePeriod = phoneOptions.doubleSpacePeriod;
+  s.englishWords = phoneOptions.englishWords;
+  return s;
+}
 
 JavaVM *vm;
 jclass nativeCore;
@@ -143,9 +154,7 @@ void configure(JNIEnv *env, jclass, jstring rimeShared, jstring rimeUser, jstrin
   mozcPaths.profileDir = str(env, mozcProfile);
   mozcPaths.touch = true;
   if (core) return;
-  Settings s = Settings::parse(str(env, conf));
-  s.commitOnSwitch = false;  // 🌐 drops what is typed (the user, 2026-11-15)
-  core = std::make_unique<Core>(makeEngine, s);
+  core = std::make_unique<Core>(makeEngine, forPhone(Settings::parse(str(env, conf))));
 }
 
 // A changed schema or Mozc data set takes effect when the engine next starts.
@@ -184,9 +193,24 @@ void setEnglishPaths(JNIEnv *env, jclass, jstring dictionary, jlong offset, jlon
 
 void setSettings(JNIEnv *env, jclass, jstring conf) {
   std::lock_guard g(lock);
-  Settings s = Settings::parse(str(env, conf));
-  s.commitOnSwitch = false;
-  core->setSettings(s);
+  core->setSettings(forPhone(Settings::parse(str(env, conf))));
+}
+
+void setEnglishOptions(JNIEnv *env, jclass, jboolean autocorrect, jboolean doubleSpacePeriod, jobjectArray words,
+                       jintArray frequencies) {
+  std::lock_guard g(lock);
+  phoneOptions.autocorrect = autocorrect;
+  phoneOptions.doubleSpacePeriod = doubleSpacePeriod;
+  phoneOptions.englishWords.clear();
+  const jsize n = env->GetArrayLength(words);
+  std::vector<jint> f(n);
+  env->GetIntArrayRegion(frequencies, 0, n, f.data());
+  for (jsize i = 0; i < n; i++) {
+    auto word = static_cast<jstring>(env->GetObjectArrayElement(words, i));
+    phoneOptions.englishWords.emplace_back(str(env, word), f[i]);
+    env->DeleteLocalRef(word);
+  }
+  if (core) core->setSettings(forPhone(core->settings()));
 }
 
 jstring settings(JNIEnv *env, jclass) {
@@ -373,6 +397,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"setEnglishPaths", "(Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;)V",
        reinterpret_cast<void *>(setEnglishPaths)},
       {"setSettings", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setSettings)},
+      {"setEnglishOptions", "(ZZ[Ljava/lang/String;[I)V", reinterpret_cast<void *>(setEnglishOptions)},
       {"settings", "()Ljava/lang/String;", reinterpret_cast<void *>(settings)},
       {"selectLanguage", "(I)V", reinterpret_cast<void *>(selectLanguage)},
       {"setField", "(IZ)V", reinterpret_cast<void *>(setField)},

@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <map>
@@ -28,6 +29,7 @@
 
 #include "dictionary/property/historical_info.h"
 #include "dictionary/property/ngram_context.h"
+#include "dictionary/property/unigram_property.h"
 #include "dictionary/structure/dictionary_structure_with_buffer_policy_factory.h"
 #include "dictionary/utils/dict_file_writing_utils.h"
 #include "dictionary/utils/file_utils.h"
@@ -49,6 +51,10 @@ constexpr int kMaxResults = MAX_RESULTS;          // the decoder's results per c
 constexpr int kPrevWords = MAX_PREV_WORD_COUNT_FOR_N_GRAM;
 // AOSP's "modest" autocorrection, the rule until the model has loaded (Suggest.getSuggestedWordsForNonBatchInput).
 constexpr float kAutocorrectThreshold = 0.185f;
+// AOSP's double-space period timeout (config_double_space_period_timeout)
+constexpr std::chrono::milliseconds kDoubleSpace{1100};
+// AOSP's user dictionary frequency scale: a word added by hand (250) gets 160 (UserBinaryDictionary).
+constexpr int kHandAddedFrequency = 250, kPersonalProbability = 160;
 constexpr size_t kNextWords = 5;      // the model's next words asked for; blocked ones leave the list
 constexpr size_t kContextChars = 1000;  // the text before the cursor kept; the model reads 300 of it
 // Typing options: not a gesture, no full edit distance, offensive words blocked, locale weight 1.0.
@@ -418,6 +424,19 @@ class English : public Engine {
       return false;  // the frontend does the field's action or types it
     }
     if (c && isSeparator(c)) {
+      const auto now = std::chrono::steady_clock::now();
+      const auto lastSpace = std::exchange(lastSpace_, c == ' ' ? now : std::chrono::steady_clock::time_point{});
+      // Two spaces after a word (or a space after a picked one): ". ", as AOSP's double-space period.
+      if (c == ' ' && doubleSpacePeriod_ && typed_.empty() && (afterPick || now - lastSpace < kDoubleSpace) &&
+          spaceEndsSentence()) {
+        context_.pop_back();
+        edit_.deleteBefore = 1;
+        commit_ += ". ";
+        context_ += ". ";
+        lastSpace_ = {};
+        changed();
+        return true;
+      }
       if (afterPick && joinsWord(c) && context_.ends_with(' ')) {
         // "word" picked, then ".": "word. " (#39); a space the user typed keeps the period where it is.
         context_.pop_back();
@@ -494,7 +513,15 @@ class English : public Engine {
     field_ = field;
     resetWord();
   }
-  void applySettings(const Settings &, bool learning) override { learning_ = learning; }
+  void applySettings(const Settings &s, bool learning) override {
+    learning_ = learning;
+    autocorrect_ = s.autocorrect;
+    doubleSpacePeriod_ = s.doubleSpacePeriod;
+    if (s.englishWords != personalWords_) {
+      personalWords_ = s.englishWords;
+      openPersonal();
+    }
+  }
   void setLayout(const Layout &layout) override {
     layout_ = layout;
     keys_ = proximityInfo(layout);
@@ -531,6 +558,45 @@ class English : public Engine {
 
  private:
   std::string historyPath() const { return paths_.userDir + "/en_history"; }
+
+  // The personal dictionary's words as AOSP's user dictionary holds them: a dictionary of their own, made
+  // again whenever they change (they come from the platform, which keeps them).
+  void openPersonal() {
+    personal_.reset();
+    if (paths_.userDir.empty()) return;
+    const std::string path = paths_.userDir + "/en_personal";
+    latinime::FileUtils::removeDirAndFiles(path.c_str());
+    if (personalWords_.empty()) return;
+    latinime::DictionaryHeaderStructurePolicy::AttributeMap attributes;
+    auto put = [&](const std::string &k, const std::string &v) { attributes[{k.begin(), k.end()}] = {v.begin(), v.end()}; };
+    put("dictionary", "user.en_US");
+    put("locale", "en_US");
+    put("version", "1");
+    const std::string locale = "en_US";
+    latinime::DictFileWritingUtils::createEmptyDictFile(path.c_str(), 403, {locale.begin(), locale.end()}, &attributes);
+    personal_ = Lexicon::open(path, 0, 0, true);
+    if (!personal_) {
+      std::fprintf(stderr, "sebtype: can't make the English personal words in %s\n", path.c_str());
+      return;
+    }
+    for (const auto &[word, frequency] : personalWords_) {
+      const auto cps = codePoints(word);
+      if (cps.empty() || cps.size() >= size_t(kMaxWordLength)) continue;
+      const int probability = std::clamp(frequency * kPersonalProbability / kHandAddedFrequency, 1, 255);
+      const latinime::UnigramProperty unigram(false, false, false, false, probability, latinime::HistoricalInfo());
+      personal_->dict->addUnigramEntry(latinime::CodePointArrayView(cps), &unigram);
+    }
+  }
+
+  // The text ends in a space after a word, a digit or a closing mark: a second space may make it ". ".
+  bool spaceEndsSentence() const {
+    if (context_.size() < 2 || context_.back() != ' ') return false;
+    size_t at = context_.size() - 2;
+    while (at > 0 && (context_[at] & 0xc0) == 0x80) at--;
+    const auto cps = codePoints(context_.substr(at, context_.size() - 1 - at));
+    const char32_t c = cps.empty() ? 0 : char32_t(cps.back());
+    return isLetter(c) || (c >= '0' && c <= '9') || std::u32string_view(U")]}\"'").find(c) != std::u32string_view::npos;
+  }
 
   // Today's app (FUTO Keyboard's, before #191 stage 6) keeps English's learned words in this same AOSP format,
   // in a folder of this name. The update moves that folder into userDir (android/next's Migration); its words
@@ -649,8 +715,9 @@ class English : public Engine {
     const auto context = ngramContext(context_);
     std::vector<Word> results;
     for (const Word &w : main_->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
-    if (history_)
-      for (const Word &w : history_->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
+    for (Lexicon *lexicon : {history_.get(), personal_.get()})
+      if (lexicon)
+        for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
 
     std::string committed = typed;
     std::vector<std::string> strip;
@@ -683,9 +750,11 @@ class English : public Engine {
         if (allowed && kind != Dictionary::KIND_SHORTCUT && strong) committed = strip.front();
       }
     }
-    // Words typed right after a "." or a digit (".py", "3rd") are left as typed (#39).
+    // With autocorrect off, and for words typed right after a "." or a digit (".py", "3rd", #39), the
+    // word stays as typed.
     const char before = context_.empty() ? ' ' : context_.back();
-    if (before == '.' || before == '/' || before == ':' || std::isdigit(static_cast<unsigned char>(before)))
+    if (!autocorrect_ || before == '.' || before == '/' || before == ':' ||
+        std::isdigit(static_cast<unsigned char>(before)))
       committed = typed;
     for (auto &w : strip) w = withCase(w, typed_);
     committed = withCase(committed, typed_);
@@ -725,7 +794,7 @@ class English : public Engine {
     std::string learned = word;
     const auto end = context_.find_last_not_of(" ");
     const bool sentenceStart = end == std::string::npos || std::string(".!?\n").find(context_[end]) != std::string::npos;
-    const bool known = main_->has(word) || history_->has(word);
+    const bool known = main_->has(word) || history_->has(word) || (personal_ && personal_->has(word));
     if (sentenceStart && (main_->has(lowerCaseWord(word)) || !known)) learned = lowerCaseWord(word);
     const auto cps = codePoints(learned);
     const auto context = ngramContext(context_);
@@ -800,11 +869,14 @@ class English : public Engine {
 
   EnglishPaths paths_;
   std::function<void()> ready_;
-  std::unique_ptr<Lexicon> main_, history_;
+  std::unique_ptr<Lexicon> main_, history_, personal_;
+  std::vector<std::pair<std::string, int>> personalWords_;
   Layout layout_;
   std::unique_ptr<latinime::ProximityInfo> keys_;
   Field field_ = Field::Text;
   bool learning_ = true;
+  bool autocorrect_ = true, doubleSpacePeriod_ = false;
+  std::chrono::steady_clock::time_point lastSpace_;  // the last space typed, for the double-space period
 
   std::vector<int> typed_, xs_, ys_;  // the letters typed and their touch points
   std::string context_;               // the text before them

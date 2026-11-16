@@ -27,6 +27,7 @@
     <string name="key_next">下一项</string>
     <string name="key_previous">上一项</string>
     <string name="key_done">完成</string>
+    <string name="action_settings">设置</string>
     <string name="action_emoji">表情符号</string>
     <string name="action_undo">撤销</string>
     <string name="action_redo">重做</string>

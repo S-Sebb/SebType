@@ -11,6 +11,7 @@ import dev.sebb.sebtype.next.Icons.Icon
 /** What the action bar and All Actions offer (#53 B1–B4), in All Actions' order */
 enum class Action(val label: Int, val icon: Icon) {
     EMOJI(R.string.action_emoji, Icon.EMOJI),
+    SETTINGS(R.string.action_settings, Icon.SETTINGS),
     UNDO(R.string.action_undo, Icon.UNDO),
     REDO(R.string.action_redo, Icon.REDO),
     CLIPBOARD(R.string.action_clipboard, Icon.CLIPBOARD),

@@ -27,6 +27,7 @@
     <string name="key_next">次へ</string>
     <string name="key_previous">前へ</string>
     <string name="key_done">完了</string>
+    <string name="action_settings">設定</string>
     <string name="action_emoji">絵文字</string>
     <string name="action_undo">元に戻す</string>
     <string name="action_redo">やり直し</string>

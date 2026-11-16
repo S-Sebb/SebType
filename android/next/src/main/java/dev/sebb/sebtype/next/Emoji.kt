@@ -21,10 +21,19 @@ object Emoji {
 
     class Group(val name: String, val items: List<Item>)
 
-    private var groups: List<Group>? = null
+    @Volatile private var groups: List<Group>? = null
+    @Volatile private var byName: Map<String, String>? = null
 
-    /** Read once per process, the first time the picker opens */
+    /** Read once per process, the first time the picker opens (or English suggests one) */
     fun groups(context: Context): List<Group> = groups ?: load(context).also { groups = it }
+
+    /** The emoji an English [word] names: its CLDR name is the word, or the word and "face" ("cat" 🐈, "pig" 🐖) */
+    fun forWord(context: Context, word: String): String? {
+        val names = byName ?: groups(context).flatMap { it.items }.asReversed().associate { it.name(0).lowercase() to it.text }
+            .also { byName = it }
+        val w = word.lowercase()
+        return names[w] ?: names["$w face"]
+    }
 
     private fun load(context: Context): List<Group> {
         val paint = Paint()

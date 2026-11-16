@@ -579,4 +579,28 @@ TEST_F(EnglishTest, PunctuationAfterAPickJoinsTheWord) {  // #39
   EXPECT_EQ(en->takeEdit().deleteBefore, 0);
   EXPECT_EQ(en->takeCommit(), ".");
 }
+
+TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDoubleSpacePeriods) {
+  start("");
+  Settings s;
+  s.autocorrect = false;
+  en->applySettings(s, true);
+  type("teh ");
+  EXPECT_EQ(en->takeCommit(), "teh ");
+  s.autocorrect = true;
+  s.doubleSpacePeriod = true;
+  s.englishWords = {{"zorblax", 250}};
+  en->applySettings(s, true);
+  type("zorbl");
+  EXPECT_TRUE(lists("zorblax"));
+  en->clear();
+  type("ok ");
+  en->takeCommit();
+  EXPECT_TRUE(type(" "));
+  EXPECT_EQ(en->takeEdit().deleteBefore, 1);
+  EXPECT_EQ(en->takeCommit(), ". ");
+  EXPECT_TRUE(type(" "));  // a third space is only a space
+  EXPECT_EQ(en->takeEdit().deleteBefore, 0);
+  EXPECT_EQ(en->takeCommit(), " ");
+}
 #endif

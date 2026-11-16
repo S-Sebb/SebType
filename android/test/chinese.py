@@ -1520,6 +1520,62 @@ def picked_suggestion_period():
     return f"-> {text!r}"
 
 
+def personal_word_en():
+    """English suggests a word of the personal dictionary (Android's user dictionary), as 日本語 does."""
+    root(
+        f"content insert --uri {WORDS} --bind word:s:zorblax --bind locale:s:en_US"
+        " --bind frequency:i:250 --bind appid:i:0"
+    )
+    try:
+        to_english()
+        got = candidates_for(
+            "zorbl"
+        )  # the field shows the keyboard again: it reads the words
+    finally:
+        root(f"content delete --uri {WORDS} --where \"word='zorblax'\"")
+    if "zorblax" not in got:
+        raise Fail(f"zorbl -> {got[:6]}, without the personal word zorblax")
+    return f"zorbl -> {got[:6]}"
+
+
+def emoji_suggestion():
+    """English's word that names an emoji offers it in the bar; a tap puts it in place of the word."""
+    to_english()
+    open_field()
+    type_text("pizza")
+    got = wait_for(
+        "🍕 in the bar", lambda: "🍕" in candidates(nodes()) and candidates(nodes()), 15
+    )
+    tap_candidate("🍕")
+    settle()
+    if (text := field_text()) != "🍕":
+        raise Fail(f"pizza, 🍕 tapped -> {text!r}")
+    return f"pizza -> {got[:3]}, tapped -> {text!r}"
+
+
+SETTINGS_ACTION = ("Settings", "设置", "設定")
+
+
+def settings_action():
+    """All Actions' Settings opens the app's settings (Decisions #2, 2026-11-12)."""
+    to_english()
+    open_field()
+    action(ALL_ACTIONS)
+    tap_label(SETTINGS_ACTION)
+
+    def resumed():
+        dump = adb("shell", "dumpsys activity activities")
+        return any(
+            "settings.SettingsActivity" in line
+            for line in dump.splitlines()
+            if "ResumedActivity" in line
+        )
+
+    wait_for("the settings to open", resumed, 10)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    return "All Actions, Settings -> SettingsActivity"
+
+
 if NEXT:
     NEXT_SKIPS["en-futo-default-migrates"] = (
         "FUTO's stored settings have nothing to migrate to here"
@@ -1542,6 +1598,14 @@ if NEXT:
         "en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"]
     )
     check("emoji-picks", emoji_picks, needs=["first-install"])
+    check(
+        "en-double-space-period",
+        typed_as("yes  then", "Yes. Then"),
+        needs=["first-install"],
+    )
+    check("en-personal-word", personal_word_en, needs=["first-install"])
+    check("en-emoji-suggestion", emoji_suggestion, needs=["first-install"])
+    check("settings-action", settings_action, needs=["first-install"])
     check("clipboard-paste", clipboard_paste, needs=["first-install"])
     check("quick-clip", quick_clip, needs=["first-install"])
     check("modes-one-handed", modes_one_handed, needs=["first-install"])

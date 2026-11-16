@@ -9,7 +9,7 @@ import android.graphics.RectF
 object Icons {
     enum class Icon { SHIFT, SHIFT_ON, SHIFT_LOCKED, DELETE, ENTER, GLOBE, SEARCH, SEND, NEXT, PREVIOUS, DONE, MENU, MENU_OPEN, EXPAND, COLLAPSE, INCOGNITO,
         MORE, EMOJI, UNDO, REDO, CLIPBOARD, MODES, SELECT_ALL, COPY, CUT, PASTE, PIN, CLOSE, RECENT,
-        STANDARD, ONE_HANDED, SPLIT, FLOATING, SWAP, PLUS, MINUS, DRAG }
+        STANDARD, ONE_HANDED, SPLIT, FLOATING, SWAP, PLUS, MINUS, DRAG, SETTINGS }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeJoin = Paint.Join.MITER
@@ -184,6 +184,16 @@ object Icons {
                 if (icon == Icon.PLUS) canvas.drawLine(12f, 5f, 12f, 19f, paint)
             }
             Icon.DRAG -> for (y in listOf(9f, 15f)) canvas.drawLine(5f, y, 19f, y, paint)
+            // A cog: a ring with eight square teeth
+            Icon.SETTINGS -> {
+                canvas.drawCircle(12f, 12f, 3f, paint)
+                canvas.drawCircle(12f, 12f, 7f, paint)
+                for (i in 0 until 8) {
+                    canvas.save(); canvas.rotate(i * 45f, 12f, 12f)
+                    canvas.drawRect(10.5f, 2.5f, 13.5f, 5f, paint)
+                    canvas.restore()
+                }
+            }
         }
         canvas.restore()
     }
