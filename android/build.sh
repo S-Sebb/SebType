@@ -9,6 +9,7 @@
 #   android/build.sh next          signed arm64-v8a release APK of next/, the new keyboard (#191, test-only)
 #   android/build.sh next-debug    debug arm64-v8a APK of next/
 #   android/build.sh next-update   next's signed release as dev.sebb.sebtype: an update over today's app (#254)
+#   android/build.sh unit-tests    the app's unit tests (JVM, no device), and next/ compiled; no APK
 # Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here), and copies
 # the APKs back. A release comes back unsigned and is signed here: the key never leaves this PC.
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
@@ -21,7 +22,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source ../tools/lib.sh
 
-kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64|next|next-debug|next-update}
+kind=${1:?usage: android/build.sh release|debug|debug-x86_64|test-x86_64|next|next-debug|next-update|unit-tests}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
 apksigner() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner "$@"; }
 # A release is built unsigned, here or on the build host, and signed the same way in both cases, as Gradle
@@ -86,6 +87,8 @@ case $kind in
     task=":next:assembleDebug" abis=arm64-v8a out=next/build/outputs/apk/debug ;;
   next-update)
     task=":next:assembleRelease -PsebtypeAppId=dev.sebb.sebtype" abis=arm64-v8a out=next/build/outputs/apk/release ;;
+  unit-tests)
+    task=":app:testDebugUnitTest :next:compileDebugKotlin" abis=arm64-v8a out= ;;
   *) echo "build: unknown kind $kind" >&2; exit 2 ;;
 esac
 # This run's APKs, hard links to Gradle's (which the next build replaces, not overwrites).
@@ -115,12 +118,16 @@ build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${containe
     sccache --start-server >/dev/null
     trap "sccache --stop-server >/dev/null; rm -f $SCCACHE_SERVER_UDS" EXIT
   fi
-  rm -rf "$OUT" app/build/outputs/apk/androidTest
+  [[ -z $OUT ]] || rm -rf "$OUT" app/build/outputs/apk/androidTest
   ./gradlew --no-daemon --max-workers="$GRADLE_WORKERS" -PsebtypeJobs="$BUILD_JOBS" -Dorg.gradle.jvmargs=-Xmx3g \
     -Pkotlin.compiler.execution.strategy=daemon -Pkotlin.daemon.jvmargs=-Xmx2g --console=plain -q "$@" >&2
-  cp -l "$OUT"/*.apk "$RUN/"
+  [[ -z $OUT ]] || cp -l "$OUT"/*.apk "$RUN/"
   if [[ $KIND == test-x86_64 ]]; then mkdir "$RUN/androidTest" && cp -l app/build/outputs/apk/androidTest/debug/*.apk "$RUN/androidTest/"; fi
 ' build $task -PsebtypeAbis="$abis"
+if [[ $kind == unit-tests ]]; then
+  echo "build: unit tests passed in $(( $(date +%s) - $(cat "$locked") ))s after $(( $(cat "$locked") - start ))s in the lock queue" >&2
+  exit
+fi
 apk=$(echo "$run"/*.apk)
 [[ -z $signed || -n $unsigned ]] || apk=$(sign_release "$apk")
 echo "build: $kind $VERSION_NAME in $(( $(date +%s) - $(cat "$locked") ))s after $(( $(cat "$locked") - start ))s in the lock queue, $(du -h "$apk" | cut -f1)" >&2

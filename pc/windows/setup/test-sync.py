@@ -54,7 +54,7 @@ def main():
         print(folder)
     elif command == "add-mozc":
         db, reading, word = args
-        s.write_file(db, s.mozc_add(s.read_mozc(db), [(reading, word, s.NOUN)]))
+        s.write_file(db, s.mozc_add(s.read_mozc(db) or b"", [(reading, word, s.NOUN)]))
     elif command == "put-phone":
         c = client(*args)
         c.request(
@@ -84,7 +84,7 @@ def main():
         with open(os.path.join(folder, "rime_ice.userdb.txt"), encoding="utf-8") as f:
             if PHONE_RIME not in f.read():
                 sys.exit(f"Rime's snapshot lacks the other device's {PHONE_RIME}")
-        if PHONE_MOZC not in {w for _, w, _, _ in s.mozc_words(s.read_mozc(db))}:
+        if PHONE_MOZC not in {w for _, w, _, _ in s.mozc_words(s.read_mozc(db) or b"")}:
             sys.exit(f"Mozc's dictionary lacks the other device's {PHONE_MOZC}")
         print(f"Rime merged {PHONE_RIME}, Mozc has {PHONE_MOZC}")
     else:

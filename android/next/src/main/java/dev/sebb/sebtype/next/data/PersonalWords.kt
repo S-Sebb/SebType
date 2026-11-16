@@ -70,15 +70,15 @@ object PersonalWords {
         if (words.any { it.japanese }) refreshMozc(context)
     }
 
-    fun delete(context: Context, word: PersonalWord) {
+    fun delete(context: Context, vararg words: PersonalWord) {
         val ids = ArrayList<Long>()
-        context.contentResolver.query(UserDictionary.Words.CONTENT_URI,
+        for (word in words) context.contentResolver.query(UserDictionary.Words.CONTENT_URI,
             arrayOf(UserDictionary.Words._ID, UserDictionary.Words.LOCALE, UserDictionary.Words.SHORTCUT),
             "${UserDictionary.Words.WORD}=?", arrayOf(word.word), null)?.use { c ->
             while (c.moveToNext()) if (c.getString(1) == word.locale && c.getString(2) == word.shortcut) ids += c.getLong(0)
         }
         ids.forEach { context.contentResolver.delete(UserDictionary.Words.CONTENT_URI, "${UserDictionary.Words._ID}=$it", null) }
-        if (word.japanese) refreshMozc(context)
+        if (words.any { it.japanese }) refreshMozc(context)
     }
 
     /** Mozc dictionaries the user imported (#11), each kept as the file it came as. */

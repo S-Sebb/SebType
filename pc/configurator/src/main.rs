@@ -238,16 +238,6 @@ fn zh_words(ui: &Ui) -> Vec<rime::Word> {
         })
         .collect()
 }
-fn ja_words(ui: &Ui) -> Vec<mozc::Word> {
-    ui.ja_words
-        .iter()
-        .map(|w| mozc::Word {
-            reading: w.reading.into(),
-            word: w.word.into(),
-            pos: w.pos as usize,
-        })
-        .collect()
-}
 
 fn export(backup: Backup, file: String) -> Result<Toast, Toast> {
     let Some(path) = rfd::FileDialog::new()
@@ -581,14 +571,19 @@ fn main() -> Result<(), slint::PlatformError> {
                 toast(&weak.unwrap(), say(Msg::ReadingHiraganaOnly));
                 return false;
             }
-            ui.ja_words.push(JaWord {
-                reading,
+            let w = mozc::Word {
+                reading: reading.into(),
                 word: word.trim().into(),
+                pos: pos as usize,
+                mozc_pos: None,
+            };
+            ui.ja_words.push(JaWord {
+                reading: w.reading.as_str().into(),
+                word: w.word.as_str().into(),
                 pos,
             });
-            let words = ja_words(&ui);
             run(Box::new(move || {
-                mozc::save_words(&platform::mozc_dir(), &words).map_err(err)?;
+                mozc::add_word(&platform::mozc_dir(), w).map_err(err)?;
                 platform::restart_mozc();
                 Ok(say(Msg::SavedJa))
             }));
@@ -598,10 +593,10 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_remove_ja_word({
         let (ui, run) = (ui.clone(), run.clone());
         move |i| {
-            ui.ja_words.remove(i as usize);
-            let words = ja_words(&ui);
+            let w = ui.ja_words.remove(i as usize);
+            let (reading, word) = (w.reading.to_string(), w.word.to_string());
             run(Box::new(move || {
-                mozc::save_words(&platform::mozc_dir(), &words).map_err(err)?;
+                mozc::remove_word(&platform::mozc_dir(), &reading, &word).map_err(err)?;
                 platform::restart_mozc();
                 Ok(say(Msg::Deleted))
             }));
@@ -637,7 +632,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 japanese: japanese(&st),
                 candidates: candidates(&st),
                 chinese_words: zh_words(&ui),
-                japanese_words: ja_words(&ui),
+                japanese_words: mozc::words(&platform::mozc_dir()).unwrap_or_default(),
             };
             let file = st.get_backup_file().into();
             run(Box::new(move || export(b, file)));
