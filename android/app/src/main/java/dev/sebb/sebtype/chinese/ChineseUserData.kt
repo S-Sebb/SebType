@@ -5,6 +5,10 @@ import dev.sebb.sebtype.SebTypeConf
 import dev.sebb.sebtype.core.ChineseWordSync
 import java.io.File
 import java.io.InputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.general.ChineseIME
 
 /**
@@ -53,20 +57,33 @@ object ChineseMyWords {
         }
     }
 
+    private val editing = Mutex()
+
+    /**
+     * Changes the words as they are now: [change] gets them ([saved]) and returns the new ones, or null to keep
+     * them; then [after] runs, under the same lock. The settings screen and the sync each read and write the
+     * whole list, so one in the middle of the other would lose a word (#272).
+     */
+    suspend fun edit(context: Context, change: (List<ChineseWord>?) -> List<ChineseWord>?, after: () -> Unit = {}) =
+        editing.withLock {
+            withContext(Dispatchers.IO) { change(saved(context)) }?.let { write(context, it) }
+            withContext(Dispatchers.IO) { after() }
+        }
+
     /**
      * Saves [words]. Rime reads them when it starts, so a running Rime is restarted (about a second,
      * no deploy); one not running yet picks them up when Chinese is next typed.
      */
-    suspend fun write(context: Context, words: List<ChineseWord>) {
+    private suspend fun write(context: Context, words: List<ChineseWord>) {
         val wasReady = RimeIceSetup.state.value == RimeIceSetup.State.Ready
         RimeIceSetup.whileStopped(context) {
             val shipped = File(ChineseIME.getShared(context), FILE).takeIf { it.isFile }?.readText().orEmpty()
-            userFile(context).writeText(buildString {
+            ChineseWordSync.replace(userFile(context), buildString {
                 append(shipped)
                 if(isNotEmpty() && !endsWith('\n')) append('\n')
                 appendLine(MARKER)
                 words.forEach { appendLine("${it.word}\t${it.pinyin}") }
-            })
+            }.toByteArray())
         }
         if(wasReady) RimeIceSetup.prepareInBackground(context)
     }

@@ -29,7 +29,6 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.HttpsURLConnection
-import dev.sebb.sebtype.core.ChineseWordSync
 import dev.sebb.sebtype.next.Engines
 import android.os.UserManager
 
@@ -290,12 +289,12 @@ object Sync {
         val sync = File(user(context), "sync")
         var remote = server.list()
         val ownBefore = installationId(context)
-        val chineseCopies = PersonalDictionarySync.chineseCopiesCount(context)
+        PersonalDictionarySync.dropOldChineseCopies(context, sync)
         for(file in remote) {
             val dictionary = file.name in PersonalDictionarySync.FILES
             if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || FILE.matches(file.name))) continue
             val local = File(sync, "${file.device}/${file.name}")
-            val old = local.takeIf { it.isFile && (file.name != ChineseWordSync.FILE || chineseCopies) }?.readBytes()
+            val old = local.takeIf { it.isFile }?.readBytes()
             if(old != null && sha256(old) == file.sha256) continue
             val bytes = server.download(file)
             // The copy kept here is what the next download is compared with, so it is saved after the words.

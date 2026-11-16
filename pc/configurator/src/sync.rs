@@ -156,17 +156,28 @@ fn client(s: &Sync, args: &[&std::ffi::OsStr]) -> Result<String, Failed> {
     }
 }
 
-/// How many words pull changed in Mozc's dictionary and in Chinese My words, from its
-/// "pull: N file(s), M word change(s) for Mozc, K for Rime".
-fn word_changes(pulled: &str) -> (usize, usize) {
-    let count = |i| {
-        pulled
-            .split(", ")
-            .nth(i)
-            .and_then(|w| w.split(' ').next()?.trim().parse().ok())
-            .unwrap_or(0)
-    };
-    (count(1), count(2))
+/// Runs f holding the lock file at path, which other processes wait for.
+fn locked_in<T>(path: &Path, f: impl FnOnce() -> T) -> io::Result<T> {
+    let file = fs::File::create(path)?;
+    file.lock()?;
+    Ok(f())
+}
+
+/// Runs f with My words to itself: the window's word edits and a sync's pull each read the words and
+/// write them back, so one done in the middle of the other would be lost (#272).
+pub fn words_locked<T>(f: impl FnOnce() -> T) -> io::Result<T> {
+    fs::create_dir_all(dir())?;
+    locked_in(&dir().join("words.lock"), f)
+}
+
+/// Rime reads My words when it deploys. A pull that changed them leaves the flag file, which only a
+/// deploy that went through removes, so a failed deploy or a sync cut off after the pull is retried.
+fn deploy_if_pending(flag: &Path, deploy: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    if flag.exists() {
+        deploy()?;
+        fs::remove_file(flag)?;
+    }
+    Ok(())
 }
 
 /// One sync, as the phone's: the other devices' changes come down, Rime merges them and writes this
@@ -177,19 +188,29 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
         args.extend(["--mozc-db".as_ref(), db.as_os_str()]);
     }
     let pull = [&["pull".as_ref()], &args[..]].concat();
-    let pulled = client(s, &pull)?;
+    let phrases = rime_dir.join(rime::PHRASES);
+    let flag = dir().join("rime-deploy-pending");
+    // What the pull changed, read even when it fails part way: it may have changed words by then.
+    let (pulled, mozc_changed) = words_locked(|| {
+        let (zh, ja) = (fs::read(&phrases).ok(), mozc_db.map(fs::read));
+        let pulled = client(s, &pull);
+        if fs::read(&phrases).ok() != zh {
+            fs::write(&flag, "").map_err(|_| Failed::Offline)?;
+        }
+        let ja_now = mozc_db.map(fs::read);
+        Ok::<_, Failed>((pulled, ja.map(|r| r.ok()) != ja_now.map(|r| r.ok())))
+    })
+    .map_err(|_| Failed::Offline)??;
+    if mozc_changed {
+        platform::restart_mozc(); // Mozc reads its dictionary when it starts
+    }
+    deploy_if_pending(&flag, platform::redeploy_rime).map_err(|_| Failed::Offline)?;
+    pulled?;
     if let Some(own) = rime::own_sync_folder(rime_dir) {
         platform::sync_rime(&own);
     }
     let push = [&["push".as_ref()], &args[..]].concat();
     client(s, &push)?;
-    let (mozc, rime) = word_changes(&pulled);
-    if mozc > 0 {
-        platform::restart_mozc(); // Mozc reads its dictionary when it starts
-    }
-    if rime > 0 {
-        let _ = platform::redeploy_rime(); // and Rime My words when it deploys
-    }
     Ok(())
 }
 
@@ -468,15 +489,61 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
+    fn temp(name: &str) -> std::path::PathBuf {
+        let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/test-tmp/{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A pull that changed My words deploys Rime until a deploy goes through (#272).
     #[test]
-    fn word_changes_come_from_pulls_line() {
-        assert_eq!(
-            word_changes("pull: 2 file(s), 3 word change(s) for Mozc, 1 for Rime\n"),
-            (3, 1)
+    fn a_pending_deploy_stays_until_one_goes_through() {
+        let d = temp("deploy");
+        let flag = d.join("rime-deploy-pending");
+        let mut deploys = 0;
+        deploy_if_pending(&flag, || {
+            deploys += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(deploys, 0, "nothing pending");
+        fs::write(&flag, "").unwrap();
+        assert!(deploy_if_pending(&flag, || Err(io::Error::other("made up"))).is_err());
+        assert!(flag.exists(), "a failed deploy is tried again");
+        deploy_if_pending(&flag, || Ok(())).unwrap();
+        assert!(!flag.exists());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A word edit waits for a pull that holds the words, and the other way round (#272).
+    #[test]
+    fn word_edits_wait_for_each_other() {
+        let d = temp("words-lock");
+        let lock = d.join("words.lock");
+        let (held, release) = (
+            std::sync::mpsc::channel::<()>(),
+            std::sync::mpsc::channel::<()>(),
         );
-        assert_eq!(
-            word_changes("pull: 0 file(s), 0 word change(s) for Mozc, 0 for Rime\n"),
-            (0, 0)
+        let path = lock.clone();
+        let holder = std::thread::spawn(move || {
+            locked_in(&path, || {
+                held.0.send(()).unwrap();
+                release.1.recv().unwrap();
+                std::time::Instant::now()
+            })
+            .unwrap()
+        });
+        held.1.recv().unwrap();
+        let waiter = std::thread::spawn(move || locked_in(&lock, std::time::Instant::now).unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        release.0.send(()).unwrap();
+        let released = holder.join().unwrap();
+        assert!(
+            waiter.join().unwrap() >= released,
+            "ran only after the release"
         );
+        fs::remove_dir_all(&d).unwrap();
     }
 }

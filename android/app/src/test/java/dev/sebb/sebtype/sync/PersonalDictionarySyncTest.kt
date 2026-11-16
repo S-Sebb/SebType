@@ -5,11 +5,17 @@ import dev.sebb.sebtype.core.MozcWordSync
 import org.futo.inputmethod.latin.uix.PersonalWord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributes
 
 class PersonalDictionarySyncTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -156,11 +162,36 @@ class PersonalDictionarySyncTest {
     }
 
     @Test
-    fun chineseClockAheadAndOldClientCopies() {
+    fun chineseOldClientCopiesGoBeforeTheFirstSync() {
+        // Copies of two devices' files a client before #272 kept; a first sync takes in one, then is cut off.
+        val sync = tmp.newFolder()
+        val copies = listOf("dev-a", "dev-b").map { File(sync, "$it/${ChineseWordSync.FILE}").apply { parentFile!!.mkdirs(); writeText("x") } }
+        val own = File(tmp.newFolder(), ChineseWordSync.FILE)
+        ChineseWordSync.dropOldCopies(own, sync)
+        assertFalse(copies.any { it.exists() })
+        ChineseWordSync.ownEntries(own, listOf())
+        copies[0].writeText("taken in")
+        ChineseWordSync.dropOldCopies(own, sync)
+        assertTrue("once its own file is there, its copies are what it took in", copies[0].exists())
+    }
+
+    @Test
+    fun myWordsAreReplacedWholeNotWrittenInPlace() {
+        val file = tmp.newFile().apply { writeText("old") }
+        val key = { Files.readAttributes(file.toPath(), BasicFileAttributes::class.java).fileKey() }
+        val before = key()
+        ChineseWordSync.replace(file, "new".toByteArray())
+        assertEquals("new", file.readText())
+        assertNotEquals("a new file renamed over it", before, key())
+        File(file.path + ".tmp").mkdirs() // the new file can't be written
+        assertThrows(IOException::class.java) { ChineseWordSync.replace(file, "newer".toByteArray()) }
+        assertEquals("new", file.readText())
+    }
+
+    @Test
+    fun chineseClockAhead() {
         val phone = ChineseDevice(listOf())
-        assertFalse("before its own file, copies from an old client don't count", ChineseWordSync.copiesCount(phone.own))
         phone.takeIn("pumoli\t噗莫里\t名詞\t\t5000\n".toByteArray()) // from a device whose clock ran ahead
-        assertTrue(ChineseWordSync.copiesCount(phone.own))
         assertEquals(listOf("pumoli" to "噗莫里"), phone.words)
         phone.words = listOf()
         val deleted = ChineseWordSync.ownEntries(phone.own, phone.words, 100).values.single()

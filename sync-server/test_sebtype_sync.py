@@ -375,8 +375,9 @@ class Server(unittest.TestCase):
             with open(os.path.join(d, s.PHRASES), "w", encoding="utf-8") as f:
                 f.write(shipped)
 
-        def edit(pc, *words):
-            s.save_rime_words(pc[0], words)
+        def edit(pc, *words):  # My words become words
+            have = {(p, w) for p, w, _, _ in s.rime_words(pc[0]) or []}
+            s.save_rime_words(pc[0], words, have)
 
         def sync(pc):
             s.pull(client, pc[1], pc[2], rime_dir=pc[0])
@@ -420,6 +421,47 @@ class Server(unittest.TestCase):
         self.assertEqual(s.pull(client, device, sync_dir, rime_dir=d), (1, 0, 1))
         self.assertEqual(s.rime_words(d), [("pumoli", "噗莫里", s.NOUN, "")])
 
+    def test_chinese_first_sync_cut_off_after_one_device(self):
+        """Two devices' files kept by a client before #272; the first sync after the update takes in
+        one, then fails: the next one still takes in the other's words."""
+        self.call("DELETE", "/v1/files")
+        client = s.Client(self.url, "alice", "made-up-pass")
+        (d,) = self.rime_dirs("zh-f")
+        device, sync_dir = s.rime_installation(d)
+        for peer, word in (("zh-g", "pumoli\t噗莫里"), ("zh-h", "gulaxi\t咕拉西")):
+            body = f"{word}\t名詞\n".encode()
+            self.call("PUT", f"/v1/files/{peer}/{s.ZH_FILE}", body)
+            s.write_file(os.path.join(sync_dir, peer, s.ZH_FILE), body)  # the old way
+
+        class CutOff(s.Client):
+            def request(self, method, path, body=None):
+                if path.endswith(f"zh-h/{s.ZH_FILE}"):
+                    raise OSError("made-up network failure")
+                return super().request(method, path, body)
+
+        with self.assertRaises(OSError):
+            s.pull(
+                CutOff(self.url, "alice", "made-up-pass"), device, sync_dir, rime_dir=d
+            )
+        self.assertEqual([w for _, w, _, _ in s.rime_words(d)], ["噗莫里"])
+        s.pull(client, device, sync_dir, rime_dir=d)
+        self.assertEqual(
+            sorted(w for _, w, _, _ in s.rime_words(d)), ["咕拉西", "噗莫里"]
+        )
+
+    def test_chinese_take_in_keeps_the_other_rows(self):
+        """A change from another device touches only its own row: the others keep their weights and
+        comments."""
+        (d,) = self.rime_dirs("zh-i")
+        rows = f"# made up\n{s.MARKER}\n咕拉西\tgulaxi\t100\n# a made-up note\n"
+        with open(os.path.join(d, s.PHRASES), "w", encoding="utf-8") as f:
+            f.write(rows)
+        own = os.path.join(d, "own.txt")
+        s.own_file(own, s.rime_words(d), now=1)
+        s.rime_take_in(d, own, "pumoli\t噗莫里\t名詞\t\t50\n".encode(), None, now=60)
+        with open(os.path.join(d, s.PHRASES), encoding="utf-8") as f:
+            self.assertEqual(f.read(), rows + "噗莫里\tpumoli\n")
+
     def test_chinese_clock_ahead_and_no_phrases_file(self):
         """A deletion after a word dated in the future still wins; a PC with no My words yet reads as
         having none to tell, not as having deleted them all."""
@@ -428,7 +470,7 @@ class Server(unittest.TestCase):
         self.assertIsNone(s.rime_words(d))
         ahead = "pumoli\t噗莫里\t名詞\t\t5000\n".encode()
         self.assertEqual(s.rime_take_in(d, own, ahead, None, now=100), 1)
-        s.save_rime_words(d, [])
+        s.save_rime_words(d, [], {("pumoli", "噗莫里")})
         own_entries = s.own_file(own, s.rime_words(d), now=200)
         self.assertEqual(own_entries[("pumoli", "噗莫里")].time, 5001)
         self.assertTrue(own_entries[("pumoli", "噗莫里")].deleted)

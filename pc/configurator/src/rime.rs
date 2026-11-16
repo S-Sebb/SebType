@@ -10,7 +10,7 @@ use std::{
 
 const SCHEMA_PATCH: &str = "rime_ice.custom.yaml";
 const DEFAULT_PATCH: &str = "default.custom.yaml";
-const PHRASES: &str = "custom_phrase.txt";
+pub const PHRASES: &str = "custom_phrase.txt";
 const MARKER: &str = "# SebType: My words"; // as the phone writes it (ChineseMyWords)
 /// The sync's record of My words (sebtype_sync.py's ZH_FILE, #272): named like Rime's snapshots, but
 /// not learned words, so forget keeps it.

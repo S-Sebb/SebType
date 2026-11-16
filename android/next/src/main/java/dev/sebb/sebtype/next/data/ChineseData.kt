@@ -38,16 +38,25 @@ object ChineseData {
         }
     }
 
-    fun setMyWords(context: Context, words: List<ChineseWord>, done: (Boolean) -> Unit = {}) =
-        Engines.whileChineseStopped(context, block = {
+    /**
+     * Changes the words as they are now, on 中文's one engine thread with Rime stopped: [change] gets them
+     * ([savedWords]) and returns the new ones, or null to keep them; then [after] runs. The settings screen and the
+     * sync each read and write the whole list, so one in the middle of the other would lose a word (#272).
+     */
+    fun editMyWords(
+        context: Context, change: (List<ChineseWord>?) -> List<ChineseWord>?, after: () -> Unit = {}, done: (Boolean) -> Unit = {},
+    ) = Engines.whileChineseStopped(context, block = {
+        change(savedWords(context))?.let { words ->
             val shipped = File(Engines.sharedDir(context), PHRASES).takeIf { it.isFile }?.readText().orEmpty()
-            File(Engines.userDir(context), PHRASES).writeText(buildString {
+            ChineseWordSync.replace(File(Engines.userDir(context), PHRASES), buildString {
                 append(shipped)
                 if (isNotEmpty() && !endsWith('\n')) append('\n')
                 appendLine(MARKER)
                 words.forEach { appendLine("${it.word}\t${it.pinyin}") }
-            })
-        }, done = done)
+            }.toByteArray())
+        }
+        after()
+    }, done = done)
 
     /** Forgets what Rime learned (its user dictionaries and their sync snapshots); the user's own words (and the sync's copies of them) stay. */
     fun forget(context: Context, done: (Boolean) -> Unit = {}) = Engines.whileChineseStopped(context, block = {

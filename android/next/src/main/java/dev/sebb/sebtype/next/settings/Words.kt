@@ -164,7 +164,7 @@ fun ChineseWordsScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settin
     // On the words as they are when saved: a sync may have changed them since the screen read them (#272).
     fun change(edit: (List<ChineseWord>) -> List<ChineseWord>) {
         words = edit(words)
-        ChineseData.setMyWords(context, edit(ChineseData.myWords(context)))
+        ChineseData.editMyWords(context, { edit(it.orEmpty()) })
     }
     AddRow { adding = true }
     if (words.isEmpty()) NoWords() else Card {

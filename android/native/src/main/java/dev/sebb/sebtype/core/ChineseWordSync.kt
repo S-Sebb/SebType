@@ -26,11 +26,18 @@ object ChineseWordSync {
         return entries.also { save(own, it) }
     }
 
-    private fun save(own: File, entries: Map<Pair<String, String>, MozcWordSync.Entry>) {
-        own.parentFile!!.mkdirs()
-        val tmp = File(own.path + ".tmp")
-        tmp.writeBytes(MozcWordSync.format(entries.values))
-        if (!tmp.renameTo(own)) throw IOException("can't save the sync's 中文 words")
+    private fun save(own: File, entries: Map<Pair<String, String>, MozcWordSync.Entry>) = replace(own, MozcWordSync.format(entries.values))
+
+    /**
+     * Writes [file] whole or not at all: [bytes] go to a file beside it, renamed over it. Written in place, a
+     * write cut off would leave My words looking complete with words missing, which the next sync would send
+     * everywhere as deletions (#272).
+     */
+    fun replace(file: File, bytes: ByteArray) {
+        file.parentFile!!.mkdirs()
+        val tmp = File(file.path + ".tmp")
+        tmp.writeBytes(bytes)
+        if (!tmp.renameTo(file)) throw IOException("can't save ${file.name}")
     }
 
     /**
@@ -51,8 +58,11 @@ object ChineseWordSync {
     }
 
     /**
-     * A client from before #272 kept other devices' files as Rime snapshots without taking their words in: until
-     * this device has its own file ([own]), its copies are not what it took in last time.
+     * A client from before #272 kept other devices' files in the sync folder [sync] as Rime snapshots without
+     * taking their words in, so they aren't what this device took in last time. Deleted before this device has
+     * its own file [own], so a first sync cut off after one device's file still takes in the others' later.
      */
-    fun copiesCount(own: File) = own.isFile
+    fun dropOldCopies(own: File, sync: File) {
+        if (!own.isFile) sync.listFiles().orEmpty().forEach { File(it, FILE).delete() }
+    }
 }

@@ -698,29 +698,41 @@ def rime_words(rime_dir):
     return words
 
 
-def save_rime_words(rime_dir, words):
-    """Writes My words, (pinyin, word), after rime-ice's own phrases, as the Configurator does."""
+def save_rime_words(rime_dir, words, gone=()):
+    """Writes My words after rime-ice's own phrases: drops the rows of the (pinyin, word) keys in gone
+    and appends words, (pinyin, word). Every other row stays as it is, its weight and comments too."""
     path = os.path.join(rime_dir, PHRASES)
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.read().splitlines()
     except FileNotFoundError:
         lines = []
-    head = lines[: lines.index(MARKER)] if MARKER in lines else lines
-    body = head + [MARKER] + [f"{w}\t{p}" for p, w in words]
+    if MARKER not in lines:
+        lines.append(MARKER)
+    at = lines.index(MARKER) + 1
+
+    def key(line):
+        f = line.split("\t")
+        return (f[1], f[0]) if len(f) >= 2 else None
+
+    rows = [line for line in lines[at:] if key(line) not in gone]
+    body = lines[:at] + rows + [f"{w}\t{p}" for p, w in words]
     write_file(path, "".join(line + "\n" for line in body).encode())
 
 
 def rime_take_in(rime_dir, own_path, new, old, now=None):
     """Takes another device's Chinese file into My words and this device's file at own_path; returns
-    how many words were added or deleted. Rime reads My words when it deploys."""
+    how many words were added or deleted. Rime reads My words when it deploys. The Configurator holds
+    its words lock meanwhile (sync.rs), so a word saved in its window can't be lost in between."""
     have = rime_words(rime_dir)
     own = own_file(own_path, have, now)
     changes = merge(own, new, old)
     if changes:
-        gone = {e.key for e in changes}
-        kept = [(p, w) for p, w, _, _ in have or [] if (p, w) not in gone]
-        save_rime_words(rime_dir, kept + [e.key for e in changes if not e.deleted])
+        save_rime_words(
+            rime_dir,
+            [e.key for e in changes if not e.deleted],
+            {e.key for e in changes},
+        )
     write_file(own_path, format_entries(own))  # after My words, as for Mozc
     return len(changes)
 
@@ -742,9 +754,13 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
     (files, Japanese words added, changed or deleted, Chinese ones)."""
     count = words = chinese = 0
     own_zh = os.path.join(sync_dir, device, ZH_FILE)
-    # A client from before #272 kept copies of other devices' Chinese files without taking their words
-    # in: until this device has its own file, they are not what it took in last time.
-    zh_copies = os.path.isfile(own_zh)
+    if rime_dir and not os.path.isfile(own_zh):
+        # A client from before #272 kept copies of other devices' Chinese files without taking their
+        # words in, so they aren't what this device took in last time: gone before its own file starts,
+        # so a first sync cut off after one device's file still takes in the others'.
+        for other in os.listdir(sync_dir) if os.path.isdir(sync_dir) else []:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(os.path.join(sync_dir, other, ZH_FILE))
     for f in client.files():
         name = f["name"]
         # The copy kept of a Mozc or Chinese file is what its next download is compared with: it is
@@ -759,7 +775,7 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
             continue
         path = os.path.join(sync_dir, f["device"], name)
         old = None
-        if os.path.isfile(path) and (name != ZH_FILE or zh_copies):
+        if os.path.isfile(path):
             with open(path, "rb") as fh:
                 old = fh.read()
             if hashlib.sha256(old).hexdigest() == f["sha256"]:

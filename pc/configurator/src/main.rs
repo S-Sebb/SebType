@@ -266,12 +266,16 @@ fn import() -> Result<Option<Backup>, Toast> {
     let (rime_dir, mozc_dir) = (platform::rime_dir(), platform::mozc_dir());
     if rime_dir.is_dir() {
         rime::save(&rime_dir, &b.chinese).map_err(err)?;
-        rime::save_words(&rime_dir, &b.chinese_words).map_err(err)?;
+        sync::words_locked(|| rime::save_words(&rime_dir, &b.chinese_words))
+            .and_then(|r| r)
+            .map_err(err)?;
         platform::redeploy_rime().map_err(err)?;
     }
     if mozc_dir.is_dir() {
         mozc::save(&mozc_dir, &b.japanese).map_err(err)?;
-        mozc::save_words(&mozc_dir, &b.japanese_words).map_err(err)?;
+        sync::words_locked(|| mozc::save_words(&mozc_dir, &b.japanese_words))
+            .and_then(|r| r)
+            .map_err(err)?;
         platform::restart_mozc();
     }
     platform::set_candidates(&b.candidates).map_err(err)?;
@@ -548,7 +552,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 code: w.pinyin.as_str().into(),
             });
             run(Box::new(move || {
-                rime::add_word(&platform::rime_dir(), w).map_err(err)?;
+                sync::words_locked(|| rime::add_word(&platform::rime_dir(), w))
+                    .and_then(|r| r)
+                    .map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::SavedZh))
             }));
@@ -564,7 +570,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 pinyin: w.code.into(),
             };
             run(Box::new(move || {
-                rime::remove_word(&platform::rime_dir(), &w).map_err(err)?;
+                sync::words_locked(|| rime::remove_word(&platform::rime_dir(), &w))
+                    .and_then(|r| r)
+                    .map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::DeletedZh))
             }));
@@ -589,7 +597,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 pos,
             });
             run(Box::new(move || {
-                mozc::add_word(&platform::mozc_dir(), w).map_err(err)?;
+                sync::words_locked(|| mozc::add_word(&platform::mozc_dir(), w))
+                    .and_then(|r| r)
+                    .map_err(err)?;
                 platform::restart_mozc();
                 Ok(say(Msg::SavedJa))
             }));
@@ -602,7 +612,9 @@ fn main() -> Result<(), slint::PlatformError> {
             let w = ui.ja_words.remove(i as usize);
             let (reading, word) = (w.reading.to_string(), w.word.to_string());
             run(Box::new(move || {
-                mozc::remove_word(&platform::mozc_dir(), &reading, &word).map_err(err)?;
+                sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &reading, &word))
+                    .and_then(|r| r)
+                    .map_err(err)?;
                 platform::restart_mozc();
                 Ok(say(Msg::Deleted))
             }));

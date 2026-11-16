@@ -86,8 +86,8 @@ object PersonalDictionarySync {
     private fun ownChinese(context: Context) = File(context.noBackupFilesDir, "sync/${ChineseWordSync.FILE}")
     private fun chineseWords(context: Context) = ChineseData.savedWords(context)?.map { it.pinyin to it.word }
 
-    /** Whether the copies kept of other devices' 中文 files count, read before a sync ([ChineseWordSync.copiesCount]). */
-    fun chineseCopiesCount(context: Context) = ChineseWordSync.copiesCount(ownChinese(context))
+    /** Before a sync: [ChineseWordSync.dropOldCopies] in Rime's sync folder [sync]. */
+    fun dropOldChineseCopies(context: Context, sync: File) = ChineseWordSync.dropOldCopies(ownChinese(context), sync)
 
     fun snapshots(context: Context): Map<String, ByteArray> {
         val words = PersonalWords.all(context)
@@ -100,11 +100,16 @@ object PersonalDictionarySync {
     /** Takes another device's changes into this phone's personal dictionaries. */
     suspend fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
         if (name == ChineseWordSync.FILE) {
-            val changes = ChineseWordSync.changes(ownChinese(context), chineseWords(context), new, old)
-            changes.words?.let { words ->
-                suspendCoroutine { c -> ChineseData.setMyWords(context, words.map { ChineseWord(it.second, it.first) }) { c.resume(it) } }
+            // Most files change nothing here: those skip stopping 中文.
+            val first = ChineseWordSync.changes(ownChinese(context), chineseWords(context), new, old)
+            if (first.words == null) { first.save(); return }
+            lateinit var changes: ChineseWordSync.Changes
+            suspendCoroutine { c ->
+                ChineseData.editMyWords(context, { have ->
+                    changes = ChineseWordSync.changes(ownChinese(context), have?.map { it.pinyin to it.word }, new, old)
+                    changes.words?.map { ChineseWord(it.second, it.first) }
+                }, after = { changes.save() }) { c.resume(it) }
             }
-            changes.save()
             return
         }
         if (name != MOZC_FILE) {

@@ -52,7 +52,7 @@ fun ChineseWordsScreen(navController: NavHostController) {
     // On the words as they are when saved: a sync may have changed them since the screen read them (#272).
     fun change(edit: (List<ChineseWord>) -> List<ChineseWord>) {
         words = edit(words.orEmpty())
-        scope.launch { ChineseMyWords.write(context, edit(withContext(Dispatchers.IO) { ChineseMyWords.read(context) })) }
+        scope.launch { ChineseMyWords.edit(context, { edit(it.orEmpty()) }) }
     }
 
     // Lazy, with each word drawing its slice of the card, so long lists open and scroll smoothly (#87).

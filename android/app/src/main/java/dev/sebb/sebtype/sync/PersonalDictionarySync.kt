@@ -99,8 +99,8 @@ object PersonalDictionarySync {
     private fun ownChinese(context: Context) = File(context.noBackupFilesDir, "sync/${ChineseWordSync.FILE}")
     private fun chineseWords(context: Context) = ChineseMyWords.saved(context)?.map { it.pinyin to it.word }
 
-    /** Whether the copies kept of other devices' 中文 files count, read before a sync ([ChineseWordSync.copiesCount]). */
-    fun chineseCopiesCount(context: Context) = ChineseWordSync.copiesCount(ownChinese(context))
+    /** Before a sync: [ChineseWordSync.dropOldCopies] in Rime's sync folder [sync]. */
+    fun dropOldChineseCopies(context: Context, sync: File) = ChineseWordSync.dropOldCopies(ownChinese(context), sync)
 
     fun snapshots(context: Context): Map<String, ByteArray> {
         val words = UserDictionaryIO(context).get()
@@ -113,9 +113,11 @@ object PersonalDictionarySync {
     /** Takes another device's changes into this phone's personal dictionaries. */
     suspend fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
         if(name == ChineseWordSync.FILE) {
-            val changes = ChineseWordSync.changes(ownChinese(context), chineseWords(context), new, old)
-            changes.words?.let { words -> ChineseMyWords.write(context, words.map { ChineseWord(it.second, it.first) }) }
-            changes.save()
+            lateinit var changes: ChineseWordSync.Changes
+            ChineseMyWords.edit(context, { have ->
+                changes = ChineseWordSync.changes(ownChinese(context), have?.map { it.pinyin to it.word }, new, old)
+                changes.words?.map { ChineseWord(it.second, it.first) }
+            }, after = { changes.save() })
             return
         }
         val io = UserDictionaryIO(context)
