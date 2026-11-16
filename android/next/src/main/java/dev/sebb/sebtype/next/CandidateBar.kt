@@ -213,9 +213,13 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         val cy = r.centerY()
         when (val tag = item.tag) {
             is Int -> {
-                if (tag == 0) PixelFrame.CHIP.draw(canvas, r.left + 5 * density, r.top + 7 * density, r.right - 5 * density, r.bottom - 7 * density, px)
-                // A thin line between candidates (English's slots have none)
-                else if (style != Style.SLOTS) fill.apply { color = Picnic.OUTLINE }.let { canvas.drawRect(r.left, cy - 12.5f * density, r.left + density, cy + 12.5f * density, it) }
+                // English's chip hugs the word in its slot, as today's
+                val half = if (style == Style.SLOTS) minOf(r.width() / 2 - 5 * density, maxOf(24 * density, text.measureText(item.label) / 2 + 10 * density))
+                    else r.width() / 2 - 5 * density
+                if (tag == 0) PixelFrame.CHIP.draw(canvas, r.centerX() - half, r.top + 7 * density, r.centerX() + half, r.bottom - 7 * density, px)
+                // A thin line between candidates; English's slots have one before the middle and the right one.
+                val line = if (style == Style.SLOTS) r.left > 0.5f else tag != 0
+                if (line) fill.apply { color = Picnic.OUTLINE }.let { canvas.drawRect(r.left, cy - 12.5f * density, r.left + density, cy + 12.5f * density, it) }
                 canvas.drawText(item.label, r.centerX() - text.measureText(item.label) / 2, cy + text.textSize * 0.35f, text)
             }
             Kind.NOTICE -> canvas.drawText(item.label, r.left + 8 * density, cy + small.textSize * 0.35f, small)
