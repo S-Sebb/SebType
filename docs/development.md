@@ -344,7 +344,7 @@ beside other agents' builds.
 | Build | yanglab16: build / in all | nobara-pc |
 |---|---|---|
 | `android/build.sh debug`, first build there (empty caches, the SDK just installed) | 62 s / 74 s | |
-| debug, a new checkout copy (shared caches warm) | 81 s / 101 s | 14–15 s with warm caches (#58), 196 s measured in #223 |
+| debug, a new checkout copy (shared caches warm) | 81 s / 101 s; 65–106 s build with the lab's load at 55–60 (#250) | 14–15 s with warm caches (#58), 196 s measured in #223, 41 s in #250 |
 | debug, nothing changed | 19 s in all | 7–8 s (#58) |
 | debug, one Kotlin file changed | 27 s / 32 s | 17–31 s (#58, at 8 threads) |
 | `android/build.sh release`, first build there | 128 s / 135 s | 298 s from the caches |
@@ -355,6 +355,13 @@ beside other agents' builds.
 On nobara-pc a build also waits for the lock behind other agents' builds: 2 and 9 minutes for the two
 measured here.
 
+`android/test/build.sh` checks these caches on yanglab16 (#250): a new checkout copy's debug build stays
+within 120 s and doesn't run Bazel (Mozc comes from Gradle's cache), and a changed Kotlin file compiles
+incrementally. Most of a new copy's time is CMake configuring and building the native code, its compiles
+from sccache, on the NAS (14–21 s per task under the lab's load). Until #250 a new copy also ran Bazel,
+because `MODULE.bazel.lock`, which Bazel writes and git ignores, was an input of the Mozc task: copies
+where Bazel had run never matched the cache.
+
 Built both ways from the same commit, the RPMs have the same files, byte for byte; their headers differ in
 build host and time, as two local builds do. The release APKs have the same entries except four:
 `libjni_latinime.so` and `librime-jni.so` (#223), and `rime-data.zip` and `baseline.prof` (#229).
@@ -364,7 +371,8 @@ build host and time, as two local builds do. The release APKs have the same entr
 Measured on nobara-pc (16 threads, 15 GB) on 2026-11-10, before Mozc and Rime were built from source (#186), with other agents' work running beside, so
 numbers vary by about ±30 %. "Build" is `android/build.sh`'s own time, which it now prints apart from
 the wait for the build lock; "peak" is the summed memory of the build's processes (Gradle, the Kotlin
-daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproducibility parts.
+daemon, clang, aapt2, R8). Since #250 `android/test/build.sh` checks the cache and reproducibility parts
+on yanglab16, not here.
 
 | `android/build.sh …` | Before | After |
 |---|---|---|
@@ -412,13 +420,16 @@ What made the difference, each measured on its own:
 - **Configuration cache**: Gradle reuses the configured build (nothing changed 11 → 6 s, one Kotlin file
   24 → 17 s). `build.gradle`'s git calls go through `providers.exec`, which it allows.
 
-Release builds stay reproducible: a release built with no build cache and no sccache in one worktree, one
-built from the caches in another and one built on yanglab16 are the same file. Before, they differed
+Release builds stay reproducible: on yanglab16, a release built with no build cache and with sccache
+compiling everything again in one checkout and one built from the caches in another are the same file, and
+so are two signed on nobara-pc (`android/test/build.sh`; with `SEBTYPE_BUILD_HOST=local` also one built on
+nobara-pc). Before, they differed
 between checkouts (folder name in the dex, checkout path in `libjni_latinime.so`; #223: AGP's per-checkout
 `.cxx/<hash>/` folder, and Rime's third-party builds in it, in the libraries' debug info and so their
 build IDs) and between machines (#229: the NDK's path; Rime's recorded file times and the zip's local
 times in `rime-data.zip`; Compose code from an incremental Kotlin compile, so a release compiles Kotlin
-from scratch; R8 marking one method differently in `baseline.prof` with 48 threads, so it runs on 4; and
+from scratch; R8 marking one method differently in `baseline.prof` with several threads, so it runs on one: always
+with 48, and in one of four yanglab16 builds with 4 (#250); a release from scratch there took 143–155 s with one thread and 119–182 s with 4, so the cost is lost in the lab's load; and
 Gradle signing a local release but `apksigner` a remote one, which aligned the entries differently).
 
 Tried and not kept:

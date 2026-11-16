@@ -48,10 +48,14 @@ if ! { git worktree add -q --detach "$wt" HEAD &&
 fi
 
 built_in() { grep -o 'in [0-9]*s after' "$1" | tr -dc 0-9; } # the build's own time, without the lock queue
-# The checkout just built the same sources, so only native code compiles (from sccache).
+# The checkout just built the same sources, so Mozc comes from Gradle's cache (Bazel doesn't run) and only
+# CMake runs, its compiles from sccache. That took 65-106 s on yanglab16 with the lab's load at 55-60
+# (41 s on nobara-pc, 2026-11-16); rebuilding Rime adds about 170 s (#223).
 debug_from_cache() {
+  local log=$out/test-build-new-worktree-debug.log s
   (cd "$wt" && android/build.sh debug) || return 1
-  local s; s=$(built_in "$out/test-build-new-worktree-debug.log"); echo "built in ${s}s, budget 60s"; (( s <= 60 ))
+  ! grep -q 'Starting local Bazel server' "$log" || { echo "Bazel ran: Mozc missed Gradle's cache"; return 1; }
+  s=$(built_in "$log"); echo "built in ${s}s, budget 120s"; (( s <= 120 ))
 }
 export -f built_in debug_from_cache
 check new-worktree-debug debug_from_cache
@@ -61,7 +65,8 @@ wt_remotely() { (cd "$wt" && source tools/lib.sh && build_remotely "$@"); }
 # One changed Kotlin file: Kotlin's build report says whether it compiled incrementally.
 kotlin_incremental() {
   local kt=android/app/src/main/java/org/futo/inputmethod/latin/uix/ActionBar.kt reports
-  echo "private val sebtypeTestBuildProbe = 1" >> "$wt/$kt"
+  # A new value each run: with the same change Gradle's cache restores the compile instead.
+  echo "private val sebtypeTestBuildProbe = \"$(date +%s%N)\"" >> "$wt/$kt"
   reports=$remote_wt/android/build/reports/kotlin-build
   on_host rm -rf "$reports"
   wt_remotely 'ORG_GRADLE_PROJECT_kotlin.build.report.output=file' android/build.sh debug; local rc=$?
