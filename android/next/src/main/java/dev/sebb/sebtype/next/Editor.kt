@@ -62,6 +62,8 @@ class Editor(private val ime: InputMethodService) {
     fun compose(text: CharSequence) {
         val ic = ic ?: return
         if (text.isEmpty() && !composing) return
+        // A new composing text starts at the cursor; its update tells where, later.
+        if (!composing) composeStart = selStart
         ic.setComposingText(text, 1)
         composing = text.isNotEmpty()
     }
@@ -203,12 +205,22 @@ class Editor(private val ime: InputMethodService) {
      * the composing text, or to a place none of our recent edits put it.
      */
     fun selectionChanged(newStart: Int, newEnd: Int, candidatesStart: Int, candidatesEnd: Int): Boolean {
-        val external = if (composing) candidatesStart < 0 || newStart < candidatesStart || newEnd > candidatesEnd
-        else !(newStart == newEnd && newStart in expected)
-        if (composing) composeStart = candidatesStart
+        if (composing && candidatesStart >= 0) {
+            composeStart = candidatesStart
+            selStart = newStart
+            selEnd = newEnd
+            return newStart < candidatesStart || newEnd > candidatesEnd
+        }
+        // One of our own edits, its update arriving after later ones (a commit's, while the next word is
+        // already composing): the selection we track already follows those.
+        val ours = if (newStart == newEnd) expected.indexOf(newStart) else -1
+        if (ours >= 0) {
+            repeat(ours) { expected.removeFirst() }
+            return false
+        }
         selStart = newStart
         selEnd = newEnd
-        return external
+        return true
     }
 
     fun beginBatch() = ic?.beginBatchEdit()

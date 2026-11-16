@@ -1111,7 +1111,15 @@ def fast_typing_en():
         raise Fail(
             f"typed {want.lower()!r} 10 ms apart in EN; the field shows {text!r}"
         )
-    return f"{want.lower()!r}, 10 ms apart -> {text!r}"
+    # 100 ms apart, a word's commit is reported while the next word composes: not a cursor move (#257)
+    open_field()
+    type_fast("the quick brown fox jumps over the lazy dog ", gap_ms=100)
+    slow = "The quick brown fox jumps over the lazy dog "
+    if (text100 := field_text()) != slow:
+        raise Fail(
+            f"typed {slow.lower()!r} 100 ms apart in EN; the field shows {text100!r}"
+        )
+    return f"{want.lower()!r}, 10 ms apart -> {text!r}; 100 ms apart -> {text100!r}"
 
 
 check("fast-typing-en", fast_typing_en, needs=["en-model-waits-for-letter"])
