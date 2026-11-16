@@ -10,8 +10,12 @@ types pinyin and takes pictures of the first, a middle and the last page, a wrap
 at the screen's right and bottom edges; then pages with clicks on the arrows and the mouse wheel and
 checks each lands on the page the keyboard shows. sebtype.conf goes back as it was. Results: one line
 per check in <Out>\paging-results.txt, pictures <Out>\*.png; exit 0 only if all pass.
+
+-Colours instead takes pictures of the system look in Windows' light mode, dark mode and the high-contrast
+theme Night sky, across and down, and of Picnic for comparison (#279): the first page (faint ‹), the second
+and Japanese with Mozc's comments. Light/dark mode and high contrast go back as they were.
 #>
-param([string]$Out = "$env:USERPROFILE\scratch\SebType\276\screens")
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\276\screens", [switch]$Colours)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -50,6 +54,12 @@ namespace SebTypePaging {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr c);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct HIGHCONTRAST { public int size; public uint flags; public string scheme; }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfoW(uint action, uint param, ref HIGHCONTRAST hc, uint winIni);
+    [DllImport("user32.dll")] public static extern uint GetSysColor(int index);
+    public static HIGHCONTRAST HighContrast() { var hc = new HIGHCONTRAST(); hc.size = Marshal.SizeOf(hc); SystemParametersInfoW(0x42, (uint)hc.size, ref hc, 0); return hc; }
+    // SPI_SETHIGHCONTRAST, saved and broadcast as Settings does.
+    public static void SetHighContrast(HIGHCONTRAST hc) { hc.size = Marshal.SizeOf(hc); SystemParametersInfoW(0x43, (uint)hc.size, ref hc, 3); }
     // The visible candidate window (other apps with the text service have hidden ones).
     public static IntPtr Window() {
       IntPtr found = IntPtr.Zero;
@@ -112,12 +122,65 @@ function Field($lang) {
 function Word($w) { Keys Escape Escape; $tsf::Clear(); TypeText $w; Start-Sleep -Milliseconds 600; $tsf::Settle(200) }
 function Caret($x, $y) { [SebType.TextStore]::CaretX = $x; [SebType.TextStore]::CaretY = $y }
 
+function Conf($look, $o) {
+  New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
+  Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'down'))", 'FontSize=14', "Picnic=$([int]($look -eq 'picnic'))"
+}
+
+if ($Colours) {
+  $personalize = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+  $lightBefore = (Get-ItemProperty $personalize -ErrorAction SilentlyContinue).AppsUseLightTheme
+  $hcBefore = $in::HighContrast()
+  $themeBefore = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes').CurrentTheme
+  function Mode($mode) {
+    $hc = $in::HighContrast()
+    $on = $mode -eq 'high-contrast'
+    if ((($hc.flags -band 1) -ne 0) -ne $on) {
+      $hc.flags = if ($on) { $hc.flags -bor 1 } else { $hc.flags -band -bnot 1 }
+      if ($on) { $hc.scheme = 'High Contrast Black' }
+      $in::SetHighContrast($hc); Start-Sleep 8
+    }
+    if (-not $on) { Set-ItemProperty $personalize AppsUseLightTheme ([int]($mode -eq 'light')) -Type DWord }
+    if ((($in::HighContrast().flags -band 1) -ne 0) -ne $on) { throw "high contrast did not turn $(if ($on) { 'on' } else { 'off' })" }
+  }
+  $tsf::Start()
+  try {
+    foreach ($m in @('light', 'dark', 'high-contrast' | ForEach-Object { , @('system', $_) }) + , @('picnic', 'light')) {
+      $look, $mode = $m
+      foreach ($o in 'across', 'down') {
+        $tag = "$look-$(if ($look -eq 'system') { "$mode-" })$o"
+        Check $tag {
+          Mode $mode; Conf $look $o; Caret 20 20; Field zh
+          Word 'nihao'; $null = Shot "$tag-1-first"
+          Keys PageDown; $null = Shot "$tag-2-second"; Keys Escape Escape
+          Field ja; Keys Escape; $tsf::Clear(); TypeText 'kawaii'; Keys space space; Start-Sleep -Milliseconds 600
+          $null = Shot "$tag-3-ja"; Keys Escape Escape Escape
+          "window $('{0:x6}' -f $in::GetSysColor(5)), text $('{0:x6}' -f $in::GetSysColor(8)) (0xBBGGRR)"
+        }
+      }
+    }
+  } finally {
+    $tsf::Stop()
+    if ($null -ne $confBefore) { Set-Content -NoNewline -Encoding utf8 $conf $confBefore } else { Remove-Item -ErrorAction SilentlyContinue $conf }
+    if ($in::HighContrast().flags -ne $hcBefore.flags) { $in::SetHighContrast($hcBefore); Start-Sleep 8 }
+    if ($null -ne $lightBefore) { Set-ItemProperty $personalize AppsUseLightTheme $lightBefore -Type DWord } else { Remove-ItemProperty $personalize AppsUseLightTheme -ErrorAction SilentlyContinue }
+    $themeAfter = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes').CurrentTheme
+    Check 'settings-restored' {
+      if ($in::HighContrast().flags -ne $hcBefore.flags) { throw "high-contrast flags $($in::HighContrast().flags), were $($hcBefore.flags)" }
+      if ((Get-ItemProperty $personalize -ErrorAction SilentlyContinue).AppsUseLightTheme -ne $lightBefore) { throw 'AppsUseLightTheme differs' }
+      if ($themeAfter -ne $themeBefore) { throw "theme $themeAfter, was $themeBefore" }
+      "AppsUseLightTheme $lightBefore, high contrast flags $($hcBefore.flags), theme $themeBefore"
+    }
+  }
+  $failed = @(Get-Content $results | Where-Object { $_ -like 'FAIL *' }).Count
+  exit [int]($failed -gt 0)
+}
+
 $tsf::Start()
 try {
   foreach ($look in 'picnic', 'system') {
     foreach ($o in 'across', 'down') {
-      New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
-      Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'down'))", 'FontSize=14', "Picnic=$([int]($look -eq 'picnic'))"
+      Conf $look $o
       $tag = "$look-$o"
       Caret 20 20
       Field zh
