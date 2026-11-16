@@ -38,6 +38,8 @@ NEXT_SKIPS = {
     "ja-personal-word-after-restart": "Android's user dictionary reaches Mozc in stage 5",
     "en-model-waits-for-letter": "English's model comes in stage 2",
 }
+# The new keyboard's space bar, as its accessibility label reads in each system language.
+SPACE_LABELS = ("Space", "空格", "スペース")
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 # Rime's data is private (#32): read through the emulator's root shell (su), as a release APK has no run-as.
 RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
@@ -238,7 +240,15 @@ def type_fast(text, gap_ms=10):
     (10-60 ms a key, #241); then waits for them to catch up."""
     k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
     left, top, right, bottom = keyboard_frame
-    space = (int(left + 5.5 * (right - left) / 10), row_y(top, bottom, 3))
+    # The new keyboard labels its space bar; today's has its place in the bottom row.
+    space = next(
+        (
+            (x, y)
+            for label, x, y, top_, cls in nodes()
+            if NEXT and label in SPACE_LABELS
+        ),
+        (int(left + 5.5 * (right - left) / 10), row_y(top, bottom, 3)),
+    )
     script = "type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\n" + "".join(
         f"Tap({x},{y})\nUserWait({gap_ms})\n"
         for x, y in (space if ch == " " else k[ch][:2] for ch in text)

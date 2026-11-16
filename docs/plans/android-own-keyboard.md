@@ -213,6 +213,8 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
   - The background setup (`RimeIceSetup`) and the settings call `NativeCore` directly from their own
     threads. One lock keeps them and the engine thread apart; the main thread never takes it, so a keyboard
     opening while Rime starts (0.6–1.9 s) no longer waits for it.
+  - The new keyboard (`android/next`) types the same way: a key that depends on whether something is typed
+    (space, Enter, Delete) asks the engine on the engine thread, where the keys before it have already run.
 
   Next-word suggestions are computed on one worker thread and posted back, so a key never waits for them.
 - **Settings shared with the PCs.** `core::Settings` grows from `[Languages] Order=` to everything both

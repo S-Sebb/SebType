@@ -19,7 +19,7 @@ import java.util.zip.ZipInputStream
  * The engines behind 中文 and 日本語, in core/ ([NativeCore]): their files, sebtype.conf (the settings the
  * phone shares with the PCs), Chinese's first-run setup, and stopping an engine nobody has used for a while.
  * Setup and engine starts run on background threads, one per engine, so 日本語 never waits behind 中文's
- * setup; typing calls [NativeCore] on the main thread.
+ * setup; typing calls [NativeCore] on its engine thread ([NativeCore.post]).
  */
 object Engines {
     const val TAG = "SebType"
