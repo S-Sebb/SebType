@@ -1081,6 +1081,22 @@ def en_model_waits_for_letter():
 check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
 
 
+def fast_typing_en():
+    """English keys typed faster than the engine answers (#241) land in order, with the sentence's
+    capital: a key lost, out of order or shifted from a stale Shift would show here."""
+    open_field()
+    type_fast("the cat sat on the mat ")
+    want = "The cat sat on the mat "
+    if (text := field_text()) != want:
+        raise Fail(
+            f"typed {want.lower()!r} 10 ms apart in EN; the field shows {text!r}"
+        )
+    return f"{want.lower()!r}, 10 ms apart -> {text!r}"
+
+
+check("fast-typing-en", fast_typing_en, needs=["en-model-waits-for-letter"])
+
+
 def main_learns():
     """main's build, fresh, learns 厉害 (rime-ice's dictionary, same schema id rime_ice)."""
     adb("uninstall", PKG, check=False)

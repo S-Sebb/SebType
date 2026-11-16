@@ -319,7 +319,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Code.GLOBE -> nextLanguage()
             Code.SHIFT, Code.GAP -> {}
         }
-        autoShift()
+        // By the field as the keys before left it: once their results have shown
+        NativeCore.after { autoShift() }
     }
 
     private fun type(text: String) {
