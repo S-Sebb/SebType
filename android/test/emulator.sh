@@ -194,7 +194,10 @@ device_suite() {
 export -f result check set_locale device_checks first_start_settings device_suite
 export adb apk futo_apk field_apk locale_dex results pkg next ime
 android/emulator.sh -P 1 -w 1800 -m 50 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
-  2> "$out/emulator.log" || grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
-  result FAIL emulator "$(head -1 "$out/emulator.log")"
+  2> "$out/emulator.log"
+# The device suite always records install-beside-futo; without it the device steps never ran, whatever the
+# lock's exit status says (#241: a run passed on the host checks alone).
+grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
+  result FAIL emulator "the device steps didn't run: $(head -1 "$out/emulator.log")"
 
 ! grep -qv '^PASS' "$results"

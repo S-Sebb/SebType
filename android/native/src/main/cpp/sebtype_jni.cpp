@@ -1,7 +1,7 @@
 // SebType: the JNI glue between the keyboard (NativeCore.kt) and core/. One Core per process, with 中文's
-// librime and 日本語's Mozc; every call takes one lock, so the keyboard (main thread) and the background
-// setup (RimeIceSetup) never run core/ at once. A call that changes what is typed returns all of it in one
-// NativeState. MIT, SebType.
+// librime and 日本語's Mozc; every call takes one lock, so the keyboard's engine thread (NativeCore.post) and
+// the background setup (RimeIceSetup) never run core/ at once. A call that changes what is typed returns all
+// of it in one NativeState. MIT, SebType.
 #include <jni.h>
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>

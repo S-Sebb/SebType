@@ -1,12 +1,72 @@
 package dev.sebb.sebtype.core
 
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
+import android.os.Process
+import java.util.concurrent.CountDownLatch
+
 /**
  * The phone's way into SebType's core (core/ in the repository, the PCs' engine code): one process-wide
  * Core with 中文 (librime) and 日本語 (Mozc in this process), in libsebtype.so (sebtype_jni.cpp). Calls are
  * synchronous and take one lock, so the keyboard and the background setup can both call it.
+ *
+ * The keyboard calls it only through [post] (#241): a 中 or 日 key takes 10–60 ms in the engines, more
+ * than a frame, so the main thread hands each call to one engine thread and shows its result when it
+ * comes. Calls run in the order they are posted and their results show in that order, so keys typed faster
+ * than the engines answer are neither lost nor reordered.
  */
 object NativeCore {
     init { System.loadLibrary("sebtype") }
+
+    private val engine = Handler(HandlerThread("SebTypeEngine", Process.THREAD_PRIORITY_DISPLAY).apply { start() }.looper)
+    private val main = Handler(Looper.getMainLooper())
+
+    private class Step(val show: (Any?) -> Unit) {
+        var result: Any? = null
+        @Volatile var done = false
+    }
+    // Posted from the main thread and not yet shown, oldest first; only the main thread touches it.
+    private val steps = ArrayDeque<Step>()
+
+    /** From the main thread: runs [work] on the engine thread, after everything posted before it. */
+    fun post(work: NativeCore.() -> Unit) {
+        engine.post { work() }
+    }
+
+    /** [post], then [show] with [work]'s result on the main thread, after the results posted before it. */
+    fun <T> post(work: NativeCore.() -> T, show: (T) -> Unit) {
+        @Suppress("UNCHECKED_CAST")
+        val step = Step { show(it as T) }
+        steps.addLast(step)
+        engine.post {
+            step.result = work()
+            step.done = true
+            main.post(::deliver)
+        }
+    }
+
+    /** From the main thread: runs [action] there once the results posted before it have shown. */
+    fun after(action: () -> Unit) {
+        if(steps.isEmpty()) action() else steps.addLast(Step { action() }.apply { done = true })
+    }
+
+    /**
+     * From the main thread: waits for the results still to come and shows them now, while their text field
+     * and language are still current (before a field closes or another language takes over). Only results
+     * are waited for, so a field that typed nothing never waits on an engine starting.
+     */
+    fun drain() {
+        if(steps.isEmpty()) return
+        val idle = CountDownLatch(1)
+        engine.post { idle.countDown() }
+        idle.await()
+        deliver()
+    }
+
+    private fun deliver() {
+        while(steps.firstOrNull()?.done == true) steps.removeFirst().let { it.show(it.result) }
+    }
 
     const val ENGLISH = 0
     const val CHINESE = 1

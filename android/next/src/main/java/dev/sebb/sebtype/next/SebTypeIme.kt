@@ -31,7 +31,8 @@ import dev.sebb.sebtype.next.Layout.Code
  * SebType's own keyboard (#191, stage 3). English types the letters as they are (its suggestions come in
  * stage 2); 中文 and 日本語 go through core/ ([NativeCore]): each key goes to the engine, and what it
  * returns (text to commit, the composition, candidates) is shown. 中文's pinyin floats above the bar,
- * 日本語's composition sits in the field.
+ * 日本語's composition sits in the field. Every engine call goes to [NativeCore]'s engine thread and its
+ * result shows when it comes back, in the order the keys were typed (#241).
  */
 class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Listener, MenuPanel.Listener {
     private enum class Page(val file: String) { LETTERS("letters"), SYMBOLS("symbols"), SYMBOLS2("symbols2"), DIGITS("digits") }
@@ -56,7 +57,13 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private var state: NativeState? = null
 
     private val incognito get() = prefs.getBoolean("incognito", false)
+    /** What the last shown result was typing; keys still on the engine thread may have changed it. */
     private val composing get() = state?.preedit?.isNotEmpty() == true
+    // Whether the engine has something typed after its last call: read and written on the engine thread
+    // only, so a key decides by what the keys before it typed, shown or not.
+    private var engineComposing = false
+    private fun NativeState.recorded() = also { engineComposing = preedit.isNotEmpty() }
+    private var keysSent: Int? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -149,7 +156,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onFinishInput() {
         super.onFinishInput()
-        if (composing) NativeCore.clear()
+        NativeCore.drain() // the results still to come land in this field
+        if (composing) NativeCore.post {
+            clear()
+            engineComposing = false
+        }
         editor.finishComposing()
         state = null
         if (views) strip.preedit = ""
@@ -162,23 +173,30 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         // The user moved the cursor away: what was being typed stays as it is in the field.
         if (external && composing) {
             editor.finishComposing()
-            show(NativeCore.clear(), applyText = false)
+            NativeCore.post({ clear().recorded() }) { show(it, applyText = false) }
         }
         if (views) autoShift()
     }
 
     /** The current language for this field: core/'s engine, its field kind, the keys. */
     private fun enterLanguage() {
-        NativeCore.clear()
-        NativeCore.selectLanguage(lang)
-        NativeCore.setField(kind.field, kind.learns && !incognito)
+        val lang = lang
+        val field = kind.field
+        val learning = kind.learns && !incognito
+        NativeCore.post {
+            clear()
+            selectLanguage(lang)
+            setField(field, learning)
+            // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
+            // one would load it here, ahead of the keys.
+            if (lang == JAPANESE && running(JAPANESE)) setAlternate(false)
+            engineComposing = false
+        }
+        keysSent = null
         when (lang) {
             CHINESE -> Engines.prepareChinese(this)
             JAPANESE -> {
-                // A new field (or 日本語 again) starts on あ (#38).
                 katakana = false
-                // Mozc starts on あ by itself; asking a stopped one would load it here, on the main thread.
-                if (NativeCore.running(JAPANESE)) NativeCore.setAlternate(false)
                 Engines.prepareJapanese(this)
             }
         }
@@ -198,9 +216,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     override fun onKey(code: Code, text: String) {
         when (code) {
             Code.TEXT -> type(text)
-            Code.SPACE -> if (toEngine && composing) engine(NativeCore.charSym(' '.code)) else commit(" ")
-            Code.ENTER -> if (toEngine && composing) engine(NativeCore.XK_Return) else editor.enter()
-            Code.DELETE -> if (toEngine && composing) engine(NativeCore.XK_BackSpace) else editor.deleteBefore()
+            Code.SPACE -> whileComposing(NativeCore.charSym(' '.code)) { editor.commit(" ") }
+            Code.ENTER -> whileComposing(NativeCore.XK_Return) { editor.enter() }
+            Code.DELETE -> whileComposing(NativeCore.XK_BackSpace) { editor.deleteBefore() }
             Code.SYMBOLS -> setPage(if (page != Page.SYMBOLS) Page.SYMBOLS else Page.LETTERS)
             Code.SYMBOLS2 -> setPage(Page.SYMBOLS2)
             Code.DIGITS -> setPage(Page.DIGITS)
@@ -215,25 +233,39 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         if (!toEngine) return commit(text)
         val cp = text.codePointAt(0)
         if (Character.charCount(cp) == text.length && cp < 0x80) {
-            val st = NativeCore.key(NativeCore.charSym(cp), 0)
-            show(st)
-            if (!st.taken) commit(text)
+            NativeCore.post({ key(NativeCore.charSym(cp), 0).recorded() }) {
+                show(it)
+                if (!it.taken) editor.commit(text)
+            }
             return
         }
         // A long-press choice the engine has no key for (？, …): what is typed goes first. In 中文 that is
         // the first candidate, as Rime's own punctuation does.
-        if (composing) {
-            show(if (lang == CHINESE && state?.candidates?.isNotEmpty() == true) NativeCore.selectCandidate(0) else NativeCore.flush())
-            if (composing) show(NativeCore.flush())
+        val chinese = lang == CHINESE
+        NativeCore.post({
+            buildList {
+                if (engineComposing) {
+                    add(if (chinese && state().candidates.isNotEmpty()) selectCandidate(0) else flush())
+                    if (last().preedit.isNotEmpty()) add(flush())
+                    last().recorded()
+                }
+            }
+        }) { states ->
+            states.forEach { show(it) }
+            editor.commit(text)
         }
-        commit(text)
     }
 
-    private fun engine(sym: Int) = show(NativeCore.key(sym, 0))
-
-    private fun commit(text: String) {
-        editor.commit(text)
+    /** Space, Enter or Delete: to the engine while it has something typed, else [otherwise] in the field. */
+    private fun whileComposing(sym: Int, otherwise: () -> Unit) {
+        if (!toEngine) return NativeCore.after(otherwise)
+        NativeCore.post({ if (engineComposing) key(sym, 0).recorded() else null }) {
+            if (it != null) show(it) else otherwise()
+        }
     }
+
+    /** Text into the field, after what the keys before it typed. */
+    private fun commit(text: String) = NativeCore.after { editor.commit(text) }
 
     private fun setPage(page: Page) {
         this.page = page
@@ -241,6 +273,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     }
 
     private fun nextLanguage() {
+        NativeCore.drain() // what the keys before typed shows in this language
         val order = Engines.languages()
         val next = order[(order.indexOf(lang) + 1) % order.size]
         // What is being typed is dropped (core/ doesn't commit it on a switch).
@@ -303,8 +336,15 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val numberRow = if (kind.numberRow && kind.pad == null && page == Page.LETTERS) Layout.load(this, "numbers", code) else null
         keyboard.setPage(layout, numberRow, if (lang == ENGLISH) "$" else "¥")
         keyboard.spaceLabel = when (lang) { CHINESE -> "中文"; JAPANESE -> "日本語"; else -> "English" }
-        if (lang == JAPANESE) NativeCore.setKeys(if (page == Page.LETTERS) NativeCore.KEYS_KANA else NativeCore.KEYS_SYMBOLS,
-            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+        if (lang == JAPANESE) {
+            val keys = if (page == Page.LETTERS) NativeCore.KEYS_KANA else NativeCore.KEYS_SYMBOLS
+            val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val sent = keys * 2 + if (landscape) 1 else 0
+            if (sent != keysSent) {
+                keysSent = sent
+                NativeCore.post { setKeys(keys, landscape) }
+            }
+        }
 
         val st = state
         strip.preedit = if (lang == CHINESE) st?.preedit.orEmpty() else ""
@@ -333,7 +373,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onCandidate(index: Int) {
         expanded = false
-        show(NativeCore.selectCandidate(index))
+        NativeCore.post({ selectCandidate(index).recorded() }) { show(it) }
     }
 
     override fun onMenu() {
@@ -344,8 +384,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onChip() {
         katakana = !katakana
-        NativeCore.setAlternate(katakana)
-        show(NativeCore.state())
+        val on = katakana
+        NativeCore.post({
+            setAlternate(on)
+            state().recorded()
+        }) { show(it) }
     }
 
     override fun onIncognito() = onIncognito(!incognito)
@@ -362,13 +405,17 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onTraditional(on: Boolean) {
         // core/ turns rime-ice's option on at once and saves the choice in sebtype.conf (#36).
-        Engines.setSetting(this, "Chinese", "Traditional", on)
-        show(NativeCore.state())
+        NativeCore.post({
+            Engines.setSetting(this@SebTypeIme, "Chinese", "Traditional", on)
+            state().recorded()
+        }) { show(it) }
     }
 
     override fun onIncognito(on: Boolean) {
         prefs.edit().putBoolean("incognito", on).apply()
-        NativeCore.setField(kind.field, kind.learns && !on)
+        val field = kind.field
+        val learning = kind.learns && !on
+        NativeCore.post { setField(field, learning) }
         refresh()
     }
 }
