@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import dev.sebb.sebtype.next.data.Prefs
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
@@ -27,7 +28,6 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
     class Clip(val text: String, val pinned: Boolean)
 
     private val app = context.applicationContext
-    private val prefs = app.getSharedPreferences("keyboard", Context.MODE_PRIVATE)
     private val manager = app.getSystemService(ClipboardManager::class.java)
     private val file = File(app.filesDir, "clipboard.json")
     private val saver = Executors.newSingleThreadExecutor { Thread(it, "SebType clipboard") }
@@ -35,11 +35,19 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
     /** Called when the history or the quick clip changes */
     var onChange: (() -> Unit)? = null
 
-    /** Off after a fresh install, as today's keyboard */
+    // The switch just tapped, until the settings file has it (Prefs writes in the background)
+    private var tapped: Boolean? = null
+
+    /** The settings' clipboard history ([Prefs.CLIPBOARD_HISTORY]): off after a fresh install, as today's keyboard */
     var keep: Boolean
-        get() = prefs.getBoolean("keep_clipboard", false)
+        get() {
+            val saved = Prefs[Prefs.CLIPBOARD_HISTORY]
+            if (tapped == saved) tapped = null
+            return tapped ?: saved
+        }
         set(value) {
-            prefs.edit().putBoolean("keep_clipboard", value).apply()
+            tapped = value
+            Prefs.set(app, Prefs.CLIPBOARD_HISTORY, value)
             if (!value) clear(keepPinned = false)
             onChange?.invoke()
         }

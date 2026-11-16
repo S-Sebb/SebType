@@ -281,7 +281,9 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private val pointers = HashMap<Int, Pointer>()
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var lastShiftTap = 0L
-    private val longPressMs = 350L
+    /** The settings' long-press time and key popup ([dev.sebb.sebtype.next.data.Prefs]) */
+    var longPressMs = 300L
+    var previews = true
     private val repeatStartMs = 400L
     private val repeatMs = 50L
 
@@ -357,7 +359,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 postDelayed(repeat, repeatStartMs)
             }
             else -> {
-                if (cell.key.code == Code.TEXT) showPreview(cell)
+                if (cell.key.code == Code.TEXT && previews) showPreview(cell)
                 if (cell.key.more.isNotEmpty() || cell.key.code == Code.GLOBE) postDelayed(longPress, longPressMs)
             }
         }

@@ -223,8 +223,10 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }
         enterLanguage()
         keyboard.enter = kind.enter
-        keyboard.haptics = prefs.getBoolean("haptics", true)
-        keyboard.sounds = prefs.getBoolean("sounds", false)
+        keyboard.haptics = Prefs[Prefs.VIBRATE]
+        keyboard.sounds = Prefs[Prefs.SOUND]
+        keyboard.previews = Prefs[Prefs.KEY_POPUP]
+        keyboard.longPressMs = Prefs[Prefs.LONG_PRESS_MS].toLong()
         applyMode()
         refresh()
         autoShift()
@@ -416,7 +418,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
                 }
                 if (!Character.isLetter(cp) || keyboard.typedWithUserShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
                 // The field's capital, by the text this letter follows once the keys before it are in
-                val caps = editor.capsFlags
+                val caps = if (Prefs[Prefs.CAPITALISE]) editor.capsFlags else 0
                 val lower = text.lowercase()
                 var cased = lower
                 send({
@@ -505,7 +507,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     /** English's Shift for the start of a sentence, as the field asks. */
     private fun autoShift() {
         if (!views || keyboard.shift == KeyboardView.Shift.LOCKED) return
-        val on = lang == ENGLISH && kind.pad == null && page == Page.LETTERS && editor.capsMode()
+        val on = lang == ENGLISH && kind.pad == null && page == Page.LETTERS && Prefs[Prefs.CAPITALISE] && editor.capsMode()
         keyboard.setShift(if (on) KeyboardView.Shift.ON else KeyboardView.Shift.OFF)
     }
 
