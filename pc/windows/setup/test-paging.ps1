@@ -69,7 +69,7 @@ namespace SebTypePaging {
       RECT r; GetWindowRect(h, out r);
       using (var bmp = new Bitmap(r.R - r.L, r.B - r.T)) {
         using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
-        if (path != null) bmp.Save(path, ImageFormat.Png);
+        if (!string.IsNullOrEmpty(path)) bmp.Save(path, ImageFormat.Png);
         var data = bmp.LockBits(new Rectangle(Point.Empty, bmp.Size), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         var bytes = new byte[data.Stride * data.Height];
         Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);

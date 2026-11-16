@@ -51,4 +51,9 @@ struct CandidateLayout {
   int hit(float x, float y) const;
 };
 
+// What stays the same over a word's pages, so they keep its width. Rime's pinyin row (pinyin) only moves its
+// syllable spaces and highlight as it pages (page 1's 你好 covers "ni hao", page 2's 拟 "ni" of "nihao");
+// Mozc's shows the focused candidate in the segment being converted (highlight), so only where that is.
+std::wstring pageWord(const std::vector<std::wstring> &segments, int highlight, bool pinyin);
+
 }  // namespace sebtype::win

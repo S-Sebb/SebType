@@ -180,4 +180,17 @@ int CandidateLayout::hit(float x, float y) const {
   return kNone;
 }
 
+std::wstring pageWord(const std::vector<std::wstring> &segments, int highlight, bool pinyin) {
+  std::wstring key;
+  for (size_t i = 0; i < segments.size(); ++i) {
+    if (pinyin) {
+      for (wchar_t c : segments[i])
+        if (c != L' ') key += c;
+    } else {
+      key += (static_cast<int>(i) == highlight ? L"\x1" : segments[i]) + L'\x2';
+    }
+  }
+  return key;
+}
+
 }  // namespace sebtype::win

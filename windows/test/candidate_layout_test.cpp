@@ -110,6 +110,14 @@ int main() {
     CHECK(l.prevBox.empty() && l.nextBox.empty());
   }
 
+  // A word's pages: Rime's pinyin row moves its spaces and highlight; Mozc's converted segment changes.
+  using sebtype::win::pageWord;
+  CHECK(pageWord({L"ni hao"}, 0, true) == pageWord({L"ni", L"hao"}, 0, true));
+  CHECK(pageWord({L"ni hao"}, 0, true) != pageWord({L"ni hao", L"m"}, 0, true));
+  CHECK(pageWord({L"今日", L"は"}, 0, false) == pageWord({L"京", L"は"}, 0, false));
+  CHECK(pageWord({L"今日", L"は"}, 0, false) != pageWord({L"今日", L"は"}, 1, false));
+  CHECK(pageWord({L"きょう"}, -1, false) != pageWord({L"きょうは"}, -1, false));
+
   std::printf("%s candidate layout\n", failures ? "FAIL" : "PASS");
   return failures ? 1 : 0;
 }

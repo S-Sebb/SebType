@@ -58,14 +58,6 @@ RECT workArea(const RECT &caret) {
   return mi.rcWork;
 }
 
-// What stays the same over a word's pages: its pinyin (Rime's doesn't change as it pages); Mozc's shows the
-// focused candidate in the segment being converted, so only where that segment is.
-std::wstring word(const Preedit &preedit, bool pinyin) {
-  std::wstring key;
-  for (const Segment &seg : preedit.segments) key += (seg.highlight && !pinyin ? L"\x1" : utf16(seg.text)) + L'\x2';
-  return key;
-}
-
 }  // namespace
 
 CandidateWindow::~CandidateWindow() {
@@ -310,7 +302,13 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   KillTimer(hwnd_, kNoticeTimer);
   const bool shown = IsWindowVisible(hwnd_);
   if (!styleLoaded_ || !shown) loadStyle(caret);  // the Configurator's changes, once per showing
-  std::wstring w = word(reply.preedit, preeditRow);
+  std::vector<std::wstring> segments;
+  int highlight = -1;
+  for (const Segment &seg : reply.preedit.segments) {
+    if (seg.highlight) highlight = static_cast<int>(segments.size());
+    segments.push_back(utf16(seg.text));
+  }
+  std::wstring w = pageWord(segments, highlight, preeditRow);
   l.keepWidth = shown && w == word_ ? l.width : 0;
   word_ = std::move(w);
   layout(caret);
