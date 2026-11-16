@@ -26,7 +26,7 @@ add_library(sebtype SHARED src/tip/dll.cpp src/tip/textservice.cpp src/tip/edit.
   src/tip/candidate_layout.cpp src/tip/langbar.cpp src/tip/sebtype.def ${CMAKE_CURRENT_BINARY_DIR}/sebtype.rc)
 set_target_properties(sebtype PROPERTIES PREFIX "")
 target_include_directories(sebtype PRIVATE src/tip ../core/include)
-target_link_libraries(sebtype PRIVATE d2d1 dwrite windowscodecs shcore shlwapi ole32 oleaut32 uuid)
+target_link_libraries(sebtype PRIVATE d2d1 dwrite windowscodecs shcore shlwapi advapi32 ole32 oleaut32 uuid)
 if(NOT MSVC)
   target_link_options(sebtype PRIVATE -static)
 endif()

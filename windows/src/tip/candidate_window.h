@@ -1,5 +1,5 @@
 // SebType on Windows: the candidate window, drawn in the app like Weasel's: the pinyin row (Chinese), the
-// candidates across or down, in Weasel's default look or SebType's Picnic with the pig (#162). Also the short
+// candidates across or down, in Windows' colours (#279) or SebType's Picnic with the pig (#162). Also the short
 // popup after 中文's Shift switch. Page arrows, a click or the mouse wheel page (#276). MIT, SebType.
 #pragma once
 
@@ -27,11 +27,11 @@ class CandidateWindow {
   void hide();
 
  private:
-  // The style: Weasel's layout and its aqua or SebType's Picnic colours, at the monitor's scale.
+  // The style: Weasel's layout in Windows' own colours or SebType's Picnic, at the monitor's scale.
   struct Style {
     bool vertical = true, picnic = false;
     float scale = 1, fontPx = 0;
-    UINT32 text, back, border, hiliteText, hiliteBack, candText, comment, candHiliteText, candHiliteBack;
+    Palette colors;
   };
 
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

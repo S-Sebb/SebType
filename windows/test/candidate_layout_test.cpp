@@ -1,5 +1,6 @@
 // The candidate window's layout (windows/src/tip/candidate_layout.h) with made-up text sizes: page arrows,
-// a word's width kept over its pages, wrapping, and what a click hits (#276). Builds anywhere:
+// a word's width kept over its pages, wrapping, and what a click hits (#276); and its colours, which follow
+// Windows or are Picnic's, readable in each (#279). Builds anywhere:
 //   c++ -std=c++20 -I windows/src/tip windows/test/candidate_layout_test.cpp windows/src/tip/candidate_layout.cpp
 // MIT, SebType.
 #include "candidate_layout.h"
@@ -117,6 +118,47 @@ int main() {
   CHECK(pageWord({L"今日", L"は"}, 0, false) == pageWord({L"京", L"は"}, 0, false));
   CHECK(pageWord({L"今日", L"は"}, 0, false) != pageWord({L"今日", L"は"}, 1, false));
   CHECK(pageWord({L"きょう"}, -1, false) != pageWord({L"きょうは"}, -1, false));
+
+  // Colours. Every text, the comments and the faint arrow readable on what they sit on, in light and dark
+  // mode with a pale and a deep accent, and in Windows' high-contrast themes.
+  using sebtype::win::contrast;
+  using sebtype::win::Palette;
+  using sebtype::win::SystemColors;
+  auto readable = [](const Palette &p) {
+    CHECK(contrast(p.text, p.back) >= 4.5);
+    CHECK(contrast(p.candText, p.back) >= 4.5);
+    CHECK(contrast(p.comment, p.back) >= 4.5);
+    CHECK(contrast(p.hiliteText, p.hiliteBack) >= 4.5);
+    CHECK(contrast(p.candHiliteText, p.candHiliteBack) >= 4.5);
+    CHECK(contrast(p.faint, p.back) >= 3);
+    CHECK(contrast(p.faint, p.back) < contrast(p.text, p.back));  // still fainter than a page that exists
+  };
+  // Accent shades as Windows 11 makes them: its default blue, and yellow (a pale accent).
+  const SystemColors blue{false, false, 0x4cc2ff, 0x0067c0}, yellow{false, false, 0xffe980, 0xc29b00};
+  for (SystemColors c : {blue, yellow}) {
+    for (bool dark : {false, true}) {
+      c.dark = dark;
+      const Palette p = sebtype::win::systemPalette(c);
+      readable(p);
+      CHECK(p.candHiliteBack == (dark ? c.accentLight2 : c.accentDark1));
+      CHECK(dark == (p.back < 0x808080));
+    }
+  }
+  // High contrast: the theme's own colours (Night sky's and Desert's).
+  const SystemColors night{true, false, 0, 0, 0x000000, 0xffffff, 0x8ee3f0, 0x263b50, 0xa6a6a6},
+      desert{true, false, 0, 0, 0xfffaef, 0x3d3d3d, 0x903909, 0xfff5e3, 0x676767};
+  for (const SystemColors &c : {night, desert}) {
+    const Palette p = sebtype::win::systemPalette(c);
+    readable(p);
+    CHECK(p.back == c.window && p.candHiliteBack == c.highlight && p.faint == c.grayText);
+    // A high-contrast theme wins over the light or dark mode.
+    SystemColors darkToo = c;
+    darkToo.dark = true;
+    CHECK(sebtype::win::systemPalette(darkToo).back == c.window);
+  }
+  // Picnic stays as it was.
+  const Palette picnic = sebtype::win::picnicPalette();
+  CHECK(picnic.back == 0xfff7e8 && picnic.candHiliteBack == 0xc2506a && picnic.comment == 0x73533f);
 
   std::printf("%s candidate layout\n", failures ? "FAIL" : "PASS");
   return failures ? 1 : 0;
