@@ -156,10 +156,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private fun layoutCells() {
         val unit = (width - 2 * sidePadding) / 10f
-        // Split: each half keeps 5 key widths in SPLIT_HALF of the width; a key across the middle (space) is
-        // cut in two.
+        // Split: each half keeps 5 key widths in SPLIT_HALF of the width. A key across the middle is on both
+        // halves, whole (g, v, as today's), or cut in two when it is wider than a key (space).
         val half = SPLIT_HALF * (width - 2 * sidePadding) / 5f
-        fun place(u: Float) = sidePadding + if (!split) u * unit else if (u <= 5) u * half else width - 2 * sidePadding - (10 - u) * half
+        fun left(u: Float) = sidePadding + if (split) u * half else u * unit
+        fun right(u: Float) = width - sidePadding - (10 - u) * half
         var y = topPadding
         val out = ArrayList<Cell>()
         for (row in numberRow?.rows.orEmpty() + page?.rows.orEmpty()) {
@@ -167,11 +168,17 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             var u = 0f
             for (key in row.keys) {
                 val end = u + key.width
-                if (key.code != Code.GAP) {
-                    if (split && u < 5 && end > 5) {
-                        out += Cell(key, RectF(place(u), y, place(5f), y + h))
-                        out += Cell(key, RectF(place(5f), y, place(end), y + h))
-                    } else out += Cell(key, RectF(place(u), y, place(end), y + h))
+                if (key.code != Code.GAP) when {
+                    !split || end <= 5 -> out += Cell(key, RectF(left(u), y, left(end), y + h))
+                    u >= 5 -> out += Cell(key, RectF(right(u), y, right(end), y + h))
+                    key.width <= 1 -> {
+                        out += Cell(key, RectF(left(u), y, left(end), y + h))
+                        out += Cell(key, RectF(right(u), y, right(end), y + h))
+                    }
+                    else -> {
+                        out += Cell(key, RectF(left(u), y, left(5f), y + h))
+                        out += Cell(key, RectF(right(5f), y, right(end), y + h))
+                    }
                 }
                 u = end
             }

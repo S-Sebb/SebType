@@ -231,11 +231,12 @@ def run(app, mode):
     # Clipboard history on (it is off after an install), then a copy made in the field app
     def clipboard():
         tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
-        if {t for t, _, _ in nodes()} & {
-            "Clipboard history is off",
-            "Keep clipboard history",
-        }:
+        # Turned on once: the dark run finds it on from the light one.
+        shown = {t for t, _, _ in nodes()}
+        if "Clipboard history is off" in shown:
             tap_label("Keep clipboard history")
+        elif "Enable Clipboard History" in shown:
+            tap_label("Enable Clipboard History")
         open_field(app, clip="sebclip-example")
         time.sleep(3)
         tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
@@ -247,7 +248,7 @@ def run(app, mode):
     )
     step("modes", lambda: tile(app, "Keyboard Modes", "键盘模式"))
 
-    def mode(*labels):
+    def pick_mode(*labels):
         tile(app, "Keyboard Modes", "键盘模式")
         tap_label(*labels)
 
@@ -256,12 +257,12 @@ def run(app, mode):
         ("split", ("Split",)),
         ("floating", ("Float", "Floating")),
     ):
-        step(state, lambda labels=labels: (mode(*labels), open_field(app)))
+        step(state, lambda labels=labels: (pick_mode(*labels), open_field(app)))
         try:
-            mode("Standard")
+            pick_mode("Standard")
         except SystemExit as e:
             print(f"{state}: back to Standard: {e}", flush=True)
-    step("resize", lambda: mode("Resize Keyboard"))
+    step("resize", lambda: pick_mode("Resize Keyboard"))
     step("quick-clip", lambda: (open_field(app, clip="sebclip-quick"), time.sleep(3)))
     k = open_field(app)
     close_action_bar()

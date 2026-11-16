@@ -78,6 +78,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private lateinit var emoji: EmojiPanel
     private lateinit var clips: ClipboardPanel
     private lateinit var modes: ModesPanel
+    private lateinit var content: KeysFrame
     private var views = false
 
     private var lang = ENGLISH
@@ -168,7 +169,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keysRow = LinearLayout(this)
         keysRow.addView(keyboard, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         keysRow.addView(side, LinearLayout.LayoutParams(0, MATCH_PARENT, 0f))
-        val content = KeysFrame(this)
+        content = KeysFrame(this)
         content.addView(keysRow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         for (v in listOf(grid, actions, emoji, clips)) content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         val barFrame = FrameLayout(this)
@@ -642,6 +643,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         // The action bar: open, over the bar; never over a panel's title
         val rowShown = barOpen && shown == Panel.NONE
         actionRow.visibility = if (rowShown) View.VISIBLE else View.GONE
+        val overKeys = shown != Panel.NONE && shown != Panel.MODES
+        content.extra = if (barOpen && overKeys) (ActionRow.HEIGHT_DP * resources.displayMetrics.density).toInt() else 0
         if (rowShown) actionRow.show(Action.pinned(this), on)
         val autofilling = autofill.showing && candidates.isEmpty() && shown == Panel.NONE
         autofill.visibility = if (autofilling) View.VISIBLE else View.GONE
@@ -884,13 +887,23 @@ class UpdateReceiver : BroadcastReceiver() {
     }
 }
 
-/** Holds the keys, and the expanded candidates and the panels over them at exactly the keys' height. */
+/**
+ * Holds the keys, and the expanded candidates and the panels over them at exactly the keys' height, plus
+ * [extra]: the action bar's row while a panel takes its place, so the keyboard keeps its height.
+ */
 private class KeysFrame(context: Context) : FrameLayout(context) {
+    var extra = 0
+        set(value) {
+            if (field != value) requestLayout()
+            field = value
+        }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val keys = getChildAt(0)
         keys.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-        val exact = MeasureSpec.makeMeasureSpec(keys.measuredHeight, MeasureSpec.EXACTLY)
+        val height = keys.measuredHeight + extra
+        val exact = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
         for (i in 1 until childCount) getChildAt(i).measure(widthMeasureSpec, exact)
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), keys.measuredHeight)
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height)
     }
 }

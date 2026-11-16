@@ -128,8 +128,10 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
 class ClipboardPanel(context: Context, private val texts: Texts, private val clipboard: Clipboard, private val onPaste: (String) -> Unit) :
     ItemsView(context, vertical = true) {
     private val density = resources.displayMetrics.density
-    private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 15 * density; color = Picnic.INK }
-    private val muted = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 15 * density; color = Picnic.MUTED }
+    // Not density inside apply: TextPaint has a density of its own (1)
+    private val fontSize = 15 * density
+    private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = fontSize; color = Picnic.INK }
+    private val muted = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = fontSize; color = Picnic.MUTED }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pad = 10 * density
     private val button = 40 * density

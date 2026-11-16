@@ -72,12 +72,13 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
         val bottom = height - 4 * density
         val out = ArrayList<Item>()
         if (resizing) {
-            val row = bottom - top
-            out += Item(RectF(pad, top, width - pad, bottom), "${texts[R.string.mode_height]} ${(h * 100).toInt()}%", "android.widget.TextView", fixed = true, tag = Kind.HEIGHT)
-            out += Item(RectF(pad, top, pad + row * 1.4f, bottom), texts[R.string.mode_shorter], "android.widget.Button", fixed = true, tag = Kind.SHORTER)
-            out += Item(RectF(width - pad - row * 1.4f, top, width - pad, bottom), texts[R.string.mode_taller], "android.widget.Button", fixed = true, tag = Kind.TALLER)
-            // The buttons over the height's card: a tap finds them first.
-            setItems(out.sortedBy { it.tag == Kind.HEIGHT }, 0f)
+            // − and + on either side of the height's card
+            val button = (bottom - top) * 1.4f
+            out += Item(RectF(pad, top, pad + button, bottom), texts[R.string.mode_shorter], "android.widget.Button", fixed = true, tag = Kind.SHORTER)
+            out += Item(RectF(pad + button + pad, top, width - 2 * pad - button, bottom), "${texts[R.string.mode_height]} ${(h * 100).toInt()}%",
+                "android.widget.TextView", fixed = true, tag = Kind.HEIGHT)
+            out += Item(RectF(width - pad - button, top, width - pad, bottom), texts[R.string.mode_taller], "android.widget.Button", fixed = true, tag = Kind.TALLER)
+            setItems(out, 0f)
             return
         }
         val tab = (width - 2 * pad) / Mode.entries.size

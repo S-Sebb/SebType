@@ -50,12 +50,16 @@ class ActionRow(context: Context, private val texts: Texts, private val listener
         fun onAction(action: Action)
     }
 
+    companion object {
+        const val HEIGHT_DP = 40
+    }
+
     private val density = resources.displayMetrics.density
     private var actions = emptyList<Action>()
     private var on = emptySet<Action>()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) =
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (40 * density).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (HEIGHT_DP * density).toInt())
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = rebuild()
 
