@@ -704,6 +704,97 @@ if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.reposito
 else result SKIP rime-label-and-zh-hant-key "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
+# Private fields (#270): a private Fcitx5 (as above) with SebType's input method on its own fake account. In a field
+# the app marks sensitive (Chromium's incognito windows, Qt's ImhSensitiveData), a word picked in 中文 and in
+# 日本語 is not learned, and what was learned before is still first; in a field that may learn the same pick is.
+private_field() {
+  local h=$fake/private
+  mkdir -p "$h/.config/fcitx5"
+  fake_run < /dev/null > /dev/null || return 1
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" <<'PY'
+import subprocess, sys, time
+from gi.repository import Gio, GLib
+
+fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
+                         stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+CONTROLLER, IC, SEBTYPE = ('/controller', 'org.fcitx.Fcitx.Controller1'), 'org.fcitx.Fcitx.InputContext1', ('/sebtype', 'org.sebtype.Core1')
+def wait(cond, secs):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        GLib.MainContext.default().iteration(False); time.sleep(0.02)
+    return cond()
+def up():
+    try: call(*CONTROLLER, 'CurrentInputMethod'); return True
+    except GLib.Error: return False
+wait(up, 10)
+ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+             '(a(ss))', [('program', 'sebtype-test')])
+committed, preedit = [], ['']
+def on_signal(_c, _s, _p, _i, name, params):
+    if name == 'CommitString': committed.append(params.unpack()[0])
+    elif name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+SENSITIVE = 1 << 36
+def field(sensitive):  # preedit, formatted, client-side panel; the core reads the flags at the next key
+    call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39 | (SENSITIVE if sensitive else 0))
+call(ic, IC, 'FocusIn')
+KEYS = {'space': (0x20, 65), 'Return': (0xff0d, 36), 'Escape': (0xff1b, 9), '4': (0x34, 13),
+        **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
+           for code, c in enumerate(row, first)}}
+def tap(name):
+    for release in (False, True):
+        call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], 0, release, 0)
+        wait(lambda: False, 0.03)
+def commit(keys):
+    committed.clear()
+    for k in keys: tap(k)
+    wait(lambda: committed, 3)
+    return ''.join(committed)
+def rime_ready():  # Rime deploys on first use and takes no keys until then
+    tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
+LANGS = {  # the first candidate, and the fourth picked
+    'zh': (lambda: commit([*'shishi', 'space']), lambda: commit([*'shishi', '4'])),
+    'ja': (lambda: commit([*'kisha', 'space', 'Return']), lambda: commit([*'kisha', *['space'] * 4, 'Return'])),
+}
+
+ok = True
+def check(name, got, want):
+    global ok
+    ok &= got == want
+    print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
+
+for lang, (first, fourth) in LANGS.items():
+    call(*SEBTYPE, 'SetLanguage', '(s)', lang)
+    field(False)
+    if lang == 'zh': check('Rime deployed', wait(rime_ready, 60), True)
+    top = first()
+    field(True)
+    picked = fourth()
+    check(f'{lang}: a pick in a sensitive field', bool(picked) and picked != top, True)
+    check(f'{lang}: a sensitive field learns nothing', first(), top)
+    field(False)
+    check(f'{lang}: the same pick in a field that may learn', fourth(), picked)
+    check(f'{lang}: a field that may learn learns it', first(), picked)
+    field(True)
+    check(f'{lang}: a sensitive field keeps what was learned', first(), picked)
+fcitx.terminate(); fcitx.wait(10)
+sys.exit(0 if ok else 1)
+PY
+  local rc=$? p
+  for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  return $rc
+}
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
+  check private-field private_field
+else result SKIP private-field "needs fcitx5, dbus-run-session and python3-gobject"
+fi
+
 # Win+Space and the tray menu (#92, #93, #117): a private Fcitx5 (as above) with SebType's input method
 # (#190; SebType's Chinese data) on a fourth fake account set up by setup-ime.sh, which also puts SebType's
 # tray in place of Fcitx5's, and a stand-in for Plasma's tray (a StatusNotifierWatcher on that bus) that
