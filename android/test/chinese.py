@@ -1300,6 +1300,25 @@ def learn_japanese():
     return got[2]
 
 
+def row(label, ns):
+    """A settings row's node, or None: a toggle's row reads "Title. " and its subtitle, others the title."""
+    return next(
+        (
+            n
+            for n in ns
+            if n[0] == label
+            or n[0].startswith((label + ".", label + ",", label + "\n"))
+        ),
+        None,
+    )
+
+
+def tap_row(label, timeout=10):
+    n = wait_for(label, lambda: row(label, nodes()), timeout)
+    adb("shell", "input", "tap", str(n[1]), str(n[2]))
+    time.sleep(1)
+
+
 def set_old_options():
     """Autocorrect off, "z = zh" on and learning off in today's settings, as a user would; returns what it
     stored, for the log."""
@@ -1313,11 +1332,11 @@ def set_old_options():
         adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", settings)
         for label in path:
             for _ in range(4):
-                if any(n[0] == label for n in nodes()):
+                if row(label, nodes()):
                     break
                 adb("shell", "input", "swipe", "540", "1700", "540", "900", "400")
                 time.sleep(1)
-            tap_label((label,))
+            tap_row(label)
     adb("shell", "am", "force-stop", OLD_PKG)
     data = f"/data/user/0/{OLD_PKG}"
     return root(
@@ -1406,7 +1425,15 @@ def update_from_futo_app():
         )
     finally:
         adb("uninstall", OLD_PKG, check=False)
+        # The new keyboard was uninstalled for the update: the checks after this one need it back.
+        adb("install", apk, timeout=300)
         as_app(os.environ.get("SEBTYPE_PACKAGE") or OLD_PKG, NEXT_RUN)
+        wait_for(
+            "the new keyboard to be listed",
+            lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
+            30,
+        )
+        adb("shell", "ime", "enable", IME)
 
 
 NEXT_RUN = NEXT
