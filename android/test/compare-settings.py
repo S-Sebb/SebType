@@ -37,9 +37,9 @@ APPS = {
 # Each group's row on the home screen, and a label its screen shows
 SCREENS = [
     ("home", None, "About"),
-    ("languages", "Languages", "日本語"),
+    ("languages", "Languages", "Globe order"),
     ("keyboard", "Keyboard", "Popup on keypress"),
-    ("privacy", "Privacy", "Clipboard"),
+    ("privacy", "Privacy", "Learn from my typing"),
     ("backup", "Sync & backup", "Import settings"),
     ("about", "About", "Version"),
 ]
