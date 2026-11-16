@@ -22,19 +22,22 @@ object Icons {
         canvas.translate(x - 12 * u, y - 12 * u)
         canvas.scale(u, u)
         paint.color = color
-        paint.strokeWidth = 2.2f
+        paint.strokeWidth = 1.6f
         paint.style = Paint.Style.STROKE
         path.reset()
         when (icon) {
-            Icon.SHIFT, Icon.SHIFT_ON, Icon.SHIFT_LOCKED -> {
-                path.moveTo(12f, 3.5f); path.lineTo(20.5f, 12f); path.lineTo(15.5f, 12f); path.lineTo(15.5f, 18f)
-                path.lineTo(8.5f, 18f); path.lineTo(8.5f, 12f); path.lineTo(3.5f, 12f); path.close()
-                if (icon != Icon.SHIFT) paint.style = Paint.Style.FILL_AND_STROKE
+            Icon.SHIFT -> {
+                path.moveTo(12f, 4f); path.lineTo(20f, 12f); path.lineTo(15.5f, 12f); path.lineTo(15.5f, 19f)
+                path.lineTo(8.5f, 19f); path.lineTo(8.5f, 12f); path.lineTo(4f, 12f); path.close()
                 canvas.drawPath(path, paint)
-                if (icon == Icon.SHIFT_LOCKED) {
-                    paint.style = Paint.Style.FILL
-                    canvas.drawRect(8.5f, 20f, 15.5f, 22f, paint)
-                }
+            }
+            // On for one capital: a shorter arrow over a bar. Locked: the arrow filled.
+            Icon.SHIFT_ON, Icon.SHIFT_LOCKED -> {
+                path.moveTo(12f, 4f); path.lineTo(19.5f, 11f); path.lineTo(15.5f, 11f); path.lineTo(15.5f, 15.5f)
+                path.lineTo(8.5f, 15.5f); path.lineTo(8.5f, 11f); path.lineTo(4.5f, 11f); path.close()
+                if (icon == Icon.SHIFT_LOCKED) paint.style = Paint.Style.FILL_AND_STROKE
+                canvas.drawPath(path, paint)
+                canvas.drawLine(8.5f, 19f, 15.5f, 19f, paint)
             }
             Icon.DELETE -> {
                 path.moveTo(8f, 5f); path.lineTo(21f, 5f); path.lineTo(21f, 19f); path.lineTo(8f, 19f); path.lineTo(2.5f, 12f); path.close()
@@ -43,16 +46,15 @@ object Icons {
                 canvas.drawLine(17.5f, 9f, 11.5f, 15f, paint)
             }
             Icon.ENTER -> {
-                path.moveTo(19f, 5f); path.lineTo(19f, 14f); path.lineTo(5f, 14f)
+                path.moveTo(19.5f, 8.5f); path.lineTo(19.5f, 13.5f); path.lineTo(4.5f, 13.5f)
                 canvas.drawPath(path, paint)
-                path.reset(); path.moveTo(9f, 10f); path.lineTo(5f, 14f); path.lineTo(9f, 18f)
+                path.reset(); path.moveTo(8.5f, 9.5f); path.lineTo(4.5f, 13.5f); path.lineTo(8.5f, 17.5f)
                 canvas.drawPath(path, paint)
             }
             Icon.GLOBE -> {
                 canvas.drawCircle(12f, 12f, 9f, paint)
                 canvas.drawOval(RectF(8f, 3f, 16f, 21f), paint)
                 canvas.drawLine(3f, 12f, 21f, 12f, paint)
-                canvas.drawLine(12f, 3f, 12f, 21f, paint)
             }
             Icon.SEARCH -> {
                 canvas.drawCircle(10f, 10f, 6f, paint)

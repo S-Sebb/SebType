@@ -16,11 +16,15 @@ import kotlin.math.roundToInt
  * window is here.
  */
 object Picnic {
-    const val CLOTH = 0xFFFBE9D6.toInt()
-    const val CHECK = 0xFFF8E2CC.toInt()
+    const val CLOTH = 0xFFFFEBD6.toInt()
+    const val CHECK = 0xFFF7E3CE.toInt()
     const val CREAM = 0xFFFFF7E8.toInt()
     const val INK = 0xFF4A2F22.toInt()
     const val MUTED = 0xFF73533F.toInt()
+    /** The space bar's language name and the unselected kana of 日本語's chip */
+    const val FADED = 0xFFB9A594.toInt()
+    /** 中文's pinyin box over the app */
+    const val PREEDIT = 0xFFA7A7A9.toInt()
     const val LINE = 0xFFECD0AE.toInt()
     const val WARM = 0xFFF0B443.toInt()
     const val PINK = 0xFFFDE0E6.toInt()

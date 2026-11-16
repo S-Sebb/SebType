@@ -18,6 +18,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.sebb.sebtype.core.NativeCore
 import dev.sebb.sebtype.core.NativeCore.CHINESE
@@ -33,7 +34,7 @@ import dev.sebb.sebtype.next.Layout.Code
  * 日本語's composition sits in the field.
  */
 class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Listener, MenuPanel.Listener {
-    private enum class Page(val file: String) { LETTERS("letters"), SYMBOLS("symbols"), SYMBOLS2("symbols2") }
+    private enum class Page(val file: String) { LETTERS("letters"), SYMBOLS("symbols"), SYMBOLS2("symbols2"), DIGITS("digits") }
 
     private val prefs by lazy { getSharedPreferences("keyboard", MODE_PRIVATE) }
     private val editor = Editor(this)
@@ -92,11 +93,17 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         stack.addView(panel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(stack, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, android.view.Gravity.BOTTOM))
         root.addView(popups, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        // The keys stay clear of the navigation bar the window reaches under.
+        // The keys stay clear of the navigation bar the window reaches under. With gesture navigation the
+        // keyboard's own bar (back and the keyboard switcher) is taller than the gesture area the
+        // navigation-bar inset gives: it is the tappable part.
         ViewCompat.setOnApplyWindowInsetsListener(panel) { v, insets ->
-            v.setPadding(0, 0, 0, insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
+            val bottom = maxOf(insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom)
+            v.setPadding(0, 0, 0, bottom)
             insets
         }
+        // The system's back and keyboard-switch buttons under the keys: dark, on the light cloth
+        window.window?.let { WindowCompat.getInsetsController(it, it.decorView).isAppearanceLightNavigationBars = true }
         views = true
         return root
     }
@@ -194,8 +201,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Code.SPACE -> if (toEngine && composing) engine(NativeCore.charSym(' '.code)) else commit(" ")
             Code.ENTER -> if (toEngine && composing) engine(NativeCore.XK_Return) else editor.enter()
             Code.DELETE -> if (toEngine && composing) engine(NativeCore.XK_BackSpace) else editor.deleteBefore()
-            Code.SYMBOLS -> setPage(if (page == Page.LETTERS || page == Page.SYMBOLS2) Page.SYMBOLS else Page.LETTERS)
+            Code.SYMBOLS -> setPage(if (page != Page.SYMBOLS) Page.SYMBOLS else Page.LETTERS)
             Code.SYMBOLS2 -> setPage(Page.SYMBOLS2)
+            Code.DIGITS -> setPage(Page.DIGITS)
             Code.LETTERS -> setPage(Page.LETTERS)
             Code.GLOBE -> nextLanguage()
             Code.SHIFT, Code.GAP -> {}
@@ -313,7 +321,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }
         val chip = if (lang == JAPANESE && kind.pad == null) (if (katakana) "ア" else "あ") else null
         bar.show(candidates, chip, badge, notice, menuOpen, expanded)
-        if (expanded) grid.show(candidates)
+        if (expanded) grid.show(candidates, bar.shownCount())
         if (menuOpen) menu.show(if (lang == CHINESE) Engines.setting("Chinese", "Traditional") == true else null, incognito)
         grid.visibility = if (expanded) View.VISIBLE else View.GONE
         menu.visibility = if (menuOpen && !expanded) View.VISIBLE else View.GONE

@@ -2,6 +2,7 @@
 <resources>
     <string name="open_menu">打开操作栏</string>
     <string name="close_menu">关闭操作栏</string>
+    <string name="menu_title">所有操作项</string>
     <string name="incognito">无痕模式</string>
     <string name="incognito_on">无痕模式已开，点按关闭</string>
     <string name="incognito_field">此输入框为无痕模式</string>
@@ -15,6 +16,7 @@
     <string name="key_delete">删除</string>
     <string name="key_symbols">符号</string>
     <string name="key_more_symbols">更多符号</string>
+    <string name="key_digits">数字</string>
     <string name="key_letters">字母</string>
     <string name="key_language">下一种语言</string>
     <string name="key_space">空格</string>

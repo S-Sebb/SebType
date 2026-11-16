@@ -10,7 +10,9 @@ import org.json.JSONObject
  *
  *  - `text`: what it types; `label`: what it shows, when that differs (中文's `，` types `,` so Rime makes
  *    it full- or half-width);
- *  - `code`: a key that does something else (shift, delete, symbols, symbols2, letters, globe, space, enter);
+ *  - `code`: a key that does something else (shift, delete, symbols, symbols2, digits, letters, globe, space,
+ *    enter);
+ *  - `pink`: a text key drawn like the function keys (the punctuation beside the space bar);
  *  - `width` in key-widths (1 by default); `gap`: empty space of that width, no key;
  *  - `hint`: the small character in its corner; `more`: what a long press offers, the first one picked
  *    unless the finger moves;
@@ -23,7 +25,7 @@ import org.json.JSONObject
 class Layout(val name: String, val rows: List<Row>) {
     class Row(val keys: List<Key>, val height: Float)
 
-    enum class Code { TEXT, GAP, SHIFT, DELETE, SYMBOLS, SYMBOLS2, LETTERS, GLOBE, SPACE, ENTER }
+    enum class Code { TEXT, GAP, SHIFT, DELETE, SYMBOLS, SYMBOLS2, DIGITS, LETTERS, GLOBE, SPACE, ENTER }
 
     class Key(
         val code: Code,
@@ -33,6 +35,7 @@ class Layout(val name: String, val rows: List<Row>) {
         val hint: String?,
         val more: List<Key>,
         val currency: Boolean,
+        val pink: Boolean = false,
     ) {
         /** Shift, delete and the page and language keys: pink. Enter: berry. Letters, space: cream. */
         val function get() = code != Code.TEXT && code != Code.SPACE && code != Code.ENTER
@@ -72,6 +75,7 @@ class Layout(val name: String, val rows: List<Row>) {
                 o.optString("hint").ifEmpty { null },
                 o.optJSONArray("more")?.let { keys(it, lang) } ?: emptyList(),
                 o.optBoolean("currency"),
+                o.optBoolean("pink"),
             )
         }
     }

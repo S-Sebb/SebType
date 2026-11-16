@@ -5,6 +5,7 @@
     <string name="subtype">English, 中文, 日本語</string>
     <string name="open_menu">Open Action Bar</string>
     <string name="close_menu">Close Action Bar</string>
+    <string name="menu_title">All Actions</string>
     <string name="incognito">Incognito</string>
     <string name="incognito_on">Incognito on. Tap to turn off</string>
     <string name="incognito_field">Incognito in this field</string>
@@ -18,6 +19,7 @@
     <string name="key_delete">Delete</string>
     <string name="key_symbols">Symbols</string>
     <string name="key_more_symbols">More symbols</string>
+    <string name="key_digits">Numbers</string>
     <string name="key_letters">Letters</string>
     <string name="key_language">Next language</string>
     <string name="key_space">Space</string>

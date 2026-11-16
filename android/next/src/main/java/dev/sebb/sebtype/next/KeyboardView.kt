@@ -20,6 +20,11 @@ import kotlin.math.ceil
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+private operator fun RectF.component1() = left
+private operator fun RectF.component2() = top
+private operator fun RectF.component3() = right
+private operator fun RectF.component4() = bottom
+
 /**
  * The keys: one View drawn on a Canvas. It lays out a [Layout] page (with the number row over it when
  * asked), draws it in the Picnic look and turns touches into keys: a tap types on release, a long press
@@ -39,11 +44,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private val density = resources.displayMetrics.density
     private val px = Picnic.pixel(context).toFloat()
-    /** Rows are as far apart as Gboard's (#161): 59 dp */
-    private val rowHeight = 59 * density
-    private val sidePadding = 3 * density
-    private val gapX = 3 * density
-    private val gapY = 4.5f * density
+    /** Rows are as far apart as Gboard's (#161) and today's keyboard */
+    private val rowHeight = 59.3f * density
+    private val sidePadding = 2 * density
+    /** Space between the bar and the first row */
+    private val topPadding = 4.2f * density
 
     private var page: Layout? = null
     private var numberRow: Layout? = null
@@ -63,7 +68,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
     private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.RIGHT; typeface = fonts.first; color = Picnic.MUTED; textSize = 10 * density
+        textAlign = Paint.Align.RIGHT; typeface = fonts.first; color = Picnic.MUTED; textSize = 12.5f * density
     }
 
     private val a11y = Accessibility()
@@ -96,14 +101,14 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         (page?.rows.orEmpty() + numberRow?.rows.orEmpty()).sumOf { it.height.toDouble() }.toFloat()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(rows(page, numberRow) * rowHeight).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(topPadding + rows(page, numberRow) * rowHeight).toInt())
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = layoutCells()
 
     private fun layoutCells() {
         val unit = (width - 2 * sidePadding) / 10f
-        var y = 0f
+        var y = topPadding
         val out = ArrayList<Cell>()
         for (row in numberRow?.rows.orEmpty() + page?.rows.orEmpty()) {
             val h = row.height * rowHeight
@@ -149,7 +154,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private fun frame(key: Layout.Key) = when {
         key.code == Code.ENTER || (key.code == Code.SHIFT && shift == Shift.LOCKED) -> PixelFrame.BERRY
-        key.function -> PixelFrame.PINK
+        key.function || key.pink -> PixelFrame.PINK
         else -> PixelFrame.CREAM
     }
 
@@ -158,7 +163,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             val r = cell.rect
             val key = cell.key
             val pressed = pointers.values.any { it.cell === cell }
-            val l = r.left + gapX; val t = r.top + gapY; val rr = r.right - gapX; val b = r.bottom - gapY
+            val (l, t, rr, b) = face(r)
             val frame = frame(key)
             frame.draw(canvas, l, t, rr, b, px, pressed)
             // The frame's shadow takes its last pixel right and below: the face's middle is up and left of it.
@@ -168,19 +173,34 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             val icon = icon(key)
             when {
                 icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f), ink)
-                key.code == Code.SPACE -> {
+                key.code == Code.SPACE && key.label.isBlank() -> {
                     label.textSize = 13 * density
-                    label.color = Picnic.MUTED
+                    label.color = Picnic.FADED
                     canvas.drawText(spaceLabel, cx, cy + label.textSize * 0.35f, label)
+                }
+                key.label.contains('\n') -> {
+                    // The numbers page's key: its digits small, in two lines
+                    label.textSize = 11 * density
+                    label.color = ink
+                    val lines = key.label.split('\n')
+                    lines.forEachIndexed { i, line ->
+                        canvas.drawText(line, cx, cy + label.textSize * (0.35f + 1.1f * (i - (lines.size - 1) / 2f)), label)
+                    }
                 }
                 else -> {
                     val s = shown(key)
-                    label.textSize = (if (s.length > 1) 15 else if (cell.rect.height() < rowHeight) 20 else 23) * density
+                    label.textSize = when {
+                        s.length > 1 -> 13f
+                        cell.rect.height() < rowHeight -> 20f
+                        // The small punctuation is drawn larger, as today's keyboard does
+                        s in ",.、。" -> 45f
+                        else -> 25f
+                    } * density
                     label.color = ink
                     canvas.drawText(s, cx, cy + label.textSize * 0.35f, label)
                 }
             }
-            key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize, hint) }
+            key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
         }
     }
 
@@ -230,7 +250,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 val p = pointers[e.getPointerId(i)] ?: continue
                 p.panel?.let { panel ->
                     val x = e.getX(i)
-                    val y = e.getY(i) - layerOffsetY()
+                    val y = e.getY(i) + layerOffsetY()
                     val nearest = panel.indices.minByOrNull {
                         val r = panel[it].first
                         abs(r.centerX() - x) + abs(r.centerY() - y) * 0.5f
@@ -313,20 +333,25 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             listener.onPickKeyboard()
             return
         }
+        // Up to five columns, rows as even as they go. The first choice sits over the key, the next ones
+        // alternate right and left of it, and rows fill from the bottom up (as AOSP's keyboard places them).
         val unit = (width - 2 * sidePadding) / 10f
-        val perRow = min(key.more.size, 8)
-        val rows = (key.more.size + perRow - 1) / perRow
-        val cellH = rowHeight * 0.85f
-        val panelW = perRow * unit + 4 * px
-        val panelH = rows * cellH + 4 * px
-        val offset = layerOffsetY()
+        val n = key.more.size
+        val rows = (n + 4) / 5
+        val cols = (n + rows - 1) / rows
+        val cellH = rowHeight * 0.82f
         val r = p.cell.rect
-        val left = (r.centerX() - unit / 2 - 2 * px).coerceIn(0f, width - panelW)
-        val bottom = r.top + gapY + offset
-        val top = bottom - panelH
+        val column = ((r.centerX() - sidePadding) / unit).toInt()
+        // Columns that fit left and right of the key's own, the rest going to the other side at an edge
+        var right = min((cols - 1) - (cols - 1) / 2, 9 - column)
+        val left = min(cols - 1 - right, column)
+        right = cols - 1 - left
+        val order = (0 until cols * 2).map { if (it % 2 == 1) (it + 1) / 2 else -it / 2 }.filter { it in -left..right }
+        val x0 = r.centerX() - unit / 2
+        val bottom = r.top + layerOffsetY() - 17 * density
         p.panel = key.more.mapIndexed { i, more ->
-            val x = left + 2 * px + (i % perRow) * unit
-            val y = top + 2 * px + (i / perRow) * cellH
+            val x = x0 + order[i % cols] * unit
+            val y = bottom - (i / cols + 1) * cellH
             RectF(x, y, x + unit, y + cellH) to more
         }
         p.chosen = 0
@@ -340,13 +365,13 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         popups.showPanel(frame, panel.map { it.first to (if (shift != Shift.OFF) it.second.label.uppercase() else it.second.label) }, p.chosen)
     }
 
+    /** A key's face in its cell: its outline starts at the cell's top, the space between rows below it. */
+    private fun face(r: RectF) = RectF(r.left + 1.5f * density, r.top, r.right - 2 * density, r.top + r.height() * 0.83f)
+
+    /** The key, a row taller upwards, its label in the part above the key */
     private fun showPreview(cell: Cell) {
-        val r = cell.rect
-        val offset = layerOffsetY()
-        val w = r.width() - 2 * gapX + 4 * density
-        val h = (r.height() - 2 * gapY) * 1.25f
-        val bottom = r.top + gapY + offset
-        popups.showPreview(RectF(r.centerX() - w / 2, bottom - h, r.centerX() + w / 2, bottom), shown(cell.key))
+        val f = face(cell.rect).apply { offset(0f, layerOffsetY()) }
+        popups.showPreview(RectF(f.left, f.top - rowHeight, f.right, f.bottom), shown(cell.key), f.top - rowHeight / 2)
     }
 
     /** This view's top in the popup layer's coordinates */
@@ -365,6 +390,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         Code.DELETE -> context.getString(R.string.key_delete)
         Code.SYMBOLS -> context.getString(R.string.key_symbols)
         Code.SYMBOLS2 -> context.getString(R.string.key_more_symbols)
+        Code.DIGITS -> context.getString(R.string.key_digits)
         Code.LETTERS -> context.getString(R.string.key_letters)
         Code.GLOBE -> context.getString(R.string.key_language)
         Code.SPACE -> context.getString(R.string.key_space)

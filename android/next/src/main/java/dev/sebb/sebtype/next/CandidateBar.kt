@@ -8,9 +8,11 @@ import android.graphics.RectF
 import dev.sebb.sebtype.next.Icons.Icon
 
 /**
- * The bar over the keys. From the left: the menu button (›), 日本語's あ/ア chip (#38), the incognito badge
- * (#31), then the candidates, scrolling sideways, the first on a pink chip (#28); the button at the right end
- * opens all of them. While 中文 sets itself up, or after its setup failed, a notice takes the candidates' place.
+ * The bar over the keys, as today's keyboard draws it. From the left: 日本語's あ|ア chip (#38), the menu
+ * button (› in a cream circle, while there are no candidates), the incognito badge (#31), then the
+ * candidates in cells at least 58 dp wide with lines between them, scrolling sideways, the first on a pink
+ * chip (#28); the chevron at the right end opens all of them. While 中文 sets itself up, or after its setup
+ * failed, a notice takes the candidates' place.
  */
 @SuppressLint("ViewConstructor")
 class CandidateBar(context: Context, private val listener: Listener) : ItemsView(context, vertical = false) {
@@ -27,8 +29,10 @@ class CandidateBar(context: Context, private val listener: Listener) : ItemsView
 
     private val density = resources.displayMetrics.density
     private val px = Picnic.pixel(context).toFloat()
-    private val barHeight = (48 * density).toInt()
-    private val button = 40 * density
+    private val barHeight = (40 * density).toInt()
+    private val button = 45 * density
+    private val chipWidth = 78.5f * density
+    private val cellWidth = 58 * density
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Picnic.fonts(context).first
         textSize = 18 * density
@@ -39,7 +43,9 @@ class CandidateBar(context: Context, private val listener: Listener) : ItemsView
         textSize = 14 * density
         color = Picnic.MUTED
     }
-    private val chipFrame = PixelFrame(Picnic.CREAM, Picnic.WHITE, Picnic.LINE)
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val title = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 17 * density; color = Picnic.INK }
+    private val kana = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 17 * density; textAlign = Paint.Align.CENTER }
 
     private var candidates = emptyList<String>()
     private var chip: String? = null
@@ -82,11 +88,13 @@ class CandidateBar(context: Context, private val listener: Listener) : ItemsView
         val h = height.toFloat()
         val out = ArrayList<Item>()
         var x = 0f
-        out += Item(RectF(x, 0f, x + button, h), context.getString(if (menuOpen) R.string.close_menu else R.string.open_menu),
-            Role.BUTTON, fixed = true, tag = Kind.MENU)
-        x += button
         chip?.let {
-            out += Item(RectF(x, 0f, x + button, h), it, Role.BUTTON, fixed = true, tag = Kind.CHIP)
+            out += Item(RectF(x, 0f, x + chipWidth, h), it, Role.BUTTON, fixed = true, tag = Kind.CHIP)
+            x += chipWidth
+        }
+        if (candidates.isEmpty() || menuOpen) {
+            out += Item(RectF(x, 0f, x + button, h), context.getString(if (menuOpen) R.string.close_menu else R.string.open_menu),
+                Role.BUTTON, fixed = true, tag = Kind.MENU)
             x += button
         }
         if (badge != Badge.NONE) {
@@ -101,10 +109,9 @@ class CandidateBar(context: Context, private val listener: Listener) : ItemsView
         if (notice != null) {
             out += Item(RectF(x, 0f, width.toFloat(), h), notice, Role.CANDIDATE, tag = Kind.NOTICE)
         } else {
-            val pad = 12 * density
             var cx = start
             candidates.forEachIndexed { i, c ->
-                val w = text.measureText(c) + 2 * pad
+                val w = maxOf(cellWidth, text.measureText(c) + 16 * density)
                 out += Item(RectF(cx, 0f, cx + w, h), c, Role.CANDIDATE, tag = i)
                 cx += w
             }
@@ -118,6 +125,9 @@ class CandidateBar(context: Context, private val listener: Listener) : ItemsView
         setItems(out.map { if (it.fixed) it else Item(RectF(it.rect).apply { offset(-start, 0f) }, it.label, it.role, tag = it.tag) },
             extent, keepScroll)
     }
+
+    /** How many candidates start inside the bar: the expanded view goes on after them */
+    fun shownCount() = items.count { it.tag is Int && it.rect.left < viewport() }
 
     override fun viewport() = width - start - (if (candidates.isNotEmpty() || expanded) button else 0f)
 
@@ -143,21 +153,41 @@ class CandidateBar(context: Context, private val listener: Listener) : ItemsView
         val cy = r.centerY()
         when (val tag = item.tag) {
             is Int -> {
-                if (tag == 0) PixelFrame.CHIP.draw(canvas, r.left + 2 * density, r.top + 7 * density, r.right - 2 * density, r.bottom - 7 * density, px)
-                canvas.drawText(item.label, r.left + 12 * density, cy + text.textSize * 0.35f, text)
+                if (tag == 0) PixelFrame.CHIP.draw(canvas, r.left + 5 * density, r.top + 7 * density, r.right - 5 * density, r.bottom - 7 * density, px)
+                // A thin line between candidates
+                else fill.apply { color = Picnic.OUTLINE }.let { canvas.drawRect(r.left, cy - 12.5f * density, r.left + density, cy + 12.5f * density, it) }
+                canvas.drawText(item.label, r.centerX() - text.measureText(item.label) / 2, cy + text.textSize * 0.35f, text)
             }
             Kind.NOTICE -> canvas.drawText(item.label, r.left + 8 * density, cy + small.textSize * 0.35f, small)
-            Kind.MENU -> Icons.draw(canvas, if (menuOpen) Icon.MENU_OPEN else Icon.MENU, r.centerX(), cy, 22 * density, Picnic.INK)
-            Kind.EXPAND -> Icons.draw(canvas, if (expanded) Icon.COLLAPSE else Icon.EXPAND, r.centerX(), cy, 22 * density, Picnic.INK)
+            // Open: ← and the menu's title, as today's action panel
+            Kind.MENU -> if (menuOpen) {
+                Icons.draw(canvas, Icon.PREVIOUS, r.centerX(), cy, 22 * density, Picnic.INK)
+                title.let { canvas.drawText(context.getString(R.string.menu_title), r.right + 6 * density, cy + it.textSize * 0.35f, it) }
+            } else {
+                canvas.drawCircle(r.right - 22.5f * density, cy, 16 * density, fill.apply { color = Picnic.CREAM })
+                Icons.draw(canvas, if (menuOpen) Icon.MENU_OPEN else Icon.MENU, r.right - 22.5f * density, cy, 16 * density, Picnic.INK)
+            }
+            // ^ opens all the candidates, v closes them again
+            Kind.EXPAND -> Icons.draw(canvas, if (expanded) Icon.EXPAND else Icon.COLLAPSE, r.centerX(), cy, 18 * density, Picnic.INK)
             Kind.BADGE -> Icons.draw(canvas, Icon.INCOGNITO, r.centerX(), cy, 22 * density,
                 if (badge == Badge.TOGGLE) Picnic.BERRY else Picnic.MUTED)
+            // A pill: あ and ア side by side, the one in use on berry
             Kind.CHIP -> {
-                val s = 32 * density
-                chipFrame.draw(canvas, r.centerX() - s / 2, cy - s / 2, r.centerX() + s / 2, cy + s / 2, px)
-                text.textSize = 17 * density
-                val w = text.measureText(item.label)
-                canvas.drawText(item.label, r.centerX() - w / 2 - px / 2, cy + text.textSize * 0.35f - px / 2, text)
-                text.textSize = 18 * density
+                val l = r.left + 8 * density
+                val w = 70.5f * density
+                val half = 13 * density
+                val hiragana = item.label == "あ"
+                fill.color = Picnic.CREAM
+                canvas.drawRoundRect(l, cy - half, l + w, cy + half, half, half, fill)
+                fill.color = Picnic.BERRY
+                canvas.save()
+                canvas.clipRect(if (hiragana) l else l + w / 2, cy - half, if (hiragana) l + w / 2 else l + w, cy + half)
+                canvas.drawRoundRect(l, cy - half, l + w, cy + half, half, half, fill)
+                canvas.restore()
+                for ((i, k) in listOf("あ", "ア").withIndex()) {
+                    kana.color = if (hiragana == (i == 0)) Picnic.WHITE else Picnic.FADED
+                    canvas.drawText(k, l + w / 4 * (1 + 2 * i), cy + kana.textSize * 0.35f, kana)
+                }
             }
         }
     }

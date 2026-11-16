@@ -20,7 +20,7 @@ class PopupLayer(context: Context) : View(context) {
     }
     private val selected = PixelFrame(Picnic.BERRY, Picnic.BERRY_HIGH, Picnic.BERRY_LOW, shadow = false)
 
-    private var preview: Pair<RectF, String>? = null
+    private var preview: Triple<RectF, String, Float>? = null
     /** The long-press panel: its frame, each choice's cell and label, and the selected one */
     private var panel: Triple<RectF, List<Pair<RectF, String>>, Int>? = null
 
@@ -28,8 +28,9 @@ class PopupLayer(context: Context) : View(context) {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
-    fun showPreview(rect: RectF, label: String) {
-        preview = rect to label
+    /** [labelY]: the middle of the label */
+    fun showPreview(rect: RectF, label: String, labelY: Float) {
+        preview = Triple(rect, label, labelY)
         invalidate()
     }
 
@@ -47,11 +48,11 @@ class PopupLayer(context: Context) : View(context) {
     }
 
     override fun onDraw(canvas: Canvas) {
-        preview?.let { (r, label) ->
+        preview?.let { (r, label, y) ->
             PixelFrame.CREAM.draw(canvas, r.left, r.top, r.right, r.bottom, px)
-            text.textSize = r.height() * 0.42f
+            text.textSize = r.width() * 0.45f
             text.color = Picnic.INK
-            canvas.drawText(label, r.centerX() - px / 2, r.centerY() + text.textSize * 0.35f - px / 2, text)
+            canvas.drawText(label, r.centerX() - px / 2, y + text.textSize * 0.35f, text)
         }
         panel?.let { (frame, cells, chosen) ->
             PixelFrame.CREAM.draw(canvas, frame.left, frame.top, frame.right, frame.bottom, px)
