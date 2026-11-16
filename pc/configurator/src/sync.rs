@@ -156,7 +156,7 @@ fn client(s: &Sync, args: &[&std::ffi::OsStr]) -> Result<String, Failed> {
     }
 }
 
-/// How many words pull added to Mozc's dictionary, from its "pull: N file(s), M new word(s) for Mozc".
+/// How many words pull changed in Mozc's dictionary, from its "pull: N file(s), M word change(s) for Mozc".
 fn new_mozc_words(pulled: &str) -> usize {
     pulled
         .split(", ")
@@ -317,6 +317,7 @@ mod tests {
             reading: "もふてすと".into(),
             word: "モフ試験語".into(),
             pos: 0,
+            mozc_pos: None,
         };
         mozc::save_words(&mozc_dir, &[pc_ja]).unwrap();
 
@@ -354,10 +355,12 @@ mod tests {
             fs::read_to_string(&pc_snapshot).unwrap().contains("普噜莫"),
             "Rime merged the phone's word"
         );
-        let db = fs::read(mozc_dir.join("user_dictionary.db")).unwrap();
         assert!(
-            String::from_utf8_lossy(&db).contains("プルモ試験語"),
-            "Mozc got the phone's word"
+            mozc::words(&mozc_dir)
+                .unwrap()
+                .iter()
+                .any(|w| w.word == "プルモ試験語"),
+            "Mozc got the phone's word, in My words (#273)"
         );
 
         // A wrong password is the status line's, and touches nothing.

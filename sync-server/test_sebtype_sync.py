@@ -231,6 +231,168 @@ class Server(unittest.TestCase):
         )
         self.assertTrue(stored.startswith(s.pb_field(2, mine) + s.pb_field(2, off)))
 
+    def test_deletions_and_edits_sync_between_two_pcs(self):
+        """#273: a word added on one PC reaches the other in SebType's dictionary (My words), its
+        deletion deletes it there, and adding it again brings it back."""
+        self.call("DELETE", "/v1/files")
+        client = s.Client(self.url, "alice", "made-up-pass")
+        pcs = []
+        for d in self.rime_dirs("pc-a", "pc-b"):
+            device, sync_dir = s.rime_installation(d)
+            pcs.append((device, sync_dir, os.path.join(d, "user_dictionary.db")))
+
+        def edit(pc, add=(), remove=()):
+            db = s.read_mozc(pc[2]) or b""
+            s.write_file(pc[2], s.mozc_add(s.mozc_remove(db, set(remove)), list(add)))
+
+        def sync(pc):
+            s.pull(client, pc[0], pc[1], pc[2])
+            s.push(client, pc[0], pc[1], pc[2])
+            with open(pc[2], "rb") as f:
+                return sorted(w for _, w, _, _ in s.mozc_words(f.read()))
+
+        a, b = pcs
+        edit(a, add=[("ぷにょ", "プニョ島", 9)])
+        edit(b, add=[("もちょ", "モチョ", 1)])
+        sync(a), sync(b)
+        self.assertEqual(sync(a), ["プニョ島", "モチョ"])
+        self.assertEqual(sync(b), ["プニョ島", "モチョ"])
+        with open(b[2], "rb") as f:
+            self.assertIn(s.DICTIONARY.encode(), f.read())  # where My words reads it
+
+        edit(a, remove=[("もちょ", "モチョ")])
+        sync(a)
+        self.assertEqual(sync(b), ["プニョ島"], "deleted on a, so on b too")
+        self.assertEqual(sync(a), ["プニョ島"], "and b's file doesn't bring it back")
+
+        edit(b, add=[("もちょ", "モチョ", 5)])
+        sync(b)
+        self.assertEqual(sync(a), ["プニョ島", "モチョ"], "added again on b")
+        with open(a[2], "rb") as f:
+            self.assertIn(("もちょ", "モチョ", 5, ""), s.mozc_words(f.read()))
+
+    def test_newest_change_wins(self):
+        """Delete on one device and add again or edit on another, and one word edited on two: each
+        device ends with the newest change, whichever order the files arrive in."""
+        word = s.Entry("ぴぴ", "ピピ丸", 1, time=10)
+        start = {word.key: word}
+
+        def device(change, now):
+            if change == "delete":
+                return s.stamp(start, [], now)
+            return s.stamp(start, [("ぴぴ", "ピピ丸", change, "")], now)
+
+        for first, second, winner in (
+            (
+                "delete",
+                5,
+                s.Entry("ぴぴ", "ピピ丸", 5, time=30),
+            ),  # edited after the delete
+            (
+                5,
+                "delete",
+                s.Entry("ぴぴ", "ピピ丸", s.NOUN, "", 30, True),
+            ),  # deleted after the edit
+            (5, 9, s.Entry("ぴぴ", "ピピ丸", 9, time=30)),  # the later edit
+        ):
+            one, two = device(first, 20), device(second, 30)
+            for own, other in ((one, two), (two, one)):
+                own = dict(own)
+                s.merge(own, s.format_entries(other), s.format_entries(start))
+                self.assertEqual(own[word.key], winner, (first, second))
+        first = s.stamp(None, [("ぴぴ", "ピピ丸", 1, "")], 20)
+        gone = {word.key: s.Entry("ぴぴ", "ピピ丸", 1, "", 20, True)}
+        self.assertEqual(
+            s.merge(gone, s.format_entries(first), None),
+            [],
+            "a first sync dates nothing",
+        )
+        tie = {word.key: s.Entry("ぴぴ", "ピピ丸", 1, time=20)}
+        self.assertEqual(
+            len(s.merge(gone, s.format_entries(tie), None)), 1, "an addition wins a tie"
+        )
+
+    def take_in(self, db, own, *files, now=100):
+        """Another device's files taken in one after another, each with the one before as its old copy."""
+        old = None
+        for new in files:
+            s.mozc_take_in(db, own, new.encode(), old, now)
+            old = new.encode()
+        with open(db, "rb") as f:
+            return s.mozc_words(f.read())
+
+    def test_a_deletion_of_a_word_this_pc_lacks_is_kept(self):
+        """A PC that never had a word keeps another device's deletion of it, so an older addition
+        arriving later from a third device doesn't bring it back."""
+        folder = tempfile.mkdtemp(dir=self.data)
+        db, own = (
+            os.path.join(folder, "user_dictionary.db"),
+            os.path.join(folder, "own.txt"),
+        )
+        s.write_file(db, s.mozc_add(b"", [("もふ", "モフ", 1)]))
+        s.own_mozc(db, own, 1)
+        s.mozc_take_in(db, own, "#-\tぴぴ\tピピ\t\t\t20\n".encode(), None, 30)
+        words = self.take_in(db, own, "ぴぴ\tピピ\t名詞\t\t10\n", now=40)
+        self.assertEqual([w for _, w, _, _ in words], ["モフ"])
+
+    def test_an_edit_keeps_the_words_comment(self):
+        folder = tempfile.mkdtemp(dir=self.data)
+        db, own = (
+            os.path.join(folder, "user_dictionary.db"),
+            os.path.join(folder, "own.txt"),
+        )
+        entry = s.pb_field(1, "もふ") + s.pb_field(2, "モフ") + s.pb_field(5, 1)
+        storage = s.pb_field(3, s.DICTIONARY) + s.pb_field(
+            4, entry + s.pb_field(4, "made up")
+        )
+        s.write_file(db, s.pb_field(2, storage))
+        s.own_mozc(db, own, 1)
+        words = self.take_in(db, own, "もふ\tモフ\t人名\t\t50\n")
+        self.assertEqual(words, [("もふ", "モフ", 5, "made up")])
+
+    def test_a_change_after_one_dated_in_the_future_still_wins(self):
+        """Another device's clock ran ahead: a change made here after taking in its word is dated
+        after that word's change, so it wins everywhere."""
+        ahead = {("ぴぴ", "ピピ"): s.Entry("ぴぴ", "ピピ", 1, time=1000)}
+        self.assertEqual(s.stamp(ahead, [], 50)[("ぴぴ", "ピピ")].time, 1001)
+        edited = s.stamp(ahead, [("ぴぴ", "ピピ", 5, "")], 50)
+        self.assertEqual(edited[("ぴぴ", "ピピ")].time, 1001)
+        self.assertEqual(
+            s.stamp(ahead, [("ぴぴ", "ピピ", 1, "")], 50), ahead, "unchanged"
+        )
+
+    def test_old_clients(self):
+        """A client from before #273 still reads a new file's words, which keep Mozc's export columns,
+        and skips its deletions; its own file's words come in only when it gained them, so a word
+        deleted here doesn't come back from it, and its deletions stay its own."""
+        new = s.format_entries(
+            s.stamp(
+                {
+                    ("ぴぴ", "ピピ丸"): s.Entry("ぴぴ", "ピピ丸", 1),
+                    ("もふ", "モフ"): s.Entry("もふ", "モフ", 1),
+                },
+                [("ぴぴ", "ピピ丸", 5, "made up")],
+                1234,
+            )
+        ).decode()
+        self.assertEqual(
+            new, "#-\tもふ\tモフ\t\t\t1234\nぴぴ\tピピ丸\t人名\tmade up\t1234\n"
+        )
+        old_reader = [
+            line.split("\t")[:3]
+            for line in new.splitlines()
+            if not line.startswith("#")
+        ]
+        self.assertEqual(old_reader, [["ぴぴ", "ピピ丸", "人名"]])
+
+        own = {("もふ", "モフ"): s.Entry("もふ", "モフ", 1, "", 50, True)}
+        before = "\ufeffもふ\tモフ\t名詞\n".encode()  # a Mozc export starts with a BOM
+        after = "もふ\tモフ\t名詞\nぐる\tグル\t名詞\tPC\n".encode()
+        changes = s.merge(own, after, before)
+        self.assertEqual([e.key for e in changes], [("ぐる", "グル")])
+        self.assertTrue(own[("もふ", "モフ")].deleted)
+        self.assertEqual(s.merge(own, b"", after), [], "its deletions stay its own")
+
 
 if __name__ == "__main__":
     unittest.main()

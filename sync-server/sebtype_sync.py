@@ -4,7 +4,7 @@
 Rime syncs learned words through a folder, `sync/<installation id>/`: every device writes only its own
 folder and merges in everyone else's, so a server that keeps one copy of each device's folder per user
 is all sync needs (study report on #3, section 6). The same folders carry each device's Japanese and
-English personal dictionaries (#14). The server stores these files and the phone's crash reports (#33)
+English personal dictionaries (#14); Japanese deletions and edits sync too (#273). The server stores these files and the phone's crash reports (#33)
 and nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
 HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give it a certificate.
 
@@ -342,7 +342,9 @@ POS = [
     "抑制単語",
 ]
 NOUN = 1  # an entry's part of speech when it has none, and for a name Mozc doesn't know
-SYNC_DICTIONARY = "SebType sync"  # where words from other devices go
+# SebType's dictionary in Mozc: the Configurator's My words, and where other devices' words go (#273).
+# Before #273 they went to one of their own, "SebType sync", which the Configurator now merges into it.
+DICTIONARY = "SebType"
 
 
 def varint(data, i):
@@ -418,33 +420,23 @@ def mozc_words(db):
     return words
 
 
-def mozc_text(words):
-    """Mozc's export format, sorted so an unchanged dictionary uploads nothing."""
-    lines = (
-        "\t".join([r, w, POS[p]] + ([c] if c else [])) + "\n" for r, w, p, c in words
-    )
-    return "".join(sorted(lines)).encode()
-
-
-def parse_mozc_text(data):
-    words = set()
-    for line in data.decode("utf-8", "replace").lstrip("\ufeff").splitlines():
-        f = line.split("\t")
-        if len(f) >= 3 and f[0] and f[1] and not line.startswith("#"):
-            words.add((f[0], f[1], POS.index(f[2]) if f[2] in POS else NOUN))
-    return words
-
-
 def mozc_add(db, words):
-    """db with words added to its SebType sync dictionary, made if missing; the rest kept unchanged."""
+    """db with words, (reading, word, part of speech[, comment]), added to SebType's dictionary, the
+    one the Configurator's My words shows (#273), made if missing; the rest kept unchanged."""
     entries = b"".join(
-        pb_field(4, pb_field(1, r) + pb_field(2, w) + pb_field(5, p))
-        for r, w, p in words
+        pb_field(
+            4,
+            pb_field(1, r)
+            + pb_field(2, w)
+            + pb_field(5, p)
+            + b"".join(pb_field(4, c) for c in comment if c),
+        )
+        for r, w, p, *comment in words
     )
     out = bytearray()
     for number, dictionary, start, end in pb_fields(db):
         d = {n: v for n, v, _, _ in pb_fields(dictionary)} if number == 2 else {}
-        if entries and d.get(3) == SYNC_DICTIONARY.encode() and not d.get(5):
+        if entries and d.get(3) == DICTIONARY.encode() and not d.get(5):
             out += pb_field(2, dictionary + entries)
             entries = b""
         else:
@@ -455,10 +447,166 @@ def mozc_add(db, words):
             2,
             pb_field(1, secrets.randbits(63) | 1)
             + pb_field(2, 1)
-            + pb_field(3, SYNC_DICTIONARY)
+            + pb_field(3, DICTIONARY)
             + entries,
         )
     return bytes(out)
+
+
+def mozc_remove(db, keys):
+    """db without the entries of enabled dictionaries whose (reading, word) is in keys."""
+    out = bytearray()
+    for number, dictionary, start, end in pb_fields(db):
+        d = {n: v for n, v, _, _ in pb_fields(dictionary)} if number == 2 else {}
+        if number != 2 or not d.get(2, 1) or d.get(5):
+            out += db[start:end]
+            continue
+        kept = bytearray()
+        for n, entry, s, e in pb_fields(dictionary):
+            f = {k: v for k, v, _, _ in pb_fields(entry)} if n == 4 else {}
+            if n != 4 or (f.get(1, b"").decode(), f.get(2, b"").decode()) not in keys:
+                kept += dictionary[s:e]
+        out += pb_field(2, bytes(kept))
+    return bytes(out)
+
+
+# --- Deletions and edits (#273) ---
+#
+# Each device's mozc_dictionary.txt is its Japanese words in Mozc's export format, and since #273 also
+# the time each word last changed there and the words deleted there, in columns and lines older
+# clients skip:
+#
+#     reading<TAB>word<TAB>part of speech<TAB>comment<TAB>time     a word, changed at time (ms since 1970)
+#     #-<TAB>reading<TAB>word<TAB><TAB><TAB>time                    a word deleted at time
+#
+# A word is its reading and spelling; its part of speech is what an edit changes. Every device keeps
+# its own file as the record of what it last had, so a sync can tell what changed on it since then
+# and date those changes. Taking in another device's file, each word's newest change wins: a newer
+# deletion deletes it here, a newer addition or edit adds it or changes it here, and an older one
+# changes nothing. Times are the devices' clocks. On a tie an addition wins over a deletion.
+# A word without a time (from a client before #273, or one a device had when it first synced with
+# this version) is taken in only when that device's file gained it since the copy taken last time,
+# as before #273, so a word deleted before then doesn't come back.
+
+DELETED = "#-\t"
+
+
+class Entry(tuple):
+    """(reading, word, part of speech, comment, time, deleted) of one word in a sync file."""
+
+    __slots__ = ()
+
+    def __new__(cls, reading, word, pos, comment="", time=0, deleted=False):
+        return tuple.__new__(cls, (reading, word, pos, comment, time, deleted))
+
+    key = property(lambda e: (e[0], e[1]))
+    pos = property(lambda e: e[2])
+    comment = property(lambda e: e[3])
+    time = property(lambda e: e[4])
+    deleted = property(lambda e: e[5])
+
+    def rank(self):
+        """Which of two changes to a word wins: the newer, an addition on a tie, then any fixed order."""
+        return self.time, not self.deleted, POS[self.pos]  # as the phones compare them
+
+
+def parse_entries(data):
+    """A sync file's words by (reading, word), the newest change of each."""
+    entries = {}
+    for line in data.decode("utf-8", "replace").lstrip("\ufeff").splitlines():
+        deleted = line.startswith(DELETED)
+        if deleted:
+            line = line[len(DELETED) :]
+        elif line.startswith("#"):
+            continue
+        f = line.split("\t") + [""] * 4
+        if not f[0] or not f[1] or (not deleted and line.count("\t") < 2):
+            continue
+        e = Entry(
+            f[0],
+            f[1],
+            POS.index(f[2]) if f[2] in POS else NOUN,
+            f[3],
+            int(f[4]) if f[4].isdigit() else 0,
+            deleted,
+        )
+        if e.key not in entries or e.rank() > entries[e.key].rank():
+            entries[e.key] = e
+    return entries
+
+
+def format_entries(entries):
+    """A sync file, sorted so an unchanged dictionary uploads nothing."""
+    lines = []
+    for e in entries.values():
+        if e.deleted:
+            lines.append(DELETED + "\t".join([e[0], e[1], "", "", str(e.time)]))
+        else:
+            dated = (
+                [e.comment, str(e.time)] if e.time else [e.comment] if e.comment else []
+            )
+            lines.append("\t".join([e[0], e[1], POS[e.pos]] + dated))
+    return "".join(line + "\n" for line in sorted(lines)).encode()
+
+
+def stamp(own, words, now):
+    """This device's file own (None before its first sync) brought up to date with its words, dating
+    what changed since. A first sync dates nothing: what was deleted before it stays a local matter.
+    A change is dated after the one it replaces, even one from a device whose clock ran ahead, so the
+    later change wins everywhere."""
+    if words is None:  # no dictionary (yet), so nothing to tell
+        return dict(own or {})
+    first = own is None
+    own = dict(own or {})
+
+    def when(e):
+        return 0 if first else max(now, e.time + 1) if e else now
+
+    have = {(r, w): (p, c) for r, w, p, c in words}
+    for key, (pos, comment) in have.items():
+        e = own.get(key)
+        if e is None or e.deleted or e.pos != pos:
+            own[key] = Entry(*key, pos, comment, when(e))
+        elif e.comment != comment:
+            own[key] = Entry(*key, pos, comment, e.time)
+    for key, e in list(own.items()):
+        if not e.deleted and key not in have:
+            own[key] = Entry(*key, NOUN, "", when(e), True)  # no part of speech
+    return own
+
+
+def merge(own, new, old):
+    """Takes another device's file new (and the copy old taken of it last time) into this device's
+    file own; returns the changes that win, which this device's dictionary then gets."""
+    before = parse_entries(old or b"")
+    changes = []
+    for key, e in parse_entries(new).items():
+        mine = own.get(key)
+        if e.time:
+            wins = mine is None or e.rank() > mine.rank()
+        else:
+            wins = mine is None and key not in before and not e.deleted
+        if not wins:
+            continue
+        own[key] = e
+        if not (e.deleted and (mine is None or mine.deleted)):
+            changes.append(e)
+    return changes
+
+
+def own_mozc(db_path, own_path, now=None):
+    """This device's sync file, kept at own_path, brought up to date with its Mozc dictionary."""
+    try:
+        with open(own_path, "rb") as f:
+            own = parse_entries(f.read())
+    except FileNotFoundError:
+        own = None
+    db = read_mozc(db_path)
+    own = stamp(
+        own, None if db is None else mozc_words(db), now or time.time_ns() // 10**6
+    )
+    write_file(own_path, format_entries(own))
+    return own
 
 
 @contextlib.contextmanager
@@ -479,26 +627,39 @@ def mozc_lock(db):
 
 
 def read_mozc(db_path):
-    """Mozc saves its dictionary by renaming a new file over it, so a read needs no lock."""
+    """Mozc saves its dictionary by renaming a new file over it, so a read needs no lock. None when
+    there is none: no word registered yet, or not Mozc's folder."""
     try:
         with open(db_path, "rb") as f:
             return f.read()
-    except FileNotFoundError:  # no word registered yet
-        return b""
+    except FileNotFoundError:
+        return None
 
 
-def mozc_take_in(db_path, new, old):
-    """Adds the words another device's Mozc file gained since its previous copy, and that this
-    dictionary lacks, to Mozc's dictionary; returns how many."""
+def mozc_take_in(db_path, own_path, new, old, now=None):
+    """Takes another device's Mozc file into Mozc's dictionary, and into this device's file at
+    own_path; returns how many words were added, changed or deleted."""
     with mozc_lock(db_path):
-        db = read_mozc(db_path)
-        have = {(r, w, p) for r, w, p, _ in mozc_words(db)}
-        words = sorted(parse_mozc_text(new) - parse_mozc_text(old or b"") - have)
-        if words:
+        own = own_mozc(
+            db_path, own_path, now
+        )  # first dates this PC's own changes, so they can win
+        comments = {key: e.comment for key, e in own.items()}
+        changes = merge(own, new, old)
+        if changes:
+            db = read_mozc(db_path) or b""
             if db:
                 shutil.copyfile(db_path, db_path + ".sebtype-backup")
-            write_file(db_path, mozc_add(db, words))
-        return len(words)
+            db = mozc_remove(db, {e.key for e in changes})
+            added = [e for e in changes if not e.deleted]
+            db = mozc_add(
+                db,
+                [(*e.key, e.pos, e.comment or comments.get(e.key, "")) for e in added],
+            )
+            write_file(db_path, db)
+        # After the dictionary, so a sync cut off in between takes the file in again; always, since
+        # a deletion of a word this PC lacks changes only this.
+        write_file(own_path, format_entries(own))
+        return len(changes)
 
 
 # --- PC client: pull and push ---
@@ -513,8 +674,8 @@ def write_file(path, body):
 
 
 def pull(client, device, sync_dir, mozc_db=None):
-    """Downloads every other device's changed files into sync_dir/<device>/, and with mozc_db adds
-    their new Japanese words to Mozc; returns (files, words)."""
+    """Downloads every other device's changed files into sync_dir/<device>/, and with mozc_db takes
+    their Japanese words' changes into Mozc; returns (files, words added, changed or deleted)."""
     count = words = 0
     for f in client.files():
         name = f["name"]
@@ -536,7 +697,8 @@ def pull(client, device, sync_dir, mozc_db=None):
                 continue
         body = client.request("GET", f"/v1/files/{f['device']}/{name}")
         if name == MOZC_FILE:
-            words += mozc_take_in(mozc_db, body, old)
+            own = os.path.join(sync_dir, device, MOZC_FILE)
+            words += mozc_take_in(mozc_db, own, body, old)
         write_file(path, body)
         count += 1
     return count, words
@@ -544,7 +706,7 @@ def pull(client, device, sync_dir, mozc_db=None):
 
 def push(client, device, sync_dir, mozc_db=None):
     """Uploads this device's changed snapshots (learned words, not Rime's yaml backups) and with
-    mozc_db its Japanese dictionary; returns how many."""
+    mozc_db its Japanese words (its own Mozc file, kept in its folder); returns how many."""
     remote = {f["name"]: f["sha256"] for f in client.files() if f["device"] == device}
     files = {}
     folder = os.path.join(sync_dir, device)
@@ -553,7 +715,9 @@ def push(client, device, sync_dir, mozc_db=None):
             with open(os.path.join(folder, name), "rb") as f:
                 files[name] = f.read()
     if mozc_db:
-        files[MOZC_FILE] = mozc_text(mozc_words(read_mozc(mozc_db)))
+        files[MOZC_FILE] = format_entries(
+            own_mozc(mozc_db, os.path.join(folder, MOZC_FILE))
+        )
     count = 0
     for name, body in files.items():
         if remote.get(name) != hashlib.sha256(body).hexdigest():
@@ -579,7 +743,7 @@ def run_client(args):
             print("delete: done")
         elif args.command == "pull":
             files, words = pull(client, device, sync_dir, args.mozc_db)
-            print(f"pull: {files} file(s), {words} new word(s) for Mozc")
+            print(f"pull: {files} file(s), {words} word change(s) for Mozc")
         else:
             print(f"push: {push(client, device, sync_dir, args.mozc_db)} file(s)")
     except urllib.error.HTTPError as e:

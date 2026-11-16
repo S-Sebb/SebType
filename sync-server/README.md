@@ -13,11 +13,28 @@ one copy of each device's folder is enough, and two devices never overwrite each
 
 The same folders carry the personal dictionaries: each device puts its whole Japanese dictionary there
 as `mozc_dictionary.txt`, in the format of Mozc's own dictionary export, and its other (English) words
-as `userdictionary.json`, FUTO Keyboard's format, which only phones have. A device takes in only the
-words another device's file gained since it last took that file. A word you delete stays deleted on
-that device, even while another device still has it. A sync only ever adds words. To remove a word
-everywhere, delete it on each device. Learning history (what Mozc or the English keyboard learned
-from your typing) isn't synced.
+as `userdictionary.json`, FUTO Keyboard's format, which only phones have. Learning history (what Mozc
+or the English keyboard learned from your typing) isn't synced.
+
+Japanese words sync both ways, deletions and edits too (#273). Each line of `mozc_dictionary.txt` also
+has the time the word last changed on that device, and the words deleted there are kept as `#-` lines;
+a device keeps its own file as the record of what it had at its last sync, so it can tell what you
+changed since. A word is its reading and spelling, and its newest change wins:
+
+- Deleted on one device: it goes on the others at their next sync.
+- Deleted on one device and added again (or edited) later on another: whichever happened last wins,
+  whichever device syncs first. The devices' clocks decide, so keep them right.
+- Edited on two devices (another part of speech): the later edit wins.
+- Words from before this version carry no time. One of them comes to a device only when the other
+  device's file gained it, as before, so a word you deleted earlier doesn't come back.
+
+A device from before #273 still syncs: the new file's words keep Mozc's export columns, and it skips the
+`#-` lines. It takes in the words other devices add but not their deletions; what it still has doesn't
+come back to the others, and what it deletes stays deleted only there.
+
+English words sync as before: a device takes in only the words another device's file gained since it
+last took that file, so a word you delete stays deleted on that device, even while another device still
+has it, and to remove one everywhere, delete it on each phone.
 
 `sebtype_sync.py` is that server, and a small client for the PCs. It stores only these files
 (`*.userdb.txt`, `mozc_dictionary.txt`, `userdictionary.json`), one folder per device under each user,
@@ -125,7 +142,7 @@ learned words and dictionaries. It turns sync off. The words on the phone and on
 uploads the phone's own.
 
 Words from other devices go into the personal dictionaries: Japanese ones into 日本語's **My words**,
-English ones into English's. Japanese words with a part of speech the phone doesn't know come in as
+English ones into English's. A Japanese word deleted on another device goes from My words too. Japanese words with a part of speech the phone doesn't know come in as
 nouns, without their comments.
 
 ## On a PC (SebType Configurator)
@@ -144,7 +161,7 @@ timer (`sebtype-sync.timer`, also two minutes after login) on Linux, a Task Sche
 ("SebType sync", while you're logged on) on Windows. Each run is the three steps below with this
 `sebtype_sync.py`, built into the Configurator: `pull`, Rime's sync (Fcitx5's save on Linux,
 `sebtype-server.exe /sync` on Windows), `push`, with the password on the client's stdin
-(`--password-stdin`) and the Mozc dictionary included. When new Japanese words came in, Mozc restarts to
+(`--password-stdin`) and the Mozc dictionary included. When Japanese words came in or went, Mozc restarts to
 read them. On Windows the Configurator runs it with the Python that Setup installs next to it.
 
 "Delete learned words and dictionaries on the server" runs the client's `delete` and turns sync off; the
@@ -194,9 +211,12 @@ On Windows the user dir is `%APPDATA%\Rime`; the same `pull` and `push` work wit
 
 ## Japanese on a PC (Mozc)
 
-With `--mozc-db`, `push` also uploads the PC's Mozc user dictionary, and `pull` adds the other devices'
-new Japanese words to it. They go into a dictionary of their own, "SebType sync", in Mozc's dictionary
-tool. The PC still needs Rime, for its device id. English words stay on the phones: a PC has no English
+With `--mozc-db`, `push` also uploads the PC's Mozc user dictionary (its enabled dictionaries' words),
+and `pull` takes in the other devices' changes: their new words go into the dictionary "SebType", which
+the Configurator shows as My words, and the words they deleted go from every enabled dictionary. Words
+an older version put in a dictionary of their own, "SebType sync", show in My words too, and move into
+"SebType" when you next add or delete a word there. The PC keeps its own file, with the times, as
+`mozc_dictionary.txt` in its folder in Rime's sync folder. The PC still needs Rime, for its device id. English words stay on the phones: a PC has no English
 personal dictionary to put them in.
 
 On Linux the dictionary is `~/.config/mozc/user_dictionary.db` (`~/.mozc/user_dictionary.db` if an older
@@ -221,8 +241,9 @@ Microsoft IME keeps no file this can sync.
 ## Tests
 
 `python3 -I sync-server/test_sebtype_sync.py`: the server on a local port with a made-up user, two
-made-up devices syncing through it, a made-up Mozc dictionary, a crash report, and the command line
-with the password on stdin. The Configurator's sync is checked by `SEBTYPE_CHECKS=private-sync
+made-up devices syncing through it, made-up Mozc dictionaries (adding, deleting and adding again,
+conflicts, and a client from before #273), a crash report, and the command line with the password on
+stdin. The phone's side of the same rules is in `android/build.sh unit-tests`. The Configurator's sync is checked by `SEBTYPE_CHECKS=private-sync
 pc/configurator/test.sh`: this server on the PC with a throwaway login, a private keyring, Fcitx5, Rime
 and Mozc in a sandbox, made-up words both ways, and delete. The phone side is
 checked on the emulator by `SEBTYPE_CHECKS=first-install,sync android/test/emulator.sh`
