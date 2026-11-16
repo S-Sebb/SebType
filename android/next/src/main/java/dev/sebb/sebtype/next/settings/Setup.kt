@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -41,8 +42,9 @@ fun Setup(state: Pair<Boolean, Boolean>) = Column(
 ) {
     val context = LocalContext.current
     val step = if (state.first) 2 else 1
-    Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(240.dp))
-    Row(Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+    // The launcher icon's pig, a one-colour silhouette with room around it, in ink as today's.
+    Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(320.dp), colorFilter = ColorFilter.tint(Ink))
+    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.setup_step, step), fontSize = 12.sp, color = Ink)
         LinearProgressIndicator({ step / 2f }, Modifier.weight(1f).padding(start = 8.dp), color = Berry, trackColor = Line,
             drawStopIndicator = {})
