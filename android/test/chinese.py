@@ -1403,17 +1403,17 @@ def modes_one_handed():
 
 
 def modes_split():
-    """Split: the keys in two halves, g and h far apart."""
+    """Split: the keys in two halves, t and y far apart (g and v sit on both halves, as in today's app)."""
     to_english()
     try:
         set_mode("Split")
         k = key_spots()
-        gap = k["h"][0] - k["g"][0]
+        gap = k["y"][0] - k["t"][0]
         unit = k["w"][0] - k["q"][0]
         if gap < 2 * unit:
-            raise Fail(f"g and h are {gap} px apart, a key is {unit}")
+            raise Fail(f"t and y are {gap} px apart, a key is {unit}")
         types_letters()
-        return f"g to h {gap} px, a key {unit} px"
+        return f"t to y {gap} px, a key {unit} px"
     finally:
         set_mode("Standard")
 
