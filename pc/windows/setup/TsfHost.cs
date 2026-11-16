@@ -294,6 +294,9 @@ namespace SebType {
     [DllImport("user32.dll", EntryPoint = "SetFocus")] static extern IntPtr SetWindowFocus(IntPtr h);
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] static extern uint MapVirtualKeyW(uint code, uint type);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     const uint WM_APP = 0x8000, WM_QUIT = 0x12, WM_CHAR = 0x102, WM_GETTEXT = 0xD;
     static readonly Guid CLSID_TF_ThreadMgr = new Guid("529a9e6b-6587-4f23-ab9e-9c7d683e3c50");
     static readonly Guid CLSID_TF_InputProcessorProfiles = new Guid("33c53a50-f456-4884-b049-85fd643ecfed");
@@ -400,14 +403,18 @@ namespace SebType {
       // Up to 6 s: right after another window closes, Windows can refuse for a while (seen on TCSBackEnd).
       for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) {
         if (!NoInput) { keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero); }
+        // Without input: joined for a moment to the input of the window in front, which may hand it on.
+        uint pid, front = NoInput ? GetWindowThreadProcessId(GetForegroundWindow(), out pid) : 0, self = GetCurrentThreadId();
+        bool joined = front != 0 && front != self && AttachThreadInput(self, front, true);
         SetForegroundWindow(h);
+        if (joined) { BringWindowToTop(h); AttachThreadInput(self, front, false); }
         Thread.Sleep(300);
       }
       return GetForegroundWindow() == h;
     }
     // No input of the test's own (#277: a PC whose screen must stay off, which any input in the session
-    // lights): Foreground takes no Alt tap, which works once nobody has typed for a while (the foreground
-    // lock's time-out), and keys go through Key, to TSF's keystroke manager, not into the session's input.
+    // lights): Foreground takes no Alt tap but joins the input of the window in front for a moment, and keys
+    // go through Key, to TSF's keystroke manager, not into the session's input.
     public static bool NoInput;
     // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter
     // or space the input method lets through goes into the field. True when the input method took it.
@@ -431,6 +438,13 @@ namespace SebType {
         threadMgr.SetFocus(away ? otherMgr : docMgr);
         return 0;
       });
+    }
+    // Which window is in front (its process) and whether TSF's thread has the focus: why Focus failed.
+    public static string FocusState() {
+      uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+      string name; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { name = "pid " + pid; }
+      return "in front: " + (GetForegroundWindow() == store.Hwnd ? "the test field" : name) +
+             ", TSF thread focus: " + OnUi(() => { bool f; threadMgr.IsThreadFocus(out f); return f; });
     }
     // The text field's window in front, with the keyboard focus, and TSF's focus on its document.
     public static bool Focus() {

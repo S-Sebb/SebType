@@ -87,7 +87,7 @@ if ($display::Last -ne 0) { Write-Host "BLOCKED preflight: the display is on (st
 # Before each key: the display still off, and the field in front with TSF's focus.
 function Ready {
   if ($display::Lit) { throw "the display turned on ($(States)): no more keys" }
-  if (-not $tsf::Focus()) { throw 'the test field is not in front with the keyboard focus (no key sent)' }
+  if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
 function Keys {
   Ready
@@ -107,8 +107,13 @@ $tsf::Start()
 try {
   if ($Trial) {
     Check 'trial-front-and-key' {
-      Ready; $null = $tsf::Key(0x41); $tsf::Settle(500)
-      "in front without a key; one key through TSF, the field holds '$($tsf::Text())'"
+      # The key goes even when the field isn't in front (it is no input either way), to show where it gets.
+      if ($display::Lit) { throw "the display turned on ($(States)): no key sent" }
+      $front = $tsf::Focus(); $state = $tsf::FocusState()
+      $eaten = $tsf::Key(0x41); $tsf::Settle(500); $t = $tsf::Text()
+      $why = "$state; one key through TSF (eaten: $eaten), the field holds '$t'"
+      if (-not $front -or $t -ne 'a') { throw $why }
+      $why
     }
   } else {
     Lang zh
