@@ -161,9 +161,10 @@ fun ChineseWordsScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settin
     var words by remember { mutableStateOf(ChineseData.myWords(context)) }
     var editing by remember { mutableStateOf<Int?>(null) }
     var adding by remember { mutableStateOf(false) }
-    fun save(new: List<ChineseWord>) {
-        words = new
-        ChineseData.setMyWords(context, new)
+    // On the words as they are when saved: a sync may have changed them since the screen read them (#272).
+    fun change(edit: (List<ChineseWord>) -> List<ChineseWord>) {
+        words = edit(words)
+        ChineseData.setMyWords(context, edit(ChineseData.myWords(context)))
     }
     AddRow { adding = true }
     if (words.isEmpty()) NoWords() else Card {
@@ -172,12 +173,13 @@ fun ChineseWordsScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settin
     val labels = listOf(stringResource(R.string.sebtype_settings_word), stringResource(R.string.sebtype_settings_pinyin))
     val valid = { v: List<String> -> ChineseData.isValid(v[0].trim(), ChineseData.normalizePinyin(v[1])) }
     if (adding) WordDialog(stringResource(R.string.settings_add), labels, valid = valid, close = { adding = false }) { (word, pinyin) ->
-        save(words + ChineseWord(word, ChineseData.normalizePinyin(pinyin)))
+        change { it + ChineseWord(word, ChineseData.normalizePinyin(pinyin)) }
     }
     editing?.let { i ->
         val old = words[i]
-        WordDialog(old.word, labels, listOf(old.word, old.pinyin), valid, onDelete = { save(words - old) }, close = { editing = null }) { (word, pinyin) ->
-            save(words.toMutableList().also { it[i] = ChineseWord(word, ChineseData.normalizePinyin(pinyin)) })
+        WordDialog(old.word, labels, listOf(old.word, old.pinyin), valid, onDelete = { change { it - old } }, close = { editing = null }) { (word, pinyin) ->
+            val new = ChineseWord(word, ChineseData.normalizePinyin(pinyin))
+            change { list -> list.map { if (it == old) new else it } }
         }
     }
 }

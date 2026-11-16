@@ -144,10 +144,10 @@ class Server(unittest.TestCase):
                 s.push(client, device, sync_dir), 0
             )  # unchanged: nothing sent
         device, sync_dir = s.rime_installation(dirs[0])
-        self.assertEqual(s.pull(client, device, sync_dir), (1, 0))
+        self.assertEqual(s.pull(client, device, sync_dir), (1, 0, 0))
         with open(os.path.join(sync_dir, "phone-0002", "rime_ice.userdb.txt")) as f:
             self.assertEqual(f.read(), "made up word of phone-0002\n")
-        self.assertEqual(s.pull(client, device, sync_dir), (0, 0))
+        self.assertEqual(s.pull(client, device, sync_dir), (0, 0, 0))
 
     def test_command_line_reads_the_password_from_stdin(self):
         """The Configurator's way (#180): the password on stdin, a refused login as exit code 3, and
@@ -167,7 +167,9 @@ class Server(unittest.TestCase):
             )
 
         r = run("push", "made-up-pass", "--rime-dir", rime_dir)
-        self.assertEqual((r.returncode, r.stdout), (0, "push: 1 file(s)\n"), r.stderr)
+        self.assertEqual(
+            (r.returncode, r.stdout), (0, "push: 2 file(s)\n"), r.stderr
+        )  # with its (empty) Chinese words
         self.assertEqual(run("pull", "wrong", "--rime-dir", rime_dir).returncode, 3)
         self.assertEqual(run("delete", "made-up-pass").returncode, 0)
         self.assertEqual(json.loads(self.call("GET", "/v1/files")[1])["files"], [])
@@ -211,7 +213,7 @@ class Server(unittest.TestCase):
         phone = "ぷるもに\tプルモニ語\t名詞\nぴよぽん\tピヨポン丸\t品詞なし\n"
         self.call("PUT", "/v1/files/phone-0004/mozc_dictionary.txt", phone.encode())
         self.call("PUT", "/v1/files/phone-0004/userdictionary.json", b"[]")
-        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 2))
+        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 2, 0))
         with open(db, "rb") as f:
             words = s.mozc_words(f.read())
         self.assertIn(("ぴよぽん", "ピヨポン丸", 0, ""), words)
@@ -223,7 +225,7 @@ class Server(unittest.TestCase):
             f.write(s.pb_field(2, mine) + s.pb_field(2, off))
         phone += "ぐるみん\tグルミン\t人名\n"
         self.call("PUT", "/v1/files/phone-0004/mozc_dictionary.txt", phone.encode())
-        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 1))
+        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 1, 0))
         with open(db, "rb") as f:
             stored = f.read()
         self.assertEqual(
@@ -359,6 +361,79 @@ class Server(unittest.TestCase):
         self.assertEqual(edited[("ぴぴ", "ピピ")].time, 1001)
         self.assertEqual(
             s.stamp(ahead, [("ぴぴ", "ピピ", 1, "")], 50), ahead, "unchanged"
+        )
+
+    def test_chinese_my_words_sync_between_two_pcs(self):
+        """#272: My words in custom_phrase.txt, after rime-ice's own phrases, sync by the Japanese
+        rules: an addition reaches the other PC, a deletion deletes it there, and adding it again
+        brings it back; rime-ice's phrases stay as they are."""
+        self.call("DELETE", "/v1/files")
+        client = s.Client(self.url, "alice", "made-up-pass")
+        pcs = [(d, *s.rime_installation(d)) for d in self.rime_dirs("zh-a", "zh-b")]
+        shipped = "# rime-ice made up\n你好\tnihao\t1\n"
+        for d, _, _ in pcs:
+            with open(os.path.join(d, s.PHRASES), "w", encoding="utf-8") as f:
+                f.write(shipped)
+
+        def edit(pc, *words):
+            s.save_rime_words(pc[0], words)
+
+        def sync(pc):
+            s.pull(client, pc[1], pc[2], rime_dir=pc[0])
+            s.push(client, pc[1], pc[2], rime_dir=pc[0])
+            return sorted(w for _, w, _, _ in s.rime_words(pc[0]) or [])
+
+        a, b = pcs
+        self.assertEqual(sync(a), [], "no My words yet: nothing to tell")
+        edit(a, ("pumoli", "噗莫里"))
+        edit(b, ("gulaxi", "咕拉西"))
+        sync(a), sync(b)
+        self.assertEqual(sync(a), ["咕拉西", "噗莫里"])
+        self.assertEqual(sync(b), ["咕拉西", "噗莫里"])
+        with open(os.path.join(b[0], s.PHRASES), encoding="utf-8") as f:
+            self.assertTrue(f.read().startswith(shipped + s.MARKER + "\n"))
+
+        edit(a, ("pumoli", "噗莫里"))
+        sync(a)
+        self.assertEqual(sync(b), ["噗莫里"], "deleted on a, so on b too")
+        self.assertEqual(sync(a), ["噗莫里"], "and b's file doesn't bring it back")
+
+        edit(b, ("pumoli", "噗莫里"), ("gulaxi", "咕拉西"))
+        sync(b)
+        self.assertEqual(sync(a), ["咕拉西", "噗莫里"], "added again on b")
+        self.assertEqual(
+            self.call("GET", "/v1/files/zh-a/" + s.ZH_FILE)[0], 200, "a Rime-named file"
+        )
+
+    def test_chinese_words_a_client_before_272_kept_come_in(self):
+        """A client before #272 stored another device's Chinese file as one of Rime's snapshots
+        without taking its words in: once upgraded, it takes them in all the same."""
+        self.call("DELETE", "/v1/files")
+        client = s.Client(self.url, "alice", "made-up-pass")
+        (d,) = self.rime_dirs("zh-c")
+        device, sync_dir = s.rime_installation(d)
+        other = (
+            "pumoli\t噗莫里\t名詞\n".encode()
+        )  # from that device's first sync: no time
+        self.call("PUT", "/v1/files/zh-d/" + s.ZH_FILE, other)
+        s.write_file(os.path.join(sync_dir, "zh-d", s.ZH_FILE), other)  # the old way
+        self.assertEqual(s.pull(client, device, sync_dir, rime_dir=d), (1, 0, 1))
+        self.assertEqual(s.rime_words(d), [("pumoli", "噗莫里", s.NOUN, "")])
+
+    def test_chinese_clock_ahead_and_no_phrases_file(self):
+        """A deletion after a word dated in the future still wins; a PC with no My words yet reads as
+        having none to tell, not as having deleted them all."""
+        (d,) = self.rime_dirs("zh-e")
+        own = os.path.join(d, "own.txt")
+        self.assertIsNone(s.rime_words(d))
+        ahead = "pumoli\t噗莫里\t名詞\t\t5000\n".encode()
+        self.assertEqual(s.rime_take_in(d, own, ahead, None, now=100), 1)
+        s.save_rime_words(d, [])
+        own_entries = s.own_file(own, s.rime_words(d), now=200)
+        self.assertEqual(own_entries[("pumoli", "噗莫里")].time, 5001)
+        self.assertTrue(own_entries[("pumoli", "噗莫里")].deleted)
+        self.assertEqual(
+            s.rime_take_in(d, own, ahead, None, now=300), 0, "stays deleted"
         )
 
     def test_old_clients(self):

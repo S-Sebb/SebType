@@ -2,6 +2,9 @@ package dev.sebb.sebtype.sync
 
 import android.content.Context
 import android.provider.UserDictionary
+import dev.sebb.sebtype.chinese.ChineseMyWords
+import dev.sebb.sebtype.chinese.ChineseWord
+import dev.sebb.sebtype.core.ChineseWordSync
 import dev.sebb.sebtype.core.MozcWordSync
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -20,14 +23,15 @@ import java.io.IOException
  * The personal dictionaries' part of the sync (#14). Each device's folder on the server holds its whole
  * Japanese dictionary in Mozc's own export format, which Mozc on a PC reads, with each word's last change and
  * the words deleted on it ([MozcWordSync], #273), and its other words (English) in FUTO's `userdictionary.json`
- * format. A Japanese word's newest change wins, a deletion too. Of the other words a device takes in only those
+ * format, and its 中文 My words ([ChineseWordSync], #272). A Japanese or 中文 word's newest change wins, a
+ * deletion too. Of the other words a device takes in only those
  * another device's file gained since the copy it took last time, so a word deleted here doesn't come back from
  * a device that still has it, and nothing of them is deleted here.
  */
 object PersonalDictionarySync {
     const val MOZC_FILE = "mozc_dictionary.txt"
     const val WORDS_FILE = "userdictionary.json"
-    val FILES = setOf(MOZC_FILE, WORDS_FILE)
+    val FILES = setOf(MOZC_FILE, WORDS_FILE, ChineseWordSync.FILE)
 
     private fun japanese(word: PersonalWord): JapanesePersonalWord? =
         if(word.locale?.substringBefore('_') == "ja") decodeJapanesePersonalWord(word) else null
@@ -92,14 +96,28 @@ object PersonalDictionarySync {
     }
 
     private fun ownFile(context: Context) = File(context.noBackupFilesDir, "sync/$MOZC_FILE")
+    private fun ownChinese(context: Context) = File(context.noBackupFilesDir, "sync/${ChineseWordSync.FILE}")
+    private fun chineseWords(context: Context) = ChineseMyWords.saved(context)?.map { it.pinyin to it.word }
+
+    /** Whether the copies kept of other devices' 中文 files count, read before a sync ([ChineseWordSync.copiesCount]). */
+    fun chineseCopiesCount(context: Context) = ChineseWordSync.copiesCount(ownChinese(context))
 
     fun snapshots(context: Context): Map<String, ByteArray> {
         val words = UserDictionaryIO(context).get()
-        return mapOf(MOZC_FILE to MozcWordSync.format(ownMozc(ownFile(context), words).values), WORDS_FILE to wordsFile(words))
+        return mapOf(
+            MOZC_FILE to MozcWordSync.format(ownMozc(ownFile(context), words).values), WORDS_FILE to wordsFile(words),
+            ChineseWordSync.FILE to MozcWordSync.format(ChineseWordSync.ownEntries(ownChinese(context), chineseWords(context)).values),
+        )
     }
 
-    /** Takes another device's changes into this phone's personal dictionary. */
-    fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
+    /** Takes another device's changes into this phone's personal dictionaries. */
+    suspend fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
+        if(name == ChineseWordSync.FILE) {
+            val changes = ChineseWordSync.changes(ownChinese(context), chineseWords(context), new, old)
+            changes.words?.let { words -> ChineseMyWords.write(context, words.map { ChineseWord(it.second, it.first) }) }
+            changes.save()
+            return
+        }
         val io = UserDictionaryIO(context)
         if(name != MOZC_FILE) {
             newWords(new, old, io.get()).takeIf { it.isNotEmpty() }?.let { io.put(it) }

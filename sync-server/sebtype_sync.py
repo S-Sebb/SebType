@@ -4,7 +4,8 @@
 Rime syncs learned words through a folder, `sync/<installation id>/`: every device writes only its own
 folder and merges in everyone else's, so a server that keeps one copy of each device's folder per user
 is all sync needs (study report on #3, section 6). The same folders carry each device's Japanese and
-English personal dictionaries (#14); Japanese deletions and edits sync too (#273). The server stores these files and the phone's crash reports (#33)
+English personal dictionaries (#14), and its Chinese My words (#272); Japanese and Chinese deletions
+and edits sync too (#273). The server stores these files and the phone's crash reports (#33)
 and nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
 HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give it a certificate.
 
@@ -52,6 +53,10 @@ RIME_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.userdb\.txt")
 # A device's Japanese personal dictionary in Mozc's export format, and its other (English) words in
 # FUTO's userdictionary.json format, which only phones have.
 MOZC_FILE, WORDS_FILE = "mozc_dictionary.txt", "userdictionary.json"
+# A device's Chinese My words (#272), in the Japanese file's format. Named like Rime's snapshots so
+# servers and clients from before #272 store and pass it on unchanged; Rime takes in only the
+# snapshots of its own user dictionaries (rime_ice.userdb.txt), so it never reads this one.
+ZH_FILE = "zh_my_words.userdb.txt"
 MAX_FILE = 64 << 20  # a userdb snapshot of years of typing is a few MB
 CRASH = re.compile(r"crash-\d{8}-\d{6}-[0-9a-f]{6}\.txt")
 MAX_CRASH = 256 << 10  # a report is a stack trace and 200 log lines, a few dozen KB
@@ -594,19 +599,22 @@ def merge(own, new, old):
     return changes
 
 
-def own_mozc(db_path, own_path, now=None):
-    """This device's sync file, kept at own_path, brought up to date with its Mozc dictionary."""
+def own_file(own_path, words, now=None):
+    """This device's sync file, kept at own_path, brought up to date with its words (None: none)."""
     try:
         with open(own_path, "rb") as f:
             own = parse_entries(f.read())
     except FileNotFoundError:
         own = None
-    db = read_mozc(db_path)
-    own = stamp(
-        own, None if db is None else mozc_words(db), now or time.time_ns() // 10**6
-    )
+    own = stamp(own, words, now or time.time_ns() // 10**6)
     write_file(own_path, format_entries(own))
     return own
+
+
+def own_mozc(db_path, own_path, now=None):
+    """This device's Japanese sync file, kept at own_path, brought up to date with Mozc's dictionary."""
+    db = read_mozc(db_path)
+    return own_file(own_path, None if db is None else mozc_words(db), now)
 
 
 @contextlib.contextmanager
@@ -662,6 +670,61 @@ def mozc_take_in(db_path, own_path, new, old, now=None):
         return len(changes)
 
 
+# --- Chinese My words (#272) ---
+#
+# The Configurator keeps them in Rime's custom_phrase.txt after MARKER, as word<TAB>pinyin lines, after
+# rime-ice's own phrases (pc/configurator/src/rime.rs; the phones the same). They sync by the rules
+# above, a word being its pinyin and spelling: in the sync file pinyin<TAB>word<TAB>名詞, the part of
+# speech only filling Mozc's column.
+
+PHRASES, MARKER = "custom_phrase.txt", "# SebType: My words"
+
+
+def rime_words(rime_dir):
+    """(pinyin, word, part of speech, comment) of the My words in custom_phrase.txt; None when
+    there is no My words section (never saved), so a missing file isn't read as all deleted."""
+    try:
+        with open(os.path.join(rime_dir, PHRASES), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return None
+    if MARKER not in lines:
+        return None
+    words = []
+    for line in lines[lines.index(MARKER) + 1 :]:
+        f = line.split("\t")
+        if len(f) >= 2 and f[0] and f[1]:
+            words.append((f[1], f[0], NOUN, ""))
+    return words
+
+
+def save_rime_words(rime_dir, words):
+    """Writes My words, (pinyin, word), after rime-ice's own phrases, as the Configurator does."""
+    path = os.path.join(rime_dir, PHRASES)
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+    head = lines[: lines.index(MARKER)] if MARKER in lines else lines
+    body = head + [MARKER] + [f"{w}\t{p}" for p, w in words]
+    write_file(path, "".join(line + "\n" for line in body).encode())
+
+
+def rime_take_in(rime_dir, own_path, new, old, now=None):
+    """Takes another device's Chinese file into My words and this device's file at own_path; returns
+    how many words were added or deleted. Rime reads My words when it deploys."""
+    have = rime_words(rime_dir)
+    own = own_file(own_path, have, now)
+    changes = merge(own, new, old)
+    if changes:
+        gone = {e.key for e in changes}
+        kept = [(p, w) for p, w, _, _ in have or [] if (p, w) not in gone]
+        save_rime_words(rime_dir, kept + [e.key for e in changes if not e.deleted])
+    write_file(own_path, format_entries(own))  # after My words, as for Mozc
+    return len(changes)
+
+
 # --- PC client: pull and push ---
 
 
@@ -673,24 +736,30 @@ def write_file(path, body):
     os.replace(tmp, path)
 
 
-def pull(client, device, sync_dir, mozc_db=None):
-    """Downloads every other device's changed files into sync_dir/<device>/, and with mozc_db takes
-    their Japanese words' changes into Mozc; returns (files, words added, changed or deleted)."""
-    count = words = 0
+def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
+    """Downloads every other device's changed files into sync_dir/<device>/, takes their Chinese words'
+    changes into rime_dir's My words and with mozc_db their Japanese words' into Mozc; returns
+    (files, Japanese words added, changed or deleted, Chinese ones)."""
+    count = words = chinese = 0
+    own_zh = os.path.join(sync_dir, device, ZH_FILE)
+    # A client from before #272 kept copies of other devices' Chinese files without taking their words
+    # in: until this device has its own file, they are not what it took in last time.
+    zh_copies = os.path.isfile(own_zh)
     for f in client.files():
         name = f["name"]
-        # The copy kept of a Mozc file is what its next download is compared with: it is taken only
-        # along with its words. Nothing on a PC uses another device's English words.
+        # The copy kept of a Mozc or Chinese file is what its next download is compared with: it is
+        # taken only along with its words. Nothing on a PC uses another device's English words.
         if (
             f["device"] == device
             or not (NAME.fullmatch(f["device"]) and synced(name))
             or name == WORDS_FILE
             or (name == MOZC_FILE and not mozc_db)
+            or (name == ZH_FILE and not rime_dir)
         ):
             continue
         path = os.path.join(sync_dir, f["device"], name)
         old = None
-        if os.path.isfile(path):
+        if os.path.isfile(path) and (name != ZH_FILE or zh_copies):
             with open(path, "rb") as fh:
                 old = fh.read()
             if hashlib.sha256(old).hexdigest() == f["sha256"]:
@@ -699,17 +768,24 @@ def pull(client, device, sync_dir, mozc_db=None):
         if name == MOZC_FILE:
             own = os.path.join(sync_dir, device, MOZC_FILE)
             words += mozc_take_in(mozc_db, own, body, old)
+        elif name == ZH_FILE:
+            chinese += rime_take_in(rime_dir, own_zh, body, old)
         write_file(path, body)
         count += 1
-    return count, words
+    return count, words, chinese
 
 
-def push(client, device, sync_dir, mozc_db=None):
-    """Uploads this device's changed snapshots (learned words, not Rime's yaml backups) and with
-    mozc_db its Japanese words (its own Mozc file, kept in its folder); returns how many."""
+def push(client, device, sync_dir, mozc_db=None, rime_dir=None):
+    """Uploads this device's changed snapshots (learned words, not Rime's yaml backups), with rime_dir
+    its Chinese words and with mozc_db its Japanese words (its own files, kept in its folder); returns
+    how many."""
     remote = {f["name"]: f["sha256"] for f in client.files() if f["device"] == device}
     files = {}
     folder = os.path.join(sync_dir, device)
+    if rime_dir:
+        own_file(
+            os.path.join(folder, ZH_FILE), rime_words(rime_dir)
+        )  # read with the snapshots
     for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
         if RIME_FILE.fullmatch(name):
             with open(os.path.join(folder, name), "rb") as f:
@@ -742,10 +818,18 @@ def run_client(args):
             client.request("DELETE", "/v1/files")
             print("delete: done")
         elif args.command == "pull":
-            files, words = pull(client, device, sync_dir, args.mozc_db)
-            print(f"pull: {files} file(s), {words} word change(s) for Mozc")
+            files, words, chinese = pull(
+                client, device, sync_dir, args.mozc_db, args.rime_dir
+            )
+            # The Configurator reads the counts by their place (sync.rs).
+            print(
+                f"pull: {files} file(s), {words} word change(s) for Mozc, "
+                f"{chinese} for Rime"
+            )
         else:
-            print(f"push: {push(client, device, sync_dir, args.mozc_db)} file(s)")
+            print(
+                f"push: {push(client, device, sync_dir, args.mozc_db, args.rime_dir)} file(s)"
+            )
     except urllib.error.HTTPError as e:
         print(f"{args.command}: the server said {e.code}", file=sys.stderr)
         sys.exit(3 if e.code in (401, 403) else 1)

@@ -1,8 +1,12 @@
 package dev.sebb.sebtype.sync
 
+import dev.sebb.sebtype.core.ChineseWordSync
 import dev.sebb.sebtype.core.MozcWordSync
 import org.futo.inputmethod.latin.uix.PersonalWord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -112,5 +116,57 @@ class PersonalDictionarySyncTest {
         val file = MozcWordSync.format(MozcWordSync.stamp(own, listOf(MozcWordSync.Entry("ぴぴ", "ピピ丸", "人名", "made up")), 1234).values)
         assertEquals("#-\tもふ\tモフ\t\t\t1234\nぴぴ\tピピ丸\t人名\tmade up\t1234\n", String(file))
         assertEquals(file.toList(), MozcWordSync.format(MozcWordSync.parse(file).values).toList())
+    }
+
+    /** One device's 中文 My words (#272), as (pinyin, word); null before they were first saved. */
+    private inner class ChineseDevice(var words: List<Pair<String, String>>?) {
+        val own = tmp.newFile().apply { delete() }
+        var copy: ByteArray? = null
+
+        fun file(now: Long) = MozcWordSync.format(ChineseWordSync.ownEntries(own, words, now).values)
+
+        fun takeIn(other: ByteArray) {
+            val changes = ChineseWordSync.changes(own, words, other, copy)
+            changes.words?.let { words = it }
+            changes.save()
+            copy = other
+        }
+    }
+
+    @Test
+    fun chineseWordsAddDeleteAndComeBack() {
+        val a = ChineseDevice(listOf("pumoli" to "噗莫里"))
+        val b = ChineseDevice(null)
+        assertEquals("never saved: none to tell", "", String(b.file(1)))
+        b.takeIn(a.file(1))
+        a.takeIn(b.file(2))
+        assertEquals(listOf("pumoli" to "噗莫里"), b.words)
+
+        a.words = listOf()
+        b.takeIn(a.file(10))
+        assertEquals("deleted on a, so on b", listOf<Pair<String, String>>(), b.words)
+        a.takeIn(b.file(11))
+        assertEquals(listOf<Pair<String, String>>(), a.words)
+
+        b.words = listOf("pumoli" to "噗莫里")
+        a.takeIn(b.file(20))
+        assertEquals("added again on b", listOf("pumoli" to "噗莫里"), a.words)
+        // The PC's format (sync-server/test_sebtype_sync.py reads it the same).
+        assertEquals("pumoli\t噗莫里\t名詞\t\t20\n", String(b.file(30)))
+    }
+
+    @Test
+    fun chineseClockAheadAndOldClientCopies() {
+        val phone = ChineseDevice(listOf())
+        assertFalse("before its own file, copies from an old client don't count", ChineseWordSync.copiesCount(phone.own))
+        phone.takeIn("pumoli\t噗莫里\t名詞\t\t5000\n".toByteArray()) // from a device whose clock ran ahead
+        assertTrue(ChineseWordSync.copiesCount(phone.own))
+        assertEquals(listOf("pumoli" to "噗莫里"), phone.words)
+        phone.words = listOf()
+        val deleted = ChineseWordSync.ownEntries(phone.own, phone.words, 100).values.single()
+        assertEquals(5001L, deleted.time)
+        assertTrue(deleted.deleted)
+        val unchanged = ChineseWordSync.changes(phone.own, phone.words, "pumoli\t噗莫里\t名詞\t\t5000\n".toByteArray(), null)
+        assertNull("stays deleted", unchanged.words)
     }
 }

@@ -12,6 +12,9 @@ const SCHEMA_PATCH: &str = "rime_ice.custom.yaml";
 const DEFAULT_PATCH: &str = "default.custom.yaml";
 const PHRASES: &str = "custom_phrase.txt";
 const MARKER: &str = "# SebType: My words"; // as the phone writes it (ChineseMyWords)
+/// The sync's record of My words (sebtype_sync.py's ZH_FILE, #272): named like Rime's snapshots, but
+/// not learned words, so forget keeps it.
+const SYNCED_WORDS: &str = "zh_my_words.userdb.txt";
 
 // rime-ice's switches, by their place in rime_ice.schema.yaml.
 const ASCII_PUNCT: &str = "switches/@1/reset";
@@ -227,6 +230,20 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     write(&path, &text)
 }
 
+/// Adds a word to My words as they are now: the sync may have changed them since the window read them.
+pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
+    let mut all = words(dir);
+    all.push(word);
+    save_words(dir, &all)
+}
+
+/// Removes a word from My words as they are now.
+pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
+    let mut all = words(dir);
+    all.retain(|w| w != word);
+    save_words(dir, &all)
+}
+
 /// Deletes what Rime learned (its user dictionaries and their sync snapshots); the settings and the
 /// user's own words stay. Rime must restart (redeploy) afterwards.
 pub fn forget(dir: &Path) -> io::Result<usize> {
@@ -237,6 +254,7 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
             if name.ends_with(".userdb") && path.is_dir() {
                 fs::remove_dir_all(&path)?;
                 *n += 1;
+            } else if name == SYNCED_WORDS {
             } else if name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct") {
                 fs::remove_file(&path)?;
                 *n += 1;
@@ -336,6 +354,15 @@ mod tests {
         }];
         save_words(&d, &w).unwrap();
         assert_eq!(words(&d), w);
+        // Add and remove work on the file as the sync left it, not on the window's list.
+        let other = Word {
+            word: "噗莫".into(),
+            pinyin: "pumo".into(),
+        };
+        add_word(&d, other.clone()).unwrap();
+        assert_eq!(words(&d), [w[0].clone(), other.clone()]);
+        remove_word(&d, &w[0]).unwrap();
+        assert_eq!(words(&d), [other]);
         save_words(&d, &[]).unwrap();
         assert_eq!(
             read(&d.join(PHRASES)),
@@ -350,7 +377,12 @@ mod tests {
         fs::create_dir_all(d.join("rime_ice.userdb")).unwrap();
         fs::create_dir_all(d.join("sync/abc")).unwrap();
         fs::write(d.join("sync/abc/rime_ice.userdb.txt"), "x").unwrap();
+        fs::write(d.join("sync/abc").join(SYNCED_WORDS), "x").unwrap();
         assert_eq!(forget(&d).unwrap(), 2);
+        assert!(
+            d.join("sync/abc").join(SYNCED_WORDS).exists(),
+            "My words' sync record stays"
+        );
         assert!(!d.join("rime_ice.userdb").exists() && d.join(PHRASES).exists());
         fs::remove_dir_all(&d).unwrap();
     }

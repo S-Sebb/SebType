@@ -1,5 +1,5 @@
 //! Sync with the user's own server (#12, #180), as the phone does (#14): 中文's learned words through
-//! Rime's sync folder, and the Japanese dictionary, by sync-server/sebtype_sync.py's own pull and push.
+//! Rime's sync folder, its My words (#272) and the Japanese dictionary, by sync-server/sebtype_sync.py's own pull and push.
 //! The server and username are kept in SebType's folder (sync.json, with the last sync's outcome); the
 //! password only in the system's keyring (Secret Service, Credential Manager), handed to the client on
 //! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour.
@@ -156,13 +156,17 @@ fn client(s: &Sync, args: &[&std::ffi::OsStr]) -> Result<String, Failed> {
     }
 }
 
-/// How many words pull changed in Mozc's dictionary, from its "pull: N file(s), M word change(s) for Mozc".
-fn new_mozc_words(pulled: &str) -> usize {
-    pulled
-        .split(", ")
-        .nth(1)
-        .and_then(|w| w.split(' ').next()?.parse().ok())
-        .unwrap_or(0)
+/// How many words pull changed in Mozc's dictionary and in Chinese My words, from its
+/// "pull: N file(s), M word change(s) for Mozc, K for Rime".
+fn word_changes(pulled: &str) -> (usize, usize) {
+    let count = |i| {
+        pulled
+            .split(", ")
+            .nth(i)
+            .and_then(|w| w.split(' ').next()?.trim().parse().ok())
+            .unwrap_or(0)
+    };
+    (count(1), count(2))
 }
 
 /// One sync, as the phone's: the other devices' changes come down, Rime merges them and writes this
@@ -179,8 +183,12 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
     }
     let push = [&["push".as_ref()], &args[..]].concat();
     client(s, &push)?;
-    if new_mozc_words(&pulled) > 0 {
+    let (mozc, rime) = word_changes(&pulled);
+    if mozc > 0 {
         platform::restart_mozc(); // Mozc reads its dictionary when it starts
+    }
+    if rime > 0 {
+        let _ = platform::redeploy_rime(); // and Rime My words when it deploys
     }
     Ok(())
 }
@@ -328,6 +336,11 @@ mod tests {
             mozc_pos: None,
         };
         mozc::save_words(&mozc_dir, &[pc_ja]).unwrap();
+        let pc_zh = rime::Word {
+            word: "莫噗试词".into(),
+            pinyin: "mopushici".into(),
+        };
+        rime::save_words(&rime_dir, &[pc_zh]).unwrap();
 
         // Another device's words on the server.
         http("DELETE", "/v1/files", "");
@@ -340,6 +353,11 @@ mod tests {
             "PUT",
             "/v1/files/sebtype-test-phone/mozc_dictionary.txt",
             "ぷるもて\tプルモ試験語\t名詞\n",
+        );
+        http(
+            "PUT",
+            "/v1/files/sebtype-test-phone/zh_my_words.userdb.txt",
+            "pulumoci\t普噜莫词\t名詞\t\t1000\n",
         );
 
         keyring().unwrap().set_password(&password).unwrap();
@@ -357,6 +375,8 @@ mod tests {
         assert!(get(&format!("/v1/files/{device}/rime_ice.userdb.txt")).contains("莫福姬"));
         assert!(get(&format!("/v1/files/{device}/mozc_dictionary.txt"))
             .contains("もふてすと\tモフ試験語"));
+        assert!(get(&format!("/v1/files/{device}/zh_my_words.userdb.txt"))
+            .contains("mopushici\t莫噗试词"));
         // A word from another device reaches the PC's Rime (merged into its learned words, which its
         // own snapshot is written from) and Mozc.
         assert!(
@@ -369,6 +389,10 @@ mod tests {
                 .iter()
                 .any(|w| w.word == "プルモ試験語"),
             "Mozc got the phone's word, in My words (#273)"
+        );
+        assert!(
+            rime::words(&rime_dir).iter().any(|w| w.word == "普噜莫词"),
+            "Chinese My words got the phone's word (#272)"
         );
 
         // A wrong password is the status line's, and touches nothing.
@@ -445,14 +469,14 @@ mod tests {
     }
 
     #[test]
-    fn mozc_words_come_from_pulls_line() {
+    fn word_changes_come_from_pulls_line() {
         assert_eq!(
-            new_mozc_words("pull: 2 file(s), 3 new word(s) for Mozc\n"),
-            3
+            word_changes("pull: 2 file(s), 3 word change(s) for Mozc, 1 for Rime\n"),
+            (3, 1)
         );
         assert_eq!(
-            new_mozc_words("pull: 0 file(s), 0 new word(s) for Mozc\n"),
-            0
+            word_changes("pull: 0 file(s), 0 word change(s) for Mozc, 0 for Rime\n"),
+            (0, 0)
         );
     }
 }

@@ -49,9 +49,10 @@ fun ChineseWordsScreen(navController: NavHostController) {
 
     LaunchedEffect(Unit) { words = withContext(Dispatchers.IO) { ChineseMyWords.read(context) } }
 
-    fun save(newWords: List<ChineseWord>) {
-        words = newWords
-        scope.launch { ChineseMyWords.write(context, newWords) }
+    // On the words as they are when saved: a sync may have changed them since the screen read them (#272).
+    fun change(edit: (List<ChineseWord>) -> List<ChineseWord>) {
+        words = edit(words.orEmpty())
+        scope.launch { ChineseMyWords.write(context, edit(withContext(Dispatchers.IO) { ChineseMyWords.read(context) })) }
     }
 
     // Lazy, with each word drawing its slice of the card, so long lists open and scroll smoothly (#87).
@@ -87,12 +88,11 @@ fun ChineseWordsScreen(navController: NavHostController) {
             original = original,
             onDismiss = { editing = null },
             onSave = { new ->
-                val list = words.orEmpty()
-                save(if(original.word.isEmpty()) list + new else list.map { if(it == original) new else it })
+                change { list -> if(original.word.isEmpty()) list + new else list.map { if(it == original) new else it } }
                 editing = null
             },
             onDelete = if(original.word.isEmpty()) null else {{
-                save(words.orEmpty() - original)
+                change { it - original }
                 editing = null
             }}
         )

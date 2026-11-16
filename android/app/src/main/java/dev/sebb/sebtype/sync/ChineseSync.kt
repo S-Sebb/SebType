@@ -32,6 +32,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.HttpsURLConnection
 import dev.sebb.sebtype.chinese.RimeIceSetup
+import dev.sebb.sebtype.core.ChineseWordSync
 import org.futo.inputmethod.engine.general.ChineseIME
 
 /** The user's own sync server and login (#12, Decisions #2: bring your own server, its own login). */
@@ -288,11 +289,12 @@ object ChineseSync {
         val sync = File(user(context), "sync")
         var remote = server.list()
         val ownBefore = installationId(context)
+        val chineseCopies = PersonalDictionarySync.chineseCopiesCount(context)
         for(file in remote) {
             val dictionary = file.name in PersonalDictionarySync.FILES
             if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || FILE.matches(file.name))) continue
             val local = File(sync, "${file.device}/${file.name}")
-            val old = local.takeIf { it.isFile }?.readBytes()
+            val old = local.takeIf { it.isFile && (file.name != ChineseWordSync.FILE || chineseCopies) }?.readBytes()
             if(old != null && sha256(old) == file.sha256) continue
             val bytes = server.download(file)
             // The copy kept here is what the next download is compared with, so it is saved after the words.

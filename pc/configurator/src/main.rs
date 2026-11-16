@@ -539,13 +539,16 @@ fn main() -> Result<(), slint::PlatformError> {
                 toast(&weak.unwrap(), say(Msg::PinyinLettersOnly));
                 return false;
             }
-            ui.zh_words.push(ZhWord {
+            let w = rime::Word {
                 word: word.trim().into(),
-                code: pinyin.into(),
+                pinyin,
+            };
+            ui.zh_words.push(ZhWord {
+                word: w.word.as_str().into(),
+                code: w.pinyin.as_str().into(),
             });
-            let words = zh_words(&ui);
             run(Box::new(move || {
-                rime::save_words(&platform::rime_dir(), &words).map_err(err)?;
+                rime::add_word(&platform::rime_dir(), w).map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::SavedZh))
             }));
@@ -555,10 +558,13 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_remove_zh_word({
         let (ui, run) = (ui.clone(), run.clone());
         move |i| {
-            ui.zh_words.remove(i as usize);
-            let words = zh_words(&ui);
+            let w = ui.zh_words.remove(i as usize);
+            let w = rime::Word {
+                word: w.word.into(),
+                pinyin: w.code.into(),
+            };
             run(Box::new(move || {
-                rime::save_words(&platform::rime_dir(), &words).map_err(err)?;
+                rime::remove_word(&platform::rime_dir(), &w).map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::DeletedZh))
             }));

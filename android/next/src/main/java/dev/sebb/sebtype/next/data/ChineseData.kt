@@ -1,6 +1,7 @@
 package dev.sebb.sebtype.next.data
 
 import android.content.Context
+import dev.sebb.sebtype.core.ChineseWordSync
 import dev.sebb.sebtype.next.Engines
 import java.io.File
 import java.io.InputStream
@@ -26,10 +27,13 @@ object ChineseData {
 
     fun isValid(word: String, pinyin: String) = word.isNotBlank() && '\t' !in word && '\n' !in word && PINYIN.matches(pinyin)
 
-    fun myWords(context: Context): List<ChineseWord> {
-        val file = File(Engines.userDir(context), PHRASES)
-        if (!file.isFile) return emptyList()
-        return file.readLines().dropWhile { it != MARKER }.drop(1).mapNotNull { line ->
+    fun myWords(context: Context): List<ChineseWord> = savedWords(context).orEmpty()
+
+    /** The words, or null before they were first saved here (the sync then has none to tell, #272). */
+    fun savedWords(context: Context): List<ChineseWord>? {
+        val lines = File(Engines.userDir(context), PHRASES).takeIf { it.isFile }?.readLines() ?: return null
+        if (MARKER !in lines) return null
+        return lines.dropWhile { it != MARKER }.drop(1).mapNotNull { line ->
             line.split('\t').takeIf { it.size >= 2 }?.let { ChineseWord(it[0], it[1]) }
         }
     }
@@ -45,10 +49,10 @@ object ChineseData {
             })
         }, done = done)
 
-    /** Forgets what Rime learned (its user dictionaries and their sync snapshots); the user's own words stay. */
+    /** Forgets what Rime learned (its user dictionaries and their sync snapshots); the user's own words (and the sync's copies of them) stay. */
     fun forget(context: Context, done: (Boolean) -> Unit = {}) = Engines.whileChineseStopped(context, block = {
         Engines.userDir(context).walkBottomUp()
-            .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") }
+            .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") && it.name != ChineseWordSync.FILE }
             .forEach { it.deleteRecursively() }
     }, done = done)
 

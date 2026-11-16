@@ -2,6 +2,7 @@ package dev.sebb.sebtype.chinese
 
 import android.content.Context
 import dev.sebb.sebtype.SebTypeConf
+import dev.sebb.sebtype.core.ChineseWordSync
 import java.io.File
 import java.io.InputStream
 import org.futo.inputmethod.engine.general.ChineseIME
@@ -41,10 +42,13 @@ object ChineseMyWords {
     fun isValid(word: String, pinyin: String) =
         word.isNotBlank() && '\t' !in word && '\n' !in word && PINYIN.matches(pinyin)
 
-    fun read(context: Context): List<ChineseWord> {
-        val file = userFile(context)
-        if(!file.isFile) return emptyList()
-        return file.readLines().dropWhile { it != MARKER }.drop(1).mapNotNull { line ->
+    fun read(context: Context): List<ChineseWord> = saved(context).orEmpty()
+
+    /** The words, or null before they were first saved here (the sync then has none to tell, #272). */
+    fun saved(context: Context): List<ChineseWord>? {
+        val lines = userFile(context).takeIf { it.isFile }?.readLines() ?: return null
+        if(MARKER !in lines) return null
+        return lines.dropWhile { it != MARKER }.drop(1).mapNotNull { line ->
             line.split('\t').takeIf { it.size >= 2 }?.let { ChineseWord(it[0], it[1]) }
         }
     }
@@ -71,12 +75,13 @@ object ChineseMyWords {
 object ChineseLearnedWords {
     /**
      * Deletes Rime's learned words (its user dictionaries and their sync snapshots). The deployed
-     * build, the settings patch and the user's own words stay, so no new deploy is needed.
+     * build, the settings patch and the user's own words (and the sync's copies of them) stay, so no
+     * new deploy is needed.
      */
     suspend fun forget(context: Context) {
         RimeIceSetup.whileStopped(context) {
             ChineseIME.getUser(context).walkBottomUp()
-                .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") }
+                .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") && it.name != ChineseWordSync.FILE }
                 .forEach { it.deleteRecursively() }
         }
     }
