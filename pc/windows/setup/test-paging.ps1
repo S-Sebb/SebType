@@ -156,19 +156,28 @@ try {
       # A page that needs more room than the first one's width wraps: taller, same width.
       if ($o -eq 'across') {
         Check "$tag-wrap" {
-          foreach ($w in 'women', 'zhongguo', 'shijie', 'xiexie', 'hello', 'a', 'yi') {
-            Word $w; $first = Rect (Win); $last = Hash
-            for ($n = 2; $n -le 30; $n++) {
-              Keys PageDown; $r = Rect (Win); $h = Hash
-              if ($h -eq $last) { break }; $last = $h
-              if ($r.B - $r.T -gt $first.B - $first.T) {
-                $null = Shot "$tag-4-wrapped"
-                if ($r.R - $r.L -ne $first.R - $first.L) { throw "'$w' page $n wrapped but its width changed" }
-                return "'$w' page ${n}: $($first.B - $first.T) -> $($r.B - $r.T) px tall, $($r.R - $r.L) px wide"
+          # Chinese words, then Japanese ones (converted with two spaces), whose comments vary more by page.
+          $words = @('women', 'zhongguo', 'shijie', 'xiexie', 'hello', 'a', 'yi' | ForEach-Object { , @('zh', $_) }) +
+                   @('kawaii', 'hai', 'kami', 'nihongo' | ForEach-Object { , @('ja', $_) })
+          $cur = 'zh'
+          try {
+            foreach ($lw in $words) {
+              $lang, $w = $lw
+              if ($lang -ne $cur) { Field $lang; $cur = $lang }
+              if ($lang -eq 'zh') { Word $w } else { Keys Escape Escape Escape; $tsf::Clear(); TypeText $w; Keys space space; Start-Sleep -Milliseconds 600 }
+              $first = Rect (Win); $last = Hash
+              for ($n = 2; $n -le 30; $n++) {
+                Keys PageDown; $r = Rect (Win); $h = Hash
+                if ($h -eq $last) { break }; $last = $h
+                if ($r.B - $r.T -gt $first.B - $first.T + 10) {  # a row more, not a taller glyph
+                  $null = Shot "$tag-4-wrapped"
+                  if ($r.R - $r.L -ne $first.R - $first.L) { throw "'$w' page $n wrapped but its width changed" }
+                  return "'$w' page ${n}: $($first.B - $first.T) -> $($r.B - $r.T) px tall, $($r.R - $r.L) px wide"
+                }
               }
             }
-          }
-          throw 'no page of the words tried wrapped'
+            throw 'no page of the words tried wrapped'
+          } finally { Keys Escape Escape Escape; Field zh }
         }
       }
       # At the screen's right edge the window moves left; at its bottom it goes above the text; always on
