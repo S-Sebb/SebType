@@ -17,15 +17,23 @@ BUILD_MEMORY_GB=8
 # (build_host_ready, build_remotely). There, a shared machine, a build gets half its 96 threads and 32 GB,
 # and the Android build's tools are in the scratch cache (tools/android-tools.sh).
 BUILD_HOST=${SEBTYPE_BUILD_HOST:-yanglab16}
-if [[ $(hostname -s) == yanglab16 ]]; then
-  BUILD_HOST=local BUILD_JOBS=$(( $(nproc) / 2 )) GRADLE_WORKERS=$(( $(nproc) / 2 )) BUILD_MEMORY_GB=32
+# The build container sees SEBTYPE_HOST through --env-host (fedora_container): its own host name is the
+# container's, and it has no hostname command.
+if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
+  export SEBTYPE_HOST
+  BUILD_HOST=local BUILD_JOBS=$(( $(nproc) / 2 )) BUILD_MEMORY_GB=32
+  # The build container is already capped to that half, and nproc there counts only it.
+  [[ -f /run/.containerenv ]] && BUILD_JOBS=$(nproc)
+  GRADLE_WORKERS=$BUILD_JOBS
   export ANDROID_HOME=$SCRATCH/cache/android-sdk JAVA_HOME_21=$SCRATCH/cache/jdks/jdk-21.0.13+9 \
     GRADLE_USER_HOME=$SCRATCH/cache/gradle ANDROID_USER_HOME=$SCRATCH/cache/android-user \
     SCCACHE_DIR=$SCRATCH/cache/sccache CARGO_HOME=$SCRATCH/cache/cargo PATH=$SCRATCH/cache/bin:$PATH
   # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user.
-  podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
-  BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
-  export BAZEL_CACHE
+  if [[ ! -f /run/.containerenv ]]; then  # inside the build container it comes from the host
+    podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
+    BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
+    export BAZEL_CACHE
+  fi
 fi
 # Bazel's output roots and caches (Mozc's builds).
 BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
@@ -40,7 +48,7 @@ build_host_ready() {
   local try=(ssh -o ConnectTimeout=10 -o BatchMode=yes "$BUILD_HOST" true)
   "${try[@]}" 2>/dev/null && return
   gtk-launch ZSTray >/dev/null 2>&1 && sleep 20 && "${try[@]}" 2>/dev/null && return
-  echo "build: $BUILD_HOST unreachable, also after starting Zscaler; building on $(hostname -s) (SEBTYPE_BUILD_HOST=local skips the try)" >&2
+  echo "build: $BUILD_HOST unreachable, also after starting Zscaler; building on $(uname -n) (SEBTYPE_BUILD_HOST=local skips the try)" >&2
   BUILD_HOST=local
   return 1
 }
@@ -80,7 +88,7 @@ build_remotely() {
 # Elsewhere, to nothing: the build runs on the host.
 fedora_container() {
   container=()
-  [[ $(hostname -s) == yanglab16 ]] || return 0
+  [[ $SEBTYPE_HOST == yanglab16* && ! -f /run/.containerenv ]] || return 0
   local rpms='librime librime-lua opencc gcc gcc-c++ cargo rust fontconfig-devel python3 python-unversioned-command unzip zip diffutils findutils which'
   local image nas
   # shellcheck source=../linux/versions.sh
