@@ -31,6 +31,11 @@ hf oasst2 OpenAssistant/oasst2 179dd21fc55192153d94adb0e0ce8f69e222bf75 --includ
 hf oasst1 OpenAssistant/oasst1 fdf72ae0827c1cda404aff25b6603abec9e3399b --include '2023-04-12_oasst_prompts.messages.jsonl.gz' &
 hf soda allenai/soda fdc848ab0183208ea7808206c91c724414d0a071 --include '*.parquet' &
 hf dolly databricks/databricks-dolly-15k bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a --include '*.jsonl' &
+# The NUS SMS Corpus from its authors' repository (its licence is on NUS's ScholarBank record, SOURCES.md).
+[[ -s nus-sms/smsCorpus_en_2015.03.09_all.xml ]] ||
+  { mkdir -p nus-sms && curl -sfo nus-sms/en.zip \
+      https://raw.githubusercontent.com/kite1988/nus-sms-corpus/bf0a365170d324e61e4025edf363d400f1edd1a6/smsCorpus_en_xml_2015.03.09_all.zip &&
+    unzip -oq nus-sms/en.zip -d nus-sms && rm nus-sms/en.zip; } &
 [[ -s enwikinews-20261101.xml.bz2 ]] ||
   { curl -sfo wikinews.part https://dumps.wikimedia.org/enwikinews/20261101/enwikinews-20261101-pages-articles.xml.bz2 &&
     mv wikinews.part enwikinews-20261101.xml.bz2; } &
