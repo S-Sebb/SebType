@@ -4,7 +4,8 @@
 //
 // Threads: keys, the decoder and the ranking run on the caller's thread, as every engine's keys do. The
 // model loads on a worker thread once the first letter is typed (Decisions #2, 2026-11-11: until then the
-// decoder decides alone), and next words are computed there and posted back through READY (plan §3).
+// decoder decides alone), and next words are computed there and posted back through READY (plan §3);
+// a key that comes while they are being computed is ranked by the decoder alone, without waiting.
 #include <sebtype/hosts.h>
 
 #include <jni.h>
@@ -653,14 +654,16 @@ class English : public Engine {
 
     std::string committed = typed;
     std::vector<std::string> strip;
-    if (model_ready_) {
+    // A key never waits for the next words the worker is computing with the model: it goes by the
+    // decoder's rule alone, as before the model loaded (#241, the phone's engine thread).
+    std::unique_lock modelLock(modelMutex_, std::defer_lock);
+    if (model_ready_ && modelLock.try_lock()) {
       std::vector<sebtype_lm::Candidate> candidates;
       bool typedIsWord = false;
       for (const Word &w : results) {
         typedIsWord |= w.word == typed;
         candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
       }
-      std::lock_guard g(modelMutex_);
       const auto ranked = sebtype_lm::rank(*model_, context_, typed, candidates, typedIsWord);
       strip = ranked.strip, committed = ranked.committed;
     } else {
