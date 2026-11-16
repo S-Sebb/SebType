@@ -11,12 +11,15 @@ was downloaded at the revision below, and its licence was checked there (`fetch.
 | [OpenAssistant oasst1](https://huggingface.co/datasets/OpenAssistant/oasst1) prompts (2023-04-12) | nothing: read only to leave these messages out (the harness's chat sentences come from them) | Apache-2.0 | `fdf72ae0` |
 | [SODA](https://huggingface.co/datasets/allenai/soda) | the turns of its dialogues | CC BY 4.0, Allen Institute for AI | `fdc848ab` |
 | [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k) | instructions and responses | CC BY-SA 3.0, Databricks | `bdd27f4d` |
+| [NUS SMS Corpus](https://scholarbank.nus.edu.sg/handle/10635/137343) (2015-03-09 release, files from [its authors' repository](https://github.com/kite1988/nus-sms-corpus)) | real text messages, 55,835; `corpus.py` writes them, but `pack.py`'s MIX doesn't use them yet (#266) | CC BY 4.0, National University of Singapore (Tao Chen, Min-Yen Kan) | `bf0a3651` |
 | [English Wikinews](https://dumps.wikimedia.org/enwikinews/20261101/) (dump of 2026-11-01) | articles, without the 200 the harness's news sentences come from | CC BY 2.5, by Wikinews's contributors | `enwikinews-20261101-pages-articles.xml.bz2` |
 
 **The harness's test sets stay out** (`corpus.py`):
 
 - oasst1's prompts are left out of oasst2 by id and by text;
 - the 200 Wikinews articles in `android/test/english/sets/wikinews-articles.tsv` are left out by title;
+- the 1,400 NUS SMS messages in `android/test/english/sets/nus-sms-held-out.txt` are left out by id, and so is
+  every message with the same words;
 - any line from any source that shares 8 words in a row with a harness item is dropped (a whole item of 5 to 7
   words, too). `overlap.py` checks the corpus again afterwards.
 

@@ -22,7 +22,7 @@ mkdir -p "$out/english"; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 
 # Preflight
-for f in $here/sets/{clean,phone-typos,misspellings,next-chat,next-news}.tsv; do
+for f in $here/sets/{clean,phone-typos,misspellings,next-chat,next-news,next-texts,text-typos}.tsv; do
   [[ -s $f ]] || { echo "preflight: $f missing (make_sets.py makes it)"; exit 1; }
 done
 [[ -f android/app/src/main/res/raw/ml4_q6_k.gguf ]] || { echo "preflight: FUTO's model ml4_q6_k.gguf missing"; exit 1; }

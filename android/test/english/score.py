@@ -7,12 +7,12 @@
 
 Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key, and after
 how many keys the target was first in the top 3 (0: never).
-- Typo sets (phone-typos, misspellings): fixed = a space commits the intended word; top1 / top3 = the
+- Typo sets (phone-typos, text-typos, misspellings): fixed = a space commits the intended word; top1 / top3 = the
   intended word is first / among the first three suggestions.
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
-- next-chat, next-news: top3 = the next word is among the three predictions with nothing typed.
+- next-chat, next-news, next-texts: top3 = the next word is among the three predictions with nothing typed.
 Rates are percentages with one decimal. Latency: per key p50 / p95 and per word (all its keys) p50 / p95,
 in milliseconds, over the typed sets; per prediction for the next-word sets.
 """
@@ -78,6 +78,7 @@ def table(s1, s2):
     print("|---|" + "---|" * len(cols))
     for s, name in (
         ("phone-typos", "phone typos"),
+        ("text-typos", "phone typos in text messages"),
         ("misspellings", "Wikipedia misspellings"),
     ):
         row(
@@ -95,9 +96,13 @@ def table(s1, s2):
         "clean",
         lambda x, y: f"{x['changed']} %",
     )
-    for s, name in (("next-chat", "chat"), ("next-news", "news")):
+    for s, name in (
+        ("next-chat", "chat sentences"),
+        ("next-news", "news sentences"),
+        ("next-texts", "text messages"),
+    ):
         row(
-            f"Next word in the top 3, nothing typed ({name} sentences, {n(s)} words)",
+            f"Next word in the top 3, nothing typed ({name}, {n(s)} words)",
             s,
             lambda x, y: f"{x['top3']} %",
         )

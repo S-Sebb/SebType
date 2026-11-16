@@ -9,6 +9,7 @@ Text is folded to ASCII (accents dropped, typographic quotes and dashes made pla
 markup or other scripts are dropped. The English harness's test sentences stay out (android/test/english):
 - oasst1's initial prompts, the harness's chat pool, are left out of oasst2 entirely;
 - the 200 Wikinews articles the harness's news sentences come from are left out of the Wikinews dump;
+- the NUS SMS messages the harness's texting sets come from are left out, with every message of the same words;
 - any line, from any source, that shares 8 words in a row with a harness item is dropped (overlap.py checks).
 """
 
@@ -157,6 +158,20 @@ def dolly(path):
     return clean((r[k] for r in rows for k in ("instruction", "response")), min_words=2)
 
 
+def nus_sms(path, excluded_ids):
+    """The NUS SMS Corpus's messages; not in pack.py's MIX yet (#266). Its <#> and <EMAIL> placeholders fail BAD."""
+    msgs = [
+        (m.get("id"), m.findtext("text") or "")
+        for m in ET.parse(path).getroot().iter("message")
+    ]
+    words = lambda t: tuple(WORDS.findall(t.lower()))
+    held_out = {words(t) for i, t in msgs if i in excluded_ids}
+    return clean(
+        (t for i, t in msgs if i not in excluded_ids and words(t) not in held_out),
+        min_words=2,
+    )
+
+
 def wikinews(path, excluded_titles):
     import mwparserfromhell
 
@@ -214,6 +229,7 @@ def main(run):
         l.split("\t")[1]
         for l in (HARNESS / "wikinews-articles.tsv").read_text().splitlines()
     }
+    sms_ids = set((HARNESS / "nus-sms-held-out.txt").read_text().split())
 
     with mp.Pool(WORKERS, initializer=init_worker) as pool:
         jobs = {
@@ -233,6 +249,11 @@ def main(run):
             "wikinews": [
                 pool.apply_async(
                     wikinews, (src / "enwikinews-20261101.xml.bz2", titles)
+                )
+            ],
+            "nus-sms": [
+                pool.apply_async(
+                    nus_sms, (src / "nus-sms/smsCorpus_en_2015.03.09_all.xml", sms_ids)
                 )
             ],
             "soda": [

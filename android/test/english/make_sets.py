@@ -1,6 +1,7 @@
 """Builds the English harness's test sets (#231) from openly licensed text; run.sh reads the committed result.
 
   make_sets.py OASST1_PROMPTS_JSONL_GZ MISSPELLINGS_TXT WIKINEWS_JSON OUT_DIR
+  make_sets.py texts NUS_SMS_XML OUT_DIR
 
 WIKINEWS_JSON is a cache: fetched from Wikinews's API when it doesn't exist.
 
@@ -16,6 +17,19 @@ context, typed letters, intended word, then the touch points' x and y (comma-sep
   A substitution or a neighbour insertion is a tap that lands on another key.
 - misspellings: 1,500 of Wikipedia's common misspellings, typed on their own keys with no context.
 
+`texts` makes the texting sets (#266) from real text messages, the NUS SMS Corpus (CC BY 4.0), as their senders
+wrote them: lowercase, "u", "lol", "dont". Only senders from the US, Canada, the UK, Australia and New Zealand,
+as the rest is mostly Singaporean and Indian English. No sender gives more than 15 % of the messages.
+- next-texts: every lowercase word after the first in 400 messages, one letter or longer, nothing typed.
+- text-typos: one word of three letters or more from each of 1,000 other messages, with a typo as phone-typos.
+A word typed without its apostrophe ("dont", "im") is meant as the word with it ("don't", "I'm") when the
+dictionary has only that one. nus-sms-held-out.txt lists the messages' ids: tools/english-lm/corpus.py leaves
+them out of training, and every message with the same words.
+Personal data: the corpus already replaced numbers and email addresses (<#>, <EMAIL>); a message is left out if
+it has a digit, a placeholder or one of @#/<>_, a capital in mid-sentence (other than I), a word that is a name
+more often than not in data/en-dict/en_US.dict ("John", "Mike", "Monday"), or a word that is in neither the
+dictionary nor the messages of 5 senders (a friend's name, a street).
+
 Taps are a Gaussian around the key centre with sigma 30 px (1.9 mm on #46's 108 px, 6.8 mm keys). Each set
 uses its own sentences; the seed is fixed, so the same inputs give the same files.
 """
@@ -29,6 +43,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
+from collections import Counter, defaultdict
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -83,7 +99,7 @@ def sentences(texts):
                 yield s
 
 
-def targets(s):
+def targets(s, min_len=2):
     """(context, word) for each lowercase word after the first that stands alone between spaces/punctuation."""
     for m in WORD.finditer(s):
         w, i, j = m.group(), m.start(), m.end()
@@ -92,7 +108,7 @@ def targets(s):
             and s[i - 1] == " "
             and w.isalpha()
             and w.islower()
-            and len(w) >= 2
+            and len(w) >= min_len
             and (j == len(s) or s[j] in " .,!?;:")
         ):
             yield s[:i].rstrip(), w
@@ -274,5 +290,123 @@ def main(oasst, misspellings, wikinews, out):
         print(f"{f.name}: {len(f.read_text().splitlines())} rows")
 
 
+NUS_COUNTRIES = {
+    "united states",
+    "usa",
+    "canada",
+    "united kingdom",
+    "uk",
+    "australia",
+    "new zealand",
+}
+I_FORMS = {"I", "I'm", "I'll", "I'd", "I've"}
+
+
+def texts(nus, out):
+    out = Path(out)
+    sys.path.insert(
+        0, str(HERE.parents[2] / "data/en-dict")
+    )  # run with python3 -I, which drops it
+    import v202
+
+    words = v202.decode((HERE.parents[2] / "data/en-dict/en_US.dict").read_bytes())[1]
+    freq = lambda w: words[w][0] if w in words and not words[w][1] else -1
+    with_apostrophe = defaultdict(list)
+    for a, (_, not_a_word, _, _) in words.items():
+        if "'" in a and not not_a_word:
+            with_apostrophe[a.replace("'", "").lower()].append(a)
+
+    def name_like(w):
+        cap = w.capitalize()
+        return cap not in I_FORMS and cap in words and freq(w) < words[cap][0]
+
+    def intended(w):
+        forms = with_apostrophe.get(w, [])
+        shortcuts = [t for t, _ in words[w][3]] if w in words else []
+        return (
+            forms[0]
+            if len(forms) == 1 and (freq(w) < 0 or forms[0] in shortcuts)
+            else w
+        )
+
+    msgs = []
+    for m in ET.parse(nus).getroot().iter("message"):
+        p = m.find("source/userProfile")
+        text = " ".join((m.findtext("text") or "").translate(ASCII).split())
+        msgs.append(
+            (
+                m.get("id"),
+                p.findtext("userID"),
+                p.findtext("country").strip().lower(),
+                text,
+            )
+        )
+    senders = defaultdict(set)
+    for _, u, _, t in msgs:
+        for w in WORD.findall(t.lower()):
+            senders[w].add(u)
+
+    def plain(t):
+        ms = list(WORD.finditer(t))
+        return (
+            t.isascii()
+            and 3 <= len(t.split()) <= 30
+            and not re.search(r"[0-9<>@#/\\_*=|~^{}\[\]]|https?:|www\.", t)
+            and all(
+                (freq(w) >= 0 or len(senders[w]) >= 5) and not name_like(w)
+                for w in (m.group().lower() for m in ms)
+            )
+            and not any(
+                m.group()[0].isupper()
+                and not m.group().isupper()
+                and m.group() not in I_FORMS
+                and t[: m.start()].strip()[-1:] not in ("", ".", "!", "?")
+                for m in ms
+            )
+        )
+
+    pool, seen = [], set()
+    for i, u, c, t in msgs:
+        if c in NUS_COUNTRIES and plain(t) and t.lower() not in seen:
+            seen.add(t.lower())
+            pool.append((i, u, t))
+    rng = random.Random(266)
+    rng.shuffle(pool)
+    n_next, n_typos = 400, 1000
+    cap, per_sender, picked = (n_next + n_typos) * 15 // 100, Counter(), []
+    for i, u, t in pool:
+        need = 1 if len(picked) < n_next else 3
+        if per_sender[u] < cap and any(len(w) >= need for _, w in targets(t, 1)):
+            per_sender[u] += 1
+            picked.append((i, t))
+            if len(picked) == n_next + n_typos:
+                break
+    assert len(picked) == n_next + n_typos, f"only {len(picked)} messages pass"
+    (out / "next-texts.tsv").write_text(
+        "".join(
+            row(c, "", intended(w)) + "\n"
+            for _, t in picked[:n_next]
+            for c, w in targets(t, 1)
+        )
+    )
+    rows = []
+    for _, t in picked[n_next:]:
+        c, w = rng.choice([x for x in targets(t, 3)])
+        typed, taps = typo(rng, w)
+        rows.append(row(c, typed, intended(w), taps) + "\n")
+    (out / "text-typos.tsv").write_text("".join(rows))
+    (out / "nus-sms-held-out.txt").write_text(
+        "".join(f"{i}\n" for i in sorted(int(i) for i, _ in picked))
+    )
+    print(
+        f"{len(pool)} messages pass, from {len({u for _, u, _ in pool})} senders; per sender {per_sender.most_common(5)}"
+    )
+    for f in ("next-texts.tsv", "text-typos.tsv"):
+        print(f"{f}: {len((out / f).read_text().splitlines())} rows")
+
+
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    if sys.argv[1] == "texts":
+        texts(*sys.argv[2:])
+    else:
+        main(*sys.argv[1:])

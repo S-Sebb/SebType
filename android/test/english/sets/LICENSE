@@ -8,4 +8,10 @@ words or learned data. Each file keeps its sources' licences:
   Commons Attribution 2.5, by Wikinews's contributors.
 - misspellings.tsv: Wikipedia's "Lists of common misspellings/For machines" (revision 1199637275), Creative Commons
   Attribution-ShareAlike 4.0, by Wikipedia's contributors; this file is under the same licence.
+- next-texts.tsv and text-typos.tsv: text messages from the NUS SMS Corpus, 2015-03-09 release (Tao Chen and
+  Min-Yen Kan, "Creating a Live, Public Short Message Service Corpus: The NUS SMS Corpus", Language Resources and
+  Evaluation 47(2), 2013; https://scholarbank.nus.edu.sg/handle/10635/137343, files from
+  https://github.com/kite1988/nus-sms-corpus at bf0a3651), Creative Commons Attribution 4.0, by the National
+  University of Singapore. nus-sms-held-out.txt lists their message ids. Messages with a name, a number or an
+  address are left out (../make_sets.py says how).
 - The touch points and typos in every file are generated (MIT, ../../../../LICENSE-SebType).
