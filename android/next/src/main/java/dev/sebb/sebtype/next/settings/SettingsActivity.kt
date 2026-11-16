@@ -1,7 +1,10 @@
 package dev.sebb.sebtype.next.settings
 
 import android.content.Context
+import android.database.ContentObserver
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
@@ -54,25 +57,31 @@ import dev.sebb.sebtype.next.data.Prefs
  * About) and their screens, or the setup wizard while SebType isn't the keyboard in use.
  */
 class SettingsActivity : ComponentActivity() {
-    // Back from Android's keyboard settings or the keyboard picker, the wizard goes on or ends.
-    private val resumes = mutableIntStateOf(0)
+    // Goes up when SebType is turned on or chosen, however that happens (Android's keyboard settings, the
+    // picker, another app), so the wizard goes on or ends.
+    private val changes = mutableIntStateOf(0)
+    private val keyboards = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) { changes.intValue++ }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Engines.configure(this)
-        setContent { PicnicTheme { App(resumes.intValue) } }
+        for (name in listOf(Settings.Secure.DEFAULT_INPUT_METHOD, Settings.Secure.ENABLED_INPUT_METHODS)) {
+            contentResolver.registerContentObserver(Settings.Secure.getUriFor(name), false, keyboards)
+        }
+        setContent { PicnicTheme { App(changes.intValue) } }
     }
 
     override fun onResume() {
         super.onResume()
-        resumes.intValue++
+        changes.intValue++
     }
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        // The keyboard picker is a dialog over this window: it ends with focus back, not with a resume.
-        if (hasFocus) resumes.intValue++
+    override fun onDestroy() {
+        contentResolver.unregisterContentObserver(keyboards)
+        super.onDestroy()
     }
 }
 
@@ -110,12 +119,12 @@ object Conf {
 }
 
 @Composable
-private fun App(resumes: Int) {
+private fun App(changes: Int) {
     val context = LocalContext.current
     val stack: SnapshotStateList<String> = rememberSaveable(
         saver = androidx.compose.runtime.saveable.listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
     ) { mutableListOf<String>().toMutableStateList() }
-    val state = remember(resumes) { keyboardState(context) }
+    val state = remember(changes) { keyboardState(context) }
     val nav = Nav(stack)
     if (stack.isEmpty() && !(state.first && state.second)) return Setup(state)
     BackHandler(stack.isNotEmpty()) { nav.back() }
