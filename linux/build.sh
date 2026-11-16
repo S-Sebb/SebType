@@ -20,10 +20,12 @@ source "$root/tools/lib.sh"
 if build_host_ready; then build_remotely linux/build.sh; exit; fi
 # Bazel's caches for Mozc, so a rebuild compiles only what changed.
 MOZC_CACHE=$BAZEL_CACHE/mozc
-mkdir -p "$SEBTYPE_CACHE/sources" "$MOZC_CACHE"/{work,sources}
-pack_source "$root/engines/mozc" "$SEBTYPE_CACHE/sources/mozc.tar.gz"
+mkdir -p "$SEBTYPE_CACHE" "$MOZC_CACHE/work"
+stage=$(rpm_stage)
+trap 'rm -rf "$stage"' EXIT
+pack_source "$root/engines/mozc" "$stage/sources/mozc.tar.gz"
 tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c core linux pc/icons |
-  gzip -n > "$SEBTYPE_CACHE/sources/sebtype.tar.gz"
+  gzip -n > "$stage/sources/sebtype.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies and Bazelisk. Built once per pin and spec.
 image=localhost/sebtype-builder:$(cat "$here/sebtype.spec" - <<<"$BUILD_IMAGE $BAZELISK_SHA256" | sha256sum | head -c 12)
@@ -44,13 +46,14 @@ rm -rf /work/sebtype-top
 rpmbuild -bb --define '_topdir /work/sebtype-top' --define '_sourcedir /sources' --define "sebtype_version $1" \
   --define "sebtype_release $2" --define 'debug_package %{nil}' --define "_smp_build_ncpus $3" \
   --define 'bazel_root /work/bazel' /pkg.spec > /work/sebtype-build.log 2>&1 || { tail -30 /work/sebtype-build.log; exit 1; }
+cp /work/sebtype-top/RPMS/x86_64/*.rpm /out/
 EOF2
 )
 start=$SECONDS
 build_lock 120 "sebtype build" \
   podman run --rm --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -e BAZELISK_HOME=/work/bazelisk -v "$MOZC_CACHE/work:/work:Z" \
-  -v "$SEBTYPE_CACHE/sources:/sources:ro,Z" -v "$here/sebtype.spec:/pkg.spec:ro,Z" "$image" \
+  -v "$stage/sources:/sources:ro,Z" -v "$stage/rpms:/out:Z" -v "$here/sebtype.spec:/pkg.spec:ro,Z" "$image" \
   bash -c "$inner" inner "$SEBTYPE_VERSION" "$SEBTYPE_RPM_RELEASE" "$BUILD_JOBS"
-cp "$MOZC_CACHE/work/sebtype-top/RPMS/x86_64/$SEBTYPE_RPM" "$SEBTYPE_CACHE/"
+cp "$stage/rpms/$SEBTYPE_RPM" "$SEBTYPE_CACHE/"
 echo "built in $((SECONDS - start)) s (logs: $MOZC_CACHE/work/sebtype-build.log)" >&2
 echo "$SEBTYPE_CACHE/$SEBTYPE_RPM"

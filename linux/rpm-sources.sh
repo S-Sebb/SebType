@@ -17,6 +17,18 @@ fetch_lookaside() {
   done
 }
 
+# rpm_stage: prints a new folder for one build, in its task folder (TASK_OUT, tools/lib.sh): sources/ for
+# the sources it packs, rpms/ for the RPMs it copies out of the shared work folder while it holds the build
+# lock. A build from another checkout that starts meanwhile can't swap them for its own (#305), as it could
+# in the shared cache. The caller removes it.
+rpm_stage() {
+  local stage
+  mkdir -p "$TASK_OUT"
+  stage=$(mktemp -d "$TASK_OUT/rpm-build.XXXXXX")
+  mkdir "$stage"/{sources,rpms}
+  echo "$stage"
+}
+
 # pack_source <dir> <tarball>: SebType's source tree <dir> (engines/<name>) as <name>/ in a .tar.gz, the
 # same bytes for the same files, so a build that compares sources sees no change.
 pack_source() {
