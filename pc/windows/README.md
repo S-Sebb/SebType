@@ -121,8 +121,9 @@ The typing runs in a second task, not elevated, as apps run. The keys are real (
 
 `setup/test-unsynced.ps1` checks the words kept when the sync before a removal fails (#271) on any
 Windows PC without installing SebType: `setup.ps1`'s account steps and the Configurator's sync, offline,
-synced and never on, as a throwaway local user it removes after. On YukaROG it runs elevated through
-`t3admin` (its header says what its folder holds).
+synced and never on, as a throwaway local user it removes after. It runs elevated on TCSBackEnd
+(its header says what its folder holds); the user's profile stays loaded until Windows restarts, so it
+needs a PC that can be restarted after.
 
 | Check | What passes |
 |---|---|

@@ -3,15 +3,16 @@ Checks that an uninstall or a language left out keeps the learned words its sync
 without SebType installed: setup.ps1's account steps (-User -Save, then -User -Undo or -Languages) with the
 Configurator's sync before removal, as a throwaway local user, so nobody's own words, login or input
 settings are touched. Made-up words; a throwaway login on sebtype_sync.py serving on this PC's localhost,
-or no server at all ("offline"). One command, elevated (YukaROG: through t3admin), with Windows PowerShell:
+or no server at all ("offline"). One command, elevated, with Windows PowerShell (on TCSBackEnd, over ssh):
 
     powershell -NoProfile -ExecutionPolicy Bypass -File test-unsynced.ps1
 
 Its folder holds this script, sebtype_sync.py (sync-server/), test-sync.py, python\ (Python's embeddable
 package, python.ps1), fix\ (setup.ps1 and sebtype-configurator.exe to check) and optionally main\ (the
 same from main: shows the words lost before the fix, as INFO). Results: one line per check in
-out\unsynced-results.txt, logs next to it; exit 0 only if all pass. The user, its profile and its
-"SebType sync" task are removed at the end.
+out\unsynced-results.txt, logs next to it; exit 0 only if all pass. The user and its tasks are removed at
+the end; Windows keeps its profile loaded until a restart, so a cleanup line names the profile to delete
+after one. Not on a PC someone can't restart (YukaROG).
 -Part user is the throwaway user's own part, run by the task.
 #>
 param([string]$Part, [string]$Dir, [string]$Scenario, [string]$Server, [string]$SyncPassword)
@@ -76,25 +77,20 @@ $name = 'sebtype-unsynced'
 $random = { -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ }) }
 $password = (& $random) + 'aA1!'
 $syncPassword = & $random  # throwaway, as the user's
-# The user's profile can stay loaded a while after its last task: unloads it, then deletes it. Also
-# for one an earlier run left.
+# The user's profiles, this run's and any an earlier run left. Windows keeps a task user's profile loaded
+# until a restart (also seen with test.ps1's sebtype-test), and a loaded one can't be deleted: those stay,
+# for after a restart. A new user of the same name gets a profile folder of its own.
 function Remove-Profiles {
-  for ($i = 0; $i -lt 40; $i++) {
-    $left = @(Get-CimInstance Win32_UserProfile | Where-Object LocalPath -Like "*\$name*")
-    if (-not $left) { return $true }
-    foreach ($p in $left) {
-      if ($p.Loaded) { foreach ($h in "$($p.SID)_Classes", $p.SID) { & reg.exe unload "HKU\$h" 2>&1 | Out-Null } }
-      try { $p | Remove-CimInstance } catch { }
-    }
-    Start-Sleep 3
+  foreach ($p in @(Get-CimInstance Win32_UserProfile | Where-Object LocalPath -Like "*\$name*")) {
+    try { $p | Remove-CimInstance } catch { }
   }
-  $false
+  @(Get-CimInstance Win32_UserProfile | Where-Object LocalPath -Like "*\$name*").LocalPath
 }
-if (-not (Remove-Profiles)) { Write-Host "preflight: a $name profile from an earlier run is still loaded"; exit 1 }
+$null = Remove-Profiles
 $free = { $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $l.Start(); $p = $l.LocalEndpoint.Port; $l.Stop(); $p }
 $offline = "http://127.0.0.1:$(& $free)"  # nothing listens there
 $port = & $free
-$server = $null
+$syncServer = $null  # not $server: that is -Server, a string
 # Every variant's Configurator runs the sync client with the Python next to it, as installed.
 $variants = @('main', 'fix' | Where-Object { Test-Path "$root\$_\setup.ps1" })
 foreach ($v in $variants) { if (-not (Test-Path "$root\$v\python")) { Copy-Item "$root\python" "$root\$v\python" -Recurse } }
@@ -118,7 +114,7 @@ function As-User([string]$variant, [string]$scenario, [string]$url = '') {
   } finally { Unregister-ScheduledTask SebType-unsynced-test -Confirm:$false }
   $text = Get-Content $log -Raw  # *> writes UTF-16
   $r = @{ log = $log; text = $text }
-  foreach ($m in [regex]::Matches($text, '(?m)^([a-z-]+)=(\S*)')) { if (-not $r.ContainsKey($m.Groups[1].Value)) { $r[$m.Groups[1].Value] = $m.Groups[2].Value } }
+  foreach ($m in [regex]::Matches($text, '(?m)^([a-z-]+)=(\S*)')) { $r[$m.Groups[1].Value] = $m.Groups[2].Value }  # the last: exit= is setup.ps1's last step
   $r.sync = if ($text -match 'before learned words are deleted \(exit (-?\d+)\)') { $Matches[1] } else { 'none' }
   $r
 }
@@ -155,7 +151,7 @@ try {
   }
   Check 'synced-uninstall-deletes-words' {
     $null = $syncPassword | & $python -I "$root\sebtype_sync.py" adduser --data "$out\sync-server" --password-stdin $syncUser
-    $script:server = Start-Process $python -PassThru -NoNewWindow -RedirectStandardError "$out\unsynced-server.log" `
+    $script:syncServer = Start-Process $python -PassThru -NoNewWindow -RedirectStandardError "$out\unsynced-server.log" `
       -ArgumentList '-I', "`"$root\sebtype_sync.py`"", 'serve', '--data', "`"$out\sync-server`"", '--port', $port
     Start-Sleep 2
     $r = As-User fix synced "http://127.0.0.1:$port"
@@ -164,14 +160,15 @@ try {
     Expect $r @{ 'save-login' = 0; sync = 0; exit = 0; 'rime-words' = $false; 'mozc-words' = $false; 'kept-rime' = $false; 'kept-mozc' = $false }
   }
 } finally {
-  if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+  if ($syncServer) { Stop-Process -Id $syncServer.Id -Force -ErrorAction SilentlyContinue }
   $user = Get-LocalUser $name -ErrorAction SilentlyContinue
   if ($user) {
     Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue | Where-Object { $_.Principal.UserId -like "*$name" } | Unregister-ScheduledTask -Confirm:$false
     Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object UserName -like "*\$name" | Stop-Process -Force -ErrorAction SilentlyContinue
     Remove-LocalUser $name
   }
-  if (-not (Remove-Profiles)) { Result 'cleanup' FAIL "the $name profile is still loaded" }
+  $left = Remove-Profiles
+  if ($left) { Result 'cleanup' INFO "restart Windows, then delete the profiles still loaded: $($left -join ', ')" }
   Remove-Item "$out\sync-server", "$root\fix\sebtype-mozc.dll", "$root\fix\mozc-keymap.tsv" -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item "$root\main\python", "$root\fix\python" -Recurse -Force -ErrorAction SilentlyContinue
 }
