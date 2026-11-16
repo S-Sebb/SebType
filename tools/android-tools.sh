@@ -2,10 +2,7 @@
 # Installs the Android build's tools, pinned, into ~/scratch/SebType/cache/ on a build host without them
 # (yanglab16, #225): the JDK nobara-pc builds with, the Android SDK packages the build uses, and sccache.
 # tools/lib.sh points the build at them there. Does nothing for a tool already installed.
-# Prints the image the build runs in there: the pinned Fedora nobara-pc runs, with what the build takes
-# from the system (Fedora's librime and OpenCC for the Chinese data, gcc for Bazel's host tools, python).
 set -euo pipefail
-source "$(dirname "$0")/../linux/versions.sh"
 source "$(dirname "$0")/lib.sh"
 mkdir -p "$SCRATCH/cache" && cd "$SCRATCH/cache"
 
@@ -46,10 +43,3 @@ if ((${#missing[@]})); then
   { yes || :; } | "$sdkmanager" --licenses >/dev/null  # yes ends on SIGPIPE
   "$sdkmanager" --install "${missing[@]}" >/dev/null
 fi
-
-rpms='librime librime-lua opencc gcc gcc-c++ python3 python-unversioned-command unzip zip diffutils findutils which'
-image=localhost/sebtype-android:$(sha256sum <<<"$BUILD_IMAGE $rpms" | head -c 12)
-podman image exists "$image" ||
-  podman build -q -t "$image" -f - . <<<"FROM $BUILD_IMAGE
-RUN dnf -y install $rpms && dnf clean all" >/dev/null
-echo "$image"

@@ -28,7 +28,7 @@ check() { # name, timeout seconds, command or exported function...
 }
 
 # Preflight
-for c in cargo dbus-run-session kwin_wayland spectacle fcitx5 desktop-file-validate; do
+for c in dbus-run-session kwin_wayland spectacle fcitx5 desktop-file-validate; do
   command -v "$c" >/dev/null || { echo "preflight: $c missing"; exit 1; }
 done
 python3 -c 'import dbus, Xlib, PIL, numpy' 2>/dev/null || { echo "preflight: python3-dbus, python3-xlib, python3-pillow and python3-numpy needed"; exit 1; }
@@ -42,12 +42,12 @@ own=$out/configurator-own
 
 command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
 
-# The nested sessions and setup-ime's test run under this PC's lock (devq), after a build under the
-# shared build lock (tools/lib.sh), so builds never run side by side.
+# The nested sessions and setup-ime's test run under this PC's lock (devq), after the app and its unit
+# tests are built on yanglab16 (tools/build.sh, #248) and copied back: this PC compiles nothing.
 if [[ -z ${HOLDING-} ]]; then
   sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
-  build_lock 30 "sebtype configurator test build ($(git branch --show-current))" \
-    env CARGO_BUILD_JOBS="$BUILD_JOBS" bash -c 'cargo build --release && cargo test --release --no-run' > "$out/configurator-test-build.log" 2>&1 ||
+  ../../tools/build.sh 30 "sebtype configurator test build ($(git branch --show-current))" pc/configurator/build.sh \
+    > /dev/null 2> "$out/configurator-test-build.log" ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
   exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
@@ -56,10 +56,13 @@ fi
 own_env=$(sebtype_env "$own")  # word-split where it is used: Fcitx5 finds SebType's add-on there
 export own_env
 
-check unit-tests 900 cargo test --release
-check every-string-translated 300 cargo test --release every_string_is_translated
-check release-build 900 cargo build --release
-bin=$PWD/target/release/sebtype-configurator
+bin=$PWD/target/release/sebtype-configurator tests=$PWD/target/release/sebtype-configurator-test
+check unit-tests 900 "$tests"
+check every-string-translated 300 "$tests" every_string_is_translated
+# The release build, made in yanglab16's Fedora, finds every library it links here.
+release_build() { ldd "$bin" && ! ldd "$bin" | grep -q 'not found'; }
+export -f release_build; export bin
+check release-build 60 release_build
 
 # A sandbox account: copies of this account's engine settings, without Rime's and Mozc's learned words.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
@@ -119,21 +122,20 @@ SH
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
-export -f shots; export out sb bin
+export -f shots; export out sb
 check every-screen-in-every-language 400 shots
 
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
 # shellcheck disable=SC2016,SC2086  # the inner script gets its paths as arguments; own_env is split
 private_fcitx5() {
   private_dbus "$sb" -i PATH="$PATH" $own_env HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" \
-    CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
     -- bash -c '
       fcitx5 -k --disable=all --enable=dbus,keyboard,sebtype > "$1/fcitx5.log" 2>&1 & f=$!
       for _ in $(seq 50); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.2; done
-      cargo test --release --manifest-path "$2/Cargo.toml" -- --ignored --exact linux::tests::private_fcitx5_takes_languages_and_chinese_settings
-      rc=$?; kill $f; wait $f; exit $rc' _ "$sb" "$PWD"
+      "$2" --ignored --exact linux::tests::private_fcitx5_takes_languages_and_chinese_settings
+      rc=$?; kill $f; wait $f; exit $rc' _ "$sb" "$tests"
 }
-export -f private_fcitx5
+export -f private_fcitx5; export tests
 check private-fcitx5-and-rime 300 private_fcitx5
 
 # The Picnic window that test wrote draws SebType's pig at the start (#94), horizontal and vertical: a
@@ -180,7 +182,6 @@ private_sync() {
   rm -f "$d/config/mozc/user_dictionary.db"  # only made-up Japanese words
   port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
   private_dbus "$sb" -i PATH="$PATH" $own_env HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
-    CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_TARGET_DIR="$PWD/target" \
     -- bash -c '
       d=$1 here=$2 port=$3 server=$2/../../sync-server/sebtype_sync.py
       SEBTYPE_TEST_SYNC_PASSWORD=$(head -c 18 /dev/urandom | base64)
@@ -218,7 +219,7 @@ else:
     print("Rime has no rime_ice.userdb: 中文 never came up")
 PY
       export SEBTYPE_TEST_SYNC_SERVER=http://127.0.0.1:$port SEBTYPE_TEST_SYNC_USER=sebtype-test SEBTYPE_TEST_SYNC_PASSWORD
-      cargo test --release --manifest-path "$here/Cargo.toml" -- --ignored --exact sync::tests::private_server_syncs_both_ways_and_delete_clears_it
+      "$here/target/release/sebtype-configurator-test" --ignored --exact sync::tests::private_server_syncs_both_ways_and_delete_clears_it
       rc=$?; kill $f $s; wait $f $s
       cp "$d/fcitx5.log" "$4/configurator-test-private-sync-fcitx5.log"
       ls -lR --time-style=+%T "$XDG_DATA_HOME/fcitx5/rime/sync" "$XDG_DATA_HOME/fcitx5/rime" > "$4/configurator-test-private-sync-rime.txt" 2>&1

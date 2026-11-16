@@ -4,6 +4,8 @@
 # compiles anything (Decisions #2: no Rime deploy on the phone). Gradle runs this before every build;
 # the result is cached by its inputs, so only the first build after a change compiles (about 10 s).
 #   data/rime/build.sh [ASSETS_DIR]   # default build/sebtype-assets; writes ASSETS_DIR/rime/
+# Prints the zip's path in the cache (~/scratch/SebType/cache/rime-data-<key>.zip). Tests build it on
+# yanglab16 with tools/build.sh.
 #
 # The zip is the Rime shared dir: rime-ice's files (minus the schemas other than full pinyin), 白霜's
 # zh-moqi.gram, SebType's sebtype.dict.yaml (the pack that reads the user's own word list, #11) and
@@ -270,3 +272,4 @@ fi
 cmp -s "$zip" "$out/rime-data.zip" || cp "$zip" "$out/rime-data.zip"
 rm -f "$out"/rime-ice.zip "$out"/rime-ice-SOURCE.txt # from before #40
 echo "$version" > "$out/bundle-version"
+echo "$zip"
