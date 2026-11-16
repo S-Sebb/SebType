@@ -6,12 +6,16 @@ to replace FUTO's `ml4_q6_k.gguf`. The phone runs it through `engines/sebtype-lm
 harness (`android/test/english/run.sh` with `SEBTYPE_MODEL`) measures it against the plan's quality bar, and
 [docs/perf/2026-11-15-english.md](../../docs/perf/2026-11-15-english.md) has the results.
 
+The committed model is r2, trained by this folder as of commit `15671d98` (before #266's sources). The folder now
+holds r3's recipe, which adds everyday sources and texting style; r3 fixed fewer misspellings than r2 and wasn't
+committed ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md#results-the-retrained-model-r3-2026-11-16)).
+
 ## The model
 
 - A Llama-style transformer: 8 layers, width 512, 8 heads, feed-forward 1,536, input and output embeddings
   shared, 256 tokens of context. 35.7M parameters, about FUTO's size. `config.json` has the training settings.
 - SebType's own tokenizer: SentencePiece BPE with 16,384 pieces, trained on the corpus (`tokenizer.py`). r3
-  keeps r2's, copied into the run's `data/` before `prepare.sh`, so only the training text changed.
+  kept r2's (`tokenizer.model` in r2's checkpoint, copied into the run's `data/` before `prepare.sh`).
 - **Correction examples in the text.** In front of 5 % of the words, the training text holds the letters
   someone typed for it: `<T>`, the typed letters, `<S>`, then the word as written. The typed letters are the
   word itself (40 %), a phone typo in #46's error mix (35 %), a spelling mistake (15 %) or only its first

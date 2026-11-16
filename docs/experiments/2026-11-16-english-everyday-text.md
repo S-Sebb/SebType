@@ -5,7 +5,8 @@ learns from Wikipedia, Wikinews, oasst2, Dolly and SODA. SODA's dialogues are ma
 sources is real everyday typing: short messages to people, chat, slang, "u", "lol", no apostrophes. This
 experiment looked for openly licensed everyday English that the model may be trained on (CC BY-SA 4.0,
 docs/plans/android-own-keyboard.md, Decisions 6). It also adds a texting test set to the English harness and
-measures today's stacks on it. Nothing was retrained.
+measures today's stacks on it. The retraining that followed (r3, [Results](#results-the-retrained-model-r3-2026-11-16))
+gained on the texting sets but fixed fewer misspellings, so r2 stays; the dictionary now has common texting forms.
 
 **Summary.** Real everyday English under an open licence is scarce. Only one source is real texting: the
 **NUS SMS Corpus** (CC BY 4.0), 55,835 text messages and 447k words after cleaning. That is small: a few
@@ -165,3 +166,86 @@ Two cheaper levers would likely matter more than any source left. Both are for t
 
 A retrain can then be judged on the new rows. `next-texts` and `text-typos` should rise, and §2's bar on the
 other sets must still pass.
+
+## Results: the retrained model, r3 (2026-11-16)
+
+The user's answer was "Retrain with both": the four sources and texting-style noise, with r3 replacing r2 only
+if no harness set gets worse beyond noise and the texting sets improve. **r3 doesn't pass: it fixes fewer
+Wikipedia misspellings (39.6 % against 43.0 %), so the committed model stays r2.** The texting words in the
+dictionary, measured on their own, change nothing else and ship.
+
+**What changed in training** (`tools/english-lm`, r3's recipe): MIX as recommended above, with these corpora:
+
+- NUS SMS: 20,743 training lines (1,074 more held out for the dev sets). Besides the harness's messages, left out
+  are messages with Singlish particles and messages with a word that is neither a lowercase dictionary word nor
+  used by 5 senders, which catches the first names NUS left in ("andreu", "sophie").
+- Blended Skill Talk: 67,314 lines, only the crowd workers' own turns (its seed turns come partly from
+  EmpatheticDialogues, which is non-commercial). Topical-Chat: 185,600 lines. Tatoeba: 1,132,527 sentences,
+  without any that holds a word Tatoeba capitalises mid-sentence more often than not (Tom, Mary, Sami, places).
+- Texting style: in 20 % of SODA's, Blended Skill Talk's and Topical-Chat's lines, sentences start in lowercase,
+  and "I", apostrophes and full stops are often dropped. Common words take short forms ("u", "ur", "pls",
+  "gonna", "idk"; `pack.py`).
+- Everything else as r2: its tokenizer, config (8B tokens over three packs), seed and `decide()` weights.
+
+`overlap.py`: 0 corpus lines share 8 words with a harness item, and 0 harness items of 5 words or more are in the
+corpus. Of the 1,400 held-out NUS messages, none is in the NUS training lines. 132 short ones ("I love you.",
+"Where are you?") also occur in other sources as ordinary English.
+
+**Choosing the texting share on the dev sets.** Three 1B-token models from the same packed text, differing only
+in the share (`dev_sets.py` adds texting dev sets from held-out NUS messages; dev numbers, decide()'s weights as
+committed):
+
+| Dev set | share 0 | 0.2 | 0.4 |
+|---|---|---|---|
+| next-texts top 3 (1,290 words) | 16.7 % | **18.4 %** | 18.3 % |
+| text-typos fixed (732) | 61.1 % | **62.8 %** | 62.6 % |
+| next-chat / next-news top 3 | 40.4 / 42.6 % | 40.7 / 41.7 % | 39.9 / 41.2 % |
+| phone-typos fixed (1,633) | 84.9 % | 84.1 % | 83.8 % |
+| misspellings fixed (1,500) | 52.7 % | 52.1 % | 49.1 % |
+| clean changed (4,574) | 0.1 % | 0.1 % | 0.0 % |
+
+0.2 gives most of the texting gain at the least cost elsewhere. On the dev sets, r3 against r2: next-texts 15.4 →
+19.2 %, text-typos fixed 61.9 → 62.2 %, next-chat 45.2 → 44.9 %, next-news 44.7 → 45.2 %, phone-typos fixed
+85.5 → 85.2 %, misspellings fixed 52.3 → 49.3 %. The misspellings loss already showed there.
+
+**The harness** (`run.sh` on yanglab16, the new keyboard's stack, core/). The quality numbers of each run's two
+passes agree; its `reproducible` check failed on latency only, as other jobs shared the machine. "Paired" counts
+the items only the old or only the new configuration gets right, with an exact sign test.
+
+| Measure (set, items) | r2, today's dictionary | r2 + texting words | r3 + texting words | Paired: only r2 / only r3 right |
+|---|---|---|---|---|
+| Typo fixed (phone typos, 1,000) | 83.5 % | 83.5 % | 83.4 % | 25 / 24, p 1.0 |
+| Intended word first / in the top 3 (phone typos) | 91.7 / 95.3 % | 91.7 / 95.3 % | 91.3 / 95.0 % | |
+| **Typo fixed (phone typos in text messages, 1,000)** | 71.9 % | 71.9 % | **73.8 %** | 29 / 48, p 0.04 |
+| Intended word first / in the top 3 (text messages) | 84.6 / 91.2 % | 84.8 / 91.5 % | 85.4 / 92.1 % | |
+| **Typo fixed (Wikipedia misspellings, 1,500)** | 43.0 % | 43.0 % | **39.6 %** | 164 / 113, p 0.003 |
+| Intended word first / in the top 3 (misspellings) | 83.3 / 88.5 % | 83.3 / 88.5 % | 83.6 / 88.6 % | |
+| Correct word wrongly changed (clean words, 1,000) | 0.2 % | 0.2 % | 0.2 % | 0 / 0 |
+| Next word in the top 3 (chat sentences, 2,701) | 41.7 % | 41.7 % | 41.9 % | 123 / 127, p 0.85 |
+| Next word in the top 3 (news sentences, 1,927) | 43.7 % | 43.7 % | 43.7 % | 82 / 81, p 1.0 |
+| **Next word in the top 3 (text messages, 2,618)** | 29.1 % | 29.1 % | **30.6 %** | 123 / 160, p 0.03 |
+| Per key, ms p95, clean / phone typos (run 1) | 16.8 / 21.1 | 21.3 / 23.8 | 18.6 / 20.1 | same size and shape |
+
+SebType's model on AOSP's decoder moves the same way: misspellings fixed 43.6 → 39.9 %, text-typos 71.4 →
+73.0 %, next-texts 29.1 → 30.6 %. r3 has r2's shape and size, so its latency is r2's; the p95s above move
+with the machine's load (r2's two runs differ as much).
+
+**Where r3 loses.** It ranks the intended word first as often as r2 (83.6 against 83.3 %). It loses on the
+commit: with no context, it is less sure that a space should change letters that aren't a word, and more often
+leaves them. That fits what it learned from real messages, where words are often left misspelt or shortened.
+The gains are the reverse: in texting contexts, r3 keeps and predicts the texting forms. Typed on their own
+after seven everyday contexts, the 26 texting words are kept by a space 179 times of 182 with r3. r2 keeps them
+155 times; it turns "lmao" into "Lao", "omw" into "one" and "ppl" into "pop".
+
+**The texting words** (`data/en-dict/make_dict.py`): u, ur, ok, lol, omg, btw, idk, thx, tmrw, lmao, brb, ttyl,
+nvm, ppl, cuz, tbh, hahaha, hehe, xoxo, bday, txt, plz, ikr, omw, lmk, smh. They get wordfreq's weight, capped at
+90 (about the 85th percentile of the list; "the" is 222). The words they look like keep theirs, so none is pushed
+out. A higher cap (110, or none) keeps the same words and only offers more of them as completions. With r2,
+adding them changes no harness number but text-typos' first and top-3 rates (+0.2 and +0.3 points). Typed on
+their own, they are kept 155 times of 182 instead of 127.
+
+**Not tried: the commit margin.** On the dev sets, `decide()`'s margin for letters that aren't a word
+(MARGIN_NON_WORD, 12) is far from the best for either model. At 6, dev misspellings fixed rises from 52 to 78 %
+(r2) and from 49 to 78 % (r3), with phone and text typos up too and changed correct words still 0.1 %. That is a
+change to the ranking, separate from this training, and needs the harness's own check (r1's looser weights
+changed more correct words), so it isn't part of this result (#291).
