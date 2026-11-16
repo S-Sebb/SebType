@@ -35,6 +35,8 @@ def sample(corpus, weights, n):
 
 
 def main(run):
+    # Run with python -I, which drops the script's own folder from the path.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     from pack import MIX
 
     data = Path(run) / "data"

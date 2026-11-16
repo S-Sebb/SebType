@@ -10,12 +10,17 @@ harness (`android/test/english/run.sh` with `SEBTYPE_MODEL`) measures it against
 
 - A Llama-style transformer: 8 layers, width 512, 8 heads, feed-forward 1,536, input and output embeddings
   shared, 256 tokens of context. 35.7M parameters, about FUTO's size. `config.json` has the training settings.
-- SebType's own tokenizer: SentencePiece BPE with 16,384 pieces, trained on the corpus (`tokenizer.py`).
+- SebType's own tokenizer: SentencePiece BPE with 16,384 pieces, trained on the corpus (`tokenizer.py`). r3
+  keeps r2's, copied into the run's `data/` before `prepare.sh`, so only the training text changed.
 - **Correction examples in the text.** In front of 5 % of the words, the training text holds the letters
   someone typed for it: `<T>`, the typed letters, `<S>`, then the word as written. The typed letters are the
   word itself (40 %), a phone typo in #46's error mix (35 %), a spelling mistake (15 %) or only its first
   letters (10 %) (`noise.py`, `pack.py`). The model learns to predict the meant word from the letters and the
   sentence before them, so on the phone it both predicts and corrects.
+- **Texting style** (#266). A fifth of the chat sources' lines (SODA, Blended Skill Talk, Topical-Chat) are
+  written as people text: lowercase sentence starts, "i", dropped apostrophes and full stops, "u", "pls",
+  "gonna" (`pack.py`). The real text messages of the NUS SMS Corpus show the model the true mix. The share was
+  chosen on the dev sets with short trials ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md)).
 - Exported to GGUF and quantised to Q6_K like FUTO's (`export.sh`).
 
 On the phone, AOSP's decoder finds the candidates for the typed letters. The model scores each of the first 6
