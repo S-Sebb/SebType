@@ -96,6 +96,8 @@ private val Colours = lightColorScheme(
 // Today's settings text (#267): no letter spacing, so text styles are given in full rather than taken from Material's.
 /** A row's title */
 val TitleText = TextStyle(fontSize = 20.sp, lineHeight = 30.sp)
+/** A row's subtitle's colour: today's, the text's ink at 60 % */
+val SubtitleInk = Ink.copy(alpha = 0.6f)
 /** A row's subtitle */
 val SubtitleText = TextStyle(fontSize = 14.sp, lineHeight = 20.sp)
 /** A title bar's or a heading's text */
@@ -234,7 +236,7 @@ fun Item(
     }
     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = TitleText, color = Ink, modifier = Modifier.heightIn(min = 24.dp))
-        if (!subtitle.isNullOrEmpty()) Text(subtitle, style = SubtitleText, color = Muted)
+        if (!subtitle.isNullOrEmpty()) Text(subtitle, style = SubtitleText, color = SubtitleInk)
     }
     Spacer(Modifier.width(4.dp))
     end?.invoke()
@@ -267,24 +269,24 @@ fun Badge(berry: Boolean, content: @Composable () -> Unit) = Box(
     contentAlignment = Alignment.Center,
 ) { content() }
 
-/** Languages' icon: a globe, as the 🌐 key's */
+/** Languages' icon: a globe, as the 🌐 key's, in today's 26dp with a 20dp circle */
 @Composable
-fun Globe() = androidx.compose.foundation.Canvas(Modifier.size(24.dp)) {
-    val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
-    val r = size.minDimension / 2 - stroke.width / 2
-    drawCircle(Ink, r, style = stroke)
-    drawOval(Ink, Offset(center.x - r * 0.45f, center.y - r), Size(r * 0.9f, 2 * r), style = stroke)
-    drawLine(Ink, Offset(center.x - r, center.y), Offset(center.x + r, center.y), stroke.width)
+fun Globe() = androidx.compose.foundation.Canvas(Modifier.size(26.dp)) {
+    val u = size.width / 26
+    val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2 * u)
+    drawCircle(Ink, 10 * u, style = stroke)
+    drawOval(Ink, Offset(9 * u, 3 * u), Size(8 * u, 20 * u), style = stroke)
+    drawLine(Ink, Offset(3 * u, 13 * u), Offset(23 * u, 13 * u), stroke.width)
 }
 
-/** Keyboard's icon: a white key block on the berry badge */
+/** Keyboard's icon: two rows of five white keys and a space bar on the berry badge, as today's */
 @Composable
-fun KeyboardIcon() = androidx.compose.foundation.Canvas(Modifier.size(26.dp, 18.dp)) {
-    val u = size.width / 13
-    drawRoundRect(Color.White, cornerRadius = androidx.compose.ui.geometry.CornerRadius(u, u))
-    val key = Color(Picnic.BERRY_LOW)
-    for (row in 0..1) for (col in 0..4) drawRect(key, Offset(u * (1 + col * 2.4f), u * (1.5f + row * 2.5f)), Size(u * 1.6f, u * 1.6f))
-    drawRect(key, Offset(u * 3.4f, u * 6.6f), Size(u * 6.2f, u * 1.4f))
+fun KeyboardIcon() = androidx.compose.foundation.Canvas(Modifier.size(24.dp, 13.935.dp)) {
+    val u = size.width / 62
+    val corner = androidx.compose.ui.geometry.CornerRadius(2 * u, 2 * u)
+    for (row in 0..1) for (col in 0..4)
+        drawRoundRect(Color.White, Offset(col * 13.115f * u, row * 13.2f * u), Size(9.538f * u, 9.6f * u), corner)
+    drawRoundRect(Color.White, Offset(10.731f * u, 26.4f * u), Size(40.538f * u, 9.6f * u), corner)
 }
 
 /** Picnic stays light in the system's dark mode (#111), so the system bars keep their dark icons. */

@@ -1,6 +1,7 @@
 package dev.sebb.sebtype.next.settings
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.Image
@@ -17,7 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,8 +37,13 @@ fun Setup(state: Pair<Boolean, Boolean>) = Column(Modifier.fillMaxSize().cloth()
     val context = LocalContext.current
     val step = if (state.first) 2 else 1
     // Today's layout: the launcher icon's pig, in its colours, fills the top three quarters (less the group
-    // below), and a quarter stays empty under the group.
-    Image(painterResource(R.mipmap.ic_launcher_pig), null, Modifier.fillMaxWidth().weight(0.75f))
+    // below), and a quarter stays empty under the group. Its bitmap is loaded unscaled and scaled up
+    // without smoothing so the pixel art's edges stay crisp.
+    val pig = remember {
+        BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher_pig, BitmapFactory.Options().apply { inScaled = false })
+            .asImageBitmap()
+    }
+    Image(pig, null, Modifier.fillMaxWidth().weight(0.75f), filterQuality = FilterQuality.None)
     Column(Modifier.padding(32.dp)) {
         Column(Modifier.padding(16.dp)) {
             Text(stringResource(R.string.setup_step, step), fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
