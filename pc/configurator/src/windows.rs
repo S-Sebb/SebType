@@ -57,13 +57,17 @@ fn run(program: &str, args: &[&str]) -> io::Result<String> {
 }
 fn powershell(script: &str) -> io::Result<String> {
     // Windows PowerShell: its language cmdlets are the ones that can change the list (pc/windows/setup/setup.ps1).
+    // Its own modules, not those of a PowerShell 7 the Configurator was started from (#299).
     run(
         "powershell.exe",
         &[
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            &format!("[Console]::OutputEncoding = [Text.Encoding]::UTF8; {script}"),
+            &format!(
+                "$env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine'); \
+                 [Console]::OutputEncoding = [Text.Encoding]::UTF8; {script}"
+            ),
         ],
     )
 }

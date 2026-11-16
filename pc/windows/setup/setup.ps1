@@ -28,6 +28,9 @@ param(
 # Windows PowerShell 5.1, which every Windows has: PowerShell 7's language list cmdlets fail on some
 # Windows versions (PowerShell issue #14102, seen on Server 2022).
 $ErrorActionPreference = 'Stop'
+# Started from PowerShell 7, Windows PowerShell inherits its PSModulePath, and finds PowerShell 7's
+# modules (Microsoft.PowerShell.Utility's Get-FileHash) before its own, which it can't load (#299).
+$env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine')
 Set-StrictMode -Version Latest
 $want = @(if (-not $Undo) { $Languages -split '[, ]+' | Where-Object { $_ } })
 if ($want | Where-Object { $_ -notin 'en', 'zh', 'ja' }) { throw "-Languages takes en, zh and ja, not '$Languages'" }
