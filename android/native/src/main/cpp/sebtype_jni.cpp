@@ -184,7 +184,7 @@ jobject key(JNIEnv *env, jclass, jint sym, jint mods) {
 // Types letters into an empty composition, as librime's simulate_key_sequence did for RimeJni.
 jobject type(JNIEnv *env, jclass, jstring text) {
   std::lock_guard g(lock);
-  core->focusOut();
+  core->clear();
   for (char c : str(env, text)) core->key({static_cast<uint32_t>(static_cast<unsigned char>(c)), 0, false});
   return state(env, true);
 }
@@ -232,7 +232,7 @@ jobject flush(JNIEnv *env, jclass) {
 
 jobject clear(JNIEnv *env, jclass) {
   std::lock_guard g(lock);
-  core->focusOut();
+  core->clear();
   return state(env, true);
 }
 

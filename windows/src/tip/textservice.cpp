@@ -356,11 +356,26 @@ STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focused, ITfDocumentMgr *) 
 }
 
 void TextService::focus(ITfDocumentMgr *focused) {
-  // What was being typed is dropped, as on Linux (the core's focusOut).
+  // What was being typed goes into the field it was typed in (#277), as Microsoft's IMEs and Mozc do: the
+  // core gives it on FocusOut (pinyin as its letters, Japanese as converted), and it replaces the composition.
   if (context_) {
-    if (composition_)
-      editSession(context_, clientId_, [this](TfEditCookie ec) { return endComposition(ec, context_); }, false);
-    send({Op::FocusOut});
+    std::wstring typed;
+    if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    if (composition_) {
+      // The session may run once focus moved on: it keeps its own context and composition.
+      ITfContext *context = context_;
+      ITfComposition *composition = std::exchange(composition_, nullptr);
+      context->AddRef();
+      const auto end = [context, composition, typed](TfEditCookie ec) {
+        endComposition(ec, context, composition, typed);
+        context->Release();
+        return S_OK;
+      };
+      if (FAILED(editSession(context, clientId_, end, false))) {
+        composition->Release();
+        context->Release();
+      }
+    }
     context_->Release();
     context_ = nullptr;
   }
@@ -556,13 +571,20 @@ void TextService::toggleLatin() {
   if (send({Op::Latin})) apply(context_);
 }
 
-// --- The app ended the composition (a click elsewhere in the text, say): the typing is dropped ---
+// --- The app ended the composition (a click elsewhere in the text, say): what was typed goes in where it
+// was, as when focus moves away (#277). The app keeps the caret where it put it. ---
 
-STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie, ITfComposition *composition) {
+STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie ec, ITfComposition *composition) {
   if (composition == composition_) {
+    std::wstring typed;
+    if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    ITfRange *range = nullptr;
+    if (!typed.empty() && SUCCEEDED(composition_->GetRange(&range))) {
+      range->SetText(ec, 0, typed.c_str(), static_cast<LONG>(typed.size()));
+      range->Release();
+    }
     composition_->Release();
     composition_ = nullptr;
-    send({Op::FocusOut});
     if (window_) window_->hide();
   }
   return S_OK;

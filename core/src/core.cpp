@@ -345,9 +345,19 @@ void Core::changePage(bool next) {
 }
 
 void Core::focusOut() {
+  commit_ += unfinished();
+  clear();
+}
+
+std::string Core::unfinished() {
+  auto *e = running(lang_);
+  return e ? e->unfinished() : std::string{};
+}
+
+void Core::clear() {
   shiftDown_ = 0;
   swallow_.clear();
-  if (auto *e = current()) e->clear();
+  if (auto *e = running(lang_)) e->clear();
 }
 
 bool Core::latin() {

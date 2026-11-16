@@ -39,6 +39,7 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   void keyEvent(const fcitx::InputMethodEntry &entry, fcitx::KeyEvent &event) override;
   void activate(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) override;
   void reset(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) override;
+  void deactivate(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) override;
   std::string subModeIconImpl(const fcitx::InputMethodEntry &, fcitx::InputContext &) override;
   std::string subModeLabelImpl(const fcitx::InputMethodEntry &, fcitx::InputContext &) override;
   std::string subMode(const fcitx::InputMethodEntry &, fcitx::InputContext &) override;

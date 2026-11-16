@@ -21,7 +21,9 @@ class Engine {
   virtual Preedit preedit() = 0;
   virtual std::string aux() { return {}; }
   virtual bool composing() = 0;
-  // Commits what is being typed (leaving the language), or drops it (focus moved away).
+  // What focus moving away types in (#277): the preedit as it shows.
+  virtual std::string unfinished() { return preedit().text(); }
+  // Commits what is being typed (leaving the language), or drops it.
   virtual void flush() = 0;
   virtual void clear() = 0;
 

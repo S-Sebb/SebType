@@ -309,6 +309,21 @@ if ($Typing) {
           if ("$typo $clean" -ne '小时 考试') { throw "xkaoshi + Space gave '$typo', kaoshi + Space '$clean' (want 小时, 考试)" }
           "xkaoshi → $typo, kaoshi → $clean"
         }
+        # #277: focus moving away mid-word (another window to the front, and back) types in the pinyin as its
+        # letters, and the next word starts fresh.
+        Check 'chinese-focus-out' {
+          $other = Start-Process notepad -PassThru
+          try {
+            $null = $other.WaitForInputIdle(10000)
+            Keys 'Control_L+a' BackSpace; TypeText 'nihao'; Start-Sleep 1
+            if (-not $tsf::Foreground($other.MainWindowHandle)) { throw 'the second Notepad did not come to the front' }
+            Start-Sleep 1
+            if (-not $tsf::Foreground($h)) { throw 'Notepad did not come back to the front' }
+            Start-Sleep 1; TypeText 'ni '; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
+            if ($t -ne 'nihao你') { throw "nihao, focus away and back, ni + Space gave '$t' (want nihao你)" }
+            $t
+          } finally { $other | Stop-Process -Force -ErrorAction SilentlyContinue }
+        }
       }
       # Notepad gets Japanese only once it is committed (Enter). Japanese starts in English or あ.
       function Committed($s) { Keys 'Control_L+a' BackSpace; TypeText $s; Keys Return; Start-Sleep 1; $tsf::EditText($h).Trim() }
@@ -1013,7 +1028,7 @@ Check 'admin-input-as-before' {
   if ((Languages) -ne $adminBefore.languages) { throw "this admin's input methods are $(Languages), were $($adminBefore.languages)" }
   'this admin''s input methods untouched'
 }
-foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'japanese-all', 'japanese-alt-grave', 'chinese-tray-menu', 'japanese-tray-menu', 'picnic-window',
+foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'chinese-focus-out', 'japanese-all', 'japanese-alt-grave', 'chinese-tray-menu', 'japanese-tray-menu', 'picnic-window',
   'round1-upgrade', 'japanese-after-language-change', 'round1-uninstall-pages', 'round1-everything-as-before', 'round2-upgrade-drops-japanese', 'round2-everything-as-before') {
   if (-not $Only -and -not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
 }
