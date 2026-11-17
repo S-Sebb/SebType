@@ -273,6 +273,12 @@ class Mozc final : public Engine {
     }
   }
 
+  void reload() override {
+    clear();
+    mozc_->reload();
+    session_ = 0;  // the new instance has none
+  }
+
   void forget() override {
     for (auto type : {Input::CLEAR_USER_HISTORY, Input::CLEAR_USER_PREDICTION, Input::SYNC_DATA}) {
       Input in;

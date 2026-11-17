@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -40,26 +41,18 @@ bool eval(const mozc::commands::Input &in, mozc::commands::Output &out) {
 }
 
 // One engine per process, the 日本語 engine's: loaded with it and closed when the core stops it (the phone
-// frees an idle Mozc; the PCs reload one whose files the Configurator changed); with paths.preload in its own
-// thread (#312).
+// frees an idle Mozc); the PCs reload one whose files the Configurator changed. With paths.preload it loads,
+// and reloads, in its own thread (#312).
 class InProcess final : public MozcTransport {
  public:
-  explicit InProcess(const MozcPaths &paths) {
-    auto load = [this, preload = paths.preload, profile = paths.profileDir, data = paths.dataFile,
-                 offset = paths.dataOffset, length = paths.dataLength] {
-      if (!preload.empty()) {
-        std::ifstream f(std::filesystem::u8path(preload), std::ios::binary);
-        std::vector<char> buf(1 << 20);
-        while (f.read(buf.data(), buf.size())) {}
-      }
-      open_ = sebtype_mozc_open(profile.c_str(), data.c_str(), offset, length) != 0;
-      loading_ = false;
-    };
-    if (!paths.preload.empty()) {
-      loading_ = true;
-      loader_ = std::thread(load);
-    } else {
+  explicit InProcess(const MozcPaths &paths)
+      : preload_(paths.preload), profile_(paths.profileDir), data_(paths.dataFile), offset_(paths.dataOffset),
+        length_(paths.dataLength) {
+    if (preload_.empty()) {
       load();
+    } else {
+      loading_ = true;
+      loader_ = std::thread([this] { loadInBackground(); });
     }
   }
   ~InProcess() override {
@@ -70,9 +63,26 @@ class InProcess final : public MozcTransport {
   bool loading() const override { return loading_; }
   bool open() const override { return !loading_ && open_; }
 
+  // A reload asked for while Mozc loads is done by the loading thread before it says it is done: no key goes
+  // to the instance it replaces, and no one waits for the load.
+  void reload() override {
+    {
+      std::lock_guard<std::mutex> hold(state_);
+      if (loading_) {
+        reload_ = true;
+        return;
+      }
+      loading_ = !preload_.empty();
+    }
+    if (preload_.empty()) return load();
+    if (loader_.joinable()) loader_.join();  // done: loading_ was false
+    loader_ = std::thread([this] { loadInBackground(); });
+  }
+
   bool call(const mozc::commands::Input &in, mozc::commands::Output &out) override {
     if (!open()) return false;
-    if (learning_) sebtype_mozc_set_learning(*std::exchange(learning_, std::nullopt));
+    if (learning_ && !learningSet_) sebtype_mozc_set_learning(*learning_);
+    learningSet_ = true;
     if (!eval(in, out)) return false;
     if (in.type() == mozc::commands::Input::SYNC_DATA) {
       unsaved_ = false;
@@ -92,12 +102,44 @@ class InProcess final : public MozcTransport {
   }
 
   // Applied before the next call, which is when it matters: Mozc may still be loading now.
-  void setLearning(bool learning) override { learning_ = learning; }
+  void setLearning(bool learning) override {
+    learning_ = learning;
+    learningSet_ = false;
+  }
 
  private:
+  // Opens Mozc, or opens it again: it saves and reads its files again.
+  void load() {
+    if (open_) sebtype_mozc_close();
+    open_ = sebtype_mozc_open(profile_.c_str(), data_.c_str(), offset_, length_) != 0;
+    learningSet_ = false;  // the new instance's
+  }
+
+  // Reads the DLL through first: see MozcPaths::preload.
+  void loadInBackground() {
+    {
+      std::ifstream f(std::filesystem::u8path(preload_), std::ios::binary);
+      std::vector<char> buf(1 << 20);
+      while (f.read(buf.data(), buf.size())) {}
+    }
+    for (;;) {
+      load();
+      std::lock_guard<std::mutex> hold(state_);
+      if (!std::exchange(reload_, false)) {
+        loading_ = false;
+        return;
+      }
+    }
+  }
+
+  const std::string preload_, profile_, data_;
+  const int64_t offset_, length_;
+  std::mutex state_;  // loading_ and reload_ between the loading thread and reload()
   std::atomic<bool> open_{false}, loading_{false};
+  bool reload_ = false;
   std::thread loader_;
   std::optional<bool> learning_;
+  std::atomic<bool> learningSet_{false};
   bool unsaved_ = false;
   Clock::time_point savedAt_ = Clock::now();
 };

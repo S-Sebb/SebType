@@ -20,6 +20,8 @@ class MozcTransport {
   // False when Mozc didn't load, or is still loading.
   virtual bool open() const = 0;
   virtual bool loading() const = 0;
+  // Mozc saves and reads its files again (loading() meanwhile when it loads in the background).
+  virtual void reload() = 0;
 };
 
 std::unique_ptr<MozcTransport> makeMozcTransport(const MozcPaths &paths);

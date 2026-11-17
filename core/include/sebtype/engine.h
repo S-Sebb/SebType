@@ -69,6 +69,9 @@ class Engine {
   virtual void applySettings(const Settings & /*settings*/, bool /*learning*/) {}
   // Forgets what was learned from typing, where the engine keeps it itself (Mozc's history).
   virtual void forget() {}
+  // Reads its files again, which another program changed (Mozc's dictionary and settings); what was being
+  // typed goes.
+  virtual void reload() {}
 
   // Applies changed settings or data (Rime's deploy) and saves learned words (Rime's sync).
   virtual void deploy() {}
