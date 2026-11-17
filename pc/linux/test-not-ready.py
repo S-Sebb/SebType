@@ -181,6 +181,21 @@ def screen(name):
     return np.asarray(Image.open(f"{out}/{name}.png").convert("RGBA")).astype(np.int32)
 
 
+def drawn(px):
+    """An opaque cut whose pixels differ from each other: some channel varies across them (a std over the
+    pixels, per channel, so one solid colour doesn't pass on its channels' differences)."""
+    return px[..., 3].min() == 255 and px[..., :3].reshape(-1, 3).std(axis=0).max() > 20
+
+
+assert not drawn(np.full((8, 8, 4), (220, 170, 120, 255))) and drawn(
+    np.concatenate(
+        [
+            np.full((4, 8, 4), (220, 170, 120, 255)),
+            np.full((4, 8, 4), (40, 30, 20, 255)),
+        ]
+    )
+)
+
 # The tray key is where the screens of 中 and あ differ (the tray is a window of its own, placed by KWin).
 moved = np.abs(screen("zh") - screen("hira")).sum(axis=2) > 30
 ys, xs = np.nonzero(moved)
@@ -192,9 +207,7 @@ if len(xs):
         tray = Image.open(f"{out}/{name}.png").convert("RGBA").crop(box)
         tray.save(f"{out}/{name}-tray.png")
         px = np.asarray(tray).astype(np.int32)
-        if (
-            px[..., 3].min() == 255 and px[..., :3].std() > 20
-        ):  # opaque, and more than one colour
+        if drawn(px):
             cut.append(name)
 result(
     "tray-pictures",
