@@ -13,7 +13,15 @@ import dev.sebb.sebtype.core.NativeCore
  *    as usual from what was learned before, but nothing new is learned (Decisions #2, 2026-11-12);
  *  - e-mail addresses get the number row too.
  */
-class FieldKind(val field: Int, val learns: Boolean, val pad: String?, val numberRow: Boolean, val enter: Enter) {
+class FieldKind(
+    val field: Int,
+    val learns: Boolean,
+    val pad: String?,
+    val numberRow: Boolean,
+    val enter: Enter,
+    /** English's: plain (no suggestions or corrections, but e-mail domains) in URL and e-mail fields */
+    val englishField: Int = field,
+) {
     /** What the enter key does and shows */
     enum class Enter { NEWLINE, GO, SEARCH, SEND, NEXT, PREVIOUS, DONE }
 
@@ -39,9 +47,11 @@ class FieldKind(val field: Int, val learns: Boolean, val pad: String?, val numbe
                     InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ->
                         FieldKind(NativeCore.FIELD_PASSWORD, false, null, true, enter)
                     InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ->
-                        FieldKind(NativeCore.FIELD_TEXT, false, null, true, enter)
-                    InputType.TYPE_TEXT_VARIATION_URI -> FieldKind(NativeCore.FIELD_TEXT, false, null, false, enter)
-                    else -> FieldKind(NativeCore.FIELD_TEXT, !noLearning, null, false, enter)
+                        FieldKind(NativeCore.FIELD_TEXT, false, null, true, enter, NativeCore.FIELD_PLAIN)
+                    InputType.TYPE_TEXT_VARIATION_URI -> FieldKind(NativeCore.FIELD_TEXT, false, null, false, enter, NativeCore.FIELD_PLAIN)
+                    // A field that asks for no suggestions (a code or a search box) gets none in English.
+                    else -> FieldKind(NativeCore.FIELD_TEXT, !noLearning, null, false, enter,
+                        if (type and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0) NativeCore.FIELD_PLAIN else NativeCore.FIELD_TEXT)
                 }
                 // A field that takes raw keys (a terminal)
                 else -> FieldKind(NativeCore.FIELD_TEXT, !noLearning, null, false, Enter.NEWLINE)

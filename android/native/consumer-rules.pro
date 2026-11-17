@@ -7,3 +7,6 @@
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
     <fields>;
 }
+
+# English's worker thread calls it from native code.
+-keep class dev.sebb.sebtype.core.NativeCore { void englishReady(); }

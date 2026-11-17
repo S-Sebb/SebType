@@ -16,10 +16,11 @@ import java.util.concurrent.Executors
 import java.util.zip.ZipInputStream
 
 /**
- * The engines behind 中文 and 日本語, in core/ ([NativeCore]): their files, sebtype.conf (the settings the
- * phone shares with the PCs), Chinese's first-run setup, and stopping an engine nobody has used for a while.
- * Setup and engine starts run on background threads, one per engine, so 日本語 never waits behind 中文's
- * setup; typing calls [NativeCore] on its engine thread ([NativeCore.post]).
+ * The engines behind English, 中文 and 日本語, in core/ ([NativeCore]): their files, sebtype.conf (the
+ * settings the phone shares with the PCs), Chinese's first-run setup, English's model copied out of the APK,
+ * and stopping an engine nobody has used for a while. Setup and engine starts run on background threads, one
+ * per engine, so 日本語 never waits behind 中文's setup; typing calls [NativeCore] on its engine thread
+ * ([NativeCore.post]).
  */
 object Engines {
     const val TAG = "SebType"
@@ -37,6 +38,7 @@ object Engines {
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "SebType 中文") }
     private val japanese = Executors.newSingleThreadExecutor { Thread(it, "SebType 日本語") }
+    private val english = Executors.newSingleThreadExecutor { Thread(it, "SebType English") }
     private val main = Handler(Looper.getMainLooper())
     private var configured = false
     private var japaneseStopped = false
@@ -68,7 +70,42 @@ object Engines {
             NativeCore.setMozcData(mozcProfile(app).path, app.applicationInfo.sourceDir, it.startOffset, it.length)
         }
         configured = true
+        prepareEnglish(app)
     }
+
+    private fun englishModel(context: Context) = File(context.noBackupFilesDir, "english/english.gguf")
+
+    /**
+     * English reads its dictionary straight out of the APK. The model is copied out once per install or
+     * update (llama.cpp maps a file of its own), in the background: until it is there English runs without
+     * it, as before its first letter (it loads only once a letter is typed, Decisions #2).
+     */
+    private fun prepareEnglish(app: Context) {
+        val installed = app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime.toString()
+        val model = englishModel(app)
+        val marker = File(model.path + ".installed")
+        fun setPaths(withModel: Boolean) = app.assets.openFd("english/en_US.dict").use {
+            NativeCore.setEnglishPaths(app.applicationInfo.sourceDir, it.startOffset, it.length,
+                if (withModel) model.path else "", File(app.filesDir, "english").apply { mkdirs() }.path)
+        }
+        val ready = marker.isFile && marker.readText() == installed && model.isFile
+        setPaths(ready)
+        if (ready) return
+        english.execute {
+            val t0 = SystemClock.elapsedRealtime()
+            model.parentFile!!.mkdirs()
+            marker.delete()
+            val part = File(model.path + ".part")
+            app.assets.open("english/english.gguf").use { input -> part.outputStream().use { input.copyTo(it, 1 shl 16) } }
+            if (!part.renameTo(model)) throw IOException("Can't write ${model.path}")
+            marker.writeText(installed)
+            Log.w(TAG, "Copied English's model in ${SystemClock.elapsedRealtime() - t0} ms")
+            main.post { setPaths(true) }
+        }
+    }
+
+    /** Saves the words English learned (AOSP's user history, in its files) */
+    fun saveEnglish() = english.execute { if (NativeCore.running(NativeCore.ENGLISH)) NativeCore.save(NativeCore.ENGLISH) }
 
     /** sebtype.conf's options, as core/ normalised them */
     fun setting(section: String, key: String): Boolean? {

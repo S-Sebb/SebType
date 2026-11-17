@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Screenshots of today's keyboard (app/) next to the new one (next/, #191) on the emulator, for the
-user to judge the look by eye: English, symbols, a long press, 中文 with pinyin and candidates, its
-简/繁 menu, and 日本語, in the system's light and dark mode. Run under the emulator's lock:
+user to judge the look by eye: English with its suggestions and next words, caps lock, the action bar, All
+Actions and its emoji, clipboard and keyboard modes panels, the copied text offered, symbols, a long press,
+中文 with pinyin and candidates, its 简/繁 menu, and 日本語, in the system's light and dark mode. Run
+under the emulator's lock:
 
     android/emulator.sh -- android/test/compare-screens.py TODAY_APK NEW_APK FIELD_APK OUTDIR
 
@@ -20,6 +22,8 @@ import xml.etree.ElementTree as ET
 from PIL import Image
 
 today_apk, new_apk, field_apk, outdir = sys.argv[1:5]
+# ONLY=caps,split retakes those states alone; the page keeps the others' pictures
+ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
 serial = os.environ["ANDROID_SERIAL"]
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 APPS = {
@@ -31,8 +35,24 @@ APPS = {
     ),
     "new": ("dev.sebb.sebtype.next", ".SebTypeIme", "keyboard", new_apk),
 }
+# An app given as "-" is left out: its pictures from an earlier run stay on the page
+TAKEN = {app: v for app, v in APPS.items() if v[3] != "-"}
 STATES = [
     ("en", "English"),
+    ("en-words", "English: hel"),
+    ("en-next", "English: hello and a space, next words"),
+    ("caps", "Caps lock"),
+    ("action-bar", "The action bar"),
+    ("all-actions", "All Actions"),
+    ("emoji", "Emoji"),
+    ("clipboard", "Clipboard, with a copy"),
+    ("edit-actions", "All Actions: Edit actions"),
+    ("modes", "Keyboard modes"),
+    ("one-handed", "One-handed mode"),
+    ("split", "Split mode"),
+    ("floating", "Floating mode"),
+    ("resize", "Keyboard modes: Resize Keyboard"),
+    ("quick-clip", "Text just copied, in the bar"),
     ("symbols", "Symbols"),
     ("long-press", "Long press on e"),
     ("zh", "中文: nihao"),
@@ -118,12 +138,13 @@ class Keys:
         time.sleep(1.5)
 
 
-def open_field(app):
+def open_field(app, clip=None):
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     pkg, ime, _, _ = APPS[app]
     adb("shell", "ime", "set", f"{pkg}/{ime}")
-    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD)
+    extra = ["--es", "clip", clip] if clip else []
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", FIELD, *extra)
     time.sleep(1)
     return Keys(frame(app))
 
@@ -156,16 +177,31 @@ def chinese_ready(app, k):
     raise SystemExit(f"{app}: no 你好 for nihao")
 
 
+ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト", "すべての操作")
+
+
+def action_bar():
+    """Opens the action bar, unless it is open already: on both keyboards that is a saved setting."""
+    if not {t for t, _, _ in nodes()} & set(ALL_ACTIONS):
+        tap_label("Open Action Bar", "打开操作栏", "アクションバーを開く")
+
+
+def close_action_bar():
+    if {t for t, _, _ in nodes()} & set(ALL_ACTIONS):
+        tap_label("Close Action Bar", "关闭操作栏", "アクションバーを閉じる")
+
+
 def menu(app):
-    if app == "new":
-        tap_label("Open Action Bar")
-        return
-    # Today's bar is labelled in the keyboard's language. The expanded bar is a saved setting: it may be
-    # open, with All Actions showing, already.
-    labels = {t for t, _, _ in nodes()}
-    if not labels & {"All Actions", "所有操作项"}:
-        tap_label("Open Action Bar", "打开操作栏")
-    tap_label("All Actions", "所有操作项")
+    # The bar is labelled in the keyboard's language.
+    action_bar()
+    tap_label(*ALL_ACTIONS)
+
+
+def tile(app, *labels):
+    """All Actions' tile, by its name on either keyboard"""
+    open_field(app)
+    menu(app)
+    tap_label(*labels)
 
 
 def run(app, mode):
@@ -174,6 +210,8 @@ def run(app, mode):
 
     def step(state, do):
         """One screenshot; a state that fails is noted in the page instead of stopping the run."""
+        if ONLY and state not in ONLY:
+            return
         try:
             do()
             shot(f"{mode}-{state}-{app}", top)
@@ -182,6 +220,66 @@ def run(app, mode):
             print(f"{mode}-{state}-{app}: {e}", flush=True)
 
     step("en", lambda: None)
+    step("en-words", lambda: k.type("hel"))
+    step("en-next", lambda: (k.type("lo"), k.bottom(5.5), time.sleep(3)))
+    k = open_field(app)
+
+    def caps():
+        # A double tap 100 ms apart in one monkey run: two `input tap`s are too slow for it
+        x, y = int(k.l + 0.75 * k.w), int(k.row(2))
+        script = f"type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\nTap({x},{y})\nUserWait(100)\nTap({x},{y})\n"
+        path = os.path.join(outdir, "caps-taps.txt")
+        with open(path, "w") as f:
+            f.write(script)
+        adb("push", path, "/data/local/tmp/sebtype-caps-taps.txt")
+        os.remove(path)
+        adb("shell", "monkey", "-f", "/data/local/tmp/sebtype-caps-taps.txt", "1")
+        adb("shell", "rm", "/data/local/tmp/sebtype-caps-taps.txt")
+        time.sleep(1)
+
+    step("caps", caps)
+    step("action-bar", lambda: (open_field(app), action_bar()))
+    step("all-actions", lambda: (open_field(app), menu(app)))
+    step("emoji", lambda: tile(app, "Emojis", "Emoji", "表情符号"))
+
+    # Clipboard history on (it is off after an install), then a copy made in the field app
+    def clipboard():
+        tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
+        # Turned on once: the dark run finds it on from the light one.
+        shown = {t for t, _, _ in nodes()}
+        if "Clipboard history is off" in shown:
+            tap_label("Keep clipboard history")
+        elif "Enable Clipboard History" in shown:
+            tap_label("Enable Clipboard History")
+        open_field(app, clip="sebclip-example")
+        time.sleep(3)
+        tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
+
+    step("clipboard", clipboard)
+    step(
+        "edit-actions",
+        lambda: (open_field(app), menu(app), tap_label("Edit actions", "编辑快捷方式")),
+    )
+    step("modes", lambda: tile(app, "Keyboard Modes", "键盘模式"))
+
+    def pick_mode(*labels):
+        tile(app, "Keyboard Modes", "键盘模式")
+        tap_label(*labels)
+
+    for state, labels in (
+        ("one-handed", ("One Hand", "One-handed")),
+        ("split", ("Split",)),
+        ("floating", ("Float", "Floating")),
+    ):
+        step(state, lambda labels=labels: (pick_mode(*labels), open_field(app)))
+        try:
+            pick_mode("Standard")
+        except SystemExit as e:
+            print(f"{state}: back to Standard: {e}", flush=True)
+    step("resize", lambda: pick_mode("Resize Keyboard"))
+    step("quick-clip", lambda: (open_field(app, clip="sebclip-quick"), time.sleep(3)))
+    k = open_field(app)
+    close_action_bar()
     step("symbols", lambda: k.bottom(0.75))  # ?123
     k.bottom(0.75)  # ABC
     x, y = k.letter("e")
@@ -212,7 +310,7 @@ def run(app, mode):
 failed = {}
 os.makedirs(outdir, exist_ok=True)
 adb("install", "-r", field_apk, timeout=300)
-for app, (pkg, ime, _, apk) in APPS.items():
+for app, (pkg, ime, _, apk) in TAKEN.items():
     adb("uninstall", pkg)
     adb("install", apk, timeout=300)
     for _ in range(15):
@@ -224,7 +322,7 @@ try:
     for mode in ("light", "dark"):
         adb("shell", "cmd", "uimode", "night", "yes" if mode == "dark" else "no")
         time.sleep(2)
-        for app in APPS:
+        for app in TAKEN:
             run(app, mode)
 finally:
     adb("shell", "cmd", "uimode", "night", "no")
@@ -245,7 +343,7 @@ rows = "\n".join(
 with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
     f.write(f"""<!doctype html><meta charset="utf-8"><title>SebType: today's keyboard and the new one</title>
 <style>body{{font-family:sans-serif;background:#eee}} td,th{{padding:6px;vertical-align:top}} img{{width:100%;max-width:480px;border:1px solid #ccc}}</style>
-<h1>Today's keyboard (left) and the new one (right), #242</h1>
+<h1>Today's keyboard (left) and the new one (right), #257</h1>
 <table><tr><th></th><th>Today (app/)</th><th>New (next/)</th></tr>
 {rows}
 </table>

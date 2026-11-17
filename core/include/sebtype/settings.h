@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace sebtype {
@@ -23,6 +24,12 @@ struct Settings {
   // Leaving a language types in what is typed, as focus moving away does (the PCs' Win+Space, #301), or
   // drops it (the phone's 🌐, the user's choice of 2026-11-15). A platform's, so not in the file.
   bool commitOnSwitch = true;
+  // English's options on the phone (its own settings, so not in the file either): a space may correct the
+  // word typed; two spaces in a row type ". "; the personal dictionary's English words, with Android's user
+  // dictionary frequency (1..255, 250 for a word added by hand).
+  bool autocorrect = true;
+  bool doubleSpacePeriod = false;
+  std::vector<std::pair<std::string, int>> englishWords;
 
   static Settings parse(std::string_view ini);
   std::string serialize() const;

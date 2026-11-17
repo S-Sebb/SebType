@@ -20,6 +20,8 @@ has the details):
   - data/en-dict/en_US.dict: AOSP's en_US word list (Apache-2.0) with wordfreq's frequencies under
     CC BY-SA 4.0 (credits at the end).
   - engines/sebtype-lm/english.gguf: SebType's English model, CC BY-SA 4.0 (credits at the end).
+  - android/next/src/main/assets/emoji/emoji.txt: made by data/emoji/ from Unicode's emoji-test.txt and
+    Unicode CLDR's annotations, under the Unicode License v3 (android/next/src/main/assets/emoji/LICENSE.txt).
   - SebType's Mozc in engines/mozc/, and pc/linux/mozc-keymap.tsv: Mozc's BSD-3-Clause licence.
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's

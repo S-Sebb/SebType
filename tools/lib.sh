@@ -83,13 +83,14 @@ build_remotely() {
 # fedora_container [PODMAN_OPTION...]: on yanglab16, sets container to the command that runs a build there
 # in the pinned Fedora nobara-pc runs (linux/versions.sh), with what builds take from the system: Fedora's
 # librime and OpenCC for the Chinese data, gcc for Bazel's host tools, Rust and fontconfig for the
-# Configurator, python. It runs as tony with an empty home (Java takes it from the user, not HOME), its CPUs
-# and memory capped, and the scratch folder where it is (under both its paths: Gradle takes the NAS's).
+# Configurator, python, git for llama.cpp's pinned checkout (engines/sebtype-lm/fetch-llama.sh). It runs as
+# tony with an empty home (Java takes it from the user, not HOME), its CPUs and memory capped, and the scratch
+# folder where it is (under both its paths: Gradle takes the NAS's).
 # Elsewhere, to nothing: the build runs on the host.
 fedora_container() {
   container=()
   [[ $SEBTYPE_HOST == yanglab16* && ! -f /run/.containerenv ]] || return 0
-  local rpms='librime librime-lua opencc gcc gcc-c++ cargo rust fontconfig-devel python3 python-unversioned-command unzip zip diffutils findutils which'
+  local rpms='librime librime-lua opencc gcc gcc-c++ cargo rust fontconfig-devel python3 python-unversioned-command unzip zip diffutils findutils which git'
   local image nas
   # shellcheck source=../linux/versions.sh
   source "$(dirname "${BASH_SOURCE[0]}")/../linux/versions.sh"

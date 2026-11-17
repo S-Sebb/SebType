@@ -2,7 +2,8 @@
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:settingsActivity="dev.sebb.sebtype.next.settings.SettingsActivity"
     android:supportsSwitchingToNextInputMethod="true"
-    android:suppressesSpellChecker="true">
+    android:suppressesSpellChecker="true"
+    android:supportsInlineSuggestions="true">
     <subtype
         android:label="@string/subtype"
         android:imeSubtypeMode="keyboard"

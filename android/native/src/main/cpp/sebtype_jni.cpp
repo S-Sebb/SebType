@@ -1,7 +1,7 @@
 // SebType: the JNI glue between the keyboard (NativeCore.kt) and core/. One Core per process, with 中文's
-// librime and 日本語's Mozc; every call takes one lock, so the keyboard's engine thread (NativeCore.post) and
-// the background setup (RimeIceSetup) never run core/ at once. A call that changes what is typed returns all
-// of it in one NativeState. MIT, SebType.
+// librime, 日本語's Mozc and English (AOSP's decoder and SebType's model); every call takes one lock, so the
+// keyboard's engine thread (NativeCore.post) and the background setup (RimeIceSetup) never run core/ at once.
+// A call that changes what is typed returns all of it in one NativeState. MIT, SebType.
 #include <jni.h>
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
@@ -26,6 +26,38 @@ std::mutex lock;
 std::unique_ptr<Core> core;
 RimePaths rimePaths;
 MozcPaths mozcPaths;
+EnglishPaths englishPaths;
+// The phone's own options over sebtype.conf's: 🌐 drops what is typed (the user, 2026-11-15), and English's
+// (setEnglishOptions).
+Settings phoneOptions;
+
+Settings forPhone(Settings s) {
+  s.commitOnSwitch = false;
+  s.autocorrect = phoneOptions.autocorrect;
+  s.doubleSpacePeriod = phoneOptions.doubleSpacePeriod;
+  s.englishWords = phoneOptions.englishWords;
+  return s;
+}
+
+JavaVM *vm;
+jclass nativeCore;
+jmethodID englishReady;
+
+// English's next words come from its worker thread: the keyboard is told through NativeCore.englishReady,
+// which posts to its main thread. The thread is attached once and detached when it ends (ART aborts on a
+// thread that ends attached).
+void onEnglishReady() {
+  struct Attached {
+    JNIEnv *env = nullptr;
+    ~Attached() {
+      if (env) vm->DetachCurrentThread();
+    }
+  };
+  thread_local Attached attached;
+  if (!attached.env && vm->AttachCurrentThread(&attached.env, nullptr) != JNI_OK) return;
+  attached.env->CallStaticVoidMethod(nativeCore, englishReady);
+  if (attached.env->ExceptionCheck()) attached.env->ExceptionClear();
+}
 
 std::string str(JNIEnv *env, jstring s) {
   if (!s) return {};
@@ -79,7 +111,8 @@ Lang lang(jint id) { return id == 1 ? Lang::Chinese : id == 2 ? Lang::Japanese :
 std::unique_ptr<Engine> makeEngine(Lang l) {
   if (l == Lang::Chinese) return makeRime(rimePaths);
   if (l == Lang::Japanese) return makeMozc(mozcPaths);
-  return nullptr;
+  if (englishPaths.dictionary.empty()) return nullptr;
+  return makeEnglish(englishPaths, onEnglishReady);
 }
 
 // What is typed after a call: the commit, the edit around it, the preedit (its segments, which are
@@ -121,9 +154,7 @@ void configure(JNIEnv *env, jclass, jstring rimeShared, jstring rimeUser, jstrin
   mozcPaths.profileDir = str(env, mozcProfile);
   mozcPaths.touch = true;
   if (core) return;
-  Settings s = Settings::parse(str(env, conf));
-  s.commitOnSwitch = false;  // 🌐 drops what is typed (the user, 2026-11-15)
-  core = std::make_unique<Core>(makeEngine, s);
+  core = std::make_unique<Core>(makeEngine, forPhone(Settings::parse(str(env, conf))));
 }
 
 // A changed schema or Mozc data set takes effect when the engine next starts.
@@ -148,11 +179,38 @@ void setMozcData(JNIEnv *env, jclass, jstring profile, jstring file, jlong offse
   core->stop(Lang::Japanese);
 }
 
+void setEnglishPaths(JNIEnv *env, jclass, jstring dictionary, jlong offset, jlong length, jstring model,
+                     jstring userDir) {
+  std::lock_guard g(lock);
+  EnglishPaths p{str(env, dictionary), offset, length, str(env, model), str(env, userDir)};
+  if (p.dictionary == englishPaths.dictionary && p.dictionaryOffset == englishPaths.dictionaryOffset &&
+      p.dictionaryLength == englishPaths.dictionaryLength && p.model == englishPaths.model &&
+      p.userDir == englishPaths.userDir)
+    return;
+  englishPaths = p;
+  core->stop(Lang::English);
+}
+
 void setSettings(JNIEnv *env, jclass, jstring conf) {
   std::lock_guard g(lock);
-  Settings s = Settings::parse(str(env, conf));
-  s.commitOnSwitch = false;
-  core->setSettings(s);
+  core->setSettings(forPhone(Settings::parse(str(env, conf))));
+}
+
+void setEnglishOptions(JNIEnv *env, jclass, jboolean autocorrect, jboolean doubleSpacePeriod, jobjectArray words,
+                       jintArray frequencies) {
+  std::lock_guard g(lock);
+  phoneOptions.autocorrect = autocorrect;
+  phoneOptions.doubleSpacePeriod = doubleSpacePeriod;
+  phoneOptions.englishWords.clear();
+  const jsize n = env->GetArrayLength(words);
+  std::vector<jint> f(n);
+  env->GetIntArrayRegion(frequencies, 0, n, f.data());
+  for (jsize i = 0; i < n; i++) {
+    auto word = static_cast<jstring>(env->GetObjectArrayElement(words, i));
+    phoneOptions.englishWords.emplace_back(str(env, word), f[i]);
+    env->DeleteLocalRef(word);
+  }
+  if (core) core->setSettings(forPhone(core->settings()));
 }
 
 jstring settings(JNIEnv *env, jclass) {
@@ -179,6 +237,30 @@ jobject key(JNIEnv *env, jclass, jint sym, jint mods) {
   std::lock_guard g(lock);
   const bool taken = core->key({static_cast<uint32_t>(sym), static_cast<uint32_t>(mods), false});
   return state(env, taken);
+}
+
+// A tap at (x, y) in the keys' pixels, for English's correction of taps near another key.
+jobject keyAt(JNIEnv *env, jclass, jint sym, jint mods, jint x, jint y) {
+  std::lock_guard g(lock);
+  const bool taken = core->key({static_cast<uint32_t>(sym), static_cast<uint32_t>(mods), false, x, y});
+  return state(env, taken);
+}
+
+// The letter keys: five ints a key (its character, x, y, width, height), in the keyboard's pixels.
+void setLayout(JNIEnv *env, jclass, jint width, jint height, jintArray keys) {
+  Layout layout{width, height, {}};
+  std::vector<jint> k(env->GetArrayLength(keys));
+  env->GetIntArrayRegion(keys, 0, static_cast<jsize>(k.size()), k.data());
+  for (size_t i = 0; i + 4 < k.size(); i += 5)
+    layout.keys.push_back({static_cast<char32_t>(k[i]), k[i + 1], k[i + 2], k[i + 3], k[i + 4]});
+  std::lock_guard g(lock);
+  core->setLayout(layout);
+}
+
+void setContext(JNIEnv *env, jclass, jstring before) {
+  const std::string s = str(env, before);
+  std::lock_guard g(lock);
+  core->setContext(s);
 }
 
 // Types letters into an empty composition, as librime's simulate_key_sequence did for RimeJni.
@@ -298,25 +380,32 @@ jbyteArray importUserDictionary(JNIEnv *env, jclass, jbyteArray text) {
 
 }  // namespace
 
-extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) {
+extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
+  vm = javaVm;
   rime_require_module_lua();
   rime_require_module_octagram();
   JNIEnv *env;
   if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
   constexpr const char *S = "Ldev/sebb/sebtype/core/NativeState;";
   const std::string st = std::string("()") + S, i = std::string("(I)") + S, ii = std::string("(II)") + S,
-                    t = std::string("(Ljava/lang/String;)") + S;
+                    t = std::string("(Ljava/lang/String;)") + S, iiii = std::string("(IIII)") + S;
   const JNINativeMethod methods[] = {
       {"configure", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
        reinterpret_cast<void *>(configure)},
       {"setRimeSchema", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setRimeSchema)},
       {"setMozcData", "(Ljava/lang/String;Ljava/lang/String;JJ)V", reinterpret_cast<void *>(setMozcData)},
+      {"setEnglishPaths", "(Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;)V",
+       reinterpret_cast<void *>(setEnglishPaths)},
       {"setSettings", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setSettings)},
+      {"setEnglishOptions", "(ZZ[Ljava/lang/String;[I)V", reinterpret_cast<void *>(setEnglishOptions)},
       {"settings", "()Ljava/lang/String;", reinterpret_cast<void *>(settings)},
       {"selectLanguage", "(I)V", reinterpret_cast<void *>(selectLanguage)},
       {"setField", "(IZ)V", reinterpret_cast<void *>(setField)},
       {"setKeys", "(IZ)V", reinterpret_cast<void *>(setKeys)},
       {"key", ii.c_str(), reinterpret_cast<void *>(key)},
+      {"keyAt", iiii.c_str(), reinterpret_cast<void *>(keyAt)},
+      {"setLayout", "(II[I)V", reinterpret_cast<void *>(setLayout)},
+      {"setContext", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setContext)},
       {"type", t.c_str(), reinterpret_cast<void *>(type)},
       {"tryTyping", "(ILjava/lang/String;)[Ljava/lang/String;", reinterpret_cast<void *>(tryTyping)},
       {"selectCandidate", i.c_str(), reinterpret_cast<void *>(selectCandidate)},
@@ -337,5 +426,8 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) {
   };
   jclass cls = env->FindClass("dev/sebb/sebtype/core/NativeCore");
   if (!cls || env->RegisterNatives(cls, methods, sizeof(methods) / sizeof(methods[0])) != JNI_OK) return JNI_ERR;
+  nativeCore = static_cast<jclass>(env->NewGlobalRef(cls));
+  englishReady = env->GetStaticMethodID(cls, "englishReady", "()V");
+  if (!englishReady) return JNI_ERR;
   return JNI_VERSION_1_6;
 }

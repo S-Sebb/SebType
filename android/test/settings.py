@@ -58,11 +58,6 @@ NEXT = PKG == "dev.sebb.sebtype.next"
 IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
 NEXT_SKIPS = {
-    "incognito-private-en": "English learns in stage 2",
-    "incognito-en": "English learns in stage 2",
-    "incognito-off-learns-en": "English learns in stage 2",
-    "incognito-clipboard": "clipboard history comes in stage 4",
-    "import-en-personal-dictionary": "English's suggestions come to the phone with #246's engine",
     "settings-payment-note": "no FUTO payment screens in the new app (#191 Decisions 7)",
 }
 SETTINGS = (
@@ -252,6 +247,20 @@ def type_keys(text):
     for ch in text:
         tap(k[ch][0], k[ch][1])
     time.sleep(1.5)
+    settle()
+
+
+def settle(seconds=30):
+    """The new keyboard's keys show when its engine thread answers (#241), which on the emulator can
+    take a second a key in English: waits until the field stops changing."""
+    if not NEXT:
+        return
+    last, end = None, time.time() + seconds
+    while time.time() < end:
+        if (text := field_text()) == last:
+            return
+        last = text
+        time.sleep(1)
 
 
 def open_field(kind=None, clip=None):
@@ -327,15 +336,8 @@ def to_language(probe, word):
             while True:
                 ns = nodes()
                 if (
-                    probe == "hello" and NEXT
-                ):  # no suggestions yet: hello typed as it is, no chip
-                    got = candidates(ns)
-                    english = not any(n[0] in ("あ", "ア") for n in ns)
-                    if english and not got and field_text().lower() == "hello":
-                        return
-                elif (
                     probe == "hello"
-                ):  # English's words aren't TextViews: en_candidates
+                ):  # today's English words aren't TextViews: en_candidates
                     got = en_candidates(ns)
                     english = not any(
                         re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
@@ -558,7 +560,12 @@ SCREENS = [
     (
         "resize",
         (HOME["keyboard"], labels("尺寸和位置", "Size and position", "サイズと位置")),
-        labels("调整键盘大小", "Resize Keyboard", "キーボードサイズ調整"),
+        labels(
+            "调整键盘大小",
+            "Resize Keyboard",
+            "キーボードサイズ調整",
+            "キーボードのサイズ変更",
+        ),
     ),
     (
         "action-bar",
@@ -603,9 +610,10 @@ SCREENS = [
 ]
 
 
-# Not in the new app yet: resizing and the action bar (stage 4); FUTO's payment page (#191 Decisions 7).
+# Not in the new app: the action bar's buttons screen (its keyboard edits them, #257); FUTO's payment
+# page (#191 Decisions 7).
 if NEXT:
-    SCREENS = [s for s in SCREENS if s[0] not in ("resize", "action-bar", "payment")]
+    SCREENS = [s for s in SCREENS if s[0] not in ("action-bar", "payment")]
 
 
 def every_screen():
@@ -1107,7 +1115,14 @@ INCOGNITO_FIELD = labels(
 OPEN_BAR = labels("打开操作栏", "Open Action Bar", "アクションバーを開く")
 CLOSE_BAR = labels("关闭操作栏", "Close Action Bar", "アクションバーを閉じる")
 CLIPBOARD_FILE = f"/data/data/{PKG}/files/clipboard.json"
+CLIPBOARD_ACTION = labels("剪贴板管理器", "Clipboard Manager", "クリップボード")
+KEEP_CLIPBOARD = labels(
+    "保留剪贴板历史", "Keep clipboard history", "クリップボード履歴を残す"
+)
 BAR_CONTROLS.update((*INCOGNITO_ON, *INCOGNITO_FIELD, *OPEN_BAR, *CLOSE_BAR))
+# The new keyboard's bar: its expand button
+BAR_CONTROLS.update(labels("更多候选词", "More candidates", "候補をもっと見る"))
+BAR_CONTROLS.update(labels("收起候选词", "Fewer candidates", "候補を閉じる"))
 
 
 def badge():
@@ -1224,12 +1239,14 @@ def incognito_clipboard():
     for _ in range(2):
         if clipboard_capture(f"sebclip-ctl-{time.time_ns()}"):
             break
-        toggle(
-            (HOME["privacy"],),
-            labels(
-                "保留剪贴板历史", "Keep clipboard history", "クリップボード履歴を残す"
-            ),
-        )
+        if NEXT:  # the switch is the keyboard's clipboard panel's (the settings app is stage 5's)
+            open_field()
+            if not screen_has(CLOSE_BAR):
+                tap_text(OPEN_BAR)
+            tap_text(CLIPBOARD_ACTION)
+            tap_text(KEEP_CLIPBOARD)
+        else:
+            toggle((HOME["privacy"],), KEEP_CLIPBOARD)
     else:
         raise Fail("clipboard history keeps no copy even from a normal field")
     private = f"sebclip-private-{time.time_ns()}"

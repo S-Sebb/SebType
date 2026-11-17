@@ -118,4 +118,10 @@
     <string name="import_failed">インポートに失敗しました</string>
     <string name="export_done">設定をエクスポートしました</string>
     <string name="export_failed">エクスポートに失敗しました</string>
+    <string name="sebtype_settings_size">サイズと位置</string>
+    <string name="sebtype_settings_size_subtitle">キーボードモードと高さ</string>
+    <string name="sebtype_settings_size_try">ここで入力して試せます</string>
+    <string name="sebtype_settings_hints">ヒントを表示</string>
+    <string name="sebtype_settings_hints_subtitle">キーの隅の数字と記号</string>
+    <string name="sebtype_settings_vibrate_strength">バイブレーションの強さ</string>
 </resources>

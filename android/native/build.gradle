@@ -1,5 +1,6 @@
 // SebType's native library for the phone (#191): libsebtype.so, core/ (the PCs' engine code) with librime
-// (engines/librime, with librime-lua and octagram) and the JNI glue NativeCore.kt calls; and libmozc.so,
+// (engines/librime, with librime-lua and octagram), English (AOSP's decoder in engines/latinime and SebType's
+// model on llama.cpp, engines/sebtype-lm) and the JNI glue NativeCore.kt calls; and libmozc.so,
 // built from engines/mozc with Bazel, the same Mozc the PCs run, which libsebtype.so links to and core/
 // calls in this process.
 plugins {
@@ -13,6 +14,9 @@ final def depsCache = "${System.getProperty('user.home')}/scratch/SebType/cache/
 final def mozcSrc = file('../../engines/mozc/src')
 final def abis = (findProperty('sebtypeAbis') ?: 'arm64-v8a').split(',') as List
 final def mozcLibs = layout.buildDirectory.dir('generated/mozc/jniLibs')
+// llama.cpp (MIT) at the commit engines/sebtype-lm pins, fetched once into the shared cache.
+final def llamaDir = providers.exec { commandLine 'bash', file('../../engines/sebtype-lm/fetch-llama.sh').absolutePath }
+    .standardOutput.asText.get().trim()
 
 android {
     namespace 'dev.sebb.sebtype.core'
@@ -32,6 +36,7 @@ android {
                 "-DSEBTYPE_CORE_DIR=${repoRoot}/core",
                 "-DMOZC_LIBS_DIR=${mozcLibs.get().asFile.absolutePath}",
                 "-DRIME_DEPS_CACHE=${depsCache}",
+                '-DSEBTYPE_ENGLISH=ON', "-DLLAMA_DIR=${llamaDir}",
                 '-DCMAKE_BUILD_TYPE=Release'
             // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
             if (findProperty('sebtypeJobs')) {
@@ -41,6 +46,7 @@ android {
             // in app/build.gradle): the library is the same from every checkout and machine (#223, #229).
             final def prefixMaps = ["-ffile-prefix-map=${repoRoot}/=", "-ffile-prefix-map=${depsCache}/=rime-android/",
                                     "-ffile-prefix-map=${android.sdkDirectory}/=android-sdk/",
+                                    "-ffile-prefix-map=${llamaDir}/=llama.cpp/",
                                     '-ffile-compilation-dir=.']
             cFlags(*prefixMaps)
             cppFlags('-Wno-deprecated', *prefixMaps)

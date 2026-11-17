@@ -20,7 +20,15 @@ tasks.register('copyFonts', Sync) {
     }
     into fontsDir
 }
-preBuild.dependsOn 'buildRimeData', 'copyFonts'
+// English's dictionary (data/en-dict) and SebType's model (engines/sebtype-lm), both stored uncompressed: the
+// dictionary is read straight from the APK, the model copied out once (llama.cpp maps a file of its own).
+final def englishDir = layout.buildDirectory.dir('generated/sebtype-english')
+tasks.register('copyEnglish', Sync) {
+    from('../../data/en-dict') { include 'en_US.dict' }
+    from('../../engines/sebtype-lm') { include 'english.gguf' }
+    into englishDir.map { it.dir('english') }
+}
+preBuild.dependsOn 'buildRimeData', 'copyFonts', 'copyEnglish'
 
 android {
     namespace 'dev.sebb.sebtype.next'
@@ -64,12 +72,12 @@ android {
     sourceSets {
         main {
             res.srcDirs += ['../app/res-bundle', fontsDir] // Mozc's dictionary (build.sh downloads it); the fonts
-            assets.srcDirs += assetsDir
+            assets.srcDirs += [assetsDir, englishDir]
         }
     }
 
     androidResources {
-        noCompress 'dict', 'zip' // Mozc maps its dictionary straight from the APK
+        noCompress 'dict', 'zip', 'gguf' // Mozc and English read their dictionaries straight from the APK
     }
 
     packagingOptions {
@@ -99,4 +107,6 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.9.1'
     implementation 'androidx.datastore:datastore-preferences:1.1.7'
     testImplementation 'junit:junit:4.13.2'
+    // Inline autofill's chips (#53 B9)
+    implementation 'androidx.autofill:autofill:1.1.0'
 }

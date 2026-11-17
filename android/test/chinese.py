@@ -35,9 +35,7 @@ NEXT = PKG == "dev.sebb.sebtype.next"
 IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
 FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
 # Checks the new keyboard can't pass yet, and why.
-NEXT_SKIPS = {
-    "en-model-waits-for-letter": "English's model comes in stage 2",
-}
+NEXT_SKIPS = {}
 # The new keyboard's space bar, as its accessibility label reads in each system language.
 SPACE_LABELS = ("Space", "空格", "スペース")
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
@@ -230,6 +228,20 @@ def type_keys(text):
     for ch in text:
         adb("shell", "input", "tap", str(k[ch][0]), str(k[ch][1]))
     time.sleep(1.5)
+    settle()
+
+
+def settle(seconds=30):
+    """The new keyboard's keys show when its engine thread answers (#241), which on the emulator can
+    take a second a key in English: waits until the field stops changing."""
+    if not NEXT:
+        return
+    last, end = None, time.time() + seconds
+    while time.time() < end:
+        if (text := field_text()) == last:
+            return
+        last = text
+        time.sleep(1)
 
 
 def field_text():
@@ -237,7 +249,7 @@ def field_text():
 
 
 def type_fast(text, gap_ms=10):
-    """Types text (letters and spaces) with monkey taps gap_ms apart, faster than the engines answer
+    """Types text (letters, spaces and periods) with monkey taps gap_ms apart, faster than the engines answer
     (10-60 ms a key, #241); then waits for them to catch up."""
     k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
     left, top, right, bottom = keyboard_frame
@@ -250,9 +262,22 @@ def type_fast(text, gap_ms=10):
         ),
         (int(left + 5.5 * (right - left) / 10), row_y(top, bottom, 3)),
     )
+    # The bottom row's period, by its label
+    period = next(
+        ((x, y) for label, x, y, top_, cls in nodes() if label == "." and top_ >= top),
+        None,
+    )
+    monkey_taps(
+        [space if ch == " " else period if ch == "." else k[ch][:2] for ch in text],
+        gap_ms,
+    )
+    time.sleep(3)
+
+
+def monkey_taps(points, gap_ms):
+    """Taps the points gap_ms apart in one monkey run: closer together than `input tap` can (a double tap)."""
     script = "type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\n" + "".join(
-        f"Tap({x},{y})\nUserWait({gap_ms})\n"
-        for x, y in (space if ch == " " else k[ch][:2] for ch in text)
+        f"Tap({x},{y})\nUserWait({gap_ms})\n" for x, y in points
     )
     path = os.path.join(logdir, "fast-taps.txt")
     with open(path, "w") as f:
@@ -260,19 +285,20 @@ def type_fast(text, gap_ms=10):
     adb("push", path, "/data/local/tmp/sebtype-fast-taps.txt")
     adb("shell", "monkey", "-f", "/data/local/tmp/sebtype-fast-taps.txt", "1")
     adb("shell", "rm", "/data/local/tmp/sebtype-fast-taps.txt")
-    time.sleep(3)
 
 
-def open_field(kind=None):
+def open_field(kind=None, clip=None):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
-    a password, pin, private, url or email field (#30)."""
+    a password, pin, private, url or email field (#30); clip has the field app copy that text."""
     global number_row
     number_row = kind in ("password", "visible-password", "email")
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     # A new popup each time (new task, clear task): one left open would get the intent without showing
     # the keyboard again.
-    extra = ["--es", "kind", kind] if kind else []
+    extra = (["--es", "kind", kind] if kind else []) + (
+        ["--es", "clip", clip] if clip else []
+    )
 
     def show():
         adb("shell", "ime", "set", IME)
@@ -749,7 +775,7 @@ check(
 # system language (English, Chinese or Japanese).
 OPEN_BAR = ("Open Action Bar", "打开操作栏", "アクションバーを開く")
 CLOSE_BAR = ("Close Action Bar", "关闭操作栏", "アクションバーを閉じる")
-ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト")
+ALL_ACTIONS = ("All Actions", "所有操作项", "アクションリスト", "すべての操作")
 BACK = ("Back", "返回", "戻る")
 
 
@@ -763,18 +789,16 @@ def tap_label(labels, timeout=10):
 
 def open_menu():
     open_field()
-    if NEXT:
-        tap_label(OPEN_BAR)
-        return
-    # The expanded bar is a saved setting (ActionBarExpanded), so after it has been opened once, a new
-    # keyboard comes up expanded: its toggle reads "Close Action Bar" and its tiles are already showing.
+    # The expanded bar is a saved setting (today's ActionBarExpanded, the new keyboard's too), so after it
+    # has been opened once, a new keyboard comes up expanded: its toggle reads "Close Action Bar" and All
+    # Actions is already showing.
     if not any(n[0] in ALL_ACTIONS for n in nodes()):
         tap_label(OPEN_BAR)
     tap_label(ALL_ACTIONS)
 
 
 def close_menu():
-    tap_label(CLOSE_BAR if NEXT else BACK)
+    tap_label(BACK)
 
 
 def menu_switch():
@@ -1055,7 +1079,9 @@ check("ja-unloads-when-idle", ja_unloads_when_idle, needs=["ja-chip"])
 
 def model_mapped():
     pid = adb("shell", "pidof", PKG).strip()
-    return pid and "transformer-models/" in root(f"cat /proc/{pid}/maps")
+    # The new keyboard's model is english.gguf, copied out of the APK into no_backup/english/.
+    model = "english/english.gguf" if NEXT else "transformer-models/"
+    return pid and model in root(f"cat /proc/{pid}/maps")
 
 
 def en_model_waits_for_letter():
@@ -1078,6 +1104,30 @@ def en_model_waits_for_letter():
 
 
 check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
+
+
+def fast_typing_en():
+    """English keys typed faster than the engine answers (#241) land in order, with each sentence's
+    capital: a key lost, out of order or cased by a Shift the field hadn't caught up with shows here."""
+    open_field()
+    type_fast("the cat sat. on the mat ")
+    want = "The cat sat. On the mat "
+    if (text := field_text()) != want:
+        raise Fail(
+            f"typed {want.lower()!r} 10 ms apart in EN; the field shows {text!r}"
+        )
+    # 100 ms apart, a word's commit is reported while the next word composes: not a cursor move (#257)
+    open_field()
+    type_fast("the quick brown fox jumps over the lazy dog ", gap_ms=100)
+    slow = "The quick brown fox jumps over the lazy dog "
+    if (text100 := field_text()) != slow:
+        raise Fail(
+            f"typed {slow.lower()!r} 100 ms apart in EN; the field shows {text100!r}"
+        )
+    return f"{want.lower()!r}, 10 ms apart -> {text!r}; 100 ms apart -> {text100!r}"
+
+
+check("fast-typing-en", fast_typing_en, needs=["en-model-waits-for-letter"])
 
 
 def main_learns():
@@ -1148,10 +1198,12 @@ def type_text(text):
     for ch in text:
         adb("shell", "input", "tap", *map(str, k[{" ": "Space"}.get(ch, ch)]))
     time.sleep(1.5)
+    settle()
 
 
 def to_english():
-    """Cycles the globe until x types a plain x: no chip, no candidates and no Chinese notice."""
+    """Cycles the globe until x types a plain x: no chip, no Chinese notice and no Chinese candidates
+    (English may suggest words for it)."""
     for _ in range(4):
         open_field()
         type_keys("x")
@@ -1159,7 +1211,7 @@ def to_english():
         notice = any(n[0].startswith(PREPARING) for n in ns)
         if (
             not chip(ns)
-            and not candidates(ns)
+            and all(c.isascii() for c in candidates(ns))
             and not notice
             and field_text().lower() == "x"
         ):
@@ -1221,8 +1273,355 @@ def typed_as(text, want):
     return run
 
 
+# --- Stage 4 (#257): the action bar's panels, the quick clip, keyboard modes and swipes ---
+
+EMOJI_ACTION = ("Emojis", "表情符号", "絵文字")
+CLIPBOARD_ACTION = ("Clipboard Manager", "剪贴板管理器", "クリップボード")
+MODES_ACTION = ("Keyboard Modes", "键盘模式", "キーボードモード")
+KEEP_CLIPBOARD = (
+    "Keep clipboard history",
+    "保留剪贴板历史",
+    "クリップボード履歴を残す",
+)
+QUICK_CLIP = ("Paste copied text", "粘贴复制的文字", "コピーしたテキストを貼り付け")
+RESIZE = ("Resize Keyboard", "调整键盘大小", "キーボードのサイズ変更")
+TALLER = ("Taller", "调高", "高く")
+SHORTER = ("Shorter", "调低", "低く")
+
+
+def action(labels):
+    """Opens the action bar if it is closed, then taps one of its actions."""
+    if not any(n[0] in CLOSE_BAR for n in nodes()):
+        tap_label(OPEN_BAR)
+    tap_label(labels)
+
+
+def node(label):
+    return next((n for n in nodes() if n[0] == label), None)
+
+
+def emoji_picks():
+    """The emoji panel types an emoji by its CLDR name, and keeps it among the recent ones."""
+    to_english()
+    open_field()
+    action(EMOJI_ACTION)
+    tap_label(("grinning face",))
+    if field_text() != "😀":
+        raise Fail(f"grinning face typed {field_text()!r}")
+    open_field()
+    action(EMOJI_ACTION)
+    ns = nodes()
+    recent = next((n for n in ns if n[0] == "Recently used"), None)
+    first = next((n for n in ns if n[0] == "grinning face"), None)
+    if not recent or not first or first[2] > recent[2] + 200:
+        raise Fail("grinning face isn't first under Recently used")
+    # A long press shows its skin tones; one is typed and kept for next time.
+    # Its group's tab scrolls to it.
+    tab = next(
+        n
+        for n in nodes()
+        if n[0] == "People & Body" and n[4] == "android.widget.Button"
+    )
+    adb("shell", "input", "tap", str(tab[1]), str(tab[2]))
+    time.sleep(1)
+    hand = wait_for("waving hand", lambda: node("waving hand"), 10)
+    adb(
+        "shell",
+        "input",
+        "swipe",
+        str(hand[1]),
+        str(hand[2]),
+        str(hand[1]),
+        str(hand[2]),
+        "800",
+    )
+    time.sleep(1)
+    tap_label(("👋🏽",))
+    if field_text() != "👋🏽":
+        raise Fail(f"the medium skin tone typed {field_text()!r}")
+    return "grinning face -> 😀, first among the recent ones; waving hand's medium tone -> 👋🏽"
+
+
+def clipboard_paste():
+    """Clipboard history on, a copy is kept, and a tap on it in the clipboard panel pastes it."""
+    to_english()
+    open_field()
+    action(CLIPBOARD_ACTION)
+    if node("Clipboard history is off"):
+        tap_label(KEEP_CLIPBOARD)
+    text = f"sebclip-paste-{time.time_ns()}"
+    open_field(clip=text)
+    time.sleep(4)
+    open_field()
+    action(CLIPBOARD_ACTION)
+    tap_label((text,))
+    got = field_text()
+    if got != text:
+        raise Fail(f"the clip pasted {got!r}")
+    return f"kept and pasted {text}"
+
+
+def quick_clip():
+    """Text just copied is offered in the bar; a tap pastes it, and it is gone."""
+    to_english()
+    text = f"sebclip-quick-{time.time_ns()}"
+    open_field(clip=text)
+    wait_for("the quick clip", lambda: any(n[0] in QUICK_CLIP for n in nodes()), 10)
+    tap_label(QUICK_CLIP)
+    got = field_text()
+    if got != text:
+        raise Fail(f"the quick clip pasted {got!r}")
+    if any(n[0] in QUICK_CLIP for n in nodes()):
+        raise Fail("the quick clip is still offered after it was pasted")
+    return f"offered and pasted {text}"
+
+
+def frame_now():
+    nodes()
+    return keyboard_frame
+
+
+def set_mode(label):
+    open_field()
+    action(MODES_ACTION)
+    tap_label((label,))
+    open_field()
+    return frame_now()
+
+
+def screen_width():
+    m = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size"))
+    return int(m.group(1))
+
+
+def types_letters():
+    open_field()
+    type_text("ok")
+    if field_text().lower() != "ok":
+        raise Fail(f"typing ok gave {field_text()!r}")
+
+
+def modes_one_handed():
+    """One-handed: the keys take 80% of the width, at one side, and still type."""
+    to_english()
+    try:
+        l, t, r, b = set_mode("One-handed")
+        w = screen_width()
+        if not (0.7 * w < r - l < 0.9 * w):
+            raise Fail(f"the keys are {r - l} px wide of {w}")
+        types_letters()
+        return f"keys {r - l} of {w} px, typing works"
+    finally:
+        set_mode("Standard")
+
+
+def caps_lock():
+    """A double tap on Shift locks capitals, also while the field's own capital has Shift on (#257): today's
+    does, and the locked key is drawn berry. A new field ends it, as today's does."""
+    open_field()
+    shift = wait_for(
+        "Shift",
+        lambda: next(
+            (
+                (x, y)
+                for label, x, y, top, cls in nodes()
+                if label in ("Shift", "Shift on")
+            ),
+            None,
+        ),
+        KEYBOARD_WAIT,
+    )
+    monkey_taps([shift, shift], 100)
+    time.sleep(1)
+    if "Caps lock" not in {label for label, *_ in nodes()}:
+        raise Fail("a double tap on Shift (auto-capital on) didn't lock it")
+    type_fast("ab", gap_ms=300)
+    if (text := field_text()) != "AB":
+        raise Fail(f"typed ab with caps lock; the field shows {text!r}")
+    open_field()
+    time.sleep(1)
+    if "Caps lock" in {label for label, *_ in nodes()}:
+        raise Fail("caps lock stayed on in a new field")
+    return f"double tap -> Caps lock, ab -> {text!r}; a new field ends it"
+
+
+def modes_split():
+    """Split: the keys in two halves, t and y far apart (g and v sit on both halves, as in today's app)."""
+    to_english()
+    try:
+        set_mode("Split")
+        k = key_spots()
+        gap = k["y"][0] - k["t"][0]
+        unit = k["w"][0] - k["q"][0]
+        if gap < 2 * unit:
+            raise Fail(f"t and y are {gap} px apart, a key is {unit}")
+        types_letters()
+        return f"t to y {gap} px, a key {unit} px"
+    finally:
+        set_mode("Standard")
+
+
+def modes_floating():
+    """Floating: a narrower keyboard that leaves the app its whole height, and still types."""
+    to_english()
+    try:
+        l, t, r, b = set_mode("Floating")
+        w = screen_width()
+        if not (r - l < 0.9 * w):
+            raise Fail(f"the floating keyboard is {r - l} px wide of {w}")
+        types_letters()
+        return f"{r - l} of {w} px wide, typing works"
+    finally:
+        set_mode("Standard")
+
+
+def modes_height():
+    """Taller and shorter: the keys' height follows, and comes back."""
+    to_english()
+    open_field()
+    l, t, r, b = frame_now()
+    before = b - t
+    open_field()
+    action(MODES_ACTION)
+    tap_label(RESIZE)
+    tap_label(TALLER)
+    tap_label(TALLER)
+    open_field()
+    l, t, r, b = frame_now()
+    after = b - t
+    open_field()
+    action(MODES_ACTION)
+    tap_label(RESIZE)
+    tap_label(SHORTER)
+    tap_label(SHORTER)
+    open_field()
+    l, t, r, b = frame_now()
+    if not after > before * 1.05:
+        raise Fail(f"two taps on Taller: {before} -> {after} px")
+    if abs((b - t) - before) > 4:
+        raise Fail(f"two taps on Shorter didn't bring {before} px back: {b - t}")
+    return f"{before} -> {after} -> {b - t} px"
+
+
+def swipe_key(label, dx):
+    k = key_spots()
+    x, y = k[label]
+    adb("shell", "input", "swipe", str(x), str(y), str(x + dx), str(y), "600")
+    time.sleep(1.5)
+
+
+def swipe_space_cursor():
+    """Space swiped left moves the cursor back: a letter typed then lands inside the text."""
+    to_english()
+    open_field()
+    type_text("good day ")
+    unit = key_spots()["w"][0] - key_spots()["q"][0]
+    swipe_key("Space", -2 * unit)
+    type_text("x")
+    got = field_text()
+    if got.endswith("x") or "x" not in got:
+        raise Fail(f"after the swipe, x went to {got!r}")
+    return f"-> {got!r}"
+
+
+def swipe_delete_words():
+    """Delete swiped left a key and a half deletes the last two words."""
+    to_english()
+    open_field()
+    type_text("one two three")
+    unit = key_spots()["w"][0] - key_spots()["q"][0]
+    swipe_key("Delete", -int(1.6 * unit))
+    got = field_text()
+    if (
+        "three" in got.lower()
+        or "two" in got.lower()
+        or not got.lower().startswith("one")
+    ):
+        raise Fail(f"after the swipe the field shows {got!r}")
+    return f"-> {got!r}"
+
+
+def picked_suggestion_period():
+    """#39: after a tapped suggestion, a "." still joins the word: "this", This tapped, "." -> "This. "."""
+    to_english()
+    open_field()
+    type_text("this")
+    wait_for("This in the bar", lambda: "This" in candidates(nodes()), 15)
+    ns = nodes()
+    row = bar_row(ns)
+    x, y = next(
+        (x, y)
+        for label, x, y, top, cls in ns
+        if label == "This" and row[0] < y < row[1]
+    )
+    adb("shell", "input", "tap", str(x), str(y))
+    time.sleep(1.5)
+    type_text(".")
+    text = field_text()
+    if text != "This. ":
+        raise Fail(f"this, This tapped, then . -> {text!r}, not 'This. '")
+    return f"-> {text!r}"
+
+
+def personal_word_en():
+    """English suggests a word of the personal dictionary (Android's user dictionary), as 日本語 does."""
+    root(
+        f"content insert --uri {WORDS} --bind word:s:zorblax --bind locale:s:en_US"
+        " --bind frequency:i:250 --bind appid:i:0"
+    )
+    try:
+        to_english()
+        got = candidates_for(
+            "zorbl"
+        )  # the field shows the keyboard again: it reads the words
+    finally:
+        root(f"content delete --uri {WORDS} --where \"word='zorblax'\"")
+    if "zorblax" not in [
+        c.lower() for c in got
+    ]:  # a sentence's first word has its capital
+        raise Fail(f"zorbl -> {got[:6]}, without the personal word zorblax")
+    return f"zorbl -> {got[:6]}"
+
+
+def emoji_suggestion():
+    """English's word that names an emoji offers it in the bar; a tap puts it in place of the word."""
+    to_english()
+    open_field()
+    type_text("pizza")
+    got = wait_for(
+        "🍕 in the bar", lambda: "🍕" in candidates(nodes()) and candidates(nodes()), 15
+    )
+    tap_candidate("🍕")
+    settle()
+    if (text := field_text()) != "🍕":
+        raise Fail(f"pizza, 🍕 tapped -> {text!r}")
+    return f"pizza -> {got[:3]}, tapped -> {text!r}"
+
+
+SETTINGS_ACTION = ("Settings", "设置", "設定")
+
+
+def settings_action():
+    """All Actions' Settings opens the app's settings (Decisions #2, 2026-11-12)."""
+    to_english()
+    open_field()
+    action(ALL_ACTIONS)
+    tap_label(SETTINGS_ACTION)
+
+    def resumed():
+        dump = adb("shell", "dumpsys activity activities")
+        return any(
+            "settings.SettingsActivity" in line
+            for line in dump.splitlines()
+            if "ResumedActivity" in line
+        )
+
+    wait_for("the settings to open", resumed, 10)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    return "All Actions, Settings -> SettingsActivity"
+
+
 if NEXT:
-    NEXT_SKIPS["en-picked-suggestion-period"] = "English's suggestions come in stage 2"
     NEXT_SKIPS["en-futo-default-migrates"] = (
         "FUTO's stored settings have nothing to migrate to here"
     )
@@ -1240,7 +1639,27 @@ if NEXT:
         typed_as("hello. how", "Hello. How"),
         needs=["first-install"],
     )
-    check("en-picked-suggestion-period", lambda: None)
+    check(
+        "en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"]
+    )
+    check("emoji-picks", emoji_picks, needs=["first-install"])
+    check("caps-lock", caps_lock, needs=["en-model-waits-for-letter"])
+    check(
+        "en-double-space-period",
+        typed_as("yes  then", "Yes. Then"),
+        needs=["first-install"],
+    )
+    check("en-personal-word", personal_word_en, needs=["first-install"])
+    check("en-emoji-suggestion", emoji_suggestion, needs=["first-install"])
+    check("settings-action", settings_action, needs=["first-install"])
+    check("clipboard-paste", clipboard_paste, needs=["first-install"])
+    check("quick-clip", quick_clip, needs=["first-install"])
+    check("modes-one-handed", modes_one_handed, needs=["first-install"])
+    check("modes-split", modes_split, needs=["first-install"])
+    check("modes-floating", modes_floating, needs=["first-install"])
+    check("modes-height", modes_height, needs=["first-install"])
+    check("swipe-space-cursor", swipe_space_cursor, needs=["first-install"])
+    check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
     check("en-futo-default-migrates", lambda: None)
 
 if (

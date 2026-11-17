@@ -30,6 +30,10 @@ object Prefs {
     val KEY_POPUP = Option(booleanPreferencesKey("popup_on"), true)
     val VIBRATE = Option(booleanPreferencesKey("vibrate_on"), true)
     val SOUND = Option(booleanPreferencesKey("sound_on"), false)
+    /** The keys' vibration, in percent of the motor's strength (#257) */
+    val VIBRATE_STRENGTH = Option(intPreferencesKey("sebtype_vibrate_strength"), 50)
+    /** The small digits and symbols in the keys' corners, a long press's first choice (#257) */
+    val SHOW_HINTS = Option(booleanPreferencesKey("sebtype_show_hints"), true)
     val LONG_PRESS_MS = Option(intPreferencesKey("pref_key_longpress_timeout"), 300)
     val AUTOCORRECT = Option(booleanPreferencesKey("pref_key_auto_correction"), true)
     val CAPITALISE = Option(booleanPreferencesKey("auto_cap"), true)

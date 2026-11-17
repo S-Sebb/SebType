@@ -1,6 +1,7 @@
 package dev.sebb.sebtype.next
 
 import dev.sebb.sebtype.next.data.PersonalWords
+import dev.sebb.sebtype.next.settings.SettingsActivity
 import dev.sebb.sebtype.next.data.Prefs
 import dev.sebb.sebtype.next.sync.Sync
 import android.content.BroadcastReceiver
@@ -9,6 +10,8 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.inputmethodservice.InputMethodService
+import android.os.Build
+import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
@@ -17,6 +20,8 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InlineSuggestionsRequest
+import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -29,43 +34,95 @@ import dev.sebb.sebtype.core.NativeCore.ENGLISH
 import dev.sebb.sebtype.core.NativeCore.JAPANESE
 import dev.sebb.sebtype.core.NativeState
 import dev.sebb.sebtype.next.Layout.Code
+import kotlin.math.roundToInt
 
 /**
- * SebType's own keyboard (#191, stage 3). English types the letters as they are (its suggestions come in
- * stage 2); 中文 and 日本語 go through core/ ([NativeCore]): each key goes to the engine, and what it
- * returns (text to commit, the composition, candidates) is shown. 中文's pinyin floats above the bar,
- * 日本語's composition sits in the field. Every engine call goes to [NativeCore]'s engine thread and its
- * result shows when it comes back, in the order the keys were typed (#241).
+ * SebType's own keyboard (#191, stages 3 and 4). English, 中文 and 日本語 go through core/ ([NativeCore]):
+ * each key goes to the engine, and what it returns (text to commit, the composition, candidates) is shown.
+ * 中文's pinyin floats above the bar; English's word and 日本語's composition sit in the field. English's
+ * next words come from its worker thread ([NativeCore.onEnglishReady]). Every engine call goes to
+ * [NativeCore]'s engine thread and its result shows when it comes back, in the order the keys were typed (#241). The action bar, All Actions and
+ * their panels (emoji, clipboard) take the keys' place; Keyboard Modes, a row over the keys, moves and resizes them.
  */
-class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Listener, MenuPanel.Listener {
+class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Listener, ActionRow.Listener,
+    ActionsPanel.Listener, EmojiPanel.Listener, ModesPanel.Listener {
+    private companion object {
+        val ENGLISH_KEYS = setOf(Code.TEXT, Code.SPACE, Code.ENTER, Code.DELETE)
+        /** Enough of the text before the cursor to tell where a sentence starts */
+        const val SHIFT_CONTEXT = 64
+    }
+
     private enum class Page(val file: String) { LETTERS("letters"), SYMBOLS("symbols"), SYMBOLS2("symbols2"), DIGITS("digits") }
+
+    /** What takes the keys' place */
+    private enum class Panel { NONE, ACTIONS, EDIT, EMOJI, CLIPBOARD, MODES }
 
     private val prefs by lazy { getSharedPreferences("keyboard", MODE_PRIVATE) }
     private val editor = Editor(this)
+    private val texts by lazy { Texts(this) }
+    private val clipboard by lazy { Clipboard(this) { incognito || kind.incognito } }
 
+    private lateinit var root: FrameLayout
+    private lateinit var stack: LinearLayout
     private lateinit var panel: ClothPanel
     private lateinit var strip: PreeditStrip
+    private lateinit var handle: DragHandle
+    private lateinit var actionRow: ActionRow
     private lateinit var bar: CandidateBar
+    private lateinit var autofill: AutofillStrip
+    private lateinit var keysRow: LinearLayout
+    private lateinit var side: SideStrip
     private lateinit var keyboard: KeyboardView
     private lateinit var grid: CandidateGrid
-    private lateinit var menu: MenuPanel
+    private lateinit var actions: ActionsPanel
+    private lateinit var emoji: EmojiPanel
+    private lateinit var clips: ClipboardPanel
+    private lateinit var modes: ModesPanel
+    private lateinit var content: KeysFrame
     private var views = false
 
     private var lang = ENGLISH
     private var page = Page.LETTERS
     private var kind = FieldKind.of(null)
     private var katakana = false
-    private var menuOpen = false
+    private var shown = Panel.NONE
     private var expanded = false
     private var state: NativeState? = null
 
     private val incognito get() = prefs.getBoolean("incognito", false)
+    /** The action bar stays open, or closed, from one field to the next */
+    private var barOpen: Boolean
+        get() = prefs.getBoolean("action_bar", false)
+        set(value) = prefs.edit().putBoolean("action_bar", value).apply()
+    /** Modes are kept per orientation */
+    private val orientation get() = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) "land" else "port"
+    private var mode: Mode
+        get() = Mode.entries.firstOrNull { it.name == prefs.getString("mode_$orientation", null) } ?: Mode.STANDARD
+        set(value) = prefs.edit().putString("mode_$orientation", value.name).apply()
+    private var heightScale: Float
+        get() = prefs.getFloat("height_$orientation", 1f)
+        set(value) = prefs.edit().putFloat("height_$orientation", value).apply()
+    private val refreshClip = Runnable { refresh() }
+    /** Keyboard Modes shows the height in place of the modes (Resize Keyboard) */
+    private var resizing = false
     /** What the last shown result was typing; keys still on the engine thread may have changed it. */
     private val composing get() = state?.preedit?.isNotEmpty() == true
     // Whether the engine has something typed after its last call: read and written on the engine thread
     // only, so a key decides by what the keys before it typed, shown or not.
     private var engineComposing = false
-    private fun NativeState.recorded() = also { engineComposing = preedit.isNotEmpty() }
+    private var enginePreedit = ""
+    private fun NativeState.recorded() = also {
+        engineComposing = preedit.isNotEmpty()
+        enginePreedit = preedit
+    }
+    // English: the text before the cursor as the keys sent so far leave it, on the engine thread too, so a
+    // letter typed ahead of the engine gets the field's capital by the text it will follow (#241).
+    private val engineBefore = StringBuilder()
+    // English's options and personal words as last sent to core/ (the engine thread's)
+    private var englishOptionsSent: Any? = null
+    /** The emoji English's word names, and its index in the bar (-1: none) */
+    private var emojiShown = ""
+    private var emojiAt = -1
     private var keysSent: Int? = null
 
     override fun onCreate() {
@@ -73,32 +130,57 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         Engines.configure(this)
         Engines.prepareChinese(this)
         Engines.onChange = { if (views) refresh() }
+        // Next words for the text so far, from English's worker: shown unless a word is being typed again.
+        NativeCore.onEnglishReady = Runnable {
+            NativeCore.post({ if (engineComposing) null else state() }) { if (it != null && views && lang == ENGLISH) show(it) }
+        }
         // A fresh install starts in English (#35).
         lang = prefs.getInt("language", ENGLISH).takeIf { it in Engines.languages() } ?: ENGLISH
+        texts.language = lang
+        clipboard.onChange = { if (views) refresh() }
+        clipboard.start()
     }
 
     override fun onDestroy() {
         Engines.onChange = null
+        NativeCore.onEnglishReady = null
         Engines.saveJapanese()
+        Engines.saveEnglish()
+        clipboard.stop()
         super.onDestroy()
     }
 
     override fun onCreateInputView(): View {
-        val root = FrameLayout(this)
+        root = FrameLayout(this)
         val popups = PopupLayer(this)
         strip = PreeditStrip(this)
         panel = ClothPanel(this)
-        bar = CandidateBar(this, this)
+        handle = DragHandle(this, texts, ::onDrag) { saveFloating() }
+        actionRow = ActionRow(this, texts, this)
+        bar = CandidateBar(this, texts, this)
+        autofill = AutofillStrip(this)
         keyboard = KeyboardView(this, popups, this)
+        side = SideStrip(this, texts, { onSwapSide() }) { onMode(Mode.STANDARD) }
         grid = CandidateGrid(this) { onCandidate(it) }
-        menu = MenuPanel(this, this)
-        val content = KeysFrame(this)
-        content.addView(keyboard, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        content.addView(grid, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        content.addView(menu, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        panel.addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        actions = ActionsPanel(this, texts, this)
+        emoji = EmojiPanel(this, texts, this)
+        clips = ClipboardPanel(this, texts, clipboard) { onPasteClip(it) }
+        modes = ModesPanel(this, texts, this)
+        keysRow = LinearLayout(this)
+        keysRow.addView(keyboard, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        keysRow.addView(side, LinearLayout.LayoutParams(0, MATCH_PARENT, 0f))
+        content = KeysFrame(this)
+        content.addView(keysRow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        for (v in listOf(grid, actions, emoji, clips)) content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        val barFrame = FrameLayout(this)
+        barFrame.addView(bar, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        barFrame.addView(autofill, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        panel.addView(handle, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        panel.addView(actionRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        panel.addView(barFrame, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        panel.addView(modes, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(content, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        val stack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        stack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         stack.addView(strip, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         stack.addView(panel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(stack, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, android.view.Gravity.BOTTOM))
@@ -120,13 +202,17 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onEvaluateFullscreenMode() = false
 
-    /** The app sees the keyboard from the bar down; the floating pinyin above it lets touches through. */
+    /**
+     * The app sees the keyboard from the bar down; the floating pinyin above it lets touches through. A
+     * floating keyboard takes no room from the app: only its own touches are its.
+     */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
         if (!views || !panel.isShown) return
         val at = IntArray(2).also { panel.getLocationInWindow(it) }
-        outInsets.contentTopInsets = at[1]
-        outInsets.visibleTopInsets = at[1]
+        val top = if (mode == Mode.FLOATING) root.height else at[1]
+        outInsets.contentTopInsets = top
+        outInsets.visibleTopInsets = top
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
         outInsets.touchableRegion.set(Rect(at[0], at[1], at[0] + panel.width, at[1] + panel.height))
     }
@@ -142,11 +228,25 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         super.onStartInputView(info, restarting)
         if (!restarting) {
             page = Page.LETTERS
-            menuOpen = false
+            shown = Panel.NONE
             expanded = false
+            keyboard.setShift(KeyboardView.Shift.OFF) // Caps Lock ends with its field, as today's does
         }
         enterLanguage()
         keyboard.enter = kind.enter
+        keyboard.haptics = Prefs[Prefs.VIBRATE]
+        keyboard.sounds = Prefs[Prefs.SOUND]
+        keyboard.previews = Prefs[Prefs.KEY_POPUP]
+        keyboard.longPressMs = Prefs[Prefs.LONG_PRESS_MS].toLong()
+        keyboard.hints = Prefs[Prefs.SHOW_HINTS]
+        keyboard.strength = Prefs[Prefs.VIBRATE_STRENGTH]
+        englishOptions()
+        // Settings' Size and position opened a field to show the keyboard in its Keyboard Modes
+        if (prefs.getBoolean("open_modes", false)) {
+            prefs.edit().putBoolean("open_modes", false).apply()
+            shown = Panel.MODES
+        }
+        applyMode()
         refresh()
         autoShift()
         Sync.onKeyboardShown()
@@ -154,18 +254,17 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        if (views) autofill.clear()
         Engines.inUse(lang, false)
         Engines.saveJapanese()
         Sync.onKeyboardHidden(this)
+        Engines.saveEnglish()
     }
 
     override fun onFinishInput() {
         super.onFinishInput()
         NativeCore.drain() // the results still to come land in this field
-        if (composing) NativeCore.post {
-            clear()
-            engineComposing = false
-        }
+        if (composing) NativeCore.post { clear().recorded() }
         editor.finishComposing()
         state = null
         if (views) strip.preedit = ""
@@ -180,22 +279,63 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             editor.finishComposing()
             NativeCore.post({ clear().recorded() }) { show(it, applyText = false) }
         }
+        // English reads the words before the cursor for its corrections and next words.
+        if (external && lang == ENGLISH && toEngine) englishContext()
         if (views) autoShift()
+    }
+
+    /** English reads the text before the cursor again, after it changed other than by its keys. */
+    private fun englishContext() {
+        val before = editor.textBefore()
+        NativeCore.post({
+            setContext(before)
+            engineBefore.setLength(0)
+            engineBefore.append(before)
+            state().recorded()
+        }) { show(it, applyText = false) }
+    }
+
+    /**
+     * Settings' English options and the personal dictionary's English words (Android's user dictionary,
+     * read on the engine thread): core/ makes its dictionary of them again only when they changed.
+     */
+    private fun englishOptions() {
+        val autocorrect = Prefs[Prefs.AUTOCORRECT]
+        val period = Prefs[Prefs.DOUBLE_SPACE_PERIOD]
+        val app = applicationContext
+        if (Prefs[Prefs.EMOJI_SUGGESTIONS]) Thread { Emoji.forWord(app, "") }.start()
+        NativeCore.post {
+            val words = PersonalWords.all(app).filter { it.locale == null || it.locale.startsWith("en") }
+            val options = Triple(autocorrect, period, words.map { it.word to it.frequency })
+            if (options != englishOptionsSent) {
+                englishOptionsSent = options
+                setEnglishOptions(autocorrect, period, words.map { it.word }.toTypedArray(), words.map { it.frequency }.toIntArray())
+            }
+        }
     }
 
     /** The current language for this field: core/'s engine, its field kind, the keys. */
     private fun enterLanguage() {
         val lang = lang
-        val field = kind.field
+        val field = field()
         val learning = kind.learns && !incognito
+        // English reads the words before the cursor for its corrections and next words.
+        val before = if (lang == ENGLISH && toEngine) editor.textBefore() else null
         NativeCore.post {
             clear()
             selectLanguage(lang)
             setField(field, learning)
+            engineBefore.setLength(0)
+            before?.let {
+                setContext(it)
+                engineBefore.append(it)
+            }
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
             // one would load it here, ahead of the keys.
             if (lang == JAPANESE && running(JAPANESE)) setAlternate(false)
+            // Nothing typed in the new field: the next letter's capital reads no word left from the last one
             engineComposing = false
+            enginePreedit = ""
         }
         keysSent = null
         when (lang) {
@@ -216,12 +356,15 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     /** Keys go to core/ in 中文 (once it is set up) and 日本語, outside number and phone pads. */
     private val toEngine get() = kind.pad == null && when (lang) {
         CHINESE -> Engines.chinese == Engines.Chinese.READY
-        JAPANESE -> true
-        else -> false
+        else -> true
     }
 
-    override fun onKey(code: Code, text: String) {
-        when (code) {
+    /** The field as the language's engine treats it: English corrects nothing in URL and e-mail fields. */
+    private fun field() = if (lang == ENGLISH) kind.englishField else kind.field
+
+    override fun onKey(code: Code, text: String, x: Int, y: Int) {
+        if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y)
+        else when (code) {
             Code.TEXT -> type(text)
             Code.SPACE -> whileComposing(NativeCore.charSym(' '.code)) { editor.commit(" ") }
             Code.ENTER -> whileComposing(NativeCore.XK_Return) { editor.enter() }
@@ -233,7 +376,18 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Code.GLOBE -> nextLanguage()
             Code.SHIFT, Code.GAP -> {}
         }
-        autoShift()
+        // By the field as the keys before left it: once their results have shown
+        NativeCore.after {
+            autoShift()
+            if (lang == ENGLISH && toEngine && NativeCore.idle) {
+                // All shown: the field is what the engine thread's copy should be (less the word typed).
+                val before = editor.textBefore(SHIFT_CONTEXT).dropLast(state?.preedit?.length ?: 0)
+                NativeCore.post {
+                    engineBefore.setLength(0)
+                    engineBefore.append(before)
+                }
+            }
+        }
     }
 
     private fun type(text: String) {
@@ -271,6 +425,55 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }
     }
 
+    /**
+     * English: every key goes to the engine, letters with where they were tapped. A key it doesn't take
+     * (a digit, a symbol, Enter, Delete with no word typed) does what it does after the engine committed the
+     * word being typed. On the engine thread too, after the keys before it (#241).
+     */
+    private fun english(code: Code, text: String, x: Int, y: Int) {
+        /**
+         * [sym] to the engine; if it doesn't take it, [otherwise] in the field, where [typed] goes on the
+         * engine thread's copy of the text (null: Delete's character comes off).
+         */
+        fun send(sym: () -> Int, typed: String?, otherwise: () -> Unit) =
+            NativeCore.post({
+                val s = sym()
+                val st = (if (x >= 0) keyAt(s, 0, x, y) else key(s, 0)).recorded()
+                if (st.deleteBefore > 0) engineBefore.setLength(maxOf(0, engineBefore.length - st.deleteBefore))
+                engineBefore.append(st.commit)
+                if (!st.taken) {
+                    if (typed != null) engineBefore.append(typed) else if (engineBefore.isNotEmpty()) engineBefore.setLength(engineBefore.length - 1)
+                }
+                st
+            }) {
+                show(it)
+                if (!it.taken) otherwise()
+            }
+        when (code) {
+            Code.TEXT -> {
+                val cp = text.codePointAt(0)
+                if (Character.charCount(cp) != text.length) return NativeCore.post({ flush().recorded() }) {
+                    show(it)
+                    editor.commit(text)
+                }
+                if (!Character.isLetter(cp) || keyboard.typedWithUserShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
+                // The field's capital, by the text this letter follows once the keys before it are in
+                val caps = if (Prefs[Prefs.CAPITALISE]) editor.capsFlags else 0
+                val lower = text.lowercase()
+                var cased = lower
+                send({
+                    val upper = caps != 0 &&
+                        android.text.TextUtils.getCapsMode("$engineBefore$enginePreedit", engineBefore.length + enginePreedit.length, caps) != 0
+                    cased = if (upper) lower.uppercase() else lower
+                    NativeCore.charSym(cased.codePointAt(0))
+                }, lower) { editor.commit(cased) }
+            }
+            Code.SPACE -> send({ ' '.code }, " ") { editor.commit(" ") }
+            Code.ENTER -> send({ NativeCore.XK_Return }, "\n") { editor.enter() }
+            else -> send({ NativeCore.XK_BackSpace }, null) { editor.deleteBefore() }
+        }
+    }
+
     /** Text into the field, after what the keys before it typed. */
     private fun commit(text: String) = NativeCore.after { editor.commit(text) }
 
@@ -288,12 +491,53 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         strip.preedit = ""
         Engines.inUse(lang, false)
         lang = next
-        prefs.edit().putInt("language", lang).apply()
+        texts.language = lang
+        // Written at once: the process may be stopped right after a switch, and the next start must be in it.
+        prefs.edit().putInt("language", lang).commit()
         page = Page.LETTERS
-        menuOpen = false
+        shown = Panel.NONE
         expanded = false
         enterLanguage()
         refresh()
+    }
+
+    private var layoutSent: List<Int>? = null
+
+    override fun onLayout(width: Int, height: Int, keys: IntArray) {
+        val sig = listOf(width, height) + keys.toList()
+        if (sig == layoutSent) return
+        layoutSent = sig
+        val copy = keys.copyOf()
+        NativeCore.post { setLayout(width, height, copy) }
+    }
+
+    /** The space bar's swipe: in 中文's and 日本語's composition the engine's cursor, elsewhere the field's. */
+    override fun onCursor(by: Int) {
+        val english = lang == ENGLISH
+        val sym = if (by < 0) NativeCore.XK_Left else NativeCore.XK_Right
+        NativeCore.post({
+            when {
+                !engineComposing -> null
+                english -> listOf(flush().recorded())
+                else -> List(kotlin.math.abs(by)) { key(sym, 0) }.also { it.lastOrNull()?.recorded() }
+            }
+        }) { states ->
+            states?.forEach { show(it) }
+            if (states == null || english) editor.moveBy(by)
+        }
+    }
+
+    /** Delete's swipe: what is being typed goes (English's word is kept, as typed), then whole words. */
+    override fun onDeleteWords(words: Int, done: Boolean) {
+        val english = lang == ENGLISH
+        NativeCore.post({ if (engineComposing) (if (english) flush() else clear()).recorded() else null }) { st ->
+            if (st != null) {
+                if (!english) editor.compose("")
+                show(st)
+            }
+            editor.selectWordsBefore(words, done)
+            if (done) autoShift()
+        }
     }
 
     override fun onPickKeyboard() {
@@ -303,7 +547,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     /** English's Shift for the start of a sentence, as the field asks. */
     private fun autoShift() {
         if (!views || keyboard.shift == KeyboardView.Shift.LOCKED) return
-        val on = lang == ENGLISH && kind.pad == null && page == Page.LETTERS && editor.capsMode()
+        val on = lang == ENGLISH && kind.pad == null && page == Page.LETTERS && Prefs[Prefs.CAPITALISE] && editor.capsMode()
         keyboard.setShift(if (on) KeyboardView.Shift.ON else KeyboardView.Shift.OFF)
     }
 
@@ -315,7 +559,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             if (st.commit.isNotEmpty()) editor.commit(st.commit)
             if (st.commit.isNotEmpty() && lang == CHINESE) Sync.onChineseCommit(this)
             if (st.commitCursor != 0) editor.moveCursor(st.commitCursor)
-            if (lang == JAPANESE) editor.compose(composition(st))
+            if (lang != CHINESE) editor.compose(composition(st))
             editor.endBatch()
         }
         state = st
@@ -356,7 +600,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
         val st = state
         strip.preedit = if (lang == CHINESE) st?.preedit.orEmpty() else ""
-        val candidates = st?.candidates?.toList().orEmpty()
+        // English's word may name an emoji: it takes the bar's third place
+        val named = if (lang == ENGLISH && composing && kind.pad == null && Prefs[Prefs.EMOJI_SUGGESTIONS])
+            Emoji.forWord(this, st!!.preedit) else null
+        val candidates = (st?.candidates?.toMutableList() ?: mutableListOf()).also { list ->
+            emojiAt = if (named != null) minOf(2, list.size) else -1
+            if (named != null) list.add(emojiAt, named)
+            emojiShown = named.orEmpty()
+        }
         val notice = if (lang != CHINESE || kind.pad != null) null else when (Engines.chinese) {
             Engines.Chinese.PREPARING -> getString(R.string.chinese_preparing)
             Engines.Chinese.FAILED -> getString(R.string.chinese_failed)
@@ -368,26 +619,228 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             else -> CandidateBar.Badge.NONE
         }
         val chip = if (lang == JAPANESE && kind.pad == null) (if (katakana) "ア" else "あ") else null
-        bar.show(candidates, chip, badge, notice, menuOpen, expanded)
+        val header = when (shown) {
+            Panel.NONE -> null
+            Panel.ACTIONS -> CandidateBar.Header(texts[R.string.menu_title], texts[R.string.edit_shortcuts])
+            Panel.EDIT -> CandidateBar.Header(texts[R.string.edit_shortcuts], texts[R.string.edit_done])
+            Panel.EMOJI -> CandidateBar.Header(texts[R.string.action_emoji], null)
+            Panel.CLIPBOARD -> CandidateBar.Header(texts[R.string.action_clipboard], null)
+            Panel.MODES -> CandidateBar.Header(texts[R.string.action_modes], texts[R.string.mode_resize])
+        }
+        // The text just copied, while nothing is typed
+        val clip = clipboard.quickClip?.takeIf { !composing && kind.pad == null }
+        bar.removeCallbacks(refreshClip)
+        if (clip != null) bar.postDelayed(refreshClip, 5_000)
+        val style = when (lang) {
+            ENGLISH -> CandidateBar.Style.SLOTS
+            JAPANESE -> CandidateBar.Style.WIDE_FIRST
+            else -> CandidateBar.Style.CELLS
+        }
+        bar.show(candidates, composing, style, lang == ENGLISH && composing && st?.selected == 0, barOpen, chip, badge, notice,
+            header, expanded, clip)
+        val on = if (incognito) setOf(Action.INCOGNITO) else emptySet()
+        val traditional = if (lang == CHINESE) Engines.setting("Chinese", "Traditional") == true else null
+        // The action bar: open, over the bar; never over a panel's title
+        val rowShown = barOpen && shown == Panel.NONE
+        actionRow.visibility = if (rowShown) View.VISIBLE else View.GONE
+        val overKeys = shown != Panel.NONE && shown != Panel.MODES
+        content.extra = if (barOpen && overKeys) (ActionRow.HEIGHT_DP * resources.displayMetrics.density).toInt() else 0
+        if (rowShown) actionRow.show(Action.pinned(this), on)
+        val autofilling = autofill.showing && candidates.isEmpty() && shown == Panel.NONE
+        autofill.visibility = if (autofilling) View.VISIBLE else View.GONE
+        bar.visibility = if (autofilling) View.INVISIBLE else View.VISIBLE
         if (expanded) grid.show(candidates, bar.shownCount())
-        if (menuOpen) menu.show(if (lang == CHINESE) Engines.setting("Chinese", "Traditional") == true else null, incognito)
+        when (shown) {
+            Panel.ACTIONS, Panel.EDIT -> actions.show(traditional, on, Action.pinned(this), shown == Panel.EDIT)
+            Panel.CLIPBOARD -> clips.show()
+            Panel.MODES -> modes.show(mode, heightScale, resizing)
+            else -> {}
+        }
         grid.visibility = if (expanded) View.VISIBLE else View.GONE
-        menu.visibility = if (menuOpen && !expanded) View.VISIBLE else View.GONE
-        // The keys keep their place (and the keyboard its height) under the grid and the menu.
-        keyboard.visibility = if (expanded || menuOpen) View.INVISIBLE else View.VISIBLE
+        val over = if (expanded) null else shown
+        actions.visibility = if (over == Panel.ACTIONS || over == Panel.EDIT) View.VISIBLE else View.GONE
+        emoji.visibility = if (over == Panel.EMOJI) View.VISIBLE else View.GONE
+        clips.visibility = if (over == Panel.CLIPBOARD) View.VISIBLE else View.GONE
+        modes.visibility = if (over == Panel.MODES) View.VISIBLE else View.GONE
+        // The keys keep their place (and the keyboard its height) under the grid and the panels.
+        keysRow.visibility = if (expanded || (shown != Panel.NONE && shown != Panel.MODES)) View.INVISIBLE else View.VISIBLE
     }
 
-    // --- The bar and the menu ---
+    // --- Keyboard modes (#53 B5) ---
+
+    /** The mode and height for this orientation: the keys' width and side, split, floating */
+    private fun applyMode() {
+        if (!views) return
+        val m = mode
+        keyboard.heightScale = heightScale
+        keyboard.split = m == Mode.SPLIT
+        val oneHanded = m == Mode.ONE_HANDED
+        (keyboard.layoutParams as LinearLayout.LayoutParams).weight = if (oneHanded) Mode.ONE_HANDED_WIDTH else 1f
+        (side.layoutParams as LinearLayout.LayoutParams).weight = if (oneHanded) 1 - Mode.ONE_HANDED_WIDTH else 0f
+        side.visibility = if (oneHanded) View.VISIBLE else View.GONE
+        // The strip on the side the keys aren't
+        val left = prefs.getBoolean("one_handed_left_$orientation", false)
+        if ((keysRow.indexOfChild(side) == 0) != !left) {
+            keysRow.removeView(side)
+            keysRow.addView(side, if (left) 1 else 0)
+        }
+        val floating = m == Mode.FLOATING
+        handle.visibility = if (floating) View.VISIBLE else View.GONE
+        val width = resources.displayMetrics.widthPixels
+        stack.layoutParams = (stack.layoutParams as FrameLayout.LayoutParams).apply {
+            this.width = if (floating) (width * Mode.FLOATING_WIDTH).toInt() else MATCH_PARENT
+            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+        }
+        stack.translationX = if (floating) prefs.getFloat("float_x_$orientation", 0f) else 0f
+        stack.translationY = if (floating) prefs.getFloat("float_y_$orientation", 0f) else 0f
+        layoutSent = null
+    }
+
+    /** The floating keyboard dragged by its handle: it stays on the screen. */
+    private fun onDrag(dx: Float, dy: Float) {
+        val maxX = (root.width - stack.width) / 2f
+        stack.translationX = (stack.translationX + dx).coerceIn(-maxX, maxX)
+        stack.translationY = (stack.translationY + dy).coerceIn(-(root.height - stack.height).toFloat(), 0f)
+    }
+
+    private fun saveFloating() {
+        prefs.edit().putFloat("float_x_$orientation", stack.translationX).putFloat("float_y_$orientation", stack.translationY).apply()
+        layoutSent = null
+        // A layout pass computes the insets again: the touchable region follows the keyboard.
+        stack.requestLayout()
+    }
+
+    override fun onMode(mode: Mode) {
+        this.mode = mode
+        shown = Panel.NONE
+        applyMode()
+        refresh()
+    }
+
+    override fun onHeight(by: Float) {
+        heightScale = ((heightScale + by) * 20).roundToInt() / 20f
+        heightScale = heightScale.coerceIn(Mode.MIN_HEIGHT, Mode.MAX_HEIGHT)
+        applyMode()
+        refresh()
+    }
+
+    private fun onSwapSide() {
+        val key = "one_handed_left_$orientation"
+        prefs.edit().putBoolean(key, !prefs.getBoolean(key, false)).apply()
+        applyMode()
+    }
+
+    // --- Inline autofill (#53 B9): the password manager's chips over the bar ---
+
+    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && views) autofill.request(bar.height.takeIf { it > 0 } ?: (40 * resources.displayMetrics.density).toInt())
+        else null
+
+    override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !views) return false
+        autofill.show(response.inlineSuggestions, bar.height) { refresh() }
+        return true
+    }
+
+    // --- The bar, the action bar and the panels ---
 
     override fun onCandidate(index: Int) {
         expanded = false
-        NativeCore.post({ selectCandidate(index).recorded() }) { show(it) }
+        val emoji = emojiAt
+        if (emoji < 0 || index < emoji) return NativeCore.post({ selectCandidate(index).recorded() }) { show(it) }
+        if (index > emoji) return NativeCore.post({ selectCandidate(index - 1).recorded() }) { show(it) }
+        // The emoji in place of the word
+        val text = emojiShown
+        NativeCore.post({ clear().recorded() }) {
+            show(it)
+            editor.commit(text)
+            englishContext()
+        }
     }
 
+    /** The bar's › and ^ (opening and closing the action bar), or ← over a panel (Edit actions goes back to All Actions) */
     override fun onMenu() {
-        menuOpen = !menuOpen
+        when (shown) {
+            Panel.NONE -> barOpen = !barOpen
+            Panel.EDIT -> shown = Panel.ACTIONS
+            else -> shown = Panel.NONE
+        }
         expanded = false
         refresh()
+    }
+
+    override fun onAllActions() = open(Panel.ACTIONS)
+
+    override fun onHeaderButton() {
+        if (shown != Panel.MODES) return open(if (shown == Panel.ACTIONS) Panel.EDIT else Panel.ACTIONS)
+        resizing = !resizing
+        refresh()
+    }
+
+    private fun open(panel: Panel) {
+        shown = panel
+        resizing = false
+        expanded = false
+        if (panel == Panel.EMOJI) emoji.open()
+        refresh()
+    }
+
+    override fun onAction(action: Action) {
+        when (action) {
+            Action.EMOJI -> return open(Panel.EMOJI)
+            Action.CLIPBOARD -> return open(Panel.CLIPBOARD)
+            Action.MODES -> return open(Panel.MODES)
+            Action.INCOGNITO -> return onIncognito(!incognito)
+            Action.LANGUAGE -> nextLanguage()
+            Action.SETTINGS -> finishTyping {
+                startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                requestHideSelf(0)
+            }
+            Action.UNDO, Action.REDO -> finishTyping { editor.undo(action == Action.REDO) }
+            Action.SELECT_ALL, Action.CUT, Action.COPY, Action.PASTE -> finishTyping {
+                editor.menuAction(when (action) {
+                    Action.SELECT_ALL -> android.R.id.selectAll
+                    Action.CUT -> android.R.id.cut
+                    Action.COPY -> android.R.id.copy
+                    else -> android.R.id.paste
+                })
+            }
+        }
+        // An edit from All Actions goes back to the keys, to see it.
+        if (shown != Panel.NONE) open(Panel.NONE)
+    }
+
+    override fun onPinned(actions: List<Action>) {
+        Action.setPinned(this, actions)
+        refresh()
+    }
+
+    /** What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing */
+    private fun finishTyping(then: () -> Unit) {
+        val chinese = lang == CHINESE
+        NativeCore.post({ if (engineComposing) (if (chinese) clear() else flush()).recorded() else null }) { st ->
+            if (st != null) {
+                show(st)
+                if (!chinese) editor.finishComposing()
+            }
+            then()
+        }
+    }
+
+    override fun onEmoji(text: String) = finishTyping { editor.commit(text) }
+
+    override fun onLetters() = open(Panel.NONE)
+
+    override fun onDelete() = onKey(Code.DELETE, "", -1, -1)
+
+    override fun onClip() {
+        clipboard.quickClip?.let { onPasteClip(it) }
+    }
+
+    private fun onPasteClip(text: String) {
+        finishTyping { editor.commit(text) }
+        clipboard.dropQuick()
+        if (shown == Panel.CLIPBOARD) open(Panel.NONE)
     }
 
     override fun onChip() {
@@ -403,7 +856,6 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onExpand() {
         expanded = !expanded
-        menuOpen = false
         refresh()
     }
 
@@ -419,9 +871,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }) { show(it) }
     }
 
-    override fun onIncognito(on: Boolean) {
+    private fun onIncognito(on: Boolean) {
         prefs.edit().putBoolean("incognito", on).apply()
-        val field = kind.field
+        val field = field()
         val learning = kind.learns && !on
         NativeCore.post { setField(field, learning) }
         refresh()
@@ -435,13 +887,23 @@ class UpdateReceiver : BroadcastReceiver() {
     }
 }
 
-/** Holds the keys, and the expanded candidates and the menu over them at exactly the keys' height. */
+/**
+ * Holds the keys, and the expanded candidates and the panels over them at exactly the keys' height, plus
+ * [extra]: the action bar's row while a panel takes its place, so the keyboard keeps its height.
+ */
 private class KeysFrame(context: Context) : FrameLayout(context) {
+    var extra = 0
+        set(value) {
+            if (field != value) requestLayout()
+            field = value
+        }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val keys = getChildAt(0)
         keys.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-        val exact = MeasureSpec.makeMeasureSpec(keys.measuredHeight, MeasureSpec.EXACTLY)
+        val height = keys.measuredHeight + extra
+        val exact = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
         for (i in 1 until childCount) getChildAt(i).measure(widthMeasureSpec, exact)
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), keys.measuredHeight)
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height)
     }
 }
