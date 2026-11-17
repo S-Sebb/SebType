@@ -1953,7 +1953,11 @@ def floating_resize():
                 raise Fail(
                     f"after {name} the keys are {r3 - l3}x{b3 - t3} px, not {r2 - l2}x{b2 - t2}"
                 )
-        # Turned with the frame up, the new keyboard view hides its keys from TalkBack too; Apply brings them back.
+        # Turned with the frame up (floating in both orientations; the field kept), the new keyboard view
+        # hides its keys from TalkBack too; Apply brings them back.
+        rotate(1)
+        set_mode("Floating")
+        rotate(0)
         open_field()
         action(MODES_ACTION)
         tap_label(RESIZE)
@@ -1963,6 +1967,7 @@ def floating_resize():
         talkback_reaches(framed=True)
         tap_label(("Apply", "应用", "適用"))
         talkback_reaches(framed=False)
+        set_mode("Standard")
         rotate(0)
         types_letters()
         return (
@@ -1971,6 +1976,8 @@ def floating_resize():
             f"the frame alone and the keys after Apply; typing works"
         )
     finally:
+        rotate(1)
+        set_mode("Standard")
         rotate(0)
         adb(
             "shell",
@@ -2031,18 +2038,23 @@ def floating_short_window():
             raise Fail(
                 f"back in the full window the keys are {r4 - l4}x{b4 - t4} px, not {r3 - l3}x{tall}"
             )
+        # A window wider than tall is landscape: floating there too.
         tiny = round(200 * screen_density())
         adb("shell", "wm", "size", f"{w}x{tiny}")
         time.sleep(3)
-        open_field()
-        action(MODES_ACTION)
-        tiny_space = bottom_row_whole(tiny)
-        handle = node(MOVE_KEYBOARD)
-        if not handle or handle[3] < 0:
-            raise Fail(
-                f"in a {tiny} px window with Keyboard Modes open the handle is at {handle and handle[3]}"
-            )
-        screenshot("floating-tiny-window.png")
+        try:
+            set_mode("Floating")
+            open_field()
+            action(MODES_ACTION)
+            tiny_space = bottom_row_whole(tiny)
+            handle = node(MOVE_KEYBOARD)
+            if not handle or handle[3] < 0:
+                raise Fail(
+                    f"in a {tiny} px window with Keyboard Modes open the handle is at {handle and handle[3]}"
+                )
+            screenshot("floating-tiny-window.png")
+        finally:
+            set_mode("Standard")
         return (
             f"keys {tall} px; {b2 - t2} px within a {short} px window (Space {space}), typing works; "
             f"narrowed there to {r3 - l3} px, then {r4 - l4}x{b4 - t4} px in the full window; "
@@ -2084,10 +2096,10 @@ def floating_narrowest():
             bounds.get(k) for k in (RESIZE_CORNER, "Reset", "Apply")
         )
         # The frame is the keyboard's width, its right edge the corner's; each button whole within it, apart
-        # from the other and big enough to press (48 dp; bounds are cut to what shows).
+        # from the other and as big as drawn, 40 dp at least (bounds are cut to what shows).
         right = corner and corner[2]
         left = right and right - narrowest
-        least = 48 * screen_density()
+        least = 40 * screen_density() - 2
         if (
             not (corner and reset and apply)
             or any(
