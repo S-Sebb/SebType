@@ -44,14 +44,11 @@ cmake -S $here -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAOSP_JNI="$aosp/n
   > "$out/build.log"
 ninja -C $build -j "$BUILD_JOBS" >> "$out/build.log"
 
-# Stacks: name, executable, its files. aosp-sebdict runs AOSP's decoder on the dictionary SebType ships,
-# so the comparison with today's isolates the decoder and the model; core is the new keyboard's English
-# (core/src/english.cpp on the rebuilt dictionary, #244), which the plan's bar gates.
-raw=android/app/src/main/res/raw
+# Stacks: name, executable, its files. core is the keyboard's English (core/src/english.cpp on the rebuilt
+# dictionary, #244), which the plan's bar gates against today.json: the FUTO-based app's English, measured on
+# its last main before it was removed (#262).
 stacks=(
-  "today english-today $here/layout.tsv $raw/main_en.dict $raw/ml4_q6_k.gguf"
   "aosp english-aosp $here/layout.tsv $aosp/java/res/raw/main_en.dict"
-  "aosp-sebdict english-aosp $here/layout.tsv $raw/main_en.dict"
   "sebtype english-sebtype $here/layout.tsv $aosp/java/res/raw/main_en.dict $model"
   "core english-core $here/layout.tsv data/en-dict/en_US.dict $model"
 )

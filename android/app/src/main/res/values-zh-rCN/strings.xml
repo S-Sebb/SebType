@@ -1,245 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  /*
-  **
-  ** Copyright 2008, The Android Open Source Project
-  **
-  ** Licensed under the Apache License, Version 2.0 (the "License");
-  ** you may not use this file except in compliance with the License.
-  ** You may obtain a copy of the License at
-  **
-  **     http://www.apache.org/licenses/LICENSE-2.0
-  **
-  ** Unless required by applicable law or agreed to in writing, software
-  ** distributed under the License is distributed on an "AS IS" BASIS,
-  ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  ** See the License for the specific language governing permissions and
-  ** limitations under the License.
-  */
--->
 <resources>
-  <!-- Title for Latin keyboard input options dialog [CHAR LIMIT=25] -->
-    <string name="english_ime_input_options">"输入选项"</string>
-  <!-- Option to provide vibrate/haptic feedback on keypress -->
-    <string name="vibrate_on_keypress">"按键振动"</string>
-  <!-- Option to play back sound on keypress in soft keyboard -->
-    <string name="sound_on_keypress">"按键音效"</string>
-  <!-- Option to control whether or not to show a popup with a larger font on each key press. -->
-    <string name="popup_on_keypress">"按键时弹出显示字符"</string>
-  <!-- Option to show language switch key [CHAR LIMIT=30] -->
-    <string name="show_language_switch_key">"语言切换键"</string>
-  <!-- Units abbreviation for the duration (milliseconds) [CHAR LIMIT=10] -->
-    <string name="abbreviation_unit_milliseconds">"%s毫秒"</string>
-  <!-- Preference for input language selection -->
-    <string name="select_language">"语言"</string>
-  <!--
-    Description for English (UK) keyboard subtype [CHAR LIMIT=25]
-    (UK) should be an abbreviation of United Kingdom to fit in the CHAR LIMIT.
-  -->
-    <string name="subtype_en_GB">"英语(英国)"</string>
-  <!--
-    Description for English (US) keyboard subtype [CHAR LIMIT=25]
-    (US) should be an abbreviation of United States to fit in the CHAR LIMIT.
-  -->
-    <string name="subtype_en_US">"英语(美国)"</string>
-  <!--
-    Description for Spanish (US) keyboard subtype [CHAR LIMIT=25]
-    (US) should be an abbreviation of United States to fit in the CHAR LIMIT.
-  -->
-    <string name="subtype_es_US">"西班牙语（美国）"</string>
-  <!-- Description for Hinglish (https://en.wikipedia.org/wiki/Hinglish) keyboard subtype [CHAR LIMIT=25] -->
-    <string name="subtype_hi_ZZ">"印地英语"</string>
-    <string name="subtype_hi__Latn">"印地英语"</string>
-  <!--
-    Description for Serbian (Latin) keyboard subtype [CHAR LIMIT=25]
-    (Latin) can be an abbreviation to fit in the CHAR LIMIT.
-  -->
-    <string name="subtype_sr_ZZ">"塞尔维亚语（拉丁语布局）"</string>
-    <string name="subtype_ipa">"国际音标"</string>
-  <!--
-    Description for English (UK) keyboard subtype with explicit keyboard layout [CHAR LIMIT=25]
-    (UK) should be an abbreviation of United Kingdom to fit in the CHAR LIMIT.
-    This should be identical to subtype_en_GB aside from the trailing (%s).
-  -->
-    <string name="subtype_with_layout_en_GB">"英式英语（%s）"</string>
-  <!--
-    Description for English (US) keyboard subtype with explicit keyboard layout [CHAR LIMIT=25]
-    (US) should be an abbreviation of United States to fit in the CHAR LIMIT.
-    This should be identical to subtype_en_US aside from the trailing (%s).
-  -->
-    <string name="subtype_with_layout_en_US">"美式英语（%s）"</string>
-  <!--
-    Description for Spanish (US) keyboard subtype with explicit keyboard layout [CHAR LIMIT=25]
-    (US) should be an abbreviation of United Statesn to fit in the CHAR LIMIT.
-    This should be identical to subtype_es_US aside from the trailing (%s).
-  -->
-    <string name="subtype_with_layout_es_US">"美式西班牙语（%s）"</string>
-  <!--
-    Description for Hinglish (https://en.wikipedia.org/wiki/Hinglish) keyboard subtype with explicit keyboard layout [CHAR LIMIT=25]
-    This should be identical to subtype_hi_ZZ aside from the trailing (%s).
-  -->
-    <string name="subtype_with_layout_hi_ZZ">"印地英语（%s）"</string>
-  <!--
-    Description for Serbian (Latin) keyboard subtype with explicit keyboard layout [CHAR LIMIT=25]
-    This should be identical to subtype_sr_ZZ aside from the trailing (%s).
-  -->
-    <string name="subtype_with_layout_sr_ZZ">"塞尔维亚语（%s布局）"</string>
-  <!--
-    Description for "LANGUAGE_NAME" (Traditional) keyboard subtype [CHAR LIMIT=25]
-    (Traditional) can be an abbreviation to fit in the CHAR LIMIT.
-  -->
-    <string name="subtype_generic_traditional">"%s（传统）"</string>
-  <!--
-    Description for "LANGUAGE_NAME" (Compact) keyboard subtype [CHAR LIMIT=25]
-    (Compact) can be an abbreviation to fit in the CHAR LIMIT.
-  -->
-    <string name="subtype_generic_compact">"%s（紧凑型）"</string>
-  <!--
-    This string is displayed in a language list that allows to choose a language for
-    suggestions in a software keyboard. This setting won't give suggestions in any particular
-    language, hence "No language".
-    As for the "alphabet" mention, it refers specifically to the Latin alphabet, as opposed to
-    Cyrillic, Arabic, Hebrew or other scripts. This keyboard offers no suggestions, but it will
-    be a QWERTY, or AZERTY, or any other disposition that only offers Latin characters, so
-    you wouldn't be able to type, say, Arabic on it. Please translate it in a way that "alphabet"
-    would be understood to mean specifically the Latin alphabet, rather than any other
-    alphabet. [CHAR LIMIT=29]
-  -->
-    <string name="subtype_no_language">"无语言（字母）"</string>
-  <!--
-    This string is displayed in the description for a keyboard type. It refers specifically to
-    the Latin alphabet, as opposed to Cyrillic, Arabic, Hebrew or other scripts.
-    When the device is configured to use a language using a script other than the Latin alphabet, the
-    user still needs a keyboard that can input Latin characters for passwords or login names for
-    example, and a way to switch to this Latin alphabet keyboard. This string is the description for
-    this keyboard, so users of other scripts should understand when they read this that it represents a
-    keyboard that is meant for them to be able to enter Latin characters as opposed to the script they
-    are used to. This keyboard does not provide a dictionary, and it is not tied to any specific
-    language among those that use the Latin alphabet. This keyboard is laid out in the QWERTY
-    disposition rather than other common dispositions for Latin languages. [CHAR LIMIT=25]
-  -->
-    <string name="subtype_no_language_qwerty">"字母 (QWERTY)"</string>
-  <!--
-    This string is displayed in the description for a keyboard type. It refers specifically to
-    the Latin alphabet, as opposed to Cyrillic, Arabic, Hebrew or other scripts.
-    When the device is configured to use a language using a script other than the Latin alphabet, the
-    user still needs a keyboard that can input Latin characters for passwords or login names for
-    example, and a way to switch to this Latin alphabet keyboard. This string is the description for
-    this keyboard, so users of other scripts should understand when they read this that it represents a
-    keyboard that is meant for them to be able to enter Latin characters as opposed to the script they
-    are used to. This keyboard does not provide a dictionary, and it is not tied to any specific
-    language among those that use the Latin alphabet. This keyboard is laid out in the QWERTZ
-    disposition rather than other common dispositions for Latin languages. [CHAR LIMIT=25]
-  -->
-    <string name="subtype_no_language_qwertz">"字母 (QWERTZ)"</string>
-  <!--
-    This string is displayed in the description for a keyboard type. It refers specifically to
-    the Latin alphabet, as opposed to Cyrillic, Arabic, Hebrew or other scripts.
-    When the device is configured to use a language using a script other than the Latin alphabet, the
-    user still needs a keyboard that can input Latin characters for passwords or login names for
-    example, and a way to switch to this Latin alphabet keyboard. This string is the description for
-    this keyboard, so users of other scripts should understand when they read this that it represents a
-    keyboard that is meant for them to be able to enter Latin characters as opposed to the script they
-    are used to. This keyboard does not provide a dictionary, and it is not tied to any specific
-    language among those that use the Latin alphabet. This keyboard is laid out in the AZERTY
-    disposition rather than other common dispositions for Latin languages. [CHAR LIMIT=25]
-  -->
-    <string name="subtype_no_language_azerty">"字母 (AZERTY)"</string>
-  <!--
-    This string is displayed in the description for a keyboard type. It refers specifically to
-    the Latin alphabet, as opposed to Cyrillic, Arabic, Hebrew or other scripts.
-    When the device is configured to use a language using a script other than the Latin alphabet, the
-    user still needs a keyboard that can input Latin characters for passwords or login names for
-    example, and a way to switch to this Latin alphabet keyboard. This string is the description for
-    this keyboard, so users of other scripts should understand when they read this that it represents a
-    keyboard that is meant for them to be able to enter Latin characters as opposed to the script they
-    are used to. This keyboard does not provide a dictionary, and it is not tied to any specific
-    language among those that use the Latin alphabet. This keyboard is laid out in the Dvorak
-    disposition rather than other common dispositions for Latin languages. [CHAR LIMIT=25]
-  -->
-    <string name="subtype_no_language_dvorak">"字母 (Dvorak)"</string>
-  <!--
-    This string is displayed in the description for a keyboard type. It refers specifically to
-    the Latin alphabet, as opposed to Cyrillic, Arabic, Hebrew or other scripts.
-    When the device is configured to use a language using a script other than the Latin alphabet, the
-    user still needs a keyboard that can input Latin characters for passwords or login names for
-    example, and a way to switch to this Latin alphabet keyboard. This string is the description for
-    this keyboard, so users of other scripts should understand when they read this that it represents a
-    keyboard that is meant for them to be able to enter Latin characters as opposed to the script they
-    are used to. This keyboard does not provide a dictionary, and it is not tied to any specific
-    language among those that use the Latin alphabet. This keyboard is laid out in the Colemak
-    disposition rather than other common dispositions for Latin languages. [CHAR LIMIT=25]
-  -->
-    <string name="subtype_no_language_colemak">"字母 (Colemak)"</string>
-  <!--
-    This string is displayed in the description for a keyboard type. It refers specifically to
-    the Latin alphabet, as opposed to Cyrillic, Arabic, Hebrew or other scripts.
-    When the device is configured to use a language using a script other than the Latin alphabet, the
-    user still needs a keyboard that can input Latin characters for passwords or login names for
-    example, and a way to switch to this Latin alphabet keyboard. This string is the description for
-    this keyboard, so users of other scripts should understand when they read this that it represents a
-    keyboard that is meant for them to be able to enter Latin characters as opposed to the script they
-    are used to. This keyboard does not provide a dictionary, and it is not tied to any specific
-    language among those that use the Latin alphabet. This keyboard is laid out in the QWERTY PC
-    disposition that offers additional keys, but smaller keys compared to other common dispositions for
-    mobile devices. [CHAR LIMIT=25]
-  -->
-    <string name="subtype_no_language_pcqwerty">"字母 (PC)"</string>
-  <!-- Description for Emoji keyboard subtype [CHAR LIMIT=25] -->
-    <string name="subtype_emoji">"表情符号"</string>
-  <!-- Standard message to dismiss a dialog box -->
-    <string name="cancel">"取消"</string>
-  <!-- Title of the button in a dialog box. The button takes the user to the keyboard settings. [CHAR LIMIT=15] -->
-    <string name="go_to_settings">"设置"</string>
-  <!--
-    User dictionary settings. The title of the menu item to add a new word to the user dictionary.
-    This resource is corresponding to  msgid="4056762757149923551"
-  -->
-    <string name="user_dict_settings_add_menu_title">"添加"</string>
-  <!--
-    User dictionary settings. The title of the dialog to add a new word to the user dictionary. [CHAR LIMIT=25]
-    This resource is corresponding to msgid="4702613990174126482"
-  -->
-    <string name="user_dict_settings_add_dialog_title">"添加到字典"</string>
-  <!--
-    User dictionary settings. Text on the dialog button to confirm adding a word. [CHAR LIMIT=15]
-    This resource is corresponding to msgid="6225823625332416144"
-  -->
-    <string name="user_dict_settings_add_dialog_confirm">"确定"</string>
-  <!--
-    User dictionary settings. Label to put before the word field (that's the word that will actually be added to the user dictionary when OK is pressed). [CHAR LIMIT=20]
-    This resource is corresponding to msgid="7868879174905963135"
-  -->
-    <string name="user_dict_settings_add_word_option_name">"字词："</string>
-  <!--
-    User dictionary settings. Label to put before the shortcut field (once a shortcut is registered, the user can type the shortcut and get the word it points to in the suggestions). [CHAR LIMIT=20]
-    This resource is corresponding to msgid="660089258866063925"
-  -->
-    <string name="user_dict_settings_add_shortcut_option_name">"快捷键："</string>
-  <!--
-    User dictionary settings. Hint for the text field to type the word to add to the user dictionary. [CHAR LIMIT=35]
-    This resource is corresponding to msgid="5725254076556821247"
-  -->
-    <string name="user_dict_settings_add_word_hint">"输入字词"</string>
-  <!--
-    User dictionary settings. Hint for the text field to type the optional shortcut to add to the user dictionary. [CHAR LIMIT=35]
-    This resource is corresponding to msgid="7333763456561873445"
-  -->
-    <string name="user_dict_settings_add_shortcut_hint">"快捷键（选填）"</string>
-  <!--
-    User dictionary settings. The title of the dialog to edit an existing word in the user dictionary.
-    This resource is corresponding to msgid="8967476444840548674"
-  -->
-    <string name="user_dict_settings_edit_dialog_title">"修改字词"</string>
-  <!--
-    User dictionary settings. The list item to choose to insert a word into the user dictionary for all languages
-    This resource is corresponding to msgid="6742000040975959247"
-  -->
-    <string name="user_dict_settings_all_languages">"所有语言"</string>
-  <!--
-    User dictionary settings. Label to delete an entry in the user dictionary [CHAR LIMIT=30]
-    This resource is copied from packages/apps/Settings/res/values/strings.xml
-    This resource is corresponding to msgid="4219243412325163003"
-  -->
-    <string name="user_dict_settings_delete">"删除"</string>
+    <string name="open_menu">打开操作栏</string>
+    <string name="close_menu">关闭操作栏</string>
+    <string name="menu_title">所有操作项</string>
+    <string name="incognito">无痕模式</string>
+    <string name="incognito_on">无痕模式已开，点按关闭</string>
+    <string name="incognito_field">此输入框为无痕模式</string>
+    <string name="more_candidates">更多候选词</string>
+    <string name="fewer_candidates">收起候选词</string>
+    <string name="chinese_preparing">正在准备中文…</string>
+    <string name="chinese_failed">中文输入启动失败，点此重试</string>
+    <string name="key_shift">Shift</string>
+    <string name="key_shift_on">Shift 已开</string>
+    <string name="key_caps_lock">大写锁定</string>
+    <string name="key_delete">删除</string>
+    <string name="key_symbols">符号</string>
+    <string name="key_more_symbols">更多符号</string>
+    <string name="key_digits">数字</string>
+    <string name="key_letters">字母</string>
+    <string name="key_language">下一种语言</string>
+    <!-- TalkBack: what a double tap and hold on a key does (#283) -->
+    <string name="key_alternates">显示替代字符</string>
+    <string name="key_pick_keyboard">选择键盘</string>
+    <string name="key_lock_caps">开启大写锁定</string>
+    <string name="key_space">空格</string>
+    <string name="key_enter">换行</string>
+    <string name="key_search">搜索</string>
+    <string name="key_send">发送</string>
+    <string name="key_go">前往</string>
+    <string name="key_next">下一项</string>
+    <string name="key_previous">上一项</string>
+    <string name="key_done">完成</string>
+    <string name="action_settings">设置</string>
+    <string name="action_emoji">表情符号</string>
+    <string name="action_undo">撤销</string>
+    <string name="action_redo">重做</string>
+    <string name="action_clipboard">剪贴板管理器</string>
+    <string name="action_modes">键盘模式</string>
+    <string name="action_language">语言切换键</string>
+    <string name="action_select_all">全选</string>
+    <string name="action_cut">剪切到剪贴板</string>
+    <string name="action_copy">复制到剪贴板</string>
+    <string name="action_paste">从剪贴板粘贴</string>
+    <string name="edit_shortcuts">编辑快捷方式</string>
+    <string name="edit_done">完成</string>
+    <string name="emoji_recent">最近使用</string>
+    <string name="emoji_smileys">笑脸和情感</string>
+    <string name="emoji_people">人物和身体</string>
+    <string name="emoji_animals">动物和自然</string>
+    <string name="emoji_food">食物和饮料</string>
+    <string name="emoji_travel">旅行和地点</string>
+    <string name="emoji_activities">活动</string>
+    <string name="emoji_objects">物品</string>
+    <string name="emoji_symbols">符号</string>
+    <string name="emoji_flags">旗帜</string>
+    <string name="clipboard_keep">保留剪贴板历史</string>
+    <string name="clipboard_clear">清除</string>
+    <string name="clipboard_empty">还没有复制的内容</string>
+    <string name="clipboard_off">剪贴板历史已关闭</string>
+    <string name="clipboard_pin">固定</string>
+    <string name="clipboard_unpin">取消固定</string>
+    <string name="clipboard_remove">移除</string>
+    <string name="quick_clip">粘贴复制的文字</string>
+    <string name="emoji_search">搜索</string>
+    <string name="emoji_no_results">未找到结果</string>
+    <string name="emoji_faces">颜文字</string>
+    <string name="clipboard_search">搜索剪贴板</string>
+    <string name="clipboard_search_hint">输入搜索内容…</string>
+    <string name="clipboard_image">图片</string>
+    <string name="quick_clip_image">粘贴复制的图片</string>
+    <string name="image_unsupported">应用不支持插入图片</string>
+    <string name="search_close">关闭搜索</string>
+    <string name="mode_standard">标准</string>
+    <string name="mode_one_handed">单手</string>
+    <string name="mode_split">分离</string>
+    <string name="mode_floating">悬浮</string>
+    <string name="mode_resize">调整键盘大小</string>
+    <string name="mode_height">高度</string>
+    <string name="mode_taller">调高</string>
+    <string name="mode_shorter">调低</string>
+    <string name="mode_swap">换到另一边</string>
+    <string name="mode_move">移动键盘</string>
+    <string name="mode_resize_corner">拖动调整大小</string>
+    <string name="mode_wider">调宽</string>
+    <string name="mode_narrower">调窄</string>
+    <string name="mode_reset">重置</string>
+    <string name="mode_apply">应用</string>
+    <string name="back">返回</string>
 </resources>

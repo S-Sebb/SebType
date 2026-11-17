@@ -58,7 +58,7 @@
 | **Linux** (KDE Plasma on Wayland, Fedora or Nobara) | `pc/linux/setup-ime.sh` from a checkout: the `sebtype` add-on over Fedora's Fcitx5, in every app, XWayland ones too | [docs/install.md](docs/install.md#linux) |
 | **Windows** (64-bit) | `SebType-setup-<version>.exe`: SebType's own text service, with English, 中文 and 日本語 each optional | [docs/install.md](docs/install.md#windows) |
 
-SebType's app id is `dev.sebb.sebtype`, so it installs next to FUTO Keyboard and Gboard. On the PCs,
+SebType's app id is `dev.sebb.sebtype`, so it installs next to other keyboards such as Gboard. On the PCs,
 **SebType Configurator** in the app menu holds the settings: languages and their order, 简/繁, fuzzy
 pinyin, your own words, the candidate window, privacy and sync.
 
@@ -108,32 +108,24 @@ SebType is its own keyboard for Android, Linux and Windows. It builds on these p
 - **[Rime](https://rime.im)** ([librime](https://github.com/rime/librime), librime-lua, octagram) : Chinese input
 - **[rime-ice (雾凇拼音)](https://github.com/iDvel/rime-ice)** and **[白霜拼音 (rime-frost)](https://github.com/gaboolic/rime-frost)**: the Chinese data
 - **[Mozc](https://github.com/google/mozc)**: Japanese on every device
-- **[FUTO Keyboard](https://github.com/futo-org/android-keyboard)** (built on AOSP's LatinIME): the phone app's keyboard UI, English suggestions and layouts, which SebType modifies
+- **[AOSP LatinIME](https://android.googlesource.com/platform/packages/inputmethods/LatinIME)**, [llama.cpp](https://github.com/ggml-org/llama.cpp): English suggestions and corrections on SebType's own model
 - **[Fcitx5](https://github.com/fcitx/fcitx5)**, [fcitx5-rime](https://github.com/fcitx/fcitx5-rime) and [fcitx5-mozc](https://github.com/fcitx/mozc): input on Linux; [Weasel](https://github.com/rime/weasel): the layout of the Windows candidate window
 - **[wordfreq](https://github.com/rspeer/wordfreq)** and [SCOWL](https://wordlist.aspell.net): the English dictionary's frequencies and checks
 - **Nunito**, **Pixelify Sans**, **Jersey 10** and **Noto Sans CJK**: the fonts
 
-**The Android app contains FUTO Keyboard's code, modified by SebType, under FUTO's
-[FUTO Source First License 1.1](LICENSE.md)** (see also [NOTICE](NOTICE)). SebType is not made,
-endorsed or supported by FUTO; please don't report SebType problems to FUTO. That licence makes it
-source-available, not open source: anyone may use it, but it may be modified only for non-commercial
-purposes and shared only free of charge and non-commercially, with FUTO's payment features and notices
-left in. SebType keeps FUTO's payment screen, with a note on SebType's licence. SebType's own code
-outside FUTO's files is under the [MIT licence](LICENSE-SebType). Each part keeps the licence of the
-project it came from:
+SebType's own code is under the [MIT licence](LICENSE-SebType). Until 2026-11 (#262) the Android app
+was a modified [FUTO Keyboard](https://github.com/futo-org/android-keyboard); the app SebType ships now
+contains none of its code or data (see [NOTICE](NOTICE)). Each part keeps the licence of the project it
+came from:
 
 <details>
 <summary><strong>Licences</strong>: which licence covers which part</summary>
 
 | Part | Licence |
 |---|---|
-| FUTO Keyboard's code: `android/app/` other than SebType's files below, `android/tools/contributors.py`, `android/tools/make-keyboard-text-py/`, `.github/ISSUE_TEMPLATE/`, the Gradle files in `android/` (other than `android/build.gradle`), `android/app/src/main/java/org/futo/inputmethod/engine/general/mozc/SelectionTracker.java` (from FUTO's mozc-lib, Mozc's Android client; Google's parts BSD-3-Clause) and the FUTO files brought in from its submodules (`android/app/src/main/assets/layouts/`, the translations in `android/app/src/main/res/values-ja/` and `values-zh-rCN/`, `android/app/src/main/res/raw/ml4_q6_k.gguf`). SebType's edits inside these files count as FUTO-derived | [FUTO Source First License 1.1](LICENSE.md) |
-| The original AOSP keyboard code in those folders, up to commit `d847619a` | Apache-2.0 ([NOTICE](NOTICE)) |
-| Code from other projects that FUTO vendored (sentencepiece, protobuf, ggml, llama.cpp, gemoji and others) | each project's own, in its folder |
-| SebType's own code: `core/`, `linux/`, `windows/`, `pc/`, `art/`, `data/`, `docs/`, `sync-server/`, `tools/`, `engines/sebtype-lm/`, `.github/workflows/`, and SebType's own files in `android/` ([android/LICENSE](android/LICENSE) lists them: the scripts, `test/`, `perf/`, `native/` (the phone's native library), and in the app the `dev.sebb.sebtype` code, its strings and its launcher icon), with the exceptions below. Each folder's `LICENSE` file lists its exceptions | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
-| `android/app/src/main/assets/layouts/SebType/`: adapted from FUTO's layouts | Apache-2.0, like FUTO's layouts |
-| `android/app/src/main/res/raw/emoji_i18n.jsondlgz` (FUTO's emoji names, trimmed) | FUTO Source First License 1.1 |
-| `android/app/src/main/res/raw/main_en.dict`, the English dictionary: FUTO's words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | FUTO Source First License 1.1, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
+| SebType's own code: `core/`, `linux/`, `windows/`, `pc/`, `art/`, `data/`, `docs/`, `sync-server/`, `tools/`, `engines/sebtype-lm/`, `.github/` and `android/` (the phone app and its native library; [android/LICENSE](android/LICENSE) lists its exceptions), with the exceptions below. Each folder's `LICENSE` file lists its exceptions | MIT ([LICENSE-SebType](LICENSE-SebType)), Copyright (c) 2026 S-Sebb |
+| `data/en-dict/en_US.dict`, the English dictionary: AOSP's en_US words with [wordfreq](https://github.com/rspeer/wordfreq)'s frequencies; its added words were checked against [SCOWL](https://wordlist.aspell.net) | Apache-2.0, and CC BY-SA 4.0 for the frequencies ([NOTICE](NOTICE)) |
+| `android/app/src/main/assets/emoji/emoji.txt`: Unicode's emoji list and CLDR's names, with SebType's own ASCII faces | Unicode License v3 |
 | The Picnic theme's fonts Nunito and Pixelify Sans, and the glyph outlines in the `pc/icons/` tray icons (Noto Sans CJK and Nunito) | SIL Open Font License 1.1 ([art/fonts/OFL-Nunito.txt](art/fonts/OFL-Nunito.txt), [art/fonts/OFL-PixelifySans.txt](art/fonts/OFL-PixelifySans.txt)) |
 | SebType's Mozc (`engines/mozc/`: Mozc with SebType's changes) and `pc/linux/mozc-keymap.tsv` (Mozc's MS-IME keymap with SebType's keys) | BSD-3-Clause, like Mozc |
 | `core/src/rime.cpp` (follows fcitx5-rime) and SebType's tray in `linux/src/tray.*` (ported from Fcitx5's notificationitem) | LGPL-2.1-or-later, like fcitx5-rime and Fcitx5 ([LICENSE-LGPL-2.1](LICENSE-LGPL-2.1)) |
@@ -152,50 +144,6 @@ travel inside the bundle. Sources: rime-ice 2026.06.30 at
 rime-frost 1.0.4 at
 [89ad92e4](https://github.com/gaboolic/rime-frost/tree/89ad92e450f9a5f4dcc2de67ba28004f9af0cc1e),
 built by [`data/rime/build.sh`](data/rime/build.sh).
-
-</details>
-
-<details>
-<summary><strong>FUTO Keyboard's README</strong>, unchanged</summary>
-
-# FUTO Keyboard
-
-The goal is to make a good modern keyboard that stays offline and doesn't spy on you. This keyboard is a fork of [LatinIME, The Android Open-Source Keyboard](https://android.googlesource.com/platform/packages/inputmethods/LatinIME), with significant changes made to it.
-
-Check out the [FUTO Keyboard website](https://keyboard.futo.tech/) for downloads and more information.
-
-The code is licensed under the [FUTO Source First License 1.1](LICENSE.md).
-
-## Issue tracking and contributing
-
-Please check the GitHub repository to report issues: [https://github.com/futo-org/android-keyboard/](https://github.com/futo-org/android-keyboard/)
-
-The source code is hosted on our [internal GitLab](https://gitlab.futo.org/keyboard/latinime) and mirrored to [GitHub](https://github.com/futo-org/android-keyboard/). As registration is closed on our internal GitLab, we use GitHub instead for issues and pull requests.
-
-Due to custom license, pull requests to this repository require signing a [CLA](https://cla.futo.org/) which you can do after opening a PR. Contributions to the [layouts repo](https://github.com/futo-org/futo-keyboard-layouts) don't require CLA as they're Apache-2.0
-
-If you want to help translate the app, please do so via our Pontoon instance: https://i18n-keyboard.futo.org/
-
-## Layouts
-
-If you want to contribute layouts, check out the [layouts repo](https://github.com/futo-org/futo-keyboard-layouts).
-
-## Building
-
-SebType: see [docs/development.md](docs/development.md).
-
-## APK signing
-
-For official FUTO Keyboard versions, you can verify the APK's signing key fingerprint for integrity.
-
-```
-Signing key fingerprint for all versions except Google Play:
-
-MD5: 3A:BB:71:C6:BB:E4:92:27:B1:E3:5D:81:01:48:6A:B0
-SHA1: 5D:15:B3:6E:C9:6A:96:28:41:09:DD:62:93:0D:9C:39:9F:5F:06:43
-SHA-256: 74:3F:AD:58:64:AB:C4:26:50:0B:2D:C2:C4:7C:8A:D3:24:CB:CD:16:03:3F:80:16:99:48:41:35:63:74:F9:95
-
-```
 
 </details>
 

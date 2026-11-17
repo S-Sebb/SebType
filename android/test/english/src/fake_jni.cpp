@@ -72,13 +72,6 @@ jstring NewStringUTF(JNIEnv *, const char *utf) {
     return reinterpret_cast<jstring>(s);
 }
 
-// FUTO's string2jstring makes its strings through java.nio: a direct buffer, Charset.decode and toString.
-jobject NewDirectByteBuffer(JNIEnv *, void *address, jlong capacity) {
-    auto *s = new Str;
-    s->s.assign(static_cast<const char *>(address), capacity);
-    made.emplace_back(s);
-    return reinterpret_cast<jobject>(s);
-}
 jmethodID GetMethodID(JNIEnv *, jclass, const char *, const char *) {
     return reinterpret_cast<jmethodID>(1);
 }
@@ -146,7 +139,6 @@ JNINativeInterface_ makeTable() {
     t.GetStringUTFChars = GetStringUTFChars;
     t.ReleaseStringUTFChars = ReleaseStringUTFChars;
     t.NewStringUTF = NewStringUTF;
-    t.NewDirectByteBuffer = NewDirectByteBuffer;
     t.GetMethodID = GetMethodID;
     t.GetStaticMethodID = GetMethodID;
     t.CallStaticObjectMethodV = CallStaticObjectMethodV;

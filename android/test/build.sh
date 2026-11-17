@@ -66,9 +66,8 @@ on_host true || { echo "preflight: yanglab16 unreachable (start Zscaler: gtk-lau
 android/build.sh debug > /dev/null 2> "$out/test-build-warm.log" ||
   { echo "preflight: debug build on yanglab16 failed, see $out/test-build-warm.log"; exit 1; }
 cleanup
-# The worktree's copy on yanglab16 starts empty but for FUTO's downloaded dictionary, which git ignores.
-if ! { git worktree add -q --detach "$wt" HEAD &&
-  on_host "mkdir -p $remote_wt/android/app && cp -a $remote_main/android/app/res-bundle $remote_wt/android/app/"; }; then
+# The worktree's copy on yanglab16 starts empty (Mozc's dictionary comes from the shared cache).
+if ! git worktree add -q --detach "$wt" HEAD; then
   echo "preflight: can't set up $wt and its copy on yanglab16"; exit 1
 fi
 
@@ -89,7 +88,7 @@ check new-worktree-debug debug_from_cache
 wt_remotely() { (cd "$wt" && source tools/lib.sh && build_remotely "$@"); }
 # One changed Kotlin file: Kotlin's build report says whether it compiled incrementally.
 kotlin_incremental() {
-  local kt=android/app/src/main/java/org/futo/inputmethod/latin/uix/ActionBar.kt reports
+  local kt=android/app/src/main/java/dev/sebb/sebtype/Keys.kt reports
   # A new value each run: with the same change Gradle's cache restores the compile instead.
   echo "private val sebtypeTestBuildProbe = \"$(date +%s%N)\"" >> "$wt/$kt"
   reports=$remote_wt/android/build/reports/kotlin-build

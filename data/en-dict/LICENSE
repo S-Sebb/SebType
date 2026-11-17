@@ -1,5 +1,3 @@
-SebType's own code, under the MIT licence in ../../LICENSE-SebType. The dictionary it builds,
-android/app/src/main/res/raw/main_en.dict, is not: it is FUTO's dictionary with wordfreq's frequencies (see ../../NOTICE).
-en_US.dict, which build.sh --aosp builds for the new keyboard (#244), is not SebType's code either: AOSP's
-en_US word list (Apache-2.0) with wordfreq's frequencies (CC BY-SA 4.0) and SCOWL-checked words (see
-../../NOTICE).
+SebType's own code, under the MIT licence in ../../LICENSE-SebType. The dictionary it builds, en_US.dict,
+is not SebType's code: AOSP's en_US word list (Apache-2.0) with wordfreq's frequencies (CC BY-SA 4.0) and
+SCOWL-checked words (see ../../NOTICE).

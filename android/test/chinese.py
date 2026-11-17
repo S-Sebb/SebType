@@ -6,15 +6,11 @@ cold starts (#97) and its idle unload (#56), and that English's model waits for 
     chinese.py SERIAL APK BUMPED_APK FIELD_APK RESULTS LOGDIR [MAIN_APK]
 
 APK is the release build; BUMPED_APK is the same APK with a different bundled data version marker,
-installed over it as an update; MAIN_APK (optional) is main's release build, which learns a word before
-APK is installed over it; FIELD_APK is android/perf/build-field.sh's text field app, which only
+installed over it as an update; MAIN_APK (optional) is the last release of the FUTO-based app, which learns
+words in all three languages before APK is installed over it (update-from-futo-app); FIELD_APK is android/perf/build-field.sh's text field app, which only
 supplies the box that gets typed into (the app's own "try typing" popup isn't exported). Types by
 tapping SebType's own keys (found with `uiautomator dump --windows`) and reads the candidate bar. One
 line per check appended to RESULTS; later checks that depend on an earlier one SKIP when it failed.
-
-SEBTYPE_PACKAGE=dev.sebb.sebtype.next runs them against the new keyboard (#191 stage 3, android/next):
-the checks for what it doesn't have yet SKIP, and it gets its own: pinyin dropped on the globe, and
-English's spacing around a period (#39).
 """
 
 import ast
@@ -32,13 +28,13 @@ import zlib
 
 serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
 main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
-PKG = os.environ.get("SEBTYPE_PACKAGE") or "dev.sebb.sebtype"
-# The new keyboard (android/next): its own service, keyboard view and log tag.
-NEXT = PKG == "dev.sebb.sebtype.next"
-IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
-FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
-# Checks the new keyboard can't pass yet, and why.
-NEXT_SKIPS = {}
+PKG = "dev.sebb.sebtype"
+# The keyboard keeps the FUTO-based app's service name, so an update from it stays selected (#262).
+IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+# OLD: the helpers drive the FUTO-based app (MAIN_APK), only within update-from-futo-app: its keyboard
+# view and log tags are its own.
+OLD = False
+FRAME_ID = f"{PKG}:id/keyboard"
 # The new keyboard's space bar, as its accessibility label reads in each system language.
 SPACE_LABELS = ("Space", "空格", "スペース")
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
@@ -169,7 +165,7 @@ def keys(ns):
     return {
         label.lower(): (x, y, top)
         for label, x, y, top, cls in ns
-        if re.fullmatch(r"[a-zA-Z]" if NEXT else r"[a-z]", label)
+        if re.fullmatch(r"[a-zA-Z]", label)
     }
 
 
@@ -239,9 +235,9 @@ def type_keys(text):
 
 
 def settle(seconds=30):
-    """The new keyboard's keys show when its engine thread answers (#241), which on the emulator can
+    """The keyboard's keys show when its engine thread answers (#241), which on the emulator can
     take a second a key in English: waits until the field stops changing."""
-    if not NEXT:
+    if OLD:
         return
     last, end = None, time.time() + seconds
     while time.time() < end:
@@ -265,7 +261,7 @@ def type_fast(text, gap_ms=10):
         (
             (x, y)
             for label, x, y, top_, cls in nodes()
-            if NEXT and label in SPACE_LABELS
+            if not OLD and label in SPACE_LABELS
         ),
         (int(left + 5.5 * (right - left) / 10), row_y(top, bottom, 3)),
     )
@@ -350,7 +346,7 @@ def tap_candidate(word):
 
 def logcat():
     """The app's rime log lines; logcat's -s splits the filter on spaces, so it can't match the tag."""
-    if NEXT:
+    if not OLD:
         return adb("shell", "logcat -d -s SebType || true")
     return adb("shell", "logcat -d | grep -F 'ChineseIME (rime)' || true")
 
@@ -429,9 +425,6 @@ if WANTED == set():  # none of the named checks is here
 def check(name, fn, needs=()):
     if WANTED is not None and name not in WANTED:
         return
-    if NEXT and name in NEXT_SKIPS:
-        result("SKIP", name, f"new keyboard: {NEXT_SKIPS[name]}")
-        return
     missing = [n for n in needs if not passed.get(n)]
     if missing:
         result("SKIP", name, f"needs {', '.join(missing)}")
@@ -476,17 +469,7 @@ def fresh_install():
     open_field()
     q = keys(nodes())["q"]
     adb("shell", "input", "text", "hi")  # English works meanwhile
-    # The new keyboard has no setup screen: it sets Chinese up as it first starts.
-    if not NEXT:
-        adb(
-            "shell",
-            "am",
-            "start",
-            "-W",
-            "-n",
-            f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity",
-        )
-        adb("shell", "am", "start", "-W", "-n", FIELD)  # back to the same field
+    # The keyboard sets Chinese up as it first starts, without the settings.
     # Under load (the other emulator's suite) the keyboard can take seconds to come back.
     wait_for("the keyboard back in the field", lambda: keys(nodes()), KEYBOARD_WAIT)
     time.sleep(1)  # taps while the keyboard slides back in are dropped
@@ -1064,7 +1047,7 @@ check("ja-personal-word-after-restart", personal_word_after_restart, needs=["ja-
 
 
 def mozc_log():
-    return adb("shell", f"logcat -d -s {'SebType' if NEXT else 'JapaneseIME'} || true")
+    return adb("shell", f"logcat -d -s {'JapaneseIME' if OLD else 'SebType'} || true")
 
 
 def ja_unloads_when_idle():
@@ -1092,9 +1075,8 @@ check("ja-unloads-when-idle", ja_unloads_when_idle, needs=["ja-chip"])
 
 def model_mapped():
     pid = adb("shell", "pidof", PKG).strip()
-    # The new keyboard's model is english.gguf, copied out of the APK into no_backup/english/.
-    model = "english/english.gguf" if NEXT else "transformer-models/"
-    return pid and model in root(f"cat /proc/{pid}/maps")
+    # The model is english.gguf, copied out of the APK into no_backup/english/.
+    return pid and "english/english.gguf" in root(f"cat /proc/{pid}/maps")
 
 
 def en_model_waits_for_letter():
@@ -1143,51 +1125,7 @@ def fast_typing_en():
 check("fast-typing-en", fast_typing_en, needs=["en-model-waits-for-letter"])
 
 
-def main_learns():
-    """main's build, fresh, learns 厉害 (rime-ice's dictionary, same schema id rime_ice)."""
-    adb("uninstall", PKG, check=False)
-    adb("install", main_apk, timeout=300)
-    wait_for(
-        "SebType to be listed",
-        lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
-        30,
-    )
-    adb("shell", "ime", "enable", IME)
-    adb("logcat", "-c")
-    open_field()
-    tap_globe()  # a fresh install starts in EN
-    wait_set_up()
-    return learn_lower_candidate()
-
-
-def update_from_main():
-    adb("logcat", "-c")
-    adb("install", "-r", apk, timeout=300)
-    setup, install, _, _ = wait_set_up()
-    # main and this build ship the same bundled data version, which RimeIceBundle leaves installed;
-    # only a release that changes the data reinstalls it here (as BUMPED_APK does above).
-    data = f"data reinstalled in {install} ms" if install else "installed data kept"
-    wait_for(
-        "SebType to be listed again",
-        lambda: IME in adb("shell", "ime", "list", "-s"),
-        30,
-    )
-    try:
-        open_field()
-    except Fail:
-        open_field()
-    return f"main -> this build: {data}, set up in {setup} ms"
-
-
-def moved_from_external():
-    """main kept Rime's data in external storage; this build moved it into private storage (#32)."""
-    if "rime_ice.userdb" not in root(f"ls {RIME_USER}").split():
-        raise Fail(f"no rime_ice.userdb in {RIME_USER}")
-    nothing_external()
-    return "learned words in private storage, nothing left in external files"
-
-
-# --- The new keyboard's own checks (SEBTYPE_PACKAGE=dev.sebb.sebtype.next) ---
+# --- The keyboard's own checks, from #191's stages 3 and 4 ---
 
 
 def key_spots():
@@ -2431,107 +2369,70 @@ def en_failure_visible():
 
 check("hw-typing-zh", hw_typing(to_chinese, "nihao"), needs=["first-install"])
 check("hw-typing-ja", hw_typing(to_japanese, "hashi"), needs=["first-install"])
-if NEXT:
-    check("en-failure-visible", en_failure_visible, needs=["first-install"])
+check("en-failure-visible", en_failure_visible, needs=["first-install"])
+check("zh-globe-drops-pinyin", globe_drops_pinyin, needs=["ranh"])
+# #39's four period checks (LiveSpacingTests in app/): the two the new keyboard can run, as typing.
+check(
+    "en-period-space-stays",
+    typed_as(
+        "open main .py see notebook .ipynb ", "Open main .py see notebook .ipynb "
+    ),
+    needs=["first-install"],
+)
+check(
+    "en-sentence-capital",
+    typed_as("hello. how", "Hello. How"),
+    needs=["first-install"],
+)
+check("en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"])
+check("emoji-picks", emoji_picks, needs=["first-install"])
+check("caps-lock", caps_lock, needs=["en-model-waits-for-letter"])
+check(
+    "en-double-space-period",
+    typed_as("yes  then", "Yes. Then"),
+    needs=["first-install"],
+)
+check("en-personal-word", personal_word_en, needs=["first-install"])
+check("en-backspace-reverts", backspace_reverts, needs=["first-install"])
+check("en-reopen-word", reopen_word, needs=["first-install"])
+check("en-emoji-suggestion", emoji_suggestion, needs=["first-install"])
+check("settings-action", settings_action, needs=["first-install"])
+check("clipboard-paste", clipboard_paste, needs=["first-install"])
+check("quick-clip", quick_clip, needs=["first-install"])
+check("quick-clip-secret", quick_clip_secret, needs=["first-install"])
+check("emoji-search", emoji_search, needs=["first-install"])
+check("emoji-ascii", emoji_ascii, needs=["first-install"])
+check("clipboard-search", clipboard_search, needs=["first-install"])
+check("clipboard-image-paste", clipboard_image_paste, needs=["first-install"])
+check("clipboard-today-image", clipboard_today_image, needs=["first-install"])
+check("modes-one-handed", modes_one_handed, needs=["first-install"])
+check("modes-split", modes_split, needs=["first-install"])
+check("modes-floating", modes_floating, needs=["first-install"])
+check("modes-height", modes_height, needs=["first-install"])
+check("swipe-space-cursor", swipe_space_cursor, needs=["first-install"])
+check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
+check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
+check("modes-floating-resized", floating_after_resize, needs=["first-install"])
+check("modes-floating-resize", floating_resize, needs=["first-install"])
+check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
+check("modes-floating-short-window", floating_short_window, needs=["first-install"])
+check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
 
-if NEXT:
-    NEXT_SKIPS["en-futo-default-migrates"] = (
-        "FUTO's stored settings have nothing to migrate to here"
-    )
-    check("zh-globe-drops-pinyin", globe_drops_pinyin, needs=["ranh"])
-    # #39's four period checks (LiveSpacingTests in app/): the two the new keyboard can run, as typing.
-    check(
-        "en-period-space-stays",
-        typed_as(
-            "open main .py see notebook .ipynb ", "Open main .py see notebook .ipynb "
-        ),
-        needs=["first-install"],
-    )
-    check(
-        "en-sentence-capital",
-        typed_as("hello. how", "Hello. How"),
-        needs=["first-install"],
-    )
-    check(
-        "en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"]
-    )
-    check("emoji-picks", emoji_picks, needs=["first-install"])
-    check("caps-lock", caps_lock, needs=["en-model-waits-for-letter"])
-    check(
-        "en-double-space-period",
-        typed_as("yes  then", "Yes. Then"),
-        needs=["first-install"],
-    )
-    check("en-personal-word", personal_word_en, needs=["first-install"])
-    check("en-backspace-reverts", backspace_reverts, needs=["first-install"])
-    check("en-reopen-word", reopen_word, needs=["first-install"])
-    check("en-emoji-suggestion", emoji_suggestion, needs=["first-install"])
-    check("settings-action", settings_action, needs=["first-install"])
-    check("clipboard-paste", clipboard_paste, needs=["first-install"])
-    check("quick-clip", quick_clip, needs=["first-install"])
-    check("quick-clip-secret", quick_clip_secret, needs=["first-install"])
-    check("emoji-search", emoji_search, needs=["first-install"])
-    check("emoji-ascii", emoji_ascii, needs=["first-install"])
-    check("clipboard-search", clipboard_search, needs=["first-install"])
-    check("clipboard-image-paste", clipboard_image_paste, needs=["first-install"])
-    check("clipboard-today-image", clipboard_today_image, needs=["first-install"])
-    check("modes-one-handed", modes_one_handed, needs=["first-install"])
-    check("modes-split", modes_split, needs=["first-install"])
-    check("modes-floating", modes_floating, needs=["first-install"])
-    check("modes-height", modes_height, needs=["first-install"])
-    check("swipe-space-cursor", swipe_space_cursor, needs=["first-install"])
-    check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
-    check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
-    check("modes-floating-resized", floating_after_resize, needs=["first-install"])
-    check("modes-floating-resize", floating_resize, needs=["first-install"])
-    check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
-    check("modes-floating-short-window", floating_short_window, needs=["first-install"])
-    check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
-    check("en-futo-default-migrates", lambda: None)
-
-if (
-    main_apk and not NEXT
-):  # the new keyboard's update from main is update-from-futo-app's
-    check("main-learns", main_learns)
-    check("update-from-main", update_from_main, needs=["main-learns"])
-    check("update-from-main-moved", moved_from_external, needs=["update-from-main"])
-    check(
-        "update-from-main-keeps-learned",
-        expect_first("lh", "厉害"),
-        needs=["update-from-main"],
-    )
-    check(
-        "update-from-main-chinese",
-        expect_first("ranh", "然后"),
-        needs=["update-from-main"],
-    )
-elif not NEXT and (WANTED is None or "update-from-main" in WANTED):
-    result("SKIP", "update-from-main", "no MAIN_APK (main's release APK) given")
-# --- An update from today's app (FUTO's, MAIN_APK) to the new keyboard built as dev.sebb.sebtype (#254) ---
-# UPDATE_APK is android/build.sh next-update's APK. Today's app learns a made-up English word, picks
-# lower candidates in 中文 and 日本語 and changes options in its settings (autocorrect, fuzzy pinyin, learning);
-# after the update the new keyboard offers both picks first, English's learned words wait in the English
-# engine's folder (core_test checks that engine takes them in), and the options are kept.
-update_apk = os.environ.get("UPDATE_APK", "")
-OLD_PKG = "dev.sebb.sebtype"
+# --- An update from the FUTO-based app (its last release, MAIN_APK) to this one (#254, #262) ---
+# The old app, chosen as the keyboard, learns a made-up English word, picks lower candidates in 中文 and
+# 日本語 and changes options in its settings (autocorrect, fuzzy pinyin, learning). APK installs over it: SebType
+# stays enabled and chosen (the service keeps its name), offers both picks first, English's learned words
+# wait in the English engine's folder (core_test checks that engine takes them in), and the options are kept.
+OLD_PKG = PKG
 EN_WORD = "zorbleq"  # made up, so only learning can put it in the history
 JA_CODE = "hashi"
 
 
-def as_app(pkg, new):
-    """Points the helpers at an installed app: today's (FUTO's keyboard) or the new one, in package pkg."""
-    global PKG, NEXT, IME, FRAME_ID, RIME_USER, RIME_SHARED
-    PKG, NEXT = pkg, new
-    # The new keyboard's classes keep their package when it is built as dev.sebb.sebtype, and Android
-    # names that service dev.sebb.sebtype/.next.SebTypeIme: the id `ime list` prints and `ime enable` takes.
-    IME = (
-        (f"{PKG}/.SebTypeIme" if PKG.endswith(".next") else f"{PKG}/.next.SebTypeIme")
-        if NEXT
-        else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
-    )
-    FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
-    RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
-    RIME_SHARED = f"/data/user/0/{PKG}/no_backup/rime/shared"
+def as_old(old):
+    """Points the helpers at the FUTO-based app (old) or this one: their keyboard views differ."""
+    global OLD, FRAME_ID
+    OLD = old
+    FRAME_ID = f"{PKG}:id/main_keyboard_frame" if old else f"{PKG}:id/keyboard"
 
 
 def tap_space():
@@ -2604,17 +2505,17 @@ def old_files(path):
 
 def update_from_futo_app():
     adb("shell", "ime", "reset", check=False)
-    as_app(OLD_PKG, False)
+    as_old(True)
     try:
-        for p in (OLD_PKG, "dev.sebb.sebtype.next"):
-            adb("uninstall", p, check=False)
+        adb("uninstall", OLD_PKG, check=False)
         adb("install", main_apk, timeout=300)
         wait_for(
-            "today's app to be listed",
+            "the old app to be listed",
             lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
             30,
         )
         adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
         adb("logcat", "-c")
         open_field()
         tap_globe()  # a fresh install starts in EN
@@ -2629,24 +2530,37 @@ def update_from_futo_app():
             type_keys(EN_WORD)
             tap_space()
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
-        print("today's app stored:\n" + set_old_options())
+        print("the old app stored:\n" + set_old_options())
         history = "files/UserHistoryDictionary.en_US.dict"
         if not old_files(history):
-            raise Fail(f"today's app kept no English history in {history}")
+            raise Fail(f"the old app kept no English history in {history}")
+        chosen = adb(
+            "shell", "settings", "get", "secure", "default_input_method"
+        ).strip()
+        if chosen != IME:
+            raise Fail(
+                f"the old app isn't the chosen keyboard before the update: {chosen}"
+            )
         datastore = f"/data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
         before = set(root(f"strings {datastore}").split())
 
         adb("logcat", "-c")
-        adb("install", "-r", update_apk, timeout=300)
-        as_app(OLD_PKG, True)
+        adb("install", "-r", apk, timeout=300)
+        as_old(False)
         wait_for(
             "the update's keyboard to be listed",
             lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
             30,
         )
-        # The old keyboard's service is gone: Android drops it from the enabled keyboards.
-        kept = IME in adb("shell", "ime", "list", "-s")
-        adb("shell", "ime", "enable", IME)
+        # Nothing is enabled or chosen again: the update itself must keep SebType the keyboard in use.
+        enabled = IME in adb("shell", "ime", "list", "-s").split()
+        chosen = adb(
+            "shell", "settings", "get", "secure", "default_input_method"
+        ).strip()
+        if not enabled or chosen != IME:
+            raise Fail(
+                f"after the update SebType is {'enabled' if enabled else 'not enabled'}, the keyboard in use {chosen}"
+            )
         open_field()
         wait_set_up()
         moved = old_files("files/english/UserHistoryDictionary.en_US.dict")
@@ -2680,14 +2594,14 @@ def update_from_futo_app():
         if got[0] != ja:
             raise Fail(f"after the update {JA_CODE} -> {got[:5]}, not {ja} first")
         return (
-            f"{zh}; {JA_CODE} -> {got[:3]}; English's history moved ({', '.join(moved)}); options kept;"
-            f" keyboard {'still' if kept else 'no longer'} enabled after the update"
+            f"SebType still enabled and in use after the update; {zh}; {JA_CODE} -> {got[:3]};"
+            f" English's history moved ({', '.join(moved)}); options kept"
         )
     finally:
+        as_old(False)
         adb("uninstall", OLD_PKG, check=False)
-        # The new keyboard was uninstalled for the update: the checks after this one need it back.
+        # A fresh install for the checks after this one.
         adb("install", apk, timeout=300)
-        as_app(os.environ.get("SEBTYPE_PACKAGE") or OLD_PKG, NEXT_RUN)
         wait_for(
             "the new keyboard to be listed",
             lambda: IME in adb("shell", "ime", "list", "-a", "-s"),
@@ -2696,14 +2610,13 @@ def update_from_futo_app():
         adb("shell", "ime", "enable", IME)
 
 
-NEXT_RUN = NEXT
-if NEXT and main_apk and update_apk:
+if main_apk:
     check("update-from-futo-app", update_from_futo_app)
-elif NEXT and (WANTED is None or "update-from-futo-app" in WANTED):
+elif WANTED is None or "update-from-futo-app" in WANTED:
     result(
         "SKIP",
         "update-from-futo-app",
-        "needs MAIN_APK and UPDATE_APK (android/build.sh next-update)",
+        "needs MAIN_APK, the FUTO-based app's last release",
     )
 
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

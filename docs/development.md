@@ -15,7 +15,7 @@ describe what each PC part does and list what each of its checks verifies.
 
 | Folder | What |
 |---|---|
-| `android/` | The Gradle build: `app/` (the keyboard, FUTO Keyboard with SebType's changes), `native/` (`libsebtype.so`: `core/` with librime and the JNI glue, and Mozc's `libmozc.so`, which it runs in-process), the build and release scripts, `test/` and `perf/` |
+| `android/` | The Gradle build: `app/` (the keyboard and its settings), `native/` (`libsebtype.so`: `core/` with librime and the JNI glue, and Mozc's `libmozc.so`, which it runs in-process), the build and release scripts, `test/` and `perf/` |
 | `engines/` | `mozc/` and `librime/`: the one source of each engine, built for the phone and both PCs |
 | `core/`, `linux/`, `windows/` | SebType's shared core and its frontends: the Fcitx5 add-on, the Windows text service and server |
 | `pc/` | Linux (Fcitx5) and Windows (librime's build, Mozc's installer, SebType's installer), and the Configurator |
@@ -91,9 +91,7 @@ time and memory:
 android/build.sh release        # signed arm64-v8a release APK (keystore in ~/.config/sebtype)
 android/build.sh debug          # debug arm64-v8a APK, the one the emulator tests run
 android/build.sh debug-x86_64   # debug APK for an x86_64 emulator
-android/build.sh test-x86_64    # debug APK and its instrumented-test APK
-android/build.sh next           # signed arm64-v8a APK of next/, the new keyboard (#191, test-only)
-android/build.sh next-debug     # its debug APK
+android/build.sh unit-tests     # the app's JVM unit tests
 ```
 
 It prints the APK's path last. Each run gets its own folder in `android/app/build/runs/` (hard links,
@@ -106,10 +104,10 @@ What it builds from source, and the caches that make a rebuild quick:
 | Part | Built by | Cache |
 |---|---|---|
 | Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle` (on yanglab16 `~/scratch/SebType/cache/gradle`), shared by every worktree |
-| The app's C++ (`libjni_latinime.so`) and `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
+| `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
 | Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
-| Mozc's dictionary | `android/app/res-bundle/download-bundles.py` | `android/app/res-bundle/` |
+| Mozc's dictionary (pinned, checksum-checked) | `android/app/mozc-dictionary.sh` | `~/scratch/SebType/cache/` |
 
 Scripts write their test, perf and release outputs to the running task's folder,
 `~/scratch/SebType/<issue>/` (`TASK_OUT` in `tools/lib.sh`): run them as `ISSUE=211 <script>`. Without
@@ -135,15 +133,14 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | Command | What it checks |
 |---|---|
 | `android/test/emulator.sh` | The full emulator suite (below) |
-| `android/test/typing.sh` | The instrumented typing tests on the emulator |
 | `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
-| `SEBTYPE_PACKAGE=dev.sebb.sebtype.next android/test/emulator.sh` | The same checks on the new keyboard (next/, #191); those for what it doesn't have yet SKIP with the stage that brings it |
-| `android/emulator.sh -- android/test/compare-screens.py TODAY_APK NEW_APK FIELD_APK OUTDIR` | Screenshots of today's keyboard and the new one side by side, light and dark, for judging the look |
-| `android/build.sh unit-tests` | The unit tests of the app and `next/` (on yanglab16) |
-| `android/test/english/run.sh` | English quality next to pristine AOSP, on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
+| `MAIN_APK=<the FUTO-based app's last release> android/test/emulator.sh` | Adds `update-from-futo-app`: an update from that app keeps SebType picked and its words, Rime and Mozc data and settings (#262) |
+| `android/emulator.sh -- android/test/compare-screens.py OLD_APK NEW_APK FIELD_APK OUTDIR` | Screenshots of two builds' keyboards side by side, light and dark, for judging the look |
+| `android/build.sh unit-tests` | The app's unit tests (on yanglab16) |
+| `android/test/english/run.sh` | English quality next to pristine AOSP and the FUTO-based app's frozen numbers (`today.json`), on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
 | `linux/test-parallel-build.sh` | Two RPM builds from different checkouts at once each package their own code (#305); the cache keeps an RPM per sources, so a checkout reuses its own and a changed one builds another (#326) |
@@ -176,7 +173,7 @@ one: then it reports SKIP and says why. `android/perf/perf.sh` is a measurement 
 
 ### The emulator
 
-SebType's device tests (`android/test/emulator.sh`, `typing.sh`, `privacy.sh`, `android/perf/perf.sh`) run on one headless emulator on nobara-pc, one run at a time: two
+SebType's device tests (`android/test/emulator.sh`, `privacy.sh`, `android/perf/perf.sh`) run on one headless emulator on nobara-pc, one run at a time: two
 emulators ran the PC out of memory (Decisions #2, #170). `android/emulator.sh` queues each run for it:
 
 | AVD | Serial | Guest RAM | Lock |
@@ -226,6 +223,8 @@ Next to other IMEs, the same way (#54), with a 12-minute mixed-typing run (`SOAK
 
 - Android: `android/perf/perf.sh --compare` (another installed keyboard: `IME_PKG`, `IME_ID`, `KEY_ROWS`,
   `KEY_SPACE`) and `--soak` (SebType as installed); `--compare-device` and `--soak-device` on a phone.
+- Two SebType APKs (e.g. the last release and a change): `android/perf/compare-apks.sh OLD_APK NEW_APK`, their
+  `--compare-device` rows alternately on the emulator, `RUNS` times each (default 2).
 - Linux: `pc/linux/compare.sh` (SebType's input method next to Fedora's fcitx5-rime and fcitx5-mozc, each in a private Fcitx5).
 - Windows: `ONLY=compare pc/windows/setup/test-tcsbackend.sh` (Microsoft Pinyin and Japanese IME;
   `COMPARE_IMES` narrows it).
@@ -258,10 +257,10 @@ What it measures:
 | Every key arrives | the same 10 keys a second: the keyboard must get every tap (Perfetto), and the field's text (a UI dump) must be what was tapped, ignoring case. The check fails naming each missing, extra or out-of-order character with its position, kept in `run/<fast\|long>.diff`. A missing touch means the taps' injection lost it, not the keyboard; autocorrect can put back a key the keyboard never got, so touches are checked first |
 | Chinese first-run setup | the app's own timing of installing the bundled data and Rime's check, after the first switch to 中, and how many tables or prisms were compiled on the device (should be 0; root shell only) |
 
-English runs with FUTO's transformer on (the default), Chinese with Rime and the bundled data (rime-ice's schema, 白霜's dictionary), Japanese with
+English runs with SebType's model (`engines/sebtype-lm`), Chinese with Rime and the bundled data (rime-ice's schema, 白霜's dictionary), Japanese with
 Mozc. Each typing set runs `RUNS` times (default 3), each time in a fresh test field; the table
 gives the median and the 95th percentile over all keys. English types after one keyboard restart,
-because the transformer can stay off in the first process after install.
+because the model can stay off in the first process after install.
 
 Results, in `~/scratch/SebType/<issue>/perf/` (or `PERF_OUT`): `perf.md` (the table), `results.txt`
 (one line per check), and traces and logs in `run/`. Open a `.pftrace` in https://ui.perfetto.dev to see where
@@ -272,11 +271,11 @@ framework trace slices and frame timelines; the trace records no logs.
 
 Notes:
 
-- **Engines load on demand (#56).** English's transformer loads once the first letter is typed (an
+- **Engines load on demand (#56).** English's model loads once the first letter is typed (an
   empty field gets the dictionary's suggestions until then) and unloads when the language switches
   or after 3 minutes without a prediction (`ENGINE_IDLE_MS`). Rime stops 3 minutes after 中 was last
   in use, or after a background setup nobody types into. Mozc unloads 3 minutes after 日 was last in
-  use, and the next 日 field loads it again. So "after typing 中" has no transformer in it, and "after
+  use, and the next 日 field loads it again. So "after typing 中" has no English model in it, and "after
   fast typing EN" (right after 中 and 日) is the most that is ever loaded at once.
 - **Idle is read once the keyboard settled**, 30 s after it opens (`SETTLE_S`). A new process reads
   about 25 MB higher for its first seconds (start-up Java garbage not yet collected): on the phone

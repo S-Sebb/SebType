@@ -1,67 +1,54 @@
 package dev.sebb.sebtype.sync
 
 import android.content.Context
-import android.provider.UserDictionary
-import dev.sebb.sebtype.chinese.ChineseMyWords
-import dev.sebb.sebtype.chinese.ChineseWord
 import dev.sebb.sebtype.core.ChineseWordSync
 import dev.sebb.sebtype.core.MozcWordSync
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import org.futo.inputmethod.engine.GlobalIMEMessage
-import org.futo.inputmethod.engine.IMEMessage
-import org.futo.inputmethod.latin.uix.PersonalWord
-import org.futo.inputmethod.latin.uix.UserDictionaryIO
-import org.futo.inputmethod.latin.uix.settings.pages.pdict.JapanesePersonalWord
-import org.futo.inputmethod.latin.uix.settings.pages.pdict.PosTypes
-import org.futo.inputmethod.latin.uix.settings.pages.pdict.decodeJapanesePersonalWord
-import org.futo.inputmethod.latin.uix.settings.pages.pdict.encode
+import dev.sebb.sebtype.data.ChineseData
+import dev.sebb.sebtype.data.ChineseWord
+import dev.sebb.sebtype.data.MozcPos
+import dev.sebb.sebtype.data.PersonalWord
+import dev.sebb.sebtype.data.PersonalWords
+import org.json.JSONException
 import java.io.File
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 /**
  * The personal dictionaries' part of the sync (#14). Each device's folder on the server holds its whole
- * Japanese dictionary in Mozc's own export format, which Mozc on a PC reads, with each word's last change and
- * the words deleted on it ([MozcWordSync], #273), and its other words (English) in FUTO's `userdictionary.json`
- * format, and its 中文 My words ([ChineseWordSync], #272). A Japanese or 中文 word's newest change wins, a
- * deletion too. Of the other words a device takes in only those
- * another device's file gained since the copy it took last time, so a word deleted here doesn't come back from
- * a device that still has it, and nothing of them is deleted here.
+ * 日本語 dictionary in Mozc's own export format, which Mozc on a PC reads, with each word's last change and the
+ * words deleted on it ([MozcWordSync], #273), its other words (English) in `userdictionary.json`, and its 中文
+ * My words ([ChineseWordSync], #272). A 日本語 or 中文 word's newest change wins, a deletion too. Of the other words a device takes in only those another device's
+ * file gained since the copy it took last time, so a word deleted here doesn't come back from a device that
+ * still has it, and nothing of them is deleted here.
  */
 object PersonalDictionarySync {
     const val MOZC_FILE = "mozc_dictionary.txt"
     const val WORDS_FILE = "userdictionary.json"
     val FILES = setOf(MOZC_FILE, WORDS_FILE, ChineseWordSync.FILE)
 
-    private fun japanese(word: PersonalWord): JapanesePersonalWord? =
-        if(word.locale?.substringBefore('_') == "ja") decodeJapanesePersonalWord(word) else null
+    private fun PersonalWord.entry() = MozcWordSync.Entry(reading, word, MozcPos.name(pos))
 
-    private fun JapanesePersonalWord.entry() = MozcWordSync.Entry(furigana, output, pos.text)
-
-    private fun MozcWordSync.Entry.word() =
-        JapanesePersonalWord(furigana = reading, output = word, pos = PosTypes.entries.find { it.text == pos } ?: PosTypes.NOUN).encode()
-
-    /** This phone's Japanese file, kept in [own], brought up to date with its [words]. */
+    /** This phone's 日本語 file, kept in [own], brought up to date with its [words]. */
     fun ownMozc(own: File, words: List<PersonalWord>, now: Long = System.currentTimeMillis()): MutableMap<Pair<String, String>, MozcWordSync.Entry> {
         val before = own.takeIf { it.isFile }?.readBytes()?.let(MozcWordSync::parse)
-        return MozcWordSync.stamp(before, words.mapNotNull { japanese(it)?.entry() }, now).also { save(own, it) }
+        return MozcWordSync.stamp(before, words.filter { it.japanese }.map { it.entry() }, now).also { save(own, it) }
     }
 
     private fun save(own: File, entries: Map<Pair<String, String>, MozcWordSync.Entry>) {
         own.parentFile!!.mkdirs()
         val tmp = File(own.path + ".tmp")
         tmp.writeBytes(MozcWordSync.format(entries.values))
-        if(!tmp.renameTo(own)) throw IOException("can't save the sync's Japanese words")
+        if (!tmp.renameTo(own)) throw IOException("can't save the sync's 日本語 words")
     }
 
     /** This device's other words' file. Sorted, so an unchanged dictionary uploads nothing. */
     fun wordsFile(words: List<PersonalWord>): ByteArray =
-        Json.encodeToString(words.filter { japanese(it) == null }.sortedWith(compareBy({ it.locale }, { it.word }, { it.shortcut })))
-            .toByteArray()
+        PersonalWord.json(words.filter { !it.japanese }.sortedWith(compareBy({ it.locale }, { it.word }, { it.shortcut }))).toByteArray()
 
     private fun otherWords(bytes: ByteArray): Set<PersonalWord> = try {
-        Json.decodeFromString<List<PersonalWord>>(String(bytes, Charsets.UTF_8)).toSet()
-    } catch(_: IllegalArgumentException) {
+        PersonalWord.list(String(bytes, Charsets.UTF_8)).toSet()
+    } catch (_: JSONException) {
         emptySet() // not a word list: nothing to take in
     }
 
@@ -75,7 +62,7 @@ object PersonalDictionarySync {
     }
 
     /**
-     * What another device's Japanese file changes here: [removed] and [added] go to the personal dictionary first,
+     * What another device's 日本語 file changes here: [removed] and [added] go to the personal dictionary first,
      * then [save] keeps the merged file. Saved before, a sync cut off in between would take the words not yet
      * in the dictionary for ones deleted here.
      */
@@ -86,24 +73,24 @@ object PersonalDictionarySync {
         fun save() = PersonalDictionarySync.save(own, merged)
     }
 
-    /** Takes another device's Japanese file into this phone's file [own] and its words [have]. */
+    /** Takes another device's 日本語 file into this phone's file [own] and its words [have]. */
     fun japaneseChanges(own: File, have: List<PersonalWord>, new: ByteArray, old: ByteArray?): JapaneseChanges {
         val entries = ownMozc(own, have)
         val changes = MozcWordSync.merge(entries, new, old)
         val keys = changes.map { it.key }.toSet()
-        return JapaneseChanges(have.filter { japanese(it)?.let { j -> j.furigana to j.output } in keys },
-            changes.filter { !it.deleted }.map { it.word() }, own, entries)
+        return JapaneseChanges(have.filter { it.japanese && it.reading to it.word in keys },
+            changes.filter { !it.deleted }.map { PersonalWord.japanese(it.reading, it.word, MozcPos.of(it.pos)) }, own, entries)
     }
 
     private fun ownFile(context: Context) = File(context.noBackupFilesDir, "sync/$MOZC_FILE")
     private fun ownChinese(context: Context) = File(context.noBackupFilesDir, "sync/${ChineseWordSync.FILE}")
-    private fun chineseWords(context: Context) = ChineseMyWords.saved(context)?.map { it.pinyin to it.word }
+    private fun chineseWords(context: Context) = ChineseData.savedWords(context)?.map { it.pinyin to it.word }
 
     /** Before a sync: [ChineseWordSync.dropOldCopies] in Rime's sync folder [sync]. */
     fun dropOldChineseCopies(context: Context, sync: File) = ChineseWordSync.dropOldCopies(ownChinese(context), sync)
 
     fun snapshots(context: Context): Map<String, ByteArray> {
-        val words = UserDictionaryIO(context).get()
+        val words = PersonalWords.all(context)
         return mapOf(
             MOZC_FILE to MozcWordSync.format(ownMozc(ownFile(context), words).values), WORDS_FILE to wordsFile(words),
             ChineseWordSync.FILE to MozcWordSync.format(ChineseWordSync.ownEntries(ownChinese(context), chineseWords(context)).values),
@@ -112,29 +99,26 @@ object PersonalDictionarySync {
 
     /** Takes another device's changes into this phone's personal dictionaries. */
     suspend fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
-        if(name == ChineseWordSync.FILE) {
+        if (name == ChineseWordSync.FILE) {
+            // Most files change nothing here: those skip stopping 中文.
+            val first = ChineseWordSync.changes(ownChinese(context), chineseWords(context), new, old)
+            if (first.words == null) { first.save(); return }
             lateinit var changes: ChineseWordSync.Changes
-            ChineseMyWords.edit(context, { have ->
-                changes = ChineseWordSync.changes(ownChinese(context), have?.map { it.pinyin to it.word }, new, old)
-                changes.words?.map { ChineseWord(it.second, it.first) }
-            }, after = { changes.save() })
-            return
-        }
-        val io = UserDictionaryIO(context)
-        if(name != MOZC_FILE) {
-            newWords(new, old, io.get()).takeIf { it.isNotEmpty() }?.let { io.put(it) }
-            return
-        }
-        val changes = japaneseChanges(ownFile(context), io.get(), new, old)
-        if(changes.removed.isNotEmpty() || changes.added.isNotEmpty()) {
-            // By reading too: UserDictionaryIO.remove would take every Japanese word spelled the same.
-            changes.removed.forEach {
-                context.contentResolver.delete(UserDictionary.Words.CONTENT_URI,
-                    "${UserDictionary.Words.WORD}=? AND ${UserDictionary.Words.SHORTCUT}=?", arrayOf(it.word, it.shortcut))
+            suspendCoroutine { c ->
+                ChineseData.editMyWords(context, { have ->
+                    changes = ChineseWordSync.changes(ownChinese(context), have?.map { it.pinyin to it.word }, new, old)
+                    changes.words?.map { ChineseWord(it.second, it.first) }
+                }, after = { changes.save() }) { c.resume(it) }
             }
-            io.put(changes.added)
-            GlobalIMEMessage.tryEmit(IMEMessage.ReloadPersonalDict)
+            return
         }
+        if (name != MOZC_FILE) {
+            newWords(new, old, PersonalWords.all(context)).takeIf { it.isNotEmpty() }?.let { PersonalWords.add(context, it) }
+            return
+        }
+        val changes = japaneseChanges(ownFile(context), PersonalWords.all(context), new, old)
+        if (changes.removed.isNotEmpty()) PersonalWords.delete(context, *changes.removed.toTypedArray())
+        if (changes.added.isNotEmpty()) PersonalWords.add(context, changes.added)
         changes.save()
     }
 }

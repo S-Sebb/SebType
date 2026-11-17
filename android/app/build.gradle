@@ -1,204 +1,77 @@
-//file:noinspection HardCodedStringLiteral
+// SebType's keyboard app (#191): its own code on core/ through :native.
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
-    id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
-def getVersionCode = { ->
-    def envCode = System.getenv('VERSION_CODE')
-    if (envCode?.trim()) {
-        try {
-            return Integer.parseInt(envCode.trim())
-        } catch (NumberFormatException ignored) {
-            project.logger.warn("VERSION_CODE='$envCode' is not a valid integer – falling back to git rev-list.")
-        }
-    } else {
-        project.logger.warn("VERSION_CODE env variable not set – falling back to git rev-list.")
-    }
-
-    try {
-        // SebType (#58): providers.exec, which the configuration cache allows at configuration time.
-        // SebType counts HEAD, as android/build.sh does: there is no master branch.
-        final def stdout = providers.exec { commandLine 'git', 'rev-list', '--first-parent', '--count', 'HEAD' }.standardOutput.asText.get()
-        return Integer.parseInt(stdout.trim())
-    } catch (ignored) {
-        project.logger.lifecycle("Failed to get rev-list count from git!")
-        return -1
-    }
-}
-
-def getVersionName = { ->
-    def envName = System.getenv('VERSION_NAME')
-    if (envName?.trim()) {
-        return envName.trim()
-    } else {
-        project.logger.warn("VERSION_NAME env variable not set – falling back to git describe.")
-    }
-
-    try {
-        // SebType (#58): providers.exec, which the configuration cache allows at configuration time
-        final def stdout = providers.exec { commandLine 'git', 'describe', '--tags' }.standardOutput.asText.get()
-        return stdout.trim()
-    } catch (ignored) {
-        project.logger.lifecycle("Failed to get version name tag from git!")
-        return "0.0.0"
-    }
-}
-
-tasks.register('updateLocales', Exec) {
-    workingDir = file('../tools/make-keyboard-text-py')
-    commandLine = [
-            System.getProperty("os.name").toLowerCase().contains("windows") ? "python" : "python3",
-            "src/generate.py"
-    ]
-}
-
-tasks.register('updateContributors') {
-    def script = file('../tools/contributors.py')
-    def outputFile = file('src/main/java/org/futo/inputmethod/latin/uix/settings/pages/credits/Contributors.kt')
-
-    inputs.file script
-    outputs.file outputFile
-
-    doLast {
-        exec {
-            environment 'GITHUB_TOKEN', System.getenv('GITHUB_TOKEN') ?: ''
-            commandLine 'python3', script.absolutePath
-        }
-    }
-}
-
-preBuild.dependsOn updateLocales
-
-// SebType: the Chinese data, compiled from pinned sources (cached) and not committed.
+// The Chinese data (data/rime/build.sh, cached).
+final def assetsDir = layout.buildDirectory.dir('sebtype-assets')
 tasks.register('buildRimeData', Exec) {
-    commandLine 'bash', file('../../data/rime/build.sh').absolutePath, layout.buildDirectory.dir('sebtype-assets').get().asFile.absolutePath
+    commandLine 'bash', file('../../data/rime/build.sh').absolutePath, assetsDir.get().asFile.absolutePath
 }
-preBuild.dependsOn buildRimeData
-
-// Workaround (#62): the APK ships the NDK's libc++_shared.so, though nothing loads it. On the Nothing A001
-// (Dimensity 7300, Android 16), the phone schedules SebType on its little cores without an extra native library,
-// and English prediction takes 99 ms per key instead of 21 ms. With one, it usually uses the big cores: 7 of 8
-// perf/perf.sh runs, against 0 of 3 without (#59).
-final def sebtypeJniLibs = layout.buildDirectory.dir('generated/sebtype-jniLibs')
-tasks.register('sebtypeJniLibs', Sync) {
-    from(fileTree("${android.ndkDirectory}/toolchains/llvm/prebuilt").matching {
-        include '*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so'
-    }.files)
-    into sebtypeJniLibs.map { it.dir('arm64-v8a') }
+// Mozc's Japanese dictionary (mozc-dictionary.sh, cached), a raw resource for 日本語.
+final def mozcDictDir = layout.buildDirectory.dir('generated/mozc-dictionary')
+tasks.register('mozcDictionary', Exec) {
+    commandLine 'bash', file('mozc-dictionary.sh').absolutePath, mozcDictDir.get().asFile.absolutePath
 }
-preBuild.dependsOn 'sebtypeJniLibs'
+// English's dictionary (data/en-dict) and SebType's model (engines/sebtype-lm), both stored uncompressed: the
+// dictionary is read straight from the APK, the model copied out once (llama.cpp maps a file of its own).
+final def englishDir = layout.buildDirectory.dir('generated/sebtype-english')
+tasks.register('copyEnglish', Sync) {
+    from('../../data/en-dict') { include 'en_US.dict' }
+    from('../../engines/sebtype-lm') { include 'english.gguf' }
+    into englishDir.map { it.dir('english') }
+}
+preBuild.dependsOn 'buildRimeData', 'mozcDictionary', 'copyEnglish'
 
 android {
-    namespace 'org.futo.inputmethod.latin'
-
+    namespace 'dev.sebb.sebtype'
     compileSdk 35
-
-    // Required if using classes in android.test.runner
-    useLibrary 'android.test.runner'
-
-    // Required if using classes in android.test.base
-    useLibrary 'android.test.base'
-
-    // Required if using classes in android.test.mock
-    useLibrary 'android.test.mock'
+    ndkVersion '28.2.13676358'
 
     defaultConfig {
+        applicationId 'dev.sebb.sebtype'
         minSdk 24
         targetSdk 35
-        versionName getVersionName()
-        versionCode getVersionCode()
-
-        // SebType: own application id so it installs next to stock FUTO; the Kotlin/Java package stays FUTO's.
-        applicationId 'dev.sebb.sebtype'
-        testApplicationId 'org.futo.inputmethod.latin.tests'
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables.useSupportLibrary = false
-
-        // SebType ships arm64 only; -PsebtypeAbis=x86_64 builds for an emulator.
+        versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
+        versionName System.getenv('VERSION_NAME') ?: 'dev'
         ndk {
             abiFilters(*(findProperty('sebtypeAbis') ?: 'arm64-v8a').split(','))
         }
-        // SebType (#58): native code names its source files relative to the checkout, so the libraries are
-        // the same in every worktree and sccache (build.sh) can share objects between them. The compile
-        // folder is AGP's .cxx/<hash>/, whose hash differs per checkout: it went into the debug info and so
-        // into the library's build ID (#223). So did the NDK's path, which differs between machines (#229).
-        externalNativeBuild.cmake {
-            // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
-            if (findProperty('sebtypeJobs')) {
-                arguments "-DCMAKE_JOB_POOLS=jobs=${findProperty('sebtypeJobs')}", '-DCMAKE_JOB_POOL_COMPILE=jobs', '-DCMAKE_JOB_POOL_LINK=jobs'
-            }
-            cFlags "-ffile-prefix-map=${rootDir.parent}/=", "-ffile-prefix-map=${android.sdkDirectory}/=android-sdk/", '-ffile-compilation-dir=.'
-            cppFlags "-ffile-prefix-map=${rootDir.parent}/=", "-ffile-prefix-map=${android.sdkDirectory}/=android-sdk/", '-ffile-compilation-dir=.'
-        }
-        // SebType speaks English, Chinese and Japanese only (#6); add 'ru' back with Russian.
         resConfigs 'en', 'ja', 'zh-rCN'
     }
-
-    bundle {
-        language {
-            enableSplit = true
-        }
+    buildFeatures {
+        compose true
+        buildConfig true
     }
 
     signingConfigs {
         debug {
-            storeFile file("shared.keystore")
+            storeFile file('shared.keystore')
         }
     }
 
-    // SebType (#149, #178, #229): a release APK is built unsigned, never with shared.keystore (Android's
-    // public test key), and build.sh signs it with SebType's key, on this PC wherever it was built.
     buildTypes {
         debug {
-            minifyEnabled false
-            shrinkResources false
             signingConfig signingConfigs.debug
         }
+        // Built unsigned; build.sh signs it with SebType's key.
         release {
             minifyEnabled true
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
         }
-
-        buildTypes.each {
-            //it.buildConfigField "String", "FUTOPAY_URL", "\"https://pay.futo.org/api/PaymentPortal?product=voiceinput&success=futo-keyboard%3a%2f%2flicense%2factivate\""
-            it.buildConfigField "String", "FUTOPAY_URL", "\"https://pay2.futo.org/checkout/polar/futo-keyboard/futo-keyboard-voiceinput/checkout-ready?success=redirect-to-organization-page\""
-            it.buildConfigField "String", "FUTOPAY_PRICE", "\"~\$6.99\""
-
-            it.buildConfigField "String", "GOOGLEPAY_URL", "\"https://play.google.com/store/apps/details?id=org.futo.keyboardpayment\""
-            it.buildConfigField "String", "GOOGLEPAY_PRICE", "\"~\$11.99\""
-
-            // FUTO's non-Play Store payment screen, unchanged (FUTO's licence, #53); FLAVOR is the one it
-            // was built as before SebType dropped the flavors (#178).
-            it.buildConfigField "String", "FLAVOR", "\"stable\""
-            it.buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
-            it.buildConfigField "String", "PAYMENT_PRICE", "FUTOPAY_PRICE"
-        }
-    }
-
-    compileOptions {
-        coreLibraryDesugaringEnabled true
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     sourceSets {
         main {
-            res.srcDirs += 'res-bundle' // Mozc's dictionary, downloaded by build.sh
-            jniLibs.srcDirs = [sebtypeJniLibs] // the unused libc++_shared.so (#62)
-            assets.srcDirs += layout.buildDirectory.dir('sebtype-assets') // the bundled Chinese data
+            res.srcDirs += [mozcDictDir]
+            assets.srcDirs += [assetsDir, englishDir]
         }
     }
 
-    lintOptions {
-        checkReleaseBuilds false
-    }
-
-    aaptOptions {
-        noCompress 'dict', 'zip'
+    androidResources {
+        noCompress 'dict', 'zip', 'gguf' // Mozc and English read their dictionaries straight from the APK
     }
 
     packagingOptions {
@@ -207,77 +80,33 @@ android {
         }
     }
 
-    ndkVersion '28.2.13676358'
-    externalNativeBuild {
-        cmake {
-            path 'src/main/cpp/CMakeLists.txt'
-        }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
-
     kotlinOptions {
         jvmTarget = '1.8'
     }
-    buildFeatures {
-        compose true
-        viewBinding true
-        mlModelBinding true
-        buildConfig true
+    // The JVM tests' fake field answers getExtractedText with Android's own ExtractedText, a stub there
+    testOptions {
+        unitTests.returnDefaultValues = true
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.4'
-    implementation 'androidx.lifecycle:lifecycle-runtime:2.8.4'
-    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.4'
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4'
-    implementation 'androidx.activity:activity-compose:1.9.1'
-    implementation platform('androidx.compose:compose-bom:2025.06.00')
-    implementation 'androidx.compose.ui:ui'
-    implementation 'androidx.compose.ui:ui-graphics'
-    implementation 'androidx.compose.ui:ui-tooling-preview'
-    implementation 'androidx.compose.material3:material3'
-    implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.navigation:navigation-compose:2.10.0-alpha02'
-
-    implementation 'com.google.code.findbugs:jsr305:3.0.2'
-
-    implementation 'androidx.datastore:datastore-preferences:1.1.7'
-    implementation 'androidx.autofill:autofill:1.1.0'
-    implementation 'androidx.window:window:1.3.0'
-
-    implementation 'sh.calvin.reorderable:reorderable:3.0.0'
-
-    //implementation 'com.squareup.okhttp3:okhttp:4.11.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1'
-    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.7.1'
-
-    implementation 'com.akuleshov7:ktoml-core:0.7.1'
-
-    //def work_version = "2.9.0"
-    //implementation "androidx.work:work-runtime-ktx:$work_version"
-    //implementation "androidx.work:work-runtime:$work_version"
-
-    implementation "com.charleskorn.kaml:kaml:0.61.0"
-
     implementation project(':native')
-
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
-
-    debugImplementation 'androidx.compose.ui:ui-tooling'
-    debugImplementation 'androidx.compose.ui:ui-test-manifest'
-
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.customview:customview:1.1.0'
+    // The settings app (#254): Compose loads only when it opens, never in the keyboard's window.
+    implementation platform('androidx.compose:compose-bom:2025.06.00')
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-core'
+    implementation 'androidx.activity:activity-compose:1.9.1'
+    implementation 'androidx.datastore:datastore-preferences:1.1.7'
     testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation "org.mockito:mockito-core:1.9.5"
-    androidTestImplementation 'com.google.dexmaker:dexmaker:1.2'
-    androidTestImplementation 'com.google.dexmaker:dexmaker-mockito:1.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test:rules:1.5.0'
-    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.2.0'
-    androidTestImplementation 'androidx.annotation:annotation:1.0.0'
+    // The clipboard's file in the JVM tests: Android's org.json is only a stub there
+    testImplementation 'org.json:json:20240303'
+    // Inline autofill's chips (#53 B9)
+    implementation 'androidx.autofill:autofill:1.1.0'
 }
-
-project.logger.lifecycle("versionCode = ${android.defaultConfig.versionCode}")
-project.logger.lifecycle("versionName = ${android.defaultConfig.versionName}")

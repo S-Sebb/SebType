@@ -1,0 +1,61 @@
+{
+ "today": {
+  "clean": {
+   "changed": 0.3,
+   "items": 1000,
+   "key_ms_p50": 10.61,
+   "key_ms_p95": 29.8,
+   "saved": 44.7,
+   "word_ms_p50": 51.04,
+   "word_ms_p95": 149.41
+  },
+  "misspellings": {
+   "fixed": 37.5,
+   "items": 1500,
+   "key_ms_p50": 12.91,
+   "key_ms_p95": 25.84,
+   "top1": 40.9,
+   "top3": 66.7,
+   "word_ms_p50": 115.14,
+   "word_ms_p95": 243.03
+  },
+  "next-chat": {
+   "items": 2701,
+   "ms_p50": 5.78,
+   "ms_p95": 25.28,
+   "top3": 37.8
+  },
+  "next-news": {
+   "items": 1927,
+   "ms_p50": 8.11,
+   "ms_p95": 36.32,
+   "top3": 32.1
+  },
+  "next-texts": {
+   "items": 2618,
+   "ms_p50": 7.3,
+   "ms_p95": 18.21,
+   "top3": 26.9
+  },
+  "phone-typos": {
+   "fixed": 80.7,
+   "items": 1000,
+   "key_ms_p50": 10.45,
+   "key_ms_p95": 29.25,
+   "top1": 85.2,
+   "top3": 93.4,
+   "word_ms_p50": 54.61,
+   "word_ms_p95": 152.71
+  },
+  "text-typos": {
+   "fixed": 69.0,
+   "items": 1000,
+   "key_ms_p50": 10.66,
+   "key_ms_p95": 32.48,
+   "top1": 75.7,
+   "top3": 88.4,
+   "word_ms_p50": 48.28,
+   "word_ms_p95": 138.29
+  }
+ }
+}

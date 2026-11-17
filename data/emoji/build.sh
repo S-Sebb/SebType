@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Regenerates the new keyboard's emoji list (#191 stage 4, android/next's assets/emoji/emoji.txt) from pinned
+# Regenerates the keyboard's emoji list (#191 stage 4, android/app's assets/emoji/emoji.txt) from pinned
 # Unicode sources: the emoji, their order, groups and skin tones from Unicode's emoji-test.txt, and their names
 # and keywords in English, 中文 and 日本語 from Unicode CLDR's annotations (make.py says how). Both under the
-# Unicode licence (see ../../NOTICE). Then the ASCII faces in ascii.txt (FUTO's, see
-# ../../NOTICE). Bumping a source:
-# change its URL and sha256 here and rebuild.
+# Unicode licence (see ../../NOTICE). Then SebType's ASCII faces in ascii.txt. Bumping a source: change its
+# URL and sha256 here and rebuild.
 #
 #   data/emoji/build.sh [OUTPUT]
 set -euo pipefail
@@ -22,7 +21,7 @@ declare -A SHA256=(
   [derived-ja]=1da738fd3577f747f312e37230ca6a0c9a578b97fa12fbab6d3b061856361213
 )
 
-out=${1:-android/next/src/main/assets/emoji/emoji.txt}
+out=${1:-android/app/src/main/assets/emoji/emoji.txt}
 cache=$HOME/scratch/SebType/cache/emoji-16.0
 mkdir -p "$cache" "$(dirname "$out")"
 

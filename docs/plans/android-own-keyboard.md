@@ -1,6 +1,7 @@
 # Plan: SebType's own Android keyboard on core/ (#191, #190 step 3)
 
-Status: the user's choices are recorded at the end. Nothing here is built yet.
+Status: the user's choices are recorded at the end. Stages 0–5 are built, and stage 6's switch is too (#262): the
+new keyboard is `dev.sebb.sebtype` and FUTO's code is gone. The first release since the hold is still to come.
 
 The user's goal (2026-11-15): "I want to make sure as much of these components are our own code in consistent
 form, so everything is easier to maintain and we can clean up things as much as possible while reducing final
@@ -25,7 +26,8 @@ perf runs call it 103–105 MB).
   19 % Rime's data. All the UI and engine code together is under 9 %. A new UI saves about 2 MB. The memory and
   speed gains come from one keyboard window without FUTO's framework and from one JNI call per key.
 - **FUTO's licence ends with stage 6.** The new app ships no FUTO code or data, so the payment screen, the
-  unpaid notice and FUTO's licence notice leave with the old app. The app on the phone keeps them until then.
+  unpaid notice and FUTO's licence notice leave with the old app (done in #262, §4). The app on the phone keeps
+  them until the first release from it.
 - **The new keyboard looks close to today's** (the user, 2026-11-16: "Keyboard's looks should just look close to
   what it's looking like now. That's it, simple."). Stages 3–5 match today's layout, keys, colours, fonts and
   bars; screenshots next to today's are the check, and no redesign is in scope.
@@ -233,7 +235,10 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
   when settings open.
 - **Package.** The new code goes under `android/app/src/main/java/dev/sebb/sebtype/`, the only Kotlin package
   left after stage 6. Gradle modules: `:app` and `:native` (CMake for `core/`, librime, latinime and the model
-  module; the Bazel task for Mozc). `:rime` and `:mozc` go.
+  module; the Bazel task for Mozc). `:rime` and `:mozc` go. Done in #262, with one exception: Android knows a
+  keyboard by its service's class name, so `org.futo.inputmethod.latin.LatinIME` stays as SebType's own
+  one-line subclass of `SebTypeIme`, and an update from the FUTO-based app keeps SebType turned on and picked.
+  The `trimmed` check fails on any other `org.futo` class.
 
 ### Build
 
@@ -278,6 +283,18 @@ Everything else of FUTO's goes at stage 6:
 - FUTO's layouts (Apache-2.0, but the new format replaces them).
 
 The README keeps FUTO Keyboard in its components list, as its English model.
+
+**What stage 6 did (#262).** Decisions 7 moved SebType's model and AOSP's dictionary into stage 2, so the switch
+had no FUTO file left to keep: the table above and the stage 7 list below all went at once.
+
+- `android/app` (the FUTO-based app), `android/tools/`, `.github/ISSUE_TEMPLATE/`, `LICENSE.md` and FUTO's
+  NOTICE section are gone from the tree; git history keeps them. NOTICE has one paragraph on the app's history
+  and the kept service name.
+- The English harness can't build FUTO's decoder and model any more, so its "today" column is the last
+  measured run, frozen in `android/test/english/today.json`.
+- `data/en-dict` builds only from AOSP's list, and the ASCII faces in `data/emoji/ascii.txt` are SebType's own.
+- Mozc's Japanese dictionary is still the build FUTO hosts (`jisho-v25.10-non-gpl.dict`, Mozc's data under
+  Mozc's BSD-3-Clause), now fetched by `android/app/mozc-dictionary.sh` at a pinned checksum.
 
 **At stage 7** SebType's own model and dictionary replace the last FUTO files. In that release:
 
@@ -334,7 +351,7 @@ Builds run on yanglab16 (§3, Build). A delegate-day is one delegate's day of te
 | 3 | **New keyboard, typing core.** `SebTypeIme`, `Editor`, `KeyboardView` with the 3 layouts, symbols and number row, 🌐 cycle and long-press picker, candidate bar with chip and 简/繁 menu, field kinds and incognito, Picnic look, accessibility labels. Built as a test-only `dev.sebb.sebtype.next` package beside the app | unchanged (new keyboard in the test package) | `chinese.py` and `settings.py` gain a `SEBTYPE_PACKAGE` switch; run `chinese-run`, `incognito-*`, the four #39 period checks, `uniform-layouts`, and a new check that pinyin is dropped on 🌐; screenshots next to today's for the user | 8–12 days |
 | 4 | **New keyboard, the rest.** Action bar and editor, All Actions, emoji picker (CLDR names), clipboard and quick clips, inline autofill, keyboard modes and height, spacebar and backspace swipes, haptics and key sounds | unchanged (test package) | new checks: `emoji-picks`, `clipboard-paste`, `quick-clip`, `modes-*`, `swipe-*`; screenshots for the user | 6–9 days |
 | 5 | **Settings and data.** Compose settings in 6 groups with pixel frames, setup wizard, export and import, PC words, sync and crash reports, credits, FUTO's payment screens with #112's note; **migration** of an installed FUTO-based SebType's data on update (DataStore keys, learned English words, Rime userdb and Mozc profile kept in place) | unchanged (test package) | `settings-run` in full (including `settings-payment-note`), `sync-*`, `settings-backup-*`, a new `update-from-futo-app` check (learned words in all 3 languages survive) | 5–7 days |
-| 6 | **Switch and release.** The new app becomes `dev.sebb.sebtype`; all of FUTO's code and data goes, with the payment screens and FUTO's notices (Decisions 7); licence files and README updated; perf run on the phone (#54 style); **the first release since the hold** | **the new app, released** | full `emulator.sh`, `typing.sh`, `android/perf/perf.sh`, the harness; `trimmed` gains a check that no `org.futo` class or FUTO file is left; phone perf run including English | 2–3 days |
+| 6 | **Switch and release.** Switch done in #262; the release is still to come. The new app becomes `dev.sebb.sebtype`; all of FUTO's code and data goes, with the payment screens and FUTO's notices (Decisions 7); licence files and README updated; perf run on the phone (#54 style); **the first release since the hold** | **the new app, released** | full `emulator.sh`, `typing.sh`, `android/perf/perf.sh`, the harness; `trimmed` gains a check that no `org.futo` class or FUTO file is left; phone perf run including English | 2–3 days |
 | 7 | **SebType's own English model** (training done in #236; the swap moved into stages 2 and 6 by Decisions 7, so what's left here is optional model upgrades). Corpus and training scripts in `tools/english-lm/`, training on yanglab16, `engines/sebtype-lm/` loader, dictionary rebuilt from AOSP's `en_US`; swap in once the harness passes §2's bar; then FUTO's last files, the payment screens and FUTO's notices go | the app with no FUTO code, released | the harness against §2's bar; `emulator.sh` English checks (`en-model-waits-for-letter`, `incognito-en`, the #39 checks); `trimmed` checks that no `org.futo` class or FUTO file is left; phone perf run | 8–12 days + GPU time |
 
 Stages 0–6 take about 32–47 delegate-days. Stages 2 and 3 can run in parallel after stage 1. Stage 7 can start

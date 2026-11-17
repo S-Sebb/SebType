@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Checks SebType's English dictionary (#47): the dictionary codec, that the committed main_en.dict is what
-# build.sh makes from the pinned sources, the #40 benchmark against FUTO's dictionary, and that the release
+# Checks SebType's English dictionary (#47, #244): the dictionary codec, that the committed en_US.dict is what
+# build.sh makes from the pinned sources, the #40 benchmark against AOSP's dictionary, and that the release
 # APK ships it. One line per check in ~/scratch/SebType/<issue>/test-en-dict-results.txt; logs next to it.
 # Exit 0 only if all pass. Typing on the emulator ("gi" -> GitHub, autocorrect) is checked by hand.
 set -uo pipefail
@@ -10,9 +10,7 @@ source tools/lib.sh
 out=$TASK_OUT; mkdir -p "$out"
 results=$out/test-en-dict-results.txt; : > "$results"
 cache=$SCRATCH/cache
-dict=android/app/src/main/res/raw/main_en.dict
-sdk=$ANDROID_HOME
-bt=$(ls -d "$sdk"/build-tools/* 2>/dev/null | tail -1)
+dict=data/en-dict/en_US.dict
 # Benchmark text, as in the #40 study: OpenAssistant oasst1 prompts (Apache-2.0) and Wikipedia's
 # machine-readable common misspellings (CC BY-SA 4.0) at a fixed revision.
 CHAT_URL=https://huggingface.co/datasets/OpenAssistant/oasst1/resolve/main/2023-04-12_oasst_prompts.messages.jsonl.gz
@@ -26,10 +24,11 @@ check() { # name, command...; timeout T seconds (default 300)
   if timeout "${T:-300}" "$@" > "$out/test-en-dict-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-en-dict-$name.log"; fi
 }
-fetch() { # url sha256 name -> cached path
+fetch() { # url sha256 name [decode command] -> cached path
   local f=$cache/$3
   echo "$2  $f" | sha256sum -c --status 2>/dev/null ||
-    { curl -fsSL -A "SebType-test/1.0" -o "$f.part" "$1" && echo "$2  $f.part" | sha256sum -c --status && mv "$f.part" "$f"; } ||
+    { curl -fsSL --limit-rate 35M -A "SebType-test/1.0" "$1" | ${4:-cat} > "$f.part" &&
+      echo "$2  $f.part" | sha256sum -c --status && mv "$f.part" "$f"; } ||
     return 1
   echo "$f"
 }
@@ -38,22 +37,23 @@ fetch() { # url sha256 name -> cached path
 for c in python3 hunspell curl; do command -v $c >/dev/null || { echo "preflight: $c missing"; exit 1; }; done
 [[ -f $dict ]] || { echo "preflight: $dict missing"; exit 1; }
 mkdir -p "$cache"
-# FUTO's dictionary, the one data/en-dict/build.sh starts from
-futo=$(fetch https://gitlab.futo.org/keyboard/keyboard-large-resources/-/raw/d87d9dbdf3966bbe18413be375dab2f6c7bbdfdd/raw/main_en.dict c3e21185c056e82769a2bb1381ae6b0e799437bdab101379715c6baa0a3544d1 futo-main_en.dict) ||
-  { echo "preflight: can't download FUTO's dictionary"; exit 1; }
+# AOSP LatinIME's own English dictionary (Apache-2.0), at the commit build.sh's word list comes from
+aosp=$(fetch 'https://android.googlesource.com/platform/packages/inputmethods/LatinIME/+/127336e9f29d69607eab55982324b210279ae8c5/java/res/raw/main_en.dict?format=TEXT' \
+  581e0a428fff00d4ac574866596d6de9408bb76d1ce9626e34c887113713253f aosp-127336e9f29d-main_en.dict "base64 -d") ||
+  { echo "preflight: can't download AOSP's dictionary"; exit 1; }
 chat=$(fetch "$CHAT_URL" "$CHAT_SHA256" oasst1-prompts.jsonl.gz) || { echo "preflight: can't download $CHAT_URL"; exit 1; }
 typos=$(fetch "$TYPOS_URL" "$TYPOS_SHA256" misspellings-1199637275.txt) || { echo "preflight: can't download misspellings"; exit 1; }
 
 check codec-roundtrip python3 -I -B -c "
 import sys; sys.path.insert(0, 'data/en-dict'); import v202
-d = open('$futo', 'rb').read(); a, w = v202.decode(d)
-assert v202.encode(a, w) == d, 'FUTO main_en.dict does not re-encode to the same bytes'"
+d = open('$aosp', 'rb').read(); a, w = v202.decode(d)
+assert v202.encode(a, w) == d, 'AOSP main_en.dict does not re-encode to the same bytes'"
 
 rebuilt=$out/test-en-dict-rebuilt.dict
 check reproducible bash -c "data/en-dict/build.sh '$rebuilt' && cmp '$rebuilt' '$dict'"
 
-# The study's numbers: FUTO 26.3 % top-1 after 2 letters; the new list 32.2 %, accepting 0.4 % of misspellings.
-python3 -I -B data/en-dict/bench.py "$chat" "$typos" "$futo" "$dict" > "$out/test-en-dict-bench.txt" 2>&1
+# The study's numbers: the base dictionary 26.3 % top-1 after 2 letters (AOSP's scores the same); SebType's 32.2 %, accepting 0.4 % of misspellings.
+python3 -I -B data/en-dict/bench.py "$chat" "$typos" "$aosp" "$dict" > "$out/test-en-dict-bench.txt" 2>&1
 check benchmark python3 -I -B -c "
 rows = [l.split() for l in open('$out/test-en-dict-bench.txt')][1:]
 new = dict(zip(['cover', 'p2top1', 'p2top3', 'p3top1', 'p3top3', 'typos_ok'], map(float, rows[1][2:])))
@@ -66,12 +66,12 @@ apk_check() {
   local apk path
   apk=$(android/build.sh release 2> "$out/test-en-dict-build.log" | tail -1)
   [[ -f $apk ]] || { echo "release build failed, see $out/test-en-dict-build.log"; return 1; }
-  path=$("$bt/aapt2" dump resources "$apk" | grep -A2 'raw/main_en$' | awk '$1 == "()" {print $3}')
-  echo "apk $apk, dictionary at $path, $(stat -c %s "$apk") bytes"
+  path=assets/english/en_US.dict
+  echo "apk $apk, $(stat -c %s "$apk") bytes"
   unzip -Zl "$apk" "$path" | grep -q ' stor ' || { echo "dictionary is compressed"; return 1; }
   cmp <(unzip -p "$apk" "$path") "$dict"
 }
-export -f apk_check; export out bt dict
+export -f apk_check; export out dict
 T=2400 check apk-ships-it bash -c apk_check
 
 ! grep -q '^FAIL' "$results"
