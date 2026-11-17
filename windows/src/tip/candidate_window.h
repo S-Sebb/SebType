@@ -24,6 +24,7 @@ class CandidateWindow {
   void show(const Reply &reply, bool preeditRow, const RECT &caret);
   // The popup after a switch, for a moment.
   void notice(const std::string &text, const RECT &caret);
+  bool noticing() const { return noticing_; }
   void hide();
 
  private:
@@ -56,6 +57,7 @@ class CandidateWindow {
   // The word whose pages are shown: they keep its first page's width.
   std::wstring word_;
   int wheel_ = 0;  // the wheel's turn not yet a page
+  bool noticing_ = false;  // a notice shows, until its timer
   // Direct2D and DirectWrite, made once per window.
   ID2D1Factory *d2d_ = nullptr;
   IDWriteFactory *dwrite_ = nullptr;

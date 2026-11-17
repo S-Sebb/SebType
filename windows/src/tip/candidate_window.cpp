@@ -321,6 +321,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   if (l.cells.empty() && l.preedit.empty() && l.aux.empty()) return hide();
   if (!create()) return;
   KillTimer(hwnd_, kNoticeTimer);
+  noticing_ = false;
   const bool shown = IsWindowVisible(hwnd_);
   if (!styleLoaded_ || !shown) loadStyle(caret);  // the Configurator's changes, once per showing
   std::vector<std::wstring> segments;
@@ -354,11 +355,13 @@ void CandidateWindow::notice(const std::string &text, const RECT &caret) {
   draw();
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   SetTimer(hwnd_, kNoticeTimer, kNoticeMs, nullptr);
+  noticing_ = true;
 }
 
 void CandidateWindow::hide() {
   if (!hwnd_) return;
   KillTimer(hwnd_, kNoticeTimer);
+  noticing_ = false;
   ShowWindow(hwnd_, SW_HIDE);
   word_.clear();
   wheel_ = 0;

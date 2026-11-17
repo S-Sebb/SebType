@@ -106,7 +106,8 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
 
   if (!composing) {
     endComposition(ec, context);
-    if (window_) window_->hide();
+    // A notice stays its moment: the release of the key that showed it comes with nothing to show (#275).
+    if (window_ && !window_->noticing()) window_->hide();
   } else {
     if (!composition_) {
       ITfInsertAtSelection *insert = nullptr;
