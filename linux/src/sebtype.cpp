@@ -225,6 +225,7 @@ void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig
   if (path == "deploy") {
     core_->engine(Lang::Chinese);
     core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
+    updateStatus(instance_->mostRecentInputContext());
   } else if (path == "mozc") {
     // Mozc reads its settings and dictionaries when it starts: it saves and closes, and the next 日本語 key
     // starts it again.
@@ -261,22 +262,71 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     text.setCursor(p.cursor);
     if (ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(text);
     else panel.setPreedit(text);
-    if (auto aux = core_->aux(); !aux.empty()) panel.setAuxUp(fcitx::Text(aux));
-    if (const Page page = core_->page(); !page.empty()) panel.setCandidateList(std::make_unique<List>(this, ic, page));
+    const auto aux = core_->aux();
+    const Page page = core_->page();
+    if (!aux.empty()) panel.setAuxUp(fcitx::Text(aux));
+    if (!page.empty()) panel.setCandidateList(std::make_unique<List>(this, ic, page));
+    // The key's release resets the panel too: a popup still showing over an empty panel stays for its
+    // second (Fcitx5 hides it only while it is the panel's sole text).
+    const uint64_t now = fcitx::now(CLOCK_MONOTONIC);
+    if (aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_) {
+      panel.setAuxUp(fcitx::Text(shown_));
+      hidePopupLater(ic);
+    }
     if (auto commit = core_->takeCommit(); !commit.empty()) ic->commitString(commit);
     ic->updatePreedit();
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
     const auto &config = instance_->globalConfig();
     if (auto notice = core_->takeNotice(config.compactInputMethodInformation());
-        !notice.empty() && config.showInputMethodInformation())
+        !notice.empty() && config.showInputMethodInformation()) {
       instance_->showCustomInputMethodInformation(ic, notice);
+      shown_ = notice;
+      shownUntil_ = now + 1000000;
+      hidePopupLater(ic);
+    }
   }
-  // The tray and Plasma's input method panel read the icon and menu again.
-  if (auto icon = core_->icon(); ic && icon != lastIcon_) {
+  updateStatus(ic);
+}
+
+void SebTypeEngine::hidePopupLater(fcitx::InputContext *ic) {
+  hide_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, shownUntil_, 0, [this, ref = ic->watch()](fcitx::EventSourceTime *, uint64_t) {
+        hidePopup(ref.get());
+        return true;
+      });
+}
+
+void SebTypeEngine::hidePopup(fcitx::InputContext *ic) {
+  shownUntil_ = 0;
+  if (!ic || shown_.empty() || ic->inputPanel().auxUp().toString() != shown_) return;
+  ic->inputPanel().setAuxUp(fcitx::Text());
+  ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+}
+
+void SebTypeEngine::updateStatus(fcitx::InputContext *ic) {
+  const auto icon = core_->icon();
+  if (ic && icon != lastIcon_) {
     lastIcon_ = icon;
     ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
   }
   if (auto *tray = dynamic_cast<NotificationItem *>(instance_->addonManager().addon("notificationitem"))) tray->update();
+  if (!icon.ends_with("-wait") || (poll_ && poll_->isEnabled())) return;
+  if (poll_) {
+    poll_->setNextInterval(500000);
+    poll_->setOneShot();
+    return;
+  }
+  poll_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + 500000, 0, [this](fcitx::EventSourceTime *source, uint64_t) {
+        updateStatus(instance_->mostRecentInputContext());
+        if (core_->icon().ends_with("-wait")) {
+          source->setNextInterval(500000);
+          source->setOneShot();
+        } else {
+          hidePopup(instance_->mostRecentInputContext());  // its "getting ready" is over
+        }
+        return true;
+      });
 }
 
 class SebTypeFactory : public fcitx::AddonFactory {

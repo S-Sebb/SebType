@@ -3,6 +3,7 @@
 #pragma once
 
 #include <sebtype/engine.h>
+#include <sebtype/not_ready.h>
 #include <sebtype/settings.h>
 #include <sebtype/types.h>
 
@@ -88,12 +89,19 @@ class Core {
   bool alternate();
   void setAlternate(bool on);
   bool capsLock() const { return capsLock_; }
-  // The tray icon: en, zh, zh-a, zh-caps, hira, kata, ja-a, ja-caps (the names in pc/icons).
+  // The tray icon: en, zh, zh-a, zh-caps, hira, kata, ja-a, ja-caps, and zh-wait, zh-off, hira-wait, hira-off
+  // while the language isn't ready (the names in pc/icons).
   std::string icon();
+  // Whether the language's engine takes keys now; keys it can't take go to the app as typed (#275).
+  Readiness readiness();
+  // Another language's icon, read only: an engine not started yet is ready (a text service in another
+  // language's app asks while this one types, #275).
+  std::string icon(Lang lang);
   std::vector<MenuItem> menu();
   void activate(const MenuItem &item);
   // The popup after a switch of language or of 中文's English mode, once, as Fcitx5 showed it
-  // (compact: its CompactInputMethodInformation); empty when there is none.
+  // (compact: its CompactInputMethodInformation), or at the first key typed while the language isn't ready;
+  // empty when there is none.
   std::string takeNotice(bool compact);
   // The language the popup's words are in (#205); English until set.
   void setUiLanguage(Lang lang) { ui_ = lang; }
@@ -107,6 +115,7 @@ class Core {
 
  private:
   Engine *current() { return engine(lang_); }
+  std::string icon(Lang lang, Engine *e);
   void switchTo(Lang lang);
 
   EngineFactory factory_;
@@ -122,6 +131,8 @@ class Core {
   std::vector<uint32_t> swallow_;  // releases of keys the core took on press
   std::string commit_;
   bool notice_ = false;
+  Readiness notReady_ = Readiness::Ready;  // the popup says so (#275)
+  bool warned_ = false;  // said once until the language is ready again
   Field field_ = Field::Text;
   bool fieldLearning_ = true;
   Keys keys_ = Keys::Kana;

@@ -31,10 +31,13 @@ if(NOT MSVC)
   target_link_options(sebtype PRIVATE -static)
 endif()
 
-# The candidate window's layout, tested without a screen (windows/build.ps1 runs it).
+# The candidate window's layout, tested without a screen, and the calls to a server that hangs (windows/build.ps1
+# runs both).
 if(NOT SEBTYPE_TIP_ONLY)
   add_executable(candidate-layout-test test/candidate_layout_test.cpp src/tip/candidate_layout.cpp)
   target_include_directories(candidate-layout-test PRIVATE src/tip)
+  add_executable(pipe-test test/pipe_test.cpp)
+  target_include_directories(pipe-test PRIVATE src ../core/include)
 endif()
 
 # The server, with the core.

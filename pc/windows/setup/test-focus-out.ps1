@@ -22,9 +22,11 @@ Results: one line per check in <Out>\focus-out-results.txt; exit 0 only if all p
 param([string]$Out = "$env:USERPROFILE\scratch\SebType\277", [switch]$Trial, [string]$WatchTo, [switch]$AnyDisplay)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
-New-Item -ItemType Directory -Force $Out | Out-Null
 $results = "$Out\focus-out-results.txt"
-Set-Content -Encoding utf8 $results ''
+if (-not $WatchTo) {  # the watcher leaves a test's results alone
+  New-Item -ItemType Directory -Force $Out | Out-Null
+  Set-Content -Encoding utf8 $results ''
+}
 function Result($name, $status, $why = '') {
   $line = "$status $name$(if ($why) { ": $why" })"
   Add-Content -Encoding utf8 $results $line; Write-Host $line
@@ -40,36 +42,8 @@ elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'runs in session 0: start it i
 elseif (-not (Test-Path "$root\TsfHost.cs")) { "no TsfHost.cs beside $PSCommandPath" }
 if ($missing) { Write-Host "BLOCKED preflight: $missing"; exit 1 }
 
-Add-Type @'
-using System; using System.Collections.Generic; using System.Runtime.InteropServices;
-namespace SebTypeFocus {
-  // Windows' display state as it reports it, at once on registering and at each change: 0 off, 1 on, 2 dimmed.
-  public static class Display {
-    delegate uint Callback(IntPtr context, uint type, IntPtr setting);
-    [StructLayout(LayoutKind.Sequential)] struct Recipient { public Callback callback; public IntPtr context; }
-    [DllImport("powrprof.dll")] static extern uint PowerSettingRegisterNotification(ref Guid setting, uint flags, IntPtr recipient, out IntPtr handle);
-    static Callback kept; static IntPtr recipient;
-    public static readonly List<string> States = new List<string>();
-    public static int Last = -1, Lit = 0;
-    public static void Watch() {
-      kept = (c, type, s) => {
-        if (type == 0x8013 /* PBT_POWERSETTINGCHANGE */ && s != IntPtr.Zero) {
-          int state = Marshal.ReadInt32(s, 20);  // after the GUID and DataLength
-          lock (States) { States.Add(DateTime.Now.ToString("HH:mm:ss.fff") + " " + state); Last = state; if (state != 0) Lit++; }
-        }
-        return 0;
-      };
-      recipient = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Recipient)));
-      Marshal.StructureToPtr(new Recipient { callback = kept }, recipient, false);
-      var guid = new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");
-      IntPtr handle;
-      uint err = PowerSettingRegisterNotification(ref guid, 2 /* DEVICE_NOTIFY_CALLBACK */, recipient, out handle);
-      if (err != 0) throw new Exception("PowerSettingRegisterNotification failed: " + err);
-    }
-  }
-}
-'@
-$display = [SebTypeFocus.Display]
+Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
+$display = [SebType.Display]
 if ($WatchTo) {
   $display::Watch(); $seen = 0; $end = (Get-Date).AddMinutes(60)
   while (-not (Test-Path "$WatchTo.stop") -and (Get-Date) -lt $end) {
@@ -78,7 +52,6 @@ if ($WatchTo) {
   }
   exit 0
 }
-Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
 $tsf = [SebType.TsfHost]
 $tsf::NoInput = $true
 function States { $display::States -join ', ' }

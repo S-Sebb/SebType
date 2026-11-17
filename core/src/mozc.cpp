@@ -149,6 +149,8 @@ class Mozc final : public Engine {
     mozc_->call(in, out);
   }
 
+  bool available() override { return mozc_->open(); }
+
   bool key(const Key &k) override {
     if (k.release) return false;
     Input in;

@@ -198,10 +198,12 @@ tray_icons() {
 }
 # The RPM has every icon the add-on asks for (sebtype-<state>, the states of pc/icons) at each hicolor size.
 rpm_icons() {
-  local d n
-  for d in 16x16 22x22 24x24 32x32 scalable; do
-    for n in en zh zh-a zh-caps hira kata ja-a ja-caps; do
-      cmp "../icons/${d%%x*}/$n.svg" "$own/usr/share/icons/hicolor/$d/status/sebtype-$n.svg" || return 1
+  local p n
+  for p in 16:16x16 22:22x22 24:24x24 32:32x32 48:48x48 64:64x64 32:16x16@2 44:22x22@2 48:24x24@2 64:32x32@2 \
+    scalable:scalable; do
+    for n in en zh zh-a zh-caps hira kata ja-a ja-caps zh-wait zh-off hira-wait hira-off; do
+      [[ ${p%%:*} == scalable ]] && n=$n.svg || n=$n.png
+      cmp "../icons/${p%%:*}/$n" "$own/usr/share/icons/hicolor/${p#*:}/status/sebtype-$n" || return 1
     done
   done
 }

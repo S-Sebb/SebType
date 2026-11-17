@@ -11,6 +11,9 @@
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
+# ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the
+# test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows-<SCALE>-<time>.
+# SCALE=150 (100 to 500) sets the session's display scaling (Remote Desktop's desktop scale factor).
 # It takes SebType-setup-*.exe (and for PERF_RUN perf-rime.exe) from the "Windows setup" CI run of this
 # commit (gh), or else from build/, and pushes them (TCSBackEnd's downloads are fast, its uploads capped),
 # runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
@@ -25,13 +28,14 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 source "$repo/tools/lib.sh"
-out=$TASK_OUT/73-setup-tcsbackend
+stamp=$(date +%Y%m%d-%H%M%S)
+out=$TASK_OUT/73-setup-tcsbackend-$stamp  # each run its own: none deletes another's
 lock=/tmp/agent-locks/devices/tcsbackend.lock
 branch=$(git -C "$repo" branch --show-current)
 if [ -z "${HOLDING:-}" ]; then
   exec env HOLDING=1 devq -w 3600 -m 75 -n "sebtype installer test on TCSBackEnd ($branch)" "$lock" bash "$0"
 fi
-mkdir -p "$out"; rm -rf "${out:?}"/*
+mkdir -p "$out"
 # Where a run's time goes: $out/times.txt here, logs/*-times.txt from test.ps1.
 t0=$(date +%s)
 mark() { echo "$(date +%T) +$(( $(date +%s) - t0 ))s $*" >> "$out/times.txt"; }
@@ -43,8 +47,8 @@ command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v 
 # The setup CI built from this commit, else one built here into build/ (ISCC under Wine, from CI's other
 # artifacts) while CI's Mozc build still runs.
 head=$(git -C "$repo" rev-parse HEAD)
-run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$branch" --status success --json databaseId,headSha \
-  -q "map(select(.headSha == \"$head\"))[0].databaseId // empty" 2>/dev/null)
+run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --commit "$head" --status success --json databaseId \
+  -q '.[0].databaseId // empty' 2>/dev/null)
 perf=
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
@@ -152,7 +156,7 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
@@ -188,7 +192,7 @@ if [ -n "${logon:-}" ]; then
   # The password is this run's own, for a user test.ps1 removes when it ends.
   gamescope --backend headless -W 1280 -H 800 -- bash -c 'python3 "$1" 47812 >"$2" 2>&1 & shift 2; exec xfreerdp "$@"' \
     _ "$here/rdp-keys.py" "$out/rdp-keys.log" /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \
-    /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /audio-mode:none -clipboard \
+    /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /scale-desktop:"${SCALE:-100}" /audio-mode:none -clipboard \
     >"$out/freerdp.log" 2>&1 & rdp=$!
 fi
 mark 'Remote Desktop started'
@@ -209,6 +213,11 @@ scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" 2>/dev/null && tar -xf 
 for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
 done
+if [ -d "$out/logs/275" ]; then
+  screens=$TASK_OUT/screens/windows-${SCALE:-100}-$stamp
+  mkdir -p "$screens"
+  cp "$out"/logs/275/*.png "$out/logs/275/not-ready-results.txt" "$screens/" 2>/dev/null
+fi
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
 [ -s "$out/results.txt" ] || echo "FAIL results: test.ps1 wrote no results (logs: $out/logs)"
 mark 'logs fetched'

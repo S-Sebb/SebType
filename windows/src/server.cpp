@@ -92,6 +92,7 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
 constexpr wchar_t kServerMutex[] = L"Local\\SebType.Server";
 std::mutex lock;
 Core *core = nullptr;
+Composer composer;  // under lock
 
 Reply state(bool taken, std::string commit = {}) {
   Reply r;
@@ -115,10 +116,16 @@ void followField(bool learning) {
   note(learning ? "field: learns" : "field: private, learns nothing");
 }
 
-Reply handle(const Request &q) {
+Reply handle(const Request &q, HANDLE pipe) {
   const DWORD asked = GetTickCount();
   std::lock_guard<std::mutex> hold(lock);
   const DWORD started = GetTickCount();
+  // The app stopped waiting (pipe.h's Guarded) and typed the key itself: done now, it would go in twice (#275).
+  if (clientGone(pipe)) {
+    note("op " + std::to_string(static_cast<int>(q.op)) + ": dropped, the app stopped waiting after " +
+         std::to_string(started - asked) + " ms");
+    return {};
+  }
   struct Slow {  // a request that took over a second: what waited and what worked
     const Request &q;
     DWORD asked, started;
@@ -129,6 +136,7 @@ Reply handle(const Request &q) {
              ": waited " + std::to_string(started - asked) + " ms, took " + std::to_string(done - started) + " ms");
     }
   } slow{q, asked, started};
+  const bool reset = composer.resets(q);
   bool taken = false;
   std::string commit;
   switch (q.op) {
@@ -163,6 +171,16 @@ Reply handle(const Request &q) {
       }
       break;
     case Op::State: break;
+    case Op::Ready: {  // not state(): it would take the notice, and the commit, meant for the app that typed
+      Reply r;
+      r.lang = q.lang;
+      r.icon = core->icon(q.lang);
+      return r;
+    }
+    case Op::Reset:
+      if (reset) core->clear();
+      else note("reset: kept, another app has typed since");
+      break;
     case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet; Mozc's page size
       core->engine(Lang::Chinese);
       core->forEachEngine([](Engine &e) { e.deploy(); });
@@ -205,7 +223,7 @@ void serve(HANDLE pipe) {
   }
   Request q;
   if (!in.empty() && decode(in, q)) {
-    const std::string out = encode(handle(q));
+    const std::string out = encode(handle(q, pipe));
     if (WriteFile(pipe, out.data(), static_cast<DWORD>(out.size()), &n, nullptr)) FlushFileBuffers(pipe);
     if (q.op == Op::Quit) {
       std::lock_guard<std::mutex> hold(lock);

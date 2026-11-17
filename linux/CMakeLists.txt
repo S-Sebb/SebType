@@ -27,16 +27,21 @@ install(FILES data/sebtype.conf DESTINATION "${CMAKE_INSTALL_DATADIR}/fcitx5/add
 install(FILES data/notificationitem.conf DESTINATION "${CMAKE_INSTALL_DATADIR}/sebtype/fcitx5/addon")
 
 # The tray icons (../pc/icons) as sebtype-<state> in hicolor, where every icon theme looks last, so they
-# need no icon theme of SebType's (#278). hicolor has no 20 px folders: its 20 px drawings are Windows' alone.
+# need no icon theme of SebType's (#278). Each size is drawn at its own pixels (#275); the @2 folders take the
+# double-size drawing, for a tray at 200 %, and scalable the 48 px one as an SVG.
 set(icons ${CMAKE_SOURCE_DIR}/../pc/icons)
 file(GLOB states RELATIVE ${icons}/scalable ${icons}/scalable/*.svg)
-foreach(size 16 22 24 32 scalable)
-  set(dir ${size}x${size})
-  if(size STREQUAL scalable)
-    set(dir scalable)
-  endif()
+foreach(pair 16:16x16 22:22x22 24:24x24 32:32x32 48:48x48 64:64x64 32:16x16@2 44:22x22@2 48:24x24@2 64:32x32@2)
+  string(REPLACE ":" ";" pair ${pair})
+  list(GET pair 0 size)
+  list(GET pair 1 dir)
   foreach(state ${states})
-    install(FILES ${icons}/${size}/${state} DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${dir}/status"
-      RENAME sebtype-${state})
+    string(REPLACE .svg .png png ${state})
+    install(FILES ${icons}/${size}/${png} DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${dir}/status"
+      RENAME sebtype-${png})
   endforeach()
+endforeach()
+foreach(state ${states})
+  install(FILES ${icons}/scalable/${state} DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/status"
+    RENAME sebtype-${state})
 endforeach()

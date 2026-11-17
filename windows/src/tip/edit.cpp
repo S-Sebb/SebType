@@ -8,13 +8,16 @@
 namespace sebtype::win {
 namespace {
 
-// Where the caret is, for the window; Windows' caret when the app can't say.
+// Where the caret is, for the window; Windows' caret when the app can't say. In the screen's own pixels, as
+// the window places itself (candidate_window.cpp): a DPI-unaware app's are scaled.
 RECT caretRect(TfEditCookie ec, ITfContext *context, ITfRange *range) {
   RECT rect{};
+  HWND wnd = nullptr;
   ITfContextView *view = nullptr;
   BOOL clipped = FALSE;
   if (range && SUCCEEDED(context->GetActiveView(&view))) {
     if (FAILED(view->GetTextExt(ec, range, &rect, &clipped))) rect = {};
+    if (FAILED(view->GetWnd(&wnd))) wnd = nullptr;
     view->Release();
   }
   if (rect.left == 0 && rect.top == 0 && rect.right == 0 && rect.bottom == 0) {
@@ -22,8 +25,13 @@ RECT caretRect(TfEditCookie ec, ITfContext *context, ITfRange *range) {
     if (GetGUIThreadInfo(GetCurrentThreadId(), &gui) && gui.hwndCaret) {
       rect = gui.rcCaret;
       MapWindowPoints(gui.hwndCaret, nullptr, reinterpret_cast<POINT *>(&rect), 2);
+      wnd = gui.hwndCaret;
     }
   }
+  POINT corners[2] = {{rect.left, rect.top}, {rect.right, rect.bottom}};
+  if (wnd && LogicalToPhysicalPointForPerMonitorDPI(wnd, &corners[0]) &&
+      LogicalToPhysicalPointForPerMonitorDPI(wnd, &corners[1]))
+    rect = {corners[0].x, corners[0].y, corners[1].x, corners[1].y};
   return rect;
 }
 
@@ -106,7 +114,8 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
 
   if (!composing) {
     endComposition(ec, context);
-    if (window_) window_->hide();
+    // A notice stays its moment: the release of the key that showed it comes with nothing to show (#275).
+    if (window_ && !window_->noticing()) window_->hide();
   } else {
     if (!composition_) {
       ITfInsertAtSelection *insert = nullptr;

@@ -23,13 +23,13 @@ constexpr uint32_t Shift_L = 0xffe1, Shift_R = 0xffe2, Control_L = 0xffe3, Alt_L
 // Types letters into a preedit, lists `total` candidates 6 to a page, commits the highlighted one on Space.
 struct FakeEngine : Engine {
   std::string typed, commit;
-  bool latinOn = false, alt = false;
+  bool latinOn = false, alt = false, deploying = false, loaded = true;
   int total = 20, cursor = 0;
   std::vector<uint32_t> seen;
 
   bool key(const Key &k) override {
     seen.push_back(k.sym);
-    if (k.release || latinOn) return false;
+    if (k.release || latinOn || deploying || !loaded) return false;
     if (k.sym >= 'a' && k.sym <= 'z' && !(k.mods & (mod::Ctrl | mod::Alt))) {
       typed += static_cast<char>(k.sym);
       cursor = 0;
@@ -68,6 +68,8 @@ struct FakeEngine : Engine {
   Field field = Field::Text;
   bool learning = true;
   void setField(Field f) override { field = f; }
+  bool busy() override { return deploying; }
+  bool available() override { return loaded; }
   void applySettings(const Settings &, bool learn) override { learning = learn; }
 };
 
@@ -253,6 +255,44 @@ TEST_F(CoreTest, PopupWordsFollowTheSystemLanguage) {
   core.selectLanguage(Lang::Chinese);
   shiftTap();
   EXPECT_EQ(core.takeNotice(false), "中文（英字）");
+}
+
+// #275: while Rime deploys (or Mozc didn't load) the key is grey, keys go to the app as typed, and the first
+// one says why, once until the language is ready again; then the key is 中 or あ again.
+TEST_F(CoreTest, ALanguageThatIsNotReadyGreysItsKeyAndSaysSoOnce) {
+  core.selectLanguage(Lang::Chinese);
+  core.takeNotice(false);
+  engines[Lang::Chinese]->deploying = true;
+  EXPECT_EQ(core.icon(), "zh-wait");
+  EXPECT_FALSE(tap('n'));
+  EXPECT_EQ(core.takeNotice(true), "中文 is getting ready: letters go in as typed");
+  EXPECT_FALSE(tap('i'));
+  chord(mod::Ctrl, 'c');
+  EXPECT_EQ(core.takeNotice(false), "");
+  engines[Lang::Chinese]->deploying = false;
+  EXPECT_EQ(core.icon(), "zh");
+  EXPECT_TRUE(tap('n'));
+  EXPECT_EQ(core.takeNotice(false), "");
+  engines[Lang::Chinese]->clear();
+  engines[Lang::Chinese]->deploying = true;  // a second deploy says it again
+  tap('h');
+  EXPECT_EQ(core.takeNotice(false), "中文 is getting ready: letters go in as typed");
+
+  core.setUiLanguage(Lang::Chinese);
+  core.selectLanguage(Lang::Japanese);
+  core.takeNotice(false);
+  engines[Lang::Japanese]->loaded = false;
+  EXPECT_EQ(core.icon(), "hira-off");
+  EXPECT_FALSE(tap('k'));
+  EXPECT_EQ(core.takeNotice(false), "日本語暂不可用 · 按英文字母输入");
+
+  // A 中文 app's text service asks while a 日本語 one is typing: the answer changes nothing.
+  engines[Lang::Japanese]->loaded = true;
+  type("ka");
+  EXPECT_EQ(core.icon(Lang::Chinese), "zh-wait");
+  EXPECT_EQ(core.icon(Lang::Japanese), "hira");
+  EXPECT_EQ(core.language(), Lang::Japanese);
+  EXPECT_EQ(core.preedit().segments.size(), 1u);
 }
 
 TEST_F(CoreTest, AltGraveSwitchesKanaBeforeTypingAndNotInEnglish) {

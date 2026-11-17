@@ -164,6 +164,14 @@ class AttributeEnum final : public IEnumTfDisplayAttributeInfo {
   std::atomic<long> refs_{1};
 };
 
+// The app's calls to the server (pipe.h): its threads share it.
+Guarded server;
+
+// The text service whose readiness timer runs on this thread: one per thread, the focused one.
+thread_local TextService *watching = nullptr;
+
+bool notReady(const std::string &icon) { return icon.ends_with("-wait") || icon.ends_with("-off"); }
+
 // The server next to this DLL, or one folder up from the 32-bit one in x86\.
 std::filesystem::path serverPath() {
   wchar_t p[MAX_PATH];
@@ -275,6 +283,7 @@ STDMETHODIMP TextService::Deactivate() {
     context_->Release();
     context_ = nullptr;
   }
+  stopWatching();
   window_.reset();
   if (button_) {
     ITfLangBarItemMgr *items = nullptr;
@@ -333,19 +342,21 @@ STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid,
 void TextService::setLanguage(REFGUID profile) {
   const Lang lang = profile == kProfileJa ? Lang::Japanese : Lang::Chinese;
   const bool switched = lang != lang_;
+  if (switched) warned_ = false;  // the popup says it for each language
   lang_ = lang;
   Request q{Op::Language};
   q.lang = lang;
-  if (!send(q)) {  // no server: the button still shows the language
+  if (!send(q)) {  // no server: the button shows the language, unavailable
     reply_ = {};
     reply_.lang = lang;
-    reply_.icon = lang == Lang::Japanese ? "hira" : "zh";
+    reply_.icon = notReadyIcon(lang, Readiness::Unavailable);
   }
   // Between 中 and 日 what was being typed goes in as on focus loss (#301): the core's switch commits it,
   // and it replaces the composition. Switching to another input method comes as Deactivate instead, which drops it.
   if (switched && context_) typeIn(utf16(std::exchange(reply_.commit, {})));
   if (window_) window_->hide();
   if (button_) button_->update();
+  watchReadiness();  // a switch to 中文 while Rime deploys is grey until it is done, with no key typed
 }
 
 // Whether one of SebType's profiles is still the thread's keyboard (not while another is being activated).
@@ -377,6 +388,13 @@ STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focused, ITfDocumentMgr *) 
   return S_OK;
 }
 
+// The thread's keyboard focus: only the app in front watches whether its language is ready again.
+STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
+  if (foreground) watchReadiness();
+  else stopWatching();
+  return S_OK;
+}
+
 void TextService::focus(ITfDocumentMgr *focused) {
   // What was being typed goes into the field it was typed in (#277), as Microsoft's IMEs and Mozc do: the
   // core gives it on FocusOut (pinyin as its letters, Japanese as converted), and it replaces the composition.
@@ -390,11 +408,13 @@ void TextService::focus(ITfDocumentMgr *focused) {
   }
   if (window_) window_->hide();
   field_ = Field::Unknown;
+  stopWatching();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
     q.lang = lang_;
     q.learning = field(context_) != Field::Private;
     send(q);
+    watchReadiness();
   }
   if (button_) button_->update();
 }
@@ -477,9 +497,22 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
   return true;
 }
 
+// The character the key types in the app, as TranslateMessage gives it (keypad digits and operators too),
+// or 0.
+wchar_t TextService::typedChar(WPARAM wParam, LPARAM lParam) {
+  BYTE state[256];
+  wchar_t ch[4];
+  if (!GetKeyboardState(state)) return 0;
+  const int n = ToUnicodeEx(static_cast<UINT>(wParam), (lParam >> 16) & 0xff, state, ch, 4, 0x4, GetKeyboardLayout(0));
+  return n == 1 && ch[0] >= 0x20 && ch[0] != 0x7f ? ch[0] : 0;
+}
+
 bool TextService::send(const Request &request) {
-  if (call(request, reply_)) return true;
-  if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that took the key but hangs
+  if (server.call(request, reply_)) {
+    warned_ = false;
+    return true;
+  }
+  if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that hangs: the key goes to the app as typed
   // An app UAC elevated (Setup, an admin console) starts none: the server would be elevated too, and out of
   // reach of the person's other apps. It uses the one they start.
   static const bool elevated = [] {
@@ -508,17 +541,78 @@ bool TextService::send(const Request &request) {
                       nullptr, &si, &pi))
     return false;
   CloseHandle(pi.hThread);
-  CloseHandle(pi.hProcess);
-  for (int i = 0; i < 60; ++i) {
-    Sleep(50);
-    if (call(request, reply_)) return true;
+  // Until it answers, for at most 3 s; one that ends (it crashed, or another one runs) or hangs ends the wait.
+  bool up = false;
+  for (int i = 0; i < 60 && !up; ++i) {
+    const bool ended = WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0;
+    up = server.call(request, reply_);
+    if (ended || (!up && GetLastError() == ERROR_TIMEOUT)) break;
   }
-  return false;
+  CloseHandle(pi.hProcess);
+  if (up) warned_ = false;
+  return up;
+}
+
+bool TextService::unavailable(ITfContext *context, const Key &k, wchar_t ch) {
+  if (k.release || (k.mods & (mod::Ctrl | mod::Alt))) ch = 0;
+  const bool typed = ch || (!k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt)));
+  const std::string icon = notReadyIcon(lang_, Readiness::Unavailable);
+  // What was being typed goes in once, as it showed: the keys that follow go to the app as typed, after it,
+  // and no reply the server owed (its Reset drops that typing) can change it later.
+  const bool composing = composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
+  if (composing) {
+    for (const Segment &seg : reply_.preedit.segments) reply_.commit += seg.text;
+    // The key's character goes in after it, in the same edit: given to the app, it could land before the
+    // commit when the app grants the edit's lock later.
+    if (ch) reply_.commit += utf8(std::wstring(1, ch));
+    reply_.preedit = {};
+    reply_.page = {};
+    reply_.aux.clear();
+  }
+  if (!composing && reply_.icon == icon && (!typed || warned_)) return false;
+  reply_.lang = lang_;
+  reply_.icon = icon;
+  if (typed && !std::exchange(warned_, true)) {
+    const LANGID ui = PRIMARYLANGID(GetUserDefaultUILanguage());
+    reply_.notice = notReadyNotice(lang_, Readiness::Unavailable,
+                                   ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
+  }
+  apply(context);
+  return composing && ch;
+}
+
+void TextService::watchReadiness() {
+  if (poll_ || !notReady(reply_.icon)) return;
+  if (watching && watching != this) watching->stopWatching();
+  watching = this;
+  poll_ = SetTimer(nullptr, 0, 1000, [](HWND, UINT, UINT_PTR, DWORD) {
+    if (watching) watching->pollReadiness();
+  });
+}
+
+// Asks only for the icon: the apps share the server's core, and another app's composition or language is
+// not this one's to change. Never starts a server (an idle app would wait for it), a key does.
+void TextService::pollReadiness() {
+  Request q{Op::Ready};
+  q.lang = lang_;
+  Reply r;
+  if (!server.call(q, r)) return;
+  warned_ = false;
+  reply_.icon = r.icon;
+  if (button_) button_->update();
+  if (!notReady(r.icon)) stopWatching();
+}
+
+void TextService::stopWatching() {
+  if (poll_) KillTimer(nullptr, poll_);
+  poll_ = 0;
+  if (watching == this) watching = nullptr;
 }
 
 void TextService::apply(ITfContext *context) {
   if (context) editSession(context, clientId_, [this, context](TfEditCookie ec) { return update(ec, context); }, false);
   if (button_) button_->update();
+  watchReadiness();
 }
 
 // The core sees each key once: OnTestKeyDown asks it and keeps the answer for OnKeyDown, as Weasel did.
@@ -538,7 +632,12 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   Request q{Op::Key};
   q.lang = lang_;
   q.learning = f != Field::Private;
-  if (!key(wParam, lParam, release, q.key) || !send(q)) return true;
+  if (!key(wParam, lParam, release, q.key)) return true;
+  if (!send(q)) {
+    *eaten = unavailable(context, q.key, typedChar(wParam, lParam));
+    if (test) tested_ = {wParam, release, *eaten != FALSE, true};
+    return true;
+  }
   *eaten = reply_.taken;
   if (test) tested_ = {wParam, release, reply_.taken, true};
   apply(context);

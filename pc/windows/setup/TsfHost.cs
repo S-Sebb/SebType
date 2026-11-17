@@ -154,6 +154,12 @@ namespace SebType {
     void ActivateLanguageProfile(ref Guid clsid, ushort langid, ref Guid profile);
     void GetActiveLanguageProfile(ref Guid clsid, out ushort langid, out Guid profile);
     void GetLanguageProfileDescription(ref Guid clsid, ushort langid, ref Guid profile, [MarshalAs(UnmanagedType.BStr)] out string desc);
+    void GetCurrentLanguage(out ushort langid);
+    void ChangeCurrentLanguage(ushort langid);
+    void GetLanguageList(out IntPtr langids, out uint count);
+    void EnumLanguageProfiles(ushort langid, out IntPtr e);
+    void EnableLanguageProfile(ref Guid clsid, ushort langid, ref Guid profile, int enable);
+    void IsEnabledLanguageProfile(ref Guid clsid, ushort langid, ref Guid profile, out int enabled);
   }
 
   [ComImport, Guid("ba468c55-9956-4fb1-a59d-52a7dd7cc6aa"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -189,21 +195,27 @@ namespace SebType {
       sink = (ITextStoreACPSink)s; return S_OK;
     }
     public int UnadviseSink(object s) { sink = null; return S_OK; }
+    // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
+    // it handled the key (#275); one that may not is granted at once all the same.
+    public bool Defer;
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
-      if (lockFlags != 0) {
+      if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
-        pendingLock = flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
+        pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
       }
       lockFlags = flags & TS_LF_READWRITE;
       hrSession = sink.OnLockGranted(lockFlags);
       lockFlags = 0;
+      GrantPending();
+      return S_OK;
+    }
+    public void GrantPending() {
       while (pendingLock != 0) {
         lockFlags = pendingLock; pendingLock = 0;
         sink.OnLockGranted(lockFlags);
         lockFlags = 0;
       }
-      return S_OK;
     }
     public int GetStatus(out TS_STATUS status) { status = new TS_STATUS(); return S_OK; }
     public int QueryInsert(int start, int end, uint cch, out int resultStart, out int resultEnd) {
@@ -314,9 +326,36 @@ namespace SebType {
     }
   }
 
+  // Windows' display state as it reports it, at once on registering and at each change: 0 off, 1 on, 2 dimmed.
+  public static class Display {
+    delegate uint Callback(IntPtr context, uint type, IntPtr setting);
+    [StructLayout(LayoutKind.Sequential)] struct Recipient { public Callback callback; public IntPtr context; }
+    [DllImport("powrprof.dll")] static extern uint PowerSettingRegisterNotification(ref Guid setting, uint flags, IntPtr recipient, out IntPtr handle);
+    static Callback kept; static IntPtr recipient;
+    public static readonly List<string> States = new List<string>();
+    public static int Last = -1, Lit = 0;
+    public static void Watch() {
+      kept = (c, type, s) => {
+        if (type == 0x8013 /* PBT_POWERSETTINGCHANGE */ && s != IntPtr.Zero) {
+          int state = Marshal.ReadInt32(s, 20);  // after the GUID and DataLength
+          lock (States) { States.Add(DateTime.Now.ToString("HH:mm:ss.fff") + " " + state); Last = state; if (state != 0) Lit++; }
+        }
+        return 0;
+      };
+      recipient = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Recipient)));
+      Marshal.StructureToPtr(new Recipient { callback = kept }, recipient, false);
+      var guid = new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");
+      IntPtr handle;
+      uint err = PowerSettingRegisterNotification(ref guid, 2 /* DEVICE_NOTIFY_CALLBACK */, recipient, out handle);
+      if (err != 0) throw new Exception("PowerSettingRegisterNotification failed: " + err);
+    }
+  }
+
   public static class TsfHost {
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateWindowExW(uint ex, string cls, string name, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
     [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetMessageW(out MSG m, IntPtr h, uint a, uint b);
@@ -331,9 +370,27 @@ namespace SebType {
     [DllImport("user32.dll", EntryPoint = "SendMessageW")] static extern IntPtr SendMessagePtr(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr h);
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool EnumThreadWindows(uint thread, EnumProc f, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern uint GetDpiForSystem();
+    // The screen's own pixels: PowerShell isn't DPI-aware, so at 150 % Windows would hand it a scaled-down
+    // copy of the screen. Per-monitor aware (v2) for the call only; TSF and the field keep the process's own.
+    static T Physical<T>(Func<T> f) {
+      var old = SetThreadDpiAwarenessContext((IntPtr)(-4));
+      try { return f(); } finally { SetThreadDpiAwarenessContext(old); }
+    }
+    public static uint Dpi() { return Physical(() => GetDpiForSystem()); }
+    [DllImport("user32.dll")] static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+    // The small icon's size at the screen's scaling (SM_CXSMICON), which the taskbar draws the button at.
+    public static int IconSize() { return GetSystemMetricsForDpi(49, Dpi()); }
+    // The candidate window's DPI awareness at its last picture: 0 unaware (Windows stretches it, in this
+    // DPI-unaware PowerShell), 1 system, 2 per monitor.
+    public static int PopupAwareness = -1;
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder s, int n, uint flags);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
@@ -465,8 +522,8 @@ namespace SebType {
     // lights): Foreground takes no Alt tap but joins the input of the window in front for a moment, and keys
     // go through Key, to TSF's keystroke manager, not into the session's input.
     public static bool NoInput;
-    // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter
-    // or space the input method lets through goes into the field. True when the input method took it.
+    // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter,
+    // space or keypad digit the input method lets through goes into the field. True when the input method took it.
     public static bool Key(byte vk) {
       return OnUi(() => {
         var keys = (ITfKeystrokeMgr)threadMgr;
@@ -474,11 +531,14 @@ namespace SebType {
         bool eaten, up;
         keys.KeyDown((IntPtr)vk, (IntPtr)(1 | scan), out eaten);
         keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
-        if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A)))
-          store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : (char)(vk + 32)).ToString());
+        if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A) || (vk >= 0x60 && vk <= 0x69)))  // space, a-z, keypad 0-9
+          store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32)).ToString());
+        store.GrantPending();
         return eaten;
       });
     }
+    // Locks that may wait are granted only after the app handled the key (TextStore.Defer).
+    public static bool DeferLocks { set { OnUi(() => { store.Defer = value; store.GrantPending(); return 0; }); } }
     static ITfDocumentMgr otherMgr;
     // TSF's focus on another document and back, as a click into another field moves it.
     public static void Away(bool away) {
@@ -561,6 +621,22 @@ namespace SebType {
       });
     }
 
+    // Whether an input method is on for this user (in its language's list), and turning it on or off.
+    public static bool Enabled(ushort langid, Guid clsid, Guid profile) {
+      return OnUi(() => {
+        var p = (ITfInputProcessorProfiles)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+        int on; p.IsEnabledLanguageProfile(ref clsid, langid, ref profile, out on);
+        return on != 0;
+      });
+    }
+    public static void Enable(ushort langid, Guid clsid, Guid profile, bool on) {
+      OnUi(() => {
+        var p = (ITfInputProcessorProfiles)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+        p.EnableLanguageProfile(ref clsid, langid, ref profile, on ? 1 : 0);
+        return 0;
+      });
+    }
+
     public static string Text() { return OnUi(() => store.Text.ToString()); }
     public static void Clear() { OnUi(() => { store.AppEdit(0, store.Text.Length, ""); return 0; }); }
     public static bool CapsLock() { return OnUi(() => { var s = new byte[256]; GetKeyboardState(s); return (s[0x14] & 1) != 0; }); }
@@ -616,18 +692,47 @@ namespace SebType {
         bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
       }
     }
+    // Saves the input mode button's icon (what the taskbar's input indicator shows) as a PNG, 64 px (#275).
+    public static void ButtonIcon(string path) {
+      OnUi(() => {
+        IntPtr h;
+        Marshal.ThrowExceptionForHR(InputModeButton().GetIcon(out h));
+        // At the size the text service gave, pixel for pixel: the size the taskbar gets.
+        using (var icon = System.Drawing.Icon.FromHandle(h))
+        using (var bmp = icon.ToBitmap()) bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        DestroyIcon(h);
+        return 0;
+      });
+    }
+    // Saves the right end of the taskbar, with the input indicator, as a PNG (#275).
+    public static void Taskbar(string path, int width) {
+      Physical(() => {
+        RECT r; GetWindowRect(FindWindowExW(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null), out r);
+        using (var bmp = new System.Drawing.Bitmap(width, r.B - r.T)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.R - width, r.T, 0, 0, bmp.Size);
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        return 0;
+      });
+    }
     // Saves the input method's candidate window, the visible window other than the field that its code
-    // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one.
+    // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one. The size
+    // says when the mouse pointer is over it: a capture leaves the pointer out, but some pointers show.
     public static string CandidateWindow(string path) {
       IntPtr w = IntPtr.Zero;
       OnUi(() => { EnumThreadWindows(threadId, (h, l) => { if (h != store.Hwnd && IsWindowVisible(h)) w = h; return w == IntPtr.Zero; }, IntPtr.Zero); return 0; });
       if (w == IntPtr.Zero) return null;
-      RECT r; GetWindowRect(w, out r);
-      using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T)) {
-        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
-        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-      }
-      return (r.R - r.L) + "x" + (r.B - r.T);
+      PopupAwareness = GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(w));
+      return Physical(() => {
+        RECT r; GetWindowRect(w, out r);
+        using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        POINT p;
+        bool pointer = GetCursorPos(out p) && p.X >= r.L && p.X < r.R && p.Y >= r.T && p.Y < r.B;
+        return (r.R - r.L) + "x" + (r.B - r.T) + (pointer ? " (pointer over it at " + (p.X - r.L) + "," + (p.Y - r.T) + ")" : "");
+      });
     }
   }
 }

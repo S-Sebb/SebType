@@ -6,6 +6,8 @@
 
 #include "../pipe.h"
 
+#include <sebtype/not_ready.h>
+
 #include <msctf.h>
 #include <ole2.h>
 
@@ -62,7 +64,7 @@ class TextService final : public ITfTextInputProcessorEx,
   STDMETHODIMP OnPopContext(ITfContext *) override { return S_OK; }
 
   // ITfKeyEventSink
-  STDMETHODIMP OnSetFocus(BOOL) override { return S_OK; }
+  STDMETHODIMP OnSetFocus(BOOL foreground) override;
   STDMETHODIMP OnTestKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) override;
   STDMETHODIMP OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) override;
   STDMETHODIMP OnTestKeyUp(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) override;
@@ -115,6 +117,14 @@ class TextService final : public ITfTextInputProcessorEx,
   Field field(ITfContext *context);
   void setOpen();
   void focus(ITfDocumentMgr *focus);
+  // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
+  // True when it took the key itself: ch, the character it types, goes in after what was being typed.
+  bool unavailable(ITfContext *context, const Key &key, wchar_t ch);
+  static wchar_t typedChar(WPARAM wParam, LPARAM lParam);
+  // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
+  void watchReadiness();
+  void pollReadiness();
+  void stopWatching();
 
   std::atomic<long> refs_{1};
   ITfThreadMgr *threadMgr_ = nullptr;
@@ -136,6 +146,8 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<CandidateWindow> window_;
   LangBarButton *button_ = nullptr;
   DWORD serverStarted_ = 0;  // GetTickCount of the last start, so a missing server isn't started every key
+  bool warned_ = false;      // the popup said the server doesn't answer, once until it does
+  UINT_PTR poll_ = 0;        // watchReadiness's timer
 };
 
 }  // namespace sebtype::win

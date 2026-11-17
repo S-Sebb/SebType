@@ -11,6 +11,7 @@
 #endif
 #include <windows.h>
 
+#include <atomic>
 #include <string>
 
 namespace sebtype::win {
@@ -77,6 +78,63 @@ inline bool call(const Request &request, Reply &reply, DWORD connectMs = 1000, D
   SetLastError(error);
   return ok && decode(in, reply);
 }
+
+// On the server's end of a connection: the app closed it, having stopped waiting for the reply.
+inline bool clientGone(HANDLE pipe) {
+  DWORD available = 0;
+  return !PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr) && GetLastError() == ERROR_BROKEN_PIPE;
+}
+
+// The text service's calls, which run on the app's thread (#275). A server that doesn't reply within replyMs
+// costs one key that wait, not every key: until it answers again, calls fail at once (ERROR_TIMEOUT, so no
+// second server is started), and at most every retryMs a Reset request that waits only probeMs asks whether
+// it does, and drops what the keys it stopped waiting for may have begun, unless another app has typed since
+// (Composer; the server drops the keys still waiting, clientGone). Only then does the call itself go out, so no key reaches a server the app stopped waiting for.
+// One per app: its threads' text services share the server. replyMs is over the slowest request seen on YukaROG,
+// the switch to 日本語 that loads Mozc (1.4 s): a key the app stops waiting for may still be typed by the server.
+class Guarded {
+ public:
+  explicit Guarded(DWORD replyMs = 3000, DWORD retryMs = 1000, DWORD probeMs = 100,
+                   uint32_t client = GetCurrentProcessId())
+      : replyMs_(replyMs), retryMs_(retryMs), probeMs_(probeMs), client_(client) {}
+
+  bool call(Request request, Reply &reply) {
+    request.client = client_;
+    if (down_) {
+      const DWORD now = GetTickCount();
+      DWORD last = tried_;
+      // One thread probes; the others fail at once meanwhile.
+      if (now - last < retryMs_ || !tried_.compare_exchange_strong(last, now)) {
+        SetLastError(ERROR_TIMEOUT);
+        return false;
+      }
+      Request reset{Op::Reset};
+      reset.client = client_;
+      Reply state;
+      if (!win::call(reset, state, 0, probeMs_)) {
+        // A server that is gone is no longer waited for: the caller may start one.
+        if (GetLastError() == ERROR_FILE_NOT_FOUND) down_ = false;
+        else SetLastError(ERROR_TIMEOUT);
+        return false;
+      }
+      down_ = false;
+    }
+    if (win::call(request, reply, 1000, replyMs_)) return true;
+    if (GetLastError() == ERROR_TIMEOUT) {
+      tried_ = GetTickCount();
+      down_ = true;
+    }
+    return false;
+  }
+
+  bool down() const { return down_; }
+
+ private:
+  const DWORD replyMs_, retryMs_, probeMs_;
+  const uint32_t client_;
+  std::atomic<bool> down_{false};
+  std::atomic<DWORD> tried_{0};
+};
 
 inline std::wstring utf16(const std::string &s) {
   if (s.empty()) return {};
