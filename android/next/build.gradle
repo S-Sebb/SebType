@@ -107,6 +107,8 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.9.1'
     implementation 'androidx.datastore:datastore-preferences:1.1.7'
     testImplementation 'junit:junit:4.13.2'
+    // The clipboard's file in the JVM tests: Android's org.json is only a stub there
+    testImplementation 'org.json:json:20240303'
     // Inline autofill's chips (#53 B9)
     implementation 'androidx.autofill:autofill:1.1.0'
 }

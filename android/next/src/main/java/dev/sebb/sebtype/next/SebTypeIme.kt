@@ -7,8 +7,10 @@ import dev.sebb.sebtype.next.sync.Sync
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.ClipDescription
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.net.Uri
 import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +27,9 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Toast
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -58,7 +63,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private enum class Panel { NONE, ACTIONS, EDIT, EMOJI, CLIPBOARD, MODES }
 
     private val prefs by lazy { getSharedPreferences("keyboard", MODE_PRIVATE) }
-    private val editor = Editor(this)
+    private val fieldEditor = Editor(this)
+    /** What the keys type into: the field, or while a panel's search runs its search field */
+    private var editor = fieldEditor
     private val texts by lazy { Texts(this) }
     private val clipboard by lazy { Clipboard(this) { incognito || kind.incognito } }
 
@@ -78,6 +85,15 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private lateinit var emoji: EmojiPanel
     private lateinit var clips: ClipboardPanel
     private lateinit var modes: ModesPanel
+    private lateinit var search: Search
+    private lateinit var searchEditor: Editor
+    private lateinit var searchRow: SearchRow
+    private lateinit var results: FrameLayout
+    private lateinit var barFrame: FrameLayout
+    private lateinit var emojiResults: EmojiPanel
+    private lateinit var clipResults: ClipboardPanel
+    /** The panel (emoji or clipboard) whose search the keys type into, over its results (#281) */
+    private var searching: Panel? = null
     private lateinit var content: KeysFrame
     private var views = false
 
@@ -165,6 +181,13 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         actions = ActionsPanel(this, texts, this)
         emoji = EmojiPanel(this, texts, this)
         clips = ClipboardPanel(this, texts, clipboard) { onPasteClip(it) }
+        emojiResults = EmojiPanel(this, texts, this, results = true)
+        clipResults = ClipboardPanel(this, texts, clipboard, results = true) { onPasteClip(it) }
+        searchRow = SearchRow(this, texts) { endSearch() }
+        search = Search(root) { onSearchText(it) }
+        searchEditor = Editor(this, search.connection)
+        results = FrameLayout(this)
+        for (v in listOf(emojiResults, clipResults)) results.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         modes = ModesPanel(this, texts, this)
         keysRow = LinearLayout(this)
         keysRow.addView(keyboard, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -172,11 +195,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         content = KeysFrame(this)
         content.addView(keysRow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         for (v in listOf(grid, actions, emoji, clips)) content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        val barFrame = FrameLayout(this)
+        barFrame = FrameLayout(this)
         barFrame.addView(bar, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         barFrame.addView(autofill, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         panel.addView(handle, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(actionRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        // A search: its field and results over the bar and the keys, as today's
+        panel.addView(searchRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        panel.addView(results, LinearLayout.LayoutParams(MATCH_PARENT, 0))
         panel.addView(barFrame, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(modes, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         panel.addView(content, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -221,6 +247,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     override fun onStartInput(info: EditorInfo, restarting: Boolean) {
         super.onStartInput(info, restarting)
+        // A search ends with its field.
+        searching = null
+        editor = fieldEditor
         kind = FieldKind.of(info)
         editor.start(info, kind)
         state = null
@@ -275,7 +304,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
                                    candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        val external = editor.selectionChanged(newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        val external = fieldEditor.selectionChanged(newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        // The keys type into a search: what they typed isn't in the field.
+        if (searching != null) return
         // The user moved the cursor away: what was being typed stays as it is in the field.
         if (external && composing) {
             editor.finishComposing()
@@ -616,21 +647,23 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Engines.Chinese.READY -> null
         }
         val badge = when {
+            searching != null -> CandidateBar.Badge.NONE
             incognito -> CandidateBar.Badge.TOGGLE
             kind.incognito -> CandidateBar.Badge.FIELD
             else -> CandidateBar.Badge.NONE
         }
         val chip = if (lang == JAPANESE && kind.pad == null) (if (katakana) "ア" else "あ") else null
-        val header = when (shown) {
+        val header = if (searching != null) null else when (shown) {
             Panel.NONE -> null
             Panel.ACTIONS -> CandidateBar.Header(texts[R.string.menu_title], texts[R.string.edit_shortcuts])
             Panel.EDIT -> CandidateBar.Header(texts[R.string.edit_shortcuts], texts[R.string.edit_done])
-            Panel.EMOJI -> CandidateBar.Header(texts[R.string.action_emoji], null)
-            Panel.CLIPBOARD -> CandidateBar.Header(texts[R.string.action_clipboard], null)
+            Panel.EMOJI -> CandidateBar.Header(texts[R.string.action_emoji], null, texts[R.string.emoji_search], pill = true)
+            Panel.CLIPBOARD -> CandidateBar.Header(texts[R.string.action_clipboard], null,
+                if (clipboard.keep) texts[R.string.clipboard_search] else null)
             Panel.MODES -> CandidateBar.Header(texts[R.string.action_modes], texts[R.string.mode_resize])
         }
-        // The text just copied, while nothing is typed
-        val clip = clipboard.quickClip?.takeIf { !composing && kind.pad == null }
+        // What was just copied, while nothing is typed; never in a password or private field (#281)
+        val clip = clipboard.quickClip?.takeIf { !composing && kind.pad == null && searching == null && !secretField }
         bar.removeCallbacks(refreshClip)
         if (clip != null) bar.postDelayed(refreshClip, 5_000)
         val style = when (lang) {
@@ -645,7 +678,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         // The action bar: open, over the bar; never over a panel's title
         val rowShown = barOpen && shown == Panel.NONE
         actionRow.visibility = if (rowShown) View.VISIBLE else View.GONE
-        val overKeys = shown != Panel.NONE && shown != Panel.MODES
+        val overKeys = shown != Panel.NONE && shown != Panel.MODES && searching == null
         content.extra = if (barOpen && overKeys) (ActionRow.HEIGHT_DP * resources.displayMetrics.density).toInt() else 0
         if (rowShown) actionRow.show(Action.pinned(this), on)
         val autofilling = autofill.showing && candidates.isEmpty() && shown == Panel.NONE
@@ -659,13 +692,19 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             else -> {}
         }
         grid.visibility = if (expanded) View.VISIBLE else View.GONE
-        val over = if (expanded) null else shown
+        val over = if (expanded || searching != null) null else shown
+        searchRow.visibility = if (searching != null) View.VISIBLE else View.GONE
+        results.visibility = searchRow.visibility
+        // As today's, a search has no bar: its field takes the bar's place
+        barFrame.visibility = if (searching != null) View.GONE else View.VISIBLE
+        emojiResults.visibility = if (searching == Panel.EMOJI) View.VISIBLE else View.GONE
+        clipResults.visibility = if (searching == Panel.CLIPBOARD) View.VISIBLE else View.GONE
         actions.visibility = if (over == Panel.ACTIONS || over == Panel.EDIT) View.VISIBLE else View.GONE
         emoji.visibility = if (over == Panel.EMOJI) View.VISIBLE else View.GONE
         clips.visibility = if (over == Panel.CLIPBOARD) View.VISIBLE else View.GONE
         modes.visibility = if (over == Panel.MODES) View.VISIBLE else View.GONE
         // The keys keep their place (and the keyboard its height) under the grid and the panels.
-        keysRow.visibility = if (expanded || (shown != Panel.NONE && shown != Panel.MODES)) View.INVISIBLE else View.VISIBLE
+        keysRow.visibility = if (expanded || overKeys) View.INVISIBLE else View.VISIBLE
     }
 
     // --- Keyboard modes (#53 B5) ---
@@ -779,6 +818,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     /** The bar's › and ^ (opening and closing the action bar), or ← over a panel (Edit actions goes back to All Actions) */
     override fun onMenu() {
+        if (searching != null) return endSearch()
         when (shown) {
             Panel.NONE -> barOpen = !barOpen
             Panel.EDIT -> shown = Panel.ACTIONS
@@ -801,6 +841,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         resizing = false
         expanded = false
         if (panel == Panel.EMOJI) emoji.open()
+        if (panel == Panel.CLIPBOARD) clipboard.prune()
         refresh()
     }
 
@@ -846,20 +887,104 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }
     }
 
-    override fun onEmoji(text: String) = finishTyping { editor.commit(text) }
+    // From a search's results it goes into the field, and the search stays, as today's.
+    override fun onEmoji(text: String, face: Boolean) = intoField(endsSearch = false) {
+        // An ASCII face gets a space either side, as today's
+        if (!face) return@intoField fieldEditor.commit(text)
+        val before = fieldEditor.textBefore(1)
+        fieldEditor.commit((if (before.isEmpty() || before.last().isWhitespace()) "" else " ") + text + " ")
+    }
 
     override fun onLetters() = open(Panel.NONE)
 
     override fun onDelete() = onKey(Code.DELETE, "", -1, -1)
 
     override fun onClip() {
-        clipboard.quickClip?.let { onPasteClip(it) }
+        val quick = clipboard.quickClip ?: return
+        intoField {
+            if (quick.text != null) fieldEditor.commit(quick.text)
+            else quick.uri?.let { pasteImage(it, quick.mimeTypes) }
+        }
+        clipboard.dropQuick()
     }
 
-    private fun onPasteClip(text: String) {
-        finishTyping { editor.commit(text) }
+    private fun onPasteClip(clip: Clipboard.Clip) {
+        intoField {
+            val file = clipboard.imageFile(clip)
+            if (clip.text != null) fieldEditor.commit(clip.text)
+            else if (file != null) pasteImage(ClipProvider.share(this, file, clip.mimeTypes.firstOrNull() ?: "image/png"), clip.mimeTypes)
+        }
+        clipboard.pasted(clip)
         clipboard.dropQuick()
         if (shown == Panel.CLIPBOARD) open(Panel.NONE)
+    }
+
+    /** An image into the field, for apps that take one (today's paste); a note for those that don't */
+    private fun pasteImage(uri: Uri, mimeTypes: List<String>) {
+        val info = currentInputEditorInfo
+        val ic = currentInputConnection
+        // The history's own images are granted by the paste; another app's (the quick clip's) only if it lets us.
+        try {
+            if (info != null) grantUriPermission(info.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: SecurityException) {}
+        val pasted = info != null && ic != null && InputConnectionCompat.commitContent(ic, info,
+            InputContentInfoCompat(uri, ClipDescription("", mimeTypes.toTypedArray()), null),
+            InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+        if (!pasted) Toast.makeText(this, texts[R.string.image_unsupported], Toast.LENGTH_SHORT).show()
+    }
+
+    /** Into the field, what is typed there first going in as it is; from a search, which then ends ([endsSearch]). */
+    private fun intoField(endsSearch: Boolean = true, then: () -> Unit) {
+        if (searching == null) return finishTyping(then)
+        then()
+        if (endsSearch) endSearch()
+    }
+
+    /** A password field, or a private one (a private browser tab): the quick clip isn't offered there. */
+    private val secretField get() = kind.field == NativeCore.FIELD_PASSWORD ||
+        (currentInputEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
+
+    // --- Search (#281) ---
+
+    /** The emoji or clipboard panel's search: the keys type into it, over its results. */
+    override fun onSearch() {
+        val panel = shown
+        finishTyping {
+            searching = panel
+            search.clear()
+            editor = searchEditor
+            kind = FieldKind.of(search.info)
+            editor.start(search.info, kind)
+            keyboard.enter = kind.enter
+            page = Page.LETTERS
+            // Two thirds of the bar and keys, which the search's field and results replace: today's results
+            // take two thirds of its keyboard view, which has the room our bar takes.
+            results.layoutParams = results.layoutParams.apply { height = ((barFrame.height + keysRow.height) / 1.5f).toInt() }
+            enterLanguage()
+            onSearchText("")
+            refresh()
+            autoShift()
+        }
+    }
+
+    private fun onSearchText(query: String) {
+        emojiResults.query = query
+        clipResults.query = query
+        searchRow.show(query, texts[if (searching == Panel.CLIPBOARD) R.string.clipboard_search_hint else R.string.emoji_search])
+    }
+
+    /** Back to the keys and the field: what is typed in the search stays there. */
+    private fun endSearch() {
+        if (searching == null) return
+        finishTyping {
+            searching = null
+            editor = fieldEditor
+            kind = FieldKind.of(currentInputEditorInfo)
+            keyboard.enter = kind.enter
+            enterLanguage()
+            open(Panel.NONE)
+            autoShift()
+        }
     }
 
     override fun onChip() {

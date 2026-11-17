@@ -11,5 +11,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The PNG the "clipimage" extra copies (#281): a throwaway test app's, readable by any app -->
+        <provider android:name=".PerfField$ImageProvider" android:authorities="dev.sebb.sebtype.perffield.image"
+            android:exported="true" />
     </application>
 </manifest>

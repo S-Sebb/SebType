@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Regenerates the new keyboard's emoji list (#191 stage 4, android/next's assets/emoji/emoji.txt) from pinned
 # Unicode sources: the emoji, their order, groups and skin tones from Unicode's emoji-test.txt, and their names
-# in English, 中文 and 日本語 from Unicode CLDR's annotations (make.py says how). Both under the Unicode licence
-# (see ../../NOTICE). Bumping a source: change its URL and sha256 here and rebuild.
+# and keywords in English, 中文 and 日本語 from Unicode CLDR's annotations (make.py says how). Both under the
+# Unicode licence (see ../../NOTICE). Then the ASCII faces in ascii.txt (FUTO's, see
+# ../../NOTICE). Bumping a source:
+# change its URL and sha256 here and rebuild.
 #
 #   data/emoji/build.sh [OUTPUT]
 set -euo pipefail
@@ -39,5 +41,5 @@ for lang in en zh ja; do
   args+=("$(fetch "$CLDR/cldr-annotations-full/annotations/$lang/annotations.json" "${SHA256[annotations-$lang]}" "annotations-$lang.json")")
   args+=("$(fetch "$CLDR/cldr-annotations-derived-full/annotationsDerived/$lang/annotations.json" "${SHA256[derived-$lang]}" "derived-$lang.json")")
 done
-python3 -I data/emoji/make.py "$out" "${args[@]}"
+python3 -I data/emoji/make.py "$out" "${args[@]}" data/emoji/ascii.txt
 echo "$out"

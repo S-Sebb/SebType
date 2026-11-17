@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 """Writes the new keyboard's emoji list from Unicode's emoji-test.txt and CLDR's annotations (build.sh).
 
-    make.py OUTPUT EMOJI_TEST ANN_EN DERIVED_EN ANN_ZH DERIVED_ZH ANN_JA DERIVED_JA
+    make.py OUTPUT EMOJI_TEST ANN_EN DERIVED_EN ANN_ZH DERIVED_ZH ANN_JA DERIVED_JA ASCII
 
 Output, UTF-8 text: a line "# <group>" starts each of the picker's groups (emoji-test's, without its
-"Component" group of bare skin tones and hair parts); every other line is one emoji, tab-separated: the
-emoji, its name in English, 中文 and 日本語 (CLDR's text-to-speech name), then, for emoji that take a skin
-tone, its five variants (light to dark) separated by spaces. Only fully-qualified emoji are listed; a
-variant with mixed tones (two people, two tones) is left out, so a tone applies to the whole emoji.
+"Component" group of bare skin tones and hair parts, then "ASCII", the faces in ascii.txt); every other
+line is one emoji, tab-separated: the emoji, its name in English, 中文 and 日本語 (CLDR's text-to-speech
+name), for emoji that take a skin tone its five variants (light to dark) separated by spaces (else empty),
+then its search keywords in English, 中文 and 日本語 (CLDR's), each separated by "|". Only fully-qualified
+emoji are listed; a variant with mixed tones (two people, two tones) is left out, so a tone applies to the
+whole emoji.
 """
 
 import json
 import sys
 
-out, test, *ann = sys.argv[1:]
+out, test, *ann, ascii_faces = sys.argv[1:]
 TONES = {0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF}
 
 
 def names(annotations, derived):
-    n = {}
+    """An emoji's name and its keywords, by the emoji without variation selectors"""
+    n, k = {}, {}
     for f in (
         derived,
         annotations,
@@ -26,10 +29,13 @@ def names(annotations, derived):
         with open(f, encoding="utf-8") as fp:
             d = json.load(fp)
         key = "annotationsDerived" if "annotationsDerived" in d else "annotations"
-        for k, v in d[key]["annotations"].items():
+        for e, v in d[key]["annotations"].items():
+            e = e.replace("️", "")
             if "tts" in v:
-                n[k.replace("️", "")] = v["tts"][0]
-    return n
+                n[e] = v["tts"][0]
+            if "default" in v:
+                k[e] = v["default"]
+    return n, k
 
 
 langs = [names(ann[i], ann[i + 1]) for i in range(0, 6, 2)]
@@ -64,10 +70,15 @@ for group, emoji in groups:
     lines.append(f"# {group}")
     for e, english, variants in emoji:
         key = e.replace("️", "")
-        row = [e, english, *(n.get(key, english) for n in langs[1:])]
-        row[1] = langs[0].get(key, english)
-        if len(variants) == 5:
-            row.append(" ".join(variants))
-        lines.append("\t".join(row))
+        row = [e, *(n.get(key, english) for n, _ in langs)]
+        row.append(" ".join(variants) if len(variants) == 5 else "")
+        row += [
+            "|".join(k for k in keys.get(key, []) if k != name)
+            for name, (_, keys) in zip(row[1:4], langs)
+        ]
+        lines.append("\t".join(row).rstrip("\t"))
+lines.append("# ASCII")
+with open(ascii_faces, encoding="utf-8") as f:
+    lines += [line.rstrip("\n") for line in f if not line.startswith("#")]
 with open(out, "w", encoding="utf-8") as f:
     f.write("\n".join(lines) + "\n")

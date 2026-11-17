@@ -14,8 +14,9 @@ import dev.sebb.sebtype.next.Icons.Icon
  * first 122 dp) with lines between them, scrolling sideways, the first on a pink chip (#28), and the chevron
  * at the right end opens all of them. English has three equal slots, the first candidate in the middle on
  * the chip; a word typed that a space would correct shows on the right, in quotes. While 中文 sets itself up, or after its setup
- * failed, a notice takes the candidates' place; with nothing typed, the text just copied is offered (#53 B8).
- * Over a panel (All Actions, emoji, …) it shows ← and the panel's title instead, and All Actions' button.
+ * failed, a notice takes the candidates' place; with nothing typed, the text or image just copied is offered
+ * (#53 B8). Over a panel (All Actions, emoji, …) it shows ← and the panel's title instead, and All Actions'
+ * button, or the emoji and clipboard panels' search (#281).
  */
 @SuppressLint("ViewConstructor")
 class CandidateBar(context: Context, private val texts: Texts, private val listener: Listener) : ItemsView(context, vertical = false) {
@@ -28,10 +29,14 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         fun onNotice()
         fun onClip()
         fun onHeaderButton()
+        fun onSearch()
     }
 
-    /** Over a panel: its title, and the button at the right end (Edit actions), if any */
-    data class Header(val title: String, val button: String?)
+    /**
+     * Over a panel: its title, and the button at the right end (Edit actions), if any. [search] labels the
+     * search at the right end: a pill with it written (emoji, as today's) or ([pill] false) a magnifier.
+     */
+    data class Header(val title: String, val button: String?, val search: String? = null, val pill: Boolean = false)
 
     enum class Badge { NONE, FIELD, TOGGLE }
 
@@ -64,7 +69,7 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
     private var badge = Badge.NONE
     private var notice: String? = null
     private var header: Header? = null
-    private var clip: String? = null
+    private var clip: Clipboard.Quick? = null
     private var typing = false
     private var style = Style.CELLS
     private var corrected = false
@@ -79,7 +84,7 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         const val BUTTON = "android.widget.Button"
     }
 
-    private enum class Kind { MENU, CHIP, BADGE, NOTICE, EXPAND, CLIP, HEADER_BUTTON }
+    private enum class Kind { MENU, CHIP, BADGE, NOTICE, EXPAND, CLIP, HEADER_BUTTON, SEARCH }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) =
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), barHeight)
@@ -91,7 +96,7 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
      * [corrected]: English's first candidate is what a space commits instead of the word typed, the second.
      */
     fun show(candidates: List<String>, typing: Boolean, style: Style, corrected: Boolean, barOpen: Boolean, chip: String?,
-             badge: Badge, notice: String?, header: Header?, expanded: Boolean, clip: String?) {
+             badge: Badge, notice: String?, header: Header?, expanded: Boolean, clip: Clipboard.Quick?) {
         val same = candidates == this.candidates
         if (same && typing == this.typing && style == this.style && corrected == this.corrected && barOpen == this.barOpen &&
             chip == this.chip && badge == this.badge && notice == this.notice && header == this.header &&
@@ -122,6 +127,10 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
                 val w = title.measureText(it) + 32 * density
                 out += Item(RectF(width - w - 8 * density, 0f, width.toFloat(), h), it, Role.BUTTON, fixed = true, tag = Kind.HEADER_BUTTON)
             }
+            header.search?.let {
+                val w = if (header.pill) 128 * density else button
+                out += Item(RectF(width - w - 4 * density, 0f, width - 4 * density, h), it, Role.BUTTON, fixed = true, tag = Kind.SEARCH)
+            }
             setItems(out, 0f)
             start = width.toFloat()
             return
@@ -151,8 +160,9 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         } else {
             // The copied text on a chip, up to a third of the bar, before any next words
             if (clip != null) {
-                val w = small.measureText(clipLabel(clip)) + 52 * density
-                out += Item(RectF(x, 0f, x + w, h), texts[R.string.quick_clip], Role.BUTTON, fixed = true, tag = Kind.CLIP)
+                val w = (clip.text?.let { small.measureText(clipLabel(it)) } ?: (24 * density)) + 52 * density
+                out += Item(RectF(x, 0f, x + w, h), texts[if (clip.text != null) R.string.quick_clip else R.string.quick_clip_image],
+                    Role.BUTTON, fixed = true, tag = Kind.CLIP)
                 x += w
                 start = x
             }
@@ -205,6 +215,7 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
             Kind.NOTICE -> listener.onNotice()
             Kind.CLIP -> listener.onClip()
             Kind.HEADER_BUTTON -> listener.onHeaderButton()
+            Kind.SEARCH -> listener.onSearch()
         }
     }
 
@@ -243,8 +254,18 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
                 fill.color = Picnic.CREAM
                 canvas.drawRoundRect(r.left + 6 * density, cy - half, r.right - 6 * density, cy + half, half, half, fill)
                 Icons.draw(canvas, Icon.CLIPBOARD, r.left + 22 * density, cy, 16 * density, Picnic.INK)
-                canvas.drawText(clipLabel(clip.orEmpty()), r.left + 36 * density, cy + small.textSize * 0.35f, small)
+                val text = clip?.text
+                if (text != null) canvas.drawText(clipLabel(text), r.left + 36 * density, cy + small.textSize * 0.35f, small)
+                else Icons.draw(canvas, Icon.IMAGE, r.left + 48 * density, cy, 18 * density, Picnic.INK)
             }
+            // Today's search: a cream pill with the magnifier and "Search" (emoji), or the magnifier alone
+            Kind.SEARCH -> if (header?.pill == true) {
+                val half = 18 * density
+                fill.color = Picnic.CREAM
+                canvas.drawRoundRect(r.left, cy - half, r.right, cy + half, half, half, fill)
+                Icons.draw(canvas, Icon.SEARCH, r.left + 20 * density, cy, 20 * density, Picnic.INK)
+                canvas.drawText(item.label, r.left + 36 * density, cy + small.textSize * 0.35f, small)
+            } else Icons.draw(canvas, Icon.SEARCH, r.centerX(), cy, 22 * density, Picnic.INK)
             // ^ opens all the candidates, v closes them again
             Kind.EXPAND -> Icons.draw(canvas, if (expanded) Icon.EXPAND else Icon.COLLAPSE, r.centerX(), cy, 18 * density, Picnic.INK)
             Kind.BADGE -> Icons.draw(canvas, Icon.INCOGNITO, r.centerX(), cy, 22 * density,

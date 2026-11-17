@@ -62,6 +62,15 @@
     <string name="clipboard_unpin">固定を解除</string>
     <string name="clipboard_remove">削除</string>
     <string name="quick_clip">コピーしたテキストを貼り付け</string>
+    <string name="emoji_search">検索</string>
+    <string name="emoji_no_results">該当なし</string>
+    <string name="emoji_faces">顔文字</string>
+    <string name="clipboard_search">クリップボードを検索</string>
+    <string name="clipboard_search_hint">検索語を入力…</string>
+    <string name="clipboard_image">画像</string>
+    <string name="quick_clip_image">コピーした画像を貼り付け</string>
+    <string name="image_unsupported">このアプリは画像挿入をサポートしていません。</string>
+    <string name="search_close">検索を閉じる</string>
     <string name="mode_standard">標準</string>
     <string name="mode_one_handed">片手</string>
     <string name="mode_split">分割</string>

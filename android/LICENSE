@@ -11,7 +11,8 @@ SebType's own files, under the MIT licence in ../LICENSE-SebType:
 - build.gradle, build.sh, release.sh, emulator.sh, upstream-version, test/, perf/, tools/trim-emoji.sh,
   native/'s own files (native/NOTICE.md lists them), and next/ (the new keyboard, #191), all of it but
   next/src/main/assets/emoji/emoji.txt, made from Unicode's data under the Unicode License v3
-  (next/src/main/assets/emoji/LICENSE.txt), and the English dictionary and model next/'s build copies in
+  (next/src/main/assets/emoji/LICENSE.txt) with its ASCII faces from FUTO's
+  app/src/main/res/raw/supplemental_emotes.json (FUTO Source First License), and the English dictionary and model next/'s build copies in
   (../NOTICE).
 
 Other projects' code SebType builds here keeps its licence:

@@ -65,6 +65,15 @@
     <string name="clipboard_unpin">Unpin</string>
     <string name="clipboard_remove">Remove</string>
     <string name="quick_clip">Paste copied text</string>
+    <string name="emoji_search">Search</string>
+    <string name="emoji_no_results">No results found</string>
+    <string name="emoji_faces">ASCII</string>
+    <string name="clipboard_search">Search clipboard</string>
+    <string name="clipboard_search_hint">Enter a search term…</string>
+    <string name="clipboard_image">Image</string>
+    <string name="quick_clip_image">Paste copied image</string>
+    <string name="image_unsupported">App does not support image insertion</string>
+    <string name="search_close">Close search</string>
     <string name="mode_standard">Standard</string>
     <string name="mode_one_handed">One-handed</string>
     <string name="mode_split">Split</string>

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Screenshots of today's keyboard (app/) next to the new one (next/, #191) on the emulator, for the
 user to judge the look by eye: English with its suggestions and next words, caps lock, the action bar, All
-Actions and its emoji, clipboard and keyboard modes panels, the copied text offered, symbols, a long press,
+Actions and its emoji, clipboard and keyboard modes panels, emoji and clipboard search, the copied text offered, symbols, a long press,
 中文 with pinyin and candidates, its 简/繁 menu, and 日本語, in the system's light and dark mode. Run
 under the emulator's lock:
 
@@ -45,7 +45,9 @@ STATES = [
     ("action-bar", "The action bar"),
     ("all-actions", "All Actions"),
     ("emoji", "Emoji"),
+    ("emoji-search", "Emoji: searching smile"),
     ("clipboard", "Clipboard, with a copy"),
+    ("clipboard-search", "Clipboard: searching seb"),
     ("edit-actions", "All Actions: Edit actions"),
     ("modes", "Keyboard modes"),
     ("one-handed", "One-handed mode"),
@@ -205,16 +207,17 @@ def tile(app, *labels):
 
 
 def run(app, mode):
+    # Shots take the bar, the floating pinyin and some of the field above the keys
     k = open_field(app)
-    top = k.t - 520  # the bar, the floating pinyin and some of the field above the keys
 
-    def step(state, do):
-        """One screenshot; a state that fails is noted in the page instead of stopping the run."""
+    def step(state, do, above=520):
+        """One screenshot of the keyboard and above pixels over its keys; a state that fails is noted in
+        the page instead of stopping the run."""
         if ONLY and state not in ONLY:
             return
         try:
             do()
-            shot(f"{mode}-{state}-{app}", top)
+            shot(f"{mode}-{state}-{app}", k.t - above)
         except (SystemExit, KeyError, ValueError, subprocess.SubprocessError) as e:
             failed[f"{mode}-{state}-{app}"] = str(e)
             print(f"{mode}-{state}-{app}: {e}", flush=True)
@@ -241,6 +244,16 @@ def run(app, mode):
     step("action-bar", lambda: (open_field(app), action_bar()))
     step("all-actions", lambda: (open_field(app), menu(app)))
     step("emoji", lambda: tile(app, "Emojis", "Emoji", "表情符号"))
+    # Search's results sit above the keys, which type into it
+    step(
+        "emoji-search",
+        lambda: (
+            tile(app, "Emojis", "Emoji", "表情符号"),
+            tap_label("Search"),
+            k.type("smile"),
+        ),
+        above=1100,
+    )
 
     # Clipboard history on (it is off after an install), then a copy made in the field app
     def clipboard():
@@ -256,6 +269,21 @@ def run(app, mode):
         tile(app, "Clipboard Manager", "Clipboard", "Clipboard History", "剪贴板管理器")
 
     step("clipboard", clipboard)
+    step(
+        "clipboard-search",
+        lambda: (
+            tile(
+                app,
+                "Clipboard Manager",
+                "Clipboard",
+                "Clipboard History",
+                "剪贴板管理器",
+            ),
+            tap_label("Search clipboard", "Search clipboard…"),
+            k.type("seb"),
+        ),
+        above=1100,
+    )
     step(
         "edit-actions",
         lambda: (open_field(app), menu(app), tap_label("Edit actions", "编辑快捷方式")),
@@ -339,11 +367,17 @@ rows = "\n".join(
     + "</tr>"
     for mode in ("light", "dark")
     for state, label in STATES
+    # States never taken in OUTDIR (ONLY left them out) stay off the page
+    if any(
+        f"{mode}-{state}-{app}" in failed
+        or os.path.exists(os.path.join(outdir, f"{mode}-{state}-{app}.png"))
+        for app in APPS
+    )
 )
 with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
     f.write(f"""<!doctype html><meta charset="utf-8"><title>SebType: today's keyboard and the new one</title>
 <style>body{{font-family:sans-serif;background:#eee}} td,th{{padding:6px;vertical-align:top}} img{{width:100%;max-width:480px;border:1px solid #ccc}}</style>
-<h1>Today's keyboard (left) and the new one (right), #257</h1>
+<h1>Today's keyboard (left) and the new one (right)</h1>
 <table><tr><th></th><th>Today (app/)</th><th>New (next/)</th></tr>
 {rows}
 </table>

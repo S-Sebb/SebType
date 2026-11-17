@@ -62,6 +62,15 @@
     <string name="clipboard_unpin">取消固定</string>
     <string name="clipboard_remove">移除</string>
     <string name="quick_clip">粘贴复制的文字</string>
+    <string name="emoji_search">搜索</string>
+    <string name="emoji_no_results">未找到结果</string>
+    <string name="emoji_faces">颜文字</string>
+    <string name="clipboard_search">搜索剪贴板</string>
+    <string name="clipboard_search_hint">输入搜索内容…</string>
+    <string name="clipboard_image">图片</string>
+    <string name="quick_clip_image">粘贴复制的图片</string>
+    <string name="image_unsupported">应用不支持插入图片</string>
+    <string name="search_close">关闭搜索</string>
     <string name="mode_standard">标准</string>
     <string name="mode_one_handed">单手</string>
     <string name="mode_split">分离</string>

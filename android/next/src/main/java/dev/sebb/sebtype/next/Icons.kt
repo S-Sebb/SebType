@@ -9,7 +9,7 @@ import android.graphics.RectF
 object Icons {
     enum class Icon { SHIFT, SHIFT_ON, SHIFT_LOCKED, DELETE, ENTER, GLOBE, SEARCH, SEND, NEXT, PREVIOUS, DONE, MENU, MENU_OPEN, EXPAND, COLLAPSE, INCOGNITO,
         MORE, EMOJI, UNDO, REDO, CLIPBOARD, MODES, SELECT_ALL, COPY, CUT, PASTE, PIN, CLOSE, RECENT,
-        STANDARD, ONE_HANDED, SPLIT, FLOATING, SWAP, PLUS, MINUS, DRAG, SETTINGS }
+        STANDARD, ONE_HANDED, SPLIT, FLOATING, SWAP, PLUS, MINUS, DRAG, SETTINGS, IMAGE }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeJoin = Paint.Join.MITER
@@ -57,6 +57,13 @@ object Icons {
                 canvas.drawCircle(12f, 12f, 9f, paint)
                 canvas.drawOval(RectF(8f, 3f, 16f, 21f), paint)
                 canvas.drawLine(3f, 12f, 21f, 12f, paint)
+            }
+            // A picture: a frame with a hill and the sun
+            Icon.IMAGE -> {
+                canvas.drawRoundRect(RectF(3.5f, 5f, 20.5f, 19f), 2f, 2f, paint)
+                path.moveTo(3.5f, 16.5f); path.lineTo(9f, 11f); path.lineTo(14f, 16f); path.lineTo(16f, 14f); path.lineTo(20.5f, 18f)
+                canvas.drawPath(path, paint)
+                canvas.drawCircle(15.5f, 9.5f, 1.6f, paint)
             }
             Icon.SEARCH -> {
                 canvas.drawCircle(10f, 10f, 6f, paint)
