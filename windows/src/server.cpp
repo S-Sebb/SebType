@@ -82,11 +82,10 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
   // settings carry over.
   if (lang == Lang::Chinese)
     return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(logDir())});
-  // Mozc loads in its own thread: its first load after an install took seconds, and the server waits for
-  // nothing meanwhile; 日本語 is grey until then (#312).
+  // Mozc loads in its own thread, and 日本語 is grey until then (#312).
   if (lang == Lang::Japanese) {
     MozcPaths paths{u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")};
-    paths.background = true;
+    paths.preload = u8(exeDir() / L"sebtype-mozc.dll");
     return makeMozc(paths);
   }
   return nullptr;

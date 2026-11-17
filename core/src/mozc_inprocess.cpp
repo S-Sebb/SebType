@@ -4,9 +4,12 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "mozc_transport.h"
 #include "sebtype_mozc.h"
@@ -37,17 +40,22 @@ bool eval(const mozc::commands::Input &in, mozc::commands::Output &out) {
 }
 
 // One engine per process, the 日本語 engine's: loaded with it and closed when the core stops it (the phone
-// frees an idle Mozc; the PCs reload one whose files the Configurator changed). paths.background loads it in
-// its own thread: its first load took seconds on Windows (#312), and the server answers every app meanwhile.
+// frees an idle Mozc; the PCs reload one whose files the Configurator changed); with paths.preload in its own
+// thread (#312).
 class InProcess final : public MozcTransport {
  public:
   explicit InProcess(const MozcPaths &paths) {
-    auto load = [this, profile = paths.profileDir, data = paths.dataFile, offset = paths.dataOffset,
-                 length = paths.dataLength] {
+    auto load = [this, preload = paths.preload, profile = paths.profileDir, data = paths.dataFile,
+                 offset = paths.dataOffset, length = paths.dataLength] {
+      if (!preload.empty()) {
+        std::ifstream f(std::filesystem::u8path(preload), std::ios::binary);
+        std::vector<char> buf(1 << 20);
+        while (f.read(buf.data(), buf.size())) {}
+      }
       open_ = sebtype_mozc_open(profile.c_str(), data.c_str(), offset, length) != 0;
       loading_ = false;
     };
-    if (paths.background) {
+    if (!paths.preload.empty()) {
       loading_ = true;
       loader_ = std::thread(load);
     } else {

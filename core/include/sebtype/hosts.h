@@ -38,8 +38,11 @@ struct MozcPaths {
   std::string dataFile;
   int64_t dataOffset = 0, dataLength = 0;
   bool touch = false;
-  // Loads in the background (the engine is busy() meanwhile) instead of in makeMozc: Windows' server (#312).
-  bool background = false;
+  // Windows' server (#312): Mozc loads in its own thread (the engine is busy() meanwhile), after reading
+  // this file (sebtype-mozc.dll) through. Its first read after an install took seconds (a scan of the new
+  // file), and inside the system's loader that wait held every new thread of the process, so every app's
+  // request too. Empty: Mozc loads in makeMozc.
+  std::string preload;
 };
 std::unique_ptr<Engine> makeMozc(const MozcPaths &paths);
 // The phone's user dictionaries: a file in any format Mozc imports (Mozc, MS-IME, ATOK, Kotoeri), as a
