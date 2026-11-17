@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 from PIL import Image
 
 today_apk, new_apk, field_apk, outdir = sys.argv[1:5]
+# ONLY=caps,split retakes those states alone; the page keeps the others' pictures
+ONLY = set(filter(None, os.environ.get("ONLY", "").split(",")))
 serial = os.environ["ANDROID_SERIAL"]
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 APPS = {
@@ -206,6 +208,8 @@ def run(app, mode):
 
     def step(state, do):
         """One screenshot; a state that fails is noted in the page instead of stopping the run."""
+        if ONLY and state not in ONLY:
+            return
         try:
             do()
             shot(f"{mode}-{state}-{app}", top)
@@ -219,8 +223,16 @@ def run(app, mode):
     k = open_field(app)
 
     def caps():
-        tap(k.l + 0.75 * k.w, k.row(2))
-        tap(k.l + 0.75 * k.w, k.row(2))
+        # A double tap 100 ms apart in one monkey run: two `input tap`s are too slow for it
+        x, y = int(k.l + 0.75 * k.w), int(k.row(2))
+        script = f"type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\nTap({x},{y})\nUserWait(100)\nTap({x},{y})\n"
+        path = os.path.join(outdir, "caps-taps.txt")
+        with open(path, "w") as f:
+            f.write(script)
+        adb("push", path, "/data/local/tmp/sebtype-caps-taps.txt")
+        os.remove(path)
+        adb("shell", "monkey", "-f", "/data/local/tmp/sebtype-caps-taps.txt", "1")
+        adb("shell", "rm", "/data/local/tmp/sebtype-caps-taps.txt")
         time.sleep(1)
 
     step("caps", caps)

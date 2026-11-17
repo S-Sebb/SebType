@@ -244,6 +244,10 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f), ink)
                 key.code == Code.SPACE && key.label.isBlank() -> {
                     label.textSize = 13 * density
+                    // Split's halves of the space bar are narrow: the label shrinks to fit, as today's does
+                    val room = rr - l - 12 * density
+                    val w = label.measureText(spaceLabel)
+                    if (w > room) label.textSize *= room / w
                     label.color = Picnic.FADED
                     canvas.drawText(spaceLabel, cx, cy + label.textSize * 0.35f, label)
                 }
@@ -366,13 +370,16 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         when (cell.key.code) {
             Code.SHIFT -> {
                 val now = SystemClock.uptimeMillis()
+                val unlocking = shift == Shift.LOCKED
+                // A double tap locks from either state, as today's does: the auto-capital's Shift too
                 setShift(when {
-                    shift == Shift.ON && now - lastShiftTap < 300 -> Shift.LOCKED
+                    unlocking -> Shift.OFF
+                    now - lastShiftTap < 300 -> Shift.LOCKED
                     shift == Shift.OFF -> Shift.ON
                     else -> Shift.OFF
                 })
                 userShift = shift != Shift.OFF
-                lastShiftTap = now
+                lastShiftTap = if (unlocking) 0 else now
             }
             Code.DELETE -> {
                 listener.onKey(Code.DELETE, "", -1, -1)

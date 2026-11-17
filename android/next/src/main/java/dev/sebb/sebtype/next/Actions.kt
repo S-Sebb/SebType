@@ -228,9 +228,25 @@ class ActionsPanel(context: Context, private val texts: Texts, private val liste
                     canvas.drawText("${pinned.indexOf(tag) + 1}", bx, by + number.textSize * 0.35f, number)
                 }
                 Icons.draw(canvas, tag.icon, r.centerX(), r.top + 34 * density, 24 * density, Picnic.INK)
-                canvas.drawText(item.label, r.centerX(), r.top + 70 * density, regular)
+                val lines = wrap(item.label, r.width() - 12 * density)
+                val step = regular.textSize * 1.15f
+                lines.forEachIndexed { i, line ->
+                    canvas.drawText(line, r.centerX(), r.top + 70 * density + step * (i - (lines.size - 1) / 2f), regular)
+                }
             }
         }
+    }
+
+    /** [label] in at most two lines of [room] px, broken between words ("Clipboard / Manager", as today's), else anywhere (中文, 日本語) */
+    private fun wrap(label: String, room: Float): List<String> {
+        if (regular.measureText(label) <= room) return listOf(label)
+        val words = label.split(' ')
+        for (n in words.size - 1 downTo 1) {
+            val first = words.take(n).joinToString(" ")
+            if (regular.measureText(first) <= room) return listOf(first, words.drop(n).joinToString(" "))
+        }
+        val n = regular.breakText(label, true, room, null).coerceAtLeast(1)
+        return listOf(label.take(n), label.drop(n))
     }
 
     /** A round switch centred at ([cx], [cy]): a tan track with a brown knob left (off), brown with a cream knob right (on) */

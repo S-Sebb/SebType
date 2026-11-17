@@ -267,11 +267,17 @@ def type_fast(text, gap_ms=10):
         ((x, y) for label, x, y, top_, cls in nodes() if label == "." and top_ >= top),
         None,
     )
+    monkey_taps(
+        [space if ch == " " else period if ch == "." else k[ch][:2] for ch in text],
+        gap_ms,
+    )
+    time.sleep(3)
+
+
+def monkey_taps(points, gap_ms):
+    """Taps the points gap_ms apart in one monkey run: closer together than `input tap` can (a double tap)."""
     script = "type= raw events\ncount= 1\nspeed= 1.0\nstart data >>\n" + "".join(
-        f"Tap({x},{y})\nUserWait({gap_ms})\n"
-        for x, y in (
-            space if ch == " " else period if ch == "." else k[ch][:2] for ch in text
-        )
+        f"Tap({x},{y})\nUserWait({gap_ms})\n" for x, y in points
     )
     path = os.path.join(logdir, "fast-taps.txt")
     with open(path, "w") as f:
@@ -279,7 +285,6 @@ def type_fast(text, gap_ms=10):
     adb("push", path, "/data/local/tmp/sebtype-fast-taps.txt")
     adb("shell", "monkey", "-f", "/data/local/tmp/sebtype-fast-taps.txt", "1")
     adb("shell", "rm", "/data/local/tmp/sebtype-fast-taps.txt")
-    time.sleep(3)
 
 
 def open_field(kind=None, clip=None):
@@ -1410,6 +1415,32 @@ def modes_one_handed():
         set_mode("Standard")
 
 
+def caps_lock():
+    """A double tap on Shift locks capitals, also while the field's own capital has Shift on (#257): today's
+    does, and the locked key is drawn berry."""
+    open_field()
+    shift = wait_for(
+        "Shift",
+        lambda: next(
+            (
+                (x, y)
+                for label, x, y, top, cls in nodes()
+                if label in ("Shift", "Shift on")
+            ),
+            None,
+        ),
+        KEYBOARD_WAIT,
+    )
+    monkey_taps([shift, shift], 100)
+    time.sleep(1)
+    if "Caps lock" not in {label for label, *_ in nodes()}:
+        raise Fail("a double tap on Shift (auto-capital on) didn't lock it")
+    type_fast("ab", gap_ms=300)
+    if (text := field_text()) != "AB":
+        raise Fail(f"typed ab with caps lock; the field shows {text!r}")
+    return f"double tap -> Caps lock, ab -> {text!r}"
+
+
 def modes_split():
     """Split: the keys in two halves, t and y far apart (g and v sit on both halves, as in today's app)."""
     to_english()
@@ -1608,6 +1639,7 @@ if NEXT:
         "en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"]
     )
     check("emoji-picks", emoji_picks, needs=["first-install"])
+    check("caps-lock", caps_lock, needs=["en-model-waits-for-letter"])
     check(
         "en-double-space-period",
         typed_as("yes  then", "Yes. Then"),
