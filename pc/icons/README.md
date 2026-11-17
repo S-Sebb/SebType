@@ -3,7 +3,7 @@
 SebType's input-method status icons ("Set E" sticker keycaps, #63): EN for the US layout, 中, あ, ア,
 and **a** in the English mode of Chinese or Japanese, which becomes **A** while Caps Lock is on.
 
-`<size>/<state>.png` and `scalable/<state>.svg` come from `build.py` (needs Pillow, `fontTools` and the
+`<size>/<state>.png` and `scalable/<state>.svg` come from `build.py` (needs Pillow, `fontTools`, pycairo and the
 Noto Sans CJK VF fonts):
 
 ```sh

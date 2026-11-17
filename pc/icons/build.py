@@ -3,24 +3,28 @@
 pc/icons/scalable/<state>.svg.
 
 Each tray size (16, 20, 22, 24, 32, 40, 44, 48 and 64 px) is drawn at its own pixel size, not scaled from a
-larger drawing: the keycap's rim, outline and face are whole pixels with hard edges, and the glyph is the
-font hinted at that size, in whole pixels (#275: a large drawing scaled down had soft grey edges). Small
+larger drawing, with the same shapes as the scalable one: its straight edges, strokes and glyphs fall on whole
+pixels with hard edges, and only the round corners shade their edge pixels; the glyph is the font hinted at
+that size (#275: a large drawing scaled down had soft grey edges). Small
 sizes keep the look with fewer details: blush from 20 px, the face's own outline from 22 px. "scalable" is a
 48 px vector drawing with the design's full proportions, for other sizes; its glyphs are font outlines, so it
 needs no font. Fonts: Noto Sans CJK Black (中 あ ア, from the system's Noto Sans CJK VF) and Nunito ExtraBold
-(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools and Pillow. Linux's RPM installs them in
+(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools, Pillow and pycairo. Linux's RPM installs them in
 hicolor (linux/CMakeLists.txt); Windows' .ico files hold the PNGs (windows/make_icons.py, #13, #65).
 """
 
+import io
+from math import pi
 from pathlib import Path
 
+import cairo
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
 NOTO_CJK = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
@@ -231,19 +235,20 @@ def sticker(S, lang, g, state=""):
     return "".join(o)
 
 
-# Pixels per tray size: sticker rim, outline, corner radius, base band under the face, face inset, face
-# outline, lip.
-PIXELS = {
-    16: (1, 1, 4, 2, 0, 0, 0),
-    20: (1, 1, 5, 3, 0, 0, 0),
-    22: (1, 1, 5, 3, 1, 1, 1),
-    24: (1, 1, 6, 3, 1, 1, 1),
-    32: (2, 2, 8, 4, 1, 1, 1),
-    40: (2, 2, 10, 5, 2, 2, 2),
-    44: (2, 2, 11, 5, 2, 2, 2),
-    48: (2, 2, 12, 6, 2, 2, 2),
-    64: (3, 3, 16, 8, 3, 2, 3),
+# The approved drawings' whole pixels per tray size (#63): sticker border, shadow, outline, base side, flare,
+# face inset, lip. Other sizes take params()' proportions, rounded.
+GRID = {
+    16: (1, 0, 1, 2, 0, 0, 0),
+    20: (1, 1, 1, 3, 0, 0, 1),
+    22: (1, 1, 1, 4, 1, 1, 1),
+    24: (1, 1, 1, 4, 1, 1, 1),
+    32: (2, 2, 2, 5, 2, 2, 2),
 }
+SIZES = (16, 20, 22, 24, 32, 40, 44, 48, 64)
+
+
+def grid(S):
+    return GRID.get(S) or tuple(max(1, round(v)) for v in params(S))
 
 
 def font(kind, px):
@@ -255,100 +260,198 @@ def font(kind, px):
     return f
 
 
+def holes(im):
+    """The closed counters in a glyph mask: background areas that don't reach its edge."""
+    w, h = im.size
+    px = im.load()
+    seen, n = set(), 0
+    for start in ((x, y) for y in range(h) for x in range(w)):
+        if start in seen or px[start]:
+            continue
+        n += 1
+        todo, seen_here = [start], {start}
+        while todo:
+            x, y = todo.pop()
+            for q in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if 0 <= q[0] < w and 0 <= q[1] < h and q not in seen_here and not px[q]:
+                    seen_here.add(q)
+                    todo.append(q)
+        seen |= seen_here
+    return n - 1  # the area around the glyph
+
+
 def bitmap(kind, text, w, h):
-    """The glyph's ink as an L mask at most w x h, hinted at its own size; the largest that fits."""
+    """The glyph's ink as an L mask at most w x h, hinted at its own size; the largest that fits. Below 20 px
+    its strokes are a pixel wider (its ink twice, a pixel apart, letters a pixel further apart), as bold as
+    the larger sizes, unless that would close a counter."""
     for px in range(h * 2, 4, -1):
         f = font(kind, px)
-        im = Image.new("L", (px * 3, px * 2), 0)
+        bold = px < 20
+        im = Image.new("L", (px * 4, px * 2), 0)
         d = ImageDraw.Draw(im)
         d.fontmode = "1"  # hinted to whole pixels, no grey fringe
-        d.text((2, 2), text, font=f, fill=255)
+        x = 2
+        for ch in text:
+            d.text((x, 2), ch, font=f, fill=255)
+            x += round(f.getlength(ch)) + bold
+        if bold:
+            wide = ImageChops.lighter(im, ImageChops.offset(im, 1, 0))
+            if holes(wide.crop(wide.getbbox())) == holes(im.crop(im.getbbox())):
+                im = wide
         box = im.getbbox()
         if box and box[2] - box[0] <= w and box[3] - box[1] <= h:
             return im.crop(box)
     raise ValueError(text)
 
 
-def rrect(d, box, r, fill):
-    """A rounded rectangle over pixels x0..x1-1, y0..y1-1, with hard edges."""
-    x0, y0, x1, y1 = box
-    d.rounded_rectangle((x0, y0, x1 - 1, y1 - 1), radius=max(r, 0), fill=fill)
+def rgb(c, alpha=1.0):
+    return tuple(int(c[i : i + 2], 16) / 255 for i in (1, 3, 5)) + (alpha,)
+
+
+def arc(cr, cx, cy, rx, ry, a0, a1):
+    cr.save()
+    cr.translate(cx, cy)
+    cr.scale(rx, ry)
+    cr.arc(0, 0, 1, a0, a1)
+    cr.restore()
+
+
+def key(cr, x0, y0, x1, y1, t, r):
+    """trap()'s shape on the pixel grid: the flare is taken into the top corners (each t px wider than tall),
+    so the top edge is as long and the sides are straight: only the corners have partly covered pixels."""
+    r = min(r, (x1 - x0) / 2 - t, (y1 - y0) / 2)
+    cr.new_path()
+    arc(cr, x1 - t - r, y0 + r, r + t, r, -pi / 2, 0)
+    arc(cr, x1 - r, y1 - r, r, r, 0, pi / 2)
+    arc(cr, x0 + r, y1 - r, r, r, pi / 2, pi)
+    arc(cr, x0 + t + r, y0 + r, r + t, r, pi, 3 * pi / 2)
+    cr.close_path()
+
+
+def rounded(cr, x0, y0, x1, y1, r):
+    key(cr, x0, y0, x1, y1, 0, r)
+
+
+def gradient(y0, y1, top, bot):
+    g = cairo.LinearGradient(0, y0, 0, y1)
+    g.add_color_stop_rgb(0, *rgb(top)[:3])
+    g.add_color_stop_rgb(1, *rgb(bot)[:3])
+    return g
+
+
+def fill(cr, source):
+    cr.set_source_rgba(*source) if isinstance(source, tuple) else cr.set_source(source)
+    cr.fill()
+
+
+def image(surface):
+    b = io.BytesIO()
+    surface.write_to_png(b)
+    return Image.open(io.BytesIO(b.getvalue())).convert("RGBA")
 
 
 def pixels(S, state):
-    """The key at S px, drawn on its pixel grid."""
+    """sticker()'s key at S px on its pixel grid: its edges on whole pixels (only round corners are partly
+    covered), its shadow, glint and blush in whole pixels, and the glyph hinted at its size."""
     lang, (kind, text) = STATES[state]
-    sb, bw, R, band, fi, fo, lip = PIXELS[S]
-    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    rrect(d, (0, 0, S, S), R, STICKER)
-    rrect(d, (sb, sb, S - sb, S - sb), R - sb, OUTLINE)
-    k = sb + bw
-    bot = BASE[lang][1]
-    rrect(d, (k, k, S - k, S - k), R - k, bot)
-    fx0, fy0, fx1, fy1 = k + fi, k, S - k - fi, S - k - band
-    if fo:  # the top face's own outline
-        rrect(d, (fx0 - fo, fy0, fx1 + fo, fy1 + fo), R - k - fi, OUTLINE)
-    rrect(d, (fx0, fy0, fx1, fy1), max(R - k - fi - fo, 1), LIP if lip else FACE)
-    if lip:
-        rrect(d, (fx0, fy0, fx1, fy1 - lip), max(R - k - fi - fo, 1), FACE)
+    sb, sh, bw, side, t, fi, lip = grid(S)
+    H, r = S - sh, S * 0.24
+    top, bot = BASE[lang]
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+    cr = cairo.Context(surface)
+    if sh:  # a hard shadow, sh px under the sticker
+        key(cr, 0, sh, S, S, t, r + sb)
+        fill(cr, rgb(OUTLINE, 0.35))
+    key(cr, 0, 0, S, H, t, r + sb)
+    fill(cr, rgb(STICKER))
+    key(cr, sb, sb, S - sb, H - sb, t, r)
+    fill(cr, rgb(OUTLINE))
+    k0, k1, ky0, ky1 = sb + bw, S - sb - bw, sb + bw, H - sb - bw
+    key(cr, k0, ky0, k1, ky1, t, max(r - bw, 0))
+    fill(cr, gradient(ky0, ky1, top, bot))
+    if S >= 32:  # glint on the base, lower left
+        gx, gy = round(k0 + S * 0.1 - S * 0.035), round(ky1 - side * 0.45 - S * 0.06)
+        cr.rectangle(gx, gy, max(1, round(S * 0.07)), max(2, round(S * 0.12)))
+        fill(cr, rgb("#FFFFFF", 0.45))
+    fx0, fx1, fy0, fy1 = k0 + t + fi, k1 - t - fi, ky0, ky1 - side
+    rf = max(r - bw - fi, 0) * 0.9
+    if S >= 22:  # top face with its own outline and a beige lip at its bottom
+        rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
+        fill(cr, rgb(OUTLINE))
+        rounded(cr, fx0, fy0, fx1, fy1, rf)
+        fill(cr, rgb(LIP))
         fy1 -= lip
+    else:  # 16/20 px: a darker rim where the top meets the base
+        rounded(cr, fx0, fy0, fx1, fy1 + 1, rf)
+        fill(cr, rgb(bot))
+    rounded(cr, fx0, fy0, fx1, fy1, rf)
+    fill(cr, gradient(fy0, fy1, "#FFFCF5", "#FFF1E2"))
+    im = image(surface)
+    d = ImageDraw.Draw(im)
     fw, fh = fx1 - fx0, fy1 - fy0
-    kind_badge = state.rpartition("-")[2]
-    # blush: a pixel or two of pink in the face's lower corners
-    if lang != "grey" and S >= 20:
-        bwid = 1 if S < 32 else 2 if S < 48 else 3
-        by = fy1 - 2 - (1 if S >= 32 else 0)
-        for bx in (fx0 + 1 + (S >= 32), fx1 - 1 - (S >= 32) - bwid):
-            d.rectangle((bx, by, bx + bwid - 1, by + (0 if S < 40 else 1)), fill=BLUSH)
-    margin = 1 if S < 32 else 2
-    gh = round(fh * (0.86 if kind != "lat" else 0.66 if text != "a" else 0.6)) - (
-        0 if S < 24 else 1
+    blush = S >= 20 and lang != "grey"
+    if blush and S >= 32:  # two short slanted dashes each side
+        w = 1 if S < 48 else 2
+        n = 2 if S < 40 else 3
+        by = round(fy0 + fh * 0.62)
+        for side_x in (fx0 + fw * 0.085, fx1 - fw * 0.085):
+            for dx in (-S * 0.035, S * 0.035):
+                x = round(side_x + dx - (n + w - 1) / 2)
+                for i in range(n):
+                    d.rectangle(
+                        (x + i, by - i, x + i + w - 1, by - i + w - 1), fill=BLUSH
+                    )
+    elif blush:  # 20-24 px: one cheek per lower corner
+        for x in (fx0, fx1 - 2):
+            d.rectangle((x, fy1 - 2, x + 1, fy1 - 2), fill=BLUSH)
+    margin = (fw * 0.17 if S >= 32 else fw * 0.1) if blush else fw * 0.06
+    bx0, bx1, by0, by1 = fx0 + margin, fx1 - margin, fy0 + fh * 0.04, fy1 - fh * 0.04
+    # As tall as sticker()'s glyph with its stroke, which made the outlines bolder.
+    stroke = 0.4 if S < 24 else S * 0.022
+    gh = fh * (0.8 if kind != "lat" else 0.66 if text != "a" else 0.6) + stroke
+    m = bitmap(
+        kind, text, round(bx1 - bx0 + stroke), round(min(gh, by1 - by0 + stroke))
     )
-    m = bitmap(kind, text, fw - 2 * margin, min(gh, fh - 2))
-    gx = fx0 + (fw - m.width + 1) // 2
-    gy = fy0 + (fh - m.height + 1) // 2
-    d.bitmap((gx, gy), m, fill=GREY_INK if lang == "grey" else INK)
+    d.bitmap(
+        (round((bx0 + bx1 - m.width) / 2), round((by0 + by1 - m.height) / 2)),
+        m,
+        fill=GREY_INK if lang == "grey" else INK,
+    )
+    kind_badge = state.rpartition("-")[2]
     if kind_badge in BADGE:
-        r = {16: 4, 20: 5, 22: 5, 24: 5, 32: 7, 40: 8, 44: 9, 48: 10, 64: 13}[S]
-        cx0, cy0 = S - 2 * r - 1, S - 2 * r - 1
-        rim = 1 if S < 40 else 2
-        d.ellipse((cx0, cy0, S - 1, S - 1), fill=STICKER)
-        d.ellipse(
-            (cx0 + rim, cy0 + rim, S - 1 - rim, S - 1 - rim), fill=BADGE[kind_badge]
-        )
-        c = (cx0 + S - 1) // 2
-        cy = (cy0 + S - 1) // 2
-        dot = 1 if S < 32 else 2 if S < 64 else 3
-        if kind_badge == "wait":
-            gap = dot + (1 if S < 24 else 2 if S < 48 else 3)
-            for dx in (-gap, 0, gap):
-                d.rectangle(
-                    (
-                        c + dx - dot // 2,
-                        cy - dot // 2,
-                        c + dx - dot // 2 + dot - 1,
-                        cy - dot // 2 + dot - 1,
-                    ),
-                    fill="#FFFFFF",
-                )
-        else:  # "!": a bar, a pixel row of gap, a dot
-            inner = 2 * r + 1 - 2 * rim
-            unit = max(1, inner // 7)
-            bar = inner - 4 * unit
-            y0 = cy - (bar + 2 * unit) // 2
-            x = c - dot // 2
-            d.rectangle((x, y0, x + dot - 1, y0 + bar - 1), fill="#FFFFFF")
-            d.rectangle(
-                (x, y0 + bar + unit, x + dot - 1, y0 + bar + unit + dot - 1),
-                fill="#FFFFFF",
-            )
+        br = max(S * 0.25, 4.5)
+        rim = max(1, round(S / 24)) if S < 48 else round(S * 0.04)
+        c = S - br - 0.2
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+        cr = cairo.Context(surface)
+        cr.arc(c, c, br, 0, 2 * pi)
+        fill(cr, rgb(STICKER))
+        cr.arc(c, c, br - rim, 0, 2 * pi)
+        fill(cr, rgb(BADGE[kind_badge]))
+        im.alpha_composite(image(surface))
+        d = ImageDraw.Draw(im)
+        inner = br - rim
+        if kind_badge == "wait":  # three square dots
+            dot = max(1, round(inner * 0.34))
+            pitch = max(
+                dot + 1, round(inner * 0.5)
+            )  # whole pixels, a gap at least a pixel wide
+            x, y = round(c - dot / 2), round(c - dot / 2)
+            for dx in (-pitch, 0, pitch):
+                d.rectangle((x + dx, y, x + dx + dot - 1, y + dot - 1), fill="#FFFFFF")
+        else:  # "!": a bar, a gap, a dot
+            w, h = max(1, round(inner * 0.36)), inner * 1.4
+            x, y0 = round(c - w / 2), round(c - h / 2)
+            bar = round(h * 0.62)
+            dot_y = max(round(c + h / 2 - w), y0 + bar + 1)
+            d.rectangle((x, y0, x + w - 1, y0 + bar - 1), fill="#FFFFFF")
+            d.rectangle((x, dot_y, x + w - 1, dot_y + w - 1), fill="#FFFFFF")
     return im
 
 
 (HERE / "scalable").mkdir(exist_ok=True)
 for state, (lang, g) in STATES.items():
     (HERE / "scalable" / f"{state}.svg").write_text(sticker(48, lang, g, state))
-    for S in PIXELS:
+    for S in SIZES:
         (HERE / str(S)).mkdir(exist_ok=True)
         pixels(S, state).save(HERE / str(S) / f"{state}.png", optimize=True)
