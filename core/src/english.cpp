@@ -393,6 +393,10 @@ class English : public Engine {
   bool key(const Key &k) override {
     if (k.release) return false;
     const char32_t c = keyChar(k.sym);
+    // As AOSP's: only the key right after a correction may undo it, and only the one after a reverted word
+    // or the punctuation after it adds the space the revert took (its phantom space).
+    const auto correction = std::exchange(lastCorrection_, std::nullopt);
+    const bool phantom = std::exchange(phantomSpace_, false);
     if (k.mods & (mod::Ctrl | mod::Alt | mod::Super)) {
       commitTyped();
       return false;
@@ -404,8 +408,11 @@ class English : public Engine {
       return false;
     }
     const bool afterPick = std::exchange(afterPick_, false);
+    leaveTail();
     if (k.sym == ks::BackSpace) {
+      if (correction) return revert(*correction);
       if (typed_.empty()) {
+        if (reopenBeforeDeleted()) return true;
         dropLastChar();
         changed();
         return false;
@@ -415,6 +422,11 @@ class English : public Engine {
       return true;
     }
     if (isLetter(c) || ((c == '\'' || c == U'’') && !typed_.empty())) {
+      if (phantom) {
+        if (!typed_.empty()) commitWord(utf8(typed_), false);
+        commit_ += " ";
+        context_ += " ";
+      }
       if (typed_.empty()) loadModel();
       typed_.push_back(int(c));
       const auto [x, y] = k.x >= 0 ? std::pair{k.x, k.y} : keyCentre(lowerCase(c));
@@ -447,11 +459,14 @@ class English : public Engine {
         context_.pop_back();
         edit_.deleteBefore = 1;
       } else if (!typed_.empty()) {
-        commitWord(decision(), false);
+        Correction last{typed_, xs_, ys_, decision(), {}, utf8(c)};
+        last.learned = commitWord(last.committed, false);
+        if (last.committed != utf8(last.typed)) lastCorrection_ = std::move(last);
       }
       commit_ += utf8(c);
       context_ += utf8(c);
       if (edit_.deleteBefore) commit_ += " ", context_ += " ";
+      phantomSpace_ = phantom && joinsWord(c);
       changed();
       return true;
     }
@@ -468,13 +483,18 @@ class English : public Engine {
     return true;
   }
 
+  // The cursor moved inside the word (to a character from its start), as the frontend saw the user put it.
+  void moveCursor(int chars) override {
+    if (!typed_.empty()) tail_ = typed_.size() - std::clamp(size_t(std::max(chars, 0)), size_t{0}, typed_.size());
+  }
+
   std::string takeCommit() override { return std::exchange(commit_, {}); }
   Edit takeEdit() override { return std::exchange(edit_, {}); }
 
   Preedit preedit() override {
     if (typed_.empty()) return {};
     const std::string text = utf8(typed_);
-    return {{{text, true, false}}, int(text.size())};
+    return {{{text, true, false}}, int(utf8(std::vector(typed_.begin(), typed_.end() - tail_)).size())};
   }
   bool composing() override { return !typed_.empty(); }
   void flush() override { commitTyped(); }
@@ -539,10 +559,14 @@ class English : public Engine {
     layout_ = layout;
     keys_ = proximityInfo(layout);
   }
-  void setContext(const std::string &before) override {
+  // A word the cursor touches is reopened, as AOSP's restartSuggestionsOnWordTouchedByCursor does.
+  void setContext(const std::string &before, const std::string &after, bool selection) override {
     resetWord();
     context_ = before.size() > kContextChars ? before.substr(before.size() - kContextChars) : before;
+    after_ = after;
+    selection_ = selection;
     changed();
+    if (!selection_ && reopen(0)) update();
   }
 
   // AOSP's flush replaces the open dictionary's folder, which fails on NFS while its files are mapped
@@ -570,6 +594,12 @@ class English : public Engine {
   }
 
  private:
+  // The last word a separator corrected, until the next key (AOSP's LastComposedWord)
+  struct Correction {
+    std::vector<int> typed, xs, ys;
+    std::string committed, learned, separator;
+  };
+
   std::string historyPath() const { return paths_.userDir + "/en_history"; }
 
   // The personal dictionary's words as AOSP's user dictionary holds them: a dictionary of their own, made
@@ -783,7 +813,7 @@ class English : public Engine {
     // With autocorrect off, and for words typed right after a "." or a digit (".py", "3rd", #39), the
     // word stays as typed.
     const char before = context_.empty() ? ' ' : context_.back();
-    if (!autocorrect_ || before == '.' || before == '/' || before == ':' ||
+    if (!autocorrect_ || resumed_ || before == '.' || before == '/' || before == ':' ||
         std::isdigit(static_cast<unsigned char>(before)))
       committed = typed;
     for (auto &w : strip) w = withCase(w, typed_);
@@ -830,6 +860,7 @@ class English : public Engine {
   }
 
   void commitTyped() {
+    leaveTail();
     if (typed_.empty()) return;
     const std::string typed = utf8(typed_);
     resetWord();
@@ -837,21 +868,23 @@ class English : public Engine {
     context_ += typed;
   }
 
-  // Commits WORD in place of the typed letters and learns it; PICKED: the user tapped it.
-  void commitWord(const std::string &word, bool picked) {
-    learn(word, picked);
+  // Commits WORD in place of the typed letters and learns it; PICKED: the user tapped it. Returns the
+  // word as learned (empty: not learned).
+  std::string commitWord(const std::string &word, bool picked) {
+    std::string learned = learn(word, picked);
     resetWord();
     commit_ += word;
     context_ += word;
+    return learned;
   }
 
   // As AOSP's DictionaryFacilitator.addWordToUserHistory: a word typed at the start of a sentence is learned
   // in lower case unless only its capitalised form is a word; a word the dictionaries don't know counts as
   // valid once it was picked, else after it was typed a few times (the forgetting curve's levels); offensive
   // words aren't learned.
-  void learn(const std::string &word, bool picked) {
-    if (!learning_ || !history_ || !main_ || word.empty() || codePoints(word).size() >= size_t(kMaxWordLength)) return;
-    if (main_->offensive(word) || main_->offensive(lowerCaseWord(word))) return;
+  std::string learn(const std::string &word, bool picked) {
+    if (!learning_ || !history_ || !main_ || word.empty() || codePoints(word).size() >= size_t(kMaxWordLength)) return {};
+    if (main_->offensive(word) || main_->offensive(lowerCaseWord(word))) return {};
     std::string learned = word;
     const auto end = context_.find_last_not_of(" ");
     const bool sentenceStart = end == std::string::npos || std::string(".!?\n").find(context_[end]) != std::string::npos;
@@ -861,11 +894,99 @@ class English : public Engine {
     const auto context = ngramContext(context_);
     history_->dict->updateEntriesForWordWithNgramContext(&context, latinime::CodePointArrayView(cps), known || picked,
                                                          latinime::HistoricalInfo(int(std::time(nullptr)), 0, 1));
+    return learned;
+  }
+
+  // Backspace right after a separator corrected a word: the word as typed again, as AOSP's revertCommit.
+  // The correction is no longer learned. After a space the typed word is open again, never to be corrected,
+  // and the space comes back before the next word (AOSP's phantom space); other punctuation stays after it.
+  bool revert(const Correction &last) {
+    if (history_ && !last.learned.empty())
+      history_->dict->removeUnigramEntry(latinime::CodePointArrayView(codePoints(last.learned)));
+    const std::string typed = utf8(last.typed);
+    edit_.deleteBefore = int(codePoints(last.committed).size() + codePoints(last.separator).size());
+    context_.erase(context_.size() - std::min(context_.size(), last.committed.size() + last.separator.size()));
+    if (last.separator == " ") {
+      typed_ = last.typed, xs_ = last.xs, ys_ = last.ys;
+      resumed_ = phantomSpace_ = true;
+      typedChanged();
+    } else {
+      commit_ += typed + last.separator;
+      context_ += typed + last.separator;
+      changed();
+    }
+    return true;
+  }
+
+  // Opens the word the cursor touches again, after DELETED characters (not letters) went before the cursor:
+  // the composing text takes them and the word's letters on both sides of the cursor, as they are in the
+  // field. A reopened word is never corrected (AOSP's resumed words).
+  bool reopen(int deleted) {
+    if (field_ != Field::Text || !main_) return false;
+    // The letters (and apostrophes inside them) before the cursor and after it
+    auto isPart = [](char32_t c) { return isLetter(c) || c == '\'' || c == U'’'; };
+    const auto before = codePoints(context_.substr(context_.size() - std::min(context_.size(), size_t(4 * kMaxWordLength))));
+    auto start = before.end();
+    while (start != before.begin() && isPart(start[-1])) --start;
+    std::vector<int> word(start, before.end());
+    const auto afterCps = codePoints(after_.substr(0, 4 * kMaxWordLength));
+    auto end = afterCps.begin();
+    while (end != afterCps.end() && isPart(*end)) ++end;
+    while (end != afterCps.begin() && !isLetter(end[-1])) --end;
+    word.insert(word.end(), afterCps.begin(), end);
+    const size_t leading = std::find_if(word.begin(), word.end(), [](int c) { return isLetter(c); }) - word.begin();
+    const size_t tail = end - afterCps.begin(), head = word.size() - tail;
+    // No word, or apostrophes before it reaching past the cursor
+    if (leading == word.size() || leading > head || word.size() >= size_t(kMaxWordLength)) return false;
+    word.erase(word.begin(), word.begin() + leading);
+    context_.erase(context_.size() - utf8(word).size() + utf8(std::vector(word.end() - tail, word.end())).size());
+    after_.erase(0, utf8(std::vector(afterCps.begin(), end)).size());
+    edit_.recompose = true;
+    edit_.composeBefore = int(head - leading) + deleted;
+    edit_.composeAfter = int(tail);
+    typed_ = word;
+    for (int c : word) {
+      const auto [x, y] = keyCentre(lowerCase(c));
+      xs_.push_back(x), ys_.push_back(y);
+    }
+    tail_ = tail;
+    resumed_ = true;
+    loadModel();
+    typedChanged();
+    return true;
+  }
+
+  // Backspace with nothing typed: when it takes a space or a punctuation mark and leaves the cursor at the
+  // end of a word, the word opens again (AOSP restarts suggestions after a delete).
+  bool reopenBeforeDeleted() {
+    if (selection_ || context_.size() < 2 || (!after_.empty() && isLetter(codePoints(after_.substr(0, 4))[0]))) return false;
+    const unsigned char last = context_.back();
+    if (last >= 0x80 || isLetter(last) || last == '\'') return false;
+    context_.pop_back();
+    if (reopen(1)) return true;
+    context_ += char(last);
+    return false;
+  }
+
+  // The cursor is inside a reopened word: a key acts at the cursor, on the letters before it (AOSP's
+  // resetComposingWord); the rest stays in the field as it is.
+  void leaveTail() {
+    if (!tail_) return;
+    after_.insert(0, utf8(std::vector(typed_.end() - tail_, typed_.end())));
+    typed_.resize(typed_.size() - tail_), xs_.resize(typed_.size()), ys_.resize(typed_.size());
+    tail_ = 0;
+    edit_.recompose = true;
+    edit_.composeBefore = int(typed_.size());
+    edit_.composeAfter = 0;
+    if (typed_.empty()) resetWord();
+    else typedChanged();
   }
 
   void resetWord() {
     typed_.clear(), xs_.clear(), ys_.clear(), strip_.clear();
-    correction_ = false, decodePending_ = false;
+    correction_ = false, decodePending_ = false, resumed_ = false, phantomSpace_ = false;
+    tail_ = 0;
+    lastCorrection_.reset();
     std::lock_guard g(mutex_);
     rankPending_ = false;
     rankWanted_.reset();
@@ -985,6 +1106,12 @@ class English : public Engine {
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
   bool domains_ = false;     // the list is e-mail domains
   bool afterPick_ = false;   // the last thing done was a pick and its space
+  std::optional<Correction> lastCorrection_;  // the last word a separator corrected, until the next key
+  bool phantomSpace_ = false;  // a revert took a space that the next word puts back
+  bool resumed_ = false;       // the word typed was reopened: never corrected
+  size_t tail_ = 0;            // the letters of typed_ after the cursor
+  std::string after_;          // the start of the text after the cursor
+  bool selection_ = false;     // text is selected
   bool decodePending_ = false;  // the letters typed changed since the strip was made
   std::vector<std::string> shown_;  // the list last returned, which a tap picks from
   std::string commit_;

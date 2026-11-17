@@ -315,20 +315,30 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             editor.finishComposing()
             NativeCore.post({ clear().recorded() }) { show(it, applyText = false) }
         }
-        // English reads the words before the cursor for its corrections and next words.
-        if (external && lang == ENGLISH && toEngine) englishContext()
+        // English reads the words around the cursor for its corrections and next words, and reopens the word
+        // the cursor went into; a move inside the word being typed moves its cursor.
+        if (lang == ENGLISH && toEngine) {
+            if (external) englishContext()
+            else if (editor.movedInside >= 0) {
+                val preedit = state?.preedit.orEmpty()
+                val chars = preedit.codePointCount(0, minOf(editor.movedInside, preedit.length))
+                NativeCore.post({ moveCursor(chars).recorded() }) { show(it, applyText = false) }
+            }
+        }
         if (views) autoShift()
     }
 
-    /** English reads the text before the cursor again, after it changed other than by its keys. */
+    /** English reads the text around the cursor again, after it changed other than by its keys. */
     private fun englishContext() {
         val before = editor.textBefore()
+        val after = editor.textAfter()
+        val selection = editor.selEnd != editor.selStart
         NativeCore.post({
-            setContext(before)
+            setContext(before, after, selection)
             engineBefore.setLength(0)
             engineBefore.append(before)
-            state().recorded()
-        }) { show(it, applyText = false) }
+            state().recorded().also { if (it.recompose) engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
+        }) { show(it) }
     }
 
     /**
@@ -355,15 +365,18 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val lang = lang
         val field = field()
         val learning = kind.learns && !incognito
-        // English reads the words before the cursor for its corrections and next words.
+        // English reads the words around the cursor for its corrections and next words, and reopens the word
+        // the cursor is at.
         val before = if (lang == ENGLISH && toEngine) editor.textBefore() else null
-        NativeCore.post {
+        val after = editor.textAfter()
+        val selection = editor.selEnd != editor.selStart
+        NativeCore.post({
             clear()
             selectLanguage(lang)
             setField(field, learning)
             engineBefore.setLength(0)
             before?.let {
-                setContext(it)
+                setContext(it, after, selection)
                 engineBefore.append(it)
             }
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
@@ -372,7 +385,10 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             // Nothing typed in the new field: the next letter's capital reads no word left from the last one
             engineComposing = false
             enginePreedit = ""
-        }
+            // The word the cursor is at, reopened: it becomes the composing text
+            before?.let { state().takeIf { it.recompose }?.recorded() }
+                ?.also { engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
+        }) { if (it != null) show(it) }
         keysSent = null
         when (lang) {
             CHINESE -> Engines.prepareChinese(this)
@@ -527,8 +543,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         NativeCore.drain() // what the keys before typed shows in this language
         val order = Engines.languages()
         val next = order[(order.indexOf(lang) + 1) % order.size]
-        // What is being typed is dropped (core/ doesn't commit it on a switch).
-        editor.compose("")
+        // What is being typed is dropped (core/ doesn't commit it on a switch); English's word stays as it shows,
+        // as today's app keeps it, and a word reopened was the field's text already (#280).
+        if (lang == ENGLISH) editor.finishComposing() else editor.compose("")
         strip.preedit = ""
         Engines.inUse(lang, false)
         lang = next
@@ -565,6 +582,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }) { states ->
             states?.forEach { show(it) }
             if (states == null || english) editor.moveBy(by)
+            // As any cursor move, into a word reopens it (#280)
+            if (english && toEngine) englishContext()
         }
     }
 
@@ -596,6 +615,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private fun show(st: NativeState, applyText: Boolean = true) {
         if (applyText) {
             editor.beginBatch()
+            if (st.recompose) editor.composeRegion(st.composeBefore, st.composeAfter)
             if (st.deleteBefore > 0 || st.deleteAfter > 0) editor.delete(st.deleteBefore, st.deleteAfter)
             if (st.commit.isNotEmpty()) editor.commit(st.commit)
             if (st.commit.isNotEmpty() && lang == CHINESE) Sync.onChineseCommit(this)

@@ -630,6 +630,105 @@ TEST_F(EnglishTest, PunctuationAfterAPickJoinsTheWord) {  // #39
   EXPECT_EQ(en->takeCommit(), ".");
 }
 
+// #280: Backspace right after a correction puts back what was typed, as today's app (AOSP's revertCommit):
+// after a space the word is open again, never corrected, and the space comes back before the next word.
+TEST_F(EnglishTest, BackspaceRightAfterACorrectionPutsBackWhatWasTyped) {
+  start("");
+  type("teh ");
+  EXPECT_EQ(en->takeCommit(), "the ");
+  EXPECT_TRUE(en->key({0xff08, 0, false}));
+  EXPECT_EQ(en->takeEdit().deleteBefore, 4);
+  EXPECT_EQ(en->takeCommit(), "");
+  EXPECT_EQ(en->preedit().text(), "teh");
+  en->settle();
+  EXPECT_TRUE(lists("the"));
+  EXPECT_EQ(en->highlighted(), -1);
+  type("x");  // the next word, after the space the revert took
+  EXPECT_EQ(en->takeCommit(), "teh ");
+  EXPECT_EQ(en->preedit().text(), "x");
+  en->clear();
+  // Punctuation stays after the word.
+  type("teh.");
+  EXPECT_EQ(en->takeCommit(), "the.");
+  EXPECT_TRUE(en->key({0xff08, 0, false}));
+  EXPECT_EQ(en->takeEdit().deleteBefore, 4);
+  EXPECT_EQ(en->takeCommit(), "teh.");
+  EXPECT_FALSE(en->composing());
+  // A space keeps the word as typed.
+  type("teh ");
+  en->takeCommit();
+  en->key({0xff08, 0, false});
+  en->takeEdit();
+  type(" ");
+  EXPECT_EQ(en->takeCommit(), "teh ");
+}
+
+// Only the key right after the correction undoes it: not once another key came, the cursor moved, the
+// field changed or the word was picked. Backspace then deletes as before (and reopens the word it reaches).
+TEST_F(EnglishTest, BackspaceAfterACorrectionUndoesItOnlyRightAfter) {
+  start("");
+  auto backspaceReverts = [&] {
+    en->takeCommit();
+    en->key({0xff08, 0, false});
+    const Edit e = en->takeEdit();
+    return e.deleteBefore > 0 || en->takeCommit() == "teh ";
+  };
+  type("teh ");
+  type("a");
+  en->key({0xff08, 0, false});
+  EXPECT_FALSE(backspaceReverts());
+  EXPECT_EQ(en->preedit().text(), "the");  // the space went, and the word the cursor reached is open
+  en->clear();
+  type("teh ");
+  en->setContext("the ", "");
+  EXPECT_FALSE(backspaceReverts());
+  en->clear();
+  type("teh ");
+  en->setField(Field::Text);
+  EXPECT_FALSE(backspaceReverts());
+  en->clear();
+  type("teh");
+  en->selectAt(indexOf("the"));
+  EXPECT_FALSE(backspaceReverts());
+}
+
+// #280: the cursor put back into a word reopens it, with its suggestions and no correction, as today's app.
+TEST_F(EnglishTest, ACursorPutIntoAWordReopensIt) {
+  start("");
+  en->setContext("I like teh", " cat");
+  Edit e = en->takeEdit();
+  EXPECT_TRUE(e.recompose);
+  EXPECT_EQ(e.composeBefore, 3);
+  EXPECT_EQ(e.composeAfter, 0);
+  EXPECT_EQ(en->preedit().text(), "teh");
+  EXPECT_TRUE(lists("the"));
+  type(" ");
+  EXPECT_EQ(en->takeCommit(), "teh ");
+  // Inside it: the whole word, and a pick replaces it all.
+  en->setContext("I like t", "eh cat");
+  e = en->takeEdit();
+  EXPECT_EQ(e.composeBefore, 1);
+  EXPECT_EQ(e.composeAfter, 2);
+  EXPECT_EQ(en->preedit().text(), "teh");
+  en->selectAt(indexOf("the"));
+  EXPECT_EQ(en->takeCommit(), "the ");
+  // A letter typed inside it goes in at the cursor, with the letters before it.
+  en->setContext("I like t", "eh cat");
+  en->takeEdit();
+  type("o");
+  e = en->takeEdit();
+  EXPECT_TRUE(e.recompose);
+  EXPECT_EQ(e.composeBefore, 1);
+  EXPECT_EQ(e.composeAfter, 0);
+  EXPECT_EQ(en->preedit().text(), "to");
+  // Not with text selected, nor in a password field.
+  en->setContext("I like teh", "", true);
+  EXPECT_FALSE(en->composing());
+  en->setField(Field::Password);
+  en->setContext("I like teh", "");
+  EXPECT_FALSE(en->composing());
+}
+
 TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDoubleSpacePeriods) {
   start("");
   Settings s;

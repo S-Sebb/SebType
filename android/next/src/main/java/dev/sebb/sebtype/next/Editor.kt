@@ -35,6 +35,11 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
     private var composeStart = -1
     /** Cursor positions our own recent edits led to: their updates can arrive after later edits. */
     private val expected = ArrayDeque<Int>()
+    /** The field's text that [composeRegion] made the composing text, until it changes */
+    private var regionText: String? = null
+    /** Where the user put the cursor inside the composing text at the last update, from its start; -1: not there */
+    var movedInside = -1
+        private set
 
     fun start(info: EditorInfo, kind: FieldKind) {
         this.info = info
@@ -43,6 +48,7 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
         selEnd = info.initialSelEnd
         composing = false
         composeStart = -1
+        regionText = null
         expected.clear()
     }
 
@@ -56,6 +62,7 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
         val start = if (composing && composeStart >= 0) composeStart else selStart
         ic.commitText(text, 1)
         composing = false
+        regionText = null
         if (start >= 0) expect(start + text.length)
     }
 
@@ -63,6 +70,8 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
     fun compose(text: CharSequence) {
         val ic = ic ?: return
         if (text.isEmpty() && !composing) return
+        // The field's own text, marked as it is: the cursor stays where it is in it
+        if (text.toString() == regionText.also { regionText = null }) return
         if (!composing) composeStart = selStart // a new composing text starts at the cursor
         ic.setComposingText(text, 1)
         composing = text.isNotEmpty()
@@ -74,6 +83,27 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
         if (!composing) return
         ic?.finishComposingText()
         composing = false
+        regionText = null
+        if (selStart >= 0) expect(selStart)
+    }
+
+    /**
+     * Makes the field's text from [before] characters (code points) before the cursor to [after] after it the
+     * composing text, as it is (English reopening a word); with neither, the composing text ends where it is.
+     */
+    fun composeRegion(before: Int, after: Int) {
+        if (before == 0 && after == 0) return finishComposing()
+        val ic = ic ?: return
+        if (selStart < 0) return
+        val textBefore = ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
+        val textAfter = ic.getTextAfterCursor(2 * after, 0)?.toString().orEmpty()
+        val b = textBefore.length - textBefore.offsetByCodePoints(textBefore.length, -minOf(before, textBefore.codePointCount(0, textBefore.length)))
+        val a = textAfter.offsetByCodePoints(0, minOf(after, textAfter.codePointCount(0, textAfter.length)))
+        ic.setComposingRegion(selStart - b, selStart + a)
+        composing = true
+        composeStart = selStart - b
+        regionText = textBefore.takeLast(b) + textAfter.take(a)
+        expect(selStart)
     }
 
     /** Backspace: the selection, else the character (a whole emoji or accented letter) before the cursor. */
@@ -107,6 +137,9 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
 
     /** The field's text before the cursor (up to [max] characters): English's context. */
     fun textBefore(max: Int = 1000): String = ic?.getTextBeforeCursor(max, 0)?.toString().orEmpty()
+
+    /** The start of the field's text after the cursor: the rest of a word English reopens. */
+    fun textAfter(max: Int = 64): String = ic?.getTextAfterCursor(max, 0)?.toString().orEmpty()
 
     /** Moves the cursor [by] characters from where it is (Mozc puts it between a pair of brackets). */
     fun moveCursor(by: Int) {
@@ -220,6 +253,8 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
     fun selectionChanged(newStart: Int, newEnd: Int, candidatesStart: Int, candidatesEnd: Int): Boolean {
         val out = candidatesStart >= 0 && (newStart < candidatesStart || newEnd > candidatesEnd)
         val ours = if (!out && newStart == newEnd) expected.indexOf(newStart) else -1
+        movedInside = if (ours < 0 && !out && composing && candidatesStart >= 0 && newStart == newEnd && expected.isEmpty())
+            newStart - candidatesStart else -1
         if (ours >= 0) {
             repeat(ours) { expected.removeFirst() } // the edits before it were reported already
             return false
