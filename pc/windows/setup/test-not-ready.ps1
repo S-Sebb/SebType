@@ -69,7 +69,9 @@ function KeyWithPopup($k, $name) {
   $null = $tsf::Key([byte][char]$k.ToUpper()); $tsf::Settle(200)
   $size = $tsf::CandidateWindow("$Out\$name-popup.png")
   if (-not $size) { throw "no popup by the caret after '$k'" }
-  $tsf::Settle(1500)
+  $tsf::Settle(600)
+  $null = $tsf::CandidateWindow("$Out\$name-popup-later.png")  # the same popup once it settled
+  $tsf::Settle(900)
   $size
 }
 function Lang($lang) {
@@ -78,42 +80,54 @@ function Lang($lang) {
   else { $tsf::Activate(0x411, $clsid, [Guid]'{B148FB02-C235-45D6-996C-672C783ECD48}') }
   $tsf::Settle(500); $tsf::Clear()
 }
+# The input mode button's icon; a check fails, not the script, while there is none.
+function Icon($path) {
+  try { $tsf::ButtonIcon($path) } catch { throw "no input mode button ($($_.Exception.InnerException.Message))" }
+}
 function Shot($name) {
-  $tsf::ButtonIcon("$Out\$name.png")
+  Icon "$Out\$name.png"
   try { $tsf::Taskbar("$Out\$name-taskbar.png", 360) } catch { }
   [Convert]::ToBase64String([IO.File]::ReadAllBytes("$Out\$name.png"))
 }
 # The icon once it is the one wanted, within secs; the last one seen otherwise.
 function WaitIcon($want, $secs) {
   $end = (Get-Date).AddSeconds($secs)
-  do { $tsf::Settle(250); $tsf::ButtonIcon("$Out\poll.png"); $now = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$Out\poll.png")) }
+  do { $tsf::Settle(250); Icon "$Out\poll.png"; $now = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$Out\poll.png")) }
   while ($now -ne $want -and (Get-Date) -lt $end)
   Remove-Item "$Out\poll.png"
   $now
 }
 
-$suspended = $null
+$suspended = $hira = $zh = $deploy = $null
 $rimeBuild = "$env:APPDATA\Rime\build"
 $tsf::Start()
 try {
-  Lang ja
-  Keys n i Escape; Start-Sleep 3  # the first key starts sebtype-server when none runs
-  $hira = Shot 'hira'
-  Lang zh
-  Keys n i Escape
-  $zh = Shot 'zh'
-  Check 'ready' { if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }; 'あ and 中 differ' }
+  # The first key starts sebtype-server when none runs; the first 日本語 after an install took over 4 s
+  # before its button showed and it took keys (YukaROG, Mozc's first load).
+  Check 'ready' {
+    Lang ja
+    $end = (Get-Date).AddSeconds(30)
+    do { Keys n i Escape; $script:hira = try { Shot 'hira' } catch { $null } } while (-not $hira -and (Get-Date) -lt $end)
+    if (-not $hira) { throw '日本語 showed no input mode button within 30 s' }
+    Lang zh
+    Keys n i Escape
+    $script:zh = Shot 'zh'
+    if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }
+    'あ and 中 differ'
+  }
+  if (-not ($hira -and $zh)) { throw 'not ready: no further checks' }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
   # takes seconds. The build folder is put back as it was at the end.
   Copy-Item -Recurse $rimeBuild "$Out\rime-build"
   Remove-Item "$rimeBuild\*.prism.bin"
+  # The text service learns of the deploy at the next key, so the key goes as soon as /deploy has asked.
   $deploy = Start-Process $server '/deploy' -PassThru
   Check 'chinese-preparing' {
-    $end = (Get-Date).AddSeconds(5)
-    do { $tsf::Settle(100); $tsf::ButtonIcon("$Out\poll.png") } while ([Convert]::ToBase64String([IO.File]::ReadAllBytes("$Out\poll.png")) -eq $zh -and (Get-Date) -lt $end)
-    Remove-Item "$Out\poll.png"
-    $tsf::Clear(); $size = KeyWithPopup 'n' 'zh-wait'; $icon = Shot 'zh-wait'; $t = $tsf::Text()
+    $tsf::Settle(300); $tsf::Clear()
+    try { $size = KeyWithPopup 'n' 'zh-wait' }
+    catch { throw "$($_.Exception.Message) (/deploy $(if ($deploy.HasExited) { "over after $([int](($deploy.ExitTime - $deploy.StartTime).TotalMilliseconds)) ms" } else { 'still running' }))" }
+    $icon = Shot 'zh-wait'; $t = $tsf::Text()
     if ($icon -eq $zh) { throw 'the icon is still 中' }
     if ($t -ne 'n') { throw "the key gave '$t', not n as typed" }
     "grey 中, 'n' as typed, popup $size"
@@ -149,6 +163,8 @@ try {
     if ($icon -ne $hira) { throw 'the icon did not turn back to あ within 4 s' }
     'あ again unasked'
   }
+} catch {
+  Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
   if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null }
   if (Test-Path "$Out\rime-build") {

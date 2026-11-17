@@ -342,6 +342,8 @@ namespace SebType {
   public static class TsfHost {
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateWindowExW(uint ex, string cls, string name, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
     [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetMessageW(out MSG m, IntPtr h, uint a, uint b);
@@ -665,7 +667,8 @@ namespace SebType {
       }
     }
     // Saves the input method's candidate window, the visible window other than the field that its code
-    // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one.
+    // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one. The size
+    // says when the mouse pointer is over it: a capture leaves the pointer out, but some pointers show.
     public static string CandidateWindow(string path) {
       IntPtr w = IntPtr.Zero;
       OnUi(() => { EnumThreadWindows(threadId, (h, l) => { if (h != store.Hwnd && IsWindowVisible(h)) w = h; return w == IntPtr.Zero; }, IntPtr.Zero); return 0; });
@@ -675,7 +678,9 @@ namespace SebType {
         using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
         bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
       }
-      return (r.R - r.L) + "x" + (r.B - r.T);
+      POINT p;
+      bool pointer = GetCursorPos(out p) && p.X >= r.L && p.X < r.R && p.Y >= r.T && p.Y < r.B;
+      return (r.R - r.L) + "x" + (r.B - r.T) + (pointer ? " (pointer over it at " + (p.X - r.L) + "," + (p.Y - r.T) + ")" : "");
     }
   }
 }

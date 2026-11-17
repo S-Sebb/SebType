@@ -22,9 +22,11 @@ Results: one line per check in <Out>\focus-out-results.txt; exit 0 only if all p
 param([string]$Out = "$env:USERPROFILE\scratch\SebType\277", [switch]$Trial, [string]$WatchTo, [switch]$AnyDisplay)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
-New-Item -ItemType Directory -Force $Out | Out-Null
 $results = "$Out\focus-out-results.txt"
-Set-Content -Encoding utf8 $results ''
+if (-not $WatchTo) {  # the watcher leaves a test's results alone
+  New-Item -ItemType Directory -Force $Out | Out-Null
+  Set-Content -Encoding utf8 $results ''
+}
 function Result($name, $status, $why = '') {
   $line = "$status $name$(if ($why) { ": $why" })"
   Add-Content -Encoding utf8 $results $line; Write-Host $line
