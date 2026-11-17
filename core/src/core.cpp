@@ -185,6 +185,11 @@ std::vector<Candidate> Core::candidates(int max) {
   return e ? e->candidates(max) : std::vector<Candidate>{};
 }
 
+bool Core::settle() {
+  auto *e = current();
+  return e && e->settle();
+}
+
 int Core::highlighted() {
   auto *e = current();
   return e ? e->highlighted() : -1;

@@ -3,6 +3,7 @@ package dev.sebb.sebtype.core
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.Message
 import android.os.Process
 import java.util.concurrent.CountDownLatch
 
@@ -21,6 +22,8 @@ object NativeCore {
     init { System.loadLibrary("sebtype") }
 
     private val engine = Handler(HandlerThread("SebTypeEngine", Process.THREAD_PRIORITY_DISPLAY).apply { start() }.looper)
+    // Results come as asynchronous messages (#310): a key's press redraws the keyboard, and the frame it
+    // asks for holds back ordinary messages until the next vsync, up to 16 ms after the key.
     private val main = Handler(Looper.getMainLooper())
 
     private class Step(val show: (Any?) -> Unit) {
@@ -46,7 +49,7 @@ object NativeCore {
         engine.post {
             step.result = work()
             step.done = true
-            main.post(::deliver)
+            main.sendMessage(Message.obtain(main, ::deliver).apply { isAsynchronous = true })
         }
     }
 
@@ -113,6 +116,8 @@ object NativeCore {
     @JvmStatic external fun key(sym: Int, mods: Int): NativeState
     /** [key] tapped at ([x], [y]) in the pixels of the keys given to [setLayout]. */
     @JvmStatic external fun keyAt(sym: Int, mods: Int, x: Int, y: Int): NativeState
+    /** The work the last key left for after its text shows (English's suggestions): the state after it, or null. */
+    @JvmStatic external fun settle(): NativeState?
     /** The letter keys, for English's correction: five ints a key, its character, x, y, width and height. */
     @JvmStatic external fun setLayout(width: Int, height: Int, keys: IntArray)
     /** The field's text before the cursor, when it changed other than by what the engine committed. */
@@ -147,7 +152,7 @@ object NativeCore {
     /** A user dictionary file in a format Mozc imports, as a serialized UserDictionary. */
     @JvmStatic external fun importMozcUserDictionary(text: ByteArray): ByteArray
 
-    /** Called on the main thread when English's next words for the text so far are ready. */
+    /** Called on the main thread when English's model has ranked the word typed or found the next words. */
     @Volatile @JvmStatic var onEnglishReady: Runnable? = null
 
     /** From English's worker thread (sebtype_jni.cpp) */

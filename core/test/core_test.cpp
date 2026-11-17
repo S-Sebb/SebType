@@ -384,9 +384,9 @@ struct EnglishTest : testing::Test {
     std::filesystem::create_directories(EN_USER_DIR);
     start();
   }
-  void start(std::string model = EN_MODEL) {
+  void start(std::string model = EN_MODEL, std::chrono::milliseconds rankDelay = {}) {
     en.reset();
-    en = makeEnglish({EN_DICT, 0, 0, model, EN_USER_DIR}, [this] {
+    en = makeEnglish({EN_DICT, 0, 0, model, EN_USER_DIR, rankDelay}, [this] {
       std::lock_guard g(mutex);
       readies++;
       cv.notify_all();
@@ -401,9 +401,13 @@ struct EnglishTest : testing::Test {
     std::lock_guard g(mutex);
     return readies;
   }
+  // Each key and then its suggestions, as the phone's keyboard asks for them
   bool type(const std::string &s) {
     bool taken = true;
-    for (char c : s) taken &= en->key({static_cast<uint32_t>(c), 0, false});
+    for (char c : s) {
+      taken &= en->key({static_cast<uint32_t>(c), 0, false});
+      en->settle();
+    }
     return taken;
   }
   std::vector<std::string> list() {
@@ -443,6 +447,52 @@ TEST_F(EnglishTest, SpaceCorrectsTyposAndKeepsWords) {
   en->setContext("open file.");
   type("pu ");
   EXPECT_EQ(en->takeCommit(), "pu ");
+}
+
+// A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
+// right after the letters, before that ranking has come, waits for it and corrects by the model.
+TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
+  start("");
+  type("waht ");
+  EXPECT_EQ(en->takeCommit(), "want ");  // the decoder's rule
+  start();
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  type("waht ");
+  EXPECT_EQ(en->takeCommit(), "what ");
+}
+
+// A tap picks the word shown, even when the model's ranking has come since and moved another word there.
+TEST_F(EnglishTest, ATapPicksTheWordShownNotALaterRanking) {
+  start(EN_MODEL, std::chrono::milliseconds(300));
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  const int readies = readyCount();
+  type("waht");
+  const auto shown = list();  // the decoder's: the model's "what" isn't ranked yet
+  ASSERT_EQ(shown.at(0), "want");
+  ASSERT_TRUE(ready(readies));  // ranked, not shown
+  en->selectAt(0);
+  EXPECT_EQ(en->takeCommit(), "want ");
+}
+
+// Rankings known to take longer than a space may wait: the space doesn't wait, and the decoder's rule decides.
+TEST_F(EnglishTest, ASpaceDoesntWaitForRankingsKnownToBeSlow) {
+  start(EN_MODEL, std::chrono::milliseconds(1000));
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  int readies = readyCount();
+  type("waht");  // timed: rankings take a second
+  ASSERT_TRUE(ready(readies));
+  en->key({0xff08, 0, false});
+  type("t");  // ranked again, a second from now
+  const auto start = std::chrono::steady_clock::now();
+  type(" ");
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(200));
+  EXPECT_EQ(en->takeCommit(), "want ");
 }
 
 TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
@@ -489,7 +539,7 @@ TEST_F(EnglishTest, APrivateFieldKeepsLearnedWordsAndLearnsNoNewOnes) {
   Core core([this](Lang lang) { return lang == Lang::English ? std::move(en) : nullptr; });
   auto typeIn = [&](const std::string &s) {
     core.setContext("");
-    for (char c : s) core.key({static_cast<uint32_t>(c), 0, false});
+    for (char c : s) core.key({static_cast<uint32_t>(c), 0, false}), core.settle();
   };
   auto listed = [&](const std::string &word) {
     const auto all = core.candidates(20);
