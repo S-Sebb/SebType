@@ -88,7 +88,9 @@
     <!-- The new app's own (#254) -->
     <string name="settings_keyboard">Keyboard</string>
     <string name="settings_keyboard_subtitle">Number row, sound and vibration</string>
-    <string name="settings_about_subtitle">Version, help, licences</string>
+    <string name="settings_about_subtitle">Version, tips, help, licences</string>
+    <string name="settings_tips">Tips</string>
+    <string name="settings_tips_subtitle">Gestures that are easy to miss</string>
     <string name="settings_credits_subtitle">rime-ice, Mozc and others</string>
     <string name="settings_fuzzy">Fuzzy Pinyin</string>
     <string name="settings_half_width_space">Use half-width space</string>
@@ -109,11 +111,17 @@
     <string name="settings_reading">Reading</string>
     <string name="settings_credits_intro">SebType is built on these projects. Thank you to everyone who made them.</string>
     <string name="settings_credits_tag">Credits</string>
-    <string name="setup_step">Setup · step %1$d of 2</string>
+    <string name="setup_step">Setup · step %1$d of 3</string>
     <string name="setup_enable_text">Welcome to SebType.\n\nTo get started, turn SebType on in Android\'s list of keyboards.</string>
     <string name="setup_choose_text">Now choose SebType as the keyboard you type with.</string>
     <string name="setup_enable">Turn on SebType</string>
     <string name="setup_choose">Choose SebType</string>
+    <string name="setup_tips_text">You\'re all set. A few things that are easy to miss:</string>
+    <string name="setup_done">Done</string>
+    <string name="tips_globe">Hold 🌐 to switch to another keyboard.</string>
+    <string name="tips_space">Slide the space bar to move the cursor.</string>
+    <string name="tips_delete">Slide left from ⌫ to delete whole words.</string>
+    <string name="tips_kana">In 日本語, tap the あ chip for katakana.</string>
     <string name="import_backup_subtitle">Replaces this phone\'s settings, learned words and dictionaries</string>
     <string name="import_as">Import into %s</string>
     <string name="import_unknown">SebType can\'t read this file</string>

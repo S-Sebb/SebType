@@ -310,6 +310,7 @@ fun AboutScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_abou
     val context = LocalContext.current
     Card {
         Item(stringResource(R.string.sebtype_settings_version), BuildConfig.VERSION_NAME)
+        NavItem(stringResource(R.string.settings_tips), stringResource(R.string.settings_tips_subtitle)) { nav.go("tips") }
         NavItem(stringResource(R.string.sebtype_settings_help), stringResource(R.string.sebtype_settings_help_subtitle)) {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/S-Sebb/SebType/issues")))
         }

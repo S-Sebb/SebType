@@ -377,6 +377,12 @@ HOME = {
 MY_WORDS = labels("我的词语", "My words", "自分の単語")
 FULL_WIDTH = labels("全角标点", "Full-width punctuation")
 EMOJI = labels("候选词中显示表情", "Emoji in candidates")
+TIPS = labels("提示", "Tips", "ヒント")
+TIPS_SPACE = labels(
+    "在空格键上左右滑动可移动光标。",
+    "Slide the space bar to move the cursor.",
+    "スペースキーを左右にスライドすると、カーソルが動きます。",
+)
 
 
 def find_all(ns, texts):
@@ -421,6 +427,10 @@ def open_settings():
 def home_shown():
     if screen_has(HOME["about"]):
         return True
+    # A fresh install opens on setup until its last step's Done (#285), which a user presses once
+    if NEXT and setup_step_shown() == 3:
+        tap_text(DONE)
+        return False
     # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
     # takes the setup screen on to the home screen.
     adb("shell", "ime", "set", IME)
@@ -594,6 +604,7 @@ SCREENS = [
         labels("导出设置", "Export settings", "設定をエクスポート"),
     ),
     ("about", (HOME["about"],), labels("版本", "Version", "バージョン")),
+    ("tips", (HOME["about"], TIPS), TIPS_SPACE),
     (
         "credits",
         (
@@ -611,9 +622,11 @@ SCREENS = [
 
 
 # Not in the new app: the action bar's buttons screen (its keyboard edits them, #257); FUTO's payment
-# page (#191 Decisions 7).
+# page (#191 Decisions 7). Only in the new app: Tips (#285).
 if NEXT:
     SCREENS = [s for s in SCREENS if s[0] not in ("action-bar", "payment")]
+else:
+    SCREENS = [s for s in SCREENS if s[0] != "tips"]
 
 
 def every_screen():
@@ -1612,6 +1625,16 @@ def backup_rime_fails():
     user = f"{FILES}/rime/user"
     marker, patch = "sebtype-282-test.txt", "rime_ice.custom.yaml"
     before = root(f"cat {user}/{patch} 2>/dev/null; true")
+    # The options too (#285): the phone's languages and setup's record must come back, not the backup's languages
+    options = NEXT and has_root()
+    if options:
+        saved = read_prefs()
+        write_prefs(
+            without_setup(saved).replace(TODAYS_SUBTYPES, b"")
+            + TODAYS_SUBTYPES
+            + setup_record(2)
+        )
+        options = prefs_entries(read_prefs())
     export_backup(False, "sebtype-282.backup")
     broken = os.path.join(logdir, "sebtype-282-broken.backup")
     with (
@@ -1619,7 +1642,13 @@ def backup_rime_fails():
         zipfile.ZipFile(broken, "w") as dst,
     ):
         for item in src.infolist():
-            if item.filename != f"rime/user/{patch}":
+            if options and item.filename == "datastore.preferences_pb":
+                dst.writestr(
+                    item,
+                    without_setup(src.read(item)).replace(TODAYS_SUBTYPES, b"")
+                    + LANGUAGES,
+                )
+            elif item.filename != f"rime/user/{patch}":
                 dst.writestr(item, src.read(item))
         dst.writestr(f"rime/user/{patch}", 'patch:\n  "engine/translators": []\n')
         dst.writestr(f"rime/user/{marker}", "made up\n")
@@ -1644,11 +1673,132 @@ def backup_rime_fails():
     after = root(f"cat {user}/{patch} 2>/dev/null; true")
     if after != before:
         raise Fail(f"{patch} was {before!r}, after the failed import {after!r}")
+    if options:
+        restored = prefs_entries(read_prefs())
+        write_prefs(saved)
+        if restored != options:
+            raise Fail(
+                f"the options were {options}, after the failed import {restored}"
+            )
     to_language("ni", "你")
     got = candidates_for("ranh")
     if not any(c in ("然后", "然後") for c in got[:3]):
         raise Fail(f"after the failed import ranh -> {got[:5]}")
-    return f"Rime's files back after a backup whose Chinese failed; ranh -> {got[:3]}"
+    return f"Rime's files{' and the options' if options else ''} back after a backup whose Chinese failed; ranh -> {got[:3]}"
+
+
+def open_with_sebtype(name):
+    """Opens Downloads' name in SebType's import screen, as a file manager's Open with does."""
+    adb(
+        "shell",
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d",
+        f"file:///sdcard/Download/{name}",
+    )
+    ids = wait_for(
+        f"{name} in the media store",
+        lambda: re.findall(
+            r"_id=(\d+)",
+            adb(
+                "shell",
+                "content",
+                "query",
+                "--uri",
+                "content://media/external/downloads",
+                "--projection",
+                "_id:_display_name",
+                "--where",
+                f"\"_display_name='{name}'\"",
+                check=False,
+            ),
+        ),
+        20,
+    )
+    uri = f"content://media/external/downloads/{max(map(int, ids))}"
+    # The type the export saves as: a file manager's Open with offers SebType for it
+    view = [
+        "-a",
+        "android.intent.action.VIEW",
+        "-t",
+        "application/octet-stream",
+        "-d",
+        uri,
+    ]
+    handlers = adb("shell", "cmd", "package", "query-activities", "--brief", *view)
+    if not {
+        f"{PKG}/.settings.ImportActivity",
+        f"{PKG}/{PKG}.settings.ImportActivity",
+    } & set(handlers.split()):
+        raise Fail(
+            f"Open with doesn't offer SebType for its own backup: {handlers.strip()!r}"
+        )
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-W",
+        *view,
+        "--grant-read-uri-permission",
+        "-n",
+        f"{PKG}/.settings.ImportActivity",
+    )
+
+
+def backup_setup():
+    """#285: through the app's own export and import, today's app's languages (globe order, layouts) go with
+    a backup and setup's record never does. A set-up phone's backup opened on a new phone keeps them, and
+    setup still runs there; the new phone's export has them again."""
+    if not NEXT:
+        raise Skip("today's app has no setup record")
+    if not has_root():
+        raise Skip("needs root to read and plant the app's options")
+    name = "sebtype-285.backup"
+    saved = read_prefs()
+    adb("shell", "ime", "enable", IME)
+    adb("shell", "ime", "set", IME)
+    try:
+        write_prefs(
+            without_setup(saved).replace(TODAYS_SUBTYPES, b"")
+            + LANGUAGES
+            + setup_record(2)
+        )
+        export_backup(False, name)
+        with zipfile.ZipFile(os.path.join(logdir, name)) as z:
+            exported = prefs_entries(z.read("datastore.preferences_pb"))
+        if exported.get(b"subtypes") != LANGUAGES or b"sebtype_setup" in exported:
+            raise Fail(
+                f"the backup's options: {sorted(exported)}, its languages {exported.get(b'subtypes')!r}"
+            )
+        # A new phone: no options yet, SebType on and chosen
+        write_prefs(b"")
+        open_with_sebtype(name)
+        tap_text(IMPORT_BUTTON)
+        wait_for("the import to finish", lambda: not screen_has(IMPORT_BUTTON), 120)
+        got = prefs_entries(read_prefs())
+        if got.get(b"subtypes") != LANGUAGES:
+            raise Fail(f"the languages after the import: {got.get(b'subtypes')!r}")
+        if got.get(b"sebtype_setup") != setup_record(0):
+            raise Fail(
+                f"setup's record after the import: {got.get(b'sebtype_setup')!r}, not unseen"
+            )
+        start_settings()
+        wait_for("setup's step 3 on the new phone", step3_again, 30)
+        tap_text(DONE)
+        wait_for("home after Done", lambda: not setup_step_shown(), 15)
+        export_backup(False, name)
+        with zipfile.ZipFile(os.path.join(logdir, name)) as z:
+            again = prefs_entries(z.read("datastore.preferences_pb"))
+        if again.get(b"subtypes") != LANGUAGES or b"sebtype_setup" in again:
+            raise Fail(
+                f"the new phone's backup: {sorted(again)}, its languages {again.get(b'subtypes')!r}"
+            )
+    finally:
+        adb("shell", f"rm -f /sdcard/Download/{name}", check=False)
+        write_prefs(saved)
+    return "the languages in the backup, not setup's record; on a new phone setup ran and its backup had them"
 
 
 def backup_screenshots():
@@ -1675,6 +1825,429 @@ def backup_screenshots():
 
 
 adb("logcat", "-c")
+# --- Setup's last step, the tips (#285; the new app only) ---
+
+SETUP_FILE = f"/data/data/{PKG}/files/datastore/settings.preferences_pb"
+
+
+def setup_step_shown():
+    m = re.search(
+        r"(?:step|第|ステップ) ?(\d)",
+        " ".join(label for label, *_ in nodes() if "3" in label),
+    )
+    return int(m.group(1)) if m else None
+
+
+@functools.cache
+def has_root():
+    return adb("shell", "su 0 id -u", check=False).strip() == "0"
+
+
+def night_mode():
+    """The system's night mode as `cmd uimode night` takes it back: yes, no or auto"""
+    m = re.search(r"Night mode: (yes|no|auto)", adb("shell", "cmd", "uimode", "night"))
+    if not m:
+        raise Skip("night mode is custom, which this can't put back")
+    return m.group(1)
+
+
+def read_prefs():
+    """DataStore's file as it is (a protobuf map of key to value); b"" when the app has none yet."""
+    adb("shell", "am", "force-stop", PKG)
+    if root(f"[ -f {SETUP_FILE} ] && echo yes || true").strip() != "yes":
+        return b""
+    local = os.path.join(logdir, "settings.preferences_pb")
+    root(
+        f"cp {SETUP_FILE} /data/local/tmp/sebtype-prefs.pb; chmod 644 /data/local/tmp/sebtype-prefs.pb"
+    )
+    adb("pull", "/data/local/tmp/sebtype-prefs.pb", local)
+    with open(local, "rb") as f:
+        data = f.read()
+    os.remove(local)
+    return data
+
+
+def write_prefs(data):
+    """Puts data in DataStore's file with the app stopped. The file must exist already: one made by root
+    here would be root's, and the app couldn't write it."""
+    adb("shell", "am", "force-stop", PKG)
+    if root(f"[ -f {SETUP_FILE} ] && echo yes || true").strip() != "yes":
+        raise Fail("no DataStore file to write over yet")
+    local = os.path.join(logdir, "settings.preferences_pb")
+    with open(local, "wb") as f:
+        f.write(data)
+    adb("push", local, "/data/local/tmp/sebtype-prefs.pb")
+    root(
+        f"cat /data/local/tmp/sebtype-prefs.pb > {SETUP_FILE}; rm /data/local/tmp/sebtype-prefs.pb"
+    )
+    os.remove(local)
+
+
+def prefs_entries(data):
+    """DataStore's file as {key: its whole map entry}"""
+
+    def varint(b, i):
+        n = shift = 0
+        while True:
+            n |= (b[i] & 0x7F) << shift
+            i += 1
+            if b[i - 1] < 0x80:
+                return n, i
+            shift += 7
+
+    entries, i = {}, 0
+    while i < len(data):
+        start = i
+        _, i = varint(data, i)  # field 1, a map entry
+        size, i = varint(data, i)
+        body, i = data[i : i + size], i + size
+        size, k = varint(body, 1)  # its field 1, the key
+        entries[body[k : k + size]] = data[start:i]
+    return entries
+
+
+def without_setup(data):
+    """data without the setup record (#285)"""
+    return b"".join(e for k, e in prefs_entries(data).items() if k != b"sebtype_setup")
+
+
+def entry(key, value):
+    """One map entry: the key, then a Value message; all short enough for one-byte lengths."""
+    e = b"\x0a" + bytes([len(key)]) + key + b"\x12" + bytes([len(value)]) + value
+    return b"\x0a" + bytes([len(e)]) + e
+
+
+# What today's app saves as it first starts: its languages, a string set (Value field 6). The new app never
+# writes them, so they mark an update over today's app.
+TODAYS_SUBTYPES = entry(b"subtypes", b"\x32\x08\x0a\x06en_US:")
+
+
+def subtypes(*names):
+    """Today's app's languages, globe order and layouts: a string set (Value field 6)"""
+    names = b"".join(b"\x0a" + bytes([len(n)]) + n for n in names)
+    return entry(b"subtypes", b"\x32" + bytes([len(names)]) + names)
+
+
+def setup_record(n):
+    """Setup's record (#285): an int (Value field 3)"""
+    return entry(b"sebtype_setup", b"\x18" + bytes([n]))
+
+
+# Other than today's app's defaults
+LANGUAGES = subtypes(
+    b"ja_JP:KeyboardLayoutSet=jis", b"zh_CN:", b"en_US:KeyboardLayoutSet=dvorak"
+)
+
+
+def forget_setup():
+    """Takes the app back to before its settings first opened: the setup record out, the rest kept. A phone
+    without root clears the app's data instead: the run installed it fresh."""
+    if not has_root():
+        adb("shell", "pm", "clear", PKG)
+        return
+    data = read_prefs()
+    if data:
+        write_prefs(without_setup(data))
+
+
+def start_settings():
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", SETTINGS)
+
+
+def wait_step(step):
+    wait_for(f"setup's step {step} of 3", lambda: setup_step_shown() == step, 20)
+
+
+def other_keyboard():
+    """Today's FUTO Keyboard, which emulator.sh installs beside SebType"""
+    imes = adb("shell", "ime", "list", "-a", "-s").split()
+    futo = next(i for i in imes if i.startswith("org.futo.inputmethod.latin/"))
+    adb("shell", "ime", "enable", futo)
+    return futo
+
+
+def home_not_setup(what):
+    """The settings open on home, with whichever keyboard is in use: never setup."""
+    wait_for(what, lambda: screen_has(HOME["about"]) or setup_step_shown(), 30)
+    step = setup_step_shown()
+    if step:
+        raise Fail(f"{what}: setup's step {step} instead")
+
+
+def bounds(texts):
+    """The bounds of the button showing one of texts: its label's nearest clickable node (Compose gives the
+    label a node of its own, inside the button's)."""
+    adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    root_node = ET.fromstring(xml[xml.index("<") :])
+    parent = {child: node for node in root_node.iter() for child in node}
+    for n in root_node.iter("node"):
+        if (n.get("text") or n.get("content-desc")) in texts:
+            while n.get("clickable") != "true" and n in parent:
+                n = parent[n]
+            return tuple(map(int, re.findall(r"\d+", n.get("bounds")))), xml
+    return None, xml
+
+
+def focus():
+    return (
+        adb("shell", "dumpsys", "window")
+        .split("mCurrentFocus=", 1)[-1]
+        .split("\n", 1)[0]
+    )
+
+
+def large_text(name, button, pressed):
+    """At font scale 2 and the largest display size, in portrait and then landscape, setup's page scrolls to
+    its real end, where the whole button is on the screen and clear of the system bars; in landscape it is
+    pressed and pressed() says what that did (settings-<name>-large-*.png)."""
+    if not has_root():
+        # A phone (someone's own): its auto-rotate turned itself on during a run, so its display can't be
+        # promised back exactly as it was; the button is only pressed, at the phone's own settings.
+        print(f"{name}: no large text on a phone")
+        before = focus()
+        tap_text(button)
+        wait_for(f"{button[0]} to do its part", lambda: pressed(before), 15)
+        return
+    w, h = map(
+        int, re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[0]
+    )  # physical, portrait
+    # What the device had, put back exactly after; settings it never set stay unset
+    saved = {
+        k: adb("shell", "settings", "get", "system", k).strip()
+        for k in ("font_scale", "user_rotation", "accelerometer_rotation")
+    }
+    override = re.search(r"Override density: (\d+)", adb("shell", "wm", "density"))
+    density = (
+        w * 160 // 320
+    )  # the largest display size: 320 dp across (540 on a 1080 px screen)
+    dp = density / 160
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    adb("shell", "settings", "put", "system", "font_scale", "2.0")
+    adb("shell", "wm", "density", str(density))
+    try:
+        for rotation, side in (("0", "portrait"), ("1", "landscape")):
+            adb("shell", "settings", "put", "system", "user_rotation", rotation)
+            time.sleep(4)
+            width, height = (w, h) if rotation == "0" else (h, w)
+            screenshot(f"{name}-large-{side}")
+            last = None
+            for _ in range(12):  # to the end: a swipe that changes nothing
+                box, xml = bounds(button)
+                if xml == last:
+                    break
+                last = xml
+                adb(
+                    "shell",
+                    "input",
+                    "swipe",
+                    str(width // 2),
+                    str(height * 3 // 4),
+                    str(width // 2),
+                    str(height // 4),
+                    "300",
+                )
+                time.sleep(1)
+            else:
+                raise Fail(f"{side}: the page didn't come to an end")
+            screenshot(f"{name}-large-{side}-end")
+            # At the end the page's 48 dp under the button show too, which no system bar is as tall as: a
+            # button the screen's edge or a bar clipped would end lower. A Material button is 40 dp at least.
+            if (
+                not box
+                or box[1] <= 0
+                or box[3] + 48 * dp > height
+                or box[3] - box[1] < 40 * dp
+            ):
+                raise Fail(
+                    f"{side}: {button[0]} not whole on the screen at the end: {box}, screen height {height}"
+                )
+        before = focus()
+        tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
+        wait_for(f"{button[0]} to do its part", lambda: pressed(before), 15)
+    finally:
+        for k, v in saved.items():
+            if v == "null":
+                adb("shell", "settings", "delete", "system", k)
+            else:
+                adb("shell", "settings", "put", "system", k, v)
+        adb("shell", "wm", "density", *([override.group(1)] if override else ["reset"]))
+        time.sleep(3)
+
+
+def left_and_back(before):
+    """A step's button opened Android's own screen or its keyboard picker; Back returns to setup."""
+    if focus() == before and not screen_has(
+        ("Choose input method", "Select input method")
+    ):
+        return False
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    wait_for("setup again after Back", lambda: "SettingsActivity" in focus(), 10)
+    return True
+
+
+DONE = labels("完成", "Done", "完了")
+
+
+def step3_again():
+    """Just after SebType stops, the system can fall back to another keyboard (setup's step 2): SebType is
+    chosen again until step 3 shows."""
+    step = setup_step_shown()
+    if step == 2:
+        adb("shell", "ime", "set", IME)
+    return step == 3
+
+
+def setup_tips():
+    """A new user: steps 1 and 2 of 3, then the tips as step 3, which an interruption keeps; Done ends
+    setup for good. At large text each step's button can be reached and pressed."""
+    forget_setup()
+    adb("shell", "ime", "disable", IME)
+    try:
+        start_settings()
+        wait_step(1)
+        screenshot("setup-step1")
+        large_text("setup-step1", labels("Turn on SebType"), left_and_back)
+        adb("shell", "ime", "enable", IME)
+        wait_step(2)
+        screenshot("setup-step2")
+        large_text("setup-step2", labels("Choose SebType"), left_and_back)
+        adb("shell", "ime", "set", IME)
+        wait_step(3)
+        wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
+        screenshot("setup-tips")
+        night = night_mode()
+        adb("shell", "cmd", "uimode", "night", "yes")
+        try:
+            time.sleep(2)
+            screenshot("setup-tips-dark")
+        finally:
+            adb("shell", "cmd", "uimode", "night", night)
+        # Interrupted: the app stopped on step 3 comes back to it
+        adb("shell", "am", "force-stop", PKG)
+        start_settings()
+        wait_for("setup's step 3 of 3 after a restart", step3_again, 30)
+        # Done, pressed at large text in landscape, opens home (its title, at the top)
+        large_text(
+            "setup-tips",
+            DONE,
+            lambda before: screen_has(("SebType",)) and not setup_step_shown(),
+        )
+        adb("shell", "am", "force-stop", PKG)
+        adb("shell", "ime", "set", IME)
+        start_settings()
+        home_not_setup("reopened after Done")
+        # Another keyboard chosen after Done: still home
+        adb("shell", "ime", "set", other_keyboard())
+        adb("shell", "am", "force-stop", PKG)
+        start_settings()
+        home_not_setup("the settings with another keyboard after Done")
+    finally:
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
+    return (
+        "steps 1, 2 and 3 of 3, each button "
+        + (
+            "scrolled to and pressed at large text (portrait and landscape)"
+            if has_root()
+            else "pressed (no large text on a phone)"
+        )
+        + ", "
+        "step 3 again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
+    )
+
+
+def setup_fresh_enabled():
+    """Fresh data with SebType already on and chosen (turned on before the app first opened, or its data
+    cleared): setup, its step 3, not home."""
+    if not has_root():  # a phone: its data cleared, which the run installed fresh
+        adb("shell", "pm", "clear", PKG)
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
+        start_settings()
+        wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
+        # Done, as the user would: the next checks expect home, and without root none can put it back
+        tap_text(DONE)
+        wait_for("home after Done", lambda: not setup_step_shown(), 15)
+        return "data cleared, SebType on and chosen: setup's step 3"
+    saved = read_prefs()
+    try:
+        write_prefs(b"")
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
+        start_settings()
+        wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
+    finally:
+        write_prefs(saved)
+    return "fresh data, SebType on and chosen: setup's step 3"
+
+
+def setup_existing_user():
+    """An update over today's app (its languages in DataStore's file, no setup record): home, never setup,
+    with SebType off (so the evidence, not Android's keyboard settings, decides), with another keyboard in
+    use, and once SebType is chosen again."""
+    if not has_root():
+        raise Skip("needs root to put today's app's data in place")
+    saved = read_prefs()
+    try:
+        write_prefs(without_setup(saved) + TODAYS_SUBTYPES)
+        adb("shell", "ime", "disable", IME)
+        try:
+            start_settings()
+            home_not_setup("opening with SebType off")
+            adb("shell", "am", "force-stop", PKG)
+        finally:
+            adb("shell", "ime", "enable", IME)
+        write_prefs(without_setup(saved) + TODAYS_SUBTYPES)
+        adb("shell", "ime", "set", other_keyboard())
+        try:
+            for run in (1, 2):
+                start_settings()
+                home_not_setup(f"opening {run} with another keyboard")
+                adb("shell", "am", "force-stop", PKG)
+        finally:
+            adb("shell", "ime", "set", IME)
+        start_settings()
+        home_not_setup("opening with SebType chosen again")
+    finally:
+        write_prefs(saved)
+    return "today's app's data: home with SebType off, with another keyboard in use, twice, and with SebType chosen again"
+
+
+def tips_screenshots():
+    shots = []
+    before = night_mode()
+    for night in ("no", "yes"):
+        adb("shell", "cmd", "uimode", "night", night)
+        try:
+            time.sleep(2)
+            suffix = "-dark" if night == "yes" else ""
+            go(HOME["about"])
+            screenshot(f"about{suffix}")
+            tap_text(TIPS)
+            wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
+            screenshot(f"tips{suffix}")
+            shots += [f"settings-about{suffix}.png", f"settings-tips{suffix}.png"]
+        finally:
+            adb("shell", "cmd", "uimode", "night", before)
+    return ", ".join(shots)
+
+
+if NEXT:
+    check("settings-setup-tips", setup_tips)
+    check(
+        "settings-setup-fresh-enabled",
+        setup_fresh_enabled,
+        needs=["settings-setup-tips"],
+    )
+    check(
+        "settings-setup-existing-user",
+        setup_existing_user,
+        needs=["settings-setup-tips"],
+    )
+    check("settings-tips-screenshots", tips_screenshots)
+
+
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
 check("settings-zh-punctuation", full_width_punctuation)
@@ -2508,5 +3081,7 @@ for name in PERSONAL_DATA:
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-installation-id", backup_installation_id)
 check("settings-backup-rime-fails", backup_rime_fails)
+if NEXT:
+    check("settings-backup-setup", backup_setup)
 check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

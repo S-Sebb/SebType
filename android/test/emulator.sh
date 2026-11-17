@@ -174,9 +174,13 @@ device_suite() {
   echo "testing $apk on $serial ($("$adb" -s "$serial" emu avd name | head -1 | tr -d '\r'))"
   [[ $("$adb" -s "$serial" shell getprop ro.product.cpu.abilist) == *arm64-v8a* ]] ||
     { result FAIL emulator "$serial can't run arm64 apps"; return 1; }
-  # Rime's data is in the app's private storage (#32), which the checks read as root.
-  [[ $("$adb" -s "$serial" shell su 0 id -u | tr -d '\r') == 0 ]] ||
-    { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
+  # Rime's data is in the app's private storage (#32), which the checks read as root. A phone without root
+  # runs only named checks; those that need root say so (#285).
+  if [[ $("$adb" -s "$serial" shell su 0 id -u 2>/dev/null | tr -d '\r') != 0 ]]; then
+    [[ -n $SEBTYPE_CHECKS && $serial != emulator-* ]] ||
+      { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
+    echo "$serial has no root shell: checks that read the app's private data skip or fail"
+  fi
   # The system language decides which of SebType's languages a fresh install starts with, and another
   # task can leave the emulator in Chinese (#106's second run: 13 checks failed for that alone).
   T=60 check locale bash -c set_locale && echo "locale en-US, $(grep -m1 '^locale was' "$out/locale.log")"

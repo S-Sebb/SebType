@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import dev.sebb.sebtype.next.Engines
 import dev.sebb.sebtype.next.R
 import dev.sebb.sebtype.next.data.Prefs
+import kotlinx.coroutines.flow.map
 
 /**
  * SebType's settings (#41, #254): a home screen of five groups (Languages, Keyboard, Privacy, Sync & backup,
@@ -117,6 +119,24 @@ object Conf {
     val LANGUAGES = listOf("en", "zh", "ja")
 }
 
+/** What the settings open on (#285): setup or not, and the setup record to save first */
+data class SetupRoute(val record: Int, val setup: Boolean)
+
+/**
+ * Setup runs until its last step's Done, whatever Android's keyboard settings say: someone can turn SebType on
+ * before they first open the app. Only an update over today's app ([todaysApp]) counts as set up already, and
+ * only with no [saved] record at all: an imported backup's languages come with one ([Prefs.imported]).
+ * Once done, setup never comes back, whichever keyboard is in use. [atHome]: no other screen is open.
+ */
+fun setupRoute(saved: Int?, todaysApp: Boolean, atHome: Boolean): SetupRoute {
+    val record = when {
+        saved == null -> if (todaysApp) Prefs.SETUP_DONE else Prefs.SETUP_TIPS_DUE
+        saved == Prefs.SETUP_UNSEEN -> Prefs.SETUP_TIPS_DUE
+        else -> saved
+    }
+    return SetupRoute(record, atHome && record != Prefs.SETUP_DONE)
+}
+
 @Composable
 private fun App(changes: Int) {
     val context = LocalContext.current
@@ -125,7 +145,13 @@ private fun App(changes: Int) {
     ) { mutableListOf<String>().toMutableStateList() }
     val state = remember(changes) { keyboardState(context) }
     val nav = Nav(stack)
-    if (stack.isEmpty() && !(state.first && state.second)) return Setup(state)
+    // Read from the file, not Prefs.current, which a new process may not have loaded yet: a tips page
+    // left open must not pass for a first start.
+    val (saved, todaysApp) = remember { Prefs.setup(context).map<Pair<Int?, Boolean>, Pair<Int?, Boolean>?> { it } }
+        .collectAsState(null).value ?: return
+    val route = setupRoute(saved, todaysApp, stack.isEmpty())
+    if (route.record != saved) LaunchedEffect(Unit) { Prefs.set(context, Prefs.SETUP, route.record) }
+    if (route.setup) return Setup(state) { Prefs.set(context, Prefs.SETUP, Prefs.SETUP_DONE) }
     BackHandler(stack.isNotEmpty()) { nav.back() }
     when (stack.lastOrNull()) {
         null -> Home(nav)
@@ -138,6 +164,7 @@ private fun App(changes: Int) {
         "privacy" -> PrivacyScreen(nav)
         "backup" -> BackupScreen(nav)
         "about" -> AboutScreen(nav)
+        "tips" -> TipsScreen(nav)
         "credits" -> CreditsScreen(nav)
     }
 }

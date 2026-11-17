@@ -84,7 +84,9 @@
     <!-- The new app's own (#254) -->
     <string name="settings_keyboard">键盘</string>
     <string name="settings_keyboard_subtitle">数字行、按键音和振动</string>
-    <string name="settings_about_subtitle">版本、帮助、许可</string>
+    <string name="settings_about_subtitle">版本、提示、帮助、许可</string>
+    <string name="settings_tips">提示</string>
+    <string name="settings_tips_subtitle">容易错过的手势</string>
     <string name="settings_credits_subtitle">rime-ice、Mozc 等</string>
     <string name="settings_fuzzy">模糊拼音</string>
     <string name="settings_half_width_space">使用半角空格</string>
@@ -105,11 +107,17 @@
     <string name="settings_reading">读音</string>
     <string name="settings_credits_intro">SebType 基于这些项目构建，感谢所有制作它们的人。</string>
     <string name="settings_credits_tag">致谢</string>
-    <string name="setup_step">设置 · 第 %1$d 步，共 2 步</string>
+    <string name="setup_step">设置 · 第 %1$d 步，共 3 步</string>
     <string name="setup_enable_text">欢迎使用 SebType。\n\n首先，请在 Android 的键盘列表中启用 SebType。</string>
     <string name="setup_choose_text">接下来，请选择 SebType 作为你正在使用的键盘。</string>
     <string name="setup_enable">启用 SebType</string>
     <string name="setup_choose">选择 SebType</string>
+    <string name="setup_tips_text">设置完成。以下几点容易错过：</string>
+    <string name="setup_done">完成</string>
+    <string name="tips_globe">长按 🌐 可切换到其他键盘。</string>
+    <string name="tips_space">在空格键上左右滑动可移动光标。</string>
+    <string name="tips_delete">从 ⌫ 向左滑动可删除整个词。</string>
+    <string name="tips_kana">在日本語中，点按 あ 标签可切换片假名。</string>
     <string name="import_backup_subtitle">替换本机的设置、学到的词和词典</string>
     <string name="import_as">导入到%s</string>
     <string name="import_unknown">SebType 无法读取此文件</string>

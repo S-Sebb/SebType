@@ -85,7 +85,9 @@
     <!-- The new app's own (#254) -->
     <string name="settings_keyboard">キーボード</string>
     <string name="settings_keyboard_subtitle">数字行、キー音と振動</string>
-    <string name="settings_about_subtitle">バージョン、ヘルプ、ライセンス</string>
+    <string name="settings_about_subtitle">バージョン、ヒント、ヘルプ、ライセンス</string>
+    <string name="settings_tips">ヒント</string>
+    <string name="settings_tips_subtitle">見落としやすいジェスチャー</string>
     <string name="settings_credits_subtitle">rime-ice、Mozc ほか</string>
     <string name="settings_fuzzy">あいまいピンイン</string>
     <string name="settings_half_width_space">半角スペースを使用</string>
@@ -106,11 +108,17 @@
     <string name="settings_reading">読み</string>
     <string name="settings_credits_intro">SebType はこれらのプロジェクトをもとに作られています。作ってくださった皆さんに感謝します。</string>
     <string name="settings_credits_tag">クレジット</string>
-    <string name="setup_step">設定 · ステップ %1$d/2</string>
+    <string name="setup_step">設定 · ステップ %1$d/3</string>
     <string name="setup_enable_text">SebType へようこそ。\n\nまず、Android のキーボード一覧で SebType をオンにしてください。</string>
     <string name="setup_choose_text">次に、入力に使うキーボードとして SebType を選んでください。</string>
     <string name="setup_enable">SebType をオンにする</string>
     <string name="setup_choose">SebType を選ぶ</string>
+    <string name="setup_tips_text">設定が完了しました。見落としやすい操作：</string>
+    <string name="setup_done">完了</string>
+    <string name="tips_globe">🌐 を長押しすると、ほかのキーボードに切り替えられます。</string>
+    <string name="tips_space">スペースキーを左右にスライドすると、カーソルが動きます。</string>
+    <string name="tips_delete">⌫ から左にスライドすると、単語ごと削除できます。</string>
+    <string name="tips_kana">日本語では、あ のチップをタップするとカタカナになります。</string>
     <string name="import_backup_subtitle">この端末の設定、学習した単語と辞書を置き換えます</string>
     <string name="import_as">%s にインポート</string>
     <string name="import_unknown">SebType はこのファイルを読み込めません</string>
