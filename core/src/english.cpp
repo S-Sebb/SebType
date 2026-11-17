@@ -10,7 +10,9 @@
 #include <sebtype/hosts.h>
 
 #include <jni.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
@@ -869,6 +871,9 @@ class English : public Engine {
   }
 
   void work() {
+    // Below the keys' and the frames' threads: on the x86 emulator a ranking takes a core for about
+    // 500 ms, and at the same priority it slowed every letter (#310).
+    setpriority(PRIO_PROCESS, gettid(), 10);
     std::unique_lock l(mutex_);
     for (;;) {
       wake_.wait(l, [&] { return stop_ || (loadAsked_ && !loadTried_) || ((rankWanted_ || nextWanted_) && model_ready_); });
