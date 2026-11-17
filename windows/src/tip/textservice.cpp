@@ -325,8 +325,7 @@ STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid,
 
 void TextService::setLanguage(REFGUID profile) {
   const Lang lang = profile == kProfileJa ? Lang::Japanese : Lang::Chinese;
-  if (composition_ && context_ && lang != lang_)
-    editSession(context_, clientId_, [this](TfEditCookie ec) { return endComposition(ec, context_); });
+  const bool switched = lang != lang_;
   lang_ = lang;
   Request q{Op::Language};
   q.lang = lang;
@@ -335,6 +334,9 @@ void TextService::setLanguage(REFGUID profile) {
     reply_.lang = lang;
     reply_.icon = lang == Lang::Japanese ? "hira" : "zh";
   }
+  // Between 中 and 日 what was being typed goes in, as on Linux (#301): what the core's switch commits
+  // replaces the composition. Switching to another input method comes as Deactivate instead, which drops it.
+  if (switched && context_) typeIn(utf16(std::exchange(reply_.commit, {})));
   if (window_) window_->hide();
   if (button_) button_->update();
 }
@@ -361,21 +363,7 @@ void TextService::focus(ITfDocumentMgr *focused) {
   if (context_) {
     std::wstring typed;
     if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
-    if (composition_) {
-      // The session may run once focus moved on: it keeps its own context and composition.
-      ITfContext *context = context_;
-      ITfComposition *composition = std::exchange(composition_, nullptr);
-      context->AddRef();
-      const auto end = [context, composition, typed](TfEditCookie ec) {
-        endComposition(ec, context, composition, typed);
-        context->Release();
-        return S_OK;
-      };
-      if (FAILED(editSession(context, clientId_, end, false))) {
-        composition->Release();
-        context->Release();
-      }
-    }
+    typeIn(typed);
     context_->Release();
     context_ = nullptr;
   }

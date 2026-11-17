@@ -146,7 +146,10 @@ needs a PC that can be restarted after.
 
 `setup/test-focus-out.ps1` checks, on a PC with SebType installed and in the logged-on person's session,
 that focus moving away mid-word types in what was typed (#277): `nihao` stays in the field after TSF's
-focus goes to another document and back, and Japanese stays as converted. It makes no input of its own
+focus goes to another document and back, and Japanese stays as converted. Switching between SebType's
+中 and 日 types in what the switch commits, as on Linux (#301): `nihongo` Space then 中 leaves `日本語`,
+`nihao` then 日 leaves Rime's first candidate `你好`. Switching to the language list's first other input
+method leaves nothing (skipped when there is none; only the test's process switches). It makes no input of its own
 (keys go to TSF's keystroke manager), so a screen that is off stays off, and it fails if Windows reports
 the display on (`-Trial` checks just that, without SebType; `-WatchTo` watches it around a whole session).
 

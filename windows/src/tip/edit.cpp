@@ -54,6 +54,23 @@ void TextService::endComposition(TfEditCookie ec, ITfContext *context, ITfCompos
   composition->Release();
 }
 
+// The session may run once focus or the language moved on: it keeps its own context and composition.
+void TextService::typeIn(const std::wstring &typed) {
+  if (!composition_) return;
+  ITfContext *context = context_;
+  ITfComposition *composition = std::exchange(composition_, nullptr);
+  context->AddRef();
+  const auto end = [context, composition, typed](TfEditCookie ec) {
+    endComposition(ec, context, composition, typed);
+    context->Release();
+    return S_OK;
+  };
+  if (FAILED(editSession(context, clientId_, end, false))) {
+    composition->Release();
+    context->Release();
+  }
+}
+
 // Leaves no pinyin or kana behind.
 HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
   if (composition_) endComposition(ec, context, std::exchange(composition_, nullptr), L"");

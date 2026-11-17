@@ -96,6 +96,8 @@ class TextService final : public ITfTextInputProcessorEx,
   // Puts text where a composition is (replacing its pinyin or kana), the caret after it, and ends it.
   static void endComposition(TfEditCookie ec, ITfContext *context, ITfComposition *composition,
                              const std::wstring &text);
+  // The same for context_'s composition, in a session of its own.
+  void typeIn(const std::wstring &typed);
 
  private:
   // A key as the server takes it, from Windows' key message; false for keys SebType never takes.

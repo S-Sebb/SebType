@@ -9,7 +9,8 @@ input lights it): the field is TsfHost.cs's (beside this script), brought to the
 keys go to TSF's keystroke manager instead of the session's input. Moving away is TSF's focus going to
 another document and back, as a click into another field does. Checks: 中文 ranhou Space gives 然后; nihao,
 then away and back, leaves nihao, and ni Space after it gives 你 (nothing left over); 日本語 nihongo Space,
-then away, leaves 日本語. Windows' display state (GUID_CONSOLE_DISPLAY_STATE) is watched from the start:
+then away, leaves 日本語; 日本語 nihongo Space, then 中文, leaves 日本語, and 中文 nihao, then 日本語,
+leaves 你好 (#301); 中文 nihao, then the list's first other input method, leaves nothing. Windows' display state (GUID_CONSOLE_DISPLAY_STATE) is watched from the start:
 it must be off then and never turn on (display-stayed-off); once it is on, no more keys go.
 -Trial needs no SebType: the field to the front and one key, and the display watched, then nothing else.
 -WatchTo <file> only watches the display, for a whole session around this test (installing, uninstalling):
@@ -27,7 +28,8 @@ function Result($name, $status, $why = '') {
   Add-Content -Encoding utf8 $results $line; Write-Host $line
 }
 function Check($name, [scriptblock]$body) {
-  try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
+  try { $why = & $body; if ($why -like 'SKIP: *') { Result $name SKIP $why.Substring(6) } else { Result $name PASS $why } }
+  catch { Result $name FAIL $_.Exception.Message }
 }
 
 $missing = if ($WatchTo) { $null }
@@ -96,11 +98,22 @@ function Keys {
 }
 function TypeText($s) { $chars = @($s.ToCharArray() | ForEach-Object { if ($_ -eq ' ') { 'space' } else { "$_" } }); Keys @chars }
 function Away { $tsf::Away($true); $tsf::Settle(800); $tsf::Away($false); $tsf::Settle(800) }
-function Lang($lang) {
-  $clsid = [Guid]'{D4E5C593-4F73-475F-936C-0E29A6FE7A02}'
+$clsid = [Guid]'{D4E5C593-4F73-475F-936C-0E29A6FE7A02}'
+function Lang($lang, [switch]$Keep) {  # -Keep: the switch is under test, so the field keeps what it holds
   if ($lang -eq 'zh') { $tsf::Activate(0x804, $clsid, [Guid]'{8AA7DDAC-A4B8-4437-9C0B-8698879EC987}') }
   else { $tsf::Activate(0x411, $clsid, [Guid]'{B148FB02-C235-45D6-996C-672C783ECD48}') }
-  $tsf::Settle(500); $tsf::Clear()
+  $tsf::Settle(500); if (-not $Keep) { $tsf::Clear() }
+}
+# The first input method in the person's language list that isn't SebType, made active for this process
+# only (the list stays as it is), or $null when there is none.
+function OtherKeyboard {
+  $tip = @((Get-WinUserLanguageList) | ForEach-Object { $_.InputMethodTips } | Where-Object { $_ -notmatch $clsid })[0]
+  if (-not $tip) { return $null }
+  $lang = [Convert]::ToUInt16($tip.Substring(0, 4), 16)
+  if ($tip -match '^\w{4}:\{(.+)\}\{(.+)\}$') { $tsf::Activate($lang, [Guid]$Matches[1], [Guid]$Matches[2]) }
+  else { $tsf::ActivateLayout($lang, $tip.Substring(5)) }
+  $tsf::Settle(800)
+  $tip
 }
 
 $tsf::Start()
@@ -134,6 +147,26 @@ try {
       TypeText 'nihongo '; Away; $t = $tsf::Text()
       if ($t -ne '日本語') { throw "nihongo + Space, then away, left '$t'" }
       $t
+    }
+    # Switching between SebType's 中 and 日 types in what the switch commits, as on Linux (#301): Mozc's
+    # conversion as it shows, Rime's first candidate.
+    Check 'japanese-to-chinese' {
+      $tsf::Clear(); TypeText 'nihongo '; Lang zh -Keep; $t = $tsf::Text()
+      if ($t -ne '日本語') { throw "nihongo + Space, then 中, left '$t'" }
+      $t
+    }
+    Check 'chinese-to-japanese' {
+      $tsf::Clear(); TypeText 'nihao'; Lang ja -Keep; $t = $tsf::Text()
+      if ($t -ne '你好') { throw "nihao, then 日, left '$t'" }
+      $t
+    }
+    # Switching to another input method still throws it away (the user's choice in #301).
+    Check 'chinese-to-other-keyboard' {
+      Lang zh; TypeText 'nihao'; $other = OtherKeyboard
+      if (-not $other) { Lang zh; return 'SKIP: the language list has no input method besides SebType' }
+      $t = $tsf::Text(); Lang zh
+      if ($t -ne '') { throw "nihao, then $other, left '$t'" }
+      "nothing left after $other"
     }
   }
 } finally {

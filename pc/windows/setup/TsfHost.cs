@@ -483,6 +483,16 @@ namespace SebType {
         return 0;
       });
     }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadKeyboardLayout(string klid, uint flags);
+    // The same for a plain keyboard layout, by its id as the language list has it ("00000409").
+    public static void ActivateLayout(ushort langid, string klid) {
+      OnUi(() => {
+        var mgr = (ITfInputProcessorProfileMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+        Guid none = Guid.Empty, noProfile = Guid.Empty;
+        mgr.ActivateProfile(2 /* TF_PROFILETYPE_KEYBOARDLAYOUT */, langid, ref none, ref noProfile, LoadKeyboardLayout(klid, 0), 0x10000000 | 0x4);
+        return 0;
+      });
+    }
     // "<langid hex> <clsid>" of the active keyboard input method, e.g. "0411 {10A67BC8-...}".
     public static string Active() {
       return OnUi(() => {
