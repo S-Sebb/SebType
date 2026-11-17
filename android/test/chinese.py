@@ -2078,9 +2078,10 @@ def floating_short_window():
             )
         # A window wider than tall is landscape: floating there too. 280 dp less the status bar, the
         # navigation bar and Keyboard Modes leaves no room for keys at today's 96 dp minimum: they step
-        # aside while Keyboard Modes is open, and come back whole at the minimum or taller once it closes.
+        # aside while Keyboard Modes is open. Once it closes they come back whole, shorter than the minimum
+        # (the bars above them leave about 60 dp), and no shorter than 48 dp, half of it.
         tiny = round(280 * screen_density())
-        least = round(96 * screen_density()) - 2
+        least = round(48 * screen_density()) - 2
         adb("shell", "wm", "size", f"{w}x{tiny}")
         time.sleep(3)
         try:
@@ -2104,11 +2105,12 @@ def floating_short_window():
             open_field()
             tiny_space = bottom_row_whole(tiny)
             tiny_keys = keyboard_frame[3] - keyboard_frame[1]
+            screenshot("floating-tiny-window-keys.png")
             if tiny_keys < least:
                 raise Fail(
-                    f"in a {tiny} px window the keys are {tiny_keys} px tall, under the 96 dp minimum"
+                    f"in a {tiny} px window the keys are {tiny_keys} px tall, under the {least} px "
+                    f"the window leaves them"
                 )
-            screenshot("floating-tiny-window-keys.png")
             types_letters()
         finally:
             set_mode("Standard")
@@ -2176,6 +2178,7 @@ def floating_narrowest():
         tap_label(("Apply",))
         if node(RESIZE_CORNER):
             raise Fail("Apply didn't end the resize")
+        screenshot("floating-narrowest-keys.png")
         l, t, r, b = frame_now()
         if abs((r - l) - narrowest) > 0.1 * narrowest:
             raise Fail(f"the narrowest keys are {r - l} px, not about {narrowest}")

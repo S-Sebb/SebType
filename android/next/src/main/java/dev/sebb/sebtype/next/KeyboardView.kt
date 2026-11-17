@@ -111,8 +111,6 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         const val VIBRATE_MS = 12L
         /** A row's height in dp at the default height */
         const val ROW = 59.3f
-        /** Hints are drawn while the text is at least this share of today's size */
-        const val MIN_HINT_SCALE = 0.6f
         /** Split: each half's share of the width */
         const val SPLIT_HALF = 0.36f
         /** Space swipe: key widths per character the cursor moves */
@@ -288,9 +286,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     canvas.drawText(s, cx, cy + label.textSize * 0.35f, label)
                 }
             }
-            // Hints shrink with the letters; too small to read, they go.
-            hint.textSize = 12.5f * density * textScale
-            if (hints && textScale >= MIN_HINT_SCALE) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
+            // Hints need a key face of today's size: on smaller ones they crowd the letter, and they go.
+            if (hints && textScale == 1f) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
         }
     }
 
