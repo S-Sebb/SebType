@@ -35,6 +35,8 @@ APPS = {
     ),
     "new": ("dev.sebb.sebtype.next", ".SebTypeIme", "keyboard", new_apk),
 }
+# An app given as "-" is left out: its pictures from an earlier run stay on the page
+TAKEN = {app: v for app, v in APPS.items() if v[3] != "-"}
 STATES = [
     ("en", "English"),
     ("en-words", "English: hel"),
@@ -308,7 +310,7 @@ def run(app, mode):
 failed = {}
 os.makedirs(outdir, exist_ok=True)
 adb("install", "-r", field_apk, timeout=300)
-for app, (pkg, ime, _, apk) in APPS.items():
+for app, (pkg, ime, _, apk) in TAKEN.items():
     adb("uninstall", pkg)
     adb("install", apk, timeout=300)
     for _ in range(15):
@@ -320,7 +322,7 @@ try:
     for mode in ("light", "dark"):
         adb("shell", "cmd", "uimode", "night", "yes" if mode == "dark" else "no")
         time.sleep(2)
-        for app in APPS:
+        for app in TAKEN:
             run(app, mode)
 finally:
     adb("shell", "cmd", "uimode", "night", "no")
