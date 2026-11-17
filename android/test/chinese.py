@@ -1636,6 +1636,7 @@ def modes_one_handed():
         w = screen_width()
         if not (0.7 * w < r - l < 0.9 * w):
             raise Fail(f"the keys are {r - l} px wide of {w}")
+        screenshot("one-handed.png")
         types_letters()
         return f"keys {r - l} of {w} px, typing works"
     finally:
@@ -1682,6 +1683,7 @@ def modes_split():
         unit = k["w"][0] - k["q"][0]
         if gap < 2 * unit:
             raise Fail(f"t and y are {gap} px apart, a key is {unit}")
+        screenshot("split.png")
         types_letters()
         return f"t to y {gap} px, a key {unit} px"
     finally:
