@@ -97,6 +97,16 @@ constexpr wchar_t kServerMutex[] = L"Local\\SebType.Server";
 std::mutex lock;
 Core *core = nullptr;
 Composer composer;  // under lock
+bool reloadMozc = false;  // under lock
+
+// Mozc reads its files again (/mozc), once it isn't loading: stopping it meanwhile would wait for the load,
+// seconds after an install, with every app's request held (#312). The first request after the load does it.
+void followReload() {
+  Engine *mozc = core->running(Lang::Japanese);
+  if (!reloadMozc || (mozc && mozc->busy())) return;
+  core->stop(Lang::Japanese);
+  reloadMozc = false;
+}
 
 Reply state(bool taken, std::string commit = {}) {
   Reply r;
@@ -140,6 +150,8 @@ Reply handle(const Request &q, HANDLE pipe) {
              ": waited " + std::to_string(started - asked) + " ms, took " + std::to_string(done - started) + " ms");
     }
   } slow{q, asked, started};
+  if (q.op == Op::Mozc) reloadMozc = true;
+  followReload();
   const bool reset = composer.resets(q);
   bool taken = false;
   std::string commit;
@@ -194,7 +206,7 @@ Reply handle(const Request &q, HANDLE pipe) {
       core->forEachEngine([](Engine &e) { e.save(); });
       break;
     case Op::Quit: break;
-    case Op::Mozc: core->stop(Lang::Japanese); break;
+    case Op::Mozc: break;  // followReload
   }
   return state(taken, commit);
 }
