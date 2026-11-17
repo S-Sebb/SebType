@@ -48,4 +48,44 @@ class EditorTest {
         field.text = "hello world!"
         assertFalse(editor.unchanged(second))
     }
+
+    /**
+     * #280: x typed at he|llo, then the cursor moved to hello wo|rld before the key's results came. They would
+     * narrow "world" and write "x" over it (hello hexrld): the first is dropped and the engine reads the field
+     * again; the next result queued behind it is dropped with no second read, and the read's own result applies.
+     */
+    @Test
+    fun keyResultsAskedBeforeTheCursorMovedAreDroppedAndTheEngineReadsTheFieldAgain() {
+        val field = Field("hello world", 2)
+        val editor = Editor(null, field.connection)
+        editor.selectionChanged(2, 2, -1, -1)
+        val key = editor.ask()
+        val settle = editor.ask()
+        field.cursor = 8
+        editor.selectionChanged(8, 8, -1, -1)
+
+        var reads = 0
+        var read: Editor.Asked? = null
+        assertFalse(editor.fresh(key) { reads++; read = editor.ask() })
+        assertFalse(editor.fresh(settle) { reads++ })
+        assertEquals(1, reads)
+        assertTrue(editor.fresh(read!!) { reads++ })
+        assertEquals(1, reads)
+    }
+
+    /** #280: a READY strip, which clears the preedit, asked for before the cursor moved is dropped too. */
+    @Test
+    fun aReadyStripAskedBeforeTheCursorMovedIsDropped() {
+        val field = Field("hello world", 5)
+        val editor = Editor(null, field.connection)
+        editor.selectionChanged(5, 5, -1, -1)
+        val ready = editor.ask()
+        assertTrue(editor.fresh(editor.ask()) {})
+        field.cursor = 11
+        editor.selectionChanged(11, 11, -1, -1)
+
+        var reads = 0
+        assertFalse(editor.fresh(ready) { reads++ })
+        assertEquals(1, reads)
+    }
 }

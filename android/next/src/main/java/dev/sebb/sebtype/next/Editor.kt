@@ -53,6 +53,33 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     }
     fun around() = Around(textBefore(), textAfter(), selEnd != selStart)
 
+    /** An engine result asked for at this state of the field: its revision and the engine's re-syncs so far */
+    inner class Asked {
+        val editor = this@Editor
+        val revision = this@Editor.revision
+        val resyncs = this@Editor.resyncs
+    }
+    private var resyncs = 0
+    fun ask() = Asked()
+
+    /**
+     * Whether a result asked for at [asked] may write to the field (#280). Results come in order, each where the
+     * cursor is when it comes: one asked for before the user moved the cursor or the field changed would write
+     * over another word. The first such is dropped and calls [read], which has the engine read the field
+     * again ([resync]); the results queued behind it are dropped too, up to that read's.
+     */
+    fun fresh(asked: Asked, read: () -> Unit): Boolean {
+        if (asked.revision == revision && asked.resyncs == resyncs) return true
+        if (asked.resyncs == resyncs) resync(read)
+        return false
+    }
+
+    /** The engine reads the field again ([read]); results asked for before it are dropped. */
+    fun resync(read: () -> Unit) {
+        resyncs++
+        read()
+    }
+
     /** Whether the field is still as [around] read it: no change since that wasn't ours, the same text. */
     fun unchanged(around: Around) =
         around.revision == revision && textBefore() == around.before && textAfter() == around.after
@@ -274,18 +301,20 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     fun selectionChanged(newStart: Int, newEnd: Int, candidatesStart: Int, candidatesEnd: Int): Boolean {
         val out = candidatesStart >= 0 && (newStart < candidatesStart || newEnd > candidatesEnd)
         val ours = if (!out && newStart == newEnd) expected.indexOf(newStart) else -1
-        movedInside = if (ours < 0 && !out && composing && candidatesStart >= 0 && newStart == newEnd && expected.isEmpty())
-            newStart - candidatesStart else -1
+        // At the composing text's end is where our own typing leaves it (a field that gave no cursor at the start)
+        movedInside = if (ours < 0 && !out && composing && candidatesStart >= 0 && newStart == newEnd && expected.isEmpty() &&
+            newStart != candidatesEnd) newStart - candidatesStart else -1
         if (ours >= 0) {
             repeat(ours) { expected.removeFirst() } // the edits before it were reported already
             return false
         }
-        revision++
         selStart = newStart
         selEnd = newEnd
         if (composing && candidatesStart >= 0) composeStart = candidatesStart
         // A field that gave no cursor at the start: our composing text is where it says.
-        return out || !(composing && candidatesStart >= 0 && expected.isEmpty())
+        val external = out || !(composing && candidatesStart >= 0 && expected.isEmpty())
+        if (external || movedInside >= 0) revision++
+        return external
     }
 
     fun beginBatch() = ic?.beginBatchEdit()
