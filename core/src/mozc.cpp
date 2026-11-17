@@ -149,6 +149,7 @@ class Mozc final : public Engine {
     mozc_->call(in, out);
   }
 
+  bool busy() override { return mozc_->loading(); }
   bool available() override { return mozc_->open(); }
 
   bool key(const Key &k) override {
@@ -270,6 +271,12 @@ class Mozc final : public Engine {
     } else {
       mozc_->setLearning(learning);
     }
+  }
+
+  void reload() override {
+    clear();
+    mozc_->reload();
+    session_ = 0;  // the new instance has none
   }
 
   void forget() override {

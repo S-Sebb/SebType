@@ -17,8 +17,11 @@ class MozcTransport {
   virtual bool call(const mozc::commands::Input &in, mozc::commands::Output &out) = 0;
   // The PCs: whether what is typed adds to Mozc's history (it is still suggested), without touching its files.
   virtual void setLearning(bool learning) = 0;
-  // False when Mozc didn't load.
+  // False when Mozc didn't load, or is still loading.
   virtual bool open() const = 0;
+  virtual bool loading() const = 0;
+  // Mozc saves and reads its files again (loading() meanwhile when it loads in the background).
+  virtual void reload() = 0;
 };
 
 std::unique_ptr<MozcTransport> makeMozcTransport(const MozcPaths &paths);

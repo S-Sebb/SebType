@@ -82,8 +82,12 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
   // settings carry over.
   if (lang == Lang::Chinese)
     return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(logDir())});
-  if (lang == Lang::Japanese)
-    return makeMozc({u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")});
+  // Mozc loads in its own thread, and 日本語 is grey until then (#312).
+  if (lang == Lang::Japanese) {
+    MozcPaths paths{u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")};
+    paths.preload = u8(exeDir() / L"sebtype-mozc.dll");
+    return makeMozc(paths);
+  }
   return nullptr;
 }
 
@@ -190,7 +194,9 @@ Reply handle(const Request &q, HANDLE pipe) {
       core->forEachEngine([](Engine &e) { e.save(); });
       break;
     case Op::Quit: break;
-    case Op::Mozc: core->stop(Lang::Japanese); break;
+    case Op::Mozc:  // in the background: 日本語 is grey until it is done (#312)
+      if (Engine *mozc = core->running(Lang::Japanese)) mozc->reload();
+      break;
   }
   return state(taken, commit);
 }

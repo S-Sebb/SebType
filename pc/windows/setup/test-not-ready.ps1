@@ -9,6 +9,10 @@ field), so a screen that is off stays off, and it stops sending keys once Window
 Checks, each saving the input indicator's icon (<state>.png, at the size the text service gave the
 taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the taskbar's right end
 (<state>-taskbar.png), these two in the screen's own pixels at any scaling:
+  first-japanese: the first 日本語 after the install (#312), its Mozc's load held 8 s (a batch oplock on
+    sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, and a key
+    goes in as typed without waiting; reload-while-loading: the Configurator's /mozc meanwhile, and 中文 still
+    switches and types at once; first-japanese-back: あ unasked once Mozc and the reload are done, then the first ka gives か;
   ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
@@ -56,7 +60,37 @@ if ($missing) { Write-Host "BLOCKED preflight: $missing"; exit 1 }
 
 Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
 Add-Type @'
-using System; using System.Runtime.InteropServices;
+using System; using System.Runtime.InteropServices; using System.Threading;
+// A slow first open of a file, as an antivirus scan of a newly installed DLL makes it (#312): a batch oplock,
+// so the next open by anyone else waits until the oplock is let go, ms after that open asked.
+public static class SlowOpen {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern IntPtr CreateFileW(string path, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool DeviceIoControl(IntPtr h, uint code, IntPtr inBuf, uint inSize, IntPtr outBuf, uint outSize, out uint ret, IntPtr overlapped);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  public static int AskedAt;  // Environment.TickCount when the other open came; 0 before
+  // False when the oplock wasn't granted (the file is open elsewhere): nothing is slowed.
+  public static bool Hold(string path, int ms) {
+    AskedAt = 0;
+    IntPtr h = CreateFileW(path, 0x80000000 /* GENERIC_READ */, 7, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0x40000000 /* OVERLAPPED */, IntPtr.Zero);
+    if (h == new IntPtr(-1)) return false;
+    var broken = new ManualResetEvent(false);
+    IntPtr ov = Marshal.AllocHGlobal(IntPtr.Size * 2 + 8 + IntPtr.Size);
+    for (int i = 0; i < IntPtr.Size * 3 + 8; i++) Marshal.WriteByte(ov, i, 0);
+    Marshal.WriteIntPtr(ov, IntPtr.Size * 2 + 8, broken.SafeWaitHandle.DangerousGetHandle());
+    uint ret;
+    if (DeviceIoControl(h, 0x00090008 /* FSCTL_REQUEST_BATCH_OPLOCK */, IntPtr.Zero, 0, IntPtr.Zero, 0, out ret, ov) ||
+        Marshal.GetLastWin32Error() != 997 /* ERROR_IO_PENDING */) {
+      CloseHandle(h); Marshal.FreeHGlobal(ov); return false;
+    }
+    new Thread(() => {
+      if (broken.WaitOne(120000)) { AskedAt = Environment.TickCount; Thread.Sleep(ms); }
+      CloseHandle(h); Marshal.FreeHGlobal(ov);
+    }) { IsBackground = true }.Start();
+    return true;
+  }
+}
 public static class SebTypeSuspend {
   [DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr h);
   [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);
@@ -127,7 +161,7 @@ function WaitIcon($want, $secs) {
 }
 
 # This session's server (a terminal server may run one per session).
-function Server { Get-Process sebtype-server | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
+function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
 # failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
@@ -157,8 +191,60 @@ function Restore-Build {
 $tsf::Start()
 Result scale INFO "$($tsf::Dpi()) dpi, $([int]($tsf::Dpi() * 100 / 96)) %; pictures in the screen's own pixels"
 try {
-  # The first key starts sebtype-server when none runs; the first 日本語 after an install took over 4 s
-  # before its button showed and it took keys (YukaROG, Mozc's first load).
+  # The first 日本語 after the install (#312): Mozc's first load took seconds, the activation waited for it
+  # past the text service's 3 s reply wait, and there was no button and no key taken for over 4 s (YukaROG).
+  # Now the button is there at once (grey あ while Mozc loads), a key goes in as typed without waiting, and
+  # あ shows once Mozc is up, unasked.
+  Check 'first-japanese' {
+    $was = if (Server) { 'a server ran already' } else { 'no server yet' }
+    # YukaROG's first load took over 4 s; TCSBackEnd's is fast by itself, so its open is held 8 s: long
+    # enough for reload-while-loading too.
+    $script:slowed = [SlowOpen]::Hold("$env:ProgramFiles\SebType\sebtype-mozc.dll", 8000)
+    $t = Get-Date; Lang ja; $activation = [int]((Get-Date) - $t).TotalMilliseconds - 500  # Lang settles 500 ms
+    $script:first = Shot 'hira-first'
+    $tsf::Clear(); $t = Get-Date; Ready; $null = $tsf::Key((Vk 'n')); $key = [int]((Get-Date) - $t).TotalMilliseconds
+    $tsf::Settle(300); $typed = $tsf::Text(); Keys Escape; $tsf::Clear()
+    $script:held = $slowed -and [SlowOpen]::AskedAt
+    $load = if (-not $slowed) { "Mozc's load not slowed (no oplock)" } elseif ($held) { 'Mozc held 8 s at its load' } else { 'Mozc not loaded yet' }
+    $timeline = "$was, $load, activation $activation ms, key $key ms gave '$typed'"
+    if ($activation -gt 1500) { throw "the activation took $activation ms ($timeline)" }
+    if ($key -gt 3500) { throw "the key waited $key ms ($timeline)" }
+    if ($held -and $typed -ne 'n') { throw "the key while Mozc loads gave '$typed', not n as typed ($timeline)" }
+    if ($held -and (Shot 'hira-first-key') -ne $first) { throw "the icon changed while Mozc loads ($timeline)" }
+    if ($held) { "grey あ at once, n as typed ($timeline)" } else { "INFO: Mozc's load wasn't held: $timeline" }
+  }
+  # The Configurator's reload (/mozc) while Mozc still loads: 中文 still switches and types at once (#312).
+  Check 'reload-while-loading' {
+    if (-not $held) { return "SKIP: Mozc's load wasn't held" }
+    $reload = Start-Process $server '/mozc' -PassThru; $tsf::Settle(300)
+    $t = Get-Date; Lang zh; $switch = [int]((Get-Date) - $t).TotalMilliseconds - 500
+    $end = (Get-Date).AddSeconds(10); $slowest = 0
+    do {
+      $tsf::Clear(); $t = Get-Date; Keys n i space
+      $slowest = [Math]::Max($slowest, [int]((Get-Date) - $t).TotalMilliseconds - 3 * 150 - 600)
+    } while ($tsf::Text() -ne '你' -and (Get-Date) -lt $end)
+    $t = $tsf::Text(); $tsf::Clear()
+    $timeline = "switch $switch ms, keys waited up to $slowest ms, Mozc's load $(if ([SlowOpen]::AskedAt + 8000 - [Environment]::TickCount -gt 0) { 'still held' } else { 'over' })"
+    if (-not $reload.WaitForExit(10000)) { throw "/mozc didn't return in 10 s ($timeline)" }
+    if ($switch -gt 1500) { throw "the switch to 中文 took $switch ms ($timeline)" }
+    if ($slowest -gt 1000) { throw "a key waited $slowest ms ($timeline)" }
+    if ($t -ne '你') { throw "ni + Space gave '$t' ($timeline)" }
+    "ni + Space gives 你 ($timeline)"
+  }
+  # あ comes unasked once Mozc is up, the reload asked for during its load done too (the text service's
+  # readiness timer, no key), and then the first ka gives か: no key goes to a Mozc that isn't ready.
+  Check 'first-japanese-back' {
+    if (-not $held) { return "SKIP: Mozc's load wasn't held" }
+    Lang ja
+    $end = (Get-Date).AddSeconds(30)
+    do { $tsf::Settle(250); $now = Shot 'hira-first-up' } while ($now -eq $first -and (Get-Date) -lt $end)
+    if ($now -eq $first) { throw 'still grey 30 s after the activation, no key typed' }
+    $tsf::Clear(); Keys k a; $t = $tsf::Text(); Keys Escape; $tsf::Clear()
+    $after = Shot 'hira-first-typed'
+    if ($t -ne 'か') { throw "the first ka once あ showed gave '$t', not か" }
+    if ($after -ne $now) { throw 'the icon that came unasked is not the one after typing か' }
+    'あ unasked after the load and the reload, then ka gives か at once'
+  }
   Check 'ready' {
     Lang ja
     $end = (Get-Date).AddSeconds(30)

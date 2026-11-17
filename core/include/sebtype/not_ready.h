@@ -11,7 +11,7 @@ namespace sebtype {
 
 enum class Readiness {
   Ready,
-  Preparing,    // Rime deploying or saving
+  Preparing,    // Rime deploying or saving, Mozc loading
   Unavailable,  // the engine didn't load, or the server doesn't answer
 };
 
