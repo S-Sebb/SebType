@@ -622,9 +622,11 @@ SCREENS = [
 
 
 # Not in the new app: the action bar's buttons screen (its keyboard edits them, #257); FUTO's payment
-# page (#191 Decisions 7).
+# page (#191 Decisions 7). Only in the new app: Tips (#285).
 if NEXT:
     SCREENS = [s for s in SCREENS if s[0] not in ("action-bar", "payment")]
+else:
+    SCREENS = [s for s in SCREENS if s[0] != "tips"]
 
 
 def every_screen():
