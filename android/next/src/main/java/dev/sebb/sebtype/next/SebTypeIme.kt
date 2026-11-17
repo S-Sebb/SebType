@@ -39,6 +39,7 @@ import dev.sebb.sebtype.core.NativeCore.ENGLISH
 import dev.sebb.sebtype.core.NativeCore.JAPANESE
 import dev.sebb.sebtype.core.NativeState
 import dev.sebb.sebtype.next.Layout.Code
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -50,7 +51,7 @@ import kotlin.math.roundToInt
  * their panels (emoji, clipboard) take the keys' place; Keyboard Modes, a row over the keys, moves and resizes them.
  */
 class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Listener, ActionRow.Listener,
-    ActionsPanel.Listener, EmojiPanel.Listener, ModesPanel.Listener {
+    ActionsPanel.Listener, EmojiPanel.Listener, ModesPanel.Listener, ResizeFrame.Listener {
     private companion object {
         val ENGLISH_KEYS = setOf(Code.TEXT, Code.SPACE, Code.ENTER, Code.DELETE)
         /** Enough of the text before the cursor to tell where a sentence starts */
@@ -85,6 +86,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private lateinit var emoji: EmojiPanel
     private lateinit var clips: ClipboardPanel
     private lateinit var modes: ModesPanel
+    private lateinit var frame: ResizeFrame
     private lateinit var search: Search
     private lateinit var searchEditor: Editor
     private lateinit var searchRow: SearchRow
@@ -115,9 +117,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private var mode: Mode
         get() = Mode.entries.firstOrNull { it.name == prefs.getString("mode_$orientation", null) } ?: Mode.STANDARD
         set(value) = prefs.edit().putString("mode_$orientation", value.name).apply()
+    /** The keys' height; the floating keyboard has its own, as today's */
+    private val heightKey get() = if (mode == Mode.FLOATING) "floating_height_$orientation" else "height_$orientation"
     private var heightScale: Float
-        get() = prefs.getFloat("height_$orientation", 1f)
-        set(value) = prefs.edit().putFloat("height_$orientation", value).apply()
+        get() = prefs.getFloat(heightKey, 1f)
+        set(value) = prefs.edit().putFloat(heightKey, value).apply()
     private val refreshClip = Runnable { refresh() }
     /** Keyboard Modes shows the height in place of the modes (Resize Keyboard) */
     private var resizing = false
@@ -210,6 +214,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         results = FrameLayout(this)
         for (v in listOf(emojiResults, clipResults)) results.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         modes = ModesPanel(this, texts, this)
+        // Hidden until refresh() shows it, so a new input view with resizing on (a rotation) hides the keys too.
+        frame = ResizeFrame(this, texts, this).apply { visibility = View.GONE }
         keysRow = LinearLayout(this)
         keysRow.addView(keyboard, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         keysRow.addView(side, LinearLayout.LayoutParams(0, MATCH_PARENT, 0f))
@@ -229,7 +235,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         panel.addView(content, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         stack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         stack.addView(strip, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        stack.addView(panel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        // Floating mode's resize frame over the whole keyboard
+        val body = FrameLayout(this)
+        body.addView(panel, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        body.addView(frame, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        stack.addView(body, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(stack, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, android.view.Gravity.BOTTOM))
         root.addView(popups, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         // A resized window, or a keyboard grown taller, moves the floating keyboard to its share of the room.
@@ -241,6 +251,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             val bottom = maxOf(insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
                 insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom)
             v.setPadding(0, 0, 0, bottom)
+            // The resize frame's corner stays above it, out of the system's gesture area.
+            (frame.layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom
             insets
         }
         // The system's back and keyboard-switch buttons under the keys: dark, on the light cloth
@@ -744,7 +756,6 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         // The action bar: open, over the bar; never over a panel's title
         val rowShown = barOpen && shown == Panel.NONE
         actionRow.visibility = if (rowShown) View.VISIBLE else View.GONE
-        val overKeys = shown != Panel.NONE && shown != Panel.MODES && searching == null
         content.extra = if (barOpen && overKeys) (ActionRow.HEIGHT_DP * resources.displayMetrics.density).toInt() else 0
         if (rowShown) actionRow.show(Action.pinned(this), on)
         val autofilling = autofill.showing && candidates.isEmpty() && shown == Panel.NONE
@@ -754,7 +765,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         when (shown) {
             Panel.ACTIONS, Panel.EDIT -> actions.show(traditional, on, Action.pinned(this), shown == Panel.EDIT)
             Panel.CLIPBOARD -> clips.show()
-            Panel.MODES -> modes.show(mode, heightScale, resizing)
+            // Floating mode resizes in its frame; the row keeps the modes under it.
+            Panel.MODES -> modes.show(mode, heightScale, resizing && mode != Mode.FLOATING)
             else -> {}
         }
         grid.visibility = if (expanded) View.VISIBLE else View.GONE
@@ -769,8 +781,34 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         emoji.visibility = if (over == Panel.EMOJI) View.VISIBLE else View.GONE
         clips.visibility = if (over == Panel.CLIPBOARD) View.VISIBLE else View.GONE
         modes.visibility = if (over == Panel.MODES) View.VISIBLE else View.GONE
+        val framed = over == Panel.MODES && resizing && mode == Mode.FLOATING
+        // TalkBack reaches only the frame while it shows: the keys under it would type through it.
+        panel.importantForAccessibility =
+            if (framed) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        if (framed != (frame.visibility == View.VISIBLE)) {
+            frame.visibility = if (framed) View.VISIBLE else View.GONE
+            if (framed) frame.post { frame.focusCorner() }
+        }
         // The keys keep their place (and the keyboard its height) under the grid and the panels.
-        keysRow.visibility = if (expanded || overKeys) View.INVISIBLE else View.VISIBLE
+        if (shown != Panel.MODES) keysAside = false
+        showKeys()
+    }
+
+    /** A panel over the keys: they keep their place (and the keyboard its height) under it */
+    private val overKeys get() = shown != Panel.NONE && shown != Panel.MODES && searching == null
+
+    /**
+     * Keyboard Modes open on a floating keyboard in a window too short for it and today's smallest keys
+     * (a landscape phone, #283): the keys step aside while it is open, rather than shrink past reading.
+     */
+    private var keysAside = false
+
+    private fun showKeys() {
+        keysRow.visibility = when {
+            keysAside -> View.GONE
+            expanded || overKeys -> View.INVISIBLE
+            else -> View.VISIBLE
+        }
     }
 
     // --- Keyboard modes (#53 B5) ---
@@ -779,6 +817,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private fun applyMode() {
         if (!views) return
         val m = mode
+        floatScale = heightScale
         keyboard.heightScale = heightScale
         keyboard.split = m == Mode.SPLIT
         val oneHanded = m == Mode.ONE_HANDED
@@ -793,9 +832,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }
         val floating = m == Mode.FLOATING
         handle.visibility = if (floating) View.VISIBLE else View.GONE
-        val width = resources.displayMetrics.widthPixels
+        floatWidth = prefs.getFloat("floating_width_$orientation", 0f)
         stack.layoutParams = (stack.layoutParams as FrameLayout.LayoutParams).apply {
-            this.width = if (floating) (width * Mode.FLOATING_WIDTH).toInt() else MATCH_PARENT
+            this.width = if (floating) floatingWidth().roundToInt() else MATCH_PARENT
             gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
         }
         floatX = prefs.getFloat("floating_x_$orientation", 0f)
@@ -810,10 +849,70 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
      */
     private var floatX = 0f
     private var floatY = 0f
+    /** The floating keyboard's width in dp as resized, as today's keeps it; 0: [Mode.FLOATING_WIDTH] of the window */
+    private var floatWidth = 0f
+
+    /** The floating keyboard's width in px, in the window as it is now: never wider than the window */
+    private fun floatingWidth(): Float {
+        val room = (root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels).toFloat()
+        val wanted = if (floatWidth > 0) floatWidth * resources.displayMetrics.density else room * Mode.FLOATING_WIDTH
+        return wanted.coerceIn(minOf(Mode.FLOATING_MIN_WIDTH_DP * resources.displayMetrics.density, room), room)
+    }
+
+    /** The floating keyboard's keys' height as saved; shown smaller while the window is too short for it */
+    private var floatScale = 1f
+
+    /** The floating keyboard's height in px with its keys at [scale] */
+    private fun floatingHeight(scale: Float) = floatingChrome() + keyboard.heightAt(scale)
+
+    /**
+     * The floating keyboard's height but for its keys: the pinyin strip, the handle, the bars, the panel's
+     * padding. Added up, not the stack's height less the keys': in a window too short for it, the stack is
+     * cut to the window while its parts keep their whole height.
+     */
+    private fun floatingChrome(): Float {
+        var sum = strip.height + panel.paddingTop + panel.paddingBottom +
+            if (keysRow.visibility == View.GONE) 0 else content.height - keyboard.height
+        for (i in 0 until panel.childCount) panel.getChildAt(i).takeIf { it !== content && it.visibility != View.GONE }?.let { sum += it.height }
+        return sum.toFloat()
+    }
+
+    /** The floating keys' height limits for resizing: today's (in four rows' dp), and the window's height above all */
+    private fun floatingScales(): ClosedFloatingPointRange<Float> {
+        val dp = root.height / resources.displayMetrics.density
+        val min = keyboard.scaleForFourRows(Mode.FLOATING_MIN_HEIGHT_DP)
+        val max = keyboard.scaleForFourRows(maxOf(dp * 2 / 3, Mode.FLOATING_MAX_HEIGHT_DP))
+        return min..maxOf(min, minOf(max, fittingScale()))
+    }
+
+    /** The keys' scale that fills the window's height left by the rest of the floating keyboard */
+    private fun fittingScale() = keyboard.scaleFor(root.height - floatingChrome())
+
+    /**
+     * The floating keys' scale as shown: the saved one, within the limits; shorter than the minimum when the
+     * window is too short for it (Keyboard Modes open in a split screen), so every row stays reachable.
+     */
+    private fun shownScale() = minOf(floatScale.coerceIn(floatingScales()), fittingScale()).coerceAtLeast(0f)
 
     /** Puts the keyboard where [floatX] and [floatY] say, in the window as it is now (after each layout) */
     private fun placeFloating() {
         val floating = mode == Mode.FLOATING
+        // A narrower window (split screen, a fold) narrows the keyboard too.
+        val lp = stack.layoutParams as FrameLayout.LayoutParams
+        if (floating && root.width > 0 && lp.width != floatingWidth().roundToInt()) {
+            lp.width = floatingWidth().roundToInt()
+            stack.layoutParams = lp
+        }
+        // A shorter window (split screen, a smaller display size) shows the keys shorter, all of them
+        // reachable; the saved height comes back when there is room.
+        if (floating && root.height > 0 && stack.height > 0) {
+            val aside = shown == Panel.MODES && fittingScale() < floatingScales().start
+            if (aside != keysAside) {
+                keysAside = aside
+                showKeys()
+            }
+            keyboard.heightScale = shownScale()
+        }
         stack.translationX = if (floating) floatX * ((root.width - stack.width) / 2f).coerceAtLeast(0f) else 0f
         stack.translationY = if (floating) -floatY * (root.height - stack.height).coerceAtLeast(0) else 0f
     }
@@ -828,7 +927,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     }
 
     private fun saveFloating() {
-        prefs.edit().putFloat("floating_x_$orientation", floatX).putFloat("floating_y_$orientation", floatY).apply()
+        prefs.edit().putFloat("floating_x_$orientation", floatX).putFloat("floating_y_$orientation", floatY)
+            .putFloat("floating_width_$orientation", floatWidth).putFloat(heightKey, floatScale).apply()
         layoutSent = null
         // A layout pass computes the insets again: the touchable region follows the keyboard.
         stack.requestLayout()
@@ -845,6 +945,59 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         heightScale = ((heightScale + by) * 20).roundToInt() / 20f
         heightScale = heightScale.coerceIn(Mode.MIN_HEIGHT, Mode.MAX_HEIGHT)
         applyMode()
+        refresh()
+    }
+
+    /**
+     * The resize frame's corner dragged (#283): the width and the keys' height follow it, within today's
+     * limits (as narrow as [Mode.FLOATING_MIN_WIDTH_DP], as wide as the window; [floatingScales]). The
+     * keyboard's top left stays where it is, unless that would put it off the screen: then it moves back on.
+     */
+    override fun onResize(dx: Float, dy: Float): Boolean {
+        val oldWidth = floatingWidth()
+        val oldScale = keyboard.heightScale
+        val oldHeight = floatingHeight(oldScale)
+        val left = (root.width - oldWidth) / 2f * (1 + floatX)
+        val top = (root.height - oldHeight) * (1 - floatY)
+        val density = resources.displayMetrics.density
+        val width = (oldWidth + dx).coerceIn(minOf(Mode.FLOATING_MIN_WIDTH_DP * density, root.width.toFloat()), root.width.toFloat())
+        val wanted = keyboard.scaleFor(keyboard.heightAt(oldScale) + dy)
+        val scale = wanted.coerceIn(floatingScales())
+        // A side saves its size only when the keyboard shown changes along it: one shown cut to a short or
+        // narrow window, or held at the window's edge, isn't the user's (within half a pixel: the scale's
+        // round trip through px isn't exact).
+        if (abs(width - oldWidth) >= 0.5f) floatWidth = width / density
+        if (abs(keyboard.heightAt(minOf(scale, fittingScale())) - keyboard.heightAt(oldScale)) >= 0.5f) floatScale = scale
+        keyboard.heightScale = shownScale()
+        val height = floatingHeight(keyboard.heightScale)
+        val roomX = (root.width - width) / 2f
+        val roomY = root.height - height
+        if (roomX > 0) floatX = (left / roomX - 1).coerceIn(-1f, 1f)
+        if (roomY > 0) floatY = (1 - top / roomY).coerceIn(0f, 1f)
+        placeFloating()
+        return width == oldWidth + dx && scale == wanted
+    }
+
+    override fun onResizeStep(wider: Int, taller: Int) {
+        val scale = keyboard.heightScale
+        onResize(wider * Mode.WIDTH_STEP * root.width, keyboard.heightAt(scale + taller * Mode.HEIGHT_STEP) - keyboard.heightAt(scale))
+        saveFloating()
+    }
+
+    override fun onMove(dx: Float, dy: Float) = onDrag(dx, dy)
+
+    override fun onResizeDone() = saveFloating()
+
+    /** Reset: the floating keyboard's width, height and place before any change, as today's */
+    override fun onResetSize() {
+        prefs.edit().remove("floating_width_$orientation").remove(heightKey)
+            .remove("floating_x_$orientation").remove("floating_y_$orientation").apply()
+        applyMode()
+        refresh()
+    }
+
+    override fun onApplySize() {
+        resizing = false
         refresh()
     }
 

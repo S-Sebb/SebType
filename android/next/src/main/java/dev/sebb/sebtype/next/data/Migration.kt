@@ -108,6 +108,8 @@ object Migration {
             out["mode_$orientation"] = size.mode.name
             out["height_$orientation"] = size.height
             out["one_handed_left_$orientation"] = size.left
+            size.floatingWidth?.let { out["floating_width_$orientation"] = it }
+            size.floatingHeight?.let { out["floating_height_$orientation"] = it }
         }
         return out.filterKeys { it !in have }
     }
@@ -153,14 +155,16 @@ object Migration {
     /** Today's recent emoji, most recent first */
     fun emoji(recent: String) = recent.split("<|>").filter { it.isNotBlank() }.distinct()
 
-    class Size(val mode: Mode, val height: Float, val left: Boolean)
+    /** [floatingWidth] (dp) and [floatingHeight]: the floating keyboard's, kept apart as today's; null if unchanged */
+    class Size(val mode: Mode, val height: Float, val left: Boolean, val floatingWidth: Float? = null, val floatingHeight: Float? = null)
 
     /**
      * Today's mode and height for an orientation, from its JSON (SavedKeyboardSizingSettings), with its keyboard
      * there before any change [today] ([todayHeights]). Today's keys take (the height + the mode's height
-     * addition − its bottom padding) × heightMultiplier (KeyboardSizingCalculator.calculate), floating ones
-     * floatingHeightDp alone; the new app's height is that over what the same mode took before any change
-     * (getDefaultSettingForKind), so an unchanged one is 1.
+     * addition − its bottom padding) × heightMultiplier (KeyboardSizingCalculator.calculate); the new app's
+     * height is that over what the same mode took before any change (getDefaultSettingForKind), so an unchanged
+     * one is 1. Floating keeps its own: floatingHeightDp over its 240 dp before any change, the docked height
+     * then being Regular's.
      */
     fun size(json: String, landscape: Boolean, today: Today): Size? {
         fun field(name: String, of: String = json) = Regex(""""$name"\s*:\s*"?([\w.+-]+)""").find(of)?.groupValues?.get(1)
@@ -173,7 +177,8 @@ object Migration {
             "Floating" -> Mode.FLOATING
             else -> return null
         }
-        val ratio = if (mode == Mode.FLOATING) (number("floatingHeightDp") ?: FLOATING_HEIGHT) / FLOATING_HEIGHT else {
+        val floating = (number("floatingHeightDp") ?: FLOATING_HEIGHT) / FLOATING_HEIGHT
+        val ratio = run {
             val standardBottom = if (landscape) 2f else 10f
             // The mode's height addition, its bottom padding, and that padding before any change
             val (addition, padding, standardPadding) = when (mode) {
@@ -184,10 +189,14 @@ object Migration {
             val keys = (today.height + (addition ?: 0f) - (padding ?: standardPadding)) * (number("heightMultiplier") ?: today.multiplier)
             keys / ((today.height - standardPadding) * today.multiplier)
         }
-        val height = (ratio / Mode.HEIGHT_STEP).roundToInt() * Mode.HEIGHT_STEP
-        return Size(mode, height.coerceIn(Mode.MIN_HEIGHT, Mode.MAX_HEIGHT), field("oneHandedDirection") == "Left")
+        fun step(ratio: Float) = ((ratio / Mode.HEIGHT_STEP).roundToInt() * Mode.HEIGHT_STEP).coerceIn(Mode.MIN_HEIGHT, Mode.MAX_HEIGHT)
+        // Floating's own height in today's limits, the window's left to the keyboard (it can't know it here)
+        return Size(mode, step(ratio), field("oneHandedDirection") == "Left",
+            number("floatingWidthDp")?.takeIf { it != FLOATING_WIDTH }?.coerceAtLeast(Mode.FLOATING_MIN_WIDTH_DP),
+            floating.takeIf { it != 1f }?.coerceAtLeast(Mode.FLOATING_MIN_HEIGHT_DP / FLOATING_HEIGHT))
     }
 
-    // Today's floating keyboard's height before any change
+    // Today's floating keyboard's height and width before any change
     private const val FLOATING_HEIGHT = 240f
+    private const val FLOATING_WIDTH = 360f
 }

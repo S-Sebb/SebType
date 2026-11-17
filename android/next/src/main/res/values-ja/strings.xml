@@ -81,5 +81,10 @@
     <string name="mode_shorter">低く</string>
     <string name="mode_swap">反対側へ</string>
     <string name="mode_move">キーボードを移動</string>
+    <string name="mode_resize_corner">ドラッグでサイズ変更</string>
+    <string name="mode_wider">広く</string>
+    <string name="mode_narrower">狭く</string>
+    <string name="mode_reset">初期化</string>
+    <string name="mode_apply">適用</string>
     <string name="back">戻る</string>
 </resources>

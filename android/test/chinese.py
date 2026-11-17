@@ -72,6 +72,10 @@ def adb(*args, timeout=120, check=True):
     return p.stdout
 
 
+# Whether the device has a root shell: a phone may not (android/test/emulator.sh)
+ROOT = os.environ.get("SEBTYPE_ROOT", "1") == "1"
+
+
 def root(cmd):
     # Through sh -c: the whole of cmd runs as root, not only its first command.
     return adb("shell", f"su 0 sh -c {shlex.quote(cmd)}")
@@ -525,14 +529,17 @@ def fresh_install():
         raise Fail(
             f"{runs} setups logged, deployed: {deployed}; expected one, deploying"
         )
-    built = root(f"ls {RIME_USER}/build").split()
-    # The bundle comes compiled: no table, prism or reverse db may be built on the phone.
-    rebuilt = [f for f in built if f.endswith(".bin")]
-    if rebuilt:
-        raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (setup {setup} ms)")
+    tables = "prebuilt tables not checked (no root shell)"
+    if ROOT:
+        built = root(f"ls {RIME_USER}/build").split()
+        # The bundle comes compiled: no table, prism or reverse db may be built on the phone.
+        rebuilt = [f for f in built if f.endswith(".bin")]
+        if rebuilt:
+            raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (setup {setup} ms)")
+        tables = "prebuilt tables used"
     return (
         f"first run from the setup screen: install {install} ms, set up in {setup} ms all told; "
-        f"{meanwhile}; prebuilt tables used"
+        f"{meanwhile}; {tables}"
     )
 
 
@@ -1294,6 +1301,7 @@ RESIZE = ("Resize Keyboard", "调整键盘大小", "キーボードのサイズ�
 TALLER = ("Taller", "调高", "高く")
 SHORTER = ("Shorter", "调低", "低く")
 MOVE_KEYBOARD = "Move keyboard"
+RESIZE_CORNER = "Drag to resize"
 
 
 def action(labels):
@@ -1628,6 +1636,7 @@ def modes_one_handed():
         w = screen_width()
         if not (0.7 * w < r - l < 0.9 * w):
             raise Fail(f"the keys are {r - l} px wide of {w}")
+        screenshot("one-handed.png")
         types_letters()
         return f"keys {r - l} of {w} px, typing works"
     finally:
@@ -1674,6 +1683,7 @@ def modes_split():
         unit = k["w"][0] - k["q"][0]
         if gap < 2 * unit:
             raise Fail(f"t and y are {gap} px apart, a key is {unit}")
+        screenshot("split.png")
         types_letters()
         return f"t to y {gap} px, a key {unit} px"
     finally:
@@ -1813,6 +1823,422 @@ def floating_after_resize():
     finally:
         adb("shell", "wm", "size", "reset")
         time.sleep(3)
+        set_mode("Standard")
+
+
+def resize_floating(*swipes):
+    """Floating mode's Resize Keyboard: each swipe (from, by) starts at "corner" (the frame's corner, which
+    resizes) or "keys" (a point on the keys, which moves the keyboard) and goes (dx, dy) px, stopping at the
+    screen's edge; then Apply."""
+    w, h = screen_size()
+    open_field()
+    action(MODES_ACTION)
+    tap_label(RESIZE)
+    wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+    talkback_reaches(framed=True)
+    for start, (dx, dy) in swipes:
+        corner = wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+        l, t, r, b = keyboard_frame
+        x, y = (
+            corner[1:3] if start == "corner" else (l + (r - l) // 6, t + (b - t) // 5)
+        )
+        to = (min(max(x + dx, 0), w - 1), min(max(y + dy, 0), h - 1))
+        adb("shell", "input", "swipe", str(x), str(y), *map(str, to), "1500")
+        time.sleep(1)
+    try:
+        tap_label(("Apply", "应用", "適用"))
+    except Fail:
+        screenshot("resize-without-apply.png")
+        raise
+    return frame_now()
+
+
+def talkback_reaches(framed):
+    """TalkBack reaches the resize frame alone while it is up (the keys under it are out of the
+    accessibility tree), and the keys again once it is gone (#283)."""
+    shown = important_labels()
+    if (RESIZE_CORNER in shown) != framed or bool(shown & set(SPACE_LABELS)) == framed:
+        raise Fail(
+            f"with the resize frame {'up' if framed else 'gone'}, TalkBack's tree has "
+            f"{sorted(shown & set(SPACE_LABELS + (RESIZE_CORNER,)))}"
+        )
+
+
+def node_bounds():
+    """{label: (left, top, right, bottom)} of the nodes in all windows, the first of each label. Bounds are
+    cut to what shows: a key half off the window is half as tall."""
+    nodes()  # the keyboard's frame too
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    out = {}
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n.get("bounds", ""))
+        out.setdefault(
+            n.get("text") or n.get("content-desc") or "",
+            m and tuple(map(int, m.groups())),
+        )
+    return out
+
+
+def bottom_row_whole(window):
+    """The keyboard's bottom row, whole within a window [window] px tall: Symbols and Space as tall as
+    Delete in the row above. Returns Space's bounds."""
+    b = node_bounds()
+    space = next((b[l] for l in SPACE_LABELS if b.get(l)), None)
+    above, symbols = b.get("Delete"), b.get("Symbols")
+    tall = above and above[3] - above[1]
+    if not (above and symbols and space) or any(
+        k[3] > window or abs((k[3] - k[1]) - tall) > 2 for k in (symbols, space)
+    ):
+        raise Fail(
+            f"in a {window} px window the bottom row isn't whole: Delete {above}, Symbols {symbols}, Space {space}"
+        )
+    return space
+
+
+def important_labels():
+    """The labels in the accessibility tree as TalkBack has it: a compressed dump leaves out the views
+    hidden from it."""
+    adb(
+        "shell",
+        "uiautomator",
+        "dump",
+        "--compressed",
+        "--windows",
+        "/sdcard/sebtype-ui.xml",
+    )
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    return {
+        n.get("text") or n.get("content-desc") or ""
+        for n in ET.fromstring(xml[xml.index("<") :]).iter("node")
+    }
+
+
+def screen_density():
+    return int(re.findall(r"density: (\d+)", adb("shell", "wm", "density"))[-1]) / 160
+
+
+def screen_size():
+    m = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size").splitlines()[-1])
+    return int(m.group(1)), int(m.group(2))
+
+
+def rotate(quarter):
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    adb("shell", "settings", "put", "system", "user_rotation", str(quarter))
+    time.sleep(3)
+
+
+def floating_resize():
+    """Floating: the resize frame's corner dragged left and up makes the keyboard narrower and shorter, and
+    the size stays after the keyboard restarts and after a turn to landscape and back (#283)."""
+    to_english()
+    auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    uimode = (
+        adb("shell", "cmd", "uimode", "night").split(":")[-1].strip()
+    )  # yes, no, auto or custom
+    try:
+        set_mode("Floating")
+        tap_reset()  # from its size and place before any change
+        open_field()
+        l, t, r, b = frame_now()
+        l2, t2, r2, b2 = resize_floating(("corner", (-200, -80)))
+        if not (r2 - l2 < r - l - 150 and b2 - t2 < b - t - 40):
+            raise Fail(
+                f"the corner dragged by (-200, -80): keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px"
+            )
+        restart_app()
+        after_restart = frame_now()
+        rotate(1)
+        open_field()
+        land = frame_now()
+        rotate(0)
+        open_field()
+        back = frame_now()
+        for name, (l3, t3, r3, b3) in (
+            ("the restart", after_restart),
+            ("landscape and back", back),
+        ):
+            if abs((r3 - l3) - (r2 - l2)) > 4 or abs((b3 - t3) - (b2 - t2)) > 4:
+                raise Fail(
+                    f"after {name} the keys are {r3 - l3}x{b3 - t3} px, not {r2 - l2}x{b2 - t2}"
+                )
+        # The keyboard's view made again with the frame up, by dark mode and by a turn (floating in both
+        # orientations): TalkBack reaches the frame alone while it shows, and the keys once it is gone (after
+        # Apply, or when the change started the keyboard over and so ended the resize).
+        rotate(1)
+        set_mode("Floating")
+        rotate(0)
+        night = "no" if uimode == "yes" else "yes"
+        made_again = []
+        for name, change in (
+            ("dark mode", lambda: adb("shell", "cmd", "uimode", "night", night)),
+            ("a turn", lambda: rotate(1)),
+        ):
+            open_field()
+            action(MODES_ACTION)
+            tap_label(RESIZE)
+            wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+            change()
+            time.sleep(3)
+            framed = node(RESIZE_CORNER) is not None
+            talkback_reaches(framed)
+            if framed:
+                tap_label(("Apply", "应用", "適用"))
+                talkback_reaches(framed=False)
+            made_again.append((name, framed))
+        set_mode("Standard")
+        rotate(0)
+        types_letters()
+        return (
+            f"keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px, kept after a restart and landscape "
+            f"(there {land[2] - land[0]}x{land[3] - land[1]}); the frame "
+            + ", ".join(
+                f"{'kept' if kept else 'closed'} by {name}" for name, kept in made_again
+            )
+            + ", TalkBack reaching the frame alone while it shows and the keys after; typing works"
+        )
+    finally:
+        adb("shell", "cmd", "uimode", "night", uimode)
+        rotate(1)
+        set_mode("Standard")
+        rotate(0)
+        adb(
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "accelerometer_rotation",
+            auto if auto in ("0", "1") else "0",
+        )
+        tap_reset()
+        set_mode("Standard")
+
+
+def tap_reset():
+    open_field()
+    action(MODES_ACTION)
+    tap_label(RESIZE)
+    tap_label(("Reset", "重置", "初期化"))
+    tap_label(("Apply", "应用", "適用"))
+
+
+def floating_short_window():
+    """Floating, moved to the top left and resized wide and tall: a window two thirds as wide and half as
+    tall shows its keys narrower and shorter, all of them whole on the screen (the handle too) and typing.
+    Wider and Taller there, held at the window's edges, change nothing saved: the full window brings the
+    whole size back. Made narrower there, the full window brings the saved height back with the new width. In
+    a window 280 dp tall the keys step aside under Keyboard Modes and show whole once it closes (#283)."""
+    to_english()
+    w, h = screen_size()
+
+    def full_window():
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        open_field()
+        return frame_now()
+
+    try:
+        set_mode("Floating")
+        tap_reset()
+        l, t, r, b = resize_floating(("keys", (-w, -h)), ("corner", (w, h)))
+        wide, tall = r - l, b - t
+        small, short = w * 2 // 3, h // 2
+        adb("shell", "wm", "size", f"{small}x{short}")
+        time.sleep(3)
+        open_field()
+        space = bottom_row_whole(short)
+        l2, t2, r2, b2 = keyboard_frame
+        handle = node(MOVE_KEYBOARD)
+        if not handle or handle[3] < 0 or b2 - t2 >= tall or r2 - l2 > small:
+            raise Fail(
+                f"keys {wide}x{tall} px; in a {small}x{short} px window {r2 - l2}x{b2 - t2} px, the handle at "
+                f"{handle and handle[3]}"
+            )
+        screenshot("floating-short-window.png")
+        types_letters()
+        # Wider and Taller at the window's edges: the saved size stays the user's, not the one shown here.
+        resize_floating(("corner", (w, 0)), ("corner", (0, h)))
+        l3, t3, r3, b3 = full_window()
+        if abs((b3 - t3) - tall) > 4 or abs((r3 - l3) - wide) > 4:
+            raise Fail(
+                f"after Wider and Taller at a {small}x{short} px window's edges, the full window shows "
+                f"{r3 - l3}x{b3 - t3} px, not the saved {wide}x{tall}"
+            )
+        # Only the width changed: the saved height stays the tall one, not the one cut to this window.
+        adb("shell", "wm", "size", f"{small}x{short}")
+        time.sleep(3)
+        open_field()  # the keyboard settled in the new window before the frame opens, as above
+        l4, t4, r4, b4 = resize_floating(("corner", (-150, 0)))
+        if (r4 - l4) > (r2 - l2) - 100:
+            raise Fail(
+                f"the corner dragged 150 px left: keys {r2 - l2} -> {r4 - l4} px wide"
+            )
+        l5, t5, r5, b5 = full_window()
+        if abs((b5 - t5) - tall) > 4 or abs((r5 - l5) - (r4 - l4)) > 4:
+            raise Fail(
+                f"back in the full window the keys are {r5 - l5}x{b5 - t5} px, not {r4 - l4}x{tall}"
+            )
+        # A window wider than tall is landscape: floating there too. 280 dp less the status bar, the
+        # navigation bar and Keyboard Modes leaves no room for keys at today's 96 dp minimum: they step
+        # aside while Keyboard Modes is open. Once it closes they come back whole, shorter than the minimum
+        # (the bars above them leave about 60 dp), and no shorter than 48 dp, half of it.
+        tiny = round(280 * screen_density())
+        least = round(48 * screen_density()) - 2
+        adb("shell", "wm", "size", f"{w}x{tiny}")
+        time.sleep(3)
+        try:
+            set_mode("Floating")
+            open_field()
+            action(MODES_ACTION)
+            b = node_bounds()
+            handle, floating = b.get(MOVE_KEYBOARD), b.get("Floating")
+            if (
+                any(b.get(l) for l in SPACE_LABELS)
+                or not handle
+                or handle[1] < 0
+                or not floating
+                or floating[3] > tiny
+            ):
+                raise Fail(
+                    f"in a {tiny} px window with Keyboard Modes open: the handle {handle}, Floating {floating}, "
+                    f"Space {[b.get(l) for l in SPACE_LABELS if b.get(l)]} (the keys should step aside)"
+                )
+            screenshot("floating-tiny-window.png")
+            open_field()
+            tiny_space = bottom_row_whole(tiny)
+            tiny_keys = keyboard_frame[3] - keyboard_frame[1]
+            screenshot("floating-tiny-window-keys.png")
+            if tiny_keys < least:
+                raise Fail(
+                    f"in a {tiny} px window the keys are {tiny_keys} px tall, under the {least} px "
+                    f"the window leaves them"
+                )
+            types_letters()
+        finally:
+            set_mode("Standard")
+        return (
+            f"keys {wide}x{tall} px; {r2 - l2}x{b2 - t2} px within a {small}x{short} px window (Space {space}), "
+            f"typing works; after Wider and Taller at its edges {r3 - l3}x{b3 - t3} px in the full window; "
+            f"narrowed there to {r4 - l4} px, then {r5 - l5}x{b5 - t5} px in the full window; in {tiny} px "
+            f"the keys aside under Keyboard Modes, then {tiny_keys} px with Space {tiny_space}, typing works"
+        )
+    finally:
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        tap_reset()
+        set_mode("Standard")
+
+
+def floating_narrowest():
+    """Floating resized as narrow as it goes: today's 144 dp, with Reset and Apply inside it and Apply still
+    ending the resize (#283)."""
+    to_english()
+    w, h = screen_size()
+    narrowest = round(144 * screen_density())
+    try:
+        set_mode("Floating")
+        tap_reset()
+        open_field()
+        action(MODES_ACTION)
+        tap_label(RESIZE)
+        corner = wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+        adb(
+            "shell",
+            "input",
+            "swipe",
+            str(corner[1]),
+            str(corner[2]),
+            "0",
+            str(corner[2]),
+            "1500",
+        )
+        time.sleep(1)
+        bounds = node_bounds()
+        corner, reset, apply = (
+            bounds.get(k) for k in (RESIZE_CORNER, "Reset", "Apply")
+        )
+        # The frame is the keyboard's width, its right edge the corner's; each button whole within it, apart
+        # from the other and as big as drawn, 40 dp at least (bounds are cut to what shows).
+        right = corner and corner[2]
+        left = right and right - narrowest
+        least = 40 * screen_density() - 2
+        if (
+            not (corner and reset and apply)
+            or any(
+                b[0] < left
+                or b[2] > right
+                or b[3] > corner[3]
+                or min(b[2] - b[0], b[3] - b[1]) < least
+                for b in (reset, apply)
+            )
+            or not (reset[3] <= apply[1] or reset[2] <= apply[0])
+        ):
+            raise Fail(
+                f"in a frame from x {left} to {right}, Reset is {reset} and Apply {apply}"
+            )
+        screenshot("floating-narrowest.png")
+        tap_label(("Apply",))
+        if node(RESIZE_CORNER):
+            raise Fail("Apply didn't end the resize")
+        screenshot("floating-narrowest-keys.png")
+        l, t, r, b = frame_now()
+        if abs((r - l) - narrowest) > 0.1 * narrowest:
+            raise Fail(f"the narrowest keys are {r - l} px, not about {narrowest}")
+        types_letters()
+        # Reset at this width brings back the keyboard's first width, 85 % of the screen.
+        open_field()
+        action(MODES_ACTION)
+        tap_label(RESIZE)
+        tap_label(("Reset",))
+        tap_label(("Apply",))
+        l2, t2, r2, b2 = frame_now()
+        if abs((r2 - l2) - 0.85 * w) > 0.05 * w:
+            raise Fail(
+                f"Reset at the narrowest width left the keys {r2 - l2} px wide, not about {0.85 * w:.0f}"
+            )
+        return (
+            f"keys {r - l} px wide (144 dp is {narrowest}), Reset {reset} and Apply {apply} inside, typing "
+            f"works; Reset there: {r2 - l2} px"
+        )
+    finally:
+        tap_reset()
+        set_mode("Standard")
+
+
+def floating_resize_edge():
+    """Floating, moved to the left edge, its corner dragged to the screen's bottom right: it grows to nearly
+    the screen's width and taller, pushed up rather than off the bottom; then a narrower window narrows it to
+    fit, and it still types (#283)."""
+    to_english()
+    w, h = screen_size()
+    try:
+        set_mode("Floating")
+        tap_reset()  # from its size and place before any change
+        open_field()
+        l, t, r, b = frame_now()
+        l2, t2, r2, b2 = resize_floating(("keys", (-w, 0)), ("corner", (w, h)))
+        if l2 < 0 or r2 > w or b2 > h or not (r2 - l2 > r - l and b2 - t2 > b - t):
+            raise Fail(
+                f"keys at ({l}, {t}, {r}, {b}) -> ({l2}, {t2}, {r2}, {b2}) on a {w}x{h} screen"
+            )
+        narrow = w * 2 // 3
+        adb("shell", "wm", "size", f"{narrow}x{h}")
+        time.sleep(3)
+        open_field()
+        l3, t3, r3, b3 = frame_now()
+        if l3 < 0 or r3 > narrow or b3 > h:
+            raise Fail(
+                f"in a {narrow} px wide screen the keys are at ({l3}, {t3}, {r3}, {b3})"
+            )
+        types_letters()
+        return (
+            f"keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px within {w}x{h}; {r3 - l3} px wide in a "
+            f"{narrow} px screen, typing works"
+        )
+    finally:
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        tap_reset()
         set_mode("Standard")
 
 
@@ -2057,6 +2483,10 @@ if NEXT:
     check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
     check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
     check("modes-floating-resized", floating_after_resize, needs=["first-install"])
+    check("modes-floating-resize", floating_resize, needs=["first-install"])
+    check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
+    check("modes-floating-short-window", floating_short_window, needs=["first-install"])
+    check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
     check("en-futo-default-migrates", lambda: None)
 
 if (

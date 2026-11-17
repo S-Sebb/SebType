@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Bundle
 import android.os.SystemClock
@@ -95,6 +96,12 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private class Cell(val key: Layout.Key, val rect: RectF)
     private var cells = emptyList<Cell>()
+    /** The keys' text sizes' share of today's: [keyTextScale] of the keys as laid out */
+    private var textScale = 1f
+    /** The key frames' pixel: today's, smaller with the text on keys smaller than any docked keyboard's */
+    private var keyPx = px
+    /** The letters' text sizes in px by label, one for the whole keyboard: [letterSizes] */
+    private var letters = emptyMap<String, Float>()
 
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
@@ -148,6 +155,12 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private fun rows(page: Layout?, numberRow: Layout?) =
         (page?.rows.orEmpty() + numberRow?.rows.orEmpty()).sumOf { it.height.toDouble() }.toFloat()
 
+    /** The keys' height in px at [scale] (a [heightScale]), and the scale that gives them [height] px */
+    fun heightAt(scale: Float) = topPadding + rows(page, numberRow) * ROW * density * scale
+    fun scaleFor(height: Float) = (height - topPadding) / (rows(page, numberRow) * ROW * density)
+    /** The height scale at which four rows are [dp] dp: today's floating keyboard sets its height as four rows' */
+    fun scaleForFourRows(dp: Float) = dp / (4 * ROW)
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(topPadding + rows(page, numberRow) * rowHeight).toInt())
     }
@@ -185,6 +198,22 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             y += h
         }
         cells = out
+        textScale = keyTextScale(heightScale, (if (split) half else unit) / density)
+        keyPx = maxOf(1, (px * textScale).roundToInt()).toFloat()
+        // Sized once for the keyboard, as today's app does from its most common key (KeyboardView.setKeyboard):
+        // the widest letter, either case, fits the most common letter key's keycap.
+        val letterCells = out.filter { isLetter(it.key) }
+        letters = if (letterCells.isEmpty()) emptyMap() else {
+            val common = letterCells.groupingBy { it.rect.width().roundToInt() }.eachCount().maxBy { it.value }.key
+            val size = 25 * density * textScale
+            // The letters' ink, measured large for a width finer than the bounds' whole pixels
+            label.textSize = 1000f
+            val ink = Rect()
+            letterSizes(letterCells.map { it.key.label }, size, keycapRoom(common.toFloat(), density, textScale, keyPx)) {
+                label.getTextBounds(it, 0, it.length, ink)
+                ink.width() / 1000f * size
+            }
+        }
         val letters = out.filter { it.key.code == Code.TEXT && it.key.text.length == 1 && it.key.text[0] in 'a'..'z' }
         if (letters.isNotEmpty()) listener.onLayout(width, height, letters.flatMap {
             val r = it.rect
@@ -234,16 +263,19 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             val pressed = pointers.values.any { it.cell === cell }
             val (l, t, rr, b) = face(r)
             val frame = frame(key)
-            frame.draw(canvas, l, t, rr, b, px, pressed)
+            frame.draw(canvas, l, t, rr, b, keyPx, pressed)
             // The frame's shadow takes its last pixel right and below: the face's middle is up and left of it.
-            val cx = (l + rr - px) / 2 + if (pressed) px / 2 else 0f
-            val cy = (t + b - px) / 2 + if (pressed) px / 2 else 0f
+            val cx = (l + rr - keyPx) / 2 + if (pressed) keyPx / 2 else 0f
+            val cy = (t + b - keyPx) / 2 + if (pressed) keyPx / 2 else 0f
             val ink = if (frame === PixelFrame.BERRY) Picnic.WHITE else Picnic.INK
             val icon = icon(key)
             when {
-                icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f), ink)
+                // On keys smaller than any docked keyboard's, an icon stays within the face's frame too.
+                icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f).let {
+                    if (textScale < 1f) minOf(it, 24 * density * textScale, rr - l - 5 * keyPx) else it
+                }, ink)
                 key.code == Code.SPACE && key.label.isBlank() -> {
-                    label.textSize = 13 * density
+                    label.textSize = 13 * density * textScale
                     // Split's halves of the space bar are narrow: the label shrinks to fit, as today's does
                     val room = rr - l - 12 * density
                     val w = label.measureText(spaceLabel)
@@ -253,7 +285,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 key.label.contains('\n') -> {
                     // The numbers page's key: its digits small, in two lines
-                    label.textSize = 11 * density
+                    label.textSize = 11 * density * textScale
                     label.color = ink
                     val lines = key.label.split('\n')
                     lines.forEachIndexed { i, line ->
@@ -262,19 +294,32 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 else -> {
                     val s = shown(key)
-                    label.textSize = when {
-                        s.length > 1 -> 13f
-                        cell.rect.height() < rowHeight -> 20f
-                        // The small punctuation is drawn larger, as today's keyboard does
-                        s in ",.、。" -> 45f
-                        else -> 25f
-                    } * density
+                    label.textSize = letters[key.label] ?: labelSize(cell, s)
                     label.color = ink
                     canvas.drawText(s, cx, cy + label.textSize * 0.35f, label)
                 }
             }
-            if (hints) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
+            // Hints need a key face of today's size: on smaller ones they crowd the letter, and they go.
+            if (hints && textScale == 1f) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
         }
+    }
+
+    private fun isLetter(key: Layout.Key) = key.label.length == 1 && key.label[0].isLetter()
+
+    /** Any other label's text size: today's, shrunk to fit a key narrower than it */
+    private fun labelSize(cell: Cell, s: String): Float {
+        label.textSize = when {
+            s.length > 1 -> 13f
+            cell.rect.height() < rowHeight -> 20f
+            // The small punctuation is drawn larger, as today's keyboard does
+            s in ",.、。" -> 45f
+            else -> 25f
+        } * density * textScale
+        // On keys smaller than any docked keyboard's, within the frame's outline and shadow
+        val (l, _, rr, _) = face(cell.rect)
+        val room = rr - l - (if (textScale < 1f) 4 else 2) * keyPx
+        val w = label.measureText(s)
+        return if (w > room) label.textSize * room / w else label.textSize
     }
 
     // --- Touch ---
@@ -524,7 +569,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     /** A key's face in its cell: its outline starts at the cell's top, the space between rows below it. */
-    private fun face(r: RectF) = RectF(r.left + 1.5f * density, r.top, r.right - 2 * density, r.top + r.height() * 0.83f)
+    private fun face(r: RectF) =
+        RectF(r.left + FACE_LEFT_DP * density * textScale, r.top, r.right - FACE_RIGHT_DP * density * textScale, r.top + r.height() * 0.83f)
 
     /** The key, a row taller upwards, its label in the part above the key */
     private fun showPreview(cell: Cell) {
@@ -643,4 +689,35 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             }
         }
     }
+}
+
+/** The narrowest letter key, in dp, any docked keyboard has (split's halves on a 320 dp phone): today's text fits it */
+private const val MIN_KEY_WIDTH_DP = 22f
+
+/**
+ * The keys' text sizes' share of today's, as today's keyboard sizes them by a key's smaller side: 1 on any
+ * docked keyboard (as tall as [Mode.MIN_HEIGHT] or taller, keys [MIN_KEY_WIDTH_DP] wide or wider), smaller on a
+ * floating keyboard resized smaller than that (#283).
+ */
+internal fun keyTextScale(heightScale: Float, keyWidthDp: Float) =
+    minOf(1f, heightScale / Mode.MIN_HEIGHT, keyWidthDp / MIN_KEY_WIDTH_DP)
+
+/** The gaps between keys: a key's face starts this far into its cell, and ends this far before its end */
+private const val FACE_LEFT_DP = 1.5f
+private const val FACE_RIGHT_DP = 2f
+
+/** The width inside a keycap's outline and shadow, of a key [keyWidth] px wide with frames of [keyPx] px */
+internal fun keycapRoom(keyWidth: Float, density: Float, textScale: Float, keyPx: Float) =
+    keyWidth - (FACE_LEFT_DP + FACE_RIGHT_DP) * density * textScale - 3 * keyPx
+
+/**
+ * The letters' text sizes by label: [size] px for every one, or smaller by one factor for every one when the
+ * widest's ink, in either case ([widthAt] measures it at [size]), is wider than [room] px, as on one-handed's and
+ * split's keys and the smallest floating ones. A pixel over is let be: the letter's antialiased edge on the
+ * outline (W at 25 dp on a 360 dp phone's keys is 0.03 px over at 420 dpi, 0.9 px at 480).
+ */
+internal fun letterSizes(labels: Collection<String>, size: Float, room: Float, widthAt: (String) -> Float): Map<String, Float> {
+    val widest = labels.maxOf { maxOf(widthAt(it), widthAt(it.uppercase())) }
+    val fitted = if (widest > room + 1) size * room / widest else size
+    return labels.associateWith { fitted }
 }
