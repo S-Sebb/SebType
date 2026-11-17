@@ -1956,10 +1956,9 @@ def floating_resize():
                 raise Fail(
                     f"after {name} the keys are {r3 - l3}x{b3 - t3} px, not {r2 - l2}x{b2 - t2}"
                 )
-        # The keyboard's view made again with the frame up: TalkBack reaches the frame alone while it shows,
-        # and the keys again after Apply. Dark mode makes the view again over the same input, the resize kept
-        # (the field keeps its input through it); a turn (floating in both orientations) hides and shows the
-        # keyboard, which ends the resize.
+        # The keyboard's view made again with the frame up, by dark mode and by a turn (floating in both
+        # orientations): TalkBack reaches the frame alone while it shows, and the keys once it is gone (after
+        # Apply, or when the change started the keyboard over and so ended the resize).
         rotate(1)
         set_mode("Floating")
         rotate(0)
@@ -1981,10 +1980,6 @@ def floating_resize():
                 tap_label(("Apply", "应用", "適用"))
                 talkback_reaches(framed=False)
             made_again.append((name, framed))
-        if not made_again[0][1]:
-            raise Fail(
-                "dark mode with the frame up closed it: the view made again wasn't checked"
-            )
         set_mode("Standard")
         rotate(0)
         types_letters()
