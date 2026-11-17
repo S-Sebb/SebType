@@ -243,8 +243,18 @@ object Backup {
             commit()
         }
 
+        /**
+         * Drops the originals. The folder is renamed away in one step first, so a cleanup cut short (the
+         * process killed) is never taken for a rollback still to do, which would undo a finished import.
+         */
         fun commit() {
-            originals.deleteRecursively()
+            val dropped = File(originals.parentFile, "${originals.name}-dropped").apply { deleteRecursively() }
+            if (originals.exists() && !originals.renameTo(dropped)) {
+                // Can't rename: forget the steps before their originals, for the same reason.
+                originals.listFiles { f -> f.name.endsWith(".to") }.orEmpty().forEach { it.delete() }
+                originals.deleteRecursively()
+            }
+            dropped.deleteRecursively()
         }
 
         private fun move(from: File, to: File) {
