@@ -1981,7 +1981,13 @@ def setup_tips():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
     return (
-        "steps 1, 2 and 3 of 3, each button scrolled to and pressed at large text (portrait and landscape), "
+        "steps 1, 2 and 3 of 3, each button "
+        + (
+            "scrolled to and pressed at large text (portrait and landscape)"
+            if has_root()
+            else "pressed (no large text on a phone)"
+        )
+        + ", "
         "step 3 again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
     )
 
@@ -1995,6 +2001,9 @@ def setup_fresh_enabled():
         adb("shell", "ime", "set", IME)
         start_settings()
         wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
+        # Done, as the user would: the next checks expect home, and without root none can put it back
+        tap_text(DONE)
+        wait_for("home after Done", lambda: not setup_step_shown(), 15)
         return "data cleared, SebType on and chosen: setup's step 3"
     saved = read_prefs()
     try:
