@@ -1,8 +1,14 @@
 package dev.sebb.sebtype.next
 
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.nio.file.Files
 
 class ClipboardTest {
     private val hour = 3_600_000L
@@ -32,13 +38,58 @@ class ClipboardTest {
         assertEquals(clips.map { listOf(it.text, it.file, it.pinned, it.timestamp) }, again.map { listOf(it.text, it.file, it.pinned, it.timestamp) })
     }
 
-    /** Stage 4's own file (text and pinned only) still reads, as copied now. */
+    /**
+     * Stage 4's own file (text and pinned only, pinned first, then newest first) reads in its order, as
+     * copied now; when the 25 unpinned are full, a new copy drops the oldest, in either file's history.
+     */
     @Test
-    fun stage4HistoryReads() {
-        val clips = Clipboard.decode("""[{"text":"b","pinned":false},{"text":"a","pinned":true}]""", now)
-        assertEquals(listOf("a", "b"), clips.map { it.text })
-        assertEquals(now, clips[0].timestamp)
-        assertNull(clips[0].file)
+    fun stage4HistoryKeepsItsOrder() {
+        val texts = (25 downTo 1).map { "t$it" } // newest (t25) first
+        val stage4 = JSONArray(listOf(JSONObject().put("text", "pin").put("pinned", true)) +
+            texts.map { JSONObject().put("text", it).put("pinned", false) }).toString()
+        val clips = Clipboard.decode(stage4, now)
+        assertEquals(listOf("pin") + texts, clips.map { it.text })
+        assertEquals(now, clips[1].timestamp)
+        assertNull(clips[1].file)
+        assertEquals(listOf("pin", "new") + texts.dropLast(1),
+            Clipboard.capped(listOf(Clipboard.Clip("new", false, now)) + clips).map { it.text })
+
+        // Today's file of the same clips, oldest first, reads newest first and drops the same one
+        val todays = Clipboard.decode(Clipboard.encode(clips), now)
+        assertEquals(listOf("pin") + texts, todays.map { it.text })
+        assertEquals(listOf("pin", "new") + texts.dropLast(1),
+            Clipboard.capped(listOf(Clipboard.Clip("new", false, now)) + todays).map { it.text })
+    }
+
+    /**
+     * An image copied in while a text's save waits in the queue: that save, whose list of images doesn't have it,
+     * leaves it; the save that shows it keeps it; an image dropped (history cleared meanwhile) goes.
+     */
+    @Test
+    fun imageBeingAddedSurvivesAnEarlierSave() {
+        val dir = Files.createTempDirectory("clips").toFile()
+        try {
+            val images = Clipboard.Images(dir)
+            fun write(name: String) = File(dir, name).apply { writeText("x") }
+            val old = write("old.png")
+            images.adding("new.png")
+            val new = write("new.png")
+            val thumb = write("new.png.thumb.jpg")
+            images.saved(emptySet()) // the text's save, queued before the image was in the history
+            assertTrue(new.exists() && thumb.exists())
+            assertFalse(old.exists())
+            images.saved(setOf("new.png", "new.png.thumb.jpg"))
+            images.saved(setOf("new.png", "new.png.thumb.jpg"))
+            assertTrue(new.exists())
+
+            images.adding("dropped.png")
+            val dropped = write("dropped.png")
+            images.dropped("dropped.png", setOf("new.png", "new.png.thumb.jpg"))
+            assertFalse(dropped.exists())
+            assertTrue(new.exists())
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 
     /** Unpinned clips go after 72 hours, pinned ones stay; at most 25 unpinned, and 40 MB of their images. */

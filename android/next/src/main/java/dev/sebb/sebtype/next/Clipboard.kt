@@ -58,6 +58,9 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
     private val file = File(app.filesDir, "clipboard.json")
     val dir = File(app.filesDir, "clipboardfiles")
     private val saver = Executors.newSingleThreadExecutor { Thread(it, "SebType clipboard") }
+    private val images = Images(dir)
+    // Bumped when the history is cleared or turned off: an image still being copied in is then dropped.
+    private var generation = 0
     private val main = Handler(Looper.getMainLooper())
 
     /** Called when the history or the quick clip changes */
@@ -81,8 +84,17 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
         }
 
     /** Newest first */
-    var history: List<Clip> = load()
+    var history: List<Clip> = emptyList()
         private set
+
+    init {
+        // What expired since the last start goes from the file and its images too, as today's
+        val saved = load()
+        if (saved != null) {
+            history = capped(pruned(saved, System.currentTimeMillis()) { it.sizeMb ?: imageFile(it)?.length()?.let { n -> n / (1024f * 1024f) } })
+            save(history)
+        }
+    }
 
     private var quick: Quick? = null
     private var quickAt = 0L
@@ -118,12 +130,13 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
             quick = Quick(null, uri, mimeTypes)
             quickAt = SystemClock.elapsedRealtime()
             onChange?.invoke()
-            if (keep) saver.execute { saveImage(uri, mimeTypes, now) }
+            val copying = generation
+            if (keep) saver.execute { saveImage(uri, mimeTypes, now, copying) }
         }
     }
 
     /** On the saver's thread: the image copied into [dir] by its MD5, with its thumbnail; then it heads the history. */
-    private fun saveImage(uri: Uri, mimeTypes: List<String>, now: Long) {
+    private fun saveImage(uri: Uri, mimeTypes: List<String>, now: Long, copying: Int) {
         val mime = IMAGE_TYPES.keys.firstOrNull { it in mimeTypes } ?: return
         try {
             dir.mkdirs()
@@ -150,9 +163,14 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
             }
             val name = md5.digest().joinToString("") { "%02x".format(it) } + "." + IMAGE_TYPES.getValue(mime)
             val image = File(dir, name)
+            images.adding(name)
             if (image.exists()) part.delete() else part.renameTo(image)
             thumbnail(image)
             main.post {
+                if (copying != generation || !keep) {
+                    val kept = referenced(history)
+                    return@post saver.execute { images.dropped(name, kept) }
+                }
                 val pinned = history.any { it.file == name && it.pinned }
                 update(listOf(Clip(null, pinned, now, name, listOf(mime), size / (1024f * 1024f))) + history.filter { it.file != name })
             }
@@ -180,7 +198,10 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
 
     fun remove(clip: Clip) = update(history.filter { it !== clip })
 
-    fun clear(keepPinned: Boolean = true) = update(if (keepPinned) history.filter { it.pinned } else emptyList())
+    fun clear(keepPinned: Boolean = true) {
+        generation++
+        update(if (keepPinned) history.filter { it.pinned } else emptyList())
+    }
 
     /** Clips past their time or over the limits are gone (when the panel opens, as today's) */
     fun prune() {
@@ -193,27 +214,59 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
     fun thumbnailFile(clip: Clip): File? = imageFile(clip)?.let { File(dir, it.name + THUMB) }
 
     private fun update(clips: List<Clip>) {
-        val pinned = clips.filter { it.pinned }
-        history = pinned + clips.filter { !it.pinned }.take(MAX)
-        val json = encode(history)
-        val files = history.mapNotNull { it.file }.flatMap { listOf(it, it + THUMB) }.toSet()
+        history = capped(clips)
+        save(history)
+        onChange?.invoke()
+    }
+
+    /** The file written and the images no clip shows any more deleted, in the background */
+    private fun save(clips: List<Clip>) {
+        val json = encode(clips)
+        val kept = referenced(clips)
         saver.execute {
             val part = File(file.path + ".new")
             part.writeText(json)
             part.renameTo(file)
-            // Images no clip shows any more
-            dir.listFiles()?.forEach { if (it.name !in files && !it.name.endsWith(".part")) it.delete() }
+            images.saved(kept)
         }
-        onChange?.invoke()
     }
 
-    private fun load(): List<Clip> = try {
-        if (!file.isFile) emptyList()
-        else pruned(decode(file.readText(), System.currentTimeMillis()).filter { it.file == null || imageFile(it)!!.isFile },
-            System.currentTimeMillis()) { it.sizeMb ?: imageFile(it)?.length()?.let { n -> n / (1024f * 1024f) } }
+    private fun referenced(clips: List<Clip>) = clips.mapNotNull { it.file }.flatMap { listOf(it, it + THUMB) }.toSet()
+
+    /** The saved history, without images whose file is gone; null if there is none or it can't be read */
+    private fun load(): List<Clip>? = try {
+        if (!file.isFile) null
+        else decode(file.readText(), System.currentTimeMillis()).filter { it.file == null || imageFile(it)!!.isFile }
     } catch (e: JSONException) {
         Log.w(TAG, "Can't read the clipboard history", e)
-        emptyList()
+        null
+    }
+
+    /**
+     * The image files in a directory, used on the saver's thread alone. An image being copied in stays until
+     * the history that shows it is saved or its copy is dropped: a save queued while it was copied in, whose
+     * list of images doesn't have it yet, mustn't delete it.
+     */
+    class Images(private val dir: File) {
+        private val adding = mutableSetOf<String>()
+
+        fun adding(name: String) {
+            adding += name
+        }
+
+        /** After a save of a history showing [kept] (images and thumbnails): the other files go, but those being added. */
+        fun saved(kept: Set<String>) {
+            adding -= kept
+            dir.listFiles()?.forEach {
+                if (it.name !in kept && it.name.removeSuffix(THUMB) !in adding && !it.name.endsWith(".part")) it.delete()
+            }
+        }
+
+        /** An image copied in that won't be shown (the history was cleared or turned off meanwhile) */
+        fun dropped(name: String, kept: Set<String>) {
+            adding -= name
+            saved(kept)
+        }
     }
 
     /** A thumbnail as today's: the image's middle square, 384 px, as JPEG; made once, beside it. */
@@ -246,12 +299,14 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
         private val IMAGE_TYPES = linkedMapOf("image/png" to "png", "image/jpeg" to "jpg", "image/jpg" to "jpg", "image/webp" to "webp")
 
         /**
-         * Today's file, oldest first, as newest first. A clip that can't be read (not text, not an image) is
-         * left out, not the whole history. One saved before this (text and pinned only) counts as copied [now].
+         * The saved history, newest first: today's file is oldest first; stage 4's (text and pinned only, no
+         * timestamps, its clips counted as copied [now]) newest first. A clip that can't be read (not text, not
+         * an image) is left out, not the whole history.
          */
         fun decode(json: String, now: Long): List<Clip> {
             val a = JSONArray(json)
-            return (0 until a.length()).mapNotNull { i ->
+            val todays = (0 until a.length()).any { a.optJSONObject(it)?.has("timestamp") == true }
+            val clips = (0 until a.length()).mapNotNull { i ->
                 val o = a.optJSONObject(i) ?: return@mapNotNull null
                 val text = if (o.isNull("text")) null else o.optString("text")
                 val file = if (o.isNull("backingFile")) null else o.optString("backingFile")
@@ -259,8 +314,12 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
                 val types = o.optJSONArray("mimeTypes")?.let { t -> (0 until t.length()).map { t.optString(it) } }.orEmpty()
                 val size = if (o.isNull("sizeMb")) null else o.optDouble("sizeMb").toFloat()
                 Clip(text, o.optBoolean("pinned"), o.optLong("timestamp", now), file, types, size)
-            }.asReversed()
+            }
+            return if (todays) clips.asReversed() else clips
         }
+
+        /** Pinned clips first, then at most [MAX] unpinned ones, the newest */
+        fun capped(clips: List<Clip>): List<Clip> = clips.filter { it.pinned } + clips.filter { !it.pinned }.take(MAX)
 
         fun find(clips: List<Clip>, query: String): List<Clip> = if (query.isBlank()) emptyList() else clips.filter {
             it.text?.contains(query, ignoreCase = true) == true || it.mimeTypes.any { m -> m.contains(query, ignoreCase = true) }
