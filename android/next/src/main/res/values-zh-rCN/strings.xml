@@ -81,5 +81,10 @@
     <string name="mode_shorter">调低</string>
     <string name="mode_swap">换到另一边</string>
     <string name="mode_move">移动键盘</string>
+    <string name="mode_resize_corner">拖动调整大小</string>
+    <string name="mode_wider">调宽</string>
+    <string name="mode_narrower">调窄</string>
+    <string name="mode_reset">重置</string>
+    <string name="mode_apply">应用</string>
     <string name="back">返回</string>
 </resources>

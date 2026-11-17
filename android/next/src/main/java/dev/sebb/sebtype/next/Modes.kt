@@ -5,9 +5,17 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Rect
+import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
+import androidx.customview.widget.ExploreByTouchHelper
 import dev.sebb.sebtype.next.Icons.Icon
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /** How the keyboard sits on the screen (#53 B5), and its height; kept per orientation, as today's */
 enum class Mode(val label: Int, val icon: Icon) {
@@ -22,8 +30,12 @@ enum class Mode(val label: Int, val icon: Icon) {
         const val HEIGHT_STEP = 0.05f
         /** One-handed: the keys' share of the width */
         const val ONE_HANDED_WIDTH = 0.8f
-        /** Floating: the keyboard's share of the width */
+        /** Floating: the keyboard's share of the width before it is resized */
         const val FLOATING_WIDTH = 0.85f
+        /** Floating: the narrowest it gets, as today's (three 48 dp keys) */
+        const val FLOATING_MIN_WIDTH_DP = 144f
+        /** Floating: TalkBack's Wider and Narrower, as shares of the window's width */
+        const val WIDTH_STEP = 0.05f
     }
 }
 
@@ -178,5 +190,164 @@ class DragHandle(context: Context, private val texts: Texts, private val onDrag:
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onDone()
         }
         return true
+    }
+}
+
+/**
+ * Floating mode's Resize Keyboard, as today's (KeyboardResizers): a frame over the keyboard, red while the
+ * keyboard is held at a limit. Its corner, dragged, sets the width and height together (#283); a drag
+ * anywhere else moves the keyboard; Reset and Apply in the middle, Apply ending it. For TalkBack the corner
+ * has the actions Wider, Narrower, Taller and Shorter.
+ */
+@SuppressLint("ViewConstructor")
+class ResizeFrame(context: Context, private val texts: Texts, private val listener: Listener) : View(context) {
+    interface Listener {
+        /** The corner dragged by (dx, dy) px; false when the keyboard stopped at a limit */
+        fun onResize(dx: Float, dy: Float): Boolean
+        /** One step wider (1) or narrower (-1), taller (1) or shorter (-1) */
+        fun onResizeStep(wider: Int, taller: Int)
+        fun onMove(dx: Float, dy: Float)
+        /** A drag ended: the size and place are kept */
+        fun onResizeDone()
+        fun onResetSize()
+        fun onApplySize()
+    }
+
+    private enum class Part { CORNER, RESET, APPLY, MOVE }
+
+    private val density = resources.displayMetrics.density
+    private val shade = Paint().apply { color = Picnic.CREAM; alpha = 128 }
+    private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3 * density }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 15 * density
+        textAlign = Paint.Align.CENTER
+        typeface = Picnic.fonts(context).first
+    }
+    private val radius = 24 * density
+    private val reset = RectF()
+    private val apply = RectF()
+    private var held: Part? = null
+    private var atLimit = false
+    private var lastX = 0f
+    private var lastY = 0f
+    private val a11y = Accessibility()
+
+    init {
+        ViewCompat.setAccessibilityDelegate(this, a11y)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        val y = h / 2f + 8 * density
+        val button = 96 * density
+        reset.set(w / 2f - 8 * density - button, y, w / 2f - 8 * density, y + 40 * density)
+        apply.set(w / 2f + 8 * density, y, w / 2f + 8 * density + button, y + 40 * density)
+        a11y.invalidateRoot()
+    }
+
+    private fun corner() = RectF(width - 2 * radius, height - 2 * radius, width.toFloat(), height.toFloat())
+
+    override fun onDraw(canvas: Canvas) {
+        val line = if (atLimit) Picnic.LIMIT else Picnic.BERRY
+        val r = 4 * density
+        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), r, r, shade)
+        border.color = line
+        val inset = border.strokeWidth / 2
+        canvas.drawRoundRect(inset, inset, width - inset, height - inset, r, r, border)
+        // The corner: a circle cut by the frame, as today's handles
+        canvas.save()
+        canvas.clipRect(0, 0, width, height)
+        fill.color = if (atLimit) Picnic.LIMIT else if (held == Part.CORNER) Picnic.BERRY_HIGH else Picnic.BERRY
+        canvas.drawCircle(width.toFloat(), height.toFloat(), radius, fill)
+        canvas.restore()
+        text.color = Picnic.INK
+        canvas.drawText(texts[R.string.mode_resize_corner], width / 2f, height / 2f - 16 * density, text)
+        for ((rect, label) in listOf(reset to R.string.mode_reset, apply to R.string.mode_apply)) {
+            fill.color = Picnic.CREAM
+            canvas.drawRoundRect(rect, 15 * density, 15 * density, fill)
+            text.color = Picnic.BERRY
+            canvas.drawText(texts[label], rect.centerX(), rect.centerY() + text.textSize * 0.35f, text)
+        }
+    }
+
+    private fun partAt(x: Float, y: Float) = when {
+        hypot(width - x, height - y) < 2 * radius -> Part.CORNER
+        reset.contains(x, y) -> Part.RESET
+        apply.contains(x, y) -> Part.APPLY
+        else -> Part.MOVE
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        // In the screen's coordinates: the frame moves and grows under the finger.
+        val dx = e.rawX - lastX
+        val dy = e.rawY - lastY
+        lastX = e.rawX; lastY = e.rawY
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { held = partAt(e.x, e.y); invalidate() }
+            MotionEvent.ACTION_MOVE -> when (held) {
+                Part.CORNER -> { atLimit = !listener.onResize(dx, dy); invalidate() }
+                Part.MOVE -> listener.onMove(dx, dy)
+                else -> {}
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val part = held
+                held = null
+                atLimit = false
+                invalidate()
+                when (part) {
+                    Part.CORNER, Part.MOVE -> listener.onResizeDone()
+                    Part.RESET -> if (e.actionMasked == MotionEvent.ACTION_UP && reset.contains(e.x, e.y)) listener.onResetSize()
+                    Part.APPLY -> if (e.actionMasked == MotionEvent.ACTION_UP && apply.contains(e.x, e.y)) listener.onApplySize()
+                    null -> {}
+                }
+            }
+        }
+        return true
+    }
+
+    override fun dispatchHoverEvent(event: MotionEvent) = a11y.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+
+    private inner class Accessibility : ExploreByTouchHelper(this@ResizeFrame) {
+        private val parts = listOf(Part.CORNER, Part.RESET, Part.APPLY)
+        /** The corner's actions: their ids, labels, and the step each takes */
+        private val steps = listOf(
+            Triple(R.id.resize_wider, R.string.mode_wider, 1 to 0),
+            Triple(R.id.resize_narrower, R.string.mode_narrower, -1 to 0),
+            Triple(R.id.resize_taller, R.string.mode_taller, 0 to 1),
+            Triple(R.id.resize_shorter, R.string.mode_shorter, 0 to -1),
+        )
+
+        override fun getVirtualViewAt(x: Float, y: Float) = parts.indexOf(partAt(x, y)).takeIf { it >= 0 } ?: INVALID_ID
+
+        override fun getVisibleVirtualViews(ids: MutableList<Int>) {
+            ids += parts.indices
+        }
+
+        override fun onPopulateNodeForVirtualView(id: Int, node: AccessibilityNodeInfoCompat) {
+            val (rect, label) = when (parts[id]) {
+                Part.CORNER -> corner() to R.string.mode_resize_corner
+                Part.RESET -> reset to R.string.mode_reset
+                else -> apply to R.string.mode_apply
+            }
+            node.contentDescription = texts[label]
+            node.className = "android.widget.Button"
+            node.setBoundsInParent(Rect(rect.left.roundToInt(), rect.top.roundToInt(), rect.right.roundToInt(), rect.bottom.roundToInt()))
+            if (parts[id] == Part.CORNER) for ((action, name, _) in steps) node.addAction(AccessibilityActionCompat(action, texts[name]))
+            else node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
+        }
+
+        override fun onPerformActionForVirtualView(id: Int, action: Int, arguments: Bundle?): Boolean {
+            when (parts.getOrNull(id)) {
+                Part.CORNER -> {
+                    val (wider, taller) = steps.firstOrNull { it.first == action }?.third ?: return false
+                    listener.onResizeStep(wider, taller)
+                }
+                Part.RESET -> if (action == AccessibilityNodeInfoCompat.ACTION_CLICK) listener.onResetSize() else return false
+                Part.APPLY -> if (action == AccessibilityNodeInfoCompat.ACTION_CLICK) listener.onApplySize() else return false
+                else -> return false
+            }
+            return true
+        }
     }
 }

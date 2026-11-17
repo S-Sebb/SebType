@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="keyboard" type="id" />
+    <item name="resize_wider" type="id" />
+    <item name="resize_narrower" type="id" />
+    <item name="resize_taller" type="id" />
+    <item name="resize_shorter" type="id" />
 </resources>

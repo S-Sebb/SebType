@@ -59,6 +59,12 @@ class MigrationTest {
         assertEquals(Mode.FLOATING, floating.mode)
         assertEquals(1.2f, floating.height, 0.001f)
         assertEquals(1f, Migration.size("""{"currentMode":"Floating","heightMultiplier":1.25}""", false, portrait)!!.height, 0.001f)
+        // Its own width and height, kept apart from the docked keyboard's (#283); today's defaults stay unset.
+        assertEquals(1.2f, floating.floatingHeight!!, 0.001f)
+        assertNull(floating.floatingWidth)
+        val resized = Migration.size("""{"currentMode":"Regular","floatingWidthDp":280.5,"floatingHeightDp":240.0}""", false, portrait)!!
+        assertEquals(280.5f, resized.floatingWidth!!, 0.001f)
+        assertNull(resized.floatingHeight)
     }
 
     @Test

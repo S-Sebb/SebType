@@ -1294,6 +1294,7 @@ RESIZE = ("Resize Keyboard", "调整键盘大小", "キーボードのサイズ�
 TALLER = ("Taller", "调高", "高く")
 SHORTER = ("Shorter", "调低", "低く")
 MOVE_KEYBOARD = "Move keyboard"
+RESIZE_CORNER = "Drag to resize"
 
 
 def action(labels):
@@ -1816,6 +1817,127 @@ def floating_after_resize():
         set_mode("Standard")
 
 
+def resize_floating(*swipes):
+    """Floating mode's Resize Keyboard: each swipe (from, by) starts at "corner" (the frame's corner, which
+    resizes) or "keys" (a point on the keys, which moves the keyboard) and goes (dx, dy) px, stopping at the
+    screen's edge; then Apply."""
+    w, h = screen_size()
+    open_field()
+    action(MODES_ACTION)
+    tap_label(RESIZE)
+    for start, (dx, dy) in swipes:
+        corner = wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+        l, t, r, b = keyboard_frame
+        x, y = (
+            corner[1:3] if start == "corner" else (l + (r - l) // 6, t + (b - t) // 5)
+        )
+        to = (min(max(x + dx, 0), w - 1), min(max(y + dy, 0), h - 1))
+        adb("shell", "input", "swipe", str(x), str(y), *map(str, to), "1500")
+        time.sleep(1)
+    tap_label(("Apply", "应用", "適用"))
+    return frame_now()
+
+
+def screen_size():
+    m = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size").splitlines()[-1])
+    return int(m.group(1)), int(m.group(2))
+
+
+def rotate(quarter):
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    adb("shell", "settings", "put", "system", "user_rotation", str(quarter))
+    time.sleep(3)
+
+
+def floating_resize():
+    """Floating: the resize frame's corner dragged left and up makes the keyboard narrower and shorter, and
+    the size stays after the keyboard restarts and after a turn to landscape and back (#283)."""
+    to_english()
+    auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    try:
+        l, t, r, b = set_mode("Floating")
+        l2, t2, r2, b2 = resize_floating(("corner", (-200, -80)))
+        if not (r2 - l2 < r - l - 150 and b2 - t2 < b - t - 40):
+            raise Fail(
+                f"the corner dragged by (-200, -80): keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px"
+            )
+        restart_app()
+        after_restart = frame_now()
+        rotate(1)
+        open_field()
+        land = frame_now()
+        rotate(0)
+        open_field()
+        back = frame_now()
+        for name, (l3, t3, r3, b3) in (
+            ("the restart", after_restart),
+            ("landscape and back", back),
+        ):
+            if abs((r3 - l3) - (r2 - l2)) > 4 or abs((b3 - t3) - (b2 - t2)) > 4:
+                raise Fail(
+                    f"after {name} the keys are {r3 - l3}x{b3 - t3} px, not {r2 - l2}x{b2 - t2}"
+                )
+        types_letters()
+        return (
+            f"keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px, kept after a restart and landscape "
+            f"(there {land[2] - land[0]}x{land[3] - land[1]}), typing works"
+        )
+    finally:
+        rotate(0)
+        adb(
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "accelerometer_rotation",
+            auto if auto in ("0", "1") else "0",
+        )
+        tap_reset()
+        set_mode("Standard")
+
+
+def tap_reset():
+    open_field()
+    action(MODES_ACTION)
+    tap_label(RESIZE)
+    tap_label(("Reset", "重置", "初期化"))
+    tap_label(("Apply", "应用", "適用"))
+
+
+def floating_resize_edge():
+    """Floating, moved to the left edge, its corner dragged to the screen's bottom right: it grows to nearly
+    the screen's width and taller, pushed up rather than off the bottom; then a narrower window narrows it to
+    fit, and it still types (#283)."""
+    to_english()
+    w, h = screen_size()
+    try:
+        l, t, r, b = set_mode("Floating")
+        l2, t2, r2, b2 = resize_floating(("keys", (-w, 0)), ("corner", (w, h)))
+        if l2 < 0 or r2 > w or b2 > h or not (r2 - l2 > r - l and b2 - t2 > b - t):
+            raise Fail(
+                f"keys at ({l}, {t}, {r}, {b}) -> ({l2}, {t2}, {r2}, {b2}) on a {w}x{h} screen"
+            )
+        narrow = w * 2 // 3
+        adb("shell", "wm", "size", f"{narrow}x{h}")
+        time.sleep(3)
+        open_field()
+        l3, t3, r3, b3 = frame_now()
+        if l3 < 0 or r3 > narrow or b3 > h:
+            raise Fail(
+                f"in a {narrow} px wide screen the keys are at ({l3}, {t3}, {r3}, {b3})"
+            )
+        types_letters()
+        return (
+            f"keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px within {w}x{h}; {r3 - l3} px wide in a "
+            f"{narrow} px screen, typing works"
+        )
+    finally:
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        tap_reset()
+        set_mode("Standard")
+
+
 def picked_suggestion_period():
     """#39: after a tapped suggestion, a "." still joins the word: "this", This tapped, "." -> "This. "."""
     to_english()
@@ -2057,6 +2179,8 @@ if NEXT:
     check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
     check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
     check("modes-floating-resized", floating_after_resize, needs=["first-install"])
+    check("modes-floating-resize", floating_resize, needs=["first-install"])
+    check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
     check("en-futo-default-migrates", lambda: None)
 
 if (

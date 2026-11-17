@@ -34,6 +34,8 @@ object Picnic {
     const val BERRY_HIGH = 0xFFE8778F.toInt()
     const val BERRY_LOW = 0xFF92384E.toInt()
     const val SHADOW = 0x305B331C
+    /** A resize held at a limit, as today's error colour */
+    const val LIMIT = 0xFFD64541.toInt()
     const val WHITE = 0xFFFFFFFF.toInt()
     private const val PETAL_PINK = 0xFFF4B6C2.toInt()
     private const val PETAL_LILAC = 0xFFC9B6EF.toInt()

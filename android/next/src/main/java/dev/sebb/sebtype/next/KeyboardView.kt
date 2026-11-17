@@ -148,6 +148,10 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private fun rows(page: Layout?, numberRow: Layout?) =
         (page?.rows.orEmpty() + numberRow?.rows.orEmpty()).sumOf { it.height.toDouble() }.toFloat()
 
+    /** The keys' height in px at [scale] (a [heightScale]), and the scale that gives them [height] px */
+    fun heightAt(scale: Float) = topPadding + rows(page, numberRow) * ROW * density * scale
+    fun scaleFor(height: Float) = (height - topPadding) / (rows(page, numberRow) * ROW * density)
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(topPadding + rows(page, numberRow) * rowHeight).toInt())
     }

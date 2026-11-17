@@ -84,5 +84,10 @@
     <string name="mode_shorter">Shorter</string>
     <string name="mode_swap">Other side</string>
     <string name="mode_move">Move keyboard</string>
+    <string name="mode_resize_corner">Drag to resize</string>
+    <string name="mode_wider">Wider</string>
+    <string name="mode_narrower">Narrower</string>
+    <string name="mode_reset">Reset</string>
+    <string name="mode_apply">Apply</string>
     <string name="back">Back</string>
 </resources>
