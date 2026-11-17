@@ -98,6 +98,7 @@ class TextService final : public ITfTextInputProcessorEx,
                              const std::wstring &text);
   // The same for context_'s composition, in a session of its own.
   void typeIn(const std::wstring &typed);
+  bool active();
 
  private:
   // A key as the server takes it, from Windows' key message; false for keys SebType never takes.

@@ -15,9 +15,11 @@ it must be off then and never turn on (display-stayed-off); once it is on, no mo
 -Trial needs no SebType: the field to the front and one key, and the display watched, then nothing else.
 -WatchTo <file> only watches the display, for a whole session around this test (installing, uninstalling):
 each state goes into the file as Windows reports it, until <file>.stop exists (at most 60 minutes).
+-AnyDisplay is for a PC no one sits at (TCSBackEnd, whose console session the run attaches): the display
+state is only reported.
 Results: one line per check in <Out>\focus-out-results.txt; exit 0 only if all pass.
 #>
-param([string]$Out = "$env:USERPROFILE\scratch\SebType\277", [switch]$Trial, [string]$WatchTo)
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\277", [switch]$Trial, [string]$WatchTo, [switch]$AnyDisplay)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -84,11 +86,11 @@ function States { $display::States -join ', ' }
 $display::Watch()
 for ($i = 0; $i -lt 20 -and $display::Last -lt 0; $i++) { Start-Sleep -Milliseconds 100 }
 if ($display::Last -lt 0) { Write-Host 'BLOCKED preflight: Windows reported no display state'; exit 1 }
-if ($display::Last -ne 0) { Write-Host "BLOCKED preflight: the display is on (state $($display::Last)): someone may be using the PC"; exit 1 }
+if ($display::Last -ne 0 -and -not $AnyDisplay) { Write-Host "BLOCKED preflight: the display is on (state $($display::Last)): someone may be using the PC"; exit 1 }
 
 # Before each key: the display still off, and the field in front with TSF's focus.
 function Ready {
-  if ($display::Lit) { throw "the display turned on ($(States)): no more keys" }
+  if ($display::Lit -and -not $AnyDisplay) { throw "the display turned on ($(States)): no more keys" }
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
 function Keys {
@@ -162,19 +164,20 @@ try {
     }
     # Switching to another input method still throws it away (the user's choice in #301).
     Check 'chinese-to-other-keyboard' {
-      Lang zh; TypeText 'nihao'; $other = OtherKeyboard
+      Lang zh; TypeText 'nihao'; $typed = $tsf::Text(); $from = $tsf::Active(); $other = OtherKeyboard
       if (-not $other) { Lang zh; return 'SKIP: the language list has no input method besides SebType' }
-      $t = $tsf::Text(); Lang zh
-      if ($t -ne '') { throw "nihao, then $other, left '$t'" }
+      $t = $tsf::Text(); $to = $tsf::Active(); Lang zh
+      if ($t -ne '') { throw "nihao, then $other, left '$t' (before: '$typed' in $from; after: $to)" }
       "nothing left after $other"
     }
   }
 } finally {
-  if (-not $display::Lit) { try { Keys Escape Escape } catch { } }
+  if (-not $display::Lit -or $AnyDisplay) { try { Keys Escape Escape } catch { } }
   $tsf::Stop()
 }
 Start-Sleep 6  # a wake from the last steps shows by now
 Check 'display-stayed-off' {
+  if ($AnyDisplay) { return "SKIP: -AnyDisplay (states: $(States))" }
   if ($display::Lit) { throw "the display turned on: $(States)" }
   "off throughout: $(States)"
 }

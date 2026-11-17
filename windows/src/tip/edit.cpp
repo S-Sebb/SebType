@@ -79,6 +79,7 @@ HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
 }
 
 HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
+  leaving_ = false;  // SebType is typing: a notice of its profile going was for its other language
   const std::wstring commit = utf16(reply_.commit);
   reply_.commit.clear();  // applied once
   const bool japanese = reply_.lang == Lang::Japanese;

@@ -266,6 +266,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
 }
 
 STDMETHODIMP TextService::Deactivate() {
+  leaving_ = true;
   if (composition_ && context_) {
     editSession(context_, clientId_, [this](TfEditCookie ec) { return endComposition(ec, context_); });
   }
@@ -317,14 +318,15 @@ void TextService::setOpen() {
   if (mgr) mgr->Release();
 }
 
-// The profile that comes next: SebType's other language, or another keyboard, which drops what was being
-// typed (the user's choice in #301) even when TSF ends the composition for it before Deactivate.
-STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid, REFGUID catid, REFGUID profile,
-                                      HKL, DWORD flags) {
-  if (!(flags & TF_IPSINK_FLAG_ACTIVE)) return S_OK;
-  const bool ours = profileType == TF_PROFILETYPE_INPUTPROCESSOR && clsid == kClsid;
-  leaving_ = !ours && (profileType == TF_PROFILETYPE_KEYBOARDLAYOUT || catid == GUID_TFCAT_TIP_KEYBOARD);
-  if (ours) setLanguage(profile);
+// Switching to another keyboard drops what was being typed (the user's choice in #301). TSF can end the
+// composition before Deactivate and before the next profile's notice (seen on TCSBackEnd), so the signs are
+// our profile going inactive, Deactivate, or another keyboard already active (OnCompositionTerminated). Our
+// other language comes active right after its notice, and the next reply clears the flag anyway.
+STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid, REFGUID, REFGUID profile, HKL,
+                                      DWORD flags) {
+  if (profileType != TF_PROFILETYPE_INPUTPROCESSOR || clsid != kClsid) return S_OK;
+  leaving_ = !(flags & TF_IPSINK_FLAG_ACTIVE);
+  if (!leaving_) setLanguage(profile);
   return S_OK;
 }
 
@@ -344,6 +346,19 @@ void TextService::setLanguage(REFGUID profile) {
   if (switched && context_) typeIn(utf16(std::exchange(reply_.commit, {})));
   if (window_) window_->hide();
   if (button_) button_->update();
+}
+
+// Whether one of SebType's profiles is still the thread's keyboard (not while another is being activated).
+bool TextService::active() {
+  bool ours = true;
+  ITfInputProcessorProfileMgr *profiles = nullptr;
+  if (SUCCEEDED(CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                                 IID_ITfInputProcessorProfileMgr, reinterpret_cast<void **>(&profiles)))) {
+    TF_INPUTPROCESSORPROFILE p{};
+    if (SUCCEEDED(profiles->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &p))) ours = p.clsid == kClsid;
+    profiles->Release();
+  }
+  return ours;
 }
 
 // The language of the thread's keyboard layout, which Windows switches with the profile. ActivateEx can read
@@ -572,6 +587,7 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie ec, ITfCompositio
   if (composition == composition_) {
     std::wstring typed;
     if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    if (!leaving_ && !active()) leaving_ = true;
     if (leaving_) typed.clear();  // the text goes, kana and all, for the next keyboard (#301)
     ITfRange *range = nullptr;
     if ((leaving_ || !typed.empty()) && SUCCEEDED(composition_->GetRange(&range))) {
