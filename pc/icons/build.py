@@ -14,10 +14,12 @@ hicolor (linux/CMakeLists.txt); Windows' .ico files hold the PNGs (windows/make_
 """
 
 import io
+import sys
 from math import pi
 from pathlib import Path
 
 import cairo
+import numpy as np
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
@@ -101,6 +103,10 @@ STATES = {  # state: language, (font, text)
 }
 BADGE = {"wait": "#C2506A", "off": "#B03030"}
 GREY_INK = "#7D706A"
+SYMMETRIC = {
+    "中",
+    "A",
+}  # centred exactly; the others within a pixel, as their shapes lean
 GLYPHS = {g: glyph(FONTS[g[0]], g[1]) for _, g in STATES.values()}
 
 
@@ -280,10 +286,11 @@ def holes(im):
     return n - 1  # the area around the glyph
 
 
-def bitmap(kind, text, w, h):
-    """The glyph's ink as an L mask at most w x h, hinted at its own size; the largest that fits. Below 20 px
-    its strokes are a pixel wider (its ink twice, a pixel apart, letters a pixel further apart), as bold as
-    the larger sizes, unless that would close a counter."""
+def bitmap(kind, text, w, h, parity):
+    """The glyph's ink as an L mask at most w x h, hinted at its own size: the largest that fits whose width
+    is even or odd as parity says (when it says), so it centres on whole pixels. Below 20 px its strokes are a pixel wider
+    (its ink twice, a pixel apart, letters a pixel further apart), as bold as the larger sizes, unless that
+    would close a counter: a size smaller rather than a lighter glyph."""
     for px in range(h * 2, 4, -1):
         f = font(kind, px)
         bold = px < 20
@@ -299,7 +306,12 @@ def bitmap(kind, text, w, h):
             if holes(wide.crop(wide.getbbox())) == holes(im.crop(im.getbbox())):
                 im = wide
         box = im.getbbox()
-        if box and box[2] - box[0] <= w and box[3] - box[1] <= h:
+        if (
+            box
+            and box[2] - box[0] <= w
+            and box[3] - box[1] <= h
+            and parity in (None, (box[2] - box[0]) % 2)
+        ):
             return im.crop(box)
     raise ValueError(text)
 
@@ -350,6 +362,59 @@ def image(surface):
     return Image.open(io.BytesIO(b.getvalue())).convert("RGBA")
 
 
+def GLINT(S, k0, ky1, side):
+    """The glint's rectangle on the base: x, y, width, height."""
+    return (
+        round(k0 + S * 0.1 - S * 0.035),
+        round(ky1 - side * 0.45 - S * 0.06),
+        max(1, round(S * 0.07)),
+        max(2, round(S * 0.12)),
+    )
+
+
+def face(S):
+    """The face's inside columns, x0 to x1 (exclusive), as pixels() draws it."""
+    sb, sh, bw, side, t, fi, lip = grid(S)
+    return sb + bw + t + fi, S - sb - bw - t - fi
+
+
+def check(S, state, im):
+    """What is wrong with a drawing: the glyph off centre in the face (its ink's left and right margins
+    differ, by more than a pixel for a glyph that isn't symmetric), or the body not a mirror image (the glyph, blush, glint and badge aside)."""
+    lang, (kind, text) = STATES[state]
+    px = np.asarray(im.convert("RGBA")).astype(int)
+    rgb_ = px[..., :3]
+    ink = (rgb_ == np.array(rgb(GREY_INK if lang == "grey" else INK)[:3]) * 255).all(
+        axis=2
+    ) & (px[..., 3] == 255)
+    x0, x1 = face(S)
+    keep = np.ones((S, S), bool)
+    if (
+        state.rpartition("-")[2] in BADGE
+    ):  # the badge sits bottom right, over the face's corner
+        br = max(S * 0.25, 4.5)
+        keep[int(S - 2 * br - 1) :, int(S - 2 * br - 1) :] = False
+    cols = np.nonzero((ink & keep)[:, x0:x1].any(axis=0))[0]
+    problems = []
+    if len(cols):
+        left, right = cols[0], x1 - x0 - 1 - cols[-1]
+        if abs(left - right) > (0 if text in SYMMETRIC else 1):
+            problems.append(f"glyph margins {left} left, {right} right")
+    blush = (rgb_ == np.array(rgb(BLUSH)[:3]) * 255).all(axis=2)
+    sb, sh, bw, side, t, fi, lip = grid(S)
+    gx, gy, gw, gh = GLINT(S, sb + bw, S - sh - sb - bw, side)
+    keep &= ~ink & ~blush
+    if S >= 32:
+        keep[gy : gy + gh, gx : gx + gw] = False
+    both = keep & keep[:, ::-1]
+    rows = sorted(
+        {int(y) for y in np.nonzero(((px != px[:, ::-1]).any(axis=2)) & both)[0]}
+    )
+    if rows:
+        problems.append(f"body not symmetric in rows {rows}")
+    return problems
+
+
 def pixels(S, state):
     """sticker()'s key at S px on its pixel grid: its edges on whole pixels (only round corners are partly
     covered), its shadow, glint and blush in whole pixels, and the glyph hinted at its size."""
@@ -369,24 +434,37 @@ def pixels(S, state):
     k0, k1, ky0, ky1 = sb + bw, S - sb - bw, sb + bw, H - sb - bw
     key(cr, k0, ky0, k1, ky1, t, max(r - bw, 0))
     fill(cr, gradient(ky0, ky1, top, bot))
-    if S >= 32:  # glint on the base, lower left
-        gx, gy = round(k0 + S * 0.1 - S * 0.035), round(ky1 - side * 0.45 - S * 0.06)
-        cr.rectangle(gx, gy, max(1, round(S * 0.07)), max(2, round(S * 0.12)))
-        fill(cr, rgb("#FFFFFF", 0.45))
     fx0, fx1, fy0, fy1 = k0 + t + fi, k1 - t - fi, ky0, ky1 - side
     rf = max(r - bw - fi, 0) * 0.9
+
+    def under_face(cr):  # the face with its outline or rim, which covers the base
+        if S >= 22:
+            rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
+        else:
+            rounded(cr, fx0, fy0, fx1, fy1 + 1, rf)
+
+    under_face(cr)
+    fill(cr, rgb(OUTLINE if S >= 22 else bot))
     if S >= 22:  # top face with its own outline and a beige lip at its bottom
-        rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
-        fill(cr, rgb(OUTLINE))
         rounded(cr, fx0, fy0, fx1, fy1, rf)
         fill(cr, rgb(LIP))
         fy1 -= lip
-    else:  # 16/20 px: a darker rim where the top meets the base
-        rounded(cr, fx0, fy0, fx1, fy1 + 1, rf)
-        fill(cr, rgb(bot))
     rounded(cr, fx0, fy0, fx1, fy1, rf)
     fill(cr, gradient(fy0, fy1, "#FFFCF5", "#FFF1E2"))
-    im = image(surface)
+    # The body is left-right symmetric: its left half mirrored (cairo shades the corners of the two sides a
+    # little differently).
+    px = np.asarray(image(surface)).copy()
+    px[:, S - S // 2 :] = px[:, : S // 2][:, ::-1]
+    im = Image.fromarray(px)
+    if S >= 32:  # glint on the base, lower left, under the face's edge
+        glint = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+        cr = cairo.Context(glint)
+        cr.rectangle(*GLINT(S, k0, ky1, side))
+        fill(cr, rgb("#FFFFFF", 0.45))
+        cr.set_operator(cairo.OPERATOR_DEST_OUT)
+        under_face(cr)
+        fill(cr, rgb("#FFFFFF"))
+        im.alpha_composite(image(glint))
     d = ImageDraw.Draw(im)
     fw, fh = fx1 - fx0, fy1 - fy0
     blush = S >= 20 and lang != "grey"
@@ -410,10 +488,14 @@ def pixels(S, state):
     stroke = 0.4 if S < 24 else S * 0.022
     gh = fh * (0.8 if kind != "lat" else 0.66 if text != "a" else 0.6) + stroke
     m = bitmap(
-        kind, text, round(bx1 - bx0 + stroke), round(min(gh, by1 - by0 + stroke))
+        kind,
+        text,
+        round(bx1 - bx0 + stroke),
+        round(min(gh, by1 - by0 + stroke)),
+        fw % 2 if text in SYMMETRIC else None,
     )
     d.bitmap(
-        (round((bx0 + bx1 - m.width) / 2), round((by0 + by1 - m.height) / 2)),
+        ((fx0 + fx1 - m.width) // 2, round((by0 + by1 - m.height) / 2)),
         m,
         fill=GREY_INK if lang == "grey" else INK,
     )
@@ -449,9 +531,19 @@ def pixels(S, state):
     return im
 
 
-(HERE / "scalable").mkdir(exist_ok=True)
-for state, (lang, g) in STATES.items():
-    (HERE / "scalable" / f"{state}.svg").write_text(sticker(48, lang, g, state))
-    for S in SIZES:
-        (HERE / str(S)).mkdir(exist_ok=True)
-        pixels(S, state).save(HERE / str(S) / f"{state}.png", optimize=True)
+# --check: only checks the PNGs there are (exit 1 on a problem); otherwise draws them all, then checks them.
+if "--check" not in sys.argv:
+    (HERE / "scalable").mkdir(exist_ok=True)
+    for state, (lang, g) in STATES.items():
+        (HERE / "scalable" / f"{state}.svg").write_text(sticker(48, lang, g, state))
+        for S in SIZES:
+            (HERE / str(S)).mkdir(exist_ok=True)
+            pixels(S, state).save(HERE / str(S) / f"{state}.png", optimize=True)
+bad = [
+    f"{S}/{state}.png: {p}"
+    for state in STATES
+    for S in SIZES
+    for p in check(S, state, Image.open(HERE / str(S) / f"{state}.png"))
+]
+print("\n".join(bad) or f"{len(STATES) * len(SIZES)} drawings centred and symmetric")
+sys.exit(1 if bad else 0)
