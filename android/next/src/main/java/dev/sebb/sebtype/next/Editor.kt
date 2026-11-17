@@ -208,9 +208,11 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         beginBatch()
         try {
             val range = st.recompose || st.deleteBefore > 0 || st.deleteAfter > 0
-            // A state that changes nothing (the strip's, after a space) reads nothing
+            // A key that only sets the composing text (a letter typed, or taken off, in the word) relies on the
+            // field's updates, as today's app does: a read before it would delay every letter. A state that
+            // changes nothing (the strip's, after a space) reads nothing either.
             val edits = range || st.commit.isNotEmpty() || st.commitCursor != 0 || then != null ||
-                composition != null && (composition.isNotEmpty() || composing)
+                composition != null && composition.isEmpty() && composing
             val check = if (checked && edits) check() else Check.SAME
             if (check == Check.CHANGED || check == Check.UNKNOWN && range || st.recompose && !composeRegion(st.composeBefore, st.composeAfter)) {
                 finishComposing()

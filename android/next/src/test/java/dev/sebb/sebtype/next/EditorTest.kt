@@ -513,9 +513,13 @@ class EditorTest {
         assertEquals(1, field.cursor)
     }
 
-    /** #280: a letter's result that came before the update for a move goes in at the cursor, not into the word left */
+    /**
+     * #280: a letter's result that came before the update for a move goes into the word still composing, as in
+     * today's app: a letter only sets the composing text, without a read first (the bar: no less safe than today's
+     * app, no slower than main). The move is heard next, and the word the letter went into is reopened.
+     */
     @Test
-    fun aLetterWrittenAfterAMoveGoesInAtTheCursor() {
+    fun aLetterWrittenBeforeAMoveIsHeardGoesIntoTheWord() {
         val field = Field("hello world", 11)
         val ime = Ime(field)
         field.tap(5)
@@ -523,10 +527,10 @@ class EditorTest {
         ime.key('x')
         field.tap(8)
         ime.result()
-        assertEquals("hello world", field.text)
+        assertEquals("hellox world", field.text)
         ime.settle()
-        assertEquals("hello woxrld", field.text)
-        assertEquals(9, field.cursor)
+        assertEquals("hellox world", field.text)
+        assertEquals(0 until 6, field.region)
     }
 
     /** #280: a suggestion tapped for "hello", its result come before the update for a move to "world": it is dropped */
@@ -575,20 +579,19 @@ class EditorTest {
     }
 
     /**
-     * #280: a letter typed reads the field no more than main's keyboard does (3 reads: the Shift after the key
-     * and after its update, and the engine's copy of the text). The check before the write is its only read, two
-     * here (the text before and after the cursor), one where Android 12+ gives getSurroundingText; the Shift and
-     * the engine's copy come from what the check found.
+     * #280: a letter typed in a word reads nothing from the field (main's reads 3: the Shift after the key and
+     * after its update, and the engine's copy of the text). It only sets the composing text, as today's app does,
+     * and the Shift and the engine's copy come from the text English's edits left.
      */
     @Test
-    fun aLetterReadsTheFieldOnlyToCheckIt() {
+    fun aLetterDoesntReadTheField() {
         val field = Field("I saw ", 6)
         val ime = Ime(field)
         for (c in "hello") {
             field.reads = 0
             ime.key(c)
             ime.settle()
-            assertEquals(2, field.reads)
+            assertEquals(0, field.reads)
         }
         assertEquals("I saw hello", field.text)
     }
@@ -613,12 +616,13 @@ class EditorTest {
     }
 
     /**
-     * #280: a composing word longer than the text checked around the cursor, whose first letter the app changed
-     * without moving the cursor. setComposingText replaces all of it: the check covers the whole word, so the
-     * app's letter isn't written over.
+     * #280: the app changed the first letter of the word being typed without moving the cursor or the composing
+     * text, so no update says so. The next letter's setComposingText writes over it, as in today's app, which
+     * reads nothing before a letter either (the bar: no less safe than today's app, no slower than main). An
+     * edit of a range, which reads first, checks all the composing text.
      */
     @Test
-    fun theWholeComposingTextIsChecked() {
+    fun anAppEditInsideTheWordGoesUnnoticedAsInTodaysApp() {
         val field = Field("", 0)
         val ime = Ime(field)
         repeat(70) { ime.key('a') }
@@ -627,7 +631,7 @@ class EditorTest {
         ime.updates()
         ime.key('x')
         ime.settle()
-        assertEquals("b" + "a".repeat(69) + "x", field.text)
+        assertEquals("a".repeat(70) + "x", field.text)
     }
 
     /**
