@@ -522,8 +522,8 @@ namespace SebType {
     // lights): Foreground takes no Alt tap but joins the input of the window in front for a moment, and keys
     // go through Key, to TSF's keystroke manager, not into the session's input.
     public static bool NoInput;
-    // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter
-    // or space the input method lets through goes into the field. True when the input method took it.
+    // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter,
+    // space or keypad digit the input method lets through goes into the field. True when the input method took it.
     public static bool Key(byte vk) {
       return OnUi(() => {
         var keys = (ITfKeystrokeMgr)threadMgr;
@@ -531,8 +531,8 @@ namespace SebType {
         bool eaten, up;
         keys.KeyDown((IntPtr)vk, (IntPtr)(1 | scan), out eaten);
         keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
-        if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A)))
-          store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : (char)(vk + 32)).ToString());
+        if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A) || (vk >= 0x60 && vk <= 0x69)))  // space, a-z, keypad 0-9
+          store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32)).ToString());
         store.GrantPending();
         return eaten;
       });

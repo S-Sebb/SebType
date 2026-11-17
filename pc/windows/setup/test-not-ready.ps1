@@ -20,8 +20,8 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   typed-after-recovery: ni + Space in 中文 then gives 你 (the key the app typed itself while the server hung
     doesn't reach Rime as well);
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
-    popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same in an app that
-    grants the text service's edit only after it handled the key.
+    popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
+    keypad 1, in an app that grants the text service's edit only after it handled the key.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -82,15 +82,19 @@ function Ready {
   if ($display::Lit -and -not $AnyDisplay) { throw "the display turned on ($(States)): no more keys" }
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
+# A key's virtual-key code: space, Escape, kp0-kp9 (the keypad's digits, Num Lock on), or a letter.
+function Vk($k) {
+  switch -regex ($k) { '^space$' { 0x20 } '^Escape$' { 0x1B } '^kp(\d)$' { 0x60 + [int]$Matches[1] } default { [byte][char]$k.ToUpper() } }
+}
 function Keys {
   Ready
-  foreach ($k in $args) { $null = $tsf::Key($(switch ($k) { 'space' { 0x20 } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } })); $tsf::Settle(150) }
+  foreach ($k in $args) { $null = $tsf::Key((Vk $k)); $tsf::Settle(150) }
   $tsf::Settle(600)
 }
 # One key, and the popup by the caret saved while it shows (1.2 s).
 function KeyWithPopup($k, $name) {
   Ready
-  $null = $tsf::Key([byte][char]$k.ToUpper()); $tsf::Settle(200)
+  $null = $tsf::Key((Vk $k)); $tsf::Settle(200)
   $size = $tsf::CandidateWindow("$Out\$name-popup.png")
   if (-not $size) { throw "no popup by the caret after '$k'" }
   $tsf::Settle(600)
@@ -273,25 +277,27 @@ try {
   }
   # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
   # and once the server answers again nothing of the old typing comes back or deletes it. The second time the
-  # app grants the text service's edit only after it handled the key, as an app may.
-  foreach ($c in @(@{ Name = 'hang-mid-composition'; Defer = $false }, @{ Name = 'hang-mid-deferred-lock'; Defer = $true })) {
-    Check $c.Name {
-      Lang ja; $tsf::Clear(); Keys k a
-      $script:suspended = Server
-      [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
-      $tsf::DeferLocks = $c.Defer
-      try { $size = KeyWithPopup 'n' "hang-mid$(if ($c.Defer) { '-deferred' })"; $why = $null } catch { $why = $_.Exception.Message }
-      finally { $tsf::DeferLocks = $false }
-      $t = $tsf::Text()
-      [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
-      $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
-      if ($why) { throw "$why (text '$t')" }
-      if ($t -ne 'かn') { throw "か then a key while the server hangs gave '$t', not かn" }
-      if ($icon -ne $hira) { throw 'the icon did not turn back to あ within 4 s' }
-      if ($after -ne 'かnい') { throw "i after the server answered again gave '$after', not かnい" }
-      "かn with the popup $size, then i gives $after"
-    }
+  # app grants the text service's edit only after it handled the key, as an app may: a letter, then a keypad digit.
+  $hang = {
+    param($key, $defer, $shot)
+    Lang ja; $tsf::Clear(); Keys k a
+    $script:suspended = Server
+    [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
+    $tsf::DeferLocks = $defer
+    try { $size = KeyWithPopup $key $shot; $why = $null } catch { $why = $_.Exception.Message }
+    finally { $tsf::DeferLocks = $false }
+    $t = $tsf::Text()
+    [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
+    $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
+    $c = if ($key -match '^kp(\d)$') { $Matches[1] } else { $key }
+    if ($why) { throw "${key}: $why (text '$t')" }
+    if ($t -ne "か$c") { throw "か then $key while the server hangs gave '$t', not か$c" }
+    if ($icon -ne $hira) { throw "${key}: the icon did not turn back to あ within 4 s" }
+    if ($after -ne "か${c}い") { throw "${key}: i after the server answered again gave '$after', not か${c}い" }
+    "か$c with the popup $size, then i gives $after"
   }
+  Check 'hang-mid-composition' { & $hang 'n' $false 'hang-mid' }
+  Check 'hang-mid-deferred-lock' { (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp') -join '; ' }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
