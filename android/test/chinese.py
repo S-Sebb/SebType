@@ -1672,6 +1672,72 @@ def settings_action():
     return "All Actions, Settings -> SettingsActivity"
 
 
+# --- A hardware (Bluetooth, USB) keyboard's keys, sent as key events (#284) ---
+
+
+def hw_typing(to_language, text):
+    """In today's app a hardware keyboard's letters reach the field as they are, without the engines:
+    FUTO's hardware keyboard support is off (ProductionFlags.IS_HARDWARE_KEYBOARD_SUPPORTED) and its Alt
+    shortcuts do nothing (KeyboardSwitcher.onToggleKeyboard). The new keyboard does the same."""
+
+    def run():
+        to_language()
+        open_field()
+        adb(
+            "shell",
+            "input",
+            "keyboard",
+            "keyevent",
+            *(f"KEYCODE_{ch.upper()}" for ch in text),
+        )
+        time.sleep(1.5)
+        settle()
+        got, bar = field_text(), candidates(nodes())
+        if got != text:
+            raise Fail(f"hardware keys {text} -> field {got!r}, bar {bar[:5]}")
+        return f"hardware keys {text} -> field {got!r}, bar {bar[:5]}"
+
+    return run
+
+
+def en_failure_visible():
+    """English's learned words can't be opened (their folder is a file): the failure is in the system
+    log, as today's app logs its dictionaries' (core/ writes it to stderr, which Android drops); English
+    still types, and once the folder is back it opens without the error."""
+    english = f"/data/user/0/{PKG}/files/english"
+    error = "can't open the English learned words"
+    try:
+        to_english()
+        stop_keyboard()
+        root(f"rm -rf {english} && touch {english}")
+        adb("logcat", "-c")
+        open_field()
+        type_keys("th")
+        line = wait_for(
+            "the error in the system log",
+            lambda: next((l for l in logcat().splitlines() if error in l), None),
+            30,
+        )
+        got = candidates(nodes())
+        if field_text().lower() != "th":
+            raise Fail(f"with the error, th typed {field_text()!r}")
+    finally:
+        stop_keyboard()
+        root(f"rm -f {english}")
+    adb("logcat", "-c")
+    open_field()
+    type_keys("th")
+    time.sleep(3)
+    if error in logcat() or not root(f"ls -d {english}").strip():
+        raise Fail("the folder is still missing after the restart")
+    return f"logged {line.split('sebtype: ', 1)[-1]!r}; typing went on ({got[:3]}); fine after the restart"
+
+
+check("hw-typing-zh", hw_typing(to_chinese, "nihao"), needs=["first-install"])
+check("hw-typing-ja", hw_typing(to_japanese, "hashi"), needs=["first-install"])
+if NEXT:
+    check("en-failure-visible", en_failure_visible, needs=["first-install"])
+
 if NEXT:
     NEXT_SKIPS["en-futo-default-migrates"] = (
         "FUTO's stored settings have nothing to migrate to here"
