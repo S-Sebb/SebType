@@ -9,8 +9,9 @@ field), so a screen that is off stays off, and it stops sending keys once Window
 Checks, each saving the input indicator's icon (<state>.png, at the size the text service gave the
 taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the taskbar's right end
 (<state>-taskbar.png), these two in the screen's own pixels at any scaling:
-  first-japanese: the first 日本語 after the install (#312) has its button at once (grey あ while Mozc loads),
-    a key goes in without waiting, and あ shows once Mozc is up;
+  first-japanese: the first 日本語 after the install (#312), its Mozc's load held 5 s (a batch oplock on
+    sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, a key goes
+    in without waiting, and あ shows once Mozc is up;
   ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
@@ -58,7 +59,37 @@ if ($missing) { Write-Host "BLOCKED preflight: $missing"; exit 1 }
 
 Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
 Add-Type @'
-using System; using System.Runtime.InteropServices;
+using System; using System.Runtime.InteropServices; using System.Threading;
+// A slow first open of a file, as an antivirus scan of a newly installed DLL makes it (#312): a batch oplock,
+// so the next open by anyone else waits until the oplock is let go, ms after that open asked.
+public static class SlowOpen {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern IntPtr CreateFileW(string path, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool DeviceIoControl(IntPtr h, uint code, IntPtr inBuf, uint inSize, IntPtr outBuf, uint outSize, out uint ret, IntPtr overlapped);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  public static int AskedAt;  // Environment.TickCount when the other open came; 0 before
+  // False when the oplock wasn't granted (the file is open elsewhere): nothing is slowed.
+  public static bool Hold(string path, int ms) {
+    AskedAt = 0;
+    IntPtr h = CreateFileW(path, 0x80000000 /* GENERIC_READ */, 7, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0x40000000 /* OVERLAPPED */, IntPtr.Zero);
+    if (h == new IntPtr(-1)) return false;
+    var broken = new ManualResetEvent(false);
+    IntPtr ov = Marshal.AllocHGlobal(IntPtr.Size * 2 + 8 + IntPtr.Size);
+    for (int i = 0; i < IntPtr.Size * 3 + 8; i++) Marshal.WriteByte(ov, i, 0);
+    Marshal.WriteIntPtr(ov, IntPtr.Size * 2 + 8, broken.SafeWaitHandle.DangerousGetHandle());
+    uint ret;
+    if (DeviceIoControl(h, 0x00090008 /* FSCTL_REQUEST_BATCH_OPLOCK */, IntPtr.Zero, 0, IntPtr.Zero, 0, out ret, ov) ||
+        Marshal.GetLastWin32Error() != 997 /* ERROR_IO_PENDING */) {
+      CloseHandle(h); Marshal.FreeHGlobal(ov); return false;
+    }
+    new Thread(() => {
+      if (broken.WaitOne(120000)) { AskedAt = Environment.TickCount; Thread.Sleep(ms); }
+      CloseHandle(h); Marshal.FreeHGlobal(ov);
+    }) { IsBackground = true }.Start();
+    return true;
+  }
+}
 public static class SebTypeSuspend {
   [DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr h);
   [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);
@@ -165,16 +196,20 @@ try {
   # あ shows once Mozc is up, unasked.
   Check 'first-japanese' {
     $was = if (Server) { 'a server ran already' } else { 'no server yet' }
+    # YukaROG's first load took over 4 s; TCSBackEnd's is fast by itself, so its open is held 5 s.
+    $slowed = [SlowOpen]::Hold("$env:ProgramFiles\SebType\sebtype-mozc.dll", 5000)
     $t = Get-Date; Lang ja; $activation = [int]((Get-Date) - $t).TotalMilliseconds - 500  # Lang settles 500 ms
     $first = Shot 'hira-first'
     $tsf::Clear(); $t = Get-Date; Ready; $null = $tsf::Key((Vk 'n')); $key = [int]((Get-Date) - $t).TotalMilliseconds
     $tsf::Settle(300); $typed = $tsf::Text(); Keys Escape; $tsf::Clear()
-    $timeline = "$was, activation $activation ms, key $key ms gave '$typed'"
+    $load = if (-not $slowed) { "Mozc's load not slowed (no oplock)" } elseif ([SlowOpen]::AskedAt) { 'Mozc held 5 s at its load' } else { 'Mozc not loaded yet' }
+    $timeline = "$was, $load, activation $activation ms, key $key ms gave '$typed'"
     if ($activation -gt 1500) { throw "the activation took $activation ms ($timeline)" }
     if ($key -gt 3500) { throw "the key waited $key ms ($timeline)" }
     $end = (Get-Date).AddSeconds(30); $up = $null
     do { Keys k a; if ($tsf::Text() -eq 'か') { $up = Shot 'hira-first-up' }; Keys Escape; $tsf::Clear() } while (-not $up -and (Get-Date) -lt $end)
     if (-not $up) { throw "ka gave no か within 30 s ($timeline)" }
+    if ($slowed -and $up -eq $first) { throw "あ while Mozc was still loading, not grey ($timeline)" }
     if ($up -eq $first) { "あ at once (Mozc was up already; $timeline)" }
     else { "grey あ at once, あ once Mozc was up ($timeline)" }
   }
