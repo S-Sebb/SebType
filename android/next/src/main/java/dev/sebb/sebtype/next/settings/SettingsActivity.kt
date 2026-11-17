@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import dev.sebb.sebtype.next.Engines
 import dev.sebb.sebtype.next.R
 import dev.sebb.sebtype.next.data.Prefs
+import kotlinx.coroutines.flow.map
 
 /**
  * SebType's settings (#41, #254): a home screen of five groups (Languages, Keyboard, Privacy, Sync & backup,
@@ -125,7 +127,16 @@ private fun App(changes: Int) {
     ) { mutableListOf<String>().toMutableStateList() }
     val state = remember(changes) { keyboardState(context) }
     val nav = Nav(stack)
-    if (stack.isEmpty() && !(state.first && state.second)) return Setup(state)
+    // Read from the file, not Prefs.current, which a new process may not have loaded yet: a tips page
+    // left open must not pass for a first start.
+    val setup = remember { Prefs.flow(context, Prefs.SETUP).map<Int, Int?> { it } }.collectAsState(null).value ?: return
+    if (setup == Prefs.SETUP_UNSEEN) LaunchedEffect(Unit) {
+        // SebType already on: someone who set it up before the tips existed, or without this app
+        Prefs.set(context, Prefs.SETUP, if (state.first) Prefs.SETUP_DONE else Prefs.SETUP_TIPS_DUE)
+    }
+    if (stack.isEmpty() && !(state.first && state.second && setup != Prefs.SETUP_TIPS_DUE)) {
+        return Setup(state) { Prefs.set(context, Prefs.SETUP, Prefs.SETUP_DONE) }
+    }
     BackHandler(stack.isNotEmpty()) { nav.back() }
     when (stack.lastOrNull()) {
         null -> Home(nav)
@@ -138,6 +149,7 @@ private fun App(changes: Int) {
         "privacy" -> PrivacyScreen(nav)
         "backup" -> BackupScreen(nav)
         "about" -> AboutScreen(nav)
+        "tips" -> TipsScreen(nav)
         "credits" -> CreditsScreen(nav)
     }
 }

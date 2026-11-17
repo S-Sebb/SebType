@@ -377,6 +377,12 @@ HOME = {
 MY_WORDS = labels("我的词语", "My words", "自分の単語")
 FULL_WIDTH = labels("全角标点", "Full-width punctuation")
 EMOJI = labels("候选词中显示表情", "Emoji in candidates")
+TIPS = labels("提示", "Tips", "ヒント")
+TIPS_SPACE = labels(
+    "在空格键上左右滑动可移动光标。",
+    "Slide the space bar to move the cursor.",
+    "スペースキーを左右にスライドすると、カーソルが動きます。",
+)
 
 
 def find_all(ns, texts):
@@ -594,6 +600,7 @@ SCREENS = [
         labels("导出设置", "Export settings", "設定をエクスポート"),
     ),
     ("about", (HOME["about"],), labels("版本", "Version", "バージョン")),
+    ("tips", (HOME["about"], TIPS), TIPS_SPACE),
     (
         "credits",
         (
@@ -1675,6 +1682,147 @@ def backup_screenshots():
 
 
 adb("logcat", "-c")
+# --- Setup's last step, the tips (#285; the new app only) ---
+
+SETUP_FILE = f"/data/data/{PKG}/files/datastore/settings.preferences_pb"
+
+
+def setup_step_shown():
+    m = re.search(
+        r"(?:step|第|ステップ) ?(\d)",
+        " ".join(label for label, *_ in nodes() if "3" in label),
+    )
+    return int(m.group(1)) if m else None
+
+
+def forget_setup():
+    """Takes the app back to before its settings first opened: the setup key out of DataStore's file
+    (a protobuf map of key to value), the rest kept."""
+    adb("shell", "am", "force-stop", PKG)
+    if root(f"[ -f {SETUP_FILE} ] && echo yes || true").strip() != "yes":
+        return  # nothing saved yet: a fresh install
+    local = os.path.join(logdir, "settings.preferences_pb")
+    root(
+        f"cp {SETUP_FILE} /data/local/tmp/sebtype-prefs.pb; chmod 644 /data/local/tmp/sebtype-prefs.pb"
+    )
+    adb("pull", "/data/local/tmp/sebtype-prefs.pb", local)
+    with open(local, "rb") as f:
+        data = f.read()
+
+    def varint(b, i):
+        n = shift = 0
+        while True:
+            n |= (b[i] & 0x7F) << shift
+            i += 1
+            if b[i - 1] < 0x80:
+                return n, i
+            shift += 7
+
+    kept, i = b"", 0
+    while i < len(data):
+        start = i
+        _, i = varint(data, i)  # field 1, a map entry
+        size, i = varint(data, i)
+        entry, i = data[i : i + size], i + size
+        if b"\x0a\x0dsebtype_setup" not in entry:
+            kept += data[start:i]
+    with open(local, "wb") as f:
+        f.write(kept)
+    adb("push", local, "/data/local/tmp/sebtype-prefs.pb")
+    root(
+        f"cat /data/local/tmp/sebtype-prefs.pb > {SETUP_FILE}; rm /data/local/tmp/sebtype-prefs.pb"
+    )
+    os.remove(local)
+
+
+def start_settings():
+    adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", SETTINGS)
+
+
+def wait_step(step):
+    wait_for(f"setup's step {step} of 3", lambda: setup_step_shown() == step, 20)
+
+
+def setup_tips():
+    """A new user: steps 1 and 2 of 3, then the tips as step 3, which an interruption keeps; Done ends
+    setup for good."""
+    forget_setup()
+    adb("shell", "ime", "disable", IME)
+    try:
+        start_settings()
+        wait_step(1)
+        adb("shell", "ime", "enable", IME)
+        wait_step(2)
+        adb("shell", "ime", "set", IME)
+        wait_step(3)
+        wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
+        screenshot("setup-tips")
+        adb("shell", "cmd", "uimode", "night", "yes")
+        try:
+            time.sleep(2)
+            screenshot("setup-tips-dark")
+        finally:
+            adb("shell", "cmd", "uimode", "night", "no")
+        # Interrupted: the app stopped on step 3 comes back to it. Just after SebType stops, the system
+        # can fall back to another keyboard (setup's step 2), so it is chosen again until step 3 shows.
+        adb("shell", "am", "force-stop", PKG)
+        start_settings()
+
+        def step3():
+            step = setup_step_shown()
+            if step == 2:
+                adb("shell", "ime", "set", IME)
+            return step == 3
+
+        wait_for("setup's step 3 of 3 after a restart", step3, 30)
+        tap_text(labels("完成", "Done", "完了"))
+        wait_for("the home screen after Done", lambda: screen_has(HOME["about"]), 10)
+        adb("shell", "am", "force-stop", PKG)
+        open_settings()
+        if setup_step_shown():
+            raise Fail("setup came back after Done")
+    finally:
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
+    return "steps 1, 2 and 3 of 3, step 3 again after a restart, home after Done and after a restart (settings-setup-tips*.png)"
+
+
+def setup_existing_user():
+    """Someone whose SebType was on before the tips existed opens the settings: home, never setup."""
+    forget_setup()
+    adb("shell", "ime", "enable", IME)
+    for run in (1, 2):
+        open_settings()
+        if setup_step_shown():
+            raise Fail(f"setup shown on opening {run}")
+        adb("shell", "am", "force-stop", PKG)
+    return "home on the first and the next opening"
+
+
+def tips_screenshots():
+    shots = []
+    for night in ("no", "yes"):
+        adb("shell", "cmd", "uimode", "night", night)
+        try:
+            time.sleep(2)
+            suffix = "-dark" if night == "yes" else ""
+            go(HOME["about"])
+            screenshot(f"about{suffix}")
+            tap_text(TIPS)
+            wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
+            screenshot(f"tips{suffix}")
+            shots += [f"settings-about{suffix}.png", f"settings-tips{suffix}.png"]
+        finally:
+            adb("shell", "cmd", "uimode", "night", "no")
+    return ", ".join(shots)
+
+
+if NEXT:
+    check("settings-setup-tips", setup_tips)
+    check("settings-setup-existing-user", setup_existing_user)
+    check("settings-tips-screenshots", tips_screenshots)
+
+
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
 check("settings-zh-punctuation", full_width_punctuation)

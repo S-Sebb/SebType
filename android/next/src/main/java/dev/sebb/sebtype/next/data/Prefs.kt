@@ -40,6 +40,15 @@ object Prefs {
     val DOUBLE_SPACE_PERIOD = Option(booleanPreferencesKey("pref_key_use_double_space_period"), true)
     val EMOJI_SUGGESTIONS = Option(booleanPreferencesKey("suggestEmojis"), true)
     val CLIPBOARD_HISTORY = Option(booleanPreferencesKey("enableClipboardHistory"), false)
+    /**
+     * Setup's last step, the tips (#285): [SETUP_UNSEEN] until the settings first open, then [SETUP_TIPS_DUE]
+     * for a new user (setup shown) or [SETUP_DONE] for one whose SebType was already on, and [SETUP_DONE]
+     * after the tips' Done.
+     */
+    val SETUP = Option(intPreferencesKey("sebtype_setup"), 0)
+    const val SETUP_UNSEEN = 0
+    const val SETUP_TIPS_DUE = 1
+    const val SETUP_DONE = 2
     /** [ChineseData.Fuzzy.of] */
     val FUZZY = Option(stringPreferencesKey("ChineseIME_fuzzy_pinyin"), "")
 

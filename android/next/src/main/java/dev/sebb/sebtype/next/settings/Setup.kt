@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,13 +30,13 @@ import dev.sebb.sebtype.next.R
 
 /**
  * The setup wizard (#53), as today's app shows it: the pig, the step, what to do and one button. Step 1 turns
- * SebType on in Android's keyboards, step 2 chooses it; each opens Android's own screen, and the settings open
- * once both are done. [state] is (on, chosen).
+ * SebType on in Android's keyboards, step 2 chooses it; each opens Android's own screen. Step 3 (#285), once
+ * both are done, shows the tips, and its Done calls [done]. [state] is (on, chosen).
  */
 @Composable
-fun Setup(state: Pair<Boolean, Boolean>) = Column(Modifier.fillMaxSize().cloth()) {
+fun Setup(state: Pair<Boolean, Boolean>, done: () -> Unit) = Column(Modifier.fillMaxSize().cloth()) {
     val context = LocalContext.current
-    val step = if (state.first) 2 else 1
+    val step = if (!state.first) 1 else if (!state.second) 2 else 3
     // Today's layout: the launcher icon's pig, in its colours, fills the top three quarters (less the group
     // below), and a quarter stays empty under the group. Its bitmap is loaded unscaled and scaled up
     // without smoothing so the pixel art's edges stay crisp.
@@ -44,21 +45,28 @@ fun Setup(state: Pair<Boolean, Boolean>) = Column(Modifier.fillMaxSize().cloth()
             .asImageBitmap()
     }
     Image(pig, null, Modifier.fillMaxWidth().weight(0.75f), filterQuality = FilterQuality.None)
-    Column(Modifier.padding(32.dp)) {
+    Column(Modifier.padding(start = 32.dp, top = 32.dp, end = 32.dp)) {
         Column(Modifier.padding(16.dp)) {
             Text(stringResource(R.string.setup_step, step), fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
-            LinearProgressIndicator({ step / 2f }, Modifier.fillMaxWidth(), color = Berry, gapSize = 0.dp, drawStopIndicator = {})
+            LinearProgressIndicator({ step / 3f }, Modifier.fillMaxWidth(), color = Berry, gapSize = 0.dp, drawStopIndicator = {})
         }
-        Text(stringResource(if (step == 1) R.string.setup_enable_text else R.string.setup_choose_text),
+        Text(stringResource(listOf(R.string.setup_enable_text, R.string.setup_choose_text, R.string.setup_tips_text)[step - 1]),
             Modifier.fillMaxWidth(), color = Ink, textAlign = TextAlign.Center)
-        Button(
-            onClick = {
-                if (step == 1) context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                else context.getSystemService(InputMethodManager::class.java).showInputMethodPicker()
-            },
-            Modifier.fillMaxWidth().padding(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Berry, contentColor = Color.White),
-        ) { Text(stringResource(if (step == 1) R.string.setup_enable else R.string.setup_choose)) }
     }
+    if (step == 3) {
+        Spacer(Modifier.height(16.dp))
+        TipsCard()
+    }
+    Button(
+        onClick = {
+            when (step) {
+                1 -> context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                2 -> context.getSystemService(InputMethodManager::class.java).showInputMethodPicker()
+                else -> done()
+            }
+        },
+        Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, top = 16.dp, bottom = 48.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Berry, contentColor = Color.White),
+    ) { Text(stringResource(listOf(R.string.setup_enable, R.string.setup_choose, R.string.setup_done)[step - 1])) }
     Spacer(Modifier.weight(0.25f))
 }
