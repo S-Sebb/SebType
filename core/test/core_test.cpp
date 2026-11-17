@@ -678,6 +678,26 @@ TEST_F(EnglishTest, BackspaceRightAfterACorrectionPutsBackWhatWasTyped) {
     EXPECT_EQ(en->takeCommit(), commit) << keys;
     EXPECT_EQ(en->preedit().text(), preedit) << keys;
   }
+  auto revertAfter = [&](const std::string &before) {
+    en.reset();
+    SetUp();
+    start("");
+    en->setContext(before, "");
+    type("teh ");
+    ASSERT_EQ(en->takeCommit(), "the ");
+    en->key({0xff08, 0, false});
+    ASSERT_EQ(en->takeEdit().deleteBefore, 4);
+  };
+  // Only ASCII's apostrophe joins the word: a curly one gets the space ("teh ’").
+  revertAfter("");
+  en->key({0x1000000 + U'’', 0, false});
+  EXPECT_EQ(en->takeCommit(), "teh ");
+  EXPECT_EQ(en->preedit().text(), "’");
+  // A double quote right before a letter of any script closes a quote, as Java's Character.isLetter has it
+  // ("Ж\"teh"): the next one opens another, after the space.
+  revertAfter("Ж\"");
+  type("\"");
+  EXPECT_EQ(en->takeCommit(), "teh \"");
 }
 
 // Only the key right after the correction undoes it: not once another key came, the cursor moved, the

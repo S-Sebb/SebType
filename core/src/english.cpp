@@ -42,6 +42,7 @@
 #include "suggest/core/result/suggestion_results.h"
 #include "suggest/core/session/dic_traverse_session.h"
 #include "suggest/core/suggest_options.h"
+#include "unicode.h"  // llama.cpp's Unicode tables (its src/)
 #include "utils/autocorrection_threshold_utils.h"
 
 namespace sebtype {
@@ -178,7 +179,13 @@ bool insideQuoteOrAfterDigit(const std::string &text) {
   const auto cps = codePoints(text);
   if (cps.empty()) return false;
   if (cps.back() >= '0' && cps.back() <= '9') return true;
-  const auto space = [](int c) { return c == ' ' || c == '\t' || c == '\n'; };
+  // Java's Character.isWhitespace and isLetter, as today's app asks: the space separators but the no-break
+  // ones, and the controls it counts; letters by llama.cpp's tables (\p{L}, Java's letters too).
+  const auto space = [](int c) {
+    return (c >= 0x09 && c <= 0x0d) || (c >= 0x1c && c <= 0x20) || c == 0x1680 || (c >= 0x2000 && c <= 0x2006) ||
+           (c >= 0x2008 && c <= 0x200a) || c == 0x2028 || c == 0x2029 || c == 0x205f || c == 0x3000;
+  };
+  const auto letter = [](int c) { return unicode_cpt_flags_from_cpt(uint32_t(c)).is_letter; };
   int prev = 0, quotes = 0;
   for (size_t i = cps.size(); i-- > 0;) {
     const int c = cps[i];
@@ -187,7 +194,7 @@ bool insideQuoteOrAfterDigit(const std::string &text) {
       if (space(prev)) return false;  // a closing quote
     } else if (c == '\n') break;
     if (space(c) && prev == '"') return true;              // an opening quote
-    if (isLetter(char32_t(c)) && prev == '"') return false;  // a closing one
+    if (letter(c) && prev == '"') return false;  // a closing one
     prev = c;
   }
   return quotes % 2 == 1;
@@ -454,7 +461,7 @@ class English : public Engine {
       return true;
     }
     if (isLetter(c) || ((c == '\'' || c == U'’') && !typed_.empty())) {
-      if (phantom && isLetter(c)) {
+      if (phantom && c != '\'') {  // today's app's only word connector is ASCII's apostrophe
         if (!typed_.empty()) commitWord(utf8(typed_), false);
         commit_ += " ";
         context_ += " ";
