@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
@@ -41,14 +42,15 @@ object Prefs {
     val EMOJI_SUGGESTIONS = Option(booleanPreferencesKey("suggestEmojis"), true)
     val CLIPBOARD_HISTORY = Option(booleanPreferencesKey("enableClipboardHistory"), false)
     /**
-     * Setup's last step, the tips (#285): [SETUP_UNSEEN] until the settings first open, then [SETUP_TIPS_DUE]
-     * for a new user (setup shown) or [SETUP_DONE] for one whose SebType was already on, and [SETUP_DONE]
-     * after the tips' Done.
+     * Setup's record (#285): [SETUP_UNSEEN] until the settings first open, [SETUP_TIPS_DUE] while setup runs,
+     * [SETUP_DONE] after its last step's Done, or at once after an update over today's app ([setup]).
      */
     val SETUP = Option(intPreferencesKey("sebtype_setup"), 0)
     const val SETUP_UNSEEN = 0
     const val SETUP_TIPS_DUE = 1
     const val SETUP_DONE = 2
+    /** Today's app's languages, which it saves as it first starts; the new app never writes them. */
+    private val TODAYS_SUBTYPES = stringSetPreferencesKey("subtypes")
     /** [ChineseData.Fuzzy.of] */
     val FUZZY = Option(stringPreferencesKey("ChineseIME_fuzzy_pinyin"), "")
 
@@ -80,6 +82,10 @@ object Prefs {
 
     fun <T> flow(context: Context, option: Option<T>): Flow<T> =
         context.applicationContext.store.data.map { it[option.key] ?: option.default }
+
+    /** Setup's record, and whether today's app was here before (an update over it, #285) */
+    fun setup(context: Context): Flow<Pair<Int, Boolean>> =
+        context.applicationContext.store.data.map { (it[SETUP.key] ?: SETUP.default) to (TODAYS_SUBTYPES in it) }
 
     fun <T> set(context: Context, option: Option<T>, value: T) {
         val app = context.applicationContext

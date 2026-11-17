@@ -1695,12 +1695,11 @@ def setup_step_shown():
     return int(m.group(1)) if m else None
 
 
-def forget_setup():
-    """Takes the app back to before its settings first opened: the setup key out of DataStore's file
-    (a protobuf map of key to value), the rest kept."""
+def read_prefs():
+    """DataStore's file as it is (a protobuf map of key to value); b"" when the app has none yet."""
     adb("shell", "am", "force-stop", PKG)
     if root(f"[ -f {SETUP_FILE} ] && echo yes || true").strip() != "yes":
-        return  # nothing saved yet: a fresh install
+        return b""
     local = os.path.join(logdir, "settings.preferences_pb")
     root(
         f"cp {SETUP_FILE} /data/local/tmp/sebtype-prefs.pb; chmod 644 /data/local/tmp/sebtype-prefs.pb"
@@ -1708,6 +1707,28 @@ def forget_setup():
     adb("pull", "/data/local/tmp/sebtype-prefs.pb", local)
     with open(local, "rb") as f:
         data = f.read()
+    os.remove(local)
+    return data
+
+
+def write_prefs(data):
+    """Puts data in DataStore's file with the app stopped. The file must exist already: one made by root
+    here would be root's, and the app couldn't write it."""
+    adb("shell", "am", "force-stop", PKG)
+    if root(f"[ -f {SETUP_FILE} ] && echo yes || true").strip() != "yes":
+        raise Fail("no DataStore file to write over yet")
+    local = os.path.join(logdir, "settings.preferences_pb")
+    with open(local, "wb") as f:
+        f.write(data)
+    adb("push", local, "/data/local/tmp/sebtype-prefs.pb")
+    root(
+        f"cat /data/local/tmp/sebtype-prefs.pb > {SETUP_FILE}; rm /data/local/tmp/sebtype-prefs.pb"
+    )
+    os.remove(local)
+
+
+def without_setup(data):
+    """data without the setup record (#285)"""
 
     def varint(b, i):
         n = shift = 0
@@ -1726,13 +1747,25 @@ def forget_setup():
         entry, i = data[i : i + size], i + size
         if b"\x0a\x0dsebtype_setup" not in entry:
             kept += data[start:i]
-    with open(local, "wb") as f:
-        f.write(kept)
-    adb("push", local, "/data/local/tmp/sebtype-prefs.pb")
-    root(
-        f"cat /data/local/tmp/sebtype-prefs.pb > {SETUP_FILE}; rm /data/local/tmp/sebtype-prefs.pb"
-    )
-    os.remove(local)
+    return kept
+
+
+def entry(key, value):
+    """One map entry: the key, then a Value message; all short enough for one-byte lengths."""
+    e = b"\x0a" + bytes([len(key)]) + key + b"\x12" + bytes([len(value)]) + value
+    return b"\x0a" + bytes([len(e)]) + e
+
+
+# What today's app saves as it first starts: its languages, a string set (Value field 6). The new app never
+# writes them, so they mark an update over today's app.
+TODAYS_SUBTYPES = entry(b"subtypes", b"\x32\x08\x0a\x06en_US:")
+
+
+def forget_setup():
+    """Takes the app back to before its settings first opened: the setup record out, the rest kept."""
+    data = read_prefs()
+    if data:
+        write_prefs(without_setup(data))
 
 
 def start_settings():
@@ -1759,30 +1792,49 @@ def home_not_setup(what):
         raise Fail(f"{what}: setup's step {step} instead")
 
 
-def large_text(name, button):
-    """At font scale 2 and the largest display size, portrait and landscape, setup's button can be scrolled
-    to and is whole on the screen (settings-<name>-large-*.png)."""
+def bounds(texts):
+    """The bounds of the largest node showing one of texts: a button's own, not its label's."""
+    adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    found = []
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        if (n.get("text") or n.get("content-desc")) in texts:
+            x1, y1, x2, y2 = map(int, re.findall(r"\d+", n.get("bounds")))
+            found.append((x1, y1, x2, y2))
+    return max(found, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), default=None), xml
+
+
+def focus():
+    return (
+        adb("shell", "dumpsys", "window")
+        .split("mCurrentFocus=", 1)[-1]
+        .split("\n", 1)[0]
+    )
+
+
+def large_text(name, button, pressed):
+    """At font scale 2 and the largest display size, in portrait and then landscape, setup's page scrolls to
+    its real end, where the whole button is on the screen and clear of the system bars; in landscape it is
+    pressed and pressed() says what that did (settings-<name>-large-*.png)."""
     w, h = map(int, adb("shell", "wm", "size").split()[-1].split("x"))
     auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    density = 540  # Settings' largest display size on guide35 (Pixel 7, 420 dpi)
+    dp = density / 160
     adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
     adb("shell", "settings", "put", "system", "font_scale", "2.0")
-    adb(
-        "shell", "wm", "density", "540"
-    )  # Settings' largest display size on guide35 (Pixel 7, 420 dpi)
+    adb("shell", "wm", "density", str(density))
     try:
         for rotation, side in (("0", "portrait"), ("1", "landscape")):
             adb("shell", "settings", "put", "system", "user_rotation", rotation)
             time.sleep(4)
             width, height = (w, h) if rotation == "0" else (h, w)
             screenshot(f"{name}-large-{side}")
-            for _ in range(8):
-                whole = [
-                    (top, y)
-                    for label, x, y, top, cls in nodes()
-                    if label in button and y - top >= 15 and 2 * y - top <= height
-                ]
-                if whole:
+            last = None
+            for _ in range(12):  # to the end: a swipe that changes nothing
+                box, xml = bounds(button)
+                if xml == last:
                     break
+                last = xml
                 adb(
                     "shell",
                     "input",
@@ -1791,12 +1843,26 @@ def large_text(name, button):
                     str(height * 3 // 4),
                     str(width // 2),
                     str(height // 4),
-                    "400",
+                    "300",
                 )
                 time.sleep(1)
             else:
-                raise Fail(f"{button[0]} can't be reached in {side}")
+                raise Fail(f"{side}: the page didn't come to an end")
             screenshot(f"{name}-large-{side}-end")
+            # At the end the page's 48 dp under the button show too, which no system bar is as tall as: a
+            # button the screen's edge or a bar clipped would end lower. A Material button is 40 dp at least.
+            if (
+                not box
+                or box[1] <= 0
+                or box[3] + 48 * dp > height
+                or box[3] - box[1] < 40 * dp
+            ):
+                raise Fail(
+                    f"{side}: {button[0]} not whole on the screen at the end: {box}, screen height {height}"
+                )
+        before = focus()
+        tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
+        wait_for(f"{button[0]} to do its part", lambda: pressed(before), 15)
     finally:
         adb("shell", "settings", "put", "system", "font_scale", "1.0")
         adb("shell", "wm", "density", "reset")
@@ -1812,19 +1878,43 @@ def large_text(name, button):
         time.sleep(3)
 
 
+def left_and_back(before):
+    """A step's button opened Android's own screen or its keyboard picker; Back returns to setup."""
+    if focus() == before and not screen_has(
+        ("Choose input method", "Select input method")
+    ):
+        return False
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    wait_for("setup again after Back", lambda: "SettingsActivity" in focus(), 10)
+    return True
+
+
+DONE = labels("完成", "Done", "完了")
+
+
+def step3_again():
+    """Just after SebType stops, the system can fall back to another keyboard (setup's step 2): SebType is
+    chosen again until step 3 shows."""
+    step = setup_step_shown()
+    if step == 2:
+        adb("shell", "ime", "set", IME)
+    return step == 3
+
+
 def setup_tips():
     """A new user: steps 1 and 2 of 3, then the tips as step 3, which an interruption keeps; Done ends
-    setup for good."""
+    setup for good. At large text each step's button can be reached and pressed."""
     forget_setup()
     adb("shell", "ime", "disable", IME)
     try:
         start_settings()
         wait_step(1)
         screenshot("setup-step1")
-        large_text("setup-step1", labels("Turn on SebType"))
+        large_text("setup-step1", labels("Turn on SebType"), left_and_back)
         adb("shell", "ime", "enable", IME)
         wait_step(2)
         screenshot("setup-step2")
+        large_text("setup-step2", labels("Choose SebType"), left_and_back)
         adb("shell", "ime", "set", IME)
         wait_step(3)
         wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
@@ -1835,21 +1925,16 @@ def setup_tips():
             screenshot("setup-tips-dark")
         finally:
             adb("shell", "cmd", "uimode", "night", "no")
-        large_text("setup-tips", labels("完成", "Done", "完了"))
-        # Interrupted: the app stopped on step 3 comes back to it. Just after SebType stops, the system
-        # can fall back to another keyboard (setup's step 2), so it is chosen again until step 3 shows.
+        # Interrupted: the app stopped on step 3 comes back to it
         adb("shell", "am", "force-stop", PKG)
         start_settings()
-
-        def step3():
-            step = setup_step_shown()
-            if step == 2:
-                adb("shell", "ime", "set", IME)
-            return step == 3
-
-        wait_for("setup's step 3 of 3 after a restart", step3, 30)
-        tap_text(labels("完成", "Done", "完了"))
-        wait_for("the home screen after Done", lambda: screen_has(HOME["about"]), 10)
+        wait_for("setup's step 3 of 3 after a restart", step3_again, 30)
+        # Done, pressed at large text in landscape, opens home (its title, at the top)
+        large_text(
+            "setup-tips",
+            DONE,
+            lambda before: screen_has(("SebType",)) and not setup_step_shown(),
+        )
         adb("shell", "am", "force-stop", PKG)
         open_settings()
         if setup_step_shown():
@@ -1862,26 +1947,48 @@ def setup_tips():
     finally:
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
-    return "steps 1, 2 and 3 of 3, the button reachable at large text in portrait and landscape, step 3 again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
+    return (
+        "steps 1, 2 and 3 of 3, each button scrolled to and pressed at large text (portrait and landscape), "
+        "step 3 again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
+    )
+
+
+def setup_fresh_enabled():
+    """Fresh data with SebType already on and chosen (turned on before the app first opened, or its data
+    cleared): setup, its step 3, not home."""
+    saved = read_prefs()
+    try:
+        write_prefs(b"")
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
+        start_settings()
+        wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
+    finally:
+        write_prefs(saved)
+    return "fresh data, SebType on and chosen: setup's step 3"
 
 
 def setup_existing_user():
-    """Someone whose SebType was on before the tips existed, with another keyboard in use, opens the
-    settings: home, never setup, and the same once SebType is chosen again."""
-    forget_setup()
-    adb("shell", "ime", "enable", IME)
-    adb("shell", "ime", "set", other_keyboard())
+    """An update over today's app (its languages in DataStore's file, no setup record) with another keyboard
+    in use: home, never setup, and the same once SebType is chosen again."""
+    saved = read_prefs()
     try:
-        for run in (1, 2):
-            start_settings()
-            home_not_setup(f"opening {run} with another keyboard")
-            adb("shell", "am", "force-stop", PKG)
+        write_prefs(without_setup(saved) + TODAYS_SUBTYPES)
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", other_keyboard())
+        try:
+            for run in (1, 2):
+                start_settings()
+                home_not_setup(f"opening {run} with another keyboard")
+                adb("shell", "am", "force-stop", PKG)
+        finally:
+            adb("shell", "ime", "set", IME)
+        open_settings()
+        if setup_step_shown():
+            raise Fail("setup shown with SebType chosen again")
     finally:
-        adb("shell", "ime", "set", IME)
-    open_settings()
-    if setup_step_shown():
-        raise Fail("setup shown with SebType chosen again")
-    return "home with another keyboard in use, twice, and with SebType chosen again"
+        write_prefs(saved)
+    return "today's app's data: home with another keyboard in use, twice, and with SebType chosen again"
 
 
 def tips_screenshots():
@@ -1904,7 +2011,16 @@ def tips_screenshots():
 
 if NEXT:
     check("settings-setup-tips", setup_tips)
-    check("settings-setup-existing-user", setup_existing_user)
+    check(
+        "settings-setup-fresh-enabled",
+        setup_fresh_enabled,
+        needs=["settings-setup-tips"],
+    )
+    check(
+        "settings-setup-existing-user",
+        setup_existing_user,
+        needs=["settings-setup-tips"],
+    )
     check("settings-tips-screenshots", tips_screenshots)
 
 
