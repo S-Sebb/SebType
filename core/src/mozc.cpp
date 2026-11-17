@@ -263,7 +263,11 @@ class Mozc final : public Engine {
   void applySettings(const Settings &s, bool learning) override {
     learning_ = learning;
     if (s.halfWidthSpace) halfWidthSpace_ = *s.halfWidthSpace;
-    if (touch_ && session_) setConfig();
+    if (touch_) {
+      if (session_) setConfig();
+    } else {
+      mozc_->setLearning(learning);
+    }
   }
 
   void forget() override {

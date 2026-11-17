@@ -69,6 +69,10 @@ class ConfigHandler {
   // Sets config.
   static void SetConfig(Config config);
 
+  // SebType (#270): sets config in memory only, never written to the file, until the next SetConfig or
+  // Reload.
+  static void SetImposedConfig(Config config);
+
   // Gets default config value.
   //
   // Using these functions are safer than using an uninitialized config value.

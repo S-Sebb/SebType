@@ -109,8 +109,10 @@ class TextService final : public ITfTextInputProcessorEx,
   bool keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bool release, bool test, BOOL *eaten);
   void setLanguage(REFGUID profile);
   void followLayout();
-  // A password field, where keys go to the app as they are (as Mozc did); asked once per focus.
-  bool password(ITfContext *context);
+  // The focused field's input scope, asked once per focus: a password field, where keys go to the app as they
+  // are (as Mozc did), or a private one, where nothing typed is learned (#270).
+  enum class Field { Unknown, Text, Private, Password };
+  Field field(ITfContext *context);
   void setOpen();
   void focus(ITfDocumentMgr *focus);
 
@@ -120,7 +122,7 @@ class TextService final : public ITfTextInputProcessorEx,
   DWORD threadMgrCookie_ = TF_INVALID_COOKIE, activationCookie_ = TF_INVALID_COOKIE;
   ITfComposition *composition_ = nullptr;
   ITfContext *context_ = nullptr;  // the focused one, for clicks and menu picks
-  enum class Password { Unknown, No, Yes } password_ = Password::Unknown;
+  Field field_ = Field::Unknown;
   TfGuidAtom attrInput_ = TF_INVALID_GUIDATOM, attrTarget_ = TF_INVALID_GUIDATOM;
   Lang lang_ = Lang::Chinese;
   Reply reply_;

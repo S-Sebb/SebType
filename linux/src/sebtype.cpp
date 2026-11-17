@@ -127,6 +127,15 @@ uint32_t coreMods(fcitx::KeyStates s) {
 
 }  // namespace
 
+// Nothing typed in a password field or one the app calls sensitive is learned (#270), and the field keeps
+// what was learned before. Qt's ImhSensitiveData and text-input-v3's sensitive hint arrive as Sensitive:
+// Chromium sets it in incognito windows on Wayland. Firefox's private windows set no hint on Linux, and
+// fcitx5-gtk drops GTK's private hint.
+void SebTypeEngine::followField(fcitx::InputContext *ic) {
+  const bool learning = !ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive);
+  if (learning != core_->fieldLearning()) core_->setField(Field::Text, learning);
+}
+
 std::tuple<std::string, bool, bool, std::string> Service::state() {
   auto &core = engine_->core();
   return {langId(core.language()), core.latin(), core.alternate(), SebTypeEngine::iconName(core.icon())};
@@ -163,6 +172,7 @@ std::vector<fcitx::InputMethodEntry> SebTypeEngine::listInputMethods() {
 }
 
 void SebTypeEngine::keyEvent(const fcitx::InputMethodEntry &, fcitx::KeyEvent &event) {
+  followField(event.inputContext());
   const auto &raw = event.rawKey();
   if (core_->key({static_cast<uint32_t>(raw.sym()), coreMods(raw.states()), event.isRelease()})) {
     event.filterAndAccept();
@@ -171,6 +181,7 @@ void SebTypeEngine::keyEvent(const fcitx::InputMethodEntry &, fcitx::KeyEvent &e
 }
 
 void SebTypeEngine::activate(const fcitx::InputMethodEntry &, fcitx::InputContextEvent &event) {
+  followField(event.inputContext());
   update(event.inputContext());
 }
 

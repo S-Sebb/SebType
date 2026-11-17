@@ -92,8 +92,11 @@ Bringing words from elsewhere (a Rime word list, Rime's learned words, Mozc or M
 
 - Typing stays on the device. The only network SebType uses is sync, to your server, and only once you
   set it up.
-- Password fields and private tabs are always incognito: nothing is learned or kept from them. A sticky
-  toggle turns incognito on anywhere until you turn it off.
+- Password fields and private tabs are always incognito: nothing new is learned from them, and the words
+  learned before are still suggested. On the PCs a private tab is one the browser marks private: Chrome's
+  and Edge's incognito windows, and Firefox's private windows on Windows. Firefox on Linux doesn't tell
+  the input method, so its private windows learn as usual. On the phone a sticky toggle turns incognito
+  on anywhere until you turn it off.
 - No logs of what you type. Crash reports have typed text taken out and go only to your server.
 - The phone's data is left out of Android backups and phone-to-phone transfers.
 - On the PCs, the Configurator's Privacy page turns learning off and forgets what Rime or Mozc learned.

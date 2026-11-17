@@ -168,6 +168,7 @@ class ConfigHandlerImpl final {
   std::shared_ptr<const Config> GetSharedDefaultConfig() const;
 
   void SetConfig(Config config);
+  void SetImposedConfig(Config config);
   void Reload();
 
   void SetConfigFileName(absl::string_view filename)
@@ -254,6 +255,13 @@ void ConfigHandlerImpl::SetConfig(Config config) {
   SetConfigInternal(output_config);
 }
 
+void ConfigHandlerImpl::SetImposedConfig(Config config) {
+  // The hashes are of the file's config: the next SetConfig writes whatever it gets.
+  config_hash_ = 0;
+  content_hash_ = 0;
+  SetConfigInternal(std::make_shared<Config>(std::move(config)));
+}
+
 // Reload from file
 void ConfigHandlerImpl::Reload() {
   const std::string filename = GetConfigFileName();
@@ -298,6 +306,10 @@ std::shared_ptr<const Config> ConfigHandler::GetSharedConfig() {
 
 void ConfigHandler::SetConfig(Config config) {
   GetConfigHandlerImpl()->SetConfig(std::move(config));
+}
+
+void ConfigHandler::SetImposedConfig(Config config) {
+  GetConfigHandlerImpl()->SetImposedConfig(std::move(config));
 }
 
 // static

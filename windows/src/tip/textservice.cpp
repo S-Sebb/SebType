@@ -389,23 +389,26 @@ void TextService::focus(ITfDocumentMgr *focused) {
     context_ = nullptr;
   }
   if (window_) window_->hide();
-  password_ = Password::Unknown;
+  field_ = Field::Unknown;
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
     q.lang = lang_;
+    q.learning = field(context_) != Field::Private;
     send(q);
   }
   if (button_) button_->update();
 }
 
-// The input scope of the focused field: password fields get the keys untouched.
-bool TextService::password(ITfContext *context) {
-  if (password_ != Password::Unknown) return password_ == Password::Yes;
-  password_ = Password::No;
+// IS_PRIVATE is what browsers set in private windows: Chromium's (Chrome, Edge) for incognito and guest
+// windows and for password fields, Firefox's for private windows, beside the field's own scopes. Asked at
+// focus, so the core knows before the first key; when the app can't answer then, asked again at each key.
+// The app's text store gives it as an attribute, which TSF has as an app property, not a TSF property.
+TextService::Field TextService::field(ITfContext *context) {
+  if (field_ != Field::Unknown) return field_;
+  Field found = Field::Text;
   ITfReadOnlyProperty *prop = nullptr;
-  const GUID *props[] = {&kPropInputScope};
-  if (FAILED(context->TrackProperties(props, 1, nullptr, 0, &prop))) return false;
-  editSession(
+  if (FAILED(context->GetAppProperty(kPropInputScope, &prop)) || !prop) return field_ = found;
+  const HRESULT read = editSession(
       context, clientId_,
       [&](TfEditCookie ec) {
         TF_SELECTION sel{};
@@ -419,8 +422,10 @@ bool TextService::password(ITfContext *context) {
             InputScope *scopes = nullptr;
             UINT count = 0;
             if (SUCCEEDED(scope->GetInputScopes(&scopes, &count))) {
-              for (UINT i = 0; i < count; ++i)
-                if (scopes[i] == IS_PASSWORD) password_ = Password::Yes;
+              for (UINT i = 0; i < count; ++i) {
+                if (scopes[i] == IS_PASSWORD) found = Field::Password;
+                else if (scopes[i] == IS_PRIVATE && found == Field::Text) found = Field::Private;
+              }
               CoTaskMemFree(scopes);
             }
             scope->Release();
@@ -432,7 +437,8 @@ bool TextService::password(ITfContext *context) {
       },
       true);
   prop->Release();
-  return password_ == Password::Yes;
+  if (SUCCEEDED(read)) field_ = found;
+  return found;
 }
 
 // --- Keys ---
@@ -525,10 +531,13 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
     return true;
   }
   tested_.pending = false;
-  if (!context || password(context)) return true;
+  if (!context) return true;
+  const Field f = field(context);
+  if (f == Field::Password) return true;
   followLayout();
   Request q{Op::Key};
   q.lang = lang_;
+  q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key) || !send(q)) return true;
   *eaten = reply_.taken;
   if (test) tested_ = {wParam, release, reply_.taken, true};

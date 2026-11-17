@@ -13,10 +13,10 @@
 namespace sebtype::win {
 
 enum class Op : uint8_t {
-  Key,       // key, lang (the app's): true in reply.taken when the core took it
+  Key,       // key, lang (the app's), learning (the field's): true in reply.taken when the core took it
   Select,    // index: a click on a candidate of the page
   Page,      // next: the window's page arrows
-  FocusIn,   // lang: focus came to a text field of an app in this language
+  FocusIn,   // lang, learning: focus came to a text field of an app in this language
   FocusOut,  // focus left it: what is being typed is dropped
   Language,  // lang: Windows switched to this language's profile
   Menu,      // index: a pick in the tray menu (an item of reply.menu)
@@ -35,6 +35,7 @@ struct Request {
   int32_t index = 0;
   bool next = false;
   Lang lang = Lang::English;
+  bool learning = true;  // false in a private field (a browser's private window): nothing typed is learned
 };
 
 struct Reply {
@@ -67,6 +68,7 @@ class Reader {
  public:
   explicit Reader(const std::string &in) : in_(in) {}
   bool ok() const { return ok_; }
+  bool atEnd() const { return pos_ == in_.size(); }
   uint32_t u32() {
     uint32_t v = 0;
     if (!take(4)) return 0;
@@ -96,7 +98,7 @@ inline std::string encode(const Request &r) {
   Writer w;
   w.u32(static_cast<uint32_t>(r.op));
   w.u32(r.key.sym), w.u32(r.key.mods), w.b(r.key.release);
-  w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang));
+  w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang)), w.b(r.learning);
   return w.out;
 }
 
@@ -105,6 +107,9 @@ inline bool decode(const std::string &in, Request &r) {
   r.op = static_cast<Op>(rd.u32());
   r.key.sym = rd.u32(), r.key.mods = rd.u32(), r.key.release = rd.b();
   r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32());
+  // The protocol has no version. An app that loaded the text service before an upgrade (#270) still sends
+  // the shorter request, without learning: it learns, as it did. An older server ignores the extra byte.
+  r.learning = rd.atEnd() || rd.b();
   return rd.ok();
 }
 

@@ -7,3 +7,4 @@ EXPORTS
   sebtype_mozc_free
   sebtype_mozc_close
   sebtype_mozc_import_user_dictionary
+  sebtype_mozc_set_learning

@@ -20,6 +20,9 @@ int sebtype_mozc_eval(const char *in, size_t in_size, char **out, size_t *out_si
 void sebtype_mozc_free(char *bytes);
 // Saves learned words and frees the engine until the next open.
 void sebtype_mozc_close();
+// The PCs' learning in a private field: read-only history while learning is 0, in memory only (config1.db is
+// never written); learning off in config1.db stays off.
+void sebtype_mozc_set_learning(int learning);
 // A user dictionary file in any format Mozc imports (Mozc, MS-IME, ATOK, Kotoeri text) as a serialized
 // mozc.user_dictionary.UserDictionary in *out; entries it can't read are skipped.
 int sebtype_mozc_import_user_dictionary(const char *text, size_t size, char **out, size_t *out_size);
