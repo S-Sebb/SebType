@@ -1927,6 +1927,9 @@ def floating_resize():
     the size stays after the keyboard restarts and after a turn to landscape and back (#283)."""
     to_english()
     auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    uimode = (
+        adb("shell", "cmd", "uimode", "night").split(":")[-1].strip()
+    )  # yes, no, auto or custom
     try:
         set_mode("Floating")
         tap_reset()  # from its size and place before any change
@@ -1953,29 +1956,48 @@ def floating_resize():
                 raise Fail(
                     f"after {name} the keys are {r3 - l3}x{b3 - t3} px, not {r2 - l2}x{b2 - t2}"
                 )
-        # Turned with the frame up (floating in both orientations; the field kept), the new keyboard view
-        # hides its keys from TalkBack too; Apply brings them back.
+        # The keyboard's view made again with the frame up: TalkBack reaches the frame alone while it shows,
+        # and the keys again after Apply. Dark mode makes the view again over the same input, the resize kept
+        # (the field keeps its input through it); a turn (floating in both orientations) hides and shows the
+        # keyboard, which ends the resize.
         rotate(1)
         set_mode("Floating")
         rotate(0)
-        open_field()
-        action(MODES_ACTION)
-        tap_label(RESIZE)
-        wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
-        rotate(1)
-        wait_for("the resize corner after the turn", lambda: node(RESIZE_CORNER), 10)
-        talkback_reaches(framed=True)
-        tap_label(("Apply", "应用", "適用"))
-        talkback_reaches(framed=False)
+        night = "no" if uimode == "yes" else "yes"
+        made_again = []
+        for name, change in (
+            ("dark mode", lambda: adb("shell", "cmd", "uimode", "night", night)),
+            ("a turn", lambda: rotate(1)),
+        ):
+            open_field()
+            action(MODES_ACTION)
+            tap_label(RESIZE)
+            wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+            change()
+            time.sleep(3)
+            framed = node(RESIZE_CORNER) is not None
+            talkback_reaches(framed)
+            if framed:
+                tap_label(("Apply", "应用", "適用"))
+                talkback_reaches(framed=False)
+            made_again.append((name, framed))
+        if not made_again[0][1]:
+            raise Fail(
+                "dark mode with the frame up closed it: the view made again wasn't checked"
+            )
         set_mode("Standard")
         rotate(0)
         types_letters()
         return (
             f"keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px, kept after a restart and landscape "
-            f"(there {land[2] - land[0]}x{land[3] - land[1]}); turned with the frame up, TalkBack reaches "
-            f"the frame alone and the keys after Apply; typing works"
+            f"(there {land[2] - land[0]}x{land[3] - land[1]}); the frame "
+            + ", ".join(
+                f"{'kept' if kept else 'closed'} by {name}" for name, kept in made_again
+            )
+            + ", TalkBack reaching the frame alone while it shows and the keys after; typing works"
         )
     finally:
+        adb("shell", "cmd", "uimode", "night", uimode)
         rotate(1)
         set_mode("Standard")
         rotate(0)
@@ -2002,7 +2024,7 @@ def tap_reset():
 def floating_short_window():
     """Floating, moved to the top and resized tall: a window half as tall shows its keys shorter, all of them
     whole on the screen (the handle too) and typing. Made narrower there, the full window brings the saved
-    height back with the new width. A window 200 dp tall with Keyboard Modes open still shows the bottom
+    height back with the new width. A window 280 dp tall with Keyboard Modes open still shows the bottom
     row whole, the keys under today's 96 dp minimum (#283)."""
     to_english()
     w, h = screen_size()
@@ -2038,8 +2060,9 @@ def floating_short_window():
             raise Fail(
                 f"back in the full window the keys are {r4 - l4}x{b4 - t4} px, not {r3 - l3}x{tall}"
             )
-        # A window wider than tall is landscape: floating there too.
-        tiny = round(200 * screen_density())
+        # A window wider than tall is landscape: floating there too. 280 dp less the status bar, the
+        # navigation bar and Keyboard Modes leaves the keys less than today's 96 dp minimum.
+        tiny = round(280 * screen_density())
         adb("shell", "wm", "size", f"{w}x{tiny}")
         time.sleep(3)
         try:
@@ -2047,6 +2070,11 @@ def floating_short_window():
             open_field()
             action(MODES_ACTION)
             tiny_space = bottom_row_whole(tiny)
+            tiny_keys = keyboard_frame[3] - keyboard_frame[1]
+            if tiny_keys >= 96 * screen_density():
+                raise Fail(
+                    f"in a {tiny} px window the keys are {tiny_keys} px tall: not under the 96 dp minimum"
+                )
             handle = node(MOVE_KEYBOARD)
             if not handle or handle[3] < 0:
                 raise Fail(
@@ -2058,7 +2086,7 @@ def floating_short_window():
         return (
             f"keys {tall} px; {b2 - t2} px within a {short} px window (Space {space}), typing works; "
             f"narrowed there to {r3 - l3} px, then {r4 - l4}x{b4 - t4} px in the full window; "
-            f"in {tiny} px with Keyboard Modes open, Space {tiny_space}"
+            f"in {tiny} px with Keyboard Modes open, keys {tiny_keys} px, Space {tiny_space}"
         )
     finally:
         adb("shell", "wm", "size", "reset")
