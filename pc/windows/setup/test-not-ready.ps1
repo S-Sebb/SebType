@@ -9,6 +9,8 @@ field), so a screen that is off stays off, and it stops sending keys once Window
 Checks, each saving the input indicator's icon (<state>.png, at the size the text service gave the
 taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the taskbar's right end
 (<state>-taskbar.png), these two in the screen's own pixels at any scaling:
+  first-japanese: the first 日本語 after the install (#312) has its button at once (grey あ while Mozc loads),
+    a key goes in without waiting, and あ shows once Mozc is up;
   ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
@@ -157,8 +159,25 @@ function Restore-Build {
 $tsf::Start()
 Result scale INFO "$($tsf::Dpi()) dpi, $([int]($tsf::Dpi() * 100 / 96)) %; pictures in the screen's own pixels"
 try {
-  # The first key starts sebtype-server when none runs; the first 日本語 after an install took over 4 s
-  # before its button showed and it took keys (YukaROG, Mozc's first load).
+  # The first 日本語 after the install (#312): Mozc's first load took seconds, the activation waited for it
+  # past the text service's 3 s reply wait, and there was no button and no key taken for over 4 s (YukaROG).
+  # Now the button is there at once (grey あ while Mozc loads), a key goes in as typed without waiting, and
+  # あ shows once Mozc is up, unasked.
+  Check 'first-japanese' {
+    $was = if (Server) { 'a server ran already' } else { 'no server yet' }
+    $t = Get-Date; Lang ja; $activation = [int]((Get-Date) - $t).TotalMilliseconds - 500  # Lang settles 500 ms
+    $first = Shot 'hira-first'
+    $tsf::Clear(); $t = Get-Date; Ready; $null = $tsf::Key((Vk 'n')); $key = [int]((Get-Date) - $t).TotalMilliseconds
+    $tsf::Settle(300); $typed = $tsf::Text(); Keys Escape; $tsf::Clear()
+    $timeline = "$was, activation $activation ms, key $key ms gave '$typed'"
+    if ($activation -gt 1500) { throw "the activation took $activation ms ($timeline)" }
+    if ($key -gt 3500) { throw "the key waited $key ms ($timeline)" }
+    $end = (Get-Date).AddSeconds(30); $up = $null
+    do { Keys k a; if ($tsf::Text() -eq 'か') { $up = Shot 'hira-first-up' }; Keys Escape; $tsf::Clear() } while (-not $up -and (Get-Date) -lt $end)
+    if (-not $up) { throw "ka gave no か within 30 s ($timeline)" }
+    if ($up -eq $first) { "あ at once (Mozc was up already; $timeline)" }
+    else { "grey あ at once, あ once Mozc was up ($timeline)" }
+  }
   Check 'ready' {
     Lang ja
     $end = (Get-Date).AddSeconds(30)
