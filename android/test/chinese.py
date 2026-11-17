@@ -1843,7 +1843,11 @@ def resize_floating(*swipes):
         to = (min(max(x + dx, 0), w - 1), min(max(y + dy, 0), h - 1))
         adb("shell", "input", "swipe", str(x), str(y), *map(str, to), "1500")
         time.sleep(1)
-    tap_label(("Apply", "应用", "適用"))
+    try:
+        tap_label(("Apply", "应用", "適用"))
+    except Fail:
+        screenshot("resize-without-apply.png")
+        raise
     return frame_now()
 
 
@@ -2062,6 +2066,7 @@ def floating_short_window():
         # Only the width changed: the saved height stays the tall one, not the one cut to this window.
         adb("shell", "wm", "size", f"{small}x{short}")
         time.sleep(3)
+        open_field()  # the keyboard settled in the new window before the frame opens, as above
         l4, t4, r4, b4 = resize_floating(("corner", (-150, 0)))
         if (r4 - l4) > (r2 - l2) - 100:
             raise Fail(

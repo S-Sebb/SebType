@@ -62,6 +62,10 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f * density }
     private val title = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 17 * density; color = Picnic.INK }
+    /** The header's title and button, their text shrunk to fit a narrow keyboard (floating, resized, #283) */
+    private val fitted = Paint(title)
+    /** The header title's room, between ← and the header's button */
+    private var titleRoom = 0f
     private val kana = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 17 * density; textAlign = Paint.Align.CENTER }
 
     private var candidates = emptyList<String>()
@@ -123,14 +127,18 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         val header = header
         if (header != null) {
             out += Item(RectF(x, 0f, x + button, h), texts[R.string.back], Role.BUTTON, fixed = true, tag = Kind.MENU)
+            var end = width.toFloat()
             header.button?.let {
-                val w = title.measureText(it) + 32 * density
+                val w = minOf(title.measureText(it) + 32 * density, width - button - 8 * density)
                 out += Item(RectF(width - w - 8 * density, 0f, width.toFloat(), h), it, Role.BUTTON, fixed = true, tag = Kind.HEADER_BUTTON)
+                end = width - w - 8 * density
             }
             header.search?.let {
                 val w = if (header.pill) 128 * density else button
                 out += Item(RectF(width - w - 4 * density, 0f, width - 4 * density, h), it, Role.BUTTON, fixed = true, tag = Kind.SEARCH)
+                end = minOf(end, width - w - 4 * density)
             }
+            titleRoom = end - button - 6 * density - 8 * density
             setItems(out, 0f)
             start = width.toFloat()
             return
@@ -237,7 +245,9 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
             // Over a panel: ← and its title, as today's action panel
             Kind.MENU -> if (header != null) {
                 Icons.draw(canvas, Icon.PREVIOUS, r.centerX(), cy, 22 * density, Picnic.INK)
-                canvas.drawText(header?.title.orEmpty(), r.right + 6 * density, cy + title.textSize * 0.35f, title)
+                // Too small to read beside the button, the title goes: ← and the button say enough.
+                val name = header?.title.orEmpty()
+                if (fit(name, titleRoom) >= MIN_TITLE_DP * density) canvas.drawText(name, r.right + 6 * density, cy + fitted.textSize * 0.35f, fitted)
             } else {
                 canvas.drawCircle(r.right - 22.5f * density, cy, 16 * density, fill.apply { color = Picnic.CREAM })
                 Icons.draw(canvas, if (barOpen) Icon.COLLAPSE else Icon.MENU, r.right - 22.5f * density, cy, 16 * density, Picnic.INK)
@@ -247,7 +257,8 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
                 val half = 16 * density
                 stroke.color = Picnic.OUTLINE
                 canvas.drawRoundRect(r.left, cy - half, r.right - 8 * density, cy + half, half, half, stroke)
-                canvas.drawText(item.label, (r.left + r.right - 8 * density) / 2 - title.measureText(item.label) / 2, cy + title.textSize * 0.35f, title)
+                fit(item.label, r.width() - 8 * density - 24 * density)
+                canvas.drawText(item.label, (r.left + r.right - 8 * density) / 2 - fitted.measureText(item.label) / 2, cy + fitted.textSize * 0.35f, fitted)
             }
             Kind.CLIP -> {
                 val half = 14 * density
@@ -297,4 +308,15 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         val n = small.breakText(line, true, width / 3f, null)
         return if (n < line.length) line.take(maxOf(1, n - 1)) + "…" else line
     }
+
+    /** [fitted] at the title's size, or smaller so [s] fits [room]; its text size */
+    private fun fit(s: String, room: Float): Float {
+        fitted.textSize = title.textSize
+        val w = fitted.measureText(s)
+        if (w > room) fitted.textSize *= maxOf(room, 0f) / w
+        return fitted.textSize
+    }
 }
+
+/** The header's title, shrunk to fit, is drawn while at least this big */
+private const val MIN_TITLE_DP = 11f

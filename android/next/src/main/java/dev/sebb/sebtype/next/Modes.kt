@@ -122,11 +122,17 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
                     canvas.drawRoundRect(r.left + 3 * density, r.top, r.right - 3 * density, r.bottom, radius, radius, fill)
                 }
                 Icons.draw(canvas, tag.icon, r.centerX(), r.top + 20 * density, 22 * density, Picnic.INK)
+                // A narrow keyboard (floating, resized, #283) shrinks the mode's name to fit its tab.
+                label.textSize = 14 * density
+                val w = label.measureText(item.label)
+                val room = r.width() - 4 * density
+                if (w > room) label.textSize *= room / w
                 canvas.drawText(item.label, r.centerX(), r.bottom - 9 * density, label)
             }
             Kind.HEIGHT -> {
                 fill.color = Picnic.CREAM
                 canvas.drawRoundRect(r, radius, radius, fill)
+                label.textSize = 14 * density
                 canvas.drawText(item.label, r.centerX(), r.centerY() + label.textSize * 0.35f, label)
             }
             Kind.SHORTER, Kind.TALLER -> Icons.draw(canvas, if (tag == Kind.TALLER) Icon.PLUS else Icon.MINUS,
