@@ -53,33 +53,6 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     }
     fun around() = Around(textBefore(), textAfter(), selEnd != selStart)
 
-    /** An engine result asked for at this state of the field: its revision and the engine's re-syncs so far */
-    inner class Asked {
-        val editor = this@Editor
-        val revision = this@Editor.revision
-        val resyncs = this@Editor.resyncs
-    }
-    private var resyncs = 0
-    fun ask() = Asked()
-
-    /**
-     * Whether a result asked for at [asked] may write to the field (#280). Results come in order, each where the
-     * cursor is when it comes: one asked for before the user moved the cursor or the field changed would write
-     * over another word. The first such is dropped and calls [read], which has the engine read the field
-     * again ([resync]); the results queued behind it are dropped too, up to that read's.
-     */
-    fun fresh(asked: Asked, read: () -> Unit): Boolean {
-        if (asked.revision == revision && asked.resyncs == resyncs) return true
-        if (asked.resyncs == resyncs) resync(read)
-        return false
-    }
-
-    /** The engine reads the field again ([read]); results asked for before it are dropped. */
-    fun resync(read: () -> Unit) {
-        resyncs++
-        read()
-    }
-
     /** Whether the field is still as [around] read it: no change since that wasn't ours, the same text. */
     fun unchanged(around: Around) =
         around.revision == revision && textBefore() == around.before && textAfter() == around.after

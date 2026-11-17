@@ -50,42 +50,61 @@ class EditorTest {
     }
 
     /**
-     * #280: x typed at he|llo, then the cursor moved to hello wo|rld before the key's results came. They would
-     * narrow "world" and write "x" over it (hello hexrld): the first is dropped and the engine reads the field
-     * again; the next result queued behind it is dropped with no second read, and the read's own result applies.
+     * The engine thread's queue as the IME uses it: results come back in order, each written where the field's
+     * cursor is when it comes; a key's result types its letter there.
+     */
+    private class Engine(val field: Field, val editor: Editor) {
+        val keys = Keys()
+        val results = ArrayDeque<() -> Unit>()
+        var reads = 0
+        fun post(key: Keys.Key? = null, show: () -> Unit) {
+            val asked = keys.ask()
+            results += {
+                if (keys.fresh(asked)) show()
+                key?.done()
+            }
+        }
+        fun key(c: Char) = keys.type { key ->
+            post(key) { field.text = field.text.substring(0, field.cursor) + c + field.text.substring(field.cursor); field.cursor++ }
+        }
+        fun move(to: Int) {
+            field.cursor = to
+            editor.selectionChanged(to, to, -1, -1)
+            keys.reread { post { reads++ } }
+        }
+        fun deliver() { while (results.isNotEmpty()) results.removeFirst()() }
+    }
+
+    /**
+     * #280: x typed at he|llo, the cursor moved to hello wo|rld and y typed there, all before x's result came.
+     * x's result, asked for at he|llo, would write over "world"; it is dropped, and no key is lost: x and y
+     * go in at the cursor in the order typed, as they do in today's app when its text reaches the app after
+     * the tap.
      */
     @Test
-    fun keyResultsAskedBeforeTheCursorMovedAreDroppedAndTheEngineReadsTheFieldAgain() {
+    fun keysTypedAroundACursorMoveAreEachTypedOnce() {
         val field = Field("hello world", 2)
         val editor = Editor(null, field.connection)
         editor.selectionChanged(2, 2, -1, -1)
-        val key = editor.ask()
-        val settle = editor.ask()
-        field.cursor = 8
-        editor.selectionChanged(8, 8, -1, -1)
-
-        var reads = 0
-        var read: Editor.Asked? = null
-        assertFalse(editor.fresh(key) { reads++; read = editor.ask() })
-        assertFalse(editor.fresh(settle) { reads++ })
-        assertEquals(1, reads)
-        assertTrue(editor.fresh(read!!) { reads++ })
-        assertEquals(1, reads)
+        val engine = Engine(field, editor)
+        engine.key('x')
+        engine.move(8)
+        engine.key('y')
+        engine.deliver()
+        assertEquals("hello woxyrld", field.text)
     }
 
-    /** #280: a READY strip, which clears the preedit, asked for before the cursor moved is dropped too. */
+    /** #280: a result for no key (a READY strip, which writes the empty preedit) asked for before a move is dropped. */
     @Test
     fun aReadyStripAskedBeforeTheCursorMovedIsDropped() {
         val field = Field("hello world", 5)
         val editor = Editor(null, field.connection)
         editor.selectionChanged(5, 5, -1, -1)
-        val ready = editor.ask()
-        assertTrue(editor.fresh(editor.ask()) {})
-        field.cursor = 11
-        editor.selectionChanged(11, 11, -1, -1)
-
-        var reads = 0
-        assertFalse(editor.fresh(ready) { reads++ })
-        assertEquals(1, reads)
+        val engine = Engine(field, editor)
+        engine.post { field.text = "" }
+        engine.move(11)
+        engine.deliver()
+        assertEquals("hello world", field.text)
+        assertEquals(1, engine.reads)
     }
 }

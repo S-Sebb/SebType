@@ -143,16 +143,22 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private var emojiAt = -1
     private var keysSent: Int? = null
 
-    /** Whether an English result asked for at [asked] may write to the field ([Editor.fresh], #280). */
-    private fun fresh(asked: Editor.Asked) =
-        lang != ENGLISH || (asked.editor === editor && editor.fresh(asked) { if (toEngine) englishContext() })
+    /** English's results and the keys they are for (#280) */
+    private val keys = Keys()
 
-    private fun resync() = editor.resync { if (toEngine) englishContext() }
+    /** Whether an English result asked for at [asked] may write to the field ([Keys], #280). */
+    private fun fresh(asked: Keys.Asked) = lang != ENGLISH || keys.fresh(asked)
 
-    /** [work] on the engine thread, then [show] with its result unless that is stale ([fresh]). */
-    private fun <T> post(work: NativeCore.() -> T, show: (T) -> Unit) {
-        val asked = editor.ask()
-        NativeCore.post(work) { if (fresh(asked)) show(it) }
+    /**
+     * [work] on the engine thread, then [show] with its result unless that is stale ([fresh]); then [key], the
+     * key it is for, is done.
+     */
+    private fun <T> post(work: NativeCore.() -> T, key: Keys.Key? = null, show: (T) -> Unit) {
+        val asked = keys.ask()
+        NativeCore.post(work) {
+            if (fresh(asked)) show(it)
+            key?.done()
+        }
     }
 
     override fun onCreate() {
@@ -267,6 +273,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         editor = fieldEditor
         kind = FieldKind.of(info)
         editor.start(info, kind)
+        keys.forget()
         state = null
     }
 
@@ -340,8 +347,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         if (views) autoShift()
     }
 
-    /** English reads the text around the cursor again, after it changed other than by its keys. */
-    private fun englishContext() {
+    /**
+     * English reads the text around the cursor again, after it changed other than by its keys: the results
+     * asked for before are dropped, and the keys they were for follow the read ([Keys.reread]).
+     */
+    private fun englishContext(): Unit = keys.reread {
         val around = editor.around()
         post({
             setContext(around.before, around.after, around.selection)
@@ -350,7 +360,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             state().recorded().also { if (it.recompose) engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
         }) {
             // The app changed the text since, with its update still to come
-            if (editor.unchanged(around)) show(it, around = around) else resync()
+            if (editor.unchanged(around)) show(it, around = around) else englishContext()
         }
     }
 
@@ -402,7 +412,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
                 ?.also { engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
         }) {
             if (it != null) {
-                if (editor.unchanged(around)) show(it, around = around) else resync()
+                if (editor.unchanged(around)) show(it, around = around) else englishContext()
             }
         }
         keysSent = null
@@ -499,6 +509,12 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
      * word being typed. On the engine thread too, after the keys before it (#241).
      */
     private fun english(code: Code, text: String, x: Int, y: Int) {
+        val userShift = keyboard.typedWithUserShift
+        // Sent again if the field changes before its result comes (#280)
+        keys.type { key -> english(key, code, text, x, y, userShift) }
+    }
+
+    private fun english(key: Keys.Key, code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
         /**
          * [sym] to the engine; if it doesn't take it, [otherwise] in the field, where [typed] goes on the
          * engine thread's copy of the text (null: Delete's character comes off).
@@ -515,7 +531,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
                     if (typed != null) engineBefore.append(typed) else if (engineBefore.isNotEmpty()) engineBefore.setLength(engineBefore.length - 1)
                 }
                 st
-            }) {
+            }, key) {
                 show(it)
                 if (!it.taken) otherwise()
             }
@@ -525,11 +541,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         when (code) {
             Code.TEXT -> {
                 val cp = text.codePointAt(0)
-                if (Character.charCount(cp) != text.length) return post({ flush().recorded() }) {
+                if (Character.charCount(cp) != text.length) return post({ flush().recorded() }, key) {
                     show(it)
                     editor.commit(text)
                 }
-                if (!Character.isLetter(cp) || keyboard.typedWithUserShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
+                if (!Character.isLetter(cp) || userShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
                 // The field's capital, by the text this letter follows once the keys before it are in
                 val caps = if (Prefs[Prefs.CAPITALISE]) editor.capsFlags else 0
                 val lower = text.lowercase()
@@ -589,7 +605,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     override fun onCursor(by: Int) {
         val english = lang == ENGLISH
         val sym = if (by < 0) NativeCore.XK_Left else NativeCore.XK_Right
-        val asked = editor.ask()
+        val asked = keys.ask()
         NativeCore.post({
             when {
                 !engineComposing -> null
@@ -608,7 +624,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     /** Delete's swipe: what is being typed goes (English's word is kept, as typed), then whole words. */
     override fun onDeleteWords(words: Int, done: Boolean) {
         val english = lang == ENGLISH
-        val asked = editor.ask()
+        val asked = keys.ask()
         NativeCore.post({ if (engineComposing) (if (english) flush() else clear()).recorded() else null }) { st ->
             // The deletion is the user's, and its own selection is a change of the field's (#280)
             if (st != null && fresh(asked)) {
@@ -638,7 +654,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             // A word reopened from [around] is marked only where the field still has it (#280)
             if (st.recompose && !editor.composeRegion(st.composeBefore, st.composeAfter, around?.text(st.composeBefore, st.composeAfter))) {
                 editor.endBatch()
-                return resync()
+                return englishContext()
             }
             if (st.deleteBefore > 0 || st.deleteAfter > 0) editor.delete(st.deleteBefore, st.deleteAfter)
             if (st.commit.isNotEmpty()) editor.commit(st.commit)
@@ -930,7 +946,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     /** What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing */
     private fun finishTyping(then: () -> Unit) {
         val chinese = lang == CHINESE
-        val asked = editor.ask()
+        val asked = keys.ask()
         NativeCore.post({ if (engineComposing) (if (chinese) clear() else flush()).recorded() else null }) { st ->
             // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
             if (st != null && fresh(asked)) {
@@ -1014,7 +1030,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             // Two thirds of the bar and keys, which the search's field and results replace: today's results
             // take two thirds of its keyboard view, which has the room our bar takes.
             results.layoutParams = results.layoutParams.apply { height = ((barFrame.height + keysRow.height) / 1.5f).toInt() }
-            enterLanguage()
+            // Keys typed since the search was tapped go into it (#280)
+            keys.reread { enterLanguage() }
             onSearchText("")
             refresh()
             autoShift()
@@ -1035,7 +1052,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             editor = fieldEditor
             kind = FieldKind.of(currentInputEditorInfo)
             keyboard.enter = kind.enter
-            enterLanguage()
+            // Keys typed since the search ended go into the field (#280)
+            keys.reread { enterLanguage() }
             open(Panel.NONE)
             autoShift()
         }
