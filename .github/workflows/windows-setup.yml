@@ -232,3 +232,26 @@ jobs:
             Get-Content "$env:LOCALAPPDATA\SebType\setup.log", "$env:ProgramFiles\SebType\setup.log" -ErrorAction SilentlyContinue
             throw "Setup failed ($($p.ExitCode))"
           }
+      # A silent Setup and uninstall whose account steps fail exit instead of waiting on an error box nobody
+      # can click (#311): /VERYSILENT alone, as pc/windows/README.md documents it. A file where the account's
+      # %LOCALAPPDATA%\SebType folder goes makes setup.ps1 -User fail.
+      - name: Silent Setup with a failing account step
+        run: |
+          Remove-Item -Recurse -Force "$env:LOCALAPPDATA\SebType"
+          New-Item -ItemType File "$env:LOCALAPPDATA\SebType" | Out-Null
+          $exe = Get-Item pc/windows/setup/out/*.exe
+          $p = Start-Process -PassThru $exe '/VERYSILENT', '/NORESTART', "/LOG=$env:RUNNER_TEMP\install-fail.log"
+          $null = $p.Handle  # so ExitCode is kept after WaitForExit
+          if (-not $p.WaitForExit(300000)) { throw 'Setup still running after 5 minutes' }
+          if ($p.ExitCode -ne 1) {
+            Get-Content "$env:RUNNER_TEMP\install-fail.log" -Tail 40
+            throw "Setup exited $($p.ExitCode), not 1"
+          }
+          # The uninstaller hands over to a copy of itself in %TEMP%, so wait for that one (as test.ps1 does).
+          Start-Process "$env:ProgramFiles\SebType\unins000.exe" '/VERYSILENT', '/NORESTART'
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5C1E7A52-3D8B-4F7E-9E0B-7B3B5A1C7354}_is1'
+          $end = (Get-Date).AddMinutes(5)
+          while ((Test-Path $key) -or (Get-Process | Where-Object { $_.Path -like "$env:TEMP\*-uninstall.tmp\*" })) {
+            if ((Get-Date) -gt $end) { throw 'Uninstaller still running after 5 minutes' }
+            Start-Sleep 5
+          }

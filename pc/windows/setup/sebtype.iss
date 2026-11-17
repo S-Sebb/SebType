@@ -258,7 +258,24 @@ begin
   Result := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\setup.ps1') + '" ' + Arguments;
 end;
 
-// Runs a setup.ps1 step; on failure says so (not in a silent run) and makes Setup's exit code 1.
+// A silent Setup or uninstall shows no message: /VERYSILENT without /SUPPRESSMSGBOXES still shows a
+// SuppressibleMsgBox, which nobody can click when Setup runs in session 0, so Setup would never exit (#311).
+function Silent: Boolean;
+begin
+  if IsUninstaller then
+    Result := UninstallSilent
+  else
+    Result := WizardSilent;
+end;
+
+procedure Tell(Text: String; Typ: TMsgBoxType);
+begin
+  Log(Text);
+  if not Silent then
+    MsgBox(Text, Typ, MB_OK);
+end;
+
+// Runs a setup.ps1 step; on failure says so (logged only in a silent run) and makes Setup's exit code 1.
 procedure Step(Name, Arguments, LogFile: String; AsOriginalUser: Boolean);
 var
   Code: Integer;
@@ -270,12 +287,12 @@ begin
     Ok := Exec('powershell.exe', PowerShell(Arguments), '', SW_HIDE, ewWaitUntilTerminated, Code);
   // 2: done, but learned words the sync couldn't send were kept rather than deleted (setup.ps1, #271).
   if Ok and (Code = 2) then
-    SuppressibleMsgBox(FmtMessage(CustomMessage('Kept'), ['%LOCALAPPDATA%\SebType\unsynced']), mbInformation, MB_OK, IDOK)
+    Tell(FmtMessage(CustomMessage('Kept'), ['%LOCALAPPDATA%\SebType\unsynced']), mbInformation)
   else if not Ok or (Code <> 0) then
   begin
     Log(Format('setup.ps1 %s failed: %d', [Arguments, Code]));
     FailCode := 1;
-    SuppressibleMsgBox(FmtMessage(CustomMessage('Failed'), [Name, IntToStr(Code), LogFile]), mbError, MB_OK, IDOK);
+    Tell(FmtMessage(CustomMessage('Failed'), [Name, IntToStr(Code), LogFile]), mbError);
   end;
 end;
 
@@ -361,7 +378,7 @@ begin
   Result := True;
   if (CurPageID = wpSelectTasks) and (Chosen = '') then
   begin
-    MsgBox(CustomMessage('NoLanguage'), mbInformation, MB_OK);
+    Tell(CustomMessage('NoLanguage'), mbInformation);
     Result := False;
   end;
 end;
