@@ -151,8 +151,9 @@ void Core::forEachEngine(const std::function<void(Engine &)> &fn) {
 
 void Core::switchTo(Lang lang) {
   if (lang == lang_) return;
-  if (settings_.commitOnSwitch) flush();
-  else if (auto *e = running(lang_)) e->clear();
+  // The PCs type in what focus moving away does (#301): pinyin as its letters, Japanese as converted.
+  if (settings_.commitOnSwitch) commit_ += unfinished();
+  if (auto *e = running(lang_)) e->clear();
   lang_ = lang;
   if (lang != settings_.languages.front()) lastOther_ = lang;
   notice_ = true;

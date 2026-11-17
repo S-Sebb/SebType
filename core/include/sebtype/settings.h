@@ -20,8 +20,8 @@ struct Settings {
   std::optional<bool> halfWidthSpace;
   // Learning from what is typed, in every language.
   bool learning = true;
-  // Leaving a language commits what is typed (the PCs' Win+Space) or drops it (the phone's 🌐, the user's
-  // choice of 2026-11-15). A platform's, so not in the file.
+  // Leaving a language types in what is typed, as focus moving away does (the PCs' Win+Space, #301), or
+  // drops it (the phone's 🌐, the user's choice of 2026-11-15). A platform's, so not in the file.
   bool commitOnSwitch = true;
 
   static Settings parse(std::string_view ini);

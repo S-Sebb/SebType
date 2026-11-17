@@ -10,7 +10,7 @@ keys go to TSF's keystroke manager instead of the session's input. Moving away i
 another document and back, as a click into another field does. Checks: 中文 ranhou Space gives 然后; nihao,
 then away and back, leaves nihao, and ni Space after it gives 你 (nothing left over); 日本語 nihongo Space,
 then away, leaves 日本語; 日本語 nihongo Space, then 中文, leaves 日本語, and 中文 nihao, then 日本語,
-leaves 你好 (#301); 中文 nihao, then the list's first other input method, leaves nothing. Windows' display state (GUID_CONSOLE_DISPLAY_STATE) is watched from the start:
+leaves nihao (#301); 中文 nihao, then the list's first other input method, leaves nothing. Windows' display state (GUID_CONSOLE_DISPLAY_STATE) is watched from the start:
 it must be off then and never turn on (display-stayed-off); once it is on, no more keys go.
 -Trial needs no SebType: the field to the front and one key, and the display watched, then nothing else.
 -WatchTo <file> only watches the display, for a whole session around this test (installing, uninstalling):
@@ -148,8 +148,8 @@ try {
       if ($t -ne '日本語') { throw "nihongo + Space, then away, left '$t'" }
       $t
     }
-    # Switching between SebType's 中 and 日 types in what the switch commits, as on Linux (#301): Mozc's
-    # conversion as it shows, Rime's first candidate.
+    # Switching between SebType's 中 and 日 types in what focus moving away does (#301): pinyin as its
+    # letters, Japanese as converted.
     Check 'japanese-to-chinese' {
       $tsf::Clear(); TypeText 'nihongo '; Lang zh -Keep; $t = $tsf::Text()
       if ($t -ne '日本語') { throw "nihongo + Space, then 中, left '$t'" }
@@ -157,7 +157,7 @@ try {
     }
     Check 'chinese-to-japanese' {
       $tsf::Clear(); TypeText 'nihao'; Lang ja -Keep; $t = $tsf::Text()
-      if ($t -ne '你好') { throw "nihao, then 日, left '$t'" }
+      if ($t -ne 'nihao') { throw "nihao, then 日, left '$t'" }
       $t
     }
     # Switching to another input method still throws it away (the user's choice in #301).

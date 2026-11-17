@@ -558,7 +558,7 @@ fi
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
-# Focus moving away mid-word types the pinyin in (#277).
+# Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301).
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
@@ -679,6 +679,15 @@ def away(caps):
 check('focus out types in nihao (the app shows the preedit)', away(1 << 1 | 1 << 4 | 1 << 39), ('nihao', '你'))
 check('focus out types in nihao (preedit in the panel)', away(1 << 39), ('nihao', '你'))
 call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+# #301: switching to 日本語 mid-word types the pinyin in the same way, and 中文 starts fresh after it.
+def switch_away():
+    committed.clear()
+    for c in 'nihao': tap(c)
+    call(*SEBTYPE, 'SetLanguage', '(s)', 'ja'); wait(lambda: committed, 2)
+    typed = ''.join(committed)
+    call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+    return typed, first('ni')
+check('switching to 日本語 types in nihao', switch_away(), ('nihao', '你'))
 def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
     wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n

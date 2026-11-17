@@ -334,8 +334,8 @@ void TextService::setLanguage(REFGUID profile) {
     reply_.lang = lang;
     reply_.icon = lang == Lang::Japanese ? "hira" : "zh";
   }
-  // Between 中 and 日 what was being typed goes in, as on Linux (#301): what the core's switch commits
-  // replaces the composition. Switching to another input method comes as Deactivate instead, which drops it.
+  // Between 中 and 日 what was being typed goes in as on focus loss (#301): the core's switch commits it,
+  // and it replaces the composition. Switching to another input method comes as Deactivate instead, which drops it.
   if (switched && context_) typeIn(utf16(std::exchange(reply_.commit, {})));
   if (window_) window_->hide();
   if (button_) button_->update();
