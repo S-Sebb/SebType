@@ -161,6 +161,38 @@ bool isSeparator(char32_t c) { return c == ' ' || std::u32string_view(U".,;:!?)]
 // Punctuation that joins the word before it when it comes right after a picked suggestion (#39).
 bool joinsWord(char32_t c) { return std::u32string_view(U".,;:!?").find(c) != std::u32string_view::npos; }
 
+// The phantom space a revert took, as today's app puts it back (InputLogic's handleNonSeparatorEvent and
+// handleSeparatorEvent, with its English spacing-and-punctuations/default.xml): before any character but its
+// word separators, the word connector (') and Unicode's other symbols (those on our keys: © ® ° ™), and
+// before a double quote that opens one. It stays for the next character after .,;:!?)]}.
+bool spaceBeforeAfterRevert(char32_t c) {
+  return c != '\'' && std::u32string_view(U"\t\n \u00a0()[]{}*&<>+=|.,;:!?/_\"-#$`\\%\u00bf\u00a1\u2014\u2013\u201e\u201c"
+                                          U"\u201d\u00ab\u00bb\u2039\u203a\u2026\u061f\u060c\u061b~\u00a9\u00ae\u00b0\u2122")
+                          .find(c) == std::u32string_view::npos;
+}
+bool keepsPhantomSpace(char32_t c) { return std::u32string_view(U".,;:!?)]}").find(c) != std::u32string_view::npos; }
+
+// Whether TEXT (before the cursor) ends inside a double quote or after a digit: today's StringUtils's
+// isInsideDoubleQuoteOrAfterDigit, where a double quote gets no phantom space.
+bool insideQuoteOrAfterDigit(const std::string &text) {
+  const auto cps = codePoints(text);
+  if (cps.empty()) return false;
+  if (cps.back() >= '0' && cps.back() <= '9') return true;
+  const auto space = [](int c) { return c == ' ' || c == '\t' || c == '\n'; };
+  int prev = 0, quotes = 0;
+  for (size_t i = cps.size(); i-- > 0;) {
+    const int c = cps[i];
+    if (c == '"') {
+      quotes++;
+      if (space(prev)) return false;  // a closing quote
+    } else if (c == '\n') break;
+    if (space(c) && prev == '"') return true;              // an opening quote
+    if (isLetter(char32_t(c)) && prev == '"') return false;  // a closing one
+    prev = c;
+  }
+  return quotes % 2 == 1;
+}
+
 std::string withCase(const std::string &word, const std::vector<int> &typed) {
   if (typed.empty() || char32_t(typed[0]) == lowerCase(typed[0])) return word;
   const bool allCaps = typed.size() > 1 && std::all_of(typed.begin(), typed.end(), [](int c) {
@@ -422,7 +454,7 @@ class English : public Engine {
       return true;
     }
     if (isLetter(c) || ((c == '\'' || c == U'’') && !typed_.empty())) {
-      if (phantom) {
+      if (phantom && isLetter(c)) {
         if (!typed_.empty()) commitWord(utf8(typed_), false);
         commit_ += " ";
         context_ += " ";
@@ -454,6 +486,7 @@ class English : public Engine {
         changed();
         return true;
       }
+      const bool quoteSpace = phantom && c == '"' && !insideQuoteOrAfterDigit(context_ + utf8(typed_));
       if (afterPick && joinsWord(c) && context_.ends_with(' ')) {
         // "word" picked, then ".": "word. " (#39); a space the user typed keeps the period where it is.
         context_.pop_back();
@@ -463,15 +496,18 @@ class English : public Engine {
         last.learned = commitWord(last.committed, false);
         if (last.committed != utf8(last.typed)) lastCorrection_ = std::move(last);
       }
+      if (quoteSpace) commit_ += " ", context_ += " ";
       commit_ += utf8(c);
       context_ += utf8(c);
       if (edit_.deleteBefore) commit_ += " ", context_ += " ";
-      phantomSpace_ = phantom && joinsWord(c);
+      phantomSpace_ = phantom && (keepsPhantomSpace(c) || c == '"' && !quoteSpace);
       changed();
       return true;
     }
-    // Digits, symbols and the keys that move the cursor: the word stays as typed.
+    // Digits, symbols and the keys that move the cursor: the word stays as typed, and after a revert the space
+    // it took comes back before a digit or a symbol, as in today's app.
     commitTyped();
+    if (phantom && c && spaceBeforeAfterRevert(c)) commit_ += " ", context_ += " ";
     if (c) context_ += utf8(c);
     changed();
     return false;

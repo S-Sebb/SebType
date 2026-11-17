@@ -661,6 +661,23 @@ TEST_F(EnglishTest, BackspaceRightAfterACorrectionPutsBackWhatWasTyped) {
   en->takeEdit();
   type(" ");
   EXPECT_EQ(en->takeCommit(), "teh ");
+  // As in today's app, the space comes back before a digit or a symbol too ("teh 1"), and before a double
+  // quote that opens; not before ' (it joins the word) or a word separator such as "(", and after .,;:!?)]}
+  // it waits for the next character.
+  for (const auto &[keys, commit, preedit] :
+       {std::tuple{"1", "teh ", ""}, {"@", "teh ", ""}, {"\"", "teh \"", ""}, {"(", "teh", ""}, {"'", "", "teh'"},
+        {")x", "teh) ", "x"}, {")1", "teh) ", ""}}) {
+    en.reset();  // saves what it learned: "teh", from the revert before
+    SetUp();     // a fresh user dictionary
+    start("");
+    type("teh ");
+    ASSERT_EQ(en->takeCommit(), "the ");
+    en->key({0xff08, 0, false});
+    ASSERT_EQ(en->takeEdit().deleteBefore, 4);
+    type(keys);
+    EXPECT_EQ(en->takeCommit(), commit) << keys;
+    EXPECT_EQ(en->preedit().text(), preedit) << keys;
+  }
 }
 
 // Only the key right after the correction undoes it: not once another key came, the cursor moved, the
