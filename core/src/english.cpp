@@ -810,10 +810,13 @@ class English : public Engine {
   }
 
   // How long until the ranking asked for at gen_ is expected to come, by the times the worker took so far:
-  // what is left of the job it is on, and the ranking itself unless that is the job. Under mutex_.
+  // what is left of the job it is on, and the ranking itself unless that is the job. A job past its time
+  // is taken to need its time again: the worker is behind, so it is no sign of the ranking coming soon.
+  // Under mutex_.
   std::chrono::steady_clock::duration rankExpectedIn() const {
+    using Duration = std::chrono::steady_clock::duration;
     const auto now = std::chrono::steady_clock::now();
-    const auto left = busy_ ? std::max(busyUntil_ - now, std::chrono::steady_clock::duration{}) : std::chrono::steady_clock::duration{};
+    const Duration left = !busy_ ? Duration{} : busyUntil_ > now ? busyUntil_ - now : busyUntil_ - busyStart_;
     return busy_ && rankingGen_ == gen_ ? left : left + rankTime_;
   }
 
@@ -892,7 +895,7 @@ class English : public Engine {
   // The worker starts a job that took TIME before (RANKING: the gen it ranks) and ends it; under mutex_.
   std::chrono::steady_clock::time_point begin(std::chrono::steady_clock::duration time, uint64_t ranking) {
     const auto now = std::chrono::steady_clock::now();
-    busy_ = true, busyUntil_ = now + time, rankingGen_ = ranking;
+    busy_ = true, busyStart_ = now, busyUntil_ = now + time, rankingGen_ = ranking;
     return now;
   }
   void end(std::chrono::steady_clock::duration &time, std::chrono::steady_clock::time_point start) {
@@ -1000,7 +1003,7 @@ class English : public Engine {
   bool rankPending_ = false;
   // The worker's job, for a space deciding whether to wait (rankExpectedIn)
   bool busy_ = false;
-  std::chrono::steady_clock::time_point busyUntil_;
+  std::chrono::steady_clock::time_point busyStart_, busyUntil_;
   uint64_t rankingGen_ = ~uint64_t{0};
   std::chrono::steady_clock::duration rankTime_{}, nextTime_{};
   bool stop_ = false, loadAsked_ = false, loadTried_ = false;
