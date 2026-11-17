@@ -3,6 +3,7 @@ package dev.sebb.sebtype.core
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.Message
 import android.os.Process
 import java.util.concurrent.CountDownLatch
 
@@ -21,6 +22,8 @@ object NativeCore {
     init { System.loadLibrary("sebtype") }
 
     private val engine = Handler(HandlerThread("SebTypeEngine", Process.THREAD_PRIORITY_DISPLAY).apply { start() }.looper)
+    // Results come as asynchronous messages (#310): a key's press redraws the keyboard, and the frame it
+    // asks for holds back ordinary messages until the next vsync, up to 16 ms after the key.
     private val main = Handler(Looper.getMainLooper())
 
     private class Step(val show: (Any?) -> Unit) {
@@ -46,7 +49,7 @@ object NativeCore {
         engine.post {
             step.result = work()
             step.done = true
-            main.post(::deliver)
+            main.sendMessage(Message.obtain(main, ::deliver).apply { isAsynchronous = true })
         }
     }
 
