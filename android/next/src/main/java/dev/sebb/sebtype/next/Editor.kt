@@ -2,6 +2,7 @@ package dev.sebb.sebtype.next
 
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
+import android.text.TextUtils
 import android.os.Build
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -14,15 +15,15 @@ import java.text.BreakIterator
 /**
  * The text field, through its InputConnection: commits, the composing text, deletes and the enter key. It
  * keeps the selection it expects after its own edits, so a selection update it didn't cause (the user moved
- * the cursor) can be told apart, and the text it expects around it, so an edit goes in only where the field
- * still is as the engine knows it (#280). The ideas follow pristine AOSP's RichInputConnection (Apache-2.0);
- * the code is SebType's.
+ * the cursor) can be told apart, and the text it expects around it, so English's edits go in only where the
+ * field still is as the engine knows it (#280). The ideas follow pristine AOSP's RichInputConnection
+ * (Apache-2.0); the code is SebType's.
  */
 class Editor(private val ime: InputMethodService?, private val target: InputConnection? = null) {
     private companion object {
         /** Delete's swipe looks this far back for words */
         const val MAX_SWIPE = 2000
-        /** How much of the text either side of the selection [write] checks: more than an edit reaches */
+        /** How much of the text either side of the selection [write] checks, besides the composing text */
         const val CHECK = 64
     }
 
@@ -30,6 +31,12 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     private val ic: InputConnection? get() = target ?: ime?.currentInputConnection
     private var info: EditorInfo? = null
     private var kind = FieldKind.of(null)
+
+    /**
+     * English (#280): [write] checks the field before each edit, and an update whose composing text isn't the
+     * one our edits left counts as the field's own change.
+     */
+    var checked = false
 
     /** The selection as the field last reported it, or as it will be after our own edits */
     var selStart = -1
@@ -39,8 +46,10 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     private var composing = false
     /** Where the composing text starts in the field, from the last update; -1 unknown */
     private var composeStart = -1
-    /** Selections our own recent edits led to: their updates can arrive after later edits. */
-    private val expected = ArrayDeque<Pair<Int, Int>>()
+    /** The composing text's length in the field */
+    private var composeLength = 0
+    /** Our recent edits' updates, still to come: the selection and the composing text they leave (-1, -1: none) */
+    private val expected = ArrayDeque<List<Int>>()
     /** The field's text that [composeRegion] made the composing text, until it changes */
     private var regionText: String? = null
     /** Where the user put the cursor inside the composing text at the last update, from its start; -1: not there */
@@ -63,8 +72,21 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
             end = start
             region = if (compose && with.isNotEmpty()) r.first until start else null
         }
+
+        /** deleteSurroundingText's edit, [b] and [a] characters either side of the selection: false when it reaches past what we know */
+        fun delete(b: Int, a: Int): Boolean {
+            if (region != null || b > start || end + a > text.length) return false
+            text = text.substring(0, start - b) + text.substring(start, end) + text.substring(end + a)
+            start -= b
+            end -= b
+            return true
+        }
     }
     private var model: Model? = null
+    /** The field gave nothing when read: what is in it, and where, is unknown */
+    private var blind = false
+    /** The field says where its text starts in getSurroundingText (Android 12+): [check] reads that */
+    private var surrounds = false
 
     /** [model], or nothing known when [edit] can't say how the field changed */
     private inline fun model(edit: Model.() -> Boolean) {
@@ -76,14 +98,22 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
 
     /**
      * Reads the field's text around the cursor: where the field says its cursor is, read with the text, becomes
-     * ours. A word may be reopened only where the field says so (#280): one is placed by the cursor.
+     * ours. A word may be reopened only where the field says so (#280): one is placed by the cursor. A field
+     * that gives nothing is [blind].
      */
     fun around(): Around {
+        blind = false
         val s = read(1000, 64)
         if (s != null) return Around(s.before, s.after, s.start == s.end)
-        val before = textBefore()
-        val selected = ic?.getSelectedText(0)?.toString().orEmpty()
-        val after = textAfter()
+        val ic = ic
+        val before = ic?.getTextBeforeCursor(1000, 0)?.toString()
+        val after = ic?.getTextAfterCursor(64, 0)?.toString()
+        val selected = if (selEnd > selStart) ic?.getSelectedText(0)?.toString() else ""
+        if (before == null || after == null || selected == null) {
+            blind = true
+            model = null
+            return Around("", "", false)
+        }
         model = Model(before + selected + after, before.length, before.length + selected.length, -1)
         return Around(before, after, false)
     }
@@ -95,13 +125,18 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
      * Up to [before] and [after] characters around the selection, with where it is, in one read: a cursor read
      * apart from the text, or our own idea of it, can be older than the text (#280). Null when the field can't.
      */
-    private fun snapshot(before: Int, after: Int): Snapshot? {
-        val ic = ic ?: return null
-        if (Build.VERSION.SDK_INT >= 31) {
-            val s = ic.getSurroundingText(before, after, 0)
-            if (s != null && s.offset >= 0) return snapshot(s.text, s.selectionStart, s.selectionEnd, s.offset, before, after)
-        }
-        val e = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return null
+    private fun snapshot(before: Int, after: Int): Snapshot? = surroundingText(before, after) ?: extracted(before, after)
+
+    /** getSurroundingText, from a field that says where its text starts */
+    private fun surroundingText(before: Int, after: Int): Snapshot? {
+        if (Build.VERSION.SDK_INT < 31) return null
+        val s = ic?.getSurroundingText(before, after, 0) ?: return null
+        return if (s.offset >= 0) snapshot(s.text, s.selectionStart, s.selectionEnd, s.offset, before, after) else null
+    }
+
+    /** getExtractedText: the whole text */
+    private fun extracted(before: Int, after: Int): Snapshot? {
+        val e = ic?.getExtractedText(ExtractedTextRequest(), 0) ?: return null
         // A part of the text (one that changed) doesn't say where the selection is in the rest
         if (e.partialStartOffset != -1) return null
         return snapshot(e.text, e.selectionStart, e.selectionEnd, e.startOffset, before, after)
@@ -117,45 +152,78 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     }
 
     /** [snapshot], which becomes what we expect of the field: the selection and the text */
-    private fun read(before: Int, after: Int): Snapshot? = snapshot(before, after)?.also { s ->
+    private fun read(before: Int, after: Int): Snapshot? {
+        val surrounding = surroundingText(before, after)
+        surrounds = surrounding != null
+        val s = surrounding ?: extracted(before, after) ?: return null
         selStart = s.start
         selEnd = s.end
         model = Model(s.before + s.selected + s.after, s.before.length, s.before.length + s.selected.length, s.start - s.before.length)
+        return s
     }
 
-    /** Whether the field is as we expect it ([model]) around the selection: the text, and where it is when the field says */
-    private fun matches(): Boolean {
-        val m = model ?: return false
-        val b = minOf(CHECK, m.start)
-        val a = minOf(CHECK, m.text.length - m.end)
+    /** What [check] found */
+    private enum class Check { SAME, CHANGED, UNKNOWN }
+
+    /** Whether the last [check] found the field's cursor where we have it: an edit may be placed by it */
+    private var placed = false
+
+    /**
+     * Whether the field is as we expect it ([model]): the text either side of the selection, all the composing
+     * text (setComposingText replaces it), and where the selection is when the field says. One read: with
+     * getSurroundingText where the field says where its text starts, else the text before and after the cursor.
+     */
+    private fun check(): Check {
+        placed = false
+        if (blind) return Check.UNKNOWN
+        val m = model ?: return Check.CHANGED
+        val r = m.region
+        val b = maxOf(minOf(CHECK, m.start), if (r != null) m.start - r.first else 0)
+        val a = maxOf(minOf(CHECK, m.text.length - m.end), if (r != null) r.last + 1 - m.end else 0)
+        if (b > m.start || m.end + a > m.text.length) return Check.CHANGED
         val before = m.text.substring(m.start - b, m.start)
         val selected = m.text.substring(m.start, m.end)
         val after = m.text.substring(m.end, m.end + a)
-        val s = snapshot(b, a)
-        if (s != null) return s.start == selStart && s.end == selEnd && (m.offset < 0 || s.start == m.offset + m.start) &&
-            s.before == before && s.selected == selected && s.after == after
-        return textBefore(b) == before && ic?.getSelectedText(0)?.toString().orEmpty() == selected && textAfter(a) == after
+        if (surrounds) {
+            val s = surroundingText(b, a) ?: return Check.UNKNOWN
+            placed = s.start == selStart && s.end == selEnd && (m.offset < 0 || s.start == m.offset + m.start)
+            return if (placed && s.before == before && s.selected == selected && s.after == after) Check.SAME else Check.CHANGED
+        }
+        val ic = ic ?: return Check.UNKNOWN
+        val fieldBefore = ic.getTextBeforeCursor(b, 0)?.toString() ?: return Check.UNKNOWN
+        val fieldAfter = ic.getTextAfterCursor(a, 0)?.toString() ?: return Check.UNKNOWN
+        // A selection where none is expected shows in the text after the cursor
+        val fieldSelected = if (selected.isEmpty()) "" else ic.getSelectedText(0)?.toString() ?: return Check.UNKNOWN
+        return if (fieldBefore == before && fieldSelected == selected && fieldAfter == after) Check.SAME else Check.CHANGED
     }
 
     /**
-     * The engine's edit [st] into the field, then [composition] as the composing text (null: as it is) and [then]:
-     * when [check], only if the field is as our edits left it, checked in the same batch (#280). False, with
-     * what was composing left in the field as it is, when it isn't: the engine must read the field again.
+     * The engine's edit [st] into the field, then [composition] as the composing text (null: as it is) and
+     * [then], in one batch. English's ([checked]) go in only where the field is as our edits left it ([check]),
+     * and its edits of a range (a word reopened, the text an undone correction deletes) only where that is
+     * known. False, with what was composing left in the field as it is, when they can't: the engine must read
+     * the field again.
      */
-    fun write(st: NativeState, composition: CharSequence?, check: Boolean, then: (() -> Unit)? = null): Boolean {
+    fun write(st: NativeState, composition: CharSequence?, then: (() -> Unit)? = null): Boolean {
         beginBatch()
         try {
-            if (check && !matches() || st.recompose && !composeRegion(st.composeBefore, st.composeAfter)) {
+            val range = st.recompose || st.deleteBefore > 0 || st.deleteAfter > 0
+            // A state that changes nothing (the strip's, after a space) reads nothing
+            val edits = range || st.commit.isNotEmpty() || st.commitCursor != 0 || then != null ||
+                composition != null && (composition.isNotEmpty() || composing)
+            val check = if (checked && edits) check() else Check.SAME
+            if (check == Check.CHANGED || check == Check.UNKNOWN && range || st.recompose && !composeRegion(st.composeBefore, st.composeAfter)) {
                 finishComposing()
                 return false
             }
-            if (st.deleteBefore > 0 || st.deleteAfter > 0) delete(st.deleteBefore, st.deleteAfter)
+            if (st.deleteBefore > 0 || st.deleteAfter > 0) delete(st.deleteBefore, st.deleteAfter, known = checked)
             if (st.commit.isNotEmpty()) commit(st.commit)
             if (st.commitCursor != 0) moveCursor(st.commitCursor)
             if (composition != null) compose(composition)
             then?.invoke()
             return true
         } finally {
+            placed = false
             endBatch()
         }
     }
@@ -170,8 +238,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         regionText = null
         expected.clear()
         model = null
-        // A swipe begun in the last field ends there
-        swipe?.dead = true
+        blind = false
     }
 
     /** A terminal or other field that takes raw key events rather than text */
@@ -199,6 +266,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         ic.setComposingText(text, 1)
         model { replace(text.toString(), compose = true); true }
         composing = text.isNotEmpty()
+        composeLength = text.length
         if (composeStart >= 0) expect(composeStart + text.length)
     }
 
@@ -220,13 +288,18 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     private fun composeRegion(before: Int, after: Int): Boolean {
         if (before == 0 && after == 0) return true.also { finishComposing() }
         val ic = ic ?: return false
-        val s = snapshot(2 * before, 2 * after)?.takeIf { it.start == selStart && it.end == selStart } ?: return false
+        // Where [check] has just found the cursor ours, the text is the model's; else one read finds both
+        val m = model
+        val s = if (placed && m != null) Snapshot(m.text.substring(0, m.start), "", m.text.substring(m.end), selStart, selEnd)
+            else snapshot(2 * before, 2 * after)?.takeIf { it.start == selStart } ?: return false
+        if (s.start != s.end) return false
         val b = s.before.length - s.before.offsetByCodePoints(s.before.length, -minOf(before, s.before.codePointCount(0, s.before.length)))
         val a = s.after.offsetByCodePoints(0, minOf(after, s.after.codePointCount(0, s.after.length)))
         ic.setComposingRegion(selStart - b, selStart + a)
         model { (start - b >= 0 && start + a <= text.length).also { if (it) region = (start - b) until (start + a) } }
         composing = true
         composeStart = selStart - b
+        composeLength = b + a
         regionText = s.before.takeLast(b) + s.after.take(a)
         expect(selStart)
         return true
@@ -248,30 +321,25 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         val last = breaks.preceding(before.length).coerceAtLeast(0)
         val n = before.length - last
         ic.deleteSurroundingText(n, 0)
-        model { deleteAround(n, 0) }
+        model { delete(n, 0) }
         if (selStart >= 0) expect(selStart - n)
     }
 
-    /** deleteSurroundingText's edit, [b] and [a] characters either side of the selection: false when it reaches past what we know */
-    private fun Model.deleteAround(b: Int, a: Int): Boolean {
-        if (region != null || b > start || end + a > text.length) return false
-        text = text.substring(0, start - b) + text.substring(start, end) + text.substring(end + a)
-        start -= b
-        end -= b
-        return true
-    }
-
-    /** An engine's edit around a commit: characters (code points) before and after the cursor. */
-    fun delete(before: Int, after: Int) {
-        if (before == 0 && after == 0) return
+    /**
+     * An engine's edit around a commit: characters (code points) before and after the cursor, counted in
+     * [model]'s text when [write] has just found it the field's ([known]), else in the field's.
+     */
+    private fun delete(before: Int, after: Int, known: Boolean) {
         val ic = ic ?: return
+        val m = model?.takeIf { known }
+        val text = m?.text?.substring(0, m.start) ?: ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
         // The cursor moves back by the UTF-16 length of what goes.
-        val text = ic.getTextBeforeCursor(2 * before, 0) ?: ""
-        val gone = text.length - Character.offsetByCodePoints(text, text.length, -minOf(before, Character.codePointCount(text, 0, text.length)))
-        val textAfter = ic.getTextAfterCursor(2 * after, 0) ?: ""
-        val goneAfter = Character.offsetByCodePoints(textAfter, 0, minOf(after, Character.codePointCount(textAfter, 0, textAfter.length)))
+        val gone = text.length - text.offsetByCodePoints(text.length, -minOf(before, text.codePointCount(0, text.length)))
         ic.deleteSurroundingTextInCodePoints(before, after)
-        model { deleteAround(gone, goneAfter) }
+        if (m != null) {
+            val rest = m.text.substring(m.end)
+            model { delete(gone, rest.offsetByCodePoints(0, minOf(after, rest.codePointCount(0, rest.length)))) }
+        } else model = null
         if (selStart >= 0) expect(selStart - gone)
     }
 
@@ -281,87 +349,62 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** The start of the field's text after the cursor: the rest of a word English reopens. */
     fun textAfter(max: Int = 64): String = ic?.getTextAfterCursor(max, 0)?.toString().orEmpty()
 
+    /** The text before the cursor (up to [max] characters) as English's checked edits left it, with no read; else the field's */
+    fun knownBefore(max: Int): String {
+        val m = model?.takeIf { checked && it.start == it.end } ?: return textBefore(max)
+        return m.text.substring(maxOf(0, m.start - max), m.start)
+    }
+
     /** Moves the cursor [by] characters from where it is (Mozc puts it between a pair of brackets). */
     fun moveCursor(by: Int) {
-        if (by == 0) return
-        // From where the field has the cursor: ours can be older (#280)
-        val s = read(0, 0) ?: return arrows(by)
-        moveTo((s.start + by).coerceAtLeast(0))
+        if (by == 0 || selStart < 0) return
+        val at = (selStart + by).coerceAtLeast(0)
+        ic?.setSelection(at, at)
+        model = null
+        expect(at)
     }
 
     /** Moves the cursor [by] characters (whole code points), as far as the text goes: the space bar's swipe. */
     fun moveBy(by: Int) {
-        if (by == 0) return
-        val s = read(maxOf(0, -2 * by), maxOf(0, 2 * by)) ?: return arrows(by)
-        moveTo(if (by < 0) s.start - (s.before.length - s.before.offsetByCodePoints(s.before.length, -minOf(-by, s.before.codePointCount(0, s.before.length))))
-            else s.end + s.after.offsetByCodePoints(0, minOf(by, s.after.codePointCount(0, s.after.length))))
-    }
-
-    private fun moveTo(at: Int) = select(at, at)
-
-    /** setSelection, in the field's positions */
-    private fun select(start: Int, end: Int) {
-        ic?.setSelection(start, end)
-        model {
-            (offset >= 0 && start - offset in 0..text.length && end - offset in start - offset..text.length).also {
-                if (it) {
-                    this.start = start - offset
-                    this.end = end - offset
-                }
-            }
+        val ic = ic ?: return
+        if (selStart < 0) return
+        val at = if (by < 0) {
+            val before = ic.getTextBeforeCursor(-2 * by, 0) ?: return
+            selStart - (before.length - Character.offsetByCodePoints(before, before.length, -minOf(-by, Character.codePointCount(before, 0, before.length))))
+        } else {
+            val after = ic.getTextAfterCursor(2 * by, 0) ?: return
+            selEnd + Character.offsetByCodePoints(after, 0, minOf(by, Character.codePointCount(after, 0, after.length)))
         }
-        expect(start, end)
+        ic.setSelection(at, at)
+        model = null
+        expect(at)
     }
 
-    /** A field that can't say where its cursor is: the arrow keys move it from wherever it is */
-    private fun arrows(by: Int) = repeat(kotlin.math.abs(by)) { key(if (by < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT) }
+    /** Delete's swipe: where it started (the cursor) and the text before it then */
+    private var swipeEnd = -1
+    private var swipeText = ""
 
-    /**
-     * Delete's swipe: the text before the cursor where it started and where that was (-1: the field can't say).
-     * [dead]: the field changed under it, or another field came up; it does nothing more.
-     */
-    private class Swipe(val text: String, val end: Int) {
-        var dead = false
-    }
-    private var swipe: Swipe? = null
-
-    /**
-     * Delete's swipe: selects [words] words before the cursor (none: back to the cursor), deleted when [done].
-     * It starts from the field's cursor, read with the text, and each step goes on only while the field is as
-     * the last one left it (#280). Where the field can't say where its cursor is, nothing is selected, and the
-     * words go when [done], counted in the text before the cursor then.
-     */
+    /** Delete's swipe: selects [words] words before the cursor (none: back to the cursor), deleted when [done]. */
     fun selectWordsBefore(words: Int, done: Boolean) {
         val ic = ic ?: return
-        beginBatch()
-        try {
-            var sw = swipe
-            if (sw == null) {
-                finishComposing()
-                val s = read(MAX_SWIPE, CHECK)
-                sw = Swipe(s?.before.orEmpty(), s?.start ?: -1).also { swipe = it }
-            } else if (sw.end >= 0 && !matches()) sw.dead = true
-            if (done) swipe = null
-            if (sw.dead) return
-            if (sw.end < 0) {
-                if (!done) return
-                val text = textBefore(MAX_SWIPE)
-                val n = text.length - wordsStart(text, words)
-                if (n == 0) return
-                ic.deleteSurroundingText(n, 0)
-                model { deleteAround(n, 0) }
-                if (selStart >= 0) expect(selStart - n)
-                return
-            }
-            val n = sw.text.length - wordsStart(sw.text, words)
-            select(sw.end - n, sw.end)
-            if (!done || n == 0) return
-            ic.commitText("", 1)
-            model { replace("", compose = false); true }
-            expect(sw.end - n)
-        } finally {
-            endBatch()
+        if (swipeEnd < 0) {
+            if (selStart < 0) return
+            swipeEnd = selStart
+            swipeText = ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString().orEmpty()
         }
+        model = null
+        val end = swipeEnd
+        val start = end - (swipeText.length - wordsStart(swipeText, words))
+        if (!done) {
+            ic.setSelection(start, end)
+            return
+        }
+        swipeEnd = -1
+        if (start < end) {
+            ic.setSelection(start, end)
+            ic.commitText("", 1)
+            expect(start)
+        } else ic.setSelection(end, end)
     }
 
     /**
@@ -386,8 +429,16 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         else commit("\n")
     }
 
-    /** Whether the next letter starts a sentence (or a word, as the field asks): English's automatic Shift. */
-    fun capsMode(): Boolean = capsFlags != 0 && (ic?.getCursorCapsMode(info!!.inputType) ?: 0) != 0
+    /**
+     * Whether the next letter starts a sentence (or a word, as the field asks): English's automatic Shift. From
+     * the text English's checked edits left, as today's app does from its own copy, with no read; else the field's.
+     */
+    fun capsMode(): Boolean {
+        if (capsFlags == 0) return false
+        val m = model?.takeIf { checked && it.start == it.end }
+        if (m != null) return TextUtils.getCapsMode(m.text.substring(0, m.start), m.start, info!!.inputType) != 0
+        return (ic?.getCursorCapsMode(info!!.inputType) ?: 0) != 0
+    }
 
     /** The capitals the field asks for (TextUtils.getCapsMode's modes), 0 for none */
     val capsFlags: Int get() {
@@ -400,19 +451,13 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** A key event: what it does to the text is the field's, so what we expect of it is gone */
     private fun key(code: Int) {
         model = null
-        if (target == null) {
-            ime?.sendDownUpKeyEvents(code)
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        target.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
-        target.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0))
+        if (target == null) ime?.sendDownUpKeyEvents(code)
     }
 
     /** Undo (Ctrl+Z) and redo (Ctrl+Shift+Z): the field's own, as a hardware keyboard sends them */
     fun undo(redo: Boolean) {
-        val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON or (if (redo) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0)
         model = null
+        val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON or (if (redo) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0)
         val now = SystemClock.uptimeMillis()
         ic?.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Z, 0, meta))
         ic?.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Z, 0, meta))
@@ -424,12 +469,10 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         ic?.performContextMenuAction(id)
     }
 
-    private fun expect(at: Int) = expect(at, at)
-
-    private fun expect(start: Int, end: Int) {
-        selStart = start
-        selEnd = end
-        expected.addLast(start to end)
+    private fun expect(at: Int) {
+        selStart = at
+        selEnd = at
+        expected.addLast(listOf(at, at, if (composing) composeStart else -1, if (composing) composeStart + composeLength else -1))
         if (expected.size > 64) expected.removeFirst()
     }
 
@@ -437,15 +480,21 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
      * The field's selection changed; true when the user moved it (or the app changed the text): out of the
      * composing text, or to a place none of our recent edits put it. Updates come late, in order: one for
      * the last letter of a word can arrive after the word's commit, while the next word already composes.
+     * Where [checked], one of ours must also have the composing text where our edit left it: an app that
+     * dropped or moved it changed the field (#280).
      */
     fun selectionChanged(newStart: Int, newEnd: Int, candidatesStart: Int, candidatesEnd: Int): Boolean {
         val out = candidatesStart >= 0 && (newStart < candidatesStart || newEnd > candidatesEnd)
-        val ours = if (!out) expected.indexOf(newStart to newEnd) else -1
+        val ours = if (out) -1 else expected.indexOfFirst {
+            it[0] == newStart && it[1] == newEnd && (!checked || it[2] == candidatesStart && it[3] == candidatesEnd)
+        }
         if (ours >= 0) {
             repeat(ours) { expected.removeFirst() } // the edits before it were reported already
             movedInside = -1
             return false
         }
+        // Where our edit left the selection, but not the composing text
+        val moved = !out && expected.any { it[0] == newStart && it[1] == newEnd }
         // Not ours: the edits still to be reported were placed by the cursor as we had it, so where they leave
         // it can't be told any more; one of those places may be where the user goes next (#280).
         val quiet = expected.isEmpty()
@@ -457,9 +506,10 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         selEnd = newEnd
         if (composing && candidatesStart >= 0) composeStart = candidatesStart
         // A field that gave no cursor at the start: our composing text is where it says.
-        val external = out || !(composing && candidatesStart >= 0 && quiet)
-        // The user's cursor in the word being typed
+        val external = out || moved || !(composing && candidatesStart >= 0 && quiet)
+        // The user's cursor in the word being typed; else what the field has is to be read again
         if (movedInside >= 0) model { region?.let { start = it.first + movedInside; end = start } != null }
+        else if (external) model = null
         return external
     }
 

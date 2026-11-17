@@ -29,8 +29,10 @@ class EditorTest {
      * A text field as its InputConnection shows it: the text, the selection and the composing region. Each change
      * sends a selection update, which the keyboard hears of later ([Ime.update]).
      */
-    private class Field(var text: String, var cursor: Int, val extract: Extract = Extract.WHOLE) {
+    private class Field(var text: String, var cursor: Int, val extract: Extract = Extract.WHOLE, val blind: Boolean = false) {
         var end = cursor
+        /** The keyboard's reads of the field so far */
+        var reads = 0
         var region: IntRange? = null
         /** An app that reports each edit's selection part-way too: the old text gone, the new not in yet */
         var intermediate = false
@@ -47,21 +49,25 @@ class EditorTest {
             changed()
         }
 
-        /** The app's own edit: [s] in at [at], what is after it moved on */
-        fun insert(at: Int, s: String) {
-            text = text.substring(0, at) + s + text.substring(at)
-            fun moved(i: Int) = if (i >= at) i + s.length else i
-            cursor = moved(cursor)
-            end = moved(end)
-            region = region?.let { moved(it.first) until moved(it.last + 1) }
+        /** The app's own edit: the text from [from] to [to] made [s], the selection and composing text left where they are */
+        fun edit(from: Int, to: Int, s: String) {
+            text = text.substring(0, from) + s + text.substring(to)
             changed()
         }
 
-        /** An arrow key */
+        /** The app ends the composing text itself, leaving it as text */
+        fun dropComposing() {
+            region = null
+            changed()
+        }
+
+        /** A key event: Delete takes the character before the cursor */
         fun key(code: Int) {
-            when (code) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> tap(maxOf(0, cursor - 1))
-                KeyEvent.KEYCODE_DPAD_RIGHT -> tap(minOf(text.length, end + 1))
+            if (code == KeyEvent.KEYCODE_DEL && cursor > 0) {
+                text = text.removeRange(cursor - 1, cursor)
+                cursor--
+                end--
+                changed()
             }
         }
 
@@ -102,11 +108,13 @@ class EditorTest {
         }
 
         val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader, arrayOf(InputConnection::class.java)) { _, method, args ->
+            if (method.name.startsWith("get")) reads++
             when (method.name) {
-                "getTextBeforeCursor" -> text.substring(maxOf(0, cursor - args[0] as Int), cursor)
-                "getTextAfterCursor" -> text.substring(end, minOf(text.length, end + args[0] as Int))
-                "getSelectedText" -> text.substring(cursor, end)
-                "getExtractedText" -> extracted()
+                "getTextBeforeCursor" -> if (blind) null else text.substring(maxOf(0, cursor - args[0] as Int), cursor)
+                "getTextAfterCursor" -> if (blind) null else text.substring(end, minOf(text.length, end + args[0] as Int))
+                "getSelectedText" -> if (blind) null else text.substring(cursor, end)
+                "getExtractedText" -> if (blind) null else extracted()
+                "getCursorCapsMode" -> 0
                 "setSelection" -> true.also { cursor = args[0] as Int; end = args[1] as Int; changed() }
                 "deleteSurroundingText", "deleteSurroundingTextInCodePoints" -> true.also {
                     val b = minOf(args[0] as Int, cursor)
@@ -147,12 +155,14 @@ class EditorTest {
         var correction: Pair<String, String>? = null
 
         init {
+            editor.checked = true
             start(field)
+            editor.around()
         }
 
-        /** [field], a text field, comes up with its selection */
+        /** [field], a text field asking for sentences' capitals, comes up with its selection */
         private fun start(field: Field) = editor.start(EditorInfo().apply {
-            inputType = InputType.TYPE_CLASS_TEXT
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             initialSelStart = field.cursor
             initialSelEnd = field.end
         }, FieldKind.of(null))
@@ -168,12 +178,17 @@ class EditorTest {
             results += {
                 if (keys.fresh(asked)) show(st, then)
                 key?.done()
+                // SebTypeIme.onKey's NativeCore.after: the Shift, and with all shown, the engine's copy of the text
+                if (key != null) {
+                    editor.capsMode()
+                    if (results.isEmpty()) editor.knownBefore(64)
+                }
             }
         }
 
         /** SebTypeIme.show */
         private fun show(st: NativeState, then: (() -> Unit)? = null): Boolean {
-            if (!editor.write(st, st.preedit, check = true, then)) {
+            if (!editor.write(st, st.preedit, then)) {
                 context()
                 return false
             }
@@ -246,28 +261,6 @@ class EditorTest {
             post(null, state(""))
         }
 
-        /** The user's swipes (SebTypeIme.onCursor, onDeleteWords): the word being typed goes in as typed, then [edit] */
-        private fun swipe(edit: () -> Unit) {
-            val asked = keys.ask()
-            val flush = if (word.isNotEmpty()) state("", word) else null
-            word = ""
-            at = 0
-            results += {
-                if (flush != null && keys.fresh(asked)) show(flush)
-                edit()
-            }
-        }
-
-        fun swipeDelete(words: Int, done: Boolean) = swipe {
-            editor.selectWordsBefore(words, done)
-            if (done) context()
-        }
-
-        fun swipeSpace(by: Int) = swipe {
-            editor.moveBy(by)
-            context()
-        }
-
         /** Another field comes up (SebTypeIme.onStartInput) */
         fun open(next: Field) {
             field = next
@@ -287,6 +280,7 @@ class EditorTest {
             }
             if (external) context()
             else if (editor.movedInside >= 0) at = minOf(editor.movedInside, word.length)
+            editor.capsMode() // SebTypeIme.autoShift
         }
 
         /** The next result */
@@ -411,8 +405,9 @@ class EditorTest {
             ime.settle()
             assertEquals("hexllo world", field.text)
             assertEquals(3, field.cursor)
-            // x types on in the word reopened; a field that can't say where its cursor is has none reopened
-            assertEquals(if (extract == Extract.WHOLE) 0 until 3 else null, field.region)
+            // The way back is the user's: the word x went into is reopened; a field that can't say where its
+            // cursor is has none reopened
+            assertEquals(if (extract == Extract.WHOLE) 0 until 6 else null, field.region)
         }
     }
 
@@ -499,39 +494,6 @@ class EditorTest {
     }
 
     /**
-     * #280: the cursor put after "hello" and delete swiped a word before the keyboard heard of the move. The
-     * swipe starts where the field has the cursor, not at the end where the keyboard last had it ("world").
-     */
-    @Test
-    fun theDeleteSwipeStartsWhereTheFieldHasTheCursor() {
-        for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
-            val field = Field("hello world", 11, extract)
-            val ime = Ime(field)
-            field.tap(5)
-            ime.swipeDelete(1, false)
-            ime.swipeDelete(1, true)
-            ime.settle()
-            assertEquals(" world", field.text)
-            assertEquals(0, field.cursor)
-        }
-    }
-
-    /** #280: the space bar's swipe moves from where the field has the cursor, though the keyboard hasn't heard of it */
-    @Test
-    fun theSpaceSwipeMovesFromWhereTheFieldHasTheCursor() {
-        // A field that can't say where its cursor is gets the arrow keys
-        for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
-            val field = Field("hello world", 11, extract)
-            val ime = Ime(field)
-            field.tap(2)
-            ime.swipeSpace(1)
-            ime.settle()
-            assertEquals(3, field.cursor)
-            assertEquals("hello world", field.text)
-        }
-    }
-
-    /**
      * #280: "teh " corrected to "the ", Backspace pressed, then the cursor put after "I " before Backspace's
      * result came, and that result came before the update for the move. The result takes back "the " before
      * the cursor where it was: written at the new cursor, it would take "I " and put "teh" there. The field
@@ -582,69 +544,6 @@ class EditorTest {
     }
 
     /**
-     * #280: delete's swipe selected "world", then the app put "X " at the start before it was let go. The
-     * selection it made was placed in the text before; the swipe stops, and nothing goes.
-     */
-    @Test
-    fun aDeleteSwipeStopsWhenTheAppEditsTheText() {
-        val field = Field("hello world", 11)
-        val ime = Ime(field)
-        ime.swipeDelete(1, false)
-        ime.settle()
-        assertEquals(6, field.cursor)
-        assertEquals(11, field.end)
-        field.insert(0, "X ")
-        ime.swipeDelete(1, true)
-        ime.settle()
-        assertEquals("X hello world", field.text)
-    }
-
-    /** #280: delete's swipe started, then the cursor moved before it was let go: the swipe stops, and nothing goes */
-    @Test
-    fun aDeleteSwipeStopsWhenTheCursorMoves() {
-        val field = Field("hello world", 11)
-        val ime = Ime(field)
-        ime.swipeDelete(1, false)
-        ime.settle()
-        field.tap(3)
-        ime.swipeDelete(1, true)
-        ime.settle()
-        assertEquals("hello world", field.text)
-    }
-
-    /** #280: delete's swipe started in one field and let go in the next: nothing goes from the next */
-    @Test
-    fun aDeleteSwipeEndsWithItsField() {
-        val field = Field("hello world", 11)
-        val ime = Ime(field)
-        ime.swipeDelete(1, false)
-        ime.settle()
-        val next = Field("good day", 8)
-        ime.open(next)
-        ime.settle()
-        ime.swipeDelete(1, true)
-        ime.settle()
-        assertEquals("good day", next.text)
-        assertEquals(8, next.cursor)
-    }
-
-    /**
-     * #280: delete's swipe in a field that can't say where its cursor is, and the app made "world" "worlds"
-     * before it was let go: the word goes as it is then, counted in the text before the cursor at the end.
-     */
-    @Test
-    fun aDeleteSwipeWithoutACursorCountsTheWordsWhenLetGo() {
-        val field = Field("hello world", 11, Extract.NONE)
-        val ime = Ime(field)
-        ime.swipeDelete(1, false)
-        ime.settle()
-        field.insert(11, "s")
-        ime.swipeDelete(1, true)
-        ime.settle()
-        assertEquals("hello ", field.text)
-    }
-
-    /**
      * #280: a field whose extracted text is a window of it (from startOffset, as getSurroundingText answers):
      * where the cursor is in the field is the window's start and the cursor in it. "world" is reopened at
      * wo|rld and x goes in at the cursor.
@@ -673,5 +572,77 @@ class EditorTest {
         ime.key('x')
         ime.settle()
         assertEquals("hello woxrld", field.text)
+    }
+
+    /**
+     * #280: a letter typed reads the field no more than main's keyboard does (3 reads: the Shift after the key
+     * and after its update, and the engine's copy of the text). The check before the write is its only read, two
+     * here (the text before and after the cursor), one where Android 12+ gives getSurroundingText; the Shift and
+     * the engine's copy come from what the check found.
+     */
+    @Test
+    fun aLetterReadsTheFieldOnlyToCheckIt() {
+        val field = Field("I saw ", 6)
+        val ime = Ime(field)
+        for (c in "hello") {
+            field.reads = 0
+            ime.key(c)
+            ime.settle()
+            assertEquals(2, field.reads)
+        }
+        assertEquals("I saw hello", field.text)
+    }
+
+    /**
+     * #280: the app ended the composing text "hello" itself, as text. Its update has the cursor where our last
+     * letter left it, but no composing text: the field changed. Taken for ours, x's composing text would go in
+     * at the cursor beside "hello" ("hellohellox"); the field is read again and "hello" reopened for x.
+     */
+    @Test
+    fun theAppEndingTheComposingTextIsTheFieldsChange() {
+        val field = Field(" world", 0)
+        val ime = Ime(field)
+        for (c in "hello") ime.key(c)
+        ime.settle()
+        assertEquals(0 until 5, field.region)
+        field.dropComposing()
+        ime.update()
+        ime.key('x')
+        ime.settle()
+        assertEquals("hellox world", field.text)
+    }
+
+    /**
+     * #280: a composing word longer than the text checked around the cursor, whose first letter the app changed
+     * without moving the cursor. setComposingText replaces all of it: the check covers the whole word, so the
+     * app's letter isn't written over.
+     */
+    @Test
+    fun theWholeComposingTextIsChecked() {
+        val field = Field("", 0)
+        val ime = Ime(field)
+        repeat(70) { ime.key('a') }
+        ime.settle()
+        field.edit(0, 1, "b")
+        ime.updates()
+        ime.key('x')
+        ime.settle()
+        assertEquals("b" + "a".repeat(69) + "x", field.text)
+    }
+
+    /**
+     * #280: a field that gives nothing when read: where its cursor is and what is around it are unknown, not
+     * empty. Backspace after "teh" corrected to "the " doesn't take the correction back there (it would delete
+     * four characters it can't see); it goes in as the field's own Backspace.
+     */
+    @Test
+    fun anUnreadableFieldTakesNoCorrectionBack() {
+        val field = Field("I saw the ", 10, Extract.NONE, blind = true)
+        val ime = Ime(field)
+        ime.correction = "teh" to "the"
+        ime.backspace()
+        ime.settle()
+        assertEquals("I saw the", field.text)
+        assertNull(field.region)
     }
 }

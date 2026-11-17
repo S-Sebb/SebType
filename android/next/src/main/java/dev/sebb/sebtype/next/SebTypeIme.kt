@@ -390,7 +390,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val field = field()
         val learning = kind.learns && !incognito
         // English reads the words around the cursor for its corrections and next words, and reopens the word
-        // the cursor is at.
+        // the cursor is at. Its edits are checked against the field first (#280).
+        editor.checked = lang == ENGLISH
         val around = editor.around()
         val before = if (lang == ENGLISH && toEngine) around.before else null
         post({
@@ -458,7 +459,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             autoShift()
             if (lang == ENGLISH && toEngine && NativeCore.idle) {
                 // All shown: the field is what the engine thread's copy should be (less the word typed).
-                val before = editor.textBefore(SHIFT_CONTEXT).dropLast(state?.preedit?.length ?: 0)
+                val before = editor.knownBefore(SHIFT_CONTEXT).dropLast(state?.preedit?.length ?: 0)
                 NativeCore.post {
                     engineBefore.setLength(0)
                     engineBefore.append(before)
@@ -653,7 +654,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
      */
     private fun show(st: NativeState, applyText: Boolean = true, then: (() -> Unit)? = null): Boolean {
         if (applyText) {
-            if (!editor.write(st, if (lang != CHINESE) composition(st) else null, check = lang == ENGLISH, then)) {
+            if (!editor.write(st, if (lang != CHINESE) composition(st) else null, then)) {
                 englishContext()
                 return false
             }
