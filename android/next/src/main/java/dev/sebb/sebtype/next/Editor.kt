@@ -14,14 +14,14 @@ import java.text.BreakIterator
  * the cursor) can be told apart. The ideas follow pristine AOSP's RichInputConnection (Apache-2.0); the code
  * is SebType's.
  */
-class Editor(private val ime: InputMethodService, private val target: InputConnection? = null) {
+class Editor(private val ime: InputMethodService?, private val target: InputConnection? = null) {
     private companion object {
         /** Delete's swipe looks this far back for words */
         const val MAX_SWIPE = 2000
     }
 
     // [target]: a search in a panel takes the typing instead of the field (#281).
-    private val ic: InputConnection? get() = target ?: ime.currentInputConnection
+    private val ic: InputConnection? get() = target ?: ime?.currentInputConnection
     private var info: EditorInfo? = null
     private var kind = FieldKind.of(null)
 
@@ -40,6 +40,22 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
     /** Where the user put the cursor inside the composing text at the last update, from its start; -1: not there */
     var movedInside = -1
         private set
+    /** Counts the field's changes that weren't ours (a cursor the user moved, the app's own edit) */
+    private var revision = 0
+
+    /** The field's text around the cursor (English's context) as it is now. */
+    inner class Around(val before: String, val after: String, val selection: Boolean) {
+        val revision = this@Editor.revision
+
+        /** The text from [b] code points before the cursor to [a] after it, as read then */
+        fun text(b: Int, a: Int): String = before.substring(before.offsetByCodePoints(before.length, -minOf(b, before.codePointCount(0, before.length)))) +
+            after.substring(0, after.offsetByCodePoints(0, minOf(a, after.codePointCount(0, after.length))))
+    }
+    fun around() = Around(textBefore(), textAfter(), selEnd != selStart)
+
+    /** Whether the field is still as [around] read it: no change since that wasn't ours, the same text. */
+    fun unchanged(around: Around) =
+        around.revision == revision && textBefore() == around.before && textAfter() == around.after
 
     fun start(info: EditorInfo, kind: FieldKind) {
         this.info = info
@@ -50,6 +66,7 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
         composeStart = -1
         regionText = null
         expected.clear()
+        revision++
     }
 
     /** A terminal or other field that takes raw key events rather than text */
@@ -90,20 +107,24 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
     /**
      * Makes the field's text from [before] characters (code points) before the cursor to [after] after it the
      * composing text, as it is (English reopening a word); with neither, the composing text ends where it is.
+     * False, and nothing marked, when that text isn't [want] (a reopen read before the field changed).
      */
-    fun composeRegion(before: Int, after: Int) {
-        if (before == 0 && after == 0) return finishComposing()
-        val ic = ic ?: return
-        if (selStart < 0) return
+    fun composeRegion(before: Int, after: Int, want: String? = null): Boolean {
+        if (before == 0 && after == 0) return true.also { finishComposing() }
+        val ic = ic ?: return false
+        if (selStart < 0) return false
         val textBefore = ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
         val textAfter = ic.getTextAfterCursor(2 * after, 0)?.toString().orEmpty()
         val b = textBefore.length - textBefore.offsetByCodePoints(textBefore.length, -minOf(before, textBefore.codePointCount(0, textBefore.length)))
         val a = textAfter.offsetByCodePoints(0, minOf(after, textAfter.codePointCount(0, textAfter.length)))
+        val text = textBefore.takeLast(b) + textAfter.take(a)
+        if (want != null && text != want) return false
         ic.setComposingRegion(selStart - b, selStart + a)
         composing = true
         composeStart = selStart - b
-        regionText = textBefore.takeLast(b) + textAfter.take(a)
+        regionText = text
         expect(selStart)
+        return true
     }
 
     /** Backspace: the selection, else the character (a whole emoji or accented letter) before the cursor. */
@@ -224,7 +245,7 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
     }
 
     private fun key(code: Int) {
-        if (target == null) ime.sendDownUpKeyEvents(code)
+        if (target == null) ime?.sendDownUpKeyEvents(code)
     }
 
     /** Undo (Ctrl+Z) and redo (Ctrl+Shift+Z): the field's own, as a hardware keyboard sends them */
@@ -259,6 +280,7 @@ class Editor(private val ime: InputMethodService, private val target: InputConne
             repeat(ours) { expected.removeFirst() } // the edits before it were reported already
             return false
         }
+        revision++
         selStart = newStart
         selEnd = newEnd
         if (composing && candidatesStart >= 0) composeStart = candidatesStart

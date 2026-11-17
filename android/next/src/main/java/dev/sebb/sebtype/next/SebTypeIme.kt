@@ -330,15 +330,16 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
 
     /** English reads the text around the cursor again, after it changed other than by its keys. */
     private fun englishContext() {
-        val before = editor.textBefore()
-        val after = editor.textAfter()
-        val selection = editor.selEnd != editor.selStart
+        val around = editor.around()
         NativeCore.post({
-            setContext(before, after, selection)
+            setContext(around.before, around.after, around.selection)
             engineBefore.setLength(0)
-            engineBefore.append(before)
+            engineBefore.append(around.before)
             state().recorded().also { if (it.recompose) engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
-        }) { show(it) }
+        }) {
+            // Read before a later move or edit: read again, so the engine's word is the field's
+            if (editor.unchanged(around)) show(it, around = around) else englishContext()
+        }
     }
 
     /**
@@ -367,16 +368,15 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val learning = kind.learns && !incognito
         // English reads the words around the cursor for its corrections and next words, and reopens the word
         // the cursor is at.
-        val before = if (lang == ENGLISH && toEngine) editor.textBefore() else null
-        val after = editor.textAfter()
-        val selection = editor.selEnd != editor.selStart
+        val around = editor.around()
+        val before = if (lang == ENGLISH && toEngine) around.before else null
         NativeCore.post({
             clear()
             selectLanguage(lang)
             setField(field, learning)
             engineBefore.setLength(0)
             before?.let {
-                setContext(it, after, selection)
+                setContext(it, around.after, around.selection)
                 engineBefore.append(it)
             }
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
@@ -388,7 +388,10 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             // The word the cursor is at, reopened: it becomes the composing text
             before?.let { state().takeIf { it.recompose }?.recorded() }
                 ?.also { engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
-        }) { if (it != null) show(it) }
+        }) {
+            if (it == null) return@post
+            if (editor.unchanged(around)) show(it, around = around) else englishContext()
+        }
         keysSent = null
         when (lang) {
             CHINESE -> Engines.prepareChinese(this)
@@ -612,10 +615,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     }
 
     /** The engine's state after a call: its text into the field (unless [applyText] is false), the rest shown. */
-    private fun show(st: NativeState, applyText: Boolean = true) {
+    private fun show(st: NativeState, applyText: Boolean = true, around: Editor.Around? = null) {
         if (applyText) {
             editor.beginBatch()
-            if (st.recompose) editor.composeRegion(st.composeBefore, st.composeAfter)
+            // A word reopened from [around] is marked only where the field still has it (#280)
+            if (st.recompose && !editor.composeRegion(st.composeBefore, st.composeAfter, around?.text(st.composeBefore, st.composeAfter))) {
+                editor.endBatch()
+                return englishContext()
+            }
             if (st.deleteBefore > 0 || st.deleteAfter > 0) editor.delete(st.deleteBefore, st.deleteAfter)
             if (st.commit.isNotEmpty()) editor.commit(st.commit)
             if (st.commit.isNotEmpty() && lang == CHINESE) Sync.onChineseCommit(this)
