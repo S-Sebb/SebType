@@ -9,9 +9,10 @@ field), so a screen that is off stays off, and it stops sending keys once Window
 Checks, each saving the input indicator's icon (<state>.png, at the size the text service gave the
 taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the taskbar's right end
 (<state>-taskbar.png), these two in the screen's own pixels at any scaling:
-  first-japanese: the first 日本語 after the install (#312), its Mozc's load held 5 s (a batch oplock on
-    sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, a key goes
-    in without waiting, and あ shows once Mozc is up;
+  first-japanese: the first 日本語 after the install (#312), its Mozc's load held 8 s (a batch oplock on
+    sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, and a key
+    goes in as typed without waiting; reload-while-loading: the Configurator's /mozc meanwhile, and 中文 still
+    switches and types at once; first-japanese-back: あ unasked once Mozc is up, then ka gives か;
   ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
@@ -196,22 +197,53 @@ try {
   # あ shows once Mozc is up, unasked.
   Check 'first-japanese' {
     $was = if (Server) { 'a server ran already' } else { 'no server yet' }
-    # YukaROG's first load took over 4 s; TCSBackEnd's is fast by itself, so its open is held 5 s.
-    $slowed = [SlowOpen]::Hold("$env:ProgramFiles\SebType\sebtype-mozc.dll", 5000)
+    # YukaROG's first load took over 4 s; TCSBackEnd's is fast by itself, so its open is held 8 s: long
+    # enough for reload-while-loading too.
+    $script:slowed = [SlowOpen]::Hold("$env:ProgramFiles\SebType\sebtype-mozc.dll", 8000)
     $t = Get-Date; Lang ja; $activation = [int]((Get-Date) - $t).TotalMilliseconds - 500  # Lang settles 500 ms
-    $first = Shot 'hira-first'
+    $script:first = Shot 'hira-first'
     $tsf::Clear(); $t = Get-Date; Ready; $null = $tsf::Key((Vk 'n')); $key = [int]((Get-Date) - $t).TotalMilliseconds
     $tsf::Settle(300); $typed = $tsf::Text(); Keys Escape; $tsf::Clear()
-    $load = if (-not $slowed) { "Mozc's load not slowed (no oplock)" } elseif ([SlowOpen]::AskedAt) { 'Mozc held 5 s at its load' } else { 'Mozc not loaded yet' }
+    $script:held = $slowed -and [SlowOpen]::AskedAt
+    $load = if (-not $slowed) { "Mozc's load not slowed (no oplock)" } elseif ($held) { 'Mozc held 8 s at its load' } else { 'Mozc not loaded yet' }
     $timeline = "$was, $load, activation $activation ms, key $key ms gave '$typed'"
     if ($activation -gt 1500) { throw "the activation took $activation ms ($timeline)" }
     if ($key -gt 3500) { throw "the key waited $key ms ($timeline)" }
-    $end = (Get-Date).AddSeconds(30); $up = $null
-    do { Keys k a; if ($tsf::Text() -eq 'か') { $up = Shot 'hira-first-up' }; Keys Escape; $tsf::Clear() } while (-not $up -and (Get-Date) -lt $end)
-    if (-not $up) { throw "ka gave no か within 30 s ($timeline)" }
-    if ($slowed -and $up -eq $first) { throw "あ while Mozc was still loading, not grey ($timeline)" }
-    if ($up -eq $first) { "あ at once (Mozc was up already; $timeline)" }
-    else { "grey あ at once, あ once Mozc was up ($timeline)" }
+    if ($held -and $typed -ne 'n') { throw "the key while Mozc loads gave '$typed', not n as typed ($timeline)" }
+    if ($held -and (Shot 'hira-first-key') -ne $first) { throw "the icon changed while Mozc loads ($timeline)" }
+    if ($held) { "grey あ at once, n as typed ($timeline)" } else { "INFO: Mozc's load wasn't held: $timeline" }
+  }
+  # The Configurator's reload (/mozc) while Mozc still loads: 中文 still switches and types at once (#312).
+  Check 'reload-while-loading' {
+    if (-not $held) { return "SKIP: Mozc's load wasn't held" }
+    $reload = Start-Process $server '/mozc' -PassThru; $tsf::Settle(300)
+    $t = Get-Date; Lang zh; $switch = [int]((Get-Date) - $t).TotalMilliseconds - 500
+    $end = (Get-Date).AddSeconds(10); $slowest = 0
+    do {
+      $tsf::Clear(); $t = Get-Date; Keys n i space
+      $slowest = [Math]::Max($slowest, [int]((Get-Date) - $t).TotalMilliseconds - 3 * 150 - 600)
+    } while ($tsf::Text() -ne '你' -and (Get-Date) -lt $end)
+    $t = $tsf::Text(); $tsf::Clear()
+    $timeline = "switch $switch ms, keys waited up to $slowest ms, Mozc's load $(if ([SlowOpen]::AskedAt + 8000 - [Environment]::TickCount -gt 0) { 'still held' } else { 'over' })"
+    if (-not $reload.WaitForExit(10000)) { throw "/mozc didn't return in 10 s ($timeline)" }
+    if ($switch -gt 1500) { throw "the switch to 中文 took $switch ms ($timeline)" }
+    if ($slowest -gt 1000) { throw "a key waited $slowest ms ($timeline)" }
+    if ($t -ne '你') { throw "ni + Space gave '$t' ($timeline)" }
+    "ni + Space gives 你 ($timeline)"
+  }
+  # あ comes unasked once Mozc is up (the text service's readiness timer, no key), then ka gives か.
+  Check 'first-japanese-back' {
+    if (-not $held) { return "SKIP: Mozc's load wasn't held" }
+    Lang ja
+    $end = (Get-Date).AddSeconds(30)
+    do { $tsf::Settle(250); $now = Shot 'hira-first-up' } while ($now -eq $first -and (Get-Date) -lt $end)
+    if ($now -eq $first) { throw 'still grey 30 s after the activation, no key typed' }
+    $end = (Get-Date).AddSeconds(10)
+    do { $tsf::Clear(); Keys k a; $t = $tsf::Text(); Keys Escape } while ($t -ne 'か' -and (Get-Date) -lt $end)
+    $tsf::Clear(); $after = Shot 'hira-first-typed'
+    if ($t -ne 'か') { throw "ka gave '$t', not か" }
+    if ($after -ne $now) { throw 'the icon that came unasked is not the one after typing か' }
+    'あ unasked, then ka gives か'
   }
   Check 'ready' {
     Lang ja
