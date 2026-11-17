@@ -12,10 +12,6 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# The tray icons' renderer, pinned.
-$ResvgUrl = 'https://github.com/linebender/resvg/releases/download/v0.49.0/resvg-win-x86_64.zip'
-$ResvgSha256 = '38af9631b37e61118a32a5ef31e6be6af083eda63b4c17ffc4fdc63e449277df'
-
 function Invoke-Checked([string]$what, [scriptblock]$cmd) {
   & $cmd
   if ($LASTEXITCODE) { throw "$what failed with exit code $LASTEXITCODE" }
@@ -27,11 +23,7 @@ $Out = (Resolve-Path $Out).Path
 $Work = (Resolve-Path $Work).Path
 $src = $PSScriptRoot
 
-$zip = "$Work\resvg.zip"
-curl.exe -sfL --retry 3 -o $zip $ResvgUrl
-if ((Get-FileHash $zip).Hash -ne $ResvgSha256) { throw "checksum mismatch: $ResvgUrl" }
-tar -xf $zip -C $Work resvg.exe
-Invoke-Checked 'make icons' { python -I "$src\make_icons.py" "$Work\resvg.exe" "$src\..\pc\icons" "$Work\icons" }
+Invoke-Checked 'make icons' { python -I "$src\make_icons.py" "$src\..\pc\icons" "$Work\icons" }
 
 # Protobuf for the core's Mozc protocol, with the C++ runtime linked in like everything else here.
 $vcpkg = $env:VCPKG_INSTALLATION_ROOT

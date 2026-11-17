@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Writes SebType's tray icons (#63, "Set E" sticker keycap) as SVGs: pc/icons/<size>/<state>.svg.
+"""Writes SebType's tray icons (#63, "Set E" sticker keycap): pc/icons/<size>/<state>.png and
+pc/icons/scalable/<state>.svg.
 
-Each size is drawn on its own pixel grid: 16, 20, 22, 24 and 32 px are hand-tuned, and "scalable" is a 48 px
-drawing with the design's full proportions, for larger and HiDPI sizes. Glyphs are font outlines, so the
-SVGs need no font: Noto Sans CJK Black (中 あ ア, from the system's Noto Sans CJK VF) and Nunito ExtraBold
-(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools. Linux's RPM installs them in hicolor (linux/CMakeLists.txt);
-Windows reuses them (#13, #65).
+Each tray size (16, 20, 22, 24, 32, 40, 44, 48 and 64 px) is drawn at its own pixel size, not scaled from a
+larger drawing: the keycap's rim, outline and face are whole pixels with hard edges, and the glyph is the
+font hinted at that size, in whole pixels (#275: a large drawing scaled down had soft grey edges). Small
+sizes keep the look with fewer details: blush from 20 px, the face's own outline from 22 px. "scalable" is a
+48 px vector drawing with the design's full proportions, for other sizes; its glyphs are font outlines, so it
+needs no font. Fonts: Noto Sans CJK Black (中 あ ア, from the system's Noto Sans CJK VF) and Nunito ExtraBold
+(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools and Pillow. Linux's RPM installs them in
+hicolor (linux/CMakeLists.txt); Windows' .ico files hold the PNGs (windows/make_icons.py, #13, #65).
 """
 
 from pathlib import Path
@@ -16,9 +20,11 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
+from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
 NOTO_CJK = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
+NUNITO = HERE.parents[1] / "android/app/src/main/res/font/sebtype_nunito_extrabold.ttf"
 
 
 def cjk(index, chars):
@@ -32,9 +38,7 @@ def cjk(index, chars):
 FONTS = {
     "sc": cjk(2, "中"),
     "jp": cjk(0, "あア"),
-    "lat": TTFont(
-        HERE.parents[1] / "android/app/src/main/res/font/sebtype_nunito_extrabold.ttf"
-    ),
+    "lat": TTFont(NUNITO),
 }
 
 
@@ -61,12 +65,13 @@ def place(g, box, h, stroke_px):
     return f'<path transform="matrix({s:.5f} 0 0 {s:.5f} {tx:.3f} {ty:.3f})" stroke-width="{stroke_px / s:.2f}" d="{d}"/>'
 
 
-INK, OUTLINE, STICKER, LIP, BLUSH = (
+INK, OUTLINE, STICKER, LIP, BLUSH, FACE = (
     "#4A2F22",
     "#5B331C",
     "#FFF8E8",
     "#F2DCC4",
     "#F2899E",
+    "#FFF8EE",  # the pixel drawings' top face, one colour
 )
 BASE = {
     "grey": ("#D9D3CE", "#AFA6A0"),  # a language that isn't ready (#275)
@@ -93,21 +98,11 @@ STATES = {  # state: language, (font, text)
 BADGE = {"wait": "#C2506A", "off": "#B03030"}
 GREY_INK = "#7D706A"
 GLYPHS = {g: glyph(FONTS[g[0]], g[1]) for _, g in STATES.values()}
-SIZES = {"16": 16, "20": 20, "22": 22, "24": 24, "32": 32, "scalable": 48}
 
 
 def params(S):
-    """Pixels for sticker border, shadow, outline, base side, flare, face inset, lip: whole pixels at tray sizes."""
-    table = {
-        16: (1, 0, 1, 2, 0, 0, 0),
-        20: (1, 1, 1, 3, 0, 0, 1),
-        22: (1, 1, 1, 4, 1, 1, 1),
-        24: (1, 1, 1, 4, 1, 1, 1),
-        32: (2, 2, 2, 5, 2, 2, 2),
-    }
-    return table.get(S) or tuple(
-        S * f for f in (0.06, 0.03, 0.032, 0.19, 0.06, 0.03, 0.035)
-    )
+    """The vector drawing's sticker border, shadow, outline, base side, flare, face inset and lip."""
+    return tuple(S * f for f in (0.06, 0.03, 0.032, 0.19, 0.06, 0.03, 0.035))
 
 
 def trap(x0, y0, x1, y1, t, r):
@@ -236,7 +231,124 @@ def sticker(S, lang, g, state=""):
     return "".join(o)
 
 
-for folder, S in SIZES.items():
-    (HERE / folder).mkdir(exist_ok=True)
-    for state, (lang, g) in STATES.items():
-        (HERE / folder / f"{state}.svg").write_text(sticker(S, lang, g, state))
+# Pixels per tray size: sticker rim, outline, corner radius, base band under the face, face inset, face
+# outline, lip.
+PIXELS = {
+    16: (1, 1, 4, 2, 0, 0, 0),
+    20: (1, 1, 5, 3, 0, 0, 0),
+    22: (1, 1, 5, 3, 1, 1, 1),
+    24: (1, 1, 6, 3, 1, 1, 1),
+    32: (2, 2, 8, 4, 1, 1, 1),
+    40: (2, 2, 10, 5, 2, 2, 2),
+    44: (2, 2, 11, 5, 2, 2, 2),
+    48: (2, 2, 12, 6, 2, 2, 2),
+    64: (3, 3, 16, 8, 3, 2, 3),
+}
+
+
+def font(kind, px):
+    """Nunito ExtraBold, or Noto Sans CJK at its Black weight."""
+    if kind == "lat":
+        return ImageFont.truetype(str(NUNITO), px)
+    f = ImageFont.truetype(NOTO_CJK, px, index=2 if kind == "sc" else 0)
+    f.set_variation_by_axes([900])
+    return f
+
+
+def bitmap(kind, text, w, h):
+    """The glyph's ink as an L mask at most w x h, hinted at its own size; the largest that fits."""
+    for px in range(h * 2, 4, -1):
+        f = font(kind, px)
+        im = Image.new("L", (px * 3, px * 2), 0)
+        d = ImageDraw.Draw(im)
+        d.fontmode = "1"  # hinted to whole pixels, no grey fringe
+        d.text((2, 2), text, font=f, fill=255)
+        box = im.getbbox()
+        if box and box[2] - box[0] <= w and box[3] - box[1] <= h:
+            return im.crop(box)
+    raise ValueError(text)
+
+
+def rrect(d, box, r, fill):
+    """A rounded rectangle over pixels x0..x1-1, y0..y1-1, with hard edges."""
+    x0, y0, x1, y1 = box
+    d.rounded_rectangle((x0, y0, x1 - 1, y1 - 1), radius=max(r, 0), fill=fill)
+
+
+def pixels(S, state):
+    """The key at S px, drawn on its pixel grid."""
+    lang, (kind, text) = STATES[state]
+    sb, bw, R, band, fi, fo, lip = PIXELS[S]
+    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    rrect(d, (0, 0, S, S), R, STICKER)
+    rrect(d, (sb, sb, S - sb, S - sb), R - sb, OUTLINE)
+    k = sb + bw
+    bot = BASE[lang][1]
+    rrect(d, (k, k, S - k, S - k), R - k, bot)
+    fx0, fy0, fx1, fy1 = k + fi, k, S - k - fi, S - k - band
+    if fo:  # the top face's own outline
+        rrect(d, (fx0 - fo, fy0, fx1 + fo, fy1 + fo), R - k - fi, OUTLINE)
+    rrect(d, (fx0, fy0, fx1, fy1), max(R - k - fi - fo, 1), LIP if lip else FACE)
+    if lip:
+        rrect(d, (fx0, fy0, fx1, fy1 - lip), max(R - k - fi - fo, 1), FACE)
+        fy1 -= lip
+    fw, fh = fx1 - fx0, fy1 - fy0
+    kind_badge = state.rpartition("-")[2]
+    # blush: a pixel or two of pink in the face's lower corners
+    if lang != "grey" and S >= 20:
+        bwid = 1 if S < 32 else 2 if S < 48 else 3
+        by = fy1 - 2 - (1 if S >= 32 else 0)
+        for bx in (fx0 + 1 + (S >= 32), fx1 - 1 - (S >= 32) - bwid):
+            d.rectangle((bx, by, bx + bwid - 1, by + (0 if S < 40 else 1)), fill=BLUSH)
+    margin = 1 if S < 32 else 2
+    gh = round(fh * (0.86 if kind != "lat" else 0.66 if text != "a" else 0.6)) - (
+        0 if S < 24 else 1
+    )
+    m = bitmap(kind, text, fw - 2 * margin, min(gh, fh - 2))
+    gx = fx0 + (fw - m.width + 1) // 2
+    gy = fy0 + (fh - m.height + 1) // 2
+    d.bitmap((gx, gy), m, fill=GREY_INK if lang == "grey" else INK)
+    if kind_badge in BADGE:
+        r = {16: 4, 20: 5, 22: 5, 24: 5, 32: 7, 40: 8, 44: 9, 48: 10, 64: 13}[S]
+        cx0, cy0 = S - 2 * r - 1, S - 2 * r - 1
+        rim = 1 if S < 40 else 2
+        d.ellipse((cx0, cy0, S - 1, S - 1), fill=STICKER)
+        d.ellipse(
+            (cx0 + rim, cy0 + rim, S - 1 - rim, S - 1 - rim), fill=BADGE[kind_badge]
+        )
+        c = (cx0 + S - 1) // 2
+        cy = (cy0 + S - 1) // 2
+        dot = 1 if S < 32 else 2 if S < 64 else 3
+        if kind_badge == "wait":
+            gap = dot + (1 if S < 24 else 2 if S < 48 else 3)
+            for dx in (-gap, 0, gap):
+                d.rectangle(
+                    (
+                        c + dx - dot // 2,
+                        cy - dot // 2,
+                        c + dx - dot // 2 + dot - 1,
+                        cy - dot // 2 + dot - 1,
+                    ),
+                    fill="#FFFFFF",
+                )
+        else:  # "!": a bar, a pixel row of gap, a dot
+            inner = 2 * r + 1 - 2 * rim
+            unit = max(1, inner // 7)
+            bar = inner - 4 * unit
+            y0 = cy - (bar + 2 * unit) // 2
+            x = c - dot // 2
+            d.rectangle((x, y0, x + dot - 1, y0 + bar - 1), fill="#FFFFFF")
+            d.rectangle(
+                (x, y0 + bar + unit, x + dot - 1, y0 + bar + unit + dot - 1),
+                fill="#FFFFFF",
+            )
+    return im
+
+
+(HERE / "scalable").mkdir(exist_ok=True)
+for state, (lang, g) in STATES.items():
+    (HERE / "scalable" / f"{state}.svg").write_text(sticker(48, lang, g, state))
+    for S in PIXELS:
+        (HERE / str(S)).mkdir(exist_ok=True)
+        pixels(S, state).save(HERE / str(S) / f"{state}.png", optimize=True)
