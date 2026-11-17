@@ -118,8 +118,9 @@ class TextService final : public ITfTextInputProcessorEx,
   void setOpen();
   void focus(ITfDocumentMgr *focus);
   // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
-  // True when it took the key itself: a character typed mid-composition goes in after what was typed.
-  bool unavailable(ITfContext *context, const Key &key);
+  // True when it took the key itself: ch, the character it types, goes in after what was being typed.
+  bool unavailable(ITfContext *context, const Key &key, wchar_t ch);
+  static wchar_t typedChar(WPARAM wParam, LPARAM lParam);
   // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
   void watchReadiness();
   void pollReadiness();

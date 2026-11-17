@@ -497,6 +497,16 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
   return true;
 }
 
+// The character the key types in the app, as TranslateMessage gives it (keypad digits and operators too),
+// or 0.
+wchar_t TextService::typedChar(WPARAM wParam, LPARAM lParam) {
+  BYTE state[256];
+  wchar_t ch[4];
+  if (!GetKeyboardState(state)) return 0;
+  const int n = ToUnicodeEx(static_cast<UINT>(wParam), (lParam >> 16) & 0xff, state, ch, 4, 0x4, GetKeyboardLayout(0));
+  return n == 1 && ch[0] >= 0x20 && ch[0] != 0x7f ? ch[0] : 0;
+}
+
 bool TextService::send(const Request &request) {
   if (server.call(request, reply_)) {
     warned_ = false;
@@ -543,17 +553,13 @@ bool TextService::send(const Request &request) {
   return up;
 }
 
-bool TextService::unavailable(ITfContext *context, const Key &k) {
-  const bool typed = !k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt));
+bool TextService::unavailable(ITfContext *context, const Key &k, wchar_t ch) {
+  if (k.release || (k.mods & (mod::Ctrl | mod::Alt))) ch = 0;
+  const bool typed = ch || (!k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt)));
   const std::string icon = notReadyIcon(lang_, Readiness::Unavailable);
   // What was being typed goes in once, as it showed: the keys that follow go to the app as typed, after it,
   // and no reply the server owed (its Reset drops that typing) can change it later.
   const bool composing = composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
-  // The character this key types (key() gives a BMP character's sym), or 0.
-  const wchar_t ch = k.release || (k.mods & (mod::Ctrl | mod::Alt)) ? 0
-                     : (k.sym >= 0x20 && k.sym < 0x7f) || (k.sym >= 0xa0 && k.sym < 0x100) ? wchar_t(k.sym)
-                     : k.sym >> 24 == 1 ? wchar_t(k.sym & 0xffff)
-                                        : 0;
   if (composing) {
     for (const Segment &seg : reply_.preedit.segments) reply_.commit += seg.text;
     // The key's character goes in after it, in the same edit: given to the app, it could land before the
@@ -628,7 +634,7 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
   if (!send(q)) {
-    *eaten = unavailable(context, q.key);
+    *eaten = unavailable(context, q.key, typedChar(wParam, lParam));
     if (test) tested_ = {wParam, release, *eaten != FALSE, true};
     return true;
   }
