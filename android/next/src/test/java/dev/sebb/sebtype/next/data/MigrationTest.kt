@@ -52,19 +52,22 @@ class MigrationTest {
         assertEquals(1f, Migration.size("""{"currentMode":"Regular","heightMultiplier":0.8,"paddingDp":{"bottom":10.0}}""", false, today)!!.height, 0.001f)
     }
 
-    /** Floating takes floatingHeightDp (240 before any change), whatever the multiplier. */
+    /** Floating's own height is floatingHeightDp over 240 (before any change); the docked height stays Regular's. */
     @Test
     fun floatingHeight() {
         val floating = Migration.size("""{"currentMode":"Floating","heightMultiplier":1.0,"floatingWidthDp":360.0,"floatingHeightDp":288.0}""", false, portrait)!!
         assertEquals(Mode.FLOATING, floating.mode)
-        assertEquals(1.2f, floating.height, 0.001f)
-        assertEquals(1f, Migration.size("""{"currentMode":"Floating","heightMultiplier":1.25}""", false, portrait)!!.height, 0.001f)
+        assertEquals(1f, floating.height, 0.001f)
+        assertEquals(1.25f, Migration.size("""{"currentMode":"Floating","heightMultiplier":1.25}""", false, portrait)!!.height, 0.001f)
         // Its own width and height, kept apart from the docked keyboard's (#283); today's defaults stay unset.
         assertEquals(1.2f, floating.floatingHeight!!, 0.001f)
         assertNull(floating.floatingWidth)
         val resized = Migration.size("""{"currentMode":"Regular","floatingWidthDp":280.5,"floatingHeightDp":240.0}""", false, portrait)!!
         assertEquals(280.5f, resized.floatingWidth!!, 0.001f)
         assertNull(resized.floatingHeight)
+        // Today's limits, not the docked keyboard's 0.8–1.3: 96 dp is 0.4, a tall one stays tall.
+        assertEquals(0.4f, Migration.size("""{"currentMode":"Floating","floatingHeightDp":60.0}""", false, portrait)!!.floatingHeight!!, 0.001f)
+        assertEquals(2f, Migration.size("""{"currentMode":"Floating","floatingHeightDp":480.0}""", false, portrait)!!.floatingHeight!!, 0.001f)
     }
 
     @Test

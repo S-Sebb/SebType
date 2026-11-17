@@ -1825,6 +1825,13 @@ def resize_floating(*swipes):
     open_field()
     action(MODES_ACTION)
     tap_label(RESIZE)
+    wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+    # TalkBack reaches the frame alone: the keys under it are out of the accessibility tree (#283).
+    shown = important_labels()
+    if RESIZE_CORNER not in shown or shown & set(SPACE_LABELS):
+        raise Fail(
+            f"with the resize frame up, TalkBack's tree has {sorted(shown & set(SPACE_LABELS + (RESIZE_CORNER,)))}"
+        )
     for start, (dx, dy) in swipes:
         corner = wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
         l, t, r, b = keyboard_frame
@@ -1836,6 +1843,28 @@ def resize_floating(*swipes):
         time.sleep(1)
     tap_label(("Apply", "应用", "適用"))
     return frame_now()
+
+
+def important_labels():
+    """The labels in the accessibility tree as TalkBack has it: a compressed dump leaves out the views
+    hidden from it."""
+    adb(
+        "shell",
+        "uiautomator",
+        "dump",
+        "--compressed",
+        "--windows",
+        "/sdcard/sebtype-ui.xml",
+    )
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    return {
+        n.get("text") or n.get("content-desc") or ""
+        for n in ET.fromstring(xml[xml.index("<") :]).iter("node")
+    }
+
+
+def screen_density():
+    return int(re.findall(r"density: (\d+)", adb("shell", "wm", "density"))[-1]) / 160
 
 
 def screen_size():
@@ -1905,6 +1934,89 @@ def tap_reset():
     tap_label(RESIZE)
     tap_label(("Reset", "重置", "初期化"))
     tap_label(("Apply", "应用", "適用"))
+
+
+def floating_short_window():
+    """Floating, moved to the top and resized tall: a window half as tall shows its keys shorter, all of them
+    on the screen (the handle too) and typing; the full window brings the saved height back (#283)."""
+    to_english()
+    w, h = screen_size()
+    try:
+        set_mode("Floating")
+        tap_reset()
+        l, t, r, b = resize_floating(("keys", (0, -h)), ("corner", (0, h)))
+        tall = b - t
+        short = h // 2
+        adb("shell", "wm", "size", f"{w}x{short}")
+        time.sleep(3)
+        open_field()
+        l2, t2, r2, b2 = frame_now()
+        handle = node(MOVE_KEYBOARD)
+        if not handle or handle[3] < 0 or t2 < 0 or b2 > short or b2 - t2 >= tall:
+            raise Fail(
+                f"keys {tall} px tall; in a {short} px window at ({t2}, {b2}), the handle at {handle and handle[3]}"
+            )
+        screenshot("floating-short-window.png")
+        types_letters()
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        open_field()
+        l3, t3, r3, b3 = frame_now()
+        if abs((b3 - t3) - tall) > 4:
+            raise Fail(
+                f"back in the full window the keys are {b3 - t3} px tall, not the saved {tall}"
+            )
+        return f"keys {tall} px; {b2 - t2} px within a {short} px window, typing works; {b3 - t3} px again after"
+    finally:
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        tap_reset()
+        set_mode("Standard")
+
+
+def floating_narrowest():
+    """Floating resized as narrow as it goes: today's 144 dp, with Reset and Apply inside it and Apply still
+    ending the resize (#283)."""
+    to_english()
+    w, h = screen_size()
+    narrowest = round(144 * screen_density())
+    try:
+        set_mode("Floating")
+        tap_reset()
+        open_field()
+        action(MODES_ACTION)
+        tap_label(RESIZE)
+        corner = wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+        adb(
+            "shell",
+            "input",
+            "swipe",
+            str(corner[1]),
+            str(corner[2]),
+            "0",
+            str(corner[2]),
+            "1500",
+        )
+        time.sleep(1)
+        corner = node(RESIZE_CORNER)
+        buttons = [node(label) for label in ("Reset", "Apply")]
+        left = corner[1] - narrowest
+        if any(b is None or not left < b[1] < corner[1] for b in buttons):
+            raise Fail(
+                f"in a frame from x {left} to {corner[1]}, Reset and Apply are at {buttons}"
+            )
+        screenshot("floating-narrowest.png")
+        tap_label(("Apply",))
+        if node(RESIZE_CORNER):
+            raise Fail("Apply didn't end the resize")
+        l, t, r, b = frame_now()
+        if abs((r - l) - narrowest) > 0.1 * narrowest:
+            raise Fail(f"the narrowest keys are {r - l} px, not about {narrowest}")
+        types_letters()
+        return f"keys {r - l} px wide (144 dp is {narrowest}), Reset and Apply inside, typing works"
+    finally:
+        tap_reset()
+        set_mode("Standard")
 
 
 def floating_resize_edge():
@@ -2187,6 +2299,8 @@ if NEXT:
     check("modes-floating-resized", floating_after_resize, needs=["first-install"])
     check("modes-floating-resize", floating_resize, needs=["first-install"])
     check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
+    check("modes-floating-short-window", floating_short_window, needs=["first-install"])
+    check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
     check("en-futo-default-migrates", lambda: None)
 
 if (

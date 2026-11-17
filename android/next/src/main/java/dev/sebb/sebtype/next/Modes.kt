@@ -34,6 +34,9 @@ enum class Mode(val label: Int, val icon: Icon) {
         const val FLOATING_WIDTH = 0.85f
         /** Floating: the narrowest it gets, as today's (three 48 dp keys) */
         const val FLOATING_MIN_WIDTH_DP = 144f
+        /** Floating: four rows' height, as today's: at least this, and at most the larger of this and ⅔ of the window */
+        const val FLOATING_MIN_HEIGHT_DP = 96f
+        const val FLOATING_MAX_HEIGHT_DP = 384f
         /** Floating: TalkBack's Wider and Narrower, as shares of the window's width */
         const val WIDTH_STEP = 0.05f
     }
@@ -241,12 +244,45 @@ class ResizeFrame(context: Context, private val texts: Texts, private val listen
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) = setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec),
         if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY) MeasureSpec.getSize(heightMeasureSpec) else 0)
 
+    /** Where the label's middle is */
+    private var labelY = 0f
+
+    /**
+     * Reset and Apply side by side in the middle, as today's, while each gets [MIN_BUTTON_DP]; on a keyboard
+     * resized narrower (down to [Mode.FLOATING_MIN_WIDTH_DP]) one over the other.
+     */
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        val y = h / 2f + 8 * density
-        val button = 96 * density
-        reset.set(w / 2f - 8 * density - button, y, w / 2f - 8 * density, y + 40 * density)
-        apply.set(w / 2f + 8 * density, y, w / 2f + 8 * density + button, y + 40 * density)
+        val pad = 8 * density
+        val tall = 40 * density
+        val side = (w - 2 * pad - 2 * pad) / 2
+        if (side >= MIN_BUTTON_DP * density) {
+            val button = minOf(96 * density, side)
+            val y = h / 2f + pad
+            reset.set(w / 2f - pad - button, y, w / 2f - pad, y + tall)
+            apply.set(w / 2f + pad, y, w / 2f + pad + button, y + tall)
+            labelY = h / 2f - 2 * pad
+        } else {
+            val button = minOf(96 * density, w - 2 * pad)
+            val y = h / 2f - tall / 2
+            reset.set(w / 2f - button / 2, y, w / 2f + button / 2, y + tall)
+            apply.set(reset.left, reset.bottom + pad, reset.right, reset.bottom + pad + tall)
+            labelY = y - 2 * pad
+        }
+        // The label in the width there is
+        text.textSize = 15 * density
+        val wide = text.measureText(texts[R.string.mode_resize_corner])
+        if (wide > w - 2 * pad) text.textSize *= (w - 2 * pad) / wide
         a11y.invalidateRoot()
+    }
+
+    /** TalkBack's focus on the corner: the keys under the frame are hidden from it while it shows. */
+    fun focusCorner() {
+        a11y.getAccessibilityNodeProvider(this)?.performAction(0, AccessibilityNodeInfoCompat.ACTION_ACCESSIBILITY_FOCUS, null)
+    }
+
+    private companion object {
+        /** A button's narrowest, side by side */
+        const val MIN_BUTTON_DP = 72f
     }
 
     private fun corner() = RectF(width - 2 * radius, height - 2 * radius, width.toFloat(), height.toFloat())
@@ -265,7 +301,7 @@ class ResizeFrame(context: Context, private val texts: Texts, private val listen
         canvas.drawCircle(width.toFloat(), height.toFloat(), radius, fill)
         canvas.restore()
         text.color = Picnic.INK
-        canvas.drawText(texts[R.string.mode_resize_corner], width / 2f, height / 2f - 16 * density, text)
+        canvas.drawText(texts[R.string.mode_resize_corner], width / 2f, labelY, text)
         for ((rect, label) in listOf(reset to R.string.mode_reset, apply to R.string.mode_apply)) {
             fill.color = Picnic.CREAM
             canvas.drawRoundRect(rect, 15 * density, 15 * density, fill)
@@ -274,10 +310,11 @@ class ResizeFrame(context: Context, private val texts: Texts, private val listen
         }
     }
 
+    // The buttons first: on a narrow keyboard Apply reaches the corner's touch area.
     private fun partAt(x: Float, y: Float) = when {
-        hypot(width - x, height - y) < 2 * radius -> Part.CORNER
         reset.contains(x, y) -> Part.RESET
         apply.contains(x, y) -> Part.APPLY
+        hypot(width - x, height - y) < 2 * radius -> Part.CORNER
         else -> Part.MOVE
     }
 

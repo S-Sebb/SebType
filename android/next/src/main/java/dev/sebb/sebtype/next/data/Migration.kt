@@ -161,9 +161,10 @@ object Migration {
     /**
      * Today's mode and height for an orientation, from its JSON (SavedKeyboardSizingSettings), with its keyboard
      * there before any change [today] ([todayHeights]). Today's keys take (the height + the mode's height
-     * addition − its bottom padding) × heightMultiplier (KeyboardSizingCalculator.calculate), floating ones
-     * floatingHeightDp alone; the new app's height is that over what the same mode took before any change
-     * (getDefaultSettingForKind), so an unchanged one is 1.
+     * addition − its bottom padding) × heightMultiplier (KeyboardSizingCalculator.calculate); the new app's
+     * height is that over what the same mode took before any change (getDefaultSettingForKind), so an unchanged
+     * one is 1. Floating keeps its own: floatingHeightDp over its 240 dp before any change, the docked height
+     * then being Regular's.
      */
     fun size(json: String, landscape: Boolean, today: Today): Size? {
         fun field(name: String, of: String = json) = Regex(""""$name"\s*:\s*"?([\w.+-]+)""").find(of)?.groupValues?.get(1)
@@ -177,7 +178,7 @@ object Migration {
             else -> return null
         }
         val floating = (number("floatingHeightDp") ?: FLOATING_HEIGHT) / FLOATING_HEIGHT
-        val ratio = if (mode == Mode.FLOATING) floating else {
+        val ratio = run {
             val standardBottom = if (landscape) 2f else 10f
             // The mode's height addition, its bottom padding, and that padding before any change
             val (addition, padding, standardPadding) = when (mode) {
@@ -189,9 +190,10 @@ object Migration {
             keys / ((today.height - standardPadding) * today.multiplier)
         }
         fun step(ratio: Float) = ((ratio / Mode.HEIGHT_STEP).roundToInt() * Mode.HEIGHT_STEP).coerceIn(Mode.MIN_HEIGHT, Mode.MAX_HEIGHT)
+        // Floating's own height in today's limits, the window's left to the keyboard (it can't know it here)
         return Size(mode, step(ratio), field("oneHandedDirection") == "Left",
             number("floatingWidthDp")?.takeIf { it != FLOATING_WIDTH }?.coerceAtLeast(Mode.FLOATING_MIN_WIDTH_DP),
-            floating.takeIf { it != 1f }?.let(::step))
+            floating.takeIf { it != 1f }?.coerceAtLeast(Mode.FLOATING_MIN_HEIGHT_DP / FLOATING_HEIGHT))
     }
 
     // Today's floating keyboard's height and width before any change
