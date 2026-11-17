@@ -289,7 +289,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         }
     }
 
-    private fun isLetter(cell: Cell) = cell.rect.height() >= rowHeight && shown(cell.key).let { it.length == 1 && it[0].isLetter() }
+    private fun isLetter(cell: Cell) = shown(cell.key).let { it.length == 1 && it[0].isLetter() }
 
     /** A key's label's text size: today's, shrunk to fit a key narrower than it (W in split's halves) */
     private fun labelSize(cell: Cell, s: String): Float {

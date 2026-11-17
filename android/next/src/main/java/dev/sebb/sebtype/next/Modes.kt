@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
@@ -279,6 +280,9 @@ class ResizeFrame(context: Context, private val texts: Texts, private val listen
         text.textSize = 15 * density
         val wide = text.measureText(texts[R.string.mode_resize_corner])
         if (wide > w - 2 * pad) text.textSize *= (w - 2 * pad) / wide
+        // The corner at the screen's edge (a keyboard as wide as the window) is in gesture navigation's Back
+        // area: a drag there resizes instead of going back.
+        if (Build.VERSION.SDK_INT >= 29) systemGestureExclusionRects = listOf(Rect(w - (2 * radius).toInt(), h - (2 * radius).toInt(), w, h))
         a11y.invalidateRoot()
     }
 
