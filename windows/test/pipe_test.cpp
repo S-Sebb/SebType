@@ -1,6 +1,7 @@
 // The text service's calls to a server that stops answering and then answers again (windows/src/pipe.h,
 // #275): one key waits, the following ones don't and never reach it, and once it answers keys go through
-// again; a server that is gone while waited for lets the text service start a new one. Uses the real pipe
+// again, first dropping what the keys it stopped waiting for began, and the server sees those requests'
+// apps gone; a server that is gone while waited for lets the text service start a new one. Uses the real pipe
 // name, so it skips while a SebType server runs. windows/build.ps1 runs it; it also builds with MinGW:
 //   x86_64-w64-mingw32-g++ -std=c++20 -O2 -static -I windows/src -I core/include windows/test/pipe_test.cpp -o pipe-test.exe
 // MIT, SebType.
@@ -26,7 +27,9 @@ int failures = 0;
   } while (0)
 
 std::atomic<bool> hang{false}, stop{false};
-std::atomic<int> keys{0};  // Key requests the server got
+std::atomic<int> keys{0};    // Key requests the server got
+std::atomic<int> resets{0};  // Reset requests
+std::atomic<int> gone{0};    // requests whose app had stopped waiting once the server got to them
 
 // Each connection: reads the request and replies, unless it hangs, then only once it no longer does.
 void serve(HANDLE pipe) {
@@ -41,7 +44,9 @@ void serve(HANDLE pipe) {
   Request q;
   if (decode(in, q)) {
     if (q.op == Op::Key) ++keys;
+    if (q.op == Op::Reset) ++resets;
     while (hang && !stop) Sleep(10);
+    if (clientGone(pipe)) ++gone;
     Reply r;
     r.taken = true;
     const std::string out = encode(r);
@@ -111,7 +116,7 @@ int main() {
   Guarded g(500, 300, 50);
 
   Took t = timed(g);
-  CHECK(t.ok && !g.down());
+  CHECK(t.ok && !g.down() && gone == 0);
 
   // It stops answering: the first key waits replyMs, the next ones fail at once and don't reach it.
   hang = true;
@@ -130,12 +135,15 @@ int main() {
   std::printf("next 20 keys: %lu ms in all, slowest %lu ms (before #275: 20 x 5000 ms)\n", total, slowest);
   CHECK(slowest <= 100 && keys == reached);
 
-  // It answers again: within retryMs a key goes through.
+  // It answers again: the server finds the waiting key's app gone, and within retryMs a Reset drops what that
+  // key may have begun before the next key goes through.
   hang = false;
   Sleep(350);
+  CHECK(gone >= 1);
+  const int before = resets, wentBefore = gone;
   t = timed(g);
   std::printf("first key after it answers again: %lu ms\n", t.ms);
-  CHECK(t.ok && !g.down() && keys == reached + 1);
+  CHECK(t.ok && !g.down() && keys == reached + 1 && resets == before + 1 && gone == wentBefore);
 
   // It hangs, then is gone: the text service may start a new one (no ERROR_TIMEOUT).
   hang = true;

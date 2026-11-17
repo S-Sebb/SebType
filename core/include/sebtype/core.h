@@ -94,6 +94,9 @@ class Core {
   std::string icon();
   // Whether the language's engine takes keys now; keys it can't take go to the app as typed (#275).
   Readiness readiness();
+  // Another language's icon, read only: an engine not started yet is ready (a text service in another
+  // language's app asks while this one types, #275).
+  std::string icon(Lang lang);
   std::vector<MenuItem> menu();
   void activate(const MenuItem &item);
   // The popup after a switch of language or of 中文's English mode, once, as Fcitx5 showed it
@@ -112,6 +115,7 @@ class Core {
 
  private:
   Engine *current() { return engine(lang_); }
+  std::string icon(Lang lang, Engine *e);
   void switchTo(Lang lang);
 
   EngineFactory factory_;

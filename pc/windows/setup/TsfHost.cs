@@ -362,6 +362,23 @@ namespace SebType {
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool EnumThreadWindows(uint thread, EnumProc f, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern uint GetDpiForSystem();
+    // The screen's own pixels: PowerShell isn't DPI-aware, so at 150 % Windows would hand it a scaled-down
+    // copy of the screen. Per-monitor aware (v2) for the call only; TSF and the field keep the process's own.
+    static T Physical<T>(Func<T> f) {
+      var old = SetThreadDpiAwarenessContext((IntPtr)(-4));
+      try { return f(); } finally { SetThreadDpiAwarenessContext(old); }
+    }
+    public static uint Dpi() { return Physical(() => GetDpiForSystem()); }
+    [DllImport("user32.dll")] static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+    // The small icon's size at the screen's scaling (SM_CXSMICON), which the taskbar draws the button at.
+    public static int IconSize() { return GetSystemMetricsForDpi(49, Dpi()); }
+    // The candidate window's DPI awareness at its last picture: 0 unaware (Windows stretches it, in this
+    // DPI-unaware PowerShell), 1 system, 2 per monitor.
+    public static int PopupAwareness = -1;
     [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder s, int n, uint flags);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
@@ -649,22 +666,23 @@ namespace SebType {
       OnUi(() => {
         IntPtr h;
         Marshal.ThrowExceptionForHR(InputModeButton().GetIcon(out h));
+        // At the size the text service gave, pixel for pixel: the size the taskbar gets.
         using (var icon = System.Drawing.Icon.FromHandle(h))
-        using (var bmp = new System.Drawing.Bitmap(64, 64)) {
-          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, 64, 64));
-          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-        }
+        using (var bmp = icon.ToBitmap()) bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
         DestroyIcon(h);
         return 0;
       });
     }
     // Saves the right end of the taskbar, with the input indicator, as a PNG (#275).
     public static void Taskbar(string path, int width) {
-      RECT r; GetWindowRect(FindWindowExW(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null), out r);
-      using (var bmp = new System.Drawing.Bitmap(width, r.B - r.T)) {
-        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.R - width, r.T, 0, 0, bmp.Size);
-        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-      }
+      Physical(() => {
+        RECT r; GetWindowRect(FindWindowExW(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null), out r);
+        using (var bmp = new System.Drawing.Bitmap(width, r.B - r.T)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.R - width, r.T, 0, 0, bmp.Size);
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        return 0;
+      });
     }
     // Saves the input method's candidate window, the visible window other than the field that its code
     // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one. The size
@@ -673,14 +691,17 @@ namespace SebType {
       IntPtr w = IntPtr.Zero;
       OnUi(() => { EnumThreadWindows(threadId, (h, l) => { if (h != store.Hwnd && IsWindowVisible(h)) w = h; return w == IntPtr.Zero; }, IntPtr.Zero); return 0; });
       if (w == IntPtr.Zero) return null;
-      RECT r; GetWindowRect(w, out r);
-      using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T)) {
-        using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
-        bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-      }
-      POINT p;
-      bool pointer = GetCursorPos(out p) && p.X >= r.L && p.X < r.R && p.Y >= r.T && p.Y < r.B;
-      return (r.R - r.L) + "x" + (r.B - r.T) + (pointer ? " (pointer over it at " + (p.X - r.L) + "," + (p.Y - r.T) + ")" : "");
+      PopupAwareness = GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(w));
+      return Physical(() => {
+        RECT r; GetWindowRect(w, out r);
+        using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(r.L, r.T, 0, 0, bmp.Size);
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        POINT p;
+        bool pointer = GetCursorPos(out p) && p.X >= r.L && p.X < r.R && p.Y >= r.T && p.Y < r.B;
+        return (r.R - r.L) + "x" + (r.B - r.T) + (pointer ? " (pointer over it at " + (p.X - r.L) + "," + (p.Y - r.T) + ")" : "");
+      });
     }
   }
 }

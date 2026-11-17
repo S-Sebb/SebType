@@ -269,7 +269,10 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     // The key's release resets the panel too: a popup still showing over an empty panel stays for its
     // second (Fcitx5 hides it only while it is the panel's sole text).
     const uint64_t now = fcitx::now(CLOCK_MONOTONIC);
-    if (aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_) panel.setAuxUp(fcitx::Text(shown_));
+    if (aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_) {
+      panel.setAuxUp(fcitx::Text(shown_));
+      hidePopupLater(ic);
+    }
     if (auto commit = core_->takeCommit(); !commit.empty()) ic->commitString(commit);
     ic->updatePreedit();
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
@@ -279,9 +282,25 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
       instance_->showCustomInputMethodInformation(ic, notice);
       shown_ = notice;
       shownUntil_ = now + 1000000;
+      hidePopupLater(ic);
     }
   }
   updateStatus(ic);
+}
+
+void SebTypeEngine::hidePopupLater(fcitx::InputContext *ic) {
+  hide_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, shownUntil_, 0, [this, ref = ic->watch()](fcitx::EventSourceTime *, uint64_t) {
+        hidePopup(ref.get());
+        return true;
+      });
+}
+
+void SebTypeEngine::hidePopup(fcitx::InputContext *ic) {
+  shownUntil_ = 0;
+  if (!ic || shown_.empty() || ic->inputPanel().auxUp().toString() != shown_) return;
+  ic->inputPanel().setAuxUp(fcitx::Text());
+  ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
 }
 
 void SebTypeEngine::updateStatus(fcitx::InputContext *ic) {
@@ -303,6 +322,8 @@ void SebTypeEngine::updateStatus(fcitx::InputContext *ic) {
         if (core_->icon().ends_with("-wait")) {
           source->setNextInterval(500000);
           source->setOneShot();
+        } else {
+          hidePopup(instance_->mostRecentInputContext());  // its "getting ready" is over
         }
         return true;
       });

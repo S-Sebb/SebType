@@ -156,6 +156,7 @@ back = wait_icon("sebtype-zh", 180)
 took = time.time() - t
 time.sleep(1)
 shot("zh-back")
+left = popup("zh-back-left")  # "getting ready" is over: no popup says it any more
 pump()
 typed.clear()
 for k in "ni ":
@@ -164,8 +165,8 @@ time.sleep(0.5)
 pump()
 result(
     "chinese-back",
-    back == "sebtype-zh" and typed == ["你"],
-    f"key {back} after {took:.1f} s, ni + Space typed {typed}",
+    back == "sebtype-zh" and left is None and typed == ["你"],
+    f"key {back} after {took:.1f} s, popup {left or 'gone'}, ni + Space typed {typed}",
 )
 
 core.SetLanguage("ja")

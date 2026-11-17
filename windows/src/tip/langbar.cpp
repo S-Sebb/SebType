@@ -112,8 +112,13 @@ STDMETHODIMP LangBarButton::OnMenuSelect(UINT id) {
   return S_OK;
 }
 
+// At the taskbar's DPI, where it is drawn: a DPI-unaware app's SM_CXSMICON is 16 at any scaling, and the taskbar
+// stretched that icon (blurry at 150 %, #275).
 STDMETHODIMP LangBarButton::GetIcon(HICON *out) {
-  const int size = GetSystemMetrics(SM_CXSMICON);
+  const DPI_AWARENESS_CONTEXT old = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  const HWND taskbar = FindWindowW(L"Shell_TrayWnd", nullptr);
+  const int size = GetSystemMetricsForDpi(SM_CXSMICON, taskbar ? GetDpiForWindow(taskbar) : GetDpiForSystem());
+  if (old) SetThreadDpiAwarenessContext(old);
   *out = static_cast<HICON>(LoadImageW(dllInstance, MAKEINTRESOURCEW(iconId(service_.reply().icon)), IMAGE_ICON,
                                        size, size, LR_DEFAULTCOLOR));
   return *out ? S_OK : E_FAIL;

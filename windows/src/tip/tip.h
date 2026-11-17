@@ -64,7 +64,7 @@ class TextService final : public ITfTextInputProcessorEx,
   STDMETHODIMP OnPopContext(ITfContext *) override { return S_OK; }
 
   // ITfKeyEventSink
-  STDMETHODIMP OnSetFocus(BOOL) override { return S_OK; }
+  STDMETHODIMP OnSetFocus(BOOL foreground) override;
   STDMETHODIMP OnTestKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) override;
   STDMETHODIMP OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) override;
   STDMETHODIMP OnTestKeyUp(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) override;

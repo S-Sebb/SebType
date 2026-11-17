@@ -6,14 +6,19 @@ person's own desktop session (not elevated). One command:
 
 Like test-focus-out.ps1 it makes no input of its own (keys go to TSF's keystroke manager in TsfHost.cs's
 field), so a screen that is off stays off, and it stops sending keys once Windows reports the display on.
-Checks, each saving the input indicator's icon (<state>.png) and, for the popup, the window by the caret
-(<state>-popup.png) and the taskbar's right end (<state>-taskbar.png):
+Checks, each saving the input indicator's icon (<state>.png, at the size the text service gave the
+taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the taskbar's right end
+(<state>-taskbar.png), these two in the screen's own pixels at any scaling:
   ready: あ and 中 as usual;
+  sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
     in as typed and the popup says why; chinese-back: once Rime is done the key is 中 again, unasked;
+  chinese-switched: a switch to 中文 during a second such deploy, no key typed: grey 中, then 中 again unasked;
   chinese-unavailable: a server that hangs (its process suspended): grey 中 with "!" after one key's wait,
     the key goes in as typed, the popup says why; japanese-unavailable: the same in 日本語 with its own popup;
-  japanese-back: the server answers again (resumed): あ again within two seconds, unasked.
+  japanese-back: the server answers again (resumed): あ again within two seconds, unasked;
+  typed-after-recovery: ni + Space in 中文 then gives 你 (the key the app typed itself while the server hung
+    doesn't reach Rime as well).
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. Results: one line per check in <Out>\not-ready-results.txt; exit 0 only
@@ -119,9 +124,17 @@ function Restart-Server([scriptblock]$change) {
   $end = (Get-Date).AddSeconds(20)
   while (-not (Test-Path $pipe)) { if ((Get-Date) -gt $end) { throw "no $pipe 20 s after the server started" }; Start-Sleep -Milliseconds 200 }
 }
-$suspended = $hira = $zh = $deploy = $null
+# Mozc loads again in a new server, which took seconds at its first load: before any check times 日本語.
+function Warm-Mozc {
+  Lang ja
+  $end = (Get-Date).AddSeconds(30)
+  do { Keys n i Escape; $now = try { Shot 'hira-again' } catch { $null } } while ($now -ne $hira -and (Get-Date) -lt $end)
+  Lang zh
+}
+$suspended = $hira = $zh = $deploy = $backup = $null
 $rimeBuild = "$env:APPDATA\Rime\build"
 $tsf::Start()
+Result scale INFO "$($tsf::Dpi()) dpi, $([int]($tsf::Dpi() * 100 / 96)) %; pictures in the screen's own pixels"
 try {
   # The first key starts sebtype-server when none runs; the first 日本語 after an install took over 4 s
   # before its button showed and it took keys (YukaROG, Mozc's first load).
@@ -141,14 +154,15 @@ try {
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
   # takes seconds. The server keeps them mapped, so it quits first (saving), and a new one starts below
-  # normal priority, so its deploy never slows what else the PC serves. The build folder is put back at the end.
-  Copy-Item -Recurse $rimeBuild "$Out\rime-build"
+  # normal priority, so its deploy never slows what else the PC serves. The build folder is put back at the end,
+  # from this run's own copy, and only once the copy is known complete.
+  $copy = "$Out\rime-build-$((New-Guid).ToString('N'))"
+  Copy-Item -Recurse $rimeBuild $copy
+  $bytes = { param($dir) (Get-ChildItem -Recurse -File $dir | Measure-Object Length -Sum | ForEach-Object { "$($_.Count) $($_.Sum)" }) }
+  if ((& $bytes $copy) -ne (& $bytes $rimeBuild)) { throw "the copy of $rimeBuild is incomplete: nothing changed" }
+  $backup = $copy
   Restart-Server { Remove-Item "$rimeBuild\*.prism.bin" }
-  # Mozc loads again in the new server, which took seconds at its first load: before any check times 日本語.
-  Lang ja
-  $end = (Get-Date).AddSeconds(30)
-  do { Keys n i Escape; $now = try { Shot 'hira-again' } catch { $null } } while ($now -ne $hira -and (Get-Date) -lt $end)
-  Lang zh
+  Warm-Mozc
   # The text service learns of the deploy at the next key, so the key goes once Rime's maintenance began:
   # the first prism back (rime_ice's, small) shows it, with seconds of the others to go (TCSBackEnd: a key
   # 300 ms after /deploy came before the deploy, which then took 12 s more after the first prism).
@@ -167,6 +181,14 @@ try {
     if ($t -ne 'n') { throw "the key gave '$t', not n as typed ($timeline)" }
     "grey 中, 'n' as typed, popup $size ($timeline)"
   }
+  # Drawn for the screen's pixels in this DPI-unaware app, as in the many apps that are: the icon at the
+  # taskbar's size, the popup per-monitor DPI aware (before, at 150 % both were stretched and blurry).
+  Check 'sharp' {
+    $img = [System.Drawing.Image]::FromFile("$Out\zh-wait.png"); $px = $img.Width; $img.Dispose()
+    $want = $tsf::IconSize(); $aware = $tsf::PopupAwareness
+    if ($px -ne $want -or $aware -ne 2) { throw "icon $px px (the taskbar draws $want), popup DPI awareness $aware (2 is per monitor; Windows stretches the others)" }
+    "icon $px px as the taskbar draws it, popup per-monitor DPI aware"
+  }
   Check 'chinese-back' {
     if (-not $deploy.WaitForExit(300000)) { throw 'Rime still deploying after 5 minutes' }
     Get-ChildItem $rimeBuild | Format-Table -AutoSize Name, Length, LastWriteTime | Out-File -Encoding utf8 "$Out\rime-build-after-deploy.txt"
@@ -176,6 +198,21 @@ try {
     if ($t -ne '你') { throw "ni + Space gave '$t'" }
     "中 again unasked, ni + Space gives $t"
   }
+  # The same deploy, met by a switch to 中文 with no key typed.
+  Lang ja
+  Restart-Server { Remove-Item "$rimeBuild\*.prism.bin" }
+  $deploy = Start-Process $server '/deploy' -PassThru
+  Check 'chinese-switched' {
+    $end = (Get-Date).AddSeconds(30)
+    while (-not (Test-Path "$rimeBuild\*.prism.bin") -and -not $deploy.HasExited -and (Get-Date) -lt $end) { $tsf::Settle(10) }
+    Lang zh; $icon = Shot 'zh-switched'
+    if ($icon -eq $zh) { throw "the icon is 中 while Rime deploys$(if ($deploy.HasExited) { ' (the deploy was over first)' })" }
+    if (-not $deploy.WaitForExit(300000)) { throw 'Rime still deploying after 5 minutes' }
+    $icon = WaitIcon $zh 3; Shot 'zh-switched-back' | Out-Null
+    if ($icon -ne $zh) { throw 'the icon did not turn back to 中 within 3 s of the deploy' }
+    'grey 中 at the switch, 中 again unasked'
+  }
+  Warm-Mozc
 
   $suspended = Server
   [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
@@ -199,13 +236,18 @@ try {
     if ($icon -ne $hira) { throw 'the icon did not turn back to あ within 4 s' }
     'あ again unasked'
   }
+  Check 'typed-after-recovery' {
+    Lang zh; Keys n i space; $t = $tsf::Text()
+    if ($t -ne '你') { throw "ni + Space gave '$t': the 'n' typed as is while the server hung went to Rime too" }
+    "ni + Space gives $t"
+  }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
   if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null }
-  if (Test-Path "$Out\rime-build") {
+  if ($backup) {
     if ($deploy -and -not $deploy.HasExited) { $deploy.WaitForExit(300000) | Out-Null }
-    try { Restart-Server { Remove-Item -Recurse $rimeBuild; Move-Item "$Out\rime-build" $rimeBuild } }
+    try { Restart-Server { Remove-Item -Recurse $rimeBuild; Move-Item $backup $rimeBuild } }
     catch { Result 'rime-build-restored' FAIL $_.Exception.Message }
   }
   if (-not $display::Lit -or $AnyDisplay) { try { Keys Escape Escape } catch { } }

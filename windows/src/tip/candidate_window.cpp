@@ -80,6 +80,16 @@ Settings readSettings() {
   return s;
 }
 
+// The window is per-monitor DPI aware whatever the app is: made, measured and placed in this context, in the
+// screen's own pixels, so Windows never stretches it for a DPI-unaware app (blurry at 150 %, #275). Its own
+// messages run in its context anyway.
+struct ScreenPixels {
+  DPI_AWARENESS_CONTEXT old = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  ~ScreenPixels() {
+    if (old) SetThreadDpiAwarenessContext(old);
+  }
+};
+
 // The work area of the caret's monitor, where the window has to stay.
 RECT workArea(const RECT &caret) {
   MONITORINFO mi{sizeof(mi)};
@@ -319,6 +329,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   l.hasPrev = reply.page.hasPrev, l.hasNext = reply.page.hasNext;
   cursor_ = reply.page.cursor;
   if (l.cells.empty() && l.preedit.empty() && l.aux.empty()) return hide();
+  ScreenPixels screen;
   if (!create()) return;
   KillTimer(hwnd_, kNoticeTimer);
   noticing_ = false;
@@ -340,6 +351,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
 }
 
 void CandidateWindow::notice(const std::string &text, const RECT &caret) {
+  ScreenPixels screen;
   if (text.empty() || !create()) return;
   loadStyle(caret);
   CandidateLayout &l = layout_;

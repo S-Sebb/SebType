@@ -65,6 +65,10 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   // The tray and Plasma's input method panel read the icon and menu again when it changed, and while 中文 is
   // preparing they look again every half second, so the key turns back to 中 when Rime is done (#275).
   void updateStatus(fcitx::InputContext *ic);
+  // Hides the popup (shown_) when its second is over or its language is ready again, if it still shows: the
+  // re-set of it at a key's release has no timer of Fcitx5's to hide it (#275).
+  void hidePopupLater(fcitx::InputContext *ic);
+  void hidePopup(fcitx::InputContext *ic);
 
   fcitx::Instance *instance_;
   std::unique_ptr<Core> core_;
@@ -73,6 +77,7 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   uint64_t shownUntil_ = 0;  // and when Fcitx5 hides it (CLOCK_MONOTONIC, µs)
   std::unique_ptr<Service> service_;
   std::unique_ptr<fcitx::EventSourceTime> poll_;
+  std::unique_ptr<fcitx::EventSourceTime> hide_;
 };
 
 }  // namespace sebtype

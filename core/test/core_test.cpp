@@ -285,6 +285,14 @@ TEST_F(CoreTest, ALanguageThatIsNotReadyGreysItsKeyAndSaysSoOnce) {
   EXPECT_EQ(core.icon(), "hira-off");
   EXPECT_FALSE(tap('k'));
   EXPECT_EQ(core.takeNotice(false), "日本語暂不可用 · 按英文字母输入");
+
+  // A 中文 app's text service asks while a 日本語 one is typing: the answer changes nothing.
+  engines[Lang::Japanese]->loaded = true;
+  type("ka");
+  EXPECT_EQ(core.icon(Lang::Chinese), "zh-wait");
+  EXPECT_EQ(core.icon(Lang::Japanese), "hira");
+  EXPECT_EQ(core.language(), Lang::Japanese);
+  EXPECT_EQ(core.preedit().segments.size(), 1u);
 }
 
 TEST_F(CoreTest, AltGraveSwitchesKanaBeforeTypingAndNotInEnglish) {

@@ -356,6 +356,7 @@ void TextService::setLanguage(REFGUID profile) {
   if (switched && context_) typeIn(utf16(std::exchange(reply_.commit, {})));
   if (window_) window_->hide();
   if (button_) button_->update();
+  watchReadiness();  // a switch to 中文 while Rime deploys is grey until it is done, with no key typed
 }
 
 // Whether one of SebType's profiles is still the thread's keyboard (not while another is being activated).
@@ -384,6 +385,13 @@ void TextService::followLayout() {
 
 STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focused, ITfDocumentMgr *) {
   focus(focused);
+  return S_OK;
+}
+
+// The thread's keyboard focus: only the app in front watches whether its language is ready again.
+STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
+  if (foreground) watchReadiness();
+  else stopWatching();
   return S_OK;
 }
 
@@ -558,14 +566,14 @@ void TextService::watchReadiness() {
   });
 }
 
-// As focus coming to the field asks; never starts a server (an idle app would wait for it), a key does.
+// Asks only for the icon: the apps share the server's core, and another app's composition or language is
+// not this one's to change. Never starts a server (an idle app would wait for it), a key does.
 void TextService::pollReadiness() {
-  Request q{Op::FocusIn};
+  Request q{Op::Ready};
   q.lang = lang_;
   Reply r;
   if (!server.call(q, r)) return;
   warned_ = false;
-  reply_.lang = r.lang;
   reply_.icon = r.icon;
   if (button_) button_->update();
   if (!notReady(r.icon)) stopWatching();

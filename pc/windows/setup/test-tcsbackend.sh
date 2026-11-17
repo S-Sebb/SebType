@@ -12,7 +12,8 @@
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
 # ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the
-# test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows.
+# test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows-<SCALE>.
+# SCALE=150 (100 to 500) sets the session's display scaling (Remote Desktop's desktop scale factor).
 # It takes SebType-setup-*.exe (and for PERF_RUN perf-rime.exe) from the "Windows setup" CI run of this
 # commit (gh), or else from build/, and pushes them (TCSBackEnd's downloads are fast, its uploads capped),
 # runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
@@ -190,7 +191,7 @@ if [ -n "${logon:-}" ]; then
   # The password is this run's own, for a user test.ps1 removes when it ends.
   gamescope --backend headless -W 1280 -H 800 -- bash -c 'python3 "$1" 47812 >"$2" 2>&1 & shift 2; exec xfreerdp "$@"' \
     _ "$here/rdp-keys.py" "$out/rdp-keys.log" /v:127.0.0.1:13389 /u:"$(sed -n 1p <<<"$logon")" \
-    /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /audio-mode:none -clipboard \
+    /p:"$(sed -n 2p <<<"$logon")" /cert:ignore /size:1280x800 /scale-desktop:"${SCALE:-100}" /audio-mode:none -clipboard \
     >"$out/freerdp.log" 2>&1 & rdp=$!
 fi
 mark 'Remote Desktop started'
@@ -212,8 +213,9 @@ for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$ou
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
 done
 if [ -d "$out/logs/275" ]; then
-  rm -rf "$TASK_OUT/screens/windows"; mkdir -p "$TASK_OUT/screens/windows"
-  cp "$out"/logs/275/*.png "$out/logs/275/not-ready-results.txt" "$TASK_OUT/screens/windows/" 2>/dev/null
+  screens=$TASK_OUT/screens/windows-${SCALE:-100}
+  rm -rf "$screens"; mkdir -p "$screens"
+  cp "$out"/logs/275/*.png "$out/logs/275/not-ready-results.txt" "$screens/" 2>/dev/null
 fi
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
 [ -s "$out/results.txt" ] || echo "FAIL results: test.ps1 wrote no results (logs: $out/logs)"

@@ -27,6 +27,8 @@ enum class Op : uint8_t {
   Quit,      // the server exits (setup, the Configurator's forget)
   Mozc,      // Mozc saves and closes, and starts again with its files at the next 日本語 key (setup, the
              // Configurator)
+  Ready,     // lang: its icon in reply.icon while it isn't ready, and nothing else; changes nothing (#275)
+  Reset,     // what is being typed is dropped: the server answers again after keys the app stopped waiting for
 };
 
 struct Request {

@@ -396,17 +396,23 @@ void Core::setAlternate(bool on) {
   }
 }
 
-Readiness Core::readiness() {
-  auto *e = current();
+namespace {
+Readiness readinessOf(Engine *e) {
   if (!e) return Readiness::Ready;
   if (e->busy()) return Readiness::Preparing;
   return e->available() ? Readiness::Ready : Readiness::Unavailable;
 }
+}  // namespace
 
-std::string Core::icon() {
-  auto *e = current();
-  if (const Readiness r = readiness(); r != Readiness::Ready) return notReadyIcon(lang_, r);
-  switch (lang_) {
+Readiness Core::readiness() { return readinessOf(current()); }
+
+std::string Core::icon() { return icon(lang_, current()); }
+
+std::string Core::icon(Lang lang) { return icon(lang, running(lang)); }
+
+std::string Core::icon(Lang lang, Engine *e) {
+  if (const Readiness r = readinessOf(e); r != Readiness::Ready) return notReadyIcon(lang, r);
+  switch (lang) {
     case Lang::Chinese:
       if (e && e->latin()) return capsLock_ ? "zh-caps" : "zh-a";
       return "zh";

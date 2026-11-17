@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The tray key while 中文 or 日本語 isn't ready (#275), on Linux, in screenshots:
-#   pc/linux/test-not-ready.sh        # results and PNGs in ~/scratch/SebType/<issue>/screens/linux
+#   pc/linux/test-not-ready.sh        # results and PNGs in ~/scratch/SebType/<issue>/screens/linux-<time>
 # A private Fcitx5 with a throwaway profile and SebType's RPM (linux/build.sh, unpacked as test-setup-ime.sh
 # does) runs in a nested KWin (virtual, 1000 x 700) with a Plasma system tray, in its own D-Bus session
 # (tools/lib.sh's private_dbus), never the live one; it takes the device lock, as it fills the CPU while
@@ -11,7 +11,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 source "$here/../../tools/lib.sh"
 # shellcheck source-path=SCRIPTDIR source=../../linux/versions.sh
 source "$here/../../linux/versions.sh"
-out=${NOT_READY_OUT:-$TASK_OUT/screens/linux}; rm -rf "$out"; mkdir -p "$out"
+out=$TASK_OUT/screens/linux-$(date +%Y%m%d-%H%M%S); mkdir -p "$out"  # each run its own: none deletes another's
 work=$(mktemp -d "$TASK_OUT/not-ready.XXXXXX"); trap 'rm -rf "$work"' EXIT
 for x in kwin_wayland plasmawindowed kded6 spectacle fcitx5 bwrap devq; do
   command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }
