@@ -104,6 +104,18 @@ RUN dnf -y install $rpms && dnf clean all" >/dev/null
     -v "$nas:$SCRATCH" -v "$nas:$nas" "$@" "$image")
 }
 
+# sccache_env ROOT: C and C++ compiles go through sccache, with a private server (sccache --start-server
+# starts it) whose hashes take paths relative to the checkout's real root ROOT, so every checkout shares the
+# cache. Without its preprocessor cache, which keys entries by those relative paths but checks the headers at
+# the absolute paths of the checkout that stored them: a checkout whose headers differ got that one's
+# objects and depfiles (#318). Objects are then found by the preprocessed source, as before sccache 0.7.
+sccache_env() {
+  mkdir -p "$SCRATCH/cache"
+  SCCACHE_SERVER_UDS=$(mktemp -u "$SCRATCH/cache/sccache.XXXXXX")  # well under a socket path's 108 bytes
+  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=$1 \
+    SCCACHE_DIRECT=false SCCACHE_SERVER_UDS
+}
+
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy SebType build at a time),
 # waiting up to an hour for it, under the CPU and memory caps, at the lowest CPU and I/O priority. The queue
 # rank is DEVQ_RANK (default 2; it orders the queue, the lock is still one build at a time), so a script run
