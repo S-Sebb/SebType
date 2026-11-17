@@ -2,8 +2,13 @@ package dev.sebb.sebtype.chinese
 
 import android.content.Context
 import dev.sebb.sebtype.SebTypeConf
+import dev.sebb.sebtype.core.ChineseWordSync
 import java.io.File
 import java.io.InputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.futo.inputmethod.engine.general.ChineseIME
 
 /**
@@ -41,28 +46,44 @@ object ChineseMyWords {
     fun isValid(word: String, pinyin: String) =
         word.isNotBlank() && '\t' !in word && '\n' !in word && PINYIN.matches(pinyin)
 
-    fun read(context: Context): List<ChineseWord> {
-        val file = userFile(context)
-        if(!file.isFile) return emptyList()
-        return file.readLines().dropWhile { it != MARKER }.drop(1).mapNotNull { line ->
+    fun read(context: Context): List<ChineseWord> = saved(context).orEmpty()
+
+    /** The words, or null before they were first saved here (the sync then has none to tell, #272). */
+    fun saved(context: Context): List<ChineseWord>? {
+        val lines = userFile(context).takeIf { it.isFile }?.readLines() ?: return null
+        if(MARKER !in lines) return null
+        return lines.dropWhile { it != MARKER }.drop(1).mapNotNull { line ->
             line.split('\t').takeIf { it.size >= 2 }?.let { ChineseWord(it[0], it[1]) }
         }
     }
+
+    private val editing = Mutex()
+
+    /**
+     * Changes the words as they are now: [change] gets them ([saved]) and returns the new ones, or null to keep
+     * them; then [after] runs, under the same lock. The settings screen and the sync each read and write the
+     * whole list, so one in the middle of the other would lose a word (#272).
+     */
+    suspend fun edit(context: Context, change: (List<ChineseWord>?) -> List<ChineseWord>?, after: () -> Unit = {}) =
+        editing.withLock {
+            withContext(Dispatchers.IO) { change(saved(context)) }?.let { write(context, it) }
+            withContext(Dispatchers.IO) { after() }
+        }
 
     /**
      * Saves [words]. Rime reads them when it starts, so a running Rime is restarted (about a second,
      * no deploy); one not running yet picks them up when Chinese is next typed.
      */
-    suspend fun write(context: Context, words: List<ChineseWord>) {
+    private suspend fun write(context: Context, words: List<ChineseWord>) {
         val wasReady = RimeIceSetup.state.value == RimeIceSetup.State.Ready
         RimeIceSetup.whileStopped(context) {
             val shipped = File(ChineseIME.getShared(context), FILE).takeIf { it.isFile }?.readText().orEmpty()
-            userFile(context).writeText(buildString {
+            ChineseWordSync.replace(userFile(context), buildString {
                 append(shipped)
                 if(isNotEmpty() && !endsWith('\n')) append('\n')
                 appendLine(MARKER)
                 words.forEach { appendLine("${it.word}\t${it.pinyin}") }
-            })
+            }.toByteArray())
         }
         if(wasReady) RimeIceSetup.prepareInBackground(context)
     }
@@ -71,12 +92,13 @@ object ChineseMyWords {
 object ChineseLearnedWords {
     /**
      * Deletes Rime's learned words (its user dictionaries and their sync snapshots). The deployed
-     * build, the settings patch and the user's own words stay, so no new deploy is needed.
+     * build, the settings patch and the user's own words (and the sync's copies of them) stay, so no
+     * new deploy is needed.
      */
     suspend fun forget(context: Context) {
         RimeIceSetup.whileStopped(context) {
             ChineseIME.getUser(context).walkBottomUp()
-                .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") }
+                .filter { it.name.endsWith(".userdb") || it.name.endsWith(".userdb.txt") && it.name != ChineseWordSync.FILE }
                 .forEach { it.deleteRecursively() }
         }
     }

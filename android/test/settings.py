@@ -1987,12 +1987,14 @@ def sync_crash_report():
 WORDS = "content://user_dictionary/words"
 # Made-up personal words (#14): the other device's, then the phone's own (reading, word for Japanese).
 OTHER_JA, OTHER_EN = ("ぷるもに", "プルモニ語"), "Plonkravit"
+OTHER_ZH = ("pumolici", "噗莫哩词")  # pinyin, word: 中文's My words (#272)
+ZH_FILE = "zh_my_words.userdb.txt"
 PHONE_JA, PHONE_EN = ("ぴよぽん", "ピヨポン丸"), "Quindlewump"
 
 
 def sync_personal_dictionaries():
-    """Made-up Japanese and English words in another device's folder are offered on the phone after a
-    sync, and words added on the phone reach its own folder (#14)."""
+    """Made-up Japanese, English and Chinese words in another device's folder are offered on the phone
+    after a sync, and words added on the phone reach its own folder (#14, #272)."""
 
     # As root, but not through root()'s quotes: Android's user dictionary takes words only from
     # keyboards, spell checkers and root (#143). It outlives the app, so a run starts by deleting the
@@ -2018,6 +2020,8 @@ def sync_personal_dictionaries():
             sync_server_dir(OTHER_DEVICE, "mozc_dictionary.txt"), "w", encoding="utf-8"
         ) as f:
             f.write(f"{OTHER_JA[0]}\t{OTHER_JA[1]}\t名詞\tmade up\n")
+        with open(sync_server_dir(OTHER_DEVICE, ZH_FILE), "w", encoding="utf-8") as f:
+            f.write(f"{OTHER_ZH[0]}\t{OTHER_ZH[1]}\t名詞\t\t1000\n")
         with open(
             sync_server_dir(OTHER_DEVICE, "userdictionary.json"), "w", encoding="utf-8"
         ) as f:
@@ -2051,6 +2055,20 @@ def sync_personal_dictionaries():
             ),
             90,
         )
+        # The phone's own record of its Chinese words holds the one it took in, with its time.
+        zh = wait_for(
+            "the Chinese word in the phone's own file",
+            lambda: (
+                f"{OTHER_ZH[0]}\t{OTHER_ZH[1]}\t名詞\t\t1000"
+                in (z := uploaded(ZH_FILE))
+                and z
+            ),
+            60,
+        )
+        if OTHER_ZH[1] not in root(f"cat {WORDS_FILE}"):
+            raise Fail(f"{OTHER_ZH[1]} not in My words ({WORDS_FILE})")
+        to_language("ni", "你")
+        zh_got = candidates_for(OTHER_ZH[0])
         wait_for(
             "the other device's words in the phone's dictionary",
             lambda: all(
@@ -2070,9 +2088,14 @@ def sync_personal_dictionaries():
         delete_words()
     offered = "no English suggestions yet" if en is None else en[:4]
     detail = (
-        f"purumoni -> {ja[:4]}, plonk -> {offered}; the phone's file: {mozc.strip()!r}"
+        f"purumoni -> {ja[:4]}, plonk -> {offered}, {OTHER_ZH[0]} -> {zh_got[:4]}; the phone's files: "
+        f"{mozc.strip()!r}, {zh.strip()!r}"
     )
-    if OTHER_JA[1] not in ja or (en is not None and OTHER_EN.lower() not in en):
+    if (
+        OTHER_JA[1] not in ja
+        or (en is not None and OTHER_EN.lower() not in en)
+        or OTHER_ZH[1] not in zh_got
+    ):
         raise Fail(detail)
     return detail
 
@@ -2082,10 +2105,10 @@ def sync_delete_on_server():
     dictionaries = [
         os.path.join(device, name)
         for device in (SYNC["device"], OTHER_DEVICE)
-        for name in ("mozc_dictionary.txt", "userdictionary.json")
+        for name in ("mozc_dictionary.txt", "userdictionary.json", ZH_FILE)
         if os.path.isfile(sync_server_dir(device, name))
     ]
-    if len(dictionaries) != 4:
+    if len(dictionaries) != 6:
         raise Fail(f"before the delete, dictionary files on the server: {dictionaries}")
     go(HOME["backup"], SYNC_DELETE)
     screenshot("12-sync-delete")
@@ -2096,7 +2119,7 @@ def sync_delete_on_server():
     go(HOME["backup"])
     wait_for("sync shown as off", lambda: screen_contains(SYNC_OFF), 20)
     screenshot("14-sync-settings")
-    return "the button deleted every device's learned words and the 4 dictionary files on the server and turned sync off"
+    return "the button deleted every device's learned words and the 6 dictionary files on the server and turned sync off"
 
 
 def sync_credentials_private():

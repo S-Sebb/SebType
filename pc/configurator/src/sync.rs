@@ -1,5 +1,5 @@
 //! Sync with the user's own server (#12, #180), as the phone does (#14): 中文's learned words through
-//! Rime's sync folder, and the Japanese dictionary, by sync-server/sebtype_sync.py's own pull and push.
+//! Rime's sync folder, its My words (#272) and the Japanese dictionary, by sync-server/sebtype_sync.py's own pull and push.
 //! The server and username are kept in SebType's folder (sync.json, with the last sync's outcome); the
 //! password only in the system's keyring (Secret Service, Credential Manager), handed to the client on
 //! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour.
@@ -156,13 +156,28 @@ fn client(s: &Sync, args: &[&std::ffi::OsStr]) -> Result<String, Failed> {
     }
 }
 
-/// How many words pull changed in Mozc's dictionary, from its "pull: N file(s), M word change(s) for Mozc".
-fn new_mozc_words(pulled: &str) -> usize {
-    pulled
-        .split(", ")
-        .nth(1)
-        .and_then(|w| w.split(' ').next()?.parse().ok())
-        .unwrap_or(0)
+/// Runs f holding the lock file at path, which other processes wait for.
+fn locked_in<T>(path: &Path, f: impl FnOnce() -> T) -> io::Result<T> {
+    let file = fs::File::create(path)?;
+    file.lock()?;
+    Ok(f())
+}
+
+/// Runs f with My words to itself: the window's word edits and a sync's pull each read the words and
+/// write them back, so one done in the middle of the other would be lost (#272).
+pub fn words_locked<T>(f: impl FnOnce() -> T) -> io::Result<T> {
+    fs::create_dir_all(dir())?;
+    locked_in(&dir().join("words.lock"), f)
+}
+
+/// Rime reads My words when it deploys. A pull that changed them leaves the flag file, which only a
+/// deploy that went through removes, so a failed deploy or a sync cut off after the pull is retried.
+fn deploy_if_pending(flag: &Path, deploy: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    if flag.exists() {
+        deploy()?;
+        fs::remove_file(flag)?;
+    }
+    Ok(())
 }
 
 /// One sync, as the phone's: the other devices' changes come down, Rime merges them and writes this
@@ -173,15 +188,29 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
         args.extend(["--mozc-db".as_ref(), db.as_os_str()]);
     }
     let pull = [&["pull".as_ref()], &args[..]].concat();
-    let pulled = client(s, &pull)?;
+    let phrases = rime_dir.join(rime::PHRASES);
+    let flag = dir().join("rime-deploy-pending");
+    // What the pull changed, read even when it fails part way: it may have changed words by then.
+    let (pulled, mozc_changed) = words_locked(|| {
+        let (zh, ja) = (fs::read(&phrases).ok(), mozc_db.map(fs::read));
+        let pulled = client(s, &pull);
+        if fs::read(&phrases).ok() != zh {
+            fs::write(&flag, "").map_err(|_| Failed::Offline)?;
+        }
+        let ja_now = mozc_db.map(fs::read);
+        Ok::<_, Failed>((pulled, ja.map(|r| r.ok()) != ja_now.map(|r| r.ok())))
+    })
+    .map_err(|_| Failed::Offline)??;
+    if mozc_changed {
+        platform::restart_mozc(); // Mozc reads its dictionary when it starts
+    }
+    deploy_if_pending(&flag, platform::redeploy_rime).map_err(|_| Failed::Offline)?;
+    pulled?;
     if let Some(own) = rime::own_sync_folder(rime_dir) {
         platform::sync_rime(&own);
     }
     let push = [&["push".as_ref()], &args[..]].concat();
     client(s, &push)?;
-    if new_mozc_words(&pulled) > 0 {
-        platform::restart_mozc(); // Mozc reads its dictionary when it starts
-    }
     Ok(())
 }
 
@@ -328,6 +357,11 @@ mod tests {
             mozc_pos: None,
         };
         mozc::save_words(&mozc_dir, &[pc_ja]).unwrap();
+        let pc_zh = rime::Word {
+            word: "莫噗试词".into(),
+            pinyin: "mopushici".into(),
+        };
+        rime::save_words(&rime_dir, &[pc_zh]).unwrap();
 
         // Another device's words on the server.
         http("DELETE", "/v1/files", "");
@@ -340,6 +374,11 @@ mod tests {
             "PUT",
             "/v1/files/sebtype-test-phone/mozc_dictionary.txt",
             "ぷるもて\tプルモ試験語\t名詞\n",
+        );
+        http(
+            "PUT",
+            "/v1/files/sebtype-test-phone/zh_my_words.userdb.txt",
+            "pulumoci\t普噜莫词\t名詞\t\t1000\n",
         );
 
         keyring().unwrap().set_password(&password).unwrap();
@@ -357,6 +396,8 @@ mod tests {
         assert!(get(&format!("/v1/files/{device}/rime_ice.userdb.txt")).contains("莫福姬"));
         assert!(get(&format!("/v1/files/{device}/mozc_dictionary.txt"))
             .contains("もふてすと\tモフ試験語"));
+        assert!(get(&format!("/v1/files/{device}/zh_my_words.userdb.txt"))
+            .contains("mopushici\t莫噗试词"));
         // A word from another device reaches the PC's Rime (merged into its learned words, which its
         // own snapshot is written from) and Mozc.
         assert!(
@@ -369,6 +410,10 @@ mod tests {
                 .iter()
                 .any(|w| w.word == "プルモ試験語"),
             "Mozc got the phone's word, in My words (#273)"
+        );
+        assert!(
+            rime::words(&rime_dir).iter().any(|w| w.word == "普噜莫词"),
+            "Chinese My words got the phone's word (#272)"
         );
 
         // A wrong password is the status line's, and touches nothing.
@@ -444,15 +489,61 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
+    fn temp(name: &str) -> std::path::PathBuf {
+        let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/test-tmp/{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A pull that changed My words deploys Rime until a deploy goes through (#272).
     #[test]
-    fn mozc_words_come_from_pulls_line() {
-        assert_eq!(
-            new_mozc_words("pull: 2 file(s), 3 new word(s) for Mozc\n"),
-            3
+    fn a_pending_deploy_stays_until_one_goes_through() {
+        let d = temp("deploy");
+        let flag = d.join("rime-deploy-pending");
+        let mut deploys = 0;
+        deploy_if_pending(&flag, || {
+            deploys += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(deploys, 0, "nothing pending");
+        fs::write(&flag, "").unwrap();
+        assert!(deploy_if_pending(&flag, || Err(io::Error::other("made up"))).is_err());
+        assert!(flag.exists(), "a failed deploy is tried again");
+        deploy_if_pending(&flag, || Ok(())).unwrap();
+        assert!(!flag.exists());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A word edit waits for a pull that holds the words, and the other way round (#272).
+    #[test]
+    fn word_edits_wait_for_each_other() {
+        let d = temp("words-lock");
+        let lock = d.join("words.lock");
+        let (held, release) = (
+            std::sync::mpsc::channel::<()>(),
+            std::sync::mpsc::channel::<()>(),
         );
-        assert_eq!(
-            new_mozc_words("pull: 0 file(s), 0 new word(s) for Mozc\n"),
-            0
+        let path = lock.clone();
+        let holder = std::thread::spawn(move || {
+            locked_in(&path, || {
+                held.0.send(()).unwrap();
+                release.1.recv().unwrap();
+                std::time::Instant::now()
+            })
+            .unwrap()
+        });
+        held.1.recv().unwrap();
+        let waiter = std::thread::spawn(move || locked_in(&lock, std::time::Instant::now).unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        release.0.send(()).unwrap();
+        let released = holder.join().unwrap();
+        assert!(
+            waiter.join().unwrap() >= released,
+            "ran only after the release"
         );
+        fs::remove_dir_all(&d).unwrap();
     }
 }

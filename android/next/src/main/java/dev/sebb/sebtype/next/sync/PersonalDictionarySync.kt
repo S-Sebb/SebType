@@ -1,26 +1,31 @@
 package dev.sebb.sebtype.next.sync
 
 import android.content.Context
+import dev.sebb.sebtype.core.ChineseWordSync
 import dev.sebb.sebtype.core.MozcWordSync
+import dev.sebb.sebtype.next.data.ChineseData
+import dev.sebb.sebtype.next.data.ChineseWord
 import dev.sebb.sebtype.next.data.MozcPos
 import dev.sebb.sebtype.next.data.PersonalWord
 import dev.sebb.sebtype.next.data.PersonalWords
 import org.json.JSONException
 import java.io.File
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 /**
  * The personal dictionaries' part of the sync (#14). Each device's folder on the server holds its whole
  * 日本語 dictionary in Mozc's own export format, which Mozc on a PC reads, with each word's last change and the
- * words deleted on it ([MozcWordSync], #273), and its other words (English) in `userdictionary.json`. A 日本語
- * word's newest change wins, a deletion too. Of the other words a device takes in only those another device's
+ * words deleted on it ([MozcWordSync], #273), its other words (English) in `userdictionary.json`, and its 中文
+ * My words ([ChineseWordSync], #272). A 日本語 or 中文 word's newest change wins, a deletion too. Of the other words a device takes in only those another device's
  * file gained since the copy it took last time, so a word deleted here doesn't come back from a device that
  * still has it, and nothing of them is deleted here.
  */
 object PersonalDictionarySync {
     const val MOZC_FILE = "mozc_dictionary.txt"
     const val WORDS_FILE = "userdictionary.json"
-    val FILES = setOf(MOZC_FILE, WORDS_FILE)
+    val FILES = setOf(MOZC_FILE, WORDS_FILE, ChineseWordSync.FILE)
 
     private fun PersonalWord.entry() = MozcWordSync.Entry(reading, word, MozcPos.name(pos))
 
@@ -78,14 +83,35 @@ object PersonalDictionarySync {
     }
 
     private fun ownFile(context: Context) = File(context.noBackupFilesDir, "sync/$MOZC_FILE")
+    private fun ownChinese(context: Context) = File(context.noBackupFilesDir, "sync/${ChineseWordSync.FILE}")
+    private fun chineseWords(context: Context) = ChineseData.savedWords(context)?.map { it.pinyin to it.word }
+
+    /** Before a sync: [ChineseWordSync.dropOldCopies] in Rime's sync folder [sync]. */
+    fun dropOldChineseCopies(context: Context, sync: File) = ChineseWordSync.dropOldCopies(ownChinese(context), sync)
 
     fun snapshots(context: Context): Map<String, ByteArray> {
         val words = PersonalWords.all(context)
-        return mapOf(MOZC_FILE to MozcWordSync.format(ownMozc(ownFile(context), words).values), WORDS_FILE to wordsFile(words))
+        return mapOf(
+            MOZC_FILE to MozcWordSync.format(ownMozc(ownFile(context), words).values), WORDS_FILE to wordsFile(words),
+            ChineseWordSync.FILE to MozcWordSync.format(ChineseWordSync.ownEntries(ownChinese(context), chineseWords(context)).values),
+        )
     }
 
-    /** Takes another device's changes into this phone's personal dictionary. */
-    fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
+    /** Takes another device's changes into this phone's personal dictionaries. */
+    suspend fun takeIn(context: Context, name: String, new: ByteArray, old: ByteArray?) {
+        if (name == ChineseWordSync.FILE) {
+            // Most files change nothing here: those skip stopping 中文.
+            val first = ChineseWordSync.changes(ownChinese(context), chineseWords(context), new, old)
+            if (first.words == null) { first.save(); return }
+            lateinit var changes: ChineseWordSync.Changes
+            suspendCoroutine { c ->
+                ChineseData.editMyWords(context, { have ->
+                    changes = ChineseWordSync.changes(ownChinese(context), have?.map { it.pinyin to it.word }, new, old)
+                    changes.words?.map { ChineseWord(it.second, it.first) }
+                }, after = { changes.save() }) { c.resume(it) }
+            }
+            return
+        }
         if (name != MOZC_FILE) {
             newWords(new, old, PersonalWords.all(context)).takeIf { it.isNotEmpty() }?.let { PersonalWords.add(context, it) }
             return

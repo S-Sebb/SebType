@@ -13,7 +13,8 @@ one copy of each device's folder is enough, and two devices never overwrite each
 
 The same folders carry the personal dictionaries: each device puts its whole Japanese dictionary there
 as `mozc_dictionary.txt`, in the format of Mozc's own dictionary export, and its other (English) words
-as `userdictionary.json`, FUTO Keyboard's format, which only phones have. Learning history (what Mozc
+as `userdictionary.json`, FUTO Keyboard's format, which only phones have, and its Chinese **My words**
+as `zh_my_words.userdb.txt` (#272). Learning history (what Mozc
 or the English keyboard learned from your typing) isn't synced.
 
 Japanese words sync both ways, deletions and edits too (#273). Each line of `mozc_dictionary.txt` also
@@ -27,6 +28,14 @@ changed since. A word is its reading and spelling, and its newest change wins:
 - Edited on two devices (another part of speech): the later edit wins.
 - Words from before this version carry no time. One of them comes to a device only when the other
   device's file gained it, as before, so a word you deleted earlier doesn't come back.
+
+Chinese My words sync by the same rules (#272). There a word is its pinyin and spelling, and each line of
+`zh_my_words.userdb.txt` is `pinyin<TAB>word<TAB>名詞<TAB><TAB>time` (the part of speech only fills
+Mozc's column) or a `#-` line. Its name is one of Rime's snapshot names, so a server or device from before
+#272 stores it and passes it on unchanged; Rime itself only reads its own user dictionaries' snapshots, so
+it never takes it for learned words. A device from before #272 doesn't sync My words: it keeps a copy of
+the other devices' files without taking their words in. Once it is updated, its first sync takes them in
+all the same, and its own words go up. Deleting learned words keeps these files.
 
 A device from before #273 still syncs: the new file's words keep Mozc's export columns, and it skips the
 `#-` lines. It takes in the words other devices add but not their deletions; what it still has doesn't
@@ -142,7 +151,8 @@ learned words and dictionaries. It turns sync off. The words on the phone and on
 uploads the phone's own.
 
 Words from other devices go into the personal dictionaries: Japanese ones into 日本語's **My words**,
-English ones into English's. A Japanese word deleted on another device goes from My words too. Japanese words with a part of speech the phone doesn't know come in as
+English ones into English's, Chinese ones into 中文's My words. A Japanese or Chinese word deleted on
+another device goes from My words too. Japanese words with a part of speech the phone doesn't know come in as
 nouns, without their comments.
 
 ## On a PC (SebType Configurator)
@@ -216,7 +226,16 @@ and `pull` takes in the other devices' changes: their new words go into the dict
 the Configurator shows as My words, and the words they deleted go from every enabled dictionary. Words
 an older version put in a dictionary of their own, "SebType sync", show in My words too, and move into
 "SebType" when you next add or delete a word there. The PC keeps its own file, with the times, as
-`mozc_dictionary.txt` in its folder in Rime's sync folder. The PC still needs Rime, for its device id. English words stay on the phones: a PC has no English
+`mozc_dictionary.txt` in its folder in Rime's sync folder. The PC still needs Rime, for its device id.
+
+## Chinese My words on a PC
+
+`push` and `pull` always sync the Configurator's 中文 My words, the lines after `# SebType: My words` in
+`custom_phrase.txt` in the Rime dir: `pull` puts the other devices' words there (after rime-ice's own
+phrases) and removes the ones they deleted, and the Configurator deploys Rime after. The PC keeps its own
+file, with the times, as `zh_my_words.userdb.txt` in its folder in Rime's sync folder. A
+`custom_phrase.txt` without that line (My words never saved) has nothing to tell, so it never reads as all
+words deleted. English words stay on the phones: a PC has no English
 personal dictionary to put them in.
 
 On Linux the dictionary is `~/.config/mozc/user_dictionary.db` (`~/.mozc/user_dictionary.db` if an older

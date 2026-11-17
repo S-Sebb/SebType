@@ -289,6 +289,7 @@ object Sync {
         val sync = File(user(context), "sync")
         var remote = server.list()
         val ownBefore = installationId(context)
+        PersonalDictionarySync.dropOldChineseCopies(context, sync)
         for(file in remote) {
             val dictionary = file.name in PersonalDictionarySync.FILES
             if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || FILE.matches(file.name))) continue
