@@ -350,7 +350,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                         val r = panel[it].first
                         abs(r.centerX() - x) + abs(r.centerY() - y) * 0.5f
                     } ?: 0
-                    if (nearest != p.chosen) { p.chosen = nearest; showPanel(p) }
+                    if (nearest != p.chosen) { p.chosen = nearest; showPanel(panel, nearest) }
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
@@ -483,14 +483,24 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             listener.onPickKeyboard()
             return
         }
-        // Up to five columns, rows as even as they go. The first choice sits over the key, the next ones
-        // alternate right and left of it, and rows fill from the bottom up (as AOSP's keyboard places them).
+        p.panel = panelFor(p.cell)
+        p.chosen = 0
+        showPanel(p.panel!!, p.chosen)
+    }
+
+    /**
+     * A key's long-press panel: its alternates' cells, in the popup layer's coordinates. Up to five columns,
+     * rows as even as they go. The first choice sits over the key, the next ones alternate right and left of
+     * it, and rows fill from the bottom up (as AOSP's keyboard places them).
+     */
+    private fun panelFor(cell: Cell): List<Pair<RectF, Layout.Key>> {
+        val key = cell.key
         val unit = (width - 2 * sidePadding) / 10f
         val n = key.more.size
         val rows = (n + 4) / 5
         val cols = (n + rows - 1) / rows
         val cellH = rowHeight * 0.82f
-        val r = p.cell.rect
+        val r = cell.rect
         val column = ((r.centerX() - sidePadding) / unit).toInt()
         // Columns that fit left and right of the key's own, the rest going to the other side at an edge
         var right = min((cols - 1) - (cols - 1) / 2, 9 - column)
@@ -499,20 +509,18 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val order = (0 until cols * 2).map { if (it % 2 == 1) (it + 1) / 2 else -it / 2 }.filter { it in -left..right }
         val x0 = r.centerX() - unit / 2 + layerOffset()[0]
         val bottom = r.top + layerOffset()[1] - 17 * density
-        p.panel = key.more.mapIndexed { i, more ->
+        return key.more.mapIndexed { i, more ->
             val x = x0 + order[i % cols] * unit
             val y = bottom - (i / cols + 1) * cellH
             RectF(x, y, x + unit, y + cellH) to more
         }
-        p.chosen = 0
-        showPanel(p)
     }
 
-    private fun showPanel(p: Pointer) {
-        val panel = p.panel ?: return
+    /** [onChoose]: TalkBack's panel, whose alternates are typed by a double tap rather than by lifting */
+    private fun showPanel(panel: List<Pair<RectF, Layout.Key>>, chosen: Int, onChoose: ((Int) -> Unit)? = null) {
         val frame = RectF(panel.minOf { it.first.left } - 2 * px, panel.minOf { it.first.top } - 2 * px,
             panel.maxOf { it.first.right } + 3 * px, panel.maxOf { it.first.bottom } + 3 * px)
-        popups.showPanel(frame, panel.map { it.first to (if (shift != Shift.OFF) it.second.label.uppercase() else it.second.label) }, p.chosen)
+        popups.showPanel(frame, panel.map { it.first to (if (shift != Shift.OFF) it.second.label.uppercase() else it.second.label) }, chosen, onChoose)
     }
 
     /** A key's face in its cell: its outline starts at the cell's top, the space between rows below it. */
@@ -556,7 +564,30 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         else -> shown(key)
     }
 
-    override fun dispatchHoverEvent(event: MotionEvent) = a11y.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+    private fun longPressLabel(key: Layout.Key) = when {
+        key.code == Code.GLOBE -> R.string.key_pick_keyboard
+        key.code == Code.SHIFT -> R.string.key_lock_caps
+        key.more.isNotEmpty() -> R.string.key_alternates
+        else -> null
+    }
+
+    /**
+     * TalkBack's long press: the key's alternates in their panel, the first one read out. Each is a
+     * double tap away; exploring the keys again closes the panel, as lifting the finger does without it.
+     */
+    private fun showAlternates(cell: Cell) {
+        val panel = panelFor(cell)
+        showPanel(panel, -1) { i ->
+            popups.clear()
+            type(panel[i].second)
+        }
+        popups.focusChoice(0)
+    }
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+        if (popups.choosing && event.actionMasked == MotionEvent.ACTION_HOVER_ENTER) popups.clear()
+        return a11y.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
+    }
 
     private inner class Accessibility : ExploreByTouchHelper(this@KeyboardView) {
         override fun getVirtualViewAt(x: Float, y: Float) =
@@ -578,7 +609,10 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             val r = cell.rect
             node.setBoundsInParent(android.graphics.Rect(r.left.roundToInt(), r.top.roundToInt(), r.right.roundToInt(), r.bottom.roundToInt()))
             node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
-            if (cell.key.more.isNotEmpty()) node.addAction(AccessibilityNodeInfoCompat.ACTION_LONG_CLICK)
+            // What a double tap and hold does, as TalkBack announces it
+            longPressLabel(cell.key)?.let {
+                node.addAction(AccessibilityNodeInfoCompat.AccessibilityActionCompat(AccessibilityNodeInfoCompat.ACTION_LONG_CLICK, context.getString(it)))
+            }
         }
 
         override fun onPopulateEventForVirtualView(id: Int, event: AccessibilityEvent) {
@@ -587,6 +621,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
         override fun onPerformActionForVirtualView(id: Int, action: Int, arguments: Bundle?): Boolean {
             val cell = cells.getOrNull(id) ?: return false
+            popups.clear() // TalkBack's alternates, if shown: another key's action leaves them
             return when (action) {
                 AccessibilityNodeInfoCompat.ACTION_CLICK -> {
                     when (cell.key.code) {
@@ -596,8 +631,12 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     true
                 }
                 AccessibilityNodeInfoCompat.ACTION_LONG_CLICK -> {
-                    if (cell.key.code == Code.GLOBE) listener.onPickKeyboard()
-                    else cell.key.more.firstOrNull()?.let { type(it) }
+                    when {
+                        cell.key.code == Code.GLOBE -> listener.onPickKeyboard()
+                        cell.key.code == Code.SHIFT -> setShift(Shift.LOCKED)
+                        cell.key.more.isNotEmpty() -> showAlternates(cell)
+                        else -> return false
+                    }
                     true
                 }
                 else -> false
