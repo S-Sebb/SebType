@@ -3,6 +3,7 @@
 // empty composition in the text (Weasel's inline_preedit: false); Japanese types inline, as Mozc did.
 // MIT, SebType.
 #include "candidate_window.h"
+#include "edit_session.h"
 
 namespace sebtype::win {
 namespace {
