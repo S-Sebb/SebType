@@ -195,21 +195,27 @@ namespace SebType {
       sink = (ITextStoreACPSink)s; return S_OK;
     }
     public int UnadviseSink(object s) { sink = null; return S_OK; }
+    // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
+    // it handled the key (#275); one that may not is granted at once all the same.
+    public bool Defer;
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
-      if (lockFlags != 0) {
+      if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
-        pendingLock = flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
+        pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
       }
       lockFlags = flags & TS_LF_READWRITE;
       hrSession = sink.OnLockGranted(lockFlags);
       lockFlags = 0;
+      GrantPending();
+      return S_OK;
+    }
+    public void GrantPending() {
       while (pendingLock != 0) {
         lockFlags = pendingLock; pendingLock = 0;
         sink.OnLockGranted(lockFlags);
         lockFlags = 0;
       }
-      return S_OK;
     }
     public int GetStatus(out TS_STATUS status) { status = new TS_STATUS(); return S_OK; }
     public int QueryInsert(int start, int end, uint cch, out int resultStart, out int resultEnd) {
@@ -527,9 +533,12 @@ namespace SebType {
         keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
         if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A)))
           store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : (char)(vk + 32)).ToString());
+        store.GrantPending();
         return eaten;
       });
     }
+    // Locks that may wait are granted only after the app handled the key (TextStore.Defer).
+    public static bool DeferLocks { set { OnUi(() => { store.Defer = value; store.GrantPending(); return 0; }); } }
     static ITfDocumentMgr otherMgr;
     // TSF's focus on another document and back, as a click into another field moves it.
     public static void Away(bool away) {
