@@ -1952,9 +1952,18 @@ def floating_short_window():
         open_field()
         l2, t2, r2, b2 = frame_now()
         handle = node(MOVE_KEYBOARD)
-        if not handle or handle[3] < 0 or t2 < 0 or b2 > short or b2 - t2 >= tall:
+        # The bottom row too: a node's bounds are cut to what shows, so a row cut off has none.
+        space = next((n for n in nodes() if n[0] in SPACE_LABELS), None)
+        if (
+            not handle
+            or handle[3] < 0
+            or not space
+            or space[2] > short
+            or b2 - t2 >= tall
+        ):
             raise Fail(
-                f"keys {tall} px tall; in a {short} px window at ({t2}, {b2}), the handle at {handle and handle[3]}"
+                f"keys {tall} px tall; in a {short} px window to {b2}, the handle at "
+                f"{handle and handle[3]}, space at {space and space[2]}"
             )
         screenshot("floating-short-window.png")
         types_letters()

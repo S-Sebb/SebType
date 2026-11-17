@@ -844,14 +844,25 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private var floatScale = 1f
 
     /** The floating keyboard's height in px with its keys at [scale] */
-    private fun floatingHeight(scale: Float) = stack.height - keyboard.height + keyboard.heightAt(scale)
+    private fun floatingHeight(scale: Float) = floatingChrome() + keyboard.heightAt(scale)
+
+    /**
+     * The floating keyboard's height but for its keys: the pinyin strip, the handle, the bars, the panel's
+     * padding. Added up, not the stack's height less the keys': in a window too short for it, the stack is
+     * cut to the window while its parts keep their whole height.
+     */
+    private fun floatingChrome(): Float {
+        var sum = strip.height + panel.paddingTop + panel.paddingBottom + content.height - keyboard.height
+        for (i in 0 until panel.childCount) panel.getChildAt(i).takeIf { it !== content && it.visibility != View.GONE }?.let { sum += it.height }
+        return sum.toFloat()
+    }
 
     /** The floating keys' height limits: today's (in four rows' dp), and the window's height above all */
     private fun floatingScales(): ClosedFloatingPointRange<Float> {
         val dp = root.height / resources.displayMetrics.density
         val min = keyboard.scaleForFourRows(Mode.FLOATING_MIN_HEIGHT_DP)
         val max = keyboard.scaleForFourRows(maxOf(dp * 2 / 3, Mode.FLOATING_MAX_HEIGHT_DP))
-        val fits = keyboard.scaleFor(root.height - (stack.height - keyboard.height).toFloat())
+        val fits = keyboard.scaleFor(root.height - floatingChrome())
         return min..maxOf(min, minOf(max, fits))
     }
 
