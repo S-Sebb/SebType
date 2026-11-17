@@ -14,10 +14,11 @@ Checks, each saving the input indicator's icon (<state>.png) and, for the popup,
   chinese-unavailable: a server that hangs (its process suspended): grey 中 with "!" after one key's wait,
     the key goes in as typed, the popup says why; japanese-unavailable: the same in 日本語 with its own popup;
   japanese-back: the server answers again (resumed): あ again within two seconds, unasked.
+-AnyDisplay is for a PC no one sits at with its display on: the display state is only reported.
 The server is resumed and Rime's build folder put back in any case. Results: one line per check in <Out>\not-ready-results.txt; exit 0 only
 if all pass.
 #>
-param([string]$Out = "$env:USERPROFILE\scratch\SebType\275\screens")
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\275\screens", [switch]$AnyDisplay)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 $server = "$env:ProgramFiles\SebType\sebtype-server.exe"
@@ -29,7 +30,8 @@ function Result($name, $status, $why = '') {
   Add-Content -Encoding utf8 $results $line; Write-Host $line
 }
 function Check($name, [scriptblock]$body) {
-  try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
+  try { $why = & $body; if ($why -like 'SKIP: *') { Result $name SKIP $why.Substring(6) } else { Result $name PASS $why } }
+  catch { Result $name FAIL $_.Exception.Message }
 }
 
 $missing = if (-not (Test-Path $server)) { 'SebType is not installed' }
@@ -52,10 +54,10 @@ function States { $display::States -join ', ' }
 $display::Watch()
 for ($i = 0; $i -lt 20 -and $display::Last -lt 0; $i++) { Start-Sleep -Milliseconds 100 }
 if ($display::Last -lt 0) { Write-Host 'BLOCKED preflight: Windows reported no display state'; exit 1 }
-if ($display::Last -ne 0) { Write-Host "BLOCKED preflight: the display is on (state $($display::Last)): someone may be using the PC"; exit 1 }
+if ($display::Last -ne 0 -and -not $AnyDisplay) { Write-Host "BLOCKED preflight: the display is on (state $($display::Last)): someone may be using the PC"; exit 1 }
 
 function Ready {
-  if ($display::Lit) { throw "the display turned on ($(States)): no more keys" }
+  if ($display::Lit -and -not $AnyDisplay) { throw "the display turned on ($(States)): no more keys" }
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
 function Keys {
@@ -171,11 +173,12 @@ try {
     if ($deploy -and -not $deploy.HasExited) { $deploy.WaitForExit(300000) | Out-Null }
     Remove-Item -Recurse $rimeBuild; Move-Item "$Out\rime-build" $rimeBuild
   }
-  if (-not $display::Lit) { try { Keys Escape Escape } catch { } }
+  if (-not $display::Lit -or $AnyDisplay) { try { Keys Escape Escape } catch { } }
   $tsf::Stop()
 }
 Start-Sleep 6  # a wake from the last steps shows by now
 Check 'display-stayed-off' {
+  if ($AnyDisplay) { return "SKIP: -AnyDisplay (states: $(States))" }
   if ($display::Lit) { throw "the display turned on: $(States)" }
   "off throughout: $(States)"
 }
