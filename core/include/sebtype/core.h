@@ -63,6 +63,8 @@ class Core {
   // highlighted one in it, and a tap on one.
   std::vector<Candidate> candidates(int max);
   int highlighted();
+  // Engine::settle on the current engine.
+  bool settle();
   void selectCandidate(int index);
   // The text field: its kind, and whether what is typed in it may be learned (private fields, incognito).
   void setField(Field field, bool learning);

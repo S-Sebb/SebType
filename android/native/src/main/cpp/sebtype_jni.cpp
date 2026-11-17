@@ -285,11 +285,18 @@ void setContext(JNIEnv *env, jclass, jstring before) {
   core->setContext(s);
 }
 
+// The work the last key left (English's suggestions, #310): the state after it, or null if nothing changed.
+jobject settle(JNIEnv *env, jclass) {
+  std::lock_guard g(lock);
+  return core->settle() ? state(env, true) : nullptr;
+}
+
 // Types letters into an empty composition, as librime's simulate_key_sequence did for RimeJni.
 jobject type(JNIEnv *env, jclass, jstring text) {
   std::lock_guard g(lock);
   core->clear();
   for (char c : str(env, text)) core->key({static_cast<uint32_t>(static_cast<unsigned char>(c)), 0, false});
+  core->settle();
   return state(env, true);
 }
 
@@ -302,6 +309,7 @@ jobjectArray tryTyping(JNIEnv *env, jclass, jint l, jstring text) {
     e->setField(Field::Text);
     e->clear();
     for (char c : str(env, text)) e->key({static_cast<uint32_t>(static_cast<unsigned char>(c)), 0, false});
+    e->settle();
     for (const auto &c : e->candidates(kMaxCandidates)) texts.push_back(c.text);
     e->clear();
     e->takeCommit();
@@ -437,6 +445,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"flush", st.c_str(), reinterpret_cast<void *>(flush)},
       {"clear", st.c_str(), reinterpret_cast<void *>(clear)},
       {"state", st.c_str(), reinterpret_cast<void *>(current)},
+      {"settle", st.c_str(), reinterpret_cast<void *>(settle)},
       {"setAlternate", "(Z)V", reinterpret_cast<void *>(setAlternate)},
       {"start", "(I)Z", reinterpret_cast<void *>(start)},
       {"running", "(I)Z", reinterpret_cast<void *>(running)},

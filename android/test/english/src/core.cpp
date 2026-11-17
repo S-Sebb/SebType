@@ -68,10 +68,11 @@ public:
             for (const auto &c : mEngine->candidates(3)) out.strip.push_back(c.text);
             return out;
         }
-        // The letter shows the decoder's strip at once; the model's ranking follows through READY (#310), and
-        // it is what the user reads, so the time per key runs until it comes.
+        // The letter shows at once, then the decoder's strip (settle), then the model's ranking through READY
+        // (#310): that is what the user reads, so the time per key runs until it comes.
         const int before = readies();
         mEngine->key({uint32_t(static_cast<unsigned char>(item.typed[n - 1])), 0, false, item.xs[n - 1], item.ys[n - 1]});
+        mEngine->settle();
         waitReady(before);
         const auto list = mEngine->candidates(20);
         out.committed = mEngine->highlighted() >= 0 ? list.at(mEngine->highlighted()).text : item.typed;

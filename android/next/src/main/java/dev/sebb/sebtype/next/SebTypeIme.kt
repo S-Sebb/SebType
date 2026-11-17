@@ -134,6 +134,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     // English: the text before the cursor as the keys sent so far leave it, on the engine thread too, so a
     // letter typed ahead of the engine gets the field's capital by the text it will follow (#241).
     private val engineBefore = StringBuilder()
+    // English keys posted and not yet run on the engine thread
+    private val englishKeysAhead = java.util.concurrent.atomic.AtomicInteger()
     // English's options and personal words as last sent to core/ (the engine thread's)
     private var englishOptionsSent: Any? = null
     /** The emoji English's word names, and its index in the bar (-1: none) */
@@ -469,8 +471,10 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
          * [sym] to the engine; if it doesn't take it, [otherwise] in the field, where [typed] goes on the
          * engine thread's copy of the text (null: Delete's character comes off).
          */
-        fun send(sym: () -> Int, typed: String?, otherwise: () -> Unit) =
+        fun send(sym: () -> Int, typed: String?, otherwise: () -> Unit) {
+            englishKeysAhead.incrementAndGet()
             NativeCore.post({
+                englishKeysAhead.decrementAndGet()
                 val s = sym()
                 val st = (if (x >= 0) keyAt(s, 0, x, y) else key(s, 0)).recorded()
                 if (st.deleteBefore > 0) engineBefore.setLength(maxOf(0, engineBefore.length - st.deleteBefore))
@@ -483,6 +487,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
                 show(it)
                 if (!it.taken) otherwise()
             }
+            // The key's text shows first; its suggestions follow, unless another key is on its way (#310).
+            NativeCore.post({ if (englishKeysAhead.get() == 0) settle() else null }) { if (it != null) show(it, applyText = false) }
+        }
         when (code) {
             Code.TEXT -> {
                 val cp = text.codePointAt(0)

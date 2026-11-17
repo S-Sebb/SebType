@@ -4,9 +4,11 @@
 //
 // Threads: keys and the decoder run on the caller's thread, as every engine's keys do. The model loads on a
 // worker thread once the first letter is typed (Decisions #2, 2026-11-11: until then the decoder decides
-// alone). A key shows the decoder's strip at once; the worker then ranks it with the model and posts the
-// model's strip back through READY, as it does the next words (plan §3, #310). A space that comes while
-// that ranking is still pending waits for it, up to kRankWait, so a correction keeps the model's quality.
+// alone). A letter's key only types it, so the frontend can show it at once, as AOSP's keyboard does; the
+// decoder runs in settle(), which the frontend calls next, and the worker then ranks its words with the
+// model and posts the model's strip back through READY, as it does the next words (plan §3, #310). A space
+// that comes while that ranking is pending waits for it, up to kRankWait, but only when the rankings timed
+// so far say it will come within that; otherwise the decoder's rule decides at once.
 #include <sebtype/hosts.h>
 
 #include <jni.h>
@@ -409,7 +411,7 @@ class English : public Engine {
         return false;
       }
       typed_.pop_back(), xs_.pop_back(), ys_.pop_back();
-      update();
+      typedChanged();
       return true;
     }
     if (isLetter(c) || ((c == '\'' || c == U'’') && !typed_.empty())) {
@@ -417,7 +419,7 @@ class English : public Engine {
       typed_.push_back(int(c));
       const auto [x, y] = k.x >= 0 ? std::pair{k.x, k.y} : keyCentre(lowerCase(c));
       xs_.push_back(x), ys_.push_back(y);
-      update();
+      typedChanged();
       return true;
     }
     if (k.sym == ks::Return || k.sym == ks::KP_Enter || k.sym == ks::Tab) {
@@ -458,6 +460,12 @@ class English : public Engine {
     if (c) context_ += utf8(c);
     changed();
     return false;
+  }
+
+  bool settle() override {
+    if (!decodePending_) return false;
+    update();
+    return true;
   }
 
   std::string takeCommit() override { return std::exchange(commit_, {}); }
@@ -708,17 +716,21 @@ class English : public Engine {
     return out;
   }
 
+  // The letters typed changed: the text before the cursor did, and the strip is the old one until settle().
+  void typedChanged() {
+    changed();
+    decodePending_ = true;
+    std::lock_guard g(mutex_);
+    rankPending_ = false;
+    rankWanted_.reset();
+  }
+
   // The strip and the correction for the letters typed so far.
   void update() {
-    changed();
+    decodePending_ = false;
     const std::string typed = utf8(typed_);
     correction_ = false;
     strip_.clear();
-    {
-      std::lock_guard g(mutex_);
-      rankPending_ = false;
-      rankWanted_.reset();
-    }
     // Right after "@" (an address typed in a text field): domains, never a correction.
     domains_ = !context_.empty() && context_.back() == '@';
     if (domains_) {
@@ -789,7 +801,7 @@ class English : public Engine {
     {
       std::unique_lock l(mutex_);
       if (!rankPending_) return;
-      if (wait) ranked_.wait_for(l, kRankWait, [&] { return rankedGen_ == gen_; });
+      if (wait && rankExpectedIn() <= kRankWait) ranked_.wait_for(l, kRankWait, [&] { return rankedGen_ == gen_; });
       if (rankedGen_ != gen_) return;
       rankPending_ = false;
       ranked = std::move(rankedWords_);
@@ -797,7 +809,16 @@ class English : public Engine {
     show(ranked->strip, ranked->committed);
   }
 
+  // How long until the ranking asked for at gen_ is expected to come, by the times the worker took so far:
+  // what is left of the job it is on, and the ranking itself unless that is the job. Under mutex_.
+  std::chrono::steady_clock::duration rankExpectedIn() const {
+    const auto now = std::chrono::steady_clock::now();
+    const auto left = busy_ ? std::max(busyUntil_ - now, std::chrono::steady_clock::duration{}) : std::chrono::steady_clock::duration{};
+    return busy_ && rankingGen_ == gen_ ? left : left + rankTime_;
+  }
+
   std::string decision() {
+    if (decodePending_) update();
     takeRanking(true);
     return correction_ ? strip_.front() : utf8(typed_);
   }
@@ -838,7 +859,7 @@ class English : public Engine {
 
   void resetWord() {
     typed_.clear(), xs_.clear(), ys_.clear(), strip_.clear();
-    correction_ = false;
+    correction_ = false, decodePending_ = false;
     std::lock_guard g(mutex_);
     rankPending_ = false;
     rankWanted_.reset();
@@ -868,6 +889,19 @@ class English : public Engine {
     wake_.notify_all();
   }
 
+  // The worker starts a job that took TIME before (RANKING: the gen it ranks) and ends it; under mutex_.
+  std::chrono::steady_clock::time_point begin(std::chrono::steady_clock::duration time, uint64_t ranking) {
+    const auto now = std::chrono::steady_clock::now();
+    busy_ = true, busyUntil_ = now + time, rankingGen_ = ranking;
+    return now;
+  }
+  void end(std::chrono::steady_clock::duration &time, std::chrono::steady_clock::time_point start) {
+    busy_ = false;
+    // The last two jobs' times weighed alike: a word's rankings take about as long as each other.
+    const auto took = std::chrono::steady_clock::now() - start;
+    time = time.count() ? (time + took) / 2 : took;
+  }
+
   void work() {
     std::unique_lock l(mutex_);
     for (;;) {
@@ -889,13 +923,16 @@ class English : public Engine {
       }
       if (rankWanted_) {  // the word being typed first: a space may be waiting for it
         const Rank r = *std::exchange(rankWanted_, std::nullopt);
+        const auto start = begin(rankTime_, r.gen);
         l.unlock();
         sebtype_lm::Ranked ranked;
         {
           std::lock_guard g(modelMutex_);
           ranked = sebtype_lm::rank(*model_, r.context, r.typed, r.candidates, r.typedIsWord);
         }
+        std::this_thread::sleep_for(paths_.rankDelay);
         l.lock();
+        end(rankTime_, start);
         if (r.gen != gen_) continue;
         rankedWords_ = std::move(ranked);
         rankedGen_ = r.gen;
@@ -907,6 +944,7 @@ class English : public Engine {
       }
       const auto [context, gen] = *std::exchange(nextWanted_, std::nullopt);
       if (gen != gen_) continue;  // typed on meanwhile
+      const auto start = begin(nextTime_, ~uint64_t{0});
       l.unlock();
       std::vector<sebtype_lm::Word> words;
       {
@@ -914,6 +952,7 @@ class English : public Engine {
         words = model_->nextWords(context, kNextWords);
       }
       l.lock();
+      end(nextTime_, start);
       if (gen != gen_) continue;
       next_ = std::move(words);
       nextGen_ = gen;
@@ -940,6 +979,7 @@ class English : public Engine {
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
   bool domains_ = false;     // the list is e-mail domains
   bool afterPick_ = false;   // the last thing done was a pick and its space
+  bool decodePending_ = false;  // the letters typed changed since the strip was made
   std::string commit_;
   Edit edit_;
 
@@ -958,6 +998,11 @@ class English : public Engine {
   sebtype_lm::Ranked rankedWords_;
   uint64_t rankedGen_ = ~uint64_t{0};
   bool rankPending_ = false;
+  // The worker's job, for a space deciding whether to wait (rankExpectedIn)
+  bool busy_ = false;
+  std::chrono::steady_clock::time_point busyUntil_;
+  uint64_t rankingGen_ = ~uint64_t{0};
+  std::chrono::steady_clock::duration rankTime_{}, nextTime_{};
   bool stop_ = false, loadAsked_ = false, loadTried_ = false;
   std::atomic<bool> model_ready_ = false;
   std::unique_ptr<sebtype_lm::Model> model_;

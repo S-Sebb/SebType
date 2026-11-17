@@ -16,6 +16,9 @@ class Engine {
 
   // A key the core passes on (never Shift, Ctrl or Alt alone: the core handles those). True when taken.
   virtual bool key(const Key &key) = 0;
+  // The work a key left for after its text shows (English's suggestions for the letters typed, #310): does
+  // it, and returns whether the candidates changed. The frontend calls it right after showing the key.
+  virtual bool settle() { return false; }
   // Text to commit since the last call.
   virtual std::string takeCommit() = 0;
   virtual Preedit preedit() = 0;

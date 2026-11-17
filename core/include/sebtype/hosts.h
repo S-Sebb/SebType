@@ -3,6 +3,7 @@
 
 #include <sebtype/engine.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -52,6 +53,7 @@ struct EnglishPaths {
   int64_t dictionaryOffset = 0, dictionaryLength = 0;
   std::string model;    // SebType's model (engines/sebtype-lm/english.gguf); loaded on the first letter typed
   std::string userDir;  // learned words: AOSP's user-history dictionary in userDir/en_history
+  std::chrono::milliseconds rankDelay{0};  // tests: each ranking takes this much longer, as on a slow phone
 };
 // READY runs on the engine's worker thread when the model has ranked the word being typed or found next words
 // for the text so far: the frontend posts it to its own thread and reads candidates() there.
