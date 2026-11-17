@@ -354,7 +354,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
     private fun englishContext(): Unit = keys.reread {
         val around = editor.around()
         post({
-            setContext(around.before, around.after, around.selection)
+            // No word reopened where it couldn't be placed (#280): as with a selection, the engine reopens none
+            setContext(around.before, around.after, !around.reopen)
             engineBefore.setLength(0)
             engineBefore.append(around.before)
             state().recorded().also { if (it.recompose) engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
@@ -398,7 +399,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             setField(field, learning)
             engineBefore.setLength(0)
             before?.let {
-                setContext(it, around.after, around.selection)
+                setContext(it, around.after, !around.reopen)
                 engineBefore.append(it)
             }
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
@@ -655,6 +656,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             editor.beginBatch()
             // A word reopened from [around] is marked only where the field still has it (#280)
             if (st.recompose && !editor.composeRegion(st.composeBefore, st.composeAfter, around?.text(st.composeBefore, st.composeAfter))) {
+                // The field changed under it: the word being typed stays as it is there, and English reads the field again
+                editor.finishComposing()
                 editor.endBatch()
                 return englishContext()
             }

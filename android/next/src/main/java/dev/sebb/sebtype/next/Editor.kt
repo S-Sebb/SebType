@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import java.text.BreakIterator
 
@@ -44,21 +45,52 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** Counts the field's changes that weren't ours (a cursor the user moved, the app's own edit) */
     private var revision = 0
 
-    /** The field's text around the cursor (English's context) as it is now. */
-    inner class Around(val before: String, val after: String, val selection: Boolean) {
+    /**
+     * The field's text around the cursor (English's context) as it is now, and where the field has the cursor,
+     * read with the text: -1 when that isn't where we have it, or the field can't say.
+     */
+    inner class Around(val before: String, val after: String, selection: Boolean, val at: Int) {
         val revision = this@Editor.revision
-        /** Where the cursor was in the field then: what a word reopened from this text is placed by */
-        val at = selStart
+        /** Whether a word may be reopened from this read: one is placed by our cursor, so it must be the field's (#280) */
+        val reopen = !selection && at >= 0
 
         /** The text from [b] code points before the cursor to [a] after it, as read then */
         fun text(b: Int, a: Int): String = before.substring(before.offsetByCodePoints(before.length, -minOf(b, before.codePointCount(0, before.length)))) +
             after.substring(0, after.offsetByCodePoints(0, minOf(a, after.codePointCount(0, after.length))))
     }
-    fun around() = Around(textBefore(), textAfter(), selEnd != selStart)
+    fun around(): Around {
+        val s = snapshot(1000, 64)
+        return if (s != null && s.start == selStart && s.end == selEnd) Around(s.before, s.after, s.start != s.end, s.start)
+        else Around(s?.before ?: textBefore(), s?.after ?: textAfter(), selEnd != selStart, -1)
+    }
 
     /** Whether the field is still as [around] read it: no change since that wasn't ours, the cursor and text the same. */
     fun unchanged(around: Around) =
-        around.revision == revision && around.at == selStart && textBefore() == around.before && textAfter() == around.after
+        around.revision == revision && around().let { it.at == around.at && it.before == around.before && it.after == around.after }
+
+    /** The field's text around the cursor and where the selection is in the field, read at once */
+    private class Snapshot(val before: String, val after: String, val start: Int, val end: Int)
+
+    /**
+     * Up to [before] and [after] characters around the selection, with where it is, in one read: a cursor read
+     * apart from the text, or our own idea of it, can be older than the text (#280). Null when the field can't.
+     */
+    private fun snapshot(before: Int, after: Int): Snapshot? {
+        val ic = ic ?: return null
+        if (Build.VERSION.SDK_INT >= 31) {
+            val s = ic.getSurroundingText(before, after, 0)
+            if (s != null && s.offset >= 0) {
+                val text = s.text.toString()
+                return Snapshot(text.substring(0, s.selectionStart), text.substring(s.selectionEnd), s.offset + s.selectionStart, s.offset + s.selectionEnd)
+            }
+        }
+        val e = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return null
+        val text = e.text?.toString() ?: return null
+        val start = minOf(e.selectionStart, e.selectionEnd)
+        val end = maxOf(e.selectionStart, e.selectionEnd)
+        if (e.startOffset < 0 || start < 0 || end > text.length) return null
+        return Snapshot(text.substring(maxOf(0, start - before), start), text.substring(end, minOf(text.length, end + after)), e.startOffset + start, e.startOffset + end)
+    }
 
     fun start(info: EditorInfo, kind: FieldKind) {
         this.info = info
@@ -115,20 +147,10 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     fun composeRegion(before: Int, after: Int, want: String? = null): Boolean {
         if (before == 0 && after == 0) return true.also { finishComposing() }
         val ic = ic ?: return false
-        if (selStart < 0) return false
-        val textBefore: String
-        val textAfter: String
-        val surrounding = if (Build.VERSION.SDK_INT >= 31) ic.getSurroundingText(2 * before, 2 * after, 0) else null
-        if (surrounding != null && surrounding.offset >= 0) {
-            // The text and where the field has the cursor, read at once: the region is placed by our cursor, so
-            // it must be the field's (#280)
-            if (surrounding.offset + surrounding.selectionStart != selStart) return false
-            textBefore = surrounding.text.substring(0, surrounding.selectionStart)
-            textAfter = surrounding.text.substring(surrounding.selectionEnd)
-        } else {
-            textBefore = ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
-            textAfter = ic.getTextAfterCursor(2 * after, 0)?.toString().orEmpty()
-        }
+        // The region is placed by our cursor, so it must be the field's, read with the text (#280)
+        val s = snapshot(2 * before, 2 * after)?.takeIf { it.start == selStart && it.end == selStart } ?: return false
+        val textBefore = s.before
+        val textAfter = s.after
         val b = textBefore.length - textBefore.offsetByCodePoints(textBefore.length, -minOf(before, textBefore.codePointCount(0, textBefore.length)))
         val a = textAfter.offsetByCodePoints(0, minOf(after, textAfter.codePointCount(0, textAfter.length)))
         val text = textBefore.takeLast(b) + textAfter.take(a)
@@ -178,48 +200,53 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
 
     /** Moves the cursor [by] characters from where it is (Mozc puts it between a pair of brackets). */
     fun moveCursor(by: Int) {
-        if (by == 0 || selStart < 0) return
-        val at = (selStart + by).coerceAtLeast(0)
-        ic?.setSelection(at, at)
-        expect(at)
+        if (by == 0) return
+        // From where the field has the cursor: ours can be older (#280)
+        val s = snapshot(0, 0) ?: return arrows(by)
+        moveTo((s.start + by).coerceAtLeast(0))
     }
 
     /** Moves the cursor [by] characters (whole code points), as far as the text goes: the space bar's swipe. */
     fun moveBy(by: Int) {
-        val ic = ic ?: return
-        if (selStart < 0) return
-        val at = if (by < 0) {
-            val before = ic.getTextBeforeCursor(-2 * by, 0) ?: return
-            selStart - (before.length - Character.offsetByCodePoints(before, before.length, -minOf(-by, Character.codePointCount(before, 0, before.length))))
-        } else {
-            val after = ic.getTextAfterCursor(2 * by, 0) ?: return
-            selEnd + Character.offsetByCodePoints(after, 0, minOf(by, Character.codePointCount(after, 0, after.length)))
-        }
-        ic.setSelection(at, at)
+        if (by == 0) return
+        val s = snapshot(maxOf(0, -2 * by), maxOf(0, 2 * by)) ?: return arrows(by)
+        moveTo(if (by < 0) s.start - (s.before.length - s.before.offsetByCodePoints(s.before.length, -minOf(-by, s.before.codePointCount(0, s.before.length))))
+            else s.end + s.after.offsetByCodePoints(0, minOf(by, s.after.codePointCount(0, s.after.length))))
+    }
+
+    private fun moveTo(at: Int) {
+        ic?.setSelection(at, at)
         expect(at)
     }
 
-    /** Delete's swipe: where it started (the cursor) and the text before it then */
+    /** A field that can't say where its cursor is: the arrow keys move it from wherever it is */
+    private fun arrows(by: Int) = repeat(kotlin.math.abs(by)) { key(if (by < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT) }
+
+    /** Delete's swipe: the text before the cursor where it started, and where that was (-1: the field can't say) */
+    private var swipeText: String? = null
     private var swipeEnd = -1
-    private var swipeText = ""
 
     /** Delete's swipe: selects [words] words before the cursor (none: back to the cursor), deleted when [done]. */
     fun selectWordsBefore(words: Int, done: Boolean) {
         val ic = ic ?: return
-        if (swipeEnd < 0) {
-            if (selStart < 0) return
-            swipeEnd = selStart
-            swipeText = ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString().orEmpty()
-        }
+        // From where the field has the cursor, read with the text: ours can be older (#280)
+        val text = swipeText ?: (snapshot(MAX_SWIPE, 0)?.also { swipeEnd = it.start }?.before ?: textBefore(MAX_SWIPE)).also { swipeText = it }
         val end = swipeEnd
-        val start = end - (swipeText.length - wordsStart(swipeText, words))
-        ic.setSelection(start, end)
-        expect(start, end)
+        val n = text.length - wordsStart(text, words)
+        if (end >= 0) {
+            ic.setSelection(end - n, end)
+            expect(end - n, end)
+        }
         if (!done) return
+        swipeText = null
         swipeEnd = -1
-        if (start < end) {
+        if (n == 0) return
+        if (end >= 0) {
             ic.commitText("", 1)
-            expect(start)
+            expect(end - n)
+        } else {
+            // Nothing could be selected: the words go from before the cursor
+            ic.deleteSurroundingText(n, 0)
         }
     }
 
