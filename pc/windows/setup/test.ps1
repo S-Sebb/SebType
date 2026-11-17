@@ -38,6 +38,9 @@ nobody's own input settings change, then removes the user and its profile:
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
    the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
    (-SoakMinutes, default 12; 0 for none); a silent uninstall. -CompareImes picks the input methods. Numbers in out\compare-*.txt.
+-Only not-ready: the tray key while 中文 or 日本語 isn't ready (#275): a silent install, test-not-ready.ps1
+   (in the folder too) as the test user, not elevated, with -AnyDisplay (its pictures in out\275), a silent
+   uninstall.
 
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
@@ -88,6 +91,13 @@ function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.Languag
 # ============================================================ typing, as the test user, not elevated
 if ($Typing) {
   try {
+    if ($Typing -eq 'not-ready') {  # its own script, which makes no keys (#275): no key server
+      $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\test-not-ready.ps1" -AnyDisplay -Out "$out\275" 2>&1 | Out-String
+      Set-Content -Encoding utf8 "$out\not-ready.log" $log
+      $lines = @(Get-Content -Encoding utf8 "$out\275\not-ready-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ })
+      if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result not-ready FAIL "no results: $($log.Trim())" }
+      return
+    }
     Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
     $tsf = [SebType.TsfHost]
     # Keys come from the Remote Desktop client (rdp-keys.py through test-tcsbackend.sh's tunnel), as a person's.
@@ -533,6 +543,13 @@ namespace SebTypeSetupTest {
   }
   # The uninstaller finishes in its copy, %TEMP%\is-*-uninstall.tmp\_unins.tmp.
   function Uninstalled { -not (Test-Path $AppKey) -and -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\*-uninstall.tmp\*" }) }
+  function Silent-Uninstall($what) {
+    Check "$what-uninstall" {
+      Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+      if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
+      'silent'
+    }
+  }
   function Typing($phase, [int]$seconds = 300) {
     Set-Content "$out\typing-phase.txt" $phase
     Start-ScheduledTask SebType-setup-typing
@@ -661,22 +678,20 @@ namespace SebTypeSetupTest {
         Set-Content "$out\soak-minutes.txt" $SoakMinutes
         Typing compare-soak ($SoakMinutes * 60 + 300)
       }
-      Check 'compare-uninstall' {
-        Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
-        if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
-        'silent'
-      }
+      Silent-Uninstall compare
+      return
+    }
+    if ($Only -eq 'not-ready') {
+      Check 'not-ready-install' { Silent not-ready-install @(); 'silent, all languages' }
+      Typing not-ready 900
+      Silent-Uninstall not-ready
       return
     }
     if ($Only -eq 'picnic') {
       # Only the Picnic window (#162): a silent install, its pictures, a silent uninstall.
       Check 'picnic-install' { Silent picnic-install @(); 'silent' }
       Typing picnic
-      Check 'picnic-uninstall' {
-        Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
-        if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
-        'silent'
-      }
+      Silent-Uninstall picnic
       return
     }
     if ($Only -eq 'upgrade') {
@@ -699,11 +714,7 @@ namespace SebTypeSetupTest {
         'Rime and Mozc learned words kept; Weasel''s and Mozc''s registrations gone'
       }
       Typing all
-      Check 'upgrade-uninstall' {
-        Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
-        if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
-        'silent'
-      }
+      Silent-Uninstall upgrade
       Check-AsBefore upgrade
       return
     }

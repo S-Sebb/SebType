@@ -11,6 +11,8 @@
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
+# ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the
+# test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows.
 # It takes SebType-setup-*.exe (and for PERF_RUN perf-rime.exe) from the "Windows setup" CI run of this
 # commit (gh), or else from build/, and pushes them (TCSBackEnd's downloads are fast, its uploads capped),
 # runs test.ps1 elevated in the Administrator session (disconnected; the game backend there is never
@@ -43,8 +45,8 @@ command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v 
 # The setup CI built from this commit, else one built here into build/ (ISCC under Wine, from CI's other
 # artifacts) while CI's Mozc build still runs.
 head=$(git -C "$repo" rev-parse HEAD)
-run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch "$branch" --status success --json databaseId,headSha \
-  -q "map(select(.headSha == \"$head\"))[0].databaseId // empty" 2>/dev/null)
+run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --commit "$head" --status success --json databaseId \
+  -q '.[0].databaseId // empty' 2>/dev/null)
 perf=
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
@@ -152,7 +154,7 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
@@ -209,6 +211,10 @@ scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" 2>/dev/null && tar -xf 
 for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
 done
+if [ -d "$out/logs/275" ]; then
+  rm -rf "$TASK_OUT/screens/windows"; mkdir -p "$TASK_OUT/screens/windows"
+  cp "$out"/logs/275/*.png "$out/logs/275/not-ready-results.txt" "$TASK_OUT/screens/windows/" 2>/dev/null
+fi
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
 [ -s "$out/results.txt" ] || echo "FAIL results: test.ps1 wrote no results (logs: $out/logs)"
 mark 'logs fetched'
