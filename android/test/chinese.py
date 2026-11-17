@@ -2024,9 +2024,8 @@ def floating_short_window():
     """Floating, moved to the top left and resized wide and tall: a window two thirds as wide and half as
     tall shows its keys narrower and shorter, all of them whole on the screen (the handle too) and typing.
     Wider and Taller there, held at the window's edges, change nothing saved: the full window brings the
-    whole size back. Made narrower there, the full window brings the saved height back with the new width. A
-    window 280 dp tall with Keyboard Modes open still shows the bottom row whole, the keys under today's
-    96 dp minimum (#283)."""
+    whole size back. Made narrower there, the full window brings the saved height back with the new width. In
+    a window 280 dp tall the keys step aside under Keyboard Modes and show whole once it closes (#283)."""
     to_english()
     w, h = screen_size()
 
@@ -2078,33 +2077,46 @@ def floating_short_window():
                 f"back in the full window the keys are {r5 - l5}x{b5 - t5} px, not {r4 - l4}x{tall}"
             )
         # A window wider than tall is landscape: floating there too. 280 dp less the status bar, the
-        # navigation bar and Keyboard Modes leaves the keys less than today's 96 dp minimum.
+        # navigation bar and Keyboard Modes leaves no room for keys at today's 96 dp minimum: they step
+        # aside while Keyboard Modes is open, and come back whole at the minimum or taller once it closes.
         tiny = round(280 * screen_density())
+        least = round(96 * screen_density()) - 2
         adb("shell", "wm", "size", f"{w}x{tiny}")
         time.sleep(3)
         try:
             set_mode("Floating")
             open_field()
             action(MODES_ACTION)
-            tiny_space = bottom_row_whole(tiny)
-            tiny_keys = keyboard_frame[3] - keyboard_frame[1]
-            if tiny_keys >= 96 * screen_density():
+            b = node_bounds()
+            handle, floating = b.get(MOVE_KEYBOARD), b.get("Floating")
+            if (
+                any(b.get(l) for l in SPACE_LABELS)
+                or not handle
+                or handle[1] < 0
+                or not floating
+                or floating[3] > tiny
+            ):
                 raise Fail(
-                    f"in a {tiny} px window the keys are {tiny_keys} px tall: not under the 96 dp minimum"
-                )
-            handle = node(MOVE_KEYBOARD)
-            if not handle or handle[3] < 0:
-                raise Fail(
-                    f"in a {tiny} px window with Keyboard Modes open the handle is at {handle and handle[3]}"
+                    f"in a {tiny} px window with Keyboard Modes open: the handle {handle}, Floating {floating}, "
+                    f"Space {[b.get(l) for l in SPACE_LABELS if b.get(l)]} (the keys should step aside)"
                 )
             screenshot("floating-tiny-window.png")
+            open_field()
+            tiny_space = bottom_row_whole(tiny)
+            tiny_keys = keyboard_frame[3] - keyboard_frame[1]
+            if tiny_keys < least:
+                raise Fail(
+                    f"in a {tiny} px window the keys are {tiny_keys} px tall, under the 96 dp minimum"
+                )
+            screenshot("floating-tiny-window-keys.png")
+            types_letters()
         finally:
             set_mode("Standard")
         return (
             f"keys {wide}x{tall} px; {r2 - l2}x{b2 - t2} px within a {small}x{short} px window (Space {space}), "
             f"typing works; after Wider and Taller at its edges {r3 - l3}x{b3 - t3} px in the full window; "
-            f"narrowed there to {r4 - l4} px, then {r5 - l5}x{b5 - t5} px in the full window; "
-            f"in {tiny} px with Keyboard Modes open, keys {tiny_keys} px, Space {tiny_space}"
+            f"narrowed there to {r4 - l4} px, then {r5 - l5}x{b5 - t5} px in the full window; in {tiny} px "
+            f"the keys aside under Keyboard Modes, then {tiny_keys} px with Space {tiny_space}, typing works"
         )
     finally:
         adb("shell", "wm", "size", "reset")

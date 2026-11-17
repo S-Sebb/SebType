@@ -60,6 +60,8 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
         textAlign = Paint.Align.CENTER
     }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    /** The modes' names' text size, as wide as their tabs allow */
+    private var modeText = 14 * density
     private var mode = Mode.STANDARD
     private var scale = 1f
     var resizing = false
@@ -97,6 +99,9 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
             return
         }
         val tab = (width - 2 * pad) / Mode.entries.size
+        // A narrow keyboard (floating, resized, #283) shrinks the modes' names, all alike, to fit their tabs.
+        label.textSize = 14 * density
+        modeText = Mode.entries.minOf { label.textSize * minOf(1f, (tab - 4 * density) / label.measureText(texts[it.label])) }
         Mode.entries.forEachIndexed { i, m ->
             val l = pad + i * tab
             out += Item(RectF(l, top, l + tab, bottom), texts[m.label], "android.widget.RadioButton", fixed = true, checked = m == mode, tag = m)
@@ -122,11 +127,7 @@ class ModesPanel(context: Context, private val texts: Texts, private val listene
                     canvas.drawRoundRect(r.left + 3 * density, r.top, r.right - 3 * density, r.bottom, radius, radius, fill)
                 }
                 Icons.draw(canvas, tag.icon, r.centerX(), r.top + 20 * density, 22 * density, Picnic.INK)
-                // A narrow keyboard (floating, resized, #283) shrinks the mode's name to fit its tab.
-                label.textSize = 14 * density
-                val w = label.measureText(item.label)
-                val room = r.width() - 4 * density
-                if (w > room) label.textSize *= room / w
+                label.textSize = modeText
                 canvas.drawText(item.label, r.centerX(), r.bottom - 9 * density, label)
             }
             Kind.HEIGHT -> {

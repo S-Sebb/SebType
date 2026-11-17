@@ -756,7 +756,6 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         // The action bar: open, over the bar; never over a panel's title
         val rowShown = barOpen && shown == Panel.NONE
         actionRow.visibility = if (rowShown) View.VISIBLE else View.GONE
-        val overKeys = shown != Panel.NONE && shown != Panel.MODES && searching == null
         content.extra = if (barOpen && overKeys) (ActionRow.HEIGHT_DP * resources.displayMetrics.density).toInt() else 0
         if (rowShown) actionRow.show(Action.pinned(this), on)
         val autofilling = autofill.showing && candidates.isEmpty() && shown == Panel.NONE
@@ -791,7 +790,25 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             if (framed) frame.post { frame.focusCorner() }
         }
         // The keys keep their place (and the keyboard its height) under the grid and the panels.
-        keysRow.visibility = if (expanded || overKeys) View.INVISIBLE else View.VISIBLE
+        if (shown != Panel.MODES) keysAside = false
+        showKeys()
+    }
+
+    /** A panel over the keys: they keep their place (and the keyboard its height) under it */
+    private val overKeys get() = shown != Panel.NONE && shown != Panel.MODES && searching == null
+
+    /**
+     * Keyboard Modes open on a floating keyboard in a window too short for it and today's smallest keys
+     * (a landscape phone, #283): the keys step aside while it is open, rather than shrink past reading.
+     */
+    private var keysAside = false
+
+    private fun showKeys() {
+        keysRow.visibility = when {
+            keysAside -> View.GONE
+            expanded || overKeys -> View.INVISIBLE
+            else -> View.VISIBLE
+        }
     }
 
     // --- Keyboard modes (#53 B5) ---
@@ -854,7 +871,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
      * cut to the window while its parts keep their whole height.
      */
     private fun floatingChrome(): Float {
-        var sum = strip.height + panel.paddingTop + panel.paddingBottom + content.height - keyboard.height
+        var sum = strip.height + panel.paddingTop + panel.paddingBottom +
+            if (keysRow.visibility == View.GONE) 0 else content.height - keyboard.height
         for (i in 0 until panel.childCount) panel.getChildAt(i).takeIf { it !== content && it.visibility != View.GONE }?.let { sum += it.height }
         return sum.toFloat()
     }
@@ -887,7 +905,14 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         }
         // A shorter window (split screen, a smaller display size) shows the keys shorter, all of them
         // reachable; the saved height comes back when there is room.
-        if (floating && root.height > 0 && stack.height > 0) keyboard.heightScale = shownScale()
+        if (floating && root.height > 0 && stack.height > 0) {
+            val aside = shown == Panel.MODES && fittingScale() < floatingScales().start
+            if (aside != keysAside) {
+                keysAside = aside
+                showKeys()
+            }
+            keyboard.heightScale = shownScale()
+        }
         stack.translationX = if (floating) floatX * ((root.width - stack.width) / 2f).coerceAtLeast(0f) else 0f
         stack.translationY = if (floating) -floatY * (root.height - stack.height).coerceAtLeast(0) else 0f
     }
