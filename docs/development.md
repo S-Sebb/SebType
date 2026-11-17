@@ -422,7 +422,13 @@ What made the difference, each measured on its own:
 - **sccache for the app's C++** (when installed): a clean rebuild 41 → 17 s, a new worktree 41 → 15 s.
   Each build starts its own sccache server with `SCCACHE_BASEDIRS` set to the checkout's root, and
   `-ffile-prefix-map` keeps the checkout's path out of the objects, so objects are shared between
-  worktrees without one worktree's paths ending up in another's library.
+  worktrees without one worktree's paths ending up in another's library. Its preprocessor cache stays
+  off (`SCCACHE_DIRECT=false`, #318): it keyed entries by those relative paths but checked the headers
+  at the absolute paths of the worktree that stored them, so a worktree that changed a header in
+  `core/include` handed main its objects compiled against that header (the new keyboard's first-start
+  crash), with depfiles that made ninja watch that worktree's headers. `android/build.sh` rebuilds a
+  CMake folder whose ninja deps still name another checkout's files; `android/test/build.sh`'s
+  `sccache-checkouts` check runs here.
 - **Configuration cache**: Gradle reuses the configured build (nothing changed 11 → 6 s, one Kotlin file
   24 → 17 s). `build.gradle`'s git calls go through `providers.exec`, which it allows.
 

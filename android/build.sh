@@ -97,23 +97,29 @@ locked=$run/locked # when the build lock was taken
 
 # Native objects come from sccache when it is installed (CMake takes the launcher from the environment
 # when it first configures a checkout). A private server per build, started in the lock (and the container),
-# hashes paths relative to the checkout's real root, and build.gradle keeps them out of the objects, so every
-# worktree shares the cache.
-if command -v sccache >/dev/null; then
-  mkdir -p "$SCRATCH/cache"
-  SCCACHE_SERVER_UDS=$(mktemp -u "$SCRATCH/cache/sccache.XXXXXX")  # well under a socket path's 108 bytes
-  export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=$(cd .. && pwd -P) \
-    SCCACHE_SERVER_UDS
-fi
+# hashes paths relative to the checkout's real root (tools/lib.sh's sccache_env), and build.gradle keeps them
+# out of the objects, so every worktree shares the cache.
+command -v sccache >/dev/null && sccache_env "$(cd .. && pwd -P)"
 
 start=$(date +%s)
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
-export KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS
+export KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS ROOT=$(cd .. && pwd) ROOT_REAL=$(cd .. && pwd -P)
 # shellcheck disable=SC2154  # container: set by fedora_container
 build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${container[@]}" bash -c '
   set -e
   date +%s > "$RUN/locked"
+  # Until #318 sccache could hand a checkout another one'"'"'s objects and depfiles, after which ninja watched
+  # that checkout'"'"'s headers instead of this one'"'"'s and never rebuilt them here. A CMake folder like that
+  # is configured and built again (its objects from sccache).
+  for deps in {app,native,next}/.cxx/*/*/*/.ninja_deps; do
+    [[ -f $deps ]] || continue
+    if grep -aoE "/[^[:space:][:cntrl:]]*/(core/include/sebtype|engines/[a-z-]+)/" "$deps" |
+      grep -qvF -e "$ROOT/" -e "$ROOT_REAL/"; then
+      echo "build: $(dirname "$deps") watched another checkout'"'"'s files (#318); building it again" >&2
+      rm -rf "$(dirname "$deps")"
+    fi
+  done
   if [[ -n ${SCCACHE_SERVER_UDS:-} ]]; then
     sccache --start-server >/dev/null
     trap "sccache --stop-server >/dev/null; rm -f $SCCACHE_SERVER_UDS" EXIT

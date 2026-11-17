@@ -34,6 +34,31 @@ cleanup() { rm -rf "$wt"; git worktree prune; on_host rm -rf "$remote_wt"; }
 trap cleanup EXIT
 export -f on_host
 
+# sccache as android/build.sh runs it, here (#318): of three checkouts with the same source, the one whose
+# header differs gets its own object and a depfile naming its own files; the one with the same header gets
+# the first one's object from the cache.
+sccache_checkouts() {
+  local d=$out/test-build-sccache c
+  command -v sccache >/dev/null && command -v clang++ >/dev/null || { echo "sccache or clang++ missing here"; return 1; }
+  rm -rf "$d" && mkdir -p "$d"/{a,b,c}/inc || return 1
+  for c in a b c; do printf '#include <h.h>\nint f() { return g(); }\n' > "$d/$c/s.cpp"; done
+  echo 'static int g() { return 1; }' | tee "$d/a/inc/h.h" > "$d/c/inc/h.h"
+  echo 'static int g() { return 2; }' > "$d/b/inc/h.h"
+  touch -d '1 hour ago' "$d"/*/s.cpp "$d"/*/inc/h.h  # sccache's preprocessor cache skips files changed just now
+  for c in a b c; do
+    (sccache_env "$d/$c"; export SCCACHE_DIR=$d/cache; cd "$d/$c" && sccache --start-server >/dev/null &&
+      sccache clang++ -O2 -I"$d/$c/inc" -MD -MF s.o.d -c "$d/$c/s.cpp" -o s.o &&
+      sccache --show-stats > stats.txt; sccache --stop-server >/dev/null; rm -f "$SCCACHE_SERVER_UDS") || return 1
+  done
+  ! cmp -s "$d/a/s.o" "$d/b/s.o" || { echo "b got a's object, compiled with a's header"; return 1; }
+  ! grep -q "$d/a/" "$d/b/s.o.d" || { echo "b's depfile names a's files:"; cat "$d/b/s.o.d"; return 1; }
+  grep -Eq '^Cache hits +1$' "$d/c/stats.txt" || { echo "c didn't get a's object from the cache:"; cat "$d/c/stats.txt"; return 1; }
+  rm -rf "$d"
+}
+export -f sccache_env sccache_checkouts
+export SCRATCH
+check sccache-checkouts sccache_checkouts
+
 # Preflight
 on_host true || { echo "preflight: yanglab16 unreachable (start Zscaler: gtk-launch ZSTray)"; exit 1; }
 [[ -z $(git status --porcelain --untracked-files=no) ]] ||
