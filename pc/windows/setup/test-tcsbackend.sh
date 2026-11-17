@@ -12,7 +12,7 @@
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
 # ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the
-# test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows-<SCALE>.
+# test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows-<SCALE>-<time>.
 # SCALE=150 (100 to 500) sets the session's display scaling (Remote Desktop's desktop scale factor).
 # It takes SebType-setup-*.exe (and for PERF_RUN perf-rime.exe) from the "Windows setup" CI run of this
 # commit (gh), or else from build/, and pushes them (TCSBackEnd's downloads are fast, its uploads capped),
@@ -28,13 +28,14 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 source "$repo/tools/lib.sh"
-out=$TASK_OUT/73-setup-tcsbackend
+stamp=$(date +%Y%m%d-%H%M%S)
+out=$TASK_OUT/73-setup-tcsbackend-$stamp  # each run its own: none deletes another's
 lock=/tmp/agent-locks/devices/tcsbackend.lock
 branch=$(git -C "$repo" branch --show-current)
 if [ -z "${HOLDING:-}" ]; then
   exec env HOLDING=1 devq -w 3600 -m 75 -n "sebtype installer test on TCSBackEnd ($branch)" "$lock" bash "$0"
 fi
-mkdir -p "$out"; rm -rf "${out:?}"/*
+mkdir -p "$out"
 # Where a run's time goes: $out/times.txt here, logs/*-times.txt from test.ps1.
 t0=$(date +%s)
 mark() { echo "$(date +%T) +$(( $(date +%s) - t0 ))s $*" >> "$out/times.txt"; }
@@ -213,8 +214,8 @@ for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$ou
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
 done
 if [ -d "$out/logs/275" ]; then
-  screens=$TASK_OUT/screens/windows-${SCALE:-100}
-  rm -rf "$screens"; mkdir -p "$screens"
+  screens=$TASK_OUT/screens/windows-${SCALE:-100}-$stamp
+  mkdir -p "$screens"
   cp "$out"/logs/275/*.png "$out/logs/275/not-ready-results.txt" "$screens/" 2>/dev/null
 fi
 iconv -f UTF-8 "$out/logs/setup-results.txt" 2>/dev/null | sed 's/^\xef\xbb\xbf//' | grep -aE '^(PASS|FAIL|SKIP|BLOCKED|INFO) ' | tee "$out/results.txt"
