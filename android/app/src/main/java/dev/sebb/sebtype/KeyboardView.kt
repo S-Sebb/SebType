@@ -106,7 +106,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
     private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.RIGHT; typeface = fonts.first; color = Picnic.MUTED; textSize = 12.5f * density
+        textAlign = Paint.Align.RIGHT; typeface = fonts.first; color = Picnic.MUTED; textSize = HINT_DP * density
     }
 
     private val a11y = Accessibility()
@@ -205,7 +205,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val letterCells = out.filter { isLetter(it.key) }
         letters = if (letterCells.isEmpty()) emptyMap() else {
             val common = letterCells.groupingBy { it.rect.width().roundToInt() }.eachCount().maxBy { it.value }.key
-            val size = 25 * density * textScale
+            val size = LETTER_DP * density * textScale
             // The letters' ink, measured large for a width finer than the bounds' whole pixels
             label.textSize = 1000f
             val ink = Rect()
@@ -214,6 +214,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 ink.width() / 1000f * size
             }
         }
+        // Hints 10% larger only beside letters at their full size: next to letters fitted to narrow keys they crowd them
+        hint.textSize = (if (letters.values.any { it < LETTER_DP * density * textScale }) 12.5f else HINT_DP) * density
         val letters = out.filter { it.key.code == Code.TEXT && it.key.text.length == 1 && it.key.text[0] in 'a'..'z' }
         if (letters.isNotEmpty()) listener.onLayout(width, height, letters.flatMap {
             val r = it.rect
@@ -271,11 +273,13 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             val icon = icon(key)
             when {
                 // On keys smaller than any docked keyboard's, an icon stays within the face's frame too.
-                icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f).let {
-                    if (textScale < 1f) minOf(it, 24 * density * textScale, rr - l - 5 * keyPx) else it
+                // 10% larger than today's where it fits the face's frame, never smaller than today's on a docked keyboard
+                icon != null -> Icons.draw(canvas, icon, cx, cy, min(ICON_DP * density, (b - t) * 0.5f).let {
+                    if (textScale < 1f) minOf(it, ICON_DP * density * textScale, rr - l - 5 * keyPx)
+                    else min(it, maxOf(rr - l - 5 * keyPx, min(24 * density, (b - t) * 0.5f)))
                 }, ink)
                 key.code == Code.SPACE && key.label.isBlank() -> {
-                    label.textSize = 13 * density * textScale
+                    label.textSize = 14.3f * density * textScale
                     // Split's halves of the space bar are narrow: the label shrinks to fit, as today's does
                     val room = rr - l - 12 * density
                     val w = label.measureText(spaceLabel)
@@ -285,7 +289,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 key.label.contains('\n') -> {
                     // The numbers page's key: its digits small, in two lines
-                    label.textSize = 11 * density * textScale
+                    label.textSize = 12.1f * density * textScale
                     label.color = ink
                     val lines = key.label.split('\n')
                     lines.forEachIndexed { i, line ->
@@ -309,11 +313,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     /** Any other label's text size: today's, shrunk to fit a key narrower than it */
     private fun labelSize(cell: Cell, s: String): Float {
         label.textSize = when {
-            s.length > 1 -> 13f
-            cell.rect.height() < rowHeight -> 20f
+            s.length > 1 -> 14.3f
+            cell.rect.height() < rowHeight -> 22f
             // The small punctuation is drawn larger, as today's keyboard does
-            s in ",.、。" -> 45f
-            else -> 25f
+            s in ",.、。" -> 49.5f
+            else -> LETTER_DP
         } * density * textScale
         // On keys smaller than any docked keyboard's, within the frame's outline and shadow
         val (l, _, rr, _) = face(cell.rect)
@@ -570,9 +574,13 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         popups.showPanel(frame, panel.map { it.first to (if (shift != Shift.OFF) it.second.label.uppercase() else it.second.label) }, chosen, onChoose)
     }
 
-    /** A key's face in its cell: its outline starts at the cell's top, the space between rows below it. */
-    private fun face(r: RectF) =
-        RectF(r.left + FACE_LEFT_DP * density * textScale, r.top, r.right - FACE_RIGHT_DP * density * textScale, r.top + r.height() * 0.83f)
+    /** A key's face in its cell, the space between rows below it, its top a little above the cell's */
+    private fun face(r: RectF): RectF {
+        // Today's face (83% of the cell from its top), 8% taller around the same middle (#329)
+        val middle = r.top + r.height() * 0.83f / 2
+        return RectF(r.left + FACE_LEFT_DP * density * textScale, middle - r.height() * FACE_HEIGHT / 2,
+            r.right - FACE_RIGHT_DP * density * textScale, middle + r.height() * FACE_HEIGHT / 2)
+    }
 
     /** The key, a row taller upwards, its label in the part above the key */
     private fun showPreview(cell: Cell) {
@@ -704,9 +712,16 @@ private const val MIN_KEY_WIDTH_DP = 22f
 internal fun keyTextScale(heightScale: Float, keyWidthDp: Float) =
     minOf(1f, heightScale / Mode.MIN_HEIGHT, keyWidthDp / MIN_KEY_WIDTH_DP)
 
-/** The gaps between keys: a key's face starts this far into its cell, and ends this far before its end */
-private const val FACE_LEFT_DP = 1.5f
-private const val FACE_RIGHT_DP = 2f
+/** The gaps between keys: a key's face starts this far into its cell, and ends this far before its end (today's 1.5 and 2, #329) */
+private const val FACE_LEFT_DP = 0.5f
+private const val FACE_RIGHT_DP = 1f
+/** A key's face's share of its cell's height */
+private const val FACE_HEIGHT = 0.83f * 1.08f
+
+/** The letters', icons' and hints' sizes in dp: today's 25, 24 and 12.5, 10% larger (#329) */
+internal const val LETTER_DP = 27.5f
+private const val ICON_DP = 26.4f
+private const val HINT_DP = 13.75f
 
 /** The width inside a keycap's outline and shadow, of a key [keyWidth] px wide with frames of [keyPx] px */
 internal fun keycapRoom(keyWidth: Float, density: Float, textScale: Float, keyPx: Float) =

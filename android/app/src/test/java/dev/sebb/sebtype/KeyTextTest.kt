@@ -65,25 +65,25 @@ class KeyTextTest {
         val px = maxOf(1, (2 * density).roundToInt()) // Picnic.pixel
         val keyPx = maxOf(1, (px * scale).roundToInt()).toFloat()
         val room = keycapRoom(key, density, scale, keyPx)
-        val size = 25 * density * scale
+        val size = LETTER_DP * density * scale
         return letterSizes(qwerty, size, room) { width(it, size) } to room
     }
 
     private fun width(s: String, size: Float) = inks.getValue(s.single()) * size
 
-    /** #283: full-width docked keyboards, portrait and landscape, draw every letter at today's 25 dp, W too. */
+    /** #283, #329: full-width docked keyboards, the owner's phone and landscape, draw every letter at 27.5 dp, W too. */
     @Test
-    fun fullWidthKeyboardsDrawTodaysLetters() {
-        for (dp in listOf(360f, 411f, 800f)) {
+    fun fullWidthKeyboardsDrawLargerLetters() {
+        for (dp in listOf(411f, 800f)) {
             val (sizes, _) = drawn(dp, split = false)
-            for ((letter, size) in sizes) assertEquals("$letter on a $dp dp keyboard", 25 * density, size, 1e-3f)
+            for ((letter, size) in sizes) assertEquals("$letter on a $dp dp keyboard", 27.5f * density, size, 1e-3f)
         }
     }
 
-    /** #283, #329: split's and one-handed's keys draw every letter at one size, W within its keycap. */
+    /** #283, #329: split's, one-handed's and a 360 dp phone's keys draw every letter at one size, W within its keycap. */
     @Test
     fun narrowDockedKeysShareOneLetterSize() {
-        for ((dp, split) in listOf(320f to true, 360f * Mode.ONE_HANDED_WIDTH to false)) {
+        for ((dp, split) in listOf(320f to true, 360f * Mode.ONE_HANDED_WIDTH to false, 360f to false)) {
             val (sizes, room) = drawn(dp, split)
             assertEquals("one size on a $dp dp keyboard (split $split): $sizes", 1, sizes.values.toSet().size)
             val size = sizes.getValue("w")
