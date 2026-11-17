@@ -2,13 +2,18 @@
 // librime, 日本語's Mozc and English (AOSP's decoder and SebType's model); every call takes one lock, so the
 // keyboard's engine thread (NativeCore.post) and the background setup (RimeIceSetup) never run core/ at once.
 // A call that changes what is typed returns all of it in one NativeState. MIT, SebType.
+#include <android/log.h>
 #include <jni.h>
+#include <unistd.h>
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
 #include <memory>
 #include <mutex>
+#include <cstdio>
+#include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace sebtype;
@@ -37,6 +42,23 @@ Settings forPhone(Settings s) {
   s.doubleSpacePeriod = phoneOptions.doubleSpacePeriod;
   s.englishWords = phoneOptions.englishWords;
   return s;
+}
+
+// core/ reports what it can't open (English's dictionary, its learned words) on stderr, which Android
+// discards: a thread copies it to the system log as errors, where the FUTO app logged the same failures.
+void stderrToLog() {
+  int fds[2];
+  if (pipe(fds) != 0) return;
+  dup2(fds[1], STDERR_FILENO);
+  close(fds[1]);
+  std::thread([fd = fds[0]] {
+    FILE *in = fdopen(fd, "r");
+    char line[1024];
+    while (std::fgets(line, sizeof line, in)) {
+      line[std::strcspn(line, "\n")] = 0;
+      __android_log_write(ANDROID_LOG_ERROR, "SebType", line);
+    }
+  }).detach();
 }
 
 JavaVM *vm;
@@ -382,6 +404,7 @@ jbyteArray importUserDictionary(JNIEnv *env, jclass, jbyteArray text) {
 
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
   vm = javaVm;
+  stderrToLog();
   rime_require_module_lua();
   rime_require_module_octagram();
   JNIEnv *env;
