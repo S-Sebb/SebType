@@ -129,7 +129,7 @@ function WaitIcon($want, $secs) {
 }
 
 # This session's server (a terminal server may run one per session).
-function Server { Get-Process sebtype-server | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
+function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
 # failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
