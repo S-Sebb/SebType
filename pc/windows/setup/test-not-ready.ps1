@@ -12,7 +12,7 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   first-japanese: the first 日本語 after the install (#312), its Mozc's load held 8 s (a batch oplock on
     sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, and a key
     goes in as typed without waiting; reload-while-loading: the Configurator's /mozc meanwhile, and 中文 still
-    switches and types at once; first-japanese-back: あ unasked once Mozc is up, then ka gives か;
+    switches and types at once; first-japanese-back: あ unasked once Mozc and the reload are done, then the first ka gives か;
   ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
@@ -231,19 +231,19 @@ try {
     if ($t -ne '你') { throw "ni + Space gave '$t' ($timeline)" }
     "ni + Space gives 你 ($timeline)"
   }
-  # あ comes unasked once Mozc is up (the text service's readiness timer, no key), then ka gives か.
+  # あ comes unasked once Mozc is up, the reload asked for during its load done too (the text service's
+  # readiness timer, no key), and then the first ka gives か: no key goes to a Mozc that isn't ready.
   Check 'first-japanese-back' {
     if (-not $held) { return "SKIP: Mozc's load wasn't held" }
     Lang ja
     $end = (Get-Date).AddSeconds(30)
     do { $tsf::Settle(250); $now = Shot 'hira-first-up' } while ($now -eq $first -and (Get-Date) -lt $end)
     if ($now -eq $first) { throw 'still grey 30 s after the activation, no key typed' }
-    $end = (Get-Date).AddSeconds(10)
-    do { $tsf::Clear(); Keys k a; $t = $tsf::Text(); Keys Escape } while ($t -ne 'か' -and (Get-Date) -lt $end)
-    $tsf::Clear(); $after = Shot 'hira-first-typed'
-    if ($t -ne 'か') { throw "ka gave '$t', not か" }
+    $tsf::Clear(); Keys k a; $t = $tsf::Text(); Keys Escape; $tsf::Clear()
+    $after = Shot 'hira-first-typed'
+    if ($t -ne 'か') { throw "the first ka once あ showed gave '$t', not か" }
     if ($after -ne $now) { throw 'the icon that came unasked is not the one after typing か' }
-    'あ unasked, then ka gives か'
+    'あ unasked after the load and the reload, then ka gives か at once'
   }
   Check 'ready' {
     Lang ja
