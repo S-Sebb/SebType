@@ -232,8 +232,8 @@ void Core::setLayout(const Layout &layout) {
   forEachEngine([&](Engine &e) { e.setLayout(layout); });
 }
 
-void Core::setContext(const std::string &before) {
-  if (auto *e = current()) e->setContext(before);
+void Core::setContext(const std::string &before, const std::string &after, bool selection) {
+  if (auto *e = current()) e->setContext(before, after, selection);
 }
 
 bool Core::undo() {

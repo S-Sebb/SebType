@@ -1722,6 +1722,12 @@ def modes_height():
     return f"{before} -> {after} -> {b - t} px"
 
 
+def tap_key(label):
+    adb("shell", "input", "tap", *map(str, key_spots()[label]))
+    time.sleep(1.5)
+    settle()
+
+
 def swipe_key(label, dx):
     k = key_spots()
     x, y = k[label]
@@ -1850,6 +1856,52 @@ def personal_word_en():
     ]:  # a sentence's first word has its capital
         raise Fail(f"zorbl -> {got[:6]}, without the personal word zorblax")
     return f"zorbl -> {got[:6]}"
+
+
+def backspace_reverts():
+    """#280: Delete right after a space corrected a word puts back what was typed, as today's app; the next
+    word gets its space back."""
+    to_english()
+    open_field()
+    type_text("i saw teh ")
+    if (got := field_text()) != "I saw the ":
+        raise Fail(f"typed 'i saw teh ' -> {got!r}, not corrected")
+    tap_key("Delete")
+    if (reverted := field_text()) != "I saw teh":
+        raise Fail(f"Delete after 'I saw the ' -> {reverted!r}, not 'I saw teh'")
+    type_text("cat")
+    if (got := field_text()) != "I saw teh cat":
+        raise Fail(f"then cat -> {got!r}")
+    return f"the -> {reverted!r} -> {got!r}"
+
+
+def reopen_word():
+    """#280: Delete back into a word, or the cursor moved into one, opens it again with its suggestions,
+    and a tap replaces the whole word, as today's app."""
+    to_english()
+    open_field()
+    type_text("i like cats ")
+    tap_key("Delete")
+    got = wait_for("suggestions for cats", lambda: candidates(nodes()), 10)
+    pick = next((c for c in got if c.lower() != "cats"), None)
+    if not pick:
+        raise Fail(f"Delete into cats -> bar {got}")
+    tap_candidate(pick)
+    settle()
+    if (text := field_text()) != f"I like {pick} ":
+        raise Fail(f"cats reopened, {pick} tapped -> {text!r}")
+    for _ in range(3):  # into the word: "I like ca|t "-style
+        adb("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
+    time.sleep(1.5)
+    inside = wait_for(f"suggestions for {pick}", lambda: candidates(nodes()), 10)
+    other = next((c for c in inside if c.lower() != pick.lower()), None)
+    if not other:
+        raise Fail(f"cursor into {pick} -> bar {inside}")
+    tap_candidate(other)
+    settle()
+    if (moved := field_text()) != f"I like {other} ":
+        raise Fail(f"cursor into {pick}, {other} tapped -> {moved!r}")
+    return f"cats -> {got[:3]} -> {text!r}; inside -> {inside[:3]} -> {moved!r}"
 
 
 def emoji_suggestion():
@@ -1985,6 +2037,8 @@ if NEXT:
         needs=["first-install"],
     )
     check("en-personal-word", personal_word_en, needs=["first-install"])
+    check("en-backspace-reverts", backspace_reverts, needs=["first-install"])
+    check("en-reopen-word", reopen_word, needs=["first-install"])
     check("en-emoji-suggestion", emoji_suggestion, needs=["first-install"])
     check("settings-action", settings_action, needs=["first-install"])
     check("clipboard-paste", clipboard_paste, needs=["first-install"])

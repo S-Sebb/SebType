@@ -160,10 +160,10 @@ jobject state(JNIEnv *env, bool taken) {
 
   jclass cls = env->FindClass("dev/sebb/sebtype/core/NativeState");
   jmethodID init = env->GetMethodID(
-      cls, "<init>", "(ZLjava/lang/String;III[Ljava/lang/String;[ZI[Ljava/lang/String;[Ljava/lang/String;I)V");
+      cls, "<init>", "(ZLjava/lang/String;IIIZII[Ljava/lang/String;[ZI[Ljava/lang/String;[Ljava/lang/String;I)V");
   return env->NewObject(cls, init, taken, jstr(env, commit), edit.deleteBefore, edit.deleteAfter, edit.cursor,
-                        jstrings(env, segments), highlighted, cursor, jstrings(env, texts),
-                        jstrings(env, comments), core->highlighted());
+                        jboolean(edit.recompose), edit.composeBefore, edit.composeAfter, jstrings(env, segments),
+                        highlighted, cursor, jstrings(env, texts), jstrings(env, comments), core->highlighted());
 }
 
 void configure(JNIEnv *env, jclass, jstring rimeShared, jstring rimeUser, jstring rimeLog, jstring mozcProfile,
@@ -279,10 +279,10 @@ void setLayout(JNIEnv *env, jclass, jint width, jint height, jintArray keys) {
   core->setLayout(layout);
 }
 
-void setContext(JNIEnv *env, jclass, jstring before) {
-  const std::string s = str(env, before);
+void setContext(JNIEnv *env, jclass, jstring before, jstring after, jboolean selection) {
+  const std::string b = str(env, before), a = str(env, after);
   std::lock_guard g(lock);
-  core->setContext(s);
+  core->setContext(b, a, selection);
 }
 
 // The work the last key left (English's suggestions, #310): the state after it, or null if nothing changed.
@@ -436,7 +436,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"key", ii.c_str(), reinterpret_cast<void *>(key)},
       {"keyAt", iiii.c_str(), reinterpret_cast<void *>(keyAt)},
       {"setLayout", "(II[I)V", reinterpret_cast<void *>(setLayout)},
-      {"setContext", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setContext)},
+      {"setContext", "(Ljava/lang/String;Ljava/lang/String;Z)V", reinterpret_cast<void *>(setContext)},
       {"type", t.c_str(), reinterpret_cast<void *>(type)},
       {"tryTyping", "(ILjava/lang/String;)[Ljava/lang/String;", reinterpret_cast<void *>(tryTyping)},
       {"selectCandidate", i.c_str(), reinterpret_cast<void *>(selectCandidate)},

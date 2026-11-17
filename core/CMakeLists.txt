@@ -85,6 +85,8 @@ if(SEBTYPE_ENGLISH)
   endif()
   add_library(sebtype-english STATIC src/english.cpp)
   target_link_libraries(sebtype-english PUBLIC sebtype-logic PRIVATE latinime sebtype_lm)
+  # llama.cpp's Unicode tables (src/unicode.h), linked already, for Java's letters in english.cpp
+  target_include_directories(sebtype-english PRIVATE $<TARGET_PROPERTY:llama,SOURCE_DIR>)
 endif()
 
 option(SEBTYPE_TESTS "Build the core's unit tests" ON)

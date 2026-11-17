@@ -120,8 +120,9 @@ object NativeCore {
     @JvmStatic external fun settle(): NativeState?
     /** The letter keys, for English's correction: five ints a key, its character, x, y, width and height. */
     @JvmStatic external fun setLayout(width: Int, height: Int, keys: IntArray)
-    /** The field's text before the cursor, when it changed other than by what the engine committed. */
-    @JvmStatic external fun setContext(before: String)
+    /** The field's text around the cursor (before it, the start of what follows, whether text is selected), when
+     *  it changed other than by what the engine committed. */
+    @JvmStatic external fun setContext(before: String, after: String, selection: Boolean)
     /** Clears the composition and types [text]'s letters. */
     @JvmStatic external fun type(text: String): NativeState
     /** A language's candidates for [text], typed without making it the current language (the setup's self-test). */
@@ -178,8 +179,13 @@ class NativeState(
     /** Text to delete around the cursor before the commit, in characters (Mozc's) */
     @JvmField val deleteBefore: Int,
     @JvmField val deleteAfter: Int,
-    /** Where the cursor goes after the commit: 0 after it, -n n characters back */
+    /** Where the cursor goes after the commit: 0 after it, -n n characters back, +n n on */
     @JvmField val commitCursor: Int,
+    /** First, the composing text becomes the field's text from [composeBefore] characters before the cursor
+     *  to [composeAfter] after it, as it is (English reopening a word); with neither, it ends where it is. */
+    @JvmField val recompose: Boolean,
+    @JvmField val composeBefore: Int,
+    @JvmField val composeAfter: Int,
     @JvmField val segments: Array<String>,
     @JvmField val highlighted: BooleanArray,
     /** In the preedit; -1 for none */

@@ -93,6 +93,10 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+    // The JVM tests' fake field answers getExtractedText with Android's own ExtractedText, a stub there
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {

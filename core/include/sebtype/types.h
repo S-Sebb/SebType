@@ -44,10 +44,15 @@ enum class Field { Text, Plain, Number, Phone, Password };
 enum class Keys { Kana, Letters, Symbols };
 // What a touch keyboard does to the field's text around a commit, in characters: the text to delete
 // around the cursor first (Mozc's deletion range), and where the cursor goes after it (0: after the
-// commit; -n: n characters back, as Mozc puts it inside a pair of brackets).
+// commit; -n: n characters back, as Mozc puts it inside a pair of brackets; +n: n on, over a space already there).
+// recompose: the composing text becomes the field's text from composeBefore characters before the cursor
+// to composeAfter after it, first, as it is (English reopening a word, #280); with neither, the composing
+// text ends where it is.
 struct Edit {
   int deleteBefore = 0, deleteAfter = 0;
   int cursor = 0;
+  bool recompose = false;
+  int composeBefore = 0, composeAfter = 0;
 };
 
 struct Segment {

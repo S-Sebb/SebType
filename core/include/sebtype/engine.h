@@ -57,10 +57,11 @@ class Engine {
   virtual std::vector<Candidate> candidates(int max);
   virtual void setField(Field /*field*/) {}
   virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}
-  // English: the keys' rectangles, and the field's text before the cursor whenever it changed other than by
-  // this engine's commits and the keys it was given (focus, a cursor move, the app's own edit).
+  // English: the keys' rectangles, and the field's text around the cursor whenever it changed other than by
+  // this engine's commits and the keys it was given (focus, a cursor move, the app's own edit): before it,
+  // the start of what follows it, and whether text is selected.
   virtual void setLayout(const Layout & /*layout*/) {}
-  virtual void setContext(const std::string & /*before*/) {}
+  virtual void setContext(const std::string & /*before*/, const std::string & /*after*/ = {}, bool /*selection*/ = false) {}
   virtual void moveCursor(int /*chars*/) {}
   virtual bool undo() { return false; }
   virtual Edit takeEdit() { return {}; }
