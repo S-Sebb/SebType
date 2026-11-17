@@ -1695,6 +1695,19 @@ def setup_step_shown():
     return int(m.group(1)) if m else None
 
 
+@functools.cache
+def has_root():
+    return adb("shell", "su 0 id -u", check=False).strip() == "0"
+
+
+def night_mode():
+    """The system's night mode as `cmd uimode night` takes it back: yes, no or auto"""
+    m = re.search(r"Night mode: (yes|no|auto)", adb("shell", "cmd", "uimode", "night"))
+    if not m:
+        raise Skip("night mode is custom, which this can't put back")
+    return m.group(1)
+
+
 def read_prefs():
     """DataStore's file as it is (a protobuf map of key to value); b"" when the app has none yet."""
     adb("shell", "am", "force-stop", PKG)
@@ -1762,7 +1775,11 @@ TODAYS_SUBTYPES = entry(b"subtypes", b"\x32\x08\x0a\x06en_US:")
 
 
 def forget_setup():
-    """Takes the app back to before its settings first opened: the setup record out, the rest kept."""
+    """Takes the app back to before its settings first opened: the setup record out, the rest kept. A phone
+    without root clears the app's data instead: the run installed it fresh."""
+    if not has_root():
+        adb("shell", "pm", "clear", PKG)
+        return
     data = read_prefs()
     if data:
         write_prefs(without_setup(data))
@@ -1793,15 +1810,18 @@ def home_not_setup(what):
 
 
 def bounds(texts):
-    """The bounds of the largest node showing one of texts: a button's own, not its label's."""
+    """The bounds of the button showing one of texts: its label's nearest clickable node (Compose gives the
+    label a node of its own, inside the button's)."""
     adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
     xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
-    found = []
-    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+    root_node = ET.fromstring(xml[xml.index("<") :])
+    parent = {child: node for node in root_node.iter() for child in node}
+    for n in root_node.iter("node"):
         if (n.get("text") or n.get("content-desc")) in texts:
-            x1, y1, x2, y2 = map(int, re.findall(r"\d+", n.get("bounds")))
-            found.append((x1, y1, x2, y2))
-    return max(found, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), default=None), xml
+            while n.get("clickable") != "true" and n in parent:
+                n = parent[n]
+            return tuple(map(int, re.findall(r"\d+", n.get("bounds")))), xml
+    return None, xml
 
 
 def focus():
@@ -1816,9 +1836,18 @@ def large_text(name, button, pressed):
     """At font scale 2 and the largest display size, in portrait and then landscape, setup's page scrolls to
     its real end, where the whole button is on the screen and clear of the system bars; in landscape it is
     pressed and pressed() says what that did (settings-<name>-large-*.png)."""
-    w, h = map(int, adb("shell", "wm", "size").split()[-1].split("x"))
-    auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
-    density = 540  # Settings' largest display size on guide35 (Pixel 7, 420 dpi)
+    w, h = map(
+        int, re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[0]
+    )  # physical, portrait
+    # What the device had, put back exactly after; settings it never set stay unset
+    saved = {
+        k: adb("shell", "settings", "get", "system", k).strip()
+        for k in ("font_scale", "user_rotation", "accelerometer_rotation")
+    }
+    override = re.search(r"Override density: (\d+)", adb("shell", "wm", "density"))
+    density = (
+        w * 160 // 320
+    )  # the largest display size: 320 dp across (540 on a 1080 px screen)
     dp = density / 160
     adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
     adb("shell", "settings", "put", "system", "font_scale", "2.0")
@@ -1864,17 +1893,12 @@ def large_text(name, button, pressed):
         tap((box[0] + box[2]) // 2, (box[1] + box[3]) // 2)
         wait_for(f"{button[0]} to do its part", lambda: pressed(before), 15)
     finally:
-        adb("shell", "settings", "put", "system", "font_scale", "1.0")
-        adb("shell", "wm", "density", "reset")
-        adb("shell", "settings", "put", "system", "user_rotation", "0")
-        adb(
-            "shell",
-            "settings",
-            "put",
-            "system",
-            "accelerometer_rotation",
-            auto if auto in ("0", "1") else "0",
-        )
+        for k, v in saved.items():
+            if v == "null":
+                adb("shell", "settings", "delete", "system", k)
+            else:
+                adb("shell", "settings", "put", "system", k, v)
+        adb("shell", "wm", "density", *([override.group(1)] if override else ["reset"]))
         time.sleep(3)
 
 
@@ -1919,12 +1943,13 @@ def setup_tips():
         wait_step(3)
         wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
         screenshot("setup-tips")
+        night = night_mode()
         adb("shell", "cmd", "uimode", "night", "yes")
         try:
             time.sleep(2)
             screenshot("setup-tips-dark")
         finally:
-            adb("shell", "cmd", "uimode", "night", "no")
+            adb("shell", "cmd", "uimode", "night", night)
         # Interrupted: the app stopped on step 3 comes back to it
         adb("shell", "am", "force-stop", PKG)
         start_settings()
@@ -1956,6 +1981,13 @@ def setup_tips():
 def setup_fresh_enabled():
     """Fresh data with SebType already on and chosen (turned on before the app first opened, or its data
     cleared): setup, its step 3, not home."""
+    if not has_root():  # a phone: its data cleared, which the run installed fresh
+        adb("shell", "pm", "clear", PKG)
+        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
+        start_settings()
+        wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
+        return "data cleared, SebType on and chosen: setup's step 3"
     saved = read_prefs()
     try:
         write_prefs(b"")
@@ -1971,6 +2003,8 @@ def setup_fresh_enabled():
 def setup_existing_user():
     """An update over today's app (its languages in DataStore's file, no setup record) with another keyboard
     in use: home, never setup, and the same once SebType is chosen again."""
+    if not has_root():
+        raise Skip("needs root to put today's app's data in place")
     saved = read_prefs()
     try:
         write_prefs(without_setup(saved) + TODAYS_SUBTYPES)
@@ -1993,6 +2027,7 @@ def setup_existing_user():
 
 def tips_screenshots():
     shots = []
+    before = night_mode()
     for night in ("no", "yes"):
         adb("shell", "cmd", "uimode", "night", night)
         try:
@@ -2005,7 +2040,7 @@ def tips_screenshots():
             screenshot(f"tips{suffix}")
             shots += [f"settings-about{suffix}.png", f"settings-tips{suffix}.png"]
         finally:
-            adb("shell", "cmd", "uimode", "night", "no")
+            adb("shell", "cmd", "uimode", "night", before)
     return ", ".join(shots)
 
 
