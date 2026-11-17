@@ -45,6 +45,10 @@ using System; using System.Runtime.InteropServices;
 public static class SebTypeSuspend {
   [DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr h);
   [DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr h);
+  [StructLayout(LayoutKind.Sequential)] struct LastInput { public uint Size, Time; }
+  [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInput li);
+  // A person's last keyboard or mouse input; the test's own keys go through TSF and don't change it.
+  public static uint InputTime() { var li = new LastInput { Size = 8 }; GetLastInputInfo(ref li); return li.Time; }
 }
 '@
 $display = [SebType.Display]
@@ -56,7 +60,10 @@ for ($i = 0; $i -lt 20 -and $display::Last -lt 0; $i++) { Start-Sleep -Milliseco
 if ($display::Last -lt 0) { Write-Host 'BLOCKED preflight: Windows reported no display state'; exit 1 }
 if ($display::Last -ne 0 -and -not $AnyDisplay) { Write-Host "BLOCKED preflight: the display is on (state $($display::Last)): someone may be using the PC"; exit 1 }
 
+$inputAt = [SebTypeSuspend]::InputTime()
 function Ready {
+  # A person's keys reach the test's field while it is in front (a Shift tap turns 中 or あ to English letters).
+  if ([SebTypeSuspend]::InputTime() -ne $inputAt) { throw 'someone used the keyboard or mouse during the test: no more keys' }
   if ($display::Lit -and -not $AnyDisplay) { throw "the display turned on ($(States)): no more keys" }
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
@@ -117,7 +124,8 @@ try {
     if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }
     'あ and 中 differ'
   }
-  if (-not ($hira -and $zh)) { throw 'not ready: no further checks' }
+  # Every later check compares against these two icons.
+  if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
   # takes seconds. The build folder is put back as it was at the end.
