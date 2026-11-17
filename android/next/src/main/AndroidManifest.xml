@@ -48,6 +48,12 @@
             </intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/method" />
         </service>
+        <!-- A clipboard image pasted from the history: read only by the app it is pasted into (#281) -->
+        <provider
+            android:name=".ClipProvider"
+            android:authorities="${applicationId}.clipboard"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <!-- An update gets 中文 ready before the keyboard next shows (#40). -->
         <receiver android:name=".UpdateReceiver" android:exported="false">
             <intent-filter>

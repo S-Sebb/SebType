@@ -19,13 +19,16 @@ English's spacing around a period (#39).
 
 import ast
 import datetime
+import json
 import os
 import re
 import shlex
+import struct
 import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zlib
 
 serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
 main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
@@ -287,17 +290,20 @@ def monkey_taps(points, gap_ms):
     adb("shell", "rm", "/data/local/tmp/sebtype-fast-taps.txt")
 
 
-def open_field(kind=None, clip=None):
+def open_field(kind=None, clip=None, image=False):
     """A fresh, empty text field with SebType up (any composition from before is dropped); kind makes it
-    a password, pin, private, url or email field (#30); clip has the field app copy that text."""
+    a password, pin, private, url, email or image field (#30, #281); clip has the field app copy that
+    text, image a small PNG."""
     global number_row
     number_row = kind in ("password", "visible-password", "email")
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     # A new popup each time (new task, clear task): one left open would get the intent without showing
     # the keyboard again.
-    extra = (["--es", "kind", kind] if kind else []) + (
-        ["--es", "clip", clip] if clip else []
+    extra = (
+        (["--es", "kind", kind] if kind else [])
+        + (["--es", "clip", clip] if clip else [])
+        + (["--ez", "clipimage", "true"] if image else [])
     )
 
     def show():
@@ -1377,6 +1383,218 @@ def quick_clip():
     return f"offered and pasted {text}"
 
 
+# --- #281: emoji and clipboard search, ASCII faces, images, today's saved history ---
+
+SEARCH = ("Search", "搜索", "検索")
+CLIPBOARD_SEARCH = ("Search clipboard", "搜索剪贴板", "クリップボードを検索")
+CLOSE_SEARCH = ("Close search", "关闭搜索", "検索を閉じる")
+FACES = ("ASCII", "颜文字", "顔文字")
+IMAGE_CLIP = ("Image", "图片", "画像")
+QUICK_IMAGE = ("Paste copied image", "粘贴复制的图片", "コピーした画像を貼り付け")
+
+
+def keep_clipboard():
+    open_field()
+    action(CLIPBOARD_ACTION)
+    if node("Clipboard history is off"):
+        tap_label(KEEP_CLIPBOARD)
+
+
+def emoji_search():
+    """The emoji panel's search: the keys type into it, a result is typed into the field."""
+    to_english()
+    open_field()
+    action(EMOJI_ACTION)
+    tap_label(SEARCH)
+    type_text("grinning")
+    tap_label(("grinning face",))
+    tap_label(CLOSE_SEARCH)
+    if field_text() != "😀":
+        raise Fail(f"grinning face from the search typed {field_text()!r}")
+    return "searched grinning -> 😀"
+
+
+def emoji_ascii():
+    """The ASCII group types its face with a space after it, as today's."""
+    to_english()
+    open_field()
+    action(EMOJI_ACTION)
+    tap_label(FACES)
+    tap_label(("smiley face",))
+    if field_text() != ":) ":
+        raise Fail(f"smiley face typed {field_text()!r}")
+    return "smiley face -> ':) '"
+
+
+def clipboard_search():
+    """The clipboard's search shows only the clips with what was typed; a tap pastes one."""
+    to_english()
+    keep_clipboard()
+    n = time.time_ns()
+    found, other = f"sebclip-found-{n}", f"sebclip-other-{n}"
+    for text in (found, other):
+        open_field(clip=text)
+        time.sleep(4)
+    open_field()
+    action(CLIPBOARD_ACTION)
+    tap_label(CLIPBOARD_SEARCH)
+    type_text("found")
+    wait_for(found, lambda: node(found), 10)
+    if node(other):
+        raise Fail(f"searching found still shows {other}")
+    tap_label((found,))
+    if field_text() != found:
+        raise Fail(f"the found clip pasted {field_text()!r}")
+    return f"found and pasted {found}, {other} left out"
+
+
+def clipboard_image_paste():
+    """A copied image is offered in the bar and kept in the history; both paste it into a field that
+    takes images."""
+    to_english()
+    keep_clipboard()
+    open_field(image=True)
+    time.sleep(4)
+    open_field(kind="image")
+    tap_label(QUICK_IMAGE)
+    got = wait_for(
+        "the pasted image",
+        lambda: field_text().startswith("image ") and field_text(),
+        10,
+    )
+    if not got.startswith("image image/png "):
+        raise Fail(f"the quick clip pasted {got!r}")
+    open_field(kind="image")
+    action(CLIPBOARD_ACTION)
+    tap_label(IMAGE_CLIP)
+    got2 = wait_for(
+        "the pasted image",
+        lambda: field_text().startswith("image ") and field_text(),
+        10,
+    )
+    if got2 != got:
+        raise Fail(f"the history's image pasted {got2!r}, the quick clip {got!r}")
+    return f"quick clip and history both pasted: {got}"
+
+
+def png(width, height):
+    """A plain-coloured PNG"""
+
+    def chunk(kind, data):
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    rows = b"".join(b"\0" + b"\xc2\x50\x6a" * width for _ in range(height))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )
+
+
+def clipboard_today_image():
+    """A history today's keyboard saved, with an image among its texts, loads whole and newest first."""
+    to_english()
+    keep_clipboard()
+    now = int(time.time() * 1000)
+    old, new = f"sebclip-today-old-{now}", f"sebclip-today-new-{now}"
+    # Today's ClipboardEntry fields, oldest first; the image is in clipboardfiles/
+    saved = [
+        {
+            "timestamp": now - 3000,
+            "pinned": False,
+            "text": old,
+            "uri": None,
+            "mimeTypes": ["text/plain"],
+        },
+        {
+            "timestamp": now - 2000,
+            "pinned": False,
+            "text": None,
+            "uri": None,
+            "mimeTypes": ["image/png"],
+            "backingFile": "sebtype281.png",
+            "sizeMb": 0.01,
+        },
+        {
+            "timestamp": now - 1000,
+            "pinned": False,
+            "text": new,
+            "uri": None,
+            "mimeTypes": ["text/plain"],
+        },
+    ]
+    for name, data in (
+        ("clipboard.json", json.dumps(saved).encode()),
+        ("sebtype281.png", png(64, 48)),
+    ):
+        path = os.path.join(logdir, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        adb("push", path, f"/data/local/tmp/{name}")
+    files = f"/data/data/{PKG}/files"
+    adb("shell", "am", "force-stop", PKG)
+    root(
+        f"mkdir -p {files}/clipboardfiles && mv /data/local/tmp/clipboard.json {files}/ && "
+        f"mv /data/local/tmp/sebtype281.png {files}/clipboardfiles/ && "
+        f"chown -R $(stat -c %u:%g {files}) {files}/clipboard.json {files}/clipboardfiles && "
+        f"restorecon -R {files}"
+    )
+    open_field()
+    action(CLIPBOARD_ACTION)
+
+    def loaded():
+        ns = nodes()
+        return ns if any(n[0] == new for n in ns) else None
+
+    def listed(ns):
+        return sorted(
+            n[0]
+            for n in ns
+            if "sebclip" in n[0] or n[0] in IMAGE_CLIP or n[0] == "null"
+        )
+
+    # Newest first: the new text, then the image, then (scrolled to, below the image) the old text
+    ns = wait_for(new, loaded, 10)
+    shown = {n[0]: n for n in ns}
+    image = next((shown[i] for i in IMAGE_CLIP if i in shown), None)
+    if "null" in shown or not image or image[2] < shown[new][2]:
+        raise Fail(f"today's history shows {listed(ns)}, top to bottom")
+    if old not in shown:
+        adb(
+            "shell",
+            "input",
+            "swipe",
+            *map(str, (image[1], image[2], image[1], shown[new][2])),
+            "600",
+        )
+        time.sleep(1.5)
+        ns = nodes()
+        shown = {n[0]: n for n in ns}
+    image = next((shown[i] for i in IMAGE_CLIP if i in shown), None)
+    if old not in shown or image and image[2] > shown[old][2]:
+        raise Fail(f"today's history shows {listed(ns)} after a scroll")
+    return "both texts and the image, newest first"
+
+
+def quick_clip_secret():
+    """Text just copied isn't offered in a password or private field."""
+    to_english()
+    for kind in ("password", "private"):
+        open_field(clip=f"sebclip-secret-{time.time_ns()}")
+        time.sleep(3)
+        open_field(kind=kind)
+        time.sleep(2)
+        if any(n[0] in QUICK_CLIP for n in nodes()):
+            raise Fail(f"the quick clip is offered in a {kind} field")
+    return "not offered in password or private fields"
+
+
 def frame_now():
     nodes()
     return keyboard_frame
@@ -1771,6 +1989,12 @@ if NEXT:
     check("settings-action", settings_action, needs=["first-install"])
     check("clipboard-paste", clipboard_paste, needs=["first-install"])
     check("quick-clip", quick_clip, needs=["first-install"])
+    check("quick-clip-secret", quick_clip_secret, needs=["first-install"])
+    check("emoji-search", emoji_search, needs=["first-install"])
+    check("emoji-ascii", emoji_ascii, needs=["first-install"])
+    check("clipboard-search", clipboard_search, needs=["first-install"])
+    check("clipboard-image-paste", clipboard_image_paste, needs=["first-install"])
+    check("clipboard-today-image", clipboard_today_image, needs=["first-install"])
     check("modes-one-handed", modes_one_handed, needs=["first-install"])
     check("modes-split", modes_split, needs=["first-install"])
     check("modes-floating", modes_floating, needs=["first-install"])

@@ -1,0 +1,61 @@
+# ASCII faces for the emoji picker's last group, as today's keyboard offers them, each with its name in
+# English, 中文 and 日本語: tab-separated, read by make.py. The faces and English names are FUTO's
+# (android/app/src/main/res/raw/supplemental_emotes.json, FUTO Source First License 1.1).
+:)	smiley face	微笑	にっこり
+:(	sad face	难过	悲しい
+:D	big smile	大笑	大笑い
+;)	winking face	眨眼	ウインク
+:P	sticking out tongue	吐舌头	あっかんべー
+:O	surprised face	惊讶	びっくり
+XD	laughing face	笑哭	爆笑
+:3	cat face	猫脸	猫の顔
+:-/	skeptical face	怀疑	うたがい
+:'(	crying face	哭泣	泣き顔
+>:(	angry face	生气	怒り
+<3	heart	爱心	ハート
+O_O	wide eyes	瞪大眼	目を見開く
+-_-	disappointed face	无语	がっかり
+>.<	frustrated face	抓狂	いらいら
+^_^	happy face	开心	にこにこ
+T_T	crying face	流泪	涙
+>:D	evil smile	坏笑	悪い笑い
+B)	cool face with sunglasses	戴墨镜	サングラス
+(╯°□°）╯︵ ┻━┻	tableflip	掀桌	ちゃぶ台返し
+¯\_(ツ)_/¯	shruggie	摊手	お手上げ
+(˶˃ ᵕ ˂˶)	cute happy face	可爱开心	かわいい笑顔
+(˶ˆᗜˆ˵)	excited face	兴奋	わくわく
+⸜(｡˃ ᵕ ˂ )⸝♡	happy with love	开心比心	ラブラブ
+(╥﹏╥)	crying face	大哭	大泣き
+ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧	sparkly happy face	闪亮开心	きらきら笑顔
+ꉂ(˵˃ ᗜ ˂˵)	laughing face	哈哈大笑	げらげら
+𐔌՞. .՞𐦯	sleepy face	困	ねむい
+>ᴗ<	simple happy face	简单开心	にこっ
+(¬_¬")	annoyed face	不爽	じとー
+( ˶°ㅁ°) !!	shocked face	震惊	がーん
+(◞‸ ◟)💧	sweating nervously	紧张流汗	冷や汗
+◝(ᵔᗜᵔ)◜	cheerful face	愉快	ごきげん
+( ≧ᗜ≦)	very happy face	超开心	大喜び
+(ᵕ—ᴗ—)	content face	满足	まんぞく
+( ꩜ ᯅ ꩜;)⁭ ⁭	confused face	困惑	こんわく
+(,,>﹏<,,)	sad crying face	委屈哭	うるうる
+૮₍ ´ ꒳ `₎ა	cute animal face	可爱动物	かわいい動物
+(*ᴗ͈ˬᴗ͈)ꕤ*.ﾟ	flower happy face	开花开心	お花の笑顔
+｡°(°¯᷄◠¯᷅°)°｡	dizzy face	晕	くらくら
+₍^. .^₎⟆	cat sleeping	睡猫	寝てる猫
+(๑>◡<๑)	blushing happy	害羞开心	照れ笑い
+(..◜ᴗ◝..)	shy face	害羞	はにかみ
+٩(ˊᗜˋ*)و ♡	cheering with love	比心欢呼	応援ラブ
+(¬`‸´¬)	grumpy face	生闷气	ふくれっ面
+(ó﹏ò｡)	teary eyes	泪眼	涙目
+∘ ∘ ∘ ( °ヮ° ) ?	thinking face	思考	考え中
+ᕙ( •̀ ᗜ •́ )ᕗ	flexing arms	秀肌肉	ムキムキ
+ᓚ₍ ^. .^₎	cat face	猫	猫
+ฅ^>⩊<^ ฅ	cat paws up	猫举爪	猫のバンザイ
+≽^•⩊•^≼	cat smiling	猫微笑	猫の笑顔
+/ᐠ - ˕ -マ	sleepy cat	困猫	ねむい猫
+૮꒰ ˶• ༝ •˶꒱ა ♡	cute face with love	可爱比心	かわいいラブ
+૮₍ ˃ ⤙ ˂ ₎ა	pouty face	噘嘴	ぷんぷん
+( ˶ˆᗜˆ˵ )	joyful face	高兴	うれしい
+(づ ᴗ _ᴗ)づ♡	hugging with love	抱抱比心	ハグ
+( ˘͈ ᵕ ˘͈♡)	loving face	爱你	ラブ
+ε(´｡•᎑•`)っ 💕	reaching for love	伸手比心	ラブを届ける

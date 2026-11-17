@@ -14,13 +14,14 @@ import java.text.BreakIterator
  * the cursor) can be told apart. The ideas follow pristine AOSP's RichInputConnection (Apache-2.0); the code
  * is SebType's.
  */
-class Editor(private val ime: InputMethodService) {
+class Editor(private val ime: InputMethodService, private val target: InputConnection? = null) {
     private companion object {
         /** Delete's swipe looks this far back for words */
         const val MAX_SWIPE = 2000
     }
 
-    private val ic: InputConnection? get() = ime.currentInputConnection
+    // [target]: a search in a panel takes the typing instead of the field (#281).
+    private val ic: InputConnection? get() = target ?: ime.currentInputConnection
     private var info: EditorInfo? = null
     private var kind = FieldKind.of(null)
 
@@ -190,7 +191,7 @@ class Editor(private val ime: InputMethodService) {
     }
 
     private fun key(code: Int) {
-        ime.sendDownUpKeyEvents(code)
+        if (target == null) ime.sendDownUpKeyEvents(code)
     }
 
     /** Undo (Ctrl+Z) and redo (Ctrl+Shift+Z): the field's own, as a hardware keyboard sends them */

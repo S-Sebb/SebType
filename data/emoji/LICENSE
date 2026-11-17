@@ -1,3 +1,5 @@
 build.sh and make.py are SebType's own code, under the MIT licence in ../../LICENSE-SebType. The list they
 build, android/next/src/main/assets/emoji/emoji.txt, is not: it is made from Unicode's emoji-test.txt and
-Unicode CLDR's annotations, under the Unicode licence (see ../../NOTICE).
+Unicode CLDR's annotations, under the Unicode licence, and from ascii.txt: the ASCII faces and English names
+of FUTO's supplemental_emotes.json (the FUTO Source First License 1.1), with SebType's 中文 and 日本語 names
+(see ../../NOTICE).
