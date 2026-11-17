@@ -2,6 +2,7 @@ package dev.sebb.sebtype.next
 
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
+import android.os.Build
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
@@ -33,8 +34,8 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     private var composing = false
     /** Where the composing text starts in the field, from the last update; -1 unknown */
     private var composeStart = -1
-    /** Cursor positions our own recent edits led to: their updates can arrive after later edits. */
-    private val expected = ArrayDeque<Int>()
+    /** Selections our own recent edits led to: their updates can arrive after later edits. */
+    private val expected = ArrayDeque<Pair<Int, Int>>()
     /** The field's text that [composeRegion] made the composing text, until it changes */
     private var regionText: String? = null
     /** Where the user put the cursor inside the composing text at the last update, from its start; -1: not there */
@@ -46,6 +47,8 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** The field's text around the cursor (English's context) as it is now. */
     inner class Around(val before: String, val after: String, val selection: Boolean) {
         val revision = this@Editor.revision
+        /** Where the cursor was in the field then: what a word reopened from this text is placed by */
+        val at = selStart
 
         /** The text from [b] code points before the cursor to [a] after it, as read then */
         fun text(b: Int, a: Int): String = before.substring(before.offsetByCodePoints(before.length, -minOf(b, before.codePointCount(0, before.length)))) +
@@ -53,9 +56,9 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     }
     fun around() = Around(textBefore(), textAfter(), selEnd != selStart)
 
-    /** Whether the field is still as [around] read it: no change since that wasn't ours, the same text. */
+    /** Whether the field is still as [around] read it: no change since that wasn't ours, the cursor and text the same. */
     fun unchanged(around: Around) =
-        around.revision == revision && textBefore() == around.before && textAfter() == around.after
+        around.revision == revision && around.at == selStart && textBefore() == around.before && textAfter() == around.after
 
     fun start(info: EditorInfo, kind: FieldKind) {
         this.info = info
@@ -113,8 +116,19 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         if (before == 0 && after == 0) return true.also { finishComposing() }
         val ic = ic ?: return false
         if (selStart < 0) return false
-        val textBefore = ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
-        val textAfter = ic.getTextAfterCursor(2 * after, 0)?.toString().orEmpty()
+        val textBefore: String
+        val textAfter: String
+        val surrounding = if (Build.VERSION.SDK_INT >= 31) ic.getSurroundingText(2 * before, 2 * after, 0) else null
+        if (surrounding != null && surrounding.offset >= 0) {
+            // The text and where the field has the cursor, read at once: the region is placed by our cursor, so
+            // it must be the field's (#280)
+            if (surrounding.offset + surrounding.selectionStart != selStart) return false
+            textBefore = surrounding.text.substring(0, surrounding.selectionStart)
+            textAfter = surrounding.text.substring(surrounding.selectionEnd)
+        } else {
+            textBefore = ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
+            textAfter = ic.getTextAfterCursor(2 * after, 0)?.toString().orEmpty()
+        }
         val b = textBefore.length - textBefore.offsetByCodePoints(textBefore.length, -minOf(before, textBefore.codePointCount(0, textBefore.length)))
         val a = textAfter.offsetByCodePoints(0, minOf(after, textAfter.codePointCount(0, textAfter.length)))
         val text = textBefore.takeLast(b) + textAfter.take(a)
@@ -199,16 +213,14 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         }
         val end = swipeEnd
         val start = end - (swipeText.length - wordsStart(swipeText, words))
-        if (!done) {
-            ic.setSelection(start, end)
-            return
-        }
+        ic.setSelection(start, end)
+        expect(start, end)
+        if (!done) return
         swipeEnd = -1
         if (start < end) {
-            ic.setSelection(start, end)
             ic.commitText("", 1)
             expect(start)
-        } else ic.setSelection(end, end)
+        }
     }
 
     /**
@@ -259,10 +271,12 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** Select all, cut, copy or paste ([android.R.id]'s), as the field's own menu does them */
     fun menuAction(id: Int) = ic?.performContextMenuAction(id)
 
-    private fun expect(at: Int) {
-        selStart = at
-        selEnd = at
-        expected.addLast(at)
+    private fun expect(at: Int) = expect(at, at)
+
+    private fun expect(start: Int, end: Int) {
+        selStart = start
+        selEnd = end
+        expected.addLast(start to end)
         if (expected.size > 64) expected.removeFirst()
     }
 
@@ -273,19 +287,24 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
      */
     fun selectionChanged(newStart: Int, newEnd: Int, candidatesStart: Int, candidatesEnd: Int): Boolean {
         val out = candidatesStart >= 0 && (newStart < candidatesStart || newEnd > candidatesEnd)
-        val ours = if (!out && newStart == newEnd) expected.indexOf(newStart) else -1
-        // At the composing text's end is where our own typing leaves it (a field that gave no cursor at the start)
-        movedInside = if (ours < 0 && !out && composing && candidatesStart >= 0 && newStart == newEnd && expected.isEmpty() &&
-            newStart != candidatesEnd) newStart - candidatesStart else -1
+        val ours = if (!out) expected.indexOf(newStart to newEnd) else -1
         if (ours >= 0) {
             repeat(ours) { expected.removeFirst() } // the edits before it were reported already
+            movedInside = -1
             return false
         }
+        // Not ours: the edits still to be reported were placed by the cursor as we had it, so where they leave
+        // it can't be told any more; one of those places may be where the user goes next (#280).
+        val quiet = expected.isEmpty()
+        expected.clear()
+        // At the composing text's end is where our own typing leaves it (a field that gave no cursor at the start)
+        movedInside = if (!out && composing && candidatesStart >= 0 && newStart == newEnd && quiet &&
+            newStart != candidatesEnd) newStart - candidatesStart else -1
         selStart = newStart
         selEnd = newEnd
         if (composing && candidatesStart >= 0) composeStart = candidatesStart
         // A field that gave no cursor at the start: our composing text is where it says.
-        val external = out || !(composing && candidatesStart >= 0 && expected.isEmpty())
+        val external = out || !(composing && candidatesStart >= 0 && quiet)
         if (external || movedInside >= 0) revision++
         return external
     }

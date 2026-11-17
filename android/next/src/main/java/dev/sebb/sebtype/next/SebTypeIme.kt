@@ -626,13 +626,15 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val english = lang == ENGLISH
         val asked = keys.ask()
         NativeCore.post({ if (engineComposing) (if (english) flush() else clear()).recorded() else null }) { st ->
-            // The deletion is the user's, and its own selection is a change of the field's (#280)
+            // The deletion is the user's: it goes ahead even when the word's result is stale (#280)
             if (st != null && fresh(asked)) {
                 if (!english) editor.compose("")
                 show(st)
             }
             editor.selectWordsBefore(words, done)
             if (done) autoShift()
+            // English reads the text the words went from (#280)
+            if (done && english && toEngine) englishContext()
         }
     }
 
