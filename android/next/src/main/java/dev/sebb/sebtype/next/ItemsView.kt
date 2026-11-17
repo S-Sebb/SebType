@@ -206,6 +206,26 @@ abstract class ItemsView(context: Context, private val vertical: Boolean) : View
             event.contentDescription = items.getOrNull(id)?.label ?: ""
         }
 
+        /** TalkBack scrolls the items a screenful at a time: only the items in view are its nodes. */
+        override fun onPopulateNodeForHost(node: AccessibilityNodeInfoCompat) {
+            if (maxScroll() <= 0f) return
+            node.isScrollable = true
+            if (scroll > 0f) node.addAction(AccessibilityNodeInfoCompat.ACTION_SCROLL_BACKWARD)
+            if (scroll < maxScroll()) node.addAction(AccessibilityNodeInfoCompat.ACTION_SCROLL_FORWARD)
+        }
+
+        override fun performAccessibilityAction(host: View, action: Int, args: Bundle?): Boolean {
+            val by = when (action) {
+                AccessibilityNodeInfoCompat.ACTION_SCROLL_FORWARD -> viewport()
+                AccessibilityNodeInfoCompat.ACTION_SCROLL_BACKWARD -> -viewport()
+                else -> return super.performAccessibilityAction(host, action, args)
+            }
+            if (maxScroll() <= 0f) return false
+            scrollTo(scroll + by)
+            host.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SCROLLED)
+            return true
+        }
+
         override fun onPerformActionForVirtualView(id: Int, action: Int, arguments: Bundle?): Boolean {
             val item = items.getOrNull(id) ?: return false
             return when (action) {

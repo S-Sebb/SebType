@@ -19,6 +19,10 @@
     <string name="key_digits">数字</string>
     <string name="key_letters">字母</string>
     <string name="key_language">下一种语言</string>
+    <!-- TalkBack: what a double tap and hold on a key does (#283) -->
+    <string name="key_alternates">显示替代字符</string>
+    <string name="key_pick_keyboard">选择键盘</string>
+    <string name="key_lock_caps">开启大写锁定</string>
     <string name="key_space">空格</string>
     <string name="key_enter">换行</string>
     <string name="key_search">搜索</string>

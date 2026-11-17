@@ -22,6 +22,10 @@
     <string name="key_digits">Numbers</string>
     <string name="key_letters">Letters</string>
     <string name="key_language">Next language</string>
+    <!-- TalkBack: what a double tap and hold on a key does (#283) -->
+    <string name="key_alternates">show alternative characters</string>
+    <string name="key_pick_keyboard">choose keyboard</string>
+    <string name="key_lock_caps">turn on Caps lock</string>
     <string name="key_space">Space</string>
     <string name="key_enter">Enter</string>
     <string name="key_search">Search</string>

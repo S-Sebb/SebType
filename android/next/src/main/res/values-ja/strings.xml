@@ -19,6 +19,10 @@
     <string name="key_digits">数字</string>
     <string name="key_letters">文字</string>
     <string name="key_language">次の言語</string>
+    <!-- TalkBack: what a double tap and hold on a key does (#283) -->
+    <string name="key_alternates">代替文字を表示</string>
+    <string name="key_pick_keyboard">キーボードを選択</string>
+    <string name="key_lock_caps">Caps Lock をオン</string>
     <string name="key_space">スペース</string>
     <string name="key_enter">改行</string>
     <string name="key_search">検索</string>

@@ -1287,6 +1287,7 @@ QUICK_CLIP = ("Paste copied text", "粘贴复制的文字", "コピーしたテ�
 RESIZE = ("Resize Keyboard", "调整键盘大小", "キーボードのサイズ変更")
 TALLER = ("Taller", "调高", "高く")
 SHORTER = ("Shorter", "调低", "低く")
+MOVE_KEYBOARD = "Move keyboard"
 
 
 def action(labels):
@@ -1541,6 +1542,56 @@ def swipe_delete_words():
     return f"-> {got!r}"
 
 
+def swipe_delete_cjk():
+    """Delete swiped left a key in Chinese, then Japanese, deletes the last word, not the whole sentence:
+    they have no spaces between words (#283)."""
+    to_english()
+    got = []
+    for text, left in (
+        ("我们今天去公园", "我们今天去"),
+        ("今日は良い天気です", "今日は良い天気"),
+    ):
+        open_field(clip=text)
+        wait_for("the quick clip", lambda: any(n[0] in QUICK_CLIP for n in nodes()), 10)
+        tap_label(QUICK_CLIP)
+        unit = key_spots()["w"][0] - key_spots()["q"][0]
+        swipe_key("Delete", -int(0.6 * unit))
+        got.append(field_text())
+        if got[-1] != left:
+            raise Fail(f"a word's swipe on {text!r} left {got[-1]!r}, not {left!r}")
+    return " and ".join(f"-> {g!r}" for g in got)
+
+
+def floating_after_resize():
+    """A floating keyboard moved to the top stays on the screen when the window gets shorter (a split
+    screen, a fold, #283), and still types."""
+    to_english()
+    size = re.search(r"Physical size: (\d+)x(\d+)", adb("shell", "wm", "size"))
+    w, h = int(size.group(1)), int(size.group(2))
+    try:
+        set_mode("Floating")
+        x, y = next(n[1:3] for n in nodes() if n[0] == MOVE_KEYBOARD)
+        adb("shell", "input", "swipe", str(x), str(y), str(x), "0", "800")
+        time.sleep(1)
+        short = h * 2 // 3
+        adb("shell", "wm", "size", f"{w}x{short}")
+        time.sleep(3)
+        open_field()
+        # The handle is the keyboard's top: off the screen, it isn't in the tree.
+        handle = next((n for n in nodes() if n[0] == MOVE_KEYBOARD), None)
+        l, t, r, b = keyboard_frame
+        if not handle or handle[3] < 0 or b > short:
+            raise Fail(
+                f"in a {short} px screen the handle is at {handle and handle[3]}, the keys end at {b} px"
+            )
+        types_letters()
+        return f"handle at {handle[3]} px, keys end at {b} of {short} px, typing works"
+    finally:
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        set_mode("Standard")
+
+
 def picked_suggestion_period():
     """#39: after a tapped suggestion, a "." still joins the word: "this", This tapped, "." -> "This. "."""
     to_english()
@@ -1660,6 +1711,8 @@ if NEXT:
     check("modes-height", modes_height, needs=["first-install"])
     check("swipe-space-cursor", swipe_space_cursor, needs=["first-install"])
     check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
+    check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
+    check("modes-floating-resized", floating_after_resize, needs=["first-install"])
     check("en-futo-default-migrates", lambda: None)
 
 if (

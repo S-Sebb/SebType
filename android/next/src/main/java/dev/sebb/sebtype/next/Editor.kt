@@ -143,12 +143,7 @@ class Editor(private val ime: InputMethodService) {
             swipeText = ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString().orEmpty()
         }
         val end = swipeEnd
-        var i = swipeText.length
-        repeat(words) {
-            while (i > 0 && swipeText[i - 1].isWhitespace()) i--
-            while (i > 0 && !swipeText[i - 1].isWhitespace()) i--
-        }
-        val start = end - (swipeText.length - i)
+        val start = end - (swipeText.length - wordsStart(swipeText, words))
         if (!done) {
             ic.setSelection(start, end)
             return
@@ -159,6 +154,22 @@ class Editor(private val ime: InputMethodService) {
             ic.commitText("", 1)
             expect(start)
         } else ic.setSelection(end, end)
+    }
+
+    /**
+     * Where [words] words before the end of [text] start, with the spaces after each. Words are the
+     * system's word breaks, as today's delete does: Chinese and Japanese, written without spaces, go a word
+     * (or a punctuation mark) at a time rather than a sentence.
+     */
+    private fun wordsStart(text: String, words: Int): Int {
+        val breaks = BreakIterator.getWordInstance()
+        breaks.setText(text)
+        var i = text.length
+        repeat(words) {
+            while (i > 0 && text[i - 1].isWhitespace()) i--
+            if (i > 0) i = breaks.preceding(i).coerceAtLeast(0)
+        }
+        return i
     }
 
     fun enter() {

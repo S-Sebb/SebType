@@ -185,6 +185,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         stack.addView(panel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(stack, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, android.view.Gravity.BOTTOM))
         root.addView(popups, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        // A resized window, or a keyboard grown taller, moves the floating keyboard to its share of the room.
+        for (v in listOf(root, stack)) v.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeFloating() }
         // The keys stay clear of the navigation bar the window reaches under. With gesture navigation the
         // keyboard's own bar (back and the keyboard switcher) is taller than the gesture area the
         // navigation-bar inset gives: it is the tappable part.
@@ -691,20 +693,37 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             this.width = if (floating) (width * Mode.FLOATING_WIDTH).toInt() else MATCH_PARENT
             gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
         }
-        stack.translationX = if (floating) prefs.getFloat("float_x_$orientation", 0f) else 0f
-        stack.translationY = if (floating) prefs.getFloat("float_y_$orientation", 0f) else 0f
+        floatX = prefs.getFloat("floating_x_$orientation", 0f)
+        floatY = prefs.getFloat("floating_y_$orientation", 0f)
+        placeFloating()
         layoutSent = null
+    }
+
+    /**
+     * The floating keyboard's place, as shares of the room it has to move in: -1 (left) to 1 (right), and 0
+     * (bottom) to 1 (top). Not pixels, so a window resized (split screen, a fold, #283) still shows it.
+     */
+    private var floatX = 0f
+    private var floatY = 0f
+
+    /** Puts the keyboard where [floatX] and [floatY] say, in the window as it is now (after each layout) */
+    private fun placeFloating() {
+        val floating = mode == Mode.FLOATING
+        stack.translationX = if (floating) floatX * ((root.width - stack.width) / 2f).coerceAtLeast(0f) else 0f
+        stack.translationY = if (floating) -floatY * (root.height - stack.height).coerceAtLeast(0) else 0f
     }
 
     /** The floating keyboard dragged by its handle: it stays on the screen. */
     private fun onDrag(dx: Float, dy: Float) {
-        val maxX = (root.width - stack.width) / 2f
-        stack.translationX = (stack.translationX + dx).coerceIn(-maxX, maxX)
-        stack.translationY = (stack.translationY + dy).coerceIn(-(root.height - stack.height).toFloat(), 0f)
+        val roomX = (root.width - stack.width) / 2f
+        val roomY = (root.height - stack.height).toFloat()
+        if (roomX > 0) floatX = (floatX + dx / roomX).coerceIn(-1f, 1f)
+        if (roomY > 0) floatY = (floatY - dy / roomY).coerceIn(0f, 1f)
+        placeFloating()
     }
 
     private fun saveFloating() {
-        prefs.edit().putFloat("float_x_$orientation", stack.translationX).putFloat("float_y_$orientation", stack.translationY).apply()
+        prefs.edit().putFloat("floating_x_$orientation", floatX).putFloat("floating_y_$orientation", floatY).apply()
         layoutSent = null
         // A layout pass computes the insets again: the touchable region follows the keyboard.
         stack.requestLayout()

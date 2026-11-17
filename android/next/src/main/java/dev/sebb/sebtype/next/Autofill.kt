@@ -27,6 +27,7 @@ import androidx.autofill.inline.v1.InlineSuggestionUi
 class AutofillStrip(context: Context) : HorizontalScrollView(context) {
     private val density = resources.displayMetrics.density
     private val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+    private val chips = Chips<View>()
 
     init {
         isHorizontalScrollBarEnabled = false
@@ -59,23 +60,50 @@ class AutofillStrip(context: Context) : HorizontalScrollView(context) {
     @RequiresApi(Build.VERSION_CODES.R)
     fun show(suggestions: List<InlineSuggestion>, barHeight: Int, changed: () -> Unit) {
         row.removeAllViews()
-        val slots = arrayOfNulls<View>(suggestions.size)
+        val answer = chips.start(suggestions.size)
         suggestions.forEachIndexed { i, s ->
             s.inflate(context, Size(ViewGroup.LayoutParams.WRAP_CONTENT, barHeight), context.mainExecutor) { view ->
-                slots[i] = view ?: return@inflate
+                val shown = chips.inflated(answer, i, view ?: return@inflate) ?: return@inflate
                 row.removeAllViews()
-                slots.filterNotNull().forEach { row.addView(it) }
+                shown.forEach { row.addView(it) }
                 changed()
             }
         }
         changed()
     }
 
-    fun clear() = row.removeAllViews()
+    /** The field is left: chips still inflating for it never show. */
+    fun clear() {
+        chips.start(0)
+        row.removeAllViews()
+    }
 
     private fun px(dp: Int) = (dp * density).toInt()
 
     private companion object {
         const val MAX = 6
+    }
+}
+
+/**
+ * The chips of the service's latest answer as they inflate, in its order. The inflations finish later, on
+ * their own: one from an earlier answer, or from a field since left (#283), adds nothing.
+ */
+class Chips<T : Any> {
+    private var answer = 0
+    private var slots = arrayOfNulls<Any>(0)
+
+    /** A new answer of [count] chips; the number its inflations bring back */
+    fun start(count: Int): Int {
+        slots = arrayOfNulls(count)
+        return ++answer
+    }
+
+    /** Chip [index] of [answer] inflated: the chips to show now, or null when that answer is over */
+    @Suppress("UNCHECKED_CAST")
+    fun inflated(answer: Int, index: Int, chip: T): List<T>? {
+        if (answer != this.answer) return null
+        slots[index] = chip
+        return slots.filterNotNull() as List<T>
     }
 }
