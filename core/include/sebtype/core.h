@@ -56,7 +56,7 @@ class Core {
   void clear();
   // What focusOut would type in.
   std::string unfinished();
-  // Commits what is being typed, as leaving the language with commitOnSwitch does.
+  // Commits what is being typed as the engine would (the phone's 🌐 key in an app's own field).
   void flush();
 
   // Touch keyboards (the phone): the candidates as one list, not paged (the bar scrolls up to max), the

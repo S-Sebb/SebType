@@ -12,7 +12,7 @@ after a commit, at most every 180 s, and when it closes. It owns what SebType's 
   letters, Ctrl+Shift+F for 简/繁 and Alt+` for あ ⇄ ア (`src/core.cpp`);
 - the candidate list and paging (`src/pager.cpp`; Rime pages 6 at a time, as its settings say), and the
   phone's unpaged list and touch paths (pick a candidate by index, retype, move the cursor);
-- what 🌐 does to unchosen text: the PCs commit it, the phone drops it (`commitOnSwitch`);
+- what 🌐 does to unchosen text: the PCs type it in as focus loss does, the phone drops it (`commitOnSwitch`);
 - the settings (`sebtype.conf`: `~/.config/sebtype/` on Linux, the app's files on the phone);
 - the tray: its icon names (the files in `pc/icons/`) and its menu.
 

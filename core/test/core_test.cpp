@@ -44,7 +44,7 @@ struct FakeEngine : Engine {
   std::string takeCommit() override { return std::exchange(commit, {}); }
   Preedit preedit() override { return typed.empty() ? Preedit{} : Preedit{{{typed}}, 0}; }
   bool composing() override { return !typed.empty(); }
-  void flush() override { commit += typed, typed.clear(); }
+  void flush() override { commit += typed + "0", typed.clear(); }  // as Rime's commit preview: the first candidate
   void clear() override { typed.clear(); }
   int pageSize() override { return 6; }
   bool candidateAt(int i, Candidate &out) override {
@@ -60,7 +60,7 @@ struct FakeEngine : Engine {
   void highlightAt(int i) override { cursor = i; }
   bool latin() override { return latinOn; }
   void setLatin(bool on) override {
-    if (on) flush();
+    if (on) commit += std::exchange(typed, {});
     latinOn = on;
   }
   bool alternate() override { return alt; }
@@ -151,7 +151,7 @@ TEST_F(CoreTest, SwitchingCommitsWhatIsTypedAndTheFirstLanguageIsHome) {
   type("ni");
   winSpace();
   EXPECT_EQ(core.language(), Lang::English);
-  EXPECT_EQ(core.takeCommit(), "ni");
+  EXPECT_EQ(core.takeCommit(), "ni");  // as its letters, as focus moving away types it in (#301)
   EXPECT_EQ(menuLabels(), (std::vector<std::string>{"中文", "English", "-"}));
   core.setSettings(Settings::parse("[Languages]\nOrder=ja\n"));
   EXPECT_EQ(core.language(), Lang::Japanese);  // English went off

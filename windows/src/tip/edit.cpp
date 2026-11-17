@@ -3,6 +3,7 @@
 // empty composition in the text (Weasel's inline_preedit: false); Japanese types inline, as Mozc did.
 // MIT, SebType.
 #include "candidate_window.h"
+#include "edit_session.h"
 
 namespace sebtype::win {
 namespace {
@@ -54,6 +55,23 @@ void TextService::endComposition(TfEditCookie ec, ITfContext *context, ITfCompos
   composition->Release();
 }
 
+// The session may run once focus or the language moved on: it keeps its own context and composition.
+void TextService::typeIn(const std::wstring &typed) {
+  if (!composition_) return;
+  ITfContext *context = context_;
+  ITfComposition *composition = std::exchange(composition_, nullptr);
+  context->AddRef();
+  const auto end = [context, composition, typed](TfEditCookie ec) {
+    endComposition(ec, context, composition, typed);
+    context->Release();
+    return S_OK;
+  };
+  if (FAILED(editSession(context, clientId_, end, false))) {
+    composition->Release();
+    context->Release();
+  }
+}
+
 // Leaves no pinyin or kana behind.
 HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
   if (composition_) endComposition(ec, context, std::exchange(composition_, nullptr), L"");
@@ -61,6 +79,7 @@ HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
 }
 
 HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
+  leaving_ = false;  // SebType is typing: a notice of its profile going was for its other language
   const std::wstring commit = utf16(reply_.commit);
   reply_.commit.clear();  // applied once
   const bool japanese = reply_.lang == Lang::Japanese;
