@@ -1833,12 +1833,7 @@ def resize_floating(*swipes):
     action(MODES_ACTION)
     tap_label(RESIZE)
     wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
-    # TalkBack reaches the frame alone: the keys under it are out of the accessibility tree (#283).
-    shown = important_labels()
-    if RESIZE_CORNER not in shown or shown & set(SPACE_LABELS):
-        raise Fail(
-            f"with the resize frame up, TalkBack's tree has {sorted(shown & set(SPACE_LABELS + (RESIZE_CORNER,)))}"
-        )
+    talkback_reaches(framed=True)
     for start, (dx, dy) in swipes:
         corner = wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
         l, t, r, b = keyboard_frame
@@ -1850,6 +1845,48 @@ def resize_floating(*swipes):
         time.sleep(1)
     tap_label(("Apply", "应用", "適用"))
     return frame_now()
+
+
+def talkback_reaches(framed):
+    """TalkBack reaches the resize frame alone while it is up (the keys under it are out of the
+    accessibility tree), and the keys again once it is gone (#283)."""
+    shown = important_labels()
+    if (RESIZE_CORNER in shown) != framed or bool(shown & set(SPACE_LABELS)) == framed:
+        raise Fail(
+            f"with the resize frame {'up' if framed else 'gone'}, TalkBack's tree has "
+            f"{sorted(shown & set(SPACE_LABELS + (RESIZE_CORNER,)))}"
+        )
+
+
+def node_bounds():
+    """{label: (left, top, right, bottom)} of the nodes in all windows, the first of each label. Bounds are
+    cut to what shows: a key half off the window is half as tall."""
+    nodes()  # the keyboard's frame too
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    out = {}
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n.get("bounds", ""))
+        out.setdefault(
+            n.get("text") or n.get("content-desc") or "",
+            m and tuple(map(int, m.groups())),
+        )
+    return out
+
+
+def bottom_row_whole(window):
+    """The keyboard's bottom row, whole within a window [window] px tall: Symbols and Space as tall as
+    Delete in the row above. Returns Space's bounds."""
+    b = node_bounds()
+    space = next((b[l] for l in SPACE_LABELS if b.get(l)), None)
+    above, symbols = b.get("Delete"), b.get("Symbols")
+    tall = above and above[3] - above[1]
+    if not (above and symbols and space) or any(
+        k[3] > window or abs((k[3] - k[1]) - tall) > 2 for k in (symbols, space)
+    ):
+        raise Fail(
+            f"in a {window} px window the bottom row isn't whole: Delete {above}, Symbols {symbols}, Space {space}"
+        )
+    return space
 
 
 def important_labels():
@@ -1916,10 +1953,22 @@ def floating_resize():
                 raise Fail(
                     f"after {name} the keys are {r3 - l3}x{b3 - t3} px, not {r2 - l2}x{b2 - t2}"
                 )
+        # Turned with the frame up, the new keyboard view hides its keys from TalkBack too; Apply brings them back.
+        open_field()
+        action(MODES_ACTION)
+        tap_label(RESIZE)
+        wait_for("the resize corner", lambda: node(RESIZE_CORNER), 10)
+        rotate(1)
+        wait_for("the resize corner after the turn", lambda: node(RESIZE_CORNER), 10)
+        talkback_reaches(framed=True)
+        tap_label(("Apply", "应用", "適用"))
+        talkback_reaches(framed=False)
+        rotate(0)
         types_letters()
         return (
             f"keys {r - l}x{b - t} -> {r2 - l2}x{b2 - t2} px, kept after a restart and landscape "
-            f"(there {land[2] - land[0]}x{land[3] - land[1]}), typing works"
+            f"(there {land[2] - land[0]}x{land[3] - land[1]}); turned with the frame up, TalkBack reaches "
+            f"the frame alone and the keys after Apply; typing works"
         )
     finally:
         rotate(0)
@@ -1945,7 +1994,9 @@ def tap_reset():
 
 def floating_short_window():
     """Floating, moved to the top and resized tall: a window half as tall shows its keys shorter, all of them
-    on the screen (the handle too) and typing; the full window brings the saved height back (#283)."""
+    whole on the screen (the handle too) and typing. Made narrower there, the full window brings the saved
+    height back with the new width. A window 200 dp tall with Keyboard Modes open still shows the bottom
+    row whole, the keys under today's 96 dp minimum (#283)."""
     to_english()
     w, h = screen_size()
     try:
@@ -1957,32 +2008,46 @@ def floating_short_window():
         adb("shell", "wm", "size", f"{w}x{short}")
         time.sleep(3)
         open_field()
-        l2, t2, r2, b2 = frame_now()
+        space = bottom_row_whole(short)
+        l2, t2, r2, b2 = keyboard_frame
         handle = node(MOVE_KEYBOARD)
-        # The bottom row too: a node's bounds are cut to what shows, so a row cut off has none.
-        space = next((n for n in nodes() if n[0] in SPACE_LABELS), None)
-        if (
-            not handle
-            or handle[3] < 0
-            or not space
-            or space[2] > short
-            or b2 - t2 >= tall
-        ):
+        if not handle or handle[3] < 0 or b2 - t2 >= tall:
             raise Fail(
-                f"keys {tall} px tall; in a {short} px window to {b2}, the handle at "
-                f"{handle and handle[3]}, space at {space and space[2]}"
+                f"keys {tall} px tall; in a {short} px window {b2 - t2} px, the handle at {handle and handle[3]}"
             )
         screenshot("floating-short-window.png")
         types_letters()
+        # Only the width changed: the saved height stays the tall one, not the one cut to this window.
+        l3, t3, r3, b3 = resize_floating(("corner", (-150, 0)))
+        if (r3 - l3) > (r2 - l2) - 100:
+            raise Fail(
+                f"the corner dragged 150 px left: keys {r2 - l2} -> {r3 - l3} px wide"
+            )
         adb("shell", "wm", "size", "reset")
         time.sleep(3)
         open_field()
-        l3, t3, r3, b3 = frame_now()
-        if abs((b3 - t3) - tall) > 4:
+        l4, t4, r4, b4 = frame_now()
+        if abs((b4 - t4) - tall) > 4 or abs((r4 - l4) - (r3 - l3)) > 4:
             raise Fail(
-                f"back in the full window the keys are {b3 - t3} px tall, not the saved {tall}"
+                f"back in the full window the keys are {r4 - l4}x{b4 - t4} px, not {r3 - l3}x{tall}"
             )
-        return f"keys {tall} px; {b2 - t2} px within a {short} px window, typing works; {b3 - t3} px again after"
+        tiny = round(200 * screen_density())
+        adb("shell", "wm", "size", f"{w}x{tiny}")
+        time.sleep(3)
+        open_field()
+        action(MODES_ACTION)
+        tiny_space = bottom_row_whole(tiny)
+        handle = node(MOVE_KEYBOARD)
+        if not handle or handle[3] < 0:
+            raise Fail(
+                f"in a {tiny} px window with Keyboard Modes open the handle is at {handle and handle[3]}"
+            )
+        screenshot("floating-tiny-window.png")
+        return (
+            f"keys {tall} px; {b2 - t2} px within a {short} px window (Space {space}), typing works; "
+            f"narrowed there to {r3 - l3} px, then {r4 - l4}x{b4 - t4} px in the full window; "
+            f"in {tiny} px with Keyboard Modes open, Space {tiny_space}"
+        )
     finally:
         adb("shell", "wm", "size", "reset")
         time.sleep(3)
@@ -2014,12 +2079,28 @@ def floating_narrowest():
             "1500",
         )
         time.sleep(1)
-        corner = node(RESIZE_CORNER)
-        buttons = [node(label) for label in ("Reset", "Apply")]
-        left = corner[1] - narrowest
-        if any(b is None or not left < b[1] < corner[1] for b in buttons):
+        bounds = node_bounds()
+        corner, reset, apply = (
+            bounds.get(k) for k in (RESIZE_CORNER, "Reset", "Apply")
+        )
+        # The frame is the keyboard's width, its right edge the corner's; each button whole within it, apart
+        # from the other and big enough to press (48 dp; bounds are cut to what shows).
+        right = corner and corner[2]
+        left = right and right - narrowest
+        least = 48 * screen_density()
+        if (
+            not (corner and reset and apply)
+            or any(
+                b[0] < left
+                or b[2] > right
+                or b[3] > corner[3]
+                or min(b[2] - b[0], b[3] - b[1]) < least
+                for b in (reset, apply)
+            )
+            or not (reset[3] <= apply[1] or reset[2] <= apply[0])
+        ):
             raise Fail(
-                f"in a frame from x {left} to {corner[1]}, Reset and Apply are at {buttons}"
+                f"in a frame from x {left} to {right}, Reset is {reset} and Apply {apply}"
             )
         screenshot("floating-narrowest.png")
         tap_label(("Apply",))
@@ -2029,7 +2110,21 @@ def floating_narrowest():
         if abs((r - l) - narrowest) > 0.1 * narrowest:
             raise Fail(f"the narrowest keys are {r - l} px, not about {narrowest}")
         types_letters()
-        return f"keys {r - l} px wide (144 dp is {narrowest}), Reset and Apply inside, typing works"
+        # Reset at this width brings back the keyboard's first width, 85 % of the screen.
+        open_field()
+        action(MODES_ACTION)
+        tap_label(RESIZE)
+        tap_label(("Reset",))
+        tap_label(("Apply",))
+        l2, t2, r2, b2 = frame_now()
+        if abs((r2 - l2) - 0.85 * w) > 0.05 * w:
+            raise Fail(
+                f"Reset at the narrowest width left the keys {r2 - l2} px wide, not about {0.85 * w:.0f}"
+            )
+        return (
+            f"keys {r - l} px wide (144 dp is {narrowest}), Reset {reset} and Apply {apply} inside, typing "
+            f"works; Reset there: {r2 - l2} px"
+        )
     finally:
         tap_reset()
         set_mode("Standard")
