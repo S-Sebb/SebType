@@ -2,10 +2,11 @@
 // finds the words near the letters typed and keeps the learned words; SebType's model (engines/sebtype-lm)
 // ranks them, decides what a space corrects and predicts the next words. MIT, SebType.
 //
-// Threads: keys, the decoder and the ranking run on the caller's thread, as every engine's keys do. The
-// model loads on a worker thread once the first letter is typed (Decisions #2, 2026-11-11: until then the
-// decoder decides alone), and next words are computed there and posted back through READY (plan §3);
-// a key that comes while they are being computed is ranked by the decoder alone, without waiting.
+// Threads: keys and the decoder run on the caller's thread, as every engine's keys do. The model loads on a
+// worker thread once the first letter is typed (Decisions #2, 2026-11-11: until then the decoder decides
+// alone). A key shows the decoder's strip at once; the worker then ranks it with the model and posts the
+// model's strip back through READY, as it does the next words (plan §3, #310). A space that comes while
+// that ranking is still pending waits for it, up to kRankWait, so a correction keeps the model's quality.
 #include <sebtype/hosts.h>
 
 #include <jni.h>
@@ -57,6 +58,8 @@ constexpr std::chrono::milliseconds kDoubleSpace{1100};
 constexpr int kHandAddedFrequency = 250, kPersonalProbability = 160;
 constexpr size_t kNextWords = 5;      // the model's next words asked for; blocked ones leave the list
 constexpr size_t kContextChars = 1000;  // the text before the cursor kept; the model reads 300 of it
+// How long a space waits for the model's ranking of the word before the decoder's rule decides (#310).
+constexpr std::chrono::milliseconds kRankWait{400};
 // Typing options: not a gesture, no full edit distance, offensive words blocked, locale weight 1.0.
 constexpr int kOptions[] = {0, 0, 1, 0, 1000};
 namespace ks {
@@ -481,7 +484,10 @@ class English : public Engine {
     out = {l[index], {}};
     return true;
   }
-  int highlighted() override { return correction_ ? 0 : -1; }
+  int highlighted() override {
+    takeRanking();
+    return correction_ ? 0 : -1;
+  }
 
   void selectAt(int index) override {
     const auto l = list();
@@ -671,7 +677,10 @@ class English : public Engine {
   // the others; e-mail domains after "@"; with nothing typed, the next words: the model's once they come,
   // until then the dictionaries' (the learned words' n-grams).
   std::vector<std::string> list() {
-    if (!typed_.empty()) return strip_;
+    if (!typed_.empty()) {
+      takeRanking();
+      return strip_;
+    }
     domains_ = atEmail();
     if (domains_) return domains(afterAt());
     if (field_ != Field::Text || !main_) return {};
@@ -705,6 +714,11 @@ class English : public Engine {
     const std::string typed = utf8(typed_);
     correction_ = false;
     strip_.clear();
+    {
+      std::lock_guard g(mutex_);
+      rankPending_ = false;
+      rankWanted_.reset();
+    }
     // Right after "@" (an address typed in a text field): domains, never a correction.
     domains_ = !context_.empty() && context_.back() == '@';
     if (domains_) {
@@ -719,37 +733,38 @@ class English : public Engine {
       if (lexicon)
         for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
 
+    // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
     std::string committed = typed;
     std::vector<std::string> strip;
-    // A key never waits for the next words the worker is computing with the model: it goes by the
-    // decoder's rule alone, as before the model loaded (#241, the phone's engine thread).
-    std::unique_lock modelLock(modelMutex_, std::defer_lock);
-    if (model_ready_ && modelLock.try_lock()) {
-      std::vector<sebtype_lm::Candidate> candidates;
-      bool typedIsWord = false;
-      for (const Word &w : results) {
-        typedIsWord |= w.word == typed;
-        candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
-      }
-      const auto ranked = sebtype_lm::rank(*model_, context_, typed, candidates, typedIsWord);
-      strip = ranked.strip, committed = ranked.committed;
-    } else {
-      // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
-      bool typedFound = false;
-      for (const Word &w : results) {
-        if (w.word == typed) typedFound = true;
-        else if (std::find(strip.begin(), strip.end(), w.word) == strip.end()) strip.push_back(w.word);
-      }
-      if (!results.empty() && !strip.empty()) {
-        const Word &first = results.front();
-        const int kind = first.kind & Dictionary::KIND_MASK_KIND;
-        const bool whitelisted = kind == Dictionary::KIND_WHITELIST;
-        const bool allowed = whitelisted || (typed_.size() > 1 && !typedFound);
-        const bool strong = whitelisted || ((first.kind & Dictionary::KIND_FLAG_APPROPRIATE_FOR_AUTOCORRECTION) &&
-                                            normalizedScore(typed_, first.word, first.score) >= kAutocorrectThreshold);
-        if (allowed && kind != Dictionary::KIND_SHORTCUT && strong) committed = strip.front();
-      }
+    bool typedFound = false;
+    for (const Word &w : results) {
+      if (w.word == typed) typedFound = true;
+      else if (std::find(strip.begin(), strip.end(), w.word) == strip.end()) strip.push_back(w.word);
     }
+    if (!results.empty() && !strip.empty()) {
+      const Word &first = results.front();
+      const int kind = first.kind & Dictionary::KIND_MASK_KIND;
+      const bool whitelisted = kind == Dictionary::KIND_WHITELIST;
+      const bool allowed = whitelisted || (typed_.size() > 1 && !typedFound);
+      const bool strong = whitelisted || ((first.kind & Dictionary::KIND_FLAG_APPROPRIATE_FOR_AUTOCORRECTION) &&
+                                          normalizedScore(typed_, first.word, first.score) >= kAutocorrectThreshold);
+      if (allowed && kind != Dictionary::KIND_SHORTCUT && strong) committed = strip.front();
+    }
+    show(strip, committed);
+    if (!model_ready_ || typed_.empty()) return;
+    // The model's ranking comes from the worker; a key never waits for it.
+    Rank rank{context_, typed, {}, typedFound, 0};
+    for (const Word &w : results) rank.candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
+    std::lock_guard g(mutex_);
+    rank.gen = gen_;
+    rankWanted_ = std::move(rank);
+    rankPending_ = true;
+    wake_.notify_all();
+  }
+
+  // Shows STRIP (best first) and COMMITTED, what a space commits, for the letters typed.
+  void show(std::vector<std::string> strip, std::string committed) {
+    const std::string typed = utf8(typed_);
     // With autocorrect off, and for words typed right after a "." or a digit (".py", "3rd", #39), the
     // word stays as typed.
     const char before = context_.empty() ? ' ' : context_.back();
@@ -759,6 +774,7 @@ class English : public Engine {
     for (auto &w : strip) w = withCase(w, typed_);
     committed = withCase(committed, typed_);
     // The typed word is always there to pick (and learn), after the correction when there is one.
+    strip_.clear();
     correction_ = committed != typed;
     if (correction_) strip_.push_back(committed);
     strip_.push_back(typed);
@@ -766,7 +782,25 @@ class English : public Engine {
       if (std::find(strip_.begin(), strip_.end(), w) == strip_.end() && w != typed) strip_.push_back(w);
   }
 
-  std::string decision() const { return correction_ ? strip_.front() : utf8(typed_); }
+  // Shows the model's ranking of the letters typed once the worker has posted it. WAIT: up to kRankWait
+  // for one still pending (a space is about to commit the word).
+  void takeRanking(bool wait = false) {
+    std::optional<sebtype_lm::Ranked> ranked;
+    {
+      std::unique_lock l(mutex_);
+      if (!rankPending_) return;
+      if (wait) ranked_.wait_for(l, kRankWait, [&] { return rankedGen_ == gen_; });
+      if (rankedGen_ != gen_) return;
+      rankPending_ = false;
+      ranked = std::move(rankedWords_);
+    }
+    show(ranked->strip, ranked->committed);
+  }
+
+  std::string decision() {
+    takeRanking(true);
+    return correction_ ? strip_.front() : utf8(typed_);
+  }
 
   void commitTyped() {
     if (typed_.empty()) return;
@@ -805,6 +839,9 @@ class English : public Engine {
   void resetWord() {
     typed_.clear(), xs_.clear(), ys_.clear(), strip_.clear();
     correction_ = false;
+    std::lock_guard g(mutex_);
+    rankPending_ = false;
+    rankWanted_.reset();
   }
 
   void dropLastChar() {
@@ -834,7 +871,7 @@ class English : public Engine {
   void work() {
     std::unique_lock l(mutex_);
     for (;;) {
-      wake_.wait(l, [&] { return stop_ || (loadAsked_ && !loadTried_) || (nextWanted_ && model_ready_); });
+      wake_.wait(l, [&] { return stop_ || (loadAsked_ && !loadTried_) || ((rankWanted_ || nextWanted_) && model_ready_); });
       if (stop_) return;
       if (loadAsked_ && !loadTried_) {
         loadTried_ = true;
@@ -850,7 +887,26 @@ class English : public Engine {
         l.lock();
         continue;
       }
+      if (rankWanted_) {  // the word being typed first: a space may be waiting for it
+        const Rank r = *std::exchange(rankWanted_, std::nullopt);
+        l.unlock();
+        sebtype_lm::Ranked ranked;
+        {
+          std::lock_guard g(modelMutex_);
+          ranked = sebtype_lm::rank(*model_, r.context, r.typed, r.candidates, r.typedIsWord);
+        }
+        l.lock();
+        if (r.gen != gen_) continue;
+        rankedWords_ = std::move(ranked);
+        rankedGen_ = r.gen;
+        ranked_.notify_all();
+        l.unlock();
+        if (ready_) ready_();
+        l.lock();
+        continue;
+      }
       const auto [context, gen] = *std::exchange(nextWanted_, std::nullopt);
+      if (gen != gen_) continue;  // typed on meanwhile
       l.unlock();
       std::vector<sebtype_lm::Word> words;
       {
@@ -887,10 +943,21 @@ class English : public Engine {
   std::string commit_;
   Edit edit_;
 
-  // The worker thread's: the model, loaded once, and the next words for the text at gen_.
+  // The worker thread's: the model, loaded once, the next words for the text at gen_ and the ranking of
+  // the letters typed at gen_ (rankPending_: asked for and not shown yet).
+  struct Rank {
+    std::string context, typed;
+    std::vector<sebtype_lm::Candidate> candidates;
+    bool typedIsWord;
+    uint64_t gen;
+  };
   std::thread worker_;
   std::mutex mutex_, modelMutex_;
-  std::condition_variable wake_;
+  std::condition_variable wake_, ranked_;
+  std::optional<Rank> rankWanted_;
+  sebtype_lm::Ranked rankedWords_;
+  uint64_t rankedGen_ = ~uint64_t{0};
+  bool rankPending_ = false;
   bool stop_ = false, loadAsked_ = false, loadTried_ = false;
   std::atomic<bool> model_ready_ = false;
   std::unique_ptr<sebtype_lm::Model> model_;

@@ -445,6 +445,20 @@ TEST_F(EnglishTest, SpaceCorrectsTyposAndKeepsWords) {
   EXPECT_EQ(en->takeCommit(), "pu ");
 }
 
+// A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
+// right after the letters, before that ranking has come, waits for it and corrects by the model.
+TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
+  start("");
+  type("waht ");
+  EXPECT_EQ(en->takeCommit(), "want ");  // the decoder's rule
+  start();
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  type("waht ");
+  EXPECT_EQ(en->takeCommit(), "what ");
+}
+
 TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   en->setContext("Thank you very ");
   std::this_thread::sleep_for(std::chrono::milliseconds(300));

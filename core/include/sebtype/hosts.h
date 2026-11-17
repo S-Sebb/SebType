@@ -53,8 +53,8 @@ struct EnglishPaths {
   std::string model;    // SebType's model (engines/sebtype-lm/english.gguf); loaded on the first letter typed
   std::string userDir;  // learned words: AOSP's user-history dictionary in userDir/en_history
 };
-// READY runs on the engine's worker thread when next words for the text so far are ready: the frontend posts
-// it to its own thread and reads candidates() there.
+// READY runs on the engine's worker thread when the model has ranked the word being typed or found next words
+// for the text so far: the frontend posts it to its own thread and reads candidates() there.
 std::unique_ptr<Engine> makeEnglish(const EnglishPaths &paths, std::function<void()> ready);
 
 }  // namespace sebtype

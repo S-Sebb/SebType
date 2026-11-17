@@ -65,7 +65,7 @@ JavaVM *vm;
 jclass nativeCore;
 jmethodID englishReady;
 
-// English's next words come from its worker thread: the keyboard is told through NativeCore.englishReady,
+// English's model ranking and next words come from its worker thread: the keyboard is told through NativeCore.englishReady,
 // which posts to its main thread. The thread is attached once and detached when it ends (ART aborts on a
 // thread that ends attached).
 void onEnglishReady() {

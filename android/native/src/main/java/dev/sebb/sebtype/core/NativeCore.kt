@@ -147,7 +147,7 @@ object NativeCore {
     /** A user dictionary file in a format Mozc imports, as a serialized UserDictionary. */
     @JvmStatic external fun importMozcUserDictionary(text: ByteArray): ByteArray
 
-    /** Called on the main thread when English's next words for the text so far are ready. */
+    /** Called on the main thread when English's model has ranked the word typed or found the next words. */
     @Volatile @JvmStatic var onEnglishReady: Runnable? = null
 
     /** From English's worker thread (sebtype_jni.cpp) */

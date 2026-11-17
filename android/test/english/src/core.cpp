@@ -68,7 +68,11 @@ public:
             for (const auto &c : mEngine->candidates(3)) out.strip.push_back(c.text);
             return out;
         }
+        // The letter shows the decoder's strip at once; the model's ranking follows through READY (#310), and
+        // it is what the user reads, so the time per key runs until it comes.
+        const int before = readies();
         mEngine->key({uint32_t(static_cast<unsigned char>(item.typed[n - 1])), 0, false, item.xs[n - 1], item.ys[n - 1]});
+        waitReady(before);
         const auto list = mEngine->candidates(20);
         out.committed = mEngine->highlighted() >= 0 ? list.at(mEngine->highlighted()).text : item.typed;
         for (const auto &c : list)
@@ -84,7 +88,7 @@ private:
     void waitReady(int after) {
         std::unique_lock l(mMutex);
         if (!mReady.wait_for(l, std::chrono::minutes(2), [&] { return mReadies > after; }))
-            throw std::runtime_error("core stack: no next words after two minutes");
+            throw std::runtime_error("core stack: no READY after two minutes");
     }
 
     std::mutex mMutex;

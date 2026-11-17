@@ -146,9 +146,10 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         Engines.configure(this)
         Engines.prepareChinese(this)
         Engines.onChange = { if (views) refresh() }
-        // Next words for the text so far, from English's worker: shown unless a word is being typed again.
+        // From English's worker: the model's strip for the word being typed (#310), or next words for the
+        // text so far. A word's letters are in the field already, so only the strip changes.
         NativeCore.onEnglishReady = Runnable {
-            NativeCore.post({ if (engineComposing) null else state() }) { if (it != null && views && lang == ENGLISH) show(it) }
+            NativeCore.post({ state() }) { if (views && lang == ENGLISH) show(it, applyText = it.preedit.isEmpty()) }
         }
         // A fresh install starts in English (#35).
         lang = prefs.getInt("language", ENGLISH).takeIf { it in Engines.languages() } ?: ENGLISH
