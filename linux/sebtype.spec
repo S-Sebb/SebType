@@ -72,4 +72,5 @@ DESTDIR=%{buildroot} ninja -C build install
 %{_datadir}/fcitx5/addon/sebtype.conf
 %{_datadir}/sebtype/fcitx5/addon/notificationitem.conf
 %{_libdir}/sebtype
-%{_datadir}/icons/hicolor/*/status/sebtype-*.svg
+%{_datadir}/icons/hicolor/*/status/sebtype-*.png
+%{_datadir}/icons/hicolor/scalable/status/sebtype-*.svg
