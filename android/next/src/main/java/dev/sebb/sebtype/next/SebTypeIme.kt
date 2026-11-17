@@ -361,7 +361,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             state().recorded().also { if (it.recompose) engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
         }) {
             // The app changed the text since, with its update still to come
-            if (editor.unchanged(around)) show(it, around = around) else englishContext()
+            show(it)
         }
     }
 
@@ -412,9 +412,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             before?.let { state().takeIf { it.recompose }?.recorded() }
                 ?.also { engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
         }) {
-            if (it != null) {
-                if (editor.unchanged(around)) show(it, around = around) else englishContext()
-            }
+            if (it != null) show(it)
         }
         keysSent = null
         when (lang) {
@@ -474,8 +472,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val cp = text.codePointAt(0)
         if (Character.charCount(cp) == text.length && cp < 0x80) {
             post({ key(NativeCore.charSym(cp), 0).recorded() }) {
-                show(it)
-                if (!it.taken) editor.commit(text)
+                show(it, then = if (!it.taken) { { editor.commit(text) } } else null)
             }
             return
         }
@@ -533,8 +530,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
                 }
                 st
             }, key) {
-                show(it)
-                if (!it.taken) otherwise()
+                // What the key does when the engine doesn't take it goes in as checked with the engine's edit
+                show(it, then = if (!it.taken) otherwise else null)
             }
             // The key's text shows first; its suggestions follow, unless another key is on its way (#310).
             post({ if (englishKeysAhead.get() == 0) settle() else null }) { if (it != null) show(it, applyText = false) }
@@ -543,8 +540,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             Code.TEXT -> {
                 val cp = text.codePointAt(0)
                 if (Character.charCount(cp) != text.length) return post({ flush().recorded() }, key) {
-                    show(it)
-                    editor.commit(text)
+                    show(it, then = { editor.commit(text) })
                 }
                 if (!Character.isLetter(cp) || userShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
                 // The field's capital, by the text this letter follows once the keys before it are in
@@ -650,27 +646,23 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         keyboard.setShift(if (on) KeyboardView.Shift.ON else KeyboardView.Shift.OFF)
     }
 
-    /** The engine's state after a call: its text into the field (unless [applyText] is false), the rest shown. */
-    private fun show(st: NativeState, applyText: Boolean = true, around: Editor.Around? = null) {
+    /**
+     * The engine's state after a call: its text into the field (unless [applyText] is false), then [then], and
+     * the rest shown. English writes only where the field is as its edits left it: if it isn't, nothing goes
+     * in, English reads the field again and false is returned (#280).
+     */
+    private fun show(st: NativeState, applyText: Boolean = true, then: (() -> Unit)? = null): Boolean {
         if (applyText) {
-            editor.beginBatch()
-            // A word reopened from [around] is marked only where the field still has it (#280)
-            if (st.recompose && !editor.composeRegion(st.composeBefore, st.composeAfter, around?.text(st.composeBefore, st.composeAfter))) {
-                // The field changed under it: the word being typed stays as it is there, and English reads the field again
-                editor.finishComposing()
-                editor.endBatch()
-                return englishContext()
+            if (!editor.write(st, if (lang != CHINESE) composition(st) else null, check = lang == ENGLISH, then)) {
+                englishContext()
+                return false
             }
-            if (st.deleteBefore > 0 || st.deleteAfter > 0) editor.delete(st.deleteBefore, st.deleteAfter)
-            if (st.commit.isNotEmpty()) editor.commit(st.commit)
             if (st.commit.isNotEmpty() && lang == CHINESE) Sync.onChineseCommit(this)
-            if (st.commitCursor != 0) editor.moveCursor(st.commitCursor)
-            if (lang != CHINESE) editor.compose(composition(st))
-            editor.endBatch()
         }
         state = st
         if (expanded && st.candidates.isEmpty()) expanded = false
         refresh()
+        return true
     }
 
     /** 日本語's composition: the segment being converted highlighted, the rest underlined. */
@@ -883,9 +875,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         // The emoji in place of the word
         val text = emojiShown
         post({ clear().recorded() }) {
-            show(it)
-            editor.commit(text)
-            englishContext()
+            if (show(it, then = { editor.commit(text) })) englishContext()
         }
     }
 
