@@ -1836,6 +1836,14 @@ def large_text(name, button, pressed):
     """At font scale 2 and the largest display size, in portrait and then landscape, setup's page scrolls to
     its real end, where the whole button is on the screen and clear of the system bars; in landscape it is
     pressed and pressed() says what that did (settings-<name>-large-*.png)."""
+    if not has_root():
+        # A phone (someone's own): its auto-rotate turned itself on during a run, so its display can't be
+        # promised back exactly as it was; the button is only pressed, at the phone's own settings.
+        print(f"{name}: no large text on a phone")
+        before = focus()
+        tap_text(button)
+        wait_for(f"{button[0]} to do its part", lambda: pressed(before), 15)
+        return
     w, h = map(
         int, re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[0]
     )  # physical, portrait
