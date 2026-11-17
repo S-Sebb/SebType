@@ -7,7 +7,7 @@ chinese.py, which leaves SebType installed, chosen as the keyboard and Chinese s
 Opens every settings screen from the home screen (one screenshot each, settings-<screen>.png in
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
-words in Chinese and Japanese; that Picnic is the only look, with no theme choice anywhere and the
+words in Chinese and Japanese (and, on the new keyboard, English, which no save or restart brings back, #282); that Picnic is the only look, with no theme choice anywhere and the
 same look in the system's dark mode (#111), its pink chip behind the first candidate and its pixel font
 in key popups (#28, settings-picnic-*.png in LOGDIR), English's rows as far apart as Gboard's (#161); that FUTO's payment screen and its row in About carry
 SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
@@ -23,7 +23,7 @@ without typed words or the login (#33), the login is in no log or plain file, an
 empties the server. Then that made-up personal data of each kind imports through the backup
 screen's Import and is offered as candidates (#11): a Rime word list and Rime learned words in 中文,
 Mozc and MS-IME dictionaries in 日本語, FUTO's personal dictionary in English. Last, that a settings
-backup leaves clipboard history out unless its box is ticked, and that importing restores it (#34),
+backup leaves clipboard history out unless its box is ticked, and that importing restores it (#34), and that a backup whose 中文 fails to start leaves the phone's Rime files (#282),
 with the backup screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels
 match the emulator's Chinese, English or Japanese UI. One line per check appended to RESULTS; each
 check finds its own way from the home screen, so one failing doesn't stop the next.
@@ -814,6 +814,27 @@ def forget_japanese():
     return f"kaku -> {fresh[:3]}, {learned} after picking {pick}, {after} after forgetting 日本語"
 
 
+def forget_english():
+    """The new keyboard forgets through English's running engine (#282): the word is gone at once, and
+    neither the engine's save as the field closes nor a restart that reads its files brings it back."""
+    if not NEXT:
+        raise Skip("today's app forgets through FUTO's own code")
+    word = "zorbleq"  # made up, so only learning can offer it
+    to_language("hello", "hello")
+    open_field()
+    commit_twice(word)
+    learned = suggested_after(word)
+    forget(labels("English"))
+    after = suggested_after(word)
+    open_field()  # the field before closes: English saves
+    adb("shell", "am", "force-stop", PKG)
+    restarted = suggested_after(word)
+    detail = f"zorbl -> {learned[:4]} learned, {after[:4]} after forgetting English, {restarted[:4]} after a restart"
+    if word not in learned or word in after or word in restarted:
+        raise Fail(detail)
+    return detail
+
+
 WORDS_FILE = f"/data/data/{PKG}/files/rime/user/custom_phrase.txt"
 # Most janky %, slowest p90 (ms) per list, from the plain one-colour look on guide35, which renders
 # in software (2026-11-10): My words 1.6 %, 16 ms; credits, laid out whole, 30-39 %, 48-57 ms. The
@@ -1582,6 +1603,54 @@ def backup_installation_id():
     return f"no installation.yaml in the backup; {own} kept after importing one with another id"
 
 
+def backup_rime_fails():
+    """A backup whose Chinese data doesn't start (#282): the import puts the phone's Rime files back and
+    中文 types as before. The backup's patch leaves Rime without translators, so ranh offers no 然后."""
+    if not NEXT:
+        raise Skip("today's app restores through FUTO's own code")
+    to_language("ni", "你")
+    user = f"{FILES}/rime/user"
+    marker, patch = "sebtype-282-test.txt", "rime_ice.custom.yaml"
+    before = root(f"cat {user}/{patch} 2>/dev/null; true")
+    export_backup(False, "sebtype-282.backup")
+    broken = os.path.join(logdir, "sebtype-282-broken.backup")
+    with (
+        zipfile.ZipFile(os.path.join(logdir, "sebtype-282.backup")) as src,
+        zipfile.ZipFile(broken, "w") as dst,
+    ):
+        for item in src.infolist():
+            if item.filename != f"rime/user/{patch}":
+                dst.writestr(item, src.read(item))
+        dst.writestr(f"rime/user/{patch}", 'patch:\n  "engine/translators": []\n')
+        dst.writestr(f"rime/user/{marker}", "made up\n")
+    adb("push", broken, "/sdcard/Download/sebtype-282-broken.backup")
+    adb("logcat", "-c")
+    try:
+        import_backup("sebtype-282-broken.backup")
+        # It ends once 中文 has started, on the backup's files or, failing that, on the phone's again.
+        log = wait_for(
+            "the import to end",
+            lambda: (lambda out: out if "settings backup" in out else None)(
+                adb("logcat", "-d", "-s", "SebType:W", check=False)
+            ),
+            300,
+        )
+    finally:
+        adb("shell", "rm -f /sdcard/Download/sebtype-282*.backup", check=False)
+    if "failed to import" not in log:
+        raise Fail("a backup whose Chinese doesn't start imported as if it had")
+    if "No such file" not in root(f"ls {user}/{marker} 2>&1; true"):
+        raise Fail(f"the backup's {marker} stayed after the failed import")
+    after = root(f"cat {user}/{patch} 2>/dev/null; true")
+    if after != before:
+        raise Fail(f"{patch} was {before!r}, after the failed import {after!r}")
+    to_language("ni", "你")
+    got = candidates_for("ranh")
+    if not any(c in ("然后", "然後") for c in got[:3]):
+        raise Fail(f"after the failed import ranh -> {got[:5]}")
+    return f"Rime's files back after a backup whose Chinese failed; ranh -> {got[:3]}"
+
+
 def backup_screenshots():
     """The backup screen in English and Japanese, whatever the system language."""
     try:
@@ -1613,6 +1682,7 @@ check("settings-zh-emoji", emoji_candidates)
 check("settings-zh-my-words", my_words)
 check("settings-zh-forget", forget_chinese)
 check("settings-ja-forget", forget_japanese)
+check("settings-en-forget", forget_english)
 check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
 check("settings-picnic-look", picnic_look)
@@ -2437,5 +2507,6 @@ for name in PERSONAL_DATA:
 # Last, in en-US: importing a backup reinstalls the Chinese data in the background.
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-installation-id", backup_installation_id)
+check("settings-backup-rime-fails", backup_rime_fails)
 check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

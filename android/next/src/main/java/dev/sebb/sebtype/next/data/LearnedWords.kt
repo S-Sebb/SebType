@@ -10,8 +10,11 @@ object LearnedWords {
     fun forget(context: Context, language: String, done: () -> Unit) {
         val app = context.applicationContext
         when (language) {
-            "en" -> Engines.onThread(NativeCore.ENGLISH) {
-                Data.englishDir(app).listFiles().orEmpty().forEach { it.deleteRecursively() }
+            // Through the engine, on the thread that types: a running English holds its words and saves them
+            // back over files deleted under it.
+            "en" -> NativeCore.post {
+                Engines.configure(app)
+                forget(NativeCore.ENGLISH)
                 android.os.Handler(app.mainLooper).post(done)
             }
             "zh" -> ChineseData.forget(app) { done() }

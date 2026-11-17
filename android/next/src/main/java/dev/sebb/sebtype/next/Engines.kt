@@ -297,21 +297,31 @@ object Engines {
 
     /**
      * Changes Rime's files with Rime stopped (its own words, forgetting, an import), then sets 中文 up again; a
-     * changed word list ([redeploy]) is compiled. [done] gets on the main thread whether 中文 is ready.
+     * changed word list ([redeploy]) is compiled. [done] gets on the main thread whether 中文 is ready, false too when [block] or the setup threw.
      */
     fun whileChineseStopped(context: Context, redeploy: Boolean = false, block: () -> Unit, done: (Boolean) -> Unit = {}) {
         val app = context.applicationContext
         worker.execute {
-            setChinese(Chinese.PREPARING)
-            configure(app)
-            NativeCore.stop(CHINESE)
+            // done always runs: a caller may be waiting for it (Backup's restore).
+            var ready = false
             try {
-                block()
-                if (redeploy) File(userDir(app), DEPLOYED).delete()
+                setChinese(Chinese.PREPARING)
+                configure(app)
+                NativeCore.stop(CHINESE)
+                try {
+                    block()
+                    if (redeploy) File(userDir(app), DEPLOYED).delete()
+                } finally {
+                    setUpChinese(app)
+                }
+                ready = chinese == Chinese.READY
+            } catch (e: Exception) {
+                Log.w(TAG, "Changing 中文's files failed", e)
+                if (chinese != Chinese.READY) setChinese(Chinese.FAILED) // the setup itself didn't finish
+
             } finally {
-                setUpChinese(app)
+                main.post { done(ready) }
             }
-            main.post { done(chinese == Chinese.READY) }
         }
     }
 
@@ -355,13 +365,20 @@ object Engines {
     /** sebtype.conf as a whole, for a backup; [replaceSettings] takes one back. */
     fun settingsFile(context: Context) = confFile(context.applicationContext)
 
-    /** As [changeSettings], with [ini] as the whole of them. */
+    /** As [changeSettings], with [ini] as the whole of them; blocks until they are written, and throws if they can't be. Not from the main thread, which NativeCore's waits for. */
     fun replaceSettings(context: Context, ini: String) {
         val app = context.applicationContext
-        NativeCore.post {
+        val task = java.util.concurrent.FutureTask<Unit> {
             configure(app)
-            setSettings(ini)
-            write(confFile(app), settings())
+            NativeCore.setSettings(ini)
+            write(confFile(app), NativeCore.settings())
+        }
+        // On NativeCore's thread itself a post would wait for this call to end.
+        if (NativeCore.onEngineThread()) task.run() else NativeCore.post { task.run() }
+        try {
+            task.get()
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
         }
     }
 }
