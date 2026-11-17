@@ -77,6 +77,14 @@ object Prefs {
         scope.launch { app.store.edit { it[option.key] = value } }
     }
 
+    /** Drops options the app no longer keeps there ([Migration]) */
+    suspend fun remove(context: Context, keys: List<Preferences.Key<*>>) {
+        context.applicationContext.store.edit { prefs -> keys.forEach { prefs.remove(it) } }
+    }
+
+    /** The whole file as it is now */
+    suspend fun read(context: Context): Preferences = context.applicationContext.store.data.first()
+
     /** Takes [prefs] as the whole file (a backup's). */
     suspend fun replace(context: Context, prefs: Preferences) {
         context.applicationContext.store.edit {

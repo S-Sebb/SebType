@@ -35,6 +35,9 @@ object NativeCore {
         engine.post { work() }
     }
 
+    /** Whether this is the thread [post] runs work on */
+    fun onEngineThread() = Looper.myLooper() == engine.looper
+
     /** [post], then [show] with [work]'s result on the main thread, after the results posted before it. */
     fun <T> post(work: NativeCore.() -> T, show: (T) -> Unit) {
         @Suppress("UNCHECKED_CAST")

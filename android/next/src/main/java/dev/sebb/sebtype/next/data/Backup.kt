@@ -99,49 +99,89 @@ object Backup {
         }
     }
 
+    /**
+     * Reads all of the backup before it changes anything, and puts everything back if a step fails: the
+     * options, the personal dictionary and the folders, which change with the engines that use them stopped.
+     */
     private suspend fun restore(context: Context, from: File) {
-        File(from, PREFS).takeIf { it.isFile }?.let { file ->
-            val prefs = file.source().buffer().use { PreferencesSerializer.readFrom(it) }
-            Prefs.replace(context, prefs)
-        }
-        File(from, CONF).takeIf { it.isFile }?.let { Engines.replaceSettings(context, it.readText()) }
-        File(from, WORDS).takeIf { it.isFile }?.let { file ->
-            val have = PersonalWords.all(context).map { Triple(it.word, it.locale, it.shortcut) }.toSet()
-            PersonalWords.add(context, PersonalWord.list(file.readText()).filter { Triple(it.word, it.locale, it.shortcut) !in have })
+        val originals = File(context.filesDir, "restore-originals")
+        // An earlier import that couldn't put all of the phone's files back finishes that first, or this one doesn't start.
+        if (Swap(originals).pending) whileStopped(context, listOf(NativeCore.CHINESE, NativeCore.JAPANESE, NativeCore.ENGLISH)) { Swap(originals).rollback() }
+        val prefs = File(from, PREFS).takeIf { it.isFile }?.let { file -> file.source().buffer().use { PreferencesSerializer.readFrom(it) } }
+        val conf = File(from, CONF).takeIf { it.isFile }?.readText()
+        val have = PersonalWords.all(context)
+        val words = File(from, WORDS).takeIf { it.isFile }?.let { file ->
+            val keys = have.map { Triple(it.word, it.locale, it.shortcut) }.toSet()
+            PersonalWord.list(file.readText()).filter { Triple(it.word, it.locale, it.shortcut) !in keys }
         }
         // Today's app's names for English's learned words and the imported Mozc files.
         File(from, LEGACY_ENGLISH).listFiles()?.forEach { moveInto(it, File(from, "english/${it.name}")) }
         File(from, LEGACY_JAPANESE).listFiles { f -> " ja " in f.name }?.forEach { moveInto(it, File(from, "ja-dictionaries/${it.name}")) }
+        val dirs = folders(context).mapNotNull { (prefix, dir) -> File(from, prefix).takeIf { it.isDirectory }?.let { prefix to (it to dir) } }.toMap()
+        val clipboard = File(from, CLIPBOARD).takeIf { it.isFile }
+        if (prefs == null && conf == null && words == null && dirs.isEmpty() && clipboard == null) throw IOException("Not a SebType backup")
 
-        val folders = folders(context)
-        // Mozc first, with Mozc stopped (without saving: its files are being replaced).
-        File(from, "mozc").takeIf { it.isDirectory }?.let { dir ->
-            val done = CountDownLatch(1)
-            Engines.onThread(NativeCore.JAPANESE) {
-                try {
-                    NativeCore.stop(NativeCore.JAPANESE)
-                    replace(dir, folders.getValue("mozc/"))
-                } finally {
-                    done.countDown()
+        val oldPrefs = Prefs.read(context)
+        val oldConf = Engines.settingsFile(context).takeIf { it.isFile }?.readText()
+        val swap = Swap(originals.apply { deleteRecursively() }) // nothing left to put back: an empty or half-made folder
+        val stop = listOf("rime/user/" to NativeCore.CHINESE, "mozc/" to NativeCore.JAPANESE, "english/" to NativeCore.ENGLISH)
+            .filter { it.first in dirs }.map { it.second }
+        try {
+            prefs?.let { Prefs.replace(context, it) }
+            conf?.let { Engines.replaceSettings(context, it) }
+            words?.let { PersonalWords.add(context, it) }
+            // 中文 set up again on the backup's data, or the originals go back (with it stopped once more).
+            whileStopped(context, stop) {
+                // installation.yaml (never in a backup) stays: it is this phone's.
+                dirs.forEach { (prefix, dir) -> swap.replace(dir.first, dir.second, if (prefix == "rime/user/") setOf("installation.yaml") else emptySet()) }
+                if (clipboard != null) {
+                    swap.replaceFile(clipboard, File(context.filesDir, CLIPBOARD))
+                    File(from, CLIPBOARD_FILES).takeIf { it.isDirectory }?.let { swap.replace(it, File(context.filesDir, "clipboardfiles")) }
                 }
             }
-            done.await()
+        } catch (e: Throwable) {
+            if (swap.pending) runCatching { whileStopped(context, stop) { swap.rollback() } }.onFailure { Log.w(TAG, "Putting the phone's data back", it) }
+            Prefs.replace(context, oldPrefs)
+            oldConf?.let { Engines.replaceSettings(context, it) }
+            words?.let { PersonalWords.delete(context, *it.toTypedArray()) }
+            Log.w(TAG, "A settings backup failed to import; the phone's data is as it was")
+            throw e
         }
-        File(from, "english").takeIf { it.isDirectory }?.let { replace(it, folders.getValue("english/")) }
-        File(from, "ja-dictionaries").takeIf { it.isDirectory }?.let { replace(it, folders.getValue("ja-dictionaries/")) }
-        File(from, "rime/user").takeIf { it.isDirectory }?.let { dir ->
-            val done = CountDownLatch(1)
-            // installation.yaml (never in a backup) stays: it is this phone's.
-            Engines.whileChineseStopped(context, redeploy = true, block = { replace(dir, folders.getValue("rime/user/"), keep = setOf("installation.yaml")) },
-                done = { done.countDown() })
-            withContext(Dispatchers.IO) { done.await() }
-        }
-        if (File(from, CLIPBOARD).isFile) {
-            File(from, CLIPBOARD).copyTo(File(context.filesDir, CLIPBOARD), overwrite = true)
-            File(from, CLIPBOARD_FILES).takeIf { it.isDirectory }?.let { replace(it, File(context.filesDir, "clipboardfiles")) }
-        }
+        swap.commit()
         PersonalWords.refreshMozc(context)
         Log.w(TAG, "Imported a settings backup")
+    }
+
+    /**
+     * Runs [block] with the engines in [langs] stopped, each on its own thread, and waits for it; [block]'s
+     * failure, or 中文 not coming back after it, is thrown here. Mozc stops without saving (its files are
+     * being replaced), English saves first, and 中文 is set up again after. A stopped engine starts again
+     * when next used.
+     */
+    private fun whileStopped(context: Context, langs: List<Int>, block: () -> Unit) {
+        if (langs.isEmpty()) return block()
+        val rest = langs.drop(1)
+        val done = CountDownLatch(1)
+        var failure: Throwable? = null
+        val inner = {
+            try {
+                if (langs[0] != NativeCore.CHINESE) NativeCore.stop(langs[0])
+                whileStopped(context, rest, block)
+            } catch (e: Throwable) {
+                failure = e
+            }
+        }
+        when (langs[0]) {
+            NativeCore.CHINESE -> Engines.whileChineseStopped(context, redeploy = true, block = inner, done = { ready ->
+                if (failure == null && !ready) failure = IOException("中文 didn't start on the restored data")
+                done.countDown()
+            })
+            NativeCore.JAPANESE -> Engines.onThread(NativeCore.JAPANESE) { inner(); done.countDown() }
+            // English types on NativeCore's thread, which starts it again for a key.
+            else -> NativeCore.post { inner(); done.countDown() }
+        }
+        done.await()
+        failure?.let { throw it }
     }
 
     private fun moveInto(from: File, to: File) {
@@ -149,10 +189,66 @@ object Backup {
         if (!from.renameTo(to)) throw IOException("Can't stage ${from.name}")
     }
 
-    /** [to]'s files become [from]'s, but those named in [keep] */
-    private fun replace(from: File, to: File, keep: Set<String> = emptySet()) {
-        to.listFiles().orEmpty().filter { it.name !in keep }.forEach { it.deleteRecursively() }
-        to.mkdirs()
-        from.copyRecursively(to, overwrite = true)
+    /**
+     * Replaces folders and files, keeping what they held in [originals] until [commit], or putting it back
+     * ([rollback]). What is left to put back is on disk, so a rollback that stopped partway finishes later
+     * with a new Swap on the same folder ([pending]). Step n keeps its originals in n/, their place in n.to
+     * (the folder, then "all" but the names after it, or "one", the name after it), and n.copied while the
+     * backup's files may be in that place.
+     */
+    internal class Swap(private val originals: File, private val rename: (File, File) -> Boolean = File::renameTo) {
+        private fun steps() = originals.list().orEmpty().filter { it.endsWith(".to") }.map { it.removeSuffix(".to").toInt() }
+
+        val pending get() = steps().isNotEmpty()
+
+        /** [to]'s files become [from]'s, but those named in [keep] */
+        fun replace(from: File, to: File, keep: Set<String> = emptySet()) {
+            if (!from.isDirectory) throw IOException("Can't read ${from.name}")
+            to.mkdirs()
+            val n = step(to, "all", keep)
+            to.listFiles().orEmpty().filter { it.name !in keep }.forEach { move(it, File(originals, "$n/${it.name}")) }
+            File(originals, "$n.copied").createNewFile()
+            from.copyRecursively(to, overwrite = true)
+        }
+
+        fun replaceFile(from: File, to: File) {
+            val n = step(to.parentFile!!, "one", setOf(to.name))
+            if (to.exists()) move(to, File(originals, "$n/${to.name}"))
+            File(originals, "$n.copied").createNewFile()
+            from.copyTo(to, overwrite = true)
+        }
+
+        private fun step(place: File, kind: String, names: Set<String>): Int {
+            val n = (steps().maxOrNull() ?: -1) + 1
+            File(originals, "$n").mkdirs()
+            File(originals, "$n.to").writeText((listOf(place.path, kind) + names).joinToString("\n"))
+            return n
+        }
+
+        /** Puts back what was moved aside, over what came in its place, latest first; each part once. */
+        fun rollback() {
+            for (n in steps().sortedDescending()) {
+                val (path, kind) = File(originals, "$n.to").readLines()
+                val names = File(originals, "$n.to").readLines().drop(2).toSet()
+                val place = File(path)
+                val copied = File(originals, "$n.copied")
+                if (copied.exists()) {
+                    val came = if (kind == "all") place.listFiles().orEmpty().filter { it.name !in names } else names.map { File(place, it) }
+                    if (!came.all { !it.exists() || it.deleteRecursively() } || !copied.delete()) throw IOException("Can't clear ${place.path}")
+                }
+                File(originals, "$n").listFiles().orEmpty().forEach { move(it, File(place, it.name)) }
+                File(originals, "$n").delete()
+                File(originals, "$n.to").delete()
+            }
+            commit()
+        }
+
+        fun commit() {
+            originals.deleteRecursively()
+        }
+
+        private fun move(from: File, to: File) {
+            if (!rename(from, to)) throw IOException("Can't move ${from.path}")
+        }
     }
 }
