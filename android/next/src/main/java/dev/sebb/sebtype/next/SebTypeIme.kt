@@ -249,6 +249,8 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             val bottom = maxOf(insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
                 insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom)
             v.setPadding(0, 0, 0, bottom)
+            // The resize frame's corner stays above it, out of the system's gesture area.
+            (frame.layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom
             insets
         }
         // The system's back and keyboard-switch buttons under the keys: dark, on the light cloth

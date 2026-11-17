@@ -1855,7 +1855,10 @@ def floating_resize():
     to_english()
     auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
     try:
-        l, t, r, b = set_mode("Floating")
+        set_mode("Floating")
+        tap_reset()  # from its size and place before any change
+        open_field()
+        l, t, r, b = frame_now()
         l2, t2, r2, b2 = resize_floating(("corner", (-200, -80)))
         if not (r2 - l2 < r - l - 150 and b2 - t2 < b - t - 40):
             raise Fail(
@@ -1911,7 +1914,10 @@ def floating_resize_edge():
     to_english()
     w, h = screen_size()
     try:
-        l, t, r, b = set_mode("Floating")
+        set_mode("Floating")
+        tap_reset()  # from its size and place before any change
+        open_field()
+        l, t, r, b = frame_now()
         l2, t2, r2, b2 = resize_floating(("keys", (-w, 0)), ("corner", (w, h)))
         if l2 < 0 or r2 > w or b2 > h or not (r2 - l2 > r - l and b2 - t2 > b - t):
             raise Fail(

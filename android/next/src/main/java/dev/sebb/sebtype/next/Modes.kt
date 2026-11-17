@@ -237,6 +237,10 @@ class ResizeFrame(context: Context, private val texts: Texts, private val listen
         ViewCompat.setAccessibilityDelegate(this, a11y)
     }
 
+    // The keyboard's height, not the room it may have: its parent measures it again to the keyboard's.
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) = setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec),
+        if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY) MeasureSpec.getSize(heightMeasureSpec) else 0)
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         val y = h / 2f + 8 * density
         val button = 96 * density
