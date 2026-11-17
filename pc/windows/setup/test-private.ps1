@@ -47,7 +47,7 @@ function Keys {
   Dark
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
   foreach ($k in $args) {
-    $null = $tsf::Key($(switch ($k) { 'space' { 0x20 } 'Return' { 0x0D } 'Escape' { 0x1B } default { [byte][char]$k.ToUpper() } }))
+    $null = $tsf::Key($(switch ($k) { 'space' { 0x20 } 'Return' { 0x0D } 'Escape' { 0x1B } default { [byte][char]"$k".ToUpper() } }))
     $tsf::Settle(150)
   }
   $tsf::Settle(600)

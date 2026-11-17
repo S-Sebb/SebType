@@ -402,12 +402,12 @@ void TextService::focus(ITfDocumentMgr *focused) {
 // IS_PRIVATE is what browsers set in private windows: Chromium's (Chrome, Edge) for incognito and guest
 // windows and for password fields, Firefox's for private windows, beside the field's own scopes. Asked at
 // focus, so the core knows before the first key; when the app can't answer then, asked again at each key.
+// The app's text store gives it as an attribute, which TSF has as an app property, not a TSF property.
 TextService::Field TextService::field(ITfContext *context) {
   if (field_ != Field::Unknown) return field_;
   Field found = Field::Text;
   ITfReadOnlyProperty *prop = nullptr;
-  const GUID *props[] = {&kPropInputScope};
-  if (FAILED(context->TrackProperties(props, 1, nullptr, 0, &prop))) return field_ = found;
+  if (FAILED(context->GetAppProperty(kPropInputScope, &prop)) || !prop) return field_ = found;
   const HRESULT read = editSession(
       context, clientId_,
       [&](TfEditCookie ec) {
