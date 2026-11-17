@@ -167,12 +167,13 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
             if (image.exists()) part.delete() else part.renameTo(image)
             thumbnail(image)
             main.post {
-                if (copying != generation || !keep) {
-                    val kept = referenced(history)
-                    return@post saver.execute { images.dropped(name, kept) }
+                // Not if the history was cleared or turned off meanwhile.
+                if (copying == generation && keep) {
+                    val pinned = history.any { it.file == name && it.pinned }
+                    update(listOf(Clip(null, pinned, now, name, listOf(mime), size / (1024f * 1024f))) + history.filter { it.file != name })
                 }
-                val pinned = history.any { it.file == name && it.pinned }
-                update(listOf(Clip(null, pinned, now, name, listOf(mime), size / (1024f * 1024f))) + history.filter { it.file != name })
+                // Queued after update()'s save: the image is kept until a saved history shows it.
+                saver.execute { images.added(name) }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Can't keep a copied image", e)
@@ -248,24 +249,30 @@ class Clipboard(context: Context, private val private: () -> Boolean) {
      * list of images doesn't have it yet, mustn't delete it.
      */
     class Images(private val dir: File) {
-        private val adding = mutableSetOf<String>()
+        // Copies in flight by name: the same image copied twice has the same name.
+        private val adding = mutableMapOf<String, Int>()
+        private var kept = emptySet<String>()
 
         fun adding(name: String) {
-            adding += name
+            adding[name] = (adding[name] ?: 0) + 1
+        }
+
+        /** A copy of [name] is done: shown by the history saved before this, or dropped, and then it goes. */
+        fun added(name: String) {
+            val left = adding.getValue(name) - 1
+            if (left > 0) adding[name] = left
+            else {
+                adding -= name
+                if (name !in kept) listOf(name, name + THUMB).forEach { File(dir, it).delete() }
+            }
         }
 
         /** After a save of a history showing [kept] (images and thumbnails): the other files go, but those being added. */
         fun saved(kept: Set<String>) {
-            adding -= kept
+            this.kept = kept
             dir.listFiles()?.forEach {
                 if (it.name !in kept && it.name.removeSuffix(THUMB) !in adding && !it.name.endsWith(".part")) it.delete()
             }
-        }
-
-        /** An image copied in that won't be shown (the history was cleared or turned off meanwhile) */
-        fun dropped(name: String, kept: Set<String>) {
-            adding -= name
-            saved(kept)
         }
     }
 

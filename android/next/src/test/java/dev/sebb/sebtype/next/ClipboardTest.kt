@@ -79,14 +79,38 @@ class ClipboardTest {
             assertTrue(new.exists() && thumb.exists())
             assertFalse(old.exists())
             images.saved(setOf("new.png", "new.png.thumb.jpg"))
+            images.added("new.png")
             images.saved(setOf("new.png", "new.png.thumb.jpg"))
             assertTrue(new.exists())
 
             images.adding("dropped.png")
             val dropped = write("dropped.png")
-            images.dropped("dropped.png", setOf("new.png", "new.png.thumb.jpg"))
+            images.added("dropped.png")
             assertFalse(dropped.exists())
             assertTrue(new.exists())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * The same image copied, the history cleared, then copied again: the second copy is saved before the
+     * first's is dropped, and the dropped one mustn't delete the file the history now shows.
+     */
+    @Test
+    fun droppedCopyLeavesTheSameImageCopiedAgain() {
+        val dir = Files.createTempDirectory("clips").toFile()
+        try {
+            val images = Clipboard.Images(dir)
+            images.adding("a.png")
+            images.adding("a.png")
+            val image = File(dir, "a.png").apply { writeText("x") }
+            images.saved(setOf("a.png", "a.png.thumb.jpg")) // the second copy's history
+            images.added("a.png")
+            images.added("a.png") // the first copy, dropped
+            assertTrue(image.exists())
+            images.saved(emptySet())
+            assertFalse(image.exists())
         } finally {
             dir.deleteRecursively()
         }
