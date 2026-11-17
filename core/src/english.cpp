@@ -492,13 +492,12 @@ class English : public Engine {
     out = {l[index], {}};
     return true;
   }
-  int highlighted() override {
-    takeRanking();
-    return correction_ ? 0 : -1;
-  }
+  // Of the list last shown: a ranking that came since is shown first (list() takes it).
+  int highlighted() override { return correction_ ? 0 : -1; }
 
+  // A tap picks from the list last shown, never from a ranking that came after it (#310).
   void selectAt(int index) override {
-    const auto l = list();
+    const auto l = shown_;
     if (index < 0 || size_t(index) >= l.size()) return;
     const std::string &w = l[index];
     if (domains_) {  // the rest of an e-mail address: no space after it
@@ -685,6 +684,10 @@ class English : public Engine {
   // the others; e-mail domains after "@"; with nothing typed, the next words: the model's once they come,
   // until then the dictionaries' (the learned words' n-grams).
   std::vector<std::string> list() {
+    shown_ = currentList();
+    return shown_;
+  }
+  std::vector<std::string> currentList() {
     if (!typed_.empty()) {
       takeRanking();
       return strip_;
@@ -983,6 +986,7 @@ class English : public Engine {
   bool domains_ = false;     // the list is e-mail domains
   bool afterPick_ = false;   // the last thing done was a pick and its space
   bool decodePending_ = false;  // the letters typed changed since the strip was made
+  std::vector<std::string> shown_;  // the list last returned, which a tap picks from
   std::string commit_;
   Edit edit_;
 

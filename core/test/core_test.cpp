@@ -463,6 +463,21 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
   EXPECT_EQ(en->takeCommit(), "what ");
 }
 
+// A tap picks the word shown, even when the model's ranking has come since and moved another word there.
+TEST_F(EnglishTest, ATapPicksTheWordShownNotALaterRanking) {
+  start(EN_MODEL, std::chrono::milliseconds(300));
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  const int readies = readyCount();
+  type("waht");
+  const auto shown = list();  // the decoder's: the model's "what" isn't ranked yet
+  ASSERT_EQ(shown.at(0), "want");
+  ASSERT_TRUE(ready(readies));  // ranked, not shown
+  en->selectAt(0);
+  EXPECT_EQ(en->takeCommit(), "want ");
+}
+
 // Rankings known to take longer than a space may wait: the space doesn't wait, and the decoder's rule decides.
 TEST_F(EnglishTest, ASpaceDoesntWaitForRankingsKnownToBeSlow) {
   start(EN_MODEL, std::chrono::milliseconds(1000));
