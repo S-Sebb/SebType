@@ -230,6 +230,7 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             page = Page.LETTERS
             shown = Panel.NONE
             expanded = false
+            keyboard.setShift(KeyboardView.Shift.OFF) // Caps Lock ends with its field, as today's does
         }
         enterLanguage()
         keyboard.enter = kind.enter

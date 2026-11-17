@@ -1417,7 +1417,7 @@ def modes_one_handed():
 
 def caps_lock():
     """A double tap on Shift locks capitals, also while the field's own capital has Shift on (#257): today's
-    does, and the locked key is drawn berry."""
+    does, and the locked key is drawn berry. A new field ends it, as today's does."""
     open_field()
     shift = wait_for(
         "Shift",
@@ -1438,7 +1438,11 @@ def caps_lock():
     type_fast("ab", gap_ms=300)
     if (text := field_text()) != "AB":
         raise Fail(f"typed ab with caps lock; the field shows {text!r}")
-    return f"double tap -> Caps lock, ab -> {text!r}"
+    open_field()
+    time.sleep(1)
+    if "Caps lock" in {label for label, *_ in nodes()}:
+        raise Fail("caps lock stayed on in a new field")
+    return f"double tap -> Caps lock, ab -> {text!r}; a new field ends it"
 
 
 def modes_split():
