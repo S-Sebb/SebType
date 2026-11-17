@@ -97,6 +97,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private var cells = emptyList<Cell>()
     /** The keys' text sizes' share of today's: [keyTextScale] of the keys as laid out */
     private var textScale = 1f
+    /** The key frames' pixel: today's, smaller with the text on keys smaller than any docked keyboard's */
+    private var keyPx = px
 
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
@@ -194,6 +196,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         }
         cells = out
         textScale = keyTextScale(heightScale, (if (split) half else unit) / density)
+        keyPx = maxOf(1, (px * textScale).roundToInt()).toFloat()
         val letters = out.filter { it.key.code == Code.TEXT && it.key.text.length == 1 && it.key.text[0] in 'a'..'z' }
         if (letters.isNotEmpty()) listener.onLayout(width, height, letters.flatMap {
             val r = it.rect
@@ -237,20 +240,25 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     override fun onDraw(canvas: Canvas) {
+        // On keys smaller than any docked keyboard's, the letters share the size that fits the widest of them.
+        val letters = if (textScale < 1f) cells.filter { isLetter(it) }.minOfOrNull { labelSize(it, shown(it.key)) } else null
         for (cell in cells) {
             val r = cell.rect
             val key = cell.key
             val pressed = pointers.values.any { it.cell === cell }
             val (l, t, rr, b) = face(r)
             val frame = frame(key)
-            frame.draw(canvas, l, t, rr, b, px, pressed)
+            frame.draw(canvas, l, t, rr, b, keyPx, pressed)
             // The frame's shadow takes its last pixel right and below: the face's middle is up and left of it.
-            val cx = (l + rr - px) / 2 + if (pressed) px / 2 else 0f
-            val cy = (t + b - px) / 2 + if (pressed) px / 2 else 0f
+            val cx = (l + rr - keyPx) / 2 + if (pressed) keyPx / 2 else 0f
+            val cy = (t + b - keyPx) / 2 + if (pressed) keyPx / 2 else 0f
             val ink = if (frame === PixelFrame.BERRY) Picnic.WHITE else Picnic.INK
             val icon = icon(key)
             when {
-                icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f), ink)
+                // On keys smaller than any docked keyboard's, an icon stays within the face's frame too.
+                icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f).let {
+                    if (textScale < 1f) minOf(it, 24 * density * textScale, rr - l - 5 * keyPx) else it
+                }, ink)
                 key.code == Code.SPACE && key.label.isBlank() -> {
                     label.textSize = 13 * density * textScale
                     // Split's halves of the space bar are narrow: the label shrinks to fit, as today's does
@@ -271,17 +279,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 else -> {
                     val s = shown(key)
-                    label.textSize = when {
-                        s.length > 1 -> 13f
-                        cell.rect.height() < rowHeight -> 20f
-                        // The small punctuation is drawn larger, as today's keyboard does
-                        s in ",.、。" -> 45f
-                        else -> 25f
-                    } * density * textScale
-                    // A key narrower than its letter (W on the narrowest floating keyboard) shrinks it to fit.
-                    val room = rr - l - 2 * px
-                    val w = label.measureText(s)
-                    if (w > room) label.textSize *= room / w
+                    label.textSize = letters?.takeIf { isLetter(cell) } ?: labelSize(cell, s)
                     label.color = ink
                     canvas.drawText(s, cx, cy + label.textSize * 0.35f, label)
                 }
@@ -289,6 +287,24 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             // Hints need a key face of today's size: on smaller ones they crowd the letter, and they go.
             if (hints && textScale == 1f) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
         }
+    }
+
+    private fun isLetter(cell: Cell) = cell.rect.height() >= rowHeight && shown(cell.key).let { it.length == 1 && it[0].isLetter() }
+
+    /** A key's label's text size: today's, shrunk to fit a key narrower than it (W in split's halves) */
+    private fun labelSize(cell: Cell, s: String): Float {
+        label.textSize = when {
+            s.length > 1 -> 13f
+            cell.rect.height() < rowHeight -> 20f
+            // The small punctuation is drawn larger, as today's keyboard does
+            s in ",.、。" -> 45f
+            else -> 25f
+        } * density * textScale
+        // On keys smaller than any docked keyboard's, within the frame's outline and shadow
+        val (l, _, rr, _) = face(cell.rect)
+        val room = rr - l - (if (textScale < 1f) 4 else 2) * keyPx
+        val w = label.measureText(s)
+        return if (w > room) label.textSize * room / w else label.textSize
     }
 
     // --- Touch ---
@@ -538,7 +554,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     /** A key's face in its cell: its outline starts at the cell's top, the space between rows below it. */
-    private fun face(r: RectF) = RectF(r.left + 1.5f * density, r.top, r.right - 2 * density, r.top + r.height() * 0.83f)
+    private fun face(r: RectF) =
+        RectF(r.left + 1.5f * density * textScale, r.top, r.right - 2 * density * textScale, r.top + r.height() * 0.83f)
 
     /** The key, a row taller upwards, its label in the part above the key */
     private fun showPreview(cell: Cell) {
