@@ -88,16 +88,18 @@ inline bool clientGone(HANDLE pipe) {
 // The text service's calls, which run on the app's thread (#275). A server that doesn't reply within replyMs
 // costs one key that wait, not every key: until it answers again, calls fail at once (ERROR_TIMEOUT, so no
 // second server is started), and at most every retryMs a Reset request that waits only probeMs asks whether
-// it does, and drops what the keys it stopped waiting for may have begun (the server drops those still waiting,
-// clientGone). Only then does the call itself go out, so no key reaches a server the app stopped waiting for.
+// it does, and drops what the keys it stopped waiting for may have begun, unless another app has typed since
+// (Composer; the server drops the keys still waiting, clientGone). Only then does the call itself go out, so no key reaches a server the app stopped waiting for.
 // One per app: its threads' text services share the server. replyMs is over the slowest request seen on YukaROG,
 // the switch to 日本語 that loads Mozc (1.4 s): a key the app stops waiting for may still be typed by the server.
 class Guarded {
  public:
-  explicit Guarded(DWORD replyMs = 3000, DWORD retryMs = 1000, DWORD probeMs = 100)
-      : replyMs_(replyMs), retryMs_(retryMs), probeMs_(probeMs) {}
+  explicit Guarded(DWORD replyMs = 3000, DWORD retryMs = 1000, DWORD probeMs = 100,
+                   uint32_t client = GetCurrentProcessId())
+      : replyMs_(replyMs), retryMs_(retryMs), probeMs_(probeMs), client_(client) {}
 
-  bool call(const Request &request, Reply &reply) {
+  bool call(Request request, Reply &reply) {
+    request.client = client_;
     if (down_) {
       const DWORD now = GetTickCount();
       DWORD last = tried_;
@@ -106,8 +108,10 @@ class Guarded {
         SetLastError(ERROR_TIMEOUT);
         return false;
       }
+      Request reset{Op::Reset};
+      reset.client = client_;
       Reply state;
-      if (!win::call(Request{Op::Reset}, state, 0, probeMs_)) {
+      if (!win::call(reset, state, 0, probeMs_)) {
         // A server that is gone is no longer waited for: the caller may start one.
         if (GetLastError() == ERROR_FILE_NOT_FOUND) down_ = false;
         else SetLastError(ERROR_TIMEOUT);
@@ -127,6 +131,7 @@ class Guarded {
 
  private:
   const DWORD replyMs_, retryMs_, probeMs_;
+  const uint32_t client_;
   std::atomic<bool> down_{false};
   std::atomic<DWORD> tried_{0};
 };

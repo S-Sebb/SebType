@@ -1,7 +1,8 @@
 // The text service's calls to a server that stops answering and then answers again (windows/src/pipe.h,
 // #275): one key waits, the following ones don't and never reach it, and once it answers keys go through
 // again, first dropping what the keys it stopped waiting for began, and the server sees those requests'
-// apps gone; a server that is gone while waited for lets the text service start a new one. Uses the real pipe
+// apps gone; another app's typing since then is kept (Composer); a server that is gone while waited for lets
+// the text service start a new one. Uses the real pipe
 // name, so it skips while a SebType server runs. windows/build.ps1 runs it; it also builds with MinGW:
 //   x86_64-w64-mingw32-g++ -std=c++20 -O2 -static -I windows/src -I core/include windows/test/pipe_test.cpp -o pipe-test.exe
 // MIT, SebType.
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <mutex>
 #include <thread>
 
 using namespace sebtype;
@@ -30,6 +32,9 @@ std::atomic<bool> hang{false}, stop{false};
 std::atomic<int> keys{0};    // Key requests the server got
 std::atomic<int> resets{0};  // Reset requests
 std::atomic<int> gone{0};    // requests whose app had stopped waiting once the server got to them
+std::atomic<int> cleared{0};  // Resets that dropped what was being typed
+std::mutex lock;
+Composer composer;  // as the server's
 
 // Each connection: reads the request and replies, unless it hangs, then only once it no longer does.
 void serve(HANDLE pipe) {
@@ -46,7 +51,12 @@ void serve(HANDLE pipe) {
     if (q.op == Op::Key) ++keys;
     if (q.op == Op::Reset) ++resets;
     while (hang && !stop) Sleep(10);
-    if (clientGone(pipe)) ++gone;
+    if (clientGone(pipe)) {
+      ++gone;
+    } else {
+      std::lock_guard<std::mutex> hold(lock);
+      if (composer.resets(q)) ++cleared;
+    }
     Reply r;
     r.taken = true;
     const std::string out = encode(r);
@@ -96,10 +106,12 @@ struct Took {
   bool ok;
   DWORD error;
 };
-Took timed(Guarded &g) {
+Took timed(Guarded &g, Op op = Op::Key) {
   Reply r;
+  Request q = key();
+  q.op = op;
   const DWORD start = GetTickCount();
-  const bool ok = g.call(key(), r);
+  const bool ok = g.call(q, r);
   return {GetTickCount() - start, ok, GetLastError()};
 }
 
@@ -140,10 +152,24 @@ int main() {
   hang = false;
   Sleep(350);
   CHECK(gone >= 1);
-  const int before = resets, wentBefore = gone;
+  int before = resets, wentBefore = gone, clearedBefore = cleared;
   t = timed(g);
   std::printf("first key after it answers again: %lu ms\n", t.ms);
   CHECK(t.ok && !g.down() && keys == reached + 1 && resets == before + 1 && gone == wentBefore);
+  CHECK(cleared == clearedBefore + 1);
+
+  // Two apps: A stops waiting, B types once the server answers again, then A's next call (even Ready) probes.
+  // Its Reset must keep B's typing: A's own was dropped with its key.
+  Guarded a(500, 300, 50, 1), b(500, 300, 50, 2);
+  CHECK(timed(a).ok);
+  hang = true;
+  CHECK(!timed(a).ok && a.down());
+  hang = false;
+  CHECK(timed(b).ok);
+  Sleep(350);
+  before = resets, clearedBefore = cleared;
+  t = timed(a, Op::Ready);
+  CHECK(t.ok && resets == before + 1 && cleared == clearedBefore);
 
   // It hangs, then is gone: the text service may start a new one (no ERROR_TIMEOUT).
   hang = true;

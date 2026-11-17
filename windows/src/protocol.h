@@ -38,6 +38,18 @@ struct Request {
   bool next = false;
   Lang lang = Lang::English;
   bool learning = true;  // false in a private field (a browser's private window): nothing typed is learned
+  uint32_t client = 0;   // the app (its process id), from pipe.h's Guarded; 0 from a text service before #275
+};
+
+// Which app's typing the server's one core holds: the last to send a key or a pick. A Reset (pipe.h's Guarded)
+// drops what is being typed only when it is that app's, never what another app typed since (#275).
+struct Composer {
+  uint32_t client = 0;
+  // Whether q is a Reset that may drop what is being typed; a key or a pick makes q's app the one typing.
+  bool resets(const Request &q) {
+    if (q.op == Op::Key || q.op == Op::Select || q.op == Op::Page || q.op == Op::Latin) client = q.client;
+    return q.op == Op::Reset && q.client == client;
+  }
 };
 
 struct Reply {
@@ -100,7 +112,7 @@ inline std::string encode(const Request &r) {
   Writer w;
   w.u32(static_cast<uint32_t>(r.op));
   w.u32(r.key.sym), w.u32(r.key.mods), w.b(r.key.release);
-  w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang)), w.b(r.learning);
+  w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang)), w.b(r.learning), w.u32(r.client);
   return w.out;
 }
 
@@ -110,8 +122,9 @@ inline bool decode(const std::string &in, Request &r) {
   r.key.sym = rd.u32(), r.key.mods = rd.u32(), r.key.release = rd.b();
   r.index = rd.i32(), r.next = rd.b(), r.lang = static_cast<Lang>(rd.u32());
   // The protocol has no version. An app that loaded the text service before an upgrade (#270) still sends
-  // the shorter request, without learning: it learns, as it did. An older server ignores the extra byte.
+  // the shorter request, without learning: it learns, as it did. An older server ignores the extra bytes.
   r.learning = rd.atEnd() || rd.b();
+  r.client = rd.atEnd() ? 0 : rd.u32();
   return rd.ok();
 }
 

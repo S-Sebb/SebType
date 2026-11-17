@@ -92,6 +92,7 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
 constexpr wchar_t kServerMutex[] = L"Local\\SebType.Server";
 std::mutex lock;
 Core *core = nullptr;
+Composer composer;  // under lock
 
 Reply state(bool taken, std::string commit = {}) {
   Reply r;
@@ -135,6 +136,7 @@ Reply handle(const Request &q, HANDLE pipe) {
              ": waited " + std::to_string(started - asked) + " ms, took " + std::to_string(done - started) + " ms");
     }
   } slow{q, asked, started};
+  const bool reset = composer.resets(q);
   bool taken = false;
   std::string commit;
   switch (q.op) {
@@ -175,7 +177,10 @@ Reply handle(const Request &q, HANDLE pipe) {
       r.icon = core->icon(q.lang);
       return r;
     }
-    case Op::Reset: core->clear(); break;
+    case Op::Reset:
+      if (reset) core->clear();
+      else note("reset: kept, another app has typed since");
+      break;
     case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet; Mozc's page size
       core->engine(Lang::Chinese);
       core->forEachEngine([](Engine &e) { e.deploy(); });

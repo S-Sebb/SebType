@@ -546,7 +546,16 @@ bool TextService::send(const Request &request) {
 void TextService::unavailable(ITfContext *context, const Key &k) {
   const bool typed = !k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt));
   const std::string icon = notReadyIcon(lang_, Readiness::Unavailable);
-  if (reply_.icon == icon && (!typed || warned_)) return;
+  // What was being typed goes in once, as it showed: the keys that follow go to the app as typed, after it,
+  // and no reply the server owed (its Reset drops that typing) can change it later.
+  const bool composing = composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
+  if (composing) {
+    for (const Segment &seg : reply_.preedit.segments) reply_.commit += seg.text;
+    reply_.preedit = {};
+    reply_.page = {};
+    reply_.aux.clear();
+  }
+  if (!composing && reply_.icon == icon && (!typed || warned_)) return;
   reply_.lang = lang_;
   reply_.icon = icon;
   if (typed && !std::exchange(warned_, true)) {

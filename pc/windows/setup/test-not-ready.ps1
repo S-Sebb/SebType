@@ -9,7 +9,7 @@ field), so a screen that is off stays off, and it stops sending keys once Window
 Checks, each saving the input indicator's icon (<state>.png, at the size the text service gave the
 taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the taskbar's right end
 (<state>-taskbar.png), these two in the screen's own pixels at any scaling:
-  ready: あ and 中 as usual;
+  ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
     in as typed and the popup says why; chinese-back: once Rime is done the key is 中 again, unasked;
@@ -18,10 +18,13 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     the key goes in as typed, the popup says why; japanese-unavailable: the same in 日本語 with its own popup;
   japanese-back: the server answers again (resumed): あ again within two seconds, unasked;
   typed-after-recovery: ni + Space in 中文 then gives 你 (the key the app typed itself while the server hung
-    doesn't reach Rime as well).
+    doesn't reach Rime as well);
+  hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
+    popup, and i once the server answers again gives かnい.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
-The server is resumed and Rime's build folder put back in any case. Results: one line per check in <Out>\not-ready-results.txt; exit 0 only
+The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
+Administrator or in its session, whose desktop may serve other things (TCSBackEnd's). Results: one line per check in <Out>\not-ready-results.txt; exit 0 only
 if all pass.
 #>
 param([string]$Out = "$env:USERPROFILE\scratch\SebType\275\screens", [switch]$AnyDisplay)
@@ -36,13 +39,18 @@ function Result($name, $status, $why = '') {
   Add-Content -Encoding utf8 $results $line; Write-Host $line
 }
 function Check($name, [scriptblock]$body) {
-  try { $why = & $body; if ($why -like 'SKIP: *') { Result $name SKIP $why.Substring(6) } else { Result $name PASS $why } }
+  try { $why = & $body; if ($why -match '^(SKIP|INFO): ') { Result $name $Matches[1] $why.Substring(6) } else { Result $name PASS $why } }
   catch { Result $name FAIL $_.Exception.Message }
 }
 
 $missing = if (-not (Test-Path $server)) { 'SebType is not installed' }
 elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'runs in session 0: start it in the desktop session' }
 elseif (-not (Test-Path "$root\TsfHost.cs")) { "no TsfHost.cs beside $PSCommandPath" }
+elseif ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -like 'S-1-5-21-*-500') { 'runs as the built-in Administrator: use a test user' }
+elseif (Get-CimInstance Win32_Process -Filter "Name = 'explorer.exe' AND SessionId = $((Get-Process -Id $PID).SessionId)" |
+    Where-Object { (Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid).Sid -like 'S-1-5-21-*-500' }) {
+  "runs in the built-in Administrator's session: use a test user's own"
+}
 if ($missing) { Write-Host "BLOCKED preflight: $missing"; exit 1 }
 
 Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
@@ -115,11 +123,11 @@ function WaitIcon($want, $secs) {
 
 # This session's server (a terminal server may run one per session).
 function Server { Get-Process sebtype-server | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
-# Changes Rime's files with no server holding them, then starts one below normal priority and waits for its pipe.
+# Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
+# failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
   if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
-  & $change
-  (Start-Process $server -PassThru).PriorityClass = 'BelowNormal'
+  try { & $change } finally { (Start-Process $server -PassThru).PriorityClass = 'BelowNormal' }
   $pipe = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
   $end = (Get-Date).AddSeconds(20)
   while (-not (Test-Path $pipe)) { if ((Get-Date) -gt $end) { throw "no $pipe 20 s after the server started" }; Start-Sleep -Milliseconds 200 }
@@ -133,6 +141,14 @@ function Warm-Mozc {
 }
 $suspended = $hira = $zh = $deploy = $backup = $null
 $rimeBuild = "$env:APPDATA\Rime\build"
+# Rime's build folder back from the copy beside it, by renames on the one volume: the deployed one is set
+# aside, the copy takes its name, and only then is the deployed one deleted; a failed rename is undone.
+function Restore-Build {
+  $removed = "$backup.removed"
+  Rename-Item $rimeBuild (Split-Path -Leaf $removed)
+  try { Rename-Item $backup 'build' } catch { Rename-Item $removed 'build' -ErrorAction Continue; throw }
+  Remove-Item -Recurse $removed
+}
 $tsf::Start()
 Result scale INFO "$($tsf::Dpi()) dpi, $([int]($tsf::Dpi() * 100 / 96)) %; pictures in the screen's own pixels"
 try {
@@ -151,12 +167,22 @@ try {
   }
   # Every later check compares against these two icons.
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
+  # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
+  Check 'windows-ime' {
+    try { $tsf::Activate(0x804, [Guid]'{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}', [Guid]'{FA550B04-5AD7-411F-A5AC-CA038EC515D7}') }
+    catch { return "SKIP: Microsoft Pinyin can't be switched to ($($_.Exception.InnerException.Message))" }
+    $tsf::Settle(1000)
+    try { Shot 'ms-pinyin' | Out-Null; $what = 'its button icon and the taskbar saved' }
+    catch { $tsf::Taskbar("$Out\ms-pinyin-taskbar.png", 360); $what = "the taskbar saved; no button icon ($($_.Exception.Message))" }
+    Lang zh
+    "INFO: Microsoft Pinyin for comparison: $what"
+  }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
   # takes seconds. The server keeps them mapped, so it quits first (saving), and a new one starts below
   # normal priority, so its deploy never slows what else the PC serves. The build folder is put back at the end,
-  # from this run's own copy, and only once the copy is known complete.
-  $copy = "$Out\rime-build-$((New-Guid).ToString('N'))"
+  # from this run's own copy beside it, and only once the copy is known complete.
+  $copy = "$rimeBuild.sebtype-test-$((New-Guid).ToString('N'))"
   Copy-Item -Recurse $rimeBuild $copy
   $bytes = { param($dir) (Get-ChildItem -Recurse -File $dir | Measure-Object Length -Sum | ForEach-Object { "$($_.Count) $($_.Sum)" }) }
   if ((& $bytes $copy) -ne (& $bytes $rimeBuild)) { throw "the copy of $rimeBuild is incomplete: nothing changed" }
@@ -241,13 +267,29 @@ try {
     if ($t -ne '你') { throw "ni + Space gave '$t': the 'n' typed as is while the server hung went to Rime too" }
     "ni + Space gives $t"
   }
+  # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
+  # and once the server answers again nothing of the old typing comes back or deletes it.
+  Check 'hang-mid-composition' {
+    Lang ja; $tsf::Clear(); Keys k a
+    $script:suspended = Server
+    [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
+    try { $size = KeyWithPopup 'n' 'hang-mid'; $why = $null } catch { $why = $_.Exception.Message }
+    $t = $tsf::Text()
+    [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
+    $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
+    if ($why) { throw "$why (text '$t')" }
+    if ($t -ne 'かn') { throw "か then a key while the server hangs gave '$t', not かn" }
+    if ($icon -ne $hira) { throw 'the icon did not turn back to あ within 4 s' }
+    if ($after -ne 'かnい') { throw "i after the server answered again gave '$after', not かnい" }
+    "かn with the popup $size, then i gives $after"
+  }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
   if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null }
   if ($backup) {
     if ($deploy -and -not $deploy.HasExited) { $deploy.WaitForExit(300000) | Out-Null }
-    try { Restart-Server { Remove-Item -Recurse $rimeBuild; Move-Item $backup $rimeBuild } }
+    try { Restart-Server { Restore-Build } }
     catch { Result 'rime-build-restored' FAIL $_.Exception.Message }
   }
   if (-not $display::Lit -or $AnyDisplay) { try { Keys Escape Escape } catch { } }

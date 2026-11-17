@@ -2,7 +2,8 @@
 # key from SebType's org.sebtype.Core1 State, saves the screen (spectacle) and the popup by the caret (from X).
 # Checks: chinese-preparing (grey 中 with "…" while Rime rebuilds, a key goes in as typed, the popup says
 # why), chinese-back (中 again, unasked). 日本語 can't be made unavailable here: Mozc falls back to a
-# minimal engine, so japanese-ready only shows あ. Results: <out>/results.txt, exit 1 if a check fails.
+# minimal engine, so japanese-ready only shows あ. tray-pictures: the key cut from each screen (<state>-tray.png),
+# where 中 and あ differ, and not blank. Results: <out>/results.txt, exit 1 if a check fails.
 import os
 import shutil
 import subprocess
@@ -174,4 +175,32 @@ time.sleep(1.5)
 ja = icon()
 shot("hira")
 result("japanese-ready", ja == "sebtype-hira", f"key {ja}")
+
+
+def screen(name):
+    return np.asarray(Image.open(f"{out}/{name}.png").convert("RGBA")).astype(np.int32)
+
+
+# The tray key is where the screens of 中 and あ differ (the tray is a window of its own, placed by KWin).
+moved = np.abs(screen("zh") - screen("hira")).sum(axis=2) > 30
+ys, xs = np.nonzero(moved)
+cut = []
+if len(xs):
+    pad = 8
+    box = (xs.min() - pad, ys.min() - pad, xs.max() + 1 + pad, ys.max() + 1 + pad)
+    for name in ("zh", "zh-wait", "zh-back", "hira"):
+        tray = Image.open(f"{out}/{name}.png").convert("RGBA").crop(box)
+        tray.save(f"{out}/{name}-tray.png")
+        px = np.asarray(tray).astype(np.int32)
+        if (
+            px[..., 3].min() == 255 and px[..., :3].std() > 20
+        ):  # opaque, and more than one colour
+            cut.append(name)
+result(
+    "tray-pictures",
+    len(cut) == 4,
+    f"key at {box[:2]}, {box[2] - box[0]} x {box[3] - box[1]} px, drawn in {', '.join(cut) or 'none'}"
+    if len(xs)
+    else "中 and あ show the same screen",
+)
 sys.exit(1 if failed else 0)
