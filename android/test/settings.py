@@ -1619,6 +1619,16 @@ def backup_rime_fails():
     user = f"{FILES}/rime/user"
     marker, patch = "sebtype-282-test.txt", "rime_ice.custom.yaml"
     before = root(f"cat {user}/{patch} 2>/dev/null; true")
+    # The options too (#285): the phone's languages and setup's record must come back, not the backup's languages
+    options = NEXT and has_root()
+    if options:
+        saved = read_prefs()
+        write_prefs(
+            without_setup(saved).replace(TODAYS_SUBTYPES, b"")
+            + TODAYS_SUBTYPES
+            + setup_record(2)
+        )
+        options = prefs_entries(read_prefs())
     export_backup(False, "sebtype-282.backup")
     broken = os.path.join(logdir, "sebtype-282-broken.backup")
     with (
@@ -1626,7 +1636,13 @@ def backup_rime_fails():
         zipfile.ZipFile(broken, "w") as dst,
     ):
         for item in src.infolist():
-            if item.filename != f"rime/user/{patch}":
+            if options and item.filename == "datastore.preferences_pb":
+                dst.writestr(
+                    item,
+                    without_setup(src.read(item)).replace(TODAYS_SUBTYPES, b"")
+                    + LANGUAGES,
+                )
+            elif item.filename != f"rime/user/{patch}":
                 dst.writestr(item, src.read(item))
         dst.writestr(f"rime/user/{patch}", 'patch:\n  "engine/translators": []\n')
         dst.writestr(f"rime/user/{marker}", "made up\n")
@@ -1651,11 +1667,119 @@ def backup_rime_fails():
     after = root(f"cat {user}/{patch} 2>/dev/null; true")
     if after != before:
         raise Fail(f"{patch} was {before!r}, after the failed import {after!r}")
+    if options:
+        restored = prefs_entries(read_prefs())
+        write_prefs(saved)
+        if restored != options:
+            raise Fail(
+                f"the options were {options}, after the failed import {restored}"
+            )
     to_language("ni", "你")
     got = candidates_for("ranh")
     if not any(c in ("然后", "然後") for c in got[:3]):
         raise Fail(f"after the failed import ranh -> {got[:5]}")
-    return f"Rime's files back after a backup whose Chinese failed; ranh -> {got[:3]}"
+    return f"Rime's files{' and the options' if options else ''} back after a backup whose Chinese failed; ranh -> {got[:3]}"
+
+
+def open_with_sebtype(name):
+    """Opens Downloads' name in SebType's import screen, as a file manager's Open with does."""
+    adb(
+        "shell",
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d",
+        f"file:///sdcard/Download/{name}",
+    )
+    ids = wait_for(
+        f"{name} in the media store",
+        lambda: re.findall(
+            r"_id=(\d+)",
+            adb(
+                "shell",
+                "content",
+                "query",
+                "--uri",
+                "content://media/external/downloads",
+                "--projection",
+                "_id:_display_name",
+                "--where",
+                f"\"_display_name='{name}'\"",
+                check=False,
+            ),
+        ),
+        20,
+    )
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-W",
+        "-a",
+        "android.intent.action.VIEW",
+        "-t",
+        "application/zip",
+        "--grant-read-uri-permission",
+        "-d",
+        f"content://media/external/downloads/{max(map(int, ids))}",
+        "-n",
+        f"{PKG}/.settings.ImportActivity",
+    )
+
+
+def backup_setup():
+    """#285: through the app's own export and import, today's app's languages (globe order, layouts) go with
+    a backup and setup's record never does. A set-up phone's backup opened on a new phone keeps them, and
+    setup still runs there; the new phone's export has them again."""
+    if not NEXT:
+        raise Skip("today's app has no setup record")
+    if not has_root():
+        raise Skip("needs root to read and plant the app's options")
+    name = "sebtype-285.backup"
+    saved = read_prefs()
+    adb("shell", "ime", "enable", IME)
+    adb("shell", "ime", "set", IME)
+    try:
+        write_prefs(
+            without_setup(saved).replace(TODAYS_SUBTYPES, b"")
+            + LANGUAGES
+            + setup_record(2)
+        )
+        export_backup(False, name)
+        with zipfile.ZipFile(os.path.join(logdir, name)) as z:
+            exported = prefs_entries(z.read("datastore.preferences_pb"))
+        if exported.get(b"subtypes") != LANGUAGES or b"sebtype_setup" in exported:
+            raise Fail(
+                f"the backup's options: {sorted(exported)}, its languages {exported.get(b'subtypes')!r}"
+            )
+        # A new phone: no options yet, SebType on and chosen
+        write_prefs(b"")
+        open_with_sebtype(name)
+        tap_text(IMPORT_BUTTON)
+        wait_for("the import to finish", lambda: not screen_has(IMPORT_BUTTON), 120)
+        got = prefs_entries(read_prefs())
+        if got.get(b"subtypes") != LANGUAGES:
+            raise Fail(f"the languages after the import: {got.get(b'subtypes')!r}")
+        if got.get(b"sebtype_setup") != setup_record(0):
+            raise Fail(
+                f"setup's record after the import: {got.get(b'sebtype_setup')!r}, not unseen"
+            )
+        start_settings()
+        wait_for("setup's step 3 on the new phone", step3_again, 30)
+        tap_text(DONE)
+        wait_for("home after Done", lambda: not setup_step_shown(), 15)
+        export_backup(False, name)
+        with zipfile.ZipFile(os.path.join(logdir, name)) as z:
+            again = prefs_entries(z.read("datastore.preferences_pb"))
+        if again.get(b"subtypes") != LANGUAGES or b"sebtype_setup" in again:
+            raise Fail(
+                f"the new phone's backup: {sorted(again)}, its languages {again.get(b'subtypes')!r}"
+            )
+    finally:
+        adb("shell", f"rm -f /sdcard/Download/{name}", check=False)
+        write_prefs(saved)
+    return "the languages in the backup, not setup's record; on a new phone setup ran and its backup had them"
 
 
 def backup_screenshots():
@@ -1740,8 +1864,8 @@ def write_prefs(data):
     os.remove(local)
 
 
-def without_setup(data):
-    """data without the setup record (#285)"""
+def prefs_entries(data):
+    """DataStore's file as {key: its whole map entry}"""
 
     def varint(b, i):
         n = shift = 0
@@ -1752,15 +1876,20 @@ def without_setup(data):
                 return n, i
             shift += 7
 
-    kept, i = b"", 0
+    entries, i = {}, 0
     while i < len(data):
         start = i
         _, i = varint(data, i)  # field 1, a map entry
         size, i = varint(data, i)
-        entry, i = data[i : i + size], i + size
-        if b"\x0a\x0dsebtype_setup" not in entry:
-            kept += data[start:i]
-    return kept
+        body, i = data[i : i + size], i + size
+        size, k = varint(body, 1)  # its field 1, the key
+        entries[body[k : k + size]] = data[start:i]
+    return entries
+
+
+def without_setup(data):
+    """data without the setup record (#285)"""
+    return b"".join(e for k, e in prefs_entries(data).items() if k != b"sebtype_setup")
 
 
 def entry(key, value):
@@ -1772,6 +1901,23 @@ def entry(key, value):
 # What today's app saves as it first starts: its languages, a string set (Value field 6). The new app never
 # writes them, so they mark an update over today's app.
 TODAYS_SUBTYPES = entry(b"subtypes", b"\x32\x08\x0a\x06en_US:")
+
+
+def subtypes(*names):
+    """Today's app's languages, globe order and layouts: a string set (Value field 6)"""
+    names = b"".join(b"\x0a" + bytes([len(n)]) + n for n in names)
+    return entry(b"subtypes", b"\x32" + bytes([len(names)]) + names)
+
+
+def setup_record(n):
+    """Setup's record (#285): an int (Value field 3)"""
+    return entry(b"sebtype_setup", b"\x18" + bytes([n]))
+
+
+# Other than today's app's defaults
+LANGUAGES = subtypes(
+    b"ja_JP:KeyboardLayoutSet=jis", b"zh_CN:", b"en_US:KeyboardLayoutSet=dvorak"
+)
 
 
 def forget_setup():
@@ -2917,5 +3063,7 @@ for name in PERSONAL_DATA:
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-installation-id", backup_installation_id)
 check("settings-backup-rime-fails", backup_rime_fails)
+if NEXT:
+    check("settings-backup-setup", backup_setup)
 check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

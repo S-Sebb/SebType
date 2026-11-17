@@ -61,10 +61,7 @@ object Backup {
                 file.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
-            if (Prefs.file(context).isFile) {
-                val prefs = okio.Buffer().also { PreferencesSerializer.writeTo(Prefs.exported(Prefs.read(context)), it) }
-                put(PREFS, prefs.readByteArray())
-            }
+            if (Prefs.file(context).isFile) put(PREFS, Prefs.exported(context))
             putFile(CONF, Engines.settingsFile(context))
             put(WORDS, PersonalWord.json(PersonalWords.all(context)).toByteArray())
             folders(context).forEach { (prefix, dir) ->
@@ -130,7 +127,7 @@ object Backup {
         val stop = listOf("rime/user/" to NativeCore.CHINESE, "mozc/" to NativeCore.JAPANESE, "english/" to NativeCore.ENGLISH)
             .filter { it.first in dirs }.map { it.second }
         try {
-            prefs?.let { Prefs.replace(context, it) }
+            prefs?.let { Prefs.import(context, it) }
             conf?.let { Engines.replaceSettings(context, it) }
             words?.let { PersonalWords.add(context, it) }
             // 中文 set up again on the backup's data, or the originals go back (with it stopped once more).

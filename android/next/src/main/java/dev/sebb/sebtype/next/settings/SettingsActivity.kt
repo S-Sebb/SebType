@@ -124,14 +124,15 @@ data class SetupRoute(val record: Int, val setup: Boolean)
 
 /**
  * Setup runs until its last step's Done, whatever Android's keyboard settings say: someone can turn SebType on
- * before they first open the app. Only an update over today's app ([todaysApp]) counts as set up already.
+ * before they first open the app. Only an update over today's app ([todaysApp]) counts as set up already, and
+ * only with no [saved] record at all: an imported backup's languages come with one ([Prefs.imported]).
  * Once done, setup never comes back, whichever keyboard is in use. [atHome]: no other screen is open.
  */
-fun setupRoute(saved: Int, todaysApp: Boolean, atHome: Boolean): SetupRoute {
+fun setupRoute(saved: Int?, todaysApp: Boolean, atHome: Boolean): SetupRoute {
     val record = when {
-        saved != Prefs.SETUP_UNSEEN -> saved
-        todaysApp -> Prefs.SETUP_DONE
-        else -> Prefs.SETUP_TIPS_DUE
+        saved == null -> if (todaysApp) Prefs.SETUP_DONE else Prefs.SETUP_TIPS_DUE
+        saved == Prefs.SETUP_UNSEEN -> Prefs.SETUP_TIPS_DUE
+        else -> saved
     }
     return SetupRoute(record, atHome && record != Prefs.SETUP_DONE)
 }
@@ -146,7 +147,7 @@ private fun App(changes: Int) {
     val nav = Nav(stack)
     // Read from the file, not Prefs.current, which a new process may not have loaded yet: a tips page
     // left open must not pass for a first start.
-    val (saved, todaysApp) = remember { Prefs.setup(context).map<Pair<Int, Boolean>, Pair<Int, Boolean>?> { it } }
+    val (saved, todaysApp) = remember { Prefs.setup(context).map<Pair<Int?, Boolean>, Pair<Int?, Boolean>?> { it } }
         .collectAsState(null).value ?: return
     val route = setupRoute(saved, todaysApp, stack.isEmpty())
     if (route.record != saved) LaunchedEffect(Unit) { Prefs.set(context, Prefs.SETUP, route.record) }
