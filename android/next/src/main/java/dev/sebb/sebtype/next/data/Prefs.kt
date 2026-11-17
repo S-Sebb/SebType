@@ -103,27 +103,37 @@ object Prefs {
         context.applicationContext.store.edit { prefs -> keys.forEach { prefs.remove(it) } }
     }
 
-    /** The whole file as it is now */
-    suspend fun read(context: Context): Preferences = context.applicationContext.store.data.first()
-
-    /** Takes [prefs] as the whole file, exactly: what an import that failed found. */
-    suspend fun replace(context: Context, prefs: Preferences) = replace(context.applicationContext.store, prefs)
-
-    suspend fun replace(store: DataStore<Preferences>, prefs: Preferences) {
-        store.edit {
-            it.clear()
-            it += prefs
-        }
-    }
+    /** What an import changed: the file before it and after ([undo]) */
+    class Imported(val before: Preferences, val after: Preferences)
 
     /** Takes a backup's options, in one edit with what this phone had ([imported]). */
     suspend fun import(context: Context, backup: Preferences) = import(context.applicationContext.store, backup)
 
-    suspend fun import(store: DataStore<Preferences>, backup: Preferences) {
-        store.edit {
-            val next = imported(backup, it.toPreferences())
+    suspend fun import(store: DataStore<Preferences>, backup: Preferences): Imported {
+        lateinit var before: Preferences
+        val after = store.edit {
+            before = it.toPreferences()
+            val next = imported(backup, before)
             it.clear()
             it += next
+        }
+        return Imported(before, after)
+    }
+
+    /**
+     * Takes back what [import] changed, for an import that failed: each option still as the import left it
+     * goes back, and what was written since (setup's Done while the engines restarted, an option) stays.
+     */
+    suspend fun undo(context: Context, import: Imported) = undo(context.applicationContext.store, import)
+
+    suspend fun undo(store: DataStore<Preferences>, import: Imported) {
+        store.edit { now ->
+            @Suppress("UNCHECKED_CAST")
+            for (key in (import.before.asMap().keys + import.after.asMap().keys) as Set<Preferences.Key<Any>>) {
+                if (now[key] != import.after[key]) continue
+                val old = import.before[key]
+                if (old == null) now.remove(key) else now[key] = old
+            }
         }
     }
 

@@ -11,7 +11,6 @@ import dev.sebb.sebtype.next.data.Prefs
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -89,14 +88,21 @@ class SetupStateTest {
         }
     }
 
-    /** A failed import puts the phone's file back as it was: its languages and setup's record */
+    /**
+     * A failed import takes back what it changed (the languages, an option, one only the backup had) but not
+     * what was written while it ran: setup's Done and an option changed meanwhile stay.
+     */
     @Test
-    fun aFailedImportRestoresTheRecordAndLanguages() = runBlocking {
-        val phone = store(Prefs.SETUP.key to Prefs.SETUP_TIPS_DUE, subtypes to setOf("en_US:"))
-        val before = phone.data.first() // as Backup.restore reads it first
-        Prefs.import(phone, preferencesOf(subtypes to languages))
-        assertFalse(phone.data.first() == before)
-        Prefs.replace(phone, before) // Backup.restore's rollback
-        assertEquals(before, phone.data.first())
+    fun aFailedImportKeepsWhatWasWrittenMeanwhile() = runBlocking {
+        val phone = store(Prefs.SETUP.key to Prefs.SETUP_TIPS_DUE, subtypes to setOf("en_US:"), Prefs.SOUND.key to false)
+        val import = Prefs.import(phone, preferencesOf(subtypes to languages, Prefs.SOUND.key to true, Prefs.VIBRATE.key to false,
+            Prefs.FUZZY.key to "zh=z"))
+        phone.edit {
+            it[Prefs.SETUP.key] = Prefs.SETUP_DONE
+            it[Prefs.VIBRATE.key] = true
+        }
+        Prefs.undo(phone, import) // Backup.restore's rollback
+        assertEquals(preferencesOf(Prefs.SETUP.key to Prefs.SETUP_DONE, subtypes to setOf("en_US:"), Prefs.SOUND.key to false,
+            Prefs.VIBRATE.key to true), phone.data.first())
     }
 }

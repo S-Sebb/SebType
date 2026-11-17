@@ -121,13 +121,13 @@ object Backup {
         val clipboard = File(from, CLIPBOARD).takeIf { it.isFile }
         if (prefs == null && conf == null && words == null && dirs.isEmpty() && clipboard == null) throw IOException("Not a SebType backup")
 
-        val oldPrefs = Prefs.read(context)
         val oldConf = Engines.settingsFile(context).takeIf { it.isFile }?.readText()
         val swap = Swap(originals.apply { deleteRecursively() }) // nothing left to put back: an empty or half-made folder
+        var imported: Prefs.Imported? = null
         val stop = listOf("rime/user/" to NativeCore.CHINESE, "mozc/" to NativeCore.JAPANESE, "english/" to NativeCore.ENGLISH)
             .filter { it.first in dirs }.map { it.second }
         try {
-            prefs?.let { Prefs.import(context, it) }
+            imported = prefs?.let { Prefs.import(context, it) }
             conf?.let { Engines.replaceSettings(context, it) }
             words?.let { PersonalWords.add(context, it) }
             // 中文 set up again on the backup's data, or the originals go back (with it stopped once more).
@@ -141,7 +141,7 @@ object Backup {
             }
         } catch (e: Throwable) {
             if (swap.pending) runCatching { whileStopped(context, stop) { swap.rollback() } }.onFailure { Log.w(TAG, "Putting the phone's data back", it) }
-            Prefs.replace(context, oldPrefs)
+            imported?.let { Prefs.undo(context, it) }
             oldConf?.let { Engines.replaceSettings(context, it) }
             words?.let { PersonalWords.delete(context, *it.toTypedArray()) }
             Log.w(TAG, "A settings backup failed to import; the phone's data is as it was")

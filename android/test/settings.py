@@ -427,6 +427,10 @@ def open_settings():
 def home_shown():
     if screen_has(HOME["about"]):
         return True
+    # A fresh install opens on setup until its last step's Done (#285), which a user presses once
+    if NEXT and setup_step_shown() == 3:
+        tap_text(DONE)
+        return False
     # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
     # takes the setup screen on to the home screen.
     adb("shell", "ime", "set", IME)
@@ -1711,18 +1715,31 @@ def open_with_sebtype(name):
         ),
         20,
     )
+    uri = f"content://media/external/downloads/{max(map(int, ids))}"
+    # The type the export saves as: a file manager's Open with offers SebType for it
+    view = [
+        "-a",
+        "android.intent.action.VIEW",
+        "-t",
+        "application/octet-stream",
+        "-d",
+        uri,
+    ]
+    handlers = adb("shell", "cmd", "package", "query-activities", "--brief", *view)
+    if not {
+        f"{PKG}/.settings.ImportActivity",
+        f"{PKG}/{PKG}.settings.ImportActivity",
+    } & set(handlers.split()):
+        raise Fail(
+            f"Open with doesn't offer SebType for its own backup: {handlers.strip()!r}"
+        )
     adb(
         "shell",
         "am",
         "start",
         "-W",
-        "-a",
-        "android.intent.action.VIEW",
-        "-t",
-        "application/zip",
+        *view,
         "--grant-read-uri-permission",
-        "-d",
-        f"content://media/external/downloads/{max(map(int, ids))}",
         "-n",
         f"{PKG}/.settings.ImportActivity",
     )
@@ -2115,9 +2132,9 @@ def setup_tips():
             lambda before: screen_has(("SebType",)) and not setup_step_shown(),
         )
         adb("shell", "am", "force-stop", PKG)
-        open_settings()
-        if setup_step_shown():
-            raise Fail("setup came back after Done")
+        adb("shell", "ime", "set", IME)
+        start_settings()
+        home_not_setup("reopened after Done")
         # Another keyboard chosen after Done: still home
         adb("shell", "ime", "set", other_keyboard())
         adb("shell", "am", "force-stop", PKG)
@@ -2188,9 +2205,8 @@ def setup_existing_user():
                 adb("shell", "am", "force-stop", PKG)
         finally:
             adb("shell", "ime", "set", IME)
-        open_settings()
-        if setup_step_shown():
-            raise Fail("setup shown with SebType chosen again")
+        start_settings()
+        home_not_setup("opening with SebType chosen again")
     finally:
         write_prefs(saved)
     return "today's app's data: home with SebType off, with another keyboard in use, twice, and with SebType chosen again"
