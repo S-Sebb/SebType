@@ -2017,43 +2017,60 @@ def tap_reset():
 
 
 def floating_short_window():
-    """Floating, moved to the top and resized tall: a window half as tall shows its keys shorter, all of them
-    whole on the screen (the handle too) and typing. Made narrower there, the full window brings the saved
-    height back with the new width. A window 280 dp tall with Keyboard Modes open still shows the bottom
-    row whole, the keys under today's 96 dp minimum (#283)."""
+    """Floating, moved to the top left and resized wide and tall: a window two thirds as wide and half as
+    tall shows its keys narrower and shorter, all of them whole on the screen (the handle too) and typing.
+    Wider and Taller there, held at the window's edges, change nothing saved: the full window brings the
+    whole size back. Made narrower there, the full window brings the saved height back with the new width. A
+    window 280 dp tall with Keyboard Modes open still shows the bottom row whole, the keys under today's
+    96 dp minimum (#283)."""
     to_english()
     w, h = screen_size()
+
+    def full_window():
+        adb("shell", "wm", "size", "reset")
+        time.sleep(3)
+        open_field()
+        return frame_now()
+
     try:
         set_mode("Floating")
         tap_reset()
-        l, t, r, b = resize_floating(("keys", (0, -h)), ("corner", (0, h)))
-        tall = b - t
-        short = h // 2
-        adb("shell", "wm", "size", f"{w}x{short}")
+        l, t, r, b = resize_floating(("keys", (-w, -h)), ("corner", (w, h)))
+        wide, tall = r - l, b - t
+        small, short = w * 2 // 3, h // 2
+        adb("shell", "wm", "size", f"{small}x{short}")
         time.sleep(3)
         open_field()
         space = bottom_row_whole(short)
         l2, t2, r2, b2 = keyboard_frame
         handle = node(MOVE_KEYBOARD)
-        if not handle or handle[3] < 0 or b2 - t2 >= tall:
+        if not handle or handle[3] < 0 or b2 - t2 >= tall or r2 - l2 > small:
             raise Fail(
-                f"keys {tall} px tall; in a {short} px window {b2 - t2} px, the handle at {handle and handle[3]}"
+                f"keys {wide}x{tall} px; in a {small}x{short} px window {r2 - l2}x{b2 - t2} px, the handle at "
+                f"{handle and handle[3]}"
             )
         screenshot("floating-short-window.png")
         types_letters()
-        # Only the width changed: the saved height stays the tall one, not the one cut to this window.
-        l3, t3, r3, b3 = resize_floating(("corner", (-150, 0)))
-        if (r3 - l3) > (r2 - l2) - 100:
+        # Wider and Taller at the window's edges: the saved size stays the user's, not the one shown here.
+        resize_floating(("corner", (w, 0)), ("corner", (0, h)))
+        l3, t3, r3, b3 = full_window()
+        if abs((b3 - t3) - tall) > 4 or abs((r3 - l3) - wide) > 4:
             raise Fail(
-                f"the corner dragged 150 px left: keys {r2 - l2} -> {r3 - l3} px wide"
+                f"after Wider and Taller at a {small}x{short} px window's edges, the full window shows "
+                f"{r3 - l3}x{b3 - t3} px, not the saved {wide}x{tall}"
             )
-        adb("shell", "wm", "size", "reset")
+        # Only the width changed: the saved height stays the tall one, not the one cut to this window.
+        adb("shell", "wm", "size", f"{small}x{short}")
         time.sleep(3)
-        open_field()
-        l4, t4, r4, b4 = frame_now()
-        if abs((b4 - t4) - tall) > 4 or abs((r4 - l4) - (r3 - l3)) > 4:
+        l4, t4, r4, b4 = resize_floating(("corner", (-150, 0)))
+        if (r4 - l4) > (r2 - l2) - 100:
             raise Fail(
-                f"back in the full window the keys are {r4 - l4}x{b4 - t4} px, not {r3 - l3}x{tall}"
+                f"the corner dragged 150 px left: keys {r2 - l2} -> {r4 - l4} px wide"
+            )
+        l5, t5, r5, b5 = full_window()
+        if abs((b5 - t5) - tall) > 4 or abs((r5 - l5) - (r4 - l4)) > 4:
+            raise Fail(
+                f"back in the full window the keys are {r5 - l5}x{b5 - t5} px, not {r4 - l4}x{tall}"
             )
         # A window wider than tall is landscape: floating there too. 280 dp less the status bar, the
         # navigation bar and Keyboard Modes leaves the keys less than today's 96 dp minimum.
@@ -2079,8 +2096,9 @@ def floating_short_window():
         finally:
             set_mode("Standard")
         return (
-            f"keys {tall} px; {b2 - t2} px within a {short} px window (Space {space}), typing works; "
-            f"narrowed there to {r3 - l3} px, then {r4 - l4}x{b4 - t4} px in the full window; "
+            f"keys {wide}x{tall} px; {r2 - l2}x{b2 - t2} px within a {small}x{short} px window (Space {space}), "
+            f"typing works; after Wider and Taller at its edges {r3 - l3}x{b3 - t3} px in the full window; "
+            f"narrowed there to {r4 - l4} px, then {r5 - l5}x{b5 - t5} px in the full window; "
             f"in {tiny} px with Keyboard Modes open, keys {tiny_keys} px, Space {tiny_space}"
         )
     finally:

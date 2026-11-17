@@ -39,6 +39,7 @@ import dev.sebb.sebtype.core.NativeCore.ENGLISH
 import dev.sebb.sebtype.core.NativeCore.JAPANESE
 import dev.sebb.sebtype.core.NativeState
 import dev.sebb.sebtype.next.Layout.Code
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -937,10 +938,11 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
         val width = (oldWidth + dx).coerceIn(minOf(Mode.FLOATING_MIN_WIDTH_DP * density, root.width.toFloat()), root.width.toFloat())
         val wanted = keyboard.scaleFor(keyboard.heightAt(oldScale) + dy)
         val scale = wanted.coerceIn(floatingScales())
-        // A change along one side keeps the other's saved size: shown cut to a short or narrow window, it
-        // isn't the user's.
-        if (dx != 0f) floatWidth = width / density
-        if (dy != 0f) floatScale = scale
+        // A side saves its size only when the keyboard shown changes along it: one shown cut to a short or
+        // narrow window, or held at the window's edge, isn't the user's (within half a pixel: the scale's
+        // round trip through px isn't exact).
+        if (abs(width - oldWidth) >= 0.5f) floatWidth = width / density
+        if (abs(keyboard.heightAt(minOf(scale, fittingScale())) - keyboard.heightAt(oldScale)) >= 0.5f) floatScale = scale
         keyboard.heightScale = shownScale()
         val height = floatingHeight(keyboard.heightScale)
         val roomX = (root.width - width) / 2f

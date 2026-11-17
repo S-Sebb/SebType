@@ -95,6 +95,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private class Cell(val key: Layout.Key, val rect: RectF)
     private var cells = emptyList<Cell>()
+    /** The keys' text sizes' share of today's: [keyTextScale] of the keys as laid out */
+    private var textScale = 1f
 
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
@@ -109,6 +111,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         const val VIBRATE_MS = 12L
         /** A row's height in dp at the default height */
         const val ROW = 59.3f
+        /** Hints are drawn while the text is at least this share of today's size */
+        const val MIN_HINT_SCALE = 0.6f
         /** Split: each half's share of the width */
         const val SPLIT_HALF = 0.36f
         /** Space swipe: key widths per character the cursor moves */
@@ -191,6 +195,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             y += h
         }
         cells = out
+        textScale = keyTextScale(heightScale, (if (split) half else unit) / density)
         val letters = out.filter { it.key.code == Code.TEXT && it.key.text.length == 1 && it.key.text[0] in 'a'..'z' }
         if (letters.isNotEmpty()) listener.onLayout(width, height, letters.flatMap {
             val r = it.rect
@@ -249,7 +254,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             when {
                 icon != null -> Icons.draw(canvas, icon, cx, cy, min(24 * density, (b - t) * 0.5f), ink)
                 key.code == Code.SPACE && key.label.isBlank() -> {
-                    label.textSize = 13 * density
+                    label.textSize = 13 * density * textScale
                     // Split's halves of the space bar are narrow: the label shrinks to fit, as today's does
                     val room = rr - l - 12 * density
                     val w = label.measureText(spaceLabel)
@@ -259,7 +264,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 key.label.contains('\n') -> {
                     // The numbers page's key: its digits small, in two lines
-                    label.textSize = 11 * density
+                    label.textSize = 11 * density * textScale
                     label.color = ink
                     val lines = key.label.split('\n')
                     lines.forEachIndexed { i, line ->
@@ -274,12 +279,18 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                         // The small punctuation is drawn larger, as today's keyboard does
                         s in ",.、。" -> 45f
                         else -> 25f
-                    } * density
+                    } * density * textScale
+                    // A key narrower than its letter (W on the narrowest floating keyboard) shrinks it to fit.
+                    val room = rr - l - 2 * px
+                    val w = label.measureText(s)
+                    if (w > room) label.textSize *= room / w
                     label.color = ink
                     canvas.drawText(s, cx, cy + label.textSize * 0.35f, label)
                 }
             }
-            if (hints) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
+            // Hints shrink with the letters; too small to read, they go.
+            hint.textSize = 12.5f * density * textScale
+            if (hints && textScale >= MIN_HINT_SCALE) key.hint?.let { canvas.drawText(it, rr - 3 * px, t + 2 * px + hint.textSize * 0.9f, hint) }
         }
     }
 
@@ -650,3 +661,14 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         }
     }
 }
+
+/** The narrowest letter key, in dp, any docked keyboard has (split's halves on a 320 dp phone): today's text fits it */
+private const val MIN_KEY_WIDTH_DP = 22f
+
+/**
+ * The keys' text sizes' share of today's, as today's keyboard sizes them by a key's smaller side: 1 on any
+ * docked keyboard (as tall as [Mode.MIN_HEIGHT] or taller, keys [MIN_KEY_WIDTH_DP] wide or wider), smaller on a
+ * floating keyboard resized smaller than that (#283).
+ */
+internal fun keyTextScale(heightScale: Float, keyWidthDp: Float) =
+    minOf(1f, heightScale / Mode.MIN_HEIGHT, keyWidthDp / MIN_KEY_WIDTH_DP)
