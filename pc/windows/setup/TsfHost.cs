@@ -154,6 +154,12 @@ namespace SebType {
     void ActivateLanguageProfile(ref Guid clsid, ushort langid, ref Guid profile);
     void GetActiveLanguageProfile(ref Guid clsid, out ushort langid, out Guid profile);
     void GetLanguageProfileDescription(ref Guid clsid, ushort langid, ref Guid profile, [MarshalAs(UnmanagedType.BStr)] out string desc);
+    void GetCurrentLanguage(out ushort langid);
+    void ChangeCurrentLanguage(ushort langid);
+    void GetLanguageList(out IntPtr langids, out uint count);
+    void EnumLanguageProfiles(ushort langid, out IntPtr e);
+    void EnableLanguageProfile(ref Guid clsid, ushort langid, ref Guid profile, int enable);
+    void IsEnabledLanguageProfile(ref Guid clsid, ushort langid, ref Guid profile, out int enabled);
   }
 
   [ComImport, Guid("ba468c55-9956-4fb1-a59d-52a7dd7cc6aa"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -603,6 +609,22 @@ namespace SebType {
         var p = (ITfInputProcessorProfiles)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
         string d; p.GetLanguageProfileDescription(ref clsid, langid, ref profile, out d);
         return d;
+      });
+    }
+
+    // Whether an input method is on for this user (in its language's list), and turning it on or off.
+    public static bool Enabled(ushort langid, Guid clsid, Guid profile) {
+      return OnUi(() => {
+        var p = (ITfInputProcessorProfiles)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+        int on; p.IsEnabledLanguageProfile(ref clsid, langid, ref profile, out on);
+        return on != 0;
+      });
+    }
+    public static void Enable(ushort langid, Guid clsid, Guid profile, bool on) {
+      OnUi(() => {
+        var p = (ITfInputProcessorProfiles)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+        p.EnableLanguageProfile(ref clsid, langid, ref profile, on ? 1 : 0);
+        return 0;
       });
     }
 

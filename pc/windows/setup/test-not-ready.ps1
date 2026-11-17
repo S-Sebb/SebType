@@ -169,13 +169,16 @@ try {
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
   Check 'windows-ime' {
-    try { $tsf::Activate(0x804, [Guid]'{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}', [Guid]'{FA550B04-5AD7-411F-A5AC-CA038EC515D7}') }
-    catch { return "SKIP: Microsoft Pinyin can't be switched to ($($_.Exception.InnerException.Message))" }
-    $tsf::Settle(1000)
-    try { Shot 'ms-pinyin' | Out-Null; $what = 'its button icon and the taskbar saved' }
-    catch { $tsf::Taskbar("$Out\ms-pinyin-taskbar.png", 360); $what = "the taskbar saved; no button icon ($($_.Exception.Message))" }
-    Lang zh
-    "INFO: Microsoft Pinyin for comparison: $what"
+    $clsid = [Guid]'{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}'; $profile = [Guid]'{FA550B04-5AD7-411F-A5AC-CA038EC515D7}'
+    $was = try { $tsf::Enabled(0x804, $clsid, $profile) } catch { return "SKIP: no Microsoft Pinyin ($($_.Exception.InnerException.Message))" }
+    try {
+      if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $true) }  # for this capture only
+      $tsf::Activate(0x804, $clsid, $profile); $tsf::Settle(1500)
+      try { Shot 'ms-pinyin' | Out-Null; $what = 'its button icon and the taskbar saved' }
+      catch { $tsf::Taskbar("$Out\ms-pinyin-taskbar.png", 360); $what = "the taskbar saved; no button icon ($($_.Exception.Message))" }
+    } catch { $what = "can't be switched to ($($_.Exception.InnerException.Message))" }
+    finally { Lang zh; if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $false) } }
+    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what"
   }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
