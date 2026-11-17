@@ -61,7 +61,10 @@ object Backup {
                 file.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
-            putFile(PREFS, Prefs.file(context))
+            if (Prefs.file(context).isFile) {
+                val prefs = okio.Buffer().also { PreferencesSerializer.writeTo(Prefs.exported(Prefs.read(context)), it) }
+                put(PREFS, prefs.readByteArray())
+            }
             putFile(CONF, Engines.settingsFile(context))
             put(WORDS, PersonalWord.json(PersonalWords.all(context)).toByteArray())
             folders(context).forEach { (prefix, dir) ->

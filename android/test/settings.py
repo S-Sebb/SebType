@@ -2018,14 +2018,22 @@ def setup_fresh_enabled():
 
 
 def setup_existing_user():
-    """An update over today's app (its languages in DataStore's file, no setup record) with another keyboard
-    in use: home, never setup, and the same once SebType is chosen again."""
+    """An update over today's app (its languages in DataStore's file, no setup record): home, never setup,
+    with SebType off (so the evidence, not Android's keyboard settings, decides), with another keyboard in
+    use, and once SebType is chosen again."""
     if not has_root():
         raise Skip("needs root to put today's app's data in place")
     saved = read_prefs()
     try:
         write_prefs(without_setup(saved) + TODAYS_SUBTYPES)
-        adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "disable", IME)
+        try:
+            start_settings()
+            home_not_setup("opening with SebType off")
+            adb("shell", "am", "force-stop", PKG)
+        finally:
+            adb("shell", "ime", "enable", IME)
+        write_prefs(without_setup(saved) + TODAYS_SUBTYPES)
         adb("shell", "ime", "set", other_keyboard())
         try:
             for run in (1, 2):
@@ -2039,7 +2047,7 @@ def setup_existing_user():
             raise Fail("setup shown with SebType chosen again")
     finally:
         write_prefs(saved)
-    return "today's app's data: home with another keyboard in use, twice, and with SebType chosen again"
+    return "today's app's data: home with SebType off, with another keyboard in use, twice, and with SebType chosen again"
 
 
 def tips_screenshots():

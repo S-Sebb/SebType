@@ -1,5 +1,9 @@
 package dev.sebb.sebtype.next.settings
 
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import dev.sebb.sebtype.next.data.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -30,5 +34,38 @@ class SetupStateTest {
     @Test
     fun anOpenScreenStays() {
         assertEquals(SetupRoute(Prefs.SETUP_TIPS_DUE, setup = false), setupRoute(Prefs.SETUP_TIPS_DUE, todaysApp = false, atHome = false))
+    }
+
+    private val todaysSubtypes = stringSetPreferencesKey("subtypes")
+
+    private fun route(prefs: Preferences) =
+        setupRoute(prefs[Prefs.SETUP.key] ?: Prefs.SETUP_UNSEEN, todaysSubtypes in prefs, atHome = true)
+
+    /** A set-up phone's backup, or today's app's, imported on a new phone: setup still runs there */
+    @Test
+    fun aSetUpPhonesBackupKeepsSetup() {
+        val backup = preferencesOf(Prefs.SETUP.key to Prefs.SETUP_DONE, todaysSubtypes to setOf("en_US:"), Prefs.SOUND.key to true)
+        val phone = Prefs.imported(backup, emptyPreferences())
+        assertEquals(SetupRoute(Prefs.SETUP_TIPS_DUE, setup = true), route(phone))
+        assertEquals(true, phone[Prefs.SOUND.key])
+    }
+
+    /** An older backup, from before setup was done or before setup's record, on a set-up phone: still home */
+    @Test
+    fun anOlderBackupKeepsHome() {
+        val phone = preferencesOf(Prefs.SETUP.key to Prefs.SETUP_DONE)
+        for (backup in listOf(preferencesOf(Prefs.SETUP.key to Prefs.SETUP_TIPS_DUE), emptyPreferences())) {
+            assertEquals(SetupRoute(Prefs.SETUP_DONE, setup = false), route(Prefs.imported(backup, phone)))
+        }
+        // An update over today's app keeps its evidence whatever the backup has
+        val updated = preferencesOf(todaysSubtypes to setOf("en_US:"))
+        assertEquals(SetupRoute(Prefs.SETUP_DONE, setup = false), route(Prefs.imported(emptyPreferences(), updated)))
+    }
+
+    /** A backup has neither setup's record nor its evidence */
+    @Test
+    fun exportLeavesSetupOut() {
+        val prefs = preferencesOf(Prefs.SETUP.key to Prefs.SETUP_DONE, todaysSubtypes to setOf("en_US:"), Prefs.SOUND.key to true)
+        assertEquals(preferencesOf(Prefs.SOUND.key to true), Prefs.exported(prefs))
     }
 }

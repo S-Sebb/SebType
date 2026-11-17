@@ -1,6 +1,7 @@
 package dev.sebb.sebtype.next.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -100,14 +101,33 @@ object Prefs {
     /** The whole file as it is now */
     suspend fun read(context: Context): Preferences = context.applicationContext.store.data.first()
 
-    /** Takes [prefs] as the whole file (a backup's). */
+    /** Takes [prefs] as the whole file (a backup's), but for what only this install keeps ([imported]). */
     suspend fun replace(context: Context, prefs: Preferences) {
         context.applicationContext.store.edit {
+            val kept = imported(prefs, it.toPreferences())
             it.clear()
-            it += prefs
+            it += kept
         }
     }
 
-    /** The whole file, for a backup */
+    /**
+     * [backup] as an import leaves it on [phone]: setup's record and today's app's languages, its evidence
+     * ([setup]), stay [phone]'s (#285). A backup from a set-up phone mustn't skip setup on a new one, nor an
+     * older backup bring it back.
+     */
+    fun imported(backup: Preferences, phone: Preferences): Preferences = backup.toMutablePreferences().apply {
+        local(SETUP.key, phone)
+        local(TODAYS_SUBTYPES, phone)
+    }
+
+    /** [prefs] as a backup has them: without what only this install keeps */
+    fun exported(prefs: Preferences): Preferences = imported(prefs, emptyPreferences())
+
+    private fun <T> MutablePreferences.local(key: Preferences.Key<T>, phone: Preferences) {
+        remove(key)
+        phone[key]?.let { this[key] = it }
+    }
+
+    /** The file, whether there are options to back up */
     fun file(context: Context) = java.io.File(context.filesDir, "datastore/settings.preferences_pb")
 }
