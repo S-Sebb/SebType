@@ -47,11 +47,11 @@ fun TipsCard() = Card {
         TipKey.DELETE to R.string.tips_delete,
         TipKey.KANA to R.string.tips_kana,
     )) Row(
-        Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         KeyPicture(key)
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         TipText(stringResource(text))
     }
 }
@@ -84,36 +84,36 @@ private fun TipText(tip: String) {
 private fun DrawScope.icon(icon: Icon, size: Float) =
     drawIntoCanvas { Icons.draw(it.nativeCanvas, icon, center.x, center.y, size, Picnic.INK) }
 
-/** A key in its pixel frame, 50 × 44 dp at most, or 日本語's あ|ア chip as the bar draws it */
+/** A key in its pixel frame, 44 × 40 dp at most, or 日本語's あ|ア chip as the bar draws it */
 @Composable
 private fun KeyPicture(key: TipKey) {
     val w = Picnic.pixel(LocalContext.current).toFloat()
     val kana = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
-    Canvas(Modifier.size(50.dp, 44.dp)) {
+    Canvas(Modifier.size(44.dp, 40.dp)) {
         val dp = density
         val cx = center.x
         drawIntoCanvas { c ->
             val canvas = c.nativeCanvas
             when (key) {
                 TipKey.GLOBE, TipKey.DELETE -> {
-                    PixelFrame.PINK.draw(canvas, cx - 18 * dp, 0f, cx + 18 * dp, size.height, w)
-                    Icons.draw(canvas, if (key == TipKey.GLOBE) Icon.GLOBE else Icon.DELETE, cx, center.y - w / 2, 22 * dp, Picnic.INK)
+                    PixelFrame.PINK.draw(canvas, cx - 16 * dp, 0f, cx + 16 * dp, size.height, w)
+                    Icons.draw(canvas, if (key == TipKey.GLOBE) Icon.GLOBE else Icon.DELETE, cx, center.y - w / 2, 20 * dp, Picnic.INK)
                 }
                 TipKey.SPACE -> {
                     PixelFrame.CREAM.draw(canvas, 0f, 0f, size.width, size.height, w)
                     // A slide either way
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Picnic.MUTED; strokeWidth = 1.6f * dp }
                     val y = center.y - w / 2
-                    canvas.drawLine(cx - 15 * dp, y, cx + 15 * dp, y, paint)
+                    canvas.drawLine(cx - 13 * dp, y, cx + 13 * dp, y, paint)
                     for (s in listOf(-1, 1)) {
-                        val tip = cx + s * 15 * dp
+                        val tip = cx + s * 13 * dp
                         canvas.drawLine(tip, y, tip - s * 5 * dp, y - 5 * dp, paint)
                         canvas.drawLine(tip, y, tip - s * 5 * dp, y + 5 * dp, paint)
                     }
                 }
                 // CandidateBar's pill, あ in use on berry, scaled to the key's width
                 TipKey.KANA -> {
-                    val half = 9 * dp
+                    val half = 8.5f * dp
                     val l = 0f
                     val r = size.width
                     val y = center.y
@@ -129,7 +129,7 @@ private fun KeyPicture(key: TipKey) {
                     fill.style = Paint.Style.STROKE
                     fill.strokeWidth = dp
                     canvas.drawRoundRect(l + dp / 2, y - half, r - dp / 2, y + half, half, half, fill)
-                    kana.textSize = 12 * dp
+                    kana.textSize = 11 * dp
                     for ((i, k) in listOf("あ", "ア").withIndex()) {
                         kana.color = if (i == 0) Picnic.WHITE else Picnic.FADED
                         canvas.drawText(k, size.width / 4 * (1 + 2 * i), y + kana.textSize * 0.35f, kana)

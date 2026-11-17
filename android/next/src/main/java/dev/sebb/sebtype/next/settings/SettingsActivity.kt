@@ -119,6 +119,18 @@ object Conf {
     val LANGUAGES = listOf("en", "zh", "ja")
 }
 
+/**
+ * Where setup stands (#285), from what was [saved] and whether SebType is [on] in Android's keyboards. An
+ * install that never saw setup with SebType already on (someone who had it before the tips existed, or an
+ * update from today's app) counts as done; otherwise setup runs to its last step's Done. Once done, setup
+ * never comes back, whichever keyboard is in use.
+ */
+fun setupState(saved: Int, on: Boolean) = when {
+    saved != Prefs.SETUP_UNSEEN -> saved
+    on -> Prefs.SETUP_DONE
+    else -> Prefs.SETUP_TIPS_DUE
+}
+
 @Composable
 private fun App(changes: Int) {
     val context = LocalContext.current
@@ -129,14 +141,10 @@ private fun App(changes: Int) {
     val nav = Nav(stack)
     // Read from the file, not Prefs.current, which a new process may not have loaded yet: a tips page
     // left open must not pass for a first start.
-    val setup = remember { Prefs.flow(context, Prefs.SETUP).map<Int, Int?> { it } }.collectAsState(null).value ?: return
-    if (setup == Prefs.SETUP_UNSEEN) LaunchedEffect(Unit) {
-        // SebType already on: someone who set it up before the tips existed, or without this app
-        Prefs.set(context, Prefs.SETUP, if (state.first) Prefs.SETUP_DONE else Prefs.SETUP_TIPS_DUE)
-    }
-    if (stack.isEmpty() && !(state.first && state.second && setup != Prefs.SETUP_TIPS_DUE)) {
-        return Setup(state) { Prefs.set(context, Prefs.SETUP, Prefs.SETUP_DONE) }
-    }
+    val saved = remember { Prefs.flow(context, Prefs.SETUP).map<Int, Int?> { it } }.collectAsState(null).value ?: return
+    val setup = setupState(saved, state.first)
+    if (setup != saved) LaunchedEffect(Unit) { Prefs.set(context, Prefs.SETUP, setup) }
+    if (stack.isEmpty() && setup != Prefs.SETUP_DONE) return Setup(state) { Prefs.set(context, Prefs.SETUP, Prefs.SETUP_DONE) }
     BackHandler(stack.isNotEmpty()) { nav.back() }
     when (stack.lastOrNull()) {
         null -> Home(nav)

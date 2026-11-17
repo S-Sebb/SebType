@@ -1743,6 +1743,75 @@ def wait_step(step):
     wait_for(f"setup's step {step} of 3", lambda: setup_step_shown() == step, 20)
 
 
+def other_keyboard():
+    """Today's FUTO Keyboard, which emulator.sh installs beside SebType"""
+    imes = adb("shell", "ime", "list", "-a", "-s").split()
+    futo = next(i for i in imes if i.startswith("org.futo.inputmethod.latin/"))
+    adb("shell", "ime", "enable", futo)
+    return futo
+
+
+def home_not_setup(what):
+    """The settings open on home, with whichever keyboard is in use: never setup."""
+    wait_for(what, lambda: screen_has(HOME["about"]) or setup_step_shown(), 30)
+    step = setup_step_shown()
+    if step:
+        raise Fail(f"{what}: setup's step {step} instead")
+
+
+def large_text(name, button):
+    """At font scale 2 and the largest display size, portrait and landscape, setup's button can be scrolled
+    to and is whole on the screen (settings-<name>-large-*.png)."""
+    w, h = map(int, adb("shell", "wm", "size").split()[-1].split("x"))
+    auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    adb("shell", "settings", "put", "system", "font_scale", "2.0")
+    adb(
+        "shell", "wm", "density", "540"
+    )  # Settings' largest display size on guide35 (Pixel 7, 420 dpi)
+    try:
+        for rotation, side in (("0", "portrait"), ("1", "landscape")):
+            adb("shell", "settings", "put", "system", "user_rotation", rotation)
+            time.sleep(4)
+            width, height = (w, h) if rotation == "0" else (h, w)
+            screenshot(f"{name}-large-{side}")
+            for _ in range(8):
+                whole = [
+                    (top, y)
+                    for label, x, y, top, cls in nodes()
+                    if label in button and y - top >= 15 and 2 * y - top <= height
+                ]
+                if whole:
+                    break
+                adb(
+                    "shell",
+                    "input",
+                    "swipe",
+                    str(width // 2),
+                    str(height * 3 // 4),
+                    str(width // 2),
+                    str(height // 4),
+                    "400",
+                )
+                time.sleep(1)
+            else:
+                raise Fail(f"{button[0]} can't be reached in {side}")
+            screenshot(f"{name}-large-{side}-end")
+    finally:
+        adb("shell", "settings", "put", "system", "font_scale", "1.0")
+        adb("shell", "wm", "density", "reset")
+        adb("shell", "settings", "put", "system", "user_rotation", "0")
+        adb(
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "accelerometer_rotation",
+            auto if auto in ("0", "1") else "0",
+        )
+        time.sleep(3)
+
+
 def setup_tips():
     """A new user: steps 1 and 2 of 3, then the tips as step 3, which an interruption keeps; Done ends
     setup for good."""
@@ -1751,8 +1820,11 @@ def setup_tips():
     try:
         start_settings()
         wait_step(1)
+        screenshot("setup-step1")
+        large_text("setup-step1", labels("Turn on SebType"))
         adb("shell", "ime", "enable", IME)
         wait_step(2)
+        screenshot("setup-step2")
         adb("shell", "ime", "set", IME)
         wait_step(3)
         wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
@@ -1763,6 +1835,7 @@ def setup_tips():
             screenshot("setup-tips-dark")
         finally:
             adb("shell", "cmd", "uimode", "night", "no")
+        large_text("setup-tips", labels("完成", "Done", "完了"))
         # Interrupted: the app stopped on step 3 comes back to it. Just after SebType stops, the system
         # can fall back to another keyboard (setup's step 2), so it is chosen again until step 3 shows.
         adb("shell", "am", "force-stop", PKG)
@@ -1781,22 +1854,34 @@ def setup_tips():
         open_settings()
         if setup_step_shown():
             raise Fail("setup came back after Done")
+        # Another keyboard chosen after Done: still home
+        adb("shell", "ime", "set", other_keyboard())
+        adb("shell", "am", "force-stop", PKG)
+        start_settings()
+        home_not_setup("the settings with another keyboard after Done")
     finally:
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
-    return "steps 1, 2 and 3 of 3, step 3 again after a restart, home after Done and after a restart (settings-setup-tips*.png)"
+    return "steps 1, 2 and 3 of 3, the button reachable at large text in portrait and landscape, step 3 again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
 
 
 def setup_existing_user():
-    """Someone whose SebType was on before the tips existed opens the settings: home, never setup."""
+    """Someone whose SebType was on before the tips existed, with another keyboard in use, opens the
+    settings: home, never setup, and the same once SebType is chosen again."""
     forget_setup()
     adb("shell", "ime", "enable", IME)
-    for run in (1, 2):
-        open_settings()
-        if setup_step_shown():
-            raise Fail(f"setup shown on opening {run}")
-        adb("shell", "am", "force-stop", PKG)
-    return "home on the first and the next opening"
+    adb("shell", "ime", "set", other_keyboard())
+    try:
+        for run in (1, 2):
+            start_settings()
+            home_not_setup(f"opening {run} with another keyboard")
+            adb("shell", "am", "force-stop", PKG)
+    finally:
+        adb("shell", "ime", "set", IME)
+    open_settings()
+    if setup_step_shown():
+        raise Fail("setup shown with SebType chosen again")
+    return "home with another keyboard in use, twice, and with SebType chosen again"
 
 
 def tips_screenshots():
