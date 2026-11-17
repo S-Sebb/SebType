@@ -72,6 +72,10 @@ def adb(*args, timeout=120, check=True):
     return p.stdout
 
 
+# Whether the device has a root shell: a phone may not (android/test/emulator.sh)
+ROOT = os.environ.get("SEBTYPE_ROOT", "1") == "1"
+
+
 def root(cmd):
     # Through sh -c: the whole of cmd runs as root, not only its first command.
     return adb("shell", f"su 0 sh -c {shlex.quote(cmd)}")
@@ -525,14 +529,17 @@ def fresh_install():
         raise Fail(
             f"{runs} setups logged, deployed: {deployed}; expected one, deploying"
         )
-    built = root(f"ls {RIME_USER}/build").split()
-    # The bundle comes compiled: no table, prism or reverse db may be built on the phone.
-    rebuilt = [f for f in built if f.endswith(".bin")]
-    if rebuilt:
-        raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (setup {setup} ms)")
+    tables = "prebuilt tables not checked (no root shell)"
+    if ROOT:
+        built = root(f"ls {RIME_USER}/build").split()
+        # The bundle comes compiled: no table, prism or reverse db may be built on the phone.
+        rebuilt = [f for f in built if f.endswith(".bin")]
+        if rebuilt:
+            raise Fail(f"rebuilt on the phone: {', '.join(rebuilt)} (setup {setup} ms)")
+        tables = "prebuilt tables used"
     return (
         f"first run from the setup screen: install {install} ms, set up in {setup} ms all told; "
-        f"{meanwhile}; prebuilt tables used"
+        f"{meanwhile}; {tables}"
     )
 
 
