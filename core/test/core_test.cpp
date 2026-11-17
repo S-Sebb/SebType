@@ -711,7 +711,8 @@ TEST_F(EnglishTest, ACursorPutIntoAWordReopensIt) {
   EXPECT_EQ(e.composeAfter, 2);
   EXPECT_EQ(en->preedit().text(), "teh");
   en->selectAt(indexOf("the"));
-  EXPECT_EQ(en->takeCommit(), "the ");
+  EXPECT_EQ(en->takeCommit(), "the");  // the space after it in the field stays the only one
+  EXPECT_EQ(en->takeEdit().cursor, 1);
   // A letter typed inside it goes in at the cursor, with the letters before it.
   en->setContext("I like t", "eh cat");
   en->takeEdit();

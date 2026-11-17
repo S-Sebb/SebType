@@ -179,7 +179,7 @@ class NativeState(
     /** Text to delete around the cursor before the commit, in characters (Mozc's) */
     @JvmField val deleteBefore: Int,
     @JvmField val deleteAfter: Int,
-    /** Where the cursor goes after the commit: 0 after it, -n n characters back */
+    /** Where the cursor goes after the commit: 0 after it, -n n characters back, +n n on */
     @JvmField val commitCursor: Int,
     /** First, the composing text becomes the field's text from [composeBefore] characters before the cursor
      *  to [composeAfter] after it, as it is (English reopening a word); with neither, it ends where it is. */

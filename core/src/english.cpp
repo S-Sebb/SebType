@@ -530,7 +530,9 @@ class English : public Engine {
       return;
     }
     commitWord(w, true);
-    commit_ += " ";
+    // A reopened word with a space after it in the field: the cursor goes after that space, not a second one
+    if (after_.starts_with(' ')) after_.erase(0, 1), edit_.cursor = 1;
+    else commit_ += " ";
     context_ += " ";
     afterPick_ = true;
     changed();
