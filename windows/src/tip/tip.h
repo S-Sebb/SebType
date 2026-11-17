@@ -123,6 +123,7 @@ class TextService final : public ITfTextInputProcessorEx,
   TfGuidAtom attrInput_ = TF_INVALID_GUIDATOM, attrTarget_ = TF_INVALID_GUIDATOM;
   Lang lang_ = Lang::Chinese;
   Reply reply_;
+  bool leaving_ = false;  // another keyboard is being activated: what was typed is dropped (#301)
   RECT caret_{};
   // OnTestKeyDown already sent this key; OnKeyDown takes its answer instead of sending it again.
   struct Tested {

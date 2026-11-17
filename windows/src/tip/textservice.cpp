@@ -218,6 +218,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
   threadMgr_ = threadMgr;
   threadMgr_->AddRef();
   clientId_ = clientId;
+  leaving_ = false;
 
   ITfSource *source = nullptr;
   if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfSource, reinterpret_cast<void **>(&source)))) {
@@ -316,10 +317,14 @@ void TextService::setOpen() {
   if (mgr) mgr->Release();
 }
 
-STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid, REFGUID, REFGUID profile, HKL,
-                                      DWORD flags) {
-  if (profileType == TF_PROFILETYPE_INPUTPROCESSOR && clsid == kClsid && (flags & TF_IPSINK_FLAG_ACTIVE))
-    setLanguage(profile);
+// The profile that comes next: SebType's other language, or another keyboard, which drops what was being
+// typed (the user's choice in #301) even when TSF ends the composition for it before Deactivate.
+STDMETHODIMP TextService::OnActivated(DWORD profileType, LANGID, REFCLSID clsid, REFGUID catid, REFGUID profile,
+                                      HKL, DWORD flags) {
+  if (!(flags & TF_IPSINK_FLAG_ACTIVE)) return S_OK;
+  const bool ours = profileType == TF_PROFILETYPE_INPUTPROCESSOR && clsid == kClsid;
+  leaving_ = !ours && (profileType == TF_PROFILETYPE_KEYBOARDLAYOUT || catid == GUID_TFCAT_TIP_KEYBOARD);
+  if (ours) setLanguage(profile);
   return S_OK;
 }
 
@@ -363,6 +368,7 @@ void TextService::focus(ITfDocumentMgr *focused) {
   if (context_) {
     std::wstring typed;
     if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    if (leaving_) typed.clear();
     typeIn(typed);
     context_->Release();
     context_ = nullptr;
@@ -566,8 +572,9 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie ec, ITfCompositio
   if (composition == composition_) {
     std::wstring typed;
     if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    if (leaving_) typed.clear();  // the text goes, kana and all, for the next keyboard (#301)
     ITfRange *range = nullptr;
-    if (!typed.empty() && SUCCEEDED(composition_->GetRange(&range))) {
+    if ((leaving_ || !typed.empty()) && SUCCEEDED(composition_->GetRange(&range))) {
       range->SetText(ec, 0, typed.c_str(), static_cast<LONG>(typed.size()));
       range->Release();
     }
