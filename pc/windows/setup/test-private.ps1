@@ -83,53 +83,61 @@ try {
     Check "$lang-normal-learns" { $null = & $fourth; $t = & $first; if ($t -ne $picked) { throw "first is '$t', want '$picked'" }; $t }
     Field $true
     Check "$lang-private-keeps-learned" { $t = & $first; if ($t -ne $picked) { throw "first is '$t', want '$picked'" }; $t }
-    Field $false  # ends in a field that may learn, which -Browsers starts from
+    Field $false
+  }
+
+  if ($Browsers) {
+    $page = "$Out\field.html"
+    Set-Content -Encoding utf8 $page '<title>sebtype-270</title><textarea autofocus></textarea>'
+    $found = @(
+      @{ Name = 'edge'; Exe = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"; Private = '--inprivate' }
+      @{ Name = 'chrome'; Exe = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"; Private = '--incognito' }
+    ) | Where-Object { Test-Path $_.Exe }
+    foreach ($b in $found) {
+      foreach ($private in $true, $false) {
+        $name = "$($b.Name)-$(if ($private) { 'private' } else { 'normal' })"
+        $prof = "$Out\$($b.Name)-profile"
+        Check $name {
+          # The server notes only a change: the test's own field first, in front with the other privacy.
+          Field (-not $private)
+          if (-not $tsf::Focus()) { throw "the test field is not in front ($($tsf::FocusState()))" }
+          $tsf::Settle(500); Dark
+          $before = @(Get-Content $log -ErrorAction SilentlyContinue).Count
+          $flags = @("--user-data-dir=`"$prof`"", '--no-first-run', '--no-default-browser-check') + @($(if ($private) { $b.Private })) + "file:///$($page -replace '\\', '/')"
+          $null = Start-Process $b.Exe -ArgumentList $flags -PassThru
+          try {
+            $h = [IntPtr]::Zero
+            for ($i = 0; $i -lt 60 -and $h -eq [IntPtr]::Zero; $i++) {
+              Start-Sleep -Milliseconds 500
+              $w = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'sebtype-270*' } | Select-Object -First 1
+              if ($w) { $h = $w.MainWindowHandle }
+            }
+            if ($h -eq [IntPtr]::Zero) { throw 'no browser window with the page' }
+            $front = $tsf::Foreground($h)
+            $want = if ($private) { 'field: private, learns nothing' } else { 'field: learns' }
+            # A new profile's page can take seconds to focus its field.
+            for ($i = 0; $i -lt 15; $i++) {
+              Start-Sleep 1; Dark
+              $new = @(Get-Content $log -ErrorAction SilentlyContinue | Select-Object -Skip $before) -match 'field: '
+              if ($new | Where-Object { $_ -like "*$want" }) { break }
+            }
+            $why = "in front: $front; server.log: $($new -join ' / ')"
+            if (-not ($new | Where-Object { $_ -like "*$want" })) { throw $why }
+            $why
+          } finally {
+            Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$prof*" } |
+              ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Start-Sleep 2
+          }
+        }
+      }
+      Remove-Item -Recurse -Force $prof -ErrorAction SilentlyContinue
+    }
+    Remove-Item -Force $page
   }
 } finally {
   if (-not (Lit)) { try { Keys Escape Escape } catch { } }
   $tsf::Stop()
-}
-
-if ($Browsers) {
-  $page = "$Out\field.html"
-  Set-Content -Encoding utf8 $page '<title>sebtype-270</title><textarea autofocus></textarea>'
-  $found = @(
-    @{ Name = 'edge'; Exe = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"; Private = '--inprivate' }
-    @{ Name = 'chrome'; Exe = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"; Private = '--incognito' }
-  ) | Where-Object { Test-Path $_.Exe }
-  foreach ($b in $found) {
-    foreach ($private in $true, $false) {
-      $name = "$($b.Name)-$(if ($private) { 'private' } else { 'normal' })"
-      $prof = "$Out\$($b.Name)-profile"
-      Check $name {
-        Dark
-        $before = @(Get-Content $log -ErrorAction SilentlyContinue).Count
-        $flags = @("--user-data-dir=`"$prof`"", '--no-first-run', '--no-default-browser-check') + @($(if ($private) { $b.Private })) + "file:///$($page -replace '\\', '/')"
-        $null = Start-Process $b.Exe -ArgumentList $flags -PassThru
-        try {
-          $h = [IntPtr]::Zero
-          for ($i = 0; $i -lt 60 -and $h -eq [IntPtr]::Zero; $i++) {
-            Start-Sleep -Milliseconds 500
-            $w = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'sebtype-270*' } | Select-Object -First 1
-            if ($w) { $h = $w.MainWindowHandle }
-          }
-          if ($h -eq [IntPtr]::Zero) { throw 'no browser window with the page' }
-          $front = $tsf::Foreground($h); Start-Sleep 3; Dark
-          $new = @(Get-Content $log -ErrorAction SilentlyContinue | Select-Object -Skip $before) -match 'field: '
-          $want = if ($private) { 'field: private, learns nothing' } else { 'field: learns' }
-          $why = "in front: $front; server.log: $($new -join ' / ')"
-          if (-not ($new | Where-Object { $_ -like "*$want" })) { throw $why }
-          $why
-        } finally {
-          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$prof*" } |
-            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-          Start-Sleep 2
-        }
-      }
-    }
-    Remove-Item -Recurse -Force $prof -ErrorAction SilentlyContinue
-  }
-  Remove-Item -Force $page
 }
 
 Start-Sleep 6  # a wake from the last steps shows by now

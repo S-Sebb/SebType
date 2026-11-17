@@ -157,7 +157,9 @@ the display on (`-Trial` checks just that, without SebType; `-WatchTo` watches i
 with the input scope `IS_PRIVATE`, which Chrome's and Edge's incognito windows and Firefox's private
 windows give, learns no 中文 or 日本語 pick and still suggests what was learned. `-Browsers` opens a page
 in Edge (and Chrome) InPrivate and normal, brings it to the front without a key and reads server.log,
-where the server notes each change of the field's learning.
+where the server notes each change of the field's learning. It needs a session with a display: a
+disconnected Remote Desktop session has no window in front (on TCSBackEnd, Administrator's session
+attached in FreeRDP inside headless gamescope, sending no keys).
 
 The keys are real input: `setup/rdp-keys.py` presses them through XTEST in the gamescope display that
 FreeRDP runs in, FreeRDP sends their scancodes to the test user's session like any keyboard, and the
