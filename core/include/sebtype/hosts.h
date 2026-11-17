@@ -38,6 +38,8 @@ struct MozcPaths {
   std::string dataFile;
   int64_t dataOffset = 0, dataLength = 0;
   bool touch = false;
+  // Loads in the background (the engine is busy() meanwhile) instead of in makeMozc: Windows' server (#312).
+  bool background = false;
 };
 std::unique_ptr<Engine> makeMozc(const MozcPaths &paths);
 // The phone's user dictionaries: a file in any format Mozc imports (Mozc, MS-IME, ATOK, Kotoeri), as a

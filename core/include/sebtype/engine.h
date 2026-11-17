@@ -73,7 +73,7 @@ class Engine {
   // Applies changed settings or data (Rime's deploy) and saves learned words (Rime's sync).
   virtual void deploy() {}
   virtual void save() {}
-  // Still deploying or saving, in the engine's own thread.
+  // Still loading, deploying or saving, in the engine's own thread.
   virtual bool busy() { return false; }
   // False when it can't take keys and isn't busy: it didn't load (#275).
   virtual bool available() { return true; }

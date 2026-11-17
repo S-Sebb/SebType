@@ -149,6 +149,7 @@ class Mozc final : public Engine {
     mozc_->call(in, out);
   }
 
+  bool busy() override { return mozc_->loading(); }
   bool available() override { return mozc_->open(); }
 
   bool key(const Key &k) override {
