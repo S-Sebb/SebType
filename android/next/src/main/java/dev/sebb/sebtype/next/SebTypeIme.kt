@@ -957,8 +957,9 @@ class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBar.Lis
             editor.start(search.info, kind)
             keyboard.enter = kind.enter
             page = Page.LETTERS
-            // As today's: the results take two thirds of the keys' height.
-            results.layoutParams = results.layoutParams.apply { height = (keysRow.height / 1.5f).toInt() }
+            // Two thirds of the bar and keys, which the search's field and results replace: today's results
+            // take two thirds of its keyboard view, which has the room our bar takes.
+            results.layoutParams = results.layoutParams.apply { height = ((barFrame.height + keysRow.height) / 1.5f).toInt() }
             enterLanguage()
             onSearchText("")
             refresh()
