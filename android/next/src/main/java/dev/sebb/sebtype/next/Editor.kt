@@ -199,20 +199,19 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
 
     /**
      * The engine's edit [st] into the field, then [composition] as the composing text (null: as it is) and
-     * [then], in one batch. English's ([checked]) go in only where the field is as our edits left it ([check]),
-     * and its edits of a range (a word reopened, the text an undone correction deletes) only where that is
-     * known. False, with what was composing left in the field as it is, when they can't: the engine must read
-     * the field again.
+     * [then], in one batch. English's edits of a range ([checked]: a word reopened, the text an undone correction
+     * deletes) go in only where the field is as our edits left it ([check]) and that is known. False, with what
+     * was composing left in the field as it is, when they can't: the engine must read the field again.
      */
     fun write(st: NativeState, composition: CharSequence?, then: (() -> Unit)? = null): Boolean {
         beginBatch()
         try {
             val range = st.recompose || st.deleteBefore > 0 || st.deleteAfter > 0
-            // A key that only sets the composing text (a letter typed, or taken off, in the word) relies on the
-            // field's updates, as today's app does: a read before it would delay every letter. A state that
-            // changes nothing (the strip's, after a space) reads nothing either.
-            val edits = range || st.commit.isNotEmpty() || st.commitCursor != 0 || then != null ||
-                composition != null && composition.isEmpty() && composing
+            // Typing (a letter, a space, punctuation, a suggestion picked) goes in by the composing text and the
+            // cursor and relies on the field's updates, as today's app does: a read before it would delay every
+            // key. Taking the composing text away with nothing committed in its place is checked: it would erase
+            // what is there.
+            val edits = range || st.commitCursor != 0 || st.commit.isEmpty() && composition?.isEmpty() == true && composing
             val check = if (checked && edits) check() else Check.SAME
             if (check == Check.CHANGED || check == Check.UNKNOWN && range || st.recompose && !composeRegion(st.composeBefore, st.composeAfter)) {
                 finishComposing()

@@ -533,9 +533,13 @@ class EditorTest {
         assertEquals(0 until 6, field.region)
     }
 
-    /** #280: a suggestion tapped for "hello", its result come before the update for a move to "world": it is dropped */
+    /**
+     * #280: a suggestion tapped for "hello", its result come before the update for a move to "world": it takes
+     * the place of the word still composing, as in today's app, which reads nothing before a commit either (the
+     * bar: no less safe than today's app, no slower than main). The move is heard next and "world" reopened.
+     */
     @Test
-    fun aSuggestionTappedBeforeAMoveIsDropped() {
+    fun aSuggestionPickedBeforeAMoveIsHeardTakesTheWordsPlace() {
         val field = Field("hello world", 11)
         val ime = Ime(field)
         field.tap(5)
@@ -543,8 +547,7 @@ class EditorTest {
         ime.pick("help")
         field.tap(8)
         ime.settle()
-        assertEquals("hello world", field.text)
-        assertEquals(6 until 11, field.region)
+        assertEquals("help  world", field.text)
     }
 
     /**
@@ -579,21 +582,21 @@ class EditorTest {
     }
 
     /**
-     * #280: a letter typed in a word reads nothing from the field (main's reads 3: the Shift after the key and
-     * after its update, and the engine's copy of the text). It only sets the composing text, as today's app does,
-     * and the Shift and the engine's copy come from the text English's edits left.
+     * #280: a letter or a space typed reads nothing from the field (main's reads 3 a letter: the Shift after the
+     * key and after its update, and the engine's copy of the text). It goes in by the composing text and the
+     * cursor, as in today's app, and the Shift and the engine's copy come from the text English's edits left.
      */
     @Test
-    fun aLetterDoesntReadTheField() {
+    fun typingDoesntReadTheField() {
         val field = Field("I saw ", 6)
         val ime = Ime(field)
-        for (c in "hello") {
+        for (c in "hello ") {
             field.reads = 0
-            ime.key(c)
+            if (c == ' ') ime.space() else ime.key(c)
             ime.settle()
             assertEquals(0, field.reads)
         }
-        assertEquals("I saw hello", field.text)
+        assertEquals("I saw hello ", field.text)
     }
 
     /**
