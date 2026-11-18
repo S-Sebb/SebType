@@ -24,6 +24,8 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   japanese-back: the server answers again (resumed): あ again within two seconds, unasked;
   typed-after-recovery: ni + Space in 中文 then gives 你 (the key the app typed itself while the server hung
     doesn't reach Rime as well); dpi-change-popup: dpi-change for the popup, at a key once the server hangs;
+  popup-own-content: that popup, after typed-after-recovery's candidates with page arrows, shows only its own
+    text: the same as japanese-unavailable's popup, with no arrows left from the candidates (#348);
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
     popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
     keypad 1, in an app that grants the text service's edit only after it handled the key.
@@ -392,6 +394,13 @@ try {
       [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
       $null = WaitIcon $hira 4; $tsf::Clear()
     }
+  }
+  Check 'popup-own-content' {
+    $d = $tsf::Dpi(); $popup = "$Out\dpi-popup-fresh-$d.png"
+    if (-not (Test-Path $popup) -or -not (Test-Path "$Out\hira-off-popup.png")) { throw 'no popup from dpi-change-popup or japanese-unavailable to compare' }
+    $diff = $tsf::Differ($popup, "$Out\hira-off-popup.png", [math]::Ceiling(8 * $d / 96))
+    if ($diff) { throw "it differs from japanese-unavailable's popup: $diff (dpi-popup-fresh-$d.png, hira-off-popup.png)" }
+    "the same as japanese-unavailable's popup: no page arrows left from the candidates"
   }
   # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
   # and once the server answers again nothing of the old typing comes back or deletes it. The second time the

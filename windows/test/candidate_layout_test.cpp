@@ -111,6 +111,23 @@ int main() {
     CHECK(l.prevBox.empty() && l.nextBox.empty());
   }
 
+  // The window reuses one layout: a popup after a Picnic page with arrows has neither arrows nor pig (#348).
+  {
+    CandidateLayout l;
+    l.vertical = false, l.picnic = true;
+    l.preedit = {L"ni"};
+    l.cells = {{L"1.", L"你", L""}};
+    l.hasNext = true;
+    l.maxWidth = 1000;
+    l.run(measure);
+    CHECK(!l.nextBox.empty() && !l.pigBox.empty());
+    l.preedit = {L"日本語暂不可用"};
+    l.cells.clear();
+    l.hasPrev = l.hasNext = false;
+    l.run(measure);
+    CHECK(l.prevBox.empty() && l.nextBox.empty() && l.pigBox.empty());
+  }
+
   // A word's pages: Rime's pinyin row moves its spaces and highlight; Mozc's converted segment changes.
   using sebtype::win::pageWord;
   CHECK(pageWord({L"ni hao"}, 0, true) == pageWord({L"ni", L"hao"}, 0, true));
