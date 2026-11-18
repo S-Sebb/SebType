@@ -1178,6 +1178,27 @@ def en_model_waits_for_letter():
 check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
 
 
+def zh_waits_for_zh():
+    """#351: a keyboard process that starts in EN leaves Rime stopped (it holds about 40 MB), and 中
+    still types at once when picked."""
+    open_field()
+    if chip(nodes()):
+        tap_globe()  # 日 -> EN
+    stop_keyboard()
+    adb("logcat", "-c")
+    open_field()
+    time.sleep(10)
+    if re.search(SET_UP, logcat()):
+        raise Fail("a keyboard that started in EN started Rime")
+    to_chinese()
+    typed = expect_first("ranh", "然后")()
+    to_english()  # the checks after type in EN
+    return f"EN: Rime not started; then {typed}"
+
+
+check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
+
+
 def fast_typing_en():
     """English keys typed faster than the engine answers (#241) land in order, with each sentence's
     capital: a key lost, out of order or cased by a Shift the field hadn't caught up with shows here."""

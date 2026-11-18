@@ -164,6 +164,22 @@ object Engines {
         worker.execute { if (chinese != Chinese.READY) setUpChinese(app) }
     }
 
+    /**
+     * Sets 中文 up ahead of its first use when this install or update hasn't yet, so the install and the
+     * deploy don't wait for its first key. Rime itself starts only for 中文: it holds about 40 MB (#351), and
+     * stops again [IDLE_MS] after this setup unless 中文 is in use by then.
+     */
+    fun setUpChineseAhead(context: Context) {
+        val app = context.applicationContext
+        worker.execute {
+            val version = app.assets.open("rime/bundle-version").bufferedReader().use { it.readText().trim() }
+            val done = listOf(File(sharedDir(app), INSTALLED), File(userDir(app), DEPLOYED)).all { it.isFile && it.readText() == version }
+            if (chinese == Chinese.READY || done) return@execute
+            setUpChinese(app)
+            main.post { if (CHINESE !in using) inUse(CHINESE, false) }
+        }
+    }
+
     /** Tries again after a failure: installs the bundled data from scratch. */
     fun retryChinese(context: Context) {
         val app = context.applicationContext
@@ -282,11 +298,13 @@ object Engines {
     }
 
     private val idleStops = HashMap<Int, Runnable>()
+    private val using = HashSet<Int>()
 
     /** [lang] is in use (true), or was left (false): an engine left alone for [IDLE_MS] stops. */
     fun inUse(lang: Int, used: Boolean) {
         if (lang == NativeCore.ENGLISH) return
         idleStops.remove(lang)?.let { main.removeCallbacks(it) }
+        if (used) using += lang else using -= lang
         if (used) return
         val stop = Runnable {
             idleStops.remove(lang)

@@ -168,7 +168,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     override fun onCreate() {
         super.onCreate()
         Engines.configure(this)
-        Engines.prepareChinese(this)
+        Engines.setUpChineseAhead(this)
         Engines.onChange = {
             if (views) {
                 chineseContextIfMissed()
@@ -1306,7 +1306,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 /** An update gets 中文 ready before the keyboard next shows (#40). */
 class UpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) Engines.prepareChinese(context)
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) Engines.setUpChineseAhead(context)
     }
 }
 
