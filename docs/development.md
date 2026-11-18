@@ -73,10 +73,12 @@ lab's machine. The Windows build runs only in CI (MSVC on GitHub's Windows runne
 yanglab16 and the NAS share the lab's one 1 Gbit/s port, and a download at full speed stalls SSH and the
 NAS for everyone. So every download a script makes is capped at 300 Mbit/s (#365): `curl --limit-rate 35M`
 (`curl.exe` on Windows, never `Invoke-WebRequest`), `wget --limit-rate=35m`, dnf with
-`--setopt=throttle=35M`, and one download at a time. `tools/check-downloads.sh` fails on a `curl` or
-`wget` call without `--limit-rate` on its line, and on `Invoke-WebRequest`; CI runs it on every PR. Hugging
-Face datasets come through `tools/hf-fetch.sh`, which lists a pinned revision's files and fetches each with
-capped curl, since `hf download` has no cap. Mozc's Bazel archives go through its capped prefetch
+`--setopt=throttle=35M`, and one download at a time. `tools/check-downloads.py` fails on a `curl` or
+`wget` command (continuation lines joined, comments left out) without `--limit-rate` of 35M or less, on
+curl or wget run through a variable, and on `Invoke-WebRequest`; CI runs it and its `--self-test` on every
+PR. Hugging Face datasets come through `tools/hf-fetch.sh`, which lists a pinned revision's files and
+fetches each with capped curl, since `hf download` has no cap; a gated dataset's token goes to curl
+through a pipe, never on its command line. Mozc's Bazel archives go through its capped prefetch
 (`tools/mozc-bazel.sh`).
 
 These have no cap, and are fetched once into a cache: the pinned Fedora image (podman), the Android SDK
@@ -161,7 +163,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
 | `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` on yanglab16 and loaded into Mozc here: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
-| `tools/check-downloads.sh` | Every `curl` and `wget` download is capped at 300 Mbit/s, and no script uses `Invoke-WebRequest` (#365); CI runs it on every PR |
+| `tools/check-downloads.py` (`--self-test`: its own cases) | Every `curl` and `wget` download is capped at 300 Mbit/s, and no script uses `Invoke-WebRequest` (#365); CI runs it on every PR |
 | `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest, or a cached file that is corrupt, replaced or deleted, is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
