@@ -1268,9 +1268,8 @@ def to_chinese():
     raise Fail("no 中 after cycling the globe")
 
 
-def zh_waits_for_zh():
-    """#351: a keyboard process that starts in EN leaves Rime stopped (it holds about 40 MB). ranh typed
-    at once after the globe, while Rime starts, still reaches it: no plain letters in the field."""
+def fresh_in_english():
+    """A new keyboard process in EN, which must leave Rime stopped (it holds about 40 MB, #351)."""
     to_english()
     stop_keyboard()
     adb("logcat", "-c")
@@ -1278,24 +1277,47 @@ def zh_waits_for_zh():
     time.sleep(10)
     if re.search(SET_UP, logcat()):
         raise Fail("a keyboard that started in EN started Rime")
-    # The globe (EN -> 中) and ranh in one burst, before Rime can start; the letters are where EN has them.
-    # Rime's files out of the page cache, as on a phone short of memory: its start reads them from storage.
-    k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+
+
+def burst_into_chinese(points):
+    """The globe (EN -> 中), then points, in one burst while Rime starts: its files are dropped from the page
+    cache first, as on a phone short of memory, so its start reads them from storage. Over the last nodes()."""
     left, top, right, bottom = keyboard_frame
     globe = (int(left + 3 * (right - left) / 10), row_y(top, bottom, 3))
     root("sync; echo 3 > /proc/sys/vm/drop_caches")
-    monkey_taps([globe] + [k[ch][:2] for ch in "ranh"], 10)
-    got = wait_for("candidates for ranh", lambda: candidates(nodes()), 30)
-    text = field_text()
+    monkey_taps([globe] + points, 10)
+
+
+def setup_took():
     setup = re.search(SET_UP, logcat())
+    return f"Rime set up in {setup.group(1)} ms" if setup else "no setup logged"
+
+
+def zh_waits_for_zh():
+    """#351: keys typed while Rime starts reach it in order, as they would a running Rime: ranh, Space
+    (然后 committed), Delete (后 deleted) leave 然. The letters are where EN has them."""
+    fresh_in_english()
+    ns = wait_for(
+        "the keyboard",
+        lambda: (lambda n: n if keys(n) else None)(nodes()),
+        KEYBOARD_WAIT,
+    )
+    k = keys(ns)
+    space = next((x, y) for label, x, y, top, cls in ns if label in SPACE_LABELS)
+    delete = next((x, y) for label, x, y, top, cls in ns if label == "Delete")
+    burst_into_chinese([k[ch][:2] for ch in "ranh"] + [space, delete])
+    try:
+        text = wait_for("the field to show what was typed", field_text, 30)
+    except Fail:
+        text = ""
+    took = setup_took()
+    bar = candidates(nodes())
     to_english()  # the checks after type in EN
-    took = f"Rime set up in {setup.group(1)} ms" if setup else "no setup logged"
-    # 然後 when zh-hant-on left 繁 on
-    if text or got[0] not in ("然后", "然後"):
+    if text != "然":
         raise Fail(
-            f"ranh typed while Rime started ({took}): field {text!r}, bar {got[:6]}"
+            f"ranh, Space, Delete typed while Rime started ({took}): field {text!r}, bar {bar[:6]}"
         )
-    return f"EN: Rime not started; ranh typed while it started ({took}) -> {got[:6]}, field empty"
+    return f"ranh, Space, Delete typed while Rime started ({took}) -> field 然"
 
 
 check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
@@ -2516,6 +2538,37 @@ check("quick-clip-secret", quick_clip_secret, needs=["first-install"])
 check("emoji-search", emoji_search, needs=["first-install"])
 check("emoji-ascii", emoji_ascii, needs=["first-install"])
 check("clipboard-search", clipboard_search, needs=["first-install"])
+
+
+def zh_search_waits():
+    """#351: letters typed into the clipboard's search while Rime starts stay in the search: closing it at
+    once leaves nothing for the field."""
+    keep_clipboard()
+    fresh_in_english()
+    action(CLIPBOARD_ACTION)
+    tap_label(CLIPBOARD_SEARCH)
+    ns = wait_for(
+        "the keyboard",
+        lambda: (lambda n: n if keys(n) else None)(nodes()),
+        KEYBOARD_WAIT,
+    )
+    k = keys(ns)
+    close = next((x, y) for label, x, y, top, cls in ns if label in CLOSE_SEARCH)
+    burst_into_chinese([k["n"][:2], k["i"][:2], close])
+    time.sleep(8)  # Rime ready, and whatever it was given shown
+    took = setup_took()
+    ns = nodes()
+    bar = candidates(ns)
+    text = field_text()
+    to_english()
+    if text or any(re.search("[\u4e00-\u9fff]", c) for c in bar):
+        raise Fail(
+            f"ni typed in the search reached the field ({took}): field {text!r}, bar {bar[:6]}"
+        )
+    return f"ni typed in the search while Rime started ({took}): nothing in the field or the bar"
+
+
+check("zh-search-waits", zh_search_waits, needs=["ja-chip"])
 check("clipboard-image-paste", clipboard_image_paste, needs=["first-install"])
 check("clipboard-today-image", clipboard_today_image, needs=["first-install"])
 check("modes-one-handed", modes_one_handed, needs=["first-install"])
