@@ -33,6 +33,9 @@ public:
     std::vector<float> score(const std::string &context, const std::string &typed,
                              const std::vector<std::string> &words);
 
+    // The part of CONTEXT both read: its last line, the last 300 characters at most, from a word's start.
+    static std::string window(const std::string &context);
+
 private:
     std::vector<int> tokenize(const std::string &text, bool bos) const;
     std::vector<int> contextTokens(const std::string &context) const;

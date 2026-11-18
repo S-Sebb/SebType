@@ -14,7 +14,8 @@
 namespace sebtype_lm {
 namespace {
 
-constexpr int CONTEXT_CHARS = 300;  // the text before the cursor the model reads, at most
+constexpr size_t CONTEXT_CHARS = 300;  // the text before the cursor the model reads, at most
+constexpr size_t CONTEXT_STEP = 150;   // how far the window's start moves at once (#359)
 constexpr int MAX_BRANCHES = 32;
 constexpr int NEXT_WORD_PIECES = 5;  // first pieces nextWords() follows to the end of their word
 constexpr size_t SCORED_CANDIDATES = 6;
@@ -106,16 +107,21 @@ std::vector<int> Model::tokenize(const std::string &text, bool bos) const {
     return out;
 }
 
-std::vector<int> Model::contextTokens(const std::string &context) const {
-    // The last line, at most CONTEXT_CHARS of it from a word's start, without the spaces after it.
-    std::string text = context.substr(context.rfind('\n') == std::string::npos ? 0 : context.rfind('\n') + 1);
-    if (text.size() > CONTEXT_CHARS) {
-        const auto space = text.find(' ', text.size() - CONTEXT_CHARS);
-        text = space == std::string::npos ? "" : text.substr(space + 1);
-    }
-    text.erase(text.find_last_not_of(' ') + 1);
-    return tokenize(text, true);
+std::string Model::window(const std::string &context) {
+    // The last line, without the spaces after it. Past CONTEXT_CHARS, from the first word that starts after
+    // the next multiple of CONTEXT_STEP at or past CONTEXT_CHARS before its end. The start stays in place
+    // while the next CONTEXT_STEP characters are typed, so the cache holds the window and only the new words
+    // are decoded (#359); a start that moved with each word would decode the whole window every time.
+    const auto newline = context.rfind('\n');
+    std::string line = context.substr(newline == std::string::npos ? 0 : newline + 1);
+    line.erase(line.find_last_not_of(' ') + 1);
+    if (line.size() <= CONTEXT_CHARS) return line;
+    const size_t from = (line.size() - CONTEXT_CHARS + CONTEXT_STEP - 1) / CONTEXT_STEP * CONTEXT_STEP;
+    const auto space = line.find(' ', from);
+    return space == std::string::npos ? "" : line.substr(space + 1);
 }
+
+std::vector<int> Model::contextTokens(const std::string &context) const { return tokenize(window(context), true); }
 
 const float *Model::advance(const std::vector<int> &prefix) {
     llama_memory_t mem = llama_get_memory(mCtx);
