@@ -192,11 +192,12 @@ phase_install() {
   "$adb" uninstall "$pkg" > /dev/null || true # fresh: the first-run costs are part of the baseline
   "$adb" install "$APK" > /dev/null || { echo "install failed" >&2; return 1; }
   "$adb" install -r "$work/perf-field.apk" > /dev/null || { echo "field install failed" >&2; return 1; }
+  # zh-deploy reads the Chinese setup that the keyboard's first process starts, as soon as it is selected.
+  "$adb" logcat -c
   sh ime enable "$ime_id" > /dev/null && sh ime set "$ime_id" > /dev/null
   echo "version=$(sh dumpsys package "$pkg" | sed -n 's/.*versionName=//p' | head -1)"
 }
 phase_first-open() { # the first keyboard open after install
-  "$adb" logcat -c # zh-deploy reads the Chinese setup this open starts
   trace_start first-open
   open_field
   sleep 5
@@ -214,13 +215,14 @@ phase_en() {
   landed en "${#text}" 80 101
   echo "pss_kb=$(pss_kb en)"
 }
-phase_zh-deploy() { # the first-run Chinese setup (install and Rime's check) the first open started (#358)
+phase_zh-deploy() { # the first-run Chinese setup (install and Rime's check) since install selected SebType (#358)
   # SebType sets 中文 up ahead of its first use as its process starts (Engines.setUpChineseAhead), so this
-  # runs right after first-open, which cleared the log, in the same process. The app times the install
-  # and the check itself; the process's peak RSS since it started covers the first open and the setup:
-  # sampling it with dumpsys meminfo would run on the keyboard's main thread during the open's trace.
+  # runs right after first-open, reading the log install cleared. The app times the install and the check
+  # itself; the setup process's peak RSS covers its first open and the setup: sampling it with dumpsys
+  # meminfo would run on the keyboard's main thread during the open's trace.
   local log deadline=$(( SECONDS + 600 ))
-  until log=$("$adb" logcat -d -s SebType | tr -d '\r'); [[ $log == *"Set up rime_ice in"* ]]; do
+  # brief: "W/SebType ( <pid>): <message>", the tag padded to 8 characters
+  until log=$("$adb" logcat -d -v brief -s SebType | tr -d '\r'); [[ $log == *"Set up rime_ice in"* ]]; do
     (( SECONDS < deadline )) || { echo "Chinese setup didn't finish in 10 min: ${log:-no log}" >&2; return 1; }
     sleep 1
   done
@@ -228,7 +230,9 @@ phase_zh-deploy() { # the first-run Chinese setup (install and Rime's check) the
   [[ $log == *"self-test passed"* ]] || { echo "Chinese setup failed: $log" >&2; return 1; }
   echo "setup_ms=$(sed -n 's/.*Set up rime_ice in \([0-9]*\) ms.*/\1/p' <<<"$log")"
   echo "install_ms=$(sed -n 's/.*Installed the bundled [^0-9]* in \([0-9]*\) ms.*/\1/p' <<<"$log")"
-  local pid; pid=$(sh pidof "$pkg")
+  local pid now; pid=$(sed -n 's/^[A-Z]\/SebType *( *\([0-9]*\)).*Set up rime_ice in.*/\1/p' <<<"$log")
+  now=$(sh pidof "$pkg")
+  [[ -n $pid && $pid == "$now" ]] || { echo "the keyboard restarted after its Chinese setup (pid ${pid:-?}, now ${now:-none}): its peak memory is gone" >&2; return 1; }
   echo "rss_peak_kb=$(sh cat "/proc/$pid/status" | awk '/^VmHWM:/ {print $2}')"
   if [[ $(sh su 0 id -u 2>/dev/null) == 0 ]]; then # tables or prisms compiled here
     echo "built_on_device=$(sh su 0 ls "$rime_user/build" | grep -c '\.bin$')"
