@@ -28,7 +28,7 @@ mkdir -p "$cache" "$(dirname "$out")"
 fetch() { # url sha256 name -> prints cached path
   local f=$cache/$3
   if ! echo "$2  $f" | sha256sum -c --status 2>/dev/null; then
-    curl -fsSL "$1" > "$f.part"
+    curl --limit-rate 35M -fsSL "$1" > "$f.part"
     echo "$2  $f.part" | sha256sum -c --status || { echo "build: $1 changed (sha256)" >&2; exit 1; }
     mv "$f.part" "$f"
   fi

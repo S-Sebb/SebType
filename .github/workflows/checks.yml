@@ -1,0 +1,18 @@
+# Repository checks that need no build, on every PR: every download is capped at 300 Mbit/s (#365).
+name: Checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  downloads-capped:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: tools/check-downloads.sh

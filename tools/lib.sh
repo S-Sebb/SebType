@@ -100,7 +100,7 @@ fedora_container() {
   image=localhost/sebtype-fedora:$(sha256sum <<<"$BUILD_IMAGE $rpms" | head -c 12)
   podman image exists "$image" ||
     podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $BUILD_IMAGE
-RUN dnf -y install $rpms && dnf clean all" >/dev/null
+RUN dnf -y --setopt=throttle=35M install $rpms && dnf clean all" >/dev/null
   nas=$(readlink -f "$SCRATCH")
   container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
     --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"

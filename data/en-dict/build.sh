@@ -29,7 +29,7 @@ command -v hunspell >/dev/null || { echo "build: hunspell missing" >&2; exit 1; 
 fetch() { # url sha256 [name] [decode command] -> prints cached path
   local f=$cache/${3:-$(basename "$1")}
   if ! echo "$2  $f" | sha256sum -c --status 2>/dev/null; then
-    curl -fsSL "$1" | ${4:-cat} > "$f.part"
+    curl --limit-rate 35M -fsSL "$1" | ${4:-cat} > "$f.part"
     echo "$2  $f.part" | sha256sum -c --status || { echo "checksum mismatch: $1" >&2; exit 1; }
     mv "$f.part" "$f"
   fi

@@ -11,7 +11,7 @@ fetch_lookaside() {
     f=$1 sum=$2
     shift 2
     sha512sum -c --status <<<"$sum  $dir/$f" 2>/dev/null && continue
-    curl -sfL --retry 3 -o "$dir/$f.part" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f"
+    curl --limit-rate 35M -sfL --retry 3 -o "$dir/$f.part" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f"
     sha512sum -c --status <<<"$sum  $dir/$f.part" || { echo "checksum mismatch: $pkg/$f" >&2; return 1; }
     mv "$dir/$f.part" "$dir/$f"
   done
@@ -52,8 +52,8 @@ builder_image() {
   fi
   podman build -q --no-cache -t "$image" -v "$spec:/pkg.spec:ro,Z" -f - "$context" <<EOF >/dev/null
 FROM $base
-RUN dnf -y install rpm-build 'dnf5-command(builddep)' && \\
-  dnf -y builddep -D 'sebtype_version 0' -D 'sebtype_release 0' /pkg.spec && dnf clean all && \\
+RUN dnf -y --setopt=throttle=35M install rpm-build 'dnf5-command(builddep)' && \\
+  dnf -y --setopt=throttle=35M builddep -D 'sebtype_version 0' -D 'sebtype_release 0' /pkg.spec && dnf clean all && \\
   $check$extra
 EOF
 }

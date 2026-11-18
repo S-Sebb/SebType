@@ -18,16 +18,17 @@ uv pip install -q --python "$venv/bin/python" --index-strategy unsafe-best-match
 llama=$("$(dirname "$0")/../../engines/sebtype-lm/fetch-llama.sh")
 uv pip install -q --python "$venv/bin/python" "$llama/gguf-py"
 
+# One download at a time, each capped (tools/hf-fetch.sh): together they would fill the lab's shared port.
+hf_fetch=$(realpath "$(dirname "$0")/../hf-fetch.sh")
+hf() { "$hf_fetch" "$venv/bin/python" "$@"; }
 mkdir -p "$run/data/src"
 cd "$run/data/src"
-hf() { "$venv/bin/hf" download "$2" --repo-type dataset --revision "$3" --local-dir "$1" "${@:4}" >/dev/null; }
 # Revisions pinned to the commits whose licence tags were checked (SOURCES.md).
-hf wikipedia wikimedia/wikipedia b04c8d1ceb2f5cd4588862100d08de323dccfbaa --include '20231101.zh/*' &
+hf wikipedia wikimedia/wikipedia b04c8d1ceb2f5cd4588862100d08de323dccfbaa '20231101.zh/*'
 hf lccc silver/lccc 5bd582fa28cd7143f2f9c852e08e23089d677c44 \
-  --include lccc_base_train.jsonl.gz --include lccc_base_valid.jsonl.gz --include lccc_base_test.jsonl.gz &
-hf oasst2 OpenAssistant/oasst2 179dd21fc55192153d94adb0e0ce8f69e222bf75 --include '2023-11-05_oasst2_all.messages.jsonl.gz' &
+  lccc_base_train.jsonl.gz lccc_base_valid.jsonl.gz lccc_base_test.jsonl.gz
+hf oasst2 OpenAssistant/oasst2 179dd21fc55192153d94adb0e0ce8f69e222bf75 '2023-11-05_oasst2_all.messages.jsonl.gz'
 [[ -s zhwikinews-20261101.xml.bz2 ]] ||
-  { curl -sfo zhwikinews.part https://dumps.wikimedia.org/zhwikinews/20261101/zhwikinews-20261101-pages-articles.xml.bz2 &&
-    mv zhwikinews.part zhwikinews-20261101.xml.bz2; } &
-for job in $(jobs -p); do wait "$job"; done
+  { curl --limit-rate 35M -sfo zhwikinews.part https://dumps.wikimedia.org/zhwikinews/20261101/zhwikinews-20261101-pages-articles.xml.bz2 &&
+    mv zhwikinews.part zhwikinews-20261101.xml.bz2; }
 du -sh "$run/data/src"/*
