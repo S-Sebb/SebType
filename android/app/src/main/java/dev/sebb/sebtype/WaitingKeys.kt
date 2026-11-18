@@ -126,3 +126,10 @@ class WaitingKeys(
         reading
     }.toString()
 }
+
+/**
+ * A key's text outside English: only English turns Shift on by itself, so a capital A–Z there without the
+ * user's Shift is English's, from a key tapped before the globe that waited its turn (#351).
+ */
+fun withoutEnglishShift(text: String, userShift: Boolean) =
+    if (!userShift && text.length == 1 && text[0] in 'A'..'Z') text.lowercase() else text

@@ -12,13 +12,21 @@ class WaitingKeysTest {
         val field = StringBuilder()
         val shifts = ArrayList<Boolean>()
         var ready = true
+        var english = true
         val engine = ArrayDeque<() -> Unit>()
-        val q = WaitingKeys({ ready }, { field.append(it.text); shifts += it.userShift }, {})
+        // As the keyboard's dispatch: the globe switches language, other languages drop English's Shift
+        val q = WaitingKeys({ ready }, { feed(it) }, {})
+
+        fun feed(key: WaitingKeys.Key) {
+            if (key.code == Code.GLOBE) english = !english
+            field.append(if (english) key.text else withoutEnglishShift(key.text, key.userShift))
+            shifts += key.userShift
+        }
 
         /** A key tapped: held, or typed at once */
         fun tap(text: String, userShift: Boolean = false, chineseStarting: Boolean = false, code: Code = Code.TEXT) {
             val key = WaitingKeys.Key(code, text, 1, 2, userShift)
-            if (!q.hold(key, chineseStarting)) field.append(text)
+            if (!q.hold(key, chineseStarting)) feed(key)
         }
 
         /** An edit that puts [text] in once the engine answers (finishTyping) */
@@ -153,5 +161,18 @@ class WaitingKeysTest {
         // Nothing waiting: the globe switches at once
         k.tap("🌐", code = Code.GLOBE)
         assertEquals("xa🌐🌐", k.field.toString())
+    }
+
+    /** #351: English's auto Shift on, a paste pending, globe, R (auto Shift) and R (the user's): r and R in 中文. */
+    @Test
+    fun keysAfterGlobeDropEnglishShift() {
+        val k = Keyboard()
+        k.edit("x")
+        k.tap("🌐", code = Code.GLOBE)
+        k.tap("R", userShift = false)
+        k.tap("R", userShift = true)
+        k.engineAnswers()
+        assertEquals("x🌐rR", k.field.toString())
+        assertFalse(k.english)
     }
 }

@@ -52,7 +52,8 @@ swipes, pastes from a search). While anything is queued or an edit is pending, a
 otherwise it runs at once, as before. So none overtakes keys still waiting: an edit waits for the keys
 before it, and keys wait for the edit before them, whose reset would otherwise drop them. Each waiting
 key keeps the Shift it was tapped with. The globe waits its turn too: paste, a, globe lands the paste,
-types a in the old language, then switches. A new field, opening or closing a search, or the keyboard
+types a in the old language, then switches. A key queued behind the globe was captured with English's
+auto Shift; outside English a capital without the user's Shift types lowercase, so ranh stays ranh. A new field, opening or closing a search, or the keyboard
 closing drops everything queued, edits included, and an edit already under way lands nowhere.
 `WaitingKeysTest` checks these orders, which a tap burst can't time.
 If Rime fails, the queued keys type as plain text.

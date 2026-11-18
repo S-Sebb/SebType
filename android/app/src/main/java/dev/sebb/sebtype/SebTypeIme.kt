@@ -529,7 +529,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     private fun dispatch(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
         if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y, userShift)
         else when (code) {
-            Code.TEXT -> type(text)
+            Code.TEXT -> type(withoutEnglishShift(text, userShift))
             Code.SPACE -> whileComposing(NativeCore.charSym(' '.code)) { editor.commit(" ") }
             Code.ENTER -> whileComposing(NativeCore.XK_Return) { editor.enter() }
             Code.DELETE -> whileComposing(NativeCore.XK_BackSpace) { editor.deleteBefore() }
