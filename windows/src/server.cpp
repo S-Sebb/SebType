@@ -260,6 +260,8 @@ int run() {
   // One server per user and session; a second one leaves at once.
   HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
   if (const DWORD error = GetLastError(); !single || error == ERROR_ALREADY_EXISTS) {
+    // Let go first: while this handle is open, the mutex stays, and a server started meanwhile leaves too.
+    if (single) CloseHandle(single);
     note("second server (" + origin + "): left, the mutex " + (single ? "is taken" : "failed, error " + std::to_string(error)));
     return 0;
   }
