@@ -76,6 +76,56 @@ No janky keyboard frames in fast or long typing. EN had 4 keyboard frames past t
   space finds the model's ranking ready, even at 100 ms per key, and none waits.
 - **Long field:** the next words for the 20,000-character text take about 460 ms each, and a ranking queues
   behind them. So 10 of 18 spaces wait for the ranking, 97 ms at the median and 249 ms at p95, and the space
-  shows that much later. One space expected too long a wait and took the decoder's rule. #359 tracks
-  making the long field's next words cheaper.
+  shows that much later. One space expected too long a wait and took the decoder's rule. #359 made the
+  long field's next words cheaper (below); the phone's numbers after it are still to be measured.
 - The emulator's key → idle (about 330 ms median in #351) is Berberis: on the phone it is 49 ms.
+
+## The long field's next words (#359)
+
+**Cause.** The model reads the last line before the cursor, at most 300 characters of it from a word's start
+(`engines/sebtype-lm/sebtype_lm.cpp`). That start moved with every word typed, so the window's first tokens
+changed and the cache, which keeps only the tokens a new text starts with, kept just `<s>`. Each job decoded
+the whole window again, about 70 tokens of the long field's text, against a word or two in a short field.
+
+**Fix.** The window's start stays where the last window started while the window is 150 to 300 characters
+long, so a job decodes only the words typed since the last one. Past 300 characters it starts again 150
+characters back, at a word's start: one job in about 25 words decodes the window again, as does the first
+job in a long field. The start is found by the last window's text, not by its offset, because the engine
+keeps the field's last 1,000 characters and cuts them again whenever it reads the field.
+
+**Host** (`engines/sebtype-lm/bench/bench.sh`, yanglab16, one thread, the perf test's 88 characters after an
+empty field and after the 20,000-character filler, the filler cut to its last 1,000 characters at every
+space; 18 next-words jobs each):
+
+| Next words, median / p95 | Short field | Long field |
+|---|---|---|
+| Before | 10.8 / 13.1 ms | 58.5 / 59.2 ms |
+| After | 11.1 / 13.3 ms | 12.3 / 36.5 ms (the p95 is the one job that starts the window again) |
+
+Rankings stayed at about 7 ms in both. **Quality**, from the same script: 60 Wikinews articles, every second
+word more than 300 characters into a paragraph (2,912 words), typed word by word:
+
+| Window | Next word first | In the top 3 | Tokens decoded per job |
+|---|---|---|---|
+| The last 300 characters (before) | 28.6 % | 43.4 % | 22.4 |
+| 150 to 300 characters, start kept (after) | 28.4 % | 43.4 % | 2.1 |
+| 150 to 300, start kept every 100 / a fixed 150 / a fixed 100 | 28.2 / 28.1 / 27.1 % | 43.6 / 42.5 / 41.0 % | 2.7 / 18.9 / 14.3 |
+
+The English harness (`android/test/english/run.sh`) gives the same results on every row before and after:
+its contexts are all under 200 characters, which the window never cuts. Next word in the top 3: chat 41.7 %,
+news 43.7 %, text messages 29.1 %.
+
+**Emulator** (guide35, `perf.sh --english`, release 0.1.30-sebtype.177, `RUNS=3`):
+
+| Next words, median / p95 (n) | EN, 700 ms per key | Fast, 100 ms per key | Long field, 100 ms per key |
+|---|---|---|---|
+| Before (0.1.30-sebtype.168, above) | 676 / 1023 ms (29) | 859 / 1043 ms (3) | 8907 ms (1) |
+| After | 687 / 1005 ms (29) | 854 / 1097 ms (4) | 3002 / 4693 ms (2) |
+
+The emulator can't show the phone's gain in the long field. Under Berberis a job takes seconds, and at 100 ms
+per key about 45 characters are typed during each one. A trace of the tokens each job decoded (a temporary
+build) showed what the cache does there: the field's first job decoded the 150-character window (49 tokens,
+5 s). The ranking after it decoded the 48 tokens typed meanwhile, the next ranking started the window again,
+and the last next words decoded the 11 tokens typed since. So each job decodes only what is new, but on the
+emulator that is a lot. On the phone, with jobs about 15 times faster, a job decodes a word or two, as in a
+short field.

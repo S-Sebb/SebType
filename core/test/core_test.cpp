@@ -6,6 +6,7 @@
 
 #if defined(SEBTYPE_ENGLISH) || defined(SEBTYPE_CHINESE_MODEL)
 #include <sebtype/hosts.h>
+#include <sebtype_lm.h>
 
 #include <condition_variable>
 #include <filesystem>
@@ -546,6 +547,38 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   // Text changed meanwhile: the words for the old text don't show.
   en->setContext("Thank you very much. See you ");
   EXPECT_FALSE(lists("much"));
+}
+
+// The model reads a window of the text before the cursor whose start stays put while the text grows, so a
+// long field's next words decode only the new words (#359).
+TEST(EnglishModel, ALongContextPredictsAsItsWindowAloneAndEditsEarlierTextAgain) {
+  sebtype_lm::Model model(EN_MODEL), fresh(EN_MODEL);
+  // The same words with the same probabilities, to within what decoding in other batches changes (~0.02).
+  auto same = [](const std::vector<sebtype_lm::Word> &a, const std::vector<sebtype_lm::Word> &b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++)
+      if (a[i].word != b[i].word || std::abs(a[i].logProb - b[i].logProb) > 0.1f) return false;
+    return true;
+  };
+  std::string filler;
+  while (filler.size() < 20000) filler += "The quick brown fox jumps over the lazy dog. ";
+  const std::string text = filler + "Thank you very";
+  const std::string window = model.window(text);
+  EXPECT_LE(window.size(), 300u);
+  EXPECT_TRUE(text.ends_with(" " + window));
+  const auto before = model.nextWords(text, 5);
+  // The start stays as the text grows, also when the engine cuts the field's text at another place.
+  const std::string more = text + " much for the";
+  EXPECT_EQ(model.window(more), window + " much for the");
+  EXPECT_EQ(model.window(more.substr(more.size() - 1000)), window + " much for the");
+  EXPECT_TRUE(same(before, fresh.nextWords(window, 5)));
+  // Earlier text inside the window changed: the cache holds the old text's words, which must not count.
+  std::string edited = text;
+  edited.replace(edited.rfind("dog."), 4, "cat!");
+  ASSERT_EQ(model.window(edited).size(), window.size());
+  const auto after = model.nextWords(edited, 5);
+  EXPECT_FALSE(same(after, before));  // the edit changes the prediction, so a stale cache would show
+  EXPECT_TRUE(same(after, sebtype_lm::Model(EN_MODEL).nextWords(edited, 5)));
 }
 
 TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
