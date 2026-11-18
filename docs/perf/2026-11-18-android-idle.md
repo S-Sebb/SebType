@@ -44,8 +44,10 @@ in 中文 meanwhile wait in a queue and go to Rime in order once it's ready. Tha
 and Space, Enter, Delete and other text after them. Delete goes to Rime in order too, since a Space
 before it may already have committed a word. The reading those keys would leave shows in the strip.
 Before this, they went into the field as plain letters. A new language, a new field, opening or
-closing a search, or the keyboard closing drops the queue, as each drops a composition. Keys queued
-while such a switch still waits for the engine go to Rime after the switch's reset, not before it.
+closing a search, or the keyboard closing drops the queue, as each drops a composition. While such a
+switch still waits for the engine, every key typed waits behind it, in any language, even with
+Rime ready and nothing queued: sent at once, it would reach the engine before the switch's reset,
+which would drop it. `WaitingKeysTest` checks that order, which a tap burst can't time.
 If Rime fails, the queued keys type as plain text.
 
 The keyboard itself no longer stops while Rime starts. Each touch and the globe read sebtype.conf
