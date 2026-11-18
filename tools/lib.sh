@@ -28,8 +28,10 @@ if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
   export ANDROID_HOME=$SCRATCH/cache/android-sdk JAVA_HOME_21=$SCRATCH/cache/jdks/jdk-21.0.13+9 \
     GRADLE_USER_HOME=$SCRATCH/cache/gradle ANDROID_USER_HOME=$SCRATCH/cache/android-user \
     SCCACHE_DIR=$SCRATCH/cache/sccache CARGO_HOME=$SCRATCH/cache/cargo PATH=$SCRATCH/cache/bin:$PATH
-  # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user.
-  if [[ ! -f /run/.containerenv ]]; then  # inside the build container it comes from the host
+  # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user. A
+  # BAZEL_CACHE set beforehand stays: inside the build container it comes from the host, and a test may name
+  # a cache of its own (a cold-cache build, #361).
+  if [[ -z ${BAZEL_CACHE:-} ]]; then
     podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
     BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
     export BAZEL_CACHE

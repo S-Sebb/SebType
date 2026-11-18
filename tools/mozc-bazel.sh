@@ -1,6 +1,7 @@
 # shellcheck shell=bash
-# Mozc's Bazel builds for the phone (#335), sourced after tools/lib.sh (BAZEL_CACHE, BUILD_JOBS). Gradle
-# takes this file and mozc-downloads.tsv as inputs of the tasks that use it, so it holds nothing else.
+# Mozc's Bazel builds for the phone (#335), and the downloads of the Linux RPM's (linux/build.sh, #361),
+# sourced after tools/lib.sh (BAZEL_CACHE, BUILD_JOBS). Gradle takes this file and mozc-downloads.tsv as inputs
+# of the tasks that use it, so it holds nothing else.
 MOZC_DOWNLOADS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mozc-downloads.tsv
 
 # mozc_bazel CONFIG COMMAND [ARG...]: Bazel in engines/mozc/src with Mozc's CONFIG (oss_android for libmozc.so,
@@ -21,21 +22,25 @@ mozc_bazel() {
 # mozc_bazel_plain COMMAND [ARG...]: the same Bazel without the build's options, for commands that take none
 # (mod).
 mozc_bazel_plain() {
-  local command=$1 cache=$BAZEL_CACHE/mozc-android src version
+  local command=$1 cache=$BAZEL_CACHE/mozc-android bazel
   shift
-  src=$(dirname "${BASH_SOURCE[0]}")/../engines/mozc/src
-  # The list's Bazel is the one Mozc names
-  version=$(sed -n 's/^USE_BAZEL_VERSION=//p' "$src/.bazeliskrc")
-  grep -q "/$version/release/bazel-$version-linux-x86_64	bazel$" "$MOZC_DOWNLOADS" ||
-    { echo "mozc_bazel: Mozc wants Bazel $version; put it in tools/mozc-downloads.tsv" >&2; return 1; }
-  mozc_prefetch "$cache"
-  (cd "$src" &&
+  bazel=$(mozc_fetch "$cache") || return
+  (cd "$(dirname "${BASH_SOURCE[0]}")/../engines/mozc/src" &&
     SEBTYPE_ANDROID_NDK=${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must name the app\'s NDK} \
-    "$cache/$(awk '$3 == "bazel" {print "bazel-" substr($1, 1, 12)}' "$MOZC_DOWNLOADS")" \
-    --output_user_root="$cache/bazel" --max_idle_secs=15 --host_jvm_args=-Xmx2g "$command" \
+    "$bazel" --output_user_root="$cache/bazel" --max_idle_secs=15 --host_jvm_args=-Xmx2g "$command" \
     --registry="file://$cache/registry" --repository_cache="$cache/repos" --repository_disable_download "$@")
 }
-
+# mozc_fetch CACHE: what the list names, into CACHE (mozc_prefetch), after checking that its Bazel is the
+# one Mozc names; prints that Bazel's path. The Linux package's build (linux/build.sh) runs it too, and its
+# spec runs that Bazel with the same registry, repository cache and downloads disabled.
+mozc_fetch() {
+  local version
+  version=$(sed -n 's/^USE_BAZEL_VERSION=//p' "$(dirname "${BASH_SOURCE[0]}")/../engines/mozc/src/.bazeliskrc")
+  grep -q "/$version/release/bazel-$version-linux-x86_64	bazel$" "$MOZC_DOWNLOADS" ||
+    { echo "mozc_bazel: Mozc wants Bazel $version; put it in tools/mozc-downloads.tsv" >&2; return 1; }
+  mozc_prefetch "$1" || return
+  echo "$1/$(awk '$3 == "bazel" {print "bazel-" substr($1, 1, 12)}' "$MOZC_DOWNLOADS")"
+}
 # mozc_prefetch CACHE: what tools/mozc-downloads.tsv lists (sha256, URL, where), into CACHE (mozc_file), each
 # once, capped at 35 MB/s, and checked. A file counts as there, unhashed, when its stamp (mozc_place) holds the
 # sha256 the list now pins and the file is still the one hashed: a registry file's path doesn't name its digest.

@@ -1,6 +1,6 @@
 # SebType's Linux input method (#190): one Fcitx5 add-on over SebType's core (core/, linux/), which hosts
 # librime for 中文 and Mozc for 日本語 (engines/mozc, as libsebtype-mozc.so in the add-on's process, #233).
-# build.sh sets the version, release and Bazel's folders.
+# build.sh sets the version, release, Bazel and its folders.
 
 # Private libraries: the add-on finds Mozc's by its RUNPATH ($ORIGIN/../sebtype), and nothing else may link it.
 %global __provides_exclude_from ^%{_libdir}/(fcitx5|sebtype)/.*\\.so$
@@ -50,9 +50,11 @@ mkdir -p engines && mv mozc engines/
 
 %build
 # Mozc as a library, with Bazel (its caches are kept between builds), before the add-on that links it.
+# Bazel downloads nothing: build.sh fetched it and all it needs, capped, into mozc_downloads (#361).
 pushd engines/mozc/src
-bazel --output_user_root=%{bazel_root} build --disk_cache=%{bazel_root}/disk-cache \
-  --repository_cache=%{bazel_root}/repository-cache --jobs=%{_smp_build_ncpus} --show_progress_rate_limit=60 \
+%{bazel} --output_user_root=%{bazel_root} build --disk_cache=%{bazel_root}/disk-cache \
+  --registry=file://%{mozc_downloads}/registry --repository_cache=%{mozc_downloads}/repos \
+  --repository_disable_download --jobs=%{_smp_build_ncpus} --show_progress_rate_limit=60 \
   -c opt --config oss_linux --config release_build //sebtype:libsebtype-mozc.so
 install -pm 755 bazel-bin/sebtype/libsebtype-mozc.so ../../../libsebtype-mozc.so
 popd

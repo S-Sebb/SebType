@@ -47,7 +47,8 @@ screens. One command, run on nobara-pc as always:
    Fedora 44 (`linux/versions.sh`) with Fedora's librime and OpenCC, as on nobara-pc (`fedora_container`
    in `tools/lib.sh`); the Linux builds use their own Fedora container as before. Bazel's output roots (Mozc's builds) are in the podman volume
    `sebtype-bazel` on yanglab16's local disk: Bazel refuses a folder it doesn't own, and on the NAS every
-   file belongs to the NAS's user.
+   file belongs to the NAS's user. `BAZEL_CACHE=<folder on yanglab16's own disk>` names another, for a
+   cold-cache build.
 
 A release APK is built unsigned, on yanglab16 (`SEBTYPE_UNSIGNED=1`) or on nobara-pc, and signed on
 nobara-pc with `apksigner` (scheme v2 alone, RSA), so the signing key never leaves nobara-pc and a release
@@ -109,10 +110,12 @@ What it builds from source, and the caches that make a rebuild quick:
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
 | Mozc's dictionary (its OSS data set, from `engines/mozc`) | Bazel (`android/app/mozc-dictionary.sh`) | As `libmozc.so`: Gradle's build cache and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` |
 
-Mozc's two Bazel builds (`tools/mozc-bazel.sh`) download nothing themselves: Bazel would at full speed, and
-yanglab16's network port is shared. `tools/mozc-downloads.tsv` lists everything they need, with its sha256:
-Bazel, the Bazel Central Registry's files and every archive. Each build fetches what its cache lacks first,
-capped at 35 MB/s, and runs Bazel with downloads disabled. After `engines/mozc`'s dependencies change, a
+Mozc's two Bazel builds (`tools/mozc-bazel.sh`), and the Linux RPM's (`linux/build.sh`, #361), download
+nothing themselves: Bazel would at full speed, and yanglab16's network port is shared.
+`tools/mozc-downloads.tsv` lists everything they need, with its sha256: Bazel, the Bazel Central Registry's
+files and every archive. Each build fetches what its cache lacks first, capped at 35 MB/s, into
+`mozc-android` in Bazel's cache folder (shared by all three), and runs Bazel with downloads disabled. The
+Linux RPM's container image gets its packages from dnf, capped too. After `engines/mozc`'s dependencies change, a
 build fails for the files it lacks; `tools/mozc-downloads.sh`, run in the build container on yanglab16,
 adds them to the list.
 
@@ -128,7 +131,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 
 | Command | Builds |
 |---|---|
-| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's library from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests |
+| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's library from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests. Bazel downloads nothing, as in the phone's Mozc builds (Android, above) |
 | `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
 | `pc/configurator/build.sh` (`cargo build --release` in `pc/configurator`) | the Configurator and its unit tests' executable; `tools/build.sh` runs it on yanglab16 |
 | `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's DLL, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
