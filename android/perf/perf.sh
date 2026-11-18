@@ -7,7 +7,7 @@
 #                                    English only: idle memory, typing, fast typing, opens (#54)
 #   android/perf/perf.sh --english   SebType in English only: install, first open, EN, fast and long, so
 #                                    the English model's rankings and spaces (#320) take minutes, not half an hour
-#   android/perf/perf.sh --chinese   SebType in 中文 only: install, first open, the Chinese setup and 中, for
+#   android/perf/perf.sh --chinese   SebType in 中文 only: install, first open with the Chinese setup, EN and 中, for
 #                                    the Chinese model's rankings and next words (#264)
 #   android/perf/perf.sh --soak      SOAK_MIN (default 12) minutes of mixed typing in SebType as installed:
 #                                    memory over time and keyboard restarts
@@ -196,6 +196,7 @@ phase_install() {
   echo "version=$(sh dumpsys package "$pkg" | sed -n 's/.*versionName=//p' | head -1)"
 }
 phase_first-open() { # the first keyboard open after install
+  "$adb" logcat -c # zh-deploy reads the Chinese setup this open starts
   trace_start first-open
   open_field
   sleep 5
@@ -213,23 +214,22 @@ phase_en() {
   landed en "${#text}" 80 101
   echo "pss_kb=$(pss_kb en)"
 }
-phase_zh-deploy() { # switch to 中: the first-run Chinese setup (install and check), with peak memory
-  . "$work/geometry"
-  local peak=0 p log
-  "$adb" logcat -c
-  taps 0 G
-  # Done when the app logs its setup; it times the install and Rime's check itself.
-  local deadline=$(( SECONDS + 600 ))
-  while (( SECONDS < deadline )); do
-    p=$(pss_kb); (( ${p:-0} > peak )) && peak=$p
-    log=$("$adb" logcat -d -s SebType | tr -d '\r' || true) # nothing until setup logs
-    [[ $log == *"Set up rime_ice in"* ]] && break
+phase_zh-deploy() { # the first-run Chinese setup (install and Rime's check) the first open started (#358)
+  # SebType sets 中文 up ahead of its first use as its process starts (Engines.setUpChineseAhead), so this
+  # runs right after first-open, which cleared the log, in the same process. The app times the install
+  # and the check itself; the process's peak RSS since it started covers the first open and the setup:
+  # sampling it with dumpsys meminfo would run on the keyboard's main thread during the open's trace.
+  local log deadline=$(( SECONDS + 600 ))
+  until log=$("$adb" logcat -d -s SebType | tr -d '\r'); [[ $log == *"Set up rime_ice in"* ]]; do
+    (( SECONDS < deadline )) || { echo "Chinese setup didn't finish in 10 min: ${log:-no log}" >&2; return 1; }
     sleep 1
   done
-  [[ $log == *"self-test passed"* ]] || { echo "Chinese setup didn't pass in 10 min: ${log:-no log}" >&2; return 1; }
-  echo "setup_ms=$(sed -n 's/.*Set up rime_ice in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
-  echo "install_ms=$(sed -n 's/.*Installed the bundled [^0-9]* in \([0-9]*\) ms.*/\1/p' <<<"$log" | tail -1)"
-  echo "pss_peak_kb=$peak"
+  log=$(grep -m1 'Set up rime_ice in' <<<"$log"; grep -m1 'Installed the bundled' <<<"$log")
+  [[ $log == *"self-test passed"* ]] || { echo "Chinese setup failed: $log" >&2; return 1; }
+  echo "setup_ms=$(sed -n 's/.*Set up rime_ice in \([0-9]*\) ms.*/\1/p' <<<"$log")"
+  echo "install_ms=$(sed -n 's/.*Installed the bundled [^0-9]* in \([0-9]*\) ms.*/\1/p' <<<"$log")"
+  local pid; pid=$(sh pidof "$pkg")
+  echo "rss_peak_kb=$(sh cat "/proc/$pid/status" | awk '/^VmHWM:/ {print $2}')"
   if [[ $(sh su 0 id -u 2>/dev/null) == 0 ]]; then # tables or prisms compiled here
     echo "built_on_device=$(sh su 0 ls "$rime_user/build" | grep -c '\.bin$')"
   fi
@@ -417,9 +417,10 @@ device_steps() { # under the device lock
   check install 600 || return 1
   grep -q '^PASS install' "$results" || return 1
   check first-open 120
+  check zh-deploy 660
   check en 600
   if [[ -n ${english:-} ]]; then check fast 300; check long 300; return; fi
-  check zh-deploy 1200
+  (. "$work/geometry"; taps 0 G); sleep 5 # EN → 中 (--compare's zh starts in its Chinese layout)
   check zh 600
   [[ -n ${chinese:-} ]] && return
   check ja 600

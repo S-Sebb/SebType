@@ -243,7 +243,8 @@ object Engines {
             deploy = true
         }
         if (ok && deploy) deployed.writeText(version)
-        // Timings only, never typed text. Log.w: release builds keep it.
+        // Timings only, never typed text. Log.w: release builds keep it. android/perf/perf.sh's zh-deploy
+        // reads this line and the install's above: change their wording there too.
         Log.w(TAG, "Set up $SCHEMA in ${SystemClock.elapsedRealtime() - t0} ms " +
             "(deployed: ${if (deploy) "yes" else "no"}), self-test ${if (ok) "passed" else "failed"}")
         setChinese(if (ok) Chinese.READY else Chinese.FAILED)
