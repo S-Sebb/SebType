@@ -181,37 +181,30 @@ function WaitIcon($want, $secs) {
 
 # This session's server (a terminal server may run one per session).
 function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
-# Every server in this session, for the results: there should be one (#332).
-Add-Type @'
-using System; using System.Runtime.InteropServices;
-public static class SebTypeLogon {
-  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
-  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-  [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr p, int access, out IntPtr t);
-  [DllImport("advapi32.dll")] static extern bool GetTokenInformation(IntPtr t, int cls, byte[] info, int size, out int n);
-  // A process's logon session (TOKEN_STATISTICS.AuthenticationId), as server.log writes it.
-  public static string Of(int pid) {
-    IntPtr p = OpenProcess(0x1000, false, pid), t;
-    if (p == IntPtr.Zero) return "?";
-    try {
-      if (!OpenProcessToken(p, 8, out t)) return "?";
-      var b = new byte[64]; int n;
-      bool ok = GetTokenInformation(t, 10, b, b.Length, out n); CloseHandle(t);
-      return ok ? string.Format("0x{0:x}:{1:x}", BitConverter.ToInt32(b, 12), BitConverter.ToUInt32(b, 8)) : "?";
-    } finally { CloseHandle(p); }
-  }
-}
-'@
-# Every server on the PC with its owner, session and logon session, for the results: one per session (#332).
-function Servers { (@(Get-CimInstance Win32_Process -Filter "Name='sebtype-server.exe'") | ForEach-Object { $o = Invoke-CimMethod -InputObject $_ GetOwner; "$($_.ProcessId) from $($_.CreationDate.ToString('HH:mm:ss.fff')) $($o.Domain)\$($o.User) session $($_.SessionId) logon $([SebTypeLogon]::Of($_.ProcessId)) parent $($_.ParentProcessId)" }) -join '; ' }
+# Every server on the PC, for a failure's message.
+function Servers { (@(Get-CimInstance Win32_Process -Filter "Name='sebtype-server.exe'") | ForEach-Object { $o = Invoke-CimMethod -InputObject $_ -MethodName GetOwner; "$($_.ProcessId) $($o.User) session $($_.SessionId) from $($_.CreationDate.ToString('HH:mm:ss.fff'))" }) -join '; ' }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
-# failed, and waits for its pipe.
+# failed, and waits for its pipe. The server's mutex (windows/src/server.cpp) is held meanwhile: an app's text
+# service that finds no server starts one (ChsIME's does, after Microsoft Pinyin was on), which would load
+# Rime's files mid-change at normal priority and keep this one from starting (#332). Held, it leaves at once.
 function Restart-Server([scriptblock]$change) {
-  if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
-  try { & $change } finally { (Start-Process $server -PassThru).PriorityClass = 'BelowNormal' }
+  $hold = [Threading.Mutex]::new($false, 'Local\SebType.Server')
+  try {
+    if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
+    & $change
+  } finally {
+    $hold.Dispose()
+    Start-Process $server
+  }
   $pipe = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
   $end = (Get-Date).AddSeconds(20)
   while (-not (Test-Path $pipe)) { if ((Get-Date) -gt $end) { throw "no $pipe 20 s after the server started" }; Start-Sleep -Milliseconds 200 }
+  # An app may still start one as the mutex is let go, which then serves instead: whichever serves runs below
+  # normal priority, and it is the only one.
+  $end = (Get-Date).AddSeconds(3)
+  while (($n = @(Get-Process sebtype-server | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId).Count) -gt 1 -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 100 }
+  if ($n -ne 1) { throw "$n servers after the restart: $(Servers)" }
+  (Server).PriorityClass = 'BelowNormal'
 }
 # Mozc loads again in a new server, which took seconds at its first load: before any check times 日本語.
 function Warm-Mozc {
@@ -306,18 +299,16 @@ try {
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
   Check 'windows-ime' {
-    $before = Servers
-    $script:watched = Server; $null = $watched.Handle  # its exit code stays readable once it is gone
     $clsid = [Guid]'{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}'; $profile = [Guid]'{FA550B04-5AD7-411F-A5AC-CA038EC515D7}'
     $was = try { $tsf::Enabled(0x804, $clsid, $profile) } catch { return "SKIP: no Microsoft Pinyin ($($_.Exception.InnerException.Message))" }
     try {
       if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $true) }  # for this capture only
-      $tsf::Activate(0x804, $clsid, $profile); $tsf::Settle(1500); $active = Servers
+      $tsf::Activate(0x804, $clsid, $profile); $tsf::Settle(1500)
       try { Shot 'ms-pinyin' | Out-Null; $what = 'its button icon and the taskbar saved' }
       catch { $tsf::Taskbar("$Out\ms-pinyin-taskbar.png", 360); $what = "the taskbar saved; no button icon ($($_.Exception.Message))" }
     } catch { $what = "can't be switched to ($($_.Exception.InnerException.Message))" }
     finally { Lang zh; if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $false) } }
-    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what; servers before: $before; with it: $active; after: $(Servers); this test: logon $([SebTypeLogon]::Of($PID)), ChsIME: $((@(Get-CimInstance Win32_Process -Filter "Name='ChsIME.exe'") | ForEach-Object { "$($_.ProcessId) session $($_.SessionId) logon $([SebTypeLogon]::Of($_.ProcessId))" }) -join ', ')"
+    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what"
   }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
@@ -329,7 +320,6 @@ try {
   $bytes = { param($dir) (Get-ChildItem -Recurse -File $dir | Measure-Object Length -Sum | ForEach-Object { "$($_.Count) $($_.Sum)" }) }
   if ((& $bytes $copy) -ne (& $bytes $rimeBuild)) { throw "the copy of $rimeBuild is incomplete: nothing changed" }
   $backup = $copy
-  if ($watched) { $watched.Refresh(); Result first-server INFO "$($watched.Id): $(if ($watched.HasExited) { "exited at $($watched.ExitTime.ToString('HH:mm:ss.fff')), code 0x$('{0:x}' -f $watched.ExitCode)" } else { 'still runs' }); servers now $(Servers)" }
   Restart-Server { Remove-Item "$rimeBuild\*.prism.bin" }
   Warm-Mozc
   # The text service learns of the deploy at the next key, so the key goes once Rime's maintenance began:

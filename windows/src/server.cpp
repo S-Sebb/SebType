@@ -19,7 +19,6 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <tlhelp32.h>
-#include <winternl.h>
 
 #include <filesystem>
 #include <fstream>
@@ -235,6 +234,7 @@ void serve(HANDLE pipe) {
     if (WriteFile(pipe, out.data(), static_cast<DWORD>(out.size()), &n, nullptr)) FlushFileBuffers(pipe);
     if (q.op == Op::Quit) {
       std::lock_guard<std::mutex> hold(lock);
+      note(q.client ? "quit, asked by app " + std::to_string(q.client) : "quit, asked by /quit");
       core->forEachEngine([](Engine &e) { e.save(); });
       // Not ExitProcess: its DLL detach and librime's static destructors run after the other threads are
       // gone and could wait for one forever. A process stuck exiting can't be terminated (taskkill fails)
@@ -246,113 +246,48 @@ void serve(HANDLE pipe) {
   CloseHandle(pipe);
 }
 
-struct Token {
-  bool elevated = false, container = false;
-  DWORD integrity = 0, session = 0;
-  std::string user = "?";
-  LUID logon{};
-};
-Token token() {
-  Token t;
-  HANDLE h = nullptr;
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &h)) return t;
-  TOKEN_ELEVATION elevated{};
-  DWORD container = 0, n = 0;
-  GetTokenInformation(h, TokenElevation, &elevated, sizeof(elevated), &n);
-  GetTokenInformation(h, TokenIsAppContainer, &container, sizeof(container), &n);
-  GetTokenInformation(h, TokenSessionId, &t.session, sizeof(t.session), &n);
-  char label[SECURITY_MAX_SID_SIZE + sizeof(TOKEN_MANDATORY_LABEL)];
-  if (GetTokenInformation(h, TokenIntegrityLevel, label, sizeof(label), &n)) {
-    PSID sid = reinterpret_cast<TOKEN_MANDATORY_LABEL *>(label)->Label.Sid;
-    t.integrity = *GetSidSubAuthority(sid, *GetSidSubAuthorityCount(sid) - 1);
-  }
-  alignas(8) char user[SECURITY_MAX_SID_SIZE + sizeof(TOKEN_USER)];
-  char *sid = nullptr;
-  if (GetTokenInformation(h, TokenUser, user, sizeof(user), &n) &&
-      ConvertSidToStringSidA(reinterpret_cast<TOKEN_USER *>(user)->User.Sid, &sid)) {
-    t.user = sid;
-    LocalFree(sid);
-  }
-  TOKEN_STATISTICS stats{};
-  if (GetTokenInformation(h, TokenStatistics, &stats, sizeof(stats), &n)) t.logon = stats.AuthenticationId;
-  CloseHandle(h);
-  t.elevated = elevated.TokenIsElevated;
-  t.container = container;
-  return t;
-}
-
-// The token and who started this process, for server.log.
-std::string origin(const Token &t) {
-  char integrity[16];
-  snprintf(integrity, sizeof(integrity), "0x%lx", t.integrity);
-  char logon[32];
-  snprintf(logon, sizeof(logon), "0x%lx:%lx", t.logon.HighPart, t.logon.LowPart);
-  return std::string(t.elevated ? "elevated, " : "") + "integrity " + integrity +
-         (t.container ? ", app container" : "") + ", session " + std::to_string(t.session) + ", user " + t.user +
-         ", logon " + logon + ", pipe " + utf8(pipeName()) + ", by " + parent();
-}
-
-// A kernel object's full name (\Sessions\<n>\BaseNamedObjects\..., or an app container's own folder), for
-// server.log.
-std::string objectName(HANDLE h) {
-  using Query = LONG(NTAPI *)(HANDLE, int, void *, ULONG, ULONG *);
-  const auto query = reinterpret_cast<Query>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryObject"));
-  alignas(8) char buf[1024];
-  ULONG n = 0;
-  if (!h || !query || query(h, 1 /* ObjectNameInformation */, buf, sizeof(buf), &n) < 0) return "?";
-  const auto *name = reinterpret_cast<const UNICODE_STRING *>(buf);
-  return utf8(std::wstring(name->Buffer, name->Length / sizeof(wchar_t)));
-}
-
 int run() {
-  const Token t = token();
-  // One that would run in an app container or below medium integrity (started by an app there, whose text
-  // service starts one as any app's does) couldn't reach the person's files: it leaves, and their next key
-  // in another app starts one.
-  if (t.container || t.integrity < SECURITY_MANDATORY_MEDIUM_RID) {
-    note("server not started (" + origin(t) + "): out of the person's files' reach");
-    return 0;
+  HANDLE token = nullptr;
+  TOKEN_ELEVATION elevated{};
+  DWORD session = 0, n = 0;
+  if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+    GetTokenInformation(token, TokenElevation, &elevated, sizeof(elevated), &n);
+    GetTokenInformation(token, TokenSessionId, &session, sizeof(session), &n);
+    CloseHandle(token);
   }
-  // One server per user and session: a second one leaves at once. The mutex keeps /deploy and /sync from
-  // standing in for a server that starts; the pipe's first instance is the server's own, whatever object
-  // namespace the process has (#332).
+  const std::string origin = std::string(elevated.TokenIsElevated ? "elevated, " : "") + "session " +
+                             std::to_string(session) + ", by " + parent();
+  // One server per user and session; a second one leaves at once.
   HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
   if (const DWORD error = GetLastError(); !single || error == ERROR_ALREADY_EXISTS) {
-    note("second server (" + origin(t) + "): left, the mutex " + (single ? "is taken" : "failed, error " + std::to_string(error)));
+    note("second server (" + origin + "): left, the mutex " + (single ? "is taken" : "failed, error " + std::to_string(error)));
     return 0;
   }
-  const std::wstring name = pipeName();
-  const auto instance = [&](DWORD first) {
-    return CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | first,
-                            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                            PIPE_UNLIMITED_INSTANCES, 65536, 65536, 0, pipeSecurity());
-  };
-  HANDLE pipe = instance(FILE_FLAG_FIRST_PIPE_INSTANCE);
-  if (pipe == INVALID_HANDLE_VALUE) {
-    const DWORD error = GetLastError();
-    note("second server (" + origin(t) + ", mutex " + objectName(single) + "): left, " +
-         (error == ERROR_ACCESS_DENIED ? "another server has the pipe" : "no pipe, error " + std::to_string(error)));
-    return 0;
-  }
-  note("server started (" + origin(t) + ", mutex " + objectName(single) + "): " + utf8(GetCommandLineW()));
+  note("server started (" + origin + "): " + utf8(GetCommandLineW()));
   Core host(makeEngine);
   core = &host;
   // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
   const LANGID ui = PRIMARYLANGID(GetUserDefaultUILanguage());
   host.setUiLanguage(ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
-  // The next instance is made as an app connects: with none waiting, the next app's call would find no pipe,
-  // as if no server ran, and start a second one (#332).
-  for (;;) {
+  const std::wstring name = pipeName();
+  const auto instance = [&] {
+    HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX,
+                                   PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                   PIPE_UNLIMITED_INSTANCES, 65536, 65536, 0, pipeSecurity());
+    if (pipe == INVALID_HANDLE_VALUE) note("no pipe, error " + std::to_string(GetLastError()));
+    return pipe;
+  };
+  // The next instance is made as an app connects, as pipe_test's server does (#303): made only after the
+  // connection's thread started, a quick call could end first and leave no instance, and the next app's call
+  // would find no pipe, as if no server ran, and start a second one only to see it leave.
+  for (HANDLE pipe = instance(); pipe != INVALID_HANDLE_VALUE;) {
     const bool connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
-    HANDLE next = instance(0);
-    if (next == INVALID_HANDLE_VALUE) {
-      note("no pipe, error " + std::to_string(GetLastError()));
-      return 1;
-    }
+    HANDLE next = instance();
     if (connected) std::thread(serve, pipe).detach();  // an app that stops mid-call holds up only its own thread
     else CloseHandle(pipe);
     pipe = next;
   }
+  return 1;
 }
 
 }  // namespace
