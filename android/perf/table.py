@@ -88,7 +88,12 @@ row(
 )
 row("Memory (PSS) idle, first open, EN", mb(fo.get("pss_idle_kb")), "first-open")
 row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "model loaded")
-row("Memory (PSS) peak during Chinese setup", mb(zd.get("pss_peak_kb")), "zh-deploy")
+row(
+    "Memory (RSS) peak, first open with Chinese setup",
+    mb(zd.get("rss_peak_kb")),
+    "zh-deploy",
+    "the process's peak RSS (VmHWM): its first open sets 中文 up; RSS counts shared pages in full",
+)
 row("Memory (PSS) after typing 中", mb(zh.get("pss_kb")), "zh")
 row(
     "Memory (PSS) after typing 日",
