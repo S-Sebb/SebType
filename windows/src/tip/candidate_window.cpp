@@ -90,6 +90,12 @@ struct ScreenPixels {
   }
 };
 
+UINT dpiAt(const RECT &caret) {
+  UINT dpiX = 96, dpiY = 96;
+  GetDpiForMonitor(MonitorFromRect(&caret, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
+  return dpiX;
+}
+
 // The work area of the caret's monitor, where the window has to stay.
 RECT workArea(const RECT &caret) {
   MONITORINFO mi{sizeof(mi)};
@@ -133,14 +139,13 @@ bool CandidateWindow::create() {
          SUCCEEDED(d2d_->CreateDCRenderTarget(&props, &target_));
 }
 
-void CandidateWindow::loadStyle(const RECT &caret) {
+void CandidateWindow::loadStyle(UINT dpi) {
   const Settings s = readSettings();
-  UINT dpiX = 96, dpiY = 96;
-  GetDpiForMonitor(MonitorFromRect(&caret, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
   Style &st = style_;
   st.vertical = s.vertical;
   st.picnic = s.picnic;
-  st.scale = dpiX / 96.0f;
+  st.dpi = dpi;
+  st.scale = dpi / 96.0f;
   st.fontPx = s.fontSize * 96.0f / 72.0f * st.scale;
   st.colors = s.picnic ? picnicPalette() : systemPalette(systemColors());
   if (format_ && formatPx_ != st.fontPx) release(format_);
@@ -334,7 +339,10 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   KillTimer(hwnd_, kNoticeTimer);
   noticing_ = false;
   const bool shown = IsWindowVisible(hwnd_);
-  if (!styleLoaded_ || !shown) loadStyle(caret);  // the Configurator's changes, once per showing
+  // The Configurator's changes, once per showing; and the scale of a monitor the caret moved to.
+  const UINT dpi = dpiAt(caret);
+  const bool rescaled = shown && dpi != style_.dpi;
+  if (!styleLoaded_ || !shown || rescaled) loadStyle(dpi);
   std::vector<std::wstring> segments;
   int highlight = -1;
   for (const Segment &seg : reply.preedit.segments) {
@@ -342,8 +350,9 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
     segments.push_back(utf16(seg.text));
   }
   std::wstring w = pageWord(segments, highlight, preeditRow);
-  l.keepWidth = shown && w == word_ ? l.width : 0;
+  l.keepWidth = shown && !rescaled && w == word_ ? l.width : 0;
   word_ = std::move(w);
+  caret_ = caret;
   layout(caret);
   place(caret);
   draw();
@@ -353,7 +362,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
 void CandidateWindow::notice(const std::string &text, const RECT &caret) {
   ScreenPixels screen;
   if (text.empty() || !create()) return;
-  loadStyle(caret);
+  loadStyle(dpiAt(caret));
   CandidateLayout &l = layout_;
   l.preedit = {utf16(text)};
   preeditHighlight_ = -1;
@@ -362,6 +371,7 @@ void CandidateWindow::notice(const std::string &text, const RECT &caret) {
   l.hasPrev = l.hasNext = false;
   l.keepWidth = 0;
   word_.clear();
+  caret_ = caret;
   layout(caret);
   place(caret);
   draw();
@@ -379,6 +389,18 @@ void CandidateWindow::hide() {
   wheel_ = 0;
 }
 
+// The monitor's scale changed, or the window went to one with another (#327): what a fresh show at that DPI
+// would draw. Hidden, the next show measures again anyway.
+void CandidateWindow::rescale(UINT dpi) {
+  if (dpi == style_.dpi) return;  // as when show() rescaled first and its place() moved the window here
+  loadStyle(dpi);
+  if (!IsWindowVisible(hwnd_)) return;
+  layout_.keepWidth = 0;
+  layout(caret_);
+  place(caret_);
+  draw();
+}
+
 void CandidateWindow::page(bool next) {
   if (next ? layout_.hasNext : layout_.hasPrev) service_.page(next);
 }
@@ -387,6 +409,14 @@ LRESULT CALLBACK CandidateWindow::proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
   auto *self = reinterpret_cast<CandidateWindow *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
   switch (msg) {
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;  // the app keeps the focus
+    // A top-level window's one DPI notification (a child's come before and after its parent's). The window
+    // places itself by the caret, so the suggested rectangle in lParam goes unused.
+    case WM_DPICHANGED:
+      if (self) {
+        ScreenPixels screen;
+        self->rescale(LOWORD(wParam));
+      }
+      return 0;
     case WM_TIMER:
       if (self && wParam == kNoticeTimer) self->hide();
       return 0;
