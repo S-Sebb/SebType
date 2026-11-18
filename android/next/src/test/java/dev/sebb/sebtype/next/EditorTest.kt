@@ -788,21 +788,27 @@ class EditorTest {
     }
 
     /**
-     * #325: emoji just past what Delete's swipe reads (2000 characters before the cursor): the read starts inside
-     * one, and two words go back to the read's start. The emoji stays whole, a flag, a skin tone and a ZWJ
-     * sequence too.
+     * #325: an emoji where Delete's swipe's read starts (2000 characters before the cursor), at each character
+     * of it: a flag, a skin tone and a ZWJ sequence. Two words reach back to the read's start; the words go only
+     * back to the space after the emoji, and the emoji stays whole. A read without a space deletes nothing.
      */
     @Test
     fun aDeleteSwipeDoesntSplitAnEmojiAtTheReadsLimit() {
-        for (emoji in listOf("😀", "🇬🇧", "👍🏽", "👩‍💻")) {
-            // The read starts one character into 😀, two into the others
-            val text = emoji + "a".repeat(if (emoji == "😀") 1999 else 2002 - emoji.length)
+        for (emoji in listOf("😀", "🇬🇧", "👍🏽", "👩‍💻")) for (cut in emoji.indices) {
+            // "x", then the read: [cut] characters into the emoji to the cursor
+            val text = "x$emoji " + "a".repeat(2000 + cut - emoji.length - 1)
             val field = Field(text, text.length)
             val ime = Ime(field)
             ime.editor.selectWordsBefore(2, false)
             ime.editor.selectWordsBefore(2, true)
-            assertEquals(emoji, field.text)
+            assertEquals("$emoji $cut", "x$emoji ", field.text)
         }
+        val text = "x🇬🇧" + "a".repeat(1997)
+        val field = Field(text, text.length)
+        val ime = Ime(field)
+        ime.editor.selectWordsBefore(2, false)
+        ime.editor.selectWordsBefore(2, true)
+        assertEquals(text, field.text)
     }
 
     /**
