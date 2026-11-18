@@ -59,9 +59,9 @@ mozc_prefetch() {
     mozc_place "$1" "$tmp" "$file" "$url" "$where" "$sha" "$(mozc_identity "$tmp")"
   done < <(grep -v '^#' "$MOZC_DOWNLOADS")
 }
-# mozc_identity FILE: which file FILE is (inode, size, mtime in ns), or nothing if there is none. mv keeps it,
-# and replacing or rewriting the file changes it.
-mozc_identity() { stat -c '%i %s %.9Y' "$1" 2>/dev/null; }
+# mozc_identity FILE: which file FILE is (inode, size, mtime in ns), or nothing, with success, if there is none
+# (the builds run under set -e). mv keeps it, and replacing or rewriting the file changes it.
+mozc_identity() { stat -c '%i %s %.9Y' "$1" 2>/dev/null || true; }
 # mozc_file CACHE SHA256 URL WHERE: where Bazel looks for that file: Bazel itself (bazel), a file of the
 # registry's, under its path in the Bazel Central Registry (registry), or an archive in Bazel's repository
 # cache, found by its sha256 (repos).

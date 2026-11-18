@@ -29,8 +29,13 @@ serve() {
   printf %s "$2" > "$dir/server/$1"
   sha256sum < "$dir/server/$1" | cut -d' ' -f1
 }
-MOZC_DOWNLOADS=$dir/list.tsv
+export dir MOZC_DOWNLOADS=$dir/list.tsv
 list() { printf '%s\n' "$@" > "$MOZC_DOWNLOADS"; }
+
+# prefetch CACHE: mozc_prefetch as the builds run it, under set -e, in a bash of its own: in a check, after
+# && or as a job, set -e would be off
+prefetch() { bash -ec 'mozc_prefetch "$1"' _ "$1"; }
+export -f curl mozc_prefetch mozc_identity mozc_file mozc_place
 
 # A pinned digest changes: the registry file's path stays, its cached bytes must not
 cache=$dir/stale
@@ -38,22 +43,22 @@ old=$(serve bcr.bazel.build/modules/m/1.0/MODULE.bazel old)
 bazel=$(serve releases.bazel.build/bazel good-bazel)
 list "$old	https://bcr.bazel.build/modules/m/1.0/MODULE.bazel	registry" \
   "$bazel	https://releases.bazel.build/bazel	bazel"
-mozc_prefetch "$cache"
+prefetch "$cache"
 new=$(serve bcr.bazel.build/modules/m/1.0/MODULE.bazel new)
 list "$new	https://bcr.bazel.build/modules/m/1.0/MODULE.bazel	registry" \
   "$bazel	https://releases.bazel.build/bazel	bazel"
-mozc_prefetch "$cache" && got=$(cat "$cache/registry/modules/m/1.0/MODULE.bazel")
+prefetch "$cache" && got=$(cat "$cache/registry/modules/m/1.0/MODULE.bazel")
 [[ ${got:-} == new ]] && result PASS changed-digest || result FAIL changed-digest "cache kept '${got:-}'"
 
 # A corrupt Bazel without a stamp (a cache from before them) is checked, not trusted
 rm -rf "$cache/stamps"
 printf corrupt > "$cache/bazel-${bazel:0:12}"
-mozc_prefetch "$cache" && got=$(cat "$cache/bazel-${bazel:0:12}")
+prefetch "$cache" && got=$(cat "$cache/bazel-${bazel:0:12}")
 [[ ${got:-} == good-bazel ]] && result PASS corrupt-bazel || result FAIL corrupt-bazel "cache kept '${got:-}'"
 
 # A deleted Bazel whose stamp stayed is fetched again
 rm "$cache/bazel-${bazel:0:12}"
-mozc_prefetch "$cache" && got=$(cat "$cache/bazel-${bazel:0:12}" 2>/dev/null)
+prefetch "$cache" && got=$(cat "$cache/bazel-${bazel:0:12}" 2>/dev/null)
 [[ ${got:-} == good-bazel ]] && result PASS deleted-file || result FAIL deleted-file "no Bazel after the prefetch"
 
 # Two worktrees pin different bytes for one registry path, and publish interleaved: A moves its file in, B
@@ -68,15 +73,15 @@ mozc_place "$cache" "$dir/b.part" "$file" "https://$path" registry "$sha_b" "$(m
 mozc_place "$cache" "" "$file" "https://$path" registry "$sha_a" "$id_a"
 serve "$path" A >/dev/null
 list "$sha_a	https://$path	registry"
-mozc_prefetch "$cache" && got=$(cat "$file")
+prefetch "$cache" && got=$(cat "$file")
 [[ ${got:-} == A ]] && result PASS interleaved || result FAIL interleaved "A's prefetch kept '${got:-}'"
 
 # Two prefetches into one empty cache at once
 cache=$dir/both
 list "$(serve bcr.bazel.build/modules/a/1.0/MODULE.bazel a)	https://bcr.bazel.build/modules/a/1.0/MODULE.bazel	registry" \
   "$(serve github.com/x/a.tar.gz archive)	https://github.com/x/a.tar.gz	repos"
-mozc_prefetch "$cache" 2> "$dir/one.err" & one=$!
-mozc_prefetch "$cache" 2> "$dir/two.err" & two=$!
+prefetch "$cache" 2> "$dir/one.err" & one=$!
+prefetch "$cache" 2> "$dir/two.err" & two=$!
 wait $one; a=$?; wait $two; b=$?
 if [[ $a == 0 && $b == 0 && $(cat "$cache/registry/modules/a/1.0/MODULE.bazel") == a ]] &&
     ! compgen -G "$cache/registry/modules/a/1.0/*.part" >/dev/null; then result PASS concurrent
