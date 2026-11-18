@@ -39,10 +39,16 @@ mapped tables, 36 MB private dirty) against 22 MB with Rime stopped, and the nat
 Fix: the service's start (and `UpdateReceiver`) call `Engines.setUpChineseAhead`. It runs the
 install and deploy only when this version hasn't done them yet, and then lets Rime stop after the
 usual 3 minutes unless 中文 is in use. Otherwise Rime starts when 中文 is picked, as after an idle
-stop (`prepareChinese` in `onStartInput`). Until Rime is up, the bar shows "preparing", as in today's
-app after its idle stop. The `zh-waits-for-zh` check in
-`android/test/chinese.py` covers it: a process that starts in English logs no Rime setup, and 中文
-then types ranh → 然后.
+stop (`prepareChinese` in `onStartInput`). Until Rime is up, the bar shows "preparing". Keys typed
+in 中文 meanwhile wait in a queue and go to Rime in order once it's ready. That covers the letters,
+and Space, Enter, Delete and other text after them. Their letters show as the reading in the strip.
+Before this, they went into the field as plain letters. A new language, a new field or the keyboard
+closing drops the queue, as it drops a composition. If Rime fails, the queued keys type as plain
+text. The `zh-waits-for-zh` check in `android/test/chinese.py` covers both:
+
+- A process that starts in English logs no Rime setup.
+- With Rime's files out of the page cache, the globe and ranh tapped in one 10 ms burst give 然后
+  in the bar and nothing in the field.
 
 The same change lowers PSS after typing English by about 36 MB, because Rime no longer sits under
 the English model.
