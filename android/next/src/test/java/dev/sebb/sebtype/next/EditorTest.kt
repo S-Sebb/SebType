@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedText
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import dev.sebb.sebtype.core.NativeState
 import org.junit.Assert.assertEquals
@@ -761,19 +762,37 @@ class EditorTest {
     }
 
     /**
-     * #325: an emoji just past what Delete's swipe reads (2000 characters before the cursor, an emoji two): the
-     * read starts inside it, and two words go back to the read's start. The emoji stays whole, in a field that
-     * says where its cursor is and in one that can't.
+     * #325: emoji just past what Delete's swipe reads (2000 characters before the cursor): the read starts inside
+     * one, and two words go back to the read's start. The emoji stays whole, a flag, a skin tone and a ZWJ
+     * sequence too, in a field that says where its cursor is and in one that can't.
      */
     @Test
     fun aDeleteSwipeDoesntSplitAnEmojiAtTheReadsLimit() {
-        for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
-            val field = Field("😀" + "a".repeat(1999), 2001, extract)
+        for (emoji in listOf("😀", "🇬🇧", "👍🏽", "👩‍💻")) for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
+            // The read starts one character into 😀, two into the others
+            val text = emoji + "a".repeat(if (emoji == "😀") 1999 else 2002 - emoji.length)
+            val field = Field(text, text.length, extract)
             val ime = Ime(field)
             ime.editor.selectWordsBefore(2, false)
             ime.editor.selectWordsBefore(2, true)
-            assertEquals("😀", field.text)
+            assertEquals("$emoji $extract", emoji, field.text)
         }
+    }
+
+    /**
+     * #325: a field that gives less than asked for, four characters either side of the cursor: the first step
+     * reads "hree", not where its word starts, and selects nothing of it. Let go, what was selected goes, and
+     * no more: a read then of "wo three" would take all "three".
+     */
+    @Test
+    fun aDeleteSwipeDeletesOnlyWhatItSelected() {
+        val field = Field("one two three", 13, Extract.WINDOW)
+        val ime = Ime(field)
+        ime.editor.selectWordsBefore(1, false)
+        ime.settle()
+        val selected = field.cursor until field.end
+        ime.editor.selectWordsBefore(1, true)
+        assertEquals("one two three".removeRange(selected), field.text)
     }
 
     /** #325: another field came up during Delete's swipe: nothing of the swipe goes into it */
@@ -813,7 +832,11 @@ class EditorTest {
     fun theSwipesInASearch() {
         val field = Field("big smile", 9)
         val editor = Editor(null, field.connection)
-        editor.start(Search(View(null)) {}.info, FieldKind.of(null))
+        val search = Search(View(null)) {}
+        // Search's own connection says where its cursor is, as the swipes need: BaseInputConnection doesn't. The
+        // JVM's stand-ins for its Editable keep no text, so the swipes go into a field of the same shape.
+        assertEquals(-1, search.connection.getExtractedText(ExtractedTextRequest(), 0)?.partialStartOffset)
+        editor.start(search.info, FieldKind.of(null))
         editor.moveBy(-2)
         assertEquals(7, field.cursor)
         editor.moveBy(2)
