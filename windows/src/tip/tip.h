@@ -17,21 +17,6 @@
 
 namespace sebtype::win {
 
-// TEMP #327 trace: one line per event in %TEMP%\rime.sebtype\tip-trace.log, with the process and thread.
-inline void trace(const std::string &line) {
-  wchar_t temp[MAX_PATH];
-  const std::wstring file = std::wstring(temp, GetTempPathW(MAX_PATH, temp)) + L"rime.sebtype\\tip-trace.log";
-  SYSTEMTIME t;
-  GetLocalTime(&t);
-  char stamp[48];
-  snprintf(stamp, sizeof(stamp), "%02d:%02d:%02d.%03d %lu/%lu ", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds,
-           GetCurrentProcessId(), GetCurrentThreadId());
-  if (FILE *f = _wfopen(file.c_str(), L"ab")) {
-    fputs((stamp + line + "\n").c_str(), f);
-    fclose(f);
-  }
-}
-
 // {D4E5C593-4F73-475F-936C-0E29A6FE7A02}
 inline constexpr GUID kClsid = {0xd4e5c593, 0x4f73, 0x475f, {0x93, 0x6c, 0x0e, 0x29, 0xa6, 0xfe, 0x7a, 0x02}};
 // 中文 (zh-CN) and 日本語 (ja-JP), the two profiles Windows lists and Win+Space switches between.

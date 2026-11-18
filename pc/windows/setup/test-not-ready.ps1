@@ -13,7 +13,8 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, and a key
     goes in as typed without waiting; reload-while-loading: the Configurator's /mozc meanwhile, and 中文 still
     switches and types at once; first-japanese-back: あ unasked once Mozc and the reload are done, then the first ka gives か;
-  ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
+  ready: あ and 中 as usual; dpi-change: the candidates rescale when the scale changes while they show (#327),
+    and back as a fresh show; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
     in as typed and the popup says why; chinese-back: once Rime is done the key is 中 again, unasked;
@@ -25,8 +26,7 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     doesn't reach Rime as well); dpi-change-popup: dpi-change for the popup, at a key once the server hangs;
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
     popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
-    keypad 1, in an app that grants the text service's edit only after it handled the key;
-  dpi-change: the candidates rescale when the scale changes while they show (#327), and back as a fresh show.
+    keypad 1, in an app that grants the text service's edit only after it handled the key.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -182,8 +182,6 @@ function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Whe
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
 # failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
-  # TEMP #327: ChsIME.exe's processes when the server restarts
-  Add-Content -Encoding utf8 "$Out\chsime.txt" "$((Get-Date).ToString('HH:mm:ss.fff')) restart: $((Get-Process ChsIME -ErrorAction SilentlyContinue | ForEach-Object { "pid $($_.Id) since $($_.StartTime.ToString('HH:mm:ss.fff')) session $($_.SessionId)" }) -join '; ')"
   if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
   try { & $change } finally { (Start-Process $server -PassThru).PriorityClass = 'BelowNormal' }
   $pipe = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
