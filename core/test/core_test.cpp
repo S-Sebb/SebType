@@ -895,6 +895,7 @@ struct FakeRime : Engine {
   bool composing() override { return !in.empty(); }
   void flush() override {
     if (const auto l = list(); !l.empty()) commit += chosen + l[0].text + in.substr(done + l[0].letters);
+    else commit += chosen + in.substr(done);
     clear();
   }
   void clear() override { in.clear(), chosen.clear(), done = 0; }
@@ -1037,6 +1038,26 @@ TEST_F(ChineseTest, FlushCommitsTheModelsFirst) {
   EXPECT_EQ(zh->takeCommit(), "我爱你");
   EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
   EXPECT_FALSE(zh->composing());
+}
+
+// 你好 spells only nihao of nihaoo: the o left commits after it, as Rime's flush leaves it.
+TEST_F(ChineseTest, FlushCommitsWhatAPartialCandidateLeaves) {
+  typeAndWait("nihaoo");
+  ASSERT_EQ(list().at(0), "你好");
+  zh->flush();
+  EXPECT_EQ(zh->takeCommit(), "你好o");
+  EXPECT_FALSE(zh->composing());
+}
+
+// Rime's first is where its user dictionary puts a word picked before (沃门 here, as if learned): the model's
+// favourite of Rime's, 我们, comes after it.
+TEST_F(ChineseTest, RimesFirstStaysAheadOfRimesOthers) {
+  start({}, [](FakeRime &r) { r.words["women"] = {"沃门", "我们"}, r.words["men"] = {"们"}; });
+  typeAndWait("women");
+  const auto l = list();
+  ASSERT_GE(l.size(), 2u);
+  EXPECT_EQ(l[0], "沃门");
+  EXPECT_NE(std::ranges::find(l, "我们"), l.end());
 }
 
 TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {

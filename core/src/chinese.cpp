@@ -148,9 +148,11 @@ class Chinese final : public Engine {
   bool composing() override { return rime_->composing(); }
   std::string unfinished() override { return rime_->unfinished(); }
   // What the strip shows first is what a flush commits (a field change, the keyboard hidden): the model's
-  // candidate, taught to Rime as a pick would be; Rime's own preview when the model's list isn't shown.
+  // candidate, taught to Rime as a pick would be; Rime's own preview when the model's list isn't shown. A
+  // Rime candidate for part of the input leaves the rest, which Rime's flush commits after it: nothing stays
+  // composing.
   void flush() override {
-    if (rime_->composing() && modelShown_ && shownRev_ == rev_ && !shown_.empty()) return pick(0);
+    if (rime_->composing() && modelShown_ && shownRev_ == rev_ && !shown_.empty()) pick(0);
     rime_->flush();
     changed();
   }
@@ -458,6 +460,9 @@ class Chinese final : public Engine {
       score[i] -= kRankWeight * std::log1p(float(job.rimeIndex[i]));
       items.push_back({{job.rime[i], {}}, job.rimeIndex[i], texts[i]});
     }
+    // Rime's first stays ahead of Rime's others: Rime puts there what the user picked before (its user
+    // dictionary), which the model can't see. The model's own candidates still compete with it.
+    if (!texts.empty() && job.rimeIndex[0] == 0) score[0] = *std::ranges::max_element(score);
     const auto generated = model.generate(context, letters, kBeam, static_cast<int>(letters.size()));
     if (revNow_ != job.rev) return {};
     for (const auto &g : generated) {
