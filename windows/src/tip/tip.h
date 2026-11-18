@@ -107,7 +107,8 @@ class TextService final : public ITfTextInputProcessorEx,
   bool key(WPARAM wParam, LPARAM lParam, bool release, Key &out);
   // Asks the server (starting it when none answers) and applies the reply in an edit session.
   bool send(const Request &request);
-  void apply(ITfContext *context);
+  // redeliver: a key (wParam, lParam) posted to the app's focused window after the edit (#330).
+  void apply(ITfContext *context, WPARAM redeliver = 0, LPARAM lParam = 0);
   bool keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bool release, bool test, BOOL *eaten);
   void setLanguage(REFGUID profile);
   void followLayout();
@@ -118,9 +119,11 @@ class TextService final : public ITfTextInputProcessorEx,
   void setOpen();
   void focus(ITfDocumentMgr *focus);
   // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
-  // True when it took the key itself: ch, the character it types, goes in after what was being typed.
-  bool unavailable(ITfContext *context, const Key &key, wchar_t ch);
-  static wchar_t typedChar(WPARAM wParam, LPARAM lParam);
+  // True when it took the key itself: while composing, every key but a modifier (#330). Its text goes in
+  // after what was being typed, in the same edit; a key that types none is posted to the app after that edit.
+  bool unavailable(ITfContext *context, const Key &key, WPARAM wParam, LPARAM lParam);
+  bool composing() const;
+  static std::wstring typedText(WPARAM wParam, LPARAM lParam, bool consume = false);
   // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
   void watchReadiness();
   void pollReadiness();
@@ -146,6 +149,7 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<CandidateWindow> window_;
   LangBarButton *button_ = nullptr;
   DWORD serverStarted_ = 0;  // GetTickCount of the last start, so a missing server isn't started every key
+  WPARAM passing_ = 0;       // a key posted again after a settling edit (#330): the app's, until its release
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does
   UINT_PTR poll_ = 0;        // watchReadiness's timer
 };

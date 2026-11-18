@@ -363,6 +363,8 @@ namespace SebType {
     [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
     [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern bool SetKeyboardState(byte[] state);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ToUnicodeEx(uint vk, uint scan, byte[] state, StringBuilder s, int n, uint flags, IntPtr hkl);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string name);
@@ -492,7 +494,7 @@ namespace SebType {
         while (GetMessageW(out m, IntPtr.Zero, 0, 0)) {
           if (m.hwnd == IntPtr.Zero && m.message == WM_APP) { Action a; while (queue.TryTake(out a)) a(); continue; }
           // A character the input method let through goes into the field, as an edit control would take it.
-          if (m.message == WM_CHAR && (char)m.wParam >= ' ') { store.AppEdit(store.SelStart, store.SelEnd, ((char)m.wParam).ToString()); continue; }
+          if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
           TranslateMessage(ref m); DispatchMessageW(ref m);
         }
       });
@@ -537,6 +539,48 @@ namespace SebType {
         return eaten;
       });
     }
+    // What an edit control does with a character: Backspace deletes the one before the caret, Enter starts a line.
+    static void Typed(char c) {
+      if (c == '\b') { if (store.SelStart > 0) store.AppEdit(store.SelStart - 1, store.SelEnd, ""); }
+      else store.AppEdit(store.SelStart, store.SelEnd, c == '\r' ? "\n" : c.ToString());
+    }
+    // A key with others held (Ctrl and Right Alt: AltGr), through TSF as Key sends it. One the input method lets
+    // through types what TranslateMessage would make of it with this thread's layout: AltGr's character, a
+    // dead key's accent with the next key, Enter, Backspace.
+    public static bool Press(byte vk, params byte[] held) {
+      return OnUi(() => {
+        var keys = (ITfKeystrokeMgr)threadMgr;
+        var state = new byte[256]; GetKeyboardState(state);
+        var before = (byte[])state.Clone();
+        foreach (var h in held) state[h] |= 0x80;
+        SetKeyboardState(state);
+        uint scan = MapVirtualKeyW(vk, 0);
+        bool eaten, up;
+        try {
+          keys.KeyDown((IntPtr)vk, (IntPtr)(1 | (long)scan << 16), out eaten);
+          if (!eaten) {
+            var ch = new StringBuilder(8);
+            int n = ToUnicodeEx(vk, scan, state, ch, 8, 0, GetKeyboardLayout(0));
+            for (int i = 0; i < n; i++) Typed(ch[i]);
+          }
+          keys.KeyUp((IntPtr)vk, (IntPtr)(1 | (long)scan << 16 | 0xC0000000L), out up);
+        } finally { SetKeyboardState(before); }
+        store.GrantPending();
+        return eaten;
+      });
+    }
+    // What the key with others held types with this thread's layout, changing no dead key state; "" for none.
+    public static string Chars(byte vk, params byte[] held) {
+      return OnUi(() => {
+        var state = new byte[256];
+        foreach (var h in held) state[h] |= 0x80;
+        var ch = new StringBuilder(8);
+        int n = ToUnicodeEx(vk, MapVirtualKeyW(vk, 0), state, ch, 8, 4, GetKeyboardLayout(0));
+        return n > 0 ? ch.ToString(0, n) : "";
+      });
+    }
+    // The thread's keyboard layout (HKL), e.g. "04110411".
+    public static string Layout() { return OnUi(() => ((long)GetKeyboardLayout(0)).ToString("x8")); }
     // Locks that may wait are granted only after the app handled the key (TextStore.Defer).
     public static bool DeferLocks { set { OnUi(() => { store.Defer = value; store.GrantPending(); return 0; }); } }
     static ITfDocumentMgr otherMgr;

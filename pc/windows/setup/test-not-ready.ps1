@@ -27,8 +27,10 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   popup-own-content: that popup, after typed-after-recovery's candidates with page arrows, shows only its own
     text: the same as japanese-unavailable's popup, with no arrows left from the candidates (#348);
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
-    popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
-    keypad 1, in an app that grants the text service's edit only after it handled the key.
+    popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n, keypad 1,
+    Enter (か, a new line) and Backspace (か deleted), in an app that grants the text service's edit only after
+    it handled the key (#330); hang-mid-deferred-german: AltGr+Q (か@) and ´ then b (か´b) there, with German
+    added as a keyboard of the Japanese language for the run (SKIP when SebType's 日本語 doesn't type with it).
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -119,19 +121,20 @@ function Ready {
   if ($display::Lit -and -not $AnyDisplay) { throw "the display turned on ($(States)): no more keys" }
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
-# A key's virtual-key code: space, Escape, kp0-kp9 (the keypad's digits, Num Lock on), or a letter.
+# A key's virtual-key code: space, Escape, Return, BackSpace, kp0-kp9 (the keypad's digits, Num Lock on), or a letter.
 function Vk($k) {
-  switch -regex ($k) { '^space$' { 0x20 } '^Escape$' { 0x1B } '^kp(\d)$' { 0x60 + [int]$Matches[1] } default { [byte][char]$k.ToUpper() } }
+  switch -regex ($k) { '^space$' { 0x20 } '^Escape$' { 0x1B } '^Return$' { 0x0D } '^BackSpace$' { 0x08 } '^kp(\d)$' { 0x60 + [int]$Matches[1] } default { [byte][char]$k.ToUpper() } }
 }
 function Keys {
   Ready
   foreach ($k in $args) { $null = $tsf::Key((Vk $k)); $tsf::Settle(150) }
   $tsf::Settle(600)
 }
-# One key, and the popup by the caret saved while it shows (1.2 s).
+# One key (or a scriptblock's keys), and the popup by the caret saved while it shows (1.2 s).
 function KeyWithPopup($k, $name) {
   Ready
-  $null = $tsf::Key((Vk $k)); $tsf::Settle(200)
+  if ($k -is [scriptblock]) { & $k } else { $null = $tsf::Key((Vk $k)) }
+  $tsf::Settle(200)
   $size = $tsf::CandidateWindow("$Out\$name-popup.png")
   if (-not $size) { throw "no popup by the caret after '$k'" }
   $tsf::Settle(600)
@@ -231,7 +234,7 @@ function Warm-Mozc {
   do { Keys n i Escape; $now = try { Shot 'hira-again' } catch { $null } } while ($now -ne $hira -and (Get-Date) -lt $end)
   Lang zh
 }
-$suspended = $hira = $zh = $deploy = $backup = $null
+$suspended = $hira = $zh = $deploy = $backup = $german = $null
 $rimeBuild = "$env:APPDATA\Rime\build"
 # Rime's build folder back from the copy beside it, by renames on the one volume: the deployed one is set
 # aside, the copy takes its name, and only then is the deployed one deleted; a failed rename is undone.
@@ -436,33 +439,59 @@ try {
     if ($diff) { throw "it differs from japanese-unavailable's popup: $diff (dpi-popup-fresh-$d.png, hira-off-popup.png)" }
     "the same as japanese-unavailable's popup: no page arrows left from the candidates"
   }
-  # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
-  # and once the server answers again nothing of the old typing comes back or deletes it. The second time the
-  # app grants the text service's edit only after it handled the key, as an app may: a letter, then a keypad digit.
+  # The server hangs while か is being typed: か stays as it showed, the key goes in after it (with the popup
+  # for a key that types text), and once the server answers again nothing of the old typing comes back or
+  # deletes it. With $defer the app grants the text service's edit only after it handled the key, as an app
+  # may: then every key, typing text or not, has to act after か went in (#330).
   $hang = {
-    param($key, $defer, $shot)
+    param($key, $defer, $shot, $want = $null)
+    $name = if ($key -is [scriptblock]) { $shot } else { $key }
+    $c = if ($key -match '^kp(\d)$') { $Matches[1] } else { $key }
+    if ($null -eq $want) { $want = "か$c" }
+    $popup = $key -notin 'Return', 'BackSpace'  # keys that type no text show none
     Lang ja; $tsf::Clear(); Keys k a
     $script:suspended = Server
     [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
     $tsf::DeferLocks = $defer
-    try { $size = KeyWithPopup $key $shot; $why = $null } catch { $why = $_.Exception.Message }
+    try {
+      if ($popup) { $size = KeyWithPopup $key $shot } else { Ready; $null = $tsf::Key((Vk $key)); $tsf::Settle(600); $size = 'none' }
+      $why = $null
+    } catch { $why = $_.Exception.Message }
     finally { $tsf::DeferLocks = $false }
     $t = $tsf::Text()
     [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
     $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
-    $c = if ($key -match '^kp(\d)$') { $Matches[1] } else { $key }
-    if ($why) { throw "${key}: $why (text '$t')" }
-    if ($t -ne "か$c") { throw "か then $key while the server hangs gave '$t', not か$c" }
-    if ($icon -ne $hira) { throw "${key}: the icon did not turn back to あ within 4 s" }
-    if ($after -ne "か${c}い") { throw "${key}: i after the server answered again gave '$after', not か${c}い" }
-    "か$c with the popup $size, then i gives $after"
+    $show = { param($s) $s -replace "`n", '\n' }
+    if ($why) { throw "${name}: $why (text '$(& $show $t)')" }
+    if ($t -ne $want) { throw "か then $name while the server hangs gave '$(& $show $t)', not $(& $show $want)" }
+    if ($icon -ne $hira) { throw "${name}: the icon did not turn back to あ within 4 s" }
+    if ($after -ne "${want}い") { throw "${name}: i after the server answered again gave '$(& $show $after)', not $(& $show "${want}い")" }
+    "$(& $show $want) with the popup $size, then i gives $(& $show $after)"
   }
   Check 'hang-mid-composition' { & $hang 'n' $false 'hang-mid' }
-  Check 'hang-mid-deferred-lock' { (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp') -join '; ' }
+  Check 'hang-mid-deferred-lock' {
+    (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp'),
+    (& $hang 'Return' $true 'hang-mid-deferred-enter' "か`n"), (& $hang 'BackSpace' $true 'hang-mid-deferred-bs' '') -join '; '
+  }
+  # The same with German as a keyboard of the Japanese language: AltGr+Q (@), and a dead key with the key
+  # after it (´ then b: ´b), which the core is never given.
+  Check 'hang-mid-deferred-german' {
+    $script:languages = Get-WinUserLanguageList
+    $list = Get-WinUserLanguageList
+    $ja = $list | Where-Object LanguageTag -like 'ja*' | Select-Object -First 1
+    if (-not $ja) { return 'SKIP: no Japanese in the language list' }
+    if ($ja.InputMethodTips -notcontains '0411:00000407') { $ja.InputMethodTips.Add('0411:00000407'); Set-WinUserLanguageList $list -Force; $script:german = $true }
+    Lang ja
+    $at = $tsf::Chars(0x51, 0x11, 0x12, 0xA2, 0xA5)  # Q with Ctrl and Alt, left Ctrl and right Alt: AltGr
+    if ($at -ne '@') { return "SKIP: SebType's 日本語 types with layout $($tsf::Layout()) even with German as a Japanese keyboard: AltGr+Q gives '$at', not @" }
+    (& $hang { $null = $tsf::Press(0x51, 0x11, 0x12, 0xA2, 0xA5) } $true 'hang-mid-deferred-altgr' 'か@'),
+    (& $hang { $null = $tsf::Press(0xDD); $null = $tsf::Press(0x42) } $true 'hang-mid-deferred-dead' 'か´b') -join '; '
+  }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
   if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null }
+  if ($german) { try { Set-WinUserLanguageList $languages -Force } catch { Result 'languages-restored' FAIL $_.Exception.Message } }
   if ($backup) {
     if ($deploy -and -not $deploy.HasExited) { $deploy.WaitForExit(300000) | Out-Null }
     try { Restart-Server { Restore-Build } }
