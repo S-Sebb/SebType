@@ -2,8 +2,10 @@
 
   score.py RUN_DIR             a JSON summary of every STACK.SET.tsv in RUN_DIR
   score.py --compare S1 S2     exit 0 if two runs' results (every row but its latency) and quality numbers are equal
-  score.py --table S1 S2       the baseline table in Markdown, run 1's numbers with run 2's latency next to them
-  score.py --bar S             exit 0 if SebType's model passes the plan's quality bar (§2) against today's
+  score.py --table S1 S2 [T]   the baseline table in Markdown, run 1's numbers with run 2's latency next to them,
+                               and today's from T (today.json) in the first column
+  score.py --bar S T           exit 0 if the keyboard's English passes the plan's quality bar (§2) against
+                               today's in T (today.json: the FUTO-based app's, measured before it was removed)
 
 Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key, and after
 how many keys the target was first in the top 3 (0: never).
@@ -33,9 +35,8 @@ def quantile(v, q):
 
 QUALITY = ("changed", "fixed", "top1", "top3", "items")
 STACKS = (
-    ("today", "Today: FUTO's decoder + transformer"),
+    ("today", "Today (2026-11-17, frozen): FUTO's decoder + transformer"),
     ("aosp", "Pristine AOSP decoder + AOSP's dictionary"),
-    ("aosp-sebdict", "Pristine AOSP decoder + SebType's dictionary"),
     ("sebtype", "Pristine AOSP decoder + SebType's model"),
     ("core", "New keyboard: core/'s English + rebuilt dictionary"),
 )
@@ -83,8 +84,11 @@ def compare(s1, s2):
     return not problems
 
 
-def table(s1, s2):
+def table(s1, s2, today=None):
     a, b = json.loads(Path(s1).read_text()), json.loads(Path(s2).read_text())
+    if today:
+        a.update(json.loads(Path(today).read_text()))
+        b.update(json.loads(Path(today).read_text()))
     cols = [k for k, _ in STACKS if k in a]
 
     def row(label, set_name, fmt):
@@ -153,10 +157,10 @@ def table(s1, s2):
     )
 
 
-def bar(path):
-    """The plan's quality bar (§2): the new keyboard's English against today's, one line per gated row."""
-    s = json.loads(Path(path).read_text())
-    today, ours = s["today"], s["core"]
+def bar(path, today_path):
+    """The plan's quality bar (§2): the keyboard's English against today's, one line per gated row."""
+    today = json.loads(Path(today_path).read_text())["today"]
+    ours = json.loads(Path(path).read_text())["core"]
     checks = []
     for set_name in ("phone-typos", "misspellings"):
         for k in ("fixed", "top1", "top3"):
@@ -243,8 +247,8 @@ if __name__ == "__main__":
     if sys.argv[1] == "--compare":
         sys.exit(0 if compare(*sys.argv[2:4]) else 1)
     elif sys.argv[1] == "--bar":
-        sys.exit(0 if bar(sys.argv[2]) else 1)
+        sys.exit(0 if bar(*sys.argv[2:4]) else 1)
     elif sys.argv[1] == "--table":
-        table(*sys.argv[2:4])
+        table(*sys.argv[2:5])
     else:
         main(sys.argv[1])

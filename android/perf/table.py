@@ -201,6 +201,8 @@ row(
     "keyboard process restarts during each typing trace",
 )
 
-print("\nBiggest APK entries (compressed):\n")
-for line in read(work / "apk-top.txt").splitlines():
-    print(f"- {line.strip()}")
+# perf.sh --compare-device measures an APK already installed, so it lists no entries
+if (work / "apk-top.txt").exists():
+    print("\nBiggest APK entries (compressed):\n")
+    for line in read(work / "apk-top.txt").splitlines():
+        print(f"- {line.strip()}")

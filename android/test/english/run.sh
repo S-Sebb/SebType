@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# The English quality harness (#231, stage 0 of docs/plans/android-own-keyboard.md): runs today's English
-# (FUTO's decoder and transformer), pristine AOSP's decoder, SebType's model on it, and the new keyboard's
-# English (core/src/english.cpp, #244) on the test sets in sets/, twice, on the build host (yanglab16), checks
-# that the two runs agree and that the new keyboard's English passes the plan's quality bar (§2).
+# The English quality harness (#231, stage 0 of docs/plans/android-own-keyboard.md): runs pristine AOSP's
+# decoder, SebType's model on it, and the keyboard's English (core/src/english.cpp, #244) on the test sets in
+# sets/, twice, on the build host (yanglab16), checks that the two runs agree and that the keyboard's English
+# passes the plan's quality bar (§2) against today.json, the FUTO-based app's English (FUTO's decoder and
+# transformer) as this harness measured it on 2026-11-17, before that app was removed (#262).
 #
 #   android/test/english/run.sh
 #
@@ -25,7 +26,6 @@ result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 for f in $here/sets/{clean,phone-typos,misspellings,next-chat,next-news,next-texts,text-typos}.tsv; do
   [[ -s $f ]] || { echo "preflight: $f missing (make_sets.py makes it)"; exit 1; }
 done
-[[ -f android/app/src/main/res/raw/ml4_q6_k.gguf ]] || { echo "preflight: FUTO's model ml4_q6_k.gguf missing"; exit 1; }
 if [[ $BUILD_HOST != local ]] && ! build_host_ready; then
   echo "preflight: $BUILD_HOST unreachable; the harness doesn't run on $(hostname -s) unless SEBTYPE_BUILD_HOST=local"
   exit 1
@@ -53,9 +53,9 @@ if [[ -s $s1 && -s $s2 ]]; then
   else
     result FAIL reproducible "$(head -1 "$out/english/compare.txt")"
   fi
-  python3 -I $here/score.py --table "$s1" "$s2" > "$out/english/table.md" &&
+  python3 -I $here/score.py --table "$s1" "$s2" $here/today.json > "$out/english/table.md" &&
     result PASS table "$out/english/table.md" || result FAIL table
-  python3 -I $here/score.py --bar "$s1" > "$out/english/bar.txt" &&
+  python3 -I $here/score.py --bar "$s1" $here/today.json > "$out/english/bar.txt" &&
     result PASS bar "$out/english/bar.txt" || result FAIL bar "$(grep -c ^FAIL "$out/english/bar.txt") rows miss, $out/english/bar.txt"
 else
   result FAIL reproducible "a run has no summary"

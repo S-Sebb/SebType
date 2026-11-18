@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Screenshots of the settings in today's app (app/) next to the new one's (next/, #254, #267) on the emulator,
+"""Screenshots of the settings in the FUTO-based app (its last release) next to SebType's own (#254, #267) on the emulator,
 for judging the look by eye: the setup wizard, the home screen and its five groups, in the system's light and
 dark mode, with the emulator in English. Run under the emulator's lock:
 
@@ -28,10 +28,11 @@ APPS = {
         "org.futo.inputmethod.latin.LatinIME",
         "org.futo.inputmethod.latin.uix.settings.SettingsActivity",
     ),
+    # Both are dev.sebb.sebtype, with the same service name (#262): each run installs one over the other.
     "new": (
-        "dev.sebb.sebtype.next",
-        ".SebTypeIme",
-        "dev.sebb.sebtype.next.settings.SettingsActivity",
+        "dev.sebb.sebtype",
+        "org.futo.inputmethod.latin.LatinIME",
+        "dev.sebb.sebtype.settings.SettingsActivity",
     ),
 }
 # Each group's row on the home screen, and a label its screen shows
@@ -125,6 +126,16 @@ try:
             time.sleep(2)
         adb("shell", "ime", "enable", f"{pkg}/{ime}")
         adb("shell", "ime", "set", f"{pkg}/{ime}")
+        # The new app's wizard ends on its tips (step 3), which Done closes for good.
+        open_settings(app)
+        if done := labels().get("Done"):
+            adb(
+                "shell",
+                "input",
+                "tap",
+                str((done[0] + done[2]) // 2),
+                str((done[1] + done[3]) // 2),
+            )
         for mode in MODES:
             adb("shell", "cmd", "uimode", "night", "yes" if mode == "dark" else "no")
             time.sleep(2)

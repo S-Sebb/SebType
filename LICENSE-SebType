@@ -1,8 +1,7 @@
-This licence covers SebType's own code: pc/, art/, data/, docs/, sync-server/, tools/, engines/sebtype-lm/
-and .github/workflows/, and SebType's own files in android/ (android/LICENSE lists them), except the files from
-other projects that README.md ("Licences") and NOTICE list. Each of those folders has a LICENSE file naming
-its exceptions. The rest of the repository is FUTO's or AOSP's code and keeps their licences (LICENSE.md and
-NOTICE), and engines/ holds Mozc and librime with SebType's changes, under their own licences (engines/LICENSE).
+This licence covers SebType's own code: pc/, art/, data/, docs/, sync-server/, tools/, engines/sebtype-lm/,
+.github/workflows/ and android/, except the files from other projects that README.md ("Licences") and NOTICE
+list. Each of those folders has a LICENSE file naming its exceptions. engines/ holds pristine AOSP LatinIME,
+Mozc and librime with SebType's changes, under their own licences (engines/LICENSE).
 
 MIT License
 

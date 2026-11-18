@@ -7,10 +7,9 @@ SebType runs on an Android phone ([Android](#android)), on Linux ([Linux](#linux
 
 SebType is published as GitHub releases of `S-Sebb/sebtype`, one arm64-v8a APK per release.
 Obtainium installs and updates it straight from those releases; no token is needed. SebType's
-application id is `dev.sebb.sebtype`, so it installs next to stock FUTO Keyboard and Gboard.
-
-The app contains FUTO Keyboard's code, modified by SebType, under the FUTO Source First License; SebType's
-own code outside FUTO's files is MIT (see the README's licences). SebType is not made or supported by FUTO.
+application id is `dev.sebb.sebtype`, so it installs next to other keyboards such as Gboard. An update
+from a release before 2026-11, when the app was based on FUTO Keyboard (#262), keeps SebType turned on and
+picked, with your words, settings and clipboard.
 
 ### Install with Obtainium
 
@@ -23,7 +22,7 @@ Obtainium checks for new releases like for any other app.
 ### Turn it on
 
 Open SebType from the launcher and follow its setup (enable the keyboard, then pick it). Switch
-between SebType, FUTO and Gboard with the navigation-bar keyboard icon.
+between SebType and your other keyboards with the navigation-bar keyboard icon.
 
 ## Linux
 
@@ -71,7 +70,7 @@ android/release.sh
 
 It builds the signed arm64 release APK under the shared build lock
 (`/tmp/agent-locks/sebtype/build.lock`) and runs `gh release create` with tag
-`v<FUTO version>-sebtype.<n>`, where `<n>` is the number of commits on main (also the version code,
+`v<android/upstream-version>-sebtype.<n>`, where `<n>` is the number of commits on main (also the version code,
 so every release from main upgrades the previous one). Needs JDK 21 in `~/.local/share/jdks/` (or
 `JAVA_HOME_21`), the Android SDK with NDK 28.2 in `~/Android/Sdk` (or `ANDROID_HOME`)
 and a logged-in `gh`.

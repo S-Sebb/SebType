@@ -687,7 +687,7 @@ class English : public Engine {
   }
 
   // Today's app (FUTO Keyboard's, before #191 stage 6) keeps English's learned words in this same AOSP format,
-  // in a folder of this name. The update moves that folder into userDir (android/next's Migration); its words
+  // in a folder of this name. The update moves that folder into userDir (android/app's Migration); its words
   // are learned here once, as of now, so none has faded by the time the new keyboard first opens.
   void takeInLegacyHistory() {
     const std::string legacy = paths_.userDir + "/UserHistoryDictionary.en_US.dict";

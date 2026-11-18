@@ -1,4 +1,4 @@
-"""Dictionary-only English benchmark from the #40 study (FUTO's transformer is not part of it).
+"""Dictionary-only English benchmark from the #40 study (no language model).
 
   bench.py CHAT_PROMPTS_JSONL_GZ MISSPELLINGS_TXT DICT...
 
@@ -58,7 +58,9 @@ def evaluate(d, toks, typos):
             cache[p] = sorted(words[i:j], key=lambda w: -d[w])[:3]
         return cache[p]
 
-    multi = [t for t in toks if len(t) > 1]  # FUTO leaves single letters out on purpose
+    multi = [
+        t for t in toks if len(t) > 1
+    ]  # the dictionaries leave single letters out on purpose
     r = {"coverage": sum(t in d for t in multi) / len(multi)}
     for k in (2, 3):
         long = [t for t in toks if len(t) > k]

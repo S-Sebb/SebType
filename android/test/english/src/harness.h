@@ -25,7 +25,7 @@ struct Output {
     std::string committed;           // what a space commits: the autocorrection, or the typed word
 };
 
-// One English stack: today's (FUTO's decoder and model) or pristine AOSP's decoder.
+// One English stack: pristine AOSP's decoder, alone or with SebType's model, or core/'s English.
 class Stack {
 public:
     virtual ~Stack() = default;
@@ -37,7 +37,7 @@ public:
     virtual void begin(const Item & /*item*/) {}
 };
 
-// Made by today.cpp or aosp.cpp, whichever the executable is built with. ARGS: the files it loads.
+// Made by aosp.cpp, sebtype.cpp or core.cpp, whichever the executable is built with. ARGS: the files it loads.
 std::unique_ptr<Stack> makeStack(const std::vector<std::string> &args);
 
 }  // namespace harness

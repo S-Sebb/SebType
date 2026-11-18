@@ -1,8 +1,8 @@
-"""Reads and writes FUTO's static binary dictionaries (format 202, the main_xx.dict files).
+"""Reads and writes LatinIME's static binary dictionaries (format 202, the main_xx.dict files).
 
-The writer follows AOSP's makedict Ver2DictEncoder (android/app/src/androidTest/java/.../makedict) node for node,
-plus the shortcut lists (e.g. "i" -> "I") that FUTO's dictionaries carry and that copy dropped.
-`selftest.sh` checks that FUTO's main_en.dict decodes and re-encodes to the identical bytes.
+The writer follows AOSP's makedict Ver2DictEncoder node for node, with the shortcut lists (e.g. "i" -> "I")
+that such dictionaries can carry. test.sh checks that AOSP's main_en.dict decodes and re-encodes to the
+identical bytes.
 
 A word is (frequency 0-255, not_a_word, possibly_offensive, [(shortcut target, frequency 0-15)]).
 """
@@ -158,7 +158,7 @@ def _count_size(n):
 
 def encode(attrs, words):
     """attrs: header attributes in the order to write them; words: as returned by decode().
-    Like FUTO's dictionaries, the output has no code point table (dicttool -t off)."""
+    Like AOSP's dictionaries, the output has no code point table (dicttool -t off)."""
     words = {w: v for w, v in words.items() if len(w) < MAX_WORD_LENGTH}
 
     def chars_size(n):

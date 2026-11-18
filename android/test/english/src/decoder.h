@@ -1,4 +1,4 @@
-// A LatinIME-style decoder (FUTO's copy or pristine AOSP's) driven through its own JNI entry points.
+// Pristine AOSP LatinIME's decoder driven through its own JNI entry points.
 #pragma once
 
 #include <string>
@@ -23,7 +23,7 @@ long long makeProximityInfo(const std::string &jniPackage, const std::string &la
 
 class Decoder {
 public:
-    // JNI_PACKAGE: "org/futo/inputmethod" or "com/android/inputmethod". MAX_RESULTS: the decoder's own.
+    // JNI_PACKAGE: "com/android/inputmethod". MAX_RESULTS: the decoder's own.
     Decoder(const std::string &jniPackage, int maxResults, const std::string &dictPath, long long proximityInfo);
     // The dictionary's suggestions for ITEM's typed letters after the previous words of its context, as
     // BinaryDictionary.getSuggestions returns them (scores at locale weight 1.0).

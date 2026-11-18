@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Screenshots of today's keyboard (app/) next to the new one (next/, #191) on the emulator, for the
+"""Screenshots of the FUTO-based keyboard (its last release, TODAY_APK) next to SebType's own (#191) on the emulator, for the
 user to judge the look by eye: English with its suggestions and next words, caps lock, the action bar, All
 Actions and its emoji, clipboard and keyboard modes panels, emoji and clipboard search, the copied text offered, symbols, a long press,
 中文 with pinyin and candidates, its 简/繁 menu, and 日本語, in the system's light and dark mode. Run
@@ -33,7 +33,13 @@ APPS = {
         "main_keyboard_frame",
         today_apk,
     ),
-    "new": ("dev.sebb.sebtype.next", ".SebTypeIme", "keyboard", new_apk),
+    # Both are dev.sebb.sebtype, with the same service name (#262): each run installs one over the other.
+    "new": (
+        "dev.sebb.sebtype",
+        "org.futo.inputmethod.latin.LatinIME",
+        "keyboard",
+        new_apk,
+    ),
 }
 # An app given as "-" is left out: its pictures from an earlier run stay on the page
 TAKEN = {app: v for app, v in APPS.items() if v[3] != "-"}
@@ -338,19 +344,19 @@ def run(app, mode):
 failed = {}
 os.makedirs(outdir, exist_ok=True)
 adb("install", "-r", field_apk, timeout=300)
-for app, (pkg, ime, _, apk) in TAKEN.items():
-    adb("uninstall", pkg)
-    adb("install", apk, timeout=300)
-    for _ in range(15):
-        if f"{pkg}/{ime}" in adb("shell", "ime", "list", "-a", "-s"):
-            break
-        time.sleep(2)
-    adb("shell", "ime", "enable", f"{pkg}/{ime}")
 try:
-    for mode in ("light", "dark"):
-        adb("shell", "cmd", "uimode", "night", "yes" if mode == "dark" else "no")
-        time.sleep(2)
-        for app in TAKEN:
+    # One app at a time: both are dev.sebb.sebtype, so each install replaces the other (#262).
+    for app, (pkg, ime, _, apk) in TAKEN.items():
+        adb("uninstall", pkg)
+        adb("install", apk, timeout=300)
+        for _ in range(15):
+            if f"{pkg}/{ime}" in adb("shell", "ime", "list", "-a", "-s"):
+                break
+            time.sleep(2)
+        adb("shell", "ime", "enable", f"{pkg}/{ime}")
+        for mode in ("light", "dark"):
+            adb("shell", "cmd", "uimode", "night", "yes" if mode == "dark" else "no")
+            time.sleep(2)
             run(app, mode)
 finally:
     adb("shell", "cmd", "uimode", "night", "no")
@@ -378,7 +384,7 @@ with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
     f.write(f"""<!doctype html><meta charset="utf-8"><title>SebType: today's keyboard and the new one</title>
 <style>body{{font-family:sans-serif;background:#eee}} td,th{{padding:6px;vertical-align:top}} img{{width:100%;max-width:480px;border:1px solid #ccc}}</style>
 <h1>Today's keyboard (left) and the new one (right)</h1>
-<table><tr><th></th><th>Today (app/)</th><th>New (next/)</th></tr>
+<table><tr><th></th><th>Today (FUTO-based)</th><th>New</th></tr>
 {rows}
 </table>
 """)

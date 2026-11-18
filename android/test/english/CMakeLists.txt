@@ -1,5 +1,4 @@
-# The English harness's two host executables (#231); bench.sh configures it.
-#   english-today: FUTO's decoder and transformer, compiled in place from android/app/src/main/cpp.
+# The English harness's host executables (#231); bench.sh configures it.
 #   english-aosp:  pristine AOSP LatinIME's decoder, from AOSP_JNI (bench.sh fetches it into the cache).
 #   english-sebtype: the same decoder with SebType's own model (engines/sebtype-lm on llama.cpp, LLAMA_DIR).
 #   english-core: the new keyboard's English, core/src/english.cpp (#244), with the same model.
@@ -18,21 +17,6 @@ set(JNI_INCLUDE ${JNI_H} ${JNI_H}/linux)
 
 set(HARNESS_SRC src/main.cpp src/fake_jni.cpp src/decoder.cpp)
 
-# Today's: FUTO's own file list, used in place.
-set(FUTO_CPP ${CMAKE_CURRENT_SOURCE_DIR}/../../app/src/main/cpp)
-set(CMAKE_CURRENT_SOURCE_DIR_SAVED ${CMAKE_CURRENT_SOURCE_DIR})
-set(CMAKE_CURRENT_SOURCE_DIR ${FUTO_CPP})
-include(${FUTO_CPP}/NativeFileList.cmake)
-set(CMAKE_CURRENT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR_SAVED})
-add_library(futo_latinime STATIC ${LATIN_IME_CORE_SRC_FILES} ${LATIN_IME_JNI_SRC_FILES})
-target_include_directories(futo_latinime PRIVATE ${LATIN_IME_CORE_INCLUDE} ${LATIN_IME_JNI_INCLUDE} ${JNI_INCLUDE})
-# FUTO's code relies on headers the NDK's libc++ pulls in by itself.
-target_compile_options(futo_latinime PRIVATE -w -D_GNU_SOURCE "SHELL:-include string.h" "SHELL:-include math.h")
-add_executable(english-today ${HARNESS_SRC} src/today.cpp)
-target_include_directories(english-today PRIVATE ${JNI_INCLUDE})
-# Whole archive: the decoders register their methods from files nothing else references.
-target_link_libraries(english-today PRIVATE -Wl,--whole-archive futo_latinime -Wl,--no-whole-archive pthread dl m)
-
 # AOSP's: every source of its native library (Android.bp's LATIN_IME_CORE_SRC_FILES and the JNI files).
 if(NOT AOSP_JNI)
   message(FATAL_ERROR "AOSP_JNI: AOSP LatinIME's native/jni folder")
@@ -44,9 +28,10 @@ target_include_directories(aosp_latinime PRIVATE ${AOSP_JNI}/src ${JNI_INCLUDE})
 target_compile_options(aosp_latinime PRIVATE -w)
 add_executable(english-aosp ${HARNESS_SRC} src/aosp.cpp)
 target_include_directories(english-aosp PRIVATE ${JNI_INCLUDE})
+# Whole archive: the decoder registers its methods from files nothing else references.
 target_link_libraries(english-aosp PRIVATE -Wl,--whole-archive aosp_latinime -Wl,--no-whole-archive pthread dl m)
 
-# SebType's: AOSP's decoder and engines/sebtype-lm on llama.cpp, built for the CPU as the other two are.
+# SebType's: AOSP's decoder and engines/sebtype-lm on llama.cpp, built for the CPU as AOSP's is.
 if(LLAMA_DIR)
   foreach(off LLAMA_BUILD_TESTS LLAMA_BUILD_TOOLS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_SERVER LLAMA_CURL
               BUILD_SHARED_LIBS GGML_NATIVE GGML_OPENMP GGML_AVX512 GGML_BACKEND_DL)

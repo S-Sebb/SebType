@@ -218,7 +218,7 @@ phase_zh-deploy() { # switch to 中: the first-run Chinese setup (install and ch
   local deadline=$(( SECONDS + 600 ))
   while (( SECONDS < deadline )); do
     p=$(pss_kb); (( ${p:-0} > peak )) && peak=$p
-    log=$("$adb" logcat -d | grep -F 'ChineseIME (rime)' | tr -d '\r' || true) # nothing until setup logs
+    log=$("$adb" logcat -d -s SebType | tr -d '\r' || true) # nothing until setup logs
     [[ $log == *"Set up rime_ice in"* ]] && break
     sleep 1
   done

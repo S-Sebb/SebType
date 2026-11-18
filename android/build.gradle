@@ -1,4 +1,4 @@
-// SebType's Android build: the keyboard app (app/) and the libraries it builds on.
+// SebType's Android build: the keyboard app (app/) and its native library (native/).
 plugins {
     id 'com.android.application' version '8.10.1' apply false
     id 'com.android.library' version '8.10.1' apply false

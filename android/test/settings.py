@@ -7,10 +7,9 @@ chinese.py, which leaves SebType installed, chosen as the keyboard and Chinese s
 Opens every settings screen from the home screen (one screenshot each, settings-<screen>.png in
 LOGDIR), then checks that SebType's own options take effect while typing: the globe order, Chinese
 full-width punctuation, emoji among Chinese candidates, Chinese "My words", and forgetting learned
-words in Chinese and Japanese (and, on the new keyboard, English, which no save or restart brings back, #282); that Picnic is the only look, with no theme choice anywhere and the
+words in Chinese, Japanese and English (which no save or restart brings back, #282); that Picnic is the only look, with no theme choice anywhere and the
 same look in the system's dark mode (#111), its pink chip behind the first candidate and its pixel font
-in key popups (#28, settings-picnic-*.png in LOGDIR), English's rows as far apart as Gboard's (#161); that FUTO's payment screen and its row in About carry
-SebType's licence note (#112). Last, that long lists (300 of My words, the credits) scroll smoothly
+in key popups (#28, settings-picnic-*.png in LOGDIR), English's rows as far apart as Gboard's (#161). Last, that long lists (300 of My words, the credits) scroll smoothly
 in their pixel-framed cards on the cloth (#87). Then, with the system switched to 日本語 and back to en-US after,
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
 password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
@@ -22,7 +21,7 @@ phone-side counterparts reach the phone's folder, a crash's report reaches the s
 without typed words or the login (#33), the login is in no log or plain file, and the delete button
 empties the server. Then that made-up personal data of each kind imports through the backup
 screen's Import and is offered as candidates (#11): a Rime word list and Rime learned words in 中文,
-Mozc and MS-IME dictionaries in 日本語, FUTO's personal dictionary in English. Last, that a settings
+Mozc and MS-IME dictionaries in 日本語, the phone's personal dictionary (userdictionary.json) in English. Last, that a settings
 backup leaves clipboard history out unless its box is ticked, and that importing restores it (#34), and that a backup whose 中文 fails to start leaves the phone's Rime files (#282),
 with the backup screen's screenshot in English and Japanese (settings-backup-<locale>.png). Labels
 match the emulator's Chinese, English or Japanese UI. One line per check appended to RESULTS; each
@@ -51,22 +50,13 @@ CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 # for a check that fails only now and then (#258).
 REPEAT = int(os.environ.get("SEBTYPE_REPEAT") or 1)
 TIMING = {"settings-smooth-scrolling"}
-PKG = os.environ.get("SEBTYPE_PACKAGE") or "dev.sebb.sebtype"
-# The new keyboard and its settings (android/next, #191 stages 3 and 5), with the checks for what it doesn't
-# have yet skipped.
-NEXT = PKG == "dev.sebb.sebtype.next"
-IME = f"{PKG}/.SebTypeIme" if NEXT else f"{PKG}/org.futo.inputmethod.latin.LatinIME"
-FRAME_ID = f"{PKG}:id/keyboard" if NEXT else f"{PKG}:id/main_keyboard_frame"
-NEXT_SKIPS = {
-    "settings-payment-note": "no FUTO payment screens in the new app (#191 Decisions 7)",
-}
-SETTINGS = (
-    f"{PKG}/dev.sebb.sebtype.next.settings.SettingsActivity"
-    if NEXT
-    else f"{PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
-)
-IMPORT_ACTIVITY = "settings.ImportActivity" if NEXT else "ImportResourceActivity"
-BACKUP_FILES = "SebTypeSettings_*.backup" if NEXT else "FUTOKeyboardSettings_*.backup"
+PKG = "dev.sebb.sebtype"
+# The keyboard keeps the FUTO-based app's service name, so an update from it stays selected (#262).
+IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
+FRAME_ID = f"{PKG}:id/keyboard"
+SETTINGS = f"{PKG}/.settings.SettingsActivity"
+IMPORT_ACTIVITY = "settings.ImportActivity"
+BACKUP_FILES = "SebTypeSettings_*.backup"
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
 PREPARING = ("正在准备中文", "Preparing Chinese")
 NOT_CANDIDATES = (*PREPARING, "中文输入启动失败", "Chinese input failed")
@@ -167,11 +157,11 @@ def letter_keys(left, top, right, bottom):
 
 
 def keys(ns):
-    # The new keyboard labels its letters as shown, in capitals while Shift is on.
+    # The keyboard labels its letters as shown, in capitals while Shift is on.
     return {
         label.lower(): (x, y, top)
         for label, x, y, top, cls in ns
-        if re.fullmatch(r"[a-zA-Z]" if NEXT else r"[a-z]", label)
+        if re.fullmatch(r"[a-zA-Z]", label)
     }
 
 
@@ -251,10 +241,8 @@ def type_keys(text):
 
 
 def settle(seconds=30):
-    """The new keyboard's keys show when its engine thread answers (#241), which on the emulator can
+    """The keyboard's keys show when its engine thread answers (#241), which on the emulator can
     take a second a key in English: waits until the field stops changing."""
-    if not NEXT:
-        return
     last, end = None, time.time() + seconds
     while time.time() < end:
         if (text := field_text()) == last:
@@ -428,7 +416,7 @@ def home_shown():
     if screen_has(HOME["about"]):
         return True
     # A fresh install opens on setup until its last step's Done (#285), which a user presses once
-    if NEXT and setup_step_shown() == 3:
+    if setup_step_shown() == 3:
         tap_text(DONE)
         return False
     # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
@@ -487,13 +475,6 @@ passed = set()
 
 
 def check(name, fn, needs=()):
-    if (
-        NEXT
-        and name in NEXT_SKIPS
-        and (not CHECKS or any(name.startswith(c) for c in CHECKS))
-    ):
-        result("SKIP", name, f"new keyboard: {NEXT_SKIPS[name]}")
-        return
     # A named run of settings-japanese leaves the system in 日本語, and the file picker's labels the
     # checks after it read (Downloads, Show roots) are English: settings-locale-back always runs.
     if (
@@ -563,9 +544,7 @@ SCREENS = [
     (
         "keyboard",
         (HOME["keyboard"],),
-        labels("显示数字行", "Show number row", "数字行を表示")
-        if NEXT
-        else labels("尺寸和位置", "Size and position", "サイズと位置"),
+        labels("显示数字行", "Show number row", "数字行を表示"),
     ),
     (
         "resize",
@@ -576,14 +555,6 @@ SCREENS = [
             "キーボードサイズ調整",
             "キーボードのサイズ変更",
         ),
-    ),
-    (
-        "action-bar",
-        (
-            HOME["keyboard"],
-            labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
-        ),
-        labels("编辑快捷方式", "Edit Actions", "アクションの編集"),
     ),
     (
         "privacy",
@@ -614,19 +585,15 @@ SCREENS = [
         labels("Credits", "致谢", "クレジット"),
     ),
     (
-        "payment",
-        (HOME["about"], labels("支持 FUTO", "Support FUTO", "FUTO を支援")),
-        labels("为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"),
+        "licence",
+        (
+            HOME["about"],
+            labels("许可与致谢", "Licence and credits", "ライセンスとクレジット"),
+            (("Mozc",), 0),
+        ),
+        ("Mozc-LICENSE.txt",),
     ),
 ]
-
-
-# Not in the new app: the action bar's buttons screen (its keyboard edits them, #257); FUTO's payment
-# page (#191 Decisions 7). Only in the new app: Tips (#285).
-if NEXT:
-    SCREENS = [s for s in SCREENS if s[0] not in ("action-bar", "payment")]
-else:
-    SCREENS = [s for s in SCREENS if s[0] != "tips"]
 
 
 def every_screen():
@@ -828,10 +795,8 @@ def forget_japanese():
 
 
 def forget_english():
-    """The new keyboard forgets through English's running engine (#282): the word is gone at once, and
+    """The keyboard forgets through English's running engine (#282): the word is gone at once, and
     neither the engine's save as the field closes nor a restart that reads its files brings it back."""
-    if not NEXT:
-        raise Skip("today's app forgets through FUTO's own code")
     word = "zorbleq"  # made up, so only learning can offer it
     to_language("hello", "hello")
     open_field()
@@ -958,7 +923,6 @@ def smooth_scrolling():
 
 
 THEME = labels("主题", "Theme")
-THEME_ACTION = labels("主题切换器", "Theme Switcher")
 
 
 def nothing_shows(texts, swipes):
@@ -974,14 +938,7 @@ def nothing_shows(texts, swipes):
 def no_theme_choice():
     open_settings()
     nothing_shows(THEME, 2)
-    if NEXT:  # its action bar comes in stage 4
-        return "no Theme group on the home screen"
-    go(
-        HOME["keyboard"],
-        labels("操作栏按钮", "Action bar buttons", "アクションバーのボタン"),
-    )
-    nothing_shows(THEME_ACTION, 4)
-    return "no Theme group on the home screen, no theme switcher among the actions"
+    return "no Theme group on the home screen"
 
 
 # Picnic's own colours (theme/Picnic.kt): the cloth's two, the cream keys and cards, their lines, pink.
@@ -1097,42 +1054,6 @@ def gboard_size():
     if any(abs(p - 59) > 1 for p in pitches):
         raise Fail(summary)
     return summary
-
-
-NOTE_ROW = labels(
-    "FUTO 许可证要求；与 SebType 无关",
-    "Required by FUTO's licence; not related to SebType",
-)
-NOTE = labels(
-    "FUTO 的许可证要求 SebType 包含此页面。",
-    "FUTO's licence requires SebType to include this page.",
-)
-
-
-def screen_contains(texts):
-    return any(t in label for label, *_ in nodes() for t in texts)
-
-
-def payment_note():
-    go(HOME["about"])
-    wait_for(
-        f"the payment row's note ({NOTE_ROW[0]})", lambda: screen_contains(NOTE_ROW), 10
-    )
-    tap_text(labels("支持 FUTO", "Support FUTO", "FUTO を支援"))
-    wait_for(f"the licence note ({NOTE[0]})", lambda: screen_contains(NOTE), 10)
-    # The note only adds to FUTO's screen: its own title and payment options are still there.
-    wait_for(
-        "FUTO's payment title",
-        lambda: screen_has(
-            labels(
-                "为FUTO Keyboard支付", "Pay for FUTO Keyboard", "FUTO キーボードの購入"
-            )
-        ),
-        10,
-    )
-    return (
-        "About's Support FUTO row and the payment screen say FUTO's licence requires it"
-    )
 
 
 # --- Incognito (#31): the action bar button, its badge, and what is learned and copied meanwhile ---
@@ -1273,14 +1194,12 @@ def incognito_clipboard():
     for _ in range(2):
         if clipboard_capture(f"sebclip-ctl-{time.time_ns()}"):
             break
-        if NEXT:  # the switch is the keyboard's clipboard panel's (the settings app is stage 5's)
-            open_field()
-            if not screen_has(CLOSE_BAR):
-                tap_text(OPEN_BAR)
-            tap_text(CLIPBOARD_ACTION)
-            tap_text(KEEP_CLIPBOARD)
-        else:
-            toggle((HOME["privacy"],), KEEP_CLIPBOARD)
+        # The switch is the keyboard's clipboard panel's
+        open_field()
+        if not screen_has(CLOSE_BAR):
+            tap_text(OPEN_BAR)
+        tap_text(CLIPBOARD_ACTION)
+        tap_text(KEEP_CLIPBOARD)
     else:
         raise Fail("clipboard history keeps no copy even from a normal field")
     private = f"sebclip-private-{time.time_ns()}"
@@ -1619,14 +1538,12 @@ def backup_installation_id():
 def backup_rime_fails():
     """A backup whose Chinese data doesn't start (#282): the import puts the phone's Rime files back and
     中文 types as before. The backup's patch leaves Rime without translators, so ranh offers no 然后."""
-    if not NEXT:
-        raise Skip("today's app restores through FUTO's own code")
     to_language("ni", "你")
     user = f"{FILES}/rime/user"
     marker, patch = "sebtype-282-test.txt", "rime_ice.custom.yaml"
     before = root(f"cat {user}/{patch} 2>/dev/null; true")
     # The options too (#285): the phone's languages and setup's record must come back, not the backup's languages
-    options = NEXT and has_root()
+    options = has_root()
     if options:
         saved = read_prefs()
         write_prefs(
@@ -1751,8 +1668,6 @@ def backup_setup():
     """#285: through the app's own export and import, today's app's languages (globe order, layouts) go with
     a backup and setup's record never does. A set-up phone's backup opened on a new phone keeps them, and
     setup still runs there; the new phone's export has them again."""
-    if not NEXT:
-        raise Skip("today's app has no setup record")
     if not has_root():
         raise Skip("needs root to read and plant the app's options")
     name = "sebtype-285.backup"
@@ -1959,7 +1874,7 @@ def wait_step(step):
 
 
 def other_keyboard():
-    """Today's FUTO Keyboard, which emulator.sh installs beside SebType"""
+    """Stock FUTO Keyboard, which emulator.sh installs beside SebType"""
     imes = adb("shell", "ime", "list", "-a", "-s").split()
     futo = next(i for i in imes if i.startswith("org.futo.inputmethod.latin/"))
     adb("shell", "ime", "enable", futo)
@@ -2233,19 +2148,18 @@ def tips_screenshots():
     return ", ".join(shots)
 
 
-if NEXT:
-    check("settings-setup-tips", setup_tips)
-    check(
-        "settings-setup-fresh-enabled",
-        setup_fresh_enabled,
-        needs=["settings-setup-tips"],
-    )
-    check(
-        "settings-setup-existing-user",
-        setup_existing_user,
-        needs=["settings-setup-tips"],
-    )
-    check("settings-tips-screenshots", tips_screenshots)
+check("settings-setup-tips", setup_tips)
+check(
+    "settings-setup-fresh-enabled",
+    setup_fresh_enabled,
+    needs=["settings-setup-tips"],
+)
+check(
+    "settings-setup-existing-user",
+    setup_existing_user,
+    needs=["settings-setup-tips"],
+)
+check("settings-tips-screenshots", tips_screenshots)
 
 
 check("settings-screens", every_screen)
@@ -2260,7 +2174,6 @@ check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
 check("settings-picnic-look", picnic_look)
 check("settings-picnic-size", gboard_size)
-check("settings-payment-note", payment_note)
 check("settings-smooth-scrolling", smooth_scrolling)
 
 
@@ -2739,11 +2652,8 @@ def sync_personal_dictionaries():
         )
         to_language("nihongo", "日本語")
         ja = candidates_for("purumoni")
-        # The new keyboard has no English suggestions yet (#246): the word reaching the dictionary is all.
+        # English: the word reaching the dictionary is all this checks (#246).
         en = None
-        if not NEXT:
-            to_language("hello", "hello")
-            en = suggested_after(OTHER_EN.lower())
     finally:
         delete_words()
     offered = "no English suggestions yet" if en is None else en[:4]
@@ -2800,27 +2710,14 @@ def sync_credentials_private():
 
 
 def english_strings():
-    """SebType's English strings as patterns (%d is any number), and FUTO's one SebType translates;
+    """SebType's English strings as patterns (%d is any number), and one that isn't SebType's;
     not those that read the same in 日本語 (the name SebType)."""
 
     def strings(path):
         return {e.get("name"): e for e in ET.parse(os.path.join(HERE, path)).getroot()}
 
     texts = {"Fuzzy Pinyin"}
-    # SebType's strings, and FUTO's that SebType rewrote in place
-    sources = (
-        (("../next/src/main/res", "strings-settings.xml", None),)
-        if NEXT
-        else (
-            ("../app/src/main/res", "strings-sebtype.xml", None),
-            ("../app/src/main/res", "strings-appname.xml", {"english_ime_settings"}),
-            (
-                "../app/src/main/res",
-                "strings-uix.xml",
-                {"setup_welcome_text", "setup_active_input_method"},
-            ),
-        )
-    )
+    sources = (("../app/src/main/res", "strings-settings.xml", None),)
     for d, f, names in sources:
         ja = strings(f"{d}/values-ja/{f}")
         for name, e in strings(f"{d}/values/{f}").items():
@@ -3081,7 +2978,6 @@ for name in PERSONAL_DATA:
 check("settings-backup-clipboard", backup_clipboard)
 check("settings-backup-installation-id", backup_installation_id)
 check("settings-backup-rime-fails", backup_rime_fails)
-if NEXT:
-    check("settings-backup-setup", backup_setup)
+check("settings-backup-setup", backup_setup)
 check("settings-backup-screenshots", backup_screenshots)
 adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)

@@ -25,7 +25,7 @@ struct ObjArr : Obj {
 };
 
 JNIEnv *env();
-// The native method CLASS.NAME as registered, e.g. "org/futo/inputmethod/latin/BinaryDictionary.openNative".
+// The native method CLASS.NAME as registered, e.g. "com/android/inputmethod/latin/BinaryDictionary.openNative".
 void *method(const std::string &classAndName);
 
 // Objects the native code creates (strings, classes) live until the next clear().

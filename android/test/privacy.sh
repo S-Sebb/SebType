@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Privacy checks for #29 on the release APK: no typed-text logs compiled in, no backup or device transfer,
 # no cleartext traffic and only system certificate authorities (#12),
-# the "try typing here" popup not exported, and (on a free emulator, android/emulator.sh) the installed app's backup flags.
+# and (on a free emulator, android/emulator.sh) the installed app's backup flags.
 # One line per check in ~/scratch/SebType/<issue>/test-privacy-results.txt; logs next to it. Exit 0 only if all pass.
 # Typing in all three languages while watching logcat is checked by hand through T3's device tools.
 set -uo pipefail
@@ -36,10 +36,9 @@ check transfer-rules grep -q 'dataExtractionRules' "$out/test-privacy-manifest.t
 rules=$("$bt/aapt2" dump resources "$apk" | awk '/xml\/data_extraction_rules$/ {getline; print $3}')
 check rules-exclude-all bash -c "x=\$('$bt/aapt2' dump xmltree --file '$rules' '$apk'); \
   ! grep -q 'E: include' <<<\"\$x\" && [[ \$(grep -c 'E: exclude' <<<\"\$x\") -eq 18 ]]"
-check popup-not-exported bash -c "grep -A3 'TextEditPopupActivity' '$out/test-privacy-manifest.txt' | grep -Eq 'exported.*=false'"
 # Sync (#12, H10 in #26): the network only through the app's config, which allows no cleartext and no
 # user-installed certificate authorities.
-netcfg=$("$bt/aapt2" dump resources "$apk" | awk '/xml\/sebtype_network_security$/ {getline; print $3}')
+netcfg=$("$bt/aapt2" dump resources "$apk" | awk '/xml\/network_security$/ {getline; print $3}')
 check network-config bash -c "grep -q 'networkSecurityConfig' '$out/test-privacy-manifest.txt' &&
   x=\$('$bt/aapt2' dump xmltree --file '$netcfg' '$apk') && grep -q 'cleartextTrafficPermitted.*=false' <<<\"\$x\" &&
   [[ \$(grep -c 'E: certificates' <<<\"\$x\") -eq 1 ]] && grep -q 'src.*=\"system\"' <<<\"\$x\""

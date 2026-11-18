@@ -3,11 +3,11 @@ in #47).
 
   make_dict.py BASE WORDFREQ_LARGE_EN_MSGPACK_GZ SCOWL_HUNSPELL_DIR OUT_DICT OUT_COMBINED_GZ
 
-BASE is FUTO's main_en.dict (today's app) or AOSP's en_US_wordlist.combined.gz (the new keyboard, #244).
+BASE is AOSP's en_US_wordlist.combined.gz (#244).
 - Words: all of the base's, plus wordfreq's frequent words (top 200 k) that it lacks and that SCOWL's
   en_US-large spell checker accepts, as written, capitalised, or in SCOWL's own mixed case (GitHub).
   All-caps forms are left out, as the base lists leave out acronyms.
-- The new keyboard's list also gets TEXTING_WORDS, common texting forms (#266), at wordfreq's weight but at
+- The list also gets TEXTING_WORDS, common texting forms (#266), at wordfreq's weight but at
   most TEXTING_MAX, so they are offered and left alone when typed without pushing out the words they look like.
 - Weights: wordfreq's, mapped onto the base's 0-255 scale by rank over the words both lists share.
   Base words that wordfreq lacks keep their weight; the typo entries (not_a_word, e.g. "wierd"
@@ -68,13 +68,6 @@ TEXTING_WORDS = [
 ]
 TEXTING_MAX = 90  # about the 85th percentile of the list's weights
 ATTRS = {
-    "date": "1762646400",
-    "dictionary": "main:en",
-    "locale": "en",
-    "version": "54",
-    "description": "English (FUTO words, wordfreq weights, SCOWL-checked modern words)",
-}
-AOSP_ATTRS = {
     "date": "1763164800",
     "dictionary": "main:en_us",
     "locale": "en_US",
@@ -205,13 +198,7 @@ def scowl_spellings(words, hunspell_dir):
 
 
 def main(base_path, wordfreq_path, hunspell_dir, out_dict, out_combined):
-    aosp = base_path.endswith(".combined.gz")
-    base = (
-        read_combined(base_path)
-        if aosp
-        else v202.decode(Path(base_path).read_bytes())[1]
-    )
-    attrs = AOSP_ATTRS if aosp else ATTRS
+    base = read_combined(base_path)
     # The base's real words on one lowercase scale, as the #40 benchmark compares them.
     ref = {}
     for w, (f, not_a_word, offensive, _) in base.items():
@@ -267,20 +254,19 @@ def main(base_path, wordfreq_path, hunspell_dir, out_dict, out_combined):
             x.lower() in offensive for x in stems | {spelling}
         )
         words[spelling] = (weight[w], False, flagged, [])
-    if aosp:
-        for w in TEXTING_WORDS:
-            assert w not in words, w
-            words[w] = (min(weight[w], TEXTING_MAX), False, False, [])
+    for w in TEXTING_WORDS:
+        assert w not in words, w
+        words[w] = (min(weight[w], TEXTING_MAX), False, False, [])
     print(
         f"base words {len(base)}, reweighted {sum(words[w] != base[w] for w in base)}, added {len(added)} "
         f"({sum(words[s][2] for s, _ in added.values())} marked offensive), total {len(words)}",
         file=sys.stderr,
     )
 
-    data = v202.encode(attrs, words)
+    data = v202.encode(ATTRS, words)
     Path(out_dict).write_bytes(data)
     with gzip.open(out_combined, "wt", encoding="utf-8") as out:
-        out.write(",".join(f"{k}={v}" for k, v in attrs.items()) + "\n")
+        out.write(",".join(f"{k}={v}" for k, v in ATTRS.items()) + "\n")
         for w, (f, not_a_word, offensive, shortcuts) in sorted(
             words.items(), key=lambda x: (-x[1][0], x[0])
         ):
