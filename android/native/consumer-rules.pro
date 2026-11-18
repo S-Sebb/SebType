@@ -8,5 +8,5 @@
     <fields>;
 }
 
-# English's worker thread calls it from native code.
--keep class dev.sebb.sebtype.core.NativeCore { void englishReady(); }
+# English's and 中文's worker threads call them from native code.
+-keep class dev.sebb.sebtype.core.NativeCore { void englishReady(); void chineseReady(); }

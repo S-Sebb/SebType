@@ -36,7 +36,7 @@ android {
                 "-DSEBTYPE_CORE_DIR=${repoRoot}/core",
                 "-DMOZC_LIBS_DIR=${mozcLibs.get().asFile.absolutePath}",
                 "-DRIME_DEPS_CACHE=${depsCache}",
-                '-DSEBTYPE_ENGLISH=ON', "-DLLAMA_DIR=${llamaDir}",
+                '-DSEBTYPE_ENGLISH=ON', '-DSEBTYPE_CHINESE_MODEL=ON', "-DLLAMA_DIR=${llamaDir}",
                 '-DCMAKE_BUILD_TYPE=Release'
             // SebType (#225): Ninja runs at most build.sh's BUILD_JOBS compiles at once (by default, one a core).
             if (findProperty('sebtypeJobs')) {

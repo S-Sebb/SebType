@@ -32,18 +32,23 @@ FROST_CORE=(8105 41448 base ext others corrections)
 # double-pinyin schemes are left out. melt_eng and radical_pinyin stay: rime_ice uses them.
 # OpenCC's simplified → traditional conversion, which rime-ice's 简/繁 switch (traditionalization, #36)
 # runs: its s2t config and the two dictionaries that config reads, compiled to OpenCC's binary format
-# with the host's libopencc (the format is the same in every OpenCC since 1.0).
+# with the host's libopencc (the format is the same in every OpenCC since 1.0). And t2s, its way back, for
+# SebType's Chinese model (core/src/chinese.cpp, #264): it reads simplified text, so with 繁 on it reads
+# Rime's candidates and the field's text through t2s.
 OPENCC_VERSION=1.1.9
 OPENCC_URL=https://raw.githubusercontent.com/BYVoid/OpenCC/ver.$OPENCC_VERSION/data
 OPENCC_S2T_SHA256=710bb970e406d9c0a3dd33c609248686cf1c5578d064b7b7fc89e70fbb9ea75d
 OPENCC_PHRASES_SHA256=17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b
 OPENCC_CHARACTERS_SHA256=ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41
+OPENCC_T2S_SHA256=b818534194f27c2d95f01001edb0a5ec49b9050119892cb30a0504bb202cc07c
+OPENCC_TS_PHRASES_SHA256=504169029c43f7f234b8e2ae470720af3657675c5574ff8aa0feb257e1dc5ce2
+OPENCC_TS_CHARACTERS_SHA256=6b5a0a799bea2bb22c001f635eaa3fc2904310f0c08addbff275477a80ecf09a
 # The tables are compiled with the host's librime, which must be engines/librime's version (the one the
 # phone builds, android/native), so the phone takes the compiled files as they are.
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=6
+BUNDLE_REVISION=7
 
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
@@ -91,6 +96,9 @@ if [[ ! -f $zip ]]; then
   cp "$(fetch "$OPENCC_URL/config/s2t.json" "$OPENCC_S2T_SHA256")" "$s/opencc/s2t.json"
   "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STPhrases.txt" "$OPENCC_PHRASES_SHA256")" "$s/opencc/STPhrases.ocd2"
   "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STCharacters.txt" "$OPENCC_CHARACTERS_SHA256")" "$s/opencc/STCharacters.ocd2"
+  cp "$(fetch "$OPENCC_URL/config/t2s.json" "$OPENCC_T2S_SHA256")" "$s/opencc/t2s.json"
+  "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/TSPhrases.txt" "$OPENCC_TS_PHRASES_SHA256")" "$s/opencc/TSPhrases.ocd2"
+  "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/TSCharacters.txt" "$OPENCC_TS_CHARACTERS_SHA256")" "$s/opencc/TSCharacters.ocd2"
   python3 -I - "$work/frost/rime_frost.dict.yaml" "$s" "${FROST_CORE[*]}" <<'EOF'
 import re, sys
 frost, shared, core = sys.argv[1], sys.argv[2], sys.argv[3].split()
