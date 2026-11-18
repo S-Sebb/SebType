@@ -61,4 +61,21 @@ key → text on screen stayed at 16 / 28 ms (EN), 18 / 35 ms (fast) and 28 / 46 
 
 ## Phone (nothing-a001, A001, Android 16)
 
-Not measured yet: the orchestrator runs `perf.sh --english` with the owner present.
+2026-11-18, the owner present: `perf.sh --english` with the release build of PR #357's head before its review fix (95096650d4; the fix changed only `table.py` and the SQL), `RUNS=3`. Its table was recomputed from the saved traces with the merged `jobs.sql` and `table.py`.
+
+| Set | Ranking, median / p95 (n) | Next words, median / p95 (n) | Spaces decided by the model | Space's wait, median / p95 |
+|---|---|---|---|---|
+| EN, 700 ms per key | 21 / 46 ms (104) | 42 / 51 ms (29) | 27 of 27 (100 %): ready 27 | none waited |
+| Fast, 100 ms per key | 24 / 46 ms (70) | 42 / 51 ms (19) | 18 of 18 (100 %): ready 18 | none waited |
+| Long field, 100 ms per key | 41 / 105 ms (27) | 456 / 469 ms (18) | 17 of 18 (94 %): ready 7, waited 10; not waited for 1 | 97 / 249 ms (10 spaces) |
+
+key → text on screen: 16 / 23 ms (EN), 15 / 20 ms (fast), 25 / 82 ms (long). key → keyboard idle in EN: 49 / 66 ms.
+No janky keyboard frames in fast or long typing. EN had 4 keyboard frames past their deadline.
+
+- **EN and fast:** a ranking takes about 20 ms on the phone, against 340 ms on the emulator, so every
+  space finds the model's ranking ready, even at 100 ms per key, and none waits.
+- **Long field:** the next words for the 20,000-character text take about 460 ms each, and a ranking queues
+  behind them. So 10 of 18 spaces wait for the ranking, 97 ms at the median and 249 ms at p95, and the space
+  shows that much later. One space expected too long a wait and took the decoder's rule. #359 tracks
+  making the long field's next words cheaper.
+- The emulator's key → idle (about 330 ms median in #351) is Berberis: on the phone it is 49 ms.
