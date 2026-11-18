@@ -416,13 +416,9 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         if (w != null && (w.end < 0) != (s == null)) return run { w.dead = !done }
         if (s == null) {
             val sw = w ?: Swipe(-1, -1, "", 0).also { if (!done) swipe = it }
-            if (words > sw.words) {
-                // A word the field marked as composing: deleteSurroundingText would go from its start
-                ic.finishComposingText()
-                composing = false
-                repeat(words - sw.words) { deleteBefore() }
-                sw.words = words
-            }
+            // The field's own Backspace: without its cursor's place, a selection in it can't be seen either
+            repeat(words - sw.words) { key(KeyEvent.KEYCODE_DEL) }
+            sw.words = maxOf(sw.words, words)
             return
         }
         // The text before where the swipe started: with the selection our last step left in it

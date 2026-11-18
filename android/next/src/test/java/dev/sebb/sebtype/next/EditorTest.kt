@@ -72,9 +72,13 @@ class EditorTest {
             changed()
         }
 
-        /** A key event: Delete takes the character before the cursor */
+        /** A key event: Delete takes the selection, else the character before the cursor */
         fun key(code: Int) {
-            if (code == KeyEvent.KEYCODE_DEL && cursor > 0) {
+            if (code == KeyEvent.KEYCODE_DEL && end > cursor) {
+                text = text.removeRange(cursor, end)
+                end = cursor
+                changed()
+            } else if (code == KeyEvent.KEYCODE_DEL && cursor > 0) {
                 text = text.removeRange(cursor - 1, cursor)
                 cursor--
                 end--
@@ -745,6 +749,28 @@ class EditorTest {
         ime.editor.selectWordsBefore(2, false)
         ime.editor.selectWordsBefore(2, true)
         assertEquals("one two thr", field.text)
+    }
+
+    /**
+     * #325: a field that can't say where its cursor is, and gave none when it came up, with "def" selected in
+     * it: the swipe's Backspace is the field's own, which takes the selection. One of ours would take the "c"
+     * before it and leave "def" selected.
+     */
+    @Test
+    fun aDeleteSwipeWhereTheCursorIsUnknownTakesTheSelection() {
+        val field = Field("abcdefghi", 3, Extract.NONE).also { it.end = 6 }
+        val service = object : InputMethodService() {
+            override fun getCurrentInputConnection() = field.connection
+            override fun sendDownUpKeyEvents(keyEventCode: Int) = field.key(keyEventCode)
+        }
+        val editor = Editor(service)
+        editor.start(EditorInfo().apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            initialSelStart = -1
+            initialSelEnd = -1
+        }, FieldKind.of(null))
+        editor.selectWordsBefore(1, false)
+        assertEquals("abcghi", field.text)
     }
 
     /**
