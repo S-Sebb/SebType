@@ -57,7 +57,8 @@ build_host_ready() {
 # build host, in a copy of this checkout there, ~/scratch/SebType/<task>/<checkout>: rsynced with its
 # uncommitted changes but not what git ignores.
 # DEVQ_RANK, ISSUE and the NAME=VALUEs go with it. The files SCRIPT prints, in the copy or in the host's
-# ~/scratch/SebType, are copied back to the same place here, and their paths printed.
+# ~/scratch/SebType, are copied back to the same place here, and their paths printed. If SCRIPT fails, what it
+# printed goes to stderr instead (linux/build.sh prints the reason there).
 build_remotely() {
   local root dir out f rel here
   root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -71,7 +72,7 @@ build_remotely() {
     rsync -a --delete --exclude=/.git --filter='. -' --filter=':- .gitignore' \
       --rsync-path="mkdir -p scratch/SebType/$dir && rsync" "$root/" "$BUILD_HOST:scratch/SebType/$dir/" || return 1
   out=$(ssh "$BUILD_HOST" "cd scratch/SebType/$dir && $(printf '%q ' env "${env[@]}" "$@")") ||
-    { echo "build: failed on $BUILD_HOST" >&2; return 1; }
+    { [[ -z $out ]] || echo "$out" >&2; echo "build: failed on $BUILD_HOST" >&2; return 1; }
   for f in $out; do
     rel=${f#*/scratch/SebType/}
     if [[ $rel == "$dir"/* ]]; then here=$root/${rel#"$dir"/}; else here=$SCRATCH/$rel; fi
