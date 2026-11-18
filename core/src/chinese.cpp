@@ -112,10 +112,12 @@ class Chinese final : public Engine {
     worker_ = std::thread([this] { work(); });
   }
 
+  // A ranking in flight stops at its next step and is dropped: no ready() comes once the engine stops.
   ~Chinese() override {
     {
       std::lock_guard g(mutex_);
       stop_ = true;
+      revNow_ = ~uint64_t{0};
     }
     wake_.notify_all();
     worker_.join();
@@ -145,7 +147,10 @@ class Chinese final : public Engine {
   std::string aux() override { return rime_->aux(); }
   bool composing() override { return rime_->composing(); }
   std::string unfinished() override { return rime_->unfinished(); }
+  // What the strip shows first is what a flush commits (a field change, the keyboard hidden): the model's
+  // candidate, taught to Rime as a pick would be; Rime's own preview when the model's list isn't shown.
   void flush() override {
+    if (rime_->composing() && modelShown_ && shownRev_ == rev_ && !shown_.empty()) return pick(0);
     rime_->flush();
     changed();
   }
@@ -285,15 +290,14 @@ class Chinese final : public Engine {
       return;
     }
     const Item item = shown_[index];
-    {
-      // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
-      // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
-      TraceSection section("SebType zh pick");
-      TraceSection mark(!rime_->composing() ? "next word"
-                        : !modelShown_      ? "rime"
-                        : item.rime >= 0    ? "model: rime's"
-                                            : "model: own");
-    }
+    // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
+    // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
+    // Both sections cover the pick's work: Rime's selection, teach()'s search piece by piece, the next list.
+    TraceSection section("SebType zh pick");
+    TraceSection mark(!rime_->composing() ? "next word"
+                      : !modelShown_      ? "rime"
+                      : item.rime >= 0    ? "model: rime's"
+                                          : "model: own");
     if (item.rime >= 0) rime_->selectAt(item.rime);
     else if (rime_->composing()) teach(item);
     else {

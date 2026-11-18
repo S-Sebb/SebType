@@ -835,7 +835,8 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
 #ifdef SEBTYPE_CHINESE_MODEL
 // Rime as the model sees it: a few words by their pinyin, a candidate list for the input not yet chosen
 // (FULL's sentence for all of it first, then the words that start it, longest first), and picks that consume
-// their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛.
+// their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛. A flush commits
+// what Rime previews, its first candidate, and learns nothing.
 struct FakeRime : Engine {
   std::map<std::string, std::vector<std::string>> words{
       {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
@@ -892,7 +893,10 @@ struct FakeRime : Engine {
   }
   std::string input() override { return in; }
   bool composing() override { return !in.empty(); }
-  void flush() override { clear(); }
+  void flush() override {
+    if (const auto l = list(); !l.empty()) commit += chosen + l[0].text + in.substr(done + l[0].letters);
+    clear();
+  }
   void clear() override { in.clear(), chosen.clear(), done = 0; }
   int pageSize() override { return 6; }
   bool candidateAt(int i, Candidate &out) override {
@@ -925,9 +929,10 @@ struct ChineseTest : testing::Test {
   std::unique_ptr<Engine> zh;
 
   void SetUp() override { start(); }
-  void start(std::chrono::milliseconds delay = {}) {
+  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}) {
     zh.reset();
     auto r = std::make_unique<FakeRime>();
+    if (setUp) setUp(*r);
     rime = r.get();
     zh = withChineseModel(std::move(r), {ZH_MODEL, ZH_OPENCC, 1, delay}, [this] {
       std::lock_guard g(mutex);
@@ -1024,5 +1029,56 @@ TEST_F(ChineseTest, PunctuationCommitsTheModelsFirst) {
   ASSERT_EQ(list().at(0), "我爱你");
   zh->key({',', 0, false});
   EXPECT_EQ(zh->takeCommit(), "我爱你，");
+}
+TEST_F(ChineseTest, FlushCommitsTheModelsFirst) {
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->flush();  // Rime's own flush would commit its sentence, 握挨泥
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
+  EXPECT_FALSE(zh->composing());
+}
+
+TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
+  start({}, [](FakeRime &r) { r.words["woai"] = {"我爱"}; });
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->picks.size(), 2u);  // 我爱, then 你
+  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
+}
+
+// Rime has no piece for what is left (as for a typo the model fixed): the model's text still commits, and
+// Rime, part chosen, learns nothing and keeps nothing.
+TEST_F(ChineseTest, AFailedTeachStillCommitsTheModelsText) {
+  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->picks.size(), 2u);  // 我, 爱
+  EXPECT_TRUE(rime->learned.empty());
+  EXPECT_FALSE(zh->composing());
+}
+
+// 发 is 發 or 髮 in 繁: OpenCC's phrases choose by the word, 头发 → 頭髮.
+TEST_F(ChineseTest, TraditionalTakesThePhrasesCharacter) {
+  zh->setAlternate(true);
+  typeAndWait("toufa");
+  const auto l = list();
+  EXPECT_NE(std::ranges::find(l, "頭髮"), l.end());
+  EXPECT_EQ(std::ranges::find(l, "頭發"), l.end());
+}
+
+TEST_F(ChineseTest, NoListComesAfterTheEngineStops) {
+  start(300ms);
+  typeAndWait("nihao");  // the model loaded
+  const int before = readyCount();
+  zh->clear();
+  type("woaini");
+  std::this_thread::sleep_for(100ms);  // its list on the way
+  zh.reset();
+  EXPECT_EQ(readyCount(), before);
 }
 #endif
