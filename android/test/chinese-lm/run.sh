@@ -5,10 +5,11 @@
 # runs agree.
 #
 #   SEBTYPE_ZH_MODEL=PATH [SEBTYPE_ZH_OPTIONS="rerank=4 rankWeight=1.5"] \
-#     [SEBTYPE_ZH_GEN_OPTIONS="generate=2 generatedRank=2"] android/test/chinese-lm/run.sh
+#     [SEBTYPE_ZH_GEN_OPTIONS="generate=2 generatedRank=2"] [SEBTYPE_ZH_CORE=1] android/test/chinese-lm/run.sh
 #
 # PATH is a GGUF file on the build host; the options are zhbench's, from tools/chinese-lm/tune.py. With
-# SEBTYPE_ZH_GEN_OPTIONS, a third stack runs the model with both sets of options. One line per
+# SEBTYPE_ZH_GEN_OPTIONS, a third stack runs the model with both sets of options; with SEBTYPE_ZH_CORE=1,
+# a fourth runs the keyboard's own code (core/src/chinese.cpp around Rime, #264). One line per
 # check in ~/scratch/SebType/<issue>/test-chinese-lm-results.txt, the table (docs/experiments/2026-11-16-chinese-lm.md's)
 # in chinese/table.md next to it, logs in chinese/run1/ and run2/. Exit 0 only if all pass. Both runs take about
 # 15 minutes with a model. It never runs on nobara-pc unless SEBTYPE_BUILD_HOST=local.
@@ -36,9 +37,10 @@ read -ra gen <<< "${SEBTYPE_ZH_GEN_OPTIONS:-}"
 ((${#gen[@]})) && options+=(-- "${gen[@]}")
 bench() {
   if [[ $BUILD_HOST == local ]]; then
-    timeout 5400 $here/bench.sh "$1" $model "${options[@]}"
+    CHINESE_CORE=${SEBTYPE_ZH_CORE:-} timeout 5400 $here/bench.sh "$1" $model "${options[@]}"
   else
-    timeout 5400 bash -c 'source tools/lib.sh; build_remotely "$@"' _ $here/bench.sh "$1" $model "${options[@]}"
+    timeout 5400 bash -c 'source tools/lib.sh; build_remotely "$@"' _ CHINESE_CORE="${SEBTYPE_ZH_CORE:-}" \
+      $here/bench.sh "$1" $model "${options[@]}"
   fi
 }
 for run in run1 run2; do

@@ -17,6 +17,7 @@ STACKS = {
     "rime": "Today: Rime, rime-ice + 白霜 + octagram",
     "model": "Rime, re-ranked by SebType's Chinese model",
     "gen": "… and the model's own candidates",
+    "core": "SebType's 中文: the model around Rime in core/ (#264)",
 }
 
 

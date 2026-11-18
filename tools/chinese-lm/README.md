@@ -20,7 +20,7 @@ has the results. Nothing here ships.
 - **Word ends.** A fifth special token, `<B>`, is never an input: its logit is trained, by binary cross-entropy,
   to say whether a word (by jieba) ends at each character. Next-word prediction uses it to know where to stop.
 
-In the harness (`android/test/chinese-lm/src/zh_lm.cpp`), the model scores Rime's first candidates as
+In the loader (`engines/sebtype-lm/zh_lm.cpp`, which the harness and core/ share), the model scores Rime's first candidates as
 `context <T>letters<S>candidate<E>` and re-ranks them with Rime's order (`rerank`, `rankWeight`); it can add
 its own candidates by beam search (`generate`), and with nothing typed it proposes next words. `tune.py`
 tunes those settings on dev sets (`make_sets.py --dev`), never on the test sets.

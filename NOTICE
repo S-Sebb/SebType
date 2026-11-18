@@ -8,6 +8,7 @@ SebType: which licence covers which part (README.md, "Licences", has the details
   - data/en-dict/en_US.dict: AOSP's en_US word list (Apache-2.0) with wordfreq's frequencies under
     CC BY-SA 4.0 (credits below).
   - engines/sebtype-lm/english.gguf: SebType's English model, CC BY-SA 4.0 (credits below).
+  - engines/sebtype-lm/chinese.gguf: SebType's Chinese model, CC BY-SA 4.0 (credits below).
   - android/app/src/main/res/font/sebtype_nunito_extrabold.ttf and sebtype_pixelify_semibold.ttf, the fonts in
     art/fonts/, and the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
   - SebType's Mozc in engines/mozc/, pc/linux/mozc-keymap.tsv, and Mozc's Japanese dictionary the Android
@@ -70,3 +71,15 @@ trained on, and is adapted from, these openly licensed texts (tools/english-lm/S
 - SODA, by the Allen Institute for AI: CC BY 4.0.
 - databricks-dolly-15k, by Databricks: CC BY-SA 3.0.
 - English Wikinews (dump of 2026-11-01), by Wikinews's contributors: CC BY 2.5.
+
+SebType's Chinese model (engines/sebtype-lm/chinese.gguf, trained by tools/chinese-lm, release r1) is licensed
+under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/).
+It was trained on, and is adapted from, these openly licensed texts (tools/chinese-lm/SOURCES.md has the
+revisions):
+
+- Chinese Wikipedia (dump of 2023-11-01, via the wikimedia/wikipedia dataset), by Wikipedia's contributors:
+  CC BY-SA.
+- LCCC base (Large-scale Cleaned Chinese Conversation, Wang et al. 2020, thu-coai), its train split: MIT.
+- OpenAssistant oasst2 (2023-11-05), its Chinese messages, by the OpenAssistant contributors: Apache-2.0.
+- Chinese Wikinews (dump of 2026-11-01), by Wikinews's contributors: CC BY 2.5.
+

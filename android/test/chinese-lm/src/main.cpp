@@ -12,6 +12,9 @@
 // NAME=VALUE sets a ranking weight (Options below), tuned on the dev sets (tune.py); dump=1 writes, after each
 // item's last key, every candidate the model scored to OUT.dump: item, Rime's rank (-1: the model's own, even
 // when Rime has it too, so tune.py can try fewer of Rime's), the model's log probability, the text. profile=1 writes each key's time per step (zh_lm::Profile) to OUT.prof.
+// core=1 runs the keyboard's own code instead (#264): core/'s Chinese engine, the model around Rime
+// (src/chinese.cpp, withChineseModel), each key timed until the model's list for it has come; the weights
+// are its own then, and of the options only threads counts.
 #include <sebtype/hosts.h>
 #include <unistd.h>
 
@@ -40,6 +43,7 @@ struct Options {
     int dump = 0;
     int profile = 0;
     int threads = 1;       // the model's
+    int core = 0;
 };
 
 struct Scored {
@@ -115,16 +119,23 @@ int main(int argc, char **argv) {
         if (kv.size() != 2) return std::cerr << "bad option " << argv[i] << "\n", 2;
         const std::map<std::string, float *> floats{{"rankWeight", &opt.rankWeight}, {"generatedRank", &opt.generatedRank}};
         const std::map<std::string, int *> ints{{"rerank", &opt.rerank}, {"generate", &opt.generate}, {"dump", &opt.dump},
-                                              {"profile", &opt.profile}, {"threads", &opt.threads}};
+                                              {"profile", &opt.profile}, {"threads", &opt.threads},
+                                              {"core", &opt.core}};
         if (floats.count(kv[0])) *floats.at(kv[0]) = std::stof(kv[1]);
         else if (ints.count(kv[0])) *ints.at(kv[0]) = std::stoi(kv[1]);
         else return std::cerr << "unknown option " << kv[0] << "\n", 2;
     }
-    if (argc > 5) model = std::make_unique<zh_lm::Model>(argv[5], opt.threads);
+    if (argc > 5 && !opt.core) model = std::make_unique<zh_lm::Model>(argv[5], opt.threads);
 
     sebtype::RimePaths paths{argv[1], argv[2], "", false, "rime_ice"};
     auto rime = sebtype::makeRime(paths);
     while (rime->busy()) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const bool core = argc > 5 && opt.core;
+    if (core) {
+        sebtype::ChineseModelPaths zh{argv[5], std::string(argv[1]) + "/opencc", opt.threads};
+        zh.synchronous = true;
+        rime = sebtype::withChineseModel(std::move(rime), zh, nullptr);
+    }
 
     std::ifstream in(argv[3]);
     std::ofstream out(argv[4]), keysOut(std::string(argv[4]) + ".keys");
@@ -147,9 +158,32 @@ int main(int argc, char **argv) {
         item++;
         rime->clear();
         std::vector<std::string> list;
+        if (core) {
+            // As the keyboard: the field's text before the cursor (untimed), then the keys, or for a next
+            // word the text's last two characters typed in.
+            std::string before = context;
+            if (keys.empty())
+                for (int n = 0; n < 2 && !before.empty(); n++) {
+                    while ((static_cast<unsigned char>(before.back()) & 0xc0) == 0x80) before.pop_back();
+                    before.pop_back();
+                }
+            rime->setContext(before, "", false);
+            const auto t0 = clock::now();
+            if (keys.empty()) rime->setContext(context, "", false);
+            for (size_t i = 0; i < keys.size(); i++) {
+                const auto k0 = clock::now();
+                sebtype::Key k;
+                k.sym = static_cast<unsigned char>(keys[i]);
+                rime->key(k);
+                list = texts(rime->candidates(opt.pageSize));
+                keysOut << std::chrono::duration<double, std::micro>(clock::now() - k0).count() << "\n";
+            }
+            list = texts(rime->candidates(13));
+            if (keys.empty()) keysOut << std::chrono::duration<double, std::micro>(clock::now() - t0).count() << "\n";
+        }
         // The keyboard reads the text before the cursor when it changes, before any key: untimed, as in the
         // English harness. A next word is timed from the commit of the text's last two characters.
-        if (model) {
+        if (model && !core) {
             std::string before = context;
             if (keys.empty())
                 for (int n = 0; n < 2 && !before.empty(); n++) {
@@ -158,14 +192,14 @@ int main(int argc, char **argv) {
                 }
             model->prime(before);
         }
-        if (keys.empty()) {
+        if (keys.empty() && !core) {
             const auto t0 = clock::now();
             list = texts(rime->candidates(10));
             if (model)
                 for (const auto &w : model->nextWords(context, 3)) list.push_back(w.text);
             keysOut << std::chrono::duration<double, std::micro>(clock::now() - t0).count() << "\n";
         }
-        for (size_t i = 0; i < keys.size(); i++) {
+        for (size_t i = 0; i < keys.size() && !core; i++) {
             const auto t0 = clock::now();
             sebtype::Key k;
             k.sym = static_cast<unsigned char>(keys[i]);

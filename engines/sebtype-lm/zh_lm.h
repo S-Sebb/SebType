@@ -1,8 +1,9 @@
-// SebType's Chinese model (tools/chinese-lm) on llama.cpp, for the experiment of #259: how likely each of Rime's
-// candidates is the text meant by the letters typed, the model's own candidates for them, and next words.
-// MIT, SebType.
+// SebType's Chinese model (tools/chinese-lm) on llama.cpp (#259, #264): how likely each of Rime's candidates is
+// the text meant by the letters typed, the model's own candidates for them, and next words. Not thread-safe:
+// one thread at a time. MIT, SebType.
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -12,6 +13,10 @@ struct llama_model;
 struct llama_vocab;
 
 namespace zh_lm {
+
+// The letters the model reads, at most: with the context, a candidate and its end, within the 256 positions it
+// was trained on. The rest are left out.
+constexpr size_t MAX_LETTERS = 64;
 
 // Where a key's time goes (main.cpp's profile=1): microseconds per step since the last reset, and counts.
 struct Profile {
@@ -48,6 +53,8 @@ public:
     std::vector<Text> nextWords(const std::string &context, size_t n);
 
     Profile profile;
+    // Asked between generate()'s steps: true ends it early, with no candidates (the letters changed since).
+    std::function<bool()> stale;
 
 private:
     std::vector<int> tokenize(const std::string &text) const;

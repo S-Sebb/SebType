@@ -1,5 +1,6 @@
 // SebType's Chinese model on llama.cpp's public API (llama.h). The model's text format is tools/chinese-lm's
 // (pack.py): <s> text, and a pinyin example "<T>typed letters<S>text<E>" in front of the text it types.
+// core/src/chinese.cpp runs it around Rime (#264); the Chinese harness (android/test/chinese-lm) measures it.
 // MIT, SebType.
 #include "zh_lm.h"
 
@@ -17,7 +18,14 @@
 namespace zh_lm {
 namespace {
 
-constexpr size_t CONTEXT_CHARS = 64;  // the field's text before the cursor the model reads, at most
+constexpr size_t CONTEXT_CHARS = 64;  // the field's text before the cursor the model reads, at most, and its tokens
+// The cache's cells, shared by every sequence: the example (at most 64 context tokens and MAX_LETTERS), the
+// candidates' tree and the beam's steps take well under 512. Each decode takes at most 256 tokens, which also
+// sizes llama.cpp's logits and compute buffers (#264: 1,024 cells and 512 tokens cost some 20 MB more).
+constexpr int CELLS = 512, BATCH = 256;
+// The candidates' tree, at most: with the example and the beam's steps (2 · width · MAX_LETTERS at most) it
+// stays within CELLS. A text that doesn't fit is left out, and scores -inf.
+constexpr size_t TREE_MAX = 240;
 constexpr int MAX_BRANCHES = 48;  // score()'s texts and twice generate()'s width, at most
 constexpr int NEXT_FIRST = 8;   // first characters nextWords() follows
 constexpr int NEXT_BEAM = 6;    // word prefixes it keeps at each length
@@ -65,11 +73,12 @@ Model::Model(const std::string &path, int threads) {
     });
     auto mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
+    mp.progress_callback = [](float, void *) { return true; };  // no dots on stderr
     mModel = llama_model_load_from_file(path.c_str(), mp);
     if (!mModel) throw std::runtime_error("zh-lm: can't load " + path);
     auto cp = llama_context_default_params();
-    cp.n_ctx = 1024;
-    cp.n_batch = cp.n_ubatch = 512;
+    cp.n_ctx = CELLS;
+    cp.n_batch = cp.n_ubatch = BATCH;
     cp.n_seq_max = MAX_BRANCHES + 1;
     cp.n_threads = cp.n_threads_batch = threads;
     cp.kv_unified = true;
@@ -134,14 +143,15 @@ std::vector<int> Model::contextTokens(const std::string &context) const {
     const auto nl = context.rfind('\n');
     std::vector<int> out{mBos};
     const auto text = tokenize(lastChars(nl == std::string::npos ? context : context.substr(nl + 1), CONTEXT_CHARS));
-    out.insert(out.end(), text.begin(), text.end());
+    // Characters outside the vocabulary take a token per byte: the positions stay within the model's 256.
+    out.insert(out.end(), text.end() - std::min(text.size(), CONTEXT_CHARS), text.end());
     return out;
 }
 
 std::vector<int> Model::examplePrefix(const std::string &context, const std::string &typed) const {
     std::vector<int> prefix = contextTokens(context);
     prefix.push_back(mT);
-    for (char c : typed)
+    for (char c : typed.substr(0, MAX_LETTERS))
         if (c >= 'a' && c <= 'z') prefix.push_back(mLetter[c - 'a']);
     prefix.push_back(mS);
     return prefix;
@@ -196,6 +206,9 @@ void Model::decodeExample(const std::vector<int> &prefix, const std::vector<std:
     int nSeqs = 0;
     for (const auto &f : followers) {
         if (f.empty()) continue;
+        size_t added = 0;
+        for (size_t n = 1; n <= f.size(); n++) added += !at.count({f.begin(), f.begin() + n});
+        if (paths.size() + added > TREE_MAX) continue;
         if (++nSeqs > MAX_BRANCHES) throw std::runtime_error("zh-lm: too many branches");
         std::vector<int> path;
         for (int t : f) {
@@ -292,11 +305,14 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     std::vector<float> out;
     for (const auto &p : pieces) {
         std::vector<int> path;
+        out.push_back(0);
         for (size_t j = 0; j < p.size(); j++) {
-            const Node &n = mNodes.at(path);
-            const float lp = n.logits[p[j]] - n.norm;
-            if (j == 0) out.push_back(lp);
-            else out.back() += lp;
+            const auto n = mNodes.find(path);
+            if (n == mNodes.end()) {  // left out of the tree
+                out.back() = -INFINITY;
+                break;
+            }
+            out.back() += n->second.logits[p[j]] - n->second.norm;
             path.push_back(p[j]);
         }
     }
@@ -337,6 +353,11 @@ std::vector<Text> Model::generate(const std::string &context, const std::string 
     std::vector<Done> done;
     llama_batch batch = llama_batch_init(width, 0, 1);
     for (int step = 0; step <= maxChars && !beams.empty(); step++) {
+        if (stale && stale()) {  // typed on: the result would go unread
+            llama_batch_free(batch);
+            mGuesses.clear();
+            return {};
+        }
         struct Option {
             size_t beam;
             int token;

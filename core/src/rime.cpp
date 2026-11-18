@@ -98,6 +98,11 @@ class Rime final : public Engine {
     return s;
   }
 
+  std::string input() override {
+    const char *in = ready() ? api_->get_input(session_) : nullptr;
+    return in ? in : "";
+  }
+
   bool composing() override {
     bool yes = false;
     withContext([&](const RimeContext &c) { yes = c.composition.length > 0; });

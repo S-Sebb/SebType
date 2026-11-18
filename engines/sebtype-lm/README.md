@@ -1,4 +1,4 @@
-# SebType's English model and its loader
+# SebType's models and their loaders
 
 - `sebtype_lm.h`, `sebtype_lm.cpp`: the loader on llama.cpp (MIT, fetched at a pinned commit by
   `fetch-llama.sh`), SebType's own code under the MIT licence.
@@ -8,9 +8,16 @@
   training sources credited in [NOTICE](../../NOTICE) and listed in
   [SOURCES.md](../../tools/english-lm/SOURCES.md).
 
-The model is committed, not fetched, so that builds work offline and with no release to host it (releases are
+- `zh_lm.h`, `zh_lm.cpp`: the Chinese model's loader (#259, #264), SebType's own code under the MIT licence.
+- `chinese.gguf`: the Chinese model, trained by [tools/chinese-lm](../../tools/chinese-lm/README.md) (release
+  r1, #259), 17,035,808 bytes, sha256 `d544a19dbe89b4f95fdd629525e87125ed3a9ea08f4c9d632ab75d0f9a4c9192`.
+  CC BY-SA 4.0 too, as part of its text is share-alike, with its sources credited in [NOTICE](../../NOTICE)
+  and listed in [SOURCES.md](../../tools/chinese-lm/SOURCES.md). `core/src/chinese.cpp` runs it around Rime;
+  the Chinese harness (`android/test/chinese-lm/run.sh`) measures it.
+
+The models are committed, not fetched, so that builds work offline and with no release to host it (releases are
 held until stage 6). A new model replaces the file, and this README's size and hash, in the PR that shows it
-passes the English harness (`android/test/english/run.sh`).
+passes its harness (`android/test/english/run.sh`, `android/test/chinese-lm/run.sh`).
 
 `core/src/english.cpp` runs it behind `core/`: AOSP's decoder (`engines/latinime`) finds the candidates, and
 the model ranks them, decides what a space corrects and predicts the next words.

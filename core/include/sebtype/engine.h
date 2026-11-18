@@ -24,6 +24,8 @@ class Engine {
   virtual Preedit preedit() = 0;
   virtual std::string aux() { return {}; }
   virtual bool composing() = 0;
+  // The keys typed as the engine keeps them (Rime's input: "nihao"), for a model around it.
+  virtual std::string input() { return {}; }
   // What focus moving away types in (#277): the preedit as it shows.
   virtual std::string unfinished() { return preedit().text(); }
   // Commits what is being typed (leaving the language), or drops it.
