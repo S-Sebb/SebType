@@ -3,6 +3,7 @@ package dev.sebb.sebtype.next
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
 import android.view.KeyEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedText
 import android.view.inputmethod.InputConnection
@@ -49,9 +50,16 @@ class EditorTest {
             changed()
         }
 
-        /** The app's own edit: the text from [from] to [to] made [s], the selection and composing text left where they are */
+        /**
+         * The app's own edit: the text from [from] to [to] made [s], the composing text left where it is; a
+         * selection after it moves with its text, as an EditText's does
+         */
         fun edit(from: Int, to: Int, s: String) {
             text = text.substring(0, from) + s + text.substring(to)
+            if (to <= cursor) {
+                cursor += s.length - (to - from)
+                end += s.length - (to - from)
+            }
             changed()
         }
 
@@ -651,5 +659,115 @@ class EditorTest {
         ime.settle()
         assertEquals("I saw the", field.text)
         assertNull(field.region)
+    }
+
+    /** #325: Delete's swipe selects a word for each step, back and forth, and deletes what is selected when let go */
+    @Test
+    fun aDeleteSwipe() {
+        val field = Field("one two three", 13)
+        val ime = Ime(field)
+        for (words in listOf(1, 2, 1)) {
+            ime.editor.selectWordsBefore(words, false)
+            ime.settle()
+        }
+        assertEquals(8 until 13, field.cursor until field.end)
+        ime.editor.selectWordsBefore(1, true)
+        ime.settle()
+        assertEquals("one two ", field.text)
+        assertEquals(8, field.cursor)
+    }
+
+    /**
+     * #325: the app put "zero " before the text while Delete was swiped: the selection moved with its words, so
+     * where the swipe started isn't where it was. The swipe ends and deletes nothing; placed where it started,
+     * it would take "o thr".
+     */
+    @Test
+    fun anAppEditDuringADeleteSwipeEndsIt() {
+        val field = Field("one two three", 13)
+        val ime = Ime(field)
+        ime.editor.selectWordsBefore(1, false)
+        ime.settle()
+        field.edit(0, 0, "zero ")
+        ime.editor.selectWordsBefore(2, false)
+        ime.editor.selectWordsBefore(2, true)
+        ime.settle()
+        assertEquals("zero one two three", field.text)
+    }
+
+    /**
+     * #325: the cursor put after "one" while Delete was swiped, before the keyboard heard of it: the swipe
+     * ends and deletes nothing, in a field that says where its cursor is and in one that can't.
+     */
+    @Test
+    fun aCursorMoveDuringADeleteSwipeEndsIt() {
+        for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
+            val field = Field("one two three", 13, extract)
+            val ime = Ime(field)
+            ime.editor.selectWordsBefore(1, false)
+            ime.settle()
+            field.tap(3)
+            ime.editor.selectWordsBefore(1, true)
+            assertEquals("one two three", field.text)
+            assertEquals(3, field.cursor)
+        }
+    }
+
+    /** #325: a field that can't say where its cursor is shows no selection; the words go, before the cursor, when let go */
+    @Test
+    fun aDeleteSwipeWhereTheCursorIsUnknown() {
+        val field = Field("one two three", 13, Extract.NONE)
+        val ime = Ime(field)
+        ime.editor.selectWordsBefore(2, false)
+        assertEquals(13, field.end)
+        ime.editor.selectWordsBefore(2, true)
+        assertEquals("one ", field.text)
+    }
+
+    /** #325: another field came up during Delete's swipe: nothing of the swipe goes into it */
+    @Test
+    fun aDeleteSwipeEndsWithItsField() {
+        val ime = Ime(Field("one two three", 13))
+        ime.editor.selectWordsBefore(1, false)
+        val next = Field("four five", 9)
+        ime.open(next)
+        ime.settle()
+        ime.editor.selectWordsBefore(1, false)
+        ime.editor.selectWordsBefore(1, true)
+        assertEquals("four five", next.text)
+        assertEquals(9, next.cursor)
+    }
+
+    /**
+     * #325: the cursor put after "one", then the space bar swiped a character right, before the keyboard heard
+     * of the move: the cursor goes from where the field has it.
+     */
+    @Test
+    fun aSpaceSwipeGoesFromTheFieldsCursor() {
+        val field = Field("one two three", 13)
+        val ime = Ime(field)
+        field.tap(3)
+        ime.editor.moveBy(1)
+        assertEquals(4, field.cursor)
+        ime.editor.moveBy(-2)
+        assertEquals(2, field.cursor)
+    }
+
+    /**
+     * #325: the emoji panel's search, a text of the keyboard's own with no surrounding text and no key events
+     * (Search.connection): both swipes move the cursor and delete in its text.
+     */
+    @Test
+    fun theSwipesInASearch() {
+        val field = Field("big smile", 9)
+        val editor = Editor(null, field.connection)
+        editor.start(Search(View(null)) {}.info, FieldKind.of(null))
+        editor.moveBy(-2)
+        assertEquals(7, field.cursor)
+        editor.moveBy(2)
+        editor.selectWordsBefore(1, false)
+        assertEquals(4 until 9, field.cursor until field.end)
+        editor.selectWordsBefore(1, true)
+        assertEquals("big ", field.text)
     }
 }
