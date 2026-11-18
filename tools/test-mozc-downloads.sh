@@ -2,6 +2,8 @@
 # Checks Mozc's capped prefetch (tools/mozc-bazel.sh's mozc_prefetch) and the list's module resolver
 # (tools/mozc-repo-urls.py) offline (#335), with a stub curl that serves files from a folder:
 # - a cached file whose pinned sha256 changed, or a corrupt cached Bazel, is fetched again;
+# - a cached file that was replaced after its stamp was written, or deleted with its stamp kept, is
+#   fetched again;
 # - two prefetches at once into one empty cache both succeed;
 # - with two versions of a module in the registry's copy, the one Bazel selected is taken.
 #   tools/test-mozc-downloads.sh
@@ -48,6 +50,26 @@ rm -rf "$cache/stamps"
 printf corrupt > "$cache/bazel-${bazel:0:12}"
 mozc_prefetch "$cache" && got=$(cat "$cache/bazel-${bazel:0:12}")
 [[ ${got:-} == good-bazel ]] && result PASS corrupt-bazel || result FAIL corrupt-bazel "cache kept '${got:-}'"
+
+# A deleted Bazel whose stamp stayed is fetched again
+rm "$cache/bazel-${bazel:0:12}"
+mozc_prefetch "$cache" && got=$(cat "$cache/bazel-${bazel:0:12}" 2>/dev/null)
+[[ ${got:-} == good-bazel ]] && result PASS deleted-file || result FAIL deleted-file "no Bazel after the prefetch"
+
+# Two worktrees pin different bytes for one registry path, and publish interleaved: A moves its file in, B
+# moves its own in and stamps it, then A stamps. A's next prefetch must not trust B's bytes.
+cache=$dir/interleaved path=bcr.bazel.build/modules/m/2.0/MODULE.bazel file=$cache/registry/modules/m/2.0/MODULE.bazel
+mkdir -p "$(dirname "$file")"
+printf A > "$dir/a.part"; printf B > "$dir/b.part"
+sha_a=$(sha256sum < "$dir/a.part" | cut -d' ' -f1) sha_b=$(sha256sum < "$dir/b.part" | cut -d' ' -f1)
+id_a=$(mozc_identity "$dir/a.part" 2>/dev/null)
+mv "$dir/a.part" "$file"
+mozc_place "$cache" "$dir/b.part" "$file" "https://$path" registry "$sha_b" "$(mozc_identity "$dir/b.part" 2>/dev/null)"
+mozc_place "$cache" "" "$file" "https://$path" registry "$sha_a" "$id_a"
+serve "$path" A >/dev/null
+list "$sha_a	https://$path	registry"
+mozc_prefetch "$cache" && got=$(cat "$file")
+[[ ${got:-} == A ]] && result PASS interleaved || result FAIL interleaved "A's prefetch kept '${got:-}'"
 
 # Two prefetches into one empty cache at once
 cache=$dir/both

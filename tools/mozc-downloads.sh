@@ -52,7 +52,8 @@ for build in "${builds[@]}"; do
       curl -fsSL --retry 3 --limit-rate 35M -o "$tmp" "$url" || { rm -f "$tmp"; echo "mozc-downloads: $url failed" >&2; exit 1; }
       sha=$(sha256sum "$tmp" | cut -d' ' -f1) file=$(mozc_file "$cache" "$sha" "$url" "$where")
       [[ -z ${want:-} || $want == "$sha" ]] || { rm "$tmp"; echo "mozc-downloads: $url isn't what its rule pins" >&2; exit 1; }
-      mkdir -p "$(dirname "$file")" && mozc_place "$cache" "$tmp" "$file" "$url" "$where" "$sha"
+      mkdir -p "$(dirname "$file")" &&
+        mozc_place "$cache" "$tmp" "$file" "$url" "$where" "$sha" "$(mozc_identity "$tmp")"
       printf '%s\t%s\t%s\n' "$sha" "$url" "$where" >> tools/mozc-downloads.tsv
       echo "added $url"
     done <<<"$missing"

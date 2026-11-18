@@ -143,7 +143,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
 | `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` on yanglab16 and loaded into Mozc here: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
-| `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest or a corrupt cached file is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
+| `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest, or a cached file that is corrupt, replaced or deleted, is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
 | `MAIN_APK=<the FUTO-based app's last release> android/test/emulator.sh` | Adds `update-from-futo-app`: an update from that app keeps SebType picked and its words, Rime and Mozc data and settings (#262) |

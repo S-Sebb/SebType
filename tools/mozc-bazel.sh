@@ -37,25 +37,31 @@ mozc_bazel_plain() {
 }
 
 # mozc_prefetch CACHE: what tools/mozc-downloads.tsv lists (sha256, URL, where), into CACHE (mozc_file), each
-# once, capped at 35 MB/s, and checked. A file counts as there when its stamp (mozc_place) holds the sha256 the
-# list now pins: a registry file's path doesn't name its digest. Builds may run this at the same time: each
-# downloads to a file of its own and moves it into place in one step.
+# once, capped at 35 MB/s, and checked. A file counts as there, unhashed, when its stamp (mozc_place) holds the
+# sha256 the list now pins and the file is still the one hashed: a registry file's path doesn't name its digest.
+# Builds may run this at the same time: each downloads to a file of its own and moves it into place in one step.
 mozc_prefetch() {
-  local sha url where file tmp
+  local sha url where file stamp id tmp
   while read -r sha url where; do
-    file=$(mozc_file "$1" "$sha" "$url" "$where")
-    [[ $(cat "$1/stamps/${file#"$1"/}" 2>/dev/null) == "$sha" ]] && continue
-    # One from before the stamps, or a stale one: kept only if it is what the list pins
-    if [[ -f $file ]] && echo "$sha  $file" | sha256sum -c --status; then
-      mozc_place "$1" "" "$file" "$url" "$where" "$sha"; continue
+    file=$(mozc_file "$1" "$sha" "$url" "$where") stamp=
+    [[ -f $1/stamps/${file#"$1"/} ]] && read -r stamp < "$1/stamps/${file#"$1"/}"
+    id=$(mozc_identity "$file")
+    [[ -n $id && $stamp == "$sha $id" ]] && continue
+    # Unstamped, replaced or stale: kept only if it is what the list pins
+    if [[ -n $id ]] && echo "$sha  $file" | sha256sum -c --status; then
+      mozc_place "$1" "" "$file" "$url" "$where" "$sha" "$id"; continue
     fi
     mkdir -p "$(dirname "$file")"
     tmp=$(mktemp --suffix=.part "$file.XXXXXX")
     curl -fsSL --retry 3 --limit-rate 35M -o "$tmp" "$url" && echo "$sha  $tmp" | sha256sum -c --status ||
       { rm -f "$tmp"; echo "mozc_prefetch: $url failed or changed (sha256)" >&2; return 1; }
-    mozc_place "$1" "$tmp" "$file" "$url" "$where" "$sha"
+    [[ $where != bazel ]] || chmod +x "$tmp"
+    mozc_place "$1" "$tmp" "$file" "$url" "$where" "$sha" "$(mozc_identity "$tmp")"
   done < <(grep -v '^#' "$MOZC_DOWNLOADS")
 }
+# mozc_identity FILE: which file FILE is (inode, size, mtime in ns), or nothing if there is none. mv keeps it,
+# and replacing or rewriting the file changes it.
+mozc_identity() { stat -c '%i %s %.9Y' "$1" 2>/dev/null; }
 # mozc_file CACHE SHA256 URL WHERE: where Bazel looks for that file: Bazel itself (bazel), a file of the
 # registry's, under its path in the Bazel Central Registry (registry), or an archive in Bazel's repository
 # cache, found by its sha256 (repos).
@@ -67,19 +73,18 @@ mozc_file() {
   esac
 }
 
-# mozc_place CACHE DOWNLOAD FILE URL WHERE SHA256: moves DOWNLOAD, checked, to FILE (mozc_file), or with no
-# DOWNLOAD takes FILE as it is, then stamps it with SHA256 in CACHE/stamps. An archive also gets the marker
-# Bazel's repository cache wants beside it: without one for the rule's canonical id, by default its URL, Bazel
-# doesn't take the file from the cache.
+# mozc_place CACHE DOWNLOAD FILE URL WHERE SHA256 IDENTITY: moves DOWNLOAD, checked, to FILE (mozc_file), or
+# with no DOWNLOAD takes FILE as it is, then stamps it in CACHE/stamps with SHA256 and IDENTITY, the checked
+# file's (mozc_identity), taken before the move: if another build replaces FILE in between, the stamp doesn't
+# match the file there and the next prefetch hashes it again. An archive also gets the marker Bazel's
+# repository cache wants beside it: without one for the rule's canonical id, by default its URL, Bazel doesn't
+# take the file from the cache.
 mozc_place() {
   local stamp=$1/stamps/${3#"$1"/} tmp
-  if [[ -n $2 ]]; then
-    [[ $5 != bazel ]] || chmod +x "$2"
-    mv -f "$2" "$3"
-  fi
+  [[ -z $2 ]] || mv -f "$2" "$3"
   [[ $5 != repos ]] || touch "$(dirname "$3")/id-$(printf %s "$4" | sha256sum | cut -d' ' -f1)"
   mkdir -p "$(dirname "$stamp")"
-  tmp=$(mktemp "$stamp.XXXXXX") && echo "$6" > "$tmp" && mv -f "$tmp" "$stamp"
+  tmp=$(mktemp "$stamp.XXXXXX") && echo "$6 $7" > "$tmp" && mv -f "$tmp" "$stamp"
 }
 
 # mozc_files CONFIG TARGET: the paths of TARGET's output files, after mozc_bazel CONFIG built it.
