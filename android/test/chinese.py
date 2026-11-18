@@ -1278,18 +1278,24 @@ def zh_waits_for_zh():
     time.sleep(10)
     if re.search(SET_UP, logcat()):
         raise Fail("a keyboard that started in EN started Rime")
-    nodes()  # the keyboard's frame, for the globe
-    tap_globe()  # EN -> 中
-    type_keys("ranh")
+    # The globe (EN -> 中) and ranh in one burst, before Rime can start; the letters are where EN has them.
+    # Rime's files out of the page cache, as on a phone short of memory: its start reads them from storage.
+    k = wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+    left, top, right, bottom = keyboard_frame
+    globe = (int(left + 3 * (right - left) / 10), row_y(top, bottom, 3))
+    root("sync; echo 3 > /proc/sys/vm/drop_caches")
+    monkey_taps([globe] + [k[ch][:2] for ch in "ranh"], 10)
     got = wait_for("candidates for ranh", lambda: candidates(nodes()), 30)
     text = field_text()
+    setup = re.search(SET_UP, logcat())
     to_english()  # the checks after type in EN
+    took = f"Rime set up in {setup.group(1)} ms" if setup else "no setup logged"
     # 然後 when zh-hant-on left 繁 on
     if text or got[0] not in ("然后", "然後"):
-        raise Fail(f"ranh typed while Rime started: field {text!r}, bar {got[:6]}")
-    return (
-        f"EN: Rime not started; ranh typed while it started -> {got[:6]}, field empty"
-    )
+        raise Fail(
+            f"ranh typed while Rime started ({took}): field {text!r}, bar {got[:6]}"
+        )
+    return f"EN: Rime not started; ranh typed while it started ({took}) -> {got[:6]}, field empty"
 
 
 check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
