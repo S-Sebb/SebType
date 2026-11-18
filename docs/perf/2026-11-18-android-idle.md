@@ -44,14 +44,23 @@ in 中文 meanwhile wait in a queue and go to Rime in order once it's ready. Tha
 and Space, Enter, Delete and other text after them. Delete goes to Rime in order too, since a Space
 before it may already have committed a word. The reading those keys would leave shows in the strip.
 Before this, they went into the field as plain letters. A new language, a new field, opening or
-closing a search, or the keyboard closing drops the queue, as each drops a composition. If Rime
-fails, the queued keys type as plain text. Two checks in `android/test/chinese.py` cover this. Both
+closing a search, or the keyboard closing drops the queue, as each drops a composition. Keys queued
+while such a switch still waits for the engine go to Rime after the switch's reset, not before it.
+If Rime fails, the queued keys type as plain text.
+
+The keyboard itself no longer stops while Rime starts. Each touch and the globe read sebtype.conf
+through NativeCore, whose calls share one lock with Rime's setup, so the keyboard's main thread waited
+for the whole start (33–36 frames skipped, about 0.5 s on the emulator, with a thread dump in
+`NativeCore.settings()`). `Engines` now keeps its own copy of the settings it saved, and the keyboard
+reads that. Two checks in `android/test/chinese.py` cover this. Both
 start from a keyboard process that started in English and logged no Rime setup. Both drop Rime's
-files from the page cache, then tap the globe and the keys in one 10 ms burst:
+files from the page cache, then tap the globe and the keys in one 10 ms burst. Both read from the
+app's log how many keys waited for Rime (a count only), so a burst that missed Rime's start fails:
 
 - `zh-waits-for-zh`: ranh, Space, Delete leave 然 in the field, as with Rime running.
-- `zh-search-waits`: ni typed into the clipboard's search, then the search closed at once, leave
-  nothing in the field or the bar.
+- `zh-search-waits`: ni typed into the clipboard's search, the search closed, ni typed, then Space
+  once Rime is ready leave 你 in the field. Before the settings copy, no key reached the queue: the
+  keyboard took them only once Rime was ready.
 
 The same change lowers PSS after typing English by about 36 MB, because Rime no longer sits under
 the English model.
