@@ -512,7 +512,8 @@ bool TextService::send(const Request &request) {
     warned_ = false;
     return true;
   }
-  if (GetLastError() == ERROR_TIMEOUT) return false;  // a server that hangs: the key goes to the app as typed
+  const DWORD error = GetLastError();
+  if (error == ERROR_TIMEOUT) return false;  // a server that hangs: the key goes to the app as typed
   // An app UAC elevated (Setup, an admin console) starts none: the server would be elevated too, and out of
   // reach of the person's other apps. It uses the one they start.
   static const bool elevated = [] {
@@ -536,7 +537,8 @@ bool TextService::send(const Request &request) {
   serverStarted_ = now;
   STARTUPINFOW si{sizeof(si)};
   PROCESS_INFORMATION pi{};
-  std::wstring cmd = L"\"" + serverPath().wstring() + L"\"";
+  // Why, in its server.log line: the call's error (2: no pipe).
+  std::wstring cmd = L"\"" + serverPath().wstring() + L"\" /error:" + std::to_wstring(error);
   if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr,
                       nullptr, &si, &pi))
     return false;

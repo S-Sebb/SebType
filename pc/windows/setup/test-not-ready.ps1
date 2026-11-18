@@ -181,14 +181,48 @@ function WaitIcon($want, $secs) {
 
 # This session's server (a terminal server may run one per session).
 function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
+Add-Type @'
+using System.Runtime.InteropServices;
+public static class SebTypePipe {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool WaitNamedPipe(string name, int ms);
+  // An instance there, free or busy (121: the wait timed out); none is 2.
+  public static bool Exists(string name) { return WaitNamedPipe(name, 1) || Marshal.GetLastWin32Error() == 121; }
+}
+'@
+# Every server on the PC, for a failure's message.
+function Servers { (@(Get-CimInstance Win32_Process -Filter "Name='sebtype-server.exe'") | ForEach-Object { $o = Invoke-CimMethod -InputObject $_ -MethodName GetOwner; "$($_.ProcessId) $($o.User) session $($_.SessionId) from $($_.CreationDate.ToString('HH:mm:ss.fff'))" }) -join '; ' }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
-# failed, and waits for its pipe.
+# failed, and waits for its pipe. The server's mutex (windows/src/server.cpp) is held meanwhile: an app's text
+# service that finds no server starts one (ChsIME's does, after Microsoft Pinyin was on), which would load
+# Rime's files mid-change at normal priority and keep this one from starting (#332). Held, it leaves at once.
 function Restart-Server([scriptblock]$change) {
-  if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
-  try { & $change } finally { (Start-Process $server -PassThru).PriorityClass = 'BelowNormal' }
-  $pipe = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
-  $end = (Get-Date).AddSeconds(20)
-  while (-not (Test-Path $pipe)) { if ((Get-Date) -gt $end) { throw "no $pipe 20 s after the server started" }; Start-Sleep -Milliseconds 200 }
+  $hold = [Threading.Mutex]::new($false, 'Local\SebType.Server')
+  try {
+    if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
+    & $change
+  } finally {
+    $hold.Dispose()
+    # Started again when it left with no pipe there: an app's server, rejected, may have held the mutex then.
+    # The pipe is asked for, not opened (Test-Path does): opened, it is busy, and seems gone.
+    $name = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
+    $up = { [SebTypePipe]::Exists($name) }
+    # One deadline for whichever server starts; another start only when none runs (it left as a second one).
+    $end = (Get-Date).AddSeconds(20); $starts = 0
+    while (-not (& $up)) {
+      if ((Get-Date) -gt $end) { throw "no $name 20 s after the restart ($starts starts): $(Servers)" }
+      if (-not (Server)) {
+        if ($starts -ge 3) { throw "no $name after 3 starts" }
+        Start-Process $server; $starts++
+      }
+      Start-Sleep -Milliseconds 200
+    }
+  }
+  # An app may still start one as the mutex is let go, which then serves instead: whichever serves runs below
+  # normal priority, and it is the only one.
+  $end = (Get-Date).AddSeconds(3)
+  while (($n = @(Get-Process sebtype-server | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId).Count) -gt 1 -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 100 }
+  if ($n -ne 1) { throw "$n servers after the restart: $(Servers)" }
+  (Server).PriorityClass = 'BelowNormal'
 }
 # Mozc loads again in a new server, which took seconds at its first load: before any check times 日本語.
 function Warm-Mozc {
