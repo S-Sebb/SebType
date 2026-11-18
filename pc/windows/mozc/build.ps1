@@ -41,7 +41,7 @@ if ($missing) {
 New-Item -ItemType Directory -Force "$WorkDir\dl", "$WorkDir\out" | Out-Null
 $bazelisk = "$WorkDir\dl\$($v.BazeliskUrl -replace '.*/', '')"
 if (-not (Test-Path $bazelisk) -or (Get-FileHash $bazelisk).Hash -ne $v.BazeliskSha256) {
-    curl.exe -sfL --retry 3 -o "$bazelisk.part" $v.BazeliskUrl
+    curl.exe --limit-rate 35M -sfL --retry 3 -o "$bazelisk.part" $v.BazeliskUrl
     if ((Get-FileHash "$bazelisk.part").Hash -ne $v.BazeliskSha256) { throw "checksum mismatch: $($v.BazeliskUrl)" }
     Move-Item -Force "$bazelisk.part" $bazelisk
 }

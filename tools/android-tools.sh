@@ -8,7 +8,7 @@ mkdir -p "$SCRATCH/cache" && cd "$SCRATCH/cache"
 
 fetch() { # url sha256 file
   [[ -f $3 ]] && return
-  curl -sfL --retry 3 -o "$3.part" "$1"
+  curl --limit-rate 35M -sfL --retry 3 -o "$3.part" "$1"
   echo "$2  $3.part" | sha256sum -c --status || { echo "android-tools: checksum mismatch: $1" >&2; exit 1; }
   mv "$3.part" "$3"
 }

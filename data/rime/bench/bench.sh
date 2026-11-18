@@ -32,7 +32,7 @@ data=$(tools/build.sh 10 "rime data for bench" data/rime/build.sh 2> "$work/buil
   { echo "preflight: data/rime/build.sh failed, see below"; tail -3 "$work/build.log"; exit 1; }
 old=$cache/rime-ice-2026.06.30-full_compiled.zip
 if ! echo "$OLD_SHA256  $old" | sha256sum -c --status 2>/dev/null; then
-  curl -fsSL -o "$old.part" "$OLD_URL" && echo "$OLD_SHA256  $old.part" | sha256sum -c --status && mv "$old.part" "$old" ||
+  curl --limit-rate 35M -fsSL -o "$old.part" "$OLD_URL" && echo "$OLD_SHA256  $old.part" | sha256sum -c --status && mv "$old.part" "$old" ||
     { echo "preflight: can't fetch rime-ice's full_compiled.zip"; exit 1; }
 fi
 rpm=$cache/$OCTAGRAM_RPM

@@ -56,7 +56,7 @@ if (-not (Test-Path "$env:BOOST_ROOT\boost")) {
   $parent = Split-Path $env:BOOST_ROOT
   New-Item -ItemType Directory -Force $parent | Out-Null
   $archive = Join-Path $parent "boost_$($BoostVersion -replace '\.', '_').7z"
-  Invoke-WebRequest "https://archives.boost.io/release/$BoostVersion/source/$(Split-Path -Leaf $archive)" -OutFile $archive
+  Invoke-Checked 'download boost' { curl.exe --limit-rate 35M -sSfL --retry 3 -o $archive "https://archives.boost.io/release/$BoostVersion/source/$(Split-Path -Leaf $archive)" }
   Invoke-Checked 'unpack boost' { 7z x -y "-o$parent" $archive | Out-Null }
   Remove-Item $archive
   Get-ChildItem $env:BOOST_ROOT -Exclude boost | Remove-Item -Recurse -Force  # sources, docs and tools: only the headers stay

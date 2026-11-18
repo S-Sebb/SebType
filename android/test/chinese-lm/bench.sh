@@ -26,7 +26,7 @@ if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
     image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$base $extra" | head -c 12)
     podman image exists "$image" ||
       podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $base
-RUN dnf -y install $extra && dnf clean all" >/dev/null
+RUN dnf -y --setopt=throttle=35M install $extra && dnf clean all" >/dev/null
     container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
   fi
   # llama.cpp (MIT) is fetched at its pinned commit out here: the container has no git.

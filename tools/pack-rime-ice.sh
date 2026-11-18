@@ -30,7 +30,7 @@ mkdir -p "$cache" "$(dirname "$out")"
 fetch() { # url sha256 -> prints cached path
   local f=$cache/$(basename "$1")
   if ! echo "$2  $f" | sha256sum -c --status 2>/dev/null; then
-    curl -fsSL -o "$f.part" "$1"
+    curl --limit-rate 35M -fsSL -o "$f.part" "$1"
     echo "$2  $f.part" | sha256sum -c --status || { echo "checksum mismatch: $1" >&2; exit 1; }
     mv "$f.part" "$f"
   fi

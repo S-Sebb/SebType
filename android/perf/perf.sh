@@ -452,7 +452,7 @@ fi
 for x in python3 curl unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 if [[ ! -x $tp ]]; then # Perfetto's trace processor, pinned
   mkdir -p "$(dirname "$tp")"
-  curl -fsSL -o "$tp.part" https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v59.1/linux-amd64/trace_processor_shell &&
+  curl --limit-rate 35M -fsSL -o "$tp.part" https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v59.1/linux-amd64/trace_processor_shell &&
     echo "2434129a3af4dc9e2034a476f7b76447b490975213e301769310d3bd0d5d6458  $tp.part" | sha256sum -c --status &&
     chmod +x "$tp.part" && mv "$tp.part" "$tp" || { echo "preflight: can't fetch Perfetto's trace processor"; exit 1; }
 fi
