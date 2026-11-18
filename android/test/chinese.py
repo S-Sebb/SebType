@@ -774,6 +774,45 @@ check(
     expect_model_first("buyaoxiawoa", "不要吓我啊"),
     needs=["first-install"],
 )
+
+
+def model_context_after_idle_stop():
+    """Rime stops 3 minutes after 中 was left, and starts again when 中 comes back. Its model then reads the
+    field's text, which was entered while it was stopped: 国 is among the next words after 中华人民共和."""
+    open_field()
+    type_keys("zhonghuarenmingonghe")
+    tap_candidate("中华人民共和")
+    if (text := field_text()) != "中华人民共和":
+        raise Fail(f"picked 中华人民共和; the field shows {text!r}")
+    adb("logcat", "-c")
+    nodes()
+    tap_globe()  # 中 -> 日
+    time.sleep(2)
+    nodes()
+    tap_globe()  # 日 -> EN
+    wait_for("Rime to unload", lambda: "Rime unloaded" in logcat(), 240, interval=5)
+    nodes()
+    tap_globe()  # EN -> 中, in the same field
+    got = []
+
+    def next_words():
+        got[:] = candidates(nodes())
+        return "国" in got[:5]
+
+    try:
+        wait_for("国 among the next words", next_words, 120, interval=2)
+    except Fail:
+        raise Fail(
+            f"after the idle stop, the next words for 中华人民共和 are {got[:6]}"
+        )
+    return f"Rime unloaded and set up again; next words {got[:6]}"
+
+
+check(
+    "zh-model-context-after-idle-stop",
+    model_context_after_idle_stop,
+    needs=["zh-model-typo"],
+)
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
 # Restarts 中 and waits for its setup, so it needs 中 working.
 check("password-after-restart", password_after_restart, needs=["ranh"])

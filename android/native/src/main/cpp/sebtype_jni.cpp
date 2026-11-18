@@ -372,6 +372,15 @@ jobject current(JNIEnv *env, jclass) {
   return state(env, true);
 }
 
+// For 中文's model's callback: the state only while 中文 is the language and Rime runs, else null. It reads under
+// the lock stop() takes, so a callback queued before a stop (an idle stop, a reinstall) finds nothing and starts
+// nothing; state() would start Rime again on files being replaced.
+jobject chineseState(JNIEnv *env, jclass) {
+  std::lock_guard g(lock);
+  if (core->language() != Lang::Chinese || !core->running(Lang::Chinese)) return nullptr;
+  return state(env, true);
+}
+
 void setAlternate(JNIEnv *, jclass, jboolean on) {
   std::lock_guard g(lock);
   core->setAlternate(on);
@@ -465,6 +474,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"flush", st.c_str(), reinterpret_cast<void *>(flush)},
       {"clear", st.c_str(), reinterpret_cast<void *>(clear)},
       {"state", st.c_str(), reinterpret_cast<void *>(current)},
+      {"chineseState", st.c_str(), reinterpret_cast<void *>(chineseState)},
       {"settle", st.c_str(), reinterpret_cast<void *>(settle)},
       {"setAlternate", "(Z)V", reinterpret_cast<void *>(setAlternate)},
       {"start", "(I)Z", reinterpret_cast<void *>(start)},

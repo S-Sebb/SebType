@@ -138,6 +138,8 @@ object NativeCore {
     /** Drops what is typed. */
     @JvmStatic external fun clear(): NativeState
     @JvmStatic external fun state(): NativeState
+    /** [state] while 中文 is the language and Rime runs, else null: it never starts a stopped Rime. */
+    @JvmStatic external fun chineseState(): NativeState?
     /** 简 ⇄ 繁, あ ⇄ ア */
     @JvmStatic external fun setAlternate(on: Boolean)
 

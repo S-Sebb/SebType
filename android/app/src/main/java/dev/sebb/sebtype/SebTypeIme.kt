@@ -169,16 +169,22 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         super.onCreate()
         Engines.configure(this)
         Engines.prepareChinese(this)
-        Engines.onChange = { if (views) refresh() }
+        Engines.onChange = {
+            if (views) {
+                chineseContextIfMissed()
+                refresh()
+            }
+        }
         // From English's worker: the model's strip for the word being typed (#310), or next words for the
         // text so far. A word's letters are in the field already, so only the strip changes.
         NativeCore.onEnglishReady = Runnable {
             post({ state() }) { if (views && lang == ENGLISH) show(it, applyText = it.preedit.isEmpty()) }
         }
         // From 中文's model (#264): its order and candidates for what is typed, or next words after a commit.
-        // Rime's list showed already; only the list changes.
+        // Rime's list showed already; only the list changes. A callback can come after Rime stopped (idle, a
+        // reinstall): chineseState() then gives null and, unlike state(), doesn't start it again.
         NativeCore.onChineseReady = Runnable {
-            post({ state() }) { if (views && lang == CHINESE) show(it, applyText = false) }
+            post({ chineseState() }) { if (it != null && views && lang == CHINESE) show(it, applyText = false) }
         }
         // A fresh install starts in English (#35).
         lang = prefs.getInt("language", ENGLISH).takeIf { it in Engines.languages() } ?: ENGLISH
@@ -400,6 +406,20 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         }
     }
 
+    // The field was entered while 中文 wasn't ready (its first setup, or a restart after the idle stop), so Rime
+    // never got its text.
+    private var chineseNeedsContext = false
+
+    /**
+     * 中文 is ready now in a field entered before it was: Rime gets the field's text as it is now, ahead of
+     * anything else sent to it (the strip's refresh, the next key), so the model ranks and predicts from it.
+     */
+    private fun chineseContextIfMissed() {
+        if (!chineseNeedsContext || lang != CHINESE || !toEngine) return
+        chineseNeedsContext = false
+        chineseContext()
+    }
+
     /**
      * Settings' English options and the personal dictionary's English words (Android's user dictionary,
      * read on the engine thread): core/ makes its dictionary of them again only when they changed.
@@ -431,6 +451,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val before = if (lang == ENGLISH && toEngine) around.before else null
         // 中文's model reads it too, from a running Rime only: asking a stopped one would start it here (#351).
         val chineseBefore = if (lang == CHINESE && toEngine) around.before else null
+        chineseNeedsContext = lang == CHINESE && !toEngine
         post({
             clear()
             selectLanguage(lang)
@@ -508,6 +529,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     private fun type(text: String) {
         if (!toEngine) return commit(text)
+        // READY can reach this key before Engines.onChange does.
+        chineseContextIfMissed()
         val cp = text.codePointAt(0)
         if (Character.charCount(cp) == text.length && cp < 0x80) {
             post({ key(NativeCore.charSym(cp), 0).recorded() }) {
@@ -535,6 +558,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** Space, Enter or Delete: to the engine while it has something typed, else [otherwise] in the field. */
     private fun whileComposing(sym: Int, otherwise: () -> Unit) {
         if (!toEngine) return NativeCore.after(otherwise)
+        chineseContextIfMissed()
         post({ if (engineComposing) key(sym, 0).recorded() else null }) {
             if (it != null) show(it) else otherwise()
         }
