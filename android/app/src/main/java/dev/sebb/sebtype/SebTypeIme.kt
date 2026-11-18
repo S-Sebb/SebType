@@ -511,7 +511,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     /**
      * Keys typed in 中文 while Rime starts (#351), fed to it in order once it is ready ([feedWaiting]); their
-     * letters show as the reading meanwhile. A new language, field or the keyboard closing drops them, as it
+     * reading shows meanwhile. A new language, field or search, or the keyboard closing, drops them, as it
      * drops a composition.
      */
     private val waiting = ArrayList<Pair<Code, String>>()
@@ -524,14 +524,22 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             val letter = code == Code.TEXT && text.length == 1 && text[0].isLetter() && text[0].code < 0x80
             if (Engines.chinese != Engines.Chinese.PREPARING || !letter) return false
         }
-        when (code) {
-            Code.DELETE -> waiting.removeAt(waiting.lastIndex)
-            Code.TEXT, Code.SPACE, Code.ENTER -> waiting += code to text
-            else -> return false
-        }
+        // Delete too goes to Rime in order: a Space before it may have committed a word it deletes from.
+        if (code !in listOf(Code.TEXT, Code.SPACE, Code.ENTER, Code.DELETE)) return false
+        waiting += code to text
         refresh()
         return true
     }
+
+    /** What the waiting keys would leave as the reading: letters add to it, Delete takes one off, Space and Enter end it. */
+    private fun waitingReading() = waiting.fold(StringBuilder()) { reading, (code, text) ->
+        when (code) {
+            Code.TEXT -> reading.append(text)
+            Code.DELETE -> if (reading.isNotEmpty()) reading.setLength(reading.length - 1)
+            else -> reading.setLength(0)
+        }
+        reading
+    }.toString()
 
     /** The keys typed while 中文 started, now that it is ready (or failed: then as typed, as any key then). */
     private fun feedWaiting() {
@@ -808,7 +816,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val st = state
         strip.preedit = when {
             lang != CHINESE -> ""
-            waiting.isNotEmpty() -> waiting.filter { it.first == Code.TEXT }.joinToString("") { it.second }
+            waiting.isNotEmpty() -> waitingReading()
             else -> st?.preedit.orEmpty()
         }
         // English's word may name an emoji: it takes the bar's third place
@@ -1271,6 +1279,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         finishTyping {
             searching = panel
             search.clear()
+            waiting.clear()
             editor = searchEditor
             kind = FieldKind.of(search.info)
             editor.start(search.info, kind)
@@ -1298,6 +1307,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         if (searching == null) return
         finishTyping {
             searching = null
+            waiting.clear()
             editor = fieldEditor
             kind = FieldKind.of(currentInputEditorInfo)
             keyboard.enter = kind.enter
