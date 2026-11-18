@@ -47,7 +47,9 @@ Before this, they went into the field as plain letters. A new language, a new fi
 closing a search, or the keyboard closing drops the queue, as each drops a composition. While such a
 switch still waits for the engine, every key typed waits behind it, in any language, even with
 Rime ready and nothing queued: sent at once, it would reach the engine before the switch's reset,
-which would drop it. `WaitingKeysTest` checks that order, which a tap burst can't time.
+which would drop it. An edit that comes while one runs or keys wait joins the same queue, so
+paste, a, paste gives x a x. Each waiting key keeps the Shift it was tapped with. `WaitingKeysTest`
+checks these orders, which a tap burst can't time.
 If Rime fails, the queued keys type as plain text.
 
 The keyboard itself no longer stops while Rime starts. Each touch and the globe read sebtype.conf

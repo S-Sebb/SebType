@@ -173,7 +173,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         Engines.onChange = {
             if (views) chineseContextIfMissed()
             // After the field's text: the keys that waited were typed after it (#351)
-            feedWaiting()
+            waiting.drain()
             if (views) refresh()
         }
         // From English's worker: the model's strip for the word being typed (#310), or next words for the
@@ -510,29 +510,24 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** The field as the language's engine treats it: English corrects nothing in URL and e-mail fields. */
     private fun field() = if (lang == ENGLISH) kind.englishField else kind.field
 
-    /** Keys held back from the engine while 中文 starts or a switch is pending ([WaitingKeys], #351). */
-    private val waiting = WaitingKeys()
+    /** Keys held back from the engine while 中文 starts or an edit waits for it, and the edits ([WaitingKeys], #351). */
+    private val waiting = WaitingKeys(
+        ready = { !chineseStarting },
+        feed = { dispatch(it.code, it.text, it.x, it.y, it.userShift) },
+        fedForRime = { Log.w(Engines.TAG, "Fed $it keys that waited for Rime") },  // a count only, never typed text
+    )
 
-    private fun wait(code: Code, text: String, x: Int, y: Int): Boolean {
-        if (kind.pad != null) return false
-        val starting = lang == CHINESE && Engines.chinese == Engines.Chinese.PREPARING
-        if (!waiting.hold(code, text, x, y, starting)) return false
-        refresh()
-        return true
-    }
-
-    /** The waiting keys, once 中文 is ready (or failed: then as typed, as any key then) and no switch is pending. */
-    private fun feedWaiting() {
-        val rime = waiting.forRime
-        val keys = waiting.take(ready = !(lang == CHINESE && Engines.chinese == Engines.Chinese.PREPARING))
-        if (keys.isEmpty()) return
-        if (rime) Log.w(Engines.TAG, "Fed ${keys.size} keys that waited for Rime")  // a count only, never typed text
-        keys.forEach { onKey(it.code, it.text, it.x, it.y) }
-    }
+    private val chineseStarting get() = lang == CHINESE && Engines.chinese == Engines.Chinese.PREPARING
 
     override fun onKey(code: Code, text: String, x: Int, y: Int) {
-        if (wait(code, text, x, y)) return
-        if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y)
+        val userShift = keyboard.typedWithUserShift
+        if (kind.pad == null && waiting.hold(WaitingKeys.Key(code, text, x, y, userShift), chineseStarting)) return refresh()
+        dispatch(code, text, x, y, userShift)
+    }
+
+    /** A key as tapped, now or when it stops waiting: [userShift], the user's Shift was on when it was tapped. */
+    private fun dispatch(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
+        if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y, userShift)
         else when (code) {
             Code.TEXT -> type(text)
             Code.SPACE -> whileComposing(NativeCore.charSym(' '.code)) { editor.commit(" ") }
@@ -601,8 +596,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
      * (a digit, a symbol, Enter, Delete with no word typed) does what it does after the engine committed the
      * word being typed. On the engine thread too, after the keys before it (#241).
      */
-    private fun english(code: Code, text: String, x: Int, y: Int) {
-        val userShift = keyboard.typedWithUserShift
+    private fun english(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
         // Sent again if the field changes before its result comes (#280)
         keys.type { key -> english(key, code, text, x, y, userShift) }
     }
@@ -797,7 +791,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val st = state
         strip.preedit = when {
             lang != CHINESE -> ""
-            !waiting.isEmpty() -> waiting.reading()
+            waiting.hasKeys() -> waiting.reading()
             else -> st?.preedit.orEmpty()
         }
         // English's word may name an emoji: it takes the bar's third place
@@ -1182,10 +1176,10 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     }
 
     /** What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing */
-    private fun finishTyping(then: () -> Unit) {
+    private fun finishTyping(then: () -> Unit) = waiting.switch { done ->
+        // As the keys typed before it left the language and field: it may run after them (#351)
         val chinese = lang == CHINESE
         val asked = keys.ask()
-        waiting.switchStarted()
         NativeCore.post({ if (engineComposing) (if (chinese) clear() else flush()).recorded() else null }) { st ->
             // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
             if (st != null && fresh(asked)) {
@@ -1193,8 +1187,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
                 if (!chinese) editor.finishComposing()
             }
             then()
-            waiting.switchDone()
-            feedWaiting()
+            done()
         }
     }
 
