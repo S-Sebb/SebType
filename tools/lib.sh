@@ -35,13 +35,18 @@ if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
     # and file locks, so neither store's reset after a reboot touches the other's containers.
     PODMAN_STORE=/media/ssd2/tony/SebType/podman
     export CONTAINERS_STORAGE_CONF=$PODMAN_STORE/storage.conf CONTAINERS_CONF_OVERRIDE=$PODMAN_STORE/containers.conf
-    if [[ ! -f $CONTAINERS_CONF_OVERRIDE ]]; then
-      mkdir -p "$PODMAN_STORE"
-      printf '[storage]\ndriver = "overlay"\ngraphroot = "%s"\nrunroot = "%s"\n' \
-        "$PODMAN_STORE/storage" "/run/user/$UID/sebtype-containers" >"$CONTAINERS_STORAGE_CONF"
-      printf '[engine]\ntmp_dir = "%s"\nlock_type = "file"\n' \
-        "/run/user/$UID/sebtype-libpod" >"$CONTAINERS_CONF_OVERRIDE"
-    fi
+    # Image copies stage in the store too, not in /var/tmp on the system disk. Each file is replaced by a
+    # rename only when it differs, so a build starting at the same time never reads a half-written one.
+    mkdir -p "$PODMAN_STORE"
+    podman_conf() {
+      [[ $(cat "$1" 2>/dev/null) == "$2" ]] && return
+      printf '%s\n' "$2" >"$1.$$" && mv -f "$1.$$" "$1"
+    }
+    podman_conf "$CONTAINERS_STORAGE_CONF" "$(printf '[storage]\ndriver = "overlay"\ngraphroot = "%s"\nrunroot = "%s"' \
+      "$PODMAN_STORE/storage" "/run/user/$UID/sebtype-containers")"
+    podman_conf "$CONTAINERS_CONF_OVERRIDE" "$(printf '[engine]\ntmp_dir = "%s"\nlock_type = "file"\nimage_copy_tmp_dir = "storage"' \
+      "/run/user/$UID/sebtype-libpod")"
+    unset -f podman_conf
     # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user.
     podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
     BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
