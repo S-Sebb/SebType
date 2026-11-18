@@ -468,6 +468,9 @@ namespace SebType {
     // PumpKeys: a key posted to the field's window goes to TSF's keystroke manager, as in an app whose loop hands
     // its keys to TSF itself; Pumped: those keys since the last call, "8 78" (with "!" for one an input method ate).
     public static bool PumpKeys;
+    // A key that, reaching the field, moves TSF's focus to another document in the same window (as Tab does
+    // between a browser's fields), or switches to the plain US keyboard (the input method goes); 0 for none.
+    public static int AwayOn, LeaveOn;
     static readonly List<string> pumped = new List<string>();
     public static string Pumped() { return OnUi(() => { var t = string.Join(" ", pumped); pumped.Clear(); return t; }); }
     static ITfThreadMgr threadMgr;
@@ -505,6 +508,11 @@ namespace SebType {
             else ((ITfKeystrokeMgr)threadMgr).KeyUp(m.wParam, m.lParam, out eaten);
             if (m.message == 0x100) pumped.Add((int)m.wParam + (eaten ? "!" : ""));
             if (eaten) continue;
+          }
+          if (m.message == 0x100 && m.hwnd == store.Hwnd) {
+            if ((int)m.wParam == 0x25) Left();
+            if ((int)m.wParam == AwayOn) threadMgr.SetFocus(OtherMgr());
+            if ((int)m.wParam == LeaveOn) try { ActivateLayoutNow(0x409, "00000409"); } catch { }
           }
           if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
           TranslateMessage(ref m); DispatchMessageW(ref m);
@@ -545,6 +553,7 @@ namespace SebType {
         bool eaten, up;
         keys.KeyDown((IntPtr)vk, (IntPtr)(1 | scan), out eaten);
         keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
+        if (!eaten && vk == 0x25) Left();
         if (!eaten && (vk == 0x08 || vk == 0x0D || vk == 0x20 || (vk >= 0x41 && vk <= 0x5A) || (vk >= 0x60 && vk <= 0x69)))  // Backspace, Enter, space, a-z, keypad 0-9
           Typed(vk == 0x08 && (GetKeyState(0x11) & 0x8000) != 0 ? '\x7f' : vk == 0x08 || vk == 0x0D || vk == 0x20 ? (char)vk : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32));
         if (!store.Hold) store.GrantPending();
@@ -573,11 +582,15 @@ namespace SebType {
     // Locks that may wait wait until this is set false again, over several keys or a focus change.
     public static bool HoldLocks { set { OnUi(() => { store.Defer = store.Hold = value; if (!value) store.GrantPending(); return 0; }); } }
     static ITfDocumentMgr otherMgr;
+    static ITfDocumentMgr OtherMgr() { if (otherMgr == null) threadMgr.CreateDocumentMgr(out otherMgr); return otherMgr; }
+    // The caret one character to the left, as an edit control moves it.
+    static void Left() { store.SelStart = store.SelEnd = Math.Max(0, store.SelStart - 1); store.AppEdit(store.SelStart, store.SelEnd, ""); }
+    // Whether a key is down as this thread's keyboard state has it (GetKeyState).
+    public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
     // TSF's focus on another document and back, as a click into another field moves it.
     public static void Away(bool away) {
       OnUi(() => {
-        if (otherMgr == null) threadMgr.CreateDocumentMgr(out otherMgr);
-        threadMgr.SetFocus(away ? otherMgr : docMgr);
+        threadMgr.SetFocus(away ? OtherMgr() : docMgr);
         return 0;
       });
     }
@@ -627,13 +640,11 @@ namespace SebType {
     }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadKeyboardLayout(string klid, uint flags);
     // The same for a plain keyboard layout, by its id as the language list has it ("00000409").
-    public static void ActivateLayout(ushort langid, string klid) {
-      OnUi(() => {
-        var mgr = (ITfInputProcessorProfileMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
-        Guid none = Guid.Empty, noProfile = Guid.Empty;
-        mgr.ActivateProfile(2 /* TF_PROFILETYPE_KEYBOARDLAYOUT */, langid, ref none, ref noProfile, LoadKeyboardLayout(klid, 0), 0x10000000 | 0x4);
-        return 0;
-      });
+    public static void ActivateLayout(ushort langid, string klid) { OnUi(() => { ActivateLayoutNow(langid, klid); return 0; }); }
+    static void ActivateLayoutNow(ushort langid, string klid) {
+      var mgr = (ITfInputProcessorProfileMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+      Guid none = Guid.Empty, noProfile = Guid.Empty;
+      mgr.ActivateProfile(2 /* TF_PROFILETYPE_KEYBOARDLAYOUT */, langid, ref none, ref noProfile, LoadKeyboardLayout(klid, 0), 0x10000000 | 0x4);
     }
     // "<langid hex> <clsid>" of the active keyboard input method, e.g. "0411 {10A67BC8-...}".
     public static string Active() {

@@ -31,7 +31,9 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     Enter (か, a new line) and Backspace (か deleted), in an app that grants the text service's edit only after
     it handled the key (#330); hang-mid-held-keys: with the lock held over several keys, Ctrl+Backspace with Ctrl
     let go before the grant still deletes a word, Backspace then n gives n (the server answering again by then,
-    and TSF seeing both replayed keys), and Enter before a focus change is dropped, not typed.
+    and TSF seeing both replayed keys), Enter before a focus change is dropped, Left after Backspace and n moves
+    the caret only after them, n after a Tab that moves the focus is dropped, and SebType going mid-replay (Ctrl+Q
+    switching the keyboard) leaves Ctrl up and composes again once back.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -482,7 +484,7 @@ try {
   # the text service has to let by; $resume: the
   # server answers again before the lock is granted, so a replayed letter the text service took would compose.
   $held = {
-    param($name, $before, [scriptblock]$keys, [scriptblock]$granted, $want, $traced, [switch]$resume)
+    param($name, $before, [scriptblock]$keys, [scriptblock]$granted, $want, $traced, [switch]$resume, $then = "${want}い")
     Lang ja; $tsf::SetText($before); Keys k a
     $script:suspended = Server
     [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
@@ -491,15 +493,16 @@ try {
       Ready; & $keys
       if ($resume) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null; Start-Sleep -Milliseconds 1500 }
     } finally { $tsf::PumpKeys = $true; $null = $tsf::Pumped(); $tsf::HoldLocks = $false }
-    & $granted; $tsf::Settle(600)
+    $tsf::Settle(600); $problem = & $granted
     $seen = $tsf::Pumped(); $tsf::PumpKeys = $false; $t = $tsf::Text()
     if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null }
     $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
     $show = { param($s) "'" + ($s -replace "`n", '\n') + "'" }
+    if ($problem) { throw "${name}: $problem (text $(& $show $t), replayed through TSF: '$seen')" }
     if ($t -ne $want) { throw "${name}: $(& $show $t), not $(& $show $want) (replayed through TSF: '$seen')" }
     if ("$seen" -ne "$traced") { throw "${name}: the keys replayed through TSF were '$seen', not '$traced' (! where an input method took one)" }
     if ($icon -ne $hira) { throw "${name}: the icon did not turn back to あ within 4 s" }
-    if ($after -ne "${want}い") { throw "${name}: i after the server answered again gave $(& $show $after), not $(& $show "${want}い")" }
+    if ($after -ne $then) { throw "${name}: i after the server answered again gave $(& $show $after), not $(& $show $then)" }
     "${name}: $(& $show $want)$(if ($seen) { ", replayed through TSF and let by: $seen" }), then i gives $(& $show $after)"
   }
   Check 'hang-mid-held-keys' {
@@ -507,6 +510,18 @@ try {
       { & $held 'ctrl-backspace' 'ab cd' { $null = $tsf::Press(0x08, 0x11, 0xA2) } {} 'ab ' '8' },  # Ctrl let go before the grant
       { & $held 'backspace-then-n' '' { $null = $tsf::Key(0x08); $null = $tsf::Key(0x4E) } {} 'n' '8 78' -resume },
       { & $held 'focus-moved' '' { $null = $tsf::Key(0x0D); $tsf::Away($true) } { $tsf::Away($false) } 'か' '' }
+      # Left after them: Backspace's and n's characters first, then the caret moves (i goes before n).
+      { & $held 'backspace-n-left' '' { foreach ($k in 0x08, 0x4E, 0x25) { $null = $tsf::Key($k) } } {} 'n' '8 78 37' -then 'いn' }
+      # Tab moves the focus to another field in the same window: n, held after it, is dropped.
+      { & $held 'tab-moves-focus' '' { $tsf::AwayOn = 0x09; $null = $tsf::Key(0x09); $null = $tsf::Key(0x4E) } { $tsf::AwayOn = 0; $tsf::Away($false) } 'か' '9' }
+      # Ctrl+Q switches to the US keyboard: SebType goes mid-replay, Ctrl isn't left down, and back it composes.
+      { & $held 'deactivated' '' { $tsf::LeaveOn = 0x51; $null = $tsf::Press(0x51, 0x11, 0xA2) } {
+          $tsf::LeaveOn = 0
+          $active = $tsf::Active(); $ctrl = $tsf::IsDown(0x11)
+          $tsf::Activate(0x411, [Guid]'{D4E5C593-4F73-475F-936C-0E29A6FE7A02}', [Guid]'{B148FB02-C235-45D6-996C-672C783ECD48}'); $tsf::Settle(500)
+          if ($active -notlike '0409 *') { "Ctrl+Q didn't switch to the US keyboard (active: $active)" }
+          elseif ($ctrl) { 'Ctrl stayed down after SebType went mid-replay' }
+        } 'か' '81' }
     ) | ForEach-Object { try { @{ ok = & $_ } } catch { @{ fail = $_.Exception.Message } } }
     $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
     if ($fails) { throw ($fails -join '; ') }

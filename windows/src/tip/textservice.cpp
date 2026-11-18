@@ -285,8 +285,9 @@ STDMETHODIMP TextService::Deactivate() {
   }
   stopWatching();
   window_.reset();
-  if (replayWindow_) DestroyWindow(std::exchange(replayWindow_, nullptr));
+  endReplay();
   held_.clear();
+  if (replayWindow_) DestroyWindow(std::exchange(replayWindow_, nullptr));
   if (button_) {
     ITfLangBarItemMgr *items = nullptr;
     if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfLangBarItemMgr, reinterpret_cast<void **>(&items)))) {
@@ -414,7 +415,9 @@ void TextService::focus(ITfDocumentMgr *focused) {
   }
   if (window_) window_->hide();
   field_ = Field::Unknown;
-  held_.clear();  // for the field that had them: not to be typed into another
+  // Keys held or being replayed were the field's that had them: not to be typed into another.
+  held_.clear();
+  replayed_.clear();
   stopWatching();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
@@ -643,10 +646,12 @@ void TextService::hold(WPARAM wParam, LPARAM lParam) {
   held_.push_back(h);
 }
 
-// Posted messages come before the keyboard's, so nothing typed meanwhile gets between: for each key, its state
-// (to this text service's own window), then the key (to the app's), and at the end the state as it was.
+// One key at a time, with its keyboard state, through this text service's own window: the next goes only
+// once the app handled this one and the character TranslateMessage made of it, and only while the focus is
+// where the keys were typed. Posted messages come before the keyboard's: nothing typed meanwhile gets between.
+constexpr UINT kReplayNext = WM_APP, kReplayAfter = WM_APP + 1;
+
 void TextService::replay() {
-  constexpr UINT kState = WM_APP, kDone = WM_APP + 1;
   if (!replayWindow_) {
     WNDCLASSEXW wc{sizeof(wc)};
     wc.lpfnWndProc = replayProc;
@@ -656,34 +661,36 @@ void TextService::replay() {
     replayWindow_ = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, dllInstance, nullptr);
     SetWindowLongPtrW(replayWindow_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
   }
-  std::vector<Held> keys = std::exchange(held_, {});
-  if (keys.empty() || GetFocus() != heldFor_ || !replayWindow_) return;
-  // After any replay still posted: its state messages count on.
-  for (const Held &h : keys) {
-    const bool sys = (h.state[VK_MENU] & 0x80) && !(h.state[VK_CONTROL] & 0x80);
-    PostMessageW(replayWindow_, kState, replayed_.size(), 0);
-    PostMessageW(heldFor_, sys ? WM_SYSKEYDOWN : WM_KEYDOWN, h.wParam, h.lParam & ~0xc0000000);
-    PostMessageW(heldFor_, sys ? WM_SYSKEYUP : WM_KEYUP, h.wParam, h.lParam | 0xc0000000);
-    replayed_.push_back(h);
+  replayed_.insert(replayed_.end(), held_.begin(), held_.end());
+  held_.clear();
+  if (replayWindow_ && !replayed_.empty() && !std::exchange(replaying_, true)) {
+    GetKeyboardState(realState_);
+    PostMessageW(replayWindow_, kReplayNext, 0, 0);
   }
-  PostMessageW(replayWindow_, kDone, replayed_.size(), 0);
+}
+
+void TextService::endReplay() {
+  if (std::exchange(replaying_, false)) SetKeyboardState(realState_);
+  replayed_.clear();
 }
 
 LRESULT CALLBACK TextService::replayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   auto *self = reinterpret_cast<TextService *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  if (self && msg == WM_APP && wParam < self->replayed_.size()) {
-    if (!std::exchange(self->replaying_, true)) GetKeyboardState(self->realState_);
-    SetKeyboardState(self->replayed_[wParam].state);
-    return 0;
+  if (!self || (msg != kReplayNext && msg != kReplayAfter)) return DefWindowProcW(hwnd, msg, wParam, lParam);
+  // The key's WM_CHAR is posted as the app translates the key: this goes after it.
+  if (msg == kReplayAfter) PostMessageW(hwnd, kReplayNext, 0, 0);
+  else if (self->replayed_.empty() || GetFocus() != self->heldFor_)
+    self->endReplay();  // the rest is dropped: not typed into another field
+  else {
+    Held h = self->replayed_.front();
+    self->replayed_.erase(self->replayed_.begin());
+    SetKeyboardState(h.state);
+    const bool sys = (h.state[VK_MENU] & 0x80) && !(h.state[VK_CONTROL] & 0x80);
+    PostMessageW(self->heldFor_, sys ? WM_SYSKEYDOWN : WM_KEYDOWN, h.wParam, h.lParam & ~0xc0000000);
+    PostMessageW(self->heldFor_, sys ? WM_SYSKEYUP : WM_KEYUP, h.wParam, h.lParam | 0xc0000000);
+    PostMessageW(hwnd, kReplayAfter, 0, 0);
   }
-  if (self && msg == WM_APP + 1) {
-    if (wParam == self->replayed_.size()) {  // the last replay posted
-      if (std::exchange(self->replaying_, false)) SetKeyboardState(self->realState_);
-      self->replayed_.clear();
-    }
-    return 0;
-  }
-  return DefWindowProcW(hwnd, msg, wParam, lParam);
+  return 0;
 }
 
 // The core sees each key once: OnTestKeyDown asks it and keeps the answer for OnKeyDown, as Weasel did.

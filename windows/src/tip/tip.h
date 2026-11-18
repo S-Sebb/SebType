@@ -133,6 +133,7 @@ class TextService final : public ITfTextInputProcessorEx,
   };
   void hold(WPARAM wParam, LPARAM lParam);
   void replay();
+  void endReplay();  // the keyboard state as it was, and nothing more replayed
   static LRESULT CALLBACK replayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   static wchar_t typedChar(WPARAM wParam, LPARAM lParam);
   // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
@@ -160,9 +161,9 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<CandidateWindow> window_;
   LangBarButton *button_ = nullptr;
   DWORD serverStarted_ = 0;  // GetTickCount of the last start, so a missing server isn't started every key
-  std::vector<Held> held_, replayed_;  // waiting for the edit; posted, being replayed
-  HWND heldFor_ = nullptr;             // the window that had the focus when the first was held
-  HWND replayWindow_ = nullptr;        // brackets each replayed key with its keyboard state
+  std::vector<Held> held_, replayed_;  // waiting for the edit; being replayed
+  HWND heldFor_ = nullptr;             // the window and field that had the focus when the first was held
+  HWND replayWindow_ = nullptr;        // sets each replayed key's keyboard state, and paces them
   BYTE realState_[256]{};              // the keyboard state before the replay, put back after it
   bool replaying_ = false;             // the replayed keys are the app's: the text service lets them by
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does
