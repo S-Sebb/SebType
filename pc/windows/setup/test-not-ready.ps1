@@ -181,6 +181,8 @@ function WaitIcon($want, $secs) {
 
 # This session's server (a terminal server may run one per session).
 function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
+# Every server in this session, for the results: there should be one (#332).
+function Servers { (@(Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId) | ForEach-Object { "$($_.Id) from $($_.StartTime.ToString('HH:mm:ss.fff'))" }) -join ', ' }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
 # failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
@@ -283,6 +285,7 @@ try {
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
   Check 'windows-ime' {
+    $before = Servers
     $clsid = [Guid]'{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}'; $profile = [Guid]'{FA550B04-5AD7-411F-A5AC-CA038EC515D7}'
     $was = try { $tsf::Enabled(0x804, $clsid, $profile) } catch { return "SKIP: no Microsoft Pinyin ($($_.Exception.InnerException.Message))" }
     try {
@@ -292,7 +295,7 @@ try {
       catch { $tsf::Taskbar("$Out\ms-pinyin-taskbar.png", 360); $what = "the taskbar saved; no button icon ($($_.Exception.Message))" }
     } catch { $what = "can't be switched to ($($_.Exception.InnerException.Message))" }
     finally { Lang zh; if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $false) } }
-    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what"
+    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what; servers before $before, after $(Servers)"
   }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime
