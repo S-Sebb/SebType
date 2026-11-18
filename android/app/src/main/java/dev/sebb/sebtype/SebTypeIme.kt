@@ -693,6 +693,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         expanded = false
         enterLanguage()
         refresh()
+        // At once: a letter tapped right after the globe must not take English's capital into 中文 or 日本語
+        autoShift()
     }
 
     private var layoutSent: List<Int>? = null
