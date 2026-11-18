@@ -13,8 +13,7 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, and a key
     goes in as typed without waiting; reload-while-loading: the Configurator's /mozc meanwhile, and 中文 still
     switches and types at once; first-japanese-back: あ unasked once Mozc and the reload are done, then the first ka gives か;
-  ready: あ and 中 as usual; dpi-change: the candidates rescale when the scale changes while they show (#327),
-    and back as a fresh show; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
+  ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
     in as typed and the popup says why; chinese-back: once Rime is done the key is 中 again, unasked;
@@ -26,7 +25,8 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     doesn't reach Rime as well); dpi-change-popup: dpi-change for the popup, at a key once the server hangs;
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
     popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
-    keypad 1, in an app that grants the text service's edit only after it handled the key.
+    keypad 1, in an app that grants the text service's edit only after it handled the key;
+  dpi-change: the candidates rescale when the scale changes while they show (#327), and back as a fresh show.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -273,10 +273,6 @@ try {
     if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }
     'あ and 中 differ'
   }
-  Check 'dpi-change' {
-    Lang zh; $tsf::Clear(); Keys n i
-    try { DpiRoundTrip 'dpi-candidates' } finally { Keys Escape; $tsf::Clear() }
-  }
   # Every later check compares against these two icons.
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
@@ -416,6 +412,11 @@ try {
   }
   Check 'hang-mid-composition' { & $hang 'n' $false 'hang-mid' }
   Check 'hang-mid-deferred-lock' { (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp') -join '; ' }
+  # Last: the timing checks before don't follow a window that was shown at another scale.
+  Check 'dpi-change' {
+    Lang zh; $tsf::Clear(); Keys n i
+    try { DpiRoundTrip 'dpi-candidates' } finally { Keys Escape; $tsf::Clear() }
+  }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
