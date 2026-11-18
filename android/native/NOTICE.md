@@ -35,7 +35,7 @@ fetches at build time.
 | RapidJSON (in OpenCC) | [RapidJSON-LICENSE.txt](src/main/assets/licenses/RapidJSON-LICENSE.txt) | MIT |
 | llamafile's sgemm (in ggml) | [Llamafile-sgemm-LICENSE.txt](src/main/assets/licenses/Llamafile-sgemm-LICENSE.txt) | MIT |
 | YaRN (in ggml) | [YaRN-LICENSE.txt](src/main/assets/licenses/YaRN-LICENSE.txt) | MIT |
-| Japanese Usage Dictionary (in Mozc's dictionary) | [Japanese-usage-dictionary-LICENSE.txt](src/main/assets/licenses/Japanese-usage-dictionary-LICENSE.txt) | BSD-3-Clause |
+| Japanese Usage Dictionary (in Mozc's dictionary) | [Japanese-usage-dictionary-LICENSE.txt](src/main/assets/licenses/Japanese-usage-dictionary-LICENSE.txt) | BSD-2-Clause |
 | Japan Post postal codes (in Mozc's dictionary) | [Japan-Post-zipcode-NOTICE.txt](src/main/assets/licenses/Japan-Post-zipcode-NOTICE.txt) | no copyright claimed |
 
 The app adds the texts the repository already holds (android/app/build.gradle's `copyLicences`), among them
