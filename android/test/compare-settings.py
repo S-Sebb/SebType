@@ -126,6 +126,16 @@ try:
             time.sleep(2)
         adb("shell", "ime", "enable", f"{pkg}/{ime}")
         adb("shell", "ime", "set", f"{pkg}/{ime}")
+        # The new app's wizard ends on its tips (step 3), which Done closes for good.
+        open_settings(app)
+        if done := labels().get("Done"):
+            adb(
+                "shell",
+                "input",
+                "tap",
+                str((done[0] + done[2]) // 2),
+                str((done[1] + done[3]) // 2),
+            )
         for mode in MODES:
             adb("shell", "cmd", "uimode", "night", "yes" if mode == "dark" else "no")
             time.sleep(2)
