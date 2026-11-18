@@ -6,6 +6,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(SEBTYPE_CJK "Build 中文 (librime) and 日本語 (Mozc)" ON)
 option(SEBTYPE_ENGLISH "Build English (AOSP's decoder and SebType's model, engines/latinime and engines/sebtype-lm)" OFF)
+option(SEBTYPE_CHINESE_MODEL "Build SebType's Chinese model around Rime (engines/sebtype-lm, OpenCC)" OFF)
 
 # Switching, menus and paging: no engine needed, so the unit tests link only this.
 add_library(sebtype-logic STATIC src/core.cpp src/pager.cpp)
@@ -59,20 +60,10 @@ target_include_directories(sebtype-core PRIVATE ${PROTO_OUT})
 target_link_libraries(sebtype-core PUBLIC sebtype-logic ${RIME_TARGET} ${PROTOBUF_TARGET} ${SEBTYPE_MOZC_LIB})
 endif()
 
-# English: AOSP LatinIME's decoder, untouched (Apache-2.0), called without Java, and SebType's model on
-# llama.cpp. The parent adds llama.cpp first, or LLAMA_DIR names its source (engines/sebtype-lm/fetch-llama.sh).
-# jni.h, for the decoder's types: the NDK's on Android, a JDK's (JAVA_HOME) elsewhere.
-if(SEBTYPE_ENGLISH)
-  set(ENGINES ${CMAKE_CURRENT_SOURCE_DIR}/../engines)
-  file(GLOB_RECURSE LATINIME_SRC ${ENGINES}/latinime/src/*.cpp)
-  add_library(latinime STATIC ${LATINIME_SRC})
-  target_include_directories(latinime PUBLIC ${ENGINES}/latinime/src)
-  set_target_properties(latinime PROPERTIES CXX_STANDARD 17)
-  target_compile_options(latinime PRIVATE -w)
-  if(NOT ANDROID)
-    find_path(JNI_H jni.h PATHS ENV JAVA_HOME PATH_SUFFIXES include REQUIRED NO_DEFAULT_PATH)
-    target_include_directories(latinime PUBLIC ${JNI_H} ${JNI_H}/linux)
-  endif()
+# SebType's models on llama.cpp (engines/sebtype-lm): the parent adds llama.cpp first, or LLAMA_DIR names its
+# source (engines/sebtype-lm/fetch-llama.sh).
+set(ENGINES ${CMAKE_CURRENT_SOURCE_DIR}/../engines)
+if(SEBTYPE_ENGLISH OR SEBTYPE_CHINESE_MODEL)
   if(NOT TARGET llama)
     foreach(off LLAMA_BUILD_TESTS LLAMA_BUILD_TOOLS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_SERVER LLAMA_CURL
                 BUILD_SHARED_LIBS GGML_OPENMP GGML_BACKEND_DL)
@@ -83,10 +74,38 @@ if(SEBTYPE_ENGLISH)
   if(NOT TARGET sebtype_lm)
     add_subdirectory(${ENGINES}/sebtype-lm sebtype-lm)
   endif()
+endif()
+
+# English: AOSP LatinIME's decoder, untouched (Apache-2.0), called without Java, and SebType's model.
+# jni.h, for the decoder's types: the NDK's on Android, a JDK's (JAVA_HOME) elsewhere.
+if(SEBTYPE_ENGLISH)
+  file(GLOB_RECURSE LATINIME_SRC ${ENGINES}/latinime/src/*.cpp)
+  add_library(latinime STATIC ${LATINIME_SRC})
+  target_include_directories(latinime PUBLIC ${ENGINES}/latinime/src)
+  set_target_properties(latinime PROPERTIES CXX_STANDARD 17)
+  target_compile_options(latinime PRIVATE -w)
+  if(NOT ANDROID)
+    find_path(JNI_H jni.h PATHS ENV JAVA_HOME PATH_SUFFIXES include REQUIRED NO_DEFAULT_PATH)
+    target_include_directories(latinime PUBLIC ${JNI_H} ${JNI_H}/linux)
+  endif()
   add_library(sebtype-english STATIC src/english.cpp)
   target_link_libraries(sebtype-english PUBLIC sebtype-logic PRIVATE latinime sebtype_lm)
   # llama.cpp's Unicode tables (src/unicode.h), linked already, for Java's letters in english.cpp
   target_include_directories(sebtype-english PRIVATE $<TARGET_PROPERTY:llama,SOURCE_DIR>)
+endif()
+
+# 中文's model around Rime (src/chinese.cpp, #264), with OpenCC for 繁: the target libopencc on Android
+# (android/native builds it for librime), the system's elsewhere.
+if(SEBTYPE_CHINESE_MODEL)
+  add_library(sebtype-chinese STATIC src/chinese.cpp)
+  if(TARGET libopencc)
+    set(OPENCC_TARGET libopencc)
+  else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(OpenCC REQUIRED IMPORTED_TARGET opencc)
+    set(OPENCC_TARGET PkgConfig::OpenCC)
+  endif()
+  target_link_libraries(sebtype-chinese PUBLIC sebtype-logic PRIVATE sebtype_zh_lm ${OPENCC_TARGET})
 endif()
 
 option(SEBTYPE_TESTS "Build the core's unit tests" ON)
@@ -102,6 +121,13 @@ if(SEBTYPE_TESTS)
       EN_DICT="${CMAKE_CURRENT_SOURCE_DIR}/../data/en-dict/en_US.dict"
       EN_MODEL="${ENGINES}/sebtype-lm/english.gguf" EN_USER_DIR="${CMAKE_CURRENT_BINARY_DIR}/english-user"
       EN_LEGACY_HISTORY="${CMAKE_CURRENT_SOURCE_DIR}/test/data/UserHistoryDictionary.en_US.dict")
+  endif()
+  if(SEBTYPE_CHINESE_MODEL)
+    # The model around a stand-in Rime: the committed model, and OpenCC's tables (ZH_OPENCC, the system's).
+    set(ZH_OPENCC /usr/share/opencc CACHE PATH "The folder with OpenCC's s2t.json and t2s.json")
+    target_link_libraries(core-test sebtype-chinese)
+    target_compile_definitions(core-test PRIVATE SEBTYPE_CHINESE_MODEL
+      ZH_MODEL="${ENGINES}/sebtype-lm/chinese.gguf" ZH_OPENCC="${ZH_OPENCC}")
   endif()
   add_test(NAME core-test COMMAND core-test)
 endif()

@@ -13,9 +13,6 @@
 
 #include <jni.h>
 #include <sys/stat.h>
-#ifdef __ANDROID__
-#include <android/trace.h>
-#endif
 
 #include <algorithm>
 #include <chrono>
@@ -45,6 +42,7 @@
 #include "suggest/core/result/suggestion_results.h"
 #include "suggest/core/session/dic_traverse_session.h"
 #include "suggest/core/suggest_options.h"
+#include "trace.h"
 #include "unicode.h"  // llama.cpp's Unicode tables (its src/)
 #include "utils/autocorrection_threshold_utils.h"
 
@@ -66,21 +64,6 @@ constexpr size_t kNextWords = 5;      // the model's next words asked for; block
 constexpr size_t kContextChars = 1000;  // the text before the cursor kept; the model reads 300 of it
 // How long a space waits for the model's ranking of the word before the decoder's rule decides (#310).
 constexpr std::chrono::milliseconds kRankWait{400};
-// A trace section from here to the end of the scope: in Perfetto traces on Android, where
-// android/perf/perf.sh reads the rankings' times and what each space did (#320), next to the worker's other
-// jobs (load, next words) that a ranking waits behind; nothing elsewhere.
-struct TraceSection {
-  explicit TraceSection([[maybe_unused]] const char *name) {
-#ifdef __ANDROID__
-    ATrace_beginSection(name);
-#endif
-  }
-  ~TraceSection() {
-#ifdef __ANDROID__
-    ATrace_endSection();
-#endif
-  }
-};
 // Typing options: not a gesture, no full edit distance, offensive words blocked, locale weight 1.0.
 constexpr int kOptions[] = {0, 0, 1, 0, 1000};
 namespace ks {

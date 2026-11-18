@@ -4,9 +4,10 @@
 # (tools/lib.sh, fedora_container) with Fedora's librime and its Lua and octagram plugins, as SebType's Linux
 # build does, in the build lock and under its caps.
 #
-#   android/test/chinese-lm/bench.sh RUN_NAME [MODEL.gguf [NAME=VALUE...] [-- NAME=VALUE...]]
+#   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh RUN_NAME [MODEL.gguf [NAME=VALUE...] [-- NAME=VALUE...]]
 #                                    NAME=VALUE: zhbench's options; after --, those a third stack ("gen", the
-#                                    model with its own candidates) adds to them
+#                                    model with its own candidates) adds to them. CHINESE_CORE=1 adds the
+#                                    keyboard's own code ("core", zhbench's core=1), with the model.
 #   android/test/chinese-lm/bench.sh --dev DEV_DIR OUT_DIR MODEL.gguf [NAME=VALUE...]  only the model, on the
 #                                                                    dev sets in DEV_DIR (tune.py)
 #
@@ -21,7 +22,7 @@ if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
   # The base build image plus librime's headers, its octagram plugin and the harness's build tools.
   fedora_container
   if [[ ${#container[@]} -gt 0 ]]; then
-    extra="librime-devel librime-octagram cmake ninja-build"
+    extra="librime-devel librime-octagram opencc-devel cmake ninja-build"
     base=${container[-1]}
     image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$base $extra" | head -c 12)
     podman image exists "$image" ||
@@ -33,7 +34,7 @@ RUN dnf -y install $extra && dnf clean all" >/dev/null
   llama=$(engines/sebtype-lm/fetch-llama.sh)
   # Only the results' paths go to stdout (build_remotely copies what it names back): each set's, which
   # score.py --compare reads, and the summary's last.
-  build_lock 120 chinese-harness "${container[@]}" env CHINESE_IN_CONTAINER=1 ISSUE="${ISSUE:-}" LLAMA_DIR="$llama" \
+  build_lock 120 chinese-harness "${container[@]}" env CHINESE_IN_CONTAINER=1 ISSUE="${ISSUE:-}" LLAMA_DIR="$llama" CHINESE_CORE="${CHINESE_CORE:-}" \
     $here/bench.sh "$@" >&2
   [[ $1 == --dev ]] && exit
   printf '%s\n' "$TASK_OUT/chinese/$1"/*.tsv "$TASK_OUT/chinese/$1/summary.json"
@@ -70,6 +71,7 @@ if [[ $dev ]]; then sets=("$dev"/dev-*.tsv); else sets=($here/sets/*.tsv); fi
 stacks=(rime)
 [[ $model ]] && stacks+=(model)
 ((${#gen[@]})) && stacks+=(gen)
+[[ $model && ${CHINESE_CORE:-} ]] && stacks+=(core)
 [[ $dev ]] && stacks=(model)
 jobs=()
 for stack in "${stacks[@]}"; do
@@ -79,6 +81,7 @@ for stack in "${stacks[@]}"; do
     args=("$work/shared" "$work/user-$stack-$name" "$set" "$out/$stack.$name.tsv")
     [[ $stack == model ]] && args+=("$model" "${options[@]}")
     [[ $stack == gen ]] && args+=("$model" "${options[@]}" "${gen[@]}")
+    [[ $stack == core ]] && args+=("$model" core=1)
     jobs+=("cp -r $work/user $work/user-$stack-$name && $build/zhbench ${args[*]}")
   done
 done

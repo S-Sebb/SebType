@@ -34,13 +34,30 @@ the user folder (none when learning is off), offensive words are never suggested
 lists e-mail domains, and punctuation after a picked word joins it (#39). CMake builds it with
 `-DSEBTYPE_ENGLISH=ON` (`-DSEBTYPE_CJK=OFF` leaves out librime and Mozc).
 
+## 中文's model
+
+`src/chinese.cpp` (`withChineseModel` in `include/sebtype/hosts.h`, `-DSEBTYPE_CHINESE_MODEL=ON`, #264) puts
+SebType's Chinese model ([`engines/sebtype-lm`](../engines/sebtype-lm), `zh_lm`) around the Rime engine, as the
+experiment of #259 measured it ([report](../docs/experiments/2026-11-16-chinese-lm.md)). Rime's list shows at
+once. On a worker thread the model scores Rime's first 4 candidates that spell the whole input, adds a beam of 2
+of its own, and with nothing typed predicts the next words; the `ready` callback announces its list, which
+replaces Rime's first ones. Each list carries the revision it was asked for, which every key, pick and field or
+setting change moves on; a late one never shows, and a beam still running for an old revision stops. Picking the
+model's own candidate selects the Rime candidates that spell it, piece by piece, so Rime's user dictionary learns
+it; where Rime has no such piece (a typo the model fixed) only the text is committed. With 繁, OpenCC's `t2s`
+gives the model simplified text and `s2t` converts its own candidates. The model loads when the engine is made
+and goes with it, so it starts and stops with Rime. Its trace sections, "SebType zh load", "zh rank", "zh next"
+and "zh pick", are in `android/perf`'s traces.
+
 ## Tests
 
 `test/core_test.cpp` checks the riskiest paths with stand-in engines: language switching, the Shift tap,
 简/繁, あ ⇄ ア, the popups and paging 6 to a page, the touch paths and both `commitOnSwitch` values. `linux/build.sh` runs them in its container on every
 build (`%check` in `linux/sebtype.spec`). Built with English, it also tests the English engine on the real
 dictionary and model: `test/english.sh` builds and runs that on yanglab16. The English harness
-(`android/test/english/run.sh`) measures its quality against today's keyboard.
+(`android/test/english/run.sh`) measures its quality against today's keyboard. Built with 中文's model, it tests
+the model around a stand-in Rime: `test/chinese.sh` builds and runs that on yanglab16, and the Chinese harness
+(`android/test/chinese-lm/run.sh`, `SEBTYPE_ZH_CORE=1`) measures this code on the real Rime.
 
 ## Licences and credits
 
@@ -53,4 +70,5 @@ dictionary and model: `test/english.sh` builds and runs that on yanglab16. The E
 - The protocol it speaks to Mozc is generated from Mozc's own `.proto` files in `engines/mozc`
   (BSD-3-Clause).
 - The engines keep their licences: librime BSD-3-Clause, Mozc BSD-3-Clause, AOSP LatinIME's decoder
-  Apache-2.0. SebType's English model is CC BY-SA 4.0 (`engines/LICENSE`, `NOTICE`).
+  Apache-2.0. SebType's English and Chinese models are CC BY-SA 4.0 (`engines/LICENSE`, `NOTICE`); OpenCC,
+for 繁 around the Chinese model, is Apache-2.0.

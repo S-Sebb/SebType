@@ -64,4 +64,20 @@ struct EnglishPaths {
 // for the text so far: the frontend posts it to its own thread and reads candidates() there.
 std::unique_ptr<Engine> makeEnglish(const EnglishPaths &paths, std::function<void()> ready);
 
+// SebType's Chinese model around 中文's engine (#264): RIME's candidates show at once; the model's order over
+// Rime's first ones, its own candidates and, with nothing typed, the next words follow from its worker thread.
+struct ChineseModelPaths {
+  std::string model;   // engines/sebtype-lm/chinese.gguf, loaded on the worker as the engine starts
+  std::string opencc;  // the folder with OpenCC's s2t.json and t2s.json (rime-data's opencc/), for 繁
+  int threads = 1;     // the model's
+  std::chrono::milliseconds rankDelay{0};  // tests: each list takes this much longer, as on a slow phone
+  // The Chinese harness (android/test/chinese-lm): each change returns once the model's list for it has
+  // come, so a key's time is Rime's and the model's.
+  bool synchronous = false;
+};
+// READY runs on the worker when the model's list for what is typed (or the next words) has come: the
+// frontend posts it to its own thread and reads candidates() there, as for English.
+std::unique_ptr<Engine> withChineseModel(std::unique_ptr<Engine> rime, const ChineseModelPaths &paths,
+                                         std::function<void()> ready);
+
 }  // namespace sebtype

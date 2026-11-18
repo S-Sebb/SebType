@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 
-#ifdef SEBTYPE_ENGLISH
+#if defined(SEBTYPE_ENGLISH) || defined(SEBTYPE_CHINESE_MODEL)
 #include <sebtype/hosts.h>
 
 #include <condition_variable>
@@ -829,5 +829,200 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
   EXPECT_TRUE(type(" "));  // a third space is only a space
   EXPECT_EQ(en->takeEdit().deleteBefore, 0);
   EXPECT_EQ(en->takeCommit(), " ");
+}
+#endif
+
+#ifdef SEBTYPE_CHINESE_MODEL
+// Rime as the model sees it: a few words by their pinyin, a candidate list for the input not yet chosen
+// (FULL's sentence for all of it first, then the words that start it, longest first), and picks that consume
+// their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛.
+struct FakeRime : Engine {
+  std::map<std::string, std::vector<std::string>> words{
+      {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
+  std::map<std::string, std::string> full{{"woaini", "握挨泥"}, {"nihao", "你好"}};
+  std::string in, chosen, commit;
+  size_t done = 0;
+  bool alt = false;
+  std::vector<int> picks;
+  std::vector<std::string> learned;
+
+  struct Item {
+    std::string text;
+    size_t letters;
+  };
+  std::string shown(std::string t) const {
+    if (alt)
+      for (size_t at; (at = t.find("爱")) != std::string::npos;) t.replace(at, 3, "愛");
+    return t;
+  }
+  std::vector<Item> list() const {
+    std::vector<Item> out;
+    const std::string left = in.substr(done);
+    if (left.empty()) return out;
+    if (auto f = full.find(left); f != full.end()) out.push_back({shown(f->second), left.size()});
+    for (size_t n = left.size(); n > 0; n--)
+      if (auto w = words.find(left.substr(0, n)); w != words.end())
+        for (const auto &t : w->second) out.push_back({shown(t), n});
+    return out;
+  }
+  bool key(const Key &k) override {
+    if (k.release) return false;
+    if (k.sym >= 'a' && k.sym <= 'z') return in += char(k.sym), true;
+    if (k.sym == 0xff08 && !in.empty()) return in.pop_back(), true;
+    if (k.sym == ' ' && composing()) return selectAt(0), true;
+    if (k.sym == ',' && composing()) selectAt(0);
+    if (k.sym == ',') return commit += "，", true;
+    return false;
+  }
+  std::string takeCommit() override { return std::exchange(commit, {}); }
+  // "wo ai ni": the syllables by the longest words that spell the input
+  Preedit preedit() override {
+    if (in.empty()) return {};
+    std::string syl;
+    for (size_t i = done; i < in.size();) {
+      size_t n = std::min<size_t>(3, in.size() - i);
+      while (n > 1 && !words.count(in.substr(i, n))) n--;
+      syl += (syl.empty() ? "" : " ") + in.substr(i, n);
+      i += n;
+    }
+    Preedit p;
+    if (!chosen.empty()) p.segments.push_back({chosen, true, false});
+    p.segments.push_back({syl, true, true});
+    return p;
+  }
+  std::string input() override { return in; }
+  bool composing() override { return !in.empty(); }
+  void flush() override { clear(); }
+  void clear() override { in.clear(), chosen.clear(), done = 0; }
+  int pageSize() override { return 6; }
+  bool candidateAt(int i, Candidate &out) override {
+    const auto l = list();
+    if (i < 0 || i >= int(l.size())) return false;
+    out = {l[i].text};
+    return true;
+  }
+  int highlighted() override { return composing() ? 0 : -1; }
+  void selectAt(int i) override {
+    const auto l = list();
+    if (i < 0 || i >= int(l.size())) return;
+    picks.push_back(i);
+    chosen += l[i].text;
+    done += l[i].letters;
+    if (done == in.size()) learned.push_back(chosen), commit += chosen, clear();
+  }
+  bool latin() override { return false; }
+  void setLatin(bool) override {}
+  bool alternate() override { return alt; }
+  void setAlternate(bool on) override { alt = on; }
+};
+
+// The model around FakeRime, with the committed model and the system's OpenCC tables.
+struct ChineseTest : testing::Test {
+  std::mutex mutex;
+  std::condition_variable cv;
+  int readies = 0;
+  FakeRime *rime = nullptr;
+  std::unique_ptr<Engine> zh;
+
+  void SetUp() override { start(); }
+  void start(std::chrono::milliseconds delay = {}) {
+    zh.reset();
+    auto r = std::make_unique<FakeRime>();
+    rime = r.get();
+    zh = withChineseModel(std::move(r), {ZH_MODEL, ZH_OPENCC, 1, delay}, [this] {
+      std::lock_guard g(mutex);
+      readies++;
+      cv.notify_all();
+    });
+  }
+  int readyCount() {
+    std::lock_guard g(mutex);
+    return readies;
+  }
+  // Waits for the READY call after AFTER, up to a minute (the model loads first).
+  bool ready(int after) {
+    std::unique_lock l(mutex);
+    return cv.wait_for(l, std::chrono::minutes(1), [&] { return readies > after; });
+  }
+  void type(const std::string &s) {
+    for (char c : s) zh->key({static_cast<uint32_t>(c), 0, false});
+  }
+  // Types S and waits for the model's list.
+  void typeAndWait(const std::string &s) {
+    const int before = readyCount();
+    type(s);
+    ASSERT_TRUE(ready(before));
+  }
+  std::vector<std::string> list() {
+    std::vector<std::string> out;
+    for (const auto &c : zh->candidates(20)) out.push_back(c.text);
+    return out;
+  }
+};
+
+TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
+  typeAndWait("woaini");
+  // The model's own candidate first, then Rime's sentence; Space picks it, and Rime learns it piece by
+  // piece: 我 (wo), 爱 (ai), 你 (ni).
+  const auto l = list();
+  ASSERT_GE(l.size(), 2u);
+  EXPECT_EQ(l[0], "我爱你");
+  EXPECT_NE(std::ranges::find(l, "握挨泥"), l.end());
+  EXPECT_EQ(zh->highlighted(), 0);
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
+  EXPECT_EQ(rime->picks.size(), 3u);
+  EXPECT_FALSE(zh->composing());
+}
+
+TEST_F(ChineseTest, PickingRimesCandidateSelectsItByRimesIndex) {
+  typeAndWait("nihao");
+  const auto l = list();
+  const auto at = std::ranges::find(l, "你好");
+  ASSERT_NE(at, l.end());
+  zh->selectAt(int(at - l.begin()));
+  EXPECT_EQ(rime->picks, (std::vector<int>{0}));  // Rime's first, 你好 for all of it
+  EXPECT_EQ(zh->takeCommit(), "你好");
+}
+
+TEST_F(ChineseTest, ALateListNeverShows) {
+  start(300ms);  // each list takes 0.3 s longer
+  typeAndWait("nihao");
+  zh->clear();
+  int before = readyCount();
+  type("wo");
+  type("a");  // asked for "wo", then "woa": only the last comes
+  zh->clear();
+  type("woaini");
+  EXPECT_EQ(list().at(0), "握挨泥");  // Rime's, until the model's for these letters
+  ASSERT_TRUE(ready(before));
+  EXPECT_EQ(readyCount(), before + 1);
+  EXPECT_EQ(list().at(0), "我爱你");
+}
+
+TEST_F(ChineseTest, TraditionalAndNextWords) {
+  zh->setAlternate(true);
+  typeAndWait("woaini");
+  EXPECT_EQ(list().at(0), "我愛你");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我愛你");
+  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我愛你"}));
+  // Nothing typed: the next words, in 繁 too, and picking one commits it.
+  const int before = readyCount();
+  zh->setContext("今天天氣很", "", false);
+  ASSERT_TRUE(ready(before));
+  const auto next = list();
+  ASSERT_FALSE(next.empty());
+  EXPECT_NE(std::ranges::find(next, "好"), next.end());
+  zh->selectAt(int(std::ranges::find(next, "好") - next.begin()));
+  EXPECT_EQ(zh->takeCommit(), "好");
+}
+
+TEST_F(ChineseTest, PunctuationCommitsTheModelsFirst) {
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->key({',', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "我爱你，");
 }
 #endif

@@ -22,10 +22,14 @@ foreach(on GGML_AVX GGML_AVX2 GGML_FMA GGML_F16C GGML_BMI2)
 endforeach()
 add_subdirectory(${LLAMA_DIR} llama EXCLUDE_FROM_ALL)
 
-set(CORE ${CMAKE_CURRENT_SOURCE_DIR}/../../../core)
-add_executable(zhbench src/main.cpp src/zh_lm.cpp ${CORE}/src/rime.cpp ${CORE}/src/pager.cpp)
-target_include_directories(zhbench PRIVATE ${CORE}/include)
-target_link_libraries(zhbench PRIVATE PkgConfig::Rime llama pthread)
+pkg_check_modules(OpenCC REQUIRED IMPORTED_TARGET opencc)
 
-add_executable(zh_lm_test src/zh_lm_test.cpp src/zh_lm.cpp)
-target_link_libraries(zh_lm_test PRIVATE llama pthread)
+# The model's loader and core/'s Chinese engine around Rime, as the keyboard builds them (#264).
+set(CORE ${CMAKE_CURRENT_SOURCE_DIR}/../../../core)
+add_subdirectory(${CORE}/../engines/sebtype-lm sebtype-lm)
+add_executable(zhbench src/main.cpp ${CORE}/src/rime.cpp ${CORE}/src/pager.cpp ${CORE}/src/chinese.cpp)
+target_include_directories(zhbench PRIVATE ${CORE}/include)
+target_link_libraries(zhbench PRIVATE PkgConfig::Rime PkgConfig::OpenCC sebtype_zh_lm pthread)
+
+add_executable(zh_lm_test src/zh_lm_test.cpp)
+target_link_libraries(zh_lm_test PRIVATE sebtype_zh_lm pthread)

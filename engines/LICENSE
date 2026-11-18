@@ -10,3 +10,6 @@ The input engines the phone and both PCs share, each under its project's licence
   Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/), because
   part of its training text is share-alike. Its sources are credited in ../NOTICE and
   ../tools/english-lm/SOURCES.md.
+- sebtype-lm/chinese.gguf: SebType's Chinese model (tools/chinese-lm, release r1), under the same Creative
+  Commons Attribution-ShareAlike 4.0 licence, for the same reason. Its sources are credited in ../NOTICE and
+  ../tools/chinese-lm/SOURCES.md.
