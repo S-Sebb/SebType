@@ -1,16 +1,16 @@
 """What Bazel repositories download, for tools/mozc-downloads.sh (#335): one "URL repos SHA256" line per file,
 or "? NAME" for a repository whose files it can't tell.
 
-    python3 -I mozc-repo-urls.py REGISTRY NAME...   # a module's repository (NAME: "rules_cc+" or "platforms"), from REGISTRY,
-                                                    # the registry's copy: its source.json and MODULE.bazel
-    ... | python3 -I mozc-repo-urls.py OUTPUT_BASE  # other repositories, from their rules' attributes in
-                                                    # `bazel mod show_repo --output=streamed_jsonproto`, or for
-                                                    # protobuf's prebuilt protoc from protobuf's own list
+    ... | python3 -I mozc-repo-urls.py REGISTRY NAME...
+        a module's repository (NAME: "rules_cc+" or "platforms") in the version `bazel mod graph --output=json`
+        (stdin) selected, from REGISTRY, the registry's copy: its source.json and MODULE.bazel
+    ... | python3 -I mozc-repo-urls.py OUTPUT_BASE
+        other repositories, from their rules' attributes in `bazel mod show_repo --output=streamed_jsonproto`,
+        or for protobuf's prebuilt protoc from protobuf's own list
 """
 
 import ast
 import base64
-import glob
 import hashlib
 import json
 import os
@@ -25,15 +25,20 @@ def sha(integrity):  # "sha256-<base64>" or hex
     return integrity
 
 
-def module(registry, name):
-    sources = glob.glob(
-        os.path.join(registry, "modules", name.rstrip("+"), "*", "source.json")
-    )
-    if len(sources) != 1:
+def selected(node, versions):  # module name -> version, from mod graph's tree
+    versions.setdefault(node["name"], node.get("version", ""))
+    for dep in node.get("dependencies", []):
+        selected(dep, versions)
+    return versions
+
+
+def module(registry, name, versions):
+    name = name.rstrip("+")
+    rel = f"modules/{name}/{versions.get(name, '?')}"
+    d = os.path.join(registry, rel)
+    if not os.path.isfile(os.path.join(d, "source.json")):
         return []
-    d = os.path.dirname(sources[0])
-    rel = os.path.relpath(d, registry)
-    source = json.load(open(sources[0]))
+    source = json.load(open(os.path.join(d, "source.json")))
     files = [(source["url"], sha(source["integrity"]))]
     for patch, integrity in source.get("patches", {}).items():
         files.append((f"{BCR}{rel}/patches/{patch}", sha(integrity)))
@@ -45,18 +50,18 @@ def module(registry, name):
 
 
 def rule(repo, output_base):
-    if (
-        repo["repoRuleName"] == "prebuilt_protoc_repo"
-    ):  # its rule names the file in code, not in attributes
+    # protobuf's prebuilt protoc names its file in code, not in attributes
+    if repo["repoRuleName"] == "prebuilt_protoc_repo":
         return protoc(repo, output_base)
     a = {}
     for x in repo.get("attribute", []):
-        v = (
-            x.get("stringValue")
-            or x.get("stringListValue")
-            or x.get("stringDictValue")
-            or x.get("stringListDictValue")
+        kinds = (
+            "stringValue",
+            "stringListValue",
+            "stringDictValue",
+            "stringListDictValue",
         )
+        v = next((x[k] for k in kinds if x.get(k)), None)
         if v:
             a[x["name"]] = v
     files = []
@@ -71,12 +76,8 @@ def rule(repo, output_base):
         files.append((d["key"], sha(d["value"])))
     integrity = {d["key"]: d["value"] for d in a.get("remote_file_integrity", [])}
     for d in a.get("remote_file_urls", []):
-        files.append(
-            (
-                d["value"][0] if isinstance(d["value"], list) else d["value"],
-                sha(integrity[d["key"]]),
-            )
-        )
+        url = d["value"][0] if isinstance(d["value"], list) else d["value"]
+        files.append((url, sha(integrity[d["key"]])))
     return files
 
 
@@ -86,9 +87,14 @@ def protoc(
     platform = next(
         x["stringValue"] for x in repo["attribute"] if x["name"] == "platform"
     )
-    rel = repo["repoRuleBzlLabel"].split("//")[1].split(":")[0]
+    label = repo[
+        "repoRuleBzlLabel"
+    ]  # @@protobuf+//bazel/private/...:protoc_toolchain.bzl
     path = os.path.join(
-        output_base, "external", repo["repoRuleBzlLabel"][2:].split("//")[0], rel
+        output_base,
+        "external",
+        label[2:].split("//")[0],
+        label.split("//")[1].split(":")[0],
     )
     tree = ast.parse(open(os.path.join(path, "tool_integrity.bzl")).read())
     known = {
@@ -103,7 +109,8 @@ def protoc(
 
 
 if os.path.isdir(os.path.join(sys.argv[1], "modules")):
-    named = [(n, module(sys.argv[1], n)) for n in sys.argv[2:]]
+    versions = selected(json.load(sys.stdin), {})
+    named = [(n, module(sys.argv[1], n, versions)) for n in sys.argv[2:]]
 else:
     named = [
         (r["canonicalName"], rule(r, sys.argv[1])) for r in map(json.loads, sys.stdin)

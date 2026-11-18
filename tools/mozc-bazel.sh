@@ -37,17 +37,23 @@ mozc_bazel_plain() {
 }
 
 # mozc_prefetch CACHE: what tools/mozc-downloads.tsv lists (sha256, URL, where), into CACHE (mozc_file), each
-# once, capped at 35 MB/s, and checked.
+# once, capped at 35 MB/s, and checked. A file counts as there when its stamp (mozc_place) holds the sha256 the
+# list now pins: a registry file's path doesn't name its digest. Builds may run this at the same time: each
+# downloads to a file of its own and moves it into place in one step.
 mozc_prefetch() {
-  local sha url where file
+  local sha url where file tmp
   while read -r sha url where; do
     file=$(mozc_file "$1" "$sha" "$url" "$where")
-    [[ -f $file && ( $where != repos || -f $(mozc_id "$file" "$url") ) ]] && continue
+    [[ $(cat "$1/stamps/${file#"$1"/}" 2>/dev/null) == "$sha" ]] && continue
+    # One from before the stamps, or a stale one: kept only if it is what the list pins
+    if [[ -f $file ]] && echo "$sha  $file" | sha256sum -c --status; then
+      mozc_place "$1" "" "$file" "$url" "$where" "$sha"; continue
+    fi
     mkdir -p "$(dirname "$file")"
-    curl -fsSL --retry 3 --limit-rate 35M -o "$file.part" "$url" &&
-      echo "$sha  $file.part" | sha256sum -c --status ||
-      { rm -f "$file.part"; echo "mozc_prefetch: $url failed or changed (sha256)" >&2; return 1; }
-    mozc_place "$file.part" "$file" "$url" "$where"
+    tmp=$(mktemp --suffix=.part "$file.XXXXXX")
+    curl -fsSL --retry 3 --limit-rate 35M -o "$tmp" "$url" && echo "$sha  $tmp" | sha256sum -c --status ||
+      { rm -f "$tmp"; echo "mozc_prefetch: $url failed or changed (sha256)" >&2; return 1; }
+    mozc_place "$1" "$tmp" "$file" "$url" "$where" "$sha"
   done < <(grep -v '^#' "$MOZC_DOWNLOADS")
 }
 # mozc_file CACHE SHA256 URL WHERE: where Bazel looks for that file: Bazel itself (bazel), a file of the
@@ -61,15 +67,20 @@ mozc_file() {
   esac
 }
 
-# mozc_place DOWNLOAD FILE URL WHERE: moves DOWNLOAD, checked, to FILE (mozc_file). An archive also gets the marker
+# mozc_place CACHE DOWNLOAD FILE URL WHERE SHA256: moves DOWNLOAD, checked, to FILE (mozc_file), or with no
+# DOWNLOAD takes FILE as it is, then stamps it with SHA256 in CACHE/stamps. An archive also gets the marker
 # Bazel's repository cache wants beside it: without one for the rule's canonical id, by default its URL, Bazel
 # doesn't take the file from the cache.
 mozc_place() {
-  [[ $4 != bazel ]] || chmod +x "$1"
-  mv "$1" "$2"
-  [[ $4 != repos ]] || touch "$(mozc_id "$2" "$3")"
+  local stamp=$1/stamps/${3#"$1"/} tmp
+  if [[ -n $2 ]]; then
+    [[ $5 != bazel ]] || chmod +x "$2"
+    mv -f "$2" "$3"
+  fi
+  [[ $5 != repos ]] || touch "$(dirname "$3")/id-$(printf %s "$4" | sha256sum | cut -d' ' -f1)"
+  mkdir -p "$(dirname "$stamp")"
+  tmp=$(mktemp "$stamp.XXXXXX") && echo "$6" > "$tmp" && mv -f "$tmp" "$stamp"
 }
-mozc_id() { echo "$(dirname "$1")/id-$(printf %s "$2" | sha256sum | cut -d' ' -f1)"; }
 
 # mozc_files CONFIG TARGET: the paths of TARGET's output files, after mozc_bazel CONFIG built it.
 mozc_files() {

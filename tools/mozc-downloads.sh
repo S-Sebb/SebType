@@ -32,7 +32,8 @@ for build in "${builds[@]}"; do
       modules=$(grep -E '^[^+]+\+?$' <<<"$repos") || true
       others=$(grep -vE '^[^+]+\+?$' <<<"$repos" | sed 's/^/@@/') || true
       # shellcheck disable=SC2086
-      [[ -z $modules ]] || { files+=$(python3 -I tools/mozc-repo-urls.py "$cache/registry" $modules)$'\n'; break; }
+      [[ -z $modules ]] || { files+=$(mozc_bazel_plain mod graph --output=json |
+        python3 -I tools/mozc-repo-urls.py "$cache/registry" $modules)$'\n'; break; }
       [[ -n $others ]] || break
       # shellcheck disable=SC2086
       if shown=$(mozc_bazel_plain mod show_repo $others --output=streamed_jsonproto 2>"$cache/show_repo.log"); then
@@ -51,7 +52,7 @@ for build in "${builds[@]}"; do
       curl -fsSL --retry 3 --limit-rate 35M -o "$tmp" "$url" || { rm -f "$tmp"; echo "mozc-downloads: $url failed" >&2; exit 1; }
       sha=$(sha256sum "$tmp" | cut -d' ' -f1) file=$(mozc_file "$cache" "$sha" "$url" "$where")
       [[ -z ${want:-} || $want == "$sha" ]] || { rm "$tmp"; echo "mozc-downloads: $url isn't what its rule pins" >&2; exit 1; }
-      mkdir -p "$(dirname "$file")" && mozc_place "$tmp" "$file" "$url" "$where"
+      mkdir -p "$(dirname "$file")" && mozc_place "$cache" "$tmp" "$file" "$url" "$where" "$sha"
       printf '%s\t%s\t%s\n' "$sha" "$url" "$where" >> tools/mozc-downloads.tsv
       echo "added $url"
     done <<<"$missing"
