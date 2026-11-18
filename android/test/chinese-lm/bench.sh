@@ -81,7 +81,7 @@ for stack in "${stacks[@]}"; do
     args=("$work/shared" "$work/user-$stack-$name" "$set" "$out/$stack.$name.tsv")
     [[ $stack == model ]] && args+=("$model" "${options[@]}")
     [[ $stack == gen ]] && args+=("$model" "${options[@]}" "${gen[@]}")
-    [[ $stack == core ]] && args+=("$model" core=1)
+    [[ $stack == core ]] && args+=("$model" core=1 "${options[@]}")
     jobs+=("cp -r $work/user $work/user-$stack-$name && $build/zhbench ${args[*]}")
   done
 done
