@@ -137,8 +137,10 @@ add-on's name (step "SebType's tray"), so Fedora's Fcitx5 needs no change. Rime 
 folder (`~/.local/share/fcitx5/rime`) and names, and Mozc its profile, so learned words stay.
 
 `linux/build.sh` builds the `sebtype` RPM in a pinned Fedora container (`linux/versions.sh`), with Mozc
-(`/usr/lib64/sebtype/libsebtype-mozc.so`, which the add-on links) built by Bazel (Bazelisk, pinned by checksum), which fetches the
-libraries `engines/mozc/src/MODULE.bazel` pins. Bazel's caches stay in `~/scratch/SebType/cache/mozc/work`,
+(`/usr/lib64/sebtype/libsebtype-mozc.so`, which the add-on links) built by Bazel with the libraries
+`engines/mozc/src/MODULE.bazel` pins. Bazel downloads nothing itself: as for the phone's Mozc builds, Bazel
+and those libraries come from `tools/mozc-downloads.tsv`, fetched capped and checked first
+([development.md](../../docs/development.md#android)) (#361). Bazel's caches stay in `~/scratch/SebType/cache/mozc/work`,
 so a rebuild compiles only what changed. It runs the core's unit tests too. The RPM's name in
 `~/scratch/SebType/cache/sebtype` has a hash of the sources it packs (`sebtype_key`), so setup and the tests
 use the one built from their own checkout's code and build it when it's missing (#326).

@@ -4,7 +4,7 @@
 # (build-librime.sh). Sourced by the build scripts, pc/linux/setup-ime.sh and the tests. Bump
 # SEBTYPE_RPM_RELEASE when core/, linux/ or engines/mozc changes, LIBRIME_SEBTYPE_RELEASE when engines/librime does.
 SEBTYPE_VERSION=0.1.0
-SEBTYPE_RPM_RELEASE=14.fc44
+SEBTYPE_RPM_RELEASE=15.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
 # What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz.
@@ -13,10 +13,6 @@ SEBTYPE_MOZC=engines/mozc
 
 # fedora:44 as of 2026-11-09; its packages are what the builds link against.
 BUILD_IMAGE=registry.fedoraproject.org/fedora@sha256:a90c26f38ee1fb33444bbec8b598d8cc9aec7cc6455f8163df7d050e5d073a4f
-# Bazelisk, which runs the Bazel version engines/mozc/src/.bazeliskrc names. The phone's Mozc builds
-# run that Bazel directly instead, from tools/mozc-downloads.tsv (tools/mozc-bazel.sh).
-BAZELISK_URL=https://github.com/bazelbuild/bazelisk/releases/download/v1.30.0/bazelisk-linux-amd64
-BAZELISK_SHA256=a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8
 
 # librime.spec also builds librime-lua and the other plugins, which must match the librime they run on:
 # setup replaces every librime package installed.
