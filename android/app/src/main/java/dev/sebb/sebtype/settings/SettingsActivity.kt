@@ -166,6 +166,7 @@ private fun App(changes: Int) {
         "about" -> AboutScreen(nav)
         "tips" -> TipsScreen(nav)
         "credits" -> CreditsScreen(nav)
+        else -> stack.last().removePrefix("licence/").toIntOrNull()?.let { LicenceScreen(nav, it) }
     }
 }
 

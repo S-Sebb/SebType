@@ -23,7 +23,34 @@ tasks.register('copyEnglish', Sync) {
     from('../../engines/sebtype-lm') { include 'english.gguf' }
     into englishDir.map { it.dir('english') }
 }
-preBuild.dependsOn 'buildRimeData', 'mozcDictionary', 'copyEnglish'
+// The licence texts of what the app ships that :native's assets/licenses doesn't hold, copied from where the
+// repository keeps them; Settings › About › Licence and credits shows them (credits.tsv names each row's).
+final def licencesDir = layout.buildDirectory.dir('generated/sebtype-licences')
+tasks.register('copyLicences', Sync) {
+    dependsOn 'buildRimeData'
+    from('../../engines/mozc/LICENSE') { rename { 'Mozc-LICENSE.txt' } }
+    from('../../engines/mozc/src/data/dictionary_oss/README.txt') { rename { 'Mozc-dictionary-LICENSE.txt' } }
+    from('../../art/fonts') {
+        include 'OFL-Nunito.txt', 'OFL-PixelifySans.txt'
+        rename { it.replace('OFL-', '').replace('.txt', '-OFL.txt') }
+    }
+    from('../../LICENSE-LGPL-2.1') { rename { 'LGPL-2.1.txt' } }
+    from('../../LICENSE-SebType') { rename { 'SebType-LICENSE.txt' } }
+    from('../../NOTICE') { rename { 'SebType-NOTICE.txt' } }
+    // AOSP's notice without its copyright line: the plain Apache License 2.0, for the other Apache-2.0 parts
+    from('../../engines/latinime/NOTICE') {
+        rename { 'Apache-2.0.txt' }
+        def started = false
+        filter { line -> started = started || line.trim() == 'Apache License'; started ? line : null }
+    }
+    // The Chinese data's own: rime-ice's and 白霜's GPL-3.0 and what was taken from each
+    from({ zipTree(assetsDir.get().file('rime/rime-data.zip')) }) {
+        include 'LICENSE', 'SOURCE.txt'
+        rename { it == 'LICENSE' ? 'Rime-data-GPL-3.0.txt' : 'Rime-data-SOURCE.txt' }
+    }
+    into licencesDir.map { it.dir('licenses') }
+}
+preBuild.dependsOn 'buildRimeData', 'mozcDictionary', 'copyEnglish', 'copyLicences'
 
 android {
     namespace 'dev.sebb.sebtype'
@@ -66,7 +93,7 @@ android {
     sourceSets {
         main {
             res.srcDirs += [mozcDictDir]
-            assets.srcDirs += [assetsDir, englishDir]
+            assets.srcDirs += [assetsDir, englishDir, licencesDir]
         }
     }
 

@@ -117,6 +117,13 @@ check trimmed bash -c 'bad=$(unzip -Z1 "$1" | grep -iE "futo|ml4_q6_k|main_en\.d
   grep -qx org.futo.inputmethod.latin.LatinIME <<<"$classes" || { echo "no org.futo.inputmethod.latin.LatinIME"; exit 1; }
   echo "$(wc -l <<<"$classes") classes, only org.futo.inputmethod.latin.LatinIME under org.futo"' _ "$apk" "$badging" "$bt"
 
+# Every licence text the credits list names ships (#262): Settings › About › Licence and credits opens them.
+check licence-texts bash -c 'files=$(unzip -Z1 "$1")
+  named=$(unzip -p "$1" assets/credits.tsv | grep -v "^#" | cut -f4 | tr , "\n" | sort -u | grep .)
+  missing=$(while read -r f; do grep -qx "assets/$f" <<<"$files" || echo "$f"; done <<<"$named")
+  [[ -z $missing ]] || { echo "named in credits.tsv, not in the APK: $missing"; exit 1; }
+  echo "$(wc -l <<<"$named") licence texts, all in the APK"' _ "$apk"
+
 # The device steps hold one emulator's lock from the install to the last check, so no other run
 # reinstalls SebType in between. They leave both keyboards installed for the manual typing check.
 device_checks() {

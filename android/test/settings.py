@@ -584,6 +584,15 @@ SCREENS = [
         ),
         labels("Credits", "致谢", "クレジット"),
     ),
+    (
+        "licence",
+        (
+            HOME["about"],
+            labels("许可与致谢", "Licence and credits", "ライセンスとクレジット"),
+            (("Mozc",), 0),
+        ),
+        ("Mozc-LICENSE.txt",),
+    ),
 ]
 
 

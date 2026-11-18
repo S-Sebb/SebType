@@ -1,31 +1,32 @@
-# What the new app ships, for Settings › About › Licence and credits (#254): name<TAB>licence<TAB>source.
+# What the new app ships, for Settings › About › Licence and credits (#254): name<TAB>licence<TAB>source<TAB>its
+# licence texts in assets/, comma-separated (none for the build scripts, which the app doesn't contain).
 # Keep in step with android/native's CMake deps, app/build.gradle's dependencies and the bundled data.
-SebType	MIT	https://github.com/S-Sebb/SebType
-librime	BSD-3-Clause	https://github.com/rime/librime
-librime-lua	BSD-3-Clause	https://github.com/hchunhui/librime-lua
-librime-octagram	BSD-3-Clause	https://github.com/lotem/librime-octagram
-Lua	MIT	https://www.lua.org
-rime-ice (雾凇拼音)	GPL-3.0	https://github.com/iDvel/rime-ice
-白霜拼音 (rime-frost)	GPL-3.0	https://github.com/gaboolic/rime-frost
-fcitx5-rime (SebType's Rime frontend follows it)	LGPL-2.1-or-later	https://github.com/fcitx/fcitx5-rime
-Mozc	BSD-3-Clause	https://github.com/google/mozc
-fcitx5-mozc (SebType's Mozc frontend follows it)	BSD-3-Clause	https://github.com/fcitx/mozc
-Abseil	Apache-2.0	https://github.com/abseil/abseil-cpp
-Protocol Buffers	BSD-3-Clause	https://github.com/protocolbuffers/protobuf
-OpenCC	Apache-2.0	https://github.com/BYVoid/OpenCC
-Boost	BSL-1.0	https://www.boost.org
-LevelDB	BSD-3-Clause	https://github.com/google/leveldb
-marisa-trie	BSD-2-Clause or LGPL-2.1	https://github.com/s-yata/marisa-trie
-yaml-cpp	MIT	https://github.com/jbeder/yaml-cpp
-RimeJni build scripts	MIT	https://github.com/osfans/trime
-AndroidX and Jetpack Compose	Apache-2.0	https://developer.android.com/jetpack/androidx
-Kotlin and kotlinx.coroutines	Apache-2.0	https://kotlinlang.org
-Okio	Apache-2.0	https://github.com/square/okio
-Nunito	OFL-1.1	https://github.com/googlefonts/nunito
-Pixelify Sans	OFL-1.1	https://github.com/eifetx/Pixelify-Sans
-AOSP LatinIME (English decoder, word list)	Apache-2.0	https://android.googlesource.com/platform/packages/inputmethods/LatinIME
-llama.cpp and ggml	MIT	https://github.com/ggml-org/llama.cpp
-SebType's English model	CC-BY-SA-4.0	https://github.com/S-Sebb/SebType/tree/main/tools/english-lm
-wordfreq (English word frequencies)	CC-BY-SA-4.0	https://github.com/rspeer/wordfreq
-SCOWL (English word checks)	SCOWL	https://wordlist.aspell.net
-Unicode emoji and CLDR annotations	Unicode-3.0	https://cldr.unicode.org
+SebType	MIT	https://github.com/S-Sebb/SebType	licenses/SebType-LICENSE.txt,licenses/SebType-NOTICE.txt
+librime	BSD-3-Clause	https://github.com/rime/librime	licenses/RIME-LICENSE.txt
+librime-lua	BSD-3-Clause	https://github.com/hchunhui/librime-lua	licenses/Librime-lua-LICENSE.txt
+librime-octagram	BSD-3-Clause	https://github.com/lotem/librime-octagram	licenses/Librime-octagram-LICENSE.txt
+Lua	MIT	https://www.lua.org	licenses/Lua-LICENSE.txt
+rime-ice (雾凇拼音)	GPL-3.0	https://github.com/iDvel/rime-ice	licenses/Rime-data-GPL-3.0.txt,licenses/Rime-data-SOURCE.txt
+白霜拼音 (rime-frost)	GPL-3.0	https://github.com/gaboolic/rime-frost	licenses/Rime-data-GPL-3.0.txt,licenses/Rime-data-SOURCE.txt
+fcitx5-rime (SebType's Rime frontend follows it)	LGPL-2.1-or-later	https://github.com/fcitx/fcitx5-rime	licenses/LGPL-2.1.txt,licenses/SebType-NOTICE.txt
+Mozc	BSD-3-Clause	https://github.com/google/mozc	licenses/Mozc-LICENSE.txt,licenses/Mozc-dictionary-LICENSE.txt
+fcitx5-mozc (SebType's Mozc frontend follows it)	BSD-3-Clause	https://github.com/fcitx/mozc	licenses/Mozc-LICENSE.txt,licenses/SebType-NOTICE.txt
+Abseil	Apache-2.0	https://github.com/abseil/abseil-cpp	licenses/Apache-2.0.txt
+Protocol Buffers	BSD-3-Clause	https://github.com/protocolbuffers/protobuf	licenses/Protobuf-LICENSE.txt
+OpenCC	Apache-2.0	https://github.com/BYVoid/OpenCC	licenses/OpenCC-LICENSE.txt
+Boost	BSL-1.0	https://www.boost.org	licenses/Boost-LICENSE.txt
+LevelDB	BSD-3-Clause	https://github.com/google/leveldb	licenses/LevelDB-LICENSE.txt
+marisa-trie	BSD-2-Clause or LGPL-2.1	https://github.com/s-yata/marisa-trie	licenses/Marisa-trie-LICENSE.txt
+yaml-cpp	MIT	https://github.com/jbeder/yaml-cpp	licenses/Yaml-cpp-LICENSE.txt
+RimeJni build scripts	MIT	https://github.com/osfans/trime	
+AndroidX and Jetpack Compose	Apache-2.0	https://developer.android.com/jetpack/androidx	licenses/Apache-2.0.txt
+Kotlin and kotlinx.coroutines	Apache-2.0	https://kotlinlang.org	licenses/Apache-2.0.txt
+Okio	Apache-2.0	https://github.com/square/okio	licenses/Apache-2.0.txt
+Nunito	OFL-1.1	https://github.com/googlefonts/nunito	licenses/Nunito-OFL.txt
+Pixelify Sans	OFL-1.1	https://github.com/eifetx/Pixelify-Sans	licenses/PixelifySans-OFL.txt
+AOSP LatinIME (English decoder, word list)	Apache-2.0	https://android.googlesource.com/platform/packages/inputmethods/LatinIME	licenses/AOSP-LatinIME-LICENSE.txt,licenses/SebType-NOTICE.txt
+llama.cpp and ggml	MIT	https://github.com/ggml-org/llama.cpp	licenses/Llama.cpp-LICENSE.txt
+SebType's English model	CC-BY-SA-4.0	https://github.com/S-Sebb/SebType/tree/main/tools/english-lm	licenses/SebType-NOTICE.txt
+wordfreq (English word frequencies)	CC-BY-SA-4.0	https://github.com/rspeer/wordfreq	licenses/SebType-NOTICE.txt
+SCOWL (English word checks)	SCOWL	https://wordlist.aspell.net	licenses/SebType-NOTICE.txt
+Unicode emoji and CLDR annotations	Unicode-3.0	https://cldr.unicode.org	emoji/LICENSE.txt

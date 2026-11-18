@@ -13,9 +13,10 @@ SebType: which licence covers which part (README.md, "Licences", has the details
   - SebType's Mozc in engines/mozc/, pc/linux/mozc-keymap.tsv, and Mozc's Japanese dictionary the Android
     build bundles (android/app/mozc-dictionary.sh): Mozc's BSD-3-Clause licence and its data's licences.
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
-  - core/src/rime.cpp, which follows fcitx5-rime, and linux/src/tray.h and tray.cpp, ported from Fcitx5's
+  - core/src/rime.cpp, which follows fcitx5-rime (Copyright 2017 Xuetian Weng and contributors), and linux/src/tray.h and tray.cpp, ported from Fcitx5's
     notificationitem: LGPL-2.1-or-later (LICENSE-LGPL-2.1).
-  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend): Mozc's BSD-3-Clause licence.
+  - core/src/mozc.cpp, which follows fcitx5-mozc (Mozc's Fcitx 5 frontend, Copyright 2010-2018 Google Inc. and
+    2017 Weng Xuetian): Mozc's BSD-3-Clause licence.
   - linux/librime.spec: Fedora's spec, MIT.
   - android/native/src/main/cpp/cmake/: RimeJni's build scripts (MIT) with SebType's changes, under RimeJni's
     licence (android/native/src/main/cpp/cmake/LICENSE).

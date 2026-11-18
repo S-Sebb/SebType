@@ -1,5 +1,6 @@
 package dev.sebb.sebtype.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -38,6 +39,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -318,25 +320,46 @@ fun AboutScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_abou
     }
 }
 
-/** One line of assets/credits.tsv: a component the app ships, its licence and where it comes from. */
-private data class Component(val name: String, val licence: String, val url: String)
+/** One line of assets/credits.tsv: a component the app ships, its licence, where it comes from and its licence texts. */
+private data class Component(val name: String, val licence: String, val url: String, val texts: List<String>)
 
-/** The licences and credits: one list of what the app is built from (assets/credits.tsv, #254). */
+private fun credits(context: Context) = context.assets.open("credits.tsv").bufferedReader().readLines()
+    .filter { it.isNotBlank() && !it.startsWith("#") }
+    .map { line -> line.split('\t').let { Component(it[0], it[1], it[2], it.getOrElse(3) { "" }.split(',').filter(String::isNotEmpty)) } }
+
+/** The licences and credits: one list of what the app is built from (assets/credits.tsv, #254); a row opens its licence texts. */
 @Composable
 fun CreditsScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_credits), nav::back) {
     val context = LocalContext.current
-    val components = remember {
-        context.assets.open("credits.tsv").bufferedReader().readLines()
-            .filter { it.isNotBlank() && !it.startsWith("#") }
-            .map { line -> line.split('\t').let { Component(it[0], it[1], it[2]) } }
-    }
+    val components = remember { credits(context) }
     Text(stringResource(R.string.settings_credits_intro), style = BodyText, color = Ink,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
     SectionTag(stringResource(R.string.settings_credits_tag))
     Card {
-        components.forEach { c ->
-            Item(c.name, "${c.licence} · ${c.url.removePrefix("https://")}",
+        components.forEachIndexed { i, c ->
+            Item(c.name, "${c.licence} · ${c.url.removePrefix("https://")}", Modifier.clickable {
+                if (c.texts.isEmpty()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(c.url)))
+                else nav.go("licence/$i")
+            })
+        }
+    }
+}
+
+/** One component's licence texts as the app ships them, under a link to its source. */
+@Composable
+fun LicenceScreen(nav: Nav, index: Int) {
+    val context = LocalContext.current
+    val c = remember { credits(context)[index] }
+    Screen(c.name, nav::back) {
+        Card {
+            Item(c.url.removePrefix("https://"), c.licence,
                 Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(c.url))) })
+        }
+        c.texts.forEach { path ->
+            SectionTag(path.substringAfterLast('/'))
+            Text(remember(path) { context.assets.open(path).bufferedReader().readText() },
+                style = SubtitleText.copy(fontFamily = FontFamily.Monospace), color = Ink,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp))
         }
     }
 }
