@@ -467,8 +467,12 @@ try {
   }
   Check 'hang-mid-composition' { & $hang 'n' $false 'hang-mid' }
   Check 'hang-mid-deferred-lock' {
-    (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp'),
-    (& $hang 'Return' $true 'hang-mid-deferred-enter' "か`n"), (& $hang 'BackSpace' $true 'hang-mid-deferred-bs' '') -join '; '
+    # Each key on its own, so one that fails doesn't hide the others.
+    $runs = @(('n', 'hang-mid-deferred', $null), ('kp1', 'hang-mid-deferred-kp', $null), ('Return', 'hang-mid-deferred-enter', "か`n"),
+      ('BackSpace', 'hang-mid-deferred-bs', '')) | ForEach-Object { try { @{ ok = & $hang $_[0] $true $_[1] $_[2] } } catch { @{ fail = $_.Exception.Message } } }
+    $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
+    if ($fails) { throw ($fails -join '; ') }
+    ($runs | ForEach-Object { $_.ok }) -join '; '
   }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
