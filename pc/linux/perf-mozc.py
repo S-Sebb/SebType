@@ -65,7 +65,10 @@ def read_varint(buf, i):
 
 
 class Mozc:
-    def __init__(self, library, profile):
+    """Mozc loaded from LIBRARY with PROFILE; DATA is a data set file (the phone's dictionary), or the
+    dictionary built into the library."""
+
+    def __init__(self, library, profile, data=None):
         self.lib = ctypes.CDLL(library)
         c = ctypes
         self.lib.sebtype_mozc_open.argtypes = [
@@ -81,7 +84,9 @@ class Mozc:
             c.POINTER(c.c_size_t),
         ]
         self.lib.sebtype_mozc_free.argtypes = [c.c_void_p]
-        if not self.lib.sebtype_mozc_open(os.fsencode(profile), b"", 0, 0):
+        if not self.lib.sebtype_mozc_open(
+            os.fsencode(profile), os.fsencode(data or ""), 0, 0
+        ):
             raise SystemExit("Mozc did not load")
 
     def call(self, request):
@@ -188,4 +193,5 @@ def main():
     mozc.close()
 
 
-main()
+if __name__ == "__main__":
+    main()

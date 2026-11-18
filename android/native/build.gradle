@@ -88,6 +88,8 @@ android {
 tasks.register('buildMozcNative', Exec) {
     inputs.files(fileTree(mozcSrc) { exclude 'bazel-*', 'MODULE.bazel.lock' }).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file('build-mozc.sh').withPathSensitivity(PathSensitivity.RELATIVE)
+    // tools/mozc-bazel.sh runs Bazel; the list pins Bazel and what it downloads
+    inputs.files('../../tools/mozc-bazel.sh', '../../tools/mozc-downloads.tsv').withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.property('abis', abis)
     outputs.dir mozcLibs
     outputs.cacheIf { true }

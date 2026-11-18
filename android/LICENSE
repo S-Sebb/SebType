@@ -7,8 +7,8 @@ The Android app and its build: SebType's own code, under the MIT licence in ../L
 - app/src/main/res/font/sebtype_pixelify_semibold.ttf: Pixelify Sans, under the SIL Open Font License 1.1
   (../art/fonts/OFL-PixelifySans.txt).
 - The data the app's build copies in: the English dictionary and model (../NOTICE), the Chinese data
-  (GPL-3.0, ../data/rime) and Mozc's Japanese dictionary (app/mozc-dictionary.sh; Mozc's BSD-3-Clause and its
-  data's licences, ../engines/mozc/LICENSE).
+  (GPL-3.0, ../data/rime) and Mozc's Japanese dictionary (app/mozc-dictionary.sh builds it from ../engines/mozc; Mozc's
+  BSD-3-Clause and its data's licences, ../engines/mozc/LICENSE).
 - native/src/main/cpp/cmake/: RimeJni's build scripts (MIT, native/src/main/cpp/cmake/LICENSE) with SebType's
   changes; native/NOTICE.md and native/src/main/assets/licenses/ list the libraries native/ builds.
 - gradlew, gradlew.bat and gradle/wrapper/: Gradle's wrapper, Apache-2.0.

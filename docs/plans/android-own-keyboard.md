@@ -293,8 +293,12 @@ had no FUTO file left to keep: the table above and the stage 7 list below all we
 - The English harness can't build FUTO's decoder and model any more, so its "today" column is the last
   measured run, frozen in `android/test/english/today.json`.
 - `data/en-dict` builds only from AOSP's list, and the ASCII faces in `data/emoji/ascii.txt` are SebType's own.
-- Mozc's Japanese dictionary is still the build FUTO hosts (`jisho-v25.10-non-gpl.dict`, Mozc's data under
-  Mozc's BSD-3-Clause), now fetched by `android/app/mozc-dictionary.sh` at a pinned checksum.
+- Mozc's Japanese dictionary was still the build FUTO hosts (`jisho-v25.10-non-gpl.dict`). That file turned out
+  to be Mozc's data plus the UT dictionaries (Wikipedia and edict2 under CC BY-SA 4.0, SudachiDict under
+  Apache-2.0), which the credits didn't name. Since #335 the build makes Mozc's own OSS data set from
+  `engines/mozc` instead (`android/app/mozc-dictionary.sh`), the dictionary the PCs' Mozc builds in: no FUTO
+  server, and only Mozc's licences. Its candidates differ a little from FUTO's file (the owner accepted it), and
+  the APK is about 26 MB smaller.
 
 **At stage 7** SebType's own model and dictionary replace the last FUTO files. In that release:
 
