@@ -67,6 +67,7 @@ void CandidateLayout::run(const Measure &measure) {
     // The pinyin row (or else Rime's or Mozc's note) with the arrows at its right; a row of their own when
     // there is neither.
     preeditBoxes.clear();
+    prevBox = nextBox = pigBox = {};  // a popup (no cells) ends early and must not keep the last page's (#348)
     float topH = 0;
     if (!preedit.empty()) {
       float x = margin;
@@ -157,7 +158,6 @@ void CandidateLayout::run(const Measure &measure) {
     height = y + margin;
 
     // The arrows: right on the top row, as tall as a text row and centred on it.
-    prevBox = nextBox = {};
     if (arrows) {
       const float t = arrowTop + std::round((topH - lineH) / 2);
       nextBox = {width - margin - arrowW, t, width - margin, t + lineH};
@@ -165,7 +165,6 @@ void CandidateLayout::run(const Measure &measure) {
       prevBox.move(-(arrowsW - arrowW), 0);
     }
 
-    pigBox = {};
     if (!picnic) break;
     // The pig, left of the rows from the first one down: its height is the first candidate row's and a margin,
     // by 10/7, within the window.

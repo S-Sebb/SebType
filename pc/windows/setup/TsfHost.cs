@@ -747,5 +747,21 @@ namespace SebType {
         return (r.R - r.L) + "x" + (r.B - r.T) + (pointer ? " (pointer over it at " + (p.X - r.L) + "," + (p.Y - r.T) + ")" : "");
       });
     }
+    // Where two captures of one window differ (#348): the pixels inside an inset (leaving out the round
+    // corners, which show what is behind) whose colour is off by more than 32 in a channel, and the box
+    // around them ("l,t-r,b"); "" when they match, the sizes when they aren't the same.
+    public static string Differ(string a, string b, int inset) {
+      using (var x = new System.Drawing.Bitmap(a)) using (var y = new System.Drawing.Bitmap(b)) {
+        if (x.Size != y.Size) return x.Width + "x" + x.Height + " and " + y.Width + "x" + y.Height;
+        int n = 0, l = int.MaxValue, t = int.MaxValue, r = -1, bottom = -1;
+        for (int j = inset; j < x.Height - inset; j++)
+          for (int i = inset; i < x.Width - inset; i++) {
+            System.Drawing.Color p = x.GetPixel(i, j), q = y.GetPixel(i, j);
+            if (Math.Max(Math.Abs(p.R - q.R), Math.Max(Math.Abs(p.G - q.G), Math.Abs(p.B - q.B))) <= 32) continue;
+            n++; l = Math.Min(l, i); t = Math.Min(t, j); r = Math.Max(r, i); bottom = Math.Max(bottom, j);
+          }
+        return n == 0 ? "" : n + " pixels at " + l + "," + t + "-" + r + "," + bottom;
+      }
+    }
   }
 }
