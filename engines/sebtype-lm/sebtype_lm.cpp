@@ -15,7 +15,7 @@ namespace sebtype_lm {
 namespace {
 
 constexpr size_t CONTEXT_CHARS = 300;  // the text before the cursor the model reads, at most
-constexpr size_t CONTEXT_STEP = 150;   // how far the window's start moves at once (#359)
+constexpr size_t CONTEXT_STEP = 150;   // how much the window grows before its start moves (#359)
 constexpr int MAX_BRANCHES = 32;
 constexpr int NEXT_WORD_PIECES = 5;  // first pieces nextWords() follows to the end of their word
 constexpr size_t SCORED_CANDIDATES = 6;
@@ -107,21 +107,30 @@ std::vector<int> Model::tokenize(const std::string &text, bool bos) const {
     return out;
 }
 
-std::string Model::window(const std::string &context) {
-    // The last line, without the spaces after it. Past CONTEXT_CHARS, from the first word that starts after
-    // the next multiple of CONTEXT_STEP at or past CONTEXT_CHARS before its end. The start stays in place
-    // while the next CONTEXT_STEP characters are typed, so the cache holds the window and only the new words
-    // are decoded (#359); a start that moved with each word would decode the whole window every time.
+std::string Model::window(const std::string &context) const {
+    // The last line, without the spaces after it, and past CONTEXT_CHARS from a word's start. The start
+    // stays where the last window started while it leaves CONTEXT_CHARS - CONTEXT_STEP to CONTEXT_CHARS, so
+    // the cache holds it and only new words are decoded; a start that moved with each word decoded the whole
+    // window each time, 8x a short field's cost on the phone (#359). It is found by the last window's text,
+    // not by its offset: the engine's context is the field's last 1,000 characters, cut again whenever it
+    // reads the field. engines/sebtype-lm/bench/bench.sh chose 300 and 150: as good as a fixed 300.
     const auto newline = context.rfind('\n');
     std::string line = context.substr(newline == std::string::npos ? 0 : newline + 1);
     line.erase(line.find_last_not_of(' ') + 1);
     if (line.size() <= CONTEXT_CHARS) return line;
-    const size_t from = (line.size() - CONTEXT_CHARS + CONTEXT_STEP - 1) / CONTEXT_STEP * CONTEXT_STEP;
-    const auto space = line.find(' ', from);
+    if (!mWindow.empty()) {
+        const auto at = line.find(mWindow, line.size() - CONTEXT_CHARS);
+        if (at != std::string::npos && line.size() - at >= CONTEXT_CHARS - CONTEXT_STEP && line[at - 1] == ' ')
+            return line.substr(at);
+    }
+    const auto space = line.find(' ', line.size() - (CONTEXT_CHARS - CONTEXT_STEP));
     return space == std::string::npos ? "" : line.substr(space + 1);
 }
 
-std::vector<int> Model::contextTokens(const std::string &context) const { return tokenize(window(context), true); }
+std::vector<int> Model::contextTokens(const std::string &context) {
+    mWindow = window(context);
+    return tokenize(mWindow, true);
+}
 
 const float *Model::advance(const std::vector<int> &prefix) {
     llama_memory_t mem = llama_get_memory(mCtx);

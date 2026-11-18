@@ -563,16 +563,19 @@ TEST(EnglishModel, ALongContextPredictsAsItsWindowAloneAndEditsEarlierTextAgain)
   std::string filler;
   while (filler.size() < 20000) filler += "The quick brown fox jumps over the lazy dog. ";
   const std::string text = filler + "Thank you very";
-  const std::string window = sebtype_lm::Model::window(text);
+  const std::string window = model.window(text);
   EXPECT_LE(window.size(), 300u);
   EXPECT_TRUE(text.ends_with(" " + window));
-  EXPECT_EQ(sebtype_lm::Model::window(text + " much for the"), window + " much for the");  // the start stays
   const auto before = model.nextWords(text, 5);
+  // The start stays as the text grows, also when the engine cuts the field's text at another place.
+  const std::string more = text + " much for the";
+  EXPECT_EQ(model.window(more), window + " much for the");
+  EXPECT_EQ(model.window(more.substr(more.size() - 1000)), window + " much for the");
   EXPECT_TRUE(same(before, fresh.nextWords(window, 5)));
   // Earlier text inside the window changed: the cache holds the old text's words, which must not count.
   std::string edited = text;
   edited.replace(edited.rfind("dog."), 4, "cat!");
-  ASSERT_EQ(sebtype_lm::Model::window(edited).size(), window.size());
+  ASSERT_EQ(model.window(edited).size(), window.size());
   const auto after = model.nextWords(edited, 5);
   EXPECT_FALSE(same(after, before));  // the edit changes the prediction, so a stale cache would show
   EXPECT_TRUE(same(after, sebtype_lm::Model(EN_MODEL).nextWords(edited, 5)));

@@ -33,12 +33,13 @@ public:
     std::vector<float> score(const std::string &context, const std::string &typed,
                              const std::vector<std::string> &words);
 
-    // The part of CONTEXT both read: its last line, the last 300 characters at most, from a word's start.
-    static std::string window(const std::string &context);
+    // The part of CONTEXT both read: its last line, the last 150 to 300 characters of it from a word's start,
+    // starting where the last call's window started while that leaves 150 to 300 characters (#359).
+    std::string window(const std::string &context) const;
 
 private:
     std::vector<int> tokenize(const std::string &text, bool bos) const;
-    std::vector<int> contextTokens(const std::string &context) const;
+    std::vector<int> contextTokens(const std::string &context);
     // Brings sequence 0 to PREFIX, decoding only what the cache doesn't hold; returns the logits after it.
     const float *advance(const std::vector<int> &prefix);
     // Decodes each of FOLLOWERS after sequence 0, on a sequence of its own, with logits at every token, and
@@ -58,6 +59,7 @@ private:
     std::vector<bool> mWordStart;        // pieces that start a word with a letter: next-word candidates
     std::vector<std::string> mText;      // each piece's text, "▁" as a space
     std::vector<int> mCached;            // the tokens sequence 0 holds
+    std::string mWindow;                 // the last window read
     int mBranches = 0;                   // sequences 1..mBranches that branch() left
 };
 
