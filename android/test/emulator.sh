@@ -11,7 +11,7 @@
 # history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
-# install and the locale always, and chinese.py's earlier checks they depend on. A PR runs the checks
+# install, the locale and settings.py's offline tests (settings-helpers) always, and chinese.py's earlier checks they depend on. A PR runs the checks
 # for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
 # which only the final performance run uses (#54, Decisions #2 2026-11-11).
 # One line per check in ~/scratch/SebType/<issue>/test-emulator/results.txt; logs next to it (one directory
@@ -33,7 +33,7 @@ pkg=dev.sebb.sebtype ime=dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 check() { # name, command...; timeout T seconds (default 180); only if SEBTYPE_CHECKS names it or it's a step all need
   local name=$1 c; shift
-  if [[ -n $SEBTYPE_CHECKS && " bumped-apk locale install-beside-futo chinese-run settings-run " != *" $name "* ]]; then
+  if [[ -n $SEBTYPE_CHECKS && " bumped-apk locale install-beside-futo chinese-run settings-run settings-helpers " != *" $name "* ]]; then
     for c in ${SEBTYPE_CHECKS//,/ }; do [[ $name == "$c"* ]] && break; done
     [[ $name == "$c"* ]] || return 0
   fi
@@ -123,6 +123,9 @@ check licence-texts bash -c 'files=$(unzip -Z1 "$1")
   missing=$(while read -r f; do grep -qx "assets/$f" <<<"$files" || echo "$f"; done <<<"$named")
   [[ -z $missing ]] || { echo "named in credits.tsv, not in the APK: $missing"; exit 1; }
   echo "$(wc -l <<<"$named") licence texts, all in the APK"' _ "$apk"
+
+# settings.py's recovery when Android doesn't restart a force-stopped SebType (#352), against a made-up adb.
+check settings-helpers python3 -I android/test/test_settings.py
 
 # The device steps hold one emulator's lock from the install to the last check, so no other run
 # reinstalls SebType in between. They leave both keyboards installed for the manual typing check.

@@ -98,6 +98,10 @@ class Skip(Exception):
     pass
 
 
+class SebTypeFault(Exception):
+    """SebType started, crashed or hung where it should have come up: not a Fail, so no retry hides it."""
+
+
 def wait_for(what, fn, timeout, interval=1.0):
     end = time.time() + timeout
     while True:
@@ -251,6 +255,79 @@ def settle(seconds=30):
         time.sleep(1)
 
 
+# In the system log: SebType's process starting, crashing (Java or native) or not responding.
+SEBTYPE_LIFE = re.compile(
+    r"Start proc \d+:dev\.sebb\.sebtype/|Process: dev\.sebb\.sebtype, PID"
+    r"|>>> dev\.sebb\.sebtype <<<|ANR in dev\.sebb\.sebtype(?![.\w])"
+)
+LOGCAT_TIME = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}")
+
+
+def logcat_time(date_out):
+    """`date '+%Y-%m-%d %H:%M:%S.%N'` on the device -> what `logcat -T` reads as a time (a bare number
+    it reads as a line count). With the year: without one logcat takes this year's, so a field opened
+    on 31 December would be a time in the future after midnight."""
+    t = date_out.strip()[:23]
+    if not LOGCAT_TIME.fullmatch(t):
+        raise ValueError(
+            f"device time {date_out.strip()!r} isn't YYYY-MM-DD hh:mm:ss.nnn"
+        )
+    return t
+
+
+recoveries = []  # the logcat file of each restart_unstarted recovery, for check()'s WARN
+current_check = ""
+
+
+def choose_sebtype():
+    """SebType the keyboard again, with one retry."""
+    for _ in range(2):
+        try:
+            adb("shell", "ime", "set", IME, check=False)
+            got = adb("shell", "settings", "get", "secure", "default_input_method")
+            if got.strip() == IME:
+                return
+        except (RuntimeError, subprocess.SubprocessError):
+            pass
+    raise Fail(
+        "SebType isn't the keyboard again after switching through another one (#352)"
+    )
+
+
+def restart_unstarted(since):
+    """SebType is chosen but has no process, the field open 10 s. After a force-stop Android can
+    leave it so, and `ime set` to the same keyboard changes nothing (#352): another keyboard and back
+    starts it. If SebType started, crashed or hung since the field opened (device time `since`) the
+    fault is SebType's: fail with that instead. Each recovery is a WARN on the check's line."""
+    log = adb("logcat", "-d", "-T", since, check=False)
+    seen = [line for line in log.splitlines() if SEBTYPE_LIFE.search(line)]
+    if seen:
+        raise SebTypeFault(
+            f"SebType isn't up or running, and since the field opened: {' | '.join(seen[-3:])}"
+        )
+    path = os.path.join(
+        logdir, f"{current_check}-recovery-{len(recoveries) + 1}.logcat"
+    )
+    with open(path, "w") as f:
+        f.write(log)
+    other = [i for i in adb("shell", "ime", "list", "-s").split() if i != IME]
+    if not other:
+        raise Fail(
+            "SebType chosen but never started since the field opened, and no other keyboard to"
+            f" switch through (logcat in {path})"
+        )
+    recoveries.append(path)
+    try:
+        adb("shell", "ime", "set", other[0])
+    except (RuntimeError, subprocess.SubprocessError) as e:
+        try:
+            choose_sebtype()
+        except Fail as restore:
+            raise Fail(f"switching to {other[0]}: {e}; then {restore}") from e
+        raise
+    choose_sebtype()
+
+
 def open_field(kind=None, clip=None):
     """A new text field with SebType up; kind makes it a password or private field, clip a text the
     field app copies to the clipboard a moment after it opens (android/perf/PerfField.java)."""
@@ -260,7 +337,12 @@ def open_field(kind=None, clip=None):
         ["--es", "clip", clip] if clip else []
     )
 
+    since = logcat_time(adb("shell", "date '+%Y-%m-%d %H:%M:%S.%N'"))
+    shown = 0.0
+
     def show():
+        nonlocal shown
+        shown = time.time()
         adb("shell", "ime", "set", IME)
         # A slow emulator can show "System UI isn't responding" over everything; this closes it.
         adb(
@@ -281,7 +363,15 @@ def open_field(kind=None, clip=None):
         ):
             show()
             return None
-        return keys(nodes())
+        ks = keys(nodes())
+        if (
+            not ks
+            and time.time() - shown > 10
+            and not adb("shell", "pidof", PKG, check=False).strip()
+        ):
+            restart_unstarted(since)
+            show()
+        return ks
 
     show()
     wait_for("the keyboard", up, KEYBOARD_WAIT)
@@ -492,24 +582,38 @@ def check(name, fn, needs=()):
         if CHECKS:  # named, so say why it didn't run
             result("SKIP", name, "timing check, runs only with PERF_RUN=1 (#54)")
         return
+    global current_check
+    current_check = name
     runs = REPEAT if any(name.startswith(c) for c in CHECKS) else 1
     for run in range(1, runs + 1):
+        first = len(recoveries)
+
+        def warned(detail):
+            new = recoveries[first:]
+            return detail + (
+                f" WARN: Android started SebType only after another keyboard and back, {len(new)}x"
+                f" (#352; {', '.join(os.path.basename(p) for p in new)})"
+                if new
+                else ""
+            )
+
         of = f" (run {run}/{runs})" if runs > 1 else ""
         try:
             detail = fn()
             passed.add(name)
-            result("PASS", name, (detail or "") + of)
+            result("PASS", name, warned((detail or "") + of))
         except Skip as e:
-            result("SKIP", name, str(e) + of)
+            result("SKIP", name, warned(str(e) + of))
         except (
             Fail,
+            SebTypeFault,
             RuntimeError,
             subprocess.SubprocessError,
             ET.ParseError,
             LookupError,
             ValueError,
         ) as e:
-            result("FAIL", name, str(e) + of)
+            result("FAIL", name, warned(str(e) + of))
             # The system log, for what the keyboard was doing (a keyboard that never came up shows why here).
             suffix = f"-{run}" if runs > 1 else ""
             with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
