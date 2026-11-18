@@ -2534,6 +2534,9 @@ def update_from_futo_app():
         history = "files/UserHistoryDictionary.en_US.dict"
         if not old_files(history):
             raise Fail(f"the old app kept no English history in {history}")
+        # Reading its files force-stopped the old app, and Android unpicks a keyboard whose app is
+        # force-stopped: pick it again, as the user had it.
+        adb("shell", "ime", "set", IME)
         chosen = adb(
             "shell", "settings", "get", "secure", "default_input_method"
         ).strip()
@@ -2608,6 +2611,7 @@ def update_from_futo_app():
             30,
         )
         adb("shell", "ime", "enable", IME)
+        adb("shell", "ime", "set", IME)
 
 
 if main_apk:

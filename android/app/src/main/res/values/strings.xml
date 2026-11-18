@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SebType next</string>
-    <string name="ime_name">SebType next</string>
+    <string name="app_name">SebType</string>
+    <string name="ime_name">SebType</string>
     <string name="subtype">English, 中文, 日本語</string>
     <string name="open_menu">Open Action Bar</string>
     <string name="close_menu">Close Action Bar</string>
