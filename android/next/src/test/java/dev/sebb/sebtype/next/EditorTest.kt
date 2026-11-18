@@ -812,6 +812,24 @@ class EditorTest {
     }
 
     /**
+     * #325: whitespace that starts a character cluster, in a read that doesn't start at the start of the text:
+     * CR LF, and a space, a no-break space and an ideographic space each with an accent. The words go back to the
+     * cluster's end, not into it ("xa\r" left, or an accent without its space).
+     */
+    @Test
+    fun aDeleteSwipeDoesntSplitWhitespaceFromWhatFollows() {
+        for (space in listOf("\r\n", " \u0301", "\u00A0\u0301", "\u3000\u0301")) {
+            // "x", then the read: from "a" to the cursor
+            val text = "xa$space" + "b".repeat(1999 - space.length)
+            val field = Field(text, text.length)
+            val ime = Ime(field)
+            ime.editor.selectWordsBefore(2, false)
+            ime.editor.selectWordsBefore(2, true)
+            assertEquals(space, "xa$space", field.text)
+        }
+    }
+
+    /**
      * #325: a field that gives less than asked for, four characters either side of the cursor: the first step
      * reads "hree", not where its word starts, and selects nothing of it. Let go, what was selected goes, and
      * no more: a read then of "wo three" would take all "three".

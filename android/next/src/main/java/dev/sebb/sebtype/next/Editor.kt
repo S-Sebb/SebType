@@ -460,12 +460,19 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
 
     /**
      * How far back in [text] the words may go: to its start where that is the field's ([whole]); else a read
-     * cut at its limit can start inside a word or any emoji (a flag, a skin tone, a ZWJ sequence), so no
-     * further back than its first whitespace: no character cluster holds one, so every break after it is the
-     * field's. A read without any can't show where a word starts: nothing of it goes.
+     * cut at its limit can start inside a word or any character cluster (a flag, a skin tone, a ZWJ sequence),
+     * so no further back than the end of the cluster its first whitespace is in (CR LF, a space with an accent).
+     * That end is the field's: it depends only on the whitespace and what follows, all in the read, and no
+     * cluster reaches back across whitespace. A read without any can't show where a word starts: nothing of it goes.
      */
-    private fun floor(text: String, whole: Boolean): Int =
-        if (whole) 0 else text.indexOfFirst { it.isWhitespace() }.let { if (it < 0) text.length else it + 1 }
+    private fun floor(text: String, whole: Boolean): Int {
+        if (whole) return 0
+        val i = text.indexOfFirst { it.isWhitespace() }
+        if (i < 0) return text.length
+        val breaks = BreakIterator.getCharacterInstance()
+        breaks.setText(text)
+        return breaks.following(i)
+    }
 
     /**
      * Where [words] words before the end of [text] start, with the spaces after each. Words are the
