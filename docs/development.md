@@ -47,7 +47,12 @@ screens. One command, run on nobara-pc as always:
    Fedora 44 (`linux/versions.sh`) with Fedora's librime and OpenCC, as on nobara-pc (`fedora_container`
    in `tools/lib.sh`); the Linux builds use their own Fedora container as before. Bazel's output roots (Mozc's builds) are in the podman volume
    `sebtype-bazel` on yanglab16's local disk: Bazel refuses a folder it doesn't own, and on the NAS every
-   file belongs to the NAS's user.
+   file belongs to the NAS's user. Every Podman call there (the build images, their containers and that
+   volume) uses SebType's own store on the SSD, `/media/ssd2/tony/SebType/podman/` (#337): yanglab16's
+   system disk, where tony's default store is, is full of other users' files. `tools/lib.sh` points
+   Podman at it with `CONTAINERS_STORAGE_CONF` and `CONTAINERS_CONF_OVERRIDE`; tony's default store and
+   Podman config, which hold other projects' images such as `gh-runner`, stay as they are. To look at
+   SebType's images by hand there: `source tools/lib.sh; podman images`.
 
 A release APK is built unsigned, on yanglab16 (`SEBTYPE_UNSIGNED=1`) or on nobara-pc, and signed on
 nobara-pc with `apksigner` (scheme v2 alone, RSA), so the signing key never leaves nobara-pc and a release
@@ -107,7 +112,7 @@ What it builds from source, and the caches that make a rebuild quick:
 |---|---|---|
 | Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle` (on yanglab16 `~/scratch/SebType/cache/gradle`), shared by every worktree |
 | The app's C++ (`libjni_latinime.so`) and `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
-| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
+| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume, on its SSD) |
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
 | Mozc's dictionary | `android/app/res-bundle/download-bundles.py` | `android/app/res-bundle/` |
 

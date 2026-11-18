@@ -28,8 +28,26 @@ if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
   export ANDROID_HOME=$SCRATCH/cache/android-sdk JAVA_HOME_21=$SCRATCH/cache/jdks/jdk-21.0.13+9 \
     GRADLE_USER_HOME=$SCRATCH/cache/gradle ANDROID_USER_HOME=$SCRATCH/cache/android-user \
     SCCACHE_DIR=$SCRATCH/cache/sccache CARGO_HOME=$SCRATCH/cache/cargo PATH=$SCRATCH/cache/bin:$PATH
-  # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user.
-  if [[ ! -f /run/.containerenv ]]; then  # inside the build container it comes from the host
+  if [[ ! -f /run/.containerenv ]]; then  # inside the build container these come from the host
+    # Every Podman call here uses SebType's own store, on the SSD (#337): yanglab16's system disk, where
+    # tony's default store is, is full of other users' files. tony's default store and Podman config,
+    # with other projects' images (gh-runner), stay as they are. The store has its own run and tmp folders
+    # and file locks, so neither store's reset after a reboot touches the other's containers.
+    PODMAN_STORE=/media/ssd2/tony/SebType/podman
+    export CONTAINERS_STORAGE_CONF=$PODMAN_STORE/storage.conf CONTAINERS_CONF_OVERRIDE=$PODMAN_STORE/containers.conf
+    # Image copies stage in the store too, not in /var/tmp on the system disk. Each file is replaced by a
+    # rename only when it differs, so a build starting at the same time never reads a half-written one.
+    mkdir -p "$PODMAN_STORE"
+    podman_conf() {
+      [[ $(cat "$1" 2>/dev/null) == "$2" ]] && return
+      printf '%s\n' "$2" >"$1.$$" && mv -f "$1.$$" "$1"
+    }
+    podman_conf "$CONTAINERS_STORAGE_CONF" "$(printf '[storage]\ndriver = "overlay"\ngraphroot = "%s"\nrunroot = "%s"' \
+      "$PODMAN_STORE/storage" "/run/user/$UID/sebtype-containers")"
+    podman_conf "$CONTAINERS_CONF_OVERRIDE" "$(printf '[engine]\ntmp_dir = "%s"\nlock_type = "file"\nimage_copy_tmp_dir = "storage"' \
+      "/run/user/$UID/sebtype-libpod")"
+    unset -f podman_conf
+    # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user.
     podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
     BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
     export BAZEL_CACHE
