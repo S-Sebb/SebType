@@ -202,19 +202,19 @@ function Restart-Server([scriptblock]$change) {
     & $change
   } finally {
     $hold.Dispose()
-    # Started again when it left with no pipe there: an app's server, rejected, may still have held the mutex.
+    # Started again when it left with no pipe there: an app's server, rejected, may have held the mutex then.
     # The pipe is asked for, not opened (Test-Path does): opened, it is busy, and seems gone.
     $name = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
     $up = { [SebTypePipe]::Exists($name) }
-    for ($try = 1; -not (& $up); $try++) {
-      if ($try -gt 3) { throw "no $name after 3 starts" }
-      $started = Start-Process $server -PassThru
-      $end = (Get-Date).AddSeconds(20)
-      while (-not (& $up) -and -not $started.HasExited) {
-        if ((Get-Date) -gt $end) { throw "no $name 20 s after the server started" }
-        Start-Sleep -Milliseconds 200
+    # One deadline for whichever server starts; another start only when none runs (it left as a second one).
+    $end = (Get-Date).AddSeconds(20); $starts = 0
+    while (-not (& $up)) {
+      if ((Get-Date) -gt $end) { throw "no $name 20 s after the restart ($starts starts): $(Servers)" }
+      if (-not (Server)) {
+        if ($starts -ge 3) { throw "no $name after 3 starts" }
+        Start-Process $server; $starts++
       }
-      if (-not (& $up)) { Start-Sleep 1 }  # the server that kept it out may still be making its pipe
+      Start-Sleep -Milliseconds 200
     }
   }
   # An app may still start one as the mutex is let go, which then serves instead: whichever serves runs below
