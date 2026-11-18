@@ -14,6 +14,7 @@ import android.net.Uri
 import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
@@ -543,9 +544,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     /** The keys typed while 中文 started, now that it is ready (or failed: then as typed, as any key then). */
     private fun feedWaiting() {
-        if (waiting.isEmpty() || Engines.chinese == Engines.Chinese.PREPARING) return
+        // A pending finishTyping feeds them once its editor switch and language reset are done
+        if (waiting.isEmpty() || transitions > 0 || Engines.chinese == Engines.Chinese.PREPARING) return
         val keys = waiting.toList()
         waiting.clear()
+        Log.w(Engines.TAG, "Fed ${keys.size} keys that waited for Rime")  // a count only, never typed text
         keys.forEach { (code, text) -> onKey(code, text, -1, -1) }
     }
 
@@ -1200,10 +1203,14 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         refresh()
     }
 
+    /** finishTyping calls still waiting for the engine: keys queued meanwhile go to Rime after them (#351) */
+    private var transitions = 0
+
     /** What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing */
     private fun finishTyping(then: () -> Unit) {
         val chinese = lang == CHINESE
         val asked = keys.ask()
+        transitions++
         NativeCore.post({ if (engineComposing) (if (chinese) clear() else flush()).recorded() else null }) { st ->
             // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
             if (st != null && fresh(asked)) {
@@ -1211,6 +1218,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
                 if (!chinese) editor.finishComposing()
             }
             then()
+            transitions--
+            feedWaiting()
         }
     }
 

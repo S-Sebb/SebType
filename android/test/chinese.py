@@ -1293,6 +1293,20 @@ def setup_took():
     return f"Rime set up in {setup.group(1)} ms" if setup else "no setup logged"
 
 
+def keys_waited():
+    """How many keys of the burst waited for Rime, from the app's log (None if none did): proof the burst
+    overlapped its start."""
+    fed = re.search(
+        r"Fed (\d+) keys that waited for Rime",
+        adb("shell", "logcat -d -s SebType || true"),
+    )
+    return int(fed.group(1)) if fed else None
+
+
+def no_overlap(took):
+    return Fail(f"no key waited for Rime ({took}): the burst didn't overlap its start")
+
+
 def zh_waits_for_zh():
     """#351: keys typed while Rime starts reach it in order, as they would a running Rime: ranh, Space
     (然后 committed), Delete (后 deleted) leave 然. The letters are where EN has them."""
@@ -1311,13 +1325,16 @@ def zh_waits_for_zh():
     except Fail:
         text = ""
     took = setup_took()
+    waited = keys_waited()
     bar = candidates(nodes())
     to_english()  # the checks after type in EN
     if text != "然":
         raise Fail(
             f"ranh, Space, Delete typed while Rime started ({took}): field {text!r}, bar {bar[:6]}"
         )
-    return f"ranh, Space, Delete typed while Rime started ({took}) -> field 然"
+    if waited is None:
+        raise no_overlap(took)
+    return f"ranh, Space, Delete typed while Rime started ({took}, {waited} keys waited) -> field 然"
 
 
 check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
@@ -2541,10 +2558,17 @@ check("clipboard-search", clipboard_search, needs=["first-install"])
 
 
 def zh_search_waits():
-    """#351: letters typed into the clipboard's search while Rime starts stay in the search: closing it at
-    once leaves nothing for the field."""
+    """#351: letters typed into the clipboard's search while Rime starts stay in the search, and keys typed
+    right after it closes reach the field once Rime is ready: ni in the search, close, ni and Space leave 你."""
     keep_clipboard()
     fresh_in_english()
+    ns = wait_for(
+        "the keyboard",
+        lambda: (lambda n: n if keys(n) else None)(nodes()),
+        KEYBOARD_WAIT,
+    )
+    field_keys = keys(ns)
+    space = next((x, y) for label, x, y, top, cls in ns if label in SPACE_LABELS)
     action(CLIPBOARD_ACTION)
     tap_label(CLIPBOARD_SEARCH)
     ns = wait_for(
@@ -2554,18 +2578,24 @@ def zh_search_waits():
     )
     k = keys(ns)
     close = next((x, y) for label, x, y, top, cls in ns if label in CLOSE_SEARCH)
-    burst_into_chinese([k["n"][:2], k["i"][:2], close])
-    time.sleep(8)  # Rime ready, and whatever it was given shown
+    burst_into_chinese(
+        [k["n"][:2], k["i"][:2], close, field_keys["n"][:2], field_keys["i"][:2], space]
+    )
+    try:
+        text = wait_for("the field to show what was typed", field_text, 30)
+    except Fail:
+        text = ""
     took = setup_took()
-    ns = nodes()
-    bar = candidates(ns)
-    text = field_text()
+    waited = keys_waited()
+    bar = candidates(nodes())
     to_english()
-    if text or any(re.search("[\u4e00-\u9fff]", c) for c in bar):
+    if text != "你":
         raise Fail(
-            f"ni typed in the search reached the field ({took}): field {text!r}, bar {bar[:6]}"
+            f"ni in the search, close, ni and Space while Rime started ({took}): field {text!r}, bar {bar[:6]}"
         )
-    return f"ni typed in the search while Rime started ({took}): nothing in the field or the bar"
+    if waited is None:
+        raise no_overlap(took)
+    return f"ni in the search, close, ni and Space while Rime started ({took}, {waited} keys waited) -> field 你"
 
 
 check("zh-search-waits", zh_search_waits, needs=["ja-chip"])
