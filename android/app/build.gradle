@@ -10,9 +10,16 @@ final def assetsDir = layout.buildDirectory.dir('sebtype-assets')
 tasks.register('buildRimeData', Exec) {
     commandLine 'bash', file('../../data/rime/build.sh').absolutePath, assetsDir.get().asFile.absolutePath
 }
-// Mozc's Japanese dictionary (mozc-dictionary.sh, cached), a raw resource for 日本語.
+// Mozc's Japanese dictionary, a raw resource for 日本語: built with Bazel from engines/mozc (mozc-dictionary.sh,
+// #335) only when it changes, as :native's libmozc.so; Gradle's build cache serves it to every worktree.
+final def mozcSrc = file('../../engines/mozc/src')
 final def mozcDictDir = layout.buildDirectory.dir('generated/mozc-dictionary')
 tasks.register('mozcDictionary', Exec) {
+    inputs.files(fileTree(mozcSrc) { exclude 'bazel-*', 'MODULE.bazel.lock' }).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file('mozc-dictionary.sh').withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.dir mozcDictDir
+    outputs.cacheIf { true }
+    environment 'ANDROID_NDK_HOME', android.ndkDirectory.absolutePath
     commandLine 'bash', file('mozc-dictionary.sh').absolutePath, mozcDictDir.get().asFile.absolutePath
 }
 // English's dictionary (data/en-dict) and SebType's model (engines/sebtype-lm), both stored uncompressed: the

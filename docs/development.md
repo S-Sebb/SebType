@@ -107,7 +107,7 @@ What it builds from source, and the caches that make a rebuild quick:
 | `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
 | Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
-| Mozc's dictionary (pinned, checksum-checked) | `android/app/mozc-dictionary.sh` | `~/scratch/SebType/cache/` |
+| Mozc's dictionary (its OSS data set, from `engines/mozc`) | Bazel (`android/app/mozc-dictionary.sh`) | As `libmozc.so`: Gradle's build cache and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` |
 
 Scripts write their test, perf and release outputs to the running task's folder,
 `~/scratch/SebType/<issue>/` (`TASK_OUT` in `tools/lib.sh`): run them as `ISSUE=211 <script>`. Without
@@ -135,6 +135,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/emulator.sh` | The full emulator suite (below) |
 | `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
+| `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` on yanglab16 and loaded into Mozc here: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
 | `MAIN_APK=<the FUTO-based app's last release> android/test/emulator.sh` | Adds `update-from-futo-app`: an update from that app keeps SebType picked and its words, Rime and Mozc data and settings (#262) |

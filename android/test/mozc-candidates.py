@@ -14,6 +14,8 @@ import os
 import sys
 import tempfile
 
+sys.dont_write_bytecode = True  # no __pycache__ in pc/linux from loading perf-mozc.py
+
 TOP = 10
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location(

@@ -11,7 +11,7 @@ SebType: which licence covers which part (README.md, "Licences", has the details
   - android/app/src/main/res/font/sebtype_nunito_extrabold.ttf and sebtype_pixelify_semibold.ttf, the fonts in
     art/fonts/, and the glyph outlines in pc/icons/ (Noto Sans CJK and Nunito): the SIL Open Font License 1.1.
   - SebType's Mozc in engines/mozc/, pc/linux/mozc-keymap.tsv, and Mozc's Japanese dictionary the Android
-    build bundles (android/app/mozc-dictionary.sh): Mozc's BSD-3-Clause licence and its data's licences.
+    build makes from it (android/app/mozc-dictionary.sh): Mozc's BSD-3-Clause licence and its data's licences.
   - SebType's librime in engines/librime/: librime's BSD-3-Clause.
   - core/src/rime.cpp, which follows fcitx5-rime (Copyright 2017 Xuetian Weng and contributors), and linux/src/tray.h and tray.cpp, ported from Fcitx5's
     notificationitem: LGPL-2.1-or-later (LICENSE-LGPL-2.1).
