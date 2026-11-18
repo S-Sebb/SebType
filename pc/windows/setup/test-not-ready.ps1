@@ -21,10 +21,9 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   chinese-switched: a switch to 中文 during a second such deploy, no key typed: grey 中, then 中 again unasked;
   chinese-unavailable: a server that hangs (its process suspended): grey 中 with "!" after one key's wait,
     the key goes in as typed, the popup says why; japanese-unavailable: the same in 日本語 with its own popup;
-  dpi-change-popup: the same for the popup;
   japanese-back: the server answers again (resumed): あ again within two seconds, unasked;
   typed-after-recovery: ni + Space in 中文 then gives 你 (the key the app typed itself while the server hung
-    doesn't reach Rime as well);
+    doesn't reach Rime as well); dpi-change-popup: dpi-change for the popup, at a key once the server hangs;
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
     popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
     keypad 1, in an app that grants the text service's edit only after it handled the key.
@@ -372,11 +371,6 @@ try {
     if ($t -ne 'k') { throw "the key gave '$t', not k as typed" }
     "grey あ with !, 'k' as typed, popup $size"
   }
-  # The popup (1.2 s) rescales too.
-  Check 'dpi-change-popup' {
-    $tsf::Clear(); Ready; $null = $tsf::Key((Vk 'k')); $tsf::Settle(200)
-    try { DpiRoundTrip 'dpi-popup' } finally { $tsf::Settle(1500); $tsf::Clear() }
-  }
   [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $suspended = $null
   Check 'japanese-back' {
     $icon = WaitIcon $hira 4; Shot 'hira-back' | Out-Null
@@ -387,6 +381,17 @@ try {
     Lang zh; Keys n i space; $t = $tsf::Text()
     if ($t -ne '你') { throw "ni + Space gave '$t': the 'n' typed as is while the server hung went to Rime too" }
     "ni + Space gives $t"
+  }
+  # The popup (1.2 s) rescales too: the first key once the server hangs shows it.
+  Check 'dpi-change-popup' {
+    Lang ja
+    $script:suspended = Server
+    [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
+    try { Ready; $null = $tsf::Key((Vk 'k')); $tsf::Settle(200); DpiRoundTrip 'dpi-popup' }
+    finally {
+      [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
+      $null = WaitIcon $hira 4; $tsf::Clear()
+    }
   }
   # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
   # and once the server answers again nothing of the old typing comes back or deletes it. The second time the
