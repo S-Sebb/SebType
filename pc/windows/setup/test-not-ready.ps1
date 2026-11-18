@@ -478,8 +478,8 @@ try {
   }
   # The app holds the text service's lock over several keys (#330): a held key keeps the keyboard state it came
   # with, every key after it waits behind it, and the held keys go nowhere once the focus moved. $traced: the
-  # keys TSF has to see again as the replay goes by, the window handing posted keys to TSF as an app's own loop
-  # may (TSF's own hook doesn't see posted keys), and the text service letting them by; $resume: the
+  # keys replayed, which the field's window hands to TSF's keystroke manager as an app's own loop may, and which
+  # the text service has to let by; $resume: the
   # server answers again before the lock is granted, so a replayed letter the text service took would compose.
   $held = {
     param($name, $before, [scriptblock]$keys, [scriptblock]$granted, $want, $traced, [switch]$resume)
@@ -490,24 +490,23 @@ try {
     try {
       Ready; & $keys
       if ($resume) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null; Start-Sleep -Milliseconds 1500 }
-      $pressed = $tsf::Traced()
-    } finally { $tsf::PumpKeys = $true; $tsf::HoldLocks = $false }
+    } finally { $tsf::PumpKeys = $true; $null = $tsf::Pumped(); $tsf::HoldLocks = $false }
     & $granted; $tsf::Settle(600)
-    $seen = $tsf::Traced(); $tsf::PumpKeys = $false; $t = $tsf::Text()
+    $seen = $tsf::Pumped(); $tsf::PumpKeys = $false; $t = $tsf::Text()
     if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null }
     $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
     $show = { param($s) "'" + ($s -replace "`n", '\n') + "'" }
-    if ($t -ne $want) { throw "${name}: $(& $show $t), not $(& $show $want) (TSF saw '$seen' at the grant)" }
-    if ($traced -and " $seen " -notlike "* $traced *") { throw "${name}: TSF saw '$seen' at the grant, not the replayed $traced (and '$pressed' as the keys were pressed)" }
+    if ($t -ne $want) { throw "${name}: $(& $show $t), not $(& $show $want) (replayed through TSF: '$seen')" }
+    if ("$seen" -ne "$traced") { throw "${name}: the keys replayed through TSF were '$seen', not '$traced' (! where an input method took one)" }
     if ($icon -ne $hira) { throw "${name}: the icon did not turn back to あ within 4 s" }
     if ($after -ne "${want}い") { throw "${name}: i after the server answered again gave $(& $show $after), not $(& $show "${want}い")" }
-    "${name}: $(& $show $want), TSF saw '$pressed' pressed and '$seen' replayed, then i gives $(& $show $after)"
+    "${name}: $(& $show $want)$(if ($seen) { ", replayed through TSF and let by: $seen" }), then i gives $(& $show $after)"
   }
   Check 'hang-mid-held-keys' {
     $runs = @(
       { & $held 'ctrl-backspace' 'ab cd' { $null = $tsf::Press(0x08, 0x11, 0xA2) } {} 'ab ' '8' },  # Ctrl let go before the grant
       { & $held 'backspace-then-n' '' { $null = $tsf::Key(0x08); $null = $tsf::Key(0x4E) } {} 'n' '8 78' -resume },
-      { & $held 'focus-moved' '' { $null = $tsf::Key(0x0D); $tsf::Away($true) } { $tsf::Away($false) } 'か' $null }
+      { & $held 'focus-moved' '' { $null = $tsf::Key(0x0D); $tsf::Away($true) } { $tsf::Away($false) } 'か' '' }
     ) | ForEach-Object { try { @{ ok = & $_ } } catch { @{ fail = $_.Exception.Message } } }
     $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
     if ($fails) { throw ($fails -join '; ') }

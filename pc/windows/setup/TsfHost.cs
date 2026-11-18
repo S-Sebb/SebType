@@ -112,26 +112,6 @@ namespace SebType {
     void KeyUp(IntPtr w, IntPtr l, [MarshalAs(UnmanagedType.Bool)] out bool eaten);
   }
 
-  [ComImport, Guid("4ea48a35-60ae-446f-8fd6-e6a8d82459f7"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface ITfSource {
-    void AdviseSink(ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] object sink, out uint cookie);
-    void UnadviseSink(uint cookie);
-  }
-
-  [ComImport, Guid("1cd4c13b-1c36-4191-a70a-7f3e611f367d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  public interface ITfKeyTraceEventSink {
-    void OnKeyTraceDown(IntPtr w, IntPtr l);
-    void OnKeyTraceUp(IntPtr w, IntPtr l);
-  }
-
-  // Every key TSF's keystroke manager handles, before any input method sees it (#330: a replayed key too).
-  [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-  public class KeyTrace : ITfKeyTraceEventSink {
-    public readonly List<int> Downs = new List<int>();
-    public void OnKeyTraceDown(IntPtr w, IntPtr l) { Downs.Add((int)w); }
-    public void OnKeyTraceUp(IntPtr w, IntPtr l) { }
-  }
-
   [ComImport, Guid("7dcf57ac-18ad-438b-824d-979bffb74b7c"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface ITfCompartmentMgr {
     void GetCompartment(ref Guid guid, out ITfCompartment compartment);
@@ -485,10 +465,11 @@ namespace SebType {
     }
     static readonly BlockingCollection<Action> queue = new BlockingCollection<Action>();
     static TextStore store;
-    static readonly KeyTrace trace = new KeyTrace();
+    // PumpKeys: a key posted to the field's window goes to TSF's keystroke manager, as in an app whose loop hands
+    // its keys to TSF itself; Pumped: those keys since the last call, "8 78" (with "!" for one an input method ate).
     public static bool PumpKeys;
-    // The keys TSF handled since the last call, as virtual-key codes ("8 78").
-    public static string Traced() { return OnUi(() => { var t = string.Join(" ", trace.Downs); trace.Downs.Clear(); return t; }); }
+    static readonly List<string> pumped = new List<string>();
+    public static string Pumped() { return OnUi(() => { var t = string.Join(" ", pumped); pumped.Clear(); return t; }); }
     static ITfThreadMgr threadMgr;
     static ITfDocumentMgr docMgr;
     static IntPtr context;
@@ -506,8 +487,6 @@ namespace SebType {
           threadMgr = (ITfThreadMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_ThreadMgr));
           uint clientId, ec;
           threadMgr.Activate(out clientId);
-          var traceId = typeof(ITfKeyTraceEventSink).GUID; uint traceCookie;
-          ((ITfSource)threadMgr).AdviseSink(ref traceId, trace, out traceCookie);
           threadMgr.CreateDocumentMgr(out docMgr);
           docMgr.CreateContext(clientId, 0, store, out context, out ec);
           docMgr.Push(context);
@@ -520,11 +499,11 @@ namespace SebType {
         while (GetMessageW(out m, IntPtr.Zero, 0, 0)) {
           if (m.hwnd == IntPtr.Zero && m.message == WM_APP) { Action a; while (queue.TryTake(out a)) a(); continue; }
           // A character the input method let through goes into the field, as an edit control would take it.
-          // A key posted to the window goes through TSF as in an app whose loop hands its keys to TSF itself.
           if (PumpKeys && (m.message == 0x100 || m.message == 0x101) && m.hwnd == store.Hwnd) {
             bool eaten;
             if (m.message == 0x100) ((ITfKeystrokeMgr)threadMgr).KeyDown(m.wParam, m.lParam, out eaten);
             else ((ITfKeystrokeMgr)threadMgr).KeyUp(m.wParam, m.lParam, out eaten);
+            if (m.message == 0x100) pumped.Add((int)m.wParam + (eaten ? "!" : ""));
             if (eaten) continue;
           }
           if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
