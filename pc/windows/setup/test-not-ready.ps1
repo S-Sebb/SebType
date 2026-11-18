@@ -181,6 +181,14 @@ function WaitIcon($want, $secs) {
 
 # This session's server (a terminal server may run one per session).
 function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
+Add-Type @'
+using System.Runtime.InteropServices;
+public static class SebTypePipe {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool WaitNamedPipe(string name, int ms);
+  // An instance there, free or busy (121: the wait timed out); none is 2.
+  public static bool Exists(string name) { return WaitNamedPipe(name, 1) || Marshal.GetLastWin32Error() == 121; }
+}
+'@
 # Every server on the PC, for a failure's message.
 function Servers { (@(Get-CimInstance Win32_Process -Filter "Name='sebtype-server.exe'") | ForEach-Object { $o = Invoke-CimMethod -InputObject $_ -MethodName GetOwner; "$($_.ProcessId) $($o.User) session $($_.SessionId) from $($_.CreationDate.ToString('HH:mm:ss.fff'))" }) -join '; ' }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
@@ -195,15 +203,15 @@ function Restart-Server([scriptblock]$change) {
   } finally {
     $hold.Dispose()
     # Started again when it left with no pipe there: an app's server, rejected, may still have held the mutex.
-    # The pipe is looked for in the list, not opened (Test-Path does): opened, it is busy, and seems gone.
-    $name = "SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
-    $up = { [IO.Directory]::GetFiles('\\.\pipe\') -like "*\$name" }
+    # The pipe is asked for, not opened (Test-Path does): opened, it is busy, and seems gone.
+    $name = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h
+    $up = { [SebTypePipe]::Exists($name) }
     for ($try = 1; -not (& $up); $try++) {
-      if ($try -gt 3) { throw "no pipe $name after 3 starts" }
+      if ($try -gt 3) { throw "no $name after 3 starts" }
       $started = Start-Process $server -PassThru
       $end = (Get-Date).AddSeconds(20)
       while (-not (& $up) -and -not $started.HasExited) {
-        if ((Get-Date) -gt $end) { throw "no pipe $name 20 s after the server started" }
+        if ((Get-Date) -gt $end) { throw "no $name 20 s after the server started" }
         Start-Sleep -Milliseconds 200
       }
       if (-not (& $up)) { Start-Sleep 1 }  # the server that kept it out may still be making its pipe
