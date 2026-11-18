@@ -13,7 +13,8 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     sebtype-mozc.dll, as an antivirus scan holds a new file): the button is there at once as grey あ, and a key
     goes in as typed without waiting; reload-while-loading: the Configurator's /mozc meanwhile, and 中文 still
     switches and types at once; first-japanese-back: あ unasked once Mozc and the reload are done, then the first ka gives か;
-  ready: あ and 中 as usual; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
+  ready: あ and 中 as usual; dpi-change: the candidates rescale when the scale changes while they show (#327),
+    and back as a fresh show; windows-ime (INFO): Microsoft Pinyin's icon in the same taskbar, to compare;
   sharp: at any scaling the icon comes at the taskbar's size and the popup in the screen's own pixels;
   chinese-preparing: while Rime deploys (sebtype-server.exe /deploy, its prisms removed), 中 turns grey with "…", a key goes
     in as typed and the popup says why; chinese-back: once Rime is done the key is 中 again, unasked;
@@ -22,7 +23,7 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     the key goes in as typed, the popup says why; japanese-unavailable: the same in 日本語 with its own popup;
   japanese-back: the server answers again (resumed): あ again within two seconds, unasked;
   typed-after-recovery: ni + Space in 中文 then gives 你 (the key the app typed itself while the server hung
-    doesn't reach Rime as well);
+    doesn't reach Rime as well); dpi-change-popup: dpi-change for the popup, at a key once the server hangs;
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
     popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
     keypad 1, in an app that grants the text service's edit only after it handled the key.
@@ -135,6 +136,22 @@ function KeyWithPopup($k, $name) {
   $null = $tsf::CandidateWindow("$Out\$name-popup-later.png")  # the same popup once it settled
   $tsf::Settle(900)
   $size
+}
+# A scale change while the window shows (#327), sent as Windows sends it: the window's sizes at this DPI, after
+# a change to the other (96 or 144) and after the change back, which has to match the first. A SCALE=150 run of
+# test-tcsbackend.sh gives the fresh show at 144 dpi that a SCALE=100 run's change has to match, and back.
+function DpiRoundTrip($name) {
+  $d = $tsf::Dpi(); $o = if ($d -eq 96) { 144 } else { 96 }
+  $size = { param($png) $s = $tsf::CandidateWindow("$Out\$png"); if ($s) { ($s -split ' ')[0] } }
+  $fresh = & $size "$name-fresh-$d.png"
+  if (-not $fresh) { throw "no window to rescale" }
+  if (-not $tsf::DpiChanged($o)) { throw "the window went before the change to $o dpi" }
+  $other = & $size "$name-changed-$o.png"
+  $null = $tsf::DpiChanged($d); $back = & $size "$name-back-$d.png"
+  $sizes = "$fresh fresh at $d dpi, $other changed to $o dpi, $back back"
+  if (-not $other -or $other -eq $fresh) { throw "the window didn't rescale: $sizes" }
+  if ($back -ne $fresh) { throw "back at $d dpi it isn't as fresh: $sizes" }
+  $sizes
 }
 function Lang($lang) {
   $clsid = [Guid]'{D4E5C593-4F73-475F-936C-0E29A6FE7A02}'
@@ -256,6 +273,10 @@ try {
     if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }
     'あ and 中 differ'
   }
+  Check 'dpi-change' {
+    Lang zh; $tsf::Clear(); Keys n i
+    try { DpiRoundTrip 'dpi-candidates' } finally { Keys Escape; $tsf::Clear() }
+  }
   # Every later check compares against these two icons.
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
@@ -360,6 +381,17 @@ try {
     Lang zh; Keys n i space; $t = $tsf::Text()
     if ($t -ne '你') { throw "ni + Space gave '$t': the 'n' typed as is while the server hung went to Rime too" }
     "ni + Space gives $t"
+  }
+  # The popup (1.2 s) rescales too: the first key once the server hangs shows it.
+  Check 'dpi-change-popup' {
+    Lang ja
+    $script:suspended = Server
+    [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
+    try { Ready; $null = $tsf::Key((Vk 'k')); $tsf::Settle(200); DpiRoundTrip 'dpi-popup' }
+    finally {
+      [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
+      $null = WaitIcon $hira 4; $tsf::Clear()
+    }
   }
   # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
   # and once the server answers again nothing of the old typing comes back or deletes it. The second time the

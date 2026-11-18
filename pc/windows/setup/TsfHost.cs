@@ -718,6 +718,19 @@ namespace SebType {
     // Saves the input method's candidate window, the visible window other than the field that its code
     // (in this thread, as TSF loads it) shows, as a PNG; returns its size, or null without one. The size
     // says when the mouse pointer is over it: a capture leaves the pointer out, but some pointers show.
+    // Tells the shown candidate window its monitor's scale is now dpi, as Windows does (WM_DPICHANGED, #327).
+    public static bool DpiChanged(uint dpi) {
+      return OnUi(() => {
+        IntPtr w = IntPtr.Zero;
+        EnumThreadWindows(threadId, (h, l) => { if (h != store.Hwnd && IsWindowVisible(h)) w = h; return w == IntPtr.Zero; }, IntPtr.Zero);
+        if (w == IntPtr.Zero) return false;
+        IntPtr rect = Marshal.AllocHGlobal(16);  // the suggested rectangle, which the window doesn't use
+        Physical(() => { RECT r; GetWindowRect(w, out r); Marshal.StructureToPtr(r, rect, false); return 0; });
+        SendMessagePtr(w, 0x02E0 /* WM_DPICHANGED */, (IntPtr)(long)(dpi << 16 | dpi), rect);
+        Marshal.FreeHGlobal(rect);
+        return true;
+      });
+    }
     public static string CandidateWindow(string path) {
       IntPtr w = IntPtr.Zero;
       OnUi(() => { EnumThreadWindows(threadId, (h, l) => { if (h != store.Hwnd && IsWindowVisible(h)) w = h; return w == IntPtr.Zero; }, IntPtr.Zero); return 0; });

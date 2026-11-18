@@ -31,13 +31,15 @@ class CandidateWindow {
   // The style: Weasel's layout in Windows' own colours or SebType's Picnic, at the monitor's scale.
   struct Style {
     bool vertical = true, picnic = false;
+    UINT dpi = 0;
     float scale = 1, fontPx = 0;
     Palette colors;
   };
 
   static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   bool create();
-  void loadStyle(const RECT &caret);
+  void loadStyle(UINT dpi);
+  void rescale(UINT dpi);
   void layout(const RECT &caret);
   void draw();
   void place(const RECT &caret);
@@ -54,6 +56,7 @@ class CandidateWindow {
   CandidateLayout layout_;
   int preeditHighlight_ = -1;
   int cursor_ = -1;
+  RECT caret_{};  // where it was last shown
   // The word whose pages are shown: they keep its first page's width.
   std::wstring word_;
   int wheel_ = 0;  // the wheel's turn not yet a page
