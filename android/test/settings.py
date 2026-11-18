@@ -251,7 +251,57 @@ def settle(seconds=30):
         time.sleep(1)
 
 
-unstarted = 0  # times open_field found SebType chosen but never started (#352)
+# In the system log: SebType's process starting, crashing (Java or native) or not responding.
+SEBTYPE_LIFE = re.compile(
+    r"Start proc \d+:dev\.sebb\.sebtype/|Process: dev\.sebb\.sebtype, PID"
+    r"|>>> dev\.sebb\.sebtype <<<|ANR in dev\.sebb\.sebtype(?![.\w])"
+)
+recoveries = []  # the logcat file of each restart_unstarted recovery, for check()'s WARN
+current_check = ""
+
+
+def choose_sebtype():
+    """SebType the keyboard again, with one retry."""
+    for _ in range(2):
+        try:
+            adb("shell", "ime", "set", IME, check=False)
+            got = adb("shell", "settings", "get", "secure", "default_input_method")
+            if got.strip() == IME:
+                return
+        except (RuntimeError, subprocess.SubprocessError):
+            pass
+    raise Fail(
+        "SebType isn't the keyboard again after switching through another one (#352)"
+    )
+
+
+def restart_unstarted(since):
+    """SebType is chosen but has no process, the field open 10 s. After a force-stop Android can
+    leave it so, and `ime set` to the same keyboard changes nothing (#352): another keyboard and back
+    starts it. If SebType started, crashed or hung since the field opened (device time `since`) the
+    fault is SebType's: fail with that instead. Each recovery is a WARN on the check's line."""
+    log = adb("logcat", "-d", "-T", since, check=False)
+    seen = [line for line in log.splitlines() if SEBTYPE_LIFE.search(line)]
+    if seen:
+        raise Fail(
+            f"SebType isn't up or running, and since the field opened: {' | '.join(seen[-3:])}"
+        )
+    path = os.path.join(
+        logdir, f"{current_check}-recovery-{len(recoveries) + 1}.logcat"
+    )
+    with open(path, "w") as f:
+        f.write(log)
+    other = [i for i in adb("shell", "ime", "list", "-s").split() if i != IME]
+    if not other:
+        raise Fail(
+            "SebType chosen but never started since the field opened, and no other keyboard to"
+            f" switch through (logcat in {path})"
+        )
+    recoveries.append(path)
+    try:
+        adb("shell", "ime", "set", other[0])
+    finally:
+        choose_sebtype()
 
 
 def open_field(kind=None, clip=None):
@@ -263,6 +313,7 @@ def open_field(kind=None, clip=None):
         ["--es", "clip", clip] if clip else []
     )
 
+    since = adb("shell", "date", "+%s").strip()
     shown = 0.0
 
     def show():
@@ -289,17 +340,12 @@ def open_field(kind=None, clip=None):
             show()
             return None
         ks = keys(nodes())
-        # After a force-stop Android can keep SebType chosen yet never start it again: no process,
-        # and `ime set` to the same keyboard changes nothing (#352). Another keyboard and back makes it.
         if (
             not ks
             and time.time() - shown > 10
             and not adb("shell", "pidof", PKG, check=False).strip()
         ):
-            global unstarted
-            unstarted += 1
-            other = [i for i in adb("shell", "ime", "list", "-s").split() if i != IME]
-            adb("shell", "ime", "set", other[0])
+            restart_unstarted(since)
             show()
         return ks
 
@@ -512,15 +558,28 @@ def check(name, fn, needs=()):
         if CHECKS:  # named, so say why it didn't run
             result("SKIP", name, "timing check, runs only with PERF_RUN=1 (#54)")
         return
+    global current_check
+    current_check = name
     runs = REPEAT if any(name.startswith(c) for c in CHECKS) else 1
     for run in range(1, runs + 1):
+        first = len(recoveries)
+
+        def warned(detail):
+            new = recoveries[first:]
+            return detail + (
+                f" WARN: Android started SebType only after another keyboard and back, {len(new)}x"
+                f" (#352; {', '.join(os.path.basename(p) for p in new)})"
+                if new
+                else ""
+            )
+
         of = f" (run {run}/{runs})" if runs > 1 else ""
         try:
             detail = fn()
             passed.add(name)
-            result("PASS", name, (detail or "") + of)
+            result("PASS", name, warned((detail or "") + of))
         except Skip as e:
-            result("SKIP", name, str(e) + of)
+            result("SKIP", name, warned(str(e) + of))
         except (
             Fail,
             RuntimeError,
@@ -529,7 +588,7 @@ def check(name, fn, needs=()):
             LookupError,
             ValueError,
         ) as e:
-            result("FAIL", name, str(e) + of)
+            result("FAIL", name, warned(str(e) + of))
             # The system log, for what the keyboard was doing (a keyboard that never came up shows why here).
             suffix = f"-{run}" if runs > 1 else ""
             with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
@@ -1265,16 +1324,10 @@ def incognito_clipboard():
 
 
 def incognito_after_restart():
-    before = unstarted
     adb("shell", "am", "force-stop", PKG)
     open_field()
     wait_for("the badge after a restart", lambda: badge() == "toggle", 15)
-    again = unstarted - before
-    return "incognito still on after the keyboard restarted" + (
-        f" (Android didn't start it until another keyboard and back, {again}x)"
-        if again
-        else ""
-    )
+    return "incognito still on after the keyboard restarted"
 
 
 def incognito_privacy_switch():
