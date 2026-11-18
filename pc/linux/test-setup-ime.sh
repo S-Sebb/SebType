@@ -43,6 +43,7 @@ rime_data=$(../../tools/build.sh 10 "rime data for test-setup-ime" data/rime/bui
 source ../../linux/versions.sh
 own=$out/own-builds
 sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
+sebtype_rpm=$(sebtype_rpm "$(sebtype_key)")  # the RPM setup-ime.sh installs from this tree
 librime_unpack "$own" || { echo "preflight: linux/build-librime.sh failed"; exit 1; }
 read -ra own_fcitx <<<"$(sebtype_run "$own")"
 
@@ -84,7 +85,7 @@ stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fa
 stub rpm 'p=${*: -1}; [[ $p == sebtype || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
 stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
-  'dnf install -y '*/$SEBTYPE_RPM) echo -n '$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE' > \"\$FAKE/sebtype\" ;;
+  'dnf install -y '*/sebtype-$SEBTYPE_VERSION-*) echo -n '$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE' > \"\$FAKE/sebtype\" ;;
   'dnf install -y '*/librime-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
   'dnf remove -y '*) for p in \"\${@:4}\"; do : > \"\$FAKE/\$p\"; done ;;
   'dnf install -y kcm-fcitx5'*|'dnf install -y fcitx5-configtool'*) for p in \"\${@:4}\"; do echo -n 5.1.16-1.fc44 > \"\$FAKE/\$p\"; done ;;
@@ -121,7 +122,7 @@ printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 # The fake account has no Rust either: the Configurator built above is newer than its sources, so
 # setup-ime.sh doesn't rebuild it.
 fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
-  touch "$h/scratch/SebType/cache/sebtype/$SEBTYPE_RPM"  # a placeholder: the fake sudo installs nothing
+  touch "$h/scratch/SebType/cache/sebtype/${sebtype_rpm##*/}"  # a placeholder: the fake sudo installs nothing
   env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
@@ -981,7 +982,7 @@ sebtype_install() {
   local o; rm -f "$fake/sudo.log"; : > "$fake/sebtype"
   o=$(echo y | fake_run) || return 1; echo "$o"
   grep -q "^change: install SebType's input method" <<<"$o" &&
-    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $h/scratch/SebType/cache/sebtype/$SEBTYPE_RPM" &&
+    [[ $(cat "$fake/sudo.log") == "sudo dnf install -y $h/scratch/SebType/cache/sebtype/${sebtype_rpm##*/}" &&
       $(cat "$fake/sebtype") == "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" ]] || return 1
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   ! grep -q "SebType's input method" <<<"$o"

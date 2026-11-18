@@ -19,8 +19,7 @@ for x in kwin_wayland plasmawindowed kded6 spectacle fcitx5 bwrap devq; do
   command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }
 done
 python3 -c 'import dbus, Xlib, numpy, PIL' 2>/dev/null || { echo "preflight: python3-dbus, xlib, numpy or pillow missing"; exit 1; }
-# The cached RPM is keyed by version alone, so it may be another tree's: this one's is built first.
-{ "$here/../../linux/build.sh" >/dev/null && sebtype_unpack "$work/own"; } || { echo "preflight: linux/build.sh failed"; exit 1; }
+sebtype_unpack "$work/own" || { echo "preflight: linux/build.sh failed"; exit 1; }
 
 h=$work/home
 mkdir -p "$h/.config/fcitx5"

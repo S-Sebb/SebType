@@ -139,7 +139,9 @@ folder (`~/.local/share/fcitx5/rime`) and names, and Mozc its profile, so learne
 `linux/build.sh` builds the `sebtype` RPM in a pinned Fedora container (`linux/versions.sh`), with Mozc
 (`/usr/lib64/sebtype/libsebtype-mozc.so`, which the add-on links) built by Bazel (Bazelisk, pinned by checksum), which fetches the
 libraries `engines/mozc/src/MODULE.bazel` pins. Bazel's caches stay in `~/scratch/SebType/cache/mozc/work`,
-so a rebuild compiles only what changed. It runs the core's unit tests too.
+so a rebuild compiles only what changed. It runs the core's unit tests too. The RPM's name in
+`~/scratch/SebType/cache/sebtype` has a hash of the sources it packs (`sebtype_key`), so setup and the tests
+use the one built from their own checkout's code and build it when it's missing (#326).
 
 Before #190, setup installed SebType's own builds of fcitx5-mozc (#66), fcitx5-rime (#117) and Fcitx5
 (#182), from sources in this repo. The input method replaced them, and their sources and packaging are

@@ -185,8 +185,9 @@ if [[ $sebtype_now != "$sebtype_want" ]] &&
   change "install SebType's input method $sebtype_want, which hosts Rime and Mozc (asks before using sudo)"; then
   read -rp "Build SebType's input method if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
   if [[ $answer == [yY]* ]]; then
-    [[ -f $SEBTYPE_CACHE/$SEBTYPE_RPM ]] || "$here/../../linux/build.sh" >/dev/null
-    sudo dnf install -y "$SEBTYPE_CACHE/$SEBTYPE_RPM"
+    key=$(sebtype_key); rpm=$(sebtype_rpm "$key")
+    [[ -f $rpm ]] || SEBTYPE_SOURCES_KEY=$key "$here/../../linux/build.sh" >/dev/null
+    sudo dnf install -y "$rpm"
     busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "SebType input method"), then run this again"
   else warn "SebType's input method isn't installed, so typing stays as it was"; fi
 fi

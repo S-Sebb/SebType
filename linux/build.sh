@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds SebType's Linux input method RPM (#190): the Fcitx5 add-on over core/ and Mozc's library, with
-# sebtype.spec in the pinned Fedora container (versions.sh). Prints the RPM's path.
+# sebtype.spec in the pinned Fedora container (versions.sh). Prints the RPM's path, named by a hash of the
+# sources it packs (versions.sh's sebtype_key, #326), so each tree's tests find their own code's RPM.
 #
-#   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.x86_64.rpm
+#   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.<key>.x86_64.rpm
 #
 # Mozc's Bazel caches stay in ~/scratch/SebType/cache/mozc/work, so a rebuild compiles only what changed. Runs in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
 # Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here) and copies
@@ -17,14 +18,19 @@ source "$here/versions.sh"
 source "$here/rpm-sources.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$root/tools/lib.sh"
-if build_host_ready; then build_remotely linux/build.sh; exit; fi
+# The build host's copy has no git, so the key goes with it.
+key=${SEBTYPE_SOURCES_KEY:-$(sebtype_key)}
+# The keyed RPMs no tree used for two weeks (sebtype_unpack touches them); those named by version alone stay.
+mkdir -p "$SEBTYPE_CACHE"
+find "$SEBTYPE_CACHE" -maxdepth 1 -regextype posix-extended -regex '.*\.[0-9a-f]{12}\.x86_64\.rpm' -mtime +14 -delete
+if build_host_ready; then build_remotely "SEBTYPE_SOURCES_KEY=$key" linux/build.sh; exit; fi
 # Bazel's caches for Mozc, so a rebuild compiles only what changed.
 MOZC_CACHE=$BAZEL_CACHE/mozc
-mkdir -p "$SEBTYPE_CACHE" "$MOZC_CACHE/work"
+mkdir -p "$MOZC_CACHE/work"
 stage=$(rpm_stage)
 trap 'rm -rf "$stage"' EXIT
-pack_source "$root/engines/mozc" "$stage/sources/mozc.tar.gz"
-tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c core linux pc/icons |
+pack_source "$root/$SEBTYPE_MOZC" "$stage/sources/mozc.tar.gz"
+tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c "${SEBTYPE_SOURCES[@]}" |
   gzip -n > "$stage/sources/sebtype.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies and Bazelisk. Built once per pin and spec.
@@ -54,6 +60,7 @@ build_lock 120 "sebtype build" \
   podman run --rm --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g" -e BAZELISK_HOME=/work/bazelisk -v "$MOZC_CACHE/work:/work:Z" \
   -v "$stage/sources:/sources:ro,Z" -v "$stage/rpms:/out:Z" -v "$here/sebtype.spec:/pkg.spec:ro,Z" "$image" \
   bash -c "$inner" inner "$SEBTYPE_VERSION" "$SEBTYPE_RPM_RELEASE" "$BUILD_JOBS"
-cp "$stage/rpms/$SEBTYPE_RPM" "$SEBTYPE_CACHE/"
+rpm=$(sebtype_rpm "$key")
+cp "$stage/rpms/$SEBTYPE_RPM" "$rpm.$$.part" && mv -f "$rpm.$$.part" "$rpm"  # per build: two trees with the same sources may publish at once
 echo "built in $((SECONDS - start)) s (logs: $MOZC_CACHE/work/sebtype-build.log)" >&2
-echo "$SEBTYPE_CACHE/$SEBTYPE_RPM"
+echo "$rpm"
