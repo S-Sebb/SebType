@@ -410,7 +410,10 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         if (w?.dead == true) return
         val s = snapshot(MAX_SWIPE, 0)
         // The text before where the swipe started: with the selection our last step left in it
-        val text = (if (s != null) s.before + (if (w != null) s.selected else "") else ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString()) ?: return
+        // As far back from where the swipe started at each step, so the words are those the steps showed; a read
+        // cut at its limit can start inside an emoji: the words go no further back than its end
+        val read = ((if (s != null) s.before + (if (w != null) s.selected else "") else ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString()) ?: return).takeLast(MAX_SWIPE)
+        val text = if (read.firstOrNull()?.isLowSurrogate() == true) read.substring(1) else read
         val after = if (s == null) ic.getTextAfterCursor(CHECK, 0)?.toString() ?: return else null
         if (w != null) {
             // With the field's positions, the text read can start further back; without, it must all be the same

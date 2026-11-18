@@ -760,6 +760,22 @@ class EditorTest {
         assertEquals("one two ", field.text)
     }
 
+    /**
+     * #325: an emoji just past what Delete's swipe reads (2000 characters before the cursor, an emoji two): the
+     * read starts inside it, and two words go back to the read's start. The emoji stays whole, in a field that
+     * says where its cursor is and in one that can't.
+     */
+    @Test
+    fun aDeleteSwipeDoesntSplitAnEmojiAtTheReadsLimit() {
+        for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
+            val field = Field("😀" + "a".repeat(1999), 2001, extract)
+            val ime = Ime(field)
+            ime.editor.selectWordsBefore(2, false)
+            ime.editor.selectWordsBefore(2, true)
+            assertEquals("😀", field.text)
+        }
+    }
+
     /** #325: another field came up during Delete's swipe: nothing of the swipe goes into it */
     @Test
     fun aDeleteSwipeEndsWithItsField() {
