@@ -3,7 +3,8 @@
 // reach it over a named pipe: one process, so the learned words have one writer, and one language and state
 // for every window. MIT, SebType.
 //
-//   sebtype-server.exe                            serves (started at logon, or by the text service)
+//   sebtype-server.exe [/error:N]                 serves (started at logon, or by the text service, with the
+//                                                 error its call met, for server.log)
 //   sebtype-server.exe /deploy|/sync|/quit|/mozc  tells the server (/deploy and /sync do it themselves when
 //                                                 none runs, and return when Rime is done), for setup and the
 //                                                 Configurator; /mozc: Mozc reads its files again;
@@ -244,19 +245,37 @@ void serve(HANDLE pipe) {
   CloseHandle(pipe);
 }
 
+// This process's token and who started it, for server.log: a server out of the apps' reach shows here.
+std::string origin() {
+  HANDLE token = nullptr;
+  TOKEN_ELEVATION elevated{};
+  DWORD container = 0, session = 0, n = 0;
+  std::string integrity = "?";
+  if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+    GetTokenInformation(token, TokenElevation, &elevated, sizeof(elevated), &n);
+    GetTokenInformation(token, TokenIsAppContainer, &container, sizeof(container), &n);
+    GetTokenInformation(token, TokenSessionId, &session, sizeof(session), &n);
+    char label[SECURITY_MAX_SID_SIZE + sizeof(TOKEN_MANDATORY_LABEL)];
+    if (GetTokenInformation(token, TokenIntegrityLevel, label, sizeof(label), &n)) {
+      PSID sid = reinterpret_cast<TOKEN_MANDATORY_LABEL *>(label)->Label.Sid;
+      char hex[16];
+      snprintf(hex, sizeof(hex), "0x%lx", *GetSidSubAuthority(sid, *GetSidSubAuthorityCount(sid) - 1));
+      integrity = hex;
+    }
+    CloseHandle(token);
+  }
+  return std::string(elevated.TokenIsElevated ? "elevated, " : "") + "integrity " + integrity +
+         (container ? ", app container" : "") + ", session " + std::to_string(session) + ", by " + parent();
+}
+
 int run() {
   // One server per user and session; a second one leaves at once.
   HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
-  if (!single || GetLastError() == ERROR_ALREADY_EXISTS) return 0;
-  HANDLE token = nullptr;
-  TOKEN_ELEVATION elevated{};
-  DWORD n = 0;
-  if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
-    GetTokenInformation(token, TokenElevation, &elevated, sizeof(elevated), &n);
-    CloseHandle(token);
+  if (const DWORD error = GetLastError(); !single || error == ERROR_ALREADY_EXISTS) {
+    note("second server (" + origin() + "): left, the mutex " + (single ? "is taken" : "failed, error " + std::to_string(error)));
+    return 0;
   }
-  note(std::string("server started") + (elevated.TokenIsElevated ? ", elevated" : "") + ", by " + parent() + ": " +
-       utf8(GetCommandLineW()));
+  note("server started (" + origin() + "): " + utf8(GetCommandLineW()));
   Core host(makeEngine);
   core = &host;
   // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
@@ -267,7 +286,10 @@ int run() {
     HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX,
                                    PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                                    PIPE_UNLIMITED_INSTANCES, 65536, 65536, 0, pipeSecurity());
-    if (pipe == INVALID_HANDLE_VALUE) return 1;
+    if (pipe == INVALID_HANDLE_VALUE) {
+      note("no pipe, error " + std::to_string(GetLastError()));
+      return 1;
+    }
     if (ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED) {
       std::thread(serve, pipe).detach();  // an app that stops mid-call holds up only its own thread
     } else {
