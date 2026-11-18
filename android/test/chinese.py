@@ -1269,8 +1269,8 @@ def to_chinese():
 
 
 def zh_waits_for_zh():
-    """#351: a keyboard process that starts in EN leaves Rime stopped (it holds about 40 MB), and 中
-    still types at once when picked."""
+    """#351: a keyboard process that starts in EN leaves Rime stopped (it holds about 40 MB). ranh typed
+    at once after the globe, while Rime starts, still reaches it: no plain letters in the field."""
     to_english()
     stop_keyboard()
     adb("logcat", "-c")
@@ -1278,13 +1278,18 @@ def zh_waits_for_zh():
     time.sleep(10)
     if re.search(SET_UP, logcat()):
         raise Fail("a keyboard that started in EN started Rime")
-    to_chinese()
-    got = candidates_for("ranh")
+    nodes()  # the keyboard's frame, for the globe
+    tap_globe()  # EN -> 中
+    type_keys("ranh")
+    got = wait_for("candidates for ranh", lambda: candidates(nodes()), 30)
+    text = field_text()
     to_english()  # the checks after type in EN
     # 然後 when zh-hant-on left 繁 on
-    if not got or got[0] not in ("然后", "然後"):
-        raise Fail(f"EN: Rime not started; then ranh -> {got[:6]}")
-    return f"EN: Rime not started; then ranh -> {got[:6]}"
+    if text or got[0] not in ("然后", "然後"):
+        raise Fail(f"ranh typed while Rime started: field {text!r}, bar {got[:6]}")
+    return (
+        f"EN: Rime not started; ranh typed while it started -> {got[:6]}, field empty"
+    )
 
 
 check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
