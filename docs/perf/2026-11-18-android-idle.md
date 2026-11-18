@@ -47,12 +47,13 @@ Before this, they went into the field as plain letters.
 
 Every input action goes through one serial dispatcher, `WaitingKeys`: keys,
 edits that wait for the engine (paste, undo, a search opening or closing), and everything else that
-reaches the engine or the field (あ/ア, 繁/简, incognito, candidates, the space bar's and Delete's swipes,
-pastes from a search). While anything is queued or an edit is pending, an action joins the queue;
+reaches the engine or the field (the globe, あ/ア, 繁/简, incognito, candidates, the space bar's and Delete's
+swipes, pastes from a search). While anything is queued or an edit is pending, an action joins the queue;
 otherwise it runs at once, as before. So none overtakes keys still waiting: an edit waits for the keys
 before it, and keys wait for the edit before them, whose reset would otherwise drop them. Each waiting
-key keeps the Shift it was tapped with. A new language, a new field, opening or closing a search, or the
-keyboard closing drops everything queued, edits included, and an edit already under way lands nowhere.
+key keeps the Shift it was tapped with. The globe waits its turn too: paste, a, globe lands the paste,
+types a in the old language, then switches. A new field, opening or closing a search, or the keyboard
+closing drops everything queued, edits included, and an edit already under way lands nowhere.
 `WaitingKeysTest` checks these orders, which a tap burst can't time.
 If Rime fails, the queued keys type as plain text.
 

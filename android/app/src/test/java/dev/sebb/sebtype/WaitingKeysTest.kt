@@ -140,4 +140,18 @@ class WaitingKeysTest {
         k.action(">")
         assertEquals("xa<>", k.field.toString())
     }
+
+    /** #351: a paste pending, a, then the globe: the paste lands, a goes in the old language, then the switch. */
+    @Test
+    fun globeWaitsItsTurn() {
+        val k = Keyboard()
+        k.edit("x")
+        k.tap("a")
+        k.tap("🌐", code = Code.GLOBE)
+        k.engineAnswers()
+        assertEquals("xa🌐", k.field.toString())
+        // Nothing waiting: the globe switches at once
+        k.tap("🌐", code = Code.GLOBE)
+        assertEquals("xa🌐🌐", k.field.toString())
+    }
 }

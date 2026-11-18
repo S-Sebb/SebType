@@ -4,15 +4,15 @@ import dev.sebb.sebtype.Layout.Code
 
 /**
  * The keyboard's one serial dispatcher for input (#351). THE RULE: every input action goes through it,
- * keys ([hold]), edits that wait for the engine ([switch]) and everything else that reaches the engine or the
- * field ([run]: chips, gestures, candidates, pastes from a search…). While anything is queued or an edit is
+ * keys and the globe ([hold]), edits that wait for the engine ([switch]) and everything else that reaches the
+ * engine or the field ([run]: chips, gestures, candidates, the action bar's language, pastes from a search…). While anything is queued or an edit is
  * pending, an action is appended; otherwise it runs at once, as if there were no queue. A new action that
  * skips it can overtake keys still waiting and land in the wrong order.
  *
  * - Keys typed in 中文 while Rime starts wait for [ready]; what comes after them waits too.
  * - An edit (the keyboard's finishTyping: paste, undo, a search opening or closing) resets the engine and
  *   waits for it; what comes meanwhile waits, since the reset would drop it.
- * - A new field, language or search [cancel]s everything queued, edits included, and an edit already started
+ * - A new field or search, or the keyboard closing, [cancel]s everything queued, edits included, and an edit already started
  *   does nothing when it finishes: nothing lands in a field that was left.
  */
 class WaitingKeys(
@@ -44,8 +44,9 @@ class WaitingKeys(
     /** Whether the key waits; [chineseStarting]: the language is 中文 and Rime isn't ready yet. */
     fun hold(key: Key, chineseStarting: Boolean): Boolean {
         if (feeding) return false
-        // Delete too waits in order: a Space before it may have committed a word it deletes from.
-        if (key.code !in listOf(Code.TEXT, Code.SPACE, Code.ENTER, Code.DELETE)) return false
+        // Delete too waits in order: a Space before it may have committed a word it deletes from. The globe
+        // waits its turn: what was typed before it goes in, in the language it was typed in.
+        if (key.code !in listOf(Code.TEXT, Code.SPACE, Code.ENTER, Code.DELETE, Code.GLOBE)) return false
         if (queue.isEmpty() && !switching) {
             val letter = key.code == Code.TEXT && key.text.length == 1 && key.text[0].isLetter() && key.text[0].code < 0x80
             if (!chineseStarting || !letter) return false
@@ -68,7 +69,7 @@ class WaitingKeys(
         if (idle) start(run) else queue += Switch(run)
     }
 
-    /** A new field, language or search: everything queued goes, and an edit under way lands nowhere. */
+    /** A new field or search, or the keyboard closing: everything queued goes, and an edit under way lands nowhere. */
     fun cancel() {
         queue.clear()
         switching = false

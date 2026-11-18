@@ -665,7 +665,6 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         // as today's app keeps it, and a word reopened was the field's text already (#280).
         if (lang == ENGLISH) editor.finishComposing() else editor.compose("")
         strip.preedit = ""
-        waiting.cancel()
         Engines.inUse(lang, false)
         lang = next
         texts.language = lang
@@ -1151,7 +1150,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             Action.CLIPBOARD -> return open(Panel.CLIPBOARD)
             Action.MODES -> return open(Panel.MODES)
             Action.INCOGNITO -> return onIncognito(!incognito)
-            Action.LANGUAGE -> nextLanguage()
+            Action.LANGUAGE -> waiting.run { nextLanguage() }
             Action.SETTINGS -> finishTyping {
                 startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 requestHideSelf(0)
