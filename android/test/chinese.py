@@ -2564,7 +2564,11 @@ def update_from_futo_app():
             raise Fail(
                 f"after the update SebType is {'enabled' if enabled else 'not enabled'}, the keyboard in use {chosen}"
             )
-        open_field()
+        # As in update_over_itself: the emulator may not rebind an updated keyboard on the first try.
+        try:
+            open_field()
+        except Fail:
+            open_field()
         wait_set_up()
         moved = old_files("files/english/UserHistoryDictionary.en_US.dict")
         if old_files(history) or not any(f.endswith(".body") for f in moved):
