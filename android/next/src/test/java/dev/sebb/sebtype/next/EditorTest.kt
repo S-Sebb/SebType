@@ -31,7 +31,9 @@ class EditorTest {
      * A text field as its InputConnection shows it: the text, the selection and the composing region. Each change
      * sends a selection update, which the keyboard hears of later ([Ime.update]).
      */
-    private class Field(var text: String, var cursor: Int, val extract: Extract = Extract.WHOLE, val blind: Boolean = false) {
+    private class Field(var text: String, var cursor: Int, val extract: Extract = Extract.WHOLE, val blind: Boolean = false,
+                        /** The most getTextBeforeCursor and getTextAfterCursor give, whatever is asked */
+                        val limit: Int = Int.MAX_VALUE) {
         var end = cursor
         /** The keyboard's reads of the field so far */
         var reads = 0
@@ -119,8 +121,8 @@ class EditorTest {
         val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader, arrayOf(InputConnection::class.java)) { _, method, args ->
             if (method.name.startsWith("get")) reads++
             when (method.name) {
-                "getTextBeforeCursor" -> if (blind) null else text.substring(maxOf(0, cursor - args[0] as Int), cursor)
-                "getTextAfterCursor" -> if (blind) null else text.substring(end, minOf(text.length, end + args[0] as Int))
+                "getTextBeforeCursor" -> if (blind) null else text.substring(maxOf(0, cursor - minOf(limit, args[0] as Int)), cursor)
+                "getTextAfterCursor" -> if (blind) null else text.substring(end, minOf(text.length, end + minOf(limit, args[0] as Int)))
                 "getSelectedText" -> if (blind) null else text.substring(cursor, end)
                 "getExtractedText" -> if (blind) null else extracted()
                 "getCursorCapsMode" -> 0
@@ -702,54 +704,52 @@ class EditorTest {
 
     /**
      * #325: the cursor put after "one" while Delete was swiped, before the keyboard heard of it: the swipe
-     * ends and deletes nothing, in a field that says where its cursor is and in one that can't.
+     * ends and deletes nothing.
      */
     @Test
     fun aCursorMoveDuringADeleteSwipeEndsIt() {
-        for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
-            val field = Field("one two three", 13, extract)
-            val ime = Ime(field)
-            ime.editor.selectWordsBefore(1, false)
-            ime.settle()
-            field.tap(3)
-            ime.editor.selectWordsBefore(1, true)
-            assertEquals("one two three", field.text)
-            assertEquals(3, field.cursor)
-        }
+        val field = Field("one two three", 13)
+        val ime = Ime(field)
+        ime.editor.selectWordsBefore(1, false)
+        ime.settle()
+        field.tap(3)
+        ime.editor.selectWordsBefore(1, true)
+        assertEquals("one two three", field.text)
+        assertEquals(3, field.cursor)
     }
 
-    /** #325: a field that can't say where its cursor is shows no selection; the words go, before the cursor, when let go */
+    /** #325: a cancelled touch, or Delete swiped back to no words, deletes nothing; the selection goes */
     @Test
-    fun aDeleteSwipeWhereTheCursorIsUnknown() {
-        val field = Field("one two three", 13, Extract.NONE)
+    fun aCancelledDeleteSwipeDeletesNothing() {
+        val field = Field("one two three", 13)
         val ime = Ime(field)
-        ime.editor.selectWordsBefore(2, false)
-        assertEquals(13, field.end)
-        ime.editor.selectWordsBefore(2, true)
-        assertEquals("one ", field.text)
+        ime.editor.selectWordsBefore(1, false)
+        ime.settle()
+        ime.editor.selectWordsBefore(0, true)
+        assertEquals("one two three", field.text)
+        assertEquals(13 until 13, field.cursor until field.end)
     }
 
     /**
-     * #325: a field that can't say where its cursor is, the cursor put after the first "one two" during the
-     * swipe, or "one " taken from the start: the text the swipe saw before the cursor ends the same, but it
-     * isn't all the same. The swipe deletes nothing; it would take the first "two", or "three".
+     * #325: a field that can't say where its cursor is, here one whose reads give at most four characters ("hree"
+     * of "one two three"): nothing tells where the text read starts, so each step further is a Backspace, at
+     * once, as in today's app. Taken for the text's start, "hree" would have gone as a word.
      */
     @Test
-    fun aDeleteSwipeWhereTheCursorIsUnknownEndsWhenTheTextChanges() {
-        for (change in listOf<(Field) -> Unit>({ it.tap(7) }, { it.edit(0, 4, "") })) {
-            val field = Field("one two one two", 15, Extract.NONE)
-            val ime = Ime(field)
-            ime.editor.selectWordsBefore(1, false)
-            change(field)
-            val text = field.text
-            ime.editor.selectWordsBefore(1, true)
-            assertEquals(text, field.text)
-        }
+    fun aDeleteSwipeWhereTheCursorIsUnknownIsBackspaces() {
+        val field = Field("one two three", 13, Extract.NONE, limit = 4)
+        val ime = Ime(field)
+        ime.editor.selectWordsBefore(2, false)
+        assertEquals("one two thr", field.text)
+        ime.editor.selectWordsBefore(1, false)
+        ime.editor.selectWordsBefore(2, false)
+        ime.editor.selectWordsBefore(2, true)
+        assertEquals("one two thr", field.text)
     }
 
     /**
-     * #325: a field that can't say where its cursor is, with "three" marked as composing: the words go before
-     * the cursor, not before the composing text ("onethree").
+     * #325: a field that can't say where its cursor is, with "three" marked as composing: the Backspace goes
+     * before the cursor, not before the composing text ("one twothree").
      */
     @Test
     fun aDeleteSwipeWhereTheCursorIsUnknownDeletesBeforeTheCursor() {
@@ -758,24 +758,24 @@ class EditorTest {
         field.region = 8 until 13
         ime.editor.selectWordsBefore(1, false)
         ime.editor.selectWordsBefore(1, true)
-        assertEquals("one two ", field.text)
+        assertEquals("one two thre", field.text)
     }
 
     /**
      * #325: emoji just past what Delete's swipe reads (2000 characters before the cursor): the read starts inside
      * one, and two words go back to the read's start. The emoji stays whole, a flag, a skin tone and a ZWJ
-     * sequence too, in a field that says where its cursor is and in one that can't.
+     * sequence too.
      */
     @Test
     fun aDeleteSwipeDoesntSplitAnEmojiAtTheReadsLimit() {
-        for (emoji in listOf("😀", "🇬🇧", "👍🏽", "👩‍💻")) for (extract in listOf(Extract.WHOLE, Extract.NONE)) {
+        for (emoji in listOf("😀", "🇬🇧", "👍🏽", "👩‍💻")) {
             // The read starts one character into 😀, two into the others
             val text = emoji + "a".repeat(if (emoji == "😀") 1999 else 2002 - emoji.length)
-            val field = Field(text, text.length, extract)
+            val field = Field(text, text.length)
             val ime = Ime(field)
             ime.editor.selectWordsBefore(2, false)
             ime.editor.selectWordsBefore(2, true)
-            assertEquals("$emoji $extract", emoji, field.text)
+            assertEquals(emoji, field.text)
         }
     }
 
