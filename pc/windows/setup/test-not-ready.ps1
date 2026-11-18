@@ -286,6 +286,7 @@ try {
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
   Check 'windows-ime' {
     $before = Servers
+    $script:watched = Server; $null = $watched.Handle  # its exit code stays readable once it is gone
     $clsid = [Guid]'{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}'; $profile = [Guid]'{FA550B04-5AD7-411F-A5AC-CA038EC515D7}'
     $was = try { $tsf::Enabled(0x804, $clsid, $profile) } catch { return "SKIP: no Microsoft Pinyin ($($_.Exception.InnerException.Message))" }
     try {
@@ -307,6 +308,7 @@ try {
   $bytes = { param($dir) (Get-ChildItem -Recurse -File $dir | Measure-Object Length -Sum | ForEach-Object { "$($_.Count) $($_.Sum)" }) }
   if ((& $bytes $copy) -ne (& $bytes $rimeBuild)) { throw "the copy of $rimeBuild is incomplete: nothing changed" }
   $backup = $copy
+  if ($watched) { $watched.Refresh(); Result first-server INFO "$($watched.Id): $(if ($watched.HasExited) { "exited at $($watched.ExitTime.ToString('HH:mm:ss.fff')), code 0x$('{0:x}' -f $watched.ExitCode)" } else { 'still runs' }); servers now $(Servers)" }
   Restart-Server { Remove-Item "$rimeBuild\*.prism.bin" }
   Warm-Mozc
   # The text service learns of the deploy at the next key, so the key goes once Rime's maintenance began:
