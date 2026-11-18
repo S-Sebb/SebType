@@ -509,13 +509,15 @@ namespace SebType {
             if (m.message == 0x100) pumped.Add((int)m.wParam + (eaten ? "!" : ""));
             if (eaten) continue;
           }
+          if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
+          TranslateMessage(ref m);
+          // What the field's window does with a key, after it was translated, as a window procedure would.
           if (m.message == 0x100 && m.hwnd == store.Hwnd) {
             if ((int)m.wParam == 0x25) Left();
             if ((int)m.wParam == AwayOn) threadMgr.SetFocus(OtherMgr());
             if ((int)m.wParam == LeaveOn) try { ActivateLayoutNow(0x409, "00000409"); } catch { }
           }
-          if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
-          TranslateMessage(ref m); DispatchMessageW(ref m);
+          DispatchMessageW(ref m);
         }
       });
       t.SetApartmentState(ApartmentState.STA);
