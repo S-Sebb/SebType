@@ -22,7 +22,10 @@ class WaitingKeysTest {
         }
 
         /** An edit that puts [text] in once the engine answers (finishTyping) */
-        fun edit(text: String) = q.switch { done -> engine.addLast { field.append(text); done() } }
+        fun edit(text: String) = q.switch { finish -> engine.addLast { finish { field.append(text) } } }
+
+        /** Any other action that reaches the field (a chip, a swipe), shown as [text] */
+        fun action(text: String) = q.run { field.append(text) }
 
         fun engineAnswers() = engine.removeFirst()()
     }
@@ -80,17 +83,61 @@ class WaitingKeysTest {
         assertFalse(k.q.hold(WaitingKeys.Key(Code.TEXT, "n", 0, 0, false), chineseStarting = false))
     }
 
-    /** #351: a new field drops the keys waiting for Rime, but an edit queued behind them still runs. */
+    /** #351: two pastes queued behind keys waiting for Rime, then a new field: neither lands, in either field. */
     @Test
-    fun clearDropsKeysNotEdits() {
+    fun newFieldDropsQueuedEdits() {
         val k = Keyboard()
         k.ready = false
         k.tap("n", chineseStarting = true)
         k.edit("x")
-        k.q.clear()
-        assertTrue(k.engine.isNotEmpty())
-        k.engineAnswers()
-        assertEquals("x", k.field.toString())
+        k.edit("y")
+        k.q.cancel()
+        k.ready = true
+        k.q.drain()
+        while (k.engine.isNotEmpty()) k.engineAnswers()
+        assertEquals("", k.field.toString())
         assertFalse(k.q.hasKeys())
+    }
+
+    /** #351: a paste under way when the field changes lands nowhere, and starts nothing queued before the change. */
+    @Test
+    fun editUnderWayLandsNowhereAfterNewField() {
+        val k = Keyboard()
+        k.edit("x")
+        k.edit("y")
+        k.q.cancel()
+        k.engineAnswers()
+        assertEquals("", k.field.toString())
+        assertTrue(k.engine.isEmpty())
+        // The new field types at once
+        k.tap("a")
+        assertEquals("a", k.field.toString())
+    }
+
+    /** #351: 日本語, a paste pending: ka, Enter, then あ→ア: the chip waits for the keys, so か is committed, not カ. */
+    @Test
+    fun chipWaitsForKeysBeforeIt() {
+        val k = Keyboard()
+        k.edit("|")
+        k.tap("k")
+        k.tap("a")
+        k.tap("\n", code = Code.ENTER)
+        k.action("[ア]")
+        k.engineAnswers()
+        assertEquals("|ka\n[ア]", k.field.toString())
+    }
+
+    /** #351: English, a paste pending: a, then a Space swipe left: the cursor moves after a is typed. */
+    @Test
+    fun swipeWaitsForKeysBeforeIt() {
+        val k = Keyboard()
+        k.edit("x")
+        k.tap("a")
+        k.action("<")
+        k.engineAnswers()
+        assertEquals("xa<", k.field.toString())
+        // Nothing waiting: an action runs at once
+        k.action(">")
+        assertEquals("xa<>", k.field.toString())
     }
 }

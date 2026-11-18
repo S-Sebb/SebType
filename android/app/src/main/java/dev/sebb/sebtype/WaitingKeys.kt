@@ -3,30 +3,41 @@ package dev.sebb.sebtype
 import dev.sebb.sebtype.Layout.Code
 
 /**
- * Keys and switches held back from the engine (#351), in the order they came, fed later in that order.
- * - Keys typed in 中文 while Rime starts wait for [ready].
- * - A switch is an edit that resets the engine and waits for it (the keyboard's finishTyping: a search opening
- *   or closing, paste, undo). While one runs, keys wait: sent then, they would reach the engine before its
- *   reset, which would drop them. A switch that comes while one runs or keys wait joins the queue too.
- * Until the queue is fed, keys after it wait too: none overtakes it.
+ * The keyboard's one serial dispatcher for input (#351). THE RULE: every input action goes through it,
+ * keys ([hold]), edits that wait for the engine ([switch]) and everything else that reaches the engine or the
+ * field ([run]: chips, gestures, candidates, pastes from a search…). While anything is queued or an edit is
+ * pending, an action is appended; otherwise it runs at once, as if there were no queue. A new action that
+ * skips it can overtake keys still waiting and land in the wrong order.
+ *
+ * - Keys typed in 中文 while Rime starts wait for [ready]; what comes after them waits too.
+ * - An edit (the keyboard's finishTyping: paste, undo, a search opening or closing) resets the engine and
+ *   waits for it; what comes meanwhile waits, since the reset would drop it.
+ * - A new field, language or search [cancel]s everything queued, edits included, and an edit already started
+ *   does nothing when it finishes: nothing lands in a field that was left.
  */
 class WaitingKeys(
     /** Whether a waiting key can be fed now: not while 中文 is starting */
     private val ready: () -> Boolean,
     /** Types a key as it was tapped */
     private val feed: (Key) -> Unit,
-    /** Keys fed that waited for Rime's start, not only for a switch: a count for the log, which tests read */
+    /** Keys fed that waited for Rime's start, not only behind an edit: a count for the log, which tests read */
     private val fedForRime: (Int) -> Unit,
 ) {
     /** A key, with what the keyboard knew when it was tapped: [userShift], the user's Shift was on. */
     class Key(val code: Code, val text: String, val x: Int, val y: Int, val userShift: Boolean)
 
-    private class Switch(val run: (done: () -> Unit) -> Unit)
+    private class Action(val run: () -> Unit)
+
+    private class Switch(val run: (finish: (edit: () -> Unit) -> Unit) -> Unit)
 
     private val queue = ArrayDeque<Any>()
     private var switching = false
+    // An action being fed runs what it starts at once: that is its own work, not a new action.
     private var feeding = false
+    private var generation = 0
     private var forRime = false
+
+    private val idle get() = feeding || (queue.isEmpty() && !switching)
 
     fun hasKeys() = queue.any { it is Key }
 
@@ -44,51 +55,67 @@ class WaitingKeys(
         return true
     }
 
-    /** Runs [run] now, or after what is waiting; it calls done once the edit is made. */
-    fun switch(run: (done: () -> Unit) -> Unit) {
-        if (queue.isEmpty() && !switching) start(run) else queue += Switch(run)
+    /** Runs [action] now, or after what is waiting. */
+    fun run(action: () -> Unit) {
+        if (idle) action() else queue += Action(action)
     }
 
-    /** Drops the waiting keys, as a new language, field or search drops a composition; the edits still run. */
-    fun clear() {
-        queue.removeAll { it is Key }
+    /**
+     * An edit that waits for the engine: [run] now or after what is waiting. It calls finish with the edit
+     * itself once the engine has answered; the edit is dropped if the field changed meanwhile.
+     */
+    fun switch(run: (finish: (edit: () -> Unit) -> Unit) -> Unit) {
+        if (idle) start(run) else queue += Switch(run)
+    }
+
+    /** A new field, language or search: everything queued goes, and an edit under way lands nowhere. */
+    fun cancel() {
+        queue.clear()
+        switching = false
+        generation++
         forRime = false
-        drain()
     }
 
-    /** Feeds what waits, in order, up to a switch (which then runs) or a key that isn't [ready]. */
+    /** Feeds what waits, in order, up to an edit (which then starts) or a key that isn't [ready]. */
     fun drain() {
         var fed = 0
         while (!switching) {
             val next = queue.firstOrNull() ?: break
+            if (next is Key && !ready()) break
+            queue.removeFirst()
             if (next is Switch) {
-                queue.removeFirst()
                 start(next.run)
-            } else {
-                if (!ready()) break
-                queue.removeFirst()
-                feeding = true
-                try {
-                    feed(next as Key)
-                } finally {
-                    feeding = false
-                }
-                fed++
+                continue
+            }
+            feeding = true
+            try {
+                if (next is Key) feed(next).also { fed++ } else (next as Action).run()
+            } finally {
+                feeding = false
             }
         }
         if (fed > 0 && forRime) fedForRime(fed)
         if (!hasKeys()) forRime = false
     }
 
-    private fun start(run: (done: () -> Unit) -> Unit) {
+    private fun start(run: (finish: (edit: () -> Unit) -> Unit) -> Unit) {
         switching = true
-        run {
-            switching = false
-            drain()
+        val started = generation
+        run { edit ->
+            if (started == generation) {
+                switching = false
+                feeding = true
+                try {
+                    edit()
+                } finally {
+                    feeding = false
+                }
+                drain()
+            }
         }
     }
 
-    /** What the keys would leave as 中文's reading: letters add to it, Delete takes one off, Space, Enter and an edit end it. */
+    /** What the keys would leave as 中文's reading: letters add to it, Delete takes one off, anything else ends it. */
     fun reading() = queue.fold(StringBuilder()) { reading, entry ->
         when ((entry as? Key)?.code) {
             Code.TEXT -> reading.append((entry as Key).text)

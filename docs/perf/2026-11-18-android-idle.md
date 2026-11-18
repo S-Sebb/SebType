@@ -43,13 +43,17 @@ stop (`prepareChinese` in `onStartInput`). Until Rime is up, the bar shows "prep
 in 中文 meanwhile wait in a queue and go to Rime in order once it's ready. That covers the letters,
 and Space, Enter, Delete and other text after them. Delete goes to Rime in order too, since a Space
 before it may already have committed a word. The reading those keys would leave shows in the strip.
-Before this, they went into the field as plain letters. A new language, a new field, opening or
-closing a search, or the keyboard closing drops the queue, as each drops a composition. While such a
-switch still waits for the engine, every key typed waits behind it, in any language, even with
-Rime ready and nothing queued: sent at once, it would reach the engine before the switch's reset,
-which would drop it. An edit that comes while one runs or keys wait joins the same queue, so
-paste, a, paste gives x a x. Each waiting key keeps the Shift it was tapped with. `WaitingKeysTest`
-checks these orders, which a tap burst can't time.
+Before this, they went into the field as plain letters.
+
+Every input action goes through one serial dispatcher, `WaitingKeys`: keys,
+edits that wait for the engine (paste, undo, a search opening or closing), and everything else that
+reaches the engine or the field (あ/ア, 繁/简, incognito, candidates, the space bar's and Delete's swipes,
+pastes from a search). While anything is queued or an edit is pending, an action joins the queue;
+otherwise it runs at once, as before. So none overtakes keys still waiting: an edit waits for the keys
+before it, and keys wait for the edit before them, whose reset would otherwise drop them. Each waiting
+key keeps the Shift it was tapped with. A new language, a new field, opening or closing a search, or the
+keyboard closing drops everything queued, edits included, and an edit already under way lands nowhere.
+`WaitingKeysTest` checks these orders, which a tap burst can't time.
 If Rime fails, the queued keys type as plain text.
 
 The keyboard itself no longer stops while Rime starts. Each touch and the globe read sebtype.conf
