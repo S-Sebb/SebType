@@ -22,7 +22,7 @@ source "$root/tools/lib.sh"
 key=${SEBTYPE_SOURCES_KEY:-$(sebtype_key)}
 # The keyed RPMs no tree used for two weeks (sebtype_unpack touches them); those named by version alone stay.
 mkdir -p "$SEBTYPE_CACHE"
-find "$SEBTYPE_CACHE" -maxdepth 1 -regex '.*\.[0-9a-f]\{12\}\.x86_64\.rpm' -mtime +14 -delete
+find "$SEBTYPE_CACHE" -maxdepth 1 -regextype posix-extended -regex '.*\.[0-9a-f]{12}\.x86_64\.rpm' -mtime +14 -delete
 if build_host_ready; then build_remotely "SEBTYPE_SOURCES_KEY=$key" linux/build.sh; exit; fi
 # Bazel's caches for Mozc, so a rebuild compiles only what changed.
 MOZC_CACHE=$BAZEL_CACHE/mozc
@@ -61,6 +61,6 @@ build_lock 120 "sebtype build" \
   -v "$stage/sources:/sources:ro,Z" -v "$stage/rpms:/out:Z" -v "$here/sebtype.spec:/pkg.spec:ro,Z" "$image" \
   bash -c "$inner" inner "$SEBTYPE_VERSION" "$SEBTYPE_RPM_RELEASE" "$BUILD_JOBS"
 rpm=$(sebtype_rpm "$key")
-cp "$stage/rpms/$SEBTYPE_RPM" "$rpm.part" && mv "$rpm.part" "$rpm"
+cp "$stage/rpms/$SEBTYPE_RPM" "$rpm.$$.part" && mv -f "$rpm.$$.part" "$rpm"  # per build: two trees with the same sources may publish at once
 echo "built in $((SECONDS - start)) s (logs: $MOZC_CACHE/work/sebtype-build.log)" >&2
 echo "$rpm"
