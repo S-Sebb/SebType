@@ -182,7 +182,28 @@ function WaitIcon($want, $secs) {
 # This session's server (a terminal server may run one per session).
 function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId | Select-Object -First 1 }
 # Every server in this session, for the results: there should be one (#332).
-function Servers { (@(Get-Process sebtype-server -ErrorAction SilentlyContinue | Where-Object SessionId -EQ (Get-Process -Id $PID).SessionId) | ForEach-Object { "$($_.Id) from $($_.StartTime.ToString('HH:mm:ss.fff'))" }) -join ', ' }
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class SebTypeLogon {
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr p, int access, out IntPtr t);
+  [DllImport("advapi32.dll")] static extern bool GetTokenInformation(IntPtr t, int cls, byte[] info, int size, out int n);
+  // A process's logon session (TOKEN_STATISTICS.AuthenticationId), as server.log writes it.
+  public static string Of(int pid) {
+    IntPtr p = OpenProcess(0x1000, false, pid), t;
+    if (p == IntPtr.Zero) return "?";
+    try {
+      if (!OpenProcessToken(p, 8, out t)) return "?";
+      var b = new byte[64]; int n;
+      bool ok = GetTokenInformation(t, 10, b, b.Length, out n); CloseHandle(t);
+      return ok ? string.Format("0x{0:x}:{1:x}", BitConverter.ToInt32(b, 12), BitConverter.ToUInt32(b, 8)) : "?";
+    } finally { CloseHandle(p); }
+  }
+}
+'@
+# Every server on the PC with its owner, session and logon session, for the results: one per session (#332).
+function Servers { (@(Get-CimInstance Win32_Process -Filter "Name='sebtype-server.exe'") | ForEach-Object { $o = Invoke-CimMethod -InputObject $_ GetOwner; "$($_.ProcessId) from $($_.CreationDate.ToString('HH:mm:ss.fff')) $($o.Domain)\$($o.User) session $($_.SessionId) logon $([SebTypeLogon]::Of($_.ProcessId)) parent $($_.ParentProcessId)" }) -join '; ' }
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
 # failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
@@ -291,12 +312,12 @@ try {
     $was = try { $tsf::Enabled(0x804, $clsid, $profile) } catch { return "SKIP: no Microsoft Pinyin ($($_.Exception.InnerException.Message))" }
     try {
       if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $true) }  # for this capture only
-      $tsf::Activate(0x804, $clsid, $profile); $tsf::Settle(1500)
+      $tsf::Activate(0x804, $clsid, $profile); $tsf::Settle(1500); $active = Servers
       try { Shot 'ms-pinyin' | Out-Null; $what = 'its button icon and the taskbar saved' }
       catch { $tsf::Taskbar("$Out\ms-pinyin-taskbar.png", 360); $what = "the taskbar saved; no button icon ($($_.Exception.Message))" }
     } catch { $what = "can't be switched to ($($_.Exception.InnerException.Message))" }
     finally { Lang zh; if (-not $was) { $tsf::Enable(0x804, $clsid, $profile, $false) } }
-    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what; servers before $before, after $(Servers)"
+    "INFO: Microsoft Pinyin$(if (-not $was) { ', on for this capture only,' }) for comparison: $what; servers before: $before; with it: $active; after: $(Servers); this test: logon $([SebTypeLogon]::Of($PID)), ChsIME: $((@(Get-CimInstance Win32_Process -Filter "Name='ChsIME.exe'") | ForEach-Object { "$($_.ProcessId) session $($_.SessionId) logon $([SebTypeLogon]::Of($_.ProcessId))" }) -join ', ')"
   }
 
   # A deploy with nothing changed is over at once: without its prisms (built from the prebuilt tables), Rime

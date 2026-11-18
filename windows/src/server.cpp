@@ -249,6 +249,8 @@ void serve(HANDLE pipe) {
 struct Token {
   bool elevated = false, container = false;
   DWORD integrity = 0, session = 0;
+  std::string user = "?";
+  LUID logon{};
 };
 Token token() {
   Token t;
@@ -264,6 +266,15 @@ Token token() {
     PSID sid = reinterpret_cast<TOKEN_MANDATORY_LABEL *>(label)->Label.Sid;
     t.integrity = *GetSidSubAuthority(sid, *GetSidSubAuthorityCount(sid) - 1);
   }
+  alignas(8) char user[SECURITY_MAX_SID_SIZE + sizeof(TOKEN_USER)];
+  char *sid = nullptr;
+  if (GetTokenInformation(h, TokenUser, user, sizeof(user), &n) &&
+      ConvertSidToStringSidA(reinterpret_cast<TOKEN_USER *>(user)->User.Sid, &sid)) {
+    t.user = sid;
+    LocalFree(sid);
+  }
+  TOKEN_STATISTICS stats{};
+  if (GetTokenInformation(h, TokenStatistics, &stats, sizeof(stats), &n)) t.logon = stats.AuthenticationId;
   CloseHandle(h);
   t.elevated = elevated.TokenIsElevated;
   t.container = container;
@@ -274,8 +285,11 @@ Token token() {
 std::string origin(const Token &t) {
   char integrity[16];
   snprintf(integrity, sizeof(integrity), "0x%lx", t.integrity);
+  char logon[32];
+  snprintf(logon, sizeof(logon), "0x%lx:%lx", t.logon.HighPart, t.logon.LowPart);
   return std::string(t.elevated ? "elevated, " : "") + "integrity " + integrity +
-         (t.container ? ", app container" : "") + ", session " + std::to_string(t.session) + ", by " + parent();
+         (t.container ? ", app container" : "") + ", session " + std::to_string(t.session) + ", user " + t.user +
+         ", logon " + logon + ", pipe " + utf8(pipeName()) + ", by " + parent();
 }
 
 // A kernel object's full name (\Sessions\<n>\BaseNamedObjects\..., or an app container's own folder), for
