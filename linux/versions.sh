@@ -7,6 +7,9 @@ SEBTYPE_VERSION=0.1.0
 SEBTYPE_RPM_RELEASE=14.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
+# What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz.
+SEBTYPE_SOURCES=(core linux pc/icons)
+SEBTYPE_MOZC=engines/mozc
 
 # fedora:44 as of 2026-11-09; its packages are what the builds link against.
 BUILD_IMAGE=registry.fedoraproject.org/fedora@sha256:a90c26f38ee1fb33444bbec8b598d8cc9aec7cc6455f8163df7d050e5d073a4f
@@ -29,12 +32,34 @@ LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-t
 LIBRIME_CACHE=$HOME/scratch/SebType/cache/librime
 librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package
 
-# sebtype_unpack <dir>: SebType's RPM (built first if it isn't cached) unpacked into <dir>, for a private
+# sebtype_key: a hash of what build.sh packs, as it is in this tree now, committed or not (new and deleted
+# files too), but not what git ignores. git hashes the files into a copy of the tree's index, so it reads again
+# only the files changed since the index was written.
+sebtype_key() {
+  local root index rc
+  root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+  index=$(git -C "$root" rev-parse --path-format=absolute --git-path index)
+  cp "$index" "$index.sebtype-key.$$" &&
+    GIT_INDEX_FILE=$index.sebtype-key.$$ git -C "$root" add -- "${SEBTYPE_SOURCES[@]}" "$SEBTYPE_MOZC" &&
+    GIT_INDEX_FILE=$index.sebtype-key.$$ git -C "$root" ls-files -s -- "${SEBTYPE_SOURCES[@]}" "$SEBTYPE_MOZC" |
+    sha256sum | head -c 12
+  rc=$?
+  rm -f "$index.sebtype-key.$$"
+  return $rc
+}
+# sebtype_rpm <key>: the cached RPM built from sources with that key (#326): two trees on different code
+# never share one, and a tree whose sources haven't changed reuses its own.
+sebtype_rpm() { echo "$SEBTYPE_CACHE/sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.$1.x86_64.rpm"; }
+# sebtype_unpack <dir>: this tree's RPM (built first if it isn't cached) unpacked into <dir>, for a private
 # Fcitx5 that runs it uninstalled with sebtype_run's prefix, or with sebtype_env's variables.
 sebtype_unpack() {
-  [[ -f $SEBTYPE_CACHE/$SEBTYPE_RPM ]] || "$(dirname "${BASH_SOURCE[0]}")/build.sh" >/dev/null || return 1
+  local key rpm
+  key=$(sebtype_key) || return 1
+  rpm=$(sebtype_rpm "$key")
+  [[ -f $rpm ]] || SEBTYPE_SOURCES_KEY=$key "$(dirname "${BASH_SOURCE[0]}")/build.sh" >/dev/null || return 1
+  touch "$rpm"  # in use: build.sh removes the keyed RPMs no tree used for two weeks
   rm -rf "$1"; mkdir -p "$1"
-  rpm2cpio "$SEBTYPE_CACHE/$SEBTYPE_RPM" | (cd "$1" && cpio -idm --quiet)
+  rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet)
 }
 sebtype_env() { # <dir>: Fcitx5 finds the add-on there before its own
   echo "FCITX_ADDON_DIRS=$1/usr/lib64/fcitx5:/usr/lib64/fcitx5" "XDG_DATA_DIRS=$1/usr/share:/usr/share"
