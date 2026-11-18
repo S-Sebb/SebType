@@ -51,21 +51,33 @@ object Engines {
     private fun mozcProfile(context: Context) = File(context.applicationInfo.dataDir, ".mozc")
     private fun confFile(context: Context) = File(context.filesDir, "sebtype.conf")
 
+    /**
+     * sebtype.conf as last saved, for [setting] and [languages]: NativeCore's own copy takes its one lock, which
+     * Rime's start holds for half a second or more, and the keyboard reads these on the main thread (#351).
+     */
+    @Volatile private var conf = ""
+
+    /** NativeCore's settings, into sebtype.conf and [conf]. */
+    private fun save(app: Context) {
+        conf = NativeCore.settings()
+        write(confFile(app), conf)
+    }
+
     /** Sets up [NativeCore] once per process with sebtype.conf, which it writes the first time. */
     @Synchronized
     fun configure(context: Context) {
         if (configured) return
         val app = context.applicationContext
         val file = confFile(app)
-        val conf = if (file.isFile) file.readText() else ""
+        val saved = if (file.isFile) file.readText() else ""
         NativeCore.configure(
             sharedDir(app).apply { mkdirs() }.path,
             userDir(app).apply { mkdirs() }.path,
             "", // Rime logs to the system log only
             mozcProfile(app).apply { mkdirs() }.path,
-            conf,
+            saved,
         )
-        if (!file.isFile) write(file, NativeCore.settings())
+        if (file.isFile) conf = NativeCore.settings() else save(app)
         // Mozc maps its dictionary straight out of the APK, where it is stored uncompressed. The resource
         // has a real file only for Japanese, so it is opened as Japanese.
         val ja = app.createConfigurationContext(Configuration(app.resources.configuration).apply { setLocale(Locale.JAPANESE) })
@@ -133,7 +145,7 @@ object Engines {
     fun setting(section: String, key: String): Boolean? {
         var current = ""
         var found: Boolean? = null
-        NativeCore.settings().lineSequence().forEach { line ->
+        conf.lineSequence().forEach { line ->
             if (line.startsWith("[") && line.endsWith("]")) current = line.substring(1, line.length - 1)
             else if (current == section && line.startsWith("$key=")) found = line.substringAfter('=') == "true"
         }
@@ -142,12 +154,12 @@ object Engines {
 
     fun setSetting(context: Context, section: String, key: String, on: Boolean) {
         NativeCore.setSettings("${NativeCore.settings()}[$section]\n$key=$on\n")
-        write(confFile(context.applicationContext), NativeCore.settings())
+        save(context.applicationContext)
     }
 
     /** The languages 🌐 goes through, in order (sebtype.conf's [Languages] Order). */
     fun languages(): List<Int> =
-        NativeCore.settings().lineSequence().firstOrNull { it.startsWith("Order=") }?.substringAfter('=')
+        conf.lineSequence().firstOrNull { it.startsWith("Order=") }?.substringAfter('=')
             ?.split(',')?.mapNotNull { mapOf("en" to NativeCore.ENGLISH, "zh" to CHINESE, "ja" to JAPANESE)[it] }
             ?.ifEmpty { null } ?: listOf(NativeCore.ENGLISH, CHINESE, JAPANESE)
 
@@ -162,6 +174,22 @@ object Engines {
         val app = context.applicationContext
         if (chinese == Chinese.READY) return
         worker.execute { if (chinese != Chinese.READY) setUpChinese(app) }
+    }
+
+    /**
+     * Sets 中文 up ahead of its first use when this install or update hasn't yet, so the install and the
+     * deploy don't wait for its first key. Rime itself starts only for 中文: it holds about 40 MB (#351), and
+     * stops again [IDLE_MS] after this setup unless 中文 is in use by then.
+     */
+    fun setUpChineseAhead(context: Context) {
+        val app = context.applicationContext
+        worker.execute {
+            val version = app.assets.open("rime/bundle-version").bufferedReader().use { it.readText().trim() }
+            val done = listOf(File(sharedDir(app), INSTALLED), File(userDir(app), DEPLOYED)).all { it.isFile && it.readText() == version }
+            if (chinese == Chinese.READY || done) return@execute
+            setUpChinese(app)
+            main.post { if (CHINESE !in using) inUse(CHINESE, false) }
+        }
     }
 
     /** Tries again after a failure: installs the bundled data from scratch. */
@@ -282,11 +310,13 @@ object Engines {
     }
 
     private val idleStops = HashMap<Int, Runnable>()
+    private val using = HashSet<Int>()
 
     /** [lang] is in use (true), or was left (false): an engine left alone for [IDLE_MS] stops. */
     fun inUse(lang: Int, used: Boolean) {
         if (lang == NativeCore.ENGLISH) return
         idleStops.remove(lang)?.let { main.removeCallbacks(it) }
+        if (used) using += lang else using -= lang
         if (used) return
         val stop = Runnable {
             idleStops.remove(lang)
@@ -379,7 +409,7 @@ object Engines {
         NativeCore.post {
             configure(app)
             setSettings(settings() + ini)
-            write(confFile(app), settings())
+            save(app)
             main.post(done)
         }
     }
@@ -393,7 +423,7 @@ object Engines {
         val task = java.util.concurrent.FutureTask<Unit> {
             configure(app)
             NativeCore.setSettings(ini)
-            write(confFile(app), NativeCore.settings())
+            save(app)
         }
         // On NativeCore's thread itself a post would wait for this call to end.
         if (NativeCore.onEngineThread()) task.run() else NativeCore.post { task.run() }

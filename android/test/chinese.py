@@ -1268,6 +1268,78 @@ def to_chinese():
     raise Fail("no 中 after cycling the globe")
 
 
+def fresh_in_english():
+    """A new keyboard process in EN, which must leave Rime stopped (it holds about 40 MB, #351)."""
+    to_english()
+    stop_keyboard()
+    adb("logcat", "-c")
+    open_field()
+    time.sleep(10)
+    if re.search(SET_UP, logcat()):
+        raise Fail("a keyboard that started in EN started Rime")
+
+
+def burst_into_chinese(points):
+    """The globe (EN -> 中), then points, in one burst while Rime starts: its files are dropped from the page
+    cache first, as on a phone short of memory, so its start reads them from storage. Over the last nodes()."""
+    left, top, right, bottom = keyboard_frame
+    globe = (int(left + 3 * (right - left) / 10), row_y(top, bottom, 3))
+    root("sync; echo 3 > /proc/sys/vm/drop_caches")
+    monkey_taps([globe] + points, 10)
+
+
+def setup_took():
+    setup = re.search(SET_UP, logcat())
+    return f"Rime set up in {setup.group(1)} ms" if setup else "no setup logged"
+
+
+def keys_waited():
+    """How many keys of the burst waited for Rime, from the app's log (None if none did): proof the burst
+    overlapped its start."""
+    fed = re.search(
+        r"Fed (\d+) keys that waited for Rime",
+        adb("shell", "logcat -d -s SebType || true"),
+    )
+    return int(fed.group(1)) if fed else None
+
+
+def no_overlap(took):
+    return Fail(f"no key waited for Rime ({took}): the burst didn't overlap its start")
+
+
+def zh_waits_for_zh():
+    """#351: keys typed while Rime starts reach it in order, as they would a running Rime: ranh, Space
+    (然后 committed), Delete (后 deleted) leave 然. The letters are where EN has them."""
+    fresh_in_english()
+    ns = wait_for(
+        "the keyboard",
+        lambda: (lambda n: n if keys(n) else None)(nodes()),
+        KEYBOARD_WAIT,
+    )
+    k = keys(ns)
+    space = next((x, y) for label, x, y, top, cls in ns if label in SPACE_LABELS)
+    delete = next((x, y) for label, x, y, top, cls in ns if label == "Delete")
+    burst_into_chinese([k[ch][:2] for ch in "ranh"] + [space, delete])
+    try:
+        text = wait_for("the field to show what was typed", field_text, 30)
+    except Fail:
+        text = ""
+    took = setup_took()
+    waited = keys_waited()
+    bar = candidates(nodes())
+    to_english()  # the checks after type in EN
+    if text != "然":
+        raise Fail(
+            f"ranh, Space, Delete typed while Rime started ({took}): field {text!r}, bar {bar[:6]}"
+        )
+    if waited is None:
+        raise no_overlap(took)
+    return f"ranh, Space, Delete typed while Rime started ({took}, {waited} keys waited) -> field 然"
+
+
+check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
+
+
 def globe_drops_pinyin():
     """The globe in the middle of a pinyin drops it: nothing reaches the field, and no candidates or
     pinyin are left above the keys (core/ doesn't commit on a switch, Decisions #2)."""
@@ -2483,6 +2555,55 @@ check("quick-clip-secret", quick_clip_secret, needs=["first-install"])
 check("emoji-search", emoji_search, needs=["first-install"])
 check("emoji-ascii", emoji_ascii, needs=["first-install"])
 check("clipboard-search", clipboard_search, needs=["first-install"])
+
+
+def zh_search_waits():
+    """#351: letters typed into the clipboard's search while Rime starts stay in the search, and letters typed
+    right after it closes reach Rime after the field's reset, not before it: ni in the search, close, ni, then
+    Space once Rime is ready leave 你."""
+    keep_clipboard()
+    fresh_in_english()
+    ns = wait_for(
+        "the keyboard",
+        lambda: (lambda n: n if keys(n) else None)(nodes()),
+        KEYBOARD_WAIT,
+    )
+    field_keys = keys(ns)
+    space = next((x, y) for label, x, y, top, cls in ns if label in SPACE_LABELS)
+    action(CLIPBOARD_ACTION)
+    tap_label(CLIPBOARD_SEARCH)
+    ns = wait_for(
+        "the keyboard",
+        lambda: (lambda n: n if keys(n) else None)(nodes()),
+        KEYBOARD_WAIT,
+    )
+    k = keys(ns)
+    close = next((x, y) for label, x, y, top, cls in ns if label in CLOSE_SEARCH)
+    burst_into_chinese(
+        [k["n"][:2], k["i"][:2], close, field_keys["n"][:2], field_keys["i"][:2]]
+    )
+    # Space only now: a Space in the burst would commit 你 before the field's reset could drop the reading
+    wait_for("Chinese to be set up", lambda: re.search(SET_UP, logcat()), 30, 1)
+    time.sleep(1)
+    adb("shell", "input", "tap", str(space[0]), str(space[1]))
+    try:
+        text = wait_for("the field to show what was typed", field_text, 10)
+    except Fail:
+        text = ""
+    took = setup_took()
+    waited = keys_waited()
+    bar = candidates(nodes())
+    to_english()
+    if text != "你":
+        raise Fail(
+            f"ni in the search, close, ni while Rime started ({took}), then Space: field {text!r}, bar {bar[:6]}"
+        )
+    if waited is None:
+        raise no_overlap(took)
+    return f"ni in the search, close, ni while Rime started ({took}, {waited} keys waited), then Space -> field 你"
+
+
+check("zh-search-waits", zh_search_waits, needs=["ja-chip"])
 check("clipboard-image-paste", clipboard_image_paste, needs=["first-install"])
 check("clipboard-today-image", clipboard_today_image, needs=["first-install"])
 check("modes-one-handed", modes_one_handed, needs=["first-install"])

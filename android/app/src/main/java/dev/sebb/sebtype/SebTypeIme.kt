@@ -14,6 +14,7 @@ import android.net.Uri
 import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
@@ -168,12 +169,12 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     override fun onCreate() {
         super.onCreate()
         Engines.configure(this)
-        Engines.prepareChinese(this)
+        Engines.setUpChineseAhead(this)
         Engines.onChange = {
-            if (views) {
-                chineseContextIfMissed()
-                refresh()
-            }
+            if (views) chineseContextIfMissed()
+            // After the field's text: the keys that waited were typed after it (#351)
+            waiting.drain()
+            if (views) refresh()
         }
         // From English's worker: the model's strip for the word being typed (#310), or next words for the
         // text so far. A word's letters are in the field already, so only the strip changes.
@@ -298,6 +299,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         kind = FieldKind.of(info)
         editor.start(info, kind)
         keys.forget()
+        waiting.cancel()
         state = null
     }
 
@@ -332,6 +334,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         if (views) autofill.clear()
+        waiting.cancel()
         Engines.inUse(lang, false)
         Engines.saveJapanese()
         Sync.onKeyboardHidden(this)
@@ -507,10 +510,26 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** The field as the language's engine treats it: English corrects nothing in URL and e-mail fields. */
     private fun field() = if (lang == ENGLISH) kind.englishField else kind.field
 
+    /** Keys held back from the engine while 中文 starts or an edit waits for it, and the edits ([WaitingKeys], #351). */
+    private val waiting = WaitingKeys(
+        ready = { kind.pad != null || !chineseStarting },
+        feed = { dispatch(it.code, it.text, it.x, it.y, it.userShift) },
+        fedForRime = { Log.w(Engines.TAG, "Fed $it keys that waited for Rime") },  // a count only, never typed text
+    )
+
+    private val chineseStarting get() = lang == CHINESE && Engines.chinese == Engines.Chinese.PREPARING
+
     override fun onKey(code: Code, text: String, x: Int, y: Int) {
-        if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y)
+        val userShift = keyboard.typedWithUserShift
+        if (waiting.hold(WaitingKeys.Key(code, text, x, y, userShift), kind.pad == null && chineseStarting)) return refresh()
+        dispatch(code, text, x, y, userShift)
+    }
+
+    /** A key as tapped, now or when it stops waiting: [userShift], the user's Shift was on when it was tapped. */
+    private fun dispatch(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
+        if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y, userShift)
         else when (code) {
-            Code.TEXT -> type(text)
+            Code.TEXT -> type(withoutEnglishShift(text, userShift))
             Code.SPACE -> whileComposing(NativeCore.charSym(' '.code)) { editor.commit(" ") }
             Code.ENTER -> whileComposing(NativeCore.XK_Return) { editor.enter() }
             Code.DELETE -> whileComposing(NativeCore.XK_BackSpace) { editor.deleteBefore() }
@@ -577,8 +596,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
      * (a digit, a symbol, Enter, Delete with no word typed) does what it does after the engine committed the
      * word being typed. On the engine thread too, after the keys before it (#241).
      */
-    private fun english(code: Code, text: String, x: Int, y: Int) {
-        val userShift = keyboard.typedWithUserShift
+    private fun english(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
         // Sent again if the field changes before its result comes (#280)
         keys.type { key -> english(key, code, text, x, y, userShift) }
     }
@@ -657,6 +675,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         expanded = false
         enterLanguage()
         refresh()
+        // At once: a letter tapped right after the globe must not take English's capital into 中文 or 日本語
+        autoShift()
     }
 
     private var layoutSent: List<Int>? = null
@@ -670,7 +690,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     }
 
     /** The space bar's swipe: in 中文's and 日本語's composition the engine's cursor, elsewhere the field's. */
-    override fun onCursor(by: Int) {
+    override fun onCursor(by: Int) = waiting.run {
         val english = lang == ENGLISH
         val sym = if (by < 0) NativeCore.XK_Left else NativeCore.XK_Right
         val asked = keys.ask()
@@ -690,7 +710,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     }
 
     /** Delete's swipe: what is being typed goes (English's word is kept, as typed), then whole words. */
-    override fun onDeleteWords(words: Int, done: Boolean) {
+    override fun onDeleteWords(words: Int, done: Boolean) = waiting.run {
         val english = lang == ENGLISH
         val asked = keys.ask()
         NativeCore.post({ if (engineComposing) (if (english) flush() else clear()).recorded() else null }) { st ->
@@ -768,7 +788,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         }
 
         val st = state
-        strip.preedit = if (lang == CHINESE) st?.preedit.orEmpty() else ""
+        strip.preedit = when {
+            lang != CHINESE -> ""
+            waiting.hasKeys() -> waiting.reading()
+            else -> st?.preedit.orEmpty()
+        }
         // English's word may name an emoji: it takes the bar's third place
         val named = if (lang == ENGLISH && composing && kind.pad == null && Prefs[Prefs.EMOJI_SUGGESTIONS])
             Emoji.forWord(this, st!!.preedit) else null
@@ -1079,11 +1103,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     // --- The bar, the action bar and the panels ---
 
-    override fun onCandidate(index: Int) {
+    override fun onCandidate(index: Int) = waiting.run {
         expanded = false
         val emoji = emojiAt
-        if (emoji < 0 || index < emoji) return post({ selectCandidate(index).recorded() }) { show(it) }
-        if (index > emoji) return post({ selectCandidate(index - 1).recorded() }) { show(it) }
+        if (emoji < 0 || index < emoji) return@run post({ selectCandidate(index).recorded() }) { show(it) }
+        if (index > emoji) return@run post({ selectCandidate(index - 1).recorded() }) { show(it) }
         // The emoji in place of the word
         val text = emojiShown
         post({ clear().recorded() }) {
@@ -1126,7 +1150,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             Action.CLIPBOARD -> return open(Panel.CLIPBOARD)
             Action.MODES -> return open(Panel.MODES)
             Action.INCOGNITO -> return onIncognito(!incognito)
-            Action.LANGUAGE -> nextLanguage()
+            Action.LANGUAGE -> waiting.run { nextLanguage() }
             Action.SETTINGS -> finishTyping {
                 startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 requestHideSelf(0)
@@ -1151,16 +1175,20 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     }
 
     /** What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing */
-    private fun finishTyping(then: () -> Unit) {
+    private fun finishTyping(then: () -> Unit) = waiting.switch { finish ->
+        // As the keys typed before it left the language and field: it may run after them (#351)
         val chinese = lang == CHINESE
         val asked = keys.ask()
         NativeCore.post({ if (engineComposing) (if (chinese) clear() else flush()).recorded() else null }) { st ->
-            // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
-            if (st != null && fresh(asked)) {
-                show(st)
-                if (!chinese) editor.finishComposing()
+            // Nothing, if the field, language or search changed meanwhile
+            finish {
+                // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
+                if (st != null && fresh(asked)) {
+                    show(st)
+                    if (!chinese) editor.finishComposing()
+                }
+                then()
             }
-            then()
         }
     }
 
@@ -1213,8 +1241,10 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** Into the field, what is typed there first going in as it is; from a search, which then ends ([endsSearch]). */
     private fun intoField(endsSearch: Boolean = true, then: () -> Unit) {
         if (searching == null) return finishTyping(then)
-        then()
-        if (endsSearch) endSearch()
+        waiting.run {
+            then()
+            if (endsSearch) endSearch()
+        }
     }
 
     /** A password field, or a private one (a private browser tab): the quick clip isn't offered there. */
@@ -1226,6 +1256,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** The emoji or clipboard panel's search: the keys type into it, over its results. */
     override fun onSearch() {
         val panel = shown
+        // At once, not once the engine has finished: Rime may get ready in between and take them (#351).
+        waiting.cancel()
         finishTyping {
             searching = panel
             search.clear()
@@ -1254,6 +1286,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** Back to the keys and the field: what is typed in the search stays there. */
     private fun endSearch() {
         if (searching == null) return
+        // At once, as in onSearch
+        waiting.cancel()
         finishTyping {
             searching = null
             editor = fieldEditor
@@ -1266,7 +1300,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         }
     }
 
-    override fun onChip() {
+    override fun onChip() = waiting.run {
         katakana = !katakana
         val on = katakana
         post({
@@ -1286,7 +1320,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         if (Engines.chinese == Engines.Chinese.FAILED) Engines.retryChinese(this)
     }
 
-    override fun onTraditional(on: Boolean) {
+    override fun onTraditional(on: Boolean) = waiting.run {
         // core/ turns rime-ice's option on at once and saves the choice in sebtype.conf (#36).
         post({
             Engines.setSetting(this@SebTypeIme, "Chinese", "Traditional", on)
@@ -1294,7 +1328,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         }) { show(it) }
     }
 
-    private fun onIncognito(on: Boolean) {
+    private fun onIncognito(on: Boolean) = waiting.run {
         prefs.edit().putBoolean("incognito", on).apply()
         val field = field()
         val learning = kind.learns && !on
@@ -1306,7 +1340,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 /** An update gets 中文 ready before the keyboard next shows (#40). */
 class UpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) Engines.prepareChinese(context)
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) Engines.setUpChineseAhead(context)
     }
 }
 
