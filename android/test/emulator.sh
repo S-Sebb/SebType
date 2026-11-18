@@ -166,8 +166,9 @@ device_suite() {
       "$adb" -s "$serial" shell ime enable "$ime" >/dev/null
       "$adb" -s "$serial" install -r "$field_apk" >/dev/null
     fi
-    # chinese.py appends its own result lines; this line only records whether it ran to the end.
-    PATH=$(dirname "$adb"):$PATH T=3600 check chinese-run \
+    # chinese.py appends its own result lines; this line only records whether it ran to the end. The update
+    # from MAIN_APK (the FUTO-based app learning first) adds about a quarter of an hour.
+    PATH=$(dirname "$adb"):$PATH T=$([[ -n ${MAIN_APK:-} ]] && echo 5400 || echo 3600) check chinese-run \
       python3 -I android/test/chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
     # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
     PATH=$(dirname "$adb"):$PATH T=3600 check settings-run python3 -I android/test/settings.py "$serial" "$results" "$out"

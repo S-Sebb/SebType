@@ -1173,12 +1173,15 @@ def to_english():
 
 
 def to_chinese():
-    """Cycles the globe until ni offers Chinese candidates (waiting while Chinese sets itself up)."""
+    """Cycles the globe until ni offers Chinese candidates (waiting while Chinese sets itself up). English
+    offers suggestions for ni too, so a candidate must be Chinese."""
     for _ in range(6):
         open_field()
         type_keys("ni")
         ns = nodes()
-        if candidates(ns) and not chip(ns):
+        if any(re.search("[\u4e00-\u9fff]", c) for c in candidates(ns)) and not chip(
+            ns
+        ):
             return
         if any(n[0].startswith(PREPARING) for n in ns):
             time.sleep(5)
