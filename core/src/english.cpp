@@ -13,6 +13,9 @@
 
 #include <jni.h>
 #include <sys/stat.h>
+#ifdef __ANDROID__
+#include <android/trace.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -63,6 +66,21 @@ constexpr size_t kNextWords = 5;      // the model's next words asked for; block
 constexpr size_t kContextChars = 1000;  // the text before the cursor kept; the model reads 300 of it
 // How long a space waits for the model's ranking of the word before the decoder's rule decides (#310).
 constexpr std::chrono::milliseconds kRankWait{400};
+// A trace section from here to the end of the scope: in Perfetto traces on Android, where
+// android/perf/perf.sh reads the rankings' times and what each space did (#320), next to the worker's other
+// jobs (load, next words) that a ranking waits behind; nothing elsewhere.
+struct TraceSection {
+  explicit TraceSection([[maybe_unused]] const char *name) {
+#ifdef __ANDROID__
+    ATrace_beginSection(name);
+#endif
+  }
+  ~TraceSection() {
+#ifdef __ANDROID__
+    ATrace_endSection();
+#endif
+  }
+};
 // Typing options: not a gesture, no full edit distance, offensive words blocked, locale weight 1.0.
 constexpr int kOptions[] = {0, 0, 1, 0, 1000};
 namespace ks {
@@ -807,7 +825,7 @@ class English : public Engine {
   void update() {
     decodePending_ = false;
     const std::string typed = utf8(typed_);
-    correction_ = false;
+    correction_ = false, modelStrip_ = false;
     strip_.clear();
     // Right after "@" (an address typed in a text field): domains, never a correction.
     domains_ = !context_.empty() && context_.back() == '@';
@@ -872,19 +890,45 @@ class English : public Engine {
       if (std::find(strip_.begin(), strip_.end(), w) == strip_.end() && w != typed) strip_.push_back(w);
   }
 
-  // Shows the model's ranking of the letters typed once the worker has posted it. WAIT: up to kRankWait
-  // for one still pending (a space is about to commit the word).
-  void takeRanking(bool wait = false) {
+  // Shows the model's ranking of the letters typed once the worker has posted it.
+  void takeRanking() {
+    std::optional<sebtype_lm::Ranked> ranked;
+    {
+      std::lock_guard g(mutex_);
+      ranked = posted();
+    }
+    if (ranked) showRanking(*ranked);
+  }
+
+  // As takeRanking, for a space about to commit the word: waits up to kRankWait for a ranking still pending.
+  // Traced as a "SebType space" section, as long as the wait, holding an empty one named by what the space
+  // found: the model's ranking "ready" or "waited" for, or the decoder's rule because the ranking was "late"
+  // (the wait timed out), "skipped" (expected after kRankWait: no wait) or "none" (none asked: no model yet).
+  void takeRankingForSpace() {
+    TraceSection section("SebType space");
+    const char *outcome;
     std::optional<sebtype_lm::Ranked> ranked;
     {
       std::unique_lock l(mutex_);
-      if (!rankPending_) return;
-      if (wait && rankExpectedIn() <= kRankWait) ranked_.wait_for(l, kRankWait, [&] { return rankedGen_ == gen_; });
-      if (rankedGen_ != gen_) return;
-      rankPending_ = false;
-      ranked = std::move(rankedWords_);
+      if (!rankPending_) outcome = modelStrip_ ? "ready" : "none";
+      else if (rankedGen_ == gen_) outcome = "ready";
+      else if (rankExpectedIn() > kRankWait) outcome = "skipped";
+      else outcome = ranked_.wait_for(l, kRankWait, [&] { return rankedGen_ == gen_; }) ? "waited" : "late";
+      ranked = posted();
     }
-    show(ranked->strip, ranked->committed);
+    if (ranked) showRanking(*ranked);
+    TraceSection mark(outcome);
+  }
+
+  // The ranking the worker posted for the letters typed, if it is pending and has come; under mutex_.
+  std::optional<sebtype_lm::Ranked> posted() {
+    if (!rankPending_ || rankedGen_ != gen_) return std::nullopt;
+    rankPending_ = false;
+    return std::move(rankedWords_);
+  }
+  void showRanking(const sebtype_lm::Ranked &ranked) {
+    show(ranked.strip, ranked.committed);
+    modelStrip_ = true;
   }
 
   // How long until the ranking asked for at gen_ is expected to come, by the times the worker took so far:
@@ -900,7 +944,7 @@ class English : public Engine {
 
   std::string decision() {
     if (decodePending_) update();
-    takeRanking(true);
+    takeRankingForSpace();
     return correction_ ? strip_.front() : utf8(typed_);
   }
 
@@ -1083,6 +1127,7 @@ class English : public Engine {
         loadTried_ = true;
         l.unlock();
         try {
+          TraceSection section("SebType load");
           auto model = std::make_unique<sebtype_lm::Model>(paths_.model, 1);
           std::lock_guard g(modelMutex_);
           model_ = std::move(model);
@@ -1099,6 +1144,7 @@ class English : public Engine {
         l.unlock();
         sebtype_lm::Ranked ranked;
         {
+          TraceSection section("SebType rank");
           std::lock_guard g(modelMutex_);
           ranked = sebtype_lm::rank(*model_, r.context, r.typed, r.candidates, r.typedIsWord);
         }
@@ -1120,6 +1166,7 @@ class English : public Engine {
       l.unlock();
       std::vector<sebtype_lm::Word> words;
       {
+        TraceSection section("SebType next");
         std::lock_guard g(modelMutex_);
         words = model_->nextWords(context, kNextWords);
       }
@@ -1149,6 +1196,7 @@ class English : public Engine {
   std::string context_;               // the text before them
   std::vector<std::string> strip_;
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
+  bool modelStrip_ = false;  // strip_ is the model's ranking, not the decoder's rule
   bool domains_ = false;     // the list is e-mail domains
   bool afterPick_ = false;   // the last thing done was a pick and its space
   std::optional<Correction> lastCorrection_;  // the last word a separator corrected, until the next key

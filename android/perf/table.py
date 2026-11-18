@@ -24,12 +24,17 @@ def out(phase):
     return dict(l.split("=", 1) for l in lines if "=" in l)
 
 
-def column(phase, name):
+def rows(phase):
     try:
-        rows = list(csv.DictReader(io.StringIO(read(work / f"{phase}.csv"))))
+        return list(csv.DictReader(io.StringIO(read(work / f"{phase}.csv"))))
     except FileNotFoundError:
         return []
-    return [float(r[name]) for r in rows if r.get(name) not in (None, "", "[NULL]")]
+
+
+def column(phase, name):
+    return [
+        float(r[name]) for r in rows(phase) if r.get(name) not in (None, "", "[NULL]")
+    ]
 
 
 def p(values, unit="ms"):  # "median / p95"
@@ -71,7 +76,6 @@ i, fo, en, zd, zh, ja, wo, co, sz = (
     )
 )
 fast, long_ = out("fast"), out("long")
-lm = column("en", "lm_ms")
 
 print("| Metric | Value | Notes |")
 print("|---|---|---|")
@@ -83,7 +87,7 @@ row(
     "after the whole run; Rime's files are internal data since #32 (root shell only: emulator)",
 )
 row("Memory (PSS) idle, first open, EN", mb(fo.get("pss_idle_kb")), "first-open")
-row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "transformer loaded")
+row("Memory (PSS) after typing EN", mb(en.get("pss_kb")), "en", "model loaded")
 row("Memory (PSS) peak during Chinese setup", mb(zd.get("pss_peak_kb")), "zh-deploy")
 row("Memory (PSS) after typing 中", mb(zh.get("pss_kb")), "zh")
 row(
@@ -162,14 +166,39 @@ for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
         lang,
         "last keyboard frame before the next key (700 ms apart), incl. key preview animation",
     )
-row(
-    "EN transformer CPU per key it ran on, median / p95",
-    p([x for x in lm if x > 0]),
-    "en",
-    # FUTO waits 350 ms for the transformer and turns it off after 6 misses in a row.
-    f"ran on {sum(x > 0 for x in lm)} of {len(lm)} keys, {sum(x > 350 for x in lm)} over FUTO's "
-    "350 ms limit; after 6 misses in a row FUTO turns it off until the next text field",
-)
+# The English model's rankings and what each space found (#320): the "SebType rank" and "SebType space"
+# trace sections, per key in keys.sql.
+for name, ph in (("EN", "en"), ("Fast typing", "fast"), ("Long field", "long")):
+    for job, what in (
+        ("rank", "ranking of the letters typed"),
+        ("next", "next words, which a ranking waits behind"),
+    ):
+        times = [
+            float(r[f"{job}_ms"])
+            for r in rows(ph)
+            for _ in range(int(r.get(f"{job}_n") or 0))
+        ]
+        row(f"{name}: model's {what}, median / p95", p(times), ph, f"{len(times)} done")
+    spaces = [r for r in rows(ph) if r.get("space") not in (None, "", "[NULL]")]
+    n = {
+        k: sum(r["space"] == k for r in spaces)
+        for k in ("ready", "waited", "late", "skipped", "none")
+    }
+    model = n["ready"] + n["waited"]
+    row(
+        f"{name}: spaces the model's ranking decided",
+        f"{model} of {len(spaces)}"
+        + (f" ({100 * model / len(spaces):.0f} %)" if spaces else ""),
+        ph,
+        f"ranking ready {n['ready']}, waited for {n['waited']}; the decoder's rule: ranking late "
+        f"{n['late']}, not waited for {n['skipped']}, none asked {n['none']}",
+    )
+    row(
+        f"{name}: a space's wait for the ranking, median / p95",
+        p([float(r["space_ms"]) for r in spaces if r["space"] in ("waited", "late")]),
+        ph,
+        f"the {n['waited'] + n['late']} spaces that waited",
+    )
 for name, d, ph, note in (
     ("Fast typing", fast, "fast", "100 ms per key"),
     ("Long field", long_, "long", "20,000 characters, 100 ms per key"),

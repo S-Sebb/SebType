@@ -5,6 +5,8 @@
 # pick a phone); RUNS (default 3) repeats each typing set.
 #   android/perf/perf.sh --compare   another installed keyboard (IME_PKG, IME_ID, KEY_ROWS) the same way,
 #                                    English only: idle memory, typing, fast typing, opens (#54)
+#   android/perf/perf.sh --english   SebType in English only: install, first open, EN, fast and long, so
+#                                    the English model's rankings and spaces (#320) take minutes, not half an hour
 #   android/perf/perf.sh --soak      SOAK_MIN (default 12) minutes of mixed typing in SebType as installed:
 #                                    memory over time and keyboard restarts
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
@@ -201,8 +203,7 @@ phase_first-open() { # the first keyboard open after install
 }
 phase_en() {
   . "$work/geometry"
-  # In the first process after install the transformer can stay off (no LanguageModel thread in the
-  # trace), so EN types into a second process, as a user would after the first day.
+  # EN types into a second process, as a user would after the first day.
   [[ -s $work/other-ime ]] && restart_keyboard
   local text='the quick brown fox jumps over the lazy dog '
   typing en 700 "$text" | tee "$work/en.part"
@@ -414,6 +415,7 @@ device_steps() { # under the device lock
   grep -q '^PASS install' "$results" || return 1
   check first-open 120
   check en 600
+  if [[ -n ${english:-} ]]; then check fast 300; check long 300; return; fi
   check zh-deploy 1200
   check zh 600
   check ja 600
@@ -455,6 +457,7 @@ if [[ ! -x $tp ]]; then # Perfetto's trace processor, pinned
 fi
 android/perf/build-field.sh "$work/perf-field.apk" > "$work/field-build.log" 2>&1 ||
   { echo "preflight: test field doesn't build, see $work/field-build.log"; exit 1; }
+[[ ${1:-} == --english ]] && export english=1
 mode=--device; [[ ${1:-} == --compare || ${1:-} == --soak ]] && mode=$1-device
 if [[ $mode == --compare-device ]]; then # another keyboard, already installed: no APK
   android/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m "${PERF_LOCK_MINUTES:-30}" -n "sebtype perf.sh --compare $pkg" -- "$self" "$mode"
