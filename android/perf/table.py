@@ -24,9 +24,9 @@ def out(phase):
     return dict(l.split("=", 1) for l in lines if "=" in l)
 
 
-def rows(phase):
+def rows(phase, kind=""):  # kind ".jobs": jobs.sql's rows
     try:
-        return list(csv.DictReader(io.StringIO(read(work / f"{phase}.csv"))))
+        return list(csv.DictReader(io.StringIO(read(work / f"{phase}{kind}.csv"))))
     except FileNotFoundError:
         return []
 
@@ -167,17 +167,13 @@ for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
         "last keyboard frame before the next key (700 ms apart), incl. key preview animation",
     )
 # The English model's rankings and what each space found (#320): the "SebType rank" and "SebType space"
-# trace sections, per key in keys.sql.
+# trace sections: each job's own time from jobs.sql, the spaces per key from keys.sql.
 for name, ph in (("EN", "en"), ("Fast typing", "fast"), ("Long field", "long")):
     for job, what in (
         ("rank", "ranking of the letters typed"),
         ("next", "next words, which a ranking waits behind"),
     ):
-        times = [
-            float(r[f"{job}_ms"])
-            for r in rows(ph)
-            for _ in range(int(r.get(f"{job}_n") or 0))
-        ]
+        times = [float(r["ms"]) for r in rows(ph, ".jobs") if r["job"] == job]
         row(f"{name}: model's {what}, median / p95", p(times), ph, f"{len(times)} done")
     spaces = [r for r in rows(ph) if r.get("space") not in (None, "", "[NULL]")]
     n = {

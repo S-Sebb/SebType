@@ -34,7 +34,7 @@ export ime_id=${IME_ID:-dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME}
 export key_rows=${KEY_ROWS:-69 130 190 249} key_space=${KEY_SPACE:-55}
 export field_act=dev.sebb.sebtype.perffield/.PerfField
 export tp=$SCRATCH/cache/trace_processor_shell-v59.1
-export keys_sql=$PWD/android/perf/keys.sql opens_sql=$PWD/android/perf/opens.sql
+export keys_sql=$PWD/android/perf/keys.sql opens_sql=$PWD/android/perf/opens.sql jobs_sql=$PWD/android/perf/jobs.sql
 results=$out/results.txt
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
@@ -140,8 +140,9 @@ typed() { # trace -> characters each test field gained (last length - starting l
   query "$1" "$work/len.sql" | grep -E '^-?[0-9]+$'
 }
 per_key_count() { echo $(( $(wc -l < "$work/$1.csv") - 1 )); } # trace: touches the keyboard got
-per_key() { # trace: the per-key CSV, and the characters typed into each field
+per_key() { # trace: the per-key CSV, the English model's jobs, and the characters typed into each field
   query "$1" "$keys_sql" > "$work/$1.csv"
+  query "$1" "$jobs_sql" > "$work/$1.jobs.csv"
   echo "keys=$(per_key_count "$1")"
   echo "typed=$(typed "$1" | paste -sd, -)"
   # Nothing in a typing trace restarts the keyboard, so each keyboard process started in it means one died.

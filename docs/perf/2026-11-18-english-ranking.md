@@ -21,9 +21,9 @@ would give only totals, not when each job ran.
 | `SebType load` | the engine's worker | loading the model, once per process |
 | `SebType space` | the engine's thread | a space or Enter deciding the word: how long it waited for the ranking. Inside it, an empty section names the outcome: `ready` (the model's ranking had come), `waited` (it came during the wait), `late` (the wait timed out: the decoder's rule), `skipped` (the ranking was expected after 400 ms, so there was no wait: the decoder's rule) or `none` (no ranking was asked for: the model isn't loaded yet) |
 
-`android/perf/keys.sql` puts these on each tap: `rank_n`/`rank_ms` and `next_n`/`next_ms` (the jobs that
-started before the next tap, and their mean time), `space` and `space_ms`. A section still open when the trace
-ends is left out. `table.py` reports, for EN (700 ms per key), fast typing (100 ms per key) and the
+`android/perf/jobs.sql` lists every ranking and next-words job in the trace with its own time, including
+those that start when the field opens. `android/perf/keys.sql` puts each space's outcome and wait on its tap
+(`space`, `space_ms`). A section still open when the trace ends is left out. `table.py` reports, for EN (700 ms per key), fast typing (100 ms per key) and the
 20,000-character field (100 ms per key):
 
 - the model's ranking, median / p95, and how many rankings ran;
@@ -44,15 +44,15 @@ not the phone's.
 
 | Set | Ranking, median / p95 (n) | Next words, median / p95 (n) | Spaces decided by the model | Space's wait, median / p95 |
 |---|---|---|---|---|
-| EN, 700 ms per key | 337 / 712 ms (104) | 661 / 862 ms (27) | 24 of 27 (89 %): ready 24; skipped 3 | none waited |
-| Fast, 100 ms per key | 831 / 1193 ms (11) | 811 / 859 ms (2) | 0 of 18: late 1, skipped 17 | 400 ms (1 space) |
-| Long field, 100 ms per key | none finished | none finished | 0 of 18: skipped 18 | none waited |
+| EN, 700 ms per key | 337 / 712 ms (104) | 676 / 1023 ms (29) | 24 of 27 (89 %): ready 24; skipped 3 | none waited |
+| Fast, 100 ms per key | 831 / 1193 ms (11) | 859 / 1043 ms (3) | 0 of 18: late 1, skipped 17 | 400 ms (1 space) |
+| Long field, 100 ms per key | none finished | 8907 ms (1) | 0 of 18: skipped 18 | none waited |
 
 key → text on screen stayed at 16 / 28 ms (EN), 18 / 35 ms (fast) and 28 / 46 ms (long).
 
 - **EN:** a ranking (about 340 ms) fits in the 700 ms between keys, so 24 of 27 spaces find it ready and
   wait for nothing. The 3 skipped spaces are each run's first word: when the field opens, the model's next
-  words for it (about 660 ms) run first, and the ranking queues behind them.
+  words for it (about 680 ms) run first, and the ranking queues behind them.
 - **Fast:** at 100 ms per key a new letter replaces the pending ranking before it finishes, so only 11
   rankings ran for 88 keys. A space almost always expects to wait longer than 400 ms and skips the wait.
   The one that waited timed out.

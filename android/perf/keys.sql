@@ -6,14 +6,10 @@
 --              next tap is presented
 --   settle_ms  until the keyboard's last frame before the next tap is presented (incl. the key
 --              preview's animation)
---   rank_n     the model's rankings of the letters typed that started and ended before the trace's end
---   rank_ms    and started before the next tap, and their mean time (the English engine's "SebType rank"
---              trace sections, #320)
---   next_n     the same for the model's next words ("SebType next"), the worker's other job: a ranking
---   next_ms    asked for meanwhile waits for it
 --   space      what a space or Enter found (its "SebType space" section): the model's ranking "ready" or
 --              "waited" for, or the decoder's rule because the ranking was "late", "skipped" or "none"
 --   space_ms   how long that space waited for the ranking
+-- The model's rankings and next words, one row per job, are in jobs.sql.
 --   app_jank   the field's or the keyboard's frames in the window that missed their deadline
 --              because of the app itself (SurfaceFlinger-side misses are left out)
 with
@@ -46,7 +42,7 @@ cand as (
 sections as (
   select s.ts, s.dur, s.name, (select c.name from slice c where c.parent_id = s.id) as outcome
   from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid)
-  where t.upid in (select upid from ime) and s.name in ('SebType rank', 'SebType next', 'SebType space')
+  where t.upid in (select upid from ime) and s.name = 'SebType space'
     and s.dur >= 0  -- -1: still open when the trace ended
 ),
 frames as (
@@ -66,14 +62,6 @@ select
     - taps.ts) / 1e6, 1) as cand_ms,
   round(((select max(f.end_ts) from frames f where f.is_ime and f.ts >= taps.ts and f.ts < taps.next_ts)
     - taps.ts) / 1e6, 1) as settle_ms,
-  (select count(*) from sections r where r.name = 'SebType rank' and r.ts >= taps.ts and r.ts < taps.next_ts)
-    as rank_n,
-  round((select avg(r.dur) from sections r
-    where r.name = 'SebType rank' and r.ts >= taps.ts and r.ts < taps.next_ts) / 1e6, 1) as rank_ms,
-  (select count(*) from sections r where r.name = 'SebType next' and r.ts >= taps.ts and r.ts < taps.next_ts)
-    as next_n,
-  round((select avg(r.dur) from sections r
-    where r.name = 'SebType next' and r.ts >= taps.ts and r.ts < taps.next_ts) / 1e6, 1) as next_ms,
   (select sp.outcome from sections sp where sp.name = 'SebType space' and sp.ts >= taps.ts and sp.ts < taps.next_ts)
     as space,
   round((select sp.dur from sections sp where sp.name = 'SebType space' and sp.ts >= taps.ts and sp.ts < taps.next_ts)
