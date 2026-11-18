@@ -373,11 +373,19 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     }
 
     /**
+     * The field's text around the cursor for the engines' context; none in a password field, where the core
+     * predicts nothing, so a password never sits in its memory. Incognito and no-learn fields keep it on
+     * purpose, in English and 中文 alike: the models predict from what is on screen and learn nothing there.
+     */
+    private fun aroundForEngine() =
+        if (kind.field == NativeCore.FIELD_PASSWORD) Editor.Around("", "", false) else editor.around()
+
+    /**
      * English reads the text around the cursor again, after it changed other than by its keys: the results
      * asked for before are dropped, and the keys they were for follow the read ([Keys.reread]).
      */
     private fun englishContext(): Unit = keys.reread {
-        val around = editor.around()
+        val around = aroundForEngine()
         post({
             // No word reopened where it couldn't be placed (#280): as with a selection, the engine reopens none
             setContext(around.before, around.after, !around.reopen)
@@ -396,7 +404,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
      * and it reads the text when the field is entered next.
      */
     private fun chineseContext() {
-        val around = editor.around()
+        val around = aroundForEngine()
         post({
             if (!running(CHINESE)) return@post null
             setContext(around.before, around.after, false)
@@ -447,7 +455,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         // English reads the words around the cursor for its corrections and next words, and reopens the word
         // the cursor is at. Its edits are checked against the field first (#280).
         editor.checked = lang == ENGLISH
-        val around = editor.around()
+        val around = aroundForEngine()
         val before = if (lang == ENGLISH && toEngine) around.before else null
         // 中文's model reads it too, from a running Rime only: asking a stopped one would start it here (#351).
         val chineseBefore = if (lang == CHINESE && toEngine) around.before else null

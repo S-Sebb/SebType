@@ -1102,4 +1102,18 @@ TEST_F(ChineseTest, NoListComesAfterTheEngineStops) {
   zh.reset();
   EXPECT_EQ(readyCount(), before);
 }
+TEST_F(ChineseTest, APasswordFieldsTextNeverReachesTheModel) {
+  zh->setField(Field::Password);
+  zh->setContext("中华人民共和", "", false);
+  int before = readyCount();
+  zh->setField(Field::Text);  // next words, from the context the password field left: none
+  ASSERT_TRUE(ready(before));
+  auto next = list();
+  EXPECT_EQ(std::ranges::find(next, "国"), next.end());
+  before = readyCount();
+  zh->setContext("中华人民共和", "", false);  // the same text in a text field
+  ASSERT_TRUE(ready(before));
+  next = list();
+  EXPECT_NE(std::ranges::find(next, "国"), next.end());
+}
 #endif

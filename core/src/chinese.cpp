@@ -202,15 +202,19 @@ class Chinese final : public Engine {
     return out;
   }
 
+  // A password field's text never reaches the model, nor stays in its context. Incognito and no-learn fields
+  // keep their context, as English does: the model predicts from what is on screen, in memory only, and with
+  // learning off teach() selects nothing and Rime learns nothing (its no_learning option).
   void setField(Field field) override {
     rime_->setField(field);
     field_ = field;
+    if (field == Field::Password) context_.clear();
     changed();
   }
   void setKeys(Keys keys, bool landscape) override { rime_->setKeys(keys, landscape); }
   void setContext(const std::string &before, const std::string &after, bool selection) override {
     rime_->setContext(before, after, selection);
-    context_ = before;
+    context_ = field_ == Field::Password ? std::string{} : before;
     trimContext();
     changed();
   }
@@ -340,7 +344,7 @@ class Chinese final : public Engine {
   }
 
   void remember(const std::string &committed) {
-    if (committed.empty()) return;
+    if (committed.empty() || field_ == Field::Password) return;
     context_ += committed;
     trimContext();
   }
