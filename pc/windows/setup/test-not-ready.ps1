@@ -27,8 +27,16 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   popup-own-content: that popup, after typed-after-recovery's candidates with page arrows, shows only its own
     text: the same as japanese-unavailable's popup, with no arrows left from the candidates (#348);
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
-    popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n and then
-    keypad 1, in an app that grants the text service's edit only after it handled the key.
+    popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n, keypad 1,
+    Enter (か, a new line) and Backspace (か deleted), in an app that grants the text service's edit only after
+    it handled the key (#330); hang-mid-held-keys: with the lock held over several keys, Ctrl+Backspace with Ctrl
+    let go before the grant still deletes a word, Backspace then n gives n (the server answering again by then,
+    and TSF seeing both replayed keys), Enter before a focus change is dropped, Left after Backspace and n moves
+    the caret only after them, n after a Tab that moves the focus is dropped, and SebType going mid-replay (Ctrl+Q
+    switching the keyboard) leaves Ctrl up and composes again once back, n's key-up once the server answers
+    again before the grant keeps Enter's か, a replay ends with the modifiers as they physically are, a settling
+    edit the field refused once is asked for again at the next key, and a replayed key the app holds over a
+    second ends the replay.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -119,9 +127,9 @@ function Ready {
   if ($display::Lit -and -not $AnyDisplay) { throw "the display turned on ($(States)): no more keys" }
   if (-not $tsf::Focus()) { throw "the test field is not in front with the keyboard focus ($($tsf::FocusState())): no key sent" }
 }
-# A key's virtual-key code: space, Escape, kp0-kp9 (the keypad's digits, Num Lock on), or a letter.
+# A key's virtual-key code: space, Escape, Return, BackSpace, kp0-kp9 (the keypad's digits, Num Lock on), or a letter.
 function Vk($k) {
-  switch -regex ($k) { '^space$' { 0x20 } '^Escape$' { 0x1B } '^kp(\d)$' { 0x60 + [int]$Matches[1] } default { [byte][char]$k.ToUpper() } }
+  switch -regex ($k) { '^space$' { 0x20 } '^Escape$' { 0x1B } '^Return$' { 0x0D } '^BackSpace$' { 0x08 } '^kp(\d)$' { 0x60 + [int]$Matches[1] } default { [byte][char]$k.ToUpper() } }
 }
 function Keys {
   Ready
@@ -436,29 +444,106 @@ try {
     if ($diff) { throw "it differs from japanese-unavailable's popup: $diff (dpi-popup-fresh-$d.png, hira-off-popup.png)" }
     "the same as japanese-unavailable's popup: no page arrows left from the candidates"
   }
-  # The server hangs while か is being typed: か stays as it showed, the key goes in after it with the popup,
-  # and once the server answers again nothing of the old typing comes back or deletes it. The second time the
-  # app grants the text service's edit only after it handled the key, as an app may: a letter, then a keypad digit.
+  # The server hangs while か is being typed: か stays as it showed, the key goes in after it (with the popup
+  # for a key that types text), and once the server answers again nothing of the old typing comes back or
+  # deletes it. With $defer the app grants the text service's edit only after it handled the key, as an app
+  # may: then every key, typing text or not, has to act after か went in (#330).
   $hang = {
-    param($key, $defer, $shot)
+    param($key, $defer, $shot, $want = $null)
+    $c = if ($key -match '^kp(\d)$') { $Matches[1] } else { $key }
+    if ($null -eq $want) { $want = "か$c" }
+    $popup = $key -notin 'Return', 'BackSpace'  # keys that type no text show none
     Lang ja; $tsf::Clear(); Keys k a
     $script:suspended = Server
     [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
     $tsf::DeferLocks = $defer
-    try { $size = KeyWithPopup $key $shot; $why = $null } catch { $why = $_.Exception.Message }
+    try {
+      if ($popup) { $size = KeyWithPopup $key $shot } else { Ready; $null = $tsf::Key((Vk $key)); $tsf::Settle(600); $size = 'none' }
+      $why = $null
+    } catch { $why = $_.Exception.Message }
     finally { $tsf::DeferLocks = $false }
     $t = $tsf::Text()
     [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
     $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
-    $c = if ($key -match '^kp(\d)$') { $Matches[1] } else { $key }
-    if ($why) { throw "${key}: $why (text '$t')" }
-    if ($t -ne "か$c") { throw "か then $key while the server hangs gave '$t', not か$c" }
+    $show = { param($s) $s -replace "`n", '\n' }
+    if ($why) { throw "${key}: $why (text '$(& $show $t)')" }
+    if ($t -ne $want) { throw "か then $key while the server hangs gave '$(& $show $t)', not $(& $show $want)" }
     if ($icon -ne $hira) { throw "${key}: the icon did not turn back to あ within 4 s" }
-    if ($after -ne "か${c}い") { throw "${key}: i after the server answered again gave '$after', not か${c}い" }
-    "か$c with the popup $size, then i gives $after"
+    if ($after -ne "${want}い") { throw "${key}: i after the server answered again gave '$(& $show $after)', not $(& $show "${want}い")" }
+    "$(& $show $want) with the popup $size, then i gives $(& $show $after)"
   }
   Check 'hang-mid-composition' { & $hang 'n' $false 'hang-mid' }
-  Check 'hang-mid-deferred-lock' { (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp') -join '; ' }
+  Check 'hang-mid-deferred-lock' {
+    # Each key on its own, so one that fails doesn't hide the others.
+    $runs = @(('n', 'hang-mid-deferred', $null), ('kp1', 'hang-mid-deferred-kp', $null), ('Return', 'hang-mid-deferred-enter', "か`n"),
+      ('BackSpace', 'hang-mid-deferred-bs', '')) | ForEach-Object { try { @{ ok = & $hang $_[0] $true $_[1] $_[2] } } catch { @{ fail = $_.Exception.Message } } }
+    $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
+    if ($fails) { throw ($fails -join '; ') }
+    ($runs | ForEach-Object { $_.ok }) -join '; '
+  }
+  # The app holds the text service's lock over several keys (#330): a held key keeps the keyboard state it came
+  # with, every key after it waits behind it, and the held keys go nowhere once the focus moved. $traced: the
+  # keys replayed, which the field's window hands to TSF's keystroke manager as an app's own loop may, and which
+  # the text service has to let by; $resume: the
+  # server answers again before the lock is granted, so a replayed letter the text service took would compose.
+  $held = {
+    param($name, $before, [scriptblock]$keys, [scriptblock]$granted, $want, $traced, [switch]$resume, $then = "${want}い")
+    Lang ja; $tsf::SetText($before); Keys k a
+    $script:suspended = Server
+    [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
+    $tsf::HoldLocks = $true
+    try {
+      Ready; & $keys
+      if ($resume) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null; Start-Sleep -Milliseconds 1500 }
+    } finally { $tsf::PumpKeys = $true; $null = $tsf::Pumped(); $tsf::HoldLocks = $false }
+    $tsf::Settle(600); $problem = & $granted
+    $seen = $tsf::Pumped(); $tsf::PumpKeys = $false; $t = $tsf::Text()
+    if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null }
+    $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
+    $show = { param($s) "'" + ($s -replace "`n", '\n') + "'" }
+    if ($problem) { throw "${name}: $problem (text $(& $show $t), replayed through TSF: '$seen')" }
+    if ($t -ne $want) { throw "${name}: $(& $show $t), not $(& $show $want) (replayed through TSF: '$seen')" }
+    if ("$seen" -ne "$traced") { throw "${name}: the keys replayed through TSF were '$seen', not '$traced' (! where an input method took one)" }
+    if ($icon -ne $hira) { throw "${name}: the icon did not turn back to あ within 4 s" }
+    if ($after -ne $then) { throw "${name}: i after the server answered again gave $(& $show $after), not $(& $show $then)" }
+    "${name}: $(& $show $want)$(if ($seen) { ", replayed through TSF and let by: $seen" }), then i gives $(& $show $after)"
+  }
+  Check 'hang-mid-held-keys' {
+    $runs = @(
+      { & $held 'ctrl-backspace' 'ab cd' { $null = $tsf::Press(0x08, 0x11, 0xA2) } {} 'ab ' '8' },  # Ctrl let go before the grant
+      { & $held 'backspace-then-n' '' { $null = $tsf::Key(0x08); $null = $tsf::Key(0x4E) } {} 'n' '8 78' -resume },
+      { & $held 'focus-moved' '' { $null = $tsf::Key(0x0D); $tsf::Away($true) } { $tsf::Away($false) } 'か' '' }
+      # Left after them: Backspace's and n's characters first, then the caret moves (i goes before n).
+      { & $held 'backspace-n-left' '' { foreach ($k in 0x08, 0x4E, 0x25) { $null = $tsf::Key($k) } } {} 'n' '8 78 37' -then 'いn' }
+      # Tab moves the focus to another field in the same window: n, held after it, is dropped.
+      { & $held 'tab-moves-focus' '' { $tsf::AwayOn = 0x09; $null = $tsf::Key(0x09); $null = $tsf::Key(0x4E) } { $tsf::AwayOn = 0; $tsf::Away($false) } 'か' '9' }
+      # Ctrl+Q switches to the US keyboard: SebType goes mid-replay, Ctrl isn't left down, and back it composes.
+      { & $held 'deactivated' '' { $tsf::LeaveOn = 0x51; $null = $tsf::Press(0x51, 0x11, 0xA2) } {
+          $tsf::LeaveOn = 0
+          $active = $tsf::Active(); $ctrl = $tsf::IsDown(0x11)
+          $tsf::Activate(0x411, [Guid]'{D4E5C593-4F73-475F-936C-0E29A6FE7A02}', [Guid]'{B148FB02-C235-45D6-996C-672C783ECD48}'); $tsf::Settle(500)
+          if ($active -notlike '0409 *') { "Ctrl+Q didn't switch to the US keyboard (active: $active)" }
+          elseif ($ctrl) { 'Ctrl stayed down after SebType went mid-replay' }
+        } 'か' '81' }
+      # The server answers again before the grant, and n's key-up doesn't replace what the edit commits.
+      { & $held 'key-up-after-recovery' '' {
+          $null = $tsf::Key(0x0D); [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
+          Start-Sleep -Milliseconds 1500; $null = $tsf::Key(0x4E) } {} "か`nn" '13 78' }
+      # Ctrl+O's replay ends with Ctrl as it physically is, though the thread's state has it down by then (the
+      # person let go while a modal loop the replayed key opened took the key-up).
+      { & $held 'ctrl-let-go-mid-replay' '' { $null = $tsf::Press(0x4F, 0x11, 0xA2); $tsf::SetKey(0x11, $true); $tsf::SetKey(0xA2, $true) } {
+          $ctrl = $tsf::IsDown(0x11); $tsf::SetKey(0x11, $false); $tsf::SetKey(0xA2, $false)
+          if ($ctrl) { 'Ctrl stayed down after the replay, though no key is physically down' }
+        } 'か' '79' }
+      # The field refuses Enter's settling edit (read-only for a moment): the next key asks for it again.
+      { & $held 'edit-refused' '' { $tsf::ReadOnly = $true; $null = $tsf::Key(0x0D); $tsf::ReadOnly = $false; $null = $tsf::Key(0x4E) } {} "か`nn" '13 78' }
+      # The app takes 1.5 s over the replayed Enter: after a second the replay ends and n is dropped.
+      { & $held 'replay-timeout' '' { $tsf::StallOn = 0x0D; $null = $tsf::Key(0x0D); $null = $tsf::Key(0x4E) } { $tsf::StallOn = 0 } "か`n" '13' }
+    ) | ForEach-Object { try { @{ ok = & $_ } } catch { @{ fail = $_.Exception.Message } } }
+    $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
+    if ($fails) { throw ($fails -join '; ') }
+    ($runs | ForEach-Object { $_.ok }) -join '; '
+  }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {

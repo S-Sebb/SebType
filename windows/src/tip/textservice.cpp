@@ -285,6 +285,10 @@ STDMETHODIMP TextService::Deactivate() {
   }
   stopWatching();
   window_.reset();
+  endReplay();
+  held_.clear();
+  settling_ = rejected_ = false;
+  if (replayWindow_) DestroyWindow(std::exchange(replayWindow_, nullptr));
   if (button_) {
     ITfLangBarItemMgr *items = nullptr;
     if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfLangBarItemMgr, reinterpret_cast<void **>(&items)))) {
@@ -399,8 +403,12 @@ void TextService::focus(ITfDocumentMgr *focused) {
   // What was being typed goes into the field it was typed in (#277), as Microsoft's IMEs and Mozc do: the
   // core gives it on FocusOut (pinyin as its letters, Japanese as converted), and it replaces the composition.
   if (context_) {
-    std::wstring typed;
-    if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    // A server that doesn't answer: what showed, with what a settling edit that hasn't run yet would commit.
+    std::string commit = std::exchange(reply_.commit, {});
+    if (send({Op::FocusOut})) commit = std::exchange(reply_.commit, {});
+    else
+      for (const Segment &seg : reply_.preedit.segments) commit += seg.text;
+    std::wstring typed = utf16(commit);
     if (leaving_) typed.clear();
     typeIn(typed);
     context_->Release();
@@ -408,6 +416,10 @@ void TextService::focus(ITfDocumentMgr *focused) {
   }
   if (window_) window_->hide();
   field_ = Field::Unknown;
+  // Keys held or being replayed were the field's that had them: not to be typed into another.
+  held_.clear();
+  replayed_.clear();
+  settling_ = rejected_ = false;
   stopWatching();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
@@ -555,14 +567,15 @@ bool TextService::send(const Request &request) {
   return up;
 }
 
-bool TextService::unavailable(ITfContext *context, const Key &k, wchar_t ch) {
-  if (k.release || (k.mods & (mod::Ctrl | mod::Alt))) ch = 0;
+bool TextService::unavailable(ITfContext *context, const Key &k, WPARAM wParam, LPARAM lParam) {
+  const wchar_t ch = k.release || (k.mods & (mod::Ctrl | mod::Alt)) ? 0 : typedChar(wParam, lParam);
   const bool typed = ch || (!k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt)));
   const std::string icon = notReadyIcon(lang_, Readiness::Unavailable);
   // What was being typed goes in once, as it showed: the keys that follow go to the app as typed, after it,
   // and no reply the server owed (its Reset drops that typing) can change it later.
-  const bool composing = composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
-  if (composing) {
+  const bool settling = composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
+  if (settling) {
+    settling_ = true;
     for (const Segment &seg : reply_.preedit.segments) reply_.commit += seg.text;
     // The key's character goes in after it, in the same edit: given to the app, it could land before the
     // commit when the app grants the edit's lock later.
@@ -571,7 +584,7 @@ bool TextService::unavailable(ITfContext *context, const Key &k, wchar_t ch) {
     reply_.page = {};
     reply_.aux.clear();
   }
-  if (!composing && reply_.icon == icon && (!typed || warned_)) return false;
+  if (!settling && reply_.icon == icon && (!typed || warned_)) return false;
   reply_.lang = lang_;
   reply_.icon = icon;
   if (typed && !std::exchange(warned_, true)) {
@@ -579,8 +592,12 @@ bool TextService::unavailable(ITfContext *context, const Key &k, wchar_t ch) {
     reply_.notice = notReadyNotice(lang_, Readiness::Unavailable,
                                    ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
   }
+  // Any other key (Enter, Backspace, a shortcut, AltGr's characters) goes to the app once that edit is done:
+  // given to it now, it could act before the commit too. Modifiers stay the app's.
+  const bool held = settling && !k.release && !ch && !(k.sym >= 0xffe1 && k.sym <= 0xffee);
+  if (held) hold(wParam, lParam);
   apply(context);
-  return composing && ch;
+  return settling && !k.release && (ch || held);
 }
 
 void TextService::watchReadiness() {
@@ -612,9 +629,86 @@ void TextService::stopWatching() {
 }
 
 void TextService::apply(ITfContext *context) {
-  if (context) editSession(context, clientId_, [this, context](TfEditCookie ec) { return update(ec, context); }, false);
+  // A settling edit the app refused (a field read-only for a moment) is asked for again at the next key:
+  // dropping it would let the server's next reply replace what it commits.
+  if (context && FAILED(editSession(
+                     context, clientId_,
+                     [this, context](TfEditCookie ec) {
+                       const HRESULT hr = update(ec, context);
+                       rejected_ = false;
+                       if (std::exchange(settling_, false)) replay();
+                       return hr;
+                     },
+                     false)))
+    rejected_ = settling_;
   if (button_) button_->update();
   watchReadiness();
+}
+
+void TextService::hold(WPARAM wParam, LPARAM lParam) {
+  if (held_.empty()) heldFor_ = GetFocus();
+  Held h{wParam, lParam, {}};
+  GetKeyboardState(h.state);
+  held_.push_back(h);
+}
+
+// One key at a time, with its keyboard state, through this text service's own window: the next goes only
+// once the app handled this one and the character TranslateMessage made of it, and only while the focus is
+// where the keys were typed. Posted messages come before the keyboard's: nothing typed meanwhile gets between.
+constexpr UINT kReplayNext = WM_APP, kReplayAfter = WM_APP + 1;
+
+void TextService::replay() {
+  if (!replayWindow_) {
+    WNDCLASSEXW wc{sizeof(wc)};
+    wc.lpfnWndProc = replayProc;
+    wc.hInstance = dllInstance;
+    wc.lpszClassName = L"SebType.Replay";
+    RegisterClassExW(&wc);  // fails harmlessly when this DLL registered it already
+    replayWindow_ = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, dllInstance, nullptr);
+    SetWindowLongPtrW(replayWindow_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+  }
+  replayed_.insert(replayed_.end(), held_.begin(), held_.end());
+  held_.clear();
+  if (replayWindow_ && !replayed_.empty() && !std::exchange(replaying_, true)) {
+    GetKeyboardState(realState_);
+    PostMessageW(replayWindow_, kReplayNext, 0, 0);
+  }
+}
+
+void TextService::endReplay() {
+  if (std::exchange(replaying_, false)) {
+    KillTimer(replayWindow_, 1);
+    // The modifiers as they are now: the person may have let go of one meanwhile, and an app's modal loop
+    // may have taken that key-up while a replayed key's state was set.
+    for (const int vk : {VK_SHIFT, VK_LSHIFT, VK_RSHIFT, VK_CONTROL, VK_LCONTROL, VK_RCONTROL, VK_MENU, VK_LMENU,
+                         VK_RMENU, VK_LWIN, VK_RWIN})
+      realState_[vk] = (realState_[vk] & 1) | (GetAsyncKeyState(vk) < 0 ? 0x80 : 0);
+    SetKeyboardState(realState_);
+  }
+  replayed_.clear();
+}
+
+LRESULT CALLBACK TextService::replayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  auto *self = reinterpret_cast<TextService *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  if (!self || (msg != kReplayNext && msg != kReplayAfter && msg != WM_TIMER))
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+  // The key's WM_CHAR is posted as the app translates the key: this goes after it.
+  if (msg == WM_TIMER)
+    self->endReplay();  // a key the app hasn't finished with in a second: the person's keys are SebType's again
+  else if (msg == kReplayAfter) PostMessageW(hwnd, kReplayNext, 0, 0);
+  else if (self->replayed_.empty() || GetFocus() != self->heldFor_)
+    self->endReplay();  // the rest is dropped: not typed into another field
+  else {
+    Held h = self->replayed_.front();
+    self->replayed_.erase(self->replayed_.begin());
+    SetTimer(hwnd, 1, 1000, nullptr);
+    SetKeyboardState(h.state);
+    const bool sys = (h.state[VK_MENU] & 0x80) && !(h.state[VK_CONTROL] & 0x80);
+    PostMessageW(self->heldFor_, sys ? WM_SYSKEYDOWN : WM_KEYDOWN, h.wParam, h.lParam & ~0xc0000000);
+    PostMessageW(self->heldFor_, sys ? WM_SYSKEYUP : WM_KEYUP, h.wParam, h.lParam | 0xc0000000);
+    PostMessageW(hwnd, kReplayAfter, 0, 0);
+  }
+  return 0;
 }
 
 // The core sees each key once: OnTestKeyDown asks it and keeps the answer for OnKeyDown, as Weasel did.
@@ -627,7 +721,7 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
     return true;
   }
   tested_.pending = false;
-  if (!context) return true;
+  if (replaying_ || !context) return true;
   const Field f = field(context);
   if (f == Field::Password) return true;
   followLayout();
@@ -635,8 +729,18 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.lang = lang_;
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
+  // Behind a settling edit, every key waits its turn, whether or not the server answers again: its reply would
+  // replace what the edit commits. Key-ups and modifiers are the app's.
+  if (settling_) {
+    if (release || (q.key.sym >= 0xffe1 && q.key.sym <= 0xffee)) return true;
+    hold(wParam, lParam);
+    if (rejected_) apply(context);
+    *eaten = TRUE;
+    if (test) tested_ = {wParam, release, true, true};
+    return true;
+  }
   if (!send(q)) {
-    *eaten = unavailable(context, q.key, typedChar(wParam, lParam));
+    *eaten = unavailable(context, q.key, wParam, lParam);
     if (test) tested_ = {wParam, release, *eaten != FALSE, true};
     return true;
   }

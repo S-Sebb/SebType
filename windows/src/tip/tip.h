@@ -14,6 +14,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace sebtype::win {
 
@@ -107,6 +108,7 @@ class TextService final : public ITfTextInputProcessorEx,
   bool key(WPARAM wParam, LPARAM lParam, bool release, Key &out);
   // Asks the server (starting it when none answers) and applies the reply in an edit session.
   bool send(const Request &request);
+  // replay: the held keys go to the app after the edit (#330).
   void apply(ITfContext *context);
   bool keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bool release, bool test, BOOL *eaten);
   void setLanguage(REFGUID profile);
@@ -118,8 +120,21 @@ class TextService final : public ITfTextInputProcessorEx,
   void setOpen();
   void focus(ITfDocumentMgr *focus);
   // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
-  // True when it took the key itself: ch, the character it types, goes in after what was being typed.
-  bool unavailable(ITfContext *context, const Key &key, wchar_t ch);
+  // True when it took the key itself: while composing, every key but a modifier (#330). The character it
+  // types goes in after what was being typed, in the same edit; any other key is held and replayed after it.
+  bool unavailable(ITfContext *context, const Key &key, WPARAM wParam, LPARAM lParam);
+  // Keys held while a settling edit waits for the app's lock (#330), each with the keyboard state it came with
+  // (Ctrl+Backspace stays Ctrl+Backspace after Ctrl is let go). Every key after the first waits behind it; they
+  // go to the window that had the focus, in order, and are dropped if the focus moved meanwhile.
+  struct Held {
+    WPARAM wParam;
+    LPARAM lParam;
+    BYTE state[256];
+  };
+  void hold(WPARAM wParam, LPARAM lParam);
+  void replay();
+  void endReplay();  // the keyboard state as it was, and nothing more replayed
+  static LRESULT CALLBACK replayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   static wchar_t typedChar(WPARAM wParam, LPARAM lParam);
   // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
   void watchReadiness();
@@ -146,6 +161,13 @@ class TextService final : public ITfTextInputProcessorEx,
   std::unique_ptr<CandidateWindow> window_;
   LangBarButton *button_ = nullptr;
   DWORD serverStarted_ = 0;  // GetTickCount of the last start, so a missing server isn't started every key
+  std::vector<Held> held_, replayed_;  // waiting for the edit; being replayed
+  HWND heldFor_ = nullptr;             // the window and field that had the focus when the first was held
+  HWND replayWindow_ = nullptr;        // sets each replayed key's keyboard state, and paces them
+  BYTE realState_[256]{};              // the keyboard state before the replay, put back after it
+  bool settling_ = false;               // an edit committing what showed when the server stopped answering
+  bool rejected_ = false;              // the app refused that edit: asked for again at the next key
+  bool replaying_ = false;             // the replayed keys are the app's: the text service lets them by
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does
   UINT_PTR poll_ = 0;        // watchReadiness's timer
 };

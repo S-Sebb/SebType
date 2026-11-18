@@ -181,7 +181,7 @@ namespace SebType {
   [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
   public class TextStore : ITextStoreACP {
     const int S_OK = 0, E_INVALIDARG = unchecked((int)0x80070057), E_NOTIMPL = unchecked((int)0x80004001);
-    const int TS_E_NOLOCK = unchecked((int)0x80040201), TS_E_SYNCHRONOUS = unchecked((int)0x80040205), TS_S_ASYNC = 0x00040300;
+    const int TS_E_READONLY = unchecked((int)0x80040209), TS_E_NOLOCK = unchecked((int)0x80040201), TS_E_SYNCHRONOUS = unchecked((int)0x80040205), TS_S_ASYNC = 0x00040300;
     const int CONNECT_E_ADVISELIMIT = unchecked((int)0x80040201);
     const uint TS_LF_SYNC = 1, TS_LF_READ = 2, TS_LF_READWRITE = 6, TS_IAS_QUERYONLY = 2;
     public readonly StringBuilder Text = new StringBuilder();
@@ -197,9 +197,13 @@ namespace SebType {
     public int UnadviseSink(object s) { sink = null; return S_OK; }
     // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
     // it handled the key (#275); one that may not is granted at once all the same.
-    public bool Defer;
+    public bool Defer, Hold;
+    // A field read-only for a moment: its status says so, and it refuses a lock to write.
+    bool readOnly;
+    public bool ReadOnly { set { readOnly = value; sink.OnStatusChange(value ? 1u : 0u); } }
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
+      if (readOnly && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) { hrSession = TS_E_READONLY; return S_OK; }
       if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
         pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
@@ -217,7 +221,7 @@ namespace SebType {
         lockFlags = 0;
       }
     }
-    public int GetStatus(out TS_STATUS status) { status = new TS_STATUS(); return S_OK; }
+    public int GetStatus(out TS_STATUS status) { status = new TS_STATUS { dynamicFlags = readOnly ? 1u : 0u }; return S_OK; }  // TS_SD_READONLY
     public int QueryInsert(int start, int end, uint cch, out int resultStart, out int resultEnd) {
       resultStart = start; resultEnd = end; return S_OK;
     }
@@ -360,9 +364,12 @@ namespace SebType {
     [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetMessageW(out MSG m, IntPtr h, uint a, uint b);
     [DllImport("user32.dll")] static extern bool TranslateMessage(ref MSG m);
+    [DllImport("user32.dll")] static extern bool PeekMessageW(out MSG m, IntPtr h, uint a, uint b, uint remove);
     [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
     [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern bool SetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern short GetKeyState(int vk);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string name);
@@ -463,6 +470,15 @@ namespace SebType {
     }
     static readonly BlockingCollection<Action> queue = new BlockingCollection<Action>();
     static TextStore store;
+    // PumpKeys: a key posted to the field's window goes to TSF's keystroke manager, as in an app whose loop hands
+    // its keys to TSF itself; Pumped: those keys since the last call, "8 78" (with "!" for one an input method ate).
+    public static bool PumpKeys;
+    // A key that, reaching the field, moves TSF's focus to another document in the same window (as Tab does
+    // between a browser's fields), or switches to the plain US keyboard (the input method goes); 0 for none.
+    // StallOn: a key whose handling takes 1.5 s in a loop that takes only timer messages, as a menu's may.
+    public static int AwayOn, LeaveOn, StallOn;
+    static readonly List<string> pumped = new List<string>();
+    public static string Pumped() { return OnUi(() => { var t = string.Join(" ", pumped); pumped.Clear(); return t; }); }
     static ITfThreadMgr threadMgr;
     static ITfDocumentMgr docMgr;
     static IntPtr context;
@@ -492,8 +508,27 @@ namespace SebType {
         while (GetMessageW(out m, IntPtr.Zero, 0, 0)) {
           if (m.hwnd == IntPtr.Zero && m.message == WM_APP) { Action a; while (queue.TryTake(out a)) a(); continue; }
           // A character the input method let through goes into the field, as an edit control would take it.
-          if (m.message == WM_CHAR && (char)m.wParam >= ' ') { store.AppEdit(store.SelStart, store.SelEnd, ((char)m.wParam).ToString()); continue; }
-          TranslateMessage(ref m); DispatchMessageW(ref m);
+          if (PumpKeys && (m.message == 0x100 || m.message == 0x101) && m.hwnd == store.Hwnd) {
+            bool eaten;
+            if (m.message == 0x100) ((ITfKeystrokeMgr)threadMgr).KeyDown(m.wParam, m.lParam, out eaten);
+            else ((ITfKeystrokeMgr)threadMgr).KeyUp(m.wParam, m.lParam, out eaten);
+            if (m.message == 0x100) pumped.Add((int)m.wParam + (eaten ? "!" : ""));
+            if (eaten) continue;
+          }
+          if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
+          TranslateMessage(ref m);
+          // What the field's window does with a key, after it was translated, as a window procedure would.
+          if (m.message == 0x100 && m.hwnd == store.Hwnd) {
+            if ((int)m.wParam == 0x25) Left();
+            if ((int)m.wParam == AwayOn) threadMgr.SetFocus(OtherMgr());
+            if ((int)m.wParam == LeaveOn) try { ActivateLayoutNow(0x409, "00000409"); } catch { }
+            if ((int)m.wParam == StallOn)
+              for (var until = Environment.TickCount + 1500; Environment.TickCount < until; Thread.Sleep(10)) {
+                MSG timer;
+                while (PeekMessageW(out timer, IntPtr.Zero, 0x113, 0x113, 1)) DispatchMessageW(ref timer);  // WM_TIMER, PM_REMOVE
+              }
+          }
+          DispatchMessageW(ref m);
         }
       });
       t.SetApartmentState(ApartmentState.STA);
@@ -523,7 +558,7 @@ namespace SebType {
     // go through Key, to TSF's keystroke manager, not into the session's input.
     public static bool NoInput;
     // A key (a virtual-key code) down and up through TSF, as the message loop passes a real one; a letter,
-    // space or keypad digit the input method lets through goes into the field. True when the input method took it.
+    // space, keypad digit, Enter or Backspace the input method lets through acts on the field. True when the input method took it.
     public static bool Key(byte vk) {
       return OnUi(() => {
         var keys = (ITfKeystrokeMgr)threadMgr;
@@ -531,20 +566,49 @@ namespace SebType {
         bool eaten, up;
         keys.KeyDown((IntPtr)vk, (IntPtr)(1 | scan), out eaten);
         keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
-        if (!eaten && (vk == 0x20 || (vk >= 0x41 && vk <= 0x5A) || (vk >= 0x60 && vk <= 0x69)))  // space, a-z, keypad 0-9
-          store.AppEdit(store.SelStart, store.SelEnd, (vk == 0x20 ? ' ' : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32)).ToString());
-        store.GrantPending();
+        if (!eaten && vk == 0x25) Left();
+        if (!eaten && (vk == 0x08 || vk == 0x0D || vk == 0x20 || (vk >= 0x41 && vk <= 0x5A) || (vk >= 0x60 && vk <= 0x69)))  // Backspace, Enter, space, a-z, keypad 0-9
+          Typed(vk == 0x08 && (GetKeyState(0x11) & 0x8000) != 0 ? '\x7f' : vk == 0x08 || vk == 0x0D || vk == 0x20 ? (char)vk : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32));
+        if (!store.Hold) store.GrantPending();
         return eaten;
       });
     }
+    // A key with others held for it only (Ctrl: 0x11 and 0xA2), let go before any lock is granted.
+    public static bool Press(byte vk, params byte[] held) {
+      var state = new byte[256];
+      OnUi(() => { GetKeyboardState(state); var with = (byte[])state.Clone(); foreach (var h in held) with[h] |= 0x80; SetKeyboardState(with); return 0; });
+      try { return Key(vk); } finally { OnUi(() => SetKeyboardState(state)); }
+    }
+    // What an edit control does with a character: Backspace deletes the one before the caret, Ctrl+Backspace
+    // (0x7f) the word before it, Enter starts a line.
+    static void Typed(char c) {
+      int at = store.SelStart;
+      if (c == '\b') at = Math.Max(0, at - 1);
+      else if (c == '\x7f') { while (at > 0 && store.Text[at - 1] == ' ') at--; while (at > 0 && store.Text[at - 1] != ' ') at--; }
+      else { store.AppEdit(store.SelStart, store.SelEnd, c == '\r' ? "\n" : c.ToString()); return; }
+      if (at < store.SelEnd) store.AppEdit(at, store.SelEnd, "");
+    }
+    // Text the app put there itself, the caret after it.
+    public static void SetText(string s) { OnUi(() => { store.AppEdit(0, store.Text.Length, s); return 0; }); }
     // Locks that may wait are granted only after the app handled the key (TextStore.Defer).
     public static bool DeferLocks { set { OnUi(() => { store.Defer = value; store.GrantPending(); return 0; }); } }
+    // Locks that may wait wait until this is set false again, over several keys or a focus change.
+    public static bool HoldLocks { set { OnUi(() => { store.Defer = store.Hold = value; if (!value) store.GrantPending(); return 0; }); } }
     static ITfDocumentMgr otherMgr;
+    static ITfDocumentMgr OtherMgr() { if (otherMgr == null) threadMgr.CreateDocumentMgr(out otherMgr); return otherMgr; }
+    // The caret one character to the left, as an edit control moves it.
+    static void Left() { store.SelStart = store.SelEnd = Math.Max(0, store.SelStart - 1); store.AppEdit(store.SelStart, store.SelEnd, ""); }
+    // Whether a key is down as this thread's keyboard state has it (GetKeyState).
+    public static bool ReadOnly { set { OnUi(() => { store.ReadOnly = value; return 0; }); } }
+    public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
+    // A key down or up in this thread's keyboard state only, as a modal loop that took a key leaves it.
+    public static void SetKey(int vk, bool down) {
+      OnUi(() => { var state = new byte[256]; GetKeyboardState(state); state[vk] = (byte)(down ? state[vk] | 0x80 : state[vk] & ~0x80); SetKeyboardState(state); return 0; });
+    }
     // TSF's focus on another document and back, as a click into another field moves it.
     public static void Away(bool away) {
       OnUi(() => {
-        if (otherMgr == null) threadMgr.CreateDocumentMgr(out otherMgr);
-        threadMgr.SetFocus(away ? otherMgr : docMgr);
+        threadMgr.SetFocus(away ? OtherMgr() : docMgr);
         return 0;
       });
     }
@@ -594,13 +658,11 @@ namespace SebType {
     }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadKeyboardLayout(string klid, uint flags);
     // The same for a plain keyboard layout, by its id as the language list has it ("00000409").
-    public static void ActivateLayout(ushort langid, string klid) {
-      OnUi(() => {
-        var mgr = (ITfInputProcessorProfileMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
-        Guid none = Guid.Empty, noProfile = Guid.Empty;
-        mgr.ActivateProfile(2 /* TF_PROFILETYPE_KEYBOARDLAYOUT */, langid, ref none, ref noProfile, LoadKeyboardLayout(klid, 0), 0x10000000 | 0x4);
-        return 0;
-      });
+    public static void ActivateLayout(ushort langid, string klid) { OnUi(() => { ActivateLayoutNow(langid, klid); return 0; }); }
+    static void ActivateLayoutNow(ushort langid, string klid) {
+      var mgr = (ITfInputProcessorProfileMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_InputProcessorProfiles));
+      Guid none = Guid.Empty, noProfile = Guid.Empty;
+      mgr.ActivateProfile(2 /* TF_PROFILETYPE_KEYBOARDLAYOUT */, langid, ref none, ref noProfile, LoadKeyboardLayout(klid, 0), 0x10000000 | 0x4);
     }
     // "<langid hex> <clsid>" of the active keyboard input method, e.g. "0411 {10A67BC8-...}".
     public static string Active() {
