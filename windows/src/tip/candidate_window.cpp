@@ -360,6 +360,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
 }
 
 void CandidateWindow::notice(const std::string &text, const RECT &caret) {
+  trace("notice '" + text + "' hwnd " + std::to_string(reinterpret_cast<uintptr_t>(hwnd_)));  // TEMP #327
   ScreenPixels screen;
   if (text.empty() || !create()) return;
   loadStyle(dpiAt(caret));
@@ -376,12 +377,14 @@ void CandidateWindow::notice(const std::string &text, const RECT &caret) {
   place(caret);
   draw();
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+  trace("notice shown, visible " + std::to_string(IsWindowVisible(hwnd_) != 0));  // TEMP #327
   SetTimer(hwnd_, kNoticeTimer, kNoticeMs, nullptr);
   noticing_ = true;
 }
 
 void CandidateWindow::hide() {
   if (!hwnd_) return;
+  trace("hide, noticing " + std::to_string(noticing_) + " visible " + std::to_string(IsWindowVisible(hwnd_) != 0));  // TEMP #327
   KillTimer(hwnd_, kNoticeTimer);
   noticing_ = false;
   ShowWindow(hwnd_, SW_HIDE);
@@ -392,6 +395,7 @@ void CandidateWindow::hide() {
 // The monitor's scale changed, or the window went to one with another (#327): what a fresh show at that DPI
 // would draw. Hidden, the next show measures again anyway.
 void CandidateWindow::rescale(UINT dpi) {
+  trace("rescale " + std::to_string(dpi) + " from " + std::to_string(style_.dpi));  // TEMP #327
   if (dpi == style_.dpi) return;  // as when show() rescaled first and its place() moved the window here
   loadStyle(dpi);
   if (!IsWindowVisible(hwnd_)) return;
@@ -418,6 +422,7 @@ LRESULT CALLBACK CandidateWindow::proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
       }
       return 0;
     case WM_TIMER:
+      trace("WM_TIMER " + std::to_string(wParam));  // TEMP #327
       if (self && wParam == kNoticeTimer) self->hide();
       return 0;
     case WM_LBUTTONUP:

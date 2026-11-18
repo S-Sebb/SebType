@@ -634,10 +634,13 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
   if (!send(q)) {
+    trace("key " + std::to_string(q.key.sym) + (release ? " up" : " down") + (test ? " test" : "") + ": send failed");  // TEMP #327
     *eaten = unavailable(context, q.key, typedChar(wParam, lParam));
     if (test) tested_ = {wParam, release, *eaten != FALSE, true};
     return true;
   }
+  trace("key " + std::to_string(q.key.sym) + (release ? " up" : " down") + (test ? " test" : "") + ": taken " +
+        std::to_string(reply_.taken) + " icon '" + reply_.icon + "' notice '" + reply_.notice + "'");  // TEMP #327
   *eaten = reply_.taken;
   if (test) tested_ = {wParam, release, reply_.taken, true};
   apply(context);

@@ -182,6 +182,7 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
     if (window_) window_->show(reply_, !japanese, caret_);
   }
 
+  trace("edit session: composing " + std::to_string(composing) + " notice '" + reply_.notice + "'");  // TEMP #327
   // 中文's English mode switch says so for a moment, as Weasel's tip did.
   if (!reply_.notice.empty() && window_ && !composing) {
     TF_SELECTION sel{};

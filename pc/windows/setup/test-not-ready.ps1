@@ -273,6 +273,10 @@ try {
     if ($hira -eq $zh) { throw 'あ and 中 show the same icon' }
     'あ and 中 differ'
   }
+  Check 'dpi-change' {
+    Lang zh; $tsf::Clear(); Keys n i
+    try { DpiRoundTrip 'dpi-candidates' } finally { Keys Escape; $tsf::Clear() }
+  }
   # Every later check compares against these two icons.
   if (-not ($hira -and $zh) -or $hira -eq $zh) { throw 'not ready: no further checks' }
   # Windows' own Microsoft Pinyin in the same taskbar, to set ours beside (ms-pinyin.png, ms-pinyin-taskbar.png).
@@ -412,11 +416,6 @@ try {
   }
   Check 'hang-mid-composition' { & $hang 'n' $false 'hang-mid' }
   Check 'hang-mid-deferred-lock' { (& $hang 'n' $true 'hang-mid-deferred'), (& $hang 'kp1' $true 'hang-mid-deferred-kp') -join '; ' }
-  # Last: the timing checks before don't follow a window that was shown at another scale.
-  Check 'dpi-change' {
-    Lang zh; $tsf::Clear(); Keys n i
-    try { DpiRoundTrip 'dpi-candidates' } finally { Keys Escape; $tsf::Clear() }
-  }
 } catch {
   Result 'script' FAIL $_.Exception.Message  # a check that can't go on: the rest is skipped
 } finally {
