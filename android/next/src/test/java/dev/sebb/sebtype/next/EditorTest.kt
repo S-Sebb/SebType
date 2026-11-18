@@ -124,11 +124,15 @@ class EditorTest {
                 "getExtractedText" -> if (blind) null else extracted()
                 "getCursorCapsMode" -> 0
                 "setSelection" -> true.also { cursor = args[0] as Int; end = args[1] as Int; changed() }
+                // As BaseInputConnection's: from the composing text's edges where they are outside the selection
                 "deleteSurroundingText", "deleteSurroundingTextInCodePoints" -> true.also {
-                    val b = minOf(args[0] as Int, cursor)
-                    text = text.substring(0, cursor - b) + text.substring(cursor, end) + text.substring(minOf(text.length, end + args[1] as Int))
+                    val from = minOf(cursor, region?.first ?: cursor)
+                    val to = maxOf(end, region?.let { it.last + 1 } ?: end)
+                    val b = minOf(args[0] as Int, from)
+                    text = text.substring(0, from - b) + text.substring(from, to) + text.substring(minOf(text.length, to + args[1] as Int))
                     cursor -= b
                     end -= b
+                    region = region?.let { (it.first - b) until (it.last + 1 - b) }
                     changed()
                 }
                 "setComposingRegion" -> true.also { region = (args[0] as Int) until (args[1] as Int); changed() }
@@ -722,6 +726,38 @@ class EditorTest {
         assertEquals(13, field.end)
         ime.editor.selectWordsBefore(2, true)
         assertEquals("one ", field.text)
+    }
+
+    /**
+     * #325: a field that can't say where its cursor is, the cursor put after the first "one two" during the
+     * swipe, or "one " taken from the start: the text the swipe saw before the cursor ends the same, but it
+     * isn't all the same. The swipe deletes nothing; it would take the first "two", or "three".
+     */
+    @Test
+    fun aDeleteSwipeWhereTheCursorIsUnknownEndsWhenTheTextChanges() {
+        for (change in listOf<(Field) -> Unit>({ it.tap(7) }, { it.edit(0, 4, "") })) {
+            val field = Field("one two one two", 15, Extract.NONE)
+            val ime = Ime(field)
+            ime.editor.selectWordsBefore(1, false)
+            change(field)
+            val text = field.text
+            ime.editor.selectWordsBefore(1, true)
+            assertEquals(text, field.text)
+        }
+    }
+
+    /**
+     * #325: a field that can't say where its cursor is, with "three" marked as composing: the words go before
+     * the cursor, not before the composing text ("onethree").
+     */
+    @Test
+    fun aDeleteSwipeWhereTheCursorIsUnknownDeletesBeforeTheCursor() {
+        val field = Field("one two three", 13, Extract.NONE)
+        val ime = Ime(field)
+        field.region = 8 until 13
+        ime.editor.selectWordsBefore(1, false)
+        ime.editor.selectWordsBefore(1, true)
+        assertEquals("one two ", field.text)
     }
 
     /** #325: another field came up during Delete's swipe: nothing of the swipe goes into it */
