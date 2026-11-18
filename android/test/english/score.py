@@ -1,7 +1,7 @@
 """Scores the English harness's runs.
 
   score.py RUN_DIR             a JSON summary of every STACK.SET.tsv in RUN_DIR
-  score.py --compare S1 S2     exit 0 if two summaries' quality numbers are equal and per-key p50 within 25 %
+  score.py --compare S1 S2     exit 0 if two runs' results (every row but its latency) and quality numbers are equal
   score.py --table S1 S2       the baseline table in Markdown, run 1's numbers with run 2's latency next to them
   score.py --bar S             exit 0 if SebType's model passes the plan's quality bar (§2) against today's
 
@@ -42,21 +42,44 @@ STACKS = (
 
 
 def compare(s1, s2):
+    """Every row's results (all but its microseconds) and every quality number must match. Latency differs
+    between runs and is left to the table and the perf checks."""
+    da, db = Path(s1).parent, Path(s2).parent
     a, b = json.loads(Path(s1).read_text()), json.loads(Path(s2).read_text())
     problems = []
+    names = sorted({f.name for d in (da, db) for f in d.glob("*.*.tsv")})
+    for name in names:
+        ra, rb = [
+            [r.split("\t") for r in (d / name).read_text().splitlines()]
+            if (d / name).exists()
+            else []
+            for d in (da, db)
+        ]
+        diff = [
+            (i, x, y)
+            for i, (x, y) in enumerate(zip(ra, rb), 1)
+            if x[:4] + x[5:] != y[:4] + y[5:]
+        ]
+        if diff:
+            i, x, y = diff[0]
+            problems.append(
+                f"{name}: {len(diff)} rows differ, first row {i} (typed {x[0]!r}): "
+                f"committed, top 3, shown after {x[2]} | {x[3]} | {x[5]} vs {y[2]} | {y[3]} | {y[5]}"
+            )
+        if len(ra) != len(rb):
+            problems.append(f"{name}: {len(ra)} vs {len(rb)} rows")
     for stack in sorted(set(a) | set(b)):
         for set_name in sorted(set(a.get(stack, {})) | set(b.get(stack, {}))):
             x, y = (
                 a.get(stack, {}).get(set_name, {}),
                 b.get(stack, {}).get(set_name, {}),
             )
-            for k in QUALITY:
+            for k in QUALITY + ("saved",):
                 if x.get(k) != y.get(k):
                     problems.append(f"{stack} {set_name} {k}: {x.get(k)} vs {y.get(k)}")
-            for k in ("key_ms_p50", "ms_p50"):
-                if k in x and k in y and max(x[k], y[k]) > 1.25 * min(x[k], y[k]):
-                    problems.append(f"{stack} {set_name} {k}: {x[k]} vs {y[k]} ms")
-    print("\n".join(problems) or "the runs agree")
+    if not names:
+        problems.append("the runs have no results")
+    print("\n".join(problems) or "every row's results and every quality number equal")
     return not problems
 
 

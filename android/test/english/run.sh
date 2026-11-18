@@ -49,7 +49,7 @@ done
 s1=$out/english/run1/summary.json s2=$out/english/run2/summary.json
 if [[ -s $s1 && -s $s2 ]]; then
   if python3 -I $here/score.py --compare "$s1" "$s2" > "$out/english/compare.txt"; then
-    result PASS reproducible "quality numbers equal, per-key p50 within 25 %"
+    result PASS reproducible "every row's results and quality numbers equal (latency not compared)"
   else
     result FAIL reproducible "$(head -1 "$out/english/compare.txt")"
   fi
