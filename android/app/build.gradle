@@ -34,6 +34,13 @@ tasks.register('copyLicences', Sync) {
         include 'OFL-Nunito.txt', 'OFL-PixelifySans.txt'
         rename { it.replace('OFL-', '').replace('.txt', '-OFL.txt') }
     }
+    // librime's bundled headers: darts-clone (also OpenCC's) and the X11 keysym names, whose notice is lines 2-46
+    from('../../engines/librime/include/COPYING.darts-clone') { rename { 'Darts-clone-LICENSE.txt' } }
+    from('../../engines/librime/include/X11/keysymdef.h') {
+        rename { 'X11-keysym-LICENSE.txt' }
+        def n = 0
+        filter { line -> ++n > 1 && n < 47 ? line : null }
+    }
     from('../../LICENSE-LGPL-2.1') { rename { 'LGPL-2.1.txt' } }
     from('../../LICENSE-SebType') { rename { 'SebType-LICENSE.txt' } }
     from('../../NOTICE') { rename { 'SebType-NOTICE.txt' } }

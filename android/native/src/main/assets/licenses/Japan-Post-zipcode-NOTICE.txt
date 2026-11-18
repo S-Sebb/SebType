@@ -1,0 +1,16 @@
+Mozc's OSS dictionary includes Japan Post's postal code data, as Mozc's credits
+(engines/mozc/src/data/installer/credits_en.html) list it:
+
+zipcode (https://www.post.japanpost.jp/zipcode/dl/readme.html)
+
+Copyright (c) 2010, JAPAN POST SERVICE CO.,Ltd.
+All rights reserved.
+
+郵便事業株式会社は著作権を主張しません。自由に配布していただいて結構です。
+
+zipcode for jigyosyo (https://www.post.japanpost.jp/zipcode/dl/jigyosyo/readme.html)
+
+Copyright (c) 2010, JAPAN POST SERVICE CO.,Ltd.
+All rights reserved.
+
+大口事業所個別番号番号データについては郵便事業株式会社は著作権を主張しません。自由に配布していただいて結構です。郵便事業株式会社への許諾も必要ありません。

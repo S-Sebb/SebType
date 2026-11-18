@@ -31,3 +31,12 @@ fetches at build time.
 | Yaml-cpp | [Yaml-cpp-LICENSE.txt](src/main/assets/licenses/Yaml-cpp-LICENSE.txt) | MIT |
 | llama.cpp | [Llama.cpp-LICENSE.txt](src/main/assets/licenses/Llama.cpp-LICENSE.txt) | MIT |
 | AOSP LatinIME's decoder | [AOSP-LatinIME-LICENSE.txt](src/main/assets/licenses/AOSP-LatinIME-LICENSE.txt) | Apache-2.0 |
+| utf8_range (in Mozc's Protocol Buffers 34.1) | [Utf8-range-LICENSE.txt](src/main/assets/licenses/Utf8-range-LICENSE.txt) | MIT |
+| RapidJSON (in OpenCC) | [RapidJSON-LICENSE.txt](src/main/assets/licenses/RapidJSON-LICENSE.txt) | MIT |
+| llamafile's sgemm (in ggml) | [Llamafile-sgemm-LICENSE.txt](src/main/assets/licenses/Llamafile-sgemm-LICENSE.txt) | MIT |
+| YaRN (in ggml) | [YaRN-LICENSE.txt](src/main/assets/licenses/YaRN-LICENSE.txt) | MIT |
+| Japanese Usage Dictionary (in Mozc's dictionary) | [Japanese-usage-dictionary-LICENSE.txt](src/main/assets/licenses/Japanese-usage-dictionary-LICENSE.txt) | BSD-3-Clause |
+| Japan Post postal codes (in Mozc's dictionary) | [Japan-Post-zipcode-NOTICE.txt](src/main/assets/licenses/Japan-Post-zipcode-NOTICE.txt) | no copyright claimed |
+
+The app adds the texts the repository already holds (android/app/build.gradle's `copyLicences`), among them
+darts-clone and the X11 keysym notice from librime's bundled headers.
