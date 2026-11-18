@@ -478,7 +478,8 @@ try {
   }
   # The app holds the text service's lock over several keys (#330): a held key keeps the keyboard state it came
   # with, every key after it waits behind it, and the held keys go nowhere once the focus moved. $traced: the
-  # keys TSF has to see again as the replay goes by (through TSF, and let by the text service); $resume: the
+  # keys TSF has to see again as the replay goes by, the window handing posted keys to TSF as an app's own loop
+  # may (TSF's own hook doesn't see posted keys), and the text service letting them by; $resume: the
   # server answers again before the lock is granted, so a replayed letter the text service took would compose.
   $held = {
     param($name, $before, [scriptblock]$keys, [scriptblock]$granted, $want, $traced, [switch]$resume)
@@ -489,18 +490,18 @@ try {
     try {
       Ready; & $keys
       if ($resume) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null; Start-Sleep -Milliseconds 1500 }
-      $null = $tsf::Traced()
-    } finally { $tsf::HoldLocks = $false }
+      $pressed = $tsf::Traced()
+    } finally { $tsf::PumpKeys = $true; $tsf::HoldLocks = $false }
     & $granted; $tsf::Settle(600)
-    $seen = $tsf::Traced(); $t = $tsf::Text()
+    $seen = $tsf::Traced(); $tsf::PumpKeys = $false; $t = $tsf::Text()
     if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null }
     $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
     $show = { param($s) "'" + ($s -replace "`n", '\n') + "'" }
     if ($t -ne $want) { throw "${name}: $(& $show $t), not $(& $show $want) (TSF saw '$seen' at the grant)" }
-    if ($traced -and " $seen " -notlike "* $traced *") { throw "${name}: TSF saw '$seen' at the grant, not the replayed $traced" }
+    if ($traced -and " $seen " -notlike "* $traced *") { throw "${name}: TSF saw '$seen' at the grant, not the replayed $traced (and '$pressed' as the keys were pressed)" }
     if ($icon -ne $hira) { throw "${name}: the icon did not turn back to あ within 4 s" }
     if ($after -ne "${want}い") { throw "${name}: i after the server answered again gave $(& $show $after), not $(& $show "${want}い")" }
-    "${name}: $(& $show $want)$(if ($traced) { ", TSF saw $seen again" }), then i gives $(& $show $after)"
+    "${name}: $(& $show $want), TSF saw '$pressed' pressed and '$seen' replayed, then i gives $(& $show $after)"
   }
   Check 'hang-mid-held-keys' {
     $runs = @(

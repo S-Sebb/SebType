@@ -486,6 +486,7 @@ namespace SebType {
     static readonly BlockingCollection<Action> queue = new BlockingCollection<Action>();
     static TextStore store;
     static readonly KeyTrace trace = new KeyTrace();
+    public static bool PumpKeys;
     // The keys TSF handled since the last call, as virtual-key codes ("8 78").
     public static string Traced() { return OnUi(() => { var t = string.Join(" ", trace.Downs); trace.Downs.Clear(); return t; }); }
     static ITfThreadMgr threadMgr;
@@ -519,6 +520,13 @@ namespace SebType {
         while (GetMessageW(out m, IntPtr.Zero, 0, 0)) {
           if (m.hwnd == IntPtr.Zero && m.message == WM_APP) { Action a; while (queue.TryTake(out a)) a(); continue; }
           // A character the input method let through goes into the field, as an edit control would take it.
+          // A key posted to the window goes through TSF as in an app whose loop hands its keys to TSF itself.
+          if (PumpKeys && (m.message == 0x100 || m.message == 0x101) && m.hwnd == store.Hwnd) {
+            bool eaten;
+            if (m.message == 0x100) ((ITfKeystrokeMgr)threadMgr).KeyDown(m.wParam, m.lParam, out eaten);
+            else ((ITfKeystrokeMgr)threadMgr).KeyUp(m.wParam, m.lParam, out eaten);
+            if (eaten) continue;
+          }
           if (m.message == WM_CHAR && ((char)m.wParam >= ' ' || (char)m.wParam == '\b' || (char)m.wParam == '\r')) { Typed((char)m.wParam); continue; }
           TranslateMessage(ref m); DispatchMessageW(ref m);
         }

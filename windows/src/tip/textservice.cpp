@@ -401,8 +401,12 @@ void TextService::focus(ITfDocumentMgr *focused) {
   // What was being typed goes into the field it was typed in (#277), as Microsoft's IMEs and Mozc do: the
   // core gives it on FocusOut (pinyin as its letters, Japanese as converted), and it replaces the composition.
   if (context_) {
-    std::wstring typed;
-    if (send({Op::FocusOut})) typed = utf16(std::exchange(reply_.commit, {}));
+    // A server that doesn't answer: what showed, with what a settling edit that hasn't run yet would commit.
+    std::string commit = std::exchange(reply_.commit, {});
+    if (send({Op::FocusOut})) commit = std::exchange(reply_.commit, {});
+    else
+      for (const Segment &seg : reply_.preedit.segments) commit += seg.text;
+    std::wstring typed = utf16(commit);
     if (leaving_) typed.clear();
     typeIn(typed);
     context_->Release();
