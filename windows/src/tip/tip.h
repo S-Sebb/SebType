@@ -109,7 +109,7 @@ class TextService final : public ITfTextInputProcessorEx,
   // Asks the server (starting it when none answers) and applies the reply in an edit session.
   bool send(const Request &request);
   // replay: the held keys go to the app after the edit (#330).
-  void apply(ITfContext *context, bool replay = false);
+  void apply(ITfContext *context);
   bool keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bool release, bool test, BOOL *eaten);
   void setLanguage(REFGUID profile);
   void followLayout();
@@ -165,6 +165,7 @@ class TextService final : public ITfTextInputProcessorEx,
   HWND heldFor_ = nullptr;             // the window and field that had the focus when the first was held
   HWND replayWindow_ = nullptr;        // sets each replayed key's keyboard state, and paces them
   BYTE realState_[256]{};              // the keyboard state before the replay, put back after it
+  bool settling_ = false;               // an edit committing what showed when the server stopped answering
   bool replaying_ = false;             // the replayed keys are the app's: the text service lets them by
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does
   UINT_PTR poll_ = 0;        // watchReadiness's timer

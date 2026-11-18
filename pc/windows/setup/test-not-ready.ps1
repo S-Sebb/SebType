@@ -33,7 +33,8 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     let go before the grant still deletes a word, Backspace then n gives n (the server answering again by then,
     and TSF seeing both replayed keys), Enter before a focus change is dropped, Left after Backspace and n moves
     the caret only after them, n after a Tab that moves the focus is dropped, and SebType going mid-replay (Ctrl+Q
-    switching the keyboard) leaves Ctrl up and composes again once back.
+    switching the keyboard) leaves Ctrl up and composes again once back, n's key-up once the server answers
+    again before the grant keeps Enter's か, and a replay ends with the modifiers as they physically are.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -522,6 +523,16 @@ try {
           if ($active -notlike '0409 *') { "Ctrl+Q didn't switch to the US keyboard (active: $active)" }
           elseif ($ctrl) { 'Ctrl stayed down after SebType went mid-replay' }
         } 'か' '81' }
+      # The server answers again before the grant, and n's key-up doesn't replace what the edit commits.
+      { & $held 'key-up-after-recovery' '' {
+          $null = $tsf::Key(0x0D); [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null
+          Start-Sleep -Milliseconds 1500; $null = $tsf::Key(0x4E) } {} "か`nn" '13 78' }
+      # Ctrl+O's replay ends with Ctrl as it physically is, though the thread's state has it down by then (the
+      # person let go while a modal loop the replayed key opened took the key-up).
+      { & $held 'ctrl-let-go-mid-replay' '' { $null = $tsf::Press(0x4F, 0x11, 0xA2); $tsf::SetKey(0x11, $true); $tsf::SetKey(0xA2, $true) } {
+          $ctrl = $tsf::IsDown(0x11); $tsf::SetKey(0x11, $false); $tsf::SetKey(0xA2, $false)
+          if ($ctrl) { 'Ctrl stayed down after the replay, though no key is physically down' }
+        } 'か' '79' }
     ) | ForEach-Object { try { @{ ok = & $_ } } catch { @{ fail = $_.Exception.Message } } }
     $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
     if ($fails) { throw ($fails -join '; ') }

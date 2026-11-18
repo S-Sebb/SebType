@@ -589,6 +589,10 @@ namespace SebType {
     static void Left() { store.SelStart = store.SelEnd = Math.Max(0, store.SelStart - 1); store.AppEdit(store.SelStart, store.SelEnd, ""); }
     // Whether a key is down as this thread's keyboard state has it (GetKeyState).
     public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
+    // A key down or up in this thread's keyboard state only, as a modal loop that took a key leaves it.
+    public static void SetKey(int vk, bool down) {
+      OnUi(() => { var state = new byte[256]; GetKeyboardState(state); state[vk] = (byte)(down ? state[vk] | 0x80 : state[vk] & ~0x80); SetKeyboardState(state); return 0; });
+    }
     // TSF's focus on another document and back, as a click into another field moves it.
     public static void Away(bool away) {
       OnUi(() => {
