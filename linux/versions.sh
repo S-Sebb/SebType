@@ -56,8 +56,10 @@ sebtype_unpack() {
   local key rpm
   key=$(sebtype_key) || return 1
   rpm=$(sebtype_rpm "$key")
+  # Marked in use before the check, so build.sh's cleanup of RPMs no tree used for two weeks can't take it
+  # between the check and the unpack; -c never leaves an empty file in its place.
+  touch -c "$rpm"
   [[ -f $rpm ]] || SEBTYPE_SOURCES_KEY=$key "$(dirname "${BASH_SOURCE[0]}")/build.sh" >/dev/null || return 1
-  touch "$rpm"  # in use: build.sh removes the keyed RPMs no tree used for two weeks
   rm -rf "$1"; mkdir -p "$1"
   rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet)
 }
