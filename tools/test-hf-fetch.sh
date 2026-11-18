@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# tools/hf-fetch.sh's token handling, offline (#365): a made-up token never shows in a bash -x trace, goes to
-# the Hugging Face endpoint and not to the host it redirects to, and without a token no header goes at all.
+# tools/hf-fetch.sh's token handling, offline (#365): a made-up token never shows in a bash -x trace or with a
+# .curlrc's verbose, goes to the Hugging Face endpoint and not to the host it redirects to, and without a
+# token no header goes at all.
 # A fake huggingface_hub module stands in for the listing and the token; two local servers stand in for
 # huggingface.co and its CDN.
 #
@@ -64,6 +65,10 @@ check token-download [ "$(cat "$work/out1/a.txt" 2>/dev/null)" = ok ]
 check token-not-in-trace bash -c '! grep -qF "$1" "$2"' - "$token" "$work/trace1"
 check token-to-hub grep -qx "hub Bearer $token" "$work/requests.log"
 check token-not-to-cdn bash -c '! grep -q "^cdn Bearer" "$1"' - "$work/requests.log"
+# A user's .curlrc that turns on verbose must not print the header either.
+mkdir "$work/curlhome" && echo verbose > "$work/curlhome/.curlrc"
+HF_TOKEN=$token CURL_HOME=$work/curlhome "$here/hf-fetch.sh" "$work/fake/python" "$work/out3" org/ds rev '*' 2> "$work/stderr3"
+check token-not-in-curlrc-verbose bash -c '! grep -qF "$1" "$2"' - "$token" "$work/stderr3"
 : > "$work/requests.log"
 env -u HF_TOKEN "$here/hf-fetch.sh" "$work/fake/python" "$work/out2" org/ds rev '*' 2> "$work/trace2"
 check no-token-download [ "$(cat "$work/out2/a.txt" 2>/dev/null)" = ok ]

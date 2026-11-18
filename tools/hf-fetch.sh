@@ -4,7 +4,7 @@
 # file already there at its listed size is kept, so a rerun fetches only what is missing. A gated dataset
 # takes the token huggingface_hub finds (HF_TOKEN or a saved login): Python writes it straight into curl's
 # config pipe, so no command line, bash variable or bash -x trace holds it, and curl (7.83 on) drops it when
-# a download redirects to the CDN's other host.
+# a download redirects to the CDN's other host. -q comes first: a .curlrc's verbose would print the header.
 #
 #   tools/hf-fetch.sh PYTHON DIR REPO REVISION GLOB...     (PYTHON: one with huggingface_hub, for the list)
 set -euo pipefail
@@ -27,6 +27,6 @@ while read -r size path; do
   f=$dir/$path
   [[ $(stat -c %s "$f" 2>/dev/null) == "$size" ]] && continue
   mkdir -p "$(dirname "$f")"
-  curl --limit-rate 35M -fsSL --retry 3 -K <(auth) -o "$f.part" "$endpoint/datasets/$repo/resolve/$rev/$path"
+  curl -q --limit-rate 35M -fsSL --retry 3 -K <(auth) -o "$f.part" "$endpoint/datasets/$repo/resolve/$rev/$path"
   mv "$f.part" "$f"
 done

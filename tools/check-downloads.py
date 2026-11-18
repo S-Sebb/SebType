@@ -28,7 +28,28 @@ POWERSHELL = (
 )  # the workflows' run steps are PowerShell on Windows
 DOWNLOADERS = {"curl", "curl.exe", "wget", "wget.exe"}
 UNCAPPABLE = {"invoke-webrequest", "iwr", "invoke-restmethod", "irm"}
-VIA_VARIABLE = re.compile(r"\$\{?\w*(curl|wget)", re.IGNORECASE)
+VIA_VARIABLE = re.compile(
+    r"\$\{?\w*(curl|wget)", re.IGNORECASE
+)  # as the command's name
+NOT_DOWNLOADS = {"--version", "-V", "--help", "-h"}
+PREFIXES = {
+    "-",
+    "run:",
+    "!",
+    "sudo",
+    "env",
+    "exec",
+    "command",
+    "time",
+    "nice",
+    "xargs",
+    "then",
+    "do",
+    "else",
+    "if",
+    "while",
+    "until",
+}
 SIZE = re.compile(r"(\d+(?:\.\d+)?)([kmg]?)", re.IGNORECASE)
 
 
@@ -46,23 +67,42 @@ def logical_lines(path, text):
         yield start, joined
 
 
+def block_end(line, i):
+    """The index after the bracket that closes the one at line[i] (or the line's end)."""
+    opener, closer, depth = line[i], {"(": ")", "{": "}"}[line[i]], 0
+    for j in range(i, len(line)):
+        depth += (line[j] == opener) - (line[j] == closer)
+        if depth == 0:
+            return j + 1
+    return len(line)
+
+
 def commands(line, powershell):
     """The line's commands as lists of words, quotes removed, up to an unquoted #. A command ends at an
-    unquoted ; & | ( ) { } (and ` outside PowerShell). An unclosed quote runs to the line's end."""
+    unquoted ; & | ( ) { } (and ` outside PowerShell); $(...) and ${...} stay whole in their word, and
+    $(...)'s contents are commands too. An unclosed quote runs to the line's end."""
     escape = "`" if powershell else "\\"
     ends = ";&|(){}" + ("" if powershell else "`")
-    cmds, words, word, quote = [], [], None, None
-    chars = iter(line)
-    for c in chars:
+    cmds, words, word, quote, inner, i = [], [], None, None, [], 0
+    while i < len(line):
+        c = line[i]
+        if c == "$" and quote != "'" and line[i + 1 : i + 2] in ("(", "{"):
+            j = block_end(line, i + 1)
+            if line[i + 1] == "(":
+                inner.append(line[i + 2 : j - 1])
+            word, i = (word or "") + line[i:j], j
+            continue
         if quote:
             if c == quote:
                 quote = None
             elif c == escape and quote == '"':
-                word += next(chars, "")
+                i += 1
+                word += line[i : i + 1]
             else:
                 word += c
         elif c == escape:
-            word = (word or "") + next(chars, "")
+            i += 1
+            word = (word or "") + line[i : i + 1]
         elif c in "'\"":
             quote, word = c, word or ""
         elif c.isspace() or c in ends or (c == "#" and word is None):
@@ -76,14 +116,28 @@ def commands(line, powershell):
                 words = []
         else:
             word = (word or "") + c
+        i += 1
     if word is not None:
         words.append(word)
     if words:
         cmds.append(words)
-    # A quoted word with spaces may hold commands of its own: bash -c "...", "$(curl ...)".
-    return cmds + [
-        c for cmd in cmds for w in cmd if " " in w for c in commands(w, powershell)
-    ]
+    # A quoted word with spaces may hold commands of its own: bash -c "...".
+    inner += [w for cmd in cmds for w in cmd if " " in w and w != line]
+    return cmds + [c for text in inner for c in commands(text, powershell)]
+
+
+def command_word(cmd):
+    """The index of the command's name: after assignments (X=1, PowerShell's $x =), a YAML step's
+    "- run:", and prefixes such as sudo, env or then."""
+    i = 0
+    while i < len(cmd):
+        if cmd[i] in PREFIXES or re.match(r"\w+=", cmd[i]):
+            i += 1
+        elif cmd[i + 1 : i + 2] == ["="]:
+            i += 2
+        else:
+            return i
+    return None
 
 
 def capped(name, args):
@@ -102,25 +156,30 @@ def capped(name, args):
 
 
 def problems(path, text):
+    seen = set()  # a substitution inside a quoted word is read twice
     for n, line in logical_lines(path, text):
         for cmd in commands(line, path.endswith(POWERSHELL)):
-            for i, word in enumerate(cmd):
-                name, args = word.lower(), cmd[i + 1 :]
-                if VIA_VARIABLE.search(word):
-                    yield (
-                        n,
-                        "curl or wget through a variable: call it by name, with --limit-rate",
-                    )
-                elif name in UNCAPPABLE and args:
-                    yield n, f"{word} can't be capped: use curl.exe --limit-rate 35M"
-                # A call: the name, then an option, a variable or a URL (not "for x in curl unzip").
-                elif (
-                    name in DOWNLOADERS
-                    and args
-                    and args[0].startswith(("-", "$", "http"))
-                ):
-                    if not capped(name, args):
-                        yield n, f"{word} without --limit-rate of 35M or less"
+            i = command_word(cmd)
+            if i is None:
+                continue
+            word, args = cmd[i], cmd[i + 1 :]
+            name = word.lower()
+            if VIA_VARIABLE.match(word):
+                why = "curl or wget through a variable: call it by name, with --limit-rate"
+            elif name in UNCAPPABLE and args:
+                why = f"{word} can't be capped: use curl.exe --limit-rate 35M"
+            elif (
+                name in DOWNLOADERS
+                and args
+                and args[0] not in NOT_DOWNLOADS
+                and not capped(name, args)
+            ):
+                why = f"{word} without --limit-rate of 35M or less"
+            else:
+                continue
+            if (n, why) not in seen:
+                seen.add((n, why))
+                yield n, why
 
 
 SELF_TEST = [  # (file name, text, fails)
@@ -158,6 +217,17 @@ SELF_TEST = [  # (file name, text, fails)
     ("a.ps1", 'curl.exe -H "X-Tag: a #b" --limit-rate 35M $u', False),
     ("a.sh", 'f=$(curl -fsSL "$u")', True),
     ("a.sh", 'f="$(curl --limit-rate 35M -fsSL "$u")"', False),
+    ("a.sh", 'curl --limit-rate 35M -o "$curl_output" "$url"', False),
+    ("a.sh", "curl $(cat url.txt) --limit-rate 35M", False),
+    ("a.sh", 'curl "$(cat url.txt)" --limit-rate 35M', False),
+    ("a.sh", "curl -o ${out} --limit-rate 35M $u", False),
+    ("a.sh", "curl example.com/archive.tar.gz -o archive.tar.gz", True),
+    ("a.sh", "wget example.com/archive.tar.gz", True),
+    ("a.sh", "curl --version", False),
+    ("a.sh", "sudo curl example.com/x", True),
+    ("a.ps1", "$x = curl.exe example.com/x", True),
+    ("a.yml", "      - run: curl -fsSL https://e/x", True),
+    ("a.yml", "      - run: dnf install -q -y git curl unzip", False),
 ]
 
 
