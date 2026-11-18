@@ -182,6 +182,8 @@ function Server { Get-Process sebtype-server -ErrorAction SilentlyContinue | Whe
 # Changes Rime's files with no server holding them, then starts one below normal priority, even when the change
 # failed, and waits for its pipe.
 function Restart-Server([scriptblock]$change) {
+  # TEMP #327: ChsIME.exe's processes when the server restarts
+  Add-Content -Encoding utf8 "$Out\chsime.txt" "$((Get-Date).ToString('HH:mm:ss.fff')) restart: $((Get-Process ChsIME -ErrorAction SilentlyContinue | ForEach-Object { "pid $($_.Id) since $($_.StartTime.ToString('HH:mm:ss.fff')) session $($_.SessionId)" }) -join '; ')"
   if ($old = Server) { Start-Process -Wait $server '/quit'; if (-not $old.WaitForExit(10000)) { throw 'the server did not quit in 10 s' } }
   try { & $change } finally { (Start-Process $server -PassThru).PriorityClass = 'BelowNormal' }
   $pipe = "\\.\pipe\SebType.$((Get-Process -Id $PID).SessionId).$env:USERNAME"  # windows/src/pipe.h

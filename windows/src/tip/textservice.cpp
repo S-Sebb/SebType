@@ -227,6 +227,11 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
   threadMgr_->AddRef();
   clientId_ = clientId;
   leaving_ = false;
+  {
+    wchar_t exe[MAX_PATH] = L"";
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    trace("activate in " + utf8(exe));  // TEMP #327
+  }
 
   ITfSource *source = nullptr;
   if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfSource, reinterpret_cast<void **>(&source)))) {
@@ -274,6 +279,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
 }
 
 STDMETHODIMP TextService::Deactivate() {
+  trace("deactivate");  // TEMP #327
   leaving_ = true;
   if (composition_ && context_) {
     editSession(context_, clientId_, [this](TfEditCookie ec) { return endComposition(ec, context_); });
@@ -534,6 +540,7 @@ bool TextService::send(const Request &request) {
   if (GetFileAttributesW((serverPath().parent_path() / L"uninstalling").c_str()) != INVALID_FILE_ATTRIBUTES)
     return false;
   serverStarted_ = now;
+  trace("starting a server for op " + std::to_string(static_cast<int>(request.op)));  // TEMP #327
   STARTUPINFOW si{sizeof(si)};
   PROCESS_INFORMATION pi{};
   std::wstring cmd = L"\"" + serverPath().wstring() + L"\"";
@@ -597,6 +604,7 @@ void TextService::pollReadiness() {
   q.lang = lang_;
   Reply r;
   if (!server.call(q, r)) return;
+  trace("poll: icon " + r.icon);  // TEMP #327
   warned_ = false;
   reply_.icon = r.icon;
   if (button_) button_->update();
