@@ -8,6 +8,7 @@
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <cstdio>
@@ -32,6 +33,7 @@ std::unique_ptr<Core> core;
 RimePaths rimePaths;
 MozcPaths mozcPaths;
 EnglishPaths englishPaths;
+ChineseModelPaths chineseModel;  // no model: Rime alone
 // The phone's own options over sebtype.conf's: 🌐 drops what is typed (the user, 2026-11-15), and English's
 // (setEnglishOptions).
 Settings phoneOptions;
@@ -63,12 +65,12 @@ void stderrToLog() {
 
 JavaVM *vm;
 jclass nativeCore;
-jmethodID englishReady;
+jmethodID englishReady, chineseReady;
 
-// English's model ranking and next words come from its worker thread: the keyboard is told through NativeCore.englishReady,
-// which posts to its main thread. The thread is attached once and detached when it ends (ART aborts on a
-// thread that ends attached).
-void onEnglishReady() {
+// The models' rankings and next words come from their worker threads: the keyboard is told through
+// NativeCore.englishReady or chineseReady, which post to its main thread. The thread is attached once and
+// detached when it ends (ART aborts on a thread that ends attached).
+void callFromWorker(jmethodID method) {
   struct Attached {
     JNIEnv *env = nullptr;
     ~Attached() {
@@ -77,9 +79,11 @@ void onEnglishReady() {
   };
   thread_local Attached attached;
   if (!attached.env && vm->AttachCurrentThread(&attached.env, nullptr) != JNI_OK) return;
-  attached.env->CallStaticVoidMethod(nativeCore, englishReady);
+  attached.env->CallStaticVoidMethod(nativeCore, method);
   if (attached.env->ExceptionCheck()) attached.env->ExceptionClear();
 }
+void onEnglishReady() { callFromWorker(englishReady); }
+void onChineseReady() { callFromWorker(chineseReady); }
 
 std::string str(JNIEnv *env, jstring s) {
   if (!s) return {};
@@ -131,7 +135,10 @@ jobjectArray jstrings(JNIEnv *env, const std::vector<std::string> &list) {
 Lang lang(jint id) { return id == 1 ? Lang::Chinese : id == 2 ? Lang::Japanese : Lang::English; }
 
 std::unique_ptr<Engine> makeEngine(Lang l) {
-  if (l == Lang::Chinese) return makeRime(rimePaths);
+  // 中文's model starts and stops with Rime: it loads on its worker as Rime starts.
+  if (l == Lang::Chinese)
+    return chineseModel.model.empty() ? makeRime(rimePaths)
+                                      : withChineseModel(makeRime(rimePaths), chineseModel, onChineseReady);
   if (l == Lang::Japanese) return makeMozc(mozcPaths);
   if (englishPaths.dictionary.empty()) return nullptr;
   return makeEnglish(englishPaths, onEnglishReady);
@@ -211,6 +218,18 @@ void setEnglishPaths(JNIEnv *env, jclass, jstring dictionary, jlong offset, jlon
     return;
   englishPaths = p;
   core->stop(Lang::English);
+}
+
+// 中文's model and OpenCC's folder (for 繁); a change restarts 中文. Until this is called Rime runs alone.
+void setChineseModel(JNIEnv *env, jclass, jstring model, jstring opencc) {
+  std::lock_guard g(lock);
+  const std::string m = str(env, model), o = str(env, opencc);
+  if (m == chineseModel.model && o == chineseModel.opencc) return;
+  chineseModel.model = m;
+  chineseModel.opencc = o;
+  // Half the cores, at most 4: 4 threads took the experiment's p95 from 25 to 18 ms a key (#259).
+  chineseModel.threads = static_cast<int>(std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u));
+  core->stop(Lang::Chinese);
 }
 
 void setSettings(JNIEnv *env, jclass, jstring conf) {
@@ -427,6 +446,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"setMozcData", "(Ljava/lang/String;Ljava/lang/String;JJ)V", reinterpret_cast<void *>(setMozcData)},
       {"setEnglishPaths", "(Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;)V",
        reinterpret_cast<void *>(setEnglishPaths)},
+      {"setChineseModel", "(Ljava/lang/String;Ljava/lang/String;)V", reinterpret_cast<void *>(setChineseModel)},
       {"setSettings", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setSettings)},
       {"setEnglishOptions", "(ZZ[Ljava/lang/String;[I)V", reinterpret_cast<void *>(setEnglishOptions)},
       {"settings", "()Ljava/lang/String;", reinterpret_cast<void *>(settings)},
@@ -460,6 +480,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
   if (!cls || env->RegisterNatives(cls, methods, sizeof(methods) / sizeof(methods[0])) != JNI_OK) return JNI_ERR;
   nativeCore = static_cast<jclass>(env->NewGlobalRef(cls));
   englishReady = env->GetStaticMethodID(cls, "englishReady", "()V");
-  if (!englishReady) return JNI_ERR;
+  chineseReady = env->GetStaticMethodID(cls, "chineseReady", "()V");
+  if (!englishReady || !chineseReady) return JNI_ERR;
   return JNI_VERSION_1_6;
 }

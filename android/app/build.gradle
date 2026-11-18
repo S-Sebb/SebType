@@ -32,6 +32,12 @@ tasks.register('copyEnglish', Sync) {
     from('../../engines/sebtype-lm') { include 'english.gguf' }
     into englishDir.map { it.dir('english') }
 }
+// 中文's model (engines/sebtype-lm/chinese.gguf, #264), stored uncompressed and copied out once, as English's.
+final def chineseModelDir = layout.buildDirectory.dir('generated/sebtype-chinese-model')
+tasks.register('copyChineseModel', Sync) {
+    from('../../engines/sebtype-lm') { include 'chinese.gguf' }
+    into chineseModelDir.map { it.dir('chinese') }
+}
 // The licence texts of what the app ships that :native's assets/licenses doesn't hold, copied from where the
 // repository keeps them; Settings › About › Licence and credits shows them (credits.tsv names each row's).
 final def licencesDir = layout.buildDirectory.dir('generated/sebtype-licences')
@@ -66,7 +72,7 @@ tasks.register('copyLicences', Sync) {
     }
     into licencesDir.map { it.dir('licenses') }
 }
-preBuild.dependsOn 'buildRimeData', 'mozcDictionary', 'copyEnglish', 'copyLicences'
+preBuild.dependsOn 'buildRimeData', 'mozcDictionary', 'copyEnglish', 'copyChineseModel', 'copyLicences'
 
 android {
     namespace 'dev.sebb.sebtype'
@@ -109,7 +115,7 @@ android {
     sourceSets {
         main {
             res.srcDirs += [mozcDictDir]
-            assets.srcDirs += [assetsDir, englishDir, licencesDir]
+            assets.srcDirs += [assetsDir, englishDir, chineseModelDir, licencesDir]
         }
     }
 

@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
 
 /**
  * The engines behind English, 中文 and 日本語, in core/ ([NativeCore]): their files, sebtype.conf (the
- * settings the phone shares with the PCs), Chinese's first-run setup, English's model copied out of the APK,
+ * settings the phone shares with the PCs), Chinese's first-run setup, English's and 中文's models copied out of the APK,
  * and stopping an engine nobody has used for a while. Setup and engine starts run on background threads, one
  * per engine, so 日本語 never waits behind 中文's setup; typing calls [NativeCore] on its engine thread
  * ([NativeCore.post]).
@@ -27,6 +27,9 @@ object Engines {
 
     /** An engine stops this long after its language was last in use (#56), and starts again when needed. */
     private const val IDLE_MS = 3 * 60_000L
+
+    private const val ENGLISH_MODEL = "english/english.gguf"
+    private const val CHINESE_MODEL = "chinese/chinese.gguf"
 
     enum class Chinese { PREPARING, READY, FAILED }
 
@@ -71,37 +74,56 @@ object Engines {
         }
         configured = true
         prepareEnglish(app)
+        prepareChineseModel(app)
     }
 
-    private fun englishModel(context: Context) = File(context.noBackupFilesDir, "english/english.gguf")
-
     /**
-     * English reads its dictionary straight out of the APK. The model is copied out once per install or
-     * update (llama.cpp maps a file of its own), in the background: until it is there English runs without
-     * it, as before its first letter (it loads only once a letter is typed, Decisions #2).
+     * A model in the APK's assets ([asset]) copied out once per install or update (llama.cpp maps a file of
+     * its own) to the same path under noBackupFilesDir, on [on]: whether it is there already, and [copied]
+     * on [on] once it is.
      */
-    private fun prepareEnglish(app: Context) {
+    private fun copyModel(app: Context, asset: String, on: java.util.concurrent.Executor, copied: () -> Unit): Boolean {
         val installed = app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime.toString()
-        val model = englishModel(app)
+        val model = File(app.noBackupFilesDir, asset)
         val marker = File(model.path + ".installed")
-        fun setPaths(withModel: Boolean) = app.assets.openFd("english/en_US.dict").use {
-            NativeCore.setEnglishPaths(app.applicationInfo.sourceDir, it.startOffset, it.length,
-                if (withModel) model.path else "", File(app.filesDir, "english").apply { mkdirs() }.path)
-        }
-        val ready = marker.isFile && marker.readText() == installed && model.isFile
-        setPaths(ready)
-        if (ready) return
-        english.execute {
+        if (marker.isFile && marker.readText() == installed && model.isFile) return true
+        on.execute {
             val t0 = SystemClock.elapsedRealtime()
             model.parentFile!!.mkdirs()
             marker.delete()
             val part = File(model.path + ".part")
-            app.assets.open("english/english.gguf").use { input -> part.outputStream().use { input.copyTo(it, 1 shl 16) } }
+            app.assets.open(asset).use { input -> part.outputStream().use { input.copyTo(it, 1 shl 16) } }
             if (!part.renameTo(model)) throw IOException("Can't write ${model.path}")
             marker.writeText(installed)
-            Log.w(TAG, "Copied English's model in ${SystemClock.elapsedRealtime() - t0} ms")
-            main.post { setPaths(true) }
+            Log.w(TAG, "Copied $asset in ${SystemClock.elapsedRealtime() - t0} ms")
+            copied()
         }
+        return false
+    }
+
+    /**
+     * English reads its dictionary straight out of the APK. Until its model is copied out English runs without
+     * it, as before its first letter (it loads only once a letter is typed, Decisions #2).
+     */
+    private fun prepareEnglish(app: Context) {
+        val model = File(app.noBackupFilesDir, ENGLISH_MODEL)
+        fun setPaths(withModel: Boolean) = app.assets.openFd("english/en_US.dict").use {
+            NativeCore.setEnglishPaths(app.applicationInfo.sourceDir, it.startOffset, it.length,
+                if (withModel) model.path else "", File(app.filesDir, "english").apply { mkdirs() }.path)
+        }
+        setPaths(copyModel(app, ENGLISH_MODEL, english) { main.post { setPaths(true) } })
+    }
+
+    /**
+     * 中文's model (#264) loads with Rime and stops with it. It is copied on 中文's own thread, ahead of the
+     * setup's start of Rime, so a first start doesn't restart Rime; until it is there Rime runs alone. 繁 reads
+     * OpenCC's tables in the installed Chinese data.
+     */
+    private fun prepareChineseModel(app: Context) {
+        val model = File(app.noBackupFilesDir, CHINESE_MODEL).path
+        val opencc = File(sharedDir(app), "opencc").path
+        if (copyModel(app, CHINESE_MODEL, worker) { NativeCore.setChineseModel(model, opencc) })
+            NativeCore.setChineseModel(model, opencc)
     }
 
     /** Saves the words English learned (AOSP's user history, in its files) */

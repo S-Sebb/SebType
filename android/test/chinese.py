@@ -736,6 +736,44 @@ check("hm-pinned", expect_first("hm", "后面"), needs=["first-install"])
 # Typo correction (#46): o for i, its neighbour on the phone grid, still gives 小时 first.
 check("typo-corrected", expect_first("xoaoshi", "小时"), needs=["first-install"])
 check("learn-picked-word", learn_lower_candidate, needs=["lh-in-bar"])
+
+
+def expect_model_first(text, word):
+    """Rime's own first candidate for text is wrong (the harness, #264); the model's list follows
+    Rime's page, slowly under Berberis, so this waits for the model to put word first."""
+
+    def run():
+        open_field()
+        type_keys(text)
+        got = []
+
+        def first():
+            got[:] = candidates(nodes())
+            return got[:1] == [word]
+
+        try:
+            wait_for(f"{word} first", first, 30)
+        except Fail:
+            raise Fail(f"{text} -> {got[:6]}")
+        tap_candidate(word)
+        if (field := field_text()) != word:
+            raise Fail(f"picking {word} wrote {field!r}")
+        return f"{text} -> {got[:6]}"
+
+    return run
+
+
+# 中文's model (#264): a typo Rime alone gets wrong, and a sentence it splits wrong.
+check(
+    "zh-model-typo",
+    expect_model_first("zheshioxiede", "这是我写的"),
+    needs=["first-install"],
+)
+check(
+    "zh-model-sentence",
+    expect_model_first("buyaoxiawoa", "不要吓我啊"),
+    needs=["first-install"],
+)
 check("learned-after-restart", learned_survives_restart, needs=["learn-picked-word"])
 # Restarts 中 and waits for its setup, so it needs 中 working.
 check("password-after-restart", password_after_restart, needs=["ranh"])

@@ -44,7 +44,7 @@ add_subdirectory(${SEBTYPE_CORE_DIR} ${RIME_JNI_BUILD_DIR}/core)
 
 add_library(sebtype SHARED sebtype_jni.cpp)
 set_target_properties(sebtype PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(sebtype PRIVATE sebtype-core sebtype-english c++_static log android)  # android: ATrace (english.cpp)
+target_link_libraries(sebtype PRIVATE sebtype-core sebtype-english sebtype-chinese c++_static log android)  # android: ATrace (english.cpp, chinese.cpp)
 target_link_options(sebtype PRIVATE
     -Wl,--gc-sections
     -Wl,--as-needed

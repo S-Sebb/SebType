@@ -36,6 +36,7 @@ llama.cpp and ggml	MIT	https://github.com/ggml-org/llama.cpp	licenses/Llama.cpp-
 llamafile's sgemm (in ggml)	MIT	https://github.com/Mozilla-Ocho/llamafile	licenses/Llamafile-sgemm-LICENSE.txt
 YaRN (in ggml)	MIT	https://github.com/jquesnelle/yarn	licenses/YaRN-LICENSE.txt
 SebType's English model	CC-BY-SA-4.0	https://github.com/S-Sebb/SebType/tree/main/tools/english-lm	licenses/SebType-NOTICE.txt
+SebType's Chinese model	CC-BY-SA-4.0	https://github.com/S-Sebb/SebType/tree/main/tools/chinese-lm	licenses/SebType-NOTICE.txt
 wordfreq (English word frequencies)	CC-BY-SA-4.0	https://github.com/rspeer/wordfreq	licenses/SebType-NOTICE.txt
 SCOWL (English word checks)	SCOWL	https://wordlist.aspell.net	licenses/SebType-NOTICE.txt
 Unicode emoji and CLDR annotations (also in Mozc's dictionary)	Unicode-3.0	https://cldr.unicode.org	emoji/LICENSE.txt

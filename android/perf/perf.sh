@@ -7,6 +7,8 @@
 #                                    English only: idle memory, typing, fast typing, opens (#54)
 #   android/perf/perf.sh --english   SebType in English only: install, first open, EN, fast and long, so
 #                                    the English model's rankings and spaces (#320) take minutes, not half an hour
+#   android/perf/perf.sh --chinese   SebType in 中文 only: install, first open, the Chinese setup and 中, for
+#                                    the Chinese model's rankings and next words (#264)
 #   android/perf/perf.sh --soak      SOAK_MIN (default 12) minutes of mixed typing in SebType as installed:
 #                                    memory over time and keyboard restarts
 # It reinstalls SebType (all its data is lost) and types into its own test field with monkey taps.
@@ -419,6 +421,7 @@ device_steps() { # under the device lock
   if [[ -n ${english:-} ]]; then check fast 300; check long 300; return; fi
   check zh-deploy 1200
   check zh 600
+  [[ -n ${chinese:-} ]] && return
   check ja 600
   check fast 300
   check long 300
@@ -459,6 +462,7 @@ fi
 android/perf/build-field.sh "$work/perf-field.apk" > "$work/field-build.log" 2>&1 ||
   { echo "preflight: test field doesn't build, see $work/field-build.log"; exit 1; }
 [[ ${1:-} == --english ]] && export english=1
+[[ ${1:-} == --chinese ]] && export chinese=1
 mode=--device; [[ ${1:-} == --compare || ${1:-} == --soak ]] && mode=$1-device
 if [[ $mode == --compare-device ]]; then # another keyboard, already installed: no APK
   android/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m "${PERF_LOCK_MINUTES:-30}" -n "sebtype perf.sh --compare $pkg" -- "$self" "$mode"

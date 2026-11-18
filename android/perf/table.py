@@ -195,6 +195,19 @@ for name, ph in (("EN", "en"), ("Fast typing", "fast"), ("Long field", "long")):
         ph,
         f"the {n['waited'] + n['late']} spaces that waited",
     )
+# 中文's model (#264): its "SebType zh rank" and "SebType zh next" sections, each job's own time. A key's
+# Rime list shows before it; a job superseded by the next key ends early and isn't counted apart.
+for job, what in (
+    ("zh rank", "order and candidates for the letters typed"),
+    ("zh next", "next words"),
+):
+    times = [float(r["ms"]) for r in rows("zh", ".jobs") if r["job"] == job]
+    row(
+        f"中: model's {what}, median / p95",
+        p(times),
+        "zh",
+        f"{len(times)} done; budget 20 ms p95 (#264)",
+    )
 for name, d, ph, note in (
     ("Fast typing", fast, "fast", "100 ms per key"),
     ("Long field", long_, "long", "20,000 characters, 100 ms per key"),
