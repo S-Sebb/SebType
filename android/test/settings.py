@@ -251,6 +251,9 @@ def settle(seconds=30):
         time.sleep(1)
 
 
+unstarted = 0  # times open_field found SebType chosen but never started (#352)
+
+
 def open_field(kind=None, clip=None):
     """A new text field with SebType up; kind makes it a password or private field, clip a text the
     field app copies to the clipboard a moment after it opens (android/perf/PerfField.java)."""
@@ -260,7 +263,11 @@ def open_field(kind=None, clip=None):
         ["--es", "clip", clip] if clip else []
     )
 
+    shown = 0.0
+
     def show():
+        nonlocal shown
+        shown = time.time()
         adb("shell", "ime", "set", IME)
         # A slow emulator can show "System UI isn't responding" over everything; this closes it.
         adb(
@@ -281,7 +288,20 @@ def open_field(kind=None, clip=None):
         ):
             show()
             return None
-        return keys(nodes())
+        ks = keys(nodes())
+        # After a force-stop Android can keep SebType chosen yet never start it again: no process,
+        # and `ime set` to the same keyboard changes nothing (#352). Another keyboard and back makes it.
+        if (
+            not ks
+            and time.time() - shown > 10
+            and not adb("shell", "pidof", PKG, check=False).strip()
+        ):
+            global unstarted
+            unstarted += 1
+            other = [i for i in adb("shell", "ime", "list", "-s").split() if i != IME]
+            adb("shell", "ime", "set", other[0])
+            show()
+        return ks
 
     show()
     wait_for("the keyboard", up, KEYBOARD_WAIT)
@@ -1245,10 +1265,16 @@ def incognito_clipboard():
 
 
 def incognito_after_restart():
+    before = unstarted
     adb("shell", "am", "force-stop", PKG)
     open_field()
     wait_for("the badge after a restart", lambda: badge() == "toggle", 15)
-    return "incognito still on after the keyboard restarted"
+    again = unstarted - before
+    return "incognito still on after the keyboard restarted" + (
+        f" (Android didn't start it until another keyboard and back, {again}x)"
+        if again
+        else ""
+    )
 
 
 def incognito_privacy_switch():
