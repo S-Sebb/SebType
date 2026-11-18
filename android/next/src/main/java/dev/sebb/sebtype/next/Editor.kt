@@ -240,6 +240,8 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         expected.clear()
         model = null
         blind = false
+        // A swipe going on was in the field before
+        swipe?.dead = true
     }
 
     /** A terminal or other field that takes raw key events rather than text */
@@ -365,47 +367,111 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         expect(at)
     }
 
-    /** Moves the cursor [by] characters (whole code points), as far as the text goes: the space bar's swipe. */
+    /**
+     * Moves the cursor [by] characters (whole code points), as far as the text goes: the space bar's swipe. Each
+     * step goes from where a read of the field finds the cursor, not where we last had it (#325); a field that
+     * can't say where its cursor is gets arrow keys.
+     */
     fun moveBy(by: Int) {
         val ic = ic ?: return
-        if (selStart < 0) return
-        val at = if (by < 0) {
-            val before = ic.getTextBeforeCursor(-2 * by, 0) ?: return
-            selStart - (before.length - Character.offsetByCodePoints(before, before.length, -minOf(-by, Character.codePointCount(before, 0, before.length))))
-        } else {
-            val after = ic.getTextAfterCursor(2 * by, 0) ?: return
-            selEnd + Character.offsetByCodePoints(after, 0, minOf(by, Character.codePointCount(after, 0, after.length)))
+        val s = snapshot(maxOf(0, -2 * by), maxOf(0, 2 * by))
+        if (s == null) {
+            repeat(kotlin.math.abs(by)) { key(if (by < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT) }
+            return
         }
+        val at = if (by < 0) s.start - (s.before.length - s.before.offsetByCodePoints(s.before.length, -minOf(-by, s.before.codePointCount(0, s.before.length))))
+            else s.end + s.after.offsetByCodePoints(0, minOf(by, s.after.codePointCount(0, s.after.length)))
         ic.setSelection(at, at)
         model = null
         expect(at)
     }
 
-    /** Delete's swipe: where it started (the cursor) and the text before it then */
-    private var swipeEnd = -1
-    private var swipeText = ""
+    /**
+     * Delete's swipe so far: where it started ([end], -1 where the field can't say), the selection's start our
+     * last step left, the text before [end] as last read, and how far back in the field its words may go
+     * ([floor]). Where the field can't say, the most [words] a step reached. [dead]: the field changed, the
+     * rest of the swipe does nothing.
+     */
+    private class Swipe(val end: Int, var start: Int, var text: String, val floor: Int) {
+        var dead = false
+        var words = 0
+    }
+    private var swipe: Swipe? = null
 
-    /** Delete's swipe: selects [words] words before the cursor (none: back to the cursor), deleted when [done]. */
+    /**
+     * Delete's swipe: selects [words] words before the cursor (none: back to the cursor), deleted when [done]
+     * with some selected; a cancelled touch is done with none. Each step reads the field first and goes ahead
+     * only where it is as the steps before left it: an edit or a cursor move since ends the swipe, and the words
+     * are found in the text read (#325), no further back than the first read found. Let go, what the last step
+     * selected goes. A field that can't say where its cursor is gets a Backspace for each step further, at once,
+     * as today's app does there: without the cursor's place, nothing tells where the text read starts.
+     */
     fun selectWordsBefore(words: Int, done: Boolean) {
         val ic = ic ?: return
-        if (swipeEnd < 0) {
-            if (selStart < 0) return
-            swipeEnd = selStart
-            swipeText = ic.getTextBeforeCursor(MAX_SWIPE, 0)?.toString().orEmpty()
-        }
-        model = null
-        val end = swipeEnd
-        val start = end - (swipeText.length - wordsStart(swipeText, words))
-        if (!done) {
-            ic.setSelection(start, end)
+        val w = swipe
+        if (done) swipe = null
+        if (w?.dead == true) return
+        val s = snapshot(MAX_SWIPE, 0)
+        // The field said where its cursor is at one step and not at another
+        if (w != null && (w.end < 0) != (s == null)) return run { w.dead = !done }
+        if (s == null) {
+            val sw = w ?: Swipe(-1, -1, "", 0).also { if (!done) swipe = it }
+            // The field's own Backspace: without its cursor's place, a selection in it can't be seen either
+            repeat(words - sw.words) { key(KeyEvent.KEYCODE_DEL) }
+            sw.words = maxOf(sw.words, words)
             return
         }
-        swipeEnd = -1
-        if (start < end) {
-            ic.setSelection(start, end)
-            ic.commitText("", 1)
-            expect(start)
-        } else ic.setSelection(end, end)
+        // The text before where the swipe started: with the selection our last step left in it
+        val text = s.before + (if (w != null) s.selected else "")
+        if (w != null) {
+            // The text read can start further back than the last
+            val n = minOf(w.text.length, text.length)
+            if (s.start != w.start || s.end != w.end || text.takeLast(n) != w.text.takeLast(n)) return run { w.dead = !done }
+        }
+        model = null
+        val end = w?.end ?: s.start
+        if (done) {
+            if (w == null) return
+            beginBatch()
+            if (words > 0 && w.start < end) {
+                // A word the field marked as composing would go in the selection's place
+                ic.finishComposingText()
+                composing = false
+                ic.setSelection(w.start, end)
+                ic.commitText("", 1)
+                expect(w.start)
+            } else {
+                ic.setSelection(end, end)
+                expect(end)
+            }
+            endBatch()
+            return
+        }
+        // Where the text read starts in the field, and how far back its words may go: no further than the first
+        // read, nor than this one
+        val textStart = end - text.length
+        val readFloor = textStart + floor(text, textStart == 0)
+        val floor = maxOf(w?.floor ?: readFloor, readFloor)
+        val start = maxOf(textStart + wordsStart(text, words), floor)
+        ic.setSelection(start, end)
+        expect(start, end)
+        swipe = (w ?: Swipe(end, end, text, floor)).also { it.start = start; it.text = text }
+    }
+
+    /**
+     * How far back in [text] the words may go: to its start where that is the field's ([whole]); else a read
+     * cut at its limit can start inside a word or any character cluster (a flag, a skin tone, a ZWJ sequence),
+     * so no further back than the end of the cluster its first whitespace is in (CR LF, a space with an accent).
+     * That end is the field's: it depends only on the whitespace and what follows, all in the read, and no
+     * cluster reaches back across whitespace. A read without any can't show where a word starts: nothing of it goes.
+     */
+    private fun floor(text: String, whole: Boolean): Int {
+        if (whole) return 0
+        val i = text.indexOfFirst { it.isWhitespace() }
+        if (i < 0) return text.length
+        val breaks = BreakIterator.getCharacterInstance()
+        breaks.setText(text)
+        return breaks.following(i)
     }
 
     /**
@@ -470,10 +536,10 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         ic?.performContextMenuAction(id)
     }
 
-    private fun expect(at: Int) {
+    private fun expect(at: Int, end: Int = at) {
         selStart = at
-        selEnd = at
-        expected.addLast(listOf(at, at, if (composing) composeStart else -1, if (composing) composeStart + composeLength else -1))
+        selEnd = end
+        expected.addLast(listOf(at, end, if (composing) composeStart else -1, if (composing) composeStart + composeLength else -1))
         if (expected.size > 64) expected.removeFirst()
     }
 

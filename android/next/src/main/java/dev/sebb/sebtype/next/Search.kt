@@ -13,6 +13,8 @@ import android.text.TextWatcher
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedText
+import android.view.inputmethod.ExtractedTextRequest
 import android.text.InputType
 
 /**
@@ -33,6 +35,14 @@ class Search(view: View, private val onChange: (String) -> Unit) {
 
     val connection = object : BaseInputConnection(view, true) {
         override fun getEditable() = text
+        // Where the cursor is, for the swipes (#325): BaseInputConnection gives no extracted text, and its key
+        // events go to the view, not to this text
+        override fun getExtractedText(request: ExtractedTextRequest?, flags: Int) = ExtractedText().also {
+            it.text = text.toString()
+            it.partialStartOffset = -1
+            it.selectionStart = Selection.getSelectionStart(text)
+            it.selectionEnd = Selection.getSelectionEnd(text)
+        }
         // Enter does nothing: the results already follow the keys.
         override fun performEditorAction(actionCode: Int) = true
     }

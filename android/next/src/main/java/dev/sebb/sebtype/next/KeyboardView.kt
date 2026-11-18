@@ -514,6 +514,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     private fun cancelTouches() {
+        // A cancelled swipe of Delete deletes nothing
+        if (pointers.values.any { it.cell.key.code == Code.DELETE && it.swiping }) listener.onDeleteWords(0, true)
         pointers.clear()
         removeCallbacks(longPress)
         removeCallbacks(repeat)
