@@ -82,13 +82,20 @@ class LogcatTime(unittest.TestCase):
     def test_device_date_to_a_time_logcat_reads(self):
         ns = settings(Device())
         self.assertEqual(
-            ns["logcat_time"]("11-18 14:46:50.059123456\r\n"), "11-18 14:46:50.059"
+            ns["logcat_time"]("2026-11-18 14:46:50.059123456\r\n"),
+            "2026-11-18 14:46:50.059",
         )
 
     def test_anything_else_fails_loudly(self):
         ns = settings(Device())
-        # A bare epoch: logcat -T reads it as a line count. A date without %N: no fraction.
-        for out in ("1795013228", "11-18 14:46:50.N", ""):
+        # A bare epoch: logcat -T reads it as a line count. A date without %N: no fraction. One
+        # without the year: logcat takes this year's, so 12-31 23:59:55 is in the future on 1 January.
+        for out in (
+            "1795013228",
+            "2026-11-18 14:46:50.N",
+            "12-31 23:59:55.123456789",
+            "",
+        ):
             with self.assertRaises(ValueError, msg=out):
                 ns["logcat_time"](out)
 
@@ -96,7 +103,7 @@ class LogcatTime(unittest.TestCase):
 class RestartUnstarted(unittest.TestCase):
     def recover(self, device):
         ns = settings(device)
-        ns["restart_unstarted"]("11-18 14:46:50.059")
+        ns["restart_unstarted"]("2026-11-18 14:46:50.059")
         return ns
 
     def test_android_never_started_it(self):
@@ -120,7 +127,7 @@ class RestartUnstarted(unittest.TestCase):
             device = Device(log=f"11-18 14:46:51.000 {line}")
             ns = settings(device)
             with self.assertRaisesRegex(ns["SebTypeFault"], re.escape(line)):
-                ns["restart_unstarted"]("11-18 14:46:50.059")
+                ns["restart_unstarted"]("2026-11-18 14:46:50.059")
             self.assertEqual(ns["recoveries"], [])
             self.assertNotIn(("shell", "ime", "set", OTHER), device.calls)
 
@@ -132,13 +139,13 @@ class RestartUnstarted(unittest.TestCase):
         with self.assertRaisesRegex(
             ns["Fail"], "no other keyboard.*chk-recovery-1.logcat"
         ):
-            ns["restart_unstarted"]("11-18 14:46:50.059")
+            ns["restart_unstarted"]("2026-11-18 14:46:50.059")
 
     def test_switch_away_times_out(self):
         device = Device(away=subprocess.TimeoutExpired("adb", 120))
         ns = settings(device)
         with self.assertRaises(subprocess.TimeoutExpired):
-            ns["restart_unstarted"]("11-18 14:46:50.059")
+            ns["restart_unstarted"]("2026-11-18 14:46:50.059")
         self.assertEqual(device.ime, IME)
 
     def test_switch_back_fails_once(self):
@@ -149,7 +156,7 @@ class RestartUnstarted(unittest.TestCase):
     def test_switch_back_never_applies(self):
         ns = settings(Device(restores=False))
         with self.assertRaisesRegex(ns["Fail"], "isn't the keyboard again"):
-            ns["restart_unstarted"]("11-18 14:46:50.059")
+            ns["restart_unstarted"]("2026-11-18 14:46:50.059")
 
     def test_failed_restore_keeps_the_first_error(self):
         device = Device(away=subprocess.TimeoutExpired("adb", 120), back=[True, True])
@@ -158,7 +165,7 @@ class RestartUnstarted(unittest.TestCase):
             ns["Fail"],
             f"switching to {re.escape(OTHER)}: .*timed out.*; then SebType isn't the keyboard",
         ):
-            ns["restart_unstarted"]("11-18 14:46:50.059")
+            ns["restart_unstarted"]("2026-11-18 14:46:50.059")
         self.assertEqual(device.calls.count(("shell", "ime", "set", IME)), 2)
 
 
@@ -172,7 +179,7 @@ class Check(unittest.TestCase):
 
         def recovering(fail):
             def fn():
-                ns["restart_unstarted"]("11-18 14:46:50.059")
+                ns["restart_unstarted"]("2026-11-18 14:46:50.059")
                 if fail:
                     raise ns["Fail"]("badge never came")
                 return "fine"
@@ -198,7 +205,7 @@ class Check(unittest.TestCase):
             log="11-18 14:46:51.000 E AndroidRuntime: Process: dev.sebb.sebtype, PID: 7"
         )
         ns = settings(device)
-        ns["open_field"] = lambda: ns["restart_unstarted"]("11-18 14:46:50.059")
+        ns["open_field"] = lambda: ns["restart_unstarted"]("2026-11-18 14:46:50.059")
         ns["check"]("settings-en-forget", lambda: ns["to_language"]("hello", "hello"))
         self.assertEqual(len(self.lines(ns)), 1)
         self.assertRegex(

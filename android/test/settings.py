@@ -260,15 +260,18 @@ SEBTYPE_LIFE = re.compile(
     r"Start proc \d+:dev\.sebb\.sebtype/|Process: dev\.sebb\.sebtype, PID"
     r"|>>> dev\.sebb\.sebtype <<<|ANR in dev\.sebb\.sebtype(?![.\w])"
 )
-LOGCAT_TIME = re.compile(r"\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}")
+LOGCAT_TIME = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}")
 
 
 def logcat_time(date_out):
-    """`date '+%m-%d %H:%M:%S.%N'` on the device -> what `logcat -T` reads as a time (a bare number
-    it reads as a line count)."""
-    t = date_out.strip()[:18]
+    """`date '+%Y-%m-%d %H:%M:%S.%N'` on the device -> what `logcat -T` reads as a time (a bare number
+    it reads as a line count). With the year: without one logcat takes this year's, so a field opened
+    on 31 December would be a time in the future after midnight."""
+    t = date_out.strip()[:23]
     if not LOGCAT_TIME.fullmatch(t):
-        raise ValueError(f"device time {date_out.strip()!r} isn't MM-DD hh:mm:ss.nnn")
+        raise ValueError(
+            f"device time {date_out.strip()!r} isn't YYYY-MM-DD hh:mm:ss.nnn"
+        )
     return t
 
 
@@ -334,7 +337,7 @@ def open_field(kind=None, clip=None):
         ["--es", "clip", clip] if clip else []
     )
 
-    since = logcat_time(adb("shell", "date '+%m-%d %H:%M:%S.%N'"))
+    since = logcat_time(adb("shell", "date '+%Y-%m-%d %H:%M:%S.%N'"))
     shown = 0.0
 
     def show():
