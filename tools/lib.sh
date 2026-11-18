@@ -117,7 +117,8 @@ fedora_container() {
     podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $BUILD_IMAGE
 RUN dnf -y install $rpms && dnf clean all" >/dev/null
   nas=$(readlink -f "$SCRATCH")
-  container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
+  # Podman sets TMPDIR to its store's tmp folder (#337), which --env-host would pass in: the container has none.
+  container=(podman run --rm --env-host --env TMPDIR=/tmp --userns=keep-id --tmpfs "$HOME:rw,U"
     --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"
     -v "$nas:$SCRATCH" -v "$nas:$nas" "$@" "$image")
 }
