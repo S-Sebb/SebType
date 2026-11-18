@@ -217,7 +217,8 @@ Take its lock while you use it (`devq -m <minutes> /tmp/agent-locks/devices/emul
 Two scripts measure SebType the same way every time (#45). They run in the final performance run of a
 batch (#54), after its clean-up, not before every merge. The budgets in Decisions #2 are provisional.
 Each final run's report is in `docs/perf/`; the first, next to other IMEs, is
-[2026-11-12](perf/2026-11-12.md), and Linux's SebType add-on (#190) is in [2026-11-15](perf/2026-11-15.md).
+[2026-11-12](perf/2026-11-12.md), Linux's SebType add-on (#190) is in [2026-11-15](perf/2026-11-15.md), and the English model's rankings
+and what a space gets (`perf.sh --english`, #320) in [2026-11-18-english-ranking](perf/2026-11-18-english-ranking.md).
 
 Next to other IMEs, the same way (#54), with a 12-minute mixed-typing run (`SOAK_MIN`) for leaks and crashes:
 
@@ -235,6 +236,7 @@ Next to other IMEs, the same way (#54), with a 12-minute mixed-typing run (`SOAK
 android/perf/perf.sh                     # builds the release APK, then measures on a free emulator (see The emulator, above)
 APK=path/to.apk android/perf/perf.sh     # measures an APK you already built
 ANDROID_SERIAL=<serial> android/perf/perf.sh   # any other device; the only way to run it on a phone
+android/perf/perf.sh --english            # English only (install, first open, EN, fast, long): the model's rankings and spaces
 ```
 
 It reinstalls SebType, so everything SebType learned on that device is lost. It then types into its
@@ -252,7 +254,8 @@ What it measures:
 | Installed size | `du` of the app's code, internal and external data (root shell only: emulator) |
 | Memory | `dumpsys meminfo` total PSS: idle, after typing in each language, in 日 alone (only Mozc loaded: past Rime's idle stop), with all three engines loaded (fast typing right after 中 and 日), idle again once unused engines unloaded (`IDLE_UNLOAD_S`, default 200 s, just over the app's 3 minutes), peak during the first Chinese setup. Each breakdown is kept in `run/meminfo-<point>.txt` |
 | Keyboard open | until the keyboard's first frame on screen: first open after install (from the field's first frame), warm (from a tap on the field after hiding the keyboard), cold (from the keyboard's process start, switching back from Gboard or FUTO with SebType stopped) |
-| Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle), and the transformer thread's CPU time |
+| Per key, per language | Perfetto: the keyboard's touch dispatch (handling), the field's next frame after its text changed (key → text), the frame that last redrew the candidate bar (key → candidates), the keyboard's last frame before the next key (key → idle) |
+| English model | the English engine's own trace sections (#320), in EN, fast typing and the long field: how long each ranking of the letters typed takes (`SebType rank`), and what each space or Enter found (`SebType space`): the model's ranking ready, or waited for and how long, or the decoder's rule because the ranking came late, wasn't expected within the 400 ms wait, or wasn't asked for (no model yet) |
 | Jank | `dumpsys gfxinfo` and the frame timeline while typing 10 keys a second, in an empty field and in a 20,000-character one |
 | Every key arrives | the same 10 keys a second: the keyboard must get every tap (Perfetto), and the field's text (a UI dump) must be what was tapped, ignoring case. The check fails naming each missing, extra or out-of-order character with its position, kept in `run/<fast\|long>.diff`. A missing touch means the taps' injection lost it, not the keyboard; autocorrect can put back a key the keyboard never got, so touches are checked first |
 | Chinese first-run setup | the app's own timing of installing the bundled data and Rime's check, after the first switch to 中, and how many tables or prisms were compiled on the device (should be 0; root shell only) |
