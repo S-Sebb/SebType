@@ -181,7 +181,7 @@ namespace SebType {
   [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
   public class TextStore : ITextStoreACP {
     const int S_OK = 0, E_INVALIDARG = unchecked((int)0x80070057), E_NOTIMPL = unchecked((int)0x80004001);
-    const int TS_E_NOLOCK = unchecked((int)0x80040201), TS_E_SYNCHRONOUS = unchecked((int)0x80040205), TS_S_ASYNC = 0x00040300;
+    const int TS_E_READONLY = unchecked((int)0x80040209), TS_E_NOLOCK = unchecked((int)0x80040201), TS_E_SYNCHRONOUS = unchecked((int)0x80040205), TS_S_ASYNC = 0x00040300;
     const int CONNECT_E_ADVISELIMIT = unchecked((int)0x80040201);
     const uint TS_LF_SYNC = 1, TS_LF_READ = 2, TS_LF_READWRITE = 6, TS_IAS_QUERYONLY = 2;
     public readonly StringBuilder Text = new StringBuilder();
@@ -198,8 +198,12 @@ namespace SebType {
     // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
     // it handled the key (#275); one that may not is granted at once all the same.
     public bool Defer, Hold;
+    // A field read-only for a moment: its status says so, and it refuses a lock to write.
+    bool readOnly;
+    public bool ReadOnly { set { readOnly = value; sink.OnStatusChange(value ? 1u : 0u); } }
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
+      if (readOnly && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) { hrSession = TS_E_READONLY; return S_OK; }
       if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
         pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
@@ -217,7 +221,7 @@ namespace SebType {
         lockFlags = 0;
       }
     }
-    public int GetStatus(out TS_STATUS status) { status = new TS_STATUS(); return S_OK; }
+    public int GetStatus(out TS_STATUS status) { status = new TS_STATUS { dynamicFlags = readOnly ? 1u : 0u }; return S_OK; }  // TS_SD_READONLY
     public int QueryInsert(int start, int end, uint cch, out int resultStart, out int resultEnd) {
       resultStart = start; resultEnd = end; return S_OK;
     }
@@ -360,6 +364,7 @@ namespace SebType {
     [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetMessageW(out MSG m, IntPtr h, uint a, uint b);
     [DllImport("user32.dll")] static extern bool TranslateMessage(ref MSG m);
+    [DllImport("user32.dll")] static extern bool PeekMessageW(out MSG m, IntPtr h, uint a, uint b, uint remove);
     [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
     [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
@@ -470,7 +475,8 @@ namespace SebType {
     public static bool PumpKeys;
     // A key that, reaching the field, moves TSF's focus to another document in the same window (as Tab does
     // between a browser's fields), or switches to the plain US keyboard (the input method goes); 0 for none.
-    public static int AwayOn, LeaveOn;
+    // StallOn: a key whose handling takes 1.5 s in a loop that takes only timer messages, as a menu's may.
+    public static int AwayOn, LeaveOn, StallOn;
     static readonly List<string> pumped = new List<string>();
     public static string Pumped() { return OnUi(() => { var t = string.Join(" ", pumped); pumped.Clear(); return t; }); }
     static ITfThreadMgr threadMgr;
@@ -516,6 +522,11 @@ namespace SebType {
             if ((int)m.wParam == 0x25) Left();
             if ((int)m.wParam == AwayOn) threadMgr.SetFocus(OtherMgr());
             if ((int)m.wParam == LeaveOn) try { ActivateLayoutNow(0x409, "00000409"); } catch { }
+            if ((int)m.wParam == StallOn)
+              for (var until = Environment.TickCount + 1500; Environment.TickCount < until; Thread.Sleep(10)) {
+                MSG timer;
+                while (PeekMessageW(out timer, IntPtr.Zero, 0x113, 0x113, 1)) DispatchMessageW(ref timer);  // WM_TIMER, PM_REMOVE
+              }
           }
           DispatchMessageW(ref m);
         }
@@ -588,6 +599,7 @@ namespace SebType {
     // The caret one character to the left, as an edit control moves it.
     static void Left() { store.SelStart = store.SelEnd = Math.Max(0, store.SelStart - 1); store.AppEdit(store.SelStart, store.SelEnd, ""); }
     // Whether a key is down as this thread's keyboard state has it (GetKeyState).
+    public static bool ReadOnly { set { OnUi(() => { store.ReadOnly = value; return 0; }); } }
     public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
     // A key down or up in this thread's keyboard state only, as a modal loop that took a key leaves it.
     public static void SetKey(int vk, bool down) {

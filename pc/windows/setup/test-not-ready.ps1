@@ -34,7 +34,9 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
     and TSF seeing both replayed keys), Enter before a focus change is dropped, Left after Backspace and n moves
     the caret only after them, n after a Tab that moves the focus is dropped, and SebType going mid-replay (Ctrl+Q
     switching the keyboard) leaves Ctrl up and composes again once back, n's key-up once the server answers
-    again before the grant keeps Enter's か, and a replay ends with the modifiers as they physically are.
+    again before the grant keeps Enter's か, a replay ends with the modifiers as they physically are, a settling
+    edit the field refused once is asked for again at the next key, and a replayed key the app holds over a
+    second ends the replay.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -533,6 +535,10 @@ try {
           $ctrl = $tsf::IsDown(0x11); $tsf::SetKey(0x11, $false); $tsf::SetKey(0xA2, $false)
           if ($ctrl) { 'Ctrl stayed down after the replay, though no key is physically down' }
         } 'か' '79' }
+      # The field refuses Enter's settling edit (read-only for a moment): the next key asks for it again.
+      { & $held 'edit-refused' '' { $tsf::ReadOnly = $true; $null = $tsf::Key(0x0D); $tsf::ReadOnly = $false; $null = $tsf::Key(0x4E) } {} "か`nn" '13 78' }
+      # The app takes 1.5 s over the replayed Enter: after a second the replay ends and n is dropped.
+      { & $held 'replay-timeout' '' { $tsf::StallOn = 0x0D; $null = $tsf::Key(0x0D); $null = $tsf::Key(0x4E) } { $tsf::StallOn = 0 } "か`n" '13' }
     ) | ForEach-Object { try { @{ ok = & $_ } } catch { @{ fail = $_.Exception.Message } } }
     $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
     if ($fails) { throw ($fails -join '; ') }

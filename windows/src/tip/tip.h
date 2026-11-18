@@ -166,6 +166,7 @@ class TextService final : public ITfTextInputProcessorEx,
   HWND replayWindow_ = nullptr;        // sets each replayed key's keyboard state, and paces them
   BYTE realState_[256]{};              // the keyboard state before the replay, put back after it
   bool settling_ = false;               // an edit committing what showed when the server stopped answering
+  bool rejected_ = false;              // the app refused that edit: asked for again at the next key
   bool replaying_ = false;             // the replayed keys are the app's: the text service lets them by
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does
   UINT_PTR poll_ = 0;        // watchReadiness's timer

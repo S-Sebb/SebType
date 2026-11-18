@@ -287,7 +287,7 @@ STDMETHODIMP TextService::Deactivate() {
   window_.reset();
   endReplay();
   held_.clear();
-  settling_ = false;
+  settling_ = rejected_ = false;
   if (replayWindow_) DestroyWindow(std::exchange(replayWindow_, nullptr));
   if (button_) {
     ITfLangBarItemMgr *items = nullptr;
@@ -419,7 +419,7 @@ void TextService::focus(ITfDocumentMgr *focused) {
   // Keys held or being replayed were the field's that had them: not to be typed into another.
   held_.clear();
   replayed_.clear();
-  settling_ = false;
+  settling_ = rejected_ = false;
   stopWatching();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
@@ -629,15 +629,18 @@ void TextService::stopWatching() {
 }
 
 void TextService::apply(ITfContext *context) {
-  if (context)
-    editSession(
-        context, clientId_,
-        [this, context](TfEditCookie ec) {
-          const HRESULT hr = update(ec, context);
-          if (std::exchange(settling_, false)) replay();
-          return hr;
-        },
-        false);
+  // A settling edit the app refused (a field read-only for a moment) is asked for again at the next key:
+  // dropping it would let the server's next reply replace what it commits.
+  if (context && FAILED(editSession(
+                     context, clientId_,
+                     [this, context](TfEditCookie ec) {
+                       const HRESULT hr = update(ec, context);
+                       rejected_ = false;
+                       if (std::exchange(settling_, false)) replay();
+                       return hr;
+                     },
+                     false)))
+    rejected_ = settling_;
   if (button_) button_->update();
   watchReadiness();
 }
@@ -731,6 +734,7 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   if (settling_) {
     if (release || (q.key.sym >= 0xffe1 && q.key.sym <= 0xffee)) return true;
     hold(wParam, lParam);
+    if (rejected_) apply(context);
     *eaten = TRUE;
     if (test) tested_ = {wParam, release, true, true};
     return true;
