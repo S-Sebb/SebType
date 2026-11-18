@@ -16,7 +16,7 @@ if [[ ${1:-} == build ]]; then
   [[ $(hostname -s) != yanglab16 ]] || tools/android-tools.sh >&2
   fedora_container -v "$BAZEL_CACHE:$BAZEL_CACHE" -w "$PWD"
   ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358 build_lock 30 mozc-dictionary "${container[@]}" bash -c '
-    set -e; source tools/lib.sh
+    set -e; source tools/lib.sh; source tools/mozc-bazel.sh
     bash android/app/mozc-dictionary.sh "$1"
     mozc_bazel oss_linux build //sebtype:libsebtype-mozc.so
     cp -f "$(mozc_files oss_linux //sebtype:libsebtype-mozc.so)" "$1"' - "$dir" >&2 || exit 1

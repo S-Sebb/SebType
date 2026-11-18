@@ -8,10 +8,11 @@
 #   android/app/mozc-dictionary.sh OUTPUT_DIR
 #
 # Gradle runs it (build.gradle) inside android/build.sh's build lock and caches its output by engines/mozc's
-# files; Bazel's own cache is libmozc.so's (tools/lib.sh's mozc_bazel).
+# files; Bazel's own cache is libmozc.so's (tools/mozc-bazel.sh's mozc_bazel).
 set -euo pipefail
 out=${1:?usage: mozc-dictionary.sh OUTPUT_DIR}
 source "$(dirname "$0")/../../tools/lib.sh"
+source "$(dirname "$0")/../../tools/mozc-bazel.sh"
 dataset=//data_manager/oss:mozc_dataset_for_oss
 mozc_bazel oss_linux build "$dataset"
 mkdir -p "$out/raw" "$out/raw-ja"

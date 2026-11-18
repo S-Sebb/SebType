@@ -109,6 +109,13 @@ What it builds from source, and the caches that make a rebuild quick:
 | The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
 | Mozc's dictionary (its OSS data set, from `engines/mozc`) | Bazel (`android/app/mozc-dictionary.sh`) | As `libmozc.so`: Gradle's build cache and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` |
 
+Mozc's two Bazel builds (`tools/mozc-bazel.sh`) download nothing themselves: Bazel would at full speed, and
+yanglab16's network port is shared. `tools/mozc-downloads.tsv` lists everything they need, with its sha256:
+Bazel, the Bazel Central Registry's files and every archive. Each build fetches what its cache lacks first,
+capped at 35 MB/s, and runs Bazel with downloads disabled. After `engines/mozc`'s dependencies change, a
+build fails for the files it lacks; `tools/mozc-downloads.sh`, run in the build container on yanglab16,
+adds them to the list.
+
 Scripts write their test, perf and release outputs to the running task's folder,
 `~/scratch/SebType/<issue>/` (`TASK_OUT` in `tools/lib.sh`): run them as `ISSUE=211 <script>`. Without
 `ISSUE` the folder is named after the checkout's folder. Caches, the Linux setup's RPMs and Chinese data

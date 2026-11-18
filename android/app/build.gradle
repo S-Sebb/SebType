@@ -17,6 +17,8 @@ final def mozcDictDir = layout.buildDirectory.dir('generated/mozc-dictionary')
 tasks.register('mozcDictionary', Exec) {
     inputs.files(fileTree(mozcSrc) { exclude 'bazel-*', 'MODULE.bazel.lock' }).withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file('mozc-dictionary.sh').withPathSensitivity(PathSensitivity.RELATIVE)
+    // tools/mozc-bazel.sh runs Bazel; the list pins Bazel and what it downloads
+    inputs.files('../../tools/mozc-bazel.sh', '../../tools/mozc-downloads.tsv').withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.dir mozcDictDir
     outputs.cacheIf { true }
     environment 'ANDROID_NDK_HOME', android.ndkDirectory.absolutePath

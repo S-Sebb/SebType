@@ -38,38 +38,6 @@ fi
 # Bazel's output roots and caches (Mozc's builds).
 BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
 
-# mozc_bazel CONFIG COMMAND [ARG...]: Bazel in engines/mozc/src with Mozc's CONFIG (oss_android for libmozc.so,
-# android/native/build-mozc.sh; oss_linux for the host tools that build the phone's dictionary,
-# android/app/mozc-dictionary.sh), with the Bazelisk the Linux build pins and one output root and disk cache in
-# $BAZEL_CACHE/mozc-android. ANDROID_NDK_HOME names the app's NDK. Gradle runs them inside android/build.sh's
-# build lock, so they take no lock themselves; the server exits soon after the build.
-mozc_bazel() {
-  local src cache bazelisk config=$1 command=$2
-  shift 2
-  src=$(cd "$(dirname "${BASH_SOURCE[0]}")/../engines/mozc/src" && pwd)
-  cache=$BAZEL_CACHE/mozc-android
-  # shellcheck source=../linux/versions.sh
-  source "$src/../../../linux/versions.sh"
-  bazelisk=$cache/bazelisk-${BAZELISK_SHA256:0:12}
-  if [[ ! -x $bazelisk ]]; then
-    mkdir -p "$cache"
-    curl -sfL --retry 3 --limit-rate 35M -o "$bazelisk.tmp" "$BAZELISK_URL"
-    echo "$BAZELISK_SHA256  $bazelisk.tmp" | sha256sum -c --status
-    chmod +x "$bazelisk.tmp" && mv "$bazelisk.tmp" "$bazelisk"
-  fi
-  (cd "$src" && SEBTYPE_ANDROID_NDK=${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must name the app\'s NDK} \
-    BAZELISK_HOME=$cache/bazelisk "$bazelisk" --output_user_root="$cache/bazel" --max_idle_secs=15 \
-    --host_jvm_args=-Xmx2g "$command" --config "$config" --config release_build --jobs="$BUILD_JOBS" \
-    --disk_cache="$cache/disk" --symlink_prefix=/ --noshow_progress "$@")
-}
-
-# mozc_files CONFIG TARGET: the paths of TARGET's output files, after mozc_bazel CONFIG built it.
-mozc_files() {
-  local root
-  root=$(mozc_bazel "$1" info execution_root 2>/dev/null)
-  mozc_bazel "$1" cquery --output=files "$2" 2>/dev/null | sed "s|^|$root/|"
-}
-
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1)}
 
