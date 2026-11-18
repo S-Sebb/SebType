@@ -78,9 +78,9 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     /** A click on each key press */
     var sounds = false
     private val audio = context.getSystemService(AudioManager::class.java)
-    private val sidePadding = 2 * density
+    private val sidePadding = SIDE_PADDING_DP * density
     /** Space between the bar and the first row */
-    private val topPadding = 4.2f * density
+    private val topPadding = TOP_PADDING_DP * density
 
     private var page: Layout? = null
     private var numberRow: Layout? = null
@@ -116,8 +116,6 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         const val VIBRATE_MS = 12L
         /** A row's height in dp at the default height */
         const val ROW = 59.3f
-        /** Split: each half's share of the width */
-        const val SPLIT_HALF = 0.36f
         /** Space swipe: key widths per character the cursor moves */
         const val CURSOR_STEP = 0.4f
     }
@@ -162,41 +160,16 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     fun scaleForFourRows(dp: Float) = dp / (4 * ROW)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(topPadding + rows(page, numberRow) * rowHeight).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(keysHeight(numberRow?.rows.orEmpty() + page?.rows.orEmpty(), rowHeight, density)).toInt())
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = layoutCells()
 
     private fun layoutCells() {
         val unit = (width - 2 * sidePadding) / 10f
-        // Split: each half keeps 5 key widths in SPLIT_HALF of the width. A key across the middle is on both
-        // halves, whole (g, v, as today's), or cut in two when it is wider than a key (space).
         val half = SPLIT_HALF * (width - 2 * sidePadding) / 5f
-        fun left(u: Float) = sidePadding + if (split) u * half else u * unit
-        fun right(u: Float) = width - sidePadding - (10 - u) * half
-        var y = topPadding
-        val out = ArrayList<Cell>()
-        for (row in numberRow?.rows.orEmpty() + page?.rows.orEmpty()) {
-            val h = row.height * rowHeight
-            var u = 0f
-            for (key in row.keys) {
-                val end = u + key.width
-                if (key.code != Code.GAP) when {
-                    !split || end <= 5 -> out += Cell(key, RectF(left(u), y, left(end), y + h))
-                    u >= 5 -> out += Cell(key, RectF(right(u), y, right(end), y + h))
-                    key.width <= 1 -> {
-                        out += Cell(key, RectF(left(u), y, left(end), y + h))
-                        out += Cell(key, RectF(right(u), y, right(end), y + h))
-                    }
-                    else -> {
-                        out += Cell(key, RectF(left(u), y, left(5f), y + h))
-                        out += Cell(key, RectF(right(5f), y, right(end), y + h))
-                    }
-                }
-                u = end
-            }
-            y += h
-        }
+        val out = keyCells(numberRow?.rows.orEmpty() + page?.rows.orEmpty(), width.toFloat(), rowHeight, density, split)
+            .map { (key, b) -> Cell(key, RectF(b.left, b.top, b.right, b.bottom)) }
         cells = out
         textScale = keyTextScale(heightScale, (if (split) half else unit) / density)
         keyPx = maxOf(1, (px * textScale).roundToInt()).toFloat()
@@ -575,12 +548,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     /** A key's face in its cell, the space between rows below it, its top a little above the cell's */
-    private fun face(r: RectF): RectF {
-        // Today's face (83% of the cell from its top), 8% taller around the same middle (#329)
-        val middle = r.top + r.height() * 0.83f / 2
-        return RectF(r.left + FACE_LEFT_DP * density * textScale, middle - r.height() * FACE_HEIGHT / 2,
-            r.right - FACE_RIGHT_DP * density * textScale, middle + r.height() * FACE_HEIGHT / 2)
-    }
+    private fun face(r: RectF) =
+        keyFace(Box(r.left, r.top, r.right, r.bottom), density, textScale).let { RectF(it.left, it.top, it.right, it.bottom) }
 
     /** The key, a row taller upwards, its label in the part above the key */
     private fun showPreview(cell: Cell) {
@@ -712,11 +681,78 @@ private const val MIN_KEY_WIDTH_DP = 22f
 internal fun keyTextScale(heightScale: Float, keyWidthDp: Float) =
     minOf(1f, heightScale / Mode.MIN_HEIGHT, keyWidthDp / MIN_KEY_WIDTH_DP)
 
+/** Space beside the keys, and between the bar and the first row */
+private const val SIDE_PADDING_DP = 2f
+private const val TOP_PADDING_DP = 4.2f
+
+/** A key's cell or face, in px */
+internal data class Box(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/** The keys' height in px: the space above them and their rows, each [rowHeight] px times its own height */
+internal fun keysHeight(rows: List<Layout.Row>, rowHeight: Float, density: Float) =
+    TOP_PADDING_DP * density + rows.sumOf { it.height.toDouble() }.toFloat() * rowHeight
+
+/**
+ * The keys' cells, where they are touched, in a view [width] px wide. Split: each half keeps 5 key widths in
+ * SPLIT_HALF of the width. A key across the middle is on both halves, whole (g, v, as today's), or cut in two
+ * when it is wider than a key (space).
+ */
+internal fun keyCells(rows: List<Layout.Row>, width: Float, rowHeight: Float, density: Float, split: Boolean): List<Pair<Layout.Key, Box>> {
+    val side = SIDE_PADDING_DP * density
+    val unit = (width - 2 * side) / 10f
+    val half = SPLIT_HALF * (width - 2 * side) / 5f
+    fun left(u: Float) = side + if (split) u * half else u * unit
+    fun right(u: Float) = width - side - (10 - u) * half
+    var y = TOP_PADDING_DP * density
+    val out = ArrayList<Pair<Layout.Key, Box>>()
+    for (row in rows) {
+        val h = row.height * rowHeight
+        var u = 0f
+        for (key in row.keys) {
+            val end = u + key.width
+            if (key.code != Layout.Code.GAP) when {
+                !split || end <= 5 -> out += key to Box(left(u), y, left(end), y + h)
+                u >= 5 -> out += key to Box(right(u), y, right(end), y + h)
+                key.width <= 1 -> {
+                    out += key to Box(left(u), y, left(end), y + h)
+                    out += key to Box(right(u), y, right(end), y + h)
+                }
+                else -> {
+                    out += key to Box(left(u), y, left(5f), y + h)
+                    out += key to Box(right(5f), y, right(end), y + h)
+                }
+            }
+            u = end
+        }
+        y += h
+    }
+    return out
+}
+
+/** Split: each half's share of the width */
+internal const val SPLIT_HALF = 0.36f
+
 /** The gaps between keys: a key's face starts this far into its cell, and ends this far before its end (today's 1.5 and 2, #329) */
 private const val FACE_LEFT_DP = 0.5f
 private const val FACE_RIGHT_DP = 1f
-/** A key's face's share of its cell's height */
-private const val FACE_HEIGHT = 0.83f * 1.08f
+/** Today's face's share of its cell's height, from the cell's top; ours is 8% taller around the same middle (#329) */
+private const val FACE_HEIGHT = 0.83f
+private const val FACE_GROWTH = 0.08f
+/**
+ * The most a face grows above and below today's: under the space above the first row, so a tall floating
+ * keyboard's first row (rows up to 200 dp in a 1200 dp window) stays inside the view. Docked rows (under 78 dp)
+ * grow their full 8%.
+ */
+private const val FACE_GROWTH_MAX_DP = 4f
+
+/** A key's face in its [cell], the space between rows below it; its top a little above the cell's */
+internal fun keyFace(cell: Box, density: Float, textScale: Float): Box {
+    val h = (cell.bottom - cell.top) * FACE_HEIGHT
+    val middle = cell.top + h / 2
+    val grow = minOf(h * FACE_GROWTH / 2, FACE_GROWTH_MAX_DP * density)
+    return Box(cell.left + FACE_LEFT_DP * density * textScale, middle - h / 2 - grow,
+        cell.right - FACE_RIGHT_DP * density * textScale, middle + h / 2 + grow)
+}
 
 /** The letters', icons' and hints' sizes in dp: today's 25, 24 and 12.5, 10% larger (#329) */
 internal const val LETTER_DP = 27.5f
