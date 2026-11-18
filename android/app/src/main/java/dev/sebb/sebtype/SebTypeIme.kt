@@ -1276,10 +1276,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** The emoji or clipboard panel's search: the keys type into it, over its results. */
     override fun onSearch() {
         val panel = shown
+        // At once, not once the engine has finished: Rime may get ready in between and take them (#351).
+        waiting.clear()
         finishTyping {
             searching = panel
             search.clear()
-            waiting.clear()
             editor = searchEditor
             kind = FieldKind.of(search.info)
             editor.start(search.info, kind)
@@ -1305,9 +1306,10 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** Back to the keys and the field: what is typed in the search stays there. */
     private fun endSearch() {
         if (searching == null) return
+        // At once, as in onSearch
+        waiting.clear()
         finishTyping {
             searching = null
-            waiting.clear()
             editor = fieldEditor
             kind = FieldKind.of(currentInputEditorInfo)
             keyboard.enter = kind.enter
