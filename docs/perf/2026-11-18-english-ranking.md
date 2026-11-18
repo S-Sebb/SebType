@@ -70,7 +70,7 @@ key → text on screen stayed at 16 / 28 ms (EN), 18 / 35 ms (fast) and 28 / 46 
 | Long field, 100 ms per key | 41 / 105 ms (27) | 456 / 469 ms (18) | 17 of 18 (94 %): ready 7, waited 10; not waited for 1 | 97 / 249 ms (10 spaces) |
 
 key → text on screen: 16 / 23 ms (EN), 15 / 20 ms (fast), 25 / 82 ms (long). key → keyboard idle in EN: 49 / 66 ms.
-No janky frames in the keyboard in any set.
+No janky keyboard frames in fast or long typing. EN had 4 keyboard frames past their deadline.
 
 - **EN and fast:** a ranking takes about 20 ms on the phone, against 340 ms on the emulator, so every
   space finds the model's ranking ready, even at 100 ms per key, and none waits.
