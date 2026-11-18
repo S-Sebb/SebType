@@ -119,11 +119,10 @@ class TextService final : public ITfTextInputProcessorEx,
   void setOpen();
   void focus(ITfDocumentMgr *focus);
   // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
-  // True when it took the key itself: while composing, every key but a modifier (#330). Its text goes in
-  // after what was being typed, in the same edit; a key that types none is posted to the app after that edit.
+  // True when it took the key itself: while composing, every key but a modifier (#330). The character it
+  // types goes in after what was being typed, in the same edit; any other key is posted to the app after it.
   bool unavailable(ITfContext *context, const Key &key, WPARAM wParam, LPARAM lParam);
-  bool composing() const;
-  static std::wstring typedText(WPARAM wParam, LPARAM lParam, bool consume = false);
+  static wchar_t typedChar(WPARAM wParam, LPARAM lParam);
   // While the language isn't ready, its state is asked again every second until the key is 中 or あ again.
   void watchReadiness();
   void pollReadiness();

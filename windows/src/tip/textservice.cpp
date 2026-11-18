@@ -498,19 +498,14 @@ bool TextService::key(WPARAM wParam, LPARAM lParam, bool release, Key &out) {
   return true;
 }
 
-// The text the key types in the app, as TranslateMessage gives it (keypad digits and operators, AltGr's
-// characters, a dead key and the key after it), without control characters. consume: takes the dead key, as
-// TranslateMessage would, for a key the app never gets.
-std::wstring TextService::typedText(WPARAM wParam, LPARAM lParam, bool consume) {
+// The character the key types in the app, as TranslateMessage gives it (keypad digits and operators too),
+// or 0.
+wchar_t TextService::typedChar(WPARAM wParam, LPARAM lParam) {
   BYTE state[256];
   wchar_t ch[4];
-  if (!GetKeyboardState(state)) return {};
-  const int n = ToUnicodeEx(static_cast<UINT>(wParam), (lParam >> 16) & 0xff, state, ch, 4, consume ? 0 : 0x4,
-                            GetKeyboardLayout(0));
-  std::wstring text;
-  for (int i = 0; i < n; ++i)
-    if (ch[i] >= 0x20 && ch[i] != 0x7f) text += ch[i];
-  return text;
+  if (!GetKeyboardState(state)) return 0;
+  const int n = ToUnicodeEx(static_cast<UINT>(wParam), (lParam >> 16) & 0xff, state, ch, 4, 0x4, GetKeyboardLayout(0));
+  return n == 1 && ch[0] >= 0x20 && ch[0] != 0x7f ? ch[0] : 0;
 }
 
 bool TextService::send(const Request &request) {
@@ -561,25 +556,18 @@ bool TextService::send(const Request &request) {
   return up;
 }
 
-bool TextService::composing() const {
-  return composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
-}
-
 bool TextService::unavailable(ITfContext *context, const Key &k, WPARAM wParam, LPARAM lParam) {
-  // Alt alone makes a menu's shortcut, not text; Ctrl and Alt together are AltGr's characters.
-  const bool menu = (k.mods & (mod::Ctrl | mod::Alt)) == mod::Alt;
-  const std::wstring text = k.release || menu ? std::wstring() : typedText(wParam, lParam);
-  const bool typed = !text.empty() || (!k.release && k.sym && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt)));
+  const wchar_t ch = k.release || (k.mods & (mod::Ctrl | mod::Alt)) ? 0 : typedChar(wParam, lParam);
+  const bool typed = ch || (!k.release && k.sym < 0xff00 && !(k.mods & (mod::Ctrl | mod::Alt)));
   const std::string icon = notReadyIcon(lang_, Readiness::Unavailable);
   // What was being typed goes in once, as it showed: the keys that follow go to the app as typed, after it,
   // and no reply the server owed (its Reset drops that typing) can change it later.
-  const bool settling = composing();
+  const bool settling = composition_ || !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
   if (settling) {
     for (const Segment &seg : reply_.preedit.segments) reply_.commit += seg.text;
-    // The key's text goes in after it, in the same edit: given to the app, it could land before the commit
-    // when the app grants the edit's lock later. A dead key's accent is used up with it, as the app would.
-    reply_.commit += utf8(text);
-    if (!text.empty()) typedText(wParam, lParam, true);
+    // The key's character goes in after it, in the same edit: given to the app, it could land before the
+    // commit when the app grants the edit's lock later.
+    if (ch) reply_.commit += utf8(std::wstring(1, ch));
     reply_.preedit = {};
     reply_.page = {};
     reply_.aux.clear();
@@ -592,11 +580,11 @@ bool TextService::unavailable(ITfContext *context, const Key &k, WPARAM wParam, 
     reply_.notice = notReadyNotice(lang_, Readiness::Unavailable,
                                    ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
   }
-  // A key that types nothing (Enter, Backspace, a shortcut) goes to the app once that edit is done: given
-  // to it now, it could act before the commit too. Modifiers stay the app's.
-  const bool redeliver = settling && !k.release && text.empty() && !(k.sym >= 0xffe1 && k.sym <= 0xffee);
+  // Any other key (Enter, Backspace, a shortcut, AltGr's characters) goes to the app once that edit is done:
+  // given to it now, it could act before the commit too. Modifiers stay the app's.
+  const bool redeliver = settling && !k.release && !ch && !(k.sym >= 0xffe1 && k.sym <= 0xffee);
   apply(context, redeliver ? wParam : 0, lParam);
-  return settling && !k.release && (!text.empty() || redeliver);
+  return settling && !k.release && (ch || redeliver);
 }
 
 void TextService::watchReadiness() {
@@ -667,16 +655,8 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   Request q{Op::Key};
   q.lang = lang_;
   q.learning = f != Field::Private;
-  const bool known = key(wParam, lParam, release, q.key);
-  // The core isn't given a dead key and the key after it ("´b", two characters); they matter only to a
-  // composition the server can't settle. Ready asks without changing anything.
-  if (!known) {
-    Request ready{Op::Ready};
-    ready.lang = lang_;
-    Reply r;
-    if (release || !composing() || typedText(wParam, lParam).size() < 2 || server.call(ready, r)) return true;
-  }
-  if (!known || !send(q)) {
+  if (!key(wParam, lParam, release, q.key)) return true;
+  if (!send(q)) {
     *eaten = unavailable(context, q.key, wParam, lParam);
     if (test) tested_ = {wParam, release, *eaten != FALSE, true};
     return true;
