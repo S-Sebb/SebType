@@ -285,6 +285,8 @@ STDMETHODIMP TextService::Deactivate() {
   }
   stopWatching();
   window_.reset();
+  if (replayWindow_) DestroyWindow(std::exchange(replayWindow_, nullptr));
+  held_.clear();
   if (button_) {
     ITfLangBarItemMgr *items = nullptr;
     if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfLangBarItemMgr, reinterpret_cast<void **>(&items)))) {
@@ -408,7 +410,7 @@ void TextService::focus(ITfDocumentMgr *focused) {
   }
   if (window_) window_->hide();
   field_ = Field::Unknown;
-  passing_ = 0;
+  held_.clear();  // for the field that had them: not to be typed into another
   stopWatching();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
@@ -582,9 +584,10 @@ bool TextService::unavailable(ITfContext *context, const Key &k, WPARAM wParam, 
   }
   // Any other key (Enter, Backspace, a shortcut, AltGr's characters) goes to the app once that edit is done:
   // given to it now, it could act before the commit too. Modifiers stay the app's.
-  const bool redeliver = settling && !k.release && !ch && !(k.sym >= 0xffe1 && k.sym <= 0xffee);
-  apply(context, redeliver ? wParam : 0, lParam);
-  return settling && !k.release && (ch || redeliver);
+  const bool held = settling && !k.release && !ch && !(k.sym >= 0xffe1 && k.sym <= 0xffee);
+  if (held) hold(wParam, lParam);
+  apply(context, held);
+  return settling && !k.release && (ch || held);
 }
 
 void TextService::watchReadiness() {
@@ -615,23 +618,68 @@ void TextService::stopWatching() {
   if (watching == this) watching = nullptr;
 }
 
-void TextService::apply(ITfContext *context, WPARAM redeliver, LPARAM lParam) {
+void TextService::apply(ITfContext *context, bool replay) {
   if (context)
     editSession(
         context, clientId_,
-        [this, context, redeliver, lParam](TfEditCookie ec) {
+        [this, context, replay](TfEditCookie ec) {
           const HRESULT hr = update(ec, context);
-          if (const HWND to = redeliver ? GetFocus() : nullptr) {
-            const bool sys = GetKeyState(VK_MENU) < 0 && GetKeyState(VK_CONTROL) >= 0;
-            passing_ = redeliver;
-            PostMessageW(to, sys ? WM_SYSKEYDOWN : WM_KEYDOWN, redeliver, lParam & ~0xc0000000);
-            PostMessageW(to, sys ? WM_SYSKEYUP : WM_KEYUP, redeliver, lParam | 0xc0000000);
-          }
+          if (replay) this->replay();
           return hr;
         },
         false);
   if (button_) button_->update();
   watchReadiness();
+}
+
+void TextService::hold(WPARAM wParam, LPARAM lParam) {
+  if (held_.empty()) heldFor_ = GetFocus();
+  Held h{wParam, lParam, {}};
+  GetKeyboardState(h.state);
+  held_.push_back(h);
+}
+
+// Posted messages come before the keyboard's, so nothing typed meanwhile gets between: for each key, its state
+// (to this text service's own window), then the key (to the app's), and at the end the state as it was.
+void TextService::replay() {
+  constexpr UINT kState = WM_APP, kDone = WM_APP + 1;
+  if (!replayWindow_) {
+    WNDCLASSEXW wc{sizeof(wc)};
+    wc.lpfnWndProc = replayProc;
+    wc.hInstance = dllInstance;
+    wc.lpszClassName = L"SebType.Replay";
+    RegisterClassExW(&wc);  // fails harmlessly when this DLL registered it already
+    replayWindow_ = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, dllInstance, nullptr);
+    SetWindowLongPtrW(replayWindow_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+  }
+  std::vector<Held> keys = std::exchange(held_, {});
+  if (keys.empty() || GetFocus() != heldFor_ || !replayWindow_) return;
+  // After any replay still posted: its state messages count on.
+  for (const Held &h : keys) {
+    const bool sys = (h.state[VK_MENU] & 0x80) && !(h.state[VK_CONTROL] & 0x80);
+    PostMessageW(replayWindow_, kState, replayed_.size(), 0);
+    PostMessageW(heldFor_, sys ? WM_SYSKEYDOWN : WM_KEYDOWN, h.wParam, h.lParam & ~0xc0000000);
+    PostMessageW(heldFor_, sys ? WM_SYSKEYUP : WM_KEYUP, h.wParam, h.lParam | 0xc0000000);
+    replayed_.push_back(h);
+  }
+  PostMessageW(replayWindow_, kDone, replayed_.size(), 0);
+}
+
+LRESULT CALLBACK TextService::replayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  auto *self = reinterpret_cast<TextService *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  if (self && msg == WM_APP && wParam < self->replayed_.size()) {
+    if (!std::exchange(self->replaying_, true)) GetKeyboardState(self->realState_);
+    SetKeyboardState(self->replayed_[wParam].state);
+    return 0;
+  }
+  if (self && msg == WM_APP + 1) {
+    if (wParam == self->replayed_.size()) {  // the last replay posted
+      if (std::exchange(self->replaying_, false)) SetKeyboardState(self->realState_);
+      self->replayed_.clear();
+    }
+    return 0;
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 // The core sees each key once: OnTestKeyDown asks it and keeps the answer for OnKeyDown, as Weasel did.
@@ -644,11 +692,7 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
     return true;
   }
   tested_.pending = false;
-  if (passing_ && wParam == passing_) {
-    if (release) passing_ = 0;
-    return true;
-  }
-  if (!context) return true;
+  if (replaying_ || !context) return true;
   const Field f = field(context);
   if (f == Field::Password) return true;
   followLayout();
@@ -656,6 +700,13 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.lang = lang_;
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
+  // Behind a held key, every key waits its turn, whether or not the server answers again.
+  if (!held_.empty() && !release && !(q.key.sym >= 0xffe1 && q.key.sym <= 0xffee)) {
+    hold(wParam, lParam);
+    *eaten = TRUE;
+    if (test) tested_ = {wParam, release, true, true};
+    return true;
+  }
   if (!send(q)) {
     *eaten = unavailable(context, q.key, wParam, lParam);
     if (test) tested_ = {wParam, release, *eaten != FALSE, true};

@@ -112,6 +112,26 @@ namespace SebType {
     void KeyUp(IntPtr w, IntPtr l, [MarshalAs(UnmanagedType.Bool)] out bool eaten);
   }
 
+  [ComImport, Guid("4ea48a35-60ae-446f-8fd6-e6a8d82459f7"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface ITfSource {
+    void AdviseSink(ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] object sink, out uint cookie);
+    void UnadviseSink(uint cookie);
+  }
+
+  [ComImport, Guid("1cd4c13b-1c36-4191-a70a-7f3e611f367d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface ITfKeyTraceEventSink {
+    void OnKeyTraceDown(IntPtr w, IntPtr l);
+    void OnKeyTraceUp(IntPtr w, IntPtr l);
+  }
+
+  // Every key TSF's keystroke manager handles, before any input method sees it (#330: a replayed key too).
+  [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
+  public class KeyTrace : ITfKeyTraceEventSink {
+    public readonly List<int> Downs = new List<int>();
+    public void OnKeyTraceDown(IntPtr w, IntPtr l) { Downs.Add((int)w); }
+    public void OnKeyTraceUp(IntPtr w, IntPtr l) { }
+  }
+
   [ComImport, Guid("7dcf57ac-18ad-438b-824d-979bffb74b7c"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface ITfCompartmentMgr {
     void GetCompartment(ref Guid guid, out ITfCompartment compartment);
@@ -197,7 +217,7 @@ namespace SebType {
     public int UnadviseSink(object s) { sink = null; return S_OK; }
     // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
     // it handled the key (#275); one that may not is granted at once all the same.
-    public bool Defer;
+    public bool Defer, Hold;
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
       if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
@@ -363,6 +383,8 @@ namespace SebType {
     [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
     [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern bool SetKeyboardState(byte[] state);
+    [DllImport("user32.dll")] static extern short GetKeyState(int vk);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string name);
@@ -463,6 +485,9 @@ namespace SebType {
     }
     static readonly BlockingCollection<Action> queue = new BlockingCollection<Action>();
     static TextStore store;
+    static readonly KeyTrace trace = new KeyTrace();
+    // The keys TSF handled since the last call, as virtual-key codes ("8 78").
+    public static string Traced() { return OnUi(() => { var t = string.Join(" ", trace.Downs); trace.Downs.Clear(); return t; }); }
     static ITfThreadMgr threadMgr;
     static ITfDocumentMgr docMgr;
     static IntPtr context;
@@ -480,6 +505,8 @@ namespace SebType {
           threadMgr = (ITfThreadMgr)Activator.CreateInstance(System.Type.GetTypeFromCLSID(CLSID_TF_ThreadMgr));
           uint clientId, ec;
           threadMgr.Activate(out clientId);
+          var traceId = typeof(ITfKeyTraceEventSink).GUID; uint traceCookie;
+          ((ITfSource)threadMgr).AdviseSink(ref traceId, trace, out traceCookie);
           threadMgr.CreateDocumentMgr(out docMgr);
           docMgr.CreateContext(clientId, 0, store, out context, out ec);
           docMgr.Push(context);
@@ -532,18 +559,32 @@ namespace SebType {
         keys.KeyDown((IntPtr)vk, (IntPtr)(1 | scan), out eaten);
         keys.KeyUp((IntPtr)vk, (IntPtr)(1 | scan | 0xC0000000L), out up);
         if (!eaten && (vk == 0x08 || vk == 0x0D || vk == 0x20 || (vk >= 0x41 && vk <= 0x5A) || (vk >= 0x60 && vk <= 0x69)))  // Backspace, Enter, space, a-z, keypad 0-9
-          Typed(vk == 0x08 || vk == 0x0D || vk == 0x20 ? (char)vk : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32));
-        store.GrantPending();
+          Typed(vk == 0x08 && (GetKeyState(0x11) & 0x8000) != 0 ? '\x7f' : vk == 0x08 || vk == 0x0D || vk == 0x20 ? (char)vk : vk >= 0x60 && vk <= 0x69 ? (char)('0' + vk - 0x60) : (char)(vk + 32));
+        if (!store.Hold) store.GrantPending();
         return eaten;
       });
     }
-    // What an edit control does with a character: Backspace deletes the one before the caret, Enter starts a line.
-    static void Typed(char c) {
-      if (c == '\b') { if (store.SelStart > 0) store.AppEdit(store.SelStart - 1, store.SelEnd, ""); }
-      else store.AppEdit(store.SelStart, store.SelEnd, c == '\r' ? "\n" : c.ToString());
+    // A key with others held for it only (Ctrl: 0x11 and 0xA2), let go before any lock is granted.
+    public static bool Press(byte vk, params byte[] held) {
+      var state = new byte[256];
+      OnUi(() => { GetKeyboardState(state); var with = (byte[])state.Clone(); foreach (var h in held) with[h] |= 0x80; SetKeyboardState(with); return 0; });
+      try { return Key(vk); } finally { OnUi(() => SetKeyboardState(state)); }
     }
+    // What an edit control does with a character: Backspace deletes the one before the caret, Ctrl+Backspace
+    // (0x7f) the word before it, Enter starts a line.
+    static void Typed(char c) {
+      int at = store.SelStart;
+      if (c == '\b') at = Math.Max(0, at - 1);
+      else if (c == '\x7f') { while (at > 0 && store.Text[at - 1] == ' ') at--; while (at > 0 && store.Text[at - 1] != ' ') at--; }
+      else { store.AppEdit(store.SelStart, store.SelEnd, c == '\r' ? "\n" : c.ToString()); return; }
+      if (at < store.SelEnd) store.AppEdit(at, store.SelEnd, "");
+    }
+    // Text the app put there itself, the caret after it.
+    public static void SetText(string s) { OnUi(() => { store.AppEdit(0, store.Text.Length, s); return 0; }); }
     // Locks that may wait are granted only after the app handled the key (TextStore.Defer).
     public static bool DeferLocks { set { OnUi(() => { store.Defer = value; store.GrantPending(); return 0; }); } }
+    // Locks that may wait wait until this is set false again, over several keys or a focus change.
+    public static bool HoldLocks { set { OnUi(() => { store.Defer = store.Hold = value; if (!value) store.GrantPending(); return 0; }); } }
     static ITfDocumentMgr otherMgr;
     // TSF's focus on another document and back, as a click into another field moves it.
     public static void Away(bool away) {

@@ -29,7 +29,9 @@ taskbar) and, for the popup, the window by the caret (<state>-popup.png) and the
   hang-mid-composition: the server hangs while か is being typed: か stays, the key goes in after it with the
     popup, and i once the server answers again gives かnい; hang-mid-deferred-lock: the same, with n, keypad 1,
     Enter (か, a new line) and Backspace (か deleted), in an app that grants the text service's edit only after
-    it handled the key (#330).
+    it handled the key (#330); hang-mid-held-keys: with the lock held over several keys, Ctrl+Backspace with Ctrl
+    let go before the grant still deletes a word, Backspace then n gives n (the server answering again by then,
+    and TSF seeing both replayed keys), and Enter before a focus change is dropped, not typed.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=not-ready): the
 display state, if Windows reports one, is only reported (INFO). The deploy runs at below-normal priority.
 The server is resumed and Rime's build folder put back in any case. It refuses to run as the built-in
@@ -470,6 +472,42 @@ try {
     # Each key on its own, so one that fails doesn't hide the others.
     $runs = @(('n', 'hang-mid-deferred', $null), ('kp1', 'hang-mid-deferred-kp', $null), ('Return', 'hang-mid-deferred-enter', "か`n"),
       ('BackSpace', 'hang-mid-deferred-bs', '')) | ForEach-Object { try { @{ ok = & $hang $_[0] $true $_[1] $_[2] } } catch { @{ fail = $_.Exception.Message } } }
+    $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
+    if ($fails) { throw ($fails -join '; ') }
+    ($runs | ForEach-Object { $_.ok }) -join '; '
+  }
+  # The app holds the text service's lock over several keys (#330): a held key keeps the keyboard state it came
+  # with, every key after it waits behind it, and the held keys go nowhere once the focus moved. $traced: the
+  # keys TSF has to see again as the replay goes by (through TSF, and let by the text service); $resume: the
+  # server answers again before the lock is granted, so a replayed letter the text service took would compose.
+  $held = {
+    param($name, $before, [scriptblock]$keys, [scriptblock]$granted, $want, $traced, [switch]$resume)
+    Lang ja; $tsf::SetText($before); Keys k a
+    $script:suspended = Server
+    [SebTypeSuspend]::NtSuspendProcess($suspended.Handle) | Out-Null
+    $tsf::HoldLocks = $true
+    try {
+      Ready; & $keys
+      if ($resume) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null; Start-Sleep -Milliseconds 1500 }
+      $null = $tsf::Traced()
+    } finally { $tsf::HoldLocks = $false }
+    & $granted; $tsf::Settle(600)
+    $seen = $tsf::Traced(); $t = $tsf::Text()
+    if ($suspended) { [SebTypeSuspend]::NtResumeProcess($suspended.Handle) | Out-Null; $script:suspended = $null }
+    $icon = WaitIcon $hira 4; Keys i; $after = $tsf::Text(); Keys Escape
+    $show = { param($s) "'" + ($s -replace "`n", '\n') + "'" }
+    if ($t -ne $want) { throw "${name}: $(& $show $t), not $(& $show $want) (TSF saw '$seen' at the grant)" }
+    if ($traced -and " $seen " -notlike "* $traced *") { throw "${name}: TSF saw '$seen' at the grant, not the replayed $traced" }
+    if ($icon -ne $hira) { throw "${name}: the icon did not turn back to あ within 4 s" }
+    if ($after -ne "${want}い") { throw "${name}: i after the server answered again gave $(& $show $after), not $(& $show "${want}い")" }
+    "${name}: $(& $show $want)$(if ($traced) { ", TSF saw $seen again" }), then i gives $(& $show $after)"
+  }
+  Check 'hang-mid-held-keys' {
+    $runs = @(
+      { & $held 'ctrl-backspace' 'ab cd' { $null = $tsf::Press(0x08, 0x11, 0xA2) } {} 'ab ' '8' },  # Ctrl let go before the grant
+      { & $held 'backspace-then-n' '' { $null = $tsf::Key(0x08); $null = $tsf::Key(0x4E) } {} 'n' '8 78' -resume },
+      { & $held 'focus-moved' '' { $null = $tsf::Key(0x0D); $tsf::Away($true) } { $tsf::Away($false) } 'か' $null }
+    ) | ForEach-Object { try { @{ ok = & $_ } } catch { @{ fail = $_.Exception.Message } } }
     $fails = @($runs | Where-Object { $_.fail } | ForEach-Object { $_.fail })
     if ($fails) { throw ($fails -join '; ') }
     ($runs | ForEach-Object { $_.ok }) -join '; '
