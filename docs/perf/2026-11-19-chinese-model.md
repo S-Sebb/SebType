@@ -20,7 +20,8 @@ causes, none of them the model's size:
   keyboard's own threads (UI, render, Rime). It runs on 2 now.
 
 The empty field's next words, asked for while a field opens, when the phone is busiest, are now computed
-once per model load.
+once per model load. And the model is read, not mapped (as #406 does for English's): with the dot product
+variant ggml repacks the weights into memory of its own, and the mapped file's pages stayed resident too.
 
 ## Results
 
@@ -33,10 +34,17 @@ once per model load.
 | + thread pool, 4 threads | big (3 runs) | 16–17 / 26–29 ms | 15–18 / 98–149 ms |
 | + thread pool, 3 threads | little (1 run) | 38 / 61 ms | 42 / 69 ms |
 | + thread pool, 2 threads | big (2 runs) | 9 / 15 ms | 11–12 / 55–58 ms |
+| + empty field's next words cached, model read (this PR) | big (2 runs) | **8 / 14–16 ms** | **10–11 / 12–31 ms** |
+| + empty field's next words cached, model read (this PR) | little (2 runs) | 33–36 / 53–107 ms | 42 / 52–57 ms |
 
-In the 2-thread runs, the next words' p95 comes from the empty field's next words while the test field
-opens (31–65 ms); the rest took 6–13 ms. Those are the ones now cached; the build with the cache wasn't
-measured on the phone yet (it was locked).
+In the 2-thread runs before the cache, the next words' p95 came from the empty field's next words while
+the test field opened (31–65 ms); the rest took 6–13 ms. With the cache those take 0 ms after the first. In
+the final build's first big-core run that first one took 90 ms (the field's first decode after the model
+loaded), and one more took 31 ms, which made its p95 31 ms. The second big-core run was at 12 ms.
+
+Memory (PSS after typing 中): 205 MB on the big cores and 234 MB on the little ones in release 181. Mapped,
+with the dot product variant, 259–277 MB in the runs above; read, 251–253 MB (one little-core run: 179 MB).
+The repacked weights still cost about 45 MB over release 181.
 
 `zh-keys.sh 2 4`, 3 rounds at 700 ms between keys (ranking; next words):
 
