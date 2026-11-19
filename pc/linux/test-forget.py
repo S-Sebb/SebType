@@ -10,7 +10,8 @@
 # failed when the input method couldn't delete what was learned (read-only folders). Rime's sync folder is
 # outside its folder (installation.yaml's sync_dir, #396): a sync before forgetting puts 中文's snapshot there,
 # forgetting deletes it and another device's (through a link) but no other file there, and a sync after it
-# brings nothing back; forgetting fails when a snapshot there can't be read or sync_dir isn't a path. Before forgetting, a
+# brings nothing back; the input method's forget fails when a snapshot there can't be read or sync_dir isn't a
+# path. Before forgetting, a
 # Forget for another language (D-Bus, or the Configurator's --forget) forgets nothing and Fcitx5 lives on.
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
 import os
@@ -370,19 +371,9 @@ result(
 )
 
 
-def configurator_forget():
-    """The Configurator's forget through the running input method: its exit code and what it said of Rime."""
-    forgot = subprocess.run(
-        [tests, "--ignored", "--exact", "linux::tests::private_fcitx5_forgets"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    said = next(
-        (line for line in forgot.stdout.splitlines() if line.startswith("Rime: ")), ""
-    )
-    return forgot.returncode, said or "no answer"
+def engine_forget():
+    """中文's forget in the input method itself (the Configurator refuses before asking it): what it said."""
+    return str(f.core.Forget("zh"))
 
 
 # A snapshot it can't read may merge back once it can, and a sync_dir that isn't a path may be any folder
@@ -392,25 +383,25 @@ os.makedirs(os.path.dirname(locked), exist_ok=True)
 with open(locked, "w") as made_up:
     made_up.write(SNAPSHOT)
 os.chmod(locked, 0o000)
-code, said = configurator_forget()
+said = engine_forget()
 os.chmod(locked, 0o644)
 result(
     "zh-forget-fails-on-unreadable-snapshot",
-    code != 0 and "can't be read" in said and os.path.exists(locked),
-    f"exit {code}, {said}",
+    said.endswith("rime_ice.userdb.txt: can't be read") and os.path.exists(locked),
+    f"said '{said}'",
 )
 os.remove(locked)
 with open(f"{rime_dir}/installation.yaml") as y:
     kept_yaml = y.read()
 with open(f"{rime_dir}/installation.yaml", "w") as y:
     y.write("\n".join(lines + [f"sync_dir: [{sync_dir}]"]) + "\n")
-code, said = configurator_forget()
+said = engine_forget()
 with open(f"{rime_dir}/installation.yaml", "w") as y:
     y.write(kept_yaml)
 result(
     "zh-forget-refuses-sync-dir-not-a-path",
-    code != 0 and "isn't a path" in said,
-    f"exit {code}, {said}",
+    "isn't a path" in said,
+    f"said '{said}'",
 )
 
 # What the engines learned (made up here) in folders they can't delete from: the Configurator says it failed.
