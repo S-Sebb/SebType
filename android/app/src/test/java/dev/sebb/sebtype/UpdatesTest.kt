@@ -6,7 +6,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.CountDownLatch
 
 class UpdatesTest {
     /** GitHub's latest release as its API answers, cut to what the check reads */
@@ -48,5 +54,52 @@ class UpdatesTest {
         assertTrue(Updates.newer("0.2.0", "0.1.30-sebtype.412"))
         assertFalse(Updates.newer("0.1.0", "0.1.30-sebtype.412"))
         assertFalse(Updates.newer("9.9.9", "dev"))
+    }
+
+    /**
+     * Turning the daily check's switch off stops its job mid-request: even when the request ignores the
+     * interrupt and finishes, the check posts nothing.
+     */
+    @Test
+    fun cancelledCheckPostsNothing() = runBlocking {
+        val asking = CountDownLatch(1)
+        val answer = CountDownLatch(1)
+        val posted = mutableListOf<Updates.Release>()
+        val check = launch(Dispatchers.IO) {
+            Updates.fetchRelease({
+                asking.countDown()
+                while (true) try { answer.await(); break } catch (e: InterruptedException) {} // ignores the interrupt
+                latest("v0.2.0", "SebType-0.2.0-arm64-v8a.apk")
+            }, "0.1.0")?.let { posted += it }
+        }
+        asking.await()
+        check.cancel()
+        answer.countDown()
+        check.join()
+        assertTrue(posted.isEmpty())
+        // Not cancelled, the same answer is a release to post
+        assertEquals("0.2.0", Updates.fetchRelease({ latest("v0.2.0", "SebType-0.2.0-arm64-v8a.apk") }, "0.1.0")?.version)
+    }
+
+    private class FakeSession(val failWrite: Boolean) : Updates.InstallSession {
+        val calls = mutableListOf<String>()
+        override fun write(apk: File) {
+            calls += "write"
+            if (failWrite) throw IOException("No space left on device")
+        }
+        override fun commit() { calls += "commit" }
+        override fun abandon() { calls += "abandon" }
+        override fun close() { calls += "close" }
+    }
+
+    /** Storage full while the APK goes into the installer's session: the session is abandoned, not left behind. */
+    @Test
+    fun failedHandoffAbandonsTheSession() {
+        val full = FakeSession(failWrite = true)
+        assertTrue(runCatching { Updates.handOff(full, File("SebType.apk")) }.exceptionOrNull() is IOException)
+        assertEquals(listOf("write", "abandon"), full.calls)
+        val ok = FakeSession(failWrite = false)
+        Updates.handOff(ok, File("SebType.apk"))
+        assertEquals(listOf("write", "commit", "close"), ok.calls)
     }
 }

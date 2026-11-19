@@ -4,7 +4,7 @@
 # test hook. android/test/update.py serves the release's JSON (v9.9.9) with the debug APK as its asset on this
 # PC, reached as the emulator's own 127.0.0.1 through adb reverse, and checks: About asks to notify, "Check
 # for updates" finds 9.9.9, the home screen's card, the request sends nothing but itself, the daily job's
-# notification, and that tapping it leads to "Install unknown apps", then, allowed, to Android's install
+# notification, and that tapping it after SebType's process died leads to "Install unknown apps", then, allowed, to Android's install
 # prompt. Screenshots update-*.png next to the results. SebType is uninstalled before and after.
 # One line per check in ~/scratch/SebType/<issue>/test-update/results.txt; logs next to it. Exit 0 only if all pass.
 set -uo pipefail

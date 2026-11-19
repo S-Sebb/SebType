@@ -54,7 +54,9 @@ import dev.sebb.sebtype.Engines
 import dev.sebb.sebtype.R
 import dev.sebb.sebtype.Updates
 import dev.sebb.sebtype.data.Prefs
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * SebType's settings (#41, #254): a home screen of five groups (Languages, Keyboard, Privacy, Sync & backup,
@@ -89,7 +91,11 @@ class SettingsActivity : ComponentActivity() {
     private fun installUpdate(intent: Intent) {
         if (!intent.getBooleanExtra(Updates.EXTRA_INSTALL, false)) return
         opened.value = "about"
-        Updates.install(this)
+        // After the process died, the release the notification shows is read back first
+        lifecycleScope.launch {
+            Updates.awaitRestored()
+            Updates.install(this@SettingsActivity)
+        }
     }
 
     override fun onResume() {

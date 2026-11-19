@@ -322,6 +322,24 @@ def daily_notification():
     screenshot("notification")
 
 
+def process_dies():
+    """The notification outlives SebType's process: another keyboard, so Android doesn't restart it, then a kill.
+    The tap that follows starts a new process, which reads the release back before it installs."""
+    other = [i for i in adb("shell", "ime", "list", "-s").split() if i != IME]
+    if not other:
+        raise Fail("no other keyboard to switch to")
+    adb("shell", "ime", "set", other[0])
+    adb("shell", "run-as", PKG, "sh", "-c", f"'kill -9 $(pidof {PKG})'", check=False)
+    wait_for(
+        "SebType's process gone",
+        lambda: not adb("shell", "pidof", PKG, check=False).strip(),
+        15,
+    )
+    if not shown(AVAILABLE):
+        raise Fail("the notification went with the process")
+    return f"keyboard {other[0]}"
+
+
 def notification_asks_to_allow():
     tap_text(AVAILABLE, scroll=False)
     # Settings' "Install unknown apps" for SebType (Android 15 hands it on to its SpaActivity)
@@ -363,6 +381,7 @@ try:
     check("home-card", home_card)
     check("request-sends-nothing-else", request_sends_nothing_else)
     check("daily-notification", daily_notification)
+    check("process-dies", process_dies)
     check("notification-asks-to-allow", notification_asks_to_allow)
     check("allowed-opens-installer", allowed_opens_installer)
 finally:

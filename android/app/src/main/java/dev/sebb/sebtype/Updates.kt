@@ -21,7 +21,14 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.IntentCompat
 import dev.sebb.sebtype.data.Prefs
 import dev.sebb.sebtype.settings.SettingsActivity
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +78,10 @@ object Updates {
     private const val CHANNEL = "updates"
     private const val TAG = "SebType updates"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // [available] as saved, read by [start]: a notification tapped after the process died waits for it.
+    private val restored = CompletableDeferred<Unit>()
+
+    suspend fun awaitRestored() = restored.await()
 
     private fun store(context: Context) = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
 
@@ -89,8 +100,10 @@ object Updates {
     fun start(context: Context) {
         val app = context.applicationContext
         scope.launch {
-            if (!enabled(app)) return@launch
-            available.value = saved(app)
+            val on = enabled(app)
+            if (on) available.value = saved(app)
+            restored.complete(Unit)
+            if (!on) return@launch
             Prefs.flow(app, Prefs.UPDATE_CHECK).distinctUntilChanged().collect { schedule(app, it) }
         }
     }
@@ -141,6 +154,16 @@ object Updates {
         return null
     }
 
+    /**
+     * GitHub's answer ([fetch], blocking) as a newer release. A check whose job was stopped (its switch turned off)
+     * ends here with a CancellationException, even if its request ignored the interrupt and finished.
+     */
+    internal suspend fun fetchRelease(fetch: () -> String, versionName: String): Release? {
+        val json = runInterruptible(Dispatchers.IO) { fetch() }
+        currentCoroutineContext().ensureActive()
+        return release(json, versionName)
+    }
+
     fun checkNow(context: Context) {
         val app = context.applicationContext
         scope.launch { check(app, notify = false) }
@@ -154,7 +177,9 @@ object Updates {
         val url = updateSource(context) ?: return@withContext true
         if (!notify) status.value = Status.Checking
         val release = try {
-            release(get(url), BuildConfig.VERSION_NAME)
+            fetchRelease({ get(url) }, BuildConfig.VERSION_NAME)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { // the network, or a page that isn't GitHub's JSON
             Log.w(TAG, "Update check failed (${e.javaClass.simpleName})")
             if (!notify) status.value = Status.CheckFailed
@@ -167,7 +192,10 @@ object Updates {
         }.apply()
         available.value = release
         if (!notify) status.value = if (release == null) Status.UpToDate else Status.Idle
-        if (notify && release != null && p.getString("notified", null) != release.version && notifyOf(context, release)) {
+        // Not once the switch is off: turning it off stops the job, but its request may have finished already.
+        if (notify && release != null && p.getString("notified", null) != release.version &&
+            Prefs.flow(context, Prefs.UPDATE_CHECK).first() && notifyOf(context, release)
+        ) {
             p.edit().putString("notified", release.version).apply()
         }
         true
@@ -271,9 +299,12 @@ object Updates {
             }
             status.value = Status.Installing
             hand(context, apk)
-        } catch (e: IOException) {
-            Log.w(TAG, "Update download failed (${e.javaClass.simpleName})")
+        } catch (e: IOException) { // the download, or writing it into the installer's session (storage full)
+            Log.w(TAG, "Update download or handoff failed (${e.javaClass.simpleName})")
             status.value = Status.Failed(R.string.update_download_failed)
+        } catch (e: RuntimeException) { // the installer refused the session
+            Log.w(TAG, "Update handoff failed (${e.javaClass.simpleName})")
+            status.value = Status.Failed(R.string.update_install_failed, e.message.orEmpty())
         } finally {
             apk.delete()
         }
@@ -284,28 +315,55 @@ object Updates {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
             .apply { setAppPackageName(context.packageName) }
         val id = installer.createSession(params)
-        installer.openSession(id).use { session ->
-            session.openWrite("SebType.apk", 0, apk.length()).use { out ->
+        val session = installer.openSession(id)
+        // Mutable: the installer adds its status and, for the user's confirmation, its own screen
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+        val answers = PendingIntent.getBroadcast(context, id, Intent(context, UpdateInstalled::class.java), flags)
+        handOff(object : InstallSession {
+            override fun write(apk: File) = session.openWrite("SebType.apk", 0, apk.length()).use { out ->
                 apk.inputStream().use { it.copyTo(out) }
                 session.fsync(out)
             }
-            // Mutable: the installer adds its status and, for the user's confirmation, its own screen
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
-            session.commit(PendingIntent.getBroadcast(context, id, Intent(context, UpdateInstalled::class.java), flags).intentSender)
+            override fun commit() = session.commit(answers.intentSender)
+            override fun abandon() = session.abandon()
+            override fun close() = session.close()
+        }, apk)
+    }
+
+    /** What [handOff] does with a PackageInstaller session; a fake in the unit tests */
+    internal interface InstallSession : java.io.Closeable {
+        fun write(apk: File)
+        fun commit()
+        fun abandon()
+    }
+
+    /** Writes [apk] into [session] and commits it; a failure before the commit abandons the session, not leaving it behind. */
+    internal fun handOff(session: InstallSession, apk: File) {
+        try {
+            session.write(apk)
+        } catch (e: Exception) {
+            session.abandon()
+            throw e
         }
+        session.use { it.commit() }
     }
 }
 
 /** The daily check, scheduled by [Updates.start] */
 class UpdateJob : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var running: Job? = null
 
     override fun onStartJob(params: JobParameters): Boolean {
-        scope.launch { jobFinished(params, !Updates.check(this@UpdateJob, notify = true)) }
+        running = scope.launch { jobFinished(params, !Updates.check(this@UpdateJob, notify = true)) }
         return true
     }
 
-    override fun onStopJob(params: JobParameters) = true
+    /** The switch turned off (which cancels the job) or the network lost: the check stops and notifies of nothing. */
+    override fun onStopJob(params: JobParameters): Boolean {
+        running?.cancel()
+        return true
+    }
 }
 
 /** Android's installer answering [Updates]' install */
