@@ -438,6 +438,15 @@ if (-not $Undo) {
   # Configurator moves it to sebtype.conf, which keeps using it, before the engines next start.
   $p = Start-Process -Wait -PassThru (Join-Path $PSScriptRoot 'sebtype-configurator.exe') '--migrate'
   Write-Output "user: learning settings $(if ($p.ExitCode) { "not migrated (exit $($p.ExitCode)), the Configurator tries again when it starts" } else { 'current' })"
+  # The daily update check (#422): the Configurator's --check-updates as this user while they are logged
+  # on, which its toast needs; a day missed runs at the next chance. A newer release shows a toast; the
+  # Configurator's "Check for updates automatically" turns it off.
+  Register-ScheduledTask 'SebType update check' -Force `
+    -Action (New-ScheduledTaskAction -Execute (Join-Path $PSScriptRoot 'sebtype-configurator.exe') -Argument '--check-updates') `
+    -Trigger (New-ScheduledTaskTrigger -Daily -At 12:00 -RandomDelay (New-TimeSpan -Hours 1)) `
+    -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1)) `
+    -Principal (New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited) | Out-Null
+  Write-Output 'user: daily update check scheduled'
   # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
   # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it
   # would be out of the apps' reach): the text service starts it at the first key, the Run key at logon.
@@ -498,6 +507,9 @@ try {
 }
 & { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType sync' /f 2>&1 | Out-Null }
 [void][SebType.User32]::CredDeleteW('login.SebType sync', 1, 0)  # CRED_TYPE_GENERIC
+# The daily update check (#422), its state and downloads.
+& { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType update check' /f 2>&1 | Out-Null }
+Remove-Item (Join-Path $StateDir 'update.json'), (Join-Path $StateDir 'updates') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
 if ($lock) { $lock.Close() }
 Remove-Item $ScheduleLock -Force -ErrorAction SilentlyContinue

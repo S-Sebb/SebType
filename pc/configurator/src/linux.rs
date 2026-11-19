@@ -664,6 +664,140 @@ pub fn schedule(on: bool) -> io::Result<()> {
     systemctl(&["daemon-reload"])
 }
 
+// --- Updates (#422) ---
+
+/// The installed version: the newer of this Configurator's and the sebtype package's, so a release
+/// installed without a new Configurator (its RPMs, pc/linux/README.md) isn't offered again.
+pub fn installed_version() -> String {
+    let rpm = Command::new("rpm")
+        .args(["-q", "--qf", "%{VERSION}", "sebtype"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    let built = crate::update::BUILT.to_string();
+    match rpm.as_deref().and_then(crate::update::parse) {
+        Some(v) if crate::update::parse(&built).is_none_or(|b| v > b) => rpm.unwrap(),
+        _ => built,
+    }
+}
+
+/// The downloads, in this account's cache.
+pub fn updates_dir() -> PathBuf {
+    xdg("XDG_CACHE_HOME", ".cache").join("sebtype/updates")
+}
+
+/// The freedesktop notification, as SebType Configurator. A click on it or its button opens the
+/// About page, from this process, which waits for it (sebtype-update.service keeps what it starts).
+pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> {
+    use dbus::{
+        arg::{PropMap, Variant},
+        blocking::Connection,
+        message::MatchRule,
+    };
+    use std::sync::{Arc, Mutex};
+    const NAME: &str = "org.freedesktop.Notifications";
+    let c = Connection::new_session().map_err(io::Error::other)?;
+    // (the notification's id, clicked or closed): the signals may come before Notify returns
+    let seen: Arc<Mutex<(u32, Vec<(u32, bool)>)>> = Default::default();
+    let s = seen.clone();
+    c.add_match(
+        MatchRule::new_signal(NAME, "ActionInvoked"),
+        move |(id, _): (u32, String), _, _| {
+            s.lock().unwrap().1.push((id, true));
+            true
+        },
+    )
+    .map_err(io::Error::other)?;
+    let s = seen.clone();
+    c.add_match(
+        MatchRule::new_signal(NAME, "NotificationClosed"),
+        move |(id, _): (u32, u32), _, _| {
+            s.lock().unwrap().1.push((id, false));
+            true
+        },
+    )
+    .map_err(io::Error::other)?;
+    let mut hints = PropMap::new();
+    hints.insert(
+        "desktop-entry".into(),
+        Variant(Box::new("sebtype-configurator".to_string())),
+    );
+    let (id,): (u32,) = c
+        .with_proxy(
+            NAME,
+            "/org/freedesktop/Notifications",
+            Duration::from_secs(10),
+        )
+        .method_call(
+            NAME,
+            "Notify",
+            // stays until it is clicked or closed
+            (
+                "SebType",
+                0u32,
+                "sebtype-configurator",
+                summary,
+                body,
+                vec!["default", action, "update", action],
+                hints,
+                0i32,
+            ),
+        )
+        .map_err(io::Error::other)?;
+    seen.lock().unwrap().0 = id;
+    let end = Instant::now() + Duration::from_secs(12 * 3600);
+    let outcome = loop {
+        if let Some(&(_, clicked)) = seen.lock().unwrap().1.iter().find(|(n, _)| *n == id) {
+            break Some(clicked);
+        }
+        if Instant::now() >= end {
+            break None;
+        }
+        c.process(Duration::from_secs(30))
+            .map_err(io::Error::other)?;
+    };
+    match outcome {
+        Some(true) => {
+            eprintln!("update: opening the About page");
+            Command::new(env::current_exe()?).arg("--update").spawn()?;
+        }
+        Some(false) => {}
+        None => {
+            let _: Result<(), _> = c
+                .with_proxy(
+                    NAME,
+                    "/org/freedesktop/Notifications",
+                    Duration::from_secs(10),
+                )
+                .method_call(NAME, "CloseNotification", (id,));
+        }
+    }
+    Ok(())
+}
+
+/// Installs the release's RPMs in one dnf transaction, with the system's admin prompt (polkit). The input
+/// method runs the new version once Fcitx5 restarts, at the next login: never restarted here.
+pub fn install_update(files: &[PathBuf]) -> io::Result<()> {
+    let out = Command::new("pkexec")
+        .args(["dnf", "install", "-y"])
+        .args(files)
+        .output()?;
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(126 | 127) => Err(io::Error::other(
+            "not allowed: the admin prompt was cancelled",
+        )),
+        _ => Err(io::Error::other(
+            String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .last()
+                .unwrap_or("dnf failed")
+                .to_string(),
+        )),
+    }
+}
+
 pub fn open_url(url: &str) {
     let _ = Command::new("xdg-open").arg(url).spawn();
 }

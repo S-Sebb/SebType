@@ -375,6 +375,90 @@ pub fn sync_started() -> u64 {
 }
 pub fn after_sync(_seen: u64, _enabled: bool) {}
 
+// --- Updates (#422) ---
+
+pub fn installed_version() -> String {
+    crate::update::BUILT.into()
+}
+
+/// The downloads, in SebType's folder, which uninstalling removes.
+pub fn updates_dir() -> PathBuf {
+    sebtype_dir().join("updates")
+}
+
+/// The Start menu shortcut's AppUserModelID (sebtype.iss), which Windows shows a toast under.
+const AUMID: &str = "SebType.Configurator";
+
+fn xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// A toast. A click on it or its button opens sebtype-configurator:update, which Setup registers to open
+/// the About page (sebtype.iss), so nothing waits here.
+fn toast_xml(summary: &str, body: &str, action: &str) -> String {
+    let open = "sebtype-configurator:update";
+    format!(
+        "<toast activationType=\"protocol\" launch=\"{open}\"><visual><binding template=\"ToastGeneric\">\
+         <text>{}</text><text>{}</text></binding></visual><actions>\
+         <action content=\"{}\" activationType=\"protocol\" arguments=\"{open}\"/></actions></toast>",
+        xml(summary),
+        xml(body),
+        xml(action)
+    )
+}
+
+pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> {
+    let out = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!(
+                "$ErrorActionPreference = 'Stop'; \
+                 $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]; \
+                 $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]; \
+                 $x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml($env:SEBTYPE_TOAST); \
+                 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{AUMID}').Show([Windows.UI.Notifications.ToastNotification]::new($x))"
+            ),
+        ])
+        .env("SEBTYPE_TOAST", toast_xml(summary, body, action))
+        .creation_flags(NO_WINDOW)
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other(format!(
+            "toast: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(())
+}
+
+/// Starts the release's Setup as an upgrade runs (pc/windows/README.md): silent but for its progress,
+/// with the languages chosen before. Through the shell, so Windows asks for admin (UAC). The caller then
+/// quits: Setup replaces this exe.
+pub fn install_update(files: &[PathBuf]) -> io::Result<()> {
+    let setup = files.first().ok_or_else(|| io::Error::other("no setup"))?;
+    let out = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$ErrorActionPreference = 'Stop'; Start-Process -FilePath $env:SEBTYPE_SETUP -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART'",
+        ])
+        .env("SEBTYPE_SETUP", setup)
+        .creation_flags(NO_WINDOW)
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other(
+            "not allowed: the admin prompt was cancelled",
+        ));
+    }
+    Ok(())
+}
+
 pub fn open_url(url: &str) {
     let _ = Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", url])
@@ -388,6 +472,17 @@ mod tests {
 
     /// The sync task also runs when Windows connects to a network (#377), half a minute later, and never
     /// twice at once.
+    /// A click on the toast or its button opens the About page through Setup's protocol; the text is escaped.
+    #[test]
+    fn the_toast_opens_the_about_page() {
+        let t = toast_xml("SebType 0.2.0 <is> available", "A & B", "Update…");
+        assert!(t.starts_with(
+            "<toast activationType=\"protocol\" launch=\"sebtype-configurator:update\">"
+        ));
+        assert!(t.contains("<text>SebType 0.2.0 &lt;is&gt; available</text><text>A &amp; B</text>"));
+        assert!(t.contains("activationType=\"protocol\" arguments=\"sebtype-configurator:update\""));
+    }
+
     #[test]
     fn sync_task_runs_when_the_network_comes_back() {
         let task = sync_task(Path::new(r"C:\Program Files\A&B\sebtype-configurator.exe"));

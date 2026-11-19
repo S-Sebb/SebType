@@ -47,6 +47,8 @@ nobody's own input settings change, then removes the user and its profile:
    folder too) as the test user, not elevated, a silent uninstall.
 -Only learned: Mozc's learned conversions sync (#409): a silent install, test-learned-sync.ps1 (in the folder
    too, with sebtype_sync.py) as the test user, not elevated, a silent uninstall.
+-Only update: the daily update check (#422): a silent install, its task, test-update.ps1 (in the folder too) as
+   the test user, not elevated, a silent uninstall and the task gone.
 -Only private: private fields and the Configurator's learning off (#270, #374): a silent install,
    test-private.ps1 (in the folder too) as the test user, not elevated, with -AnyDisplay, a silent uninstall.
 
@@ -100,7 +102,7 @@ function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.Languag
 if ($Typing) {
   try {
     # Scripts of their own, which make no keys through Remote Desktop (#275, #270): no key server.
-    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt' }
+    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt'; 'update' = 'test-update.ps1', '422', 'update-results.txt' }
     if ($own.ContainsKey($Typing)) {
       $script, $dir, $file = $own[$Typing]
       $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\$script" -AnyDisplay -Out "$out\$dir" 2>&1 | Out-String
@@ -758,6 +760,30 @@ namespace SebTypeSetupTest {
       Check "$Only-install" { Silent "$Only-install" @(); 'silent, all languages' }
       Typing $Only 900
       Silent-Uninstall $Only
+      return
+    }
+    if ($Only -eq 'update') {
+      # The daily update check (#422): Setup schedules it for the person, test-update.ps1 runs it against a
+      # release served here, and the uninstall removes it with its link.
+      Check 'update-install' { Silent update-install @(); 'silent, all languages' }
+      Check 'update-task-scheduled' {
+        $t = Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue
+        if (-not $t) { throw "no 'SebType update check' task" }
+        $a = $t.Actions[0]
+        if ($a.Execute -ne "$App\sebtype-configurator.exe" -or $a.Arguments -ne '--check-updates' -or $t.Principal.UserId -notmatch "\b$user$" -or
+          -not $t.Settings.StartWhenAvailable -or $t.Triggers[0].DaysInterval -ne 1) {
+          throw "the task runs '$($a.Execute) $($a.Arguments)' as $($t.Principal.UserId), daily: $($t.Triggers[0].DaysInterval), when available: $($t.Settings.StartWhenAvailable)"
+        }
+        "daily as $($t.Principal.UserId), and at the next chance after a missed day"
+      }
+      Typing update 300
+      Silent-Uninstall update
+      Check 'update-task-removed' {
+        $left = @(if (Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue) { 'the task' }) +
+          @(if (Test-Path 'HKLM:\SOFTWARE\Classes\sebtype-configurator') { 'the sebtype-configurator: link' })
+        if ($left) { throw "left: $($left -join ', ')" }
+        'the task and the link gone'
+      }
       return
     }
     if ($Only -in 'forget', 'learned') {

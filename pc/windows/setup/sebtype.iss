@@ -200,12 +200,18 @@ Source: "{#Pictures}\finish-1.png"; Flags: dontcopy
 Source: "{#Pictures}\finish-2.png"; Flags: dontcopy
 
 [Icons]
-Name: "{autoprograms}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"
+; The update's toast (#422) shows under this shortcut's AppUserModelID (windows.rs, AUMID).
+Name: "{autoprograms}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"; AppUserModelID: "SebType.Configurator"
 Name: "{autodesktop}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"; Tasks: desktopicon
 
 [Registry]
 ; The server starts at logon, as each user; the text service also starts it when it isn't running.
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SebType"; ValueData: """{app}\sebtype-server.exe"""; Flags: uninsdeletevalue
+
+; A click on the update's toast (#422) opens sebtype-configurator:update: the Configurator's About page.
+Root: HKLM; Subkey: "Software\Classes\sebtype-configurator"; ValueType: string; ValueData: "URL:SebType Configurator"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\sebtype-configurator"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKLM; Subkey: "Software\Classes\sebtype-configurator\shell\open\command"; ValueType: string; ValueData: """{app}\sebtype-configurator.exe"" --update"
 
 [Run]
 Filename: "{app}\sebtype-configurator.exe"; Description: "{cm:OpenConfigurator}"; Flags: nowait postinstall skipifsilent

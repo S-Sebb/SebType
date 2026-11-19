@@ -21,6 +21,8 @@ yaml-rust2 = "0.13"
 # Credential Manager on Windows.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+# The update's notification (#422), on the libdbus keyring builds in.
+dbus = "0.9"
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6", features = ["windows-native"] }
 

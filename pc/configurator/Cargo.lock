@@ -4243,6 +4243,7 @@ name = "sebtype-configurator"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dbus",
  "keyring",
  "rfd",
  "serde",

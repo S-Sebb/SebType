@@ -116,13 +116,26 @@ engines read (`rime_ice.custom.yaml`, `default.custom.yaml`, `custom_phrase.txt`
 `user_dictionary.db`, Fcitx5's `classicui.conf` and group) and tells a running Fcitx5 over D-Bus, so a
 change shows at the next key; Chinese changes redeploy Rime.
 
-To undo: `pc/linux/setup-ime.sh --undo-configurator`. It removes the app and its entry, and puts back the
-candidate window look that Picnic replaced. Settings made with it stay.
+**Updates (#422).** Setup schedules `sebtype-configurator --check-updates` once a day with a systemd user
+timer (`sebtype-update.timer`, at the next login after a missed day). It asks GitHub for SebType's latest
+release (`releases/latest`; tags `v<MAJOR.MINOR.PATCH>` only, so the `v0.1.30-sebtype.N` tags from before
+0.1.0 are never newer) and compares it with the newer of the Configurator's version (`VERSION`) and the
+installed `sebtype` package's. A newer release shows a notification once; clicking it opens the
+Configurator's About page. There, Update… downloads the release's RPMs for this PC (its arch and noarch,
+no source or debug packages, SebType's own among them) from the release's download address into
+`~/.cache/sebtype/updates`, checks each one's size against GitHub's, and installs them in one
+`pkexec dnf install -y` (one admin prompt). The new input method runs once Fcitx5 restarts: log out and
+in again; the Configurator never restarts it. About's "Check for updates automatically" turns the daily
+check off, Check now checks at once.
+
+To undo: `pc/linux/setup-ime.sh --undo-configurator`. It removes the app, its entry and its daily update
+check, and puts back the candidate window look that Picnic replaced. Settings made with it stay.
 
 `pc/configurator/test.sh` checks it without touching the session: unit tests, that every string the
 window shows has its 中文 and 日本語, every screen opened in each of the three languages in a nested
 virtual KWin (screenshots in `~/scratch/SebType/<issue>/configurator-shots`), a private Fcitx5 and Rime on
-a copy of this account's rime-ice taking the languages and Chinese settings the app writes, and
+a copy of this account's rime-ice taking the languages and Chinese settings the app writes, the daily
+update check against a release served on this PC with a fake notification server (`test-update.py`), and
 `test-setup-ime.sh`. The Windows build is the `sebtype-configurator` artifact of the Configurator
 workflow.
 
