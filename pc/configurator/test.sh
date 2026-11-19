@@ -80,12 +80,13 @@ sandbox() { # [dir], $sb by default
   local sb=${1:-$sb}
   mkdir -p "$sb/config" "$sb/data/fcitx5"
   cp -r ~/.config/fcitx5 "$sb/config/"
-  [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db ~/.config/mozc "$sb/config/"
-  rsync -a --exclude='*.userdb' --exclude='*.userdb.txt' --exclude=sync ~/.local/share/fcitx5/rime "$sb/data/fcitx5/"
-  # My words are made-up ones, never this account's (#410), so the screenshots show the list's search and Edit.
-  local phrases=$sb/data/fcitx5/rime/custom_phrase.txt
-  [[ -f $phrases ]] && sed -i '/^# SebType: My words$/,$d' "$phrases"
-  printf '# SebType: My words\n小明\txiaoming\n张伟\tzhangwei\n' >> "$phrases"
+  # No dictionary of this account's comes in, nor its backups: My words are made-up ones (#410), so the
+  # screenshots show the list's search and Edit.
+  [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db \
+    --exclude='user_dictionary*' ~/.config/mozc "$sb/config/"
+  rsync -a --exclude='*.userdb' --exclude='*.userdb.txt' --exclude=sync --exclude='custom_phrase*' \
+    ~/.local/share/fcitx5/rime "$sb/data/fcitx5/"
+  printf '# SebType: My words\n小明\txiaoming\n张伟\tzhangwei\n' > "$sb/data/fcitx5/rime/custom_phrase.txt"
   mkdir -p "$sb/config/mozc"
   python3 - "$sb/config/mozc/user_dictionary.db" <<'PY'
 import sys  # a UserDictionaryStorage (mozc.rs) with SebType's dictionary: せぶ → SebType, もふ → モフ
@@ -135,7 +136,7 @@ done
 echo all-screens-ok
 SH
   chmod +x "$sb/shots.sh"
-  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
+  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"

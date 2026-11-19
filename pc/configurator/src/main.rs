@@ -282,6 +282,7 @@ fn load(app: &AppWindow, ui: &Ui) {
                 reading: w.reading.into(),
                 word: w.word.into(),
                 pos: w.pos as i32,
+                mozc_pos: w.mozc_pos.map_or(-1, |p| p as i32),
             })
             .collect::<Vec<_>>(),
     );
@@ -297,6 +298,7 @@ fn zh_words(ui: &Ui) -> Vec<rime::Word> {
         .map(|w| rime::Word {
             word: w.word.into(),
             pinyin: w.code.into(),
+            ..Default::default()
         })
         .collect()
 }
@@ -668,6 +670,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let w = rime::Word {
                 word: word.trim().into(),
                 pinyin,
+                ..Default::default()
             };
             ui.zh_words.push(ZhWord {
                 word: w.word.as_str().into(),
@@ -694,6 +697,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let new = rime::Word {
                 word: word.trim().into(),
                 pinyin,
+                ..Default::default()
             };
             let mut all = zh_words(&ui);
             let old = all[i as usize].clone();
@@ -723,6 +727,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let w = rime::Word {
                 word: w.word.into(),
                 pinyin: w.code.into(),
+                ..Default::default()
             };
             run(Box::new(move || {
                 sync::words_locked(|| rime::remove_word(&platform::rime_dir(), &w))
@@ -744,12 +749,13 @@ fn main() -> Result<(), slint::PlatformError> {
                 reading: reading.into(),
                 word: word.trim().into(),
                 pos: pos as usize,
-                mozc_pos: None,
+                ..Default::default()
             };
             ui.ja_words.push(JaWord {
                 reading: w.reading.as_str().into(),
                 word: w.word.as_str().into(),
                 pos,
+                mozc_pos: -1,
             });
             run(Box::new(move || {
                 sync::words_locked(|| mozc::add_word(&platform::mozc_dir(), w))
@@ -768,28 +774,30 @@ fn main() -> Result<(), slint::PlatformError> {
                 toast(&weak.unwrap(), say(Msg::ReadingHiraganaOnly));
                 return false;
             }
-            let shown = JaWord {
-                reading: reading.clone(),
-                word: word.trim().into(),
-                pos,
-            };
             let mut all: Vec<JaWord> = ui.ja_words.iter().collect();
             let old = all[i as usize].clone();
-            let key = |w: &JaWord| (w.reading.clone(), w.word.clone());
+            let shown = JaWord {
+                reading,
+                word: word.trim().into(),
+                pos,
+                // A part of speech the window doesn't offer stays unless another is chosen.
+                mozc_pos: if pos == old.pos { old.mozc_pos } else { -1 },
+            };
+            let word = |w: &JaWord| mozc::Word {
+                reading: w.reading.as_str().into(),
+                word: w.word.as_str().into(),
+                pos: w.pos as usize,
+                mozc_pos: u64::try_from(w.mozc_pos).ok(),
+                rest: vec![],
+            };
+            let (old, new) = (word(&old), word(&shown));
             put_in_place(
                 &mut all,
-                |w| key(w) == key(&old),
-                shown.clone(),
-                |a, b| key(a) == key(b),
+                |w| word(w).same(&old),
+                shown,
+                |a, b| word(a).same(&word(b)),
             );
             ui.ja_words.set_vec(all);
-            let word = |w: JaWord| mozc::Word {
-                reading: w.reading.into(),
-                word: w.word.into(),
-                pos: w.pos as usize,
-                mozc_pos: None,
-            };
-            let (old, new) = (word(old), word(shown));
             run(Box::new(move || {
                 sync::words_locked(|| mozc::edit_word(&platform::mozc_dir(), &old, new))
                     .and_then(|r| r)

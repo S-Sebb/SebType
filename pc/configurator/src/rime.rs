@@ -184,10 +184,23 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     Ok(changed)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Word {
     pub word: String,
     pub pinyin: String,
+    /// What the line has after the pinyin (a weight, a comment), and the lines without a word just above
+    /// it (comments, blank lines): kept as they are when My words are saved (#410).
+    #[serde(skip)]
+    pub rest: String,
+    #[serde(skip)]
+    pub above: String,
+}
+
+/// A word is its spelling and pinyin; what else its line has goes with it.
+impl PartialEq for Word {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.word, &self.pinyin) == (&other.word, &other.pinyin)
+    }
 }
 
 /// The code Rime matches: lowercase pinyin letters only, so "Xiao Ming" and "xiao'ming" both work.
@@ -206,18 +219,25 @@ pub fn valid_word(word: &str, pinyin: &str) -> bool {
 }
 
 pub fn words(dir: &Path) -> Vec<Word> {
-    read(&dir.join(PHRASES))
-        .lines()
-        .skip_while(|l| *l != MARKER)
-        .skip(1)
-        .filter_map(|l| {
-            let mut parts = l.split('\t');
-            Some(Word {
-                word: parts.next()?.to_string(),
-                pinyin: parts.next()?.to_string(),
-            })
-        })
-        .collect()
+    my_words(&read(&dir.join(PHRASES))).0
+}
+
+/// The words after the marker, and the lines without a word after the last one.
+fn my_words(text: &str) -> (Vec<Word>, String) {
+    let (mut words, mut above) = (vec![], String::new());
+    for l in text.lines().skip_while(|l| *l != MARKER).skip(1) {
+        let mut parts = l.splitn(3, '\t');
+        match (parts.next(), parts.next()) {
+            (Some(word), Some(pinyin)) if !l.starts_with('#') => words.push(Word {
+                word: word.into(),
+                pinyin: pinyin.into(),
+                rest: parts.next().map_or(String::new(), |r| format!("\t{r}")),
+                above: std::mem::take(&mut above),
+            }),
+            _ => above.push_str(&format!("{l}\n")),
+        }
+    }
+    (words, above)
 }
 
 /// Saves the user's words after rime-ice's own phrases. Rime reads them when it starts (a redeploy).
@@ -232,8 +252,15 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     text.push_str(MARKER);
     text.push('\n');
     for w in words {
-        text.push_str(&format!("{}\t{}\n", w.word.trim(), w.pinyin));
+        text.push_str(&format!(
+            "{}{}\t{}{}\n",
+            w.above,
+            w.word.trim(),
+            w.pinyin,
+            w.rest
+        ));
     }
+    text.push_str(&my_words(&old).1);
     write_file(&path, &text)
 }
 
@@ -244,9 +271,12 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Changes a word in My words as they are now (crate::put_in_place).
-pub fn edit_word(dir: &Path, old: &Word, new: Word) -> io::Result<bool> {
+/// Changes a word in My words as they are now (crate::put_in_place), keeping what else its line has.
+pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
     let mut all = words(dir);
+    if let Some(w) = all.iter().find(|w| *w == old) {
+        (new.rest, new.above) = (w.rest.clone(), w.above.clone());
+    }
     crate::put_in_place(&mut all, |w| w == old, new, |a, b| a == b);
     save_words(dir, &all)
 }
@@ -493,6 +523,7 @@ mod tests {
         let w = vec![Word {
             word: "小明".into(),
             pinyin: normalize_pinyin("Xiao'Ming"),
+            ..Default::default()
         }];
         save_words(&d, &w).unwrap();
         assert_eq!(words(&d), w);
@@ -500,6 +531,7 @@ mod tests {
         let other = Word {
             word: "噗莫".into(),
             pinyin: "pumo".into(),
+            ..Default::default()
         };
         add_word(&d, other.clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone(), other.clone()]);
@@ -510,6 +542,7 @@ mod tests {
         let lin = Word {
             word: "小林".into(),
             pinyin: "xiaolin".into(),
+            ..Default::default()
         };
         edit_word(&d, &other, lin.clone()).unwrap();
         assert_eq!(words(&d), [lin.clone(), w[0].clone()]);
@@ -517,12 +550,27 @@ mod tests {
         assert_eq!(words(&d), [w[0].clone()]);
         // One the sync removed meanwhile comes back at the end.
         edit_word(&d, &other, lin.clone()).unwrap();
-        assert_eq!(words(&d), [w[0].clone(), lin]);
-        save_words(&d, &[]).unwrap();
+        assert_eq!(words(&d), [w[0].clone(), lin.clone()]);
+        // What else the lines have (a weight, comments between them) stays through Edit and Add.
+        let head = "# rime-ice\n你好\tnihao\t1\n";
+        fs::write(
+            d.join(PHRASES),
+            format!("{head}{MARKER}\n# from the phone\n小明\txiaoming\t9\n小林\txiaolin\n# end\n"),
+        )
+        .unwrap();
+        let lin2 = Word {
+            word: "小琳".into(),
+            pinyin: "xiaolin".into(),
+            ..Default::default()
+        };
+        edit_word(&d, &lin, lin2).unwrap();
+        add_word(&d, other.clone()).unwrap();
         assert_eq!(
             read(&d.join(PHRASES)),
-            format!("# rime-ice\n你好\tnihao\t1\n{MARKER}\n")
+            format!("{head}{MARKER}\n# from the phone\n小明\txiaoming\t9\n小琳\txiaolin\n噗莫\tpumo\n# end\n")
         );
+        save_words(&d, &[]).unwrap();
+        assert_eq!(read(&d.join(PHRASES)), format!("{head}{MARKER}\n# end\n"));
         assert!(
             valid_word("小明", "xiaoming")
                 && !valid_word("小\t明", "xiaoming")

@@ -4,7 +4,8 @@
 export struct Lang { id: string, on: bool }   // id: "en", "zh" or "ja"
 export struct Fuzzy { label: string, on: bool }
 export struct ZhWord { word: string, code: string }
-export struct JaWord { reading: string, word: string, pos: int }
+// mozc-pos: Mozc's part of speech when it isn't one the window offers (mozc::Word's mozc_pos), else -1
+export struct JaWord { reading: string, word: string, pos: int, mozc-pos: int }
 
 export enum Msg {
     none, applied, zh-redeployed, ja-next-time, theme-next-time, saved-zh, saved-ja, deleted-zh, deleted,

@@ -426,12 +426,13 @@ mod tests {
             reading: "もふてすと".into(),
             word: "モフ試験語".into(),
             pos: 0,
-            mozc_pos: None,
+            ..Default::default()
         };
         mozc::save_words(&mozc_dir, &[pc_ja]).unwrap();
         let pc_zh = rime::Word {
             word: "莫噗试词".into(),
             pinyin: "mopushici".into(),
+            ..Default::default()
         };
         rime::save_words(&rime_dir, &[pc_zh]).unwrap();
 

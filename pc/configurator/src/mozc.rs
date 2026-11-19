@@ -77,7 +77,7 @@ pub fn save(dir: &Path, j: &Japanese) -> io::Result<bool> {
     write_file(&path, &cfg)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Word {
     pub reading: String,
     pub word: String,
@@ -86,6 +86,18 @@ pub struct Word {
     /// kept as it is; pos is then 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mozc_pos: Option<u64>,
+    /// The entry's other fields (its comment, ones a newer Mozc adds) as they are, kept when the
+    /// dictionary is saved (#410).
+    #[serde(skip)]
+    pub rest: Vec<u8>,
+}
+
+impl Word {
+    /// The same entry: reading, spelling and part of speech (Add allows one word as two parts of speech).
+    pub fn same(&self, other: &Word) -> bool {
+        (&self.reading, &self.word, self.pos, self.mozc_pos)
+            == (&other.reading, &other.word, other.pos, other.mozc_pos)
+    }
 }
 
 fn string(b: &[u8]) -> String {
@@ -113,12 +125,13 @@ pub fn words(dir: &Path) -> io::Result<Vec<Word>> {
         }
         for e in fields.iter().filter(|f| f.number == 4) {
             let (mut reading, mut word, mut mozc_pos) = (String::new(), String::new(), POS[0]);
+            let mut rest = vec![];
             for f in proto::fields(e.bytes).map_err(bad)? {
                 match f.number {
                     1 => reading = string(f.bytes),
                     2 => word = string(f.bytes),
                     5 => mozc_pos = f.varint.unwrap_or(POS[0]),
-                    _ => {}
+                    _ => rest.extend_from_slice(f.whole),
                 }
             }
             let pos = POS.iter().position(|&p| p == mozc_pos);
@@ -127,6 +140,7 @@ pub fn words(dir: &Path) -> io::Result<Vec<Word>> {
                 word,
                 pos: pos.unwrap_or(0),
                 mozc_pos: pos.is_none().then_some(mozc_pos),
+                rest,
             });
         }
     }
@@ -138,7 +152,7 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     let path = dir.join(DICTIONARIES);
     let storage = read(&path)?;
     let mut out = vec![];
-    let mut id = None;
+    let (mut id, mut settings) = (None, vec![]);
     for f in proto::fields(&storage).map_err(bad)? {
         if f.number == 2 {
             let inner = proto::fields(f.bytes).map_err(bad)?;
@@ -148,6 +162,11 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
                     .any(|g| g.number == 3 && g.bytes == DICTIONARY_NAME.as_bytes())
                 {
                     id = inner.iter().find(|g| g.number == 1).and_then(|g| g.varint);
+                    // Its other fields (enabled, syncable) stay as they are.
+                    inner
+                        .iter()
+                        .filter(|g| ![1, 3, 4].contains(&g.number))
+                        .for_each(|g| settings.extend_from_slice(g.whole));
                 }
                 continue;
             }
@@ -163,11 +182,13 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     });
     let mut dict = proto::varint_field(1, id);
     dict.extend(proto::bytes_field(3, DICTIONARY_NAME.as_bytes()));
+    dict.extend(settings);
     for w in words {
         let mut e = proto::bytes_field(1, w.reading.as_bytes());
         e.extend(proto::bytes_field(2, w.word.as_bytes()));
         let pos = w.mozc_pos.unwrap_or(POS[w.pos.min(POS.len() - 1)]);
         e.extend(proto::varint_field(5, pos));
+        e.extend(&w.rest);
         dict.extend(proto::bytes_field(4, &e));
     }
     out.extend(proto::bytes_field(2, &dict));
@@ -181,22 +202,14 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Changes a word (its first entry with old's reading and spelling) in the dictionary as it is now
-/// (crate::put_in_place). A part of speech the window doesn't offer stays unless another is chosen.
+/// Changes a word (its first entry the same as old) in the dictionary as it is now (crate::put_in_place),
+/// keeping the entry's other fields.
 pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
     let mut all = words(dir)?;
-    let key = |w: &Word| (w.reading.clone(), w.word.clone());
-    if let Some(w) = all.iter().find(|w| key(w) == key(old)) {
-        if w.pos == new.pos {
-            new.mozc_pos = w.mozc_pos;
-        }
+    if let Some(w) = all.iter().find(|w| w.same(old)) {
+        new.rest = w.rest.clone();
     }
-    crate::put_in_place(
-        &mut all,
-        |w| key(w) == key(old),
-        new,
-        |a, b| key(a) == key(b),
-    );
+    crate::put_in_place(&mut all, |w| w.same(old), new, Word::same);
     save_words(dir, &all)
 }
 
@@ -290,7 +303,7 @@ mod tests {
             reading: "せぶ".into(),
             word: "SebType".into(),
             pos: 1,
-            mozc_pos: None,
+            ..Default::default()
         }];
         save_words(&d, &w).unwrap();
         save_words(&d, &w).unwrap();
@@ -359,24 +372,36 @@ mod tests {
             shown(&d),
             [("モフ".into(), 0, None), ("ピピ".into(), 0, Some(0))]
         );
-        // Edit (#410): a part of speech the window doesn't offer stays while Noun stays chosen, and a
-        // word edited into one already there leaves one entry, in the edited one's place.
-        let word = |reading: &str, word: &str, pos| Word {
+        // Edit (#410) finds the entry by its part of speech too, Mozc's own one (as the window passes it on)
+        // included, and a word edited into one already there leaves one entry, in the edited one's place.
+        let word = |reading: &str, word: &str, pos, mozc_pos| Word {
             reading: reading.into(),
             word: word.into(),
             pos,
-            mozc_pos: None,
+            mozc_pos,
+            rest: vec![],
         };
-        assert!(edit_word(&d, &word("ぴぴ", "ピピ", 0), word("ぴぴ", "ピピピ", 0)).unwrap());
+        let pipi = word("ぴぴ", "ピピピ", 0, Some(0));
+        assert!(edit_word(&d, &word("ぴぴ", "ピピ", 0, Some(0)), pipi.clone()).unwrap());
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピピ".into(), 0, Some(0))]
         );
-        edit_word(&d, &word("ぴぴ", "ピピピ", 0), word("ぴぴ", "ピピピ", 2)).unwrap();
+        edit_word(&d, &pipi, word("ぴぴ", "ピピピ", 2, None)).unwrap();
         assert_eq!(shown(&d)[1], ("ピピピ".into(), 2, None));
-        edit_word(&d, &word("もふ", "モフ", 0), word("ぴぴ", "ピピピ", 1)).unwrap();
-        assert_eq!(shown(&d), [("ピピピ".into(), 1, None)]);
-        edit_word(&d, &word("ぴぴ", "ピピピ", 1), word("ぴぴ", "ピピ", 0)).unwrap();
+        edit_word(
+            &d,
+            &word("もふ", "モフ", 0, None),
+            word("ぴぴ", "ピピピ", 2, None),
+        )
+        .unwrap();
+        assert_eq!(shown(&d), [("ピピピ".into(), 2, None)]);
+        edit_word(
+            &d,
+            &word("ぴぴ", "ピピピ", 2, None),
+            word("ぴぴ", "ピピ", 0, None),
+        )
+        .unwrap();
         let all = fs::read(d.join(DICTIONARIES)).unwrap();
         let names: Vec<_> = proto::fields(&all)
             .unwrap()
@@ -393,6 +418,41 @@ mod tests {
             "one SebType dictionary, Mozc's own kept"
         );
         assert!(String::from_utf8_lossy(&all).contains("ピピ"));
+
+        // One word as two parts of speech (Add allows it): Edit changes the one chosen, and the other's
+        // comment (Mozc's entry field 4) stays through Edit and Add.
+        let comment = proto::bytes_field(4, "テスト用".as_bytes());
+        let noun = Word {
+            rest: comment.clone(),
+            ..word("もふ", "モフ", 0, None)
+        };
+        save_words(&d, &[noun.clone(), word("もふ", "モフ", 1, None)]).unwrap();
+        edit_word(
+            &d,
+            &word("もふ", "モフ", 1, None),
+            word("もふ", "モフモフ", 1, None),
+        )
+        .unwrap();
+        add_word(&d, word("ぷる", "プル", 2, None)).unwrap();
+        assert_eq!(
+            words(&d).unwrap(),
+            [
+                noun,
+                word("もふ", "モフモフ", 1, None),
+                word("ぷる", "プル", 2, None)
+            ]
+        );
+        edit_word(
+            &d,
+            &word("もふ", "モフ", 0, None),
+            word("もふ", "もふ", 0, None),
+        )
+        .unwrap();
+        assert_eq!(
+            words(&d).unwrap()[0].rest,
+            comment,
+            "the edited entry keeps its comment"
+        );
         fs::remove_dir_all(&d).unwrap();
     }
 }
