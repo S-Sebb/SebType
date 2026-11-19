@@ -66,13 +66,17 @@ try {
   Check 'update-toast-opens-about' {
     $command = (Get-ItemProperty 'Registry::HKEY_CLASSES_ROOT\sebtype-configurator\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
     if ($command -ne "`"$app\sebtype-configurator.exe`" --update") { throw "sebtype-configurator: opens '$command'" }
+    # The window may not open here (no OpenGL in TCSBackEnd's Remote Desktop session), so any Configurator
+    # the link starts counts, however briefly it runs: nothing else starts one meanwhile.
     Start-Process 'sebtype-configurator:update'
     $deadline = (Get-Date).AddSeconds(30)
-    while (-not ($w = Get-CimInstance Win32_Process -Filter "Name = 'sebtype-configurator.exe'" | Where-Object CommandLine -match '--update')) {
-      if ((Get-Date) -gt $deadline) { throw 'no Configurator with --update after 30 s' }; Start-Sleep 1
-    }
-    $w | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-    "opens $command"
+    while (-not ($w = Get-Process sebtype-configurator -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 20 }
+    $p = Start-Process -PassThru "$app\sebtype-configurator.exe" '--update'
+    $alive = -not $p.WaitForExit(10000)
+    $direct = if ($alive) { Stop-Process -Id $p.Id -Force; 'stays open' } else { "exits with $($p.ExitCode) after $([int]($p.ExitTime - $p.StartTime).TotalMilliseconds) ms" }
+    if (-not $w) { throw "the link started no Configurator in 30 s; started directly with --update it $direct" }
+    $w | Stop-Process -Force -ErrorAction SilentlyContinue
+    "opens $command; with --update the Configurator $direct"
   }
 } finally {
   Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue

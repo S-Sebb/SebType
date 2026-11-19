@@ -109,6 +109,7 @@ PY
 }
 sandbox
 
+# The nested KWins' socket names are short: their path in the sandbox must fit a Unix socket's 108 bytes.
 # Every screen opens and stays open in each language, set as the system's; the screenshots are kept for
 # the eye, and a 中文 or 日本語 screen that looks the same as the English one fails.
 shots() {
@@ -143,7 +144,7 @@ SH
   mkdir -p "$sb/data/sebtype"
   printf '{"auto": true, "checked": %s, "latest": "99.0.0", "notified": ""}\n' "$(date +%s)" > "$sb/data/sebtype/update.json"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
-    kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
+    kwin_wayland --virtual --no-lockscreen --socket "wl$$" --width 1000 --height 700 --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
@@ -187,7 +188,7 @@ SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
   # shellcheck disable=SC2086  # own_env is split
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY $own_env HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
-    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wl-sebtype-picnic-$$" --width 1000 --height 700 --exit-with-session \
+    kwin_wayland --virtual --xwayland --no-lockscreen --socket "wp$$" --width 1000 --height 700 --exit-with-session \
     "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 2 ]]
 }
