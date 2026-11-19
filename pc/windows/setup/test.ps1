@@ -833,14 +833,14 @@ Set-Content '$login-code.txt' `$exit
         }
         # #377: the task also syncs when Windows connects to a network. The network is never touched: a
         # NetworkProfile event 10000 ("connected") written into its log stands in, and only when no other
-        # task listens for it, so nothing else reacts.
+        # task that is on listens for it, so nothing else reacts.
         Check 'sync-network-trigger' {
           $t = (Get-ScheduledTask -TaskName 'SebType sync').Triggers
           $connect = $t | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskEventTrigger' -and
             $_.Subscription -match 'Microsoft-Windows-NetworkProfile/Operational' -and $_.Subscription -match 'EventID=10000' }
           if (-not $connect) { throw "no network-connect trigger: $($t | ForEach-Object { $_.CimClass.CimClassName })" }
           if (-not ($t | Where-Object { $_.Repetition.Interval -eq 'PT30M' })) { throw 'no half-hourly trigger' }
-          $others = Get-ScheduledTask | Where-Object { $_.TaskName -ne 'SebType sync' -and
+          $others = Get-ScheduledTask | Where-Object { $_.TaskName -ne 'SebType sync' -and $_.State -ne 'Disabled' -and
             ($_.Triggers | Where-Object { $_.Subscription -match 'NetworkProfile' }) } | ForEach-Object { $_.TaskName }
           if ($others) { throw "not fired: other tasks listen for NetworkProfile events: $($others -join ', ')" }
           $before = (Get-Content $syncJson -Raw -Encoding utf8 | ConvertFrom-Json).at
