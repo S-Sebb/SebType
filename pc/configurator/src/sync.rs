@@ -5,7 +5,7 @@
 //! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour, and
 //! on Linux the network trigger runs `--network-changed` (network_changed).
 
-use crate::{platform, rime};
+use crate::{mozc, platform, rime};
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
@@ -240,19 +240,22 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
     let pull = [&["pull".as_ref()], &args[..]].concat();
     let phrases = rime_dir.join(rime::PHRASES);
     let flag = dir().join("rime-deploy-pending");
-    // What the pull changed, read even when it fails part way: it may have changed words by then.
+    // What the pull changed, read even when it fails part way: it may have changed words by then. For
+    // Mozc, its dictionary and the other devices' learned conversions (#409).
+    let mozc_state =
+        || mozc_db.map(|db| (fs::read(db).ok(), db.parent().map(mozc::others_learned)));
     let (pulled, mozc_changed) = words_locked(|| {
-        let (zh, ja) = (fs::read(&phrases).ok(), mozc_db.map(fs::read));
+        let (zh, ja) = (fs::read(&phrases).ok(), mozc_state());
         let pulled = client(s, &pull);
         if fs::read(&phrases).ok() != zh {
             fs::write(&flag, "").map_err(|_| Failed::Offline)?;
         }
-        let ja_now = mozc_db.map(fs::read);
-        Ok::<_, Failed>((pulled, ja.map(|r| r.ok()) != ja_now.map(|r| r.ok())))
+        Ok::<_, Failed>((pulled, ja != mozc_state()))
     })
     .map_err(|_| Failed::Offline)??;
     if mozc_changed {
-        let _ = platform::restart_mozc_when_idle(); // Mozc reads its dictionary when it starts
+        // Mozc reads its dictionary, and learns the other devices' conversions, when it starts
+        let _ = platform::restart_mozc_when_idle();
     }
     deploy_if_pending(&flag, platform::redeploy_rime_when_idle).map_err(|_| Failed::Offline)?;
     pulled?;
@@ -508,6 +511,27 @@ mod tests {
         assert_eq!(get("/v1/files").replace(' ', ""), "{\"files\":[]}");
         assert!(!load().enabled && !load().ever_on);
         assert!(fs::read_to_string(&pc_snapshot).unwrap().contains("莫福姬"));
+    }
+
+    /// The login for pc/linux/test-learned-sync.py's `--sync`s (#409), from the same variables, in the private
+    /// keyring of test.sh's sandbox; sync.json as a login saves it, without the schedule (no systemd there).
+    #[test]
+    #[ignore]
+    #[cfg(target_os = "linux")]
+    fn private_login() {
+        let var = |n: &str| std::env::var(n).unwrap_or_else(|_| panic!("{n} not set"));
+        keyring()
+            .unwrap()
+            .set_password(&var("SEBTYPE_TEST_SYNC_PASSWORD"))
+            .unwrap();
+        save(&Sync {
+            enabled: true,
+            ever_on: true,
+            server: var("SEBTYPE_TEST_SYNC_SERVER"),
+            user: var("SEBTYPE_TEST_SYNC_USER"),
+            ..Sync::default()
+        })
+        .unwrap();
     }
 
     /// Setup deletes learned words only when this says nothing is left unsynced (#271): a due sync that

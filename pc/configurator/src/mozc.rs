@@ -20,6 +20,16 @@ const OLD_SYNC_DICTIONARY: &str = "SebType sync";
 const HISTORY: [&str; 4] = ["segment.db", "boundary.db", "history.db", "cform.db"];
 #[cfg(not(windows))]
 const HISTORY: [&str; 4] = ["segment.db", "boundary.db", ".history.db", "cform.db"];
+/// The conversions picked here, which the sync uploads, and the other devices' the sync brings, in
+/// <device>.txt, with the copy SebType's Mozc last learned in <device>.applied (core/src/mozc_learned.h, #409).
+const LEARNED: &str = "mozc_learned.txt";
+const OTHERS_LEARNED: &str = "mozc_learned";
+const LEARNED_HEADER: &str = "# SebType mozc_learned 1\n"; // core's learned::kHeader
+/// When Japanese was last forgotten, as core's learned::Forgotten: this PC's time, in seconds since 1970, then
+/// device<TAB>time for each other device, its latest pick then by its own clock. No pick from before is learned again.
+const FORGOTTEN: &str = "mozc_learned.forgotten";
+/// core's learned::kMaxBytes: a larger record isn't read.
+const MAX_LEARNED: usize = 1 << 20;
 /// The parts of speech the window offers (State.ja-pos), as Mozc's PosType values.
 pub const POS: [u64; 6] = [1, 4, 5, 9, 8, 15]; // 名詞 固有名詞 人名 地名 組織 顔文字
 
@@ -260,7 +270,10 @@ pub fn learned(dir: &Path) -> usize {
     HISTORY.iter().filter(|f| dir.join(f).exists()).count()
 }
 
-/// Deletes Mozc's history files, with no Mozc running (Linux without Fcitx5); how many there were.
+/// Deletes Mozc's history files, with no Mozc running (Linux without Fcitx5); how many there were. As
+/// SebType's Mozc forgets (core/src/mozc_inprocess.cpp): the record of what was picked here is emptied, the
+/// other devices' are kept as learned, and the time is kept, so only what any device picks from now on comes
+/// back (#409).
 #[cfg_attr(windows, allow(dead_code))]
 pub fn forget(dir: &Path) -> io::Result<usize> {
     let mut n = 0;
@@ -271,7 +284,81 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
             Err(e) => return Err(e),
         }
     }
+    // Read once: the times kept and the copies as learned are of the same records.
+    let others = others_learned(dir);
+    if dir.is_dir() {
+        write_file(&dir.join(LEARNED), LEARNED_HEADER)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let before = String::from_utf8_lossy(&read(&dir.join(FORGOTTEN))?).into_owned();
+        let mut devices: std::collections::BTreeMap<String, i64> = before
+            .lines()
+            .skip(1)
+            .filter_map(|l| {
+                let (device, time) = l.split_once('\t')?;
+                Some((device.to_owned(), time.parse().ok()?))
+            })
+            .collect();
+        for (name, text) in &others {
+            let device = Path::new(&name).file_stem().unwrap_or_default();
+            let seen = devices
+                .entry(device.to_string_lossy().into_owned())
+                .or_insert(0);
+            *seen = (*seen).max(latest_pick(text));
+        }
+        let mut text = format!("{now}\n");
+        for (device, time) in devices {
+            text += &format!("{device}\t{time}\n");
+        }
+        write_file(&dir.join(FORGOTTEN), text)?;
+    }
+    for (name, text) in others {
+        write_file(
+            &dir.join(OTHERS_LEARNED)
+                .join(name)
+                .with_extension("applied"),
+            text,
+        )?;
+    }
     Ok(n)
+}
+
+/// The latest pick in a record as core's Forget reads it (learned::latest, by every pick's time: that device's
+/// clock may be ahead of this one's): 0 when there is none.
+fn latest_pick(record: &[u8]) -> i64 {
+    let text = String::from_utf8_lossy(record);
+    let Some(lines) = text
+        .strip_prefix(LEARNED_HEADER)
+        .filter(|_| record.len() <= MAX_LEARNED)
+    else {
+        return 0;
+    };
+    // A last line without its newline was cut short: left out, as core does.
+    let whole = &lines[..lines.rfind('\n').map_or(0, |i| i + 1)];
+    whole
+        .lines()
+        .filter_map(|l| match l.split('\t').collect::<Vec<_>>()[..] {
+            [reading, written, time] if !reading.is_empty() && !written.is_empty() => {
+                time.parse::<i64>().ok()
+            }
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// The other devices' learned conversions the sync brought (#409), by file name.
+pub fn others_learned(dir: &Path) -> Vec<(std::ffi::OsString, Vec<u8>)> {
+    let mut out: Vec<_> = fs::read_dir(dir.join(OTHERS_LEARNED))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "txt"))
+        .filter_map(|e| Some((e.file_name(), fs::read(e.path()).ok()?)))
+        .collect();
+    out.sort();
+    out
 }
 
 #[cfg(test)]
@@ -537,6 +624,47 @@ mod tests {
         );
         assert!(!remove_word(&d, &shown, 1).unwrap());
         assert_eq!(words(&d).unwrap(), shown[1..]);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Forgetting with no Mozc running (#375, #409): the history goes, this PC's record of its picks is
+    /// emptied (the next sync uploads it so), and the other devices' records are kept as learned.
+    #[test]
+    fn forgetting_empties_the_record_and_keeps_the_others_as_learned() {
+        let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "target/test-tmp/mozc-forget-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join(OTHERS_LEARNED)).unwrap();
+        fs::write(d.join(HISTORY[0]), "made up").unwrap();
+        fs::write(
+            d.join(LEARNED),
+            format!("{LEARNED_HEADER}もふしゃ\t模符社\t100\n"),
+        )
+        .unwrap();
+        // The phone's latest pick by its own clock is kept, not a last line cut short; a device kept from an
+        // earlier Forget stays.
+        let phone = format!(
+            "{LEARNED_HEADER}ぷるしゃ\t普留社\t1600000090\nぷるしゃ\t不留社\t1600000100\nぷ\t符\t1"
+        );
+        fs::write(d.join(OTHERS_LEARNED).join("phone.txt"), &phone).unwrap();
+        fs::write(
+            d.join(FORGOTTEN),
+            "1500000000\nlaptop\t1600000440\nphone\t1600000050\n",
+        )
+        .unwrap();
+        assert_eq!(forget(&d).unwrap(), 1);
+        assert!(!d.join(HISTORY[0]).exists());
+        assert_eq!(fs::read_to_string(d.join(LEARNED)).unwrap(), LEARNED_HEADER);
+        let forgotten = fs::read_to_string(d.join(FORGOTTEN)).unwrap();
+        let (here, devices) = forgotten.split_once('\n').unwrap();
+        assert!(here.parse::<i64>().unwrap() > 1_700_000_000);
+        assert_eq!(devices, "laptop\t1600000440\nphone\t1600000100\n");
+        assert_eq!(
+            fs::read_to_string(d.join(OTHERS_LEARNED).join("phone.applied")).unwrap(),
+            phone
+        );
         fs::remove_dir_all(&d).unwrap();
     }
 }

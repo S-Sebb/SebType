@@ -236,10 +236,13 @@ pub fn forget_rime() -> io::Result<usize> {
 pub fn restart_mozc() {
     let _ = server("/mozc");
 }
+/// With the words lock, which a pull holds: as on Linux (linux.rs).
 pub fn forget_mozc() -> io::Result<usize> {
-    let n = crate::mozc::learned(&mozc_dir());
-    forget("ja")?;
-    Ok(n)
+    crate::sync::words_locked(|| {
+        let n = crate::mozc::learned(&mozc_dir());
+        forget("ja")?;
+        Ok(n)
+    })?
 }
 
 // --- Sync (#180) ---

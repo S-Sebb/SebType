@@ -65,6 +65,7 @@
 #include "prediction/predictor_interface.h"
 #include "prediction/result.h"
 #include "protocol/commands.pb.h"
+#include "protocol/config.pb.h"
 #include "request/conversion_request.h"
 #include "request/request_util.h"
 #include "rewriter/rewriter_interface.h"
@@ -355,6 +356,7 @@ void Converter::FinishConversion(const ConversionRequest& request,
                                            .Build();
   rewriter_->Finish(finish_req, *segments);
   predictor_->Finish(finish_req, committed_results, segments->revert_id());
+  ReportPicks(request, *segments);
 
   // Remove the front segments except for some segments which will be
   // used as history segments.
@@ -367,6 +369,49 @@ void Converter::FinishConversion(const ConversionRequest& request,
   // Remaining segments are used as history segments.
   for (Segment& segment : *segments) {
     segment.set_segment_type(Segment::HISTORY);
+  }
+}
+
+// SebType (#409): each piece of a candidate picked over the first one (its inner segments, as the phone's
+// mixed conversion learns them), and its content word when that differs, as UserSegmentHistoryRewriter
+// remembers them. A piece of a longer pick written as it reads chose nothing, but a whole pick written as it
+// reads (しんぶん over 新聞) did.
+void Converter::ReportPicks(const ConversionRequest& request,
+                            const Segments& segments) const {
+  if (sebtype_learned == nullptr || request.incognito_mode() ||
+      request.config().history_learning_level() !=
+          config::Config::DEFAULT_HISTORY) {
+    return;
+  }
+  const auto report = [](absl::string_view key, absl::string_view value,
+                         absl::string_view content_key,
+                         absl::string_view content_value, bool whole) {
+    if (whole || key != value) sebtype_learned(key, value);
+    if (content_key != key && content_value != value &&
+        content_key != content_value && !content_key.empty()) {
+      sebtype_learned(content_key, content_value);
+    }
+  };
+  for (size_t i = segments.history_segments_size();
+       i < segments.segments_size(); ++i) {
+    const Segment& segment = segments.segment(i);
+    if (segment.segment_type() != Segment::FIXED_VALUE ||
+        segment.candidates_size() == 0) {
+      continue;
+    }
+    const Candidate& c = segment.candidate(0);
+    if (!(c.attributes & Attribute::RERANKED) ||
+        (c.attributes & Attribute::NO_HISTORY_LEARNING)) {
+      continue;
+    }
+    if (c.inner_segment_boundary.empty() || c.value == segment.key()) {
+      report(segment.key(), c.value, c.content_key, c.content_value, true);
+      continue;
+    }
+    for (const auto& inner : c.inner_segments()) {
+      report(inner.GetKey(), inner.GetValue(), inner.GetContentKey(),
+             inner.GetContentValue(), false);
+    }
   }
 }
 

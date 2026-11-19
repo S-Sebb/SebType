@@ -264,6 +264,31 @@ private_forget() {
 export -f private_forget
 check private-forget 600 private_forget
 
+# Mozc's learned conversions sync (#409): a sandbox of its own with a new Mozc profile and a made-up device id
+# (as private-sync's), a sebtype_sync.py server on this PC with a throwaway login in a private keyring, a
+# made-up phone's record on it, and made-up typing only.
+# shellcheck disable=SC2016,SC2086  # the inner script gets its paths as arguments; own_env is split
+private_learned_sync() {
+  local d=$sb/learned-sync-account port
+  sandbox "$d"; mkdir -p "$d/server"
+  rm -rf "$d/config/mozc"
+  sed -i '/^sync_dir:/d; s/^installation_id:.*/installation_id: "sebtype-test-pc"/' "$d/data/fcitx5/rime/installation.yaml"
+  rm -f "$out/learned-sync-results.txt" "$out/learned-sync-configurator.log"
+  port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+  private_dbus "$sb" -i PATH="$PATH" $own_env HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
+    -- bash -c '
+      d=$1 here=$2 port=$3 out=$4 server=$2/../../sync-server/sebtype_sync.py
+      SEBTYPE_TEST_SYNC_PASSWORD=$(head -c 18 /dev/urandom | base64)
+      printf "%s\n" "$SEBTYPE_TEST_SYNC_PASSWORD" | python3 -I "$server" adduser --data "$d/server" --password-stdin sebtype-test || exit 1
+      python3 -I "$server" serve --data "$d/server" --port "$port" > "$d/server.log" 2>&1 & s=$!
+      head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
+      export SEBTYPE_TEST_SYNC_SERVER=http://127.0.0.1:$port SEBTYPE_TEST_SYNC_USER=sebtype-test SEBTYPE_TEST_SYNC_PASSWORD
+      python3 "$here/../linux/test-learned-sync.py" "$out" "$here/target/release/sebtype-configurator-test" "$here/target/release/sebtype-configurator"
+      rc=$?; kill $s; wait $s; exit $rc' _ "$d" "$PWD" "$port" "$out"
+}
+export -f private_learned_sync
+check private-learned-sync 600 private_learned_sync
+
 # Sync when the network comes back (#377): the units the Configurator's login makes, in a private systemd
 # user manager that starts nothing else, with the network trigger watching a file of the sandbox instead of
 # resolv.conf (a drop-in), so the PC's network is never touched. Each sync's start and end go in runs.txt;

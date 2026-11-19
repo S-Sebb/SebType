@@ -4,8 +4,8 @@
 Rime syncs learned words through a folder, `sync/<installation id>/`: every device writes only its own
 folder and merges in everyone else's, so a server that keeps one copy of each device's folder per user
 is all sync needs (study report on #3, section 6). The same folders carry each device's Japanese and
-English personal dictionaries (#14), and its Chinese My words (#272); Japanese and Chinese deletions
-and edits sync too (#273). The server stores these files and the phone's crash reports (#33)
+English personal dictionaries (#14), its Chinese My words (#272) and the conversions it picked in
+Mozc (#409); Japanese and Chinese deletions and edits sync too (#273). The server stores these files and the phone's crash reports (#33)
 and nothing else, behind its own usernames and passwords (scrypt-hashed in users.json). It speaks plain
 HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give it a certificate.
 
@@ -57,6 +57,23 @@ MOZC_FILE, WORDS_FILE = "mozc_dictionary.txt", "userdictionary.json"
 # servers and clients from before #272 store and pass it on unchanged; Rime takes in only the
 # snapshots of its own user dictionaries (rime_ice.userdb.txt), so it never reads this one.
 ZH_FILE = "zh_my_words.userdb.txt"
+# The conversions a device's user picked in Mozc (#409): its record, which SebType's Mozc keeps in Mozc's
+# folder (core/src/mozc_learned.h) and learns the other devices' records from, in mozc_learned/<device>.txt.
+LEARNED_FILE, LEARNED_DIR = "mozc_learned.txt", "mozc_learned"
+MAX_LEARNED = 1 << 20  # core's learned::kMaxBytes: a larger record isn't taken in
+# Every device ID this Mozc folder's record went up under: one changes when Rime's installation is made anew,
+# and the record under an older one is this device's own, never another device's to learn (#409).
+OWN_LEARNED = "mozc_learned.own"
+
+
+def own_learned(mozc_dir):
+    try:
+        with open(os.path.join(mozc_dir, OWN_LEARNED), encoding="utf-8") as f:
+            return set(f.read().split())
+    except FileNotFoundError:
+        return set()
+
+
 MAX_FILE = 64 << 20  # a userdb snapshot of years of typing is a few MB
 CRASH = re.compile(r"crash-\d{8}-\d{6}-[0-9a-f]{6}\.txt")
 MAX_CRASH = 256 << 10  # a report is a stack trace and 200 log lines, a few dozen KB
@@ -65,7 +82,11 @@ SCRYPT = {"n": 1 << 14, "r": 8, "p": 1}
 
 def synced(name):
     """Whether a file name is one the server keeps."""
-    return bool(RIME_FILE.fullmatch(name)) or name in (MOZC_FILE, WORDS_FILE)
+    return bool(RIME_FILE.fullmatch(name)) or name in (
+        MOZC_FILE,
+        WORDS_FILE,
+        LEARNED_FILE,
+    )
 
 
 # --- Users ---
@@ -750,9 +771,11 @@ def write_file(path, body):
 
 def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
     """Downloads every other device's changed files into sync_dir/<device>/, takes their Chinese words'
-    changes into rime_dir's My words and with mozc_db their Japanese words' into Mozc; returns
-    (files, Japanese words added, changed or deleted, Chinese ones)."""
-    count = words = chinese = 0
+    changes into rime_dir's My words and with mozc_db their Japanese words' into Mozc, and their
+    learned conversions next to it for Mozc to learn; returns (files, Japanese words added, changed or
+    deleted, Chinese ones, learned conversions' records)."""
+    count = words = chinese = learned = 0
+    mine = own_learned(os.path.dirname(mozc_db)) if mozc_db else set()
     own_zh = os.path.join(sync_dir, device, ZH_FILE)
     if rime_dir and not os.path.isfile(own_zh):
         # A client from before #272 kept copies of other devices' Chinese files without taking their
@@ -769,11 +792,17 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
             f["device"] == device
             or not (NAME.fullmatch(f["device"]) and synced(name))
             or name == WORDS_FILE
-            or (name == MOZC_FILE and not mozc_db)
+            or (name in (MOZC_FILE, LEARNED_FILE) and not mozc_db)
+            or (name == LEARNED_FILE and f.get("size", 0) > MAX_LEARNED)
+            or (name == LEARNED_FILE and f["device"] in mine)
             or (name == ZH_FILE and not rime_dir)
         ):
             continue
         path = os.path.join(sync_dir, f["device"], name)
+        if name == LEARNED_FILE:  # SebType's Mozc learns it when it next starts
+            path = os.path.join(
+                os.path.dirname(mozc_db), LEARNED_DIR, f"{f['device']}.txt"
+            )
         old = None
         if os.path.isfile(path):
             with open(path, "rb") as fh:
@@ -786,9 +815,11 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
             words += mozc_take_in(mozc_db, own, body, old)
         elif name == ZH_FILE:
             chinese += rime_take_in(rime_dir, own_zh, body, old)
+        elif name == LEARNED_FILE:
+            learned += 1
         write_file(path, body)
         count += 1
-    return count, words, chinese
+    return count, words, chinese, learned
 
 
 def push(client, device, sync_dir, mozc_db=None, rime_dir=None):
@@ -810,10 +841,23 @@ def push(client, device, sync_dir, mozc_db=None, rime_dir=None):
         files[MOZC_FILE] = format_entries(
             own_mozc(mozc_db, os.path.join(folder, MOZC_FILE))
         )
+        mozc_dir = os.path.dirname(mozc_db)
+        with contextlib.suppress(FileNotFoundError):
+            with open(os.path.join(mozc_dir, LEARNED_FILE), "rb") as f:
+                files[LEARNED_FILE] = f.read()
+            if device not in (mine := own_learned(mozc_dir)):  # before it goes up
+                ids = "".join(f"{d}\n" for d in sorted(mine | {device}))
+                write_file(os.path.join(mozc_dir, OWN_LEARNED), ids.encode())
     count = 0
     for name, body in files.items():
         if remote.get(name) != hashlib.sha256(body).hexdigest():
-            client.request("PUT", f"/v1/files/{device}/{name}", body)
+            try:
+                client.request("PUT", f"/v1/files/{device}/{name}", body)
+            except urllib.error.HTTPError as e:
+                # A server from before #409 keeps no learned conversions: the rest still syncs.
+                if not (name == LEARNED_FILE and e.code == 404):
+                    raise
+                continue
             count += 1
     return count
 
@@ -834,13 +878,13 @@ def run_client(args):
             client.request("DELETE", "/v1/files")
             print("delete: done")
         elif args.command == "pull":
-            files, words, chinese = pull(
+            files, words, chinese, learned = pull(
                 client, device, sync_dir, args.mozc_db, args.rime_dir
             )
             # The Configurator reads the counts by their place (sync.rs).
             print(
                 f"pull: {files} file(s), {words} word change(s) for Mozc, "
-                f"{chinese} for Rime"
+                f"{chinese} for Rime, {learned} learned conversions' record(s)"
             )
         else:
             print(

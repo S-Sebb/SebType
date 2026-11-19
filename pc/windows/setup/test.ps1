@@ -45,6 +45,8 @@ nobody's own input settings change, then removes the user and its profile:
    uninstall.
 -Only forget: forgetting learned words while the server runs (#375): a silent install, test-forget.ps1 (in the
    folder too) as the test user, not elevated, a silent uninstall.
+-Only learned: Mozc's learned conversions sync (#409): a silent install, test-learned-sync.ps1 (in the folder
+   too, with sebtype_sync.py) as the test user, not elevated, a silent uninstall.
 -Only private: private fields and the Configurator's learning off (#270, #374): a silent install,
    test-private.ps1 (in the folder too) as the test user, not elevated, with -AnyDisplay, a silent uninstall.
 
@@ -107,11 +109,14 @@ if ($Typing) {
       if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result $Typing FAIL "no results: $($log.Trim())" }
       return
     }
-    if ($Typing -eq 'forget') {  # its own script, whose keys go to TSF's keystroke manager: no key server
-      $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\test-forget.ps1" -Out "$out\375" 2>&1 | Out-String
-      Set-Content -Encoding utf8 "$out\forget.log" $log
-      $lines = @(Get-Content -Encoding utf8 "$out\375\forget-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ })
-      if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result forget FAIL "no results: $($log.Trim())" }
+    # Scripts whose keys go to TSF's keystroke manager: no key server.
+    $tsfOwn = @{ 'forget' = 'test-forget.ps1', '375', 'forget-results.txt'; 'learned' = 'test-learned-sync.ps1', '409', 'learned-sync-results.txt' }
+    if ($tsfOwn.ContainsKey($Typing)) {
+      $script, $dir, $file = $tsfOwn[$Typing]
+      $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\$script" -Out "$out\$dir" 2>&1 | Out-String
+      Set-Content -Encoding utf8 "$out\$Typing.log" $log
+      $lines = @(Get-Content -Encoding utf8 "$out\$dir\$file" -ErrorAction SilentlyContinue | Where-Object { $_ })
+      if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result $Typing FAIL "no results: $($log.Trim())" }
       return
     }
     Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
@@ -755,10 +760,10 @@ namespace SebTypeSetupTest {
       Silent-Uninstall $Only
       return
     }
-    if ($Only -eq 'forget') {
-      Check 'forget-install' { Silent forget-install @(); 'silent, all languages' }
-      Typing forget 600
-      Silent-Uninstall forget
+    if ($Only -in 'forget', 'learned') {
+      Check "$Only-install" { Silent "$Only-install" @(); 'silent, all languages' }
+      Typing $Only 900
+      Silent-Uninstall $Only
       return
     }
     if ($Only -eq 'picnic') {

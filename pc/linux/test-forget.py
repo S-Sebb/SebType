@@ -6,8 +6,9 @@
 # both engines are open and another app keeps typing (k a Escape, which learns nothing); then the first candidate
 # is the original one again, and still after Fcitx5 restarts. The same for 日本語's prediction (Tab after きし
 # no longer suggests the word picked) and a character form it learns (a digit's width, which Mozc keeps for
-# the whole process), and at the end the Configurator says forgetting
-# failed when the input method couldn't delete what was learned (read-only folders). Rime's sync folder is
+# the whole process); the record of Mozc's picks that the sync uploads (#409) is emptied. At the end the
+# Configurator says forgetting failed when the input method couldn't delete what was learned (read-only
+# folders). Rime's sync folder is
 # outside its folder (installation.yaml's sync_dir, #396): a sync before forgetting puts 中文's snapshot there,
 # forgetting deletes it and another device's (through a link) but no other file there, and a sync after it
 # brings nothing back; the input method's forget fails when a snapshot there can't be read or sync_dir isn't a
@@ -15,14 +16,12 @@
 # Forget for another language (D-Bus, or the Configurator's --forget) forgets nothing and Fcitx5 lives on.
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
 import os
-import signal
 import subprocess
 import sys
 import time
 
 import dbus
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
+from private_fcitx import Fcitx, bus
 
 out, tests = sys.argv[1:3]
 app = sys.argv[3] if len(sys.argv) > 3 else ""
@@ -36,10 +35,6 @@ def result(name, ok, why):
     print(line, flush=True)
     with open(f"{out}/forget-results.txt", "a") as f:
         f.write(line + "\n")
-
-
-bus = dbus.SessionBus(mainloop=DBusGMainLoop())
-SYMS = {" ": 0x20, "\n": 0xFF0D, "\x1b": 0xFF1B, "\t": 0xFF09}
 
 
 def other_app():
@@ -67,99 +62,6 @@ def other_app():
 
 if tests == "--other-app":
     other_app()
-
-
-class Fcitx:
-    def __init__(self, name):
-        with open(f"{out}/forget-fcitx5-{name}.log", "w") as log:
-            self.p = subprocess.Popen(
-                [
-                    "fcitx5",
-                    "-k",
-                    "--disable=all",
-                    "--enable=dbus,dbusfrontend,keyboard,sebtype",
-                ],
-                stdout=log,
-                stderr=subprocess.STDOUT,
-            )
-        # Not a call before it has the name: the bus would start the system's Fcitx5 for it.
-        for _ in range(150):
-            if self.p.poll() is not None:
-                raise RuntimeError(f"Fcitx5 exited with {self.p.returncode}")
-            if not bus.name_has_owner("org.fcitx.Fcitx5"):
-                time.sleep(0.2)
-                continue
-            try:
-                self.core = dbus.Interface(self.obj("/sebtype"), "org.sebtype.Core1")
-                self.core.State()
-                break
-            except dbus.DBusException:
-                time.sleep(0.2)
-        else:
-            raise RuntimeError("SebType's input method didn't come up")
-        path, _ = dbus.Interface(
-            self.obj("/org/freedesktop/portal/inputmethod"),
-            "org.fcitx.Fcitx.InputMethod1",
-        ).CreateInputContext([("program", "sebtype-test")])
-        self.ic = dbus.Interface(self.obj(path), "org.fcitx.Fcitx.InputContext1")
-        self.ic.SetCapability(dbus.UInt64(1 << 1))  # preedit
-        self.ic.FocusIn()
-        self.typed = []
-        self.ic.connect_to_signal(
-            "CommitString", lambda text: self.typed.append(str(text))
-        )
-
-    def focus(self):  # back from the other app
-        self.ic.FocusIn()
-
-    def obj(self, path):
-        return bus.get_object("org.fcitx.Fcitx5", path)
-
-    def key(self, ch):
-        sym = SYMS.get(ch, ord(ch))
-        taken = False
-        for release in (False, True):
-            taken |= bool(
-                self.ic.ProcessKeyEvent(
-                    dbus.UInt32(sym),
-                    dbus.UInt32(0),
-                    dbus.UInt32(0),
-                    release,
-                    dbus.UInt32(0),
-                )
-            )
-        return taken
-
-    def pump(self):
-        while GLib.MainContext.default().iteration(False):
-            pass
-
-    def type(self, keys):
-        """What typing these keys commits."""
-        self.pump()
-        self.typed.clear()
-        for ch in keys:
-            self.key(ch)
-            time.sleep(0.05)
-        time.sleep(0.3)
-        self.pump()
-        return "".join(self.typed)
-
-    def language(self, lang):
-        """Switches to it and waits until its engine takes keys (Rime deploys at its first start)."""
-        self.core.SetLanguage(lang)
-        for _ in range(600):
-            if self.key("n" if lang == "zh" else "a"):
-                self.key("\x1b")
-                return True
-            time.sleep(0.5)
-        return False
-
-    def stop(self):
-        self.p.send_signal(
-            signal.SIGTERM
-        )  # Fcitx5 stops its add-ons: Rime and Mozc save and close
-        self.p.wait(60)
 
 
 # The first candidate, and the 4th picked (Mozc: Space converts, each Space after it the next).
@@ -229,7 +131,7 @@ def sync(f):
     return False
 
 
-f = Fcitx("first")
+f = Fcitx(f"{out}/forget-fcitx5-first.log")
 first, picked = {}, {}
 for lang, (top, fourth) in WORDS.items():
     ready = f.language(lang)
@@ -296,6 +198,20 @@ result(
 )
 
 # Both engines are open, with what they learned in memory and on disk, and another app types meanwhile.
+# This PC's record of its Mozc picks, which the sync uploads (#409): Forget empties it.
+own = f"{os.environ['XDG_CONFIG_HOME']}/mozc/mozc_learned.txt"
+LEARNED_HEADER = "# SebType mozc_learned 1\n"
+
+
+def record():
+    try:
+        with open(own, encoding="utf-8") as r:
+            return r.read()
+    except FileNotFoundError:
+        return ""
+
+
+recorded = f"\t{picked['ja']}\t" in record()
 typer = subprocess.Popen([sys.executable, __file__, out, "--other-app"])
 time.sleep(1)
 forgot = subprocess.run(
@@ -316,6 +232,11 @@ result(
     f"exit {forgot.returncode}, see {out}/forget-configurator.log",
 )
 
+result(
+    "ja-record-forgotten",
+    recorded and record() == LEARNED_HEADER,
+    f"'{picked['ja']}' {'in' if recorded else 'not in'} the record before, after {record()!r}",
+)
 left = [p for p in (snapshot, linked) if os.path.exists(p)]
 gone = [name for name in KEPT if not os.path.exists(f"{sync_dir}/{name}")]
 result(
@@ -350,7 +271,7 @@ result(
 )
 f.stop()
 
-f = Fcitx("restarted")
+f = Fcitx(f"{out}/forget-fcitx5-restarted.log")
 for lang, (top, _) in WORDS.items():
     ready = f.language(lang)
     now = f.type(top)

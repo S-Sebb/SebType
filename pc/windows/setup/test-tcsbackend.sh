@@ -14,6 +14,7 @@
 # ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the
 # test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows-<SCALE>-<time>.
 # ONLY=forget runs only forgetting learned words while the server runs (#375): test-forget.ps1 as the test user.
+# ONLY=learned runs only Mozc's learned conversions sync (#409): test-learned-sync.ps1 as the test user.
 # ONLY=private runs only private fields and the Configurator's learning off (#270, #374): test-private.ps1 in
 # the test user's Remote Desktop session.
 # SCALE=150 (100 to 500) sets the session's display scaling (Remote Desktop's desktop scale factor).
@@ -159,7 +160,7 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-private.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi

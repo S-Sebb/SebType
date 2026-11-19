@@ -8,3 +8,5 @@ EXPORTS
   sebtype_mozc_close
   sebtype_mozc_import_user_dictionary
   sebtype_mozc_set_learning
+  sebtype_mozc_take_learned
+  sebtype_mozc_learn

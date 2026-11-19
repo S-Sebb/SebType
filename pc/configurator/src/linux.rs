@@ -367,13 +367,17 @@ pub fn restart_mozc() {
         );
     }
 }
+/// With the words lock (crate::sync::words_locked), which a pull holds: Forget keeps the other devices' records as
+/// it reads them, so none may change in between (#409).
 pub fn forget_mozc() -> io::Result<usize> {
-    if !fcitx_running() {
-        return crate::mozc::forget(&mozc_dir());
-    }
-    let n = crate::mozc::learned(&mozc_dir());
-    forget("ja")?;
-    Ok(n)
+    crate::sync::words_locked(|| {
+        if !fcitx_running() {
+            return crate::mozc::forget(&mozc_dir());
+        }
+        let n = crate::mozc::learned(&mozc_dir());
+        forget("ja")?;
+        Ok(n)
+    })?
 }
 
 // --- Sync (#180) ---

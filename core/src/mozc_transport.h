@@ -24,6 +24,9 @@ class MozcTransport {
   virtual void reload() = 0;
   // The same, with Mozc's history cleared and its files deleted while it is closed (the PCs, #375).
   virtual void forget() = 0;
+  // The phone: what forget() does to the learned conversions' record (mozc_learned.h), Mozc's history being
+  // cleared by its commands instead.
+  virtual void forgetRecord() = 0;
   // Engine::forgetError, once it isn't loading().
   virtual std::string forgetError() const = 0;
 };

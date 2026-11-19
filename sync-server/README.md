@@ -14,8 +14,9 @@ one copy of each device's folder is enough, and two devices never overwrite each
 The same folders carry the personal dictionaries: each device puts its whole Japanese dictionary there
 as `mozc_dictionary.txt`, in the format of Mozc's own dictionary export, and its other (English) words
 as `userdictionary.json`, FUTO Keyboard's format, which only phones have, and its Chinese **My words**
-as `zh_my_words.userdb.txt` (#272). Learning history (what Mozc
-or the English keyboard learned from your typing) isn't synced.
+as `zh_my_words.userdb.txt` (#272). The PCs also put there the conversions you picked in Mozc, as
+`mozc_learned.txt` (#409, below). The rest of what Mozc or the English keyboard learned from your typing
+isn't synced.
 
 Japanese words sync both ways, deletions and edits too (#273). Each line of `mozc_dictionary.txt` also
 has the time the word last changed on that device, and the words deleted there are kept as `#-` lines;
@@ -41,12 +42,28 @@ A device from before #273 still syncs: the new file's words keep Mozc's export c
 `#-` lines. It takes in the words other devices add but not their deletions; what it still has doesn't
 come back to the others, and what it deletes stays deleted only there.
 
+### Learned conversions (Mozc)
+
+When you convert a reading in Japanese and pick another candidate than the first, Mozc learns it and puts
+it first next time. Mozc's own files keep only hashes of what it learned, so SebType's Mozc also keeps a
+record of your picks, `mozc_learned.txt` in Mozc's folder: a `# SebType mozc_learned 1` line, then one
+`reading<TAB>written<TAB>time` line per pick, at most its most recent 5,000. The sync uploads it when it changed
+and puts the other devices' records in `mozc_learned/<device>.txt` beside it (none over 1 MB); when Mozc next starts it learns
+each reading another device picked something for since, every pick known for it in time order, so the
+latest pick comes first on every device. Only the pick is learned, not the words around it, which Mozc
+also learns from on the device you typed on.
+
+- Learning off: nothing new is recorded, and other devices' picks are still learned, as from a private field.
+- Forget (Japanese): empties this device's record, which the next sync uploads so, and keeps when you forgot:
+  no pick from before it, on any device, is learned here again, only what is picked after.
+- A server from before #409 refuses the file; the PC syncs the rest without it.
+
 English words sync as before: a device takes in only the words another device's file gained since it
 last took that file, so a word you delete stays deleted on that device, even while another device still
 has it, and to remove one everywhere, delete it on each phone.
 
 `sebtype_sync.py` is that server, and a small client for the PCs. It stores only these files
-(`*.userdb.txt`, `mozc_dictionary.txt`, `userdictionary.json`), one folder per device under each user,
+(`*.userdb.txt`, `mozc_dictionary.txt`, `userdictionary.json`, `mozc_learned.txt`), one folder per device under each user,
 and the phone's crash reports (below). Passwords are stored as scrypt hashes in
 `users.json`. Python 3.9 or newer, standard library only.
 
@@ -135,7 +152,7 @@ All requests use HTTP Basic auth with a user from `users.json`.
 |---|---|
 | `GET /v1/files` | Lists the user's files: `{"files": [{"device", "name", "size", "sha256"}]}` |
 | `GET /v1/files/<device>/<name>` | Downloads one |
-| `PUT /v1/files/<device>/<name>` | Stores one (a `*.userdb.txt`, `mozc_dictionary.txt` or `userdictionary.json`, up to 64 MB) |
+| `PUT /v1/files/<device>/<name>` | Stores one (a `*.userdb.txt`, `mozc_dictionary.txt`, `userdictionary.json` or `mozc_learned.txt`, up to 64 MB) |
 | `DELETE /v1/files` | Deletes all of the user's files |
 | `PUT /v1/crashes/<name>` | Stores a crash report (`crash-YYYYMMDD-HHMMSS-xxxxxx.txt`, up to 256 KB) in `crashes/<user>/` |
 
@@ -171,8 +188,8 @@ timer (`sebtype-sync.timer`, also two minutes after login) on Linux, a Task Sche
 ("SebType sync", while you're logged on) on Windows. Each run is the three steps below with this
 `sebtype_sync.py`, built into the Configurator: `pull`, Rime's sync (Fcitx5's save on Linux,
 `sebtype-server.exe /sync` on Windows), `push`, with the password on the client's stdin
-(`--password-stdin`) and the Mozc dictionary included. When Japanese words came in or went, Mozc restarts to
-read them. On Windows the Configurator runs it with the Python that Setup installs next to it.
+(`--password-stdin`) and the Mozc dictionary included. When Japanese words came in or went, or
+another device's learned conversions came in, Mozc restarts, once typing is idle, to read them. On Windows the Configurator runs it with the Python that Setup installs next to it.
 
 "Delete learned words and dictionaries on the server" runs the client's `delete` and turns sync off; the
 words on the PC stay. Uninstalling SebType, or leaving a language out in Setup, never deletes anything on
