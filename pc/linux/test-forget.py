@@ -190,9 +190,9 @@ os.makedirs(sync_dir, exist_ok=True)
 with open(f"{sync_dir}/notes.txt", "w") as notes:
     notes.write("not Rime's\n")
 with open(f"{rime_dir}/installation.yaml") as y:
-    lines = [line for line in y if not line.startswith("sync_dir:")]
+    lines = [line for line in y.read().splitlines() if not line.startswith("sync_dir:")]
 with open(f"{rime_dir}/installation.yaml", "w") as y:
-    y.writelines(lines + [f'sync_dir: "{sync_dir}"\n'])
+    y.write("\n".join(lines + [f'sync_dir: "{sync_dir}"']) + "\n")
 snapshot = next(
     f"{sync_dir}/{line.split(':', 1)[1].strip().strip(chr(34))}/rime_ice.userdb.txt"
     for line in lines
