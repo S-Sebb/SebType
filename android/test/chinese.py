@@ -1038,6 +1038,13 @@ check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
 UNDO_ACTION = ("Undo", "撤销", "元に戻す")
 
 
+def action(labels):
+    """Opens the action bar if it is closed, then taps one of its actions."""
+    if not any(n[0] in CLOSE_BAR for n in nodes()):
+        tap_label(OPEN_BAR)
+    tap_label(labels)
+
+
 def undo_conversion():
     """#379: Undo after a conversion goes to Mozc, as today's app: the reading comes back, to convert again."""
     open_field()
@@ -1424,13 +1431,6 @@ TALLER = ("Taller", "调高", "高く")
 SHORTER = ("Shorter", "调低", "低く")
 MOVE_KEYBOARD = "Move keyboard"
 RESIZE_CORNER = "Drag to resize"
-
-
-def action(labels):
-    """Opens the action bar if it is closed, then taps one of its actions."""
-    if not any(n[0] in CLOSE_BAR for n in nodes()):
-        tap_label(OPEN_BAR)
-    tap_label(labels)
 
 
 def node(label):
