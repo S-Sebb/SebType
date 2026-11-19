@@ -49,7 +49,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   // Saves learned words: Rime's sync, Mozc's.
   void save() override;
   // fcitx://config/addon/sebtype/deploy: Rime applies changed settings and data; .../mozc: Mozc starts again
-  // with the files the Configurator or setup changed (its settings, dictionaries and learned words).
+  // with the files the Configurator or setup changed (its settings, dictionaries and learned words);
+  // .../deploy-when-idle and .../mozc-when-idle: the same once typing is idle, for a sync (#373).
   void setSubConfig(const std::string &path, const fcitx::RawConfig &) override;
 
   fcitx::Instance *instance() { return instance_; }

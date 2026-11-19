@@ -696,12 +696,12 @@ def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
     wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n
 check('a page shows 6 candidates (shi)', page('shi'), 6)
-# #373: the sync's Save and a deploy asked for mid-word wait until typing is idle: the word typed on keeps what
+# #373: the sync's Save and its deploy asked for mid-word wait until typing is idle: the word typed on keeps what
 # was typed before them, and Rime's save runs once typing stops (it writes this PC's snapshot).
 def sync_mid_word():
     for c in 'ni': tap(c)
     call(*CONTROLLER, 'Save')
-    call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy', GLib.Variant('s', ''))
+    call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy-when-idle', GLib.Variant('s', ''))
     wait(lambda: False, 1)
     return first('hao')
 check('a sync and a deploy mid-word keep it: nihao gives 你好', sync_mid_word(), '你好')
@@ -723,7 +723,8 @@ fi
 # Private fields (#270): a private Fcitx5 (as above) with SebType's input method on its own fake account. In a field
 # the app marks sensitive (Chromium's incognito windows, Qt's ImhSensitiveData), a word picked in 中文 and in
 # 日本語 is not learned, and what was learned before is still first; in a field that may learn the same pick is.
-# Mozc's settings file (here general_config and the MS-IME keymap) is never written for it.
+# Mozc's settings file (here general_config and the MS-IME keymap) is never written for it. Forgetting 日本語 then
+# leaves no history behind (#373).
 private_field() {
   local h=$fake/private before
   mkdir -p "$h/.config/fcitx5"
@@ -733,8 +734,8 @@ private_field() {
   before=$(stat -c '%Y.%y %s' "$h/.config/mozc/config1.db"; sha256sum < "$h/.config/mozc/config1.db")
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
-  private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" <<'PY'
-import subprocess, sys, time
+  private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" "$h/.config/mozc" <<'PY'
+import os, subprocess, sys, time
 from gi.repository import Gio, GLib
 
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
@@ -803,7 +804,15 @@ for lang, (first, fourth) in LANGS.items():
     check(f'{lang}: a field that may learn learns it', first(), picked)
     field(True)
     check(f'{lang}: a sensitive field keeps what was learned', first(), picked)
+# Forgetting 日本語 as the Configurator does (forget_mozc): Mozc restarts at once, saving and closing, then its
+# history files go; Mozc closing later (here as Fcitx5 exits) writes nothing back (#373).
+HISTORY = [os.path.join(sys.argv[2], f) for f in ('segment.db', 'boundary.db', 'cform.db', '.history.db')]
+call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/mozc', GLib.Variant('s', ''))
+removed = [f for f in HISTORY if os.path.exists(f)]
+for f in removed: os.remove(f)
+check('ja: forgetting finds the history Mozc saved as it closed', bool(removed), True)
 fcitx.terminate(); fcitx.wait(10)
+check('ja: forgotten history stays gone after Mozc closes', [f for f in HISTORY if os.path.exists(f)], [])
 sys.exit(0 if ok else 1)
 PY
   local rc=$? p

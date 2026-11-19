@@ -224,25 +224,29 @@ void SebTypeEngine::save() {
   whenIdle(Core::Chore::Save, [this] { core_->forEachEngine([](Engine &e) { e.save(); }); });
 }
 
-// The deploy and Mozc's restart drop what is being typed: they wait until typing is idle too (#373).
+// The Configurator's changes and forgetting deploy or restart Mozc at once (forgetting deletes Mozc's history
+// after the restart has closed it). A sync's pull asks with -when-idle: those drop what is being typed, so
+// they wait until typing is idle (#373).
 void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig &) {
-  if (path == "deploy") {
-    whenIdle(Core::Chore::Deploy, [this] {
-      core_->engine(Lang::Chinese);
-      core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
-    });
-  } else if (path == "mozc") {
-    // Mozc reads its settings and dictionaries when it starts: it saves and closes, and the next 日本語 key
-    // starts it again.
-    whenIdle(Core::Chore::ReloadJapanese, [this] { core_->stop(Lang::Japanese); });
-  }
+  const auto deploy = [this] {
+    core_->engine(Lang::Chinese);
+    core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
+    updateStatus(instance_->mostRecentInputContext());
+  };
+  // Mozc reads its settings and dictionaries when it starts: it saves and closes, and the next 日本語 key starts
+  // it again.
+  const auto restartMozc = [this] {
+    core_->stop(Lang::Japanese);
+    update(instance_->mostRecentInputContext());
+  };
+  if (path == "deploy") deploy();
+  else if (path == "mozc") restartMozc();
+  else if (path == "deploy-when-idle") whenIdle(Core::Chore::Deploy, deploy);
+  else if (path == "mozc-when-idle") whenIdle(Core::Chore::ReloadJapanese, restartMozc);
 }
 
 void SebTypeEngine::whenIdle(Core::Chore chore, std::function<void()> work) {
-  core_->whenIdle(chore, [this, work = std::move(work)] {
-    work();
-    updateStatus(instance_->mostRecentInputContext());  // 中文's key turns grey while Rime deploys
-  });
+  core_->whenIdle(chore, std::move(work));
   if (chores_) {
     chores_->setNextInterval(0);
     chores_->setOneShot();

@@ -8,6 +8,7 @@
 //   sebtype-server.exe /deploy|/sync|/quit|/mozc  tells the server (/deploy and /sync do it themselves when
 //                                                 none runs, and return when Rime is done), for setup and the
 //                                                 Configurator; /mozc: Mozc reads its files again;
+//   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373)
 //                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
 //                                                 didn't take the request, 5 Rime still busy after 5 minutes
 #include <sebtype/core.h>
@@ -122,6 +123,15 @@ void followField(bool learning) {
   note(learning ? "field: learns" : "field: private, learns nothing");
 }
 
+void deploy() {
+  core->engine(Lang::Chinese);
+  core->forEachEngine([](Engine &e) { e.deploy(); });
+}
+
+void reloadMozc() {
+  if (Engine *mozc = core->running(Lang::Japanese)) mozc->reload();
+}
+
 Reply handle(const Request &q, HANDLE pipe) {
   const DWORD asked = GetTickCount();
   std::lock_guard<std::mutex> hold(lock);
@@ -187,13 +197,15 @@ Reply handle(const Request &q, HANDLE pipe) {
       if (reset) core->clear();
       else note("reset: kept, another app has typed since");
       break;
-    // These drop what is being typed, so they wait until typing is idle (#373); runChores does them.
     case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet; Mozc's page size
-      core->whenIdle(Core::Chore::Deploy, [] {
-        core->engine(Lang::Chinese);
-        core->forEachEngine([](Engine &e) { e.deploy(); });
-      });
+      deploy();
       break;
+    case Op::Mozc:  // in the background: 日本語 is grey until it is done (#312)
+      reloadMozc();
+      break;
+    // A sync's: these drop what is being typed, so they wait until typing is idle (#373); runChores does them.
+    case Op::DeployWhenIdle: core->whenIdle(Core::Chore::Deploy, deploy); break;
+    case Op::MozcWhenIdle: core->whenIdle(Core::Chore::ReloadJapanese, reloadMozc); break;
     case Op::Sync:
       core->whenIdle(Core::Chore::Save, [] {
         core->engine(Lang::Chinese);
@@ -201,11 +213,6 @@ Reply handle(const Request &q, HANDLE pipe) {
       });
       break;
     case Op::Quit: break;
-    case Op::Mozc:  // in the background: 日本語 is grey until it is done (#312)
-      core->whenIdle(Core::Chore::ReloadJapanese, [] {
-        if (Engine *mozc = core->running(Lang::Japanese)) mozc->reload();
-      });
-      break;
   }
   return state(taken, commit);
 }
@@ -324,10 +331,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   else if (_wcsicmp(arg.c_str(), L"/sync") == 0) q.op = Op::Sync;
   else if (_wcsicmp(arg.c_str(), L"/quit") == 0) q.op = Op::Quit;
   else if (_wcsicmp(arg.c_str(), L"/mozc") == 0) q.op = Op::Mozc;
+  else if (_wcsicmp(arg.c_str(), L"/deploy-when-idle") == 0) q.op = Op::DeployWhenIdle;
+  else if (_wcsicmp(arg.c_str(), L"/mozc-when-idle") == 0) q.op = Op::MozcWhenIdle;
   else return run();
   Reply r;
   // No server: no Mozc to tell, and it reads its files when one starts.
-  if (q.op == Op::Quit || q.op == Op::Mozc) return call(q, r, 5000), 0;
+  if (q.op == Op::Quit || q.op == Op::Mozc || q.op == Op::MozcWhenIdle) return call(q, r, 5000), 0;
   const auto failed = [&](int code, const char *what) {
     note(std::string(utf8(arg)) + ": " + what + " (error " + std::to_string(GetLastError()) + "), exit " + std::to_string(code));
     return code;
@@ -341,7 +350,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (GetLastError() != ERROR_ALREADY_EXISTS) {
       const DWORD start = GetTickCount();
       Engine *rime = makeEngine(Lang::Chinese).release();  // never finalized: exiting ends Rime's thread
-      q.op == Op::Deploy ? rime->deploy() : rime->save();
+      q.op == Op::Sync ? rime->save() : rime->deploy();  // with no server, no one types: at once
       for (; rime->busy(); Sleep(200))
         if (GetTickCount() - start > 300000) return failed(5, "Rime still busy after 5 minutes");
       note(utf8(arg) + " in this process: " + std::to_string((GetTickCount() - start) / 1000) + " s");
