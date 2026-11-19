@@ -1979,29 +1979,47 @@ def swipe_delete_words():
 
 def slide_to_letter():
     """A finger put down on one letter and slid onto its neighbour types the neighbour (#382); held there,
-    the long press opens the neighbour's choices (e's first is 3, w's is 2)."""
+    the long press opens the neighbour's choices (e's first is 3, w's is 2). The lift-off point counts: a last
+    MOVE 7 dp past q's edge (under the 8 dp threshold) and the UP 12 dp past it type w."""
     to_english()
+    k = key_spots()
+    (qx, y), (wx, _), (ex, _) = k["q"], k["w"], k["e"]
+    edge = (qx + wx) // 2  # q's right edge: keys are a key width apart, edge to edge
+    dp = screen_density()
+    cases = (  # name, down, moves, hold, up, what it types
+        ("q -> w", qx, [qx + (wx - qx) * i // 4 for i in range(1, 5)], 0, wx, "w"),
+        (
+            "w -> e, held",
+            wx,
+            [wx + (ex - wx) * i // 4 for i in range(1, 5)],
+            1.5,
+            ex,
+            "3",
+        ),
+        (
+            "q, lifted 12 dp past its edge",
+            qx,
+            [edge + round(7 * dp)],
+            0,
+            edge + round(12 * dp),
+            "w",
+        ),
+    )
     got = []
-    for steps, hold in ((("q", "w"), 0), (("w", "e"), 1.5)):
+    for name, down, moves, hold, up, want in cases:
         open_field()
-        k = key_spots()
-        (x0, y0), (x1, y1) = k[steps[0]], k[steps[1]]
-        moves = "; ".join(
-            f"input motionevent MOVE {x0 + (x1 - x0) * i // 4} {y0}"
-            for i in range(1, 5)
-        )
+        path = "; ".join(f"input motionevent MOVE {x} {y}" for x in moves)
         adb(
             "shell",
-            f"input motionevent DOWN {x0} {y0}; {moves}; sleep {hold}; input motionevent UP {x1} {y1}",
+            f"input motionevent DOWN {down} {y}; {path}; sleep {hold}; input motionevent UP {up} {y}",
         )
         time.sleep(1.5)
         settle()
-        got.append(field_text())
-    if [g.lower() for g in got] != ["w", "3"]:
-        raise Fail(
-            f"q slid onto w typed {got[0]!r}, w slid onto e and held typed {got[1]!r}"
-        )
-    return f"q -> w typed {got[0]!r}; w -> e, held, typed {got[1]!r}"
+        text = field_text()
+        got.append(f"{name} typed {text!r}")
+        if text.lower() != want:
+            raise Fail(f"{got[-1]}, not {want!r}; " + "; ".join(got[:-1]))
+    return "; ".join(got)
 
 
 def swipe_delete_cjk():

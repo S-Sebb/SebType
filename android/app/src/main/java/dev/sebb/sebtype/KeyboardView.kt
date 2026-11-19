@@ -99,6 +99,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val rect = RectF(box.left, box.top, box.right, box.bottom)
     }
     private var cells = emptyList<Cell>()
+    private var keys = emptyList<Layout.Key>()
     private var boxes = emptyList<Box>()
     /** The keys' text sizes' share of today's: [keyTextScale] of the keys as laid out */
     private var textScale = 1f
@@ -175,6 +176,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val out = keyCells(numberRow?.rows.orEmpty() + page?.rows.orEmpty(), width.toFloat(), rowHeight, density, split)
             .map { (key, b) -> Cell(key, b) }
         cells = out
+        keys = out.map { it.key }
         boxes = out.map { it.box }
         textScale = keyTextScale(heightScale, (if (split) half else unit) / density)
         keyPx = maxOf(1, (px * textScale).roundToInt()).toFloat()
@@ -351,6 +353,10 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private fun cellAt(x: Float, y: Float): Cell? = keyAt(boxes, x, y, height.toFloat())?.let { cells[it] }
 
+    /** The letter a held finger at [x], [y] slid onto from its key, if it did; none for a key laid out again since */
+    private fun slidTo(p: Pointer, x: Float, y: Float): Cell? =
+        cells.indexOf(p.cell).takeIf { it >= 0 }?.let { slidTo(keys, boxes, it, x, y, height.toFloat(), hysteresis) }?.let { cells[it] }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
@@ -367,8 +373,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 p.y = e.getY(i)
                 if (p.panel == null) {
                     swipe(p)
-                    cellAt(p.x, p.y)?.takeIf { it !== p.cell && slides(p.cell.key, p.cell.box, it.key, p.x, p.y, hysteresis) }
-                        ?.let { slide(p, it) }
+                    slidTo(p, p.x, p.y)?.let { slide(p, it) }
                 }
                 p.panel?.let { panel ->
                     val x = e.getX(i) + layerOffset()[0]
@@ -381,8 +386,15 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
-                val id = e.getPointerId(e.actionIndex)
-                pointers[id]?.let { release(id, it) }
+                val i = e.actionIndex
+                val id = e.getPointerId(i)
+                pointers[id]?.let { p ->
+                    // Where the finger lifts counts too: a last step past the edge types the letter it ends on
+                    p.x = e.getX(i)
+                    p.y = e.getY(i)
+                    if (p.panel == null) slidTo(p, p.x, p.y)?.let { p.cell = it }
+                    release(id, p)
+                }
             }
             MotionEvent.ACTION_CANCEL -> cancelTouches()
         }
@@ -754,6 +766,13 @@ internal fun keyAt(cells: List<Box>, x: Float, y: Float, height: Float): Int? {
         dx * dx + dy * dy
     }
 }
+
+/**
+ * The key a finger held on [keys]' key [from] types instead at [x], [y], a move or where it lifts: the one it is
+ * now over, once [slides] says so; null when it keeps its key.
+ */
+internal fun slidTo(keys: List<Layout.Key>, boxes: List<Box>, from: Int, x: Float, y: Float, height: Float, hysteresis: Float): Int? =
+    keyAt(boxes, x, y, height)?.takeIf { it != from && slides(keys[from], boxes[from], keys[it], x, y, hysteresis) }
 
 /**
  * Whether a finger held on [from] (its cell [box]), now at [x], [y] over [to], types [to] instead, as today's
