@@ -6,8 +6,10 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
+struct ggml_threadpool;
 struct llama_context;
 struct llama_model;
 struct llama_vocab;
@@ -62,6 +64,7 @@ private:
     std::vector<int> examplePrefix(const std::string &context, const std::string &typed) const;
     const float *advance(const std::vector<int> &prefix);
     void clearBranches();
+    void release();  // frees the model, its context and its threads
     // Decodes the example PREFIX after what the cache holds of it, and FOLLOWERS after it as a tree, each on a
     // sequence of its own, in one batch, into mNodes.
     void decodeExample(const std::vector<int> &prefix, const std::vector<std::vector<int>> &followers);
@@ -71,6 +74,8 @@ private:
 
     llama_model *mModel = nullptr;
     llama_context *mCtx = nullptr;
+    ggml_threadpool *mPool = nullptr;
+    void (*mFreePool)(ggml_threadpool *) = nullptr;
     const llama_vocab *mVocab = nullptr;
     int mVocabSize = 0;
     int mT = -1, mS = -1, mE = -1, mB = -1, mBos = -1;
@@ -89,6 +94,7 @@ private:
     std::vector<int> mExample;
     std::map<std::vector<int>, Node> mNodes;
     std::vector<std::vector<int>> mGuesses;  // generate()'s last candidates, which score() decodes too
+    std::pair<size_t, std::vector<Text>> mEmptyWords;  // nextWords() for an empty field, and its N
 };
 
 }  // namespace zh_lm

@@ -3,6 +3,8 @@
 // keyboard's engine thread (NativeCore.post) and the background setup (RimeIceSetup) never run core/ at once.
 // A call that changes what is typed returns all of it in one NativeState. MIT, SebType.
 #include <android/log.h>
+#include <dlfcn.h>
+#include <ggml-backend.h>
 #include <jni.h>
 #include <unistd.h>
 #include <sebtype/core.h>
@@ -227,8 +229,9 @@ void setChineseModel(JNIEnv *env, jclass, jstring model, jstring opencc) {
   if (m == chineseModel.model && o == chineseModel.opencc) return;
   chineseModel.model = m;
   chineseModel.opencc = o;
-  // Half the cores, at most 4: 4 threads took the experiment's p95 from 25 to 18 ms a key (#259).
-  chineseModel.threads = static_cast<int>(std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u));
+  // 2 threads: on the A001 (#264) they took 中's ranking from 16 / 26 ms per key (p50 / p95) with 4 to 9 / 15 ms.
+  // 4 left no big core for the keyboard's own threads, which the model's then waited for at every step.
+  chineseModel.threads = std::thread::hardware_concurrency() > 1 ? 2 : 1;
   core->stop(Lang::Chinese);
 }
 
@@ -443,6 +446,12 @@ jbyteArray importUserDictionary(JNIEnv *env, jclass, jbyteArray text) {
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
   vm = javaVm;
   stderrToLog();
+  // llama.cpp's CPU code (CMakeLists.txt): of the variants next to this library, ggml loads the best this phone
+  // runs, before any model loads.
+  if (Dl_info self; dladdr(reinterpret_cast<void *>(&JNI_OnLoad), &self) && self.dli_fname) {
+    const std::string dir = self.dli_fname;
+    ggml_backend_load_all_from_path(dir.substr(0, dir.rfind('/')).c_str());
+  }
   rime_require_module_lua();
   rime_require_module_octagram();
   JNIEnv *env;
