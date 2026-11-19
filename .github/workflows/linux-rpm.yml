@@ -1,0 +1,98 @@
+# SebType's Linux input method RPM (#421), sebtype-<version>-<release>.x86_64.rpm, for each release: built by
+# linux/build.sh as on a PC, in the pinned Fedora container nobara-pc runs (linux/versions.sh), here with the
+# runner to itself (tools/lib.sh). The run's artifact "sebtype-rpm" is what android/release.sh attaches.
+# Kept 14 days from main, 3 from PRs, like the Windows setup (#418).
+name: Linux RPM
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: &paths
+      - VERSION
+      - core/**
+      - linux/**
+      - pc/icons/**
+      - engines/mozc/**
+      - tools/lib.sh
+      - tools/mozc-bazel.sh
+      - tools/mozc-downloads.tsv
+      - .github/workflows/linux-rpm.yml
+  push:
+    branches: [main]
+    paths: *paths
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    runs-on: ubuntu-24.04
+    env:
+      WORK: /home/runner/scratch/SebType/cache/mozc/work
+      DOWNLOADS: /home/runner/scratch/SebType/cache/mozc-android
+    steps:
+      - uses: actions/checkout@v4
+      - id: inputs
+        run: |
+          source linux/versions.sh
+          echo "rpm=$SEBTYPE_RPM" >> "$GITHUB_OUTPUT"
+          echo "image=$BUILD_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "hash=${{ hashFiles('VERSION', 'core/**', 'linux/**', 'pc/icons/**', 'engines/mozc/**', 'tools/lib.sh', 'tools/mozc-bazel.sh', 'tools/mozc-downloads.tsv') }}" >> "$GITHUB_OUTPUT"
+      # The RPM depends only on these: a run that changes none of them, a PR's on main's, takes the last build's.
+      - uses: actions/cache@v4
+        id: built
+        with:
+          path: out
+          key: sebtype-rpm-${{ steps.inputs.outputs.hash }}
+      # What Bazel would download (tools/mozc-downloads.tsv), fetched at the capped rate once per list.
+      - uses: actions/cache@v4
+        if: steps.built.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.DOWNLOADS }}
+          key: mozc-downloads-${{ hashFiles('tools/mozc-downloads.tsv') }}
+      # Bazel's disk cache from main's last build, so a change recompiles only what it touches.
+      - uses: actions/cache/restore@v4
+        if: steps.built.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.WORK }}/bazel/disk-cache
+          key: mozc-linux-bazel-${{ steps.inputs.outputs.hash }}
+          restore-keys: mozc-linux-bazel-
+      - name: Build
+        if: steps.built.outputs.cache-hit != 'true'
+        run: |
+          touch "$RUNNER_TEMP/start"
+          rpm=$(linux/build.sh) || { tail -50 "$WORK/sebtype-build.log"; exit 1; }
+          mkdir -p out
+          cp "$rpm" "out/${{ steps.inputs.outputs.rpm }}"
+          # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and would
+          # only grow the saved cache.
+          old=$(find "$WORK/bazel/disk-cache" -type f ! -newer "$RUNNER_TEMP/start" -print -delete | wc -l)
+          echo "Bazel cache: dropped $old unused entries, kept $(du -sh "$WORK/bazel/disk-cache" | cut -f1)"
+      # Only main's (and a manual run's) builds are saved: PRs build on main's, and each saved cache takes GBs
+      # of the repository's cache space.
+      - uses: actions/cache/save@v4
+        if: steps.built.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          path: ${{ env.WORK }}/bazel/disk-cache
+          key: mozc-linux-bazel-${{ steps.inputs.outputs.hash }}
+      # The RPM installs with its dependencies on the Fedora it was built for, as SebType's version, with the
+      # add-on and Mozc's library.
+      - name: Install
+        run: |
+          podman run --rm -v "$PWD/out:/rpm:ro" "${{ steps.inputs.outputs.image }}" bash -c '
+            set -euo pipefail
+            rpm -qip /rpm/*.rpm
+            dnf -y -q --setopt=throttle=35M install /rpm/*.rpm
+            [[ $(rpm -q --qf "%{VERSION}" sebtype) == "$1" ]] || { echo "sebtype is not version $1"; exit 1; }
+            files=$(rpm -ql sebtype)
+            echo "$files"
+            for f in /usr/lib64/fcitx5/sebtype.so /usr/share/fcitx5/addon/sebtype.conf /usr/lib64/sebtype/libsebtype-mozc.so; do
+              grep -qx "$f" <<<"$files" && [[ -f $f ]] || { echo "missing: $f"; exit 1; }
+            done
+            ! ldd /usr/lib64/fcitx5/sebtype.so | grep "not found"' inner "$(cat VERSION)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-rpm
+          path: out/*.rpm
+          if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}

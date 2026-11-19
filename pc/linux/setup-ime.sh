@@ -195,6 +195,8 @@ fi
 
 # 1b. SebType's input method (#190) and SebType's librime in place of Fedora's, built from SebType's source by
 # linux/build.sh (about an hour the first time, in a container) and linux/build-librime.sh (a minute or five).
+# Built from this checkout, not taken from a release (#421): the rest of setup installs this checkout's data,
+# librime and Configurator, and a tree under test must run its own code.
 # SebType's librime replaces one Fedora release; Fedora's update to another one warns until linux/versions.sh follows it.
 sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
 if [[ $sebtype_now != "$sebtype_want" ]] &&

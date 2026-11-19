@@ -37,6 +37,11 @@ if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
     export BAZEL_CACHE
   fi
 fi
+# On a GitHub-hosted runner (.github/workflows/linux-rpm.yml) the build has the machine to itself: all its
+# cores and most of its memory, and no lock (build_lock).
+if [[ ${GITHUB_ACTIONS:-} == true ]]; then
+  BUILD_HOST=local BUILD_JOBS=$(nproc) BUILD_MEMORY_GB=$(( $(awk '/^MemTotal/ { print int($2 / 1048576) }' /proc/meminfo) - 2 ))
+fi
 # Bazel's output roots and caches (Mozc's builds).
 BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
 
@@ -126,6 +131,7 @@ sccache_env() {
 build_lock() {
   local minutes=$1 name=$2
   shift 2
+  [[ ${GITHUB_ACTIONS:-} != true ]] || { "$@"; return; }
   devq -w 3600 -m "$minutes" -P "${DEVQ_RANK:-2}" -n "$name" /tmp/agent-locks/sebtype/build.lock \
     systemd-run --user --scope --quiet -p CPUQuota="${BUILD_JOBS}00%" -p MemoryMax="${BUILD_MEMORY_GB}G" \
     -p MemorySwapMax=0 nice -n 19 ionice -c 3 "$@"
