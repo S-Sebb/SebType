@@ -335,7 +335,7 @@ EOF
     sleep 2; [[ $(systemctl --user is-active sebtype-sync.service) == activating ]] ||
       fail "the sync isn'"'"'t waiting for the schedule lock"
     release undo
-    wait $undo || fail "the uninstall failed"
+    wait $undo || fail "the uninstall failed: $(tail -5 "$d/undo.log")"
     until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) != activating ]]" || fail "the waiting sync never ended"
     sleep 5
     for x in sebtype-sync.path sebtype-sync-network.service sebtype-sync-soon.timer; do
@@ -351,7 +351,7 @@ EOF
     systemctl --user start --no-block sebtype-sync.service
     until_ 10 "[[ \$(runs start) == 5 ]]" || fail "the second sync didn'"'"'t start"
     sleep 2
-    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo2.log" 2>&1 || fail "the second uninstall failed"
+    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo2.log" 2>&1 || fail "the second uninstall failed: $(tail -5 "$d/undo2.log")"
     release words.lock
     until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) != activating ]]" || fail "the running sync never ended"
     leftovers && fail "files left by the sync that ended after the uninstall"
