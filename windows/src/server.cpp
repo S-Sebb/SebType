@@ -222,7 +222,7 @@ Reply handle(const Request &q, HANDLE pipe) {
       break;
   }
   Reply r = state(taken, commit);
-  if (Engine *e = core->running(q.lang)) r.forgetError = e->forgetError();  // /forget's answer, once not busy
+  if (Engine *e = core->running(q.lang)) r.langBusy = e->busy(), r.forgetError = e->forgetError();  // for /forget
   return r;
 }
 
@@ -378,8 +378,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (!up) return failed(3, "the server didn't answer");
   }
   if (!call(q, r, 5000, 60000)) return failed(4, "the server didn't take the request");
-  // Until Rime is done: setup's typing and the Configurator's next step need it.
-  for (DWORD start = GetTickCount(); r.busy; Sleep(200)) {
+  // Until Rime is done: setup's typing and the Configurator's next step need it. A forget waits for its engine
+  // only, not for a sync's chores waiting until typing is idle (#373).
+  for (DWORD start = GetTickCount(); q.op == Op::Forget ? r.langBusy : r.busy; Sleep(200)) {
     if (GetTickCount() - start > 300000) return failed(5, "still busy after 5 minutes");
     Request poll;
     poll.lang = q.lang;  // its engine's forgetError
