@@ -400,6 +400,10 @@ fn main() -> Result<(), slint::PlatformError> {
         .set_vec(["en", "zh", "ja"].map(|id| lang_row(id, true)).to_vec());
     load(&app, &ui);
     show_sync(&app, &sync::load(), false);
+    // A schedule made by an older Configurator gets what this one adds (the network trigger, #377).
+    if sync::load().enabled {
+        std::thread::spawn(|| platform::schedule(true));
+    }
     UI.with(|u| *u.borrow_mut() = Some(ui.clone()));
     // The schedule syncs while the window is open too: its outcome shows up here.
     let sync_refresh = slint::Timer::default();

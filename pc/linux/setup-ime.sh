@@ -48,12 +48,13 @@ app_icon=$data/icons/hicolor/192x192/apps/sebtype-configurator.png
 picnic_theme=$data/fcitx5/themes/sebtype-picnic classicui=$config/fcitx5/conf/classicui.conf
 if ((undo_configurator)); then
   for f in "$app_desktop" "$app_icon"; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }; done
-  # Sync (#180): its half-hourly timer, its login in the keyring and its files. The server's copy stays.
+  # Sync (#180): its half-hourly timer and network trigger (#377), its login in the keyring and its files.
+  # The server's copy stays.
   sync_units=$config/systemd/user
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
-    echo "change: stop and remove SebType's sync timer"
-    systemctl --user disable --now sebtype-sync.timer 2>/dev/null
-    rm -f "$sync_units/sebtype-sync.timer" "$sync_units/sebtype-sync.service"
+    echo "change: stop and remove SebType's sync timer and network trigger"
+    systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null
+    rm -f "$sync_units"/sebtype-sync.{timer,path,service}
     systemctl --user daemon-reload 2>/dev/null
   fi
   if [[ -f $data/sebtype/sync.json ]] && command -v secret-tool >/dev/null; then

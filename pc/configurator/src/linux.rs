@@ -444,13 +444,16 @@ fn await_snapshot(
 }
 
 const SYNC_TIMER: &str = "sebtype-sync.timer";
+const SYNC_PATH: &str = "sebtype-sync.path";
 
-fn sync_units(exe: &Path) -> [(&'static str, String); 2] {
+fn sync_units(exe: &Path) -> [(&'static str, String); 3] {
     [
         (
             "sebtype-sync.service",
+            // No start limit: an offline sync fails fast, and a network that comes and goes would
+            // otherwise hit it and stop the network trigger until the next login (#377).
             format!(
-                "[Unit]\nDescription=SebType sync with your own server\n\n[Service]\nType=oneshot\nExecStart=\"{}\" --sync\n",
+                "[Unit]\nDescription=SebType sync with your own server\nStartLimitIntervalSec=0\n\n[Service]\nType=oneshot\nExecStart=\"{}\" --sync\n",
                 exe.display()
             ),
         ),
@@ -459,10 +462,20 @@ fn sync_units(exe: &Path) -> [(&'static str, String); 2] {
             // As the phone: every half hour, and soon after login.
             "[Unit]\nDescription=SebType sync every half hour\n\n[Timer]\nOnStartupSec=2min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".into(),
         ),
+        (
+            SYNC_PATH,
+            // And when the network comes back (#377): the DNS servers change then, and systemd-resolved or
+            // NetworkManager rewrites its resolv.conf, which a user unit can watch without root. A change
+            // while a sync runs starts no second one (the service is a oneshot, and sync.lock).
+            "[Unit]\nDescription=SebType sync when the network comes back\n\n[Path]\n\
+             PathChanged=/run/systemd/resolve/resolv.conf\nPathChanged=/run/NetworkManager/resolv.conf\n\
+             PathChanged=/etc/resolv.conf\nUnit=sebtype-sync.service\n\n[Install]\nWantedBy=paths.target\n"
+                .into(),
+        ),
     ]
 }
 
-/// Syncs every half hour with a systemd user timer while sync is on.
+/// Syncs every half hour and when the network comes back, with systemd user units, while sync is on.
 pub fn schedule(on: bool) -> io::Result<()> {
     let dir = config().join("systemd/user");
     let systemctl = |args: &[&str]| -> io::Result<()> {
@@ -483,14 +496,15 @@ pub fn schedule(on: bool) -> io::Result<()> {
             write_if_changed(&dir.join(name), text)?;
         }
         systemctl(&["daemon-reload"])?;
-        return systemctl(&["enable", "--now", SYNC_TIMER]);
+        return systemctl(&["enable", "--now", SYNC_TIMER, SYNC_PATH]);
     }
     if !dir.join(SYNC_TIMER).exists() {
         return Ok(());
     }
-    let _ = systemctl(&["disable", "--now", SYNC_TIMER]);
+    let _ = systemctl(&["disable", "--now", SYNC_TIMER, SYNC_PATH]);
     for (name, _) in &units {
-        fs::remove_file(dir.join(name))?;
+        // A schedule from before #377 has no path unit.
+        let _ = fs::remove_file(dir.join(name));
     }
     systemctl(&["daemon-reload"])
 }
@@ -525,6 +539,24 @@ mod tests {
         assert_eq!(asked, 2, "asked again after 5 s");
         assert!(await_snapshot(&d, Duration::from_secs(6), || fs::write(&old, "new")).is_ok());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The network coming back starts the same sync as the half-hourly timer (#377).
+    #[test]
+    fn sync_runs_when_the_network_comes_back() {
+        let units = sync_units(Path::new("/opt/sebtype/sebtype-configurator"));
+        let path = &units.iter().find(|(n, _)| *n == SYNC_PATH).unwrap().1;
+        assert!(path.contains("\n[Path]\nPathChanged=/run/systemd/resolve/resolv.conf\n"));
+        assert!(path.contains("\nPathChanged=/run/NetworkManager/resolv.conf\n"));
+        assert!(path.contains("\nUnit=sebtype-sync.service\n"));
+        assert!(path.ends_with("\n[Install]\nWantedBy=paths.target\n"));
+        assert!(
+            units[0].1.contains("\nStartLimitIntervalSec=0\n"),
+            "flaps would stop the trigger"
+        );
+        assert!(units[0]
+            .1
+            .contains("ExecStart=\"/opt/sebtype/sebtype-configurator\" --sync\n"));
     }
 
     #[test]

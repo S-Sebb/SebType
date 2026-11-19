@@ -243,6 +243,53 @@ private_forget() {
 export -f private_forget
 check private-forget 600 private_forget
 
+# Sync when the network comes back (#377): the units the Configurator's login makes, in a private systemd
+# user manager that starts nothing else, with the network trigger watching a file of the sandbox instead of
+# resolv.conf (a drop-in), so the PC's network is never touched. The new resolv.conf runs the real sync
+# (to a server that isn't there, so it ends offline), flaps never run two at once, and setup-ime.sh's
+# uninstall removes the trigger.
+# shellcheck disable=SC2016  # the inner script gets its paths as arguments
+reconnect_sync() {
+  local d=$sb/reconnect-account
+  mkdir -p "$d/config/systemd/user/sebtype-sync.service.d" "$d/config/systemd/user/sebtype-sync.path.d" "$d/data"
+  private_dbus "$sb" -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" -- bash -c '
+    d=$1 bin=$2 here=$3 units=$1/config/systemd/user
+    fail() { echo "FAIL: $1"; tail -20 "$d/manager.log"; exit 1; }
+    status() { sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" "$d/data/sebtype/sync.json" 2>/dev/null; }
+    until_() { local i; for ((i = 0; i < $1 * 5; i++)); do eval "$2" && return 0; sleep 0.2; done; return 1; }
+    # The sync sees only this sandbox, never the owner'"'"'s sync.json or keyring.
+    printf "[Service]\nEnvironment=\"HOME=%s\" \"XDG_CONFIG_HOME=%s\" \"XDG_DATA_HOME=%s\" \"DBUS_SESSION_BUS_ADDRESS=%s\"\n" \
+      "$d" "$d/config" "$d/data" "$DBUS_SESSION_BUS_ADDRESS" > "$units/sebtype-sync.service.d/sandbox.conf"
+    printf "[Path]\nPathChanged=\nPathChanged=%s\n" "$d/resolv.conf" > "$units/sebtype-sync.path.d/sandbox.conf"
+    printf "[Unit]\nDescription=Nothing\n" > "$units/sebtype-test.target"
+    SYSTEMD_LOG_TARGET=console SYSTEMD_LOG_COLOR=0 /usr/lib/systemd/systemd --user --unit=sebtype-test.target > "$d/manager.log" 2>&1 & m=$!
+    trap "kill $m; wait $m" EXIT
+    until_ 10 "[[ -S \$XDG_RUNTIME_DIR/systemd/private ]]" || fail "the private systemd didn'"'"'t start"
+    head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
+    printf "http://127.0.0.1:9\nsebtype-test\n%s\n" "$(head -c 18 /dev/urandom | base64)" | "$bin" --save-login ||
+      fail "--save-login"
+    systemctl --user is-active -q sebtype-sync.path && systemctl --user is-enabled -q sebtype-sync.path ||
+      fail "the network trigger isn'"'"'t on"
+    echo "sync on: timer $(systemctl --user is-active sebtype-sync.timer), network trigger active, status $(status)"
+    sleep 3; [[ $(status) == not-yet ]] || fail "a sync ran before the network came back: $(status)"
+    echo "nameserver 192.0.2.1" > "$d/r.tmp"; mv "$d/r.tmp" "$d/resolv.conf"
+    until_ 60 "[[ \$(status) == offline ]]" || fail "no sync within a minute of the network coming back: $(status)"
+    echo "the network came back: the sync ran, status $(status)"
+    for i in $(seq 10); do echo "nameserver 192.0.2.$i" > "$d/r.tmp"; mv "$d/r.tmp" "$d/resolv.conf"; sleep 0.1; done
+    until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) == inactive ]]"; sleep 2
+    # Each run starts, then finishes or fails (offline), before the next starts.
+    runs=$(grep -E "^(Starting|Finished|Failed to start) sebtype-sync.service" "$d/manager.log" | cut -c1-4 | uniq -c)
+    echo "runs after 10 flaps: $(grep -c "^Starting sebtype-sync.service" "$d/manager.log") in all"
+    grep -qE "^ *([2-9]|[1-9][0-9]+) " <<<"$runs" && fail "two syncs at once: $runs"
+    systemctl --user is-active -q sebtype-sync.path || fail "the flaps stopped the network trigger"
+    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo.log" 2>&1 || fail "the uninstall failed"
+    systemctl --user is-active -q sebtype-sync.path && fail "the network trigger still runs after the uninstall"
+    ls "$units"/sebtype-sync.{path,timer,service} 2>/dev/null && fail "units left after the uninstall"
+    echo "the uninstall stopped and removed the timer and the network trigger"' _ "$d" "$bin" "$PWD"
+}
+export -f reconnect_sync
+check sync-on-network-reconnect 180 reconnect_sync
+
 check setup-ime 900 ../linux/test-setup-ime.sh
 
 ! grep -q '^FAIL' "$results"

@@ -300,16 +300,77 @@ pub fn restart_mozc_when_idle() {
 
 const SYNC_TASK: &str = "SebType sync";
 
-/// Syncs every half hour with a Task Scheduler task while sync is on. It runs as the user, only while
-/// they are logged on, which Credential Manager needs.
+/// The sync task: every half hour, and half a minute after Windows connects to a network (#377), as the
+/// user and only while they are logged on, which Credential Manager needs. A run while one still runs is
+/// skipped (IgnoreNew), so a network that comes and goes doesn't stack them.
+fn sync_task(exe: &Path) -> String {
+    let exe = exe
+        .display()
+        .to_string()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    // NetworkProfile's event 10000: connected to a network.
+    let connected = "<QueryList><Query Id=\"0\" Path=\"Microsoft-Windows-NetworkProfile/Operational\">\
+        <Select Path=\"Microsoft-Windows-NetworkProfile/Operational\">\
+        *[System[Provider[@Name='Microsoft-Windows-NetworkProfile'] and EventID=10000]]</Select></Query></QueryList>";
+    let connected = connected.replace('<', "&lt;").replace('>', "&gt;");
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <TimeTrigger>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Repetition><Interval>PT30M</Interval></Repetition>
+    </TimeTrigger>
+    <EventTrigger>
+      <Subscription>{connected}</Subscription>
+      <Delay>PT30S</Delay>
+    </EventTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>{exe}</Command><Arguments>--sync</Arguments></Exec>
+  </Actions>
+</Task>
+"#
+    )
+}
+
 pub fn schedule(on: bool) -> io::Result<()> {
     if on {
-        let exe = env::current_exe()?;
-        let command = format!("\"{}\" --sync", exe.display());
-        let args = [
-            "/create", "/tn", SYNC_TASK, "/tr", &command, "/sc", "minute", "/mo", "30", "/f",
-        ];
-        return run("schtasks", &args).map(|_| ());
+        // schtasks reads a task with more than one trigger only from a UTF-16 file.
+        let file = env::temp_dir().join(format!("sebtype-sync-task-{}.xml", std::process::id()));
+        let utf16: Vec<u8> = "\u{feff}"
+            .chars()
+            .chain(sync_task(&env::current_exe()?).chars())
+            .collect::<String>()
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        fs::write(&file, utf16)?;
+        let made = run(
+            "schtasks",
+            &[
+                "/create",
+                "/tn",
+                SYNC_TASK,
+                "/xml",
+                &file.to_string_lossy(),
+                "/f",
+            ],
+        );
+        let _ = fs::remove_file(&file);
+        return made.map(|_| ());
     }
     // No task (sync was never on) is fine.
     let _ = run("schtasks", &["/delete", "/tn", SYNC_TASK, "/f"]);
@@ -326,6 +387,22 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sync task also runs when Windows connects to a network (#377), half a minute later, and never
+    /// twice at once.
+    #[test]
+    fn sync_task_runs_when_the_network_comes_back() {
+        let task = sync_task(Path::new(r"C:\Program Files\A&B\sebtype-configurator.exe"));
+        assert!(task.contains("<Interval>PT30M</Interval>"));
+        assert!(task.contains(
+            "Path=\"Microsoft-Windows-NetworkProfile/Operational\"&gt;*[System[Provider[@Name='Microsoft-Windows-NetworkProfile'] and EventID=10000]]&lt;/Select&gt;"
+        ));
+        assert!(task.contains("<Delay>PT30S</Delay>"));
+        assert!(task.contains("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"));
+        assert!(task.contains(
+            r"<Command>C:\Program Files\A&amp;B\sebtype-configurator.exe</Command><Arguments>--sync</Arguments>"
+        ));
+    }
 
     #[test]
     fn candidate_conf_replaces_its_section_and_keeps_the_rest() {
