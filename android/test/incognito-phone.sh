@@ -14,12 +14,14 @@ out=$TASK_OUT/test-incognito-phone; rm -rf "$out"; mkdir -p "$out"
 results=$out/results.txt; : > "$results"
 sdk=$ANDROID_HOME
 adb=$sdk/platform-tools/adb
-serial=${ANDROID_SERIAL:-00193353J000665}
+# Without ANDROID_SERIAL, the A001 plugged in: its serial stays out of the repo.
+serial=${ANDROID_SERIAL:-$("$adb" devices -l | awk '$2 == "device" && / model:A001 / {print $1; exit}')}
 lock=/tmp/agent-locks/devices/nothing-a001.lock
 gboard=com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
 
 # Preflight
 [[ -x $adb ]] || { echo "preflight: adb missing in $sdk"; exit 1; }
+[[ -n $serial ]] || { echo "preflight: no A001 connected (or set ANDROID_SERIAL)"; exit 1; }
 [[ $("$adb" -s "$serial" get-state 2>/dev/null) == device ]] || { echo "preflight: phone $serial not connected"; exit 1; }
 apk=$(android/build.sh release 2> "$out/build.log" | tail -1)
 [[ -f $apk ]] || { echo "preflight: release build failed, see $out/build.log"; exit 1; }

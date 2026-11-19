@@ -2628,6 +2628,10 @@ check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
 OLD_PKG = PKG
 EN_WORD = "zorbleq"  # made up, so only learning can put it in the history
 JA_CODE = "hashi"
+# z for zh: zhengzhi's 政治 is among zengzi's first three only with fuzzy pinyin's z = zh, which Rime reads
+# from SebType's schema patch (guide35: third with it, not in the first four without). Typo fixes already
+# turn commoner ones, like zege, into zh words.
+FUZZY_CODE, FUZZY_WORD = "zengzi", "政治"
 
 
 def as_old(old):
@@ -2833,6 +2837,11 @@ def update_from_futo_app():
         except Fail:
             open_field()
         wait_set_up()
+        # z = zh as Rime types it, which the settings screen alone doesn't show: the patch must have come through.
+        to_chinese()
+        fuzzy = candidates_for(FUZZY_CODE)
+        if FUZZY_WORD not in fuzzy[:3]:
+            raise Fail(f"z = zh doesn't reach Rime: {FUZZY_CODE} -> {fuzzy[:5]}")
         if not ROOT:
             # No root shell: the files below can't be read, so the options are compared as both apps' settings show them.
             new_shown = options_shown(SETTINGS, paths, tap=False)
@@ -2921,7 +2930,7 @@ def update_from_futo_app():
                     f"learning off lost in the update: sebtype.conf has {root(f'cat {old}/files/sebtype.conf; true')!r}"
                 )
         return (
-            f"SebType still enabled and in use after the update; {zh}; {JA_CODE} -> {got[:3]};"
+            f"SebType still enabled and in use after the update; {zh}; {FUZZY_CODE} -> {fuzzy[:3]}; {JA_CODE} -> {got[:3]};"
             f" {EN_WORD[:5]} -> {en[:3]}; options kept; learning off kept"
         )
     finally:
