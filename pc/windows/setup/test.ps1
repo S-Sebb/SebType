@@ -424,7 +424,7 @@ if ($Typing) {
             switch ($case) {
               'refused' { $tsf::ReadOnly = $true }
               'composition-refused' { $tsf::RefuseComposition = $true }
-              'caret-moved' { $tsf::CaretBeforeWrite = 3 }
+              'caret-moved' { $tsf::CaretAfterRead = 3 }
               default { $tsf::WriteLater = $true }
             }
             try {
@@ -432,7 +432,7 @@ if ($Typing) {
               if ($case -eq 'composition-refused' -and $tsf::Refused -eq 0) { throw 'the undo started no composition for the app to refuse' }
               if ($case -eq 'deferred-dropped') { $tsf::DropPending() }
               if ($case -eq 'deferred-caret-moved') { $tsf::Caret(3) }
-            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false; $tsf::CaretBeforeWrite = -1 }
+            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false; $tsf::CaretAfterRead = -1 }
             Start-Sleep 1
             if ($moved) { Keys Escape } else { Keys Return }
             Start-Sleep 1; $t = $tsf::Text().Trim(); $want = if ($moved) { 'ab記者' } else { '記者' }

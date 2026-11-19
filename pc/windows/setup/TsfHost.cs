@@ -216,19 +216,16 @@ namespace SebType {
     public int OnStartComposition(object composition, out bool ok) { ok = !RefuseComposition; if (!ok) Refused++; return S_OK; }
     public int OnUpdateComposition(object composition, object range) { return S_OK; }
     public int OnEndComposition(object composition) { return S_OK; }
-    // The app moves the caret here just before it grants the next write that can't wait, as if the user had
-    // clicked there between a text service's read and its write (#376); -1: no move.
-    public int CaretBeforeWrite = -1;
+    // The caret moves here right after a text service reads the text before it, as if the user had clicked there
+    // between the text service's read and its write (#376); -1: no move. It moves under TSF's lock, unannounced:
+    // an app's own move, at its next lock, came only after the undo's write.
+    public int CaretAfterRead = -1;
     // A field read-only for a moment: its status says so, and it refuses a lock to write.
     bool readOnly;
     public bool ReadOnly { set { readOnly = value; sink.OnStatusChange(value ? 1u : 0u); } }
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
       if (readOnly && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) { hrSession = TS_E_READONLY; return S_OK; }
-      if (CaretBeforeWrite >= 0 && lockFlags == 0 && (flags & TS_LF_READWRITE) == TS_LF_READWRITE && (flags & TS_LF_SYNC) != 0) {
-        int at = CaretBeforeWrite; CaretBeforeWrite = -1;
-        SelStart = SelEnd = at; AppEdit(at, at, "");
-      }
       if (WriteLater && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
         pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
@@ -278,6 +275,7 @@ namespace SebType {
       int n = Math.Min(end - start, (int)plainReq);
       if (n > 0 && plain != IntPtr.Zero) Marshal.Copy(Text.ToString(start, n).ToCharArray(), 0, plain, n);
       plainRet = (uint)n;
+      if (CaretAfterRead >= 0 && n > 0 && end == SelEnd) { SelStart = SelEnd = CaretAfterRead; CaretAfterRead = -1; }
       if (runsReq > 0 && runs != IntPtr.Zero && n > 0) {
         Marshal.WriteInt32(runs, n); Marshal.WriteInt32(runs, 4, 0);  // TS_RUNINFO: n characters of TS_RT_PLAIN
         runsRet = 1;
@@ -633,7 +631,7 @@ namespace SebType {
     public static void DropPending() { OnUi(() => { store.DropPending(); return 0; }); }
     public static bool RefuseComposition { set { OnUi(() => { store.RefuseComposition = value; if (value) store.Refused = 0; return 0; }); } }
     public static int Refused { get { return OnUi(() => store.Refused); } }
-    public static int CaretBeforeWrite { set { OnUi(() => { store.CaretBeforeWrite = value; return 0; }); } }
+    public static int CaretAfterRead { set { OnUi(() => { store.CaretAfterRead = value; return 0; }); } }
     // The caret at a place in the text, as a click puts it there.
     public static void Caret(int at) { OnUi(() => { store.SelStart = store.SelEnd = at; store.AppEdit(at, at, ""); return 0; }); }
     public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
