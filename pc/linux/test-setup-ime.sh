@@ -455,7 +455,7 @@ popup_words() {
   # Fedora's Fcitx5 shows the compact popup (あ) by default; the words checked below are the long popup's.
   kwriteconfig6 --file "$h/.config/fcitx5/config" --group Behavior --key CompactInputMethodInformation False
   private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-popup.log" "$out/popup-words.txt" <<'PY2'
-import subprocess, sys, time
+import os, subprocess, sys, time
 from gi.repository import Gio, GLib
 
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
@@ -622,12 +622,8 @@ rime_label() {
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
-import hashlib, os, re, subprocess, sys, time
+import os, subprocess, sys, time
 from gi.repository import Gio, GLib
-
-CONFIG1 = os.path.join(sys.argv[2], 'config1.db')
-def config1(): return os.stat(CONFIG1).st_mtime_ns, hashlib.sha256(open(CONFIG1, 'rb').read()).hexdigest()
-before = config1()
 
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
@@ -785,8 +781,12 @@ private_field() {
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 240 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" "$h/.config/mozc" "$PWD/../configurator/target/release/sebtype-configurator" <<'PY'
-import os, subprocess, sys, time
+import hashlib, os, re, subprocess, sys, time
 from gi.repository import Gio, GLib
+
+CONFIG1 = os.path.join(sys.argv[2], 'config1.db')
+def config1(): return os.stat(CONFIG1).st_mtime_ns, hashlib.sha256(open(CONFIG1, 'rb').read()).hexdigest()
+before = config1()
 
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
@@ -864,6 +864,7 @@ for lang, (first, nth) in LANGS.items():
     # Learning off in the Configurator is the same (#374): what was learned stays in use, a pick isn't learned.
     # The file may already say off, from a try whose notice didn't reach Fcitx5: told again all the same.
     field(False)
+    os.makedirs(os.path.dirname(SETTINGS), exist_ok=True)
     with open(SETTINGS, 'a') as f: f.write('[Learning]\nOn=false\n')
     check(f'{lang}: the Configurator turns learning off', learning(False), True)
     if lang == 'zh': wait(rime_ready, 60)
@@ -886,15 +887,17 @@ with open(RIME_PATCH, 'w') as f: f.write(re.sub(r'^patch:\n', 'patch:\n  transla
 with open(CONFIG1, 'ab') as f: f.write(b'\x90\x03\x02')  # history_learning_level (50): NO_HISTORY
 call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy', GLib.Variant('s', ''))
 call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/mozc', GLib.Variant('s', ''))
-wait(rime_ready, 60)
 for lang, (first, nth) in LANGS.items():
+    call(*SEBTYPE, 'SetLanguage', '(s)', lang)
+    if lang == 'zh': wait(rime_ready, 60)
     check(f'{lang}: learning off before #374 hides what was learned', first() != learned[lang], True)
 migrate = subprocess.run([sys.argv[3], '--migrate'], capture_output=True, text=True, timeout=120)
 check('setup migrates learning off', (migrate.returncode, migrate.stderr), (0, ''))
 check('migrated, sebtype.conf has learning off', open(SETTINGS).read().count('[Learning]\nOn=false'), 1)
 check("migrated, rime-ice's patch is as before", open(RIME_PATCH).read(), patch)
-wait(rime_ready, 60)
 for lang, (first, nth) in LANGS.items():
+    call(*SEBTYPE, 'SetLanguage', '(s)', lang)
+    if lang == 'zh': wait(rime_ready, 60)
     check(f'{lang}: migrated, what was learned is back', first(), learned[lang])
     picked = nth(4)
     check(f'{lang}: migrated, a pick', bool(picked) and picked != learned[lang], True)
