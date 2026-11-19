@@ -15,7 +15,7 @@ case "$*" in
   'wm size') echo "Physical size: $FAKE_SIZE" ;;
   'wm density') echo 'Physical density: 420' ;;
   'dumpsys window InputMethod') echo '  touchable region=SkRegion((0,1535,1080,2400))' ;;
-  'dumpsys window displays') echo "  mRotation=$FAKE_ROT}" ;;
+  'dumpsys window displays') echo "  mRotation=$FAKE_ROT}"; seq 200000 ;; # long, as a real dump: a reader must take it all
   'settings get system '*) cat "$FAKE/settings/$4" 2>/dev/null || echo null ;;
   'settings put system '*) echo "$5" > "$FAKE/settings/$4" ;;
   'settings delete system '*) rm -f "$FAKE/settings/$4"; echo 'Deleted 1 rows' ;;

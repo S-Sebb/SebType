@@ -70,12 +70,14 @@ geometry() { # keyboard grid from the screen width and the keyboard window's top
   local size; size=$(sh wm size | awk -F'[ x]' '/Physical/ {print $3 "x" $4}' | tail -1)
   W=${size%x*}
   dpi=$(sh wm density | awk '/Physical/ {print $3}' | tail -1)
-  top=$(sh dumpsys window InputMethod | sed -n 's/.*touchable region=SkRegion((\([0-9]*\),\([0-9]*\),.*/\2/p' | head -1)
+  top=$(sh dumpsys window InputMethod | sed -n 's/.*touchable region=SkRegion((\([0-9]*\),\([0-9]*\),.*/\2/p')
+  top=${top%%$'\n'*} # the first: head would close the pipe early, and the phase stops on it
   [[ -n $W && -n $dpi && -n $top ]] || { echo "keyboard window not found" >&2; return 1; }
   # The grid is a portrait screen's, its width the physical one: a turned screen's keyboard top would aim
   # every tap at other windows (#402). The physical size is the device's natural orientation's.
   (( ${size#*x} > W )) || { echo "this device's natural orientation isn't portrait ($size): the key grid is portrait's" >&2; return 1; }
-  local rot; rot=$(sh dumpsys window displays | grep -om1 'mRotation=ROTATION_[0-9]*')
+  local rot # awk reads it all: dumpsys fails when its pipe closes early
+  rot=$(sh dumpsys window displays | awk 'match($0, /mRotation=ROTATION_[0-9]+/) && !f++ {print substr($0, RSTART, RLENGTH)}')
   [[ $rot == mRotation=ROTATION_0 ]] || { echo "the screen isn't upright (${rot:-no rotation found}): taps would miss the keys" >&2; return 1; }
   declare -p W dpi top > "$work/geometry"
 }
