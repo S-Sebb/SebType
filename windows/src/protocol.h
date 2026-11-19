@@ -29,6 +29,8 @@ enum class Op : uint8_t {
              // Configurator)
   Ready,     // lang: its icon in reply.icon while it isn't ready, and nothing else; changes nothing (#275)
   Reset,     // what is being typed is dropped: the server answers again after keys the app stopped waiting for
+  DeployWhenIdle,  // Deploy and Mozc, for a sync's pull: once typing is idle, as they drop what is being typed
+  MozcWhenIdle,    // (#373); reply.busy until done
 };
 
 struct Request {

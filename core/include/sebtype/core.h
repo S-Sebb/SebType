@@ -85,6 +85,17 @@ class Core {
   // next use starts it again.
   void stop(Lang lang);
 
+  // Work that drops what is being typed, asked for by a sync or the Configurator (#373): Rime's deploy and
+  // save, Mozc reading its files again. It waits until typing is idle (nothing being typed, no key for kIdle,
+  // no engine busy), so a sync never takes a word being typed (Decisions #2). One asked for again while it
+  // waits is done once; several are done in this order.
+  enum class Chore { Deploy, ReloadJapanese, Save };
+  static constexpr std::chrono::seconds kIdle{5};
+  void whenIdle(Chore chore, std::function<void()> work);
+  // Does the next chore that waits, if typing is idle; the frontend calls it again while it returns true.
+  bool runChores();
+  bool choresWait() const { return !chores_.empty(); }
+
   bool latin();
   bool alternate();
   void setAlternate(bool on);
@@ -128,6 +139,8 @@ class Core {
   bool capsLock_ = false;
   uint32_t shiftDown_ = 0;  // the Shift key pressed alone, until another key comes
   std::chrono::steady_clock::time_point shiftAt_;
+  std::chrono::steady_clock::time_point lastKey_;  // or the start, before any
+  std::map<Chore, std::function<void()>> chores_;
   std::vector<uint32_t> swallow_;  // releases of keys the core took on press
   std::string commit_;
   bool notice_ = false;

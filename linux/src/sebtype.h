@@ -49,7 +49,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   // Saves learned words: Rime's sync, Mozc's.
   void save() override;
   // fcitx://config/addon/sebtype/deploy: Rime applies changed settings and data; .../mozc: Mozc starts again
-  // with the files the Configurator or setup changed (its settings, dictionaries and learned words).
+  // with the files the Configurator or setup changed (its settings, dictionaries and learned words);
+  // .../deploy-when-idle and .../mozc-when-idle: the same once typing is idle, for a sync (#373).
   void setSubConfig(const std::string &path, const fcitx::RawConfig &) override;
 
   fcitx::Instance *instance() { return instance_; }
@@ -69,6 +70,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   // re-set of it at a key's release has no timer of Fcitx5's to hide it (#275).
   void hidePopupLater(fcitx::InputContext *ic);
   void hidePopup(fcitx::InputContext *ic);
+  // Core::whenIdle, run from Fcitx5's loop: tried at once, then each second until typing is idle.
+  void whenIdle(Core::Chore chore, std::function<void()> work);
 
   fcitx::Instance *instance_;
   std::unique_ptr<Core> core_;
@@ -78,6 +81,7 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   std::unique_ptr<Service> service_;
   std::unique_ptr<fcitx::EventSourceTime> poll_;
   std::unique_ptr<fcitx::EventSourceTime> hide_;
+  std::unique_ptr<fcitx::EventSourceTime> chores_;
 };
 
 }  // namespace sebtype

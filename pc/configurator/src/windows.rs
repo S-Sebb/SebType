@@ -74,10 +74,15 @@ fn powershell(script: &str) -> io::Result<String> {
 
 /// SebType's server, next to the Configurator: it hosts Rime and Mozc for the text service.
 fn server(arg: &str) -> io::Result<()> {
-    Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
+    let status = Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
         .arg(arg)
         .creation_flags(NO_WINDOW)
         .status()?;
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "sebtype-server.exe {arg}: {status}"
+        )));
+    }
     Ok(())
 }
 
@@ -253,8 +258,17 @@ pub fn python() -> Command {
 
 /// Rime's 用户资料同步, in SebType's server: Rime merges the other devices' snapshots into the learned
 /// words and writes this PC's. Returns when it is done.
-pub fn sync_rime(_own: &Path) {
-    let _ = server("/sync");
+pub fn sync_rime(_own: &Path) -> io::Result<()> {
+    server("/sync")
+}
+
+/// Rime's deploy and Mozc's restart for a sync's pull: the server does them once typing is idle, as they
+/// drop what is being typed (#373). The Configurator's own changes and forgetting do them at once.
+pub fn redeploy_rime_when_idle() -> io::Result<()> {
+    server("/deploy-when-idle")
+}
+pub fn restart_mozc_when_idle() {
+    let _ = server("/mozc-when-idle");
 }
 
 const SYNC_TASK: &str = "SebType sync";

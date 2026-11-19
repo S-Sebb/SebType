@@ -202,12 +202,14 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
     })
     .map_err(|_| Failed::Offline)??;
     if mozc_changed {
-        platform::restart_mozc(); // Mozc reads its dictionary when it starts
+        platform::restart_mozc_when_idle(); // Mozc reads its dictionary when it starts
     }
-    deploy_if_pending(&flag, platform::redeploy_rime).map_err(|_| Failed::Offline)?;
+    deploy_if_pending(&flag, platform::redeploy_rime_when_idle).map_err(|_| Failed::Offline)?;
     pulled?;
+    // A save that didn't go through (typing never idle, #373) would push an old snapshot: the sync fails,
+    // so Setup keeps the words (#271).
     if let Some(own) = rime::own_sync_folder(rime_dir) {
-        platform::sync_rime(&own);
+        platform::sync_rime(&own).map_err(|_| Failed::Offline)?;
     }
     let push = [&["push".as_ref()], &args[..]].concat();
     client(s, &push)?;
@@ -343,7 +345,7 @@ mod tests {
         let pc_snapshot = own.join("rime_ice.userdb.txt");
         let pc_word = "mo fu ji \t莫福姬\tc=3 d=1 t=3";
         fs::write(&pc_snapshot, snapshot(&device, pc_word)).unwrap();
-        platform::sync_rime(&own);
+        platform::sync_rime(&own).unwrap();
         assert!(
             fs::read_to_string(&pc_snapshot).unwrap().contains("莫福姬"),
             "Rime took in the PC's word"

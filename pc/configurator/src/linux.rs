@@ -344,11 +344,51 @@ pub fn python() -> Command {
     Command::new("python3")
 }
 
+/// Rime's deploy and Mozc's restart for a sync's pull: the input method does them once typing is idle,
+/// as they drop what is being typed (#373). The Configurator's own changes and forgetting do them at once.
+pub fn redeploy_rime_when_idle() -> io::Result<()> {
+    if fcitx_running() {
+        controller(
+            "SetConfig",
+            &[
+                "sv",
+                "fcitx://config/addon/sebtype/deploy-when-idle",
+                "s",
+                "",
+            ],
+        )?;
+    }
+    Ok(())
+}
+pub fn restart_mozc_when_idle() {
+    if fcitx_running() {
+        let _ = controller(
+            "SetConfig",
+            &["sv", "fcitx://config/addon/sebtype/mozc-when-idle", "s", ""],
+        );
+    }
+}
+
 /// Rime's sync, which SebType's input method runs when Fcitx5 saves: it merges the other devices' snapshots into
-/// the learned words and writes this PC's into `own`. Rime skips it while it is busy (deploying after
-/// a start), so it is asked again every 5 s until it has written, at most 30 s; without a running
-/// Fcitx5 there is nothing to wait for.
-pub fn sync_rime(own: &Path) {
+/// the learned words and writes this PC's into `own`. Without a running Fcitx5 there is nothing to wait for.
+pub fn sync_rime(own: &Path) -> io::Result<()> {
+    if !fcitx_running() {
+        return Ok(());
+    }
+    await_snapshot(own, Duration::from_secs(30), || {
+        controller("Save", &[]).map(|_| ())
+    })
+}
+
+/// Asks for Rime's sync every 5 s until this PC's snapshot in `own` is newer than the first ask, at most
+/// `timeout`. The input method puts it off until typing is idle (#373) and Rime skips it while it is busy
+/// (deploying after a start); an error when it didn't write in time, as the snapshot that would go up is
+/// an old one.
+fn await_snapshot(
+    own: &Path,
+    timeout: Duration,
+    mut save: impl FnMut() -> io::Result<()>,
+) -> io::Result<()> {
     let newest = || {
         fs::read_dir(own)
             .into_iter()
@@ -359,24 +399,20 @@ pub fn sync_rime(own: &Path) {
             .max()
     };
     let start = SystemTime::now();
-    if !fcitx_running() {
-        return;
-    }
-    let end = Instant::now() + Duration::from_secs(30);
+    let end = Instant::now() + timeout;
     let mut ask = Instant::now();
     while Instant::now() < end {
         if Instant::now() >= ask {
-            if controller("Save", &[]).is_err() {
-                return;
-            }
+            save()?;
             ask += Duration::from_secs(5);
         }
         std::thread::sleep(Duration::from_millis(300));
         if newest().is_some_and(|t| t >= start) {
             std::thread::sleep(Duration::from_secs(1)); // a schema's dictionaries are written one by one
-            return;
+            return Ok(());
         }
     }
+    Err(io::Error::other("Rime didn't write its snapshot in time"))
 }
 
 const SYNC_TIMER: &str = "sebtype-sync.timer";
@@ -438,6 +474,30 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A sync waits for Rime's snapshot, and fails when the save never came (typing never idle, #373), so
+    /// the old snapshot doesn't go up and Setup keeps the words.
+    #[test]
+    fn a_save_that_never_comes_fails_the_sync() {
+        let d = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("target/test-tmp/snapshot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        let old = d.join("rime_ice.userdb.txt");
+        fs::write(&old, "old").unwrap();
+        let file = fs::File::options().write(true).open(&old).unwrap();
+        file.set_modified(SystemTime::now() - Duration::from_secs(60))
+            .unwrap();
+        let mut asked = 0;
+        let waited = await_snapshot(&d, Duration::from_secs(6), || {
+            asked += 1;
+            Ok(())
+        });
+        assert!(waited.is_err(), "no new snapshot");
+        assert_eq!(asked, 2, "asked again after 5 s");
+        assert!(await_snapshot(&d, Duration::from_secs(6), || fs::write(&old, "new")).is_ok());
+        fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn picnic_logo_follows_the_font_size() {
