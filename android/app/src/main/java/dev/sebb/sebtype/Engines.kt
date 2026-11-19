@@ -415,6 +415,13 @@ object Engines {
         }
     }
 
+    /** As [changeSettings], into sebtype.conf itself before [configure] reads it (the app's start); written when it returns. */
+    fun addSettingsAtStart(context: Context, ini: String) {
+        check(!configured)
+        val file = confFile(context.applicationContext)
+        write(file, (if (file.isFile) file.readText() else "") + ini)
+    }
+
     /** sebtype.conf as a whole, for a backup; [replaceSettings] takes one back. */
     fun settingsFile(context: Context) = confFile(context.applicationContext)
 

@@ -3132,7 +3132,14 @@ def update_from_futo_app():
                     f"learning off: the old app showed {old_shown}, the update {new_shown}"
                 )
         else:
-            # The update's broadcast starts the app, which moves the option.
+            # The update's broadcast or the keyboard's service starts the app, which moves the option as it
+            # starts, before the keyboard can take a key. Android may deliver the broadcast many seconds after
+            # the install on a busy emulator (#395): the wait is for the app, not for the file.
+            wait_for(
+                "the app to start after the update",
+                lambda: adb("shell", "pidof", PKG, check=False).strip(),
+                120,
+            )
             try:
                 wait_for(
                     "learning off in sebtype.conf",
@@ -3140,7 +3147,7 @@ def update_from_futo_app():
                         r"\[Learning\]\s*On=false",
                         root(f"cat {old}/files/sebtype.conf; true"),
                     ),
-                    30,
+                    15,
                 )
             except Fail:
                 raise Fail(

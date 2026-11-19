@@ -39,10 +39,11 @@ object Migration {
             if (english.renameTo(to)) Log.w(TAG, "Moved English's learned words") else Log.w(TAG, "Can't move English's learned words")
         }
         val old = context.getSharedPreferences(context.packageName + OLD_PREFS, Context.MODE_PRIVATE)
-        // Learning off (#31) is sebtype.conf's now, which the PCs share.
+        // Learning off (#31) is sebtype.conf's now, which the PCs share. Written before the engines read it and
+        // before the old option goes, so no keystroke learns and a process killed or frozen in between can't lose it (#395).
         if (old.contains(OLD_LEARNING)) {
-            if (!old.getBoolean(OLD_LEARNING, true)) Engines.changeSettings(context, "[Learning]\nOn=false\n")
-            old.edit().remove(OLD_LEARNING).apply()
+            if (!old.getBoolean(OLD_LEARNING, true)) Engines.addSettingsAtStart(context, "[Learning]\nOn=false\n")
+            old.edit().remove(OLD_LEARNING).commit()
         }
         // Incognito (#31) stays on through the update.
         if (old.contains(OLD_INCOGNITO)) {
