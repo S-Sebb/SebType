@@ -38,6 +38,7 @@ FRAME_ID = f"{PKG}:id/keyboard"
 # The new keyboard's space bar, as its accessibility label reads in each system language.
 SPACE_LABELS = ("Space", "空格", "スペース")
 FIELD = "dev.sebb.sebtype.perffield/.PerfField"
+SETTINGS = f"{PKG}/.settings.SettingsActivity"
 # Rime's data is private (#32): read through the emulator's root shell (su), as a release APK has no run-as.
 RIME_USER = f"/data/user/0/{PKG}/files/rime/user"
 RIME_SHARED = f"/data/user/0/{PKG}/no_backup/rime/shared"
@@ -2627,6 +2628,10 @@ check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
 OLD_PKG = PKG
 EN_WORD = "zorbleq"  # made up, so only learning can put it in the history
 JA_CODE = "hashi"
+# z for zh: zhengzhi's 政治 is among zengzi's first three only with fuzzy pinyin's z = zh, which Rime reads
+# from SebType's schema patch (guide35: third with it, not in the first four without). Typo fixes already
+# turn commoner ones, like zege, into zh words.
+FUZZY_CODE, FUZZY_WORD = "zengzi", "政治"
 
 
 def as_old(old):
@@ -2675,23 +2680,62 @@ def tap_row(label, timeout=10):
     time.sleep(1)
 
 
-def set_old_options(*paths):
-    """Taps each path of rows in today's settings, as a user would; returns what it stored, for the log."""
-    settings = f"{OLD_PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
+def scroll_to(label):
+    for _ in range(4):
+        if row(label, nodes()):
+            return
+        adb("shell", "input", "swipe", "540", "1700", "540", "900", "400")
+        time.sleep(1)
+
+
+def shown_on(label):
+    """Whether the screen shows the switch or box of the row titled label on (None: no such row)."""
+    adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    ns = [
+        (n, *map(int, re.findall(r"\d+", n.get("bounds", ""))))
+        for n in ET.fromstring(xml[xml.index("<") :]).iter("node")
+    ]
+    for n, x1, y1, x2, y2 in ns:
+        if row(label, [(n.get("text") or n.get("content-desc") or "",)]):
+            y = (y1 + y2) // 2
+            for m, _, top, _, bottom in ns:
+                if m.get("checkable") == "true" and top <= y <= bottom:
+                    return m.get("checked") == "true"
+    return None
+
+
+def options_shown(settings, paths, tap):
+    """Opens settings for each path of rows, tapping the last row too if tap; returns each path's last
+    row as the screen then shows it (shown_on), which a phone without a root shell checks instead of files."""
+    shown = {}
     for path in paths:
         adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", settings)
-        for label in path:
-            for _ in range(4):
-                if row(label, nodes()):
-                    break
-                adb("shell", "input", "swipe", "540", "1700", "540", "900", "400")
-                time.sleep(1)
+        for label in path[:-1]:
+            scroll_to(label)
             tap_row(label)
+        scroll_to(path[-1])
+        if tap:
+            tap_row(path[-1])
+        shown[path] = shown_on(path[-1])
+    return shown
+
+
+def set_old_options(*paths):
+    """Taps each path of rows in today's settings, as a user would; returns what it stored, for the log
+    (only with a root shell), and the rows as the screen showed them."""
+    settings = f"{OLD_PKG}/org.futo.inputmethod.latin.uix.settings.SettingsActivity"
+    shown = options_shown(settings, paths, tap=True)
     adb("shell", "am", "force-stop", OLD_PKG)
     data = f"/data/user/0/{OLD_PKG}"
-    return root(
-        f"cat {data}/shared_prefs/*.xml; strings {data}/files/datastore/settings.preferences_pb; cat {data}/files/sebtype.conf"
+    stored = (
+        root(
+            f"cat {data}/shared_prefs/*.xml; strings {data}/files/datastore/settings.preferences_pb; cat {data}/files/sebtype.conf"
+        )
+        if ROOT
+        else f"(files not read: no root shell) on the screen: {shown}"
     )
+    return stored, shown
 
 
 def old_files(path):
@@ -2730,24 +2774,33 @@ def update_from_futo_app():
             f"/data/user/0/{OLD_PKG}",
             "files/UserHistoryDictionary.en_US.dict",
         )
-        try:
-            wait_for(
-                f"the old app to save {EN_WORD}",
-                lambda: root(f"grep -rlaF {EN_WORD} {old}/{history}; true").strip(),
-                30,
-            )
-        except Fail:
-            raise Fail(
-                f"the old app saved no {EN_WORD} in its history; the field had {typed!r}"
-            )
+        if ROOT:
+            try:
+                wait_for(
+                    f"the old app to save {EN_WORD}",
+                    lambda: root(f"grep -rlaF {EN_WORD} {old}/{history}; true").strip(),
+                    30,
+                )
+            except Fail:
+                raise Fail(
+                    f"the old app saved no {EN_WORD} in its history; the field had {typed!r}"
+                )
+        else:
+            # Its history file can't be read: the old app gets the 30 s the check above allows to save it.
+            # The update's check below finds the word only if it was saved.
+            time.sleep(30)
         # Learning stays on: once it is off, today's app (AOSP's LatinIME underneath) deletes what it
         # learned when its keyboard next starts. Learning off gets its own update below.
-        options = set_old_options(
+        paths = (
             ("Languages", "Autocorrect"),
             ("Languages", "Emoji suggestions"),
             ("Languages", "Fuzzy Pinyin", "z = zh"),
         )
+        options, old_shown = set_old_options(*paths)
         print("the old app stored:\n" + options)
+        # Each tap turned the option from its default: autocorrect and emoji suggestions off, z = zh on.
+        if list(old_shown.values()) != [False, False, True]:
+            raise Fail(f"the old app's settings show {old_shown} after the taps")
         # Setting the options force-stopped the old app, and Android unpicks a keyboard whose app is
         # force-stopped: pick it again, as the user had it.
         adb("shell", "ime", "set", IME)
@@ -2759,7 +2812,7 @@ def update_from_futo_app():
                 f"the old app isn't the chosen keyboard before the update: {chosen}"
             )
         datastore = f"{old}/files/datastore/settings.preferences_pb"
-        before = set(root(f"strings {datastore}").split())
+        before = set(root(f"strings {datastore}").split()) if ROOT else set()
 
         adb("logcat", "-c")
         adb("install", "-r", apk, timeout=300)
@@ -2784,31 +2837,44 @@ def update_from_futo_app():
         except Fail:
             open_field()
         wait_set_up()
-        # Migration moves the old history into files/english/, and English's engine learns its words into
-        # en_history once and removes it: what counts is the old app's word offered now.
-        if old_files(history):
-            raise Fail(f"English's old history left in place: {old_files(history)}")
-        # Not an option: the FUTO-based app's own record of which of its input modes learned words, which
-        # nothing in SebType reads, comes through the update emptied.
-        futo_record = {"General", "Chinese", "Japanese"}
-        lost = before - futo_record - set(root(f"strings {datastore}").split())
-        if not before or lost:
-            raise Fail(f"the options' file lost {sorted(lost)[:10]}")
-        stored = root(
-            f"cat /data/user/0/{OLD_PKG}/files/sebtype.conf /data/user/0/{OLD_PKG}/files/rime/user/rime_ice.custom.yaml; "
-            f"strings /data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
-        )
-        print("the new app has:\n" + stored)
-        missing = [
-            o
-            for o, found in (
-                ("z = zh", "derive/^zh/z/" in stored),
-                ("autocorrect off", "pref_key_auto_correction" in stored),
+        # z = zh as Rime types it, which the settings screen alone doesn't show: the patch must have come through.
+        to_chinese()
+        fuzzy = candidates_for(FUZZY_CODE)
+        if FUZZY_WORD not in fuzzy[:3]:
+            raise Fail(f"z = zh doesn't reach Rime: {FUZZY_CODE} -> {fuzzy[:5]}")
+        if not ROOT:
+            # No root shell: the files below can't be read, so the options are compared as both apps' settings show them.
+            new_shown = options_shown(SETTINGS, paths, tap=False)
+            if new_shown != old_shown:
+                raise Fail(
+                    f"options changed in the update: before {old_shown}, after {new_shown}"
+                )
+        else:
+            # Migration moves the old history into files/english/, and English's engine learns its words into
+            # en_history once and removes it: what counts is the old app's word offered now.
+            if old_files(history):
+                raise Fail(f"English's old history left in place: {old_files(history)}")
+            # Not an option: the FUTO-based app's own record of which of its input modes learned words, which
+            # nothing in SebType reads, comes through the update emptied.
+            futo_record = {"General", "Chinese", "Japanese"}
+            lost = before - futo_record - set(root(f"strings {datastore}").split())
+            if not before or lost:
+                raise Fail(f"the options' file lost {sorted(lost)[:10]}")
+            stored = root(
+                f"cat /data/user/0/{OLD_PKG}/files/sebtype.conf /data/user/0/{OLD_PKG}/files/rime/user/rime_ice.custom.yaml; "
+                f"strings /data/user/0/{OLD_PKG}/files/datastore/settings.preferences_pb"
             )
-            if not found
-        ]
-        if missing:
-            raise Fail(f"options lost in the update: {', '.join(missing)}")
+            print("the new app has:\n" + stored)
+            missing = [
+                o
+                for o, found in (
+                    ("z = zh", "derive/^zh/z/" in stored),
+                    ("autocorrect off", "pref_key_auto_correction" in stored),
+                )
+                if not found
+            ]
+            if missing:
+                raise Fail(f"options lost in the update: {', '.join(missing)}")
         to_english()
         en = candidates_for(EN_WORD[:5])
         if EN_WORD not in [c.lower() for c in en]:
@@ -2833,31 +2899,38 @@ def update_from_futo_app():
         )
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)  # else its settings open on the setup screen
-        print(
-            "the old app stored:\n"
-            + set_old_options(("Privacy", "Learn from my typing"))
-        )
+        learning = (("Privacy", "Learn from my typing"),)
+        options, old_shown = set_old_options(*learning)
+        print("the old app stored:\n" + options)
         adb(
             "shell", "ime", "set", IME
         )  # as above; a stopped app also gets no update broadcast
         adb("install", "-r", apk, timeout=300)
         as_old(False)
-        # The update's broadcast starts the app, which moves the option.
-        try:
-            wait_for(
-                "learning off in sebtype.conf",
-                lambda: re.search(
-                    r"\[Learning\]\s*On=false",
-                    root(f"cat {old}/files/sebtype.conf; true"),
-                ),
-                30,
-            )
-        except Fail:
-            raise Fail(
-                f"learning off lost in the update: sebtype.conf has {root(f'cat {old}/files/sebtype.conf; true')!r}"
-            )
+        if not ROOT:
+            # The app's settings start it, as the update's broadcast does: the option moved shows off.
+            new_shown = options_shown(SETTINGS, learning, tap=False)
+            if old_shown != {learning[0]: False} or new_shown != old_shown:
+                raise Fail(
+                    f"learning off: the old app showed {old_shown}, the update {new_shown}"
+                )
+        else:
+            # The update's broadcast starts the app, which moves the option.
+            try:
+                wait_for(
+                    "learning off in sebtype.conf",
+                    lambda: re.search(
+                        r"\[Learning\]\s*On=false",
+                        root(f"cat {old}/files/sebtype.conf; true"),
+                    ),
+                    30,
+                )
+            except Fail:
+                raise Fail(
+                    f"learning off lost in the update: sebtype.conf has {root(f'cat {old}/files/sebtype.conf; true')!r}"
+                )
         return (
-            f"SebType still enabled and in use after the update; {zh}; {JA_CODE} -> {got[:3]};"
+            f"SebType still enabled and in use after the update; {zh}; {FUZZY_CODE} -> {fuzzy[:3]}; {JA_CODE} -> {got[:3]};"
             f" {EN_WORD[:5]} -> {en[:3]}; options kept; learning off kept"
         )
     finally:

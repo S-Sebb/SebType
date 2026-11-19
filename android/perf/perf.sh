@@ -2,7 +2,8 @@
 # Measures SebType's size, memory and speed on an Android device (#45); docs/development.md says how to read it.
 #   android/perf/perf.sh          builds the release APK, then measures on a free emulator (android/emulator.sh)
 # APK=<path> skips the build; ANDROID_SERIAL=<serial> measures on that device instead (the only way to
-# pick a phone); RUNS (default 3) repeats each typing set.
+# pick a phone); RUNS (default 3) repeats each typing set. PERF_STOP="<package> ..." force-stops those apps on
+# the device under its lock first, so a phone's own busy apps don't share the CPU with the run (#353).
 #   android/perf/perf.sh --compare   another installed keyboard (IME_PKG, IME_ID, KEY_ROWS) the same way,
 #                                    English only: idle memory, typing, fast typing, opens (#54)
 #   android/perf/perf.sh --english   SebType in English only: install, first open, EN, fast and long, so
@@ -411,6 +412,15 @@ device_steps() { # under the device lock
   [[ $(sh getprop ro.product.cpu.abilist) == *arm64-v8a* ]] || { echo "$ANDROID_SERIAL can't run arm64 apps" >&2; return 1; }
   (( $(sh getprop ro.build.version.sdk) >= 34 )) || { echo "$ANDROID_SERIAL: needs Android 14+ (older trace formats are untested)" >&2; return 1; }
   echo "measuring $APK on $ANDROID_SERIAL ($(sh getprop ro.product.model), Android $(sh getprop ro.build.version.release))"
+  # PERF_STOP: the person's apps that would compete for the CPU on a phone (#353), stopped here under the
+  # lock and not started again; the phone then settles before the run.
+  if [[ -n ${PERF_STOP:-} ]]; then
+    for p in $PERF_STOP; do sh am force-stop "$p"; done
+    sleep 30
+    for p in $PERF_STOP; do [[ -z $(sh pidof "$p") ]] || { echo "$p came back after force-stop" >&2; return 1; }; done
+    echo "stopped $PERF_STOP; media sessions playing: $(sh dumpsys media_session | grep -c 'state=PlaybackState {state=3')"
+  fi
+  echo "memory: $(sh "grep -E 'MemAvailable|SwapTotal|SwapFree' /proc/meminfo" | tr -s ' ' | tr '\n' ' ')"
   # Another keyboard to switch from for the cold open (the phone keeps Gboard for banking apps).
   # Gboard first: stock FUTO crashes in Mozc on the emulator.
   { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
@@ -497,8 +507,9 @@ result PASS apk "$(cat "$work/apk.out")"
 
 T=${PERF_LOCK_MINUTES:-30}
 # One of SebType's emulators, or the device ANDROID_SERIAL names, under its lock (android/emulator.sh).
+# A run stopped early fails, even with no device result recorded (a PERF_STOP app that came back, #353).
 android/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m "$T" -n "sebtype perf.sh" -- "$self" --device ||
-  echo "device steps stopped early (lock timeout, no device or install failure)" >&2
+  result FAIL device "stopped early (lock timeout, no device, a PERF_STOP app back, or install failure)"
 
 python3 -I android/perf/table.py "$work" "$results" > "$out/perf.md"
 cat "$out/perf.md"
