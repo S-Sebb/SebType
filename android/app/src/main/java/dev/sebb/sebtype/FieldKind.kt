@@ -8,7 +8,7 @@ import dev.sebb.sebtype.core.NativeCore
  * What a text field is, as the keyboard treats it (#30, #31):
  *
  *  - password fields: 中文 and 日本語 type plain letters, nothing is learned or suggested, number row on;
- *  - PIN, number, date and phone fields: a keypad;
+ *  - PIN, number, date, time and phone fields: a keypad, with the keys that kind takes (#411);
  *  - private fields (a private browser tab: no personalised learning), URLs and e-mail addresses: suggestions
  *    as usual from what was learned before, but nothing new is learned (Decisions #2, 2026-11-12);
  *  - e-mail addresses get the number row too.
@@ -38,9 +38,15 @@ class FieldKind(
             return when (type and InputType.TYPE_MASK_CLASS) {
                 InputType.TYPE_CLASS_NUMBER -> {
                     val pin = variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
-                    FieldKind(if (pin) NativeCore.FIELD_PASSWORD else NativeCore.FIELD_NUMBER, !pin && !noLearning, "numpad", false, enter)
+                    FieldKind(if (pin) NativeCore.FIELD_PASSWORD else NativeCore.FIELD_NUMBER, !pin && !noLearning,
+                        if (pin) "pin" else "numpad", false, enter)
                 }
-                InputType.TYPE_CLASS_DATETIME -> FieldKind(NativeCore.FIELD_NUMBER, !noLearning, "numpad", false, enter)
+                // Each with the separators it takes (#411)
+                InputType.TYPE_CLASS_DATETIME -> FieldKind(NativeCore.FIELD_NUMBER, !noLearning, when (variation) {
+                    InputType.TYPE_DATETIME_VARIATION_DATE -> "date"
+                    InputType.TYPE_DATETIME_VARIATION_TIME -> "time"
+                    else -> "datetime"
+                }, false, enter)
                 InputType.TYPE_CLASS_PHONE -> FieldKind(NativeCore.FIELD_PHONE, !noLearning, "phone", false, enter)
                 InputType.TYPE_CLASS_TEXT -> when (variation) {
                     InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,

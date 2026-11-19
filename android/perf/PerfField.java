@@ -33,7 +33,7 @@ import java.io.InputStream;
  * A plain text field for android/perf/perf.sh: it opens with the keyboard up, and with the extra
  * "chars" it starts with that much filler text, cursor at the end (the long-field case); the extra
  * "clip" copies that text just after it opens ("clipimage": a small PNG this app serves, #281), and "hidden"
- * keeps the keyboard down. "kind" makes it a password, PIN, visible-password, private, URL or email field, or
+ * keeps the keyboard down. "kind" makes it a password, PIN, number, phone, date, time, datetime, visible-password, private, URL or email field, or
  * one that takes pasted images ("image": it then shows "image <type> <bytes>"), or a one-line field with an
  * app's own Enter action ("action": label "Pay", id 42; it then shows "action <id>", #381).
  * It records only the text length, as the Perfetto counter "sebperf_len", never the text.
@@ -43,15 +43,14 @@ public class PerfField extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         String kind = getIntent().getStringExtra("kind");
-        EditText field = "image".equals(kind) ? new ImageField(this) : new EditText(this);
+        Integer pad = padType(kind);
+        EditText field = "image".equals(kind) ? new ImageField(this) : pad != null ? new PadField(this, pad) : new EditText(this);
         field.setGravity(Gravity.TOP | Gravity.START);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         // The field kinds android/test/chinese.py types into (#30).
         if ("password".equals(kind)) {
             field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        } else if ("pin".equals(kind)) {
-            field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         } else if ("visible-password".equals(kind)) {
             field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         } else if ("private".equals(kind)) {
@@ -107,6 +106,37 @@ public class PerfField extends Activity {
     }
 
     /** A field that takes a pasted PNG or JPEG, and shows its type and size instead. */
+    /** The input type the keyboard is told for a PIN, number, phone, date, time or datetime field (#30, #411). */
+    private static Integer padType(String kind) {
+        if ("pin".equals(kind)) return InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD;
+        if ("number".equals(kind)) return InputType.TYPE_CLASS_NUMBER;
+        if ("phone".equals(kind)) return InputType.TYPE_CLASS_PHONE;
+        if ("date".equals(kind)) return InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_DATE;
+        if ("time".equals(kind)) return InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_TIME;
+        if ("datetime".equals(kind)) return InputType.TYPE_CLASS_DATETIME;
+        return null;
+    }
+
+    /**
+     * A plain text field that tells the keyboard it is a pad's kind: it keeps every character the keys type, where
+     * Android's own number and time fields drop those they don't take, so a check sees each key's text (#411).
+     */
+    static class PadField extends EditText {
+        private final int type;
+
+        PadField(Context context, int type) {
+            super(context);
+            this.type = type;
+        }
+
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo info) {
+            InputConnection ic = super.onCreateInputConnection(info);
+            info.inputType = type;
+            return ic;
+        }
+    }
+
     static class ImageField extends EditText {
         ImageField(Context context) { super(context); }
 

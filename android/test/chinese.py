@@ -628,6 +628,78 @@ def pin_plain():
     return f"tapped 3 keypad keys in a PIN field: no candidates, field {field}"
 
 
+LAYOUTS = os.path.join(os.path.dirname(__file__), "../app/src/main/assets/layouts")
+# Each field kind's pad and what its text and space keys type, left to right and top down (#411).
+PADS = {
+    "number": ("numpad", "123456-789 ,0."),
+    "pin": ("pin", "1234567890"),
+    "phone": ("phone", "123456-789 *0#"),
+    "date": ("date", "123456-789/0."),
+    "time": ("time", "123456:789 0."),
+    "datetime": ("datetime", "123456-789/:0 "),
+}
+
+
+def pad_keys(pad):
+    """Where each key of the pad's layout file is on the keyboard: (key, x, y), over the last nodes()."""
+    with open(os.path.join(LAYOUTS, pad + ".json"), encoding="utf-8") as f:
+        rows = json.load(f)["rows"]
+    left, top, right, bottom = keyboard_frame
+    out = []
+    for r, row in enumerate(rows):
+        at = 0
+        for key in row:
+            w = key.get("width", key.get("gap", 1))
+            x = left + (at + w / 2) * (right - left) / 10
+            out.append((key, int(x), int(top + (r + 0.5) * (bottom - top) / len(rows))))
+            at += w
+    return out
+
+
+def pad_types(kind):
+    """#411: a field of this kind shows its pad: each text and space key, tapped in turn, types its own text."""
+
+    def run():
+        pad, want = PADS[kind]
+        open_field(kind)
+        for key, x, y in pad_keys(pad):
+            if "text" in key or key.get("code") == "space":
+                adb("shell", "input", "tap", str(x), str(y))
+
+        def typed():
+            return next(n[0] for n in nodes() if n[4] == "android.widget.EditText")
+
+        try:
+            field = wait_for(
+                f"{want!r} in the {kind} field", lambda: typed() == want and want, 15
+            )
+        except Fail:
+            field = typed()
+        if field != want:
+            screenshot(f"pad-{kind}.png")
+            raise Fail(f"tapped the {pad} pad's keys: field {field!r}, want {want!r}")
+        return f"{pad} pad typed {field!r}"
+
+    return run
+
+
+def pad_globe():
+    """#411: a tap on the pads' globe opens Android's keyboard chooser, which lists SebType."""
+    open_field("number")
+    key = next(k for k in pad_keys("numpad") if k[0].get("code") == "keyboards")
+    adb("shell", "input", "tap", str(key[1]), str(key[2]))
+    try:
+        wait_for(
+            "the keyboard chooser", lambda: any(n[0] == "SebType" for n in nodes()), 10
+        )
+    except Fail:
+        screenshot("pad-globe.png")
+        raise
+    finally:
+        adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+    return "the number pad's globe opened the keyboard chooser"
+
+
 def no_learning_in(kind, code):
     """#30: a lower candidate picked in a kind field isn't learned: it stays where it was in a normal one."""
 
@@ -824,6 +896,13 @@ check("learned-after-restart", learned_survives_restart, needs=["learn-picked-wo
 check("password-after-restart", password_after_restart, needs=["ranh"])
 check("password-plain", password_plain("password"), needs=["first-install"])
 check("pin-plain", pin_plain, needs=["first-install"])
+check("pad-number", pad_types("number"), needs=["first-install"])
+check("pad-pin", pad_types("pin"), needs=["first-install"])
+check("pad-phone", pad_types("phone"), needs=["first-install"])
+check("pad-date", pad_types("date"), needs=["first-install"])
+check("pad-time", pad_types("time"), needs=["first-install"])
+check("pad-datetime", pad_types("datetime"), needs=["first-install"])
+check("pad-globe", pad_globe, needs=["first-install"])
 check(
     "visible-password-plain",
     password_plain("visible-password"),

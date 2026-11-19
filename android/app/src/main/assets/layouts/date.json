@@ -1,0 +1,9 @@
+{
+  "about": "Date fields (#411). MIT, SebType.",
+  "rows": [
+    [{"text": "1", "width": 2.5}, {"text": "2", "width": 2.5}, {"text": "3", "width": 2.5}, {"code": "delete", "width": 2.5}],
+    [{"text": "4", "width": 2.5}, {"text": "5", "width": 2.5}, {"text": "6", "width": 2.5}, {"text": "-", "width": 2.5}],
+    [{"text": "7", "width": 2.5}, {"text": "8", "width": 2.5}, {"text": "9", "width": 2.5}, {"text": "/", "width": 2.5}],
+    [{"code": "keyboards", "width": 2.5}, {"text": "0", "width": 2.5}, {"text": ".", "width": 2.5}, {"code": "enter", "width": 2.5}]
+  ]
+}
