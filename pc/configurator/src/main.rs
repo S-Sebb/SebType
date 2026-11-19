@@ -1,8 +1,10 @@
 // SebType Configurator (#72): SebType's settings on the PC. It keeps no settings file of its own: every
-// value is read from, and written to, the engines' own files (the ones setup-ime sets up), then the
-// engine is redeployed or restarted.
+// value is read from, and written to, the engines' own files (the ones setup-ime sets up) or SebType's
+// sebtype.conf, then the engine is redeployed, restarted or told.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod conf;
+mod migrate;
 mod mozc;
 mod patch;
 mod proto;
@@ -44,6 +46,36 @@ struct Backup {
     candidates: Candidates,
     chinese_words: Vec<rime::Word>,
     japanese_words: Vec<mozc::Word>,
+    /// The Privacy switch (#374). A backup from before it has it as chinese.learn and japanese.learn.
+    learning: Option<bool>,
+}
+
+/// A backup's settings, learning from an older one's engine settings.
+fn parse_backup(text: &str) -> serde_json::Result<Backup> {
+    let v: serde_json::Value = serde_json::from_str(text)?;
+    let old = ["chinese", "japanese"]
+        .iter()
+        .find_map(|e| v[e]["learn"].as_bool());
+    let mut b: Backup = serde_json::from_value(v)?;
+    b.learning = b.learning.or(old);
+    Ok(b)
+}
+
+/// Writes `data` unless the file already holds it; true when it wrote. Through a file renamed over it, so a
+/// write cut off leaves the old file whole: never one cut short.
+pub fn write_file(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<bool> {
+    let data = data.as_ref();
+    if std::fs::read(path).ok().as_deref() == Some(data) {
+        return Ok(false);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".sebtype-tmp");
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(true)
 }
 
 fn lang_row(id: &str, on: bool) -> Lang {
@@ -121,14 +153,12 @@ fn chinese(s: &State, ui: &Ui) -> rime::Chinese {
         full_width_punctuation: s.get_zh_full_punct(),
         emoji: s.get_zh_emoji(),
         fuzzy: ui.fuzzy.iter().map(|f| f.on).collect(),
-        learn: s.get_learn(),
         page_size: s.get_page_size(),
     }
 }
 fn japanese(s: &State) -> mozc::Japanese {
     mozc::Japanese {
         half_width_space: s.get_ja_half_space(),
-        learn: s.get_learn(),
     }
 }
 fn candidates(s: &State) -> Candidates {
@@ -154,6 +184,37 @@ fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
         platform::restart_mozc();
     }
     Ok(say(Msg::JaNextTime))
+}
+
+/// Learning in sebtype.conf, which the input method applies at once. Then an older Configurator's learning
+/// off in Rime's and Mozc's own settings, which hid the learned words too (#374), goes: only once the
+/// input method has the choice, or the engine it restarts would learn.
+fn apply_learning(on: bool) -> std::io::Result<()> {
+    platform::set_learning(on)?;
+    drop_old_learning()
+}
+/// The engines read their settings again once typing is idle, as a sync's pull has them do (#373): a
+/// start of the Configurator, or a scheduled sync, keeps what is being typed.
+fn drop_old_learning() -> std::io::Result<()> {
+    let pending = platform::sebtype_dir().join("learning-migration-pending");
+    migrate::drop_old(
+        &platform::rime_dir(),
+        &platform::mozc_dir(),
+        &pending,
+        |e| match e {
+            migrate::Engine::Rime => platform::queue_rime_redeploy(),
+            migrate::Engine::Mozc => platform::restart_mozc_when_idle(),
+        },
+    )
+}
+/// An older Configurator's learning off moves into sebtype.conf (#374): at every start, before anything
+/// saves Rime's or Mozc's settings, and from setup (--migrate) on an upgrade. A refresh left from one that
+/// didn't finish is retried.
+fn migrate_learning() -> std::io::Result<()> {
+    if migrate::old_learning_off(&platform::rime_dir(), &platform::mozc_dir()) {
+        return apply_learning(false);
+    }
+    drop_old_learning()
 }
 
 fn set_langs_model(app: &AppWindow, ui: &Ui, list: Vec<(String, bool)>) {
@@ -192,7 +253,8 @@ fn load(app: &AppWindow, ui: &Ui) {
     s.set_zh_full_punct(c.full_width_punctuation);
     s.set_zh_emoji(c.emoji);
     s.set_page_size(c.page_size.clamp(5, 9));
-    s.set_learn(if rime_dir.is_dir() { c.learn } else { j.learn });
+    // Off too while an older Configurator's learning off stays (its migration failed).
+    s.set_learn(platform::learning() && !migrate::old_learning_off(&rime_dir, &mozc_dir));
     s.set_ja_half_space(j.half_width_space);
     ui.fuzzy.set_vec(
         (0..rime::FUZZY.len())
@@ -258,8 +320,7 @@ fn import() -> Result<Option<Backup>, Toast> {
     else {
         return Ok(None);
     };
-    let b: Backup =
-        serde_json::from_str(&std::fs::read_to_string(path).map_err(err)?).map_err(err)?;
+    let b = parse_backup(&std::fs::read_to_string(path).map_err(err)?).map_err(err)?;
     if b.sebtype_configurator != 1 {
         return Err(say(Msg::NotABackup));
     }
@@ -282,6 +343,7 @@ fn import() -> Result<Option<Backup>, Toast> {
     if !b.languages.is_empty() {
         platform::set_langs(&b.languages).map_err(err)?;
     }
+    apply_learning(b.learning.unwrap_or(true)).map_err(err)?;
     Ok(Some(b))
 }
 
@@ -339,6 +401,15 @@ fn sync_job(
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // Setup's step on an install or upgrade (pc/linux/setup-ime.sh, pc/windows/setup/setup.ps1): --migrate
+    // only migrates, and exits 1 if that failed.
+    let migrated = migrate_learning();
+    if let Err(e) = &migrated {
+        eprintln!("learning: {e}");
+    }
+    if std::env::args().any(|a| a == "--migrate") {
+        std::process::exit(i32::from(migrated.is_err()));
+    }
     // The schedule's sync (platform::schedule), and Setup's before it deletes learned words: no window.
     // Exit 1 when the sync was due and didn't go through: Setup then keeps the words (setup.ps1).
     if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
@@ -363,6 +434,18 @@ fn main() -> Result<(), slint::PlatformError> {
             },
             |_| 0,
         ));
+    }
+    // For tests without a window (pc/linux/test-setup-ime.sh, pc/windows/setup/test-private.ps1): the
+    // Privacy page's learning switch, --learning on or off.
+    if let Some(i) = std::env::args().position(|a| a == "--learning") {
+        let on = std::env::args().nth(i + 1).as_deref() == Some("on");
+        std::process::exit(match apply_learning(on) {
+            Ok(_) => 0,
+            Err(e) => {
+                eprintln!("--learning: {e}");
+                1
+            }
+        });
     }
     // For tests without a window (pc/windows/setup/test.ps1): the server, username and password on
     // stdin, one per line, saved as Server and login's Save does.
@@ -504,20 +587,11 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     s.on_learn_changed({
-        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        let (weak, run) = (app.as_weak(), run.clone());
         move || {
-            let app = weak.unwrap();
-            let (c, j) = (
-                chinese(&app.global::<State>(), &ui),
-                japanese(&app.global::<State>()),
-            );
+            let on = weak.unwrap().global::<State>().get_learn();
             run(Box::new(move || {
-                if platform::mozc_dir().is_dir() {
-                    apply_japanese(j)?;
-                }
-                if platform::rime_dir().is_dir() {
-                    return apply_chinese(c);
-                }
+                apply_learning(on).map_err(err)?;
                 Ok(say(Msg::Applied))
             }));
         }
@@ -674,6 +748,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 candidates: candidates(&st),
                 chinese_words: zh_words(&ui),
                 japanese_words: mozc::words(&platform::mozc_dir()).unwrap_or_default(),
+                learning: Some(st.get_learn()),
             };
             let file = st.get_backup_file().into();
             run(Box::new(move || export(b, file)));
@@ -761,6 +836,33 @@ fn reload_after_import(app: &AppWindow, languages: Vec<(String, bool)>) {
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, fs, path::Path};
+
+    /// Learning goes in a backup and comes back (#374), from an older one's chinese.learn and japanese.learn too.
+    #[test]
+    fn a_backup_keeps_learning() {
+        let parse = |text: &str| super::parse_backup(text).unwrap().learning;
+        for on in [false, true] {
+            let b = super::Backup {
+                sebtype_configurator: 1,
+                learning: Some(on),
+                ..Default::default()
+            };
+            assert_eq!(parse(&serde_json::to_string(&b).unwrap()), Some(on));
+        }
+        let old = |learn| {
+            format!(
+                r#"{{"sebtype_configurator":1,"chinese":{{"traditional":true,"learn":{learn}}},"japanese":{{"half_width_space":true,"learn":{learn}}}}}"#
+            )
+        };
+        let b = super::parse_backup(&old(false)).unwrap();
+        assert_eq!(b.learning, Some(false));
+        assert!(b.chinese.traditional && b.japanese.half_width_space);
+        assert_eq!(parse(&old(true)), Some(true));
+        // Japanese only (no Rime folder when it was made).
+        let ja = r#"{"sebtype_configurator":1,"japanese":{"learn":false}}"#;
+        assert_eq!(parse(ja), Some(false));
+        assert_eq!(parse(r#"{"sebtype_configurator":1}"#), None);
+    }
 
     /// What the window shows the same in every language: names, keys, licences and the sample candidates.
     #[rustfmt::skip]

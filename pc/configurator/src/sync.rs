@@ -249,7 +249,7 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
     })
     .map_err(|_| Failed::Offline)??;
     if mozc_changed {
-        platform::restart_mozc_when_idle(); // Mozc reads its dictionary when it starts
+        let _ = platform::restart_mozc_when_idle(); // Mozc reads its dictionary when it starts
     }
     deploy_if_pending(&flag, platform::redeploy_rime_when_idle).map_err(|_| Failed::Offline)?;
     pulled?;

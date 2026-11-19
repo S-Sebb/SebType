@@ -1,22 +1,32 @@
 ﻿<#
-Private fields learn nothing new (#270), on a Windows PC with SebType installed, in the logged-on person's own
-desktop session (not elevated). One command:
+Private fields learn nothing new (#270), nor does any field with learning off (#374), on a Windows PC with SebType
+installed, in the logged-on person's own desktop session (not elevated). One command:
 
     powershell -ExecutionPolicy Bypass -File test-private.ps1 -Watch <file> [-Out <folder>] [-Browsers]
+    powershell -ExecutionPolicy Bypass -File test-private.ps1 -AnyDisplay [-Out <folder>]
 
 It makes no input of its own, as test-focus-out.ps1 (#277), so a screen that is off stays off: -Watch <file> is
 test-focus-out.ps1 -WatchTo's log of the display's state, started before SebType's install; the run stops once
 it shows the display on. TsfHost.cs (beside this script) is the field, with the input scope IS_PRIVATE as a
 browser's private window gives it, or none. In 中文 (shishi) and 日本語 (kisha) a 4th candidate picked in the
 private field is not learned and the first stays first; picked in a field that may learn it is learned; and
-the private field then still suggests it first.
+the private field then still suggests it first. Then the Configurator turns learning off (--learning off, as
+its Privacy switch does): the learned pick is still first and a 3rd candidate picked is not learned; turned on
+again, the learned pick is still first and the 3rd candidate picked is learned. It is told again when
+sebtype.conf already says off (a try whose notice didn't reach the server). Last, an upgrade from a Configurator
+before #374, whose learning off hid what was learned (rime-ice's enable_user_dict, Mozc's NO_HISTORY): Setup's
+--migrate moves it to sebtype.conf, keeping what is being typed, and the learned picks are first again once
+typing is idle while a new pick isn't learned; one cut off before Rime read its settings again is retried, and
+restrictions SebType didn't write stay.
+-AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=private): no
+-Watch, and the display's state isn't checked.
 -Browsers then opens a local page with a focused text field in Edge (and Chrome when installed), InPrivate or
 incognito and then normal, each with a profile in <Out>, brings the window to the front without a key, and
 checks server.log: SebType's server notes "field: private, learns nothing" for the private window, "field:
 learns" for the normal one. The browsers it started are closed. Results: one line per check in
 <Out>\private-results.txt; exit 0 only if all pass.
 #>
-param([string]$Out = "$env:USERPROFILE\scratch\SebType\270", [string]$Watch, [switch]$Browsers)
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\270", [string]$Watch, [switch]$Browsers, [switch]$AnyDisplay)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSCommandPath
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -29,10 +39,11 @@ function Result($name, $status, $why = '') {
 function Check($name, [scriptblock]$body) {
   try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
 }
-function Lit { Get-Content $Watch -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch ' 0$' } }
+function Lit { if ($AnyDisplay) { return }; Get-Content $Watch -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch ' 0$' } }
 
 $missing = if (-not (Test-Path "$env:ProgramFiles\SebType\sebtype.dll")) { 'SebType is not installed' }
 elseif ((Get-Process -Id $PID).SessionId -eq 0) { 'runs in session 0: start it in the desktop session' }
+elseif ($AnyDisplay) { }
 elseif (-not $Watch -or -not (Test-Path $Watch)) { 'no -Watch file: start test-focus-out.ps1 -WatchTo <file> first' }
 elseif (-not (Get-Content $Watch)) { 'the -Watch file has no display state yet' }
 elseif (Lit) { "the display is on or was: $((Get-Content $Watch) -join ', ')" }
@@ -64,18 +75,33 @@ function Field($private) {
   $tsf::Away($true); $tsf::Settle(500); $tsf::Away($false); $tsf::Settle(500)
 }
 function Typed { Keys @args; $t = $tsf::Text(); $tsf::Clear(); $t }
-$words = @{  # the first candidate, and the fourth picked
-  zh = { Typed s h i s h i space }, { Typed s h i s h i 4 }
-  ja = { Typed k i s h a space Return }, { Typed k i s h a space space space space Return }
+$words = @{  # the first candidate, the fourth picked, the third and the second
+  zh = { Typed s h i s h i space }, { Typed s h i s h i 4 }, { Typed s h i s h i 3 }, { Typed s h i s h i 2 }
+  ja = { Typed k i s h a space Return }, { Typed k i s h a space space space space Return }, { Typed k i s h a space space space Return }, { Typed k i s h a space space Return }
 }
+# The Configurator's Privacy switch (#374), as its window sets it.
+function Learning($on) {
+  $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--learning', $(if ($on) { 'on' } else { 'off' }) -Wait -PassThru
+  if ($p.ExitCode) { throw "sebtype-configurator --learning: exit $($p.ExitCode)" }
+}
+function Wait-Mozc($first) { for ($i = 0; $i -lt 30 -and (& $first) -cmatch '^[a-z ]*$'; $i++) { Start-Sleep 1 } }  # Mozc loads at its first key (#312)
+function Server($arg) {
+  $p = Start-Process "$env:ProgramFiles\SebType\sebtype-server.exe" -ArgumentList $arg -Wait -PassThru
+  if ($p.ExitCode) { throw "sebtype-server $($arg): exit $($p.ExitCode)" }
+}
+$conf = "$env:APPDATA\SebType\sebtype.conf"
+$learned = @{}
+function First-Is($first, $want) { $t = & $first; if ($t -ne $want) { throw "first is '$t', want '$want'" }; $t }
 
 $tsf::Start()
 try {
   foreach ($lang in 'zh', 'ja') {
     Lang $lang
-    $first, $fourth = $words[$lang]
+    $first, $fourth, $third, $second = $words[$lang]
     if ($lang -eq 'zh') { Keys n i; Start-Sleep 3; Keys Escape; $tsf::Clear() }  # the first key starts the server
-    Field $false; $top = & $first
+    Field $false
+    if ($lang -eq 'ja') { Wait-Mozc $first }
+    $top = & $first
     Field $true; $picked = & $fourth
     Check "$lang-private-pick" { if (-not $picked -or $picked -eq $top) { throw "the 4th candidate gave '$picked' (first '$top')" }; $picked }
     Check "$lang-private-learns-nothing" { $t = & $first; if ($t -ne $top) { throw "first is '$t', want '$top'" }; $t }
@@ -84,7 +110,105 @@ try {
     Field $true
     Check "$lang-private-keeps-learned" { $t = & $first; if ($t -ne $picked) { throw "first is '$t', want '$picked'" }; $t }
     Field $false
+    # Learning off in the Configurator is the same in every field (#374), and on again learns.
+    # sebtype.conf may already say off, from a try whose notice didn't reach the server: told again all the same.
+    New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
+    [IO.File]::AppendAllText($conf, "[Learning]`nOn=false`n")
+    Check "$lang-learning-off-keeps-learned" { Learning $false; First-Is $first $picked }
+    $other = & $third
+    Check "$lang-learning-off-pick" { if (-not $other -or $other -eq $picked) { throw "the 3rd candidate gave '$other' (first '$picked')" }; $other }
+    Check "$lang-learning-off-learns-nothing" { First-Is $first $picked }
+    Check "$lang-learning-on-keeps-learned" { Learning $true; First-Is $first $picked }
+    # Learned, it moves up from 3rd (Rime may keep the word committed more often ahead of it).
+    Check "$lang-learning-on-learns" {
+      $t = & $third; if ($t -ne $other) { throw "the 3rd candidate gave '$t', want '$other'" }
+      $a, $b = (& $first), (& $second); if ($other -notin $a, $b) { throw "first two are '$a', '$b', want '$other' among them" }; "$a, $b"
+    }
+    $learned[$lang] = & $first
   }
+
+  # Restrictions SebType didn't write (no SebType comment; NO_HISTORY with Chinese's learning on) are the
+  # person's own: a migration leaves them, and learning on (#374).
+  $patchFile = "$env:APPDATA\Rime\rime_ice.custom.yaml"
+  $patch = [IO.File]::ReadAllText($patchFile)
+  $mozcDir = "$env:USERPROFILE\AppData\LocalLow\Mozc"
+  New-Item -ItemType Directory -Force $mozcDir | Out-Null
+  $cfgFile = "$mozcDir\config1.db"
+  $cfg = if (Test-Path $cfgFile) { [IO.File]::ReadAllBytes($cfgFile) } else { [byte[]]@() }
+  $pending = "$env:LOCALAPPDATA\SebType\learning-migration-pending"
+  function Old-Settings($rimeLine) {
+    [IO.File]::WriteAllText($patchFile, ($patch -replace '(?m)^patch:(\r?\n)', "patch:`$1  $rimeLine`$1"))
+    [IO.File]::WriteAllBytes($cfgFile, [byte[]]($cfg + [byte[]](0x90, 3, 2)))  # history_learning_level (50): NO_HISTORY
+  }
+  function Migrate {
+    $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--migrate' -Wait -PassThru
+    if ($p.ExitCode) { throw "sebtype-configurator --migrate: exit $($p.ExitCode)" }
+  }
+  # The migration's deploy and Mozc restart wait until typing is idle (5 s, #373); Rime then deploys.
+  function Idle-Refresh {
+    Start-Sleep 8
+    $zh = $words['zh'][0]
+    for ($i = 0; $i -lt 60 -and (& $zh) -cmatch '^[a-z ]*$'; $i++) { Start-Sleep 1 }
+    Start-Sleep 8
+  }
+  function Same-Text($a, $b) { ($a -replace "`r`n", "`n") -eq ($b -replace "`r`n", "`n") }  # the Configurator writes LF, setup.ps1 CRLF
+  Check 'own-restrictions-stay' {
+    Old-Settings 'translator/enable_user_dict: false'
+    Migrate
+    if ((Test-Path $conf) -and (Get-Content -Raw $conf) -match 'On=false') { throw "learning turned off: $(Get-Content -Raw $conf)" }
+    if ([IO.File]::ReadAllText($patchFile) -notmatch 'enable_user_dict: false\r?\n') { throw 'rime-ice patch lost it' }
+    if ([IO.File]::ReadAllBytes($cfgFile).Length -ne $cfg.Length + 3) { throw "Mozc's NO_HISTORY gone" }
+    'learning on, rime-ice patch and NO_HISTORY kept'
+  }
+  # An upgrade from a Configurator before #374, its learning off as it wrote it: Setup's --migrate moves it to
+  # sebtype.conf. It comes while 中文 is being typed, which the engines' refresh keeps (#373).
+  Old-Settings "translator/enable_user_dict: false  # SebType: don't learn"
+  Server '/deploy'; Server '/mozc'
+  $hidden = @{}
+  foreach ($lang in 'zh', 'ja') {
+    Lang $lang; Field $false
+    $first, $fourth, $null = $words[$lang]
+    if ($lang -eq 'ja') { Wait-Mozc $first }
+    $hidden[$lang] = & $first
+    Check "$lang-old-learning-off-hides-learned" { $t = $hidden[$lang]; if ($t -eq $learned[$lang]) { throw "first is the learned '$t'" }; $t }
+  }
+  Lang 'zh'; Field $false
+  Keys s h i
+  Check 'migrate' {
+    Migrate
+    if ((Get-Content -Raw $conf) -notmatch '\[Learning\]\nOn=false') { throw "sebtype.conf: $(Get-Content -Raw $conf)" }
+    $now = [IO.File]::ReadAllText($patchFile)
+    if (-not (Same-Text $now $patch)) { throw "rime_ice.custom.yaml is now: $now" }
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($cfgFile)) -ne [Convert]::ToBase64String($cfg)) { throw "config1.db isn't as before" }
+    'learning off in sebtype.conf, the old settings gone'
+  }
+  Check 'migrate-keeps-typing' { $t = Typed s h i space; if ($t -ne $hidden['zh']) { throw "typed '$t', want '$($hidden['zh'])'" }; $t }
+  Idle-Refresh
+  foreach ($lang in 'zh', 'ja') {
+    Lang $lang; Field $false
+    $first, $fourth, $null = $words[$lang]
+    if ($lang -eq 'ja') { Wait-Mozc $first }
+    Check "$lang-migrated-keeps-learned" { First-Is $first $learned[$lang] }
+    $p = & $fourth
+    Check "$lang-migrated-learns-nothing" { if ($p -eq $learned[$lang]) { throw "the 4th candidate gave '$p'" }; First-Is $first $learned[$lang] }
+  }
+  Check 'migrated-nothing-left' { if (Test-Path $pending) { throw "${pending}: $(Get-Content $pending)" }; 'none' }
+  # A migration cut off after it removed Rime's old setting, before Rime read its settings again: the next one
+  # still has Rime do it.
+  Lang 'zh'; Field $false
+  Old-Settings "translator/enable_user_dict: false  # SebType: don't learn"
+  [IO.File]::WriteAllBytes($cfgFile, $cfg)
+  Server '/deploy'
+  Check 'zh-old-learning-off-hides-again' { First-Is $words['zh'][0] $hidden['zh'] }
+  [IO.File]::WriteAllText($patchFile, $patch)
+  New-Item -ItemType Directory -Force (Split-Path $pending) | Out-Null
+  [IO.File]::WriteAllText($pending, "rime`n")
+  Check 'cut-off-migration-retried' {
+    Migrate; Idle-Refresh
+    First-Is $words['zh'][0] $learned['zh']
+    if (Test-Path $pending) { throw "$pending still there" }
+  }
+  Check 'learning-on-after-migration' { Learning $true; 'on' }
 
   if ($Browsers) {
     $page = "$Out\field.html"
@@ -141,6 +265,7 @@ try {
 }
 
 Start-Sleep 6  # a wake from the last steps shows by now
-Check 'display-stayed-off' { if (Lit) { throw "the display turned on: $((Get-Content $Watch) -join ', ')" }; 'off throughout' }
+if ($AnyDisplay) { Result display-stayed-off INFO 'not checked (-AnyDisplay)' }
+else { Check 'display-stayed-off' { if (Lit) { throw "the display turned on: $((Get-Content $Watch) -join ', ')" }; 'off throughout' } }
 $failed = @(Get-Content $results | Where-Object { $_ -like 'FAIL *' }).Count
 exit [int]($failed -gt 0)

@@ -1,7 +1,7 @@
 //! Chinese (rime-ice in Rime's user folder): the settings as patch entries, the user's own words in
 //! custom_phrase.txt, and forgetting learned words. The same files and rules as the phone (#41).
 
-use crate::patch;
+use crate::{patch, write_file};
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
@@ -22,7 +22,8 @@ const ASCII_PUNCT: &str = "switches/@1/reset";
 const TRADITIONAL: &str = "switches/@2/reset";
 const EMOJI: &str = "switches/@3/reset";
 const ALGEBRA: &str = "speller/algebra/+";
-const LEARN: &str = "translator/enable_user_dict";
+/// An older Configurator's learning off (#374), as it wrote it: only removed (drop_old_learning).
+const OLD_LEARNING_OFF: &str = "translator/enable_user_dict: false  # SebType: don't learn";
 const PAGE_SIZE: &str = "menu/page_size";
 /// SebType's page size on the PCs (Decisions #2, #163), which the setup scripts write into
 /// default.custom.yaml; rime-ice's default.yaml has 5.
@@ -71,7 +72,6 @@ pub struct Chinese {
     pub full_width_punctuation: bool,
     pub emoji: bool,
     pub fuzzy: Vec<bool>,
-    pub learn: bool,
     pub page_size: i32,
 }
 
@@ -82,7 +82,6 @@ impl Default for Chinese {
             full_width_punctuation: true,
             emoji: true,
             fuzzy: vec![false; FUZZY.len()],
-            learn: true,
             page_size: DEFAULT_PAGE_SIZE,
         }
     }
@@ -90,17 +89,6 @@ impl Default for Chinese {
 
 fn read(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_default()
-}
-
-/// Writes `text` unless the file already holds it; true when it wrote.
-fn write(path: &Path, text: &str) -> io::Result<bool> {
-    if read(path) == text {
-        return Ok(false);
-    }
-    let tmp = path.with_extension("sebtype-tmp");
-    fs::write(&tmp, text)?;
-    fs::rename(&tmp, path)?;
-    Ok(true)
 }
 
 pub fn load(dir: &Path) -> Chinese {
@@ -118,9 +106,30 @@ pub fn load(dir: &Path) -> Chinese {
                     .all(|r| rules.contains(&format!("- {r}")))
             })
             .collect(),
-        learn: patch::value(&schema, LEARN) != Some("false"),
         page_size,
     }
+}
+
+/// Learning off as an older Configurator wrote it, which hid the learned words too (#374): known by its
+/// comment, as an enable_user_dict someone wrote themselves is theirs. Learning is sebtype.conf's now
+/// (crate::conf); only drop_old_learning removes this, once sebtype.conf holds it.
+pub fn old_learning_off(dir: &Path) -> bool {
+    read(&dir.join(SCHEMA_PATCH))
+        .lines()
+        .any(|l| l.trim() == OLD_LEARNING_OFF)
+}
+/// True when there was one (Rime then needs a redeploy).
+pub fn drop_old_learning(dir: &Path) -> io::Result<bool> {
+    if !old_learning_off(dir) {
+        return Ok(false);
+    }
+    let path = dir.join(SCHEMA_PATCH);
+    let text = read(&path);
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| l.trim() != OLD_LEARNING_OFF)
+        .collect();
+    write_file(&path, &format!("{}\n", kept.join("\n")))
 }
 
 fn page_size(defaults_patch: &str) -> i32 {
@@ -145,9 +154,6 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     if !c.emoji {
         entries.push(format!("  {EMOJI}: 0  # SebType: no emoji in candidates"));
     }
-    if !c.learn {
-        entries.push(format!("  {LEARN}: false  # SebType: don't learn"));
-    }
     // Appended (not replaced): rime-ice's own rules give abbreviated pinyin.
     let rules: Vec<String> = (0..FUZZY.len())
         .filter(|&i| c.fuzzy.get(i) == Some(&true))
@@ -160,11 +166,11 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     let schema = read(&path);
     let mut changed = false;
     if path.exists() || !entries.is_empty() {
-        changed |= write(
+        changed |= write_file(
             &path,
             &patch::set(
                 &schema,
-                &[ASCII_PUNCT, TRADITIONAL, EMOJI, LEARN, ALGEBRA],
+                &[ASCII_PUNCT, TRADITIONAL, EMOJI, ALGEBRA],
                 &entries,
             ),
         )?;
@@ -173,7 +179,7 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     let defaults = read(&path);
     if page_size(&defaults) != c.page_size {
         let line = format!("  {PAGE_SIZE}: {}", c.page_size);
-        changed |= write(&path, &patch::set(&defaults, &[PAGE_SIZE], &[line]))?;
+        changed |= write_file(&path, &patch::set(&defaults, &[PAGE_SIZE], &[line]))?;
     }
     Ok(changed)
 }
@@ -228,7 +234,7 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     for w in words {
         text.push_str(&format!("{}\t{}\n", w.word.trim(), w.pinyin));
     }
-    write(&path, &text)
+    write_file(&path, &text)
 }
 
 /// Adds a word to My words as they are now: the sync may have changed them since the window read them.
@@ -425,7 +431,6 @@ mod tests {
             traditional: true,
             full_width_punctuation: false,
             emoji: false,
-            learn: false,
             page_size: 7,
             ..Chinese::default()
         };
@@ -447,6 +452,30 @@ mod tests {
         )
         .unwrap());
         assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
+        // An older Configurator's learning off (#374): another setting's save keeps it, as learning may
+        // not be in sebtype.conf yet; drop_old_learning removes it.
+        let old = format!("{setup}  {OLD_LEARNING_OFF}\n");
+        fs::write(d.join(SCHEMA_PATCH), &old).unwrap();
+        assert!(old_learning_off(&d));
+        assert!(!save(
+            &d,
+            &Chinese {
+                page_size: 7,
+                ..Chinese::default()
+            }
+        )
+        .unwrap());
+        assert!(old_learning_off(&d));
+        assert!(drop_old_learning(&d).unwrap());
+        assert!(!old_learning_off(&d));
+        assert!(!drop_old_learning(&d).unwrap());
+        assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
+        // One written by hand, without SebType's comment, is the person's own: kept (#374).
+        let own = format!("{setup}  translator/enable_user_dict: false\n");
+        fs::write(d.join(SCHEMA_PATCH), &own).unwrap();
+        assert!(!old_learning_off(&d));
+        assert!(!drop_old_learning(&d).unwrap());
+        assert_eq!(read(&d.join(SCHEMA_PATCH)), own);
         fs::remove_dir_all(&d).unwrap();
     }
 

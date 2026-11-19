@@ -612,6 +612,11 @@ if [[ ! -x $built || -n $stale ]] || ! cmp -s "$built" "$app_bin" || [[ $(cat "$
     fi
   fi
 fi
+# Learning off from before #374 hid what was learned (rime-ice's enable_user_dict, Mozc's NO_HISTORY): the
+# Configurator moves it to sebtype.conf, which keeps using it. Nothing to do once moved.
+if ((!dry)) && [[ -x $app_bin ]]; then
+  "$app_bin" --migrate || warn "SebType Configurator couldn't move learning off to SebType's settings; it tries again when it starts"
+fi
 
 # Self-check of the live session.
 parent=$(ps -o ppid= -C fcitx5 | head -1 | tr -d ' ')

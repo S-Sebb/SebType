@@ -2,7 +2,7 @@
 //! pc/linux/setup-ime.sh. A running Fcitx5 is told over D-Bus (busctl); without one, the files are
 //! written and read when it starts.
 
-use crate::Candidates;
+use crate::{conf, write_file, Candidates};
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
@@ -160,7 +160,7 @@ fn reload_addon(addon: &str) {
     }
 }
 
-// --- INI files (SebType's settings and Fcitx5's addon configs) ---
+// --- INI files (Fcitx5's addon configs) ---
 
 fn ini_get(text: &str, key: &str) -> Option<String> {
     text.lines()
@@ -188,23 +188,13 @@ fn ini_set(text: &str, key: &str, value: &str) -> String {
     out.join("\n") + "\n"
 }
 
-fn write_if_changed(path: &PathBuf, text: &str) -> io::Result<bool> {
-    if fs::read_to_string(path).ok().as_deref() == Some(text) {
-        return Ok(false);
-    }
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    fs::write(path, text)?;
-    Ok(true)
-}
-
 // --- Languages: SebType's settings, in Super+Space order (the first is home) ---
 
 /// SebType's three languages, those on first in their order, then those off. Without settings all are on.
 pub fn langs() -> io::Result<Vec<(String, bool)>> {
     let text = fs::read_to_string(settings()).unwrap_or_default();
-    let order = ini_get(&text, "Order").unwrap_or_else(|| LANGS.join(","));
+    let order =
+        conf::value(&text, "Languages", "Order").map_or_else(|| LANGS.join(","), str::to_string);
     let mut out: Vec<(String, bool)> = Vec::new();
     for id in order.split(',').filter(|id| LANGS.contains(id)) {
         if !out.iter().any(|(i, _)| i == id) {
@@ -225,9 +215,34 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
         .filter(|(_, on)| *on)
         .map(|(id, _)| id.as_str())
         .collect();
-    let text = format!("[Languages]\nOrder={}\n", on.join(","));
-    if write_if_changed(&settings(), &text)? {
+    let order = format!("Order={}\n", on.join(","));
+    set_settings(|old| conf::set_section(old, "Languages", &order))
+}
+
+/// sebtype.conf with `change` made; the input method reads it again when it changed.
+fn set_settings(change: impl FnOnce(&str) -> String) -> io::Result<()> {
+    let old = fs::read_to_string(settings()).unwrap_or_default();
+    if write_file(&settings(), &change(&old))? {
         reload_addon("sebtype");
+    }
+    Ok(())
+}
+
+// --- Learning: sebtype.conf's [Learning] ---
+
+pub fn learning() -> bool {
+    conf::learning(&fs::read_to_string(settings()).unwrap_or_default())
+}
+/// Fcitx5 has applied it when this returns. Told again on a retry, as the file may already say so while the
+/// add-on doesn't (#374); Fcitx5 not running reads it when it starts.
+pub fn set_learning(on: bool) -> io::Result<()> {
+    let path = settings();
+    write_file(
+        &path,
+        &conf::set_learning(&fs::read_to_string(&path).unwrap_or_default(), on),
+    )?;
+    if fcitx_running() {
+        controller("ReloadAddonConfig", &["s", "sebtype"])?;
     }
     Ok(())
 }
@@ -266,7 +281,7 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
     if c.picnic {
         fs::create_dir_all(theme_dir())?;
         for (name, text) in picnic_files(c.font_size) {
-            theme_changed |= write_if_changed(&theme_dir().join(name), &text)?;
+            theme_changed |= write_file(&theme_dir().join(name), &text)?;
         }
         if current.0.as_deref() != Some(PICNIC) {
             // Remember the system look, for 系统样式 and for setup-ime.sh --undo-configurator.
@@ -291,7 +306,7 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
             &ini_get(&prev, "DarkTheme").unwrap_or("default".into()),
         );
     }
-    let changed = write_if_changed(&path, &ui)? | theme_changed;
+    let changed = write_file(&path, &ui)? | theme_changed;
     if changed {
         reload_addon("classicui");
     }
@@ -388,13 +403,18 @@ pub fn redeploy_rime_when_idle() -> io::Result<()> {
     }
     Ok(())
 }
-pub fn restart_mozc_when_idle() {
+/// Fcitx5 returns once it has the request.
+pub fn queue_rime_redeploy() -> io::Result<()> {
+    redeploy_rime_when_idle()
+}
+pub fn restart_mozc_when_idle() -> io::Result<()> {
     if fcitx_running() {
-        let _ = controller(
+        controller(
             "SetConfig",
             &["sv", "fcitx://config/addon/sebtype/mozc-when-idle", "s", ""],
-        );
+        )?;
     }
+    Ok(())
 }
 
 /// Rime's sync, which SebType's input method runs when Fcitx5 saves: it merges the other devices' snapshots into
@@ -617,7 +637,7 @@ pub fn schedule(on: bool) -> io::Result<()> {
     let units = sync_units(&env::current_exe()?);
     if on {
         for (name, text) in &units {
-            write_if_changed(&dir.join(name), text)?;
+            write_file(&dir.join(name), text)?;
         }
         systemctl(&["daemon-reload"])?;
         return systemctl(&["enable", "--now", SYNC_TIMER, SYNC_PATH]);
@@ -831,7 +851,6 @@ mod tests {
             full_width_punctuation: false,
             emoji: false,
             fuzzy: vec![true; 1],
-            learn: false,
             page_size: 8,
         };
         assert!(rime::save(&dir, &c).unwrap());
@@ -861,14 +880,23 @@ mod tests {
         }
         assert!(schema.contains("\"derive/^z/zh/\""), "fuzzy z = zh");
         assert!(schema.contains("menu:\n  page_size: 8\n"), "page size");
+        // Learning off is sebtype.conf's (#374): Rime keeps its learned words in use.
+        set_learning(false).unwrap();
+        assert!(!learning());
+        assert!(
+            langs().unwrap()[0] == ("zh".into(), true),
+            "the languages kept"
+        );
         let translator = schema.split("\ntranslator:\n").nth(1).unwrap();
         assert!(
-            translator
-                .split("\n")
+            !translator
+                .split('\n')
                 .take_while(|l| l.starts_with(' '))
                 .any(|l| l == "  enable_user_dict: false"),
-            "learn"
+            "learned words in use"
         );
+        set_learning(true).unwrap();
+        assert!(learning());
 
         // Picnic with SebType's pig (#94); test.sh then draws this window in a nested KWin.
         let picnic = Candidates {

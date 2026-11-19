@@ -5,10 +5,18 @@
 //
 //   sebtype-server.exe [/error:N]                 serves (started at logon, or by the text service, with the
 //                                                 error its call met, for server.log)
-//   sebtype-server.exe /deploy|/sync|/quit|/mozc  tells the server (/deploy and /sync do it themselves when
+//   sebtype-server.exe /deploy|/sync|/quit|/mozc|/settings
+//                                                 tells the server (/deploy and /sync do it themselves when
 //                                                 none runs, and return when Rime is done), for setup and the
 //                                                 Configurator; /mozc: Mozc reads its files again;
-//   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373)
+//                                                 /settings: the core reads sebtype.conf again, before it
+//                                                 returns (#374); exit codes as /forget's, 7 the server running
+//                                                 is too old to (none running reads it when it starts);
+//   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373);
+//                                                 /deploy-when-idle returns when done, /mozc-when-idle once queued
+//   sebtype-server.exe /deploy-when-idle /queue    returns once queued, for the Configurator's migration (#374),
+//                                                 which mustn't wait for typing to end; both fail when the server
+//                                                 didn't take it
 //   sebtype-server.exe /forget:zh|/forget:ja       the language's engine forgets what it learned (itself when
 //                                                 no server runs), for the Configurator (#375); returns when done;
 //                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
@@ -28,6 +36,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <sstream>
 #include <thread>
 
 namespace sebtype::win {
@@ -81,6 +90,15 @@ std::string parent() {
     if (e.th32ProcessID == ppid) name = utf8(e.szExeFile);
   CloseHandle(snap);
   return name + " " + std::to_string(ppid);
+}
+
+// sebtype.conf, which the Configurator writes: the core's settings (its learning, #374) and the candidate
+// window's look (the text service's).
+Settings readSettings() {
+  std::ifstream f(knownFolder(FOLDERID_RoamingAppData) / L"SebType" / L"sebtype.conf");
+  std::stringstream s;
+  s << f.rdbuf();
+  return Settings::parse(s.str());
 }
 
 std::unique_ptr<Engine> makeEngine(Lang lang) {
@@ -223,8 +241,10 @@ Reply handle(const Request &q, HANDLE pipe) {
                       // background); never on the idle queue, the Configurator waits for it
       if (Engine *e = core->engine(q.lang)) e->forget();
       break;
+    case Op::Settings: core->setSettings(readSettings()); break;
   }
   Reply r = state(taken, commit);
+  r.settings = q.op == Op::Settings;
   if (Engine *e = core->running(q.lang)) {  // for /forget
     r.forgets = q.op == Op::Forget;
     r.langBusy = e->busy();
@@ -297,7 +317,7 @@ int run() {
     return 0;
   }
   note("server started (" + origin + "): " + utf8(GetCommandLineW()));
-  Core host(makeEngine);
+  Core host(makeEngine, readSettings());
   core = &host;
   // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
   const LANGID ui = PRIMARYLANGID(GetUserDefaultUILanguage());
@@ -341,6 +361,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   int argc = 0;
   wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
   const std::wstring arg = argv && argc > 1 ? argv[1] : L"";
+  const bool queue = argc > 2 && _wcsicmp(argv[2], L"/queue") == 0;
   LocalFree(argv);
   Request q;
   if (_wcsicmp(arg.c_str(), L"/deploy") == 0) q.op = Op::Deploy;
@@ -351,10 +372,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   else if (_wcsicmp(arg.c_str(), L"/mozc-when-idle") == 0) q.op = Op::MozcWhenIdle;
   else if (_wcsicmp(arg.c_str(), L"/forget:zh") == 0) q.op = Op::Forget, q.lang = Lang::Chinese;
   else if (_wcsicmp(arg.c_str(), L"/forget:ja") == 0) q.op = Op::Forget, q.lang = Lang::Japanese;
+  else if (_wcsicmp(arg.c_str(), L"/settings") == 0) q.op = Op::Settings;
   else return run();
   Reply r;
-  // No server: no Mozc to tell, and it reads its files when one starts.
-  if (q.op == Op::Quit || q.op == Op::Mozc || q.op == Op::MozcWhenIdle) return call(q, r, 5000), 0;
+  // No server: nothing to tell, and one reads Mozc's files when it starts.
+  if (q.op == Op::Quit || q.op == Op::Mozc) return call(q, r, 5000), 0;
   const auto failed = [&](int code, const char *what) {
     note(std::string(utf8(arg)) + ": " + what + " (error " + std::to_string(GetLastError()) + "), exit " + std::to_string(code));
     return code;
@@ -366,6 +388,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
     if (!single) return failed(2, "no mutex");
     if (GetLastError() != ERROR_ALREADY_EXISTS) {
+      // None runs: the next one reads sebtype.conf, and Mozc its files, when it starts.
+      if (q.op == Op::Settings || q.op == Op::MozcWhenIdle) return 0;
       const DWORD start = GetTickCount();
       Engine *e = makeEngine(q.op == Op::Forget ? q.lang : Lang::Chinese).release();  // never closed: exiting ends its threads
       q.op == Op::Sync ? e->save() : q.op == Op::Forget ? e->forget() : e->deploy();  // with no server, no one types: at once
@@ -386,6 +410,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   }
   if (!call(q, r, 5000, 60000)) return failed(4, "the server didn't take the request");
   if (q.op == Op::Forget && !r.forgets) return failed(7, "the server can't forget (one before #375 still runs)");
+  if (q.op == Op::Settings) return r.settings ? 0 : failed(7, "the server can't read sebtype.conf again (one before #374 still runs)");
+  if (q.op == Op::MozcWhenIdle || queue) return 0;  // queued: it waits for idle typing, the caller doesn't
   // Until Rime is done: setup's typing and the Configurator's next step need it. A forget waits for its engine
   // only, not for a sync's chores waiting until typing is idle (#373).
   for (DWORD start = GetTickCount(); q.op == Op::Forget ? r.langBusy : r.busy; Sleep(200)) {

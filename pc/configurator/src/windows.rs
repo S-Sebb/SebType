@@ -1,8 +1,8 @@
 //! Windows: SebType's text service (windows/, #190) with Rime for Chinese and Mozc for Japanese, set up by
 //! SebType's installer (pc/windows/setup, #73). The candidate window's look is sebtype.conf's
-//! [Candidates]; the languages are the Windows user language list.
+//! [Candidates], learning its [Learning]; the languages are the Windows user language list.
 
-use crate::Candidates;
+use crate::{conf, write_file, Candidates};
 use std::{
     env, fs, io,
     os::windows::process::CommandExt,
@@ -37,8 +37,8 @@ pub fn rime_dir() -> PathBuf {
 pub fn mozc_dir() -> PathBuf {
     appdata("USERPROFILE").join("AppData\\LocalLow\\Mozc")
 }
-/// sebtype.conf, which the text service reads its candidate window from.
-fn conf() -> PathBuf {
+/// sebtype.conf, which the text service reads its candidate window from and the server its learning.
+fn conf_path() -> PathBuf {
     appdata("APPDATA").join("SebType\\sebtype.conf")
 }
 
@@ -154,8 +154,8 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
 // --- The candidate window: sebtype.conf's [Candidates], which the text service reads ---
 
 pub fn candidates() -> Candidates {
-    let text = fs::read_to_string(conf()).unwrap_or_default();
-    let get = |key| conf_value(&text, key);
+    let text = fs::read_to_string(conf_path()).unwrap_or_default();
+    let get = |key| conf::value(&text, "Candidates", key);
     Candidates {
         vertical: get("Vertical") != Some("0"),
         font_size: get("FontSize").and_then(|v| v.parse().ok()).unwrap_or(14),
@@ -163,55 +163,31 @@ pub fn candidates() -> Candidates {
     }
 }
 
-/// A key of sebtype.conf's [Candidates].
-fn conf_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
-    text.lines()
-        .skip_while(|l| l.trim() != "[Candidates]")
-        .skip(1)
-        .take_while(|l| !l.trim_start().starts_with('['))
-        .find_map(|l| l.strip_prefix(key)?.strip_prefix('='))
-        .map(str::trim)
-}
-
-/// sebtype.conf `old` with the candidate window settings `c`, its other sections kept.
-fn candidate_conf(old: &str, c: &Candidates) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    let mut lines = old.lines().peekable();
-    while let Some(l) = lines.next() {
-        if l.trim() == "[Candidates]" {
-            while lines
-                .peek()
-                .is_some_and(|n| !n.trim_start().starts_with('['))
-            {
-                lines.next();
-            }
-        } else {
-            out.push(l);
-        }
-    }
-    let section = format!(
-        "[Candidates]\nVertical={}\nFontSize={}\nPicnic={}\n",
-        c.vertical as u8, c.font_size, c.picnic as u8
-    );
-    let rest = out.join("\n");
-    let rest = rest.trim();
-    if rest.is_empty() {
-        section
-    } else {
-        format!("{rest}\n{section}")
-    }
+/// sebtype.conf with `change` made; true when it changed.
+fn edit_conf(change: impl FnOnce(&str) -> String) -> io::Result<bool> {
+    let old = fs::read_to_string(conf_path()).unwrap_or_default();
+    write_file(&conf_path(), change(&old))
 }
 
 /// The text service reads the window's look when it next shows it: nothing to restart.
 pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
-    let old = fs::read_to_string(conf()).unwrap_or_default();
-    let new = candidate_conf(&old, c);
-    if new == old {
-        return Ok(false);
-    }
-    fs::create_dir_all(conf().parent().unwrap())?;
-    fs::write(conf(), new)?;
-    Ok(true)
+    let lines = format!(
+        "Vertical={}\nFontSize={}\nPicnic={}\n",
+        c.vertical as u8, c.font_size, c.picnic as u8
+    );
+    edit_conf(|old| conf::set_section(old, "Candidates", &lines))
+}
+
+// --- Learning: sebtype.conf's [Learning], which the server reads ---
+
+pub fn learning() -> bool {
+    conf::learning(&fs::read_to_string(conf_path()).unwrap_or_default())
+}
+/// The server applies it before /settings returns; a server that can't (one before #374) or didn't answer
+/// fails it. Told again on a retry, as the file may already say so while the server doesn't (#374).
+pub fn set_learning(on: bool) -> io::Result<()> {
+    edit_conf(|old| conf::set_learning(old, on))?;
+    server("/settings")
 }
 
 // --- Engines ---
@@ -294,8 +270,21 @@ pub fn sync_rime(_own: &Path) -> io::Result<()> {
 pub fn redeploy_rime_when_idle() -> io::Result<()> {
     server("/deploy-when-idle")
 }
-pub fn restart_mozc_when_idle() {
-    let _ = server("/mozc-when-idle");
+/// The same, returning once the server has it: an idle wait could last as long as someone types.
+pub fn queue_rime_redeploy() -> io::Result<()> {
+    let status = Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
+        .args(["/deploy-when-idle", "/queue"])
+        .creation_flags(NO_WINDOW)
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "sebtype-server.exe /deploy-when-idle /queue: {status}"
+        )));
+    }
+    Ok(())
+}
+pub fn restart_mozc_when_idle() -> io::Result<()> {
+    server("/mozc-when-idle")
 }
 
 const SYNC_TASK: &str = "SebType sync";
@@ -408,23 +397,5 @@ mod tests {
         assert!(task.contains(
             r"<Command>C:\Program Files\A&amp;B\sebtype-configurator.exe</Command><Arguments>--sync</Arguments>"
         ));
-    }
-
-    #[test]
-    fn candidate_conf_replaces_its_section_and_keeps_the_rest() {
-        let c = Candidates {
-            vertical: false,
-            font_size: 16,
-            picnic: true,
-        };
-        let old = "[Other]\nA=1\n[Candidates]\nVertical=1\nFontSize=14\n[Later]\nB=2\n";
-        let new = candidate_conf(old, &c);
-        assert_eq!(
-            new,
-            "[Other]\nA=1\n[Later]\nB=2\n[Candidates]\nVertical=0\nFontSize=16\nPicnic=1\n"
-        );
-        assert_eq!(conf_value(&new, "FontSize"), Some("16"));
-        assert_eq!(conf_value(&new, "A"), None);
-        assert_eq!(candidate_conf(&new, &c), new);
     }
 }

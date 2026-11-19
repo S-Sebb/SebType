@@ -432,6 +432,10 @@ if (-not $Undo) {
   $bar = Get-WinLanguageBarOption
   if ($bar.IsLegacySwitchingMode) { Set-WinLanguageBarOption -UseLegacySwitchMode:$false -UseLegacyLanguageBar:$bar.IsLegacyLanguageBar }
 
+  # Learning off from before #374 hid what was learned (rime-ice's enable_user_dict, Mozc's NO_HISTORY): the
+  # Configurator moves it to sebtype.conf, which keeps using it, before the engines next start.
+  $p = Start-Process -Wait -PassThru (Join-Path $PSScriptRoot 'sebtype-configurator.exe') '--migrate'
+  Write-Output "user: learning settings $(if ($p.ExitCode) { "not migrated (exit $($p.ExitCode)), the Configurator tries again when it starts" } else { 'current' })"
   # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
   # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it
   # would be out of the apps' reach): the text service starts it at the first key, the Run key at logon.
