@@ -50,6 +50,9 @@ Model::Model(const std::string &path, int threads) {
     });
     auto mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
+    // Read, not mapped: with the dot product kernels ggml repacks the weights into memory of its own, and the
+    // mapped file's pages they were read from stayed resident too, 26 MB more on the phone (#406).
+    mp.load_mode = LLAMA_LOAD_MODE_NONE;
     mModel = llama_model_load_from_file(path.c_str(), mp);
     if (!mModel) throw std::runtime_error("sebtype-lm: can't load " + path);
     auto cp = llama_context_default_params();
