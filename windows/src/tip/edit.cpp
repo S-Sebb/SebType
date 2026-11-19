@@ -48,6 +48,29 @@ LONG length16(const std::string &text, size_t bytes) {
   return static_cast<LONG>(utf16(text.substr(0, std::min(bytes, text.size()))).size());
 }
 
+// Deletes the characters just before the composition, or the caret when there is none: 日本語's undo of its
+// last commit. A character may be two UTF-16 units.
+void deleteBefore(TfEditCookie ec, ITfContext *context, ITfComposition *composition, int chars) {
+  ITfRange *range = nullptr;
+  TF_SELECTION sel{};
+  ULONG n = 0;
+  if (composition) composition->GetRange(&range);
+  else if (SUCCEEDED(context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) && n) range = sel.range;
+  if (!range) return;
+  range->Collapse(ec, TF_ANCHOR_START);
+  LONG moved = 0;
+  range->ShiftStart(ec, -2 * chars, &moved, nullptr);
+  std::wstring text(static_cast<size_t>(-moved), L'\0');
+  ULONG got = 0;
+  range->GetText(ec, 0, text.data(), static_cast<ULONG>(text.size()), &got);
+  size_t at = got;
+  for (int left = chars; left > 0 && at > 0; --left)
+    if (--at > 0 && IS_LOW_SURROGATE(text[at]) && IS_HIGH_SURROGATE(text[at - 1])) --at;
+  range->ShiftStart(ec, static_cast<LONG>(at), &moved, nullptr);
+  range->SetText(ec, 0, L"", 0);
+  range->Release();
+}
+
 }  // namespace
 
 void TextService::endComposition(TfEditCookie ec, ITfContext *context, ITfComposition *composition,
@@ -92,6 +115,8 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
   reply_.commit.clear();  // applied once
   const bool japanese = reply_.lang == Lang::Japanese;
   const bool composing = !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
+
+  if (reply_.deleteBefore > 0) deleteBefore(ec, context, composition_, std::exchange(reply_.deleteBefore, 0));
 
   // The committed text goes where the composition is, or at the caret.
   if (!commit.empty()) {

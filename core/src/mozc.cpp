@@ -443,8 +443,8 @@ class Mozc final : public Engine {
     return false;
   }
 
-  // fcitx5-mozc's MozcResponseParser; on the phone also what Mozc's Android client read: the whole list,
-  // the text to delete and where the cursor goes after a commit.
+  // fcitx5-mozc's MozcResponseParser, with the text to delete; on the phone also what Mozc's Android client
+  // read: the whole list and where the cursor goes after a commit.
   bool parse(const Output &out) {
     // A status may carry only undo_available (Session::MaybeSetUndoStatus, after a commit): its unset
     // activated would read as English letters, as on a switch away from 日本語 after typing (#190).
@@ -475,8 +475,11 @@ class Mozc final : public Engine {
       }
       if (out.has_candidate_window() && out.candidate_window().has_focused_index())
         focused_ = static_cast<int>(out.candidate_window().focused_index());
-    } else if (out.has_result()) {
-      commit_ += out.result().value();
+    } else {
+      if (out.has_result()) commit_ += out.result().value();
+      // Mozc's undo of its last commit (Ctrl+Backspace): the PCs leave the cursor after a commit, so all of it
+      // is before the cursor.
+      if (out.has_deletion_range()) edit_.deleteBefore = out.deletion_range().length();
     }
     preedit_ = {};
     if (out.has_preedit()) {
@@ -495,6 +498,10 @@ class Mozc final : public Engine {
     ids_.clear();
     aux_.clear();
     if (out.has_candidate_window()) parseCandidates(out.candidate_window());
+    // Ctrl+Backspace only asks for the undo (Session::RequestUndo): it comes with this command, as
+    // fcitx5-mozc sends it.
+    if (!touch_ && out.has_callback() && out.callback().session_command().type() == SessionCommand::UNDO)
+      command(out.callback().session_command());
     return true;
   }
 

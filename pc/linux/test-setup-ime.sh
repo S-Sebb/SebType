@@ -289,7 +289,7 @@ fi
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
 # can't see it) running SebType's input method (#190) on a second fake account set up by setup-ime.sh: Shift tap toggles
 # あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` toggles あ ⇄ ア and leaves
-# English alone (#117); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
+# English alone (#117), Ctrl+Backspace right after a commit undoes it (#376); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
 # checked on the desktop (pc/linux/README.md). Its fcitx5 is found by the fake HOME in its environment and
 # stopped afterwards.
 mozc_keys() {
@@ -305,7 +305,8 @@ from gi.repository import Gio, GLib
 SHIFT, CTRL, ALT = 1, 4, 8
 KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'Alt_L': (0xffe9, 64), 'Escape': (0xff1b, 9),
         'Return': (0xff0d, 36), 'Tab': (0xff09, 23), 'space': (0x20, 65), 'a': (0x61, 38), 'k': (0x6b, 45),
-        'K': (0x4b, 45), 'grave': (0x60, 49), 'Katakana': (0xff26, 101), 'Hiragana': (0xff25, 102)}
+        'K': (0x4b, 45), 'grave': (0x60, 49), 'Katakana': (0xff26, 101), 'Hiragana': (0xff25, 102),
+        'BackSpace': (0xff08, 22), 'i': (0x69, 31), 's': (0x73, 39), 'h': (0x68, 43)}
 MODS = {'Shift_L': SHIFT, 'Control_L': CTRL, 'Alt_L': ALT}
 
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype,kimpanel'],
@@ -325,9 +326,10 @@ for _ in range(100):
     except GLib.Error: time.sleep(0.1)
 ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-committed, preedit = [], ['']
+committed, preedit, deleted = [], [''], []
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'CommitString': committed.append(params.unpack()[0])
+    elif name == 'DeleteSurroundingText': deleted.append(params.unpack())
     elif name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
 call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)  # preedit, formatted, client-side panel
@@ -383,6 +385,13 @@ shift_tap(); check('Shift tap in ア turns English on', mode(), 'A')
 chord('Alt_L', 'grave'); check('Alt+` in English stays English', mode(), 'A')
 shift_tap(); check('Shift tap in English is ア again', mode(), 'ア')
 chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'sebtype-hira'))
+# Ctrl+Backspace right after a conversion's commit undoes it (#376): the commit is deleted, its reading composes.
+for k in [*'kisha', 'space', 'Return']: tap(k)
+done = committed[-1] if committed else ''
+chord('Control_L', 'BackSpace')
+check('Ctrl+Backspace after a commit deletes it and gives its reading back', (deleted, preedit[0]),
+      ([(-len(done), len(done))], 'きしゃ'))
+tap('Escape')
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY

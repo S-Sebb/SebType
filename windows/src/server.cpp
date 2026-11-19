@@ -108,6 +108,7 @@ Reply state(bool taken, std::string commit = {}) {
   Reply r;
   r.taken = taken;
   r.commit = commit + core->takeCommit();
+  r.deleteBefore = core->takeEdit().deleteBefore;
   r.preedit = core->preedit();
   r.page = core->page();
   r.aux = core->aux();

@@ -317,6 +317,8 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
       panel.setAuxUp(fcitx::Text(shown_));
       hidePopupLater(ic);
     }
+    // 日本語's undo of a commit (Ctrl+Backspace) deletes it: the characters before the cursor.
+    if (const int n = core_->takeEdit().deleteBefore) ic->deleteSurroundingText(-n, n);
     if (auto commit = core_->takeCommit(); !commit.empty()) ic->commitString(commit);
     ic->updatePreedit();
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
