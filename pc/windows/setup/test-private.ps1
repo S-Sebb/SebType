@@ -192,7 +192,7 @@ try {
     $p = & $fourth
     Check "$lang-migrated-learns-nothing" { if ($p -eq $learned[$lang]) { throw "the 4th candidate gave '$p'" }; First-Is $first $learned[$lang] }
   }
-  Check 'migrated-nothing-left' { if (Test-Path $pending) { throw "$pending: $(Get-Content $pending)" }; 'none' }
+  Check 'migrated-nothing-left' { if (Test-Path $pending) { throw "${pending}: $(Get-Content $pending)" }; 'none' }
   # A migration cut off after it removed Rime's old setting, before Rime read its settings again: the next one
   # still has Rime do it.
   Lang 'zh'; Field $false
