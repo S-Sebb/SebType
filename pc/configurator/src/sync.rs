@@ -2,7 +2,8 @@
 //! Rime's sync folder, its My words (#272) and the Japanese dictionary, by sync-server/sebtype_sync.py's own pull and push.
 //! The server and username are kept in SebType's folder (sync.json, with the last sync's outcome); the
 //! password only in the system's keyring (Secret Service, Credential Manager), handed to the client on
-//! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour.
+//! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour, and
+//! on Linux the network trigger runs `--network-changed` (network_changed).
 
 use crate::{platform, rime};
 use serde::{Deserialize, Serialize};
@@ -68,23 +69,38 @@ fn save_in(dir: &Path, s: &Sync) -> io::Result<()> {
     fs::rename(tmp, dir.join("sync.json"))
 }
 
-/// One schedule change at a time, each made from sync's state as it is then, so the window's refresh
-/// at start can't put back a schedule just turned off (#377).
-static SCHEDULE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Runs f with the schedule to itself, across processes: schedule changes (two Configurators may be
+/// open), the network trigger's plans, a sync's outcome and setup-ime.sh's uninstall (#377). Each reads
+/// sync's state inside it, so none puts back a schedule just turned off.
+pub fn schedule_locked<T>(f: impl FnOnce() -> T) -> io::Result<T> {
+    schedule_locked_in(&dir(), f)
+}
+fn schedule_locked_in<T>(dir: &Path, f: impl FnOnce() -> T) -> io::Result<T> {
+    fs::create_dir_all(dir)?;
+    locked_in(&dir.join("schedule.lock"), f)
+}
+
 fn change_schedule(
     dir: &Path,
     change: impl FnOnce(&mut Sync),
     schedule: impl FnOnce(bool) -> io::Result<()>,
 ) -> io::Result<Sync> {
-    let _one = SCHEDULE.lock().unwrap_or_else(|e| e.into_inner());
-    let mut s = load_in(dir);
-    let before = s.clone();
-    change(&mut s);
-    if s != before {
-        save_in(dir, &s)?;
-    }
-    schedule(s.enabled)?;
-    Ok(s)
+    schedule_locked_in(dir, || {
+        let mut s = load_in(dir);
+        let before = s.clone();
+        change(&mut s);
+        if s != before {
+            save_in(dir, &s)?;
+        }
+        schedule(s.enabled)?;
+        Ok(s)
+    })?
+}
+
+/// The network changed (the path unit's --network-changed, #377): plans a sync if sync is on.
+#[cfg(target_os = "linux")]
+pub fn network_changed() -> io::Result<()> {
+    schedule_locked(|| platform::network_changed(load().enabled))?
 }
 
 /// Makes the schedule again as this Configurator makes it, so one made by an older version gets what
@@ -247,13 +263,11 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
     Ok(())
 }
 
-/// One sync at a time, between the window and the schedule. sync.lock's time is when the last one
-/// started, which the network trigger keeps syncs apart by (platform::network_changed, #377).
+/// One sync at a time, between the window and the schedule.
 fn lock() -> io::Result<fs::File> {
     fs::create_dir_all(dir())?;
     let f = fs::File::create(dir().join("sync.lock"))?;
     f.lock()?;
-    f.set_modified(std::time::SystemTime::now())?;
     Ok(f)
 }
 
@@ -269,7 +283,7 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
     if lock.is_err() {
         return Err(s);
     }
-    let started = std::time::SystemTime::now();
+    let seen = schedule_locked(platform::sync_started).unwrap_or_default();
     let mozc_db = platform::mozc_dir().join("user_dictionary.db");
     let mozc_db = platform::mozc_dir().is_dir().then_some(mozc_db.as_path());
     s.status = match sync_with(&s, &platform::rime_dir(), mozc_db) {
@@ -282,8 +296,15 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
         Err(Failed::Login) => Status::LoginFailed,
         Err(Failed::Offline) => Status::Offline,
     };
-    let _ = save(&s);
-    platform::after_sync(started);
+    // Only the outcome: sync may have been turned off, or SebType removed, while this one ran.
+    let _ = schedule_locked(|| {
+        let mut now = load();
+        if !now.user.is_empty() {
+            (now.status, now.at) = (s.status, s.at);
+            let _ = save(&now);
+        }
+        platform::after_sync(seen, now.enabled);
+    });
     if s.status == Status::Synced {
         Ok(s)
     } else {
@@ -554,51 +575,71 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
-    /// A word edit waits for a pull that holds the words, and the other way round (#272).
+    /// The startup refresh of one Configurator, slow to make the schedule, and sync turned off in another
+    /// meanwhile: the schedule ends off (#377). The refresh runs in a second process, this test's own
+    /// executable running slow_refresh_in_another_process.
     #[test]
-    fn a_slow_refresh_cant_bring_back_a_schedule_turned_off() {
-        // The window's refresh at start, slow to make the schedule, and sync turned off meanwhile (#377).
+    fn a_refresh_in_another_configurator_cant_bring_back_a_schedule_turned_off() {
         let d = temp("schedule");
         let on = Sync {
             enabled: true,
             ..Default::default()
         };
         save_in(&d, &on).unwrap();
-        let made = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let refresh = std::thread::spawn({
-            let (d, made) = (d.clone(), made.clone());
-            move || {
-                change_schedule(
-                    &d,
-                    |_| {},
-                    |on| {
-                        std::thread::sleep(std::time::Duration::from_millis(300));
-                        made.lock().unwrap().push(on);
-                        Ok(())
-                    },
-                )
-            }
-        });
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        let off = change_schedule(
-            &d,
-            |s| s.enabled = false,
-            |on| {
-                made.lock().unwrap().push(on);
-                Ok(())
-            },
-        );
-        refresh.join().unwrap().unwrap();
-        assert!(!off.unwrap().enabled);
+        let mut other = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "sync::tests::slow_refresh_in_another_process",
+            ])
+            .env("SEBTYPE_TEST_SCHEDULE_DIR", &d)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !d.join("refreshing").exists() {
+            assert!(
+                std::time::Instant::now() < end,
+                "the other process never refreshed"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let off = change_schedule(&d, |s| s.enabled = false, |on| made(&d, on)).unwrap();
+        assert!(other.wait().unwrap().success());
+        assert!(!off.enabled);
         assert_eq!(
-            *made.lock().unwrap(),
-            [true, false],
+            fs::read_to_string(d.join("made")).unwrap(),
+            "true\nfalse\n",
             "the schedule ends off"
         );
-        assert!(!load_in(&d).enabled);
         fs::remove_dir_all(&d).unwrap();
     }
 
+    fn made(d: &Path, on: bool) -> io::Result<()> {
+        let mut f = fs::File::options()
+            .create(true)
+            .append(true)
+            .open(d.join("made"))?;
+        writeln!(f, "{on}")
+    }
+
+    #[test]
+    #[ignore]
+    fn slow_refresh_in_another_process() {
+        let d = PathBuf::from(std::env::var_os("SEBTYPE_TEST_SCHEDULE_DIR").unwrap());
+        change_schedule(
+            &d,
+            |_| {},
+            |on| {
+                fs::write(d.join("refreshing"), "")?;
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                made(&d, on)
+            },
+        )
+        .unwrap();
+    }
+
+    /// A word edit waits for a pull that holds the words, and the other way round (#272).
     #[test]
     fn word_edits_wait_for_each_other() {
         let d = temp("words-lock");

@@ -245,20 +245,22 @@ check private-forget 600 private_forget
 
 # Sync when the network comes back (#377): the units the Configurator's login makes, in a private systemd
 # user manager that starts nothing else, with the network trigger watching a file of the sandbox instead of
-# resolv.conf (a drop-in), so the PC's network is never touched. Each sync is held 8 s before it starts
-# and its start and end go in runs.txt. A new resolv.conf runs the real sync (to a server that isn't there,
-# so it ends offline) after it settles; changes while a sync is held aren't lost and come to one more sync;
-# a change just after a sync waits until 2 minutes after it; setup-ime.sh's uninstall removes the trigger
-# and a planned sync.
+# resolv.conf (a drop-in), so the PC's network is never touched. Each sync's start and end go in runs.txt;
+# its server isn't there, so it ends offline. Checked:
+# - a new resolv.conf runs the real sync after it settles;
+# - changes while a sync runs (held inside the sync, by holding its words.lock past the moment the sync
+#   planned for them comes) come to exactly one more sync once it ends;
+# - a change just after a sync waits until 2 minutes after it;
+# - setup-ime.sh's uninstall, with a --network-changed waiting for the schedule lock, leaves no trigger,
+#   planned sync or file behind.
 # shellcheck disable=SC2016  # the inner script gets its paths as arguments
 reconnect_sync() {
   local d=$sb/reconnect-account u
   u=$d/config/systemd/user
-  mkdir -p "$u/sebtype-sync.service.d" "$u/sebtype-sync-network.service.d" "$u/sebtype-sync.path.d" "$u/sebtype-sync.timer.d" "$d/data"
-  cat > "$u/sebtype-sync.service.d/held.conf" <<EOF
+  mkdir -p "$u/sebtype-sync.service.d" "$u/sebtype-sync-network.service.d" "$u/sebtype-sync.path.d" "$u/sebtype-sync.timer.d" "$d/data/sebtype"
+  cat > "$u/sebtype-sync.service.d/runs.conf" <<EOF
 [Service]
 ExecStartPre=/bin/sh -c 'echo start \$(date +%%s) >> $d/runs.txt'
-ExecStartPre=/bin/sleep 8
 ExecStopPost=/bin/sh -c 'echo end \$(date +%%s) >> $d/runs.txt'
 EOF
   printf '[Path]\nPathChanged=\nPathChanged=%s\n' "$d/resolv.conf" > "$u/sebtype-sync.path.d/sandbox.conf"
@@ -266,13 +268,16 @@ EOF
   printf '[Timer]\nOnStartupSec=\nOnUnitActiveSec=30min\n' > "$u/sebtype-sync.timer.d/sandbox.conf"
   printf '[Unit]\nDescription=Nothing\n' > "$u/sebtype-test.target"
   private_dbus "$sb" -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" -- bash -c '
-    d=$1 bin=$2 here=$3 units=$1/config/systemd/user
+    d=$1 bin=$2 here=$3 units=$1/config/systemd/user own=$1/data/sebtype
     fail() { echo "FAIL: $1"; cat "$d/runs.txt" 2>/dev/null; tail -20 "$d/manager.log"; exit 1; }
-    status() { sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" "$d/data/sebtype/sync.json" 2>/dev/null; }
+    status() { sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" "$own/sync.json" 2>/dev/null; }
     until_() { local i; for ((i = 0; i < $1 * 5; i++)); do eval "$2" && return 0; sleep 0.2; done; return 1; }
     runs() { cat "$d/runs.txt" 2>/dev/null | grep -c "^$1"; }
     at() { grep "^$1" "$d/runs.txt" | sed -n "$2s/^$1 //p"; }  # start|end, the nth one
     change() { echo "nameserver 192.0.2.$1" > "$d/r.tmp"; mv "$d/r.tmp" "$d/resolv.conf"; }
+    active() { systemctl --user is-active -q "$1"; }
+    hold() { flock "$own/$1" sh -c "until [ -e \"$d/release-$1\" ]; do sleep 0.2; done" & }  # until release <lock>
+    release() { touch "$d/release-$1"; }
     # The syncs and the network trigger see only this sandbox, never the owner'"'"'s sync.json or keyring.
     for s in sebtype-sync sebtype-sync-network; do
       printf "[Service]\nEnvironment=\"HOME=%s\" \"XDG_CONFIG_HOME=%s\" \"XDG_DATA_HOME=%s\" \"DBUS_SESSION_BUS_ADDRESS=%s\"\n" \
@@ -280,44 +285,57 @@ EOF
     done
     SYSTEMD_LOG_TARGET=console SYSTEMD_LOG_COLOR=0 /usr/lib/systemd/systemd --user --unit=sebtype-test.target > "$d/manager.log" 2>&1 & m=$!
     # systemd leaves its inaccessible/ files without permissions: the sandbox couldn'"'"'t be removed.
-    trap "kill $m; wait $m; cp \"$d/manager.log\" \"$4/configurator-test-reconnect-manager.log\"; chmod -R u+rwx \"\$XDG_RUNTIME_DIR\"" EXIT
+    trap "release words.lock; release schedule.lock; kill $m; wait $m; cp \"$d/manager.log\" \"$4/configurator-test-reconnect-manager.log\"; chmod -R u+rwx \"\$XDG_RUNTIME_DIR\"" EXIT
     until_ 10 "[[ -S \$XDG_RUNTIME_DIR/systemd/private ]]" || fail "the private systemd didn'"'"'t start"
     head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
     printf "http://127.0.0.1:9\nsebtype-test\n%s\n" "$(head -c 18 /dev/urandom | base64)" | "$bin" --save-login ||
       fail "--save-login"
-    systemctl --user is-active -q sebtype-sync.path && systemctl --user is-enabled -q sebtype-sync.path ||
-      fail "the network trigger isn'"'"'t on"
+    active sebtype-sync.path && systemctl --user is-enabled -q sebtype-sync.path || fail "the network trigger isn'"'"'t on"
     echo "sync on: timer $(systemctl --user is-active sebtype-sync.timer), network trigger active, status $(status)"
     sleep 3; [[ $(runs start) == 0 ]] || fail "a sync ran before the network came back"
+
+    hold words.lock
     t0=$(date +%s); change 1
     until_ 60 "[[ \$(runs start) == 1 ]]" || fail "no sync within a minute of the network coming back"
     echo "the network came back: a sync started $(( $(at start 1) - t0 )) s later"
-    # The network flaps while that sync is held: none of it is lost, and it all comes to one more sync.
-    for i in $(seq 2 11); do change "$i"; sleep 0.1; done
-    until_ 60 "[[ \$(runs end) == 2 ]]" || fail "the changes during a sync were lost: $(runs start) syncs"
+    sleep 2; for i in $(seq 2 11); do change "$i"; sleep 0.1; done
+    until_ 10 "active sebtype-sync-soon.timer" || fail "the changes during the sync planned nothing"
+    until_ 150 "! active sebtype-sync-soon.timer" || fail "the sync planned for them never came"
+    [[ $(runs end) == 0 ]] || fail "the sync ended before the one planned for the changes came"
+    echo "10 changes during the sync: the sync planned for them came $(( $(date +%s) - $(at start 1) )) s into it"
+    release words.lock
+    until_ 60 "[[ \$(runs end) == 2 ]]" || fail "the changes during the sync were lost: $(runs start) syncs"
     sleep 20
     [[ $(runs start) == 2 ]] || fail "10 changes during a sync ran $(( $(runs start) - 1 )) syncs, not 1"
     [[ $(cut -d" " -f1 "$d/runs.txt" | uniq | wc -l) == 4 ]] || fail "two syncs at once"
     [[ $(status) == offline ]] || fail "status $(status), not offline"
-    echo "10 changes while it was held: one more sync, never two at once, status $(status)"
-    # A change just after a sync: the next one starts 2 minutes after that one, not sooner.
+    echo "once it ended: one more sync $(( $(at start 2) - $(at end 1) )) s later, never two at once, status $(status)"
+
     change 12
     until_ 180 "[[ \$(runs start) == 3 ]]" || fail "no sync after the change that came just after one"
-    apart=$(( $(at start 3) - $(at start 2) - 8 ))  # sync.lock is taken after the 8 s hold
+    apart=$(( $(at start 3) - $(at start 2) ))
     ((apart >= 118 && apart <= 140)) || fail "syncs $apart s apart, not 2 minutes"
     echo "a change just after a sync: the next one $apart s after it"
-    systemctl --user is-active -q sebtype-sync.path || fail "the changes stopped the network trigger"
+    until_ 60 "[[ \$(runs end) == 3 ]]"
+    active sebtype-sync.path || fail "the changes stopped the network trigger"
+
+    hold schedule.lock
     change 13
-    until_ 10 "systemctl --user is-active -q sebtype-sync-soon.timer" || fail "no sync planned"
-    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo.log" 2>&1 || fail "the uninstall failed"
-    systemctl --user is-active -q sebtype-sync.path && fail "the network trigger still runs after the uninstall"
-    systemctl --user is-active -q sebtype-sync-soon.timer && fail "the planned sync is still there after the uninstall"
-    ls "$units"/sebtype-sync.{path,timer,service} "$units"/sebtype-sync-network.service "$d/data/sebtype/network-changed" 2>/dev/null &&
+    until_ 10 "[[ \$(systemctl --user is-active sebtype-sync-network.service) == activating ]]" ||
+      fail "--network-changed isn'"'"'t waiting for the schedule lock"
+    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo.log" 2>&1 & undo=$!
+    sleep 1; release schedule.lock
+    wait $undo || fail "the uninstall failed"
+    sleep 5
+    for x in sebtype-sync.path sebtype-sync-network.service sebtype-sync-soon.timer; do
+      active "$x" && fail "$x still runs after the uninstall"
+    done
+    ls "$units"/sebtype-sync.{path,timer,service} "$units"/sebtype-sync-network.service "$own"/{sync.json,network-state} 2>/dev/null &&
       fail "files left after the uninstall"
-    echo "the uninstall stopped and removed the timer, the network trigger and the planned sync"' _ "$d" "$bin" "$PWD" "$out"
+    echo "the uninstall, with --network-changed waiting: no trigger, planned sync or file left"' _ "$d" "$bin" "$PWD" "$out"
 }
 export -f reconnect_sync
-check sync-on-network-reconnect 420 reconnect_sync
+check sync-on-network-reconnect 600 reconnect_sync
 
 check setup-ime 900 ../linux/test-setup-ime.sh
 

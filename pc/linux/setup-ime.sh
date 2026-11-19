@@ -50,11 +50,15 @@ if ((undo_configurator)); then
   for f in "$app_desktop" "$app_icon"; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }; done
   # Sync (#180): its half-hourly timer and network trigger (#377), its login in the keyring and its files.
   # The server's copy stays.
+  # With the Configurator's schedule lock (sync.rs, schedule_locked), so a sync ending or the network
+  # trigger plans nothing once this has begun: each finds sync.json gone.
   sync_units=$config/systemd/user
+  if [[ -d $data/sebtype ]]; then exec {schedule_lock}>"$data/sebtype/schedule.lock"; flock "$schedule_lock"; fi
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
     echo "change: stop and remove SebType's sync timer and network trigger"
     systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null
-    systemctl --user stop sebtype-sync-soon.timer 2>/dev/null  # a sync planned after the network changed
+    # A sync planned after the network changed, and a --network-changed waiting for the lock.
+    systemctl --user stop sebtype-sync-soon.timer sebtype-sync-network.service 2>/dev/null
     rm -f "$sync_units"/sebtype-sync.{timer,path,service} "$sync_units"/sebtype-sync-network.service
     systemctl --user daemon-reload 2>/dev/null
   fi
@@ -62,9 +66,10 @@ if ((undo_configurator)); then
     echo "change: remove SebType's sync login from the keyring"
     secret-tool clear service 'SebType sync' username login 2>/dev/null
   fi
-  for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-changed}; do
+  for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock}; do
     [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }
   done
+  [[ -n ${schedule_lock-} ]] && exec {schedule_lock}>&-
   [[ -d $app_dir ]] && { echo "change: remove $app_dir"; rm -r "$app_dir"; }
   if [[ -f $classicui ]] && grep -q '^Theme=sebtype-picnic$' "$classicui"; then
     prev=$picnic_theme/previous

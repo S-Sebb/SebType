@@ -347,7 +347,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // The network trigger's: plans a sync soon (#377).
     #[cfg(target_os = "linux")]
     if std::env::args().any(|a| a == "--network-changed") {
-        std::process::exit(platform::network_changed().map_or(1, |_| 0));
+        std::process::exit(sync::network_changed().map_or(1, |_| 0));
     }
     // For tests without a window (pc/windows/setup/test-forget.ps1, #375): Privacy's Forget for zh or ja.
     if let Some(i) = std::env::args().position(|a| a == "--forget") {

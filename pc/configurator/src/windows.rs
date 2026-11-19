@@ -378,7 +378,10 @@ pub fn schedule(on: bool) -> io::Result<()> {
 }
 
 /// Task Scheduler runs the task for each network connection (sync_task): nothing more to plan.
-pub fn after_sync(_started: std::time::SystemTime) {}
+pub fn sync_started() -> u64 {
+    0
+}
+pub fn after_sync(_seen: u64, _enabled: bool) {}
 
 pub fn open_url(url: &str) {
     let _ = Command::new("rundll32")
