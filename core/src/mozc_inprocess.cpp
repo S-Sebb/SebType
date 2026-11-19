@@ -2,7 +2,6 @@
 // Mozc built into a library (sebtype_mozc.h): the same serialized commands the IPC carries, without the
 // server. MIT, SebType.
 #include <atomic>
-#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
@@ -61,6 +60,12 @@ void writeFile(const fs::path &path, const std::string &bytes) {
   fs::rename(tmp, path, ec);
 }
 
+// A device's record's name: its file's, without .txt.
+std::string device(const fs::path &record) {
+  const std::u8string u = record.stem().u8string();
+  return std::string(u.begin(), u.end());
+}
+
 int64_t now() {
   return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
@@ -98,6 +103,27 @@ class InProcess final : public MozcTransport {
 
   void reload() override { restart(false); }
   void forget() override { restart(true); }
+  // Forgetting empties this device's record, which the next sync uploads so, and keeps when it forgot, by each
+  // device's clock: no pick from before, on any device, is learned again, only what is picked from now on
+  // (Decisions #2, 2026-11-19).
+  void forgetRecord() override {
+    take(sebtype_mozc_take_learned);  // picks the old instance reported, not yet in the record
+    const int64_t at = now();
+    writeFile(ownRecord(), std::string(learned::kHeader));
+    learned::Forgotten forgotten = learned::parseForgotten(readFile(forgottenFile()));
+    forgotten.here = at;
+    std::error_code ec;
+    for (const auto &e : fs::directory_iterator(othersFolder(), ec)) {
+      if (e.path().extension() != ".txt") continue;
+      const std::string text = readRecord(e.path());
+      int64_t &seen = forgotten.devices[device(e.path())];
+      seen = std::max(seen, learned::latest(learned::accept(text, at)));
+      fs::path applied = e.path();
+      applied.replace_extension(".applied");
+      writeFile(applied, text);
+    }
+    writeFile(forgottenFile(), learned::format(forgotten));
+  }
   std::string forgetError() const override {
     std::lock_guard<std::mutex> hold(state_);
     return forgetError_;
@@ -173,7 +199,7 @@ class InProcess final : public MozcTransport {
   // The learned conversions' record (mozc_learned.h, #409), in Mozc's profile: mozc_learned.txt holds this
   // device's picks, which the sync uploads; the sync puts each other device's record in mozc_learned/<device>.txt,
   // and <device>.applied is the copy of it Mozc last learned. mozc_learned.forgotten holds when Japanese was last
-  // forgotten here, in seconds since 1970.
+  // forgotten here (learned::Forgotten).
   fs::path ownRecord() const { return fs::u8path(profile_) / "mozc_learned.txt"; }
   fs::path othersFolder() const { return fs::u8path(profile_) / "mozc_learned"; }
   fs::path forgottenFile() const { return fs::u8path(profile_) / "mozc_learned.forgotten"; }
@@ -195,7 +221,7 @@ class InProcess final : public MozcTransport {
     for (std::string line; std::getline(lines, line);) add += line + "\t" + std::to_string(now()) + "\n";
     // Read again for each pick (a few, rarer than commits): a rewrite needs it, and it may be new.
     const fs::path path = ownRecord();
-    const learned::Recorded r = learned::record(readFile(path), learned::parse(add));
+    const learned::Recorded r = learned::record(readFile(path), learned::parse(add, now()), now());
     if (r.whole) {
       writeFile(path, r.text);
     } else {
@@ -207,10 +233,12 @@ class InProcess final : public MozcTransport {
   // whole again (each pick once, the kMost most recent).
   void learnOthers() {
     const std::string ownText = readFile(ownRecord());
-    const learned::Record own = learned::parse(ownText);
+    const int64_t at = now();
+    const learned::Record own = learned::parse(ownText, at);
     if (!ownText.empty() && learned::format(own) != ownText) writeFile(ownRecord(), learned::format(own));
     // Every device's record, changed or not: which pick wins is settled over all of them (toLearn).
-    std::vector<std::pair<learned::Record, learned::Record>> others;
+    const learned::Forgotten forgotten = learned::parseForgotten(readFile(forgottenFile()));
+    std::vector<learned::Other> others;
     std::vector<std::pair<fs::path, std::string>> changed;
     std::error_code ec;
     for (const auto &e : fs::directory_iterator(othersFolder(), ec)) {
@@ -218,13 +246,12 @@ class InProcess final : public MozcTransport {
       fs::path applied = e.path();
       applied.replace_extension(".applied");
       std::string text = readRecord(e.path()), before = readRecord(applied);
-      others.emplace_back(learned::accept(text), learned::accept(before));
+      const auto seen = forgotten.devices.find(device(e.path()));
+      others.push_back({learned::accept(text, at), learned::accept(before, at),
+                        seen == forgotten.devices.end() ? 0 : seen->second});
       if (text != before) changed.emplace_back(applied, std::move(text));
     }
-    int64_t forgotten = 0;
-    const std::string when = readFile(forgottenFile());
-    std::from_chars(when.data(), when.data() + when.size(), forgotten);
-    const std::vector<learned::Pick> picks = learned::toLearn(own, others, forgotten, now());
+    const std::vector<learned::Pick> picks = learned::toLearn(own, forgotten.here, others, at);
     for (const learned::Pick &p : picks) {
       sebtype_mozc_learn(p.key.data(), p.key.size(), p.value.data(), p.value.size(), p.time);
     }
@@ -235,21 +262,6 @@ class InProcess final : public MozcTransport {
       eval(sync, ignored);
     }
     for (const auto &[applied, text] : changed) writeFile(applied, text);
-  }
-
-  // Forgetting empties this device's record, which the next sync uploads so, and keeps when it forgot: no pick
-  // from before, on any device, is learned again, only what is picked from now on (Decisions #2, 2026-11-19).
-  void forgetRecord() {
-    take(sebtype_mozc_take_learned);  // picks the old instance reported, not yet in the record
-    writeFile(ownRecord(), std::string(learned::kHeader));
-    writeFile(forgottenFile(), std::to_string(now()));
-    std::error_code ec;
-    for (const auto &e : fs::directory_iterator(othersFolder(), ec)) {
-      if (e.path().extension() != ".txt") continue;
-      fs::path applied = e.path();
-      applied.replace_extension(".applied");
-      writeFile(applied, readFile(e.path()));
-    }
   }
 
   // Mozc's own Clear: also what it keeps for the whole process, which a new instance doesn't read again

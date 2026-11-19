@@ -47,6 +47,7 @@ struct FakeMozc : MozcTransport {
   bool loading() const override { return false; }
   void reload() override {}
   void forget() override {}
+  void forgetRecord() override {}
   std::string forgetError() const override { return {}; }
   int undos() const { return static_cast<int>(std::count(commands.begin(), commands.end(), SessionCommand::UNDO)); }
 };
@@ -101,25 +102,45 @@ TEST(MozcTest, CtrlBackspaceUndoesNothingWhereTheCommitIsNotBeforeTheCaret) {
 
 // The learned conversions' record the sync carries (#409). Made-up readings and picks only.
 namespace learned = sebtype::learned;
+using learned::Other;
+using P = learned::Pick;
+// Times as seconds after T, a day in 2027; now is T + 1000 unless a test says otherwise.
+constexpr int64_t T = 1'800'000'000, Now = T + 1000;
 
 TEST(MozcLearnedTest, ARecordReadsBackAsWrittenAndAnotherVersionReadsAsEmpty) {
   learned::Record r;
-  learned::add(r, "きしゃ", "帰社", 100);
-  learned::add(r, "きしゃ", "帰社", 90);  // the later time stays
-  learned::add(r, "かんじ", "幹事", 50);
+  learned::add(r, "きしゃ", "帰社", T + 100);
+  learned::add(r, "きしゃ", "帰社", T + 90);  // the later time stays
+  learned::add(r, "かんじ", "幹事", T + 50);
   const std::string text = learned::format(r);
-  EXPECT_EQ(text, std::string(learned::kHeader) + "かんじ\t幹事\t50\nきしゃ\t帰社\t100\n");
-  EXPECT_EQ(learned::parse(text), r);
-  EXPECT_TRUE(learned::parse("# SebType mozc_learned 2\nきしゃ\t帰社\t100\n").empty());
+  EXPECT_EQ(text, std::string(learned::kHeader) + "かんじ\t幹事\t1800000050\nきしゃ\t帰社\t1800000100\n");
+  EXPECT_EQ(learned::parse(text, Now), r);
+  EXPECT_TRUE(learned::parse("# SebType mozc_learned 2\nきしゃ\t帰社\t1800000100\n", Now).empty());
   // A line cut short, or not reading<TAB>written<TAB>time, is left out.
-  EXPECT_EQ(learned::parse(std::string(learned::kHeader) + "a\tb\tx\n\tb\t1\na\t\t1\na\tb\t1\t2\nかんじ\t幹事\t50\nきし"),
-            (learned::Record{{{"かんじ", "幹事"}, 50}}));
+  EXPECT_EQ(learned::parse(std::string(learned::kHeader) + "a\tb\tx\n\tb\t1800000001\na\t\t1800000001\n"
+                                                           "a\tb\t1800000001\t2\nかんじ\t幹事\t1800000050\nきし",
+                           Now),
+            (learned::Record{{{"かんじ", "幹事"}, T + 50}}));
+}
+
+// A time no clock gave is left out, before 2020 or more than a day ahead: Mozc keeps times unsigned, so 5,000
+// picks at 1 replayed a second apart would have ranked in 2106 (#415 review).
+TEST(MozcLearnedTest, ImpossibleTimesAreLeftOut) {
+  const std::string h(learned::kHeader);
+  EXPECT_EQ(learned::parse(h + "あ\t亜\t1\nい\t以\t-5\nう\t宇\t1577836799\nえ\t江\t1577836800\nお\t尾\t1800086400\n"
+                               "か\t加\t1800086401\n",
+                           T),
+            (learned::Record{{{"え", "江"}, learned::kEarliest}, {{"お", "尾"}, T + learned::kAhead}}));
+  // Picks at the earliest time count back from now no further than it.
+  learned::Record early;
+  for (int i = 0; i < 3; ++i) learned::add(early, "よみ", "読" + std::to_string(i), learned::kEarliest);
+  for (const P &p : learned::toLearn({}, 0, {{early, {}}}, T)) EXPECT_GE(p.time, learned::kEarliest);
 }
 
 TEST(MozcLearnedTest, ARecordKeepsOnlyTheMostRecentPicks) {
   learned::Record r;
-  for (int i = 0; i < static_cast<int>(learned::kMost) + 10; ++i) learned::add(r, "よみ" + std::to_string(i), "読", i);
-  const learned::Record kept = learned::parse(learned::format(r));
+  for (int i = 0; i < static_cast<int>(learned::kMost) + 10; ++i) learned::add(r, "よみ" + std::to_string(i), "読", T + i);
+  const learned::Record kept = learned::parse(learned::format(r), T + 10000);
   EXPECT_EQ(kept.size(), learned::kMost);
   EXPECT_FALSE(kept.contains({"よみ9", "読"}));
   EXPECT_TRUE(kept.contains({"よみ10", "読"}));
@@ -128,95 +149,141 @@ TEST(MozcLearnedTest, ARecordKeepsOnlyTheMostRecentPicks) {
 // Two devices convert the same reading differently: the later pick comes first on both, the other stays learned
 // below it; at the same second, the written form decides, the same way on both.
 TEST(MozcLearnedTest, TheSameReadingPickedDifferentlyOnTwoDevicesEndsTheSameOnBoth) {
-  const learned::Record pc{{{"きしゃ", "帰社"}, 200}, {{"かんじ", "幹事"}, 10}};
-  const learned::Record phone{{{"きしゃ", "汽車"}, 100}, {{"せいか", "聖火"}, 20}};
-  using P = learned::Pick;
+  const learned::Record pc{{{"きしゃ", "帰社"}, T + 200}, {{"かんじ", "幹事"}, T + 10}};
+  const learned::Record phone{{{"きしゃ", "汽車"}, T + 100}, {{"せいか", "聖火"}, T + 20}};
   // On the PC, the phone's picks: that reading's picks oldest first, the PC's own later one last.
-  EXPECT_EQ(learned::toLearn(pc, {{phone, {}}}, 0, 1000),
-            (std::vector<P>{{"せいか", "聖火", 20}, {"きしゃ", "汽車", 100}, {"きしゃ", "帰社", 200}}));
+  EXPECT_EQ(learned::toLearn(pc, 0, {{phone, {}}}, Now),
+            (std::vector<P>{{"せいか", "聖火", T + 20}, {"きしゃ", "汽車", T + 100}, {"きしゃ", "帰社", T + 200}}));
   // On the phone, the PC's: the same order for きしゃ.
-  EXPECT_EQ(learned::toLearn(phone, {{pc, {}}}, 0, 1000),
-            (std::vector<P>{{"かんじ", "幹事", 10}, {"きしゃ", "汽車", 100}, {"きしゃ", "帰社", 200}}));
+  EXPECT_EQ(learned::toLearn(phone, 0, {{pc, {}}}, Now),
+            (std::vector<P>{{"かんじ", "幹事", T + 10}, {"きしゃ", "汽車", T + 100}, {"きしゃ", "帰社", T + 200}}));
   // At the same second, Mozc learns them a second apart, the earlier one a second back; one from a clock ahead,
   // at most now.
-  const learned::Record a{{{"きしゃ", "帰社"}, 300}}, b{{{"きしゃ", "記者"}, 300}};
-  EXPECT_EQ(learned::toLearn(a, {{b, {}}}, 0, 1000), (std::vector<P>{{"きしゃ", "帰社", 299}, {"きしゃ", "記者", 300}}));
-  EXPECT_EQ(learned::toLearn(b, {{a, {}}}, 0, 1000), (std::vector<P>{{"きしゃ", "帰社", 299}, {"きしゃ", "記者", 300}}));
-  EXPECT_EQ(learned::toLearn({}, {{a, {}}}, 0, 250), (std::vector<P>{{"きしゃ", "帰社", 250}}));
+  const learned::Record a{{{"きしゃ", "帰社"}, T + 300}}, b{{{"きしゃ", "記者"}, T + 300}};
+  EXPECT_EQ(learned::toLearn(a, 0, {{b, {}}}, Now),
+            (std::vector<P>{{"きしゃ", "帰社", T + 299}, {"きしゃ", "記者", T + 300}}));
+  EXPECT_EQ(learned::toLearn(b, 0, {{a, {}}}, Now),
+            (std::vector<P>{{"きしゃ", "帰社", T + 299}, {"きしゃ", "記者", T + 300}}));
+  EXPECT_EQ(learned::toLearn({}, 0, {{a, {}}}, T + 250), (std::vector<P>{{"きしゃ", "帰社", T + 250}}));
+}
+
+// The later pick of a reading comes first in Mozc's prediction too, which scores an entry by its time less the
+// characters of its written form (UserHistoryPredictor::GetScore): a longer one picked a second later would have
+// lost there (#415 review).
+TEST(MozcLearnedTest, TheLaterPickComesFirstInPredictionToo) {
+  const learned::Record a{{{"しんぶん", "新聞"}, T + 299}}, b{{{"しんぶん", "しんぶん"}, T + 300}},
+      c{{{"しんぶん", "新聞"}, T + 299}, {{"しんぶん", "しんぶん"}, T + 300}, {{"しんぶん", "新聞紙"}, T + 301}};
+  // Each character here is 3 bytes of UTF-8.
+  const auto score = [](const P &p) { return p.time - static_cast<int64_t>(p.value.size() / 3); };
+  for (const auto &picks : {learned::toLearn(a, 0, {{b, {}}}, Now), learned::toLearn({}, 0, {{c, {}}}, Now)}) {
+    for (size_t i = 1; i < picks.size(); ++i) {
+      EXPECT_LT(picks[i - 1].time, picks[i].time);      // conversion: by time
+      EXPECT_LT(score(picks[i - 1]), score(picks[i]));  // prediction
+    }
+  }
+  EXPECT_EQ(learned::toLearn(a, 0, {{b, {}}}, Now),
+            (std::vector<P>{{"しんぶん", "新聞", T + 297}, {"しんぶん", "しんぶん", T + 300}}));
 }
 
 // Only picks newer than the copy last learned come in; what was learned before, or forgotten since (its record
 // kept as learned), doesn't.
 TEST(MozcLearnedTest, OnlyNewPicksAreLearned) {
-  const learned::Record before{{{"かんじ", "幹事"}, 10}};
+  const learned::Record before{{{"かんじ", "幹事"}, T + 10}};
   learned::Record now = before;
-  EXPECT_TRUE(learned::toLearn({}, {{now, before}}, 0, 100).empty());
-  learned::add(now, "かんじ", "幹事", 30);  // picked again
-  learned::add(now, "せいか", "聖火", 20);
-  EXPECT_EQ(learned::toLearn({}, {{now, before}}, 0, 100),
-            (std::vector<learned::Pick>{{"せいか", "聖火", 20}, {"かんじ", "幹事", 30}}));
+  EXPECT_TRUE(learned::toLearn({}, 0, {{now, before}}, Now).empty());
+  learned::add(now, "かんじ", "幹事", T + 30);  // picked again
+  learned::add(now, "せいか", "聖火", T + 20);
+  EXPECT_EQ(learned::toLearn({}, 0, {{now, before}}, Now),
+            (std::vector<P>{{"せいか", "聖火", T + 20}, {"かんじ", "幹事", T + 30}}));
 }
 
 // A device that changed nothing since it was learned still counts: A learned C's Y at 300, then B's record brings
 // Y at 100 and X at 200, and Y stays first (#415 review).
 TEST(MozcLearnedTest, EveryDevicesRecordSettlesWhichPickWins) {
-  const learned::Record c{{{"よみ", "Y"}, 300}}, b{{{"よみ", "Y"}, 100}, {{"よみ", "X"}, 200}};
-  EXPECT_EQ(learned::toLearn({}, {{c, c}, {b, {}}}, 0, 1000),
-            (std::vector<learned::Pick>{{"よみ", "X", 200}, {"よみ", "Y", 300}}));
+  const learned::Record c{{{"よみ", "Y"}, T + 300}}, b{{{"よみ", "Y"}, T + 100}, {{"よみ", "X"}, T + 200}};
+  EXPECT_EQ(learned::toLearn({}, 0, {{c, c}, {b, {}}}, Now),
+            (std::vector<P>{{"よみ", "X", T + 200}, {"よみ", "Y", T + 300}}));
 }
 
-// After Forget (at 500), another device's earlier pick X stays forgotten when it later picks Y for the same
-// reading; picked again after the Forget, X comes back (Decisions #2, 2026-11-19).
+// After Forget, another device's earlier pick X stays forgotten when it later picks Y for the same reading;
+// picked again after the Forget, X comes back (Decisions #2, 2026-11-19).
 TEST(MozcLearnedTest, ForgottenPicksStayForgottenUntilPickedAgain) {
-  const learned::Record before{{{"よみ", "X"}, 400}};
+  const learned::Record before{{{"よみ", "X"}, T + 400}};
+  const int64_t seen = learned::latest(before);  // what Forget kept for that device
   learned::Record now = before;
-  learned::add(now, "よみ", "Y", 600);
-  EXPECT_EQ(learned::toLearn({}, {{now, before}}, 500, 1000), (std::vector<learned::Pick>{{"よみ", "Y", 600}}));
+  learned::add(now, "よみ", "Y", T + 600);
+  EXPECT_EQ(learned::toLearn({}, T + 500, {{now, before, seen}}, Now), (std::vector<P>{{"よみ", "Y", T + 600}}));
   learned::Record again = now;
-  learned::add(again, "よみ", "X", 700);
-  EXPECT_EQ(learned::toLearn({}, {{again, now}}, 500, 1000),
-            (std::vector<learned::Pick>{{"よみ", "Y", 600}, {"よみ", "X", 700}}));
+  learned::add(again, "よみ", "X", T + 700);
+  EXPECT_EQ(learned::toLearn({}, T + 500, {{again, now, seen}}, Now),
+            (std::vector<P>{{"よみ", "Y", T + 600}, {"よみ", "X", T + 700}}));
   // This device's own picks from before the Forget are gone from its record; one after it counts.
-  EXPECT_EQ(learned::toLearn({{{"よみ", "Z"}, 450}, {{"よみ", "W"}, 800}}, {{now, before}}, 500, 1000),
-            (std::vector<learned::Pick>{{"よみ", "Y", 600}, {"よみ", "W", 800}}));
+  EXPECT_EQ(learned::toLearn({{{"よみ", "Z"}, T + 450}, {{"よみ", "W"}, T + 800}}, T + 500, {{now, before, seen}}, Now),
+            (std::vector<P>{{"よみ", "Y", T + 600}, {"よみ", "W", T + 800}}));
 }
 
-// Picks at or after now (now = 1000: at 1000 and later) are learned a second apart counting back from now, never
-// ahead of it: a real pick made after them still ranks above them (#415 review).
+// A forgets at T + 500 by its clock. B's clock is a minute off: its pick X from 30 s before the Forget and its pick
+// Y from 10 s after carry B's times. Forget kept B's latest pick by B's own clock, so X stays forgotten and Y
+// counts, whichever way B's clock is off (#415 review).
+TEST(MozcLearnedTest, ForgetHoldsWhateverAnotherDevicesClockSays) {
+  for (const int64_t off : {60, -60}) {
+    const learned::Record before{{{"よみ", "X"}, T + 470 + off}};
+    learned::Record after = before;
+    learned::add(after, "よみ", "Y", T + 510 + off);
+    EXPECT_EQ(learned::toLearn({}, T + 500, {{after, before, learned::latest(before)}}, Now),
+              (std::vector<P>{{"よみ", "Y", T + 510 + off}}))
+        << off;
+  }
+  // A device with nothing kept at the Forget: all of its record counts.
+  const learned::Record c{{{"よみ", "Z"}, T + 400}};
+  EXPECT_EQ(learned::toLearn({}, T + 500, {{c, {}}}, Now), (std::vector<P>{{"よみ", "Z", T + 400}}));
+}
+
+TEST(MozcLearnedTest, WhenJapaneseWasForgottenReadsBackAsWritten) {
+  const learned::Forgotten f{T + 500, {{"phone", T + 530}, {"laptop", T + 440}}};
+  EXPECT_EQ(learned::format(f), "1800000500\nlaptop\t1800000440\nphone\t1800000530\n");
+  EXPECT_EQ(learned::parseForgotten(learned::format(f)), f);
+  EXPECT_EQ(learned::parseForgotten(""), learned::Forgotten{});
+  EXPECT_EQ(learned::parseForgotten("1800000500"), (learned::Forgotten{T + 500, {}}));
+}
+
+// Picks at or after now (now = T + 1000: at it and later) are learned a second apart counting back from now,
+// never ahead of it: a real pick made after them still ranks above them (#415 review).
 TEST(MozcLearnedTest, NoPickIsLearnedAfterNow) {
-  const learned::Record r{{{"よみ", "A"}, 1000}, {{"よみ", "B"}, 1005}, {{"よみ", "C"}, 2000}};
-  EXPECT_EQ(learned::toLearn({}, {{r, {}}}, 0, 1000),
-            (std::vector<learned::Pick>{{"よみ", "A", 998}, {"よみ", "B", 999}, {"よみ", "C", 1000}}));
-  const learned::Record tie{{{"よみ", "A"}, 1000}, {{"よみ", "B"}, 1000}};
-  EXPECT_EQ(learned::toLearn({}, {{tie, {}}}, 0, 1000),
-            (std::vector<learned::Pick>{{"よみ", "A", 999}, {"よみ", "B", 1000}}));
+  const learned::Record r{{{"よみ", "A"}, T + 1000}, {{"よみ", "B"}, T + 1005}, {{"よみ", "C"}, T + 2000}};
+  EXPECT_EQ(learned::toLearn({}, 0, {{r, {}}}, Now),
+            (std::vector<P>{{"よみ", "A", T + 998}, {"よみ", "B", T + 999}, {"よみ", "C", T + 1000}}));
+  const learned::Record tie{{{"よみ", "A"}, T + 1000}, {{"よみ", "B"}, T + 1000}};
+  EXPECT_EQ(learned::toLearn({}, 0, {{tie, {}}}, Now),
+            (std::vector<P>{{"よみ", "A", T + 999}, {"よみ", "B", T + 1000}}));
 }
 
 // This device's record never passes kMost lines: a pick appends until then, and past it the record is rewritten
 // cut back to kKeep. Another device's record is taken in up to kMost picks, and not at all past kMaxBytes.
 TEST(MozcLearnedTest, RecordsStayWithinTheCap) {
+  const int64_t now = T + 100000;
   learned::Record full;
-  for (int i = 0; i < static_cast<int>(learned::kMost); ++i) learned::add(full, "よみ" + std::to_string(i), "読", i);
+  for (int i = 0; i < static_cast<int>(learned::kMost); ++i) learned::add(full, "よみ" + std::to_string(i), "読", T + i);
   const std::string text = learned::format(full);
-  const learned::Record pick{{{"きしゃ", "帰社"}, 99999}};
-  const learned::Recorded grown = learned::record(text, pick);
+  const learned::Record pick{{{"きしゃ", "帰社"}, T + 99999}};
+  const learned::Recorded grown = learned::record(text, pick, now);
   EXPECT_TRUE(grown.whole);
-  const learned::Record kept = learned::parse(grown.text);
+  const learned::Record kept = learned::parse(grown.text, now);
   EXPECT_EQ(kept.size(), learned::kKeep);
   EXPECT_TRUE(kept.contains({"きしゃ", "帰社"}));
   EXPECT_EQ(std::count(grown.text.begin(), grown.text.end(), '\n'), static_cast<long>(learned::kKeep) + 1);
   learned::Record less = full;
   less.erase({"よみ0", "読"});
-  const learned::Recorded appended = learned::record(learned::format(less), pick);
+  const learned::Recorded appended = learned::record(learned::format(less), pick, now);
   EXPECT_FALSE(appended.whole);
-  EXPECT_EQ(appended.text, "きしゃ\t帰社\t99999\n");
-  EXPECT_TRUE(learned::record("", pick).whole);  // a new record
+  EXPECT_EQ(appended.text, "きしゃ\t帰社\t1800099999\n");
+  EXPECT_TRUE(learned::record("", pick, now).whole);  // a new record
 
   learned::Record over = full;
-  for (int i = 0; i < 10; ++i) learned::add(over, "かな" + std::to_string(i), "仮", 100000 + i);
-  const learned::Record accepted = learned::accept(learned::format(over, learned::kMost + 10));
+  for (int i = 0; i < 10; ++i) learned::add(over, "かな" + std::to_string(i), "仮", T + 90000 + i);
+  const learned::Record accepted = learned::accept(learned::format(over, learned::kMost + 10), now);
   EXPECT_EQ(accepted.size(), learned::kMost);
   EXPECT_TRUE(accepted.contains({"かな9", "仮"}));
   EXPECT_FALSE(accepted.contains({"よみ0", "読"}));
-  EXPECT_TRUE(learned::accept(std::string(learned::kHeader) + std::string(learned::kMaxBytes, 'x') + "\n").empty());
+  EXPECT_TRUE(learned::accept(std::string(learned::kHeader) + std::string(learned::kMaxBytes, 'x') + "\n", now).empty());
 }

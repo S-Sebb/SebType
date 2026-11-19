@@ -300,6 +300,7 @@ class Mozc final : public Engine {
       Output out;
       mozc_->call(in, out);
     }
+    mozc_->forgetRecord();
   }
   std::string forgetError() const override { return mozc_->forgetError(); }
 

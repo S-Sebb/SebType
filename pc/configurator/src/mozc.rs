@@ -25,8 +25,13 @@ const HISTORY: [&str; 4] = ["segment.db", "boundary.db", ".history.db", "cform.d
 const LEARNED: &str = "mozc_learned.txt";
 const OTHERS_LEARNED: &str = "mozc_learned";
 const LEARNED_HEADER: &str = "# SebType mozc_learned 1\n"; // core's learned::kHeader
-/// When Japanese was last forgotten, in seconds since 1970: no pick from before it is learned again.
+/// When Japanese was last forgotten, as core's learned::Forgotten: this PC's time, in seconds since 1970, then
+/// device<TAB>time for each other device, its latest pick then by its own clock. No pick from before is learned again.
 const FORGOTTEN: &str = "mozc_learned.forgotten";
+/// core's learned::kEarliest, kAhead and kMaxBytes: the times a record's picks can have, and the largest one read.
+const EARLIEST: i64 = 1_577_836_800;
+const AHEAD: i64 = 24 * 60 * 60;
+const MAX_LEARNED: usize = 1 << 20;
 /// The parts of speech the window offers (State.ja-pos), as Mozc's PosType values.
 pub const POS: [u64; 6] = [1, 4, 5, 9, 8, 15]; // 名詞 固有名詞 人名 地名 組織 顔文字
 
@@ -285,8 +290,28 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
         write_file(&dir.join(LEARNED), LEARNED_HEADER)?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        write_file(&dir.join(FORGOTTEN), now.to_string())?;
+            .map_or(0, |d| d.as_secs() as i64);
+        let before = String::from_utf8_lossy(&read(&dir.join(FORGOTTEN))?).into_owned();
+        let mut devices: std::collections::BTreeMap<String, i64> = before
+            .lines()
+            .skip(1)
+            .filter_map(|l| {
+                let (device, time) = l.split_once('\t')?;
+                Some((device.to_owned(), time.parse().ok()?))
+            })
+            .collect();
+        for (name, text) in others_learned(dir) {
+            let device = Path::new(&name).file_stem().unwrap_or_default();
+            let seen = devices
+                .entry(device.to_string_lossy().into_owned())
+                .or_insert(0);
+            *seen = (*seen).max(latest_pick(&text, now));
+        }
+        let mut text = format!("{now}\n");
+        for (device, time) in devices {
+            text += &format!("{device}\t{time}\n");
+        }
+        write_file(&dir.join(FORGOTTEN), text)?;
     }
     for (name, text) in others_learned(dir) {
         write_file(
@@ -297,6 +322,30 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
         )?;
     }
     Ok(n)
+}
+
+/// The latest pick in a record as core reads it (learned::accept, learned::latest): 0 when there is none.
+fn latest_pick(record: &[u8], now: i64) -> i64 {
+    let text = String::from_utf8_lossy(record);
+    let Some(lines) = text
+        .strip_prefix(LEARNED_HEADER)
+        .filter(|_| record.len() <= MAX_LEARNED)
+    else {
+        return 0;
+    };
+    // A last line without its newline was cut short: left out, as core does.
+    let whole = &lines[..lines.rfind('\n').map_or(0, |i| i + 1)];
+    whole
+        .lines()
+        .filter_map(|l| match l.split('\t').collect::<Vec<_>>()[..] {
+            [reading, written, time] if !reading.is_empty() && !written.is_empty() => {
+                time.parse::<i64>().ok()
+            }
+            _ => None,
+        })
+        .filter(|t| (EARLIEST..=now + AHEAD).contains(t))
+        .max()
+        .unwrap_or(0)
 }
 
 /// The other devices' learned conversions the sync brought (#409), by file name.
@@ -594,16 +643,24 @@ mod tests {
             format!("{LEARNED_HEADER}もふしゃ\t模符社\t100\n"),
         )
         .unwrap();
-        let phone = format!("{LEARNED_HEADER}ぷるしゃ\t普留社\t90\n");
+        // The phone's latest pick by its own clock is kept, never one no clock gave; a device kept from an
+        // earlier Forget stays.
+        let phone = format!(
+            "{LEARNED_HEADER}ぷるしゃ\t普留社\t1600000090\nぷるしゃ\t不留社\t1600000100\nぷ\t譜\t99999999999\nぷ\t符\t1"
+        );
         fs::write(d.join(OTHERS_LEARNED).join("phone.txt"), &phone).unwrap();
+        fs::write(
+            d.join(FORGOTTEN),
+            "1500000000\nlaptop\t1600000440\nphone\t1600000050\n",
+        )
+        .unwrap();
         assert_eq!(forget(&d).unwrap(), 1);
         assert!(!d.join(HISTORY[0]).exists());
         assert_eq!(fs::read_to_string(d.join(LEARNED)).unwrap(), LEARNED_HEADER);
-        let forgotten: u64 = fs::read_to_string(d.join(FORGOTTEN))
-            .unwrap()
-            .parse()
-            .unwrap();
-        assert!(forgotten > 1_700_000_000);
+        let forgotten = fs::read_to_string(d.join(FORGOTTEN)).unwrap();
+        let (here, devices) = forgotten.split_once('\n').unwrap();
+        assert!(here.parse::<i64>().unwrap() > 1_700_000_000);
+        assert_eq!(devices, "laptop\t1600000440\nphone\t1600000100\n");
         assert_eq!(
             fs::read_to_string(d.join(OTHERS_LEARNED).join("phone.applied")).unwrap(),
             phone
