@@ -56,9 +56,9 @@ if ((undo_configurator)); then
   if [[ -d $data/sebtype ]]; then exec {schedule_lock}>"$data/sebtype/schedule.lock"; flock "$schedule_lock"; fi
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
     echo "change: stop and remove SebType's sync timer and network trigger"
-    systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null
+    systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null || true
     # A sync planned after the network changed, and a --network-changed waiting for the lock.
-    systemctl --user stop sebtype-sync-soon.timer sebtype-sync-network.service 2>/dev/null
+    systemctl --user stop sebtype-sync-soon.timer sebtype-sync-network.service 2>/dev/null || true  # fails for one not there
     rm -f "$sync_units"/sebtype-sync.{timer,path,service} "$sync_units"/sebtype-sync-network.service
     systemctl --user daemon-reload 2>/dev/null
   fi
