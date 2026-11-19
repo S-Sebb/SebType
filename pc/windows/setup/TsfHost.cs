@@ -210,9 +210,10 @@ namespace SebType {
     // can't wait, and queues one that can until WriteLater is let go (or drops it, DropPending) (#376).
     public bool WriteLater;
     public void DropPending() { pendingLock = 0; }
-    // An app that refuses a text service's composition (#376).
+    // An app that refuses a text service's composition (#376), and how many it refused.
     public bool RefuseComposition;
-    public int OnStartComposition(object composition, out bool ok) { ok = !RefuseComposition; return S_OK; }
+    public int Refused;
+    public int OnStartComposition(object composition, out bool ok) { ok = !RefuseComposition; if (!ok) Refused++; return S_OK; }
     public int OnUpdateComposition(object composition, object range) { return S_OK; }
     public int OnEndComposition(object composition) { return S_OK; }
     // The app moves the caret here just before it grants the next write that can't wait, as if the user had
@@ -630,7 +631,8 @@ namespace SebType {
     public static bool ReadOnly { set { OnUi(() => { store.ReadOnly = value; return 0; }); } }
     public static bool WriteLater { set { OnUi(() => { store.WriteLater = value; if (!value) store.GrantPending(); return 0; }); } }
     public static void DropPending() { OnUi(() => { store.DropPending(); return 0; }); }
-    public static bool RefuseComposition { set { OnUi(() => { store.RefuseComposition = value; return 0; }); } }
+    public static bool RefuseComposition { set { OnUi(() => { store.RefuseComposition = value; if (value) store.Refused = 0; return 0; }); } }
+    public static int Refused { get { return OnUi(() => store.Refused); } }
     public static int CaretBeforeWrite { set { OnUi(() => { store.CaretBeforeWrite = value; return 0; }); } }
     // The caret at a place in the text, as a click puts it there.
     public static void Caret(int at) { OnUi(() => { store.SelStart = store.SelEnd = at; store.AppEdit(at, at, ""); return 0; }); }

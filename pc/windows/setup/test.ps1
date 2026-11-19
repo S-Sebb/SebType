@@ -429,6 +429,7 @@ if ($Typing) {
             }
             try {
               Keys 'Control_L+BackSpace'; Start-Sleep 1; $mid = $tsf::Text().Trim()
+              if ($case -eq 'composition-refused' -and $tsf::Refused -eq 0) { throw 'the undo started no composition for the app to refuse' }
               if ($case -eq 'deferred-dropped') { $tsf::DropPending() }
               if ($case -eq 'deferred-caret-moved') { $tsf::Caret(3) }
             } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false; $tsf::CaretBeforeWrite = -1 }
