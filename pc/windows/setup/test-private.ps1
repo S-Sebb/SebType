@@ -135,7 +135,7 @@ try {
   Server '/deploy'; Server '/mozc'
   foreach ($lang in 'zh', 'ja') {
     Lang $lang; Field $false
-    $first, $fourth = $words[$lang]
+    $first, $fourth, $null = $words[$lang]
     if ($lang -eq 'ja') { Wait-Mozc $first }
     Check "$lang-old-learning-off-hides-learned" { $t = & $first; if ($t -eq $learned[$lang]) { throw "first is the learned '$t'" }; $t }
   }
@@ -143,12 +143,14 @@ try {
     $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--migrate' -Wait -PassThru
     if ($p.ExitCode) { throw "sebtype-configurator --migrate: exit $($p.ExitCode)" }
     if ((Get-Content -Raw $conf) -notmatch '\[Learning\]\nOn=false') { throw "sebtype.conf: $(Get-Content -Raw $conf)" }
-    if ([IO.File]::ReadAllText($patchFile) -ne $patch) { throw "rime_ice.custom.yaml still has: $(Select-String enable_user_dict $patchFile)" }
+    # The Configurator writes Rime's patches with LF line endings, setup.ps1 with CRLF: Rime reads either.
+    $now = [IO.File]::ReadAllText($patchFile)
+    if (($now -replace "`r`n", "`n") -ne ($patch -replace "`r`n", "`n")) { throw "rime_ice.custom.yaml is now: $now" }
     'learning off in sebtype.conf, the old settings gone'
   }
   foreach ($lang in 'zh', 'ja') {
     Lang $lang; Field $false
-    $first, $fourth = $words[$lang]
+    $first, $fourth, $null = $words[$lang]
     if ($lang -eq 'ja') { Wait-Mozc $first }
     Check "$lang-migrated-keeps-learned" { First-Is $first $learned[$lang] }
     $p = & $fourth
