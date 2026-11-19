@@ -560,19 +560,17 @@ def rq_date():
 LEARNED = "灵魂"
 
 
-def learn_lower_candidate():
+def learn_lower_candidate(word=LEARNED):
     got = candidates_for("lh", expand=True)
-    if got.index(LEARNED) == 0:
-        raise Fail(f"lh -> {got}: {LEARNED} is already first, nothing to learn")
-    tap_candidate(LEARNED)
+    if got.index(word) == 0:
+        raise Fail(f"lh -> {got}: {word} is already first, nothing to learn")
+    tap_candidate(word)
     after = candidates_for("lh")
-    if after[0] != LEARNED:
+    if after[0] != word:
         raise Fail(
-            f"picked {LEARNED} from place {got.index(LEARNED) + 1}; next lh -> {after[:6]}"
+            f"picked {word} from place {got.index(word) + 1}; next lh -> {after[:6]}"
         )
-    return (
-        f"picked {LEARNED} from place {got.index(LEARNED) + 1}; next lh -> {after[:6]}"
-    )
+    return f"picked {word} from place {got.index(word) + 1}; next lh -> {after[:6]}"
 
 
 def learned_survives_restart():
@@ -1211,6 +1209,9 @@ def cold_starts_in_japanese(n=10):
 check("ja-cold-starts", cold_starts_in_japanese, needs=["ja-chip"])
 
 WORDS = "content://user_dictionary/words"
+# A made-up English personal word with a shortcut, as the words screen of the FUTO-based app saved it:
+# typing the shortcut offers the phrase (#380).
+SHORTCUT, SHORTCUT_PHRASE = "qvz", "plimbo vexter"
 
 
 def personal_word_after_restart():
@@ -2511,23 +2512,41 @@ def picked_suggestion_period():
 
 
 def personal_word_en():
-    """English suggests a word of the personal dictionary (Android's user dictionary), as 日本語 does."""
+    """English suggests a word of the personal dictionary (Android's user dictionary), as 日本語 does, and a
+    word's shortcut offers it first, left of the shortcut typed in the middle (#380)."""
     root(
         f"content insert --uri {WORDS} --bind word:s:zorblax --bind locale:s:en_US"
         " --bind frequency:i:250 --bind appid:i:0"
+    )
+    root(
+        f"content insert --uri {WORDS} --bind word:s:'{SHORTCUT_PHRASE}' --bind shortcut:s:{SHORTCUT}"
+        " --bind locale:s:en_US --bind frequency:i:250 --bind appid:i:0"
     )
     try:
         to_english()
         got = candidates_for(
             "zorbl"
         )  # the field shows the keyboard again: it reads the words
+        shortcut = candidates_for(SHORTCUT)
     finally:
-        root(f"content delete --uri {WORDS} --where \"word='zorblax'\"")
+        root(
+            f"content delete --uri {WORDS} --where \"word='zorblax' OR word='{SHORTCUT_PHRASE}'\""
+        )
     if "zorblax" not in [
         c.lower() for c in got
     ]:  # a sentence's first word has its capital
         raise Fail(f"zorbl -> {got[:6]}, without the personal word zorblax")
-    return f"zorbl -> {got[:6]}"
+    if shortcut_offered(shortcut):
+        raise Fail(shortcut_offered(shortcut))
+    return f"zorbl -> {got[:6]}; {SHORTCUT} -> {shortcut[:3]}"
+
+
+def shortcut_offered(bar):
+    """Why BAR (the slots left to right) doesn't offer the shortcut's phrase first, or None."""
+    # The middle slot holds the shortcut as typed, the left one the first candidate.
+    if len(bar) < 2 or bar[0].lower() != SHORTCUT_PHRASE or bar[1].lower() != SHORTCUT:
+        return f"{SHORTCUT} -> {bar[:3]}, not {SHORTCUT_PHRASE!r} first"
+    return None
 
 
 def backspace_reverts():
@@ -2930,7 +2949,14 @@ def update_from_futo_app():
         open_field()
         tap_globe()  # a fresh install starts in EN
         wait_set_up()
-        learn_lower_candidate()
+        # The old app has no model and puts 灵魂 first already, and the new one's model puts 厉害 first by
+        # itself (#369): it learns another of its lh candidates, which only the carried-over learning puts first.
+        zh_word = next(
+            w
+            for w in candidates_for("lh", expand=True)[2:]
+            if w != "厉害" and "\u4e00" <= w[0] <= "\u9fff"
+        )
+        learn_lower_candidate(zh_word)
         ja = learn_japanese()
         # English: a made-up word typed twice and the field closed, so the history saves it.
         for _ in range(2):
@@ -2940,6 +2966,20 @@ def update_from_futo_app():
             type_keys(EN_WORD)
             tap_space()
         typed = field_text()
+        # As root, as in en-personal-word: Android's user dictionary ignores the shell user.
+        root(
+            f"content insert --uri {WORDS} --bind word:s:'{SHORTCUT_PHRASE}' --bind shortcut:s:{SHORTCUT}"
+            " --bind locale:s:en_US --bind frequency:i:250 --bind appid:i:0"
+        )
+        # Its strip has no accessibility nodes: the screenshot shows it, and a space what it commits.
+        open_field()
+        type_keys(SHORTCUT)
+        screenshot("380-old-shortcut.png")
+        tap_space()
+        old_space = field_text()
+        print(f"the old app: a space after {SHORTCUT} typed {old_space!r}")
+        if old_space.lower() != SHORTCUT + " ":
+            raise Fail(f"the old app's space after {SHORTCUT} typed {old_space!r}")
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
         old, history = (
             f"/data/user/0/{OLD_PKG}",
@@ -3052,8 +3092,12 @@ def update_from_futo_app():
             raise Fail(
                 f"after the update {EN_WORD[:5]} -> {en[:5]}, without the old app's {EN_WORD}"
             )
+        shortcut = candidates_for(SHORTCUT)
+        # The old app offered the phrase first, and its space kept the shortcut typed (old_space).
+        if shortcut_offered(shortcut):
+            raise Fail(f"after the update: {shortcut_offered(shortcut)}")
         to_chinese()
-        zh = expect_first("lh", LEARNED)()
+        zh = expect_first("lh", zh_word)()
         to_japanese()
         got = candidates_for(JA_CODE)
         if got[0] != ja:
@@ -3102,9 +3146,10 @@ def update_from_futo_app():
                 )
         return (
             f"SebType still enabled and in use after the update; {zh}; {FUZZY_CODE} -> {fuzzy[:3]}; {JA_CODE} -> {got[:3]};"
-            f" {EN_WORD[:5]} -> {en[:3]}; options kept; learning off kept"
+            f" {EN_WORD[:5]} -> {en[:3]}; {SHORTCUT} -> {shortcut[:3]}; options kept; learning off kept"
         )
     finally:
+        root(f"content delete --uri {WORDS} --where \"word='{SHORTCUT_PHRASE}'\"")
         as_old(False)
         adb("uninstall", OLD_PKG, check=False)
         # A fresh install for the checks after this one.

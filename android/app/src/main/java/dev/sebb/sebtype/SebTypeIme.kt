@@ -447,10 +447,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         if (Prefs[Prefs.EMOJI_SUGGESTIONS]) Thread { Emoji.forWord(app, "") }.start()
         NativeCore.post {
             val words = PersonalWords.all(app).filter { it.locale == null || it.locale.startsWith("en") }
-            val options = Triple(autocorrect, period, words.map { it.word to it.frequency })
+            val options = Triple(autocorrect, period, words)
             if (options != englishOptionsSent) {
                 englishOptionsSent = options
-                setEnglishOptions(autocorrect, period, words.map { it.word }.toTypedArray(), words.map { it.frequency }.toIntArray())
+                setEnglishOptions(autocorrect, period, words.map { it.word }.toTypedArray(), words.map { it.frequency }.toIntArray(),
+                    words.map { it.shortcut }.toTypedArray())
             }
         }
     }

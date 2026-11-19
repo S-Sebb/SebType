@@ -894,6 +894,34 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
   EXPECT_EQ(en->takeEdit().deleteBefore, 0);
   EXPECT_EQ(en->takeCommit(), " ");
 }
+
+// #380: a personal word's shortcut offers it first, as in the FUTO-based app, but a space never replaces the
+// shortcut typed with it, with the model or without.
+TEST_F(EnglishTest, APersonalWordsShortcutOffersItWithoutCorrectingToIt) {
+  Settings s;
+  s.englishWords = {{"plimbo vexter", 250, "qvz"}};
+  for (const std::string model : {"", EN_MODEL}) {
+    const int readies = readyCount();
+    start(model);
+    en->applySettings(s, true);
+    if (!model.empty()) {  // the model ranks once it has loaded
+      type("a");
+      en->key({0xff08, 0, false});
+      ASSERT_TRUE(ready(readies));
+    }
+    // At a sentence's start the phone types it with a capital, and the word comes capitalised too.
+    for (const auto &[typed, word] : {std::pair{"qvz", "plimbo vexter"}, {"Qvz", "Plimbo vexter"}}) {
+      type(std::string(typed, 2));
+      const int ranked = readyCount();
+      type(typed + 2);
+      if (!model.empty()) ASSERT_TRUE(ready(ranked));  // the model's ranking, which would put the phrase last
+      EXPECT_EQ(indexOf(word), 1) << testing::PrintToString(list());  // after the typed word
+      type(" ");
+      EXPECT_EQ(en->takeCommit(), std::string(typed) + " ");
+      en->clear();
+    }
+  }
+}
 #endif
 
 #ifdef SEBTYPE_CHINESE_MODEL
