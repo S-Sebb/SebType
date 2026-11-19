@@ -144,6 +144,10 @@ class Rime final : public Engine {
       list.push_back({it.candidate.text ? it.candidate.text : "", it.candidate.comment ? it.candidate.comment : ""});
     }
     api_->candidate_list_end(&it);
+    // The data's last filter names the first candidate when it is a learned word: the property holds its text.
+    char learned[256];
+    if (!list.empty() && api_->get_property(session_, "sebtype_learned", learned, sizeof learned))
+      list[0].learned = list[0].text == learned;
     return list;
   }
 

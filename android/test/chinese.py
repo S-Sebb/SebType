@@ -540,7 +540,7 @@ def expect_first(text, word):
 
 def lh_in_top():
     # 白霜 ranks 厉害 4th on a fresh install (rime-ice: 8th, #4); it must be among the first ten
-    # candidates, and comes first once picked (learn-picked-word).
+    # candidates.
     got = candidates_for("lh", expand=True)
     if "厉害" not in got[:10]:
         raise Fail(f"lh -> {got[:12]} (厉害 not in the first ten)")
@@ -555,17 +555,24 @@ def rq_date():
     return f"rq -> {got[:6]}"
 
 
+# The word learn-picked-word teaches for lh: 2nd with the model, which puts 厉害 first by itself (#369), so
+# the checks after it see the learned word first only if Rime learned it and the model kept it there.
+LEARNED = "灵魂"
+
+
 def learn_lower_candidate():
     got = candidates_for("lh", expand=True)
-    if got.index("厉害") == 0:
-        raise Fail(f"lh -> {got}: 厉害 is already first, nothing to learn")
-    tap_candidate("厉害")
+    if got.index(LEARNED) == 0:
+        raise Fail(f"lh -> {got}: {LEARNED} is already first, nothing to learn")
+    tap_candidate(LEARNED)
     after = candidates_for("lh")
-    if after[0] != "厉害":
+    if after[0] != LEARNED:
         raise Fail(
-            f"picked 厉害 from place {got.index('厉害') + 1}; next lh -> {after[:6]}"
+            f"picked {LEARNED} from place {got.index(LEARNED) + 1}; next lh -> {after[:6]}"
         )
-    return f"picked 厉害 from place {got.index('厉害') + 1}; next lh -> {after[:6]}"
+    return (
+        f"picked {LEARNED} from place {got.index(LEARNED) + 1}; next lh -> {after[:6]}"
+    )
 
 
 def learned_survives_restart():
@@ -573,7 +580,7 @@ def learned_survives_restart():
     setup, _, deployed, _ = wait_set_up()
     if deployed:
         raise Fail(f"a restart deployed again ({setup} ms)")
-    return expect_first("lh", "厉害")()
+    return expect_first("lh", LEARNED)()
 
 
 def password_plain(kind):
@@ -832,14 +839,14 @@ check("failure-visible", failure_is_visible, needs=["first-install"])
 check("failure-recovers", failure_recovers, needs=["failure-visible"])
 check(
     "recovery-keeps-learned",
-    expect_first("lh", "厉害"),
+    expect_first("lh", LEARNED),
     needs=["failure-recovers", "learn-picked-word"],
 )
 check("update-redeploys", update_over_itself, needs=["first-install"])
 check("update-keeps-chinese", expect_first("ranh", "然后"), needs=["update-redeploys"])
 check(
     "update-keeps-learned",
-    expect_first("lh", "厉害"),
+    expect_first("lh", LEARNED),
     needs=["update-redeploys", "learn-picked-word"],
 )
 
@@ -930,7 +937,7 @@ def traditional_off():
     got = candidates_for("houlai")
     if not got or got[0] != "后来":
         raise Fail(f"繁 off: houlai -> {got[:6]}")
-    return f"繁 off: houlai -> {got[:6]}; learned 厉害 still first: {expect_first('lh', '厉害')()}"
+    return f"繁 off: houlai -> {got[:6]}; learned {LEARNED} still first: {expect_first('lh', LEARNED)()}"
 
 
 check("zh-hant-on", traditional_on, needs=["first-install"])
@@ -2882,7 +2889,7 @@ def update_from_futo_app():
                 f"after the update {EN_WORD[:5]} -> {en[:5]}, without the old app's {EN_WORD}"
             )
         to_chinese()
-        zh = expect_first("lh", "厉害")()
+        zh = expect_first("lh", LEARNED)()
         to_japanese()
         got = candidates_for(JA_CODE)
         if got[0] != ja:

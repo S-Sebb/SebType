@@ -69,6 +69,7 @@ struct Preedit {
 
 struct Candidate {
   std::string text, comment;
+  bool learned = false;  // Rime's first only: a word from the user dictionary (sebtype_learned.lua, #369)
 };
 // One page of candidates as the window shows it. labels is empty when keys don't pick them.
 struct Page {

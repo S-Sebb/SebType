@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <mutex>
+#include <set>
 #include <thread>
 #endif
 
@@ -871,7 +872,8 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
 // Rime as the model sees it: a few words by their pinyin, a candidate list for the input not yet chosen
 // (FULL's sentence for all of it first, then the words that start it, longest first), and picks that consume
 // their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛. A flush commits
-// what Rime previews, its first candidate, and learns nothing.
+// what Rime previews, its first candidate, and learns nothing. A first candidate in LEARNED comes marked as
+// learned, as Rime's data marks a word from its user dictionary.
 struct FakeRime : Engine {
   std::map<std::string, std::vector<std::string>> words{
       {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
@@ -881,6 +883,7 @@ struct FakeRime : Engine {
   bool alt = false;
   std::vector<int> picks;
   std::vector<std::string> learned;
+  std::set<std::string> userWords;
 
   struct Item {
     std::string text;
@@ -938,7 +941,7 @@ struct FakeRime : Engine {
   bool candidateAt(int i, Candidate &out) override {
     const auto l = list();
     if (i < 0 || i >= int(l.size())) return false;
-    out = {l[i].text};
+    out = {l[i].text, {}, i == 0 && userWords.count(l[i].text) > 0};
     return true;
   }
   int highlighted() override { return composing() ? 0 : -1; }
@@ -1123,15 +1126,23 @@ TEST_F(ChineseTest, FlushCommitsWhatAPartialCandidateLeaves) {
   EXPECT_FALSE(zh->composing());
 }
 
-// Rime's first is where its user dictionary puts a word picked before (沃门 here, as if learned): the model's
-// favourite of Rime's, 我们, comes after it.
-TEST_F(ChineseTest, RimesFirstStaysAheadOfRimesOthers) {
-  start({}, [](FakeRime &r) { r.words["women"] = {"沃门", "我们"}, r.words["men"] = {"们"}; });
+// Rime's user dictionary puts a word picked before first (沃门 here, learned): it stays ahead of the model's
+// favourite of Rime's, 我们. Rime's first that the user never picked is ranked like Rime's others (#369).
+TEST_F(ChineseTest, OnlyALearnedRimeFirstStaysAhead) {
+  const auto women = [](FakeRime &r) { r.words["women"] = {"沃门", "我们"}, r.words["men"] = {"们"}; };
+  start({}, [&](FakeRime &r) { women(r), r.userWords = {"沃门"}; });
   typeAndWait("women");
-  const auto l = list();
+  auto l = list();
   ASSERT_GE(l.size(), 2u);
   EXPECT_EQ(l[0], "沃门");
   EXPECT_NE(std::ranges::find(l, "我们"), l.end());
+
+  start({}, women);
+  typeAndWait("women");
+  l = list();
+  ASSERT_GE(l.size(), 2u);
+  EXPECT_EQ(l[0], "我们");
+  EXPECT_NE(std::ranges::find(l, "沃门"), l.end());
 }
 
 TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {

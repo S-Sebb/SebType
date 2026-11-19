@@ -44,7 +44,9 @@ of its own, and with nothing typed predicts the next words; the `ready` callback
 replaces Rime's first ones. Each list carries the revision it was asked for, which every key, pick and field or
 setting change moves on; a late one never shows, and a beam still running for an old revision stops. Picking the
 model's own candidate selects the Rime candidates that spell it, piece by piece, so Rime's user dictionary learns
-it; where Rime has no such piece (a typo the model fixed) only the text is committed. With 繁, OpenCC's `t2s`
+it; where Rime has no such piece (a typo the model fixed) only the text is committed. A word the user taught
+Rime, which its user dictionary puts first, stays ahead of Rime's other candidates: the data's last filter
+(`data/rime/sebtype_learned.lua`, #369) names it, and `src/rime.cpp` marks it `learned`. With 繁, OpenCC's `t2s`
 gives the model simplified text and `s2t` converts its own candidates. The model loads when the engine is made
 and goes with it, so it starts and stops with Rime. Its trace sections, "SebType zh load", "zh rank", "zh next"
 and "zh pick", are in `android/perf`'s traces.

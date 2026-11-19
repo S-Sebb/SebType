@@ -463,6 +463,10 @@ TIPS_SPACE = labels(
 )
 
 
+def screen_contains(texts):
+    return any(t in label for label, *_ in nodes() for t in texts)
+
+
 def find_all(ns, texts):
     return sorted(
         (
@@ -871,13 +875,14 @@ def forget(language):
 
 def forget_chinese():
     to_language("ni", "你")
+    # 灵魂, not 厉害: the Chinese model puts 厉害 first unlearned (#369).
     got = candidates_for("lh", expand=True)
-    if got[0] != "厉害":
-        tap_candidate("厉害")
+    if got[0] != "灵魂":
+        tap_candidate("灵魂")
     learned = candidates_for("lh")[:3]
     forget(labels("中文"))
     after = candidates_for("lh")[:3]
-    if learned[0] != "厉害" or after[0] == "厉害":
+    if learned[0] != "灵魂" or after[0] == "灵魂":
         raise Fail(f"lh -> {learned} learned, {after} after forgetting")
     return f"lh -> {learned} learned, {after} after forgetting 中文"
 
