@@ -15,7 +15,9 @@ its Privacy switch does): the learned pick is still first and a 3rd candidate pi
 again, the learned pick is still first and the 3rd candidate picked is learned. It is told again when
 sebtype.conf already says off (a try whose notice didn't reach the server). Last, an upgrade from a Configurator
 before #374, whose learning off hid what was learned (rime-ice's enable_user_dict, Mozc's NO_HISTORY): Setup's
---migrate moves it to sebtype.conf, and the learned picks are first again while a new pick isn't learned.
+--migrate moves it to sebtype.conf, keeping what is being typed, and the learned picks are first again once
+typing is idle while a new pick isn't learned; one cut off before Rime read its settings again is retried, and
+restrictions SebType didn't write stay.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=private): no
 -Watch, and the display's state isn't checked.
 -Browsers then opens a local page with a focused text field in Edge (and Chrome when installed), InPrivate or
@@ -125,29 +127,63 @@ try {
     $learned[$lang] = & $first
   }
 
-  # An upgrade from a Configurator before #374: its learning off, in Rime's and Mozc's own settings.
+  # Restrictions SebType didn't write (no SebType comment; NO_HISTORY with Chinese's learning on) are the
+  # person's own: a migration leaves them, and learning on (#374).
   $patchFile = "$env:APPDATA\Rime\rime_ice.custom.yaml"
   $patch = [IO.File]::ReadAllText($patchFile)
-  [IO.File]::WriteAllText($patchFile, ($patch -replace '(?m)^patch:(\r?\n)', "patch:`$1  translator/enable_user_dict: false`$1"))
   $mozcDir = "$env:USERPROFILE\AppData\LocalLow\Mozc"
   New-Item -ItemType Directory -Force $mozcDir | Out-Null
-  $f = [IO.File]::Open("$mozcDir\config1.db", 'Append'); $f.Write([byte[]](0x90, 3, 2), 0, 3); $f.Close()  # history_learning_level (50): NO_HISTORY
+  $cfgFile = "$mozcDir\config1.db"
+  $cfg = if (Test-Path $cfgFile) { [IO.File]::ReadAllBytes($cfgFile) } else { [byte[]]@() }
+  $pending = "$env:LOCALAPPDATA\SebType\learning-migration-pending"
+  function Old-Settings($rimeLine) {
+    [IO.File]::WriteAllText($patchFile, ($patch -replace '(?m)^patch:(\r?\n)', "patch:`$1  $rimeLine`$1"))
+    [IO.File]::WriteAllBytes($cfgFile, [byte[]]($cfg + [byte[]](0x90, 3, 2)))  # history_learning_level (50): NO_HISTORY
+  }
+  function Migrate {
+    $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--migrate' -Wait -PassThru
+    if ($p.ExitCode) { throw "sebtype-configurator --migrate: exit $($p.ExitCode)" }
+  }
+  # The migration's deploy and Mozc restart wait until typing is idle (5 s, #373); Rime then deploys.
+  function Idle-Refresh {
+    Start-Sleep 8
+    $zh = $words['zh'][0]
+    for ($i = 0; $i -lt 60 -and (& $zh) -cmatch '^[a-z ]*$'; $i++) { Start-Sleep 1 }
+    Start-Sleep 8
+  }
+  function Same-Text($a, $b) { ($a -replace "`r`n", "`n") -eq ($b -replace "`r`n", "`n") }  # the Configurator writes LF, setup.ps1 CRLF
+  Check 'own-restrictions-stay' {
+    Old-Settings 'translator/enable_user_dict: false'
+    Migrate
+    if ((Test-Path $conf) -and (Get-Content -Raw $conf) -match 'On=false') { throw "learning turned off: $(Get-Content -Raw $conf)" }
+    if ([IO.File]::ReadAllText($patchFile) -notmatch 'enable_user_dict: false\r?\n') { throw 'rime-ice patch lost it' }
+    if ([IO.File]::ReadAllBytes($cfgFile).Length -ne $cfg.Length + 3) { throw "Mozc's NO_HISTORY gone" }
+    'learning on, rime-ice patch and NO_HISTORY kept'
+  }
+  # An upgrade from a Configurator before #374, its learning off as it wrote it: Setup's --migrate moves it to
+  # sebtype.conf. It comes while 中文 is being typed, which the engines' refresh keeps (#373).
+  Old-Settings "translator/enable_user_dict: false  # SebType: don't learn"
   Server '/deploy'; Server '/mozc'
+  $hidden = @{}
   foreach ($lang in 'zh', 'ja') {
     Lang $lang; Field $false
     $first, $fourth, $null = $words[$lang]
     if ($lang -eq 'ja') { Wait-Mozc $first }
-    Check "$lang-old-learning-off-hides-learned" { $t = & $first; if ($t -eq $learned[$lang]) { throw "first is the learned '$t'" }; $t }
+    $hidden[$lang] = & $first
+    Check "$lang-old-learning-off-hides-learned" { $t = $hidden[$lang]; if ($t -eq $learned[$lang]) { throw "first is the learned '$t'" }; $t }
   }
+  Lang 'zh'; Field $false
+  Keys s h i
   Check 'migrate' {
-    $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--migrate' -Wait -PassThru
-    if ($p.ExitCode) { throw "sebtype-configurator --migrate: exit $($p.ExitCode)" }
+    Migrate
     if ((Get-Content -Raw $conf) -notmatch '\[Learning\]\nOn=false') { throw "sebtype.conf: $(Get-Content -Raw $conf)" }
-    # The Configurator writes Rime's patches with LF line endings, setup.ps1 with CRLF: Rime reads either.
     $now = [IO.File]::ReadAllText($patchFile)
-    if (($now -replace "`r`n", "`n") -ne ($patch -replace "`r`n", "`n")) { throw "rime_ice.custom.yaml is now: $now" }
+    if (-not (Same-Text $now $patch)) { throw "rime_ice.custom.yaml is now: $now" }
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($cfgFile)) -ne [Convert]::ToBase64String($cfg)) { throw "config1.db isn't as before" }
     'learning off in sebtype.conf, the old settings gone'
   }
+  Check 'migrate-keeps-typing' { $t = Typed s h i space; if ($t -ne $hidden['zh']) { throw "typed '$t', want '$($hidden['zh'])'" }; $t }
+  Idle-Refresh
   foreach ($lang in 'zh', 'ja') {
     Lang $lang; Field $false
     $first, $fourth, $null = $words[$lang]
@@ -155,6 +191,22 @@ try {
     Check "$lang-migrated-keeps-learned" { First-Is $first $learned[$lang] }
     $p = & $fourth
     Check "$lang-migrated-learns-nothing" { if ($p -eq $learned[$lang]) { throw "the 4th candidate gave '$p'" }; First-Is $first $learned[$lang] }
+  }
+  Check 'migrated-nothing-left' { if (Test-Path $pending) { throw "$pending: $(Get-Content $pending)" }; 'none' }
+  # A migration cut off after it removed Rime's old setting, before Rime read its settings again: the next one
+  # still has Rime do it.
+  Lang 'zh'; Field $false
+  Old-Settings "translator/enable_user_dict: false  # SebType: don't learn"
+  [IO.File]::WriteAllBytes($cfgFile, $cfg)
+  Server '/deploy'
+  Check 'zh-old-learning-off-hides-again' { First-Is $words['zh'][0] $hidden['zh'] }
+  [IO.File]::WriteAllText($patchFile, $patch)
+  New-Item -ItemType Directory -Force (Split-Path $pending) | Out-Null
+  [IO.File]::WriteAllText($pending, "rime`n")
+  Check 'cut-off-migration-retried' {
+    Migrate; Idle-Refresh
+    First-Is $words['zh'][0] $learned['zh']
+    if (Test-Path $pending) { throw "$pending still there" }
   }
   Check 'learning-on-after-migration' { Learning $true; 'on' }
 

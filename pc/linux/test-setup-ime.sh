@@ -831,6 +831,7 @@ def rime_ready():  # Rime deploys on first use and takes no keys until then
     tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
 SETTINGS = os.path.expanduser('~/.config/sebtype/sebtype.conf')
 RIME_PATCH = os.path.expanduser('~/.local/share/fcitx5/rime/rime_ice.custom.yaml')
+PENDING = os.path.expanduser('~/.local/share/sebtype/learning-migration-pending')
 learned = {}
 LANGS = {  # the first candidate, and the nth picked
     'zh': (lambda: commit([*'shishi', 'space']), lambda n: commit([*'shishi', str(n)])),
@@ -880,21 +881,43 @@ for lang, (first, nth) in LANGS.items():
     check(f'{lang}: learning on again learns it', other in (first(), nth(2)), True)
     learned[lang] = first()
 check("Mozc's config1.db untouched by learning off and on", config1(), before)
-# An upgrade from a Configurator before #374, whose learning off hid what was learned (rime-ice's
-# enable_user_dict, Mozc's NO_HISTORY): setup's --migrate moves it to sebtype.conf, which keeps using it.
+# Restrictions SebType didn't write (no SebType comment; NO_HISTORY with Chinese's learning on) are the
+# person's own: a migration leaves them, and learning on (#374).
 with open(RIME_PATCH) as f: patch = f.read()
-with open(RIME_PATCH, 'w') as f: f.write(re.sub(r'^patch:\n', 'patch:\n  translator/enable_user_dict: false\n', patch, count=1, flags=re.M))
-with open(CONFIG1, 'ab') as f: f.write(b'\x90\x03\x02')  # history_learning_level (50): NO_HISTORY
+with open(CONFIG1, 'rb') as f: cfg = f.read()
+def old_settings(rime_line):
+    with open(RIME_PATCH, 'w') as f: f.write(re.sub(r'^patch:\n', f'patch:\n  {rime_line}\n', patch, count=1, flags=re.M))
+    with open(CONFIG1, 'wb') as f: f.write(cfg + b'\x90\x03\x02')  # history_learning_level (50): NO_HISTORY
+def migrate():
+    r = subprocess.run([sys.argv[3], '--migrate'], capture_output=True, text=True, timeout=120)
+    return r.returncode, r.stderr
+def idle_refresh():  # the migration's deploy and Mozc restart wait until typing is idle (5 s, #373)
+    wait(lambda: False, 8); wait(rime_ready, 60); wait(lambda: False, 8)
+old_settings('translator/enable_user_dict: false')
+check('own restrictions: the migration runs', migrate(), (0, ''))
+check('own restrictions: learning stays on', os.path.exists(SETTINGS) and 'On=false' in open(SETTINGS).read(), False)
+check("own restrictions: rime-ice's patch keeps them", 'enable_user_dict: false\n' in open(RIME_PATCH).read(), True)
+check("own restrictions: Mozc's NO_HISTORY stays", open(CONFIG1, 'rb').read(), cfg + b'\x90\x03\x02')
+# An upgrade from a Configurator before #374, whose learning off hid what was learned (rime-ice's
+# enable_user_dict, Mozc's NO_HISTORY, as it wrote them): setup's --migrate moves it to sebtype.conf, which
+# keeps using it. It comes while 中文 is being typed, which the engines' refresh keeps (#373).
+old_settings("translator/enable_user_dict: false  # SebType: don't learn")
 call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy', GLib.Variant('s', ''))
 call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/mozc', GLib.Variant('s', ''))
+hidden = {}
 for lang, (first, nth) in LANGS.items():
     call(*SEBTYPE, 'SetLanguage', '(s)', lang)
     if lang == 'zh': wait(rime_ready, 60)
-    check(f'{lang}: learning off before #374 hides what was learned', first() != learned[lang], True)
-migrate = subprocess.run([sys.argv[3], '--migrate'], capture_output=True, text=True, timeout=120)
-check('setup migrates learning off', (migrate.returncode, migrate.stderr), (0, ''))
+    hidden[lang] = first()
+    check(f'{lang}: learning off before #374 hides what was learned', hidden[lang] != learned[lang], True)
+call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+for k in 'shi': tap(k)
+check('setup migrates learning off', migrate(), (0, ''))
+check('migrating keeps what is being typed', commit([*'shi', 'space']), hidden['zh'])
 check('migrated, sebtype.conf has learning off', open(SETTINGS).read().count('[Learning]\nOn=false'), 1)
 check("migrated, rime-ice's patch is as before", open(RIME_PATCH).read(), patch)
+check("migrated, Mozc's config1.db is as before", open(CONFIG1, 'rb').read(), cfg)
+idle_refresh()
 for lang, (first, nth) in LANGS.items():
     call(*SEBTYPE, 'SetLanguage', '(s)', lang)
     if lang == 'zh': wait(rime_ready, 60)
@@ -902,6 +925,22 @@ for lang, (first, nth) in LANGS.items():
     picked = nth(4)
     check(f'{lang}: migrated, a pick', bool(picked) and picked != learned[lang], True)
     check(f'{lang}: migrated, learning off learns nothing', first(), learned[lang])
+check('migrated, nothing left to do', os.path.exists(PENDING), False)
+# A migration cut off after it removed Rime's old setting, before Rime read its settings again: the next
+# one still has Rime do it.
+call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+old_settings("translator/enable_user_dict: false  # SebType: don't learn")
+with open(CONFIG1, 'wb') as f: f.write(cfg)
+call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy', GLib.Variant('s', ''))
+wait(rime_ready, 60)
+check('zh: learning off before #374 hides it again', LANGS['zh'][0](), hidden['zh'])
+with open(RIME_PATCH, 'w') as f: f.write(patch)
+os.makedirs(os.path.dirname(PENDING), exist_ok=True)
+with open(PENDING, 'w') as f: f.write('rime\n')
+check('the next migration runs', migrate(), (0, ''))
+idle_refresh()
+check('zh: after a cut-off migration, what was learned is back', LANGS['zh'][0](), learned['zh'])
+check('after a cut-off migration, nothing left to do', os.path.exists(PENDING), False)
 check('learning on after the migration', learning(True), True)
 # Forgetting 日本語 as the Configurator does (forget_mozc): Mozc restarts at once, saving and closing, then its
 # history files go; Mozc closing later (here as Fcitx5 exits) writes nothing back (#373).
