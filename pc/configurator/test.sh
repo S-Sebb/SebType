@@ -258,12 +258,14 @@ reconnect_sync() {
     status() { sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" "$d/data/sebtype/sync.json" 2>/dev/null; }
     until_() { local i; for ((i = 0; i < $1 * 5; i++)); do eval "$2" && return 0; sleep 0.2; done; return 1; }
     # The sync sees only this sandbox, never the owner'"'"'s sync.json or keyring.
-    printf "[Service]\nEnvironment=\"HOME=%s\" \"XDG_CONFIG_HOME=%s\" \"XDG_DATA_HOME=%s\" \"DBUS_SESSION_BUS_ADDRESS=%s\"\n" \
-      "$d" "$d/config" "$d/data" "$DBUS_SESSION_BUS_ADDRESS" > "$units/sebtype-sync.service.d/sandbox.conf"
+    # Each run also notes its start and end in runs.txt.
+    printf "[Service]\nEnvironment=\"HOME=%s\" \"XDG_CONFIG_HOME=%s\" \"XDG_DATA_HOME=%s\" \"DBUS_SESSION_BUS_ADDRESS=%s\"\nExecStartPre=/bin/sh -c \"echo start >> %s/runs.txt\"\nExecStopPost=/bin/sh -c \"echo end >> %s/runs.txt\"\n" \
+      "$d" "$d/config" "$d/data" "$DBUS_SESSION_BUS_ADDRESS" "$d" "$d" > "$units/sebtype-sync.service.d/sandbox.conf"
     printf "[Path]\nPathChanged=\nPathChanged=%s\n" "$d/resolv.conf" > "$units/sebtype-sync.path.d/sandbox.conf"
     printf "[Unit]\nDescription=Nothing\n" > "$units/sebtype-test.target"
     SYSTEMD_LOG_TARGET=console SYSTEMD_LOG_COLOR=0 /usr/lib/systemd/systemd --user --unit=sebtype-test.target > "$d/manager.log" 2>&1 & m=$!
-    trap "kill $m; wait $m" EXIT
+    # systemd leaves its inaccessible/ files without permissions: the sandbox couldn'"'"'t be removed.
+    trap "kill $m; wait $m; cp \"$d/manager.log\" \"$4/configurator-test-reconnect-manager.log\"; chmod -R u+rwx \"\$XDG_RUNTIME_DIR\"" EXIT
     until_ 10 "[[ -S \$XDG_RUNTIME_DIR/systemd/private ]]" || fail "the private systemd didn'"'"'t start"
     head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
     printf "http://127.0.0.1:9\nsebtype-test\n%s\n" "$(head -c 18 /dev/urandom | base64)" | "$bin" --save-login ||
@@ -277,15 +279,16 @@ reconnect_sync() {
     echo "the network came back: the sync ran, status $(status)"
     for i in $(seq 10); do echo "nameserver 192.0.2.$i" > "$d/r.tmp"; mv "$d/r.tmp" "$d/resolv.conf"; sleep 0.1; done
     until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) == inactive ]]"; sleep 2
-    # Each run starts, then finishes or fails (offline), before the next starts.
-    runs=$(grep -E "^(Starting|Finished|Failed to start) sebtype-sync.service" "$d/manager.log" | cut -c1-4 | uniq -c)
-    echo "runs after 10 flaps: $(grep -c "^Starting sebtype-sync.service" "$d/manager.log") in all"
-    grep -qE "^ *([2-9]|[1-9][0-9]+) " <<<"$runs" && fail "two syncs at once: $runs"
+    # Each run ends (offline) before the next starts.
+    runs=$(grep -c start "$d/runs.txt")
+    echo "runs: $runs in all, 1 before the flaps"
+    ((runs >= 2)) || fail "the flaps ran no sync"
+    [[ $(uniq "$d/runs.txt" | wc -l) == $((runs * 2)) ]] || fail "two syncs at once: $(uniq -c "$d/runs.txt" | tr "\n" " ")"
     systemctl --user is-active -q sebtype-sync.path || fail "the flaps stopped the network trigger"
     HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo.log" 2>&1 || fail "the uninstall failed"
     systemctl --user is-active -q sebtype-sync.path && fail "the network trigger still runs after the uninstall"
     ls "$units"/sebtype-sync.{path,timer,service} 2>/dev/null && fail "units left after the uninstall"
-    echo "the uninstall stopped and removed the timer and the network trigger"' _ "$d" "$bin" "$PWD"
+    echo "the uninstall stopped and removed the timer and the network trigger"' _ "$d" "$bin" "$PWD" "$out"
 }
 export -f reconnect_sync
 check sync-on-network-reconnect 180 reconnect_sync

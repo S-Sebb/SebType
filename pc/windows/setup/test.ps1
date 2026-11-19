@@ -32,7 +32,8 @@ nobody's own input settings change, then removes the user and its profile:
    localhost, run by a copy of the Python Setup packs, with a throwaway login; the login saved as the
    Configurator's Save does (sebtype-configurator --save-login: Credential Manager, the task); made-up
    words of this PC's (Rime, Mozc) and of another device (test-sync.py); the "SebType sync" task run
-   once; then a silent uninstall, which must sync first and remove the task, the login and sync's files.
+   once, then again from a network-connect event (#377); then a silent uninstall, which must sync first
+   and remove the task, the login and sync's files.
    The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
@@ -829,6 +830,27 @@ Set-Content '$login-code.txt' `$exit
           if (-not $j) { throw 'the task did not sync in 5 minutes' }
           if ($j.status -ne 'synced') { throw "the task's sync: $($j.status)" }
           'the SebType sync task ran sebtype-configurator --sync: synced'
+        }
+        # #377: the task also syncs when Windows connects to a network. The network is never touched: a
+        # NetworkProfile event 10000 ("connected") written into its log stands in, and only when no other
+        # task listens for it, so nothing else reacts.
+        Check 'sync-network-trigger' {
+          $t = (Get-ScheduledTask -TaskName 'SebType sync').Triggers
+          $connect = $t | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskEventTrigger' -and
+            $_.Subscription -match 'Microsoft-Windows-NetworkProfile/Operational' -and $_.Subscription -match 'EventID=10000' }
+          if (-not $connect) { throw "no network-connect trigger: $($t | ForEach-Object { $_.CimClass.CimClassName })" }
+          if (-not ($t | Where-Object { $_.Repetition.Interval -eq 'PT30M' })) { throw 'no half-hourly trigger' }
+          $others = Get-ScheduledTask | Where-Object { $_.TaskName -ne 'SebType sync' -and
+            ($_.Triggers | Where-Object { $_.Subscription -match 'NetworkProfile' }) } | ForEach-Object { $_.TaskName }
+          if ($others) { throw "not fired: other tasks listen for NetworkProfile events: $($others -join ', ')" }
+          $before = (Get-Content $syncJson -Raw -Encoding utf8 | ConvertFrom-Json).at
+          Start-Sleep 1  # sync.json keeps whole seconds
+          New-WinEvent -ProviderName Microsoft-Windows-NetworkProfile -Id 10000 `
+            -Payload @('SebType test', 'SebType test', [guid]::NewGuid(), 0, 1, 0) -WarningAction SilentlyContinue
+          $j = Wait-Until 120 { $x = Get-Content $syncJson -Raw -Encoding utf8 | ConvertFrom-Json; if ($x.at -gt $before) { $x } }
+          if (-not $j) { throw 'no sync within 2 minutes of the network-connect event' }
+          if ($j.status -ne 'synced') { throw "the network trigger's sync: $($j.status)" }
+          "network-connect trigger (NetworkProfile 10000, $($connect.Delay) delay) and the half-hourly one; the event ran the sync: synced"
         }
         Check 'sync-pc-words-reach-server' {
           (Helper server-has $url $syncUser $device rime_ice.userdb.txt '莫福姬'), (Helper server-has $url $syncUser $device mozc_dictionary.txt 'モフ試験語') -join '; '
