@@ -374,7 +374,8 @@ void Converter::FinishConversion(const ConversionRequest& request,
 
 // SebType (#409): each piece of a candidate picked over the first one (its inner segments, as the phone's
 // mixed conversion learns them), and its content word when that differs, as UserSegmentHistoryRewriter
-// remembers them; a piece written as it reads chose nothing.
+// remembers them. A piece of a longer pick written as it reads chose nothing, but a whole pick written as it
+// reads (しんぶん over 新聞) did.
 void Converter::ReportPicks(const ConversionRequest& request,
                             const Segments& segments) const {
   if (sebtype_learned == nullptr || request.incognito_mode() ||
@@ -384,8 +385,8 @@ void Converter::ReportPicks(const ConversionRequest& request,
   }
   const auto report = [](absl::string_view key, absl::string_view value,
                          absl::string_view content_key,
-                         absl::string_view content_value) {
-    if (key != value) sebtype_learned(key, value);
+                         absl::string_view content_value, bool whole) {
+    if (whole || key != value) sebtype_learned(key, value);
     if (content_key != key && content_value != value &&
         content_key != content_value && !content_key.empty()) {
       sebtype_learned(content_key, content_value);
@@ -403,13 +404,13 @@ void Converter::ReportPicks(const ConversionRequest& request,
         (c.attributes & Attribute::NO_HISTORY_LEARNING)) {
       continue;
     }
-    if (c.inner_segment_boundary.empty()) {
-      report(segment.key(), c.value, c.content_key, c.content_value);
+    if (c.inner_segment_boundary.empty() || c.value == segment.key()) {
+      report(segment.key(), c.value, c.content_key, c.content_value, true);
       continue;
     }
     for (const auto& inner : c.inner_segments()) {
       report(inner.GetKey(), inner.GetValue(), inner.GetContentKey(),
-             inner.GetContentValue());
+             inner.GetContentValue(), false);
     }
   }
 }

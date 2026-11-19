@@ -117,7 +117,7 @@ class InProcess final : public MozcTransport {
       if (e.path().extension() != ".txt") continue;
       const std::string text = readRecord(e.path());
       int64_t &seen = forgotten.devices[device(e.path())];
-      seen = std::max(seen, learned::latest(learned::accept(text, at)));
+      seen = std::max(seen, learned::latest(learned::parse(text)));
       fs::path applied = e.path();
       applied.replace_extension(".applied");
       writeFile(applied, text);
@@ -221,7 +221,7 @@ class InProcess final : public MozcTransport {
     for (std::string line; std::getline(lines, line);) add += line + "\t" + std::to_string(now()) + "\n";
     // Read again for each pick (a few, rarer than commits): a rewrite needs it, and it may be new.
     const fs::path path = ownRecord();
-    const learned::Recorded r = learned::record(readFile(path), learned::parse(add, now()), now());
+    const learned::Recorded r = learned::record(readFile(path), learned::parse(add));
     if (r.whole) {
       writeFile(path, r.text);
     } else {
@@ -234,7 +234,7 @@ class InProcess final : public MozcTransport {
   void learnOthers() {
     const std::string ownText = readFile(ownRecord());
     const int64_t at = now();
-    const learned::Record own = learned::parse(ownText, at);
+    const learned::Record own = learned::parse(ownText);
     if (!ownText.empty() && learned::format(own) != ownText) writeFile(ownRecord(), learned::format(own));
     // Every device's record, changed or not: which pick wins is settled over all of them (toLearn).
     const learned::Forgotten forgotten = learned::parseForgotten(readFile(forgottenFile()));
@@ -245,10 +245,11 @@ class InProcess final : public MozcTransport {
       if (e.path().extension() != ".txt") continue;
       fs::path applied = e.path();
       applied.replace_extension(".applied");
-      std::string text = readRecord(e.path()), before = readRecord(applied);
+      const learned::Record record = learned::accept(readRecord(e.path()), at);
+      // Kept as learned: only what was taken in, so a pick left out for its time comes in once it is possible.
+      std::string text = learned::format(record), before = readRecord(applied);
       const auto seen = forgotten.devices.find(device(e.path()));
-      others.push_back({learned::accept(text, at), learned::accept(before, at),
-                        seen == forgotten.devices.end() ? 0 : seen->second});
+      others.push_back({record, learned::accept(before, at), seen == forgotten.devices.end() ? 0 : seen->second});
       if (text != before) changed.emplace_back(applied, std::move(text));
     }
     const std::vector<learned::Pick> picks = learned::toLearn(own, forgotten.here, others, at);

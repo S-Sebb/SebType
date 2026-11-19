@@ -284,6 +284,19 @@ class Server(unittest.TestCase):
             self.call("GET", "/v1/files/pc-0009/mozc_learned.txt")[1], mine
         )
 
+        # Rime's installation made anew, Mozc's folder kept: the record under the old ID is this PC's own, not
+        # another device's to learn (#415 review).
+        device, sync_dir = s.rime_installation(self.rime_dirs("pc-0012")[0])
+        self.assertEqual(
+            s.pull(client, device, sync_dir, db)[3], 0
+        )  # its other files come, as any device's
+        self.assertFalse(
+            os.path.exists(os.path.join(mozc, "mozc_learned", "pc-0009.txt"))
+        )
+        s.push(client, device, sync_dir, db)
+        with open(os.path.join(mozc, s.OWN_LEARNED)) as f:
+            self.assertEqual(f.read(), "pc-0009\npc-0012\n")
+
     def test_deletions_and_edits_sync_between_two_pcs(self):
         """#273: a word added on one PC reaches the other in SebType's dictionary (My words), its
         deletion deletes it there, and adding it again brings it back."""

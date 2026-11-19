@@ -61,6 +61,19 @@ ZH_FILE = "zh_my_words.userdb.txt"
 # folder (core/src/mozc_learned.h) and learns the other devices' records from, in mozc_learned/<device>.txt.
 LEARNED_FILE, LEARNED_DIR = "mozc_learned.txt", "mozc_learned"
 MAX_LEARNED = 1 << 20  # core's learned::kMaxBytes: a larger record isn't taken in
+# Every device ID this Mozc folder's record went up under: one changes when Rime's installation is made anew,
+# and the record under an older one is this device's own, never another device's to learn (#409).
+OWN_LEARNED = "mozc_learned.own"
+
+
+def own_learned(mozc_dir):
+    try:
+        with open(os.path.join(mozc_dir, OWN_LEARNED), encoding="utf-8") as f:
+            return set(f.read().split())
+    except FileNotFoundError:
+        return set()
+
+
 MAX_FILE = 64 << 20  # a userdb snapshot of years of typing is a few MB
 CRASH = re.compile(r"crash-\d{8}-\d{6}-[0-9a-f]{6}\.txt")
 MAX_CRASH = 256 << 10  # a report is a stack trace and 200 log lines, a few dozen KB
@@ -762,6 +775,7 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
     learned conversions next to it for Mozc to learn; returns (files, Japanese words added, changed or
     deleted, Chinese ones, learned conversions' records)."""
     count = words = chinese = learned = 0
+    mine = own_learned(os.path.dirname(mozc_db)) if mozc_db else set()
     own_zh = os.path.join(sync_dir, device, ZH_FILE)
     if rime_dir and not os.path.isfile(own_zh):
         # A client from before #272 kept copies of other devices' Chinese files without taking their
@@ -780,6 +794,7 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
             or name == WORDS_FILE
             or (name in (MOZC_FILE, LEARNED_FILE) and not mozc_db)
             or (name == LEARNED_FILE and f.get("size", 0) > MAX_LEARNED)
+            or (name == LEARNED_FILE and f["device"] in mine)
             or (name == ZH_FILE and not rime_dir)
         ):
             continue
@@ -826,9 +841,13 @@ def push(client, device, sync_dir, mozc_db=None, rime_dir=None):
         files[MOZC_FILE] = format_entries(
             own_mozc(mozc_db, os.path.join(folder, MOZC_FILE))
         )
+        mozc_dir = os.path.dirname(mozc_db)
         with contextlib.suppress(FileNotFoundError):
-            with open(os.path.join(os.path.dirname(mozc_db), LEARNED_FILE), "rb") as f:
+            with open(os.path.join(mozc_dir, LEARNED_FILE), "rb") as f:
                 files[LEARNED_FILE] = f.read()
+            if device not in (mine := own_learned(mozc_dir)):  # before it goes up
+                ids = "".join(f"{d}\n" for d in sorted(mine | {device}))
+                write_file(os.path.join(mozc_dir, OWN_LEARNED), ids.encode())
     count = 0
     for name, body in files.items():
         if remote.get(name) != hashlib.sha256(body).hexdigest():

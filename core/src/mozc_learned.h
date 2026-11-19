@@ -23,8 +23,9 @@ inline constexpr size_t kKeep = kMost - kMost / 10;
 // A larger record from another device isn't read at all (accept): kMost picks of long readings fit well within.
 inline constexpr size_t kMaxBytes = 1 << 20;
 
-// Picks with a time no clock could have given are left out as the record is read: before 2020, or more than a
-// day ahead of now. Mozc keeps times unsigned, so one before 1970 would rank in 2106.
+// Picks with a time no clock could have given are taken in from no device's record, nor learned from this one's,
+// until their time is possible: before 2020, or more than a day ahead of now. Mozc keeps times unsigned, so one
+// before 1970 would rank in 2106. They stay in the records, so they come in once the clocks catch up.
 inline constexpr int64_t kEarliest = 1577836800;  // 2020-01-01
 inline constexpr int64_t kAhead = 24 * 60 * 60;
 
@@ -32,8 +33,8 @@ inline constexpr int64_t kAhead = 24 * 60 * 60;
 // reading<TAB>written<TAB>time.
 using Record = std::map<std::pair<std::string, std::string>, int64_t>;
 
-Record parse(std::string_view text, int64_t now);
-// Another device's record as taken in: empty past kMaxBytes, else its kMost most recent picks.
+Record parse(std::string_view text);
+// Another device's record as taken in: empty past kMaxBytes, else its kMost most recent picks with a possible time.
 Record accept(std::string_view text, int64_t now);
 // kHeader and the `most` most recent picks, oldest first: the same record always makes the same text.
 std::string format(const Record &record, size_t most = kMost);
@@ -46,7 +47,7 @@ struct Recorded {
   std::string text;
   bool whole;
 };
-Recorded record(std::string_view file, const Record &picks, int64_t now);
+Recorded record(std::string_view file, const Record &picks);
 
 // When Japanese was last forgotten here, kept in mozc_learned.forgotten: this device's time then, and for each
 // other device, the latest pick its record held then, by that device's own clock, so a clock set differently
@@ -58,7 +59,8 @@ struct Forgotten {
 };
 Forgotten parseForgotten(std::string_view text);
 std::string format(const Forgotten &forgotten);
-// The latest pick in a record, 0 when it is empty.
+// The latest pick in a record, 0 when it is empty. For Forget, by every pick's time, possible or not: that
+// device's clock may be ahead of this one's.
 int64_t latest(const Record &record);
 
 struct Pick {

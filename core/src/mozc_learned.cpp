@@ -8,7 +8,7 @@
 
 namespace sebtype::learned {
 
-Record parse(std::string_view text, int64_t now) {
+Record parse(std::string_view text) {
   Record record;
   if (!text.starts_with(kHeader)) return record;
   text.remove_prefix(kHeader.size());
@@ -21,7 +21,6 @@ Record parse(std::string_view text, int64_t now) {
     int64_t time = 0;
     const auto [at, error] = std::from_chars(when.data(), when.data() + when.size(), time);
     if (error != std::errc() || at != when.data() + when.size() || when.empty()) continue;
-    if (time < kEarliest || time > now + kAhead) continue;
     add(record, std::string(line.substr(0, a)), std::string(line.substr(a + 1, b - a - 1)), time);
   }
   return record;
@@ -65,14 +64,15 @@ std::string format(const Record &record, size_t most) {
 
 Record accept(std::string_view text, int64_t now) {
   if (text.size() > kMaxBytes) return {};
-  Record record = parse(text, now);
-  return record.size() <= kMost ? record : parse(format(record), now);
+  Record record = parse(text);
+  std::erase_if(record, [now](const auto &pick) { return pick.second < kEarliest || pick.second > now + kAhead; });
+  return record.size() <= kMost ? record : parse(format(record));
 }
 
-Recorded record(std::string_view file, const Record &picks, int64_t now) {
+Recorded record(std::string_view file, const Record &picks) {
   const size_t count = static_cast<size_t>(std::count(file.begin(), file.end(), '\n'));  // with the header's
   if (file.starts_with(kHeader) && count - 1 + picks.size() <= kMost) return {lines(ordered(picks), 0), false};
-  Record whole = parse(file, now);
+  Record whole = parse(file);
   for (const auto &[pick, time] : picks) add(whole, pick.first, pick.second, time);
   // Grown past kMost: cut back further, so the next picks append for a while again.
   return {format(whole, file.starts_with(kHeader) ? kKeep : kMost), true};
@@ -120,7 +120,7 @@ std::vector<Pick> toLearn(const Record &own, int64_t forgotten, const std::vecto
   Record all;
   std::set<std::string> fresh;
   for (const auto &[pick, time] : own) {
-    if (time > forgotten) add(all, pick.first, pick.second, time);
+    if (time > forgotten && time >= kEarliest && time <= now + kAhead) add(all, pick.first, pick.second, time);
   }
   for (const Other &other : others) {
     for (const auto &[pick, time] : other.record) {
@@ -144,14 +144,17 @@ std::vector<Pick> toLearn(const Record &own, int64_t forgotten, const std::vecto
   for (size_t i = picks.size(); i-- > 0;) {
     const auto &[time, value, key] = picks[i];
     const int64_t length = chars(*value);
-    int64_t at = std::min(time, next - 1);
+    next = std::min(time, next - 1);
     if (const auto it = after.find(*key); it != after.end()) {
-      at = std::min(at, it->second.first - 1 - std::max<int64_t>(0, it->second.second - length));
+      next = std::min(next, it->second.first - 1 - std::max<int64_t>(0, it->second.second - length));
     }
-    // Never before any time a record keeps: past it the order goes, which needs more picks than kMost.
-    next = std::max(at, kEarliest);
     after[*key] = {next, length};
     out[i] = {*key, *value, next};
+  }
+  // Spaced back past kEarliest: all moved forward together, so the order stays, and never past now.
+  if (!out.empty() && out.front().time < kEarliest) {
+    const int64_t by = std::min(kEarliest - out.front().time, now - out.back().time);
+    for (Pick &p : out) p.time += by;
   }
   return out;
 }

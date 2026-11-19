@@ -5,7 +5,8 @@
 # server, picks others; the Configurator's --sync takes each to the other. Checked: each device gets the other's;
 # the same reading picked on both comes first as the later pick; learning off (--learning off) records nothing
 # new but still learns the phone's; Forget (--forget ja) empties this PC's record, which the next sync uploads
-# so, and what the phone picked before doesn't come back after a sync, only what it picks after.
+# so, and what the phone picked before doesn't come back after a sync, only what it picks after. A pick written as
+# it reads is recorded too.
 # Results: one line per check, also in <out>/learned-sync-results.txt; exit 1 if a check fails.
 import base64
 import json
@@ -184,6 +185,15 @@ result(
     f"{'synced' if synced else 'no sync'}, とうき first '{now_touki}'",
 )
 on = configurator("--learning", "on")
+
+# A pick written as it reads, せいか over 成果 (seika's 3rd candidate, as above), is recorded too (#415 review).
+picked_kana = f.type(SEIKA + "   \n")
+recorded = f"{READING[SEIKA]}\t{READING[SEIKA]}\t" in read(own)
+result(
+    "kana-pick-recorded",
+    on and picked_kana == READING[SEIKA] and recorded,
+    f"3rd '{picked_kana}', {'in' if recorded else 'not in'} the record",
+)
 
 # Forget: this PC's record is emptied and uploaded so; the phone's earlier picks don't come back after a sync,
 # its later one does.

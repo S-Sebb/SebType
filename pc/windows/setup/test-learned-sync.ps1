@@ -169,6 +169,13 @@ try {
     $t
   }
   Configurator --learning on
+  Check 'kana-pick-recorded' {  # せいか over 成果, seika's 3rd candidate as above (#415 review)
+    $p = Conv seika 3
+    if ($p -ne $reading.seika -or -not (Read $own).Contains("$($reading.seika)`t$($reading.seika)`t")) {
+      throw "3rd '$p', the record '$(Read $own)'"
+    }
+    "3rd '$p', in the record"
+  }
   $words = 'kisha', 'kanji', 'touki'
   function Firsts { ($words | ForEach-Object { "$_ $(Conv $_)" }) -join ', ' }
   $want = ($words | ForEach-Object { "$_ $($first[$_])" }) -join ', '
