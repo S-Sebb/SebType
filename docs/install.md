@@ -44,7 +44,7 @@ Each step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
 SebType's installer, `SebType-setup-<version>.exe`, is built by the
 [Windows setup workflow](https://github.com/S-Sebb/SebType/actions/workflows/windows-setup.yml): open
 its latest successful run on `main` and download the `sebtype-setup` artifact (GitHub asks you to sign
-in; it is kept for 14 days). Run it, pick the languages (English, 中文, 日本語) and confirm Windows' admin prompt. Running a newer
+in; it is kept for 14 days: once it has expired, **Run workflow** on `main` there builds it again). Run it, pick the languages (English, 中文, 日本語) and confirm Windows' admin prompt. Running a newer
 installer upgrades SebType and keeps what it learned; uninstall it from Windows' Apps. What it changes,
 and the silent install: [pc/windows/README.md](../pc/windows/README.md).
 
