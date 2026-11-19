@@ -328,6 +328,17 @@ fn put_in_place<T>(
     }
 }
 
+/// The dictionary entry a My words row shows.
+fn ja_word(w: &JaWord) -> mozc::Word {
+    mozc::Word {
+        reading: w.reading.as_str().into(),
+        word: w.word.as_str().into(),
+        pos: w.pos as usize,
+        mozc_pos: u64::try_from(w.mozc_pos).ok(),
+        rest: vec![],
+    }
+}
+
 fn export(backup: Backup, file: String) -> Result<Toast, Toast> {
     let Some(path) = rfd::FileDialog::new()
         .set_file_name(file)
@@ -783,19 +794,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 // A part of speech the window doesn't offer stays unless another is chosen.
                 mozc_pos: if pos == old.pos { old.mozc_pos } else { -1 },
             };
-            let word = |w: &JaWord| mozc::Word {
-                reading: w.reading.as_str().into(),
-                word: w.word.as_str().into(),
-                pos: w.pos as usize,
-                mozc_pos: u64::try_from(w.mozc_pos).ok(),
-                rest: vec![],
-            };
-            let (old, new) = (word(&old), word(&shown));
+            let (old, new) = (ja_word(&old), ja_word(&shown));
             put_in_place(
                 &mut all,
-                |w| word(w).same(&old),
+                |w| ja_word(w).same(&old),
                 shown,
-                |a, b| word(a).same(&word(b)),
+                |a, b| ja_word(a).same(&ja_word(b)),
             );
             ui.ja_words.set_vec(all);
             run(Box::new(move || {
@@ -819,10 +823,9 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_remove_ja_word({
         let (ui, run) = (ui.clone(), run.clone());
         move |i| {
-            let w = ui.ja_words.remove(i as usize);
-            let (reading, word) = (w.reading.to_string(), w.word.to_string());
+            let w = ja_word(&ui.ja_words.remove(i as usize));
             run(Box::new(move || {
-                sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &reading, &word))
+                sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &w))
                     .and_then(|r| r)
                     .map_err(err)?;
                 platform::restart_mozc();

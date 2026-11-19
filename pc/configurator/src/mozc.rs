@@ -213,11 +213,13 @@ pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Removes a word (every entry with its reading and spelling, as the sync does) from the dictionary
-/// as it is now.
-pub fn remove_word(dir: &Path, reading: &str, word: &str) -> io::Result<bool> {
+/// Removes a word (its first entry the same as word, as the window's row) from the dictionary as it is
+/// now. Another entry of the same reading and spelling stays: to the sync that word is still there.
+pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
     let mut all = words(dir)?;
-    all.retain(|w| (w.reading.as_str(), w.word.as_str()) != (reading, word));
+    if let Some(i) = all.iter().position(|w| w.same(word)) {
+        all.remove(i);
+    }
     save_words(dir, &all)
 }
 
@@ -367,7 +369,13 @@ mod tests {
                 ("プル".into(), 2, None),    // 人名
             ]
         );
-        assert!(remove_word(&d, "ぷる", "プル").unwrap());
+        let pul = Word {
+            reading: "ぷる".into(),
+            word: "プル".into(),
+            pos: 2,
+            ..Default::default()
+        };
+        assert!(remove_word(&d, &pul).unwrap());
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピ".into(), 0, Some(0))]
@@ -453,6 +461,11 @@ mod tests {
             comment,
             "the edited entry keeps its comment"
         );
+        // Delete too removes only the entry chosen.
+        let (noun, name) = (word("もふ", "モフ", 0, None), word("もふ", "モフ", 1, None));
+        save_words(&d, &[noun.clone(), name.clone()]).unwrap();
+        remove_word(&d, &name).unwrap();
+        assert_eq!(words(&d).unwrap(), [noun]);
         fs::remove_dir_all(&d).unwrap();
     }
 }

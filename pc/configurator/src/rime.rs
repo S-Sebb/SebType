@@ -281,10 +281,12 @@ pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Removes a word from My words as they are now.
+/// Removes a word (its first entry, as the window's row) from My words as they are now.
 pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
     let mut all = words(dir);
-    all.retain(|w| w != word);
+    if let Some(i) = all.iter().position(|w| w == word) {
+        all.remove(i);
+    }
     save_words(dir, &all)
 }
 
