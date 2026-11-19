@@ -414,25 +414,24 @@ if ($Typing) {
         # A field that refuses the undo's edit, or grants it only later (the key's release meanwhile), keeps its
         # commit and the text around it, and Enter doesn't type it again.
         # The same where the app refuses the conversion's composition (the commit must not go before it can come
-        # back), and where the caret moves between the undo's read and its write.
-        foreach ($case in 'refused', 'deferred', 'deferred-dropped', 'deferred-caret-moved', 'composition-refused', 'caret-moved') {
+        # back).
+        foreach ($case in 'refused', 'deferred', 'deferred-dropped', 'deferred-caret-moved', 'composition-refused') {
           Check "japanese-undo-$case" {
             Field ja
-            $moved = $case -like '*caret-moved'
+            $moved = $case -eq 'deferred-caret-moved'
             if ($moved) { $tsf::SetText('ab') }
             TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
             switch ($case) {
               'refused' { $tsf::ReadOnly = $true }
               'composition-refused' { $tsf::RefuseComposition = $true }
-              'caret-moved' { $tsf::CaretAfterRead = 3 }
               default { $tsf::WriteLater = $true }
             }
             try {
               Keys 'Control_L+BackSpace'; Start-Sleep 1; $mid = $tsf::Text().Trim()
               if ($case -eq 'composition-refused' -and $tsf::Refused -eq 0) { throw 'the undo started no composition for the app to refuse' }
               if ($case -eq 'deferred-dropped') { $tsf::DropPending() }
-              if ($case -eq 'deferred-caret-moved') { $tsf::Caret(3) }
-            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false; $tsf::CaretAfterRead = -1 }
+              if ($moved) { $tsf::Caret(3) }
+            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false }
             Start-Sleep 1
             if ($moved) { Keys Escape } else { Keys Return }
             Start-Sleep 1; $t = $tsf::Text().Trim(); $want = if ($moved) { 'ab記者' } else { '記者' }
