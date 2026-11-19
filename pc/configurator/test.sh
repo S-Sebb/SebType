@@ -270,7 +270,7 @@ EOF
     fail() { echo "FAIL: $1"; cat "$d/runs.txt" 2>/dev/null; tail -20 "$d/manager.log"; exit 1; }
     status() { sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" "$d/data/sebtype/sync.json" 2>/dev/null; }
     until_() { local i; for ((i = 0; i < $1 * 5; i++)); do eval "$2" && return 0; sleep 0.2; done; return 1; }
-    runs() { grep -c "^$1" "$d/runs.txt" 2>/dev/null; }
+    runs() { cat "$d/runs.txt" 2>/dev/null | grep -c "^$1"; }
     at() { grep "^$1" "$d/runs.txt" | sed -n "$2s/^$1 //p"; }  # start|end, the nth one
     change() { echo "nameserver 192.0.2.$1" > "$d/r.tmp"; mv "$d/r.tmp" "$d/resolv.conf"; }
     # The syncs and the network trigger see only this sandbox, never the owner'"'"'s sync.json or keyring.
