@@ -43,7 +43,7 @@ constexpr size_t kNextWords = 5;
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
 namespace ks {
-constexpr uint32_t space = 0x20, BackSpace = 0xff08;
+constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
 }
 
 bool han(char32_t c) { return (c >= 0x3400 && c <= 0x4dbf) || (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x20000 && c <= 0x3134f); }
@@ -125,13 +125,24 @@ class Chinese final : public Engine {
 
   bool key(const Key &k) override {
     if (!k.release && !(k.mods & (mod::Ctrl | mod::Alt | mod::Super)) && rime_->composing() && modelShown_) {
-      // What Rime would commit is its own first candidate: the model's list picks its own instead.
+      // What Rime would commit or highlight is in its own order: the model's list picks and highlights in
+      // its own instead. Paging keys are rime-ice's: Page Up/Down and - =.
+      const int size = std::max(rime_->pageSize(), 1), start = highlight_ / size * size;
       const int digit = static_cast<int>(k.sym) - '1';
-      if (k.sym == ks::space || (digit >= 0 && digit < std::min<int>(shown_.size(), std::max(rime_->pageSize(), 1)))) {
-        pick(k.sym == ks::space ? 0 : digit);
+      Candidate c;
+      if (k.sym == ks::space || (digit >= 0 && digit < size && candidateAt(start + digit, c))) {
+        pick(k.sym == ks::space ? highlight_ : start + digit);
         return true;
       }
-      if (commitsFirst(k.sym)) pick(0);
+      if (k.sym == ks::Up || k.sym == ks::Down) {
+        highlightAt(highlight_ + (k.sym == ks::Up ? -1 : 1));
+        return true;
+      }
+      if (k.sym == ks::Page_Up || k.sym == ks::Page_Down || k.sym == '-' || k.sym == '=') {
+        changePage(k.sym == ks::Page_Down || k.sym == '=');
+        return true;
+      }
+      if (commitsFirst(k.sym)) pick(highlight_);
     }
     const bool taken = rime_->key(k);
     if (!k.release) changed();
@@ -147,12 +158,12 @@ class Chinese final : public Engine {
   std::string aux() override { return rime_->aux(); }
   bool composing() override { return rime_->composing(); }
   std::string unfinished() override { return rime_->unfinished(); }
-  // What the strip shows first is what a flush commits (a field change, the keyboard hidden): the model's
+  // What the strip highlights is what a flush commits (a field change, the keyboard hidden): the model's
   // candidate, taught to Rime as a pick would be; Rime's own preview when the model's list isn't shown. A
   // Rime candidate for part of the input leaves the rest, which Rime's flush commits after it: nothing stays
   // composing.
   void flush() override {
-    if (rime_->composing() && modelShown_ && shownRev_ == rev_ && !shown_.empty()) pick(0);
+    if (rime_->composing() && modelShown_ && shownRev_ == rev_ && !shown_.empty()) pick(highlight_);
     rime_->flush();
     changed();
   }
@@ -170,14 +181,19 @@ class Chinese final : public Engine {
     return true;
   }
   int highlighted() override {
-    if (modelShown_ && rime_->composing()) return 0;  // what a space picks
+    if (modelShown_ && rime_->composing()) return highlight_;  // what a space picks
     const int h = rime_->highlighted();
     for (size_t i = 0; i < shown_.size(); i++)
       if (shown_[i].rime == h) return static_cast<int>(i);
     return h;
   }
   void selectAt(int index) override { pick(index); }
+  // In the model's list the highlight moves within it; Rime's own highlight stays on its first.
   void highlightAt(int index) override {
+    if (modelShown_ && rime_->composing()) {
+      if (Candidate c; candidateAt(index, c)) highlight_ = index;
+      return;
+    }
     rime_->highlightAt(index);
     changed();
   }
@@ -367,6 +383,7 @@ class Chinese final : public Engine {
     collect();
     rev_++;
     modelShown_ = false;
+    highlight_ = 0;
     Job job{rev_, context_, {}, {}, {}, rime_->alternate()};
     const bool text = field_ == Field::Text && !rime_->latin();
     if (rime_->composing()) {
@@ -495,6 +512,7 @@ class Chinese final : public Engine {
   std::vector<Item> shown_;
   uint64_t shownRev_ = ~uint64_t{0};
   bool modelShown_ = false;  // shown_ is the model's
+  int highlight_ = 0;        // in shown_, while it is the model's
 
   // Shared with the worker, under mutex_ (revNow_ also read in the model's steps).
   std::thread worker_;
