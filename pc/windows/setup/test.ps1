@@ -14,7 +14,7 @@ nobody's own input settings change, then removes the user and its profile:
 1. The installer's pictures: the language dialog (which must preselect Windows' own display language),
    the welcome page in English, 中文 and 日本語, then a whole install in English with the uninstaller.
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
-   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese),
+   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese and its Ctrl+Backspace undo),
    Rime's time per key (p95 ≤ 10 ms, only with -PerfRun: the final performance run, #54) and Chinese's
    tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu) and its
    Picnic candidate window with the pig (pictures, horizontal and vertical), a silent
@@ -362,6 +362,13 @@ if ($Typing) {
           Keys Shift_L; $back = Committed 'a'
           if ("$kata $hira $en $back" -ne 'ア あ a あ') { throw "Alt+`` gave '$kata', again '$hira'; Shift tap and Alt+`` '$en', Shift tap '$back'" }
           'あ → ア → あ; in English Alt+` stays English'
+        }
+        # Ctrl+Backspace right after a commit undoes it (#376): 記者 goes and きしゃ composes again, which Enter commits.
+        Check 'japanese-undo-commit' {
+          $first = Committed 'kisha '
+          Keys 'Control_L+BackSpace' Return; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
+          if ($first -eq 'きしゃ' -or $t -ne 'きしゃ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace and Enter '$t' (want きしゃ)" }
+          "$first → $t"
         }
       }
     } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue }
