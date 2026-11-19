@@ -72,7 +72,7 @@ if ((undo_configurator)); then
   fi
   if [[ -f $data/sebtype/sync.json ]] && command -v secret-tool >/dev/null; then
     echo "change: remove SebType's sync login from the keyring"
-    secret-tool clear service 'SebType sync' username login 2>/dev/null
+    secret-tool clear service 'SebType sync' username login 2>/dev/null || true  # none there, or no keyring
   fi
   for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock}; do
     # Released before it goes: a sync starting meanwhile would lock a new file while this holds the old (#401).
