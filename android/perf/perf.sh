@@ -69,6 +69,17 @@ geometry() { # keyboard grid from the screen width and the keyboard window's top
   dpi=$(sh wm density | awk '/Physical/ {print $3}' | tail -1)
   top=$(sh dumpsys window InputMethod | sed -n 's/.*touchable region=SkRegion((\([0-9]*\),\([0-9]*\),.*/\2/p' | head -1)
   [[ -n $W && -n $dpi && -n $top ]] || { echo "keyboard window not found" >&2; return 1; }
+  # The grid is portrait's: a turned screen's keyboard top would aim every tap at other windows (#402)
+  local rot; rot=$(sh dumpsys window displays | grep -om1 'mRotation=ROTATION_[0-9]*')
+  [[ $rot == mRotation=ROTATION_0 ]] || { echo "the screen isn't upright (${rot:-no rotation found}): taps would miss the keys" >&2; return 1; }
+}
+rotation_keep() { # monkey turns auto-rotate on when it ends: the person's rotation settings go back after the run (#402)
+  local k
+  for k in accelerometer_rotation user_rotation; do echo "$k $(sh settings get system $k)"; done > "$work/rotation"
+}
+rotation_back() {
+  local k v
+  while read -r k v; do [[ $v == null ]] || sh settings put system "$k" "$v"; done < "$work/rotation"
 }
 key_xy() { # key -> "x y". SebType's uniform layout has 10 key columns in every language; the row
   # centres are 69, 130, 190 and 249 dp below the keyboard's top (the action bar comes first) at
@@ -391,7 +402,8 @@ phase_soak() { # SOAK_MIN (default 12) minutes of EN, 中 and 日 in turn, words
 compare_steps() { # under the device lock: another keyboard (IME_PKG, IME_ID, KEY_ROWS), English only
   export FIELD_ARGS='--es kind private'
   { sh ime list -s | grep -v "^$pkg/" | grep -m1 -e '^com.google.android.inputmethod.latin/' -e '^org.futo.inputmethod.latin/' -e '^dev.sebb.sebtype/'; } > "$work/other-ime"
-  trap 'sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
+  rotation_keep
+  trap 'rotation_back; sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
     /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
     /data/local/tmp/sebtype-ui.xml' EXIT
   check compare-setup 300 || return 1
@@ -425,7 +437,8 @@ device_steps() { # under the device lock
   # Gboard first: stock FUTO crashes in Mozc on the emulator.
   { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
     sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
-  trap 'sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
+  rotation_keep
+  trap 'rotation_back; sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
     /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
     /data/local/tmp/sebtype-ui.xml' EXIT
   check install 600 || return 1
@@ -456,7 +469,8 @@ fi
 if [[ ${1:-} == --device ]]; then device_steps; exit; fi
 if [[ ${1:-} == --compare-device ]]; then compare_steps; exit; fi
 if [[ ${1:-} == --soak-device ]]; then
-  trap 'sh rm -f /data/local/tmp/sebtype-perf-taps.txt /data/local/tmp/sebtype-ui.xml' EXIT
+  rotation_keep
+  trap 'rotation_back; sh rm -f /data/local/tmp/sebtype-perf-taps.txt /data/local/tmp/sebtype-ui.xml' EXIT
   check idle 120 && check soak $(( 60 * ${SOAK_MIN:-12} + 300 )); exit
 fi
 

@@ -320,6 +320,9 @@ Notes:
   and renders in software. Compare an emulator run with another emulator run, never with the phone.
 - **Key positions** come from SebType's uniform layout at the default keyboard height. Each typing
   check verifies the text length afterwards and fails with "taps missed the keys" if they didn't land.
+  The grid is portrait's: the test field stays upright even on a phone lying on its side, and the run
+  stops if the screen is turned anyway (#402). Monkey turns auto-rotate on when it ends, so the run puts
+  the device's rotation settings back afterwards.
 
 #### On the phone
 
