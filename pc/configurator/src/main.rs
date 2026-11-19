@@ -303,28 +303,44 @@ fn zh_words(ui: &Ui) -> Vec<rime::Word> {
         .collect()
 }
 
-/// Puts new in old's place (at the end if the sync removed old meanwhile) as the only entry of its word:
-/// a word edited into one already there takes that one's place.
+/// Which of the entries the same as row i's that row is (0: the first). A row is found again in the file,
+/// which the sync may have changed meanwhile, by its word and this (find_nth): of two identical entries,
+/// Edit and Delete change the one chosen.
+fn occurrence<T>(all: &[T], i: usize, same: impl Fn(&T, &T) -> bool) -> usize {
+    all[..i].iter().filter(|w| same(w, &all[i])).count()
+}
+
+/// Where the nth entry the same as word is, if the sync left it.
+fn find_nth<T>(all: &[T], word: &T, n: usize, same: impl Fn(&T, &T) -> bool) -> Option<usize> {
+    all.iter()
+        .enumerate()
+        .filter(|(_, w)| same(w, word))
+        .nth(n)
+        .map(|(i, _)| i)
+}
+
+/// Puts new at `at` (at the end when the sync removed the old entry meanwhile) as the only entry of its
+/// word: a word edited into one already there takes that one's place. remove takes out the others.
 fn put_in_place<T>(
     all: &mut Vec<T>,
-    old: impl Fn(&T) -> bool,
+    at: Option<usize>,
     new: T,
     same: impl Fn(&T, &T) -> bool,
+    mut remove: impl FnMut(&mut Vec<T>, usize),
 ) {
-    let i = all.iter().position(old).unwrap_or(all.len());
-    let mut before = 0; // entries of new's word before i, which go
-    let mut k = 0;
-    all.retain(|w| {
-        let keep = k == i || !same(w, &new);
-        before += usize::from(!keep && k < i);
-        k += 1;
-        keep
-    });
-    let i = i - before;
-    if i < all.len() {
-        all[i] = new;
-    } else {
-        all.push(new);
+    let mut i = match at {
+        Some(i) => {
+            all[i] = new;
+            i
+        }
+        None => {
+            all.push(new);
+            all.len() - 1
+        }
+    };
+    while let Some(j) = (0..all.len()).find(|&j| j != i && same(&all[j], &all[i])) {
+        remove(all, j);
+        i -= usize::from(j < i);
     }
 }
 
@@ -337,6 +353,10 @@ fn ja_word(w: &JaWord) -> mozc::Word {
         mozc_pos: u64::try_from(w.mozc_pos).ok(),
         rest: vec![],
     }
+}
+
+fn same_ja(a: &JaWord, b: &JaWord) -> bool {
+    ja_word(a).same(&ja_word(b))
 }
 
 fn export(backup: Backup, file: String) -> Result<Toast, Toast> {
@@ -711,8 +731,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 ..Default::default()
             };
             let mut all = zh_words(&ui);
-            let old = all[i as usize].clone();
-            put_in_place(&mut all, |w| *w == old, new.clone(), |a, b| a == b);
+            let (i, eq) = (i as usize, |a: &rime::Word, b: &rime::Word| a == b);
+            let (old, n) = (all[i].clone(), occurrence(&all, i, eq));
+            put_in_place(&mut all, Some(i), new.clone(), eq, |all, j| {
+                all.remove(j);
+            });
             ui.zh_words.set_vec(
                 all.into_iter()
                     .map(|w| ZhWord {
@@ -722,7 +745,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     .collect::<Vec<_>>(),
             );
             run(Box::new(move || {
-                sync::words_locked(|| rime::edit_word(&platform::rime_dir(), &old, new))
+                sync::words_locked(|| rime::edit_word(&platform::rime_dir(), &old, n, new))
                     .and_then(|r| r)
                     .map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
@@ -734,14 +757,12 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_remove_zh_word({
         let (ui, run) = (ui.clone(), run.clone());
         move |i| {
-            let w = ui.zh_words.remove(i as usize);
-            let w = rime::Word {
-                word: w.word.into(),
-                pinyin: w.code.into(),
-                ..Default::default()
-            };
+            let all = zh_words(&ui);
+            let i = i as usize;
+            let (w, n) = (all[i].clone(), occurrence(&all, i, |a, b| a == b));
+            ui.zh_words.remove(i);
             run(Box::new(move || {
-                sync::words_locked(|| rime::remove_word(&platform::rime_dir(), &w))
+                sync::words_locked(|| rime::remove_word(&platform::rime_dir(), &w, n))
                     .and_then(|r| r)
                     .map_err(err)?;
                 platform::redeploy_rime().map_err(err)?;
@@ -786,7 +807,8 @@ fn main() -> Result<(), slint::PlatformError> {
                 return false;
             }
             let mut all: Vec<JaWord> = ui.ja_words.iter().collect();
-            let old = all[i as usize].clone();
+            let i = i as usize;
+            let (old, n) = (all[i].clone(), occurrence(&all, i, same_ja));
             let shown = JaWord {
                 reading,
                 word: word.trim().into(),
@@ -795,15 +817,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 mozc_pos: if pos == old.pos { old.mozc_pos } else { -1 },
             };
             let (old, new) = (ja_word(&old), ja_word(&shown));
-            put_in_place(
-                &mut all,
-                |w| ja_word(w).same(&old),
-                shown,
-                |a, b| ja_word(a).same(&ja_word(b)),
-            );
+            put_in_place(&mut all, Some(i), shown, same_ja, |all, j| {
+                all.remove(j);
+            });
             ui.ja_words.set_vec(all);
             run(Box::new(move || {
-                sync::words_locked(|| mozc::edit_word(&platform::mozc_dir(), &old, new))
+                sync::words_locked(|| mozc::edit_word(&platform::mozc_dir(), &old, n, new))
                     .and_then(|r| r)
                     .map_err(err)?;
                 platform::restart_mozc();
@@ -823,9 +842,12 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_remove_ja_word({
         let (ui, run) = (ui.clone(), run.clone());
         move |i| {
-            let w = ja_word(&ui.ja_words.remove(i as usize));
+            let all: Vec<JaWord> = ui.ja_words.iter().collect();
+            let i = i as usize;
+            let (w, n) = (ja_word(&all[i]), occurrence(&all, i, same_ja));
+            ui.ja_words.remove(i);
             run(Box::new(move || {
-                sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &w))
+                sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &w, n))
                     .and_then(|r| r)
                     .map_err(err)?;
                 platform::restart_mozc();

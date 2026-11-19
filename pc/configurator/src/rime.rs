@@ -242,6 +242,11 @@ fn my_words(text: &str) -> (Vec<Word>, String) {
 
 /// Saves the user's words after rime-ice's own phrases. Rime reads them when it starts (a redeploy).
 pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
+    save_with(dir, words, "")
+}
+
+/// save_words, with the comment lines of words taken out from the end (take_out) before the old end's.
+fn save_with(dir: &Path, words: &[Word], orphans: &str) -> io::Result<bool> {
     let path = dir.join(PHRASES);
     let old = read(&path);
     let mut text: String = old
@@ -260,6 +265,7 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
             w.rest
         ));
     }
+    text.push_str(orphans);
     text.push_str(&my_words(&old).1);
     write_file(&path, &text)
 }
@@ -271,23 +277,40 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Changes a word in My words as they are now (crate::put_in_place), keeping what else its line has.
-pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
+/// Changes a word (the nth entry the same as old, crate::find_nth) in My words as they are now
+/// (crate::put_in_place), keeping what else its line has.
+pub fn edit_word(dir: &Path, old: &Word, n: usize, mut new: Word) -> io::Result<bool> {
     let mut all = words(dir);
-    if let Some(w) = all.iter().find(|w| *w == old) {
-        (new.rest, new.above) = (w.rest.clone(), w.above.clone());
+    let at = crate::find_nth(&all, old, n, Word::eq);
+    if let Some(i) = at {
+        (new.rest, new.above) = (all[i].rest.clone(), all[i].above.clone());
     }
-    crate::put_in_place(&mut all, |w| w == old, new, |a, b| a == b);
-    save_words(dir, &all)
+    let mut orphans = String::new();
+    crate::put_in_place(&mut all, at, new, Word::eq, |all, j| {
+        orphans.push_str(&take_out(all, j))
+    });
+    save_with(dir, &all, &orphans)
 }
 
-/// Removes a word (its first entry, as the window's row) from My words as they are now.
-pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
+/// Removes a word (the nth entry the same as word, as the window's row) from My words as they are now.
+pub fn remove_word(dir: &Path, word: &Word, n: usize) -> io::Result<bool> {
     let mut all = words(dir);
-    if let Some(i) = all.iter().position(|w| w == word) {
-        all.remove(i);
+    let orphans =
+        crate::find_nth(&all, word, n, Word::eq).map_or(String::new(), |i| take_out(&mut all, i));
+    save_with(dir, &all, &orphans)
+}
+
+/// Takes out the entry at i. The comment lines above it stay, above the next entry, or else returned
+/// for the end of My words.
+fn take_out(all: &mut Vec<Word>, i: usize) -> String {
+    let w = all.remove(i);
+    match all.get_mut(i) {
+        Some(next) => {
+            next.above.insert_str(0, &w.above);
+            String::new()
+        }
+        None => w.above,
     }
-    save_words(dir, &all)
 }
 
 /// What Rime learned (its user dictionaries and their snapshots, and the snapshots in its sync folder, which
@@ -537,7 +560,7 @@ mod tests {
         };
         add_word(&d, other.clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone(), other.clone()]);
-        remove_word(&d, &w[0]).unwrap();
+        remove_word(&d, &w[0], 0).unwrap();
         assert_eq!(words(&d), [other.clone()]);
         // Edit (#410) keeps the word's place; a word edited into one already there leaves one entry.
         add_word(&d, w[0].clone()).unwrap();
@@ -546,12 +569,12 @@ mod tests {
             pinyin: "xiaolin".into(),
             ..Default::default()
         };
-        edit_word(&d, &other, lin.clone()).unwrap();
+        edit_word(&d, &other, 0, lin.clone()).unwrap();
         assert_eq!(words(&d), [lin.clone(), w[0].clone()]);
-        edit_word(&d, &lin, w[0].clone()).unwrap();
+        edit_word(&d, &lin, 0, w[0].clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone()]);
         // One the sync removed meanwhile comes back at the end.
-        edit_word(&d, &other, lin.clone()).unwrap();
+        edit_word(&d, &other, 0, lin.clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone(), lin.clone()]);
         // What else the lines have (a weight, comments between them) stays through Edit and Add.
         let head = "# rime-ice\n你好\tnihao\t1\n";
@@ -565,7 +588,7 @@ mod tests {
             pinyin: "xiaolin".into(),
             ..Default::default()
         };
-        edit_word(&d, &lin, lin2).unwrap();
+        edit_word(&d, &lin, 0, lin2).unwrap();
         add_word(&d, other.clone()).unwrap();
         assert_eq!(
             read(&d.join(PHRASES)),
@@ -573,6 +596,47 @@ mod tests {
         );
         save_words(&d, &[]).unwrap();
         assert_eq!(read(&d.join(PHRASES)), format!("{head}{MARKER}\n# end\n"));
+        // Of two identical rows, Edit and Delete change the one chosen (its occurrence), with its own line.
+        let ming = w[0].clone();
+        let mings = format!("{head}{MARKER}\n小明\txiaoming\t1\n小明\txiaoming\t2\n");
+        fs::write(d.join(PHRASES), &mings).unwrap();
+        let min = Word {
+            word: "小敏".into(),
+            pinyin: "xiaomin".into(),
+            ..Default::default()
+        };
+        edit_word(&d, &ming, 1, min).unwrap();
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n小明\txiaoming\t1\n小敏\txiaomin\t2\n")
+        );
+        fs::write(d.join(PHRASES), &mings).unwrap();
+        remove_word(&d, &ming, 1).unwrap();
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n小明\txiaoming\t1\n")
+        );
+        // A comment line stays when the word under it goes: over the next word, or at the end.
+        let noted =
+            format!("{head}{MARKER}\n# section note\n小明\txiaoming\n# lin\n小林\txiaolin\n");
+        fs::write(d.join(PHRASES), &noted).unwrap();
+        remove_word(&d, &ming, 0).unwrap();
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n# section note\n# lin\n小林\txiaolin\n")
+        );
+        fs::write(d.join(PHRASES), &noted).unwrap();
+        edit_word(&d, &lin, 0, ming.clone()).unwrap(); // 小林 into 小明, which goes
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n# section note\n# lin\n小明\txiaoming\n")
+        );
+        fs::write(d.join(PHRASES), &noted).unwrap();
+        remove_word(&d, &lin, 0).unwrap();
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n# section note\n小明\txiaoming\n# lin\n")
+        );
         assert!(
             valid_word("小明", "xiaoming")
                 && !valid_word("小\t明", "xiaoming")

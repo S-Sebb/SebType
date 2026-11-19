@@ -202,22 +202,25 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Changes a word (its first entry the same as old) in the dictionary as it is now (crate::put_in_place),
-/// keeping the entry's other fields.
-pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
+/// Changes a word (the nth entry the same as old, crate::find_nth) in the dictionary as it is now
+/// (crate::put_in_place), keeping the entry's other fields.
+pub fn edit_word(dir: &Path, old: &Word, n: usize, mut new: Word) -> io::Result<bool> {
     let mut all = words(dir)?;
-    if let Some(w) = all.iter().find(|w| w.same(old)) {
-        new.rest = w.rest.clone();
+    let at = crate::find_nth(&all, old, n, Word::same);
+    if let Some(i) = at {
+        new.rest = all[i].rest.clone();
     }
-    crate::put_in_place(&mut all, |w| w.same(old), new, Word::same);
+    crate::put_in_place(&mut all, at, new, Word::same, |all, j| {
+        all.remove(j);
+    });
     save_words(dir, &all)
 }
 
-/// Removes a word (its first entry the same as word, as the window's row) from the dictionary as it is
+/// Removes a word (the nth entry the same as word, as the window's row) from the dictionary as it is
 /// now. Another entry of the same reading and spelling stays: to the sync that word is still there.
-pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
+pub fn remove_word(dir: &Path, word: &Word, n: usize) -> io::Result<bool> {
     let mut all = words(dir)?;
-    if let Some(i) = all.iter().position(|w| w.same(word)) {
+    if let Some(i) = crate::find_nth(&all, word, n, Word::same) {
         all.remove(i);
     }
     save_words(dir, &all)
@@ -375,7 +378,7 @@ mod tests {
             pos: 2,
             ..Default::default()
         };
-        assert!(remove_word(&d, &pul).unwrap());
+        assert!(remove_word(&d, &pul, 0).unwrap());
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピ".into(), 0, Some(0))]
@@ -390,16 +393,17 @@ mod tests {
             rest: vec![],
         };
         let pipi = word("ぴぴ", "ピピピ", 0, Some(0));
-        assert!(edit_word(&d, &word("ぴぴ", "ピピ", 0, Some(0)), pipi.clone()).unwrap());
+        assert!(edit_word(&d, &word("ぴぴ", "ピピ", 0, Some(0)), 0, pipi.clone()).unwrap());
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピピ".into(), 0, Some(0))]
         );
-        edit_word(&d, &pipi, word("ぴぴ", "ピピピ", 2, None)).unwrap();
+        edit_word(&d, &pipi, 0, word("ぴぴ", "ピピピ", 2, None)).unwrap();
         assert_eq!(shown(&d)[1], ("ピピピ".into(), 2, None));
         edit_word(
             &d,
             &word("もふ", "モフ", 0, None),
+            0,
             word("ぴぴ", "ピピピ", 2, None),
         )
         .unwrap();
@@ -407,6 +411,7 @@ mod tests {
         edit_word(
             &d,
             &word("ぴぴ", "ピピピ", 2, None),
+            0,
             word("ぴぴ", "ピピ", 0, None),
         )
         .unwrap();
@@ -438,6 +443,7 @@ mod tests {
         edit_word(
             &d,
             &word("もふ", "モフ", 1, None),
+            0,
             word("もふ", "モフモフ", 1, None),
         )
         .unwrap();
@@ -453,6 +459,7 @@ mod tests {
         edit_word(
             &d,
             &word("もふ", "モフ", 0, None),
+            0,
             word("もふ", "もふ", 0, None),
         )
         .unwrap();
@@ -464,8 +471,29 @@ mod tests {
         // Delete too removes only the entry chosen.
         let (noun, name) = (word("もふ", "モフ", 0, None), word("もふ", "モフ", 1, None));
         save_words(&d, &[noun.clone(), name.clone()]).unwrap();
-        remove_word(&d, &name).unwrap();
-        assert_eq!(words(&d).unwrap(), [noun]);
+        remove_word(&d, &name, 0).unwrap();
+        assert_eq!(words(&d).unwrap(), [noun.clone()]);
+        // Of two identical entries with their own comments, Edit and Delete change the one chosen (its
+        // occurrence), and Edit keeps that one's comment.
+        let with = |comment: &str| Word {
+            rest: proto::bytes_field(4, comment.as_bytes()),
+            ..noun.clone()
+        };
+        save_words(&d, &[with("一"), with("二")]).unwrap();
+        edit_word(&d, &noun, 1, word("もふ", "モフー", 0, None)).unwrap();
+        assert_eq!(
+            words(&d).unwrap(),
+            [
+                with("一"),
+                Word {
+                    word: "モフー".into(),
+                    ..with("二")
+                }
+            ]
+        );
+        save_words(&d, &[with("一"), with("二")]).unwrap();
+        remove_word(&d, &noun, 1).unwrap();
+        assert_eq!(words(&d).unwrap(), [with("一")]);
         fs::remove_dir_all(&d).unwrap();
     }
 }

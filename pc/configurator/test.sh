@@ -49,7 +49,10 @@ if [[ -z ${HOLDING-} ]]; then
   ../../tools/build.sh 30 "sebtype configurator test build ($(git branch --show-current))" pc/configurator/build.sh \
     > /dev/null 2> "$out/configurator-test-build.log" ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
-  exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
+  # SebType's Chinese data (data/rime/build.sh, cached), the Rime folder the sandbox starts from.
+  rime_data=$(../../tools/build.sh 10 "rime data for the configurator test" data/rime/build.sh 2>> "$out/configurator-test-build.log" | tail -1)
+  [[ -f $rime_data ]] || { echo "preflight: data/rime/build.sh failed, see $out/configurator-test-build.log"; exit 1; }
+  exec env HOLDING=1 RIME_DATA="$rime_data" devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
 fi
 
@@ -64,7 +67,8 @@ release_build() { ldd "$bin" && ! ldd "$bin" | grep -q 'not found'; }
 export -f release_build; export bin
 check release-build 60 release_build
 
-# A sandbox account: copies of this account's engine settings, without Rime's and Mozc's learned words.
+# A sandbox account, from an allowlist: SebType's Chinese data, this account's engine settings and made-up
+# My words (#410). Nothing else of this account's comes in: no dictionary, learned words, snapshots or backups.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
 # What the nested sessions start (ksecretd, the Documents portal) outlives their D-Bus: stop whatever
 # still runs in the sandbox.
@@ -76,18 +80,17 @@ cleanup() {
 trap cleanup EXIT
 # Each private D-Bus session runs through private_dbus (tools/lib.sh), its files removed with the sandbox.
 export -f private_dbus
+export RIME_DATA
 sandbox() { # [dir], $sb by default
-  local sb=${1:-$sb}
-  mkdir -p "$sb/config" "$sb/data/fcitx5"
-  cp -r ~/.config/fcitx5 "$sb/config/"
-  # No dictionary of this account's comes in, nor its backups: My words are made-up ones (#410), so the
-  # screenshots show the list's search and Edit.
-  [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db \
-    --exclude='user_dictionary*' ~/.config/mozc "$sb/config/"
-  rsync -a --exclude='*.userdb' --exclude='*.userdb.txt' --exclude=sync --exclude='custom_phrase*' \
-    ~/.local/share/fcitx5/rime "$sb/data/fcitx5/"
+  local sb=${1:-$sb} f rime=${1:-$sb}/data/fcitx5/rime
+  mkdir -p "$sb/config/fcitx5" "$sb/config/mozc" "$rime"
+  cp -r ~/.config/fcitx5/config ~/.config/fcitx5/conf "$sb/config/fcitx5/"
+  [[ -f ~/.config/mozc/config1.db ]] && cp ~/.config/mozc/config1.db "$sb/config/mozc/"
+  unzip -q "$RIME_DATA" -d "$rime"
+  for f in rime_ice.custom.yaml default.custom.yaml installation.yaml; do
+    [[ -f ~/.local/share/fcitx5/rime/$f ]] && cp ~/.local/share/fcitx5/rime/$f "$rime/"
+  done
   printf '# SebType: My words\n小明\txiaoming\n张伟\tzhangwei\n' > "$sb/data/fcitx5/rime/custom_phrase.txt"
-  mkdir -p "$sb/config/mozc"
   python3 - "$sb/config/mozc/user_dictionary.db" <<'PY'
 import sys  # a UserDictionaryStorage (mozc.rs) with SebType's dictionary: せぶ → SebType, もふ → モフ
 def varint(n):
