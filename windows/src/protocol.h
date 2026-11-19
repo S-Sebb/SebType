@@ -24,13 +24,14 @@ enum class Op : uint8_t {
   State,     // nothing, just the state
   Deploy,    // setup or the Configurator changed Rime's settings or data; reply.busy until it is applied
   Sync,      // save learned words and merge the other devices' (Rime's sync); reply.busy until done
-  Quit,      // the server exits (setup, the Configurator's forget)
+  Quit,      // the server exits (setup)
   Mozc,      // Mozc saves and closes, and starts again with its files at the next 日本語 key (setup, the
              // Configurator)
   Ready,     // lang: its icon in reply.icon while it isn't ready, and nothing else; changes nothing (#275)
   Reset,     // what is being typed is dropped: the server answers again after keys the app stopped waiting for
   DeployWhenIdle,  // Deploy and Mozc, for a sync's pull: once typing is idle, as they drop what is being typed
   MozcWhenIdle,    // (#373); reply.busy until done
+  Forget,    // lang: its engine forgets what it learned (the Configurator, #375); reply.busy until it is done
 };
 
 struct Request {
@@ -65,6 +66,12 @@ struct Reply {
   std::vector<MenuItem> menu;
   std::string notice;  // the popup after a switch, once
   bool busy = false;   // Rime is deploying or saving
+  // From #375, a suffix a server before it doesn't send: forgets says the server did the Forget asked for;
+  // request.lang's engine is still busy (its Forget not done; chores waiting for idle typing don't count), and
+  // what its last Forget left behind (Engine::forgetError).
+  bool forgets = false;
+  bool langBusy = false;
+  std::string forgetError;
 };
 
 // Little-endian lengths and values, strings as UTF-8.
@@ -146,7 +153,7 @@ inline std::string encode(const Reply &r) {
   for (const auto &m : r.menu) {
     w.u32(m.kind), w.s(m.label), w.s(m.icon), w.b(m.checked), w.u32(static_cast<uint32_t>(m.lang));
   }
-  w.s(r.notice), w.b(r.busy);
+  w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError);
   return w.out;
 }
 
@@ -168,6 +175,7 @@ inline bool decode(const std::string &in, Reply &r) {
     m.lang = static_cast<Lang>(rd.u32());
   }
   r.notice = rd.s(), r.busy = rd.b();
+  if (!rd.atEnd()) r.forgets = rd.b(), r.langBusy = rd.b(), r.forgetError = rd.s();
   return rd.ok();
 }
 

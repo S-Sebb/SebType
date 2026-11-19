@@ -311,10 +311,34 @@ pub fn redeploy_rime() -> io::Result<()> {
     Ok(())
 }
 
-/// Rime is restarted by the deploy, which closes the learned-words database before it opens a new one.
+/// SebType's input method forgets before it answers (#375): the engine closes its files, deletes what it
+/// learned and opens new ones, between two keys. Its answer is what it couldn't delete, and why. Without
+/// Fcitx5 nothing has them open.
+fn forget(lang: &str) -> io::Result<()> {
+    let out = busctl(&[
+        "--json=short",
+        "call",
+        "org.fcitx.Fcitx5",
+        "/sebtype",
+        "org.sebtype.Core1",
+        "Forget",
+        "s",
+        lang,
+    ])?;
+    let answer: serde_json::Value = serde_json::from_str(&out).map_err(io::Error::other)?;
+    match answer["data"][0].as_str() {
+        Some("") => Ok(()),
+        Some(left) => Err(io::Error::other(left.to_string())),
+        None => Err(io::Error::other(format!("Forget answered {out}"))),
+    }
+}
+
 pub fn forget_rime() -> io::Result<usize> {
-    let n = crate::rime::forget(&rime_dir())?;
-    redeploy_rime()?;
+    if !fcitx_running() {
+        return crate::rime::forget(&rime_dir());
+    }
+    let n = crate::rime::learned(&rime_dir())?.len();
+    forget("zh")?;
     Ok(n)
 }
 
@@ -329,8 +353,12 @@ pub fn restart_mozc() {
     }
 }
 pub fn forget_mozc() -> io::Result<usize> {
-    restart_mozc(); // or it would write the history back
-    crate::mozc::forget(&mozc_dir())
+    if !fcitx_running() {
+        return crate::mozc::forget(&mozc_dir());
+    }
+    let n = crate::mozc::learned(&mozc_dir());
+    forget("ja")?;
+    Ok(n)
 }
 
 // --- Sync (#180) ---
@@ -645,5 +673,17 @@ mod tests {
             .unwrap()
             .contains(" width=\"47\" height=\"48\" "));
         assert!(candidates().picnic);
+    }
+
+    /// The Configurator's forget while SebType's input method has Rime and Mozc open: run by
+    /// pc/linux/test-forget.py in test.sh's private Fcitx5, which types before and after (#375).
+    #[test]
+    #[ignore]
+    fn private_fcitx5_forgets() {
+        assert!(fcitx_running(), "no Fcitx5 on this bus");
+        // Mozc may hold what it learned in memory only: it saves every few minutes.
+        let (rime, mozc) = (forget_rime(), forget_mozc());
+        println!("Rime: {rime:?}, Mozc: {mozc:?}");
+        assert!(rime.is_ok() && mozc.is_ok());
     }
 }

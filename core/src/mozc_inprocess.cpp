@@ -63,20 +63,11 @@ class InProcess final : public MozcTransport {
   bool loading() const override { return loading_; }
   bool open() const override { return !loading_ && open_; }
 
-  // A reload asked for while Mozc loads is done by the loading thread before it says it is done: no key goes
-  // to the instance it replaces, and no one waits for the load.
-  void reload() override {
-    {
-      std::lock_guard<std::mutex> hold(state_);
-      if (loading_) {
-        reload_ = true;
-        return;
-      }
-      loading_ = !preload_.empty();
-    }
-    if (preload_.empty()) return load();
-    if (loader_.joinable()) loader_.join();  // done: loading_ was false
-    loader_ = std::thread([this] { loadInBackground(); });
+  void reload() override { restart(false); }
+  void forget() override { restart(true); }
+  std::string forgetError() const override {
+    std::lock_guard<std::mutex> hold(state_);
+    return forgetError_;
   }
 
   bool call(const mozc::commands::Input &in, mozc::commands::Output &out) override {
@@ -108,11 +99,66 @@ class InProcess final : public MozcTransport {
   }
 
  private:
-  // Opens Mozc, or opens it again: it saves and reads its files again.
+  // A restart asked for while Mozc loads is done by the loading thread before it says it is done: no key goes
+  // to the instance it replaces, and no one waits for the load.
+  void restart(bool forget) {
+    {
+      std::lock_guard<std::mutex> hold(state_);
+      if (forget) forget_ = true;
+      if (loading_) {
+        reload_ = true;
+        return;
+      }
+      loading_ = !preload_.empty();
+    }
+    if (preload_.empty()) return load();
+    if (loader_.joinable()) loader_.join();  // done: loading_ was false
+    loader_ = std::thread([this] { loadInBackground(); });
+  }
+
+  // Opens Mozc, or opens it again: it saves and reads its files again; after forget() without its history.
   void load() {
+    const bool forget = forget_.exchange(false);
+    if (open_ && forget) clearHistory();
     if (open_) sebtype_mozc_close();
+    open_ = false;
+    if (forget) {
+      std::string error = deleteHistory();
+      std::lock_guard<std::mutex> hold(state_);
+      forgetError_ = std::move(error);
+    }
     open_ = sebtype_mozc_open(profile_.c_str(), data_.c_str(), offset_, length_) != 0;
     learningSet_ = false;  // the new instance's
+  }
+
+  // Mozc's own Clear: also what it keeps for the whole process, which a new instance doesn't read again
+  // when the file is gone (the character forms it learned, CharacterFormManager's).
+  void clearHistory() {
+    for (auto type : {mozc::commands::Input::CLEAR_USER_HISTORY, mozc::commands::Input::CLEAR_USER_PREDICTION}) {
+      mozc::commands::Input in;
+      in.set_type(type);
+      mozc::commands::Output ignored;
+      eval(in, ignored);
+    }
+  }
+
+  // Mozc's learned conversions and predictions (the Configurator's pc/configurator/src/mozc.rs HISTORY); empty
+  // when they are gone, else the file that stayed and why.
+  std::string deleteHistory() {
+#ifdef _WIN32
+    const char *history = "history.db";  // Mozc's user_history_storage.cc: the predictions, character forms
+#else
+    const char *history = ".history.db";
+#endif
+    for (const char *name : {"segment.db", "boundary.db", history, "cform.db" /* older Mozcs' */}) {
+      const std::filesystem::path path = std::filesystem::u8path(profile_) / name;
+      std::error_code ec;
+      if (std::filesystem::remove(path, ec); ec && ec != std::errc::no_such_file_or_directory) {
+        const std::u8string u = path.u8string();
+        return std::string(u.begin(), u.end()) + ": " + ec.message();
+      }
+    }
+    return {};
   }
 
   // Reads the DLL through first: see MozcPaths::preload.
@@ -134,9 +180,10 @@ class InProcess final : public MozcTransport {
 
   const std::string preload_, profile_, data_;
   const int64_t offset_, length_;
-  std::mutex state_;  // loading_ and reload_ between the loading thread and reload()
-  std::atomic<bool> open_{false}, loading_{false};
+  mutable std::mutex state_;  // loading_, reload_ and forgetError_ between the loading thread and the rest
+  std::atomic<bool> open_{false}, loading_{false}, forget_{false};
   bool reload_ = false;
+  std::string forgetError_;
   std::thread loader_;
   std::optional<bool> learning_;
   std::atomic<bool> learningSet_{false};

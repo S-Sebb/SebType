@@ -280,6 +280,12 @@ class Mozc final : public Engine {
   }
 
   void forget() override {
+    if (!touch_) {  // the PCs: Mozc deletes its history files while closed (#375)
+      clear();
+      mozc_->forget();
+      session_ = 0;  // the new instance has none
+      return;
+    }
     for (auto type : {Input::CLEAR_USER_HISTORY, Input::CLEAR_USER_PREDICTION, Input::SYNC_DATA}) {
       Input in;
       in.set_type(type);
@@ -287,6 +293,7 @@ class Mozc final : public Engine {
       mozc_->call(in, out);
     }
   }
+  std::string forgetError() const override { return mozc_->forgetError(); }
 
   // The PCs: the candidates per page 中文 has, for Mozc's own pages (its default is 9). The phone: the user
   // dictionaries it wrote (Mozc reads them again).

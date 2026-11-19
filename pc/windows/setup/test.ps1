@@ -41,6 +41,8 @@ nobody's own input settings change, then removes the user and its profile:
 -Only not-ready: the tray key while 中文 or 日本語 isn't ready (#275): a silent install, test-not-ready.ps1
    (in the folder too) as the test user, not elevated, with -AnyDisplay (its pictures in out\275), a silent
    uninstall.
+-Only forget: forgetting learned words while the server runs (#375): a silent install, test-forget.ps1 (in the
+   folder too) as the test user, not elevated, a silent uninstall.
 
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
@@ -96,6 +98,13 @@ if ($Typing) {
       Set-Content -Encoding utf8 "$out\not-ready.log" $log
       $lines = @(Get-Content -Encoding utf8 "$out\275\not-ready-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ })
       if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result not-ready FAIL "no results: $($log.Trim())" }
+      return
+    }
+    if ($Typing -eq 'forget') {  # its own script, whose keys go to TSF's keystroke manager: no key server
+      $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\test-forget.ps1" -Out "$out\375" 2>&1 | Out-String
+      Set-Content -Encoding utf8 "$out\forget.log" $log
+      $lines = @(Get-Content -Encoding utf8 "$out\375\forget-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ })
+      if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result forget FAIL "no results: $($log.Trim())" }
       return
     }
     Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
@@ -685,6 +694,12 @@ namespace SebTypeSetupTest {
       Check 'not-ready-install' { Silent not-ready-install @(); 'silent, all languages' }
       Typing not-ready 900
       Silent-Uninstall not-ready
+      return
+    }
+    if ($Only -eq 'forget') {
+      Check 'forget-install' { Silent forget-install @(); 'silent, all languages' }
+      Typing forget 600
+      Silent-Uninstall forget
       return
     }
     if ($Only -eq 'picnic') {

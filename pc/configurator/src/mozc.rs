@@ -14,8 +14,12 @@ const DICTIONARY_NAME: &str = "SebType";
 /// Where the sync put other devices' words before #273; My words shows them and moves them into
 /// SebType's dictionary when it next saves.
 const OLD_SYNC_DICTIONARY: &str = "SebType sync";
-/// What the history files are: Mozc's learned conversions and predictions.
-const HISTORY: [&str; 4] = ["segment.db", "boundary.db", "cform.db", ".history.db"];
+/// What the history files are: Mozc's learned conversions, and its predictions and character forms
+/// (user_history_storage.cc names that file per OS); cform.db is older Mozcs'.
+#[cfg(windows)]
+const HISTORY: [&str; 4] = ["segment.db", "boundary.db", "history.db", "cform.db"];
+#[cfg(not(windows))]
+const HISTORY: [&str; 4] = ["segment.db", "boundary.db", ".history.db", "cform.db"];
 /// The parts of speech the window offers (State.ja-pos), as Mozc's PosType values.
 pub const POS: [u64; 6] = [1, 4, 5, 9, 8, 15]; // 名詞 固有名詞 人名 地名 組織 顔文字
 
@@ -187,7 +191,14 @@ pub fn valid_word(reading: &str, word: &str) -> bool {
             .all(|c| ('\u{3041}'..='\u{309f}').contains(&c) || c == 'ー')
 }
 
-/// Deletes Mozc's history files; Mozc must be stopped first, or it writes them back.
+/// How many of Mozc's history files there are. A running Mozc forgets them itself
+/// (core/src/mozc_inprocess.cpp, #375).
+pub fn learned(dir: &Path) -> usize {
+    HISTORY.iter().filter(|f| dir.join(f).exists()).count()
+}
+
+/// Deletes Mozc's history files, with no Mozc running (Linux without Fcitx5); how many there were.
+#[cfg_attr(windows, allow(dead_code))]
 pub fn forget(dir: &Path) -> io::Result<usize> {
     let mut n = 0;
     for f in HISTORY {

@@ -9,8 +9,12 @@
 //                                                 none runs, and return when Rime is done), for setup and the
 //                                                 Configurator; /mozc: Mozc reads its files again;
 //   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373)
+//   sebtype-server.exe /forget:zh|/forget:ja       the language's engine forgets what it learned (itself when
+//                                                 no server runs), for the Configurator (#375); returns when done;
 //                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
-//                                                 didn't take the request, 5 Rime still busy after 5 minutes
+//                                                 didn't take the request, 5 Rime still busy after 5 minutes,
+//                                                 6 something learned couldn't be deleted (server.log says what),
+//                                                 7 the server running is too old to forget
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
@@ -213,8 +217,18 @@ Reply handle(const Request &q, HANDLE pipe) {
       });
       break;
     case Op::Quit: break;
+    case Op::Forget:  // at once, under the lock: no key reaches the engine meanwhile (Mozc's goes on in the
+                      // background); never on the idle queue, the Configurator waits for it
+      if (Engine *e = core->engine(q.lang)) e->forget();
+      break;
   }
-  return state(taken, commit);
+  Reply r = state(taken, commit);
+  if (Engine *e = core->running(q.lang)) {  // for /forget
+    r.forgets = q.op == Op::Forget;
+    r.langBusy = e->busy();
+    r.forgetError = e->forgetError();
+  }
+  return r;
 }
 
 // Apps at any integrity level and in app containers (all application packages, and the restricted ones)
@@ -333,6 +347,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   else if (_wcsicmp(arg.c_str(), L"/mozc") == 0) q.op = Op::Mozc;
   else if (_wcsicmp(arg.c_str(), L"/deploy-when-idle") == 0) q.op = Op::DeployWhenIdle;
   else if (_wcsicmp(arg.c_str(), L"/mozc-when-idle") == 0) q.op = Op::MozcWhenIdle;
+  else if (_wcsicmp(arg.c_str(), L"/forget:zh") == 0) q.op = Op::Forget, q.lang = Lang::Chinese;
+  else if (_wcsicmp(arg.c_str(), L"/forget:ja") == 0) q.op = Op::Forget, q.lang = Lang::Japanese;
   else return run();
   Reply r;
   // No server: no Mozc to tell, and it reads its files when one starts.
@@ -342,19 +358,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     return code;
   };
   if (!call(Request{Op::State}, r, 5000)) {
-    // No server: Rime does it here, as Weasel's deployer did, and no server is left running (one started
-    // from an elevated Setup would be out of the apps' reach). Holding the server's mutex keeps a second
-    // Rime from starting meanwhile; an app's next key starts the server after.
+    // No server: the engine does it here (Rime as Weasel's deployer did), and no server is left running (one
+    // started from an elevated Setup would be out of the apps' reach). Holding the server's mutex keeps a
+    // second engine from starting meanwhile; an app's next key starts the server after.
     HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
     if (!single) return failed(2, "no mutex");
     if (GetLastError() != ERROR_ALREADY_EXISTS) {
       const DWORD start = GetTickCount();
-      Engine *rime = makeEngine(Lang::Chinese).release();  // never finalized: exiting ends Rime's thread
-      q.op == Op::Sync ? rime->save() : rime->deploy();  // with no server, no one types: at once
-      for (; rime->busy(); Sleep(200))
-        if (GetTickCount() - start > 300000) return failed(5, "Rime still busy after 5 minutes");
+      Engine *e = makeEngine(q.op == Op::Forget ? q.lang : Lang::Chinese).release();  // never closed: exiting ends its threads
+      q.op == Op::Sync ? e->save() : q.op == Op::Forget ? e->forget() : e->deploy();  // with no server, no one types: at once
+      for (; e->busy(); Sleep(200))
+        if (GetTickCount() - start > 300000) return failed(5, "still busy after 5 minutes");
       note(utf8(arg) + " in this process: " + std::to_string((GetTickCount() - start) / 1000) + " s");
-      return 0;
+      r.forgetError = e->forgetError();
+      return r.forgetError.empty() ? 0 : failed(6, r.forgetError.c_str());
     }
     // A server is starting: until it answers.
     CloseHandle(single);
@@ -366,10 +383,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (!up) return failed(3, "the server didn't answer");
   }
   if (!call(q, r, 5000, 60000)) return failed(4, "the server didn't take the request");
-  // Until Rime is done: setup's typing and the Configurator's next step need it.
-  for (DWORD start = GetTickCount(); r.busy; Sleep(200)) {
-    if (GetTickCount() - start > 300000) return failed(5, "Rime still busy after 5 minutes");
-    if (!call(Request{Op::State}, r, 5000)) return failed(3, "the server didn't answer");
+  if (q.op == Op::Forget && !r.forgets) return failed(7, "the server can't forget (one before #375 still runs)");
+  // Until Rime is done: setup's typing and the Configurator's next step need it. A forget waits for its engine
+  // only, not for a sync's chores waiting until typing is idle (#373).
+  for (DWORD start = GetTickCount(); q.op == Op::Forget ? r.langBusy : r.busy; Sleep(200)) {
+    if (GetTickCount() - start > 300000) return failed(5, "still busy after 5 minutes");
+    Request poll;
+    poll.lang = q.lang;  // its engine's forgetError
+    if (!call(poll, r, 5000)) return failed(3, "the server didn't answer");
   }
-  return 0;
+  return q.op == Op::Forget && !r.forgetError.empty() ? failed(6, r.forgetError.c_str()) : 0;
 }

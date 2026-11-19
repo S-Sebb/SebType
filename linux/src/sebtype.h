@@ -24,10 +24,15 @@ class Service : public fcitx::dbus::ObjectVTable<Service> {
   explicit Service(SebTypeEngine *engine) : engine_(engine) {}
   std::tuple<std::string, bool, bool, std::string> state();
   void setLanguage(const std::string &id);
+  // The Configurator's Forget learned words for zh or ja (#375), at once, between two keys: Fcitx5's
+  // SetConfig can't answer. The answer is what was left behind and why, empty when all of it is gone; any
+  // other id forgets nothing and says so.
+  std::string forget(const std::string &id);
 
  private:
   FCITX_OBJECT_VTABLE_METHOD(state, "State", "", "sbbs");
   FCITX_OBJECT_VTABLE_METHOD(setLanguage, "SetLanguage", "s", "");
+  FCITX_OBJECT_VTABLE_METHOD(forget, "Forget", "s", "s");
   SebTypeEngine *engine_;
 };
 
@@ -57,6 +62,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   Core &core() { return *core_; }
   // Draws what the core says into ic, shows its notice and tells the tray.
   void update(fcitx::InputContext *ic);
+  // Engine::forget, then its forgetError.
+  std::string forget(Lang lang);
   static std::string iconName(const std::string &icon) { return "sebtype-" + icon; }
 
  private:

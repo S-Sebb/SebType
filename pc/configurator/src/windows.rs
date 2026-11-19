@@ -221,12 +221,38 @@ pub fn redeploy_rime() -> io::Result<()> {
     server("/deploy")
 }
 
+/// The server's engine forgets before it returns (#375): it closes its files, deletes what it learned and
+/// opens new ones, with no key in between; with no server, sebtype-server.exe does it itself.
+fn forget(lang: &str) -> io::Result<()> {
+    let status = Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
+        .arg(format!("/forget:{lang}"))
+        .creation_flags(NO_WINDOW)
+        .status()?;
+    match status.code() {
+        Some(0) => {}
+        Some(7) => {
+            return Err(io::Error::other(
+                "the SebType server running is too old to forget: sign out and in, then try again",
+            ))
+        }
+        Some(6) => {
+            return Err(io::Error::other(format!(
+                "something learned couldn't be deleted (sebtype-server.exe /forget:{lang}; server.log says what)"
+            )))
+        }
+        _ => {
+            return Err(io::Error::other(format!(
+                "sebtype-server.exe /forget:{lang}: {status}"
+            )))
+        }
+    }
+    Ok(())
+}
+
 pub fn forget_rime() -> io::Result<usize> {
-    // The server holds the learned words open; /deploy starts it again.
-    server("/quit")?;
-    let n = crate::rime::forget(&rime_dir());
-    redeploy_rime()?;
-    n
+    let n = crate::rime::learned(&rime_dir())?.len();
+    forget("zh")?;
+    Ok(n)
 }
 
 /// Mozc, in SebType's server, reads its config and dictionaries when it starts: it saves and closes (before
@@ -235,8 +261,9 @@ pub fn restart_mozc() {
     let _ = server("/mozc");
 }
 pub fn forget_mozc() -> io::Result<usize> {
-    restart_mozc(); // or it would write the history back
-    crate::mozc::forget(&mozc_dir())
+    let n = crate::mozc::learned(&mozc_dir());
+    forget("ja")?;
+    Ok(n)
 }
 
 // --- Sync (#180) ---

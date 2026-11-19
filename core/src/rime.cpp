@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -250,6 +252,16 @@ class Rime final : public Engine {
     start(true);
   }
 
+  // With Rime stopped, so no database is open and no sync writes a snapshot back (#375).
+  void forget() override {
+    api_->join_maintenance_thread();  // a deploy's tasks open the user dictionaries too
+    endSession();
+    api_->finalize();
+    forgetError_ = forgetLearned();
+    start(false);
+  }
+  std::string forgetError() const override { return forgetError_; }
+
   // Saves learned words and merges the other devices' snapshots (Rime's sync, #12).
   void save() override {
     endSession();
@@ -286,6 +298,37 @@ class Rime final : public Engine {
     }
     return true;
   }
+
+  // What Rime learned: its user dictionaries (*.userdb) and their snapshots (*.userdb.txt, *.userdb.kct from
+  // older Rimes), in the sync folder too; My words' sync record stays (as the Configurator's rime.rs counts).
+  // Empty when all of it is gone, else the file or folder that failed and why.
+  std::string forgetLearned() {
+    namespace fs = std::filesystem;
+    const auto failed = [](const fs::path &p, const std::error_code &ec) {
+      const std::u8string u = p.u8string();
+      return std::string(u.begin(), u.end()) + ": " + ec.message();
+    };
+    std::error_code ec;
+    std::vector<fs::path> learned;
+    const fs::path dir = fs::u8path(paths_.userDir);
+    fs::recursive_directory_iterator it(dir, ec), end;
+    if (ec == std::errc::no_such_file_or_directory) return {};  // a profile that never learned
+    for (; !ec && it != end; it.increment(ec)) {
+      const std::string name = it->path().filename().string();
+      if (name.ends_with(".userdb") && it->is_directory(ec)) {
+        learned.push_back(it->path());
+        it.disable_recursion_pending();
+      } else if (name != "zh_my_words.userdb.txt" && (name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct"))) {
+        learned.push_back(it->path());
+      }
+      if (ec) return failed(it->path(), ec);
+    }
+    if (ec) return failed(dir, ec);
+    for (const auto &p : learned)
+      if (fs::remove_all(p, ec); ec) return failed(p, ec);  // one already gone is no error
+    return {};
+  }
+
 
   void endSession() {
     if (session_) api_->destroy_session(session_);
@@ -353,6 +396,7 @@ class Rime final : public Engine {
   RimeTraits traits_{};
   RimeSessionId session_ = 0;
   bool trim_ = false;  // a start (perhaps a deploy) ran since the last trim
+  std::string forgetError_;
   bool plain_ = false;
   std::vector<std::pair<std::string, bool>> options_;
   std::string commit_, tapStyle_ = "commit_code";

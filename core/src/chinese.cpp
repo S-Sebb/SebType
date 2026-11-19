@@ -252,6 +252,7 @@ class Chinese final : public Engine {
     changed();
   }
   void forget() override { rime_->forget(); }
+  std::string forgetError() const override { return rime_->forgetError(); }
   void reload() override { rime_->reload(); }
   void deploy() override {
     rime_->deploy();
