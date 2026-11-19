@@ -131,4 +131,21 @@
     <string name="sebtype_settings_hints">显示提示</string>
     <string name="sebtype_settings_hints_subtitle">按键角上的数字和符号</string>
     <string name="sebtype_settings_vibrate_strength">振动强度</string>
+    <!-- Updates (#422): Settings › About, the home screen's card and the notification -->
+    <string name="update_channel">更新</string>
+    <string name="update_available">SebType %1$s 已发布</string>
+    <string name="update_tap">点按下载并安装</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_check_subtitle">向 GitHub 查询 SebType 的最新版本</string>
+    <string name="update_checking">正在检查…</string>
+    <string name="update_up_to_date">SebType 已是最新版本</string>
+    <string name="update_check_failed">无法连接 GitHub，点按重试</string>
+    <string name="update_downloading">正在下载… %1$d%%</string>
+    <string name="update_allow">请允许 SebType 安装应用，然后返回</string>
+    <string name="update_installing">正在安装…</string>
+    <string name="update_download_failed">下载失败，点按重试</string>
+    <string name="update_not_sebtype">下载的不是 SebType，点按重试</string>
+    <string name="update_install_failed">Android 未安装更新：%1$s</string>
+    <string name="update_auto">自动检查更新</string>
+    <string name="update_auto_subtitle">每天一次，有新版本时发送通知</string>
 </resources>

@@ -132,4 +132,21 @@
     <string name="sebtype_settings_hints">ヒントを表示</string>
     <string name="sebtype_settings_hints_subtitle">キーの隅の数字と記号</string>
     <string name="sebtype_settings_vibrate_strength">バイブレーションの強さ</string>
+    <!-- Updates (#422): Settings › About, the home screen's card and the notification -->
+    <string name="update_channel">アップデート</string>
+    <string name="update_available">SebType %1$s が利用できます</string>
+    <string name="update_tap">タップしてダウンロードとインストール</string>
+    <string name="update_check">アップデートを確認</string>
+    <string name="update_check_subtitle">GitHub で SebType の最新リリースを確認します</string>
+    <string name="update_checking">確認中…</string>
+    <string name="update_up_to_date">SebType は最新です</string>
+    <string name="update_check_failed">GitHub に接続できません。タップして再試行</string>
+    <string name="update_downloading">ダウンロード中… %1$d%%</string>
+    <string name="update_allow">SebType にアプリのインストールを許可してから戻ってください</string>
+    <string name="update_installing">インストール中…</string>
+    <string name="update_download_failed">ダウンロードに失敗しました。タップして再試行</string>
+    <string name="update_not_sebtype">ダウンロードしたものは SebType ではありません。タップして再試行</string>
+    <string name="update_install_failed">Android がインストールしませんでした: %1$s</string>
+    <string name="update_auto">アップデートを自動で確認</string>
+    <string name="update_auto_subtitle">1 日 1 回。新しいバージョンがあれば通知します</string>
 </resources>

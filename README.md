@@ -48,13 +48,14 @@
   and English dictionaries, between your devices through a server you run yourself.
 - **Picnic.** A soft peach checkered look with a pixel pig, on the phone keyboard, the PC candidate
   window, the settings and the Windows installer.
-- **Offline and private.** Nothing leaves your device except sync to your own server, if you turn it on.
+- **Offline and private.** Nothing leaves your device except sync to your own server, if you turn it on,
+  and the phone's update check, which only asks GitHub for SebType's latest release.
 
 ## Get it
 
 | Where | How | Details |
 |---|---|---|
-| **Android** (arm64) | [Obtainium](https://obtainium.imranr.dev) with `https://github.com/S-Sebb/SebType`, then open SebType and turn it on | [docs/install.md](docs/install.md) |
+| **Android** (arm64) | `SebType-<version>-arm64-v8a.apk` from the latest release, then open SebType and turn it on; it updates itself | [docs/install.md](docs/install.md) |
 | **Linux** (KDE Plasma on Wayland, Fedora or Nobara) | `pc/linux/setup-ime.sh` from a checkout: the `sebtype` add-on over Fedora's Fcitx5, in every app, XWayland ones too | [docs/install.md](docs/install.md#linux) |
 | **Windows** (64-bit) | `SebType-setup-<version>.exe` from the [latest release](https://github.com/S-Sebb/SebType/releases/latest): SebType's own text service, with English, 中文 and 日本語 each optional | [docs/install.md](docs/install.md#windows) |
 
@@ -91,7 +92,9 @@ Bringing words from elsewhere (a Rime word list, Rime's learned words, Mozc or M
 ## Privacy
 
 - Typing stays on the device. The only network SebType uses is sync, to your server, and only once you
-  set it up.
+  set it up, and on the phone the update check: once a day, and from Settings › About, it asks GitHub for
+  SebType's latest release and sends nothing else, not even the phone's model. Settings › About turns the
+  daily check off.
 - Password fields and private tabs are always incognito: nothing new is learned from them, and the words
   learned before are still suggested. On the PCs a private tab is one the browser marks private: Chrome's
   and Edge's incognito windows, and Firefox's private windows on Windows. Firefox on Linux doesn't tell

@@ -5,8 +5,9 @@ SebType runs on an Android phone ([Android](#android)), on Linux ([Linux](#linux
 
 ## Android
 
-SebType is published as GitHub releases of `S-Sebb/sebtype`, one arm64-v8a APK per release.
-Obtainium installs and updates it straight from those releases; no token is needed. SebType's
+SebType is published as GitHub releases of `S-Sebb/sebtype`, one arm64-v8a APK per release,
+`SebType-<version>-arm64-v8a.apk`. Install the latest one; SebType updates itself from then on
+([Updates](#updates)). Obtainium works too, but isn't needed. SebType's
 application id is `dev.sebb.sebtype`, so it installs next to other keyboards such as Gboard. An update
 from a release before 2026-11, when the app was based on FUTO Keyboard (#262), keeps SebType turned on and
 picked, with your words, settings and clipboard.
@@ -18,6 +19,16 @@ picked, with your words, settings and clipboard.
 3. Leave the defaults (latest release, APK asset), tap Add, then Install.
 
 Obtainium checks for new releases like for any other app.
+
+### Updates
+
+SebType checks GitHub's latest release once a day, and from Settings › About › Check for updates (#422).
+The request is all it sends: no login, no device ID, not even the phone's model. A newer release shows
+on the settings' home screen, on About and as a notification (Android 13 and later ask whether SebType may
+notify, the first time About shows the switch). Tapping it downloads the release's APK and opens Android's
+install prompt; the first time, Android asks to allow installs from SebType. Android installs only an
+APK signed with SebType's key. The switch "Check for updates automatically" on About turns the daily
+check off. Releases from before 0.1.0 (`v0.1.30-sebtype.N`) are never offered as newer.
 
 ### Turn it on
 

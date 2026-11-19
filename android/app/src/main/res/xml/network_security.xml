@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The network is only for the user's own sync server (#12): HTTPS only, and only the system's certificate
+<!-- The network is only for the user's own sync server (#12) and the update check on GitHub (#422): HTTPS only, and only the system's certificate
      authorities, not ones the user or another app installed (H10 in #26). -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">

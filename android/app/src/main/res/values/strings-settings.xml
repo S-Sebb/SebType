@@ -135,4 +135,21 @@
     <string name="sebtype_settings_hints">Show hints</string>
     <string name="sebtype_settings_hints_subtitle">The digits and symbols in the keys\' corners</string>
     <string name="sebtype_settings_vibrate_strength">Vibration strength</string>
+    <!-- Updates (#422): Settings › About, the home screen's card and the notification -->
+    <string name="update_channel">Updates</string>
+    <string name="update_available">SebType %1$s is available</string>
+    <string name="update_tap">Tap to download and install</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_check_subtitle">Asks GitHub for SebType\'s latest release</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_up_to_date">SebType is up to date</string>
+    <string name="update_check_failed">Couldn\'t reach GitHub. Tap to try again</string>
+    <string name="update_downloading">Downloading… %1$d%%</string>
+    <string name="update_allow">Allow SebType to install apps, then come back</string>
+    <string name="update_installing">Installing…</string>
+    <string name="update_download_failed">Download failed. Tap to try again</string>
+    <string name="update_not_sebtype">The download isn\'t SebType. Tap to try again</string>
+    <string name="update_install_failed">Android didn\'t install it: %1$s</string>
+    <string name="update_auto">Check for updates automatically</string>
+    <string name="update_auto_subtitle">Once a day, with a notification when there is a new version</string>
 </resources>

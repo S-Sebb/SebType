@@ -111,8 +111,8 @@ class SyncLoginFailed : IOException("login failed")
 class SyncHttpError(val code: Int) : IOException("HTTP $code")
 
 /**
- * SebType's only network client, used only for the user's sync server (H10, #26) and its crash reports
- * (#33): HTTPS only (the app's
+ * SebType's network client for the user's sync server (H10, #26) and its crash reports (#33); the only other
+ * is the update check on GitHub ([dev.sebb.sebtype.Updates]). HTTPS only (the app's
  * network security config forbids cleartext too), Basic auth, the API of `sync-server/sebtype_sync.py`.
  */
 class SyncServer(private val account: SyncAccount) {
