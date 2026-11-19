@@ -17,7 +17,8 @@ clipboard copy, but still offer what was learned before; the toggle survives a r
 learning resumes. Then sync with a local sync-server (#12, made-up login and words): offline a learned
 word stays on the phone, back online a keyboard hide uploads it, a word in another device's folder on
 the server is offered after a sync, so are made-up Japanese and English personal words (#14), whose
-phone-side counterparts reach the phone's folder, a crash's report reaches the server's crash folder
+phone-side counterparts reach the phone's folder, a conversion picked in 日本語 reaches the server and another
+device's picked one comes first on the phone (#409), a crash's report reaches the server's crash folder
 without typed words or the login (#33), the login is in no log or plain file, and the delete button
 empties the server. Then that made-up personal data of each kind imports through the backup
 screen's Import and is offered as candidates (#11): a Rime word list and Rime learned words in 中文,
@@ -2779,6 +2780,104 @@ def sync_personal_dictionaries():
     return detail
 
 
+LEARNED_HEADER = "# SebType mozc_learned 1\n"
+
+
+def sync_learned_conversions():
+    """A conversion picked in 日本語 reaches the phone's record on the server, and one another device picked comes
+    first on the phone after a sync, its Mozc having learned it as it starts again (#409)."""
+    to_language("nihongo", "日本語")
+    kanji = candidates_for("kanji", expand=True)
+    other = "幹事"  # what the other device picked for かんじ
+    if not kanji or kanji[0] == other or other not in kanji:
+        raise Fail(f"kanji -> {kanji[:6]}, want {other} below the first")
+    picked = candidates_for("kisha")[1]
+    tap_candidate(picked)
+    os.makedirs(sync_server_dir(OTHER_DEVICE), exist_ok=True)
+    with open(
+        sync_server_dir(OTHER_DEVICE, "mozc_learned.txt"), "w", encoding="utf-8"
+    ) as f:
+        f.write(f"{LEARNED_HEADER}かんじ\t{other}\t{int(time.time())}\n")
+    sync_by_hiding()
+
+    def uploaded():
+        path = sync_server_dir(SYNC["device"], "mozc_learned.txt")
+        if not os.path.isfile(path):
+            return ""
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    record = wait_for(
+        "the phone's pick in its record on the server",
+        lambda: f"きしゃ\t{picked}\t" in (r := uploaded()) and r,
+        90,
+    )
+    wait_for(
+        "the other device's record on the phone",
+        lambda: (
+            other
+            in root(
+                f"cat /data/data/{PKG}/.mozc/mozc_learned/{OTHER_DEVICE}.txt 2>/dev/null; true"
+            )
+        ),
+        30,
+    )
+    now = candidates_for("kanji")
+    detail = f"picked {picked} for kisha, the phone's record {record.strip()!r}; kanji -> {now[:4]} after a sync"
+    if now[0] != other:
+        raise Fail(detail)
+
+    # Forget on the phone, with another pick of the other device's just downloaded: nothing picked before it comes
+    # back, even when that device later picks something else for the same reading, and the phone's record on the
+    # server is emptied (#416 review).
+    def other_record(*picks):
+        with open(
+            sync_server_dir(OTHER_DEVICE, "mozc_learned.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(LEARNED_HEADER + "".join(f"{r}\t{w}\t{t}\n" for r, w, t in picks))
+
+    def on_phone(written):
+        return written in root(
+            f"cat /data/data/{PKG}/.mozc/mozc_learned/{OTHER_DEVICE}.txt 2>/dev/null; true"
+        )
+
+    before = [
+        ("かんじ", other, int(time.time()) - 60),
+        ("せいか", "聖火", int(time.time())),
+    ]
+    other_record(*before)
+    sync_by_hiding()
+    wait_for(
+        "the other device's second pick on the phone", lambda: on_phone("聖火"), 90
+    )
+    forget(labels("日本語"))
+    to_language("nihongo", "日本語")
+    base = candidates_for("kanji")
+    after = "漢字"  # what the other device picks for かんじ after the Forget
+    if base[0] == other or after not in base[1:]:
+        raise Fail(
+            f"kanji -> {base[:4]} after forgetting 日本語, want {other} gone and {after} below the first"
+        )
+    other_record(*before, ("かんじ", after, int(time.time())))
+    sync_by_hiding()
+    wait_for(
+        "the phone's record emptied on the server",
+        lambda: uploaded() == LEARNED_HEADER,
+        90,
+    )
+    wait_for(
+        "the other device's pick after the Forget on the phone",
+        lambda: on_phone(after),
+        30,
+    )
+    kanji, seika = candidates_for("kanji"), candidates_for("seika")
+    want = [after] + [c for c in base if c != after]
+    detail += f"; after forgetting 日本語 kanji -> {base[:3]}, then {kanji[:3]} after another sync, seika -> {seika[:2]}"
+    if kanji[:3] != want[:3] or seika[0] == "聖火":
+        raise Fail(f"{detail}, want kanji -> {want[:3]}")
+    return detail
+
+
 def sync_delete_on_server():
     # The dictionaries go too (#14): the phone's and the other device's, left by sync-personal-dictionaries.
     dictionaries = [
@@ -2950,6 +3049,7 @@ try:
         sync_personal_dictionaries,
         needs=["sync-setup"],
     )
+    check("sync-learned-conversions", sync_learned_conversions, needs=["sync-setup"])
     check("sync-credentials-private", sync_credentials_private, needs=["sync-setup"])
     check(
         "sync-delete-on-server",

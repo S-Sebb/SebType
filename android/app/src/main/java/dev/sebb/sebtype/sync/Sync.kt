@@ -30,6 +30,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.HttpsURLConnection
 import dev.sebb.sebtype.Engines
+import dev.sebb.sebtype.core.NativeCore
 import android.os.UserManager
 
 /** The user's own sync server and login (#12, Decisions #2: bring your own server, its own login). */
@@ -106,13 +107,16 @@ object SyncAccountStore {
 
 class SyncLoginFailed : IOException("login failed")
 
+/** The server answered with an error status other than a login failure. */
+class SyncHttpError(val code: Int) : IOException("HTTP $code")
+
 /**
  * SebType's only network client, used only for the user's sync server (H10, #26) and its crash reports
  * (#33): HTTPS only (the app's
  * network security config forbids cleartext too), Basic auth, the API of `sync-server/sebtype_sync.py`.
  */
 class SyncServer(private val account: SyncAccount) {
-    data class RemoteFile(val device: String, val name: String, val sha256: String)
+    data class RemoteFile(val device: String, val name: String, val sha256: String, val size: Long = 0)
 
     private val auth = "Basic " + Base64.encodeToString(
         "${account.user}:${account.password}".toByteArray(), Base64.NO_WRAP)
@@ -136,7 +140,7 @@ class SyncServer(private val account: SyncAccount) {
             when(c.responseCode) {
                 in 200..299 -> return read(c)
                 401, 403 -> throw SyncLoginFailed()
-                else -> throw IOException("HTTP ${c.responseCode}")
+                else -> throw SyncHttpError(c.responseCode)
             }
         } finally {
             c.disconnect()
@@ -146,12 +150,16 @@ class SyncServer(private val account: SyncAccount) {
     fun list(): List<RemoteFile> = request("GET", "/v1/files") { c ->
         val files = JSONObject(c.inputStream.bufferedReader().readText()).getJSONArray("files")
         (0 until files.length()).map { files.getJSONObject(it) }.map {
-            RemoteFile(it.getString("device"), it.getString("name"), it.getString("sha256"))
+            RemoteFile(it.getString("device"), it.getString("name"), it.getString("sha256"), it.optLong("size"))
         }
     }
 
     fun download(file: RemoteFile): ByteArray =
         request("GET", "/v1/files/${file.device}/${file.name}") { c -> c.inputStream.use { it.readBytes() } }
+
+    /** [download], or null past [max] bytes. */
+    fun download(file: RemoteFile, max: Long): ByteArray? =
+        request("GET", "/v1/files/${file.device}/${file.name}") { c -> c.inputStream.use { MozcLearnedSync.readAtMost(it, max) } }
 
     fun upload(device: String, name: String, bytes: ByteArray) = request("PUT", "/v1/files/$device/$name", bytes) {}
 
@@ -169,7 +177,7 @@ val Context.unlocked get() = getSystemService(UserManager::class.java).isUserUnl
  * others' (study report on #3, section 6). A sync downloads the other devices' changed snapshots,
  * lets Rime merge them and write this phone's, and uploads that; Rime runs only when something
  * changed. The same folders carry the Japanese and English personal dictionaries
- * ([PersonalDictionarySync], #14). It runs in the background while the keyboard is hidden: when it
+ * ([PersonalDictionarySync], #14), and the conversions picked in 日本語 ([MozcLearnedSync], #409). It runs in the background while the keyboard is hidden: when it
  * hides (at most once a minute) and every half hour. Offline, Rime keeps learning as always and the
  * next sync takes everything along.
  */
@@ -216,10 +224,28 @@ object Sync {
         }
     }
 
-    fun onKeyboardShown() { keyboardShown = true }
+    @Volatile private var mozcReplay: MozcLearnedSync.Replay? = null
+
+    // Stopped through the keys' thread, so it lands between this keyboard's keys and the next one's; Mozc
+    // learns the records as it starts again with 日本語.
+    private fun replay(context: Context) = mozcReplay ?: synchronized(this) {
+        val app = context.applicationContext
+        mozcReplay ?: MozcLearnedSync.Replay(lazy { File(app.noBackupFilesDir, "sync/mozc-restart") }, { NativeCore.post { it() } }) {
+            if(NativeCore.running(NativeCore.JAPANESE)) {
+                NativeCore.save(NativeCore.JAPANESE)
+                NativeCore.stop(NativeCore.JAPANESE)
+            }
+        }.also { mozcReplay = it }
+    }
+
+    fun onKeyboardShown(context: Context) {
+        keyboardShown = true
+        replay(context).shown(true)
+    }
 
     fun onKeyboardHidden(context: Context) {
         keyboardShown = false
+        if(context.unlocked) replay(context).shown(false)
         val app = context.applicationContext
         val now = SystemClock.elapsedRealtime()
         val last = lastTry.get()
@@ -290,21 +316,27 @@ object Sync {
         var remote = server.list()
         val ownBefore = installationId(context)
         PersonalDictionarySync.dropOldChineseCopies(context, sync)
+        val mine = MozcLearnedSync.ownIds(Engines.mozcDir(context))
         for(file in remote) {
             val dictionary = file.name in PersonalDictionarySync.FILES
-            if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || FILE.matches(file.name))) continue
-            val local = File(sync, "${file.device}/${file.name}")
+            val picks = file.name == MozcLearnedSync.FILE
+            if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || picks || FILE.matches(file.name))) continue
+            if(picks && (file.size > MozcLearnedSync.MAX_BYTES || file.device in mine)) continue
+            val local = if(picks) File(Engines.mozcDir(context), "${MozcLearnedSync.DIR}/${file.device}.txt") else File(sync, "${file.device}/${file.name}")
             val old = local.takeIf { it.isFile }?.readBytes()
             if(old != null && sha256(old) == file.sha256) continue
-            val bytes = server.download(file)
+            // Bounded too, for a server that sends more than its list said.
+            val bytes = if(picks) server.download(file, MozcLearnedSync.MAX_BYTES) ?: continue else server.download(file)
             // The copy kept here is what the next download is compared with, so it is saved after the words.
             if(dictionary) PersonalDictionarySync.takeIn(context, file.name, bytes, old)
             local.parentFile!!.mkdirs()
             val tmp = File(local.path + ".tmp")
             tmp.writeBytes(bytes)
             if(!tmp.renameTo(local)) throw IOException("can't save a download")
-            if(!dictionary) markMerge(context)
+            if(picks) replay(context).mark() else if(!dictionary) markMerge(context)
         }
+        // Also one left pending by an earlier sync that failed after its download.
+        replay(context).arrange()
 
         if(mergeFile(context).exists() || remote.none { it.device == ownBefore }) {
             if(keyboardShown) return null
@@ -319,9 +351,12 @@ object Sync {
         val own = installationId(context) ?: return Status.Synced(System.currentTimeMillis())
         if(own != ownBefore) remote = server.list()
         val uploaded = remote.filter { it.device == own }.associate { it.name to it.sha256 }
-        val files = File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().associate { it.name to it.readBytes() }
-        (files + PersonalDictionarySync.snapshots(context)).forEach { (name, bytes) ->
-            if(uploaded[name] != sha256(bytes)) server.upload(own, name, bytes)
+        val record = File(Engines.mozcDir(context), MozcLearnedSync.FILE).takeIf { it.isFile }
+        if(record != null) MozcLearnedSync.keepOwnId(Engines.mozcDir(context), own)
+        val files = File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().associate { it.name to it.readBytes() } +
+            listOfNotNull(record?.let { MozcLearnedSync.FILE to it.readBytes() })
+        MozcLearnedSync.uploadAll((files + PersonalDictionarySync.snapshots(context)).filter { (name, bytes) -> uploaded[name] != sha256(bytes) }) { name, bytes ->
+            server.upload(own, name, bytes)
         }
         return Status.Synced(System.currentTimeMillis())
     }
