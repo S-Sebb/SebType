@@ -47,6 +47,14 @@ namespace SebType {
     public int GetXML(out IntPtr s) { s = IntPtr.Zero; return E_NOTIMPL; }
   }
 
+  // What TSF asks the app before a text service's composition starts (#376: one the app refuses).
+  [ComImport, Guid("5f20aa40-b57a-4f34-96ab-3576f377cc79"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface ITfContextOwnerCompositionSink {
+    [PreserveSig] int OnStartComposition([MarshalAs(UnmanagedType.IUnknown)] object composition, [MarshalAs(UnmanagedType.Bool)] out bool ok);
+    [PreserveSig] int OnUpdateComposition([MarshalAs(UnmanagedType.IUnknown)] object composition, [MarshalAs(UnmanagedType.IUnknown)] object range);
+    [PreserveSig] int OnEndComposition([MarshalAs(UnmanagedType.IUnknown)] object composition);
+  }
+
   [ComImport, Guid("28888fe3-c2a0-483a-a3ea-8cb1ce51ff3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   public interface ITextStoreACP {
     [PreserveSig] int AdviseSink(ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] object sink, uint mask);
@@ -179,7 +187,7 @@ namespace SebType {
   // and commit into. Edits from the app side (typed characters the input method didn't take, Clear)
   // happen outside a lock and are reported to TSF through the sink.
   [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-  public class TextStore : ITextStoreACP {
+  public class TextStore : ITextStoreACP, ITfContextOwnerCompositionSink {
     const int S_OK = 0, E_INVALIDARG = unchecked((int)0x80070057), E_NOTIMPL = unchecked((int)0x80004001);
     const int TS_E_READONLY = unchecked((int)0x80040209), TS_E_NOLOCK = unchecked((int)0x80040201), TS_E_SYNCHRONOUS = unchecked((int)0x80040205), TS_S_ASYNC = 0x00040300;
     const int CONNECT_E_ADVISELIMIT = unchecked((int)0x80040201);
@@ -202,12 +210,24 @@ namespace SebType {
     // can't wait, and queues one that can until WriteLater is let go (or drops it, DropPending) (#376).
     public bool WriteLater;
     public void DropPending() { pendingLock = 0; }
+    // An app that refuses a text service's composition (#376).
+    public bool RefuseComposition;
+    public int OnStartComposition(object composition, out bool ok) { ok = !RefuseComposition; return S_OK; }
+    public int OnUpdateComposition(object composition, object range) { return S_OK; }
+    public int OnEndComposition(object composition) { return S_OK; }
+    // The app moves the caret here just before it grants the next write that can't wait, as if the user had
+    // clicked there between a text service's read and its write (#376); -1: no move.
+    public int CaretBeforeWrite = -1;
     // A field read-only for a moment: its status says so, and it refuses a lock to write.
     bool readOnly;
     public bool ReadOnly { set { readOnly = value; sink.OnStatusChange(value ? 1u : 0u); } }
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
       if (readOnly && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) { hrSession = TS_E_READONLY; return S_OK; }
+      if (CaretBeforeWrite >= 0 && lockFlags == 0 && (flags & TS_LF_READWRITE) == TS_LF_READWRITE && (flags & TS_LF_SYNC) != 0) {
+        int at = CaretBeforeWrite; CaretBeforeWrite = -1;
+        SelStart = SelEnd = at; AppEdit(at, at, "");
+      }
       if (WriteLater && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
         pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
@@ -610,6 +630,8 @@ namespace SebType {
     public static bool ReadOnly { set { OnUi(() => { store.ReadOnly = value; return 0; }); } }
     public static bool WriteLater { set { OnUi(() => { store.WriteLater = value; if (!value) store.GrantPending(); return 0; }); } }
     public static void DropPending() { OnUi(() => { store.DropPending(); return 0; }); }
+    public static bool RefuseComposition { set { OnUi(() => { store.RefuseComposition = value; return 0; }); } }
+    public static int CaretBeforeWrite { set { OnUi(() => { store.CaretBeforeWrite = value; return 0; }); } }
     // The caret at a place in the text, as a click puts it there.
     public static void Caret(int at) { OnUi(() => { store.SelStart = store.SelEnd = at; store.AppEdit(at, at, ""); return 0; }); }
     public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }

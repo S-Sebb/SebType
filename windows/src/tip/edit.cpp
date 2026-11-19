@@ -79,20 +79,6 @@ bool readBefore(TfEditCookie ec, ITfRange *range, LONG units, std::wstring &text
   return true;
 }
 
-// Deletes the commit just before the composition, or the caret when there is none and nothing is selected:
-// 日本語's undo (#376). False, deleting nothing, when the app's text there isn't that commit.
-bool deleteBefore(TfEditCookie ec, ITfContext *context, ITfComposition *composition, const std::wstring &commit) {
-  ITfRange *range = nullptr;
-  if (composition) composition->GetRange(&range);
-  else range = caret(ec, context);
-  if (!range) return false;
-  std::wstring text;
-  const bool done = !commit.empty() && readBefore(ec, range, static_cast<LONG>(commit.size()), text) &&
-                    text == commit && SUCCEEDED(range->SetText(ec, 0, L"", 0));
-  range->Release();
-  return done;
-}
-
 }  // namespace
 
 std::string TextService::textBefore(ITfContext *context) {
@@ -147,6 +133,36 @@ HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
   return S_OK;
 }
 
+// 日本語's undo (#376): a composition over the commit, when it is just before the caret with nothing selected,
+// its text the conversion Mozc gave back. False where any of it fails, the commit left as it was.
+bool TextService::composeOver(TfEditCookie ec, ITfContext *context, const std::wstring &commit) {
+  ITfRange *range = caret(ec, context);
+  if (!range) return false;
+  std::wstring text;
+  ITfContextComposition *compose = nullptr;
+  // S_OK with no composition: the app refused it.
+  if (readBefore(ec, range, static_cast<LONG>(commit.size()), text) && text == commit &&
+      SUCCEEDED(context->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void **>(&compose))) &&
+      FAILED(compose->StartComposition(ec, range, static_cast<ITfCompositionSink *>(this), &composition_)))
+    composition_ = nullptr;
+  if (compose) compose->Release();
+  range->Release();
+  if (!composition_) return false;
+  std::string preedit;
+  for (const Segment &seg : reply_.preedit.segments) preedit += seg.text;
+  const std::wstring preedit16 = utf16(preedit);
+  ITfRange *composed = nullptr;
+  if (SUCCEEDED(composition_->GetRange(&composed))) {
+    const bool set = SUCCEEDED(composed->SetText(ec, TF_ST_CORRECTION, preedit16.c_str(), static_cast<LONG>(preedit16.size())));
+    composed->Release();
+    if (set) return true;
+  }
+  ITfComposition *failed = std::exchange(composition_, nullptr);
+  failed->EndComposition(ec);  // the commit stays where it was
+  failed->Release();
+  return false;
+}
+
 std::wstring TextService::undone(int chars) const {
   const LONG n = suffix16(committed_, chars);
   return n < 0 ? std::wstring{} : committed_.substr(committed_.size() - n);
@@ -158,8 +174,9 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wst
   reply_.commit.clear();  // applied once
   const bool japanese = reply_.lang == Lang::Japanese;
 
-  // Where the commit isn't just before the caret any more the undo stops: its conversion would type it again.
-  if (!undone.empty() && !deleteBefore(ec, context, composition_, undone)) dropUndo();
+  // Where the commit isn't just before the caret any more, or the app refuses its composition, the undo stops: its
+  // conversion would type it again.
+  if (!undone.empty() && (composition_ || !composeOver(ec, context, undone))) dropUndo();
   const bool composing = !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
 
   // The committed text goes where the composition is, or at the caret.

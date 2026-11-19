@@ -413,22 +413,29 @@ if ($Typing) {
         }
         # A field that refuses the undo's edit, or grants it only later (the key's release meanwhile), keeps its
         # commit and the text around it, and Enter doesn't type it again.
-        foreach ($case in 'refused', 'deferred', 'deferred-dropped', 'deferred-caret-moved') {
+        # The same where the app refuses the conversion's composition (the commit must not go before it can come
+        # back), and where the caret moves between the undo's read and its write.
+        foreach ($case in 'refused', 'deferred', 'deferred-dropped', 'deferred-caret-moved', 'composition-refused', 'caret-moved') {
           Check "japanese-undo-$case" {
             Field ja
-            $moved = $case -eq 'deferred-caret-moved'
+            $moved = $case -like '*caret-moved'
             if ($moved) { $tsf::SetText('ab') }
             TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
-            if ($case -eq 'refused') { $tsf::ReadOnly = $true } else { $tsf::WriteLater = $true }
+            switch ($case) {
+              'refused' { $tsf::ReadOnly = $true }
+              'composition-refused' { $tsf::RefuseComposition = $true }
+              'caret-moved' { $tsf::CaretBeforeWrite = 3 }
+              default { $tsf::WriteLater = $true }
+            }
             try {
-              Keys 'Control_L+BackSpace'; Start-Sleep 1
+              Keys 'Control_L+BackSpace'; Start-Sleep 1; $mid = $tsf::Text().Trim()
               if ($case -eq 'deferred-dropped') { $tsf::DropPending() }
-              if ($moved) { $tsf::Caret(3) }
-            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false }
+              if ($case -eq 'deferred-caret-moved') { $tsf::Caret(3) }
+            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false; $tsf::CaretBeforeWrite = -1 }
             Start-Sleep 1
             if ($moved) { Keys Escape } else { Keys Return }
             Start-Sleep 1; $t = $tsf::Text().Trim(); $want = if ($moved) { 'ab記者' } else { '記者' }
-            if ($first -ne $want -or $t -ne $want) { throw "kisha + Space + Enter gave '$first', then a $case Ctrl+Backspace and Enter or Escape '$t' (want $want)" }
+            if ($first -ne $want -or $mid -ne $want -or $t -ne $want) { throw "kisha + Space + Enter gave '$first', then a $case Ctrl+Backspace '$mid', and Enter or Escape '$t' (want $want throughout)" }
             "$first, kept"
           }
         }

@@ -121,6 +121,7 @@ class TextService final : public ITfTextInputProcessorEx,
   // The app's text just before the caret, as long as the last commit, empty when it has none, a selection, or
   // can't say: 日本語's undo deletes its commit there (#376).
   std::string textBefore(ITfContext *context);
+  bool composeOver(TfEditCookie ec, ITfContext *context, const std::wstring &commit);
   // The end of the last commit that the reply's undo deletes: chars characters, empty when it is shorter.
   std::wstring undone(int chars) const;
   // An undo that can't edit the app's text: its conversion goes, here and in the server.
