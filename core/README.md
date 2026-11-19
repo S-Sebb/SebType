@@ -8,7 +8,7 @@ library that exports it, built from `engines/mozc/src/sebtype`: `libsebtype-mozc
 `sebtype-mozc.dll` on Windows, and the phone's `libmozc.so` (#233). The transport saves Mozc's learned words
 after a commit, at most every 180 s, and when it closes. It owns what SebType's languages share:
 
-- the languages and switching: Win+Space (home ⇄ the last other language), the Shift tap for English
+- the languages and switching: Win+Space (home ⇄ the last other language; Windows keeps its own switcher), the Shift tap for English
   letters, Ctrl+Shift+F for 简/繁 and Alt+` for あ ⇄ ア (`src/core.cpp`);
 - the candidate list and paging (`src/pager.cpp`; Rime pages 6 at a time, as its settings say), and the
   phone's unpaged list and touch paths (pick a candidate by index, retype, move the cursor);

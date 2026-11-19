@@ -220,8 +220,8 @@ msgstr "候选窗"
 msgid "Candidates per page"
 msgstr "每页候选词"
 
-msgid "中文 (日本語 always shows 9)"
-msgstr "中文（日本語固定 9 个）"
+msgid "中文 and 日本語"
+msgstr "中文和日本語"
 
 msgid "Layout"
 msgstr "排列"
@@ -252,9 +252,6 @@ msgstr "单独轻按一下 Shift"
 
 msgid "System style"
 msgstr "系统样式"
-
-msgid "日本語's candidate window is drawn by Mozc itself and stays as it is."
-msgstr "日本語的候选窗由 Mozc 自己绘制，保持原样。"
 
 msgid "The candidate windows of 中文 and 日本語 both use this style."
 msgstr "中文和日本語的候选窗都使用此样式。"
