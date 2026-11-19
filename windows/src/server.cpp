@@ -108,6 +108,7 @@ Reply state(bool taken, std::string commit = {}) {
   Reply r;
   r.taken = taken;
   r.commit = commit + core->takeCommit();
+  r.deleteBefore = core->takeEdit().deleteBefore;
   r.preedit = core->preedit();
   r.page = core->page();
   r.aux = core->aux();
@@ -166,6 +167,7 @@ Reply handle(const Request &q, HANDLE pipe) {
         core->takeNotice(true);
       }
       followField(q.learning);
+      if (!q.before.empty()) core->setContext(q.before);
       taken = core->key(q.key);
       break;
     case Op::Select: core->select(q.index); break;

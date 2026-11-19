@@ -43,7 +43,7 @@ enum class Field { Text, Plain, Number, Phone, Password };
 // Mozc's request for the keys on screen: kana (romaji), letters or symbols.
 enum class Keys { Kana, Letters, Symbols };
 // What a touch keyboard does to the field's text around a commit, in characters: the text to delete
-// around the cursor first (Mozc's deletion range), and where the cursor goes after it (0: after the
+// around the cursor first (Mozc's deletion range; on the PCs too, after 日本語's undo of a commit), and where the cursor goes after it (0: after the
 // commit; -n: n characters back, as Mozc puts it inside a pair of brackets; +n: n on, over a space already there).
 // recompose: the composing text becomes the field's text from composeBefore characters before the cursor
 // to composeAfter after it, first, as it is (English reopening a word, #280); with neither, the composing

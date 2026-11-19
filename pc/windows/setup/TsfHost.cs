@@ -47,6 +47,14 @@ namespace SebType {
     public int GetXML(out IntPtr s) { s = IntPtr.Zero; return E_NOTIMPL; }
   }
 
+  // What TSF asks the app before a text service's composition starts (#376: one the app refuses).
+  [ComImport, Guid("5f20aa40-b57a-4f34-96ab-3576f377cc79"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface ITfContextOwnerCompositionSink {
+    [PreserveSig] int OnStartComposition([MarshalAs(UnmanagedType.IUnknown)] object composition, [MarshalAs(UnmanagedType.Bool)] out bool ok);
+    [PreserveSig] int OnUpdateComposition([MarshalAs(UnmanagedType.IUnknown)] object composition, [MarshalAs(UnmanagedType.IUnknown)] object range);
+    [PreserveSig] int OnEndComposition([MarshalAs(UnmanagedType.IUnknown)] object composition);
+  }
+
   [ComImport, Guid("28888fe3-c2a0-483a-a3ea-8cb1ce51ff3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   public interface ITextStoreACP {
     [PreserveSig] int AdviseSink(ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] object sink, uint mask);
@@ -179,7 +187,7 @@ namespace SebType {
   // and commit into. Edits from the app side (typed characters the input method didn't take, Clear)
   // happen outside a lock and are reported to TSF through the sink.
   [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-  public class TextStore : ITextStoreACP {
+  public class TextStore : ITextStoreACP, ITfContextOwnerCompositionSink {
     const int S_OK = 0, E_INVALIDARG = unchecked((int)0x80070057), E_NOTIMPL = unchecked((int)0x80004001);
     const int TS_E_READONLY = unchecked((int)0x80040209), TS_E_NOLOCK = unchecked((int)0x80040201), TS_E_SYNCHRONOUS = unchecked((int)0x80040205), TS_S_ASYNC = 0x00040300;
     const int CONNECT_E_ADVISELIMIT = unchecked((int)0x80040201);
@@ -198,12 +206,26 @@ namespace SebType {
     // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
     // it handled the key (#275); one that may not is granted at once all the same.
     public bool Defer, Hold;
+    // An app that grants reads at once but writes only later, from its message loop: it refuses a write that
+    // can't wait, and queues one that can until WriteLater is let go (or drops it, DropPending) (#376).
+    public bool WriteLater;
+    public void DropPending() { pendingLock = 0; }
+    // An app that refuses a text service's composition (#376), and how many it refused.
+    public bool RefuseComposition;
+    public int Refused;
+    public int OnStartComposition(object composition, out bool ok) { ok = !RefuseComposition; if (!ok) Refused++; return S_OK; }
+    public int OnUpdateComposition(object composition, object range) { return S_OK; }
+    public int OnEndComposition(object composition) { return S_OK; }
     // A field read-only for a moment: its status says so, and it refuses a lock to write.
     bool readOnly;
     public bool ReadOnly { set { readOnly = value; sink.OnStatusChange(value ? 1u : 0u); } }
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
       if (readOnly && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) { hrSession = TS_E_READONLY; return S_OK; }
+      if (WriteLater && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) {
+        if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
+        pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
+      }
       if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
         pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
@@ -600,6 +622,12 @@ namespace SebType {
     static void Left() { store.SelStart = store.SelEnd = Math.Max(0, store.SelStart - 1); store.AppEdit(store.SelStart, store.SelEnd, ""); }
     // Whether a key is down as this thread's keyboard state has it (GetKeyState).
     public static bool ReadOnly { set { OnUi(() => { store.ReadOnly = value; return 0; }); } }
+    public static bool WriteLater { set { OnUi(() => { store.WriteLater = value; if (!value) store.GrantPending(); return 0; }); } }
+    public static void DropPending() { OnUi(() => { store.DropPending(); return 0; }); }
+    public static bool RefuseComposition { set { OnUi(() => { store.RefuseComposition = value; if (value) store.Refused = 0; return 0; }); } }
+    public static int Refused { get { return OnUi(() => store.Refused); } }
+    // The caret at a place in the text, as a click puts it there.
+    public static void Caret(int at) { OnUi(() => { store.SelStart = store.SelEnd = at; store.AppEdit(at, at, ""); return 0; }); }
     public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
     // A key down or up in this thread's keyboard state only, as a modal loop that took a key leaves it.
     public static void SetKey(int vk, bool down) {

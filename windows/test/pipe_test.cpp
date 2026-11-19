@@ -117,18 +117,29 @@ Took timed(Guarded &g, Op op = Op::Key) {
 
 }  // namespace
 
-// A reply from a server before #375 (no forgets, langBusy, forgetError) still decodes; one from a newer one
-// carries them.
+// A reply from a server before #375 (no forgets, langBusy, forgetError) or #376 (no deleteBefore) still decodes;
+// one from a newer one carries them. So does a request from a text service before #376 (no before).
 void replySuffix() {
   Reply now;
   now.commit = "x", now.busy = true, now.forgets = true, now.langBusy = true, now.forgetError = "segment.db: denied";
+  now.deleteBefore = 2;
   const std::string full = encode(now);
   Reply r;
-  CHECK(decode(full, r) && r.commit == "x" && r.busy && r.forgets && r.langBusy && r.forgetError == now.forgetError);
-  const std::string old = full.substr(0, full.size() - (2 + 4 + now.forgetError.size()));
+  CHECK(decode(full, r) && r.commit == "x" && r.busy && r.forgets && r.langBusy && r.forgetError == now.forgetError &&
+        r.deleteBefore == 2);
+  const std::string before376 = full.substr(0, full.size() - 4);
+  CHECK(decode(before376, r) && r.forgets && r.forgetError == now.forgetError && r.deleteBefore == 0);
+  const std::string old = before376.substr(0, before376.size() - (2 + 4 + now.forgetError.size()));
   Reply o;
   CHECK(decode(old, o) && o.commit == "x" && o.busy && !o.forgets && !o.langBusy && o.forgetError.empty());
   CHECK(!decode(full.substr(0, full.size() - 1), o));  // cut short within the suffix
+
+  Request q = key();
+  q.before = "今日の記者";
+  const std::string asked = encode(q);
+  Request d;
+  CHECK(decode(asked, d) && d.before == q.before && d.key.sym == q.key.sym);
+  CHECK(decode(asked.substr(0, asked.size() - 4 - q.before.size()), d) && d.before.empty());
 }
 
 int main() {

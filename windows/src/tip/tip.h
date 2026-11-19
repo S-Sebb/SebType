@@ -94,7 +94,8 @@ class TextService final : public ITfTextInputProcessorEx,
   const Reply &reply() const { return reply_; }
 
   // For the edit sessions (edit.cpp).
-  HRESULT update(TfEditCookie ec, ITfContext *context);
+  // undone: the commit 日本語's undo deletes first (#376), in the session apply asked for at once.
+  HRESULT update(TfEditCookie ec, ITfContext *context, const std::wstring &undone = {});
   HRESULT endComposition(TfEditCookie ec, ITfContext *context);
   // Puts text where a composition is (replacing its pinyin or kana), the caret after it, and ends it.
   static void endComposition(TfEditCookie ec, ITfContext *context, ITfComposition *composition,
@@ -117,6 +118,14 @@ class TextService final : public ITfTextInputProcessorEx,
   // are (as Mozc did), or a private one, where nothing typed is learned (#270).
   enum class Field { Unknown, Text, Private, Password };
   Field field(ITfContext *context);
+  // The app's text just before the caret, as long as the last commit, empty when it has none, a selection, or
+  // can't say: 日本語's undo deletes its commit there (#376).
+  std::string textBefore(ITfContext *context);
+  bool composeOver(TfEditCookie ec, ITfContext *context, const std::wstring &commit);
+  // The end of the last commit that the reply's undo deletes: chars characters, empty when it is shorter.
+  std::wstring undone(int chars) const;
+  // An undo that can't edit the app's text: its conversion goes, here and in the server.
+  void dropUndo();
   void setOpen();
   void focus(ITfDocumentMgr *focus);
   // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.
@@ -166,6 +175,7 @@ class TextService final : public ITfTextInputProcessorEx,
   HWND replayWindow_ = nullptr;        // sets each replayed key's keyboard state, and paces them
   BYTE realState_[256]{};              // the keyboard state before the replay, put back after it
   bool settling_ = false;               // an edit committing what showed when the server stopped answering
+  std::wstring committed_;             // the last text committed, for textBefore and the undo
   bool rejected_ = false;              // the app refused that edit: asked for again at the next key
   bool replaying_ = false;             // the replayed keys are the app's: the text service lets them by
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does

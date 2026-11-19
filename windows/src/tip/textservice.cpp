@@ -519,6 +519,14 @@ wchar_t TextService::typedChar(WPARAM wParam, LPARAM lParam) {
   return n == 1 && ch[0] >= 0x20 && ch[0] != 0x7f ? ch[0] : 0;
 }
 
+void TextService::dropUndo() {
+  reply_.preedit = {};
+  reply_.page = {};
+  reply_.aux.clear();
+  Reply dropped;
+  server.call(Request{Op::Reset}, dropped);
+}
+
 bool TextService::send(const Request &request) {
   if (server.call(request, reply_)) {
     warned_ = false;
@@ -629,18 +637,25 @@ void TextService::stopWatching() {
 }
 
 void TextService::apply(ITfContext *context) {
+  // 日本語's undo (#376) edits now or not at all: later, the app's text or this reply may have changed. Where the
+  // app can't grant the edit at once, its commit stays and its conversion goes.
+  const int deleting = std::exchange(reply_.deleteBefore, 0);
+  const std::wstring commit = deleting > 0 ? undone(deleting) : std::wstring{};
+  if (deleting > 0 && commit.empty()) dropUndo();
   // A settling edit the app refused (a field read-only for a moment) is asked for again at the next key:
   // dropping it would let the server's next reply replace what it commits.
   if (context && FAILED(editSession(
                      context, clientId_,
-                     [this, context](TfEditCookie ec) {
-                       const HRESULT hr = update(ec, context);
+                     [this, context, commit](TfEditCookie ec) {
+                       const HRESULT hr = update(ec, context, commit);
                        rejected_ = false;
                        if (std::exchange(settling_, false)) replay();
                        return hr;
                      },
-                     false)))
+                     !commit.empty()))) {
     rejected_ = settling_;
+    if (!commit.empty()) dropUndo();
+  }
   if (button_) button_->update();
   watchReadiness();
 }
@@ -729,6 +744,8 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.lang = lang_;
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
+  if (q.key.sym == 0xff08 && (q.key.mods & mod::Ctrl) && !release && lang_ == Lang::Japanese)
+    q.before = textBefore(context);
   // Behind a settling edit, every key waits its turn, whether or not the server answers again: its reply would
   // replace what the edit commits. Key-ups and modifiers are the app's.
   if (settling_) {

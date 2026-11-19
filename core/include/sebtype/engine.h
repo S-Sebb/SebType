@@ -55,7 +55,7 @@ class Engine {
 
   // Touch keyboards: the whole list up to max (by default from candidateAt), the field, the keys on screen,
   // the cursor moved inside the preedit (to a character from its start), undo, and the edit around a
-  // commit.
+  // commit (the PCs too: 日本語's undo deletes its commit).
   virtual std::vector<Candidate> candidates(int max);
   virtual void setField(Field /*field*/) {}
   virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}

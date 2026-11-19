@@ -14,7 +14,7 @@ nobody's own input settings change, then removes the user and its profile:
 1. The installer's pictures: the language dialog (which must preselect Windows' own display language),
    the welcome page in English, 中文 and 日本語, then a whole install in English with the uninstaller.
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
-   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese),
+   (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese and its Ctrl+Backspace undo),
    Rime's time per key (p95 ≤ 10 ms, only with -PerfRun: the final performance run, #54) and Chinese's
    tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu) and its
    Picnic candidate window with the pig (pictures, horizontal and vertical), a silent
@@ -363,6 +363,14 @@ if ($Typing) {
           if ("$kata $hira $en $back" -ne 'ア あ a あ') { throw "Alt+`` gave '$kata', again '$hira'; Shift tap and Alt+`` '$en', Shift tap '$back'" }
           'あ → ア → あ; in English Alt+` stays English'
         }
+        # Ctrl+Backspace right after a commit (#376): undone where Notepad gives the text before the caret (記者
+        # goes and converts again, Escape gives きしゃ, which Enter commits), else nothing; never typed twice.
+        Check 'japanese-undo-commit-notepad' {
+          $first = Committed 'kisha '
+          Keys 'Control_L+BackSpace' Escape Return; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
+          if ($first -ne '記者' -or $t -notin 'きしゃ', '記者') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ, or 記者 untouched)" }
+          "$first → $(if ($t -eq '記者') { 'untouched: Notepad gave no text before the caret' } else { $t })"
+        }
       }
     } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue }
     # The tray menu (#117) of the test's own TSF text field, where the input mode button can be
@@ -394,6 +402,50 @@ if ($Typing) {
             throw "menu '$m', then a gave '$first'; menu '$m2', then '$second'"
           }
           "menu $($m -replace '\t.*') ($first), then $($m2 -replace '\t.*') ($second)"
+        }
+        # In a field whose text TSF can read and change, Ctrl+Backspace right after a commit undoes it (#376).
+        Check 'japanese-undo-commit' {
+          Field ja
+          TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+          Keys 'Control_L+BackSpace' Escape Return; Start-Sleep 1; $t = $tsf::Text().Trim()
+          if ($first -ne '記者' -or $t -notin 'きしゃ', 'キシャ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ)" }
+          "$first → $t"
+        }
+        # A field that refuses the undo's edit, or grants it only later (the key's release meanwhile), keeps its
+        # commit and the text around it, and Enter doesn't type it again.
+        # The same where the app refuses the conversion's composition (the commit must not go before it can come
+        # back).
+        foreach ($case in 'refused', 'deferred', 'deferred-dropped', 'deferred-caret-moved', 'composition-refused') {
+          Check "japanese-undo-$case" {
+            Field ja
+            $moved = $case -eq 'deferred-caret-moved'
+            if ($moved) { $tsf::SetText('ab') }
+            TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+            switch ($case) {
+              'refused' { $tsf::ReadOnly = $true }
+              'composition-refused' { $tsf::RefuseComposition = $true }
+              default { $tsf::WriteLater = $true }
+            }
+            try {
+              Keys 'Control_L+BackSpace'; Start-Sleep 1; $mid = $tsf::Text().Trim()
+              if ($case -eq 'composition-refused' -and $tsf::Refused -eq 0) { throw 'the undo started no composition for the app to refuse' }
+              if ($case -eq 'deferred-dropped') { $tsf::DropPending() }
+              if ($moved) { $tsf::Caret(3) }
+            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false; $tsf::RefuseComposition = $false }
+            Start-Sleep 1
+            if ($moved) { Keys Escape } else { Keys Return }
+            Start-Sleep 1; $t = $tsf::Text().Trim(); $want = if ($moved) { 'ab記者' } else { '記者' }
+            if ($first -ne $want -or $mid -ne $want -or $t -ne $want) { throw "kisha + Space + Enter gave '$first', then a $case Ctrl+Backspace '$mid', and Enter or Escape '$t' (want $want throughout)" }
+            "$first, kept"
+          }
+        }
+        # A commit over 32 UTF-16 units is undone too: 35 kana go and compose again, which Escape drops.
+        Check 'japanese-undo-long-commit' {
+          Field ja
+          TypeText ('aiueo' * 7); Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+          Keys 'Control_L+BackSpace' Escape Escape; Start-Sleep 1; $t = $tsf::Text().Trim()
+          if ($first -ne ('あいうえお' * 7) -or $t -ne '') { throw "35 kana + Enter gave '$first', then Ctrl+Backspace and Escape '$t' (want nothing)" }
+          "35 kana, undone"
         }
         Check 'picnic-window' $picnic
       } finally { $tsf::Stop() }

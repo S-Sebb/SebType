@@ -289,7 +289,7 @@ fi
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
 # can't see it) running SebType's input method (#190) on a second fake account set up by setup-ime.sh: Shift tap toggles
 # あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` toggles あ ⇄ ア and leaves
-# English alone (#117); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
+# English alone (#117), Ctrl+Backspace right after a commit undoes it only there (#376); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
 # checked on the desktop (pc/linux/README.md). Its fcitx5 is found by the fake HOME in its environment and
 # stopped afterwards.
 mozc_keys() {
@@ -305,7 +305,8 @@ from gi.repository import Gio, GLib
 SHIFT, CTRL, ALT = 1, 4, 8
 KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'Alt_L': (0xffe9, 64), 'Escape': (0xff1b, 9),
         'Return': (0xff0d, 36), 'Tab': (0xff09, 23), 'space': (0x20, 65), 'a': (0x61, 38), 'k': (0x6b, 45),
-        'K': (0x4b, 45), 'grave': (0x60, 49), 'Katakana': (0xff26, 101), 'Hiragana': (0xff25, 102)}
+        'K': (0x4b, 45), 'grave': (0x60, 49), 'Katakana': (0xff26, 101), 'Hiragana': (0xff25, 102),
+        'BackSpace': (0xff08, 22), 'i': (0x69, 31), 's': (0x73, 39), 'h': (0x68, 43)}
 MODS = {'Shift_L': SHIFT, 'Control_L': CTRL, 'Alt_L': ALT}
 
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype,kimpanel'],
@@ -383,6 +384,51 @@ shift_tap(); check('Shift tap in ア turns English on', mode(), 'A')
 chord('Alt_L', 'grave'); check('Alt+` in English stays English', mode(), 'A')
 shift_tap(); check('Shift tap in English is ア again', mode(), 'ア')
 chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'sebtype-hira'))
+# Ctrl+Backspace right after a commit (#376), in fields that keep their text as an app does (the caret at its
+# end) and say it to Fcitx5 (surrounding text) or not: the commit goes and converts again as before Enter, and
+# Escape gives its reading back; but never in another field, or where the app can't delete it.
+def field(surrounding, text=''):
+    global ic
+    if ic: call(ic, IC, 'FocusOut')
+    ic = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+              '(a(ss))', [('program', 'sebtype-test')])[0]
+    doc = {'text': text, 'deleted': []}
+    def on_doc(_c, _s, _p, _i, name, params):
+        if name == 'CommitString': doc['text'] += params.unpack()[0]
+        elif name == 'DeleteSurroundingText':
+            offset, n = params.unpack(); doc['deleted'].append((offset, n))
+            end = len(doc['text']) + offset
+            doc['text'] = doc['text'][:end] + doc['text'][end + n:]
+        elif name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+        else: return
+        doc['sync'] = True
+    bus.signal_subscribe(None, IC, None, ic, None, 0, on_doc)
+    call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39 | (1 << 6 if surrounding else 0))
+    call(ic, IC, 'FocusIn')
+    doc['sync'] = surrounding
+    def say():  # the app's text and caret, after each change, as apps tell it
+        if surrounding and doc.pop('sync', False):
+            n = len(doc['text']); call(ic, IC, 'SetSurroundingText', '(suu)', doc['text'], n, n)
+    doc['say'] = say; say()
+    return doc
+def typed(doc, keys):
+    for k in keys:
+        if k == 'ctrl-bs': chord('Control_L', 'BackSpace')
+        else: tap(k)
+        doc['say']()
+    return doc['text'], preedit[0]
+convert = [*'kisha', 'space', 'Return']
+doc = field(True)
+check('Ctrl+Backspace after a commit deletes it and converts it again',
+      (typed(doc, convert), typed(doc, ['ctrl-bs']), typed(doc, ['Escape']), typed(doc, ['Return']), doc['deleted']),
+      (('記者', ''), ('', '記者'), ('', 'きしゃ'), ('きしゃ', ''), [(-2, 2)]))
+typed(doc, convert)
+other = field(True, 'abcd')
+check('Ctrl+Backspace in another field after a commit leaves its text', (typed(other, ['ctrl-bs']), other['deleted']),
+      (('abcd', ''), []))
+plain = field(False)
+check('Ctrl+Backspace after a commit leaves it where the app has no surrounding text',
+      (typed(plain, convert), typed(plain, ['ctrl-bs', 'Escape', 'Return'])), (('記者', ''), ('記者', '')))
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY

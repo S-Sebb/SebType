@@ -42,6 +42,7 @@ struct Request {
   Lang lang = Lang::English;
   bool learning = true;  // false in a private field (a browser's private window): nothing typed is learned
   uint32_t client = 0;   // the app (its process id), from pipe.h's Guarded; 0 from a text service before #275
+  std::string before;    // Ctrl+Backspace in 日本語: the app's text just before the caret, if it can say (#376)
 };
 
 // Which app's typing the server's one core holds: the last to send a key or a pick. A Reset (pipe.h's Guarded)
@@ -72,6 +73,7 @@ struct Reply {
   bool forgets = false;
   bool langBusy = false;
   std::string forgetError;
+  int32_t deleteBefore = 0;  // characters before the caret to delete first: 日本語's undo of a commit (#376)
 };
 
 // Little-endian lengths and values, strings as UTF-8.
@@ -122,6 +124,7 @@ inline std::string encode(const Request &r) {
   w.u32(static_cast<uint32_t>(r.op));
   w.u32(r.key.sym), w.u32(r.key.mods), w.b(r.key.release);
   w.i32(r.index), w.b(r.next), w.u32(static_cast<uint32_t>(r.lang)), w.b(r.learning), w.u32(r.client);
+  w.s(r.before);
   return w.out;
 }
 
@@ -134,6 +137,7 @@ inline bool decode(const std::string &in, Request &r) {
   // the shorter request, without learning: it learns, as it did. An older server ignores the extra bytes.
   r.learning = rd.atEnd() || rd.b();
   r.client = rd.atEnd() ? 0 : rd.u32();
+  r.before = rd.atEnd() ? std::string{} : rd.s();
   return rd.ok();
 }
 
@@ -153,7 +157,7 @@ inline std::string encode(const Reply &r) {
   for (const auto &m : r.menu) {
     w.u32(m.kind), w.s(m.label), w.s(m.icon), w.b(m.checked), w.u32(static_cast<uint32_t>(m.lang));
   }
-  w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError);
+  w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError), w.i32(r.deleteBefore);
   return w.out;
 }
 
@@ -176,6 +180,8 @@ inline bool decode(const std::string &in, Reply &r) {
   }
   r.notice = rd.s(), r.busy = rd.b();
   if (!rd.atEnd()) r.forgets = rd.b(), r.langBusy = rd.b(), r.forgetError = rd.s();
+  // A server from before #376 sends no deletion; an older text service ignores it.
+  r.deleteBefore = rd.atEnd() ? 0 : rd.i32();
   return rd.ok();
 }
 

@@ -160,7 +160,14 @@ class Mozc final : public Engine {
     // In English letters only the keys that may turn Japanese on (Hankaku/Zenkaku, Kana…) go to the server.
     if (direct_ && !isImeKey(in.key())) return false;
     if (!touch_) in.mutable_key()->set_mode(kana_);
+    // The PCs: Mozc's undo may delete its last commit only where it is, just before the caret (#376).
+    const std::string before = std::exchange(before_, {});
+    undoable_ = !lastCommit_.empty() && before.ends_with(lastCommit_);
     return send(in);
+  }
+  // The PCs give the text before the caret for Ctrl+Backspace alone, and none where the app can't delete it.
+  void setContext(const std::string &before, const std::string &, bool selection) override {
+    if (!touch_) before_ = selection ? std::string{} : before;
   }
 
   std::string takeCommit() override { return std::exchange(commit_, {}); }
@@ -174,6 +181,7 @@ class Mozc final : public Engine {
     // The phone also forgets the text before the cursor that Mozc predicts from (its client's resetContext).
     if (touch_) command(SessionCommand::RESET_CONTEXT);
     else if (!preedit_.empty() || !page_.empty()) command(SessionCommand::REVERT);
+    lastCommit_.clear();  // focus moved or the app reset: Mozc's undo is not this field's
   }
 
   Page page() override { return page_; }
@@ -443,8 +451,8 @@ class Mozc final : public Engine {
     return false;
   }
 
-  // fcitx5-mozc's MozcResponseParser; on the phone also what Mozc's Android client read: the whole list,
-  // the text to delete and where the cursor goes after a commit.
+  // fcitx5-mozc's MozcResponseParser, with the text to delete; on the phone also what Mozc's Android client
+  // read: the whole list and where the cursor goes after a commit.
   bool parse(const Output &out) {
     // A status may carry only undo_available (Session::MaybeSetUndoStatus, after a commit): its unset
     // activated would read as English letters, as on a switch away from 日本語 after typing (#190).
@@ -475,8 +483,11 @@ class Mozc final : public Engine {
       }
       if (out.has_candidate_window() && out.candidate_window().has_focused_index())
         focused_ = static_cast<int>(out.candidate_window().focused_index());
-    } else if (out.has_result()) {
-      commit_ += out.result().value();
+    } else {
+      if (out.has_result()) commit_ += out.result().value(), lastCommit_ = out.result().value();
+      // Mozc's undo of its last commit (Ctrl+Backspace): the PCs leave the cursor after a commit, so all of it
+      // is before the cursor.
+      if (out.has_deletion_range()) edit_.deleteBefore = out.deletion_range().length();
     }
     preedit_ = {};
     if (out.has_preedit()) {
@@ -495,6 +506,13 @@ class Mozc final : public Engine {
     ids_.clear();
     aux_.clear();
     if (out.has_candidate_window()) parseCandidates(out.candidate_window());
+    // Ctrl+Backspace only asks for the undo (Session::RequestUndo): it comes with this command, as
+    // fcitx5-mozc sends it, where the commit is still just before the caret (key()). Only the last one.
+    if (!touch_ && out.has_callback() && out.callback().session_command().type() == SessionCommand::UNDO &&
+        std::exchange(undoable_, false)) {
+      lastCommit_.clear();
+      command(out.callback().session_command());
+    }
     return true;
   }
 
@@ -566,6 +584,10 @@ class Mozc final : public Engine {
   bool direct_ = false;
   CompositionMode kana_ = mozc::commands::HIRAGANA;
   std::string commit_, aux_;
+  // The PCs' undo: Mozc's last commit, the text before the caret the next key comes with, and whether it
+  // ends with that commit.
+  std::string lastCommit_, before_;
+  bool undoable_ = false;
   Preedit preedit_;
   Page page_;
   std::vector<int32_t> ids_;

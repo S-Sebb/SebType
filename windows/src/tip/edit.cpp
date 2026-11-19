@@ -48,7 +48,54 @@ LONG length16(const std::string &text, size_t bytes) {
   return static_cast<LONG>(utf16(text.substr(0, std::min(bytes, text.size()))).size());
 }
 
+// The UTF-16 length of the last chars characters of text, or -1 when it has fewer.
+LONG suffix16(const std::wstring &text, int chars) {
+  size_t at = text.size();
+  for (; chars > 0 && at > 0; --chars)
+    if (--at > 0 && IS_LOW_SURROGATE(text[at]) && IS_HIGH_SURROGATE(text[at - 1])) --at;
+  return chars ? -1 : static_cast<LONG>(text.size() - at);
+}
+
+// The empty selection, or none (null).
+ITfRange *caret(TfEditCookie ec, ITfContext *context) {
+  TF_SELECTION sel{};
+  ULONG n = 0;
+  BOOL empty = FALSE;
+  if (FAILED(context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) || !n) return nullptr;
+  if (SUCCEEDED(sel.range->IsEmpty(ec, &empty)) && empty) return sel.range;
+  sel.range->Release();
+  return nullptr;
+}
+
+// Up to units UTF-16 units of the app's text before range, read whole, or false.
+bool readBefore(TfEditCookie ec, ITfRange *range, LONG units, std::wstring &text) {
+  LONG moved = 0;
+  ULONG got = 0;
+  range->Collapse(ec, TF_ANCHOR_START);
+  if (FAILED(range->ShiftStart(ec, -units, &moved, nullptr))) return false;
+  text.assign(static_cast<size_t>(-moved), L'\0');
+  if (FAILED(range->GetText(ec, 0, text.data(), static_cast<ULONG>(text.size()), &got)) || got != text.size())
+    return false;
+  return true;
+}
+
 }  // namespace
+
+std::string TextService::textBefore(ITfContext *context) {
+  std::wstring text;
+  if (committed_.empty()) return {};
+  editSession(
+      context, clientId_,
+      [&](TfEditCookie ec) {
+        if (ITfRange *range = caret(ec, context)) {
+          if (!readBefore(ec, range, static_cast<LONG>(committed_.size()), text)) text.clear();
+          range->Release();
+        }
+        return S_OK;
+      },
+      true, TF_ES_READ);
+  return utf8(text);
+}
 
 void TextService::endComposition(TfEditCookie ec, ITfContext *context, ITfComposition *composition,
                                  const std::wstring &text) {
@@ -86,15 +133,55 @@ HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
   return S_OK;
 }
 
-HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
+// 日本語's undo (#376): a composition over the commit, when it is just before the caret with nothing selected,
+// its text the conversion Mozc gave back. False where any of it fails, the commit left as it was.
+bool TextService::composeOver(TfEditCookie ec, ITfContext *context, const std::wstring &commit) {
+  ITfRange *range = caret(ec, context);
+  if (!range) return false;
+  std::wstring text;
+  ITfContextComposition *compose = nullptr;
+  // S_OK with no composition: the app refused it.
+  if (readBefore(ec, range, static_cast<LONG>(commit.size()), text) && text == commit &&
+      SUCCEEDED(context->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void **>(&compose))) &&
+      FAILED(compose->StartComposition(ec, range, static_cast<ITfCompositionSink *>(this), &composition_)))
+    composition_ = nullptr;
+  if (compose) compose->Release();
+  range->Release();
+  if (!composition_) return false;
+  std::string preedit;
+  for (const Segment &seg : reply_.preedit.segments) preedit += seg.text;
+  const std::wstring preedit16 = utf16(preedit);
+  ITfRange *composed = nullptr;
+  if (SUCCEEDED(composition_->GetRange(&composed))) {
+    const bool set = SUCCEEDED(composed->SetText(ec, TF_ST_CORRECTION, preedit16.c_str(), static_cast<LONG>(preedit16.size())));
+    composed->Release();
+    if (set) return true;
+  }
+  ITfComposition *failed = std::exchange(composition_, nullptr);
+  failed->EndComposition(ec);  // the commit stays where it was
+  failed->Release();
+  return false;
+}
+
+std::wstring TextService::undone(int chars) const {
+  const LONG n = suffix16(committed_, chars);
+  return n < 0 ? std::wstring{} : committed_.substr(committed_.size() - n);
+}
+
+HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wstring &undone) {
   leaving_ = false;  // SebType is typing: a notice of its profile going was for its other language
   const std::wstring commit = utf16(reply_.commit);
   reply_.commit.clear();  // applied once
   const bool japanese = reply_.lang == Lang::Japanese;
+
+  // Where the commit isn't just before the caret any more, or the app refuses its composition, the undo stops: its
+  // conversion would type it again.
+  if (!undone.empty() && (composition_ || !composeOver(ec, context, undone))) dropUndo();
   const bool composing = !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
 
   // The committed text goes where the composition is, or at the caret.
   if (!commit.empty()) {
+    committed_ = commit;
     if (composition_) {
       endComposition(ec, context, std::exchange(composition_, nullptr), commit);
     } else {

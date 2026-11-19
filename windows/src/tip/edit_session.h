@@ -34,13 +34,14 @@ class EditSession final : public ITfEditSession {
   std::atomic<long> refs_{1};
 };
 
-// Synchronous when the app allows it (from a key handler), else as soon as the app can.
+// Synchronous when the app allows it (from a key handler), else as soon as the app can; to read only, a lock a
+// read-only field grants too.
 template <class Fn>
-HRESULT editSession(ITfContext *context, TfClientId clientId, Fn fn, bool sync = true) {
+HRESULT editSession(ITfContext *context, TfClientId clientId, Fn fn, bool sync = true, DWORD lock = TF_ES_READWRITE) {
   auto *session = new EditSession(fn);
   HRESULT result = E_FAIL;
-  const HRESULT hr = context->RequestEditSession(
-      clientId, session, (sync ? TF_ES_SYNC : TF_ES_ASYNCDONTCARE) | TF_ES_READWRITE, &result);
+  const HRESULT hr =
+      context->RequestEditSession(clientId, session, (sync ? TF_ES_SYNC : TF_ES_ASYNCDONTCARE) | lock, &result);
   session->Release();
   return FAILED(hr) ? hr : result;
 }
