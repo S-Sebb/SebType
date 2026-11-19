@@ -894,6 +894,57 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
   EXPECT_EQ(en->takeEdit().deleteBefore, 0);
   EXPECT_EQ(en->takeCommit(), " ");
 }
+
+// #380: a personal word's shortcut offers it first, as in the FUTO-based app, but a space never replaces the
+// shortcut typed with it, with the model or without; not even with a dictionary word the main dictionary
+// would correct it to (the FUTO-based app's space typed "becuase" with this shortcut, "because" without).
+// Letters near a shortcut offer its word first too when the decoder ranks it first, as there; otherwise
+// they correct as usual ("becaus" to "because", with the shortcut or without).
+TEST_F(EnglishTest, APersonalWordsShortcutOffersItWithoutCorrectingToIt) {
+  Settings s;
+  s.englishWords = {{"plimbo vexter", 250, "qvz"}, {"because", 250, "becuase"}};
+  for (const std::string model : {"", EN_MODEL}) {
+    const int readies = readyCount();
+    start(model);
+    en->applySettings(s, true);
+    if (!model.empty()) {  // the model ranks once it has loaded
+      type("a");
+      en->key({0xff08, 0, false});
+      ASSERT_TRUE(ready(readies));
+    }
+    // At a sentence's start the phone types it with a capital, and the word comes capitalised too.
+    for (const auto &[typed, word, committed] :
+         {std::tuple{"qvz", "plimbo vexter", "qvz "}, {"Qvz", "Plimbo vexter", "Qvz "},
+          {"qvx", "plimbo vexter", "qvx "}, {"becuase", "because", "becuase "}, {"becaus", "", "because "}}) {
+      const std::string letters = typed;
+      type(letters.substr(0, letters.size() - 1));
+      const int ranked = readyCount();
+      type(letters.substr(letters.size() - 1));
+      if (!model.empty()) ASSERT_TRUE(ready(ranked));  // the model's ranking, which would put the phrase last
+      if (*word) EXPECT_EQ(indexOf(word), 1) << testing::PrintToString(list());  // after the typed word
+      type(" ");
+      EXPECT_EQ(en->takeCommit(), committed) << model;
+      en->clear();
+    }
+  }
+}
+
+// A personal word that is also another one's shortcut stays a word, whichever comes first (#380).
+TEST_F(EnglishTest, APersonalWordThatIsAlsoAShortcutStaysAWord) {
+  start("");
+  const PersonalWord word{"zorblax", 250, ""}, phrase{"plimbo vexter", 250, "zorblax"};
+  for (const auto &words : {std::vector{word, phrase}, std::vector{phrase, word}}) {
+    Settings s;
+    s.englishWords = words;
+    en->applySettings(s, true);
+    type("zorbl");
+    EXPECT_TRUE(lists("zorblax")) << testing::PrintToString(list());
+    en->clear();
+    type("zorblax");
+    EXPECT_TRUE(lists("plimbo vexter")) << testing::PrintToString(list());
+    en->clear();
+  }
+}
 #endif
 
 #ifdef SEBTYPE_CHINESE_MODEL

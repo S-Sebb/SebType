@@ -11,6 +11,15 @@
 
 namespace sebtype {
 
+// A personal dictionary's English word as Android's user dictionary holds it: its frequency (1..255, 250 for
+// a word added by hand), and the shortcut that offers it, if any (#380).
+struct PersonalWord {
+  std::string word;
+  int frequency = 250;
+  std::string shortcut;
+  bool operator==(const PersonalWord &) const = default;
+};
+
 struct Settings {
   // Languages that are on, in order. The first is Win+Space's home language on the PCs (#93); the phone's
   // 🌐 goes through them in this order.
@@ -25,11 +34,10 @@ struct Settings {
   // drops it (the phone's 🌐, the user's choice of 2026-11-15). A platform's, so not in the file.
   bool commitOnSwitch = true;
   // English's options on the phone (its own settings, so not in the file either): a space may correct the
-  // word typed; two spaces in a row type ". "; the personal dictionary's English words, with Android's user
-  // dictionary frequency (1..255, 250 for a word added by hand).
+  // word typed; two spaces in a row type ". "; the personal dictionary's English words.
   bool autocorrect = true;
   bool doubleSpacePeriod = false;
-  std::vector<std::pair<std::string, int>> englishWords;
+  std::vector<PersonalWord> englishWords;
 
   static Settings parse(std::string_view ini);
   std::string serialize() const;

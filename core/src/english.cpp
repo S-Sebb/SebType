@@ -59,7 +59,7 @@ constexpr float kAutocorrectThreshold = 0.185f;
 // AOSP's double-space period timeout (config_double_space_period_timeout)
 constexpr std::chrono::milliseconds kDoubleSpace{1100};
 // AOSP's user dictionary frequency scale: a word added by hand (250) gets 160 (UserBinaryDictionary).
-constexpr int kHandAddedFrequency = 250, kPersonalProbability = 160;
+constexpr int kHandAddedFrequency = 250, kPersonalProbability = 160, kShortcutProbability = 14;
 constexpr size_t kNextWords = 5;      // the model's next words asked for; blocked ones leave the list
 constexpr size_t kContextChars = 1000;  // the text before the cursor kept; the model reads 300 of it
 // How long a space waits for the model's ranking of the word before the decoder's rule decides (#310).
@@ -668,11 +668,35 @@ class English : public Engine {
       std::fprintf(stderr, "sebtype: can't make the English personal words in %s\n", path.c_str());
       return;
     }
-    for (const auto &[word, frequency] : personalWords_) {
-      const auto cps = codePoints(word);
-      if (cps.empty() || cps.size() >= size_t(kMaxWordLength)) continue;
-      const int probability = std::clamp(frequency * kPersonalProbability / kHandAddedFrequency, 1, 255);
-      const latinime::UnigramProperty unigram(false, false, false, false, probability, latinime::HistoricalInfo());
+    // As AOSP's UserBinaryDictionary, a shortcut is an entry that is not a word, offering its words as
+    // KIND_SHORTCUT candidates, which never autocorrect (below 15, a whitelist entry's). Each spelling is added
+    // once, as a word if any personal word has it, with all the words it is a shortcut for: adding it again
+    // would replace its entry, so a word that is also another's shortcut would stop being offered (#380).
+    struct Entry {
+      bool word = false;
+      int probability = 0;
+      std::vector<std::vector<int>> targets;
+    };
+    std::map<std::vector<int>, Entry> entries;
+    auto valid = [](const std::vector<int> &cps) { return !cps.empty() && cps.size() < size_t(kMaxWordLength); };
+    for (const PersonalWord &w : personalWords_) {
+      const auto cps = codePoints(w.word);
+      if (!valid(cps)) continue;
+      const int probability = std::clamp(w.frequency * kPersonalProbability / kHandAddedFrequency, 1, 255);
+      Entry &word = entries[cps];
+      word.word = true;
+      word.probability = std::max(word.probability, probability);
+      const auto shortcut = codePoints(w.shortcut);
+      if (!valid(shortcut)) continue;
+      Entry &entry = entries[shortcut];
+      entry.probability = std::max(entry.probability, probability);
+      entry.targets.push_back(cps);
+    }
+    for (auto &[cps, e] : entries) {
+      std::vector<latinime::UnigramProperty::ShortcutProperty> targets;
+      for (auto &target : e.targets) targets.emplace_back(std::move(target), kShortcutProbability);
+      const latinime::UnigramProperty unigram(false, !e.word, false, false, e.probability, latinime::HistoricalInfo(),
+                                              std::move(targets));
       personal_->dict->addUnigramEntry(latinime::CodePointArrayView(cps), &unigram);
     }
   }
@@ -844,8 +868,29 @@ class English : public Engine {
     show(strip, committed);
     if (!model_ready_ || typed_.empty()) return;
     // The model's ranking comes from the worker; a key never waits for it.
+    // A personal word's shortcut offers it first, as the FUTO-based app did (#380): the model would rank a
+    // phrase it doesn't know last. That app put first the words of the shortcut typed, in any case, and a
+    // shortcut's word the decoder ranks first, as for letters near one ("qvx" for "qvz"), and then a space
+    // corrected nothing, as by AOSP's rule above. Those words stay out of the ranking, whichever dictionary
+    // offers them; other shortcuts' words the model ranks like any other ("because" for "becaus" still
+    // corrects with a shortcut "becuase").
+    const auto lower = [](std::vector<int> cps) {
+      for (int &c : cps) c = int(lowerCase(c));
+      return cps;
+    };
+    const auto typedLower = lower(typed_);
+    shortcuts_.clear();
+    const auto add = [&](const std::string &word) {
+      if (std::find(shortcuts_.begin(), shortcuts_.end(), word) == shortcuts_.end()) shortcuts_.push_back(word);
+    };
+    for (const PersonalWord &w : personalWords_)
+      if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
+    if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
+      add(results.front().word);
     Rank rank{context_, typed, {}, typedFound, 0};
-    for (const Word &w : results) rank.candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
+    for (const Word &w : results)
+      if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) == shortcuts_.end())
+        rank.candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
     std::lock_guard g(mutex_);
     rank.gen = gen_;
     rankWanted_ = std::move(rank);
@@ -910,7 +955,9 @@ class English : public Engine {
     return std::move(rankedWords_);
   }
   void showRanking(const sebtype_lm::Ranked &ranked) {
-    show(ranked.strip, ranked.committed);
+    auto strip = shortcuts_;
+    strip.insert(strip.end(), ranked.strip.begin(), ranked.strip.end());
+    show(strip, shortcuts_.empty() ? ranked.committed : utf8(typed_));
     modelStrip_ = true;
   }
 
@@ -1167,7 +1214,7 @@ class English : public Engine {
   EnglishPaths paths_;
   std::function<void()> ready_;
   std::unique_ptr<Lexicon> main_, history_, personal_;
-  std::vector<std::pair<std::string, int>> personalWords_;
+  std::vector<PersonalWord> personalWords_;
   Layout layout_;
   std::unique_ptr<latinime::ProximityInfo> keys_;
   Field field_ = Field::Text;
@@ -1178,6 +1225,7 @@ class English : public Engine {
   std::vector<int> typed_, xs_, ys_;  // the letters typed and their touch points
   std::string context_;               // the text before them
   std::vector<std::string> strip_;
+  std::vector<std::string> shortcuts_;  // the personal words the letters typed are a shortcut for
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
   bool modelStrip_ = false;  // strip_ is the model's ranking, not the decoder's rule
   bool domains_ = false;     // the list is e-mail domains

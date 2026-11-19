@@ -238,7 +238,7 @@ void setSettings(JNIEnv *env, jclass, jstring conf) {
 }
 
 void setEnglishOptions(JNIEnv *env, jclass, jboolean autocorrect, jboolean doubleSpacePeriod, jobjectArray words,
-                       jintArray frequencies) {
+                       jintArray frequencies, jobjectArray shortcuts) {
   std::lock_guard g(lock);
   phoneOptions.autocorrect = autocorrect;
   phoneOptions.doubleSpacePeriod = doubleSpacePeriod;
@@ -248,8 +248,10 @@ void setEnglishOptions(JNIEnv *env, jclass, jboolean autocorrect, jboolean doubl
   env->GetIntArrayRegion(frequencies, 0, n, f.data());
   for (jsize i = 0; i < n; i++) {
     auto word = static_cast<jstring>(env->GetObjectArrayElement(words, i));
-    phoneOptions.englishWords.emplace_back(str(env, word), f[i]);
+    auto shortcut = static_cast<jstring>(env->GetObjectArrayElement(shortcuts, i));
+    phoneOptions.englishWords.push_back({str(env, word), f[i], shortcut ? str(env, shortcut) : ""});
     env->DeleteLocalRef(word);
+    if (shortcut) env->DeleteLocalRef(shortcut);
   }
   if (core) core->setSettings(forPhone(core->settings()));
 }
@@ -457,7 +459,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
        reinterpret_cast<void *>(setEnglishPaths)},
       {"setChineseModel", "(Ljava/lang/String;Ljava/lang/String;)V", reinterpret_cast<void *>(setChineseModel)},
       {"setSettings", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setSettings)},
-      {"setEnglishOptions", "(ZZ[Ljava/lang/String;[I)V", reinterpret_cast<void *>(setEnglishOptions)},
+      {"setEnglishOptions", "(ZZ[Ljava/lang/String;[I[Ljava/lang/String;)V", reinterpret_cast<void *>(setEnglishOptions)},
       {"settings", "()Ljava/lang/String;", reinterpret_cast<void *>(settings)},
       {"selectLanguage", "(I)V", reinterpret_cast<void *>(selectLanguage)},
       {"setField", "(IZ)V", reinterpret_cast<void *>(setField)},
