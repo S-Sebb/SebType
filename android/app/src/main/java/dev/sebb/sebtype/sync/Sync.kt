@@ -1,8 +1,6 @@
 package dev.sebb.sebtype.sync
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -159,6 +157,10 @@ class SyncServer(private val account: SyncAccount) {
     fun download(file: RemoteFile): ByteArray =
         request("GET", "/v1/files/${file.device}/${file.name}") { c -> c.inputStream.use { it.readBytes() } }
 
+    /** [download], or null past [max] bytes. */
+    fun download(file: RemoteFile, max: Long): ByteArray? =
+        request("GET", "/v1/files/${file.device}/${file.name}") { c -> c.inputStream.use { MozcLearnedSync.readAtMost(it, max) } }
+
     fun upload(device: String, name: String, bytes: ByteArray) = request("PUT", "/v1/files/$device/$name", bytes) {}
 
     fun uploadCrashReport(name: String, bytes: ByteArray) = request("PUT", "/v1/crashes/$name", bytes) {}
@@ -222,18 +224,16 @@ object Sync {
         }
     }
 
-    private val main = Handler(Looper.getMainLooper())
     @Volatile private var mozcReplay: MozcLearnedSync.Replay? = null
 
     // Stopped through the keys' thread, so it lands between this keyboard's keys and the next one's; Mozc
     // learns the records as it starts again with 日本語.
     private fun replay(context: Context) = mozcReplay ?: synchronized(this) {
-        mozcReplay ?: MozcLearnedSync.Replay(File(context.noBackupFilesDir, "sync/mozc-restart")) {
-            NativeCore.post {
-                if(running(JAPANESE)) {
-                    save(JAPANESE)
-                    stop(JAPANESE)
-                }
+        val app = context.applicationContext
+        mozcReplay ?: MozcLearnedSync.Replay(lazy { File(app.noBackupFilesDir, "sync/mozc-restart") }, { NativeCore.post { it() } }) {
+            if(NativeCore.running(NativeCore.JAPANESE)) {
+                NativeCore.save(NativeCore.JAPANESE)
+                NativeCore.stop(NativeCore.JAPANESE)
             }
         }.also { mozcReplay = it }
     }
@@ -324,7 +324,8 @@ object Sync {
             val local = if(picks) File(Engines.mozcDir(context), "${MozcLearnedSync.DIR}/${file.device}.txt") else File(sync, "${file.device}/${file.name}")
             val old = local.takeIf { it.isFile }?.readBytes()
             if(old != null && sha256(old) == file.sha256) continue
-            val bytes = server.download(file)
+            // Bounded too, for a server that sends more than its list said.
+            val bytes = if(picks) server.download(file, MozcLearnedSync.MAX_BYTES) ?: continue else server.download(file)
             // The copy kept here is what the next download is compared with, so it is saved after the words.
             if(dictionary) PersonalDictionarySync.takeIn(context, file.name, bytes, old)
             local.parentFile!!.mkdirs()
@@ -334,7 +335,7 @@ object Sync {
             if(picks) replay(context).mark() else if(!dictionary) markMerge(context)
         }
         // Also one left pending by an earlier sync that failed after its download.
-        main.post { replay(context).arrange() }
+        replay(context).arrange()
 
         if(mergeFile(context).exists() || remote.none { it.device == ownBefore }) {
             if(keyboardShown) return null

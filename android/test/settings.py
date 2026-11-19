@@ -2826,6 +2826,55 @@ def sync_learned_conversions():
     detail = f"picked {picked} for kisha, the phone's record {record.strip()!r}; kanji -> {now[:4]} after a sync"
     if now[0] != other:
         raise Fail(detail)
+
+    # Forget on the phone, with another pick of the other device's just downloaded: nothing picked before it comes
+    # back, even when that device later picks something else for the same reading, and the phone's record on the
+    # server is emptied (#416 review).
+    def other_record(*picks):
+        with open(
+            sync_server_dir(OTHER_DEVICE, "mozc_learned.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(LEARNED_HEADER + "".join(f"{r}\t{w}\t{t}\n" for r, w, t in picks))
+
+    def on_phone(written):
+        return written in root(
+            f"cat /data/data/{PKG}/.mozc/mozc_learned/{OTHER_DEVICE}.txt 2>/dev/null; true"
+        )
+
+    before = [
+        ("かんじ", other, int(time.time()) - 60),
+        ("せいか", "聖火", int(time.time())),
+    ]
+    other_record(*before)
+    sync_by_hiding()
+    wait_for(
+        "the other device's second pick on the phone", lambda: on_phone("聖火"), 90
+    )
+    forget(labels("日本語"))
+    to_language("nihongo", "日本語")
+    base = candidates_for("kanji")
+    after = "漢字"  # what the other device picks for かんじ after the Forget
+    if base[0] == other or after not in base[1:]:
+        raise Fail(
+            f"kanji -> {base[:4]} after forgetting 日本語, want {other} gone and {after} below the first"
+        )
+    other_record(*before, ("かんじ", after, int(time.time())))
+    sync_by_hiding()
+    wait_for(
+        "the phone's record emptied on the server",
+        lambda: uploaded() == LEARNED_HEADER,
+        90,
+    )
+    wait_for(
+        "the other device's pick after the Forget on the phone",
+        lambda: on_phone(after),
+        30,
+    )
+    kanji, seika = candidates_for("kanji"), candidates_for("seika")
+    want = [after] + [c for c in base if c != after]
+    detail += f"; after forgetting 日本語 kanji -> {base[:3]}, then {kanji[:3]} after another sync, seika -> {seika[:2]}"
+    if kanji[:3] != want[:3] or seika[0] == "聖火":
+        raise Fail(f"{detail}, want kanji -> {want[:3]}")
     return detail
 
 
