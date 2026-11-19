@@ -4,6 +4,8 @@
   `fetch-llama.sh`), SebType's own code under the MIT licence.
 - `bench/bench.sh`: how long the next words take after an empty field and after 20,000 characters, and how
   often the next word is predicted with each context window (#359).
+- `bench/zh-keys.sh`: the Chinese model's jobs per key on a phone, timed on its big and little cores, with the
+  app's llama.cpp build (#264, [results](../../docs/perf/2026-11-19-chinese-model.md)).
 - `english.gguf`: the model, trained by [tools/english-lm](../../tools/english-lm/README.md) (release r2, #236),
   29,670,816 bytes, sha256 `34dd561818a45c4afb3dd68a73b53ad83668d9ef50cc19a1332c76cb21e42f62`. It is
   licensed under CC BY-SA 4.0 (Decisions 6 of [the plan](../../docs/plans/android-own-keyboard.md)), with its
