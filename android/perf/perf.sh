@@ -507,8 +507,9 @@ result PASS apk "$(cat "$work/apk.out")"
 
 T=${PERF_LOCK_MINUTES:-30}
 # One of SebType's emulators, or the device ANDROID_SERIAL names, under its lock (android/emulator.sh).
+# A run stopped early fails, even with no device result recorded (a PERF_STOP app that came back, #353).
 android/emulator.sh -P "${PERF_PRIORITY:-5}" -w 1800 -m "$T" -n "sebtype perf.sh" -- "$self" --device ||
-  echo "device steps stopped early (lock timeout, no device or install failure)" >&2
+  result FAIL device "stopped early (lock timeout, no device, a PERF_STOP app back, or install failure)"
 
 python3 -I android/perf/table.py "$work" "$results" > "$out/perf.md"
 cat "$out/perf.md"
