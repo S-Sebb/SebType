@@ -12,7 +12,10 @@ browser's private window gives it, or none. In 中文 (shishi) and 日本語 (ki
 private field is not learned and the first stays first; picked in a field that may learn it is learned; and
 the private field then still suggests it first. Then the Configurator turns learning off (--learning off, as
 its Privacy switch does): the learned pick is still first and a 3rd candidate picked is not learned; turned on
-again, the learned pick is still first and the 3rd candidate picked is learned.
+again, the learned pick is still first and the 3rd candidate picked is learned. It is told again when
+sebtype.conf already says off (a try whose notice didn't reach the server). Last, an upgrade from a Configurator
+before #374, whose learning off hid what was learned (rime-ice's enable_user_dict, Mozc's NO_HISTORY): Setup's
+--migrate moves it to sebtype.conf, and the learned picks are first again while a new pick isn't learned.
 -AnyDisplay is for a PC no one sits at, or a Remote Desktop session (test-tcsbackend.sh's ONLY=private): no
 -Watch, and the display's state isn't checked.
 -Browsers then opens a local page with a focused text field in Edge (and Chrome when installed), InPrivate or
@@ -79,6 +82,13 @@ function Learning($on) {
   $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--learning', $(if ($on) { 'on' } else { 'off' }) -Wait -PassThru
   if ($p.ExitCode) { throw "sebtype-configurator --learning: exit $($p.ExitCode)" }
 }
+function Wait-Mozc($first) { for ($i = 0; $i -lt 30 -and (& $first) -cmatch '^[a-z ]*$'; $i++) { Start-Sleep 1 } }  # Mozc loads at its first key (#312)
+function Server($arg) {
+  $p = Start-Process "$env:ProgramFiles\SebType\sebtype-server.exe" -ArgumentList $arg -Wait -PassThru
+  if ($p.ExitCode) { throw "sebtype-server $($arg): exit $($p.ExitCode)" }
+}
+$conf = "$env:APPDATA\SebType\sebtype.conf"
+$learned = @{}
 function First-Is($first, $want) { $t = & $first; if ($t -ne $want) { throw "first is '$t', want '$want'" }; $t }
 
 $tsf::Start()
@@ -88,7 +98,7 @@ try {
     $first, $fourth, $third, $second = $words[$lang]
     if ($lang -eq 'zh') { Keys n i; Start-Sleep 3; Keys Escape; $tsf::Clear() }  # the first key starts the server
     Field $false
-    if ($lang -eq 'ja') { for ($i = 0; $i -lt 30 -and (& $first) -cmatch '^[a-z ]*$'; $i++) { Start-Sleep 1 } }  # Mozc loads at its first key (#312)
+    if ($lang -eq 'ja') { Wait-Mozc $first }
     $top = & $first
     Field $true; $picked = & $fourth
     Check "$lang-private-pick" { if (-not $picked -or $picked -eq $top) { throw "the 4th candidate gave '$picked' (first '$top')" }; $picked }
@@ -99,6 +109,9 @@ try {
     Check "$lang-private-keeps-learned" { $t = & $first; if ($t -ne $picked) { throw "first is '$t', want '$picked'" }; $t }
     Field $false
     # Learning off in the Configurator is the same in every field (#374), and on again learns.
+    # sebtype.conf may already say off, from a try whose notice didn't reach the server: told again all the same.
+    New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
+    [IO.File]::AppendAllText($conf, "[Learning]`nOn=false`n")
     Check "$lang-learning-off-keeps-learned" { Learning $false; First-Is $first $picked }
     $other = & $third
     Check "$lang-learning-off-pick" { if (-not $other -or $other -eq $picked) { throw "the 3rd candidate gave '$other' (first '$picked')" }; $other }
@@ -109,7 +122,39 @@ try {
       $t = & $third; if ($t -ne $other) { throw "the 3rd candidate gave '$t', want '$other'" }
       $a, $b = (& $first), (& $second); if ($other -notin $a, $b) { throw "first two are '$a', '$b', want '$other' among them" }; "$a, $b"
     }
+    $learned[$lang] = & $first
   }
+
+  # An upgrade from a Configurator before #374: its learning off, in Rime's and Mozc's own settings.
+  $patchFile = "$env:APPDATA\Rime\rime_ice.custom.yaml"
+  $patch = [IO.File]::ReadAllText($patchFile)
+  [IO.File]::WriteAllText($patchFile, ($patch -replace '(?m)^patch:(\r?\n)', "patch:`$1  translator/enable_user_dict: false`$1"))
+  $mozcDir = "$env:USERPROFILE\AppData\LocalLow\Mozc"
+  New-Item -ItemType Directory -Force $mozcDir | Out-Null
+  $f = [IO.File]::Open("$mozcDir\config1.db", 'Append'); $f.Write([byte[]](0x90, 3, 2), 0, 3); $f.Close()  # history_learning_level (50): NO_HISTORY
+  Server '/deploy'; Server '/mozc'
+  foreach ($lang in 'zh', 'ja') {
+    Lang $lang; Field $false
+    $first, $fourth = $words[$lang]
+    if ($lang -eq 'ja') { Wait-Mozc $first }
+    Check "$lang-old-learning-off-hides-learned" { $t = & $first; if ($t -eq $learned[$lang]) { throw "first is the learned '$t'" }; $t }
+  }
+  Check 'migrate' {
+    $p = Start-Process "$env:ProgramFiles\SebType\sebtype-configurator.exe" -ArgumentList '--migrate' -Wait -PassThru
+    if ($p.ExitCode) { throw "sebtype-configurator --migrate: exit $($p.ExitCode)" }
+    if ((Get-Content -Raw $conf) -notmatch '\[Learning\]\nOn=false') { throw "sebtype.conf: $(Get-Content -Raw $conf)" }
+    if ([IO.File]::ReadAllText($patchFile) -ne $patch) { throw "rime_ice.custom.yaml still has: $(Select-String enable_user_dict $patchFile)" }
+    'learning off in sebtype.conf, the old settings gone'
+  }
+  foreach ($lang in 'zh', 'ja') {
+    Lang $lang; Field $false
+    $first, $fourth = $words[$lang]
+    if ($lang -eq 'ja') { Wait-Mozc $first }
+    Check "$lang-migrated-keeps-learned" { First-Is $first $learned[$lang] }
+    $p = & $fourth
+    Check "$lang-migrated-learns-nothing" { if ($p -eq $learned[$lang]) { throw "the 4th candidate gave '$p'" }; First-Is $first $learned[$lang] }
+  }
+  Check 'learning-on-after-migration' { Learning $true; 'on' }
 
   if ($Browsers) {
     $page = "$Out\field.html"

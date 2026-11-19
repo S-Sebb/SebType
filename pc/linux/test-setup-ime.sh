@@ -622,8 +622,12 @@ rime_label() {
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
-import os, subprocess, sys, time
+import hashlib, os, re, subprocess, sys, time
 from gi.repository import Gio, GLib
+
+CONFIG1 = os.path.join(sys.argv[2], 'config1.db')
+def config1(): return os.stat(CONFIG1).st_mtime_ns, hashlib.sha256(open(CONFIG1, 'rb').read()).hexdigest()
+before = config1()
 
 fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,sebtype'],
                          stdout=subprocess.DEVNULL, stderr=open(sys.argv[1], 'w'))
@@ -773,12 +777,11 @@ fi
 # leaves no history behind (#373). The Configurator's learning off (#374) is the same everywhere, and turned on
 # again learns.
 private_field() {
-  local h=$fake/private before
+  local h=$fake/private
   mkdir -p "$h/.config/fcitx5"
   fake_run < /dev/null > /dev/null || return 1
   mkdir -p "$h/.config/mozc"
   printf '\x0a\x02\x08\x01\xc8\x02\x02' > "$h/.config/mozc/config1.db"
-  before=$(stat -c '%Y.%y %s' "$h/.config/mozc/config1.db"; sha256sum < "$h/.config/mozc/config1.db")
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 240 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" "$h/.config/mozc" "$PWD/../configurator/target/release/sebtype-configurator" <<'PY'
@@ -826,6 +829,9 @@ def commit(keys):
     return ''.join(committed)
 def rime_ready():  # Rime deploys on first use and takes no keys until then
     tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
+SETTINGS = os.path.expanduser('~/.config/sebtype/sebtype.conf')
+RIME_PATCH = os.path.expanduser('~/.local/share/fcitx5/rime/rime_ice.custom.yaml')
+learned = {}
 LANGS = {  # the first candidate, and the nth picked
     'zh': (lambda: commit([*'shishi', 'space']), lambda n: commit([*'shishi', str(n)])),
     'ja': (lambda: commit([*'kisha', 'space', 'Return']), lambda n: commit([*'kisha', *['space'] * n, 'Return'])),
@@ -856,7 +862,9 @@ for lang, (first, nth) in LANGS.items():
     field(True)
     check(f'{lang}: a sensitive field keeps what was learned', first(), picked)
     # Learning off in the Configurator is the same (#374): what was learned stays in use, a pick isn't learned.
+    # The file may already say off, from a try whose notice didn't reach Fcitx5: told again all the same.
     field(False)
+    with open(SETTINGS, 'a') as f: f.write('[Learning]\nOn=false\n')
     check(f'{lang}: the Configurator turns learning off', learning(False), True)
     if lang == 'zh': wait(rime_ready, 60)
     check(f'{lang}: learning off keeps what was learned', first(), picked)
@@ -869,6 +877,29 @@ for lang, (first, nth) in LANGS.items():
     check(f'{lang}: the same pick with learning on', nth(3), other)
     # Learned, it moves up from 3rd (Rime may keep the word committed more often ahead of it).
     check(f'{lang}: learning on again learns it', other in (first(), nth(2)), True)
+    learned[lang] = first()
+check("Mozc's config1.db untouched by learning off and on", config1(), before)
+# An upgrade from a Configurator before #374, whose learning off hid what was learned (rime-ice's
+# enable_user_dict, Mozc's NO_HISTORY): setup's --migrate moves it to sebtype.conf, which keeps using it.
+with open(RIME_PATCH) as f: patch = f.read()
+with open(RIME_PATCH, 'w') as f: f.write(re.sub(r'^patch:\n', 'patch:\n  translator/enable_user_dict: false\n', patch, count=1, flags=re.M))
+with open(CONFIG1, 'ab') as f: f.write(b'\x90\x03\x02')  # history_learning_level (50): NO_HISTORY
+call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy', GLib.Variant('s', ''))
+call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/mozc', GLib.Variant('s', ''))
+wait(rime_ready, 60)
+for lang, (first, nth) in LANGS.items():
+    check(f'{lang}: learning off before #374 hides what was learned', first() != learned[lang], True)
+migrate = subprocess.run([sys.argv[3], '--migrate'], capture_output=True, text=True, timeout=120)
+check('setup migrates learning off', (migrate.returncode, migrate.stderr), (0, ''))
+check('migrated, sebtype.conf has learning off', open(SETTINGS).read().count('[Learning]\nOn=false'), 1)
+check("migrated, rime-ice's patch is as before", open(RIME_PATCH).read(), patch)
+wait(rime_ready, 60)
+for lang, (first, nth) in LANGS.items():
+    check(f'{lang}: migrated, what was learned is back', first(), learned[lang])
+    picked = nth(4)
+    check(f'{lang}: migrated, a pick', bool(picked) and picked != learned[lang], True)
+    check(f'{lang}: migrated, learning off learns nothing', first(), learned[lang])
+check('learning on after the migration', learning(True), True)
 # Forgetting 日本語 as the Configurator does (forget_mozc): Mozc restarts at once, saving and closing, then its
 # history files go; Mozc closing later (here as Fcitx5 exits) writes nothing back (#373).
 HISTORY = [os.path.join(sys.argv[2], f) for f in ('segment.db', 'boundary.db', 'cform.db', '.history.db')]
@@ -882,9 +913,6 @@ sys.exit(0 if ok else 1)
 PY
   local rc=$? p
   for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
-  if [[ $before != "$(stat -c '%Y.%y %s' "$h/.config/mozc/config1.db"; sha256sum < "$h/.config/mozc/config1.db")" ]]; then
-    echo "FAIL Mozc's config1.db was written"; rc=1
-  else echo "PASS Mozc's config1.db untouched"; fi
   return $rc
 }
 if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null; then
