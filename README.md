@@ -56,7 +56,7 @@
 |---|---|---|
 | **Android** (arm64) | [Obtainium](https://obtainium.imranr.dev) with `https://github.com/S-Sebb/SebType`, then open SebType and turn it on | [docs/install.md](docs/install.md) |
 | **Linux** (KDE Plasma on Wayland, Fedora or Nobara) | `pc/linux/setup-ime.sh` from a checkout: the `sebtype` add-on over Fedora's Fcitx5, in every app, XWayland ones too | [docs/install.md](docs/install.md#linux) |
-| **Windows** (64-bit) | `SebType-setup-<version>.exe`: SebType's own text service, with English, 中文 and 日本語 each optional | [docs/install.md](docs/install.md#windows) |
+| **Windows** (64-bit) | `SebType-setup-<version>.exe` from the [latest release](https://github.com/S-Sebb/SebType/releases/latest): SebType's own text service, with English, 中文 and 日本語 each optional | [docs/install.md](docs/install.md#windows) |
 
 SebType's app id is `dev.sebb.sebtype`, so it installs next to other keyboards such as Gboard. On the PCs,
 **SebType Configurator** in the app menu holds the settings: languages and their order, 简/繁, fuzzy

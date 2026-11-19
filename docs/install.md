@@ -41,10 +41,8 @@ Each step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
 
 ## Windows
 
-SebType's installer, `SebType-setup-<version>.exe`, is built by the
-[Windows setup workflow](https://github.com/S-Sebb/SebType/actions/workflows/windows-setup.yml): open
-its latest successful run on `main` and download the `sebtype-setup` artifact (GitHub asks you to sign
-in; it is kept for 14 days: once it has expired, **Run workflow** on `main` there builds it again). Run it, pick the languages (English, 中文, 日本語) and confirm Windows' admin prompt. Running a newer
+Download `SebType-setup-<version>.exe` from the [latest release](https://github.com/S-Sebb/SebType/releases/latest)
+(no sign-in needed). Run it, pick the languages (English, 中文, 日本語) and confirm Windows' admin prompt. Running a newer
 installer upgrades SebType and keeps what it learned; uninstall it from Windows' Apps. What it changes,
 and the silent install: [pc/windows/README.md](../pc/windows/README.md).
 
@@ -68,9 +66,15 @@ From a clean checkout of `origin/main`:
 android/release.sh
 ```
 
-It builds the signed arm64 release APK under the shared build lock
-(`/tmp/agent-locks/sebtype/build.lock`) and runs `gh release create` with tag
-`v<android/upstream-version>-sebtype.<n>`, where `<n>` is the number of commits on main (also the version code,
-so every release from main upgrades the previous one). Needs JDK 21 in `~/.local/share/jdks/` (or
-`JAVA_HOME_21`), the Android SDK with NDK 28.2 in `~/Android/Sdk` (or `ANDROID_HOME`)
-and a logged-in `gh`.
+It publishes SebType `<version>` from the repo's `VERSION` file, the one version of the phone app and the
+Windows setup: a release tagged `v<version>` with the signed arm64 APK, built under the shared build lock
+(`/tmp/agent-locks/sebtype/build.lock`), and `SebType-setup-<version>.exe`, which the
+[Windows setup workflow](https://github.com/S-Sebb/SebType/actions/workflows/windows-setup.yml) built from
+the same commit. Each release bumps `VERSION` in its own PR, whose merge runs that workflow on main; the
+script refuses a tag that already exists, and stops before publishing anything when that commit has no
+successful run or its `sebtype-setup` artifact has expired (**Run workflow** on `main` builds it again).
+`android/release.sh --dry-run` checks the tag and downloads the setup without building or publishing, and
+`android/test/release.sh` tests the script without publishing. The APK's version code is the number of
+commits on main, so every release from main upgrades the previous one, the `0.1.30-sebtype.<n>` releases
+from when the app was based on FUTO Keyboard included. Needs JDK 21 in `~/.local/share/jdks/` (or
+`JAVA_HOME_21`), the Android SDK with NDK 28.2 in `~/Android/Sdk` (or `ANDROID_HOME`) and a logged-in `gh`.
