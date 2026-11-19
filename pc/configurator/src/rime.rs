@@ -184,7 +184,7 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     Ok(changed)
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Word {
     pub word: String,
     pub pinyin: String,
@@ -196,9 +196,9 @@ pub struct Word {
     pub above: String,
 }
 
-/// A word is its spelling and pinyin; what else its line has goes with it.
-impl PartialEq for Word {
-    fn eq(&self, other: &Self) -> bool {
+impl Word {
+    /// The same word: its spelling and pinyin (what else its line has goes with it).
+    pub fn same(&self, other: &Word) -> bool {
         (&self.word, &self.pinyin) == (&other.word, &other.pinyin)
     }
 }
@@ -277,32 +277,41 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Changes a word (the nth entry the same as old, crate::find_nth) in My words as they are now
-/// (crate::put_in_place), keeping what else its line has.
-pub fn edit_word(dir: &Path, old: &Word, n: usize, mut new: Word) -> io::Result<bool> {
-    let mut all = words(dir);
-    let at = crate::find_nth(&all, old, n, Word::eq);
-    if let Some(i) = at {
-        (new.rest, new.above) = (all[i].rest.clone(), all[i].above.clone());
-    }
+/// Changes the word at i in all, keeping what else its line has (crate::put_in_place); returns the comment
+/// lines that go to the end of My words (take_out).
+pub fn edit_in(all: &mut Vec<Word>, i: usize, mut new: Word) -> String {
+    (new.rest, new.above) = (all[i].rest.clone(), all[i].above.clone());
     let mut orphans = String::new();
-    crate::put_in_place(&mut all, at, new, Word::eq, |all, j| {
+    crate::put_in_place(all, i, new, Word::same, |all, j| {
         orphans.push_str(&take_out(all, j))
     });
-    save_with(dir, &all, &orphans)
+    orphans
 }
 
-/// Removes a word (the nth entry the same as word, as the window's row) from My words as they are now.
-pub fn remove_word(dir: &Path, word: &Word, n: usize) -> io::Result<bool> {
+/// Changes the word at i of My words as shown (edit_in). Nothing changes, and false comes back, when My
+/// words are no longer as shown (the sync or another window changed them): i may be another word now.
+pub fn edit_word(dir: &Path, shown: &[Word], i: usize, new: Word) -> io::Result<bool> {
     let mut all = words(dir);
-    let orphans =
-        crate::find_nth(&all, word, n, Word::eq).map_or(String::new(), |i| take_out(&mut all, i));
-    save_with(dir, &all, &orphans)
+    if all != shown {
+        return Ok(false);
+    }
+    let orphans = edit_in(&mut all, i, new);
+    save_with(dir, &all, &orphans).map(|_| true)
+}
+
+/// Removes the word at i of My words as shown, as edit_word.
+pub fn remove_word(dir: &Path, shown: &[Word], i: usize) -> io::Result<bool> {
+    let mut all = words(dir);
+    if all != shown {
+        return Ok(false);
+    }
+    let orphans = take_out(&mut all, i);
+    save_with(dir, &all, &orphans).map(|_| true)
 }
 
 /// Takes out the entry at i. The comment lines above it stay, above the next entry, or else returned
 /// for the end of My words.
-fn take_out(all: &mut Vec<Word>, i: usize) -> String {
+pub fn take_out(all: &mut Vec<Word>, i: usize) -> String {
     let w = all.remove(i);
     match all.get_mut(i) {
         Some(next) => {
@@ -552,6 +561,23 @@ mod tests {
         }];
         save_words(&d, &w).unwrap();
         assert_eq!(words(&d), w);
+        // The window's row: the nth entry the same as w, in My words as shown (read now).
+        let at = |w: &Word, n: usize| {
+            let shown = words(&d);
+            let i = (0..shown.len())
+                .filter(|&i| shown[i].same(w))
+                .nth(n)
+                .unwrap();
+            (shown, i)
+        };
+        let edit = |old: &Word, n, new| {
+            let (shown, i) = at(old, n);
+            assert!(edit_word(&d, &shown, i, new).unwrap());
+        };
+        let remove = |old: &Word, n| {
+            let (shown, i) = at(old, n);
+            assert!(remove_word(&d, &shown, i).unwrap());
+        };
         // Add and remove work on the file as the sync left it, not on the window's list.
         let other = Word {
             word: "噗莫".into(),
@@ -560,7 +586,7 @@ mod tests {
         };
         add_word(&d, other.clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone(), other.clone()]);
-        remove_word(&d, &w[0], 0).unwrap();
+        remove(&w[0], 0);
         assert_eq!(words(&d), [other.clone()]);
         // Edit (#410) keeps the word's place; a word edited into one already there leaves one entry.
         add_word(&d, w[0].clone()).unwrap();
@@ -569,12 +595,17 @@ mod tests {
             pinyin: "xiaolin".into(),
             ..Default::default()
         };
-        edit_word(&d, &other, 0, lin.clone()).unwrap();
+        edit(&other, 0, lin.clone());
         assert_eq!(words(&d), [lin.clone(), w[0].clone()]);
-        edit_word(&d, &lin, 0, w[0].clone()).unwrap();
+        edit(&lin, 0, w[0].clone());
         assert_eq!(words(&d), [w[0].clone()]);
-        // One the sync removed meanwhile comes back at the end.
-        edit_word(&d, &other, 0, lin.clone()).unwrap();
+        // My words changed since they were shown (the sync took one out): Edit and Delete change nothing,
+        // as the row may be another word now.
+        let shown = [other.clone(), w[0].clone()];
+        assert!(!edit_word(&d, &shown, 1, lin.clone()).unwrap());
+        assert!(!remove_word(&d, &shown, 1).unwrap());
+        assert_eq!(words(&d), [w[0].clone()]);
+        add_word(&d, lin.clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone(), lin.clone()]);
         // What else the lines have (a weight, comments between them) stays through Edit and Add.
         let head = "# rime-ice\n你好\tnihao\t1\n";
@@ -588,7 +619,7 @@ mod tests {
             pinyin: "xiaolin".into(),
             ..Default::default()
         };
-        edit_word(&d, &lin, 0, lin2).unwrap();
+        edit(&lin, 0, lin2);
         add_word(&d, other.clone()).unwrap();
         assert_eq!(
             read(&d.join(PHRASES)),
@@ -605,13 +636,13 @@ mod tests {
             pinyin: "xiaomin".into(),
             ..Default::default()
         };
-        edit_word(&d, &ming, 1, min).unwrap();
+        edit(&ming, 1, min);
         assert_eq!(
             read(&d.join(PHRASES)),
             format!("{head}{MARKER}\n小明\txiaoming\t1\n小敏\txiaomin\t2\n")
         );
         fs::write(d.join(PHRASES), &mings).unwrap();
-        remove_word(&d, &ming, 1).unwrap();
+        remove(&ming, 1);
         assert_eq!(
             read(&d.join(PHRASES)),
             format!("{head}{MARKER}\n小明\txiaoming\t1\n")
@@ -620,19 +651,19 @@ mod tests {
         let noted =
             format!("{head}{MARKER}\n# section note\n小明\txiaoming\n# lin\n小林\txiaolin\n");
         fs::write(d.join(PHRASES), &noted).unwrap();
-        remove_word(&d, &ming, 0).unwrap();
+        remove(&ming, 0);
         assert_eq!(
             read(&d.join(PHRASES)),
             format!("{head}{MARKER}\n# section note\n# lin\n小林\txiaolin\n")
         );
         fs::write(d.join(PHRASES), &noted).unwrap();
-        edit_word(&d, &lin, 0, ming.clone()).unwrap(); // 小林 into 小明, which goes
+        edit(&lin, 0, ming.clone()); // 小林 into 小明, which goes
         assert_eq!(
             read(&d.join(PHRASES)),
             format!("{head}{MARKER}\n# section note\n# lin\n小明\txiaoming\n")
         );
         fs::write(d.join(PHRASES), &noted).unwrap();
-        remove_word(&d, &lin, 0).unwrap();
+        remove(&lin, 0);
         assert_eq!(
             read(&d.join(PHRASES)),
             format!("{head}{MARKER}\n# section note\n小明\txiaoming\n# lin\n")

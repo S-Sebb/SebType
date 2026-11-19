@@ -205,6 +205,9 @@ msgstr "追加"
 msgid "Delete"
 msgstr "削除"
 
+msgid "My words changed; try again"
+msgstr "自分の単語が変わりました。もう一度お試しください"
+
 msgid "Edit"
 msgstr "編集"
 

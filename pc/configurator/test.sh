@@ -67,8 +67,9 @@ release_build() { ldd "$bin" && ! ldd "$bin" | grep -q 'not found'; }
 export -f release_build; export bin
 check release-build 60 release_build
 
-# A sandbox account, from an allowlist: SebType's Chinese data, this account's engine settings and made-up
-# My words (#410). Nothing else of this account's comes in: no dictionary, learned words, snapshots or backups.
+# A sandbox account: SebType's Chinese data, settings files written here and made-up My words (#410).
+# Nothing of this account's comes in: no dictionary, learned words, snapshot, backup or settings file,
+# which could hold its own text (Mozc's romaji table, Fcitx5's phrases) or its sync folder.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
 # What the nested sessions start (ksecretd, the Documents portal) outlives their D-Bus: stop whatever
 # still runs in the sandbox.
@@ -82,14 +83,13 @@ trap cleanup EXIT
 export -f private_dbus
 export RIME_DATA
 sandbox() { # [dir], $sb by default
-  local sb=${1:-$sb} f rime=${1:-$sb}/data/fcitx5/rime
+  local sb=${1:-$sb} rime=${1:-$sb}/data/fcitx5/rime
   mkdir -p "$sb/config/fcitx5" "$sb/config/mozc" "$rime"
-  cp -r ~/.config/fcitx5/config ~/.config/fcitx5/conf "$sb/config/fcitx5/"
-  [[ -f ~/.config/mozc/config1.db ]] && cp ~/.config/mozc/config1.db "$sb/config/mozc/"
   unzip -q "$RIME_DATA" -d "$rime"
-  for f in rime_ice.custom.yaml default.custom.yaml installation.yaml; do
-    [[ -f ~/.local/share/fcitx5/rime/$f ]] && cp ~/.local/share/fcitx5/rime/$f "$rime/"
-  done
+  # setup-ime.sh's patches as compare.sh writes them; a made-up installation without a sync folder.
+  printf 'patch:\n  sebtype_typo/keyboard: pc\n' > "$rime/rime_ice.custom.yaml"
+  printf 'patch:\n  menu/page_size: 6\n' > "$rime/default.custom.yaml"
+  printf 'installation_id: "sebtype-test-pc"\n' > "$rime/installation.yaml"
   printf '# SebType: My words\n小明\txiaoming\n张伟\tzhangwei\n' > "$sb/data/fcitx5/rime/custom_phrase.txt"
   python3 - "$sb/config/mozc/user_dictionary.db" <<'PY'
 import sys  # a UserDictionaryStorage (mozc.rs) with SebType's dictionary: せぶ → SebType, もふ → モフ
@@ -199,7 +199,6 @@ private_sync() {
   local d=$sb/sync-account rime port
   sandbox "$d"; mkdir -p "$d/server"
   rime=$d/data/fcitx5/rime
-  sed -i '/^sync_dir:/d; s/^installation_id:.*/installation_id: "sebtype-test-pc"/' "$rime/installation.yaml"
   sed -i 's|translator/enable_user_dict: false|translator/enable_user_dict: true|' "$rime/rime_ice.custom.yaml" 2>/dev/null
   rm -f "$d/config/mozc/user_dictionary.db"  # only made-up Japanese words
   port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')

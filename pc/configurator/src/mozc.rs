@@ -202,28 +202,39 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Changes a word (the nth entry the same as old, crate::find_nth) in the dictionary as it is now
-/// (crate::put_in_place), keeping the entry's other fields.
-pub fn edit_word(dir: &Path, old: &Word, n: usize, mut new: Word) -> io::Result<bool> {
-    let mut all = words(dir)?;
-    let at = crate::find_nth(&all, old, n, Word::same);
-    if let Some(i) = at {
-        new.rest = all[i].rest.clone();
+/// Changes the word at i in all, keeping the entry's other fields (crate::put_in_place). A part of speech
+/// the window doesn't offer stays unless another one is chosen.
+pub fn edit_in(all: &mut Vec<Word>, i: usize, mut new: Word) {
+    new.rest = all[i].rest.clone();
+    if new.pos == all[i].pos {
+        new.mozc_pos = all[i].mozc_pos;
     }
-    crate::put_in_place(&mut all, at, new, Word::same, |all, j| {
+    crate::put_in_place(all, i, new, Word::same, |all, j| {
         all.remove(j);
     });
-    save_words(dir, &all)
 }
 
-/// Removes a word (the nth entry the same as word, as the window's row) from the dictionary as it is
-/// now. Another entry of the same reading and spelling stays: to the sync that word is still there.
-pub fn remove_word(dir: &Path, word: &Word, n: usize) -> io::Result<bool> {
+/// Changes the word at i of the dictionary as shown (edit_in). Nothing changes, and false comes back,
+/// when the dictionary is no longer as shown (the sync or another window changed it): i may be another
+/// word now.
+pub fn edit_word(dir: &Path, shown: &[Word], i: usize, new: Word) -> io::Result<bool> {
     let mut all = words(dir)?;
-    if let Some(i) = crate::find_nth(&all, word, n, Word::same) {
-        all.remove(i);
+    if all != shown {
+        return Ok(false);
     }
-    save_words(dir, &all)
+    edit_in(&mut all, i, new);
+    save_words(dir, &all).map(|_| true)
+}
+
+/// Removes the word at i of the dictionary as shown, as edit_word. Another entry of the same reading and
+/// spelling stays: to the sync that word is still there.
+pub fn remove_word(dir: &Path, shown: &[Word], i: usize) -> io::Result<bool> {
+    let mut all = words(dir)?;
+    if all != shown {
+        return Ok(false);
+    }
+    all.remove(i);
+    save_words(dir, &all).map(|_| true)
 }
 
 /// Readings are hiragana (Mozc matches the kana the romaji turns into).
@@ -364,6 +375,23 @@ mod tests {
                 .map(|w| (w.word, w.pos, w.mozc_pos))
                 .collect()
         };
+        // The window's row: the nth entry the same as w, in the dictionary as shown (read now).
+        let at = |w: &Word, n: usize| {
+            let shown = words(&d).unwrap();
+            let i = (0..shown.len())
+                .filter(|&i| shown[i].same(w))
+                .nth(n)
+                .unwrap();
+            (shown, i)
+        };
+        let edit = |old: &Word, n, new| {
+            let (shown, i) = at(old, n);
+            assert!(edit_word(&d, &shown, i, new).unwrap());
+        };
+        let remove = |old: &Word, n| {
+            let (shown, i) = at(old, n);
+            assert!(remove_word(&d, &shown, i).unwrap());
+        };
         assert_eq!(
             shown(&d),
             [
@@ -378,7 +406,7 @@ mod tests {
             pos: 2,
             ..Default::default()
         };
-        assert!(remove_word(&d, &pul, 0).unwrap());
+        remove(&pul, 0);
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピ".into(), 0, Some(0))]
@@ -393,28 +421,24 @@ mod tests {
             rest: vec![],
         };
         let pipi = word("ぴぴ", "ピピピ", 0, Some(0));
-        assert!(edit_word(&d, &word("ぴぴ", "ピピ", 0, Some(0)), 0, pipi.clone()).unwrap());
+        edit(&word("ぴぴ", "ピピ", 0, Some(0)), 0, pipi.clone());
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピピ".into(), 0, Some(0))]
         );
-        edit_word(&d, &pipi, 0, word("ぴぴ", "ピピピ", 2, None)).unwrap();
+        edit(&pipi, 0, word("ぴぴ", "ピピピ", 2, None));
         assert_eq!(shown(&d)[1], ("ピピピ".into(), 2, None));
-        edit_word(
-            &d,
+        edit(
             &word("もふ", "モフ", 0, None),
             0,
             word("ぴぴ", "ピピピ", 2, None),
-        )
-        .unwrap();
+        );
         assert_eq!(shown(&d), [("ピピピ".into(), 2, None)]);
-        edit_word(
-            &d,
+        edit(
             &word("ぴぴ", "ピピピ", 2, None),
             0,
             word("ぴぴ", "ピピ", 0, None),
-        )
-        .unwrap();
+        );
         let all = fs::read(d.join(DICTIONARIES)).unwrap();
         let names: Vec<_> = proto::fields(&all)
             .unwrap()
@@ -440,13 +464,11 @@ mod tests {
             ..word("もふ", "モフ", 0, None)
         };
         save_words(&d, &[noun.clone(), word("もふ", "モフ", 1, None)]).unwrap();
-        edit_word(
-            &d,
+        edit(
             &word("もふ", "モフ", 1, None),
             0,
             word("もふ", "モフモフ", 1, None),
-        )
-        .unwrap();
+        );
         add_word(&d, word("ぷる", "プル", 2, None)).unwrap();
         assert_eq!(
             words(&d).unwrap(),
@@ -456,13 +478,11 @@ mod tests {
                 word("ぷる", "プル", 2, None)
             ]
         );
-        edit_word(
-            &d,
+        edit(
             &word("もふ", "モフ", 0, None),
             0,
             word("もふ", "もふ", 0, None),
-        )
-        .unwrap();
+        );
         assert_eq!(
             words(&d).unwrap()[0].rest,
             comment,
@@ -471,7 +491,7 @@ mod tests {
         // Delete too removes only the entry chosen.
         let (noun, name) = (word("もふ", "モフ", 0, None), word("もふ", "モフ", 1, None));
         save_words(&d, &[noun.clone(), name.clone()]).unwrap();
-        remove_word(&d, &name, 0).unwrap();
+        remove(&name, 0);
         assert_eq!(words(&d).unwrap(), [noun.clone()]);
         // Of two identical entries with their own comments, Edit and Delete change the one chosen (its
         // occurrence), and Edit keeps that one's comment.
@@ -480,7 +500,7 @@ mod tests {
             ..noun.clone()
         };
         save_words(&d, &[with("一"), with("二")]).unwrap();
-        edit_word(&d, &noun, 1, word("もふ", "モフー", 0, None)).unwrap();
+        edit(&noun, 1, word("もふ", "モフー", 0, None));
         assert_eq!(
             words(&d).unwrap(),
             [
@@ -492,8 +512,15 @@ mod tests {
             ]
         );
         save_words(&d, &[with("一"), with("二")]).unwrap();
-        remove_word(&d, &noun, 1).unwrap();
+        remove(&noun, 1);
         assert_eq!(words(&d).unwrap(), [with("一")]);
+        // The dictionary changed since it was shown (the sync took out the first of three identical
+        // entries): the shown second row would now be the third, so Edit and Delete change nothing.
+        let shown = [with("一"), with("二"), with("三")];
+        save_words(&d, &shown[1..]).unwrap();
+        assert!(!edit_word(&d, &shown, 1, word("もふ", "モフー", 0, None)).unwrap());
+        assert!(!remove_word(&d, &shown, 1).unwrap());
+        assert_eq!(words(&d).unwrap(), shown[1..]);
         fs::remove_dir_all(&d).unwrap();
     }
 }
