@@ -1039,10 +1039,22 @@ UNDO_ACTION = ("Undo", "撤销", "元に戻す")
 
 
 def action(labels):
-    """Opens the action bar if it is closed, then taps one of its actions."""
-    if not any(n[0] in CLOSE_BAR for n in nodes()):
+    """Opens the action bar if it is closed, then taps one of its actions. While something is typed the bar's
+    toggle is hidden, but an open bar's actions stay."""
+    ns = nodes()
+    if not any(n[0] in CLOSE_BAR or n[0] in labels for n in ns):
         tap_label(OPEN_BAR)
     tap_label(labels)
+
+
+def undo(expect):
+    """The action bar's Undo in 日本語; which undo went (SebTypeIme's log), expected to be expect's (#379)."""
+    adb("logcat", "-c")
+    action(UNDO_ACTION)
+    settle()
+    went = re.findall(r"Undo: (Mozc's|the app's)", logcat())
+    if went != [expect]:
+        raise Fail(f"Undo went to {went}, not [{expect!r}]")
 
 
 def undo_conversion():
@@ -1053,8 +1065,7 @@ def undo_conversion():
     settle()
     if (text := field_text()) != "日本語":
         raise Fail(f"nihongo, 日本語 picked: the field shows {text!r}")
-    action(UNDO_ACTION)
-    settle()
+    undo("Mozc's")
     text = field_text()
     got = candidates(nodes())
     screenshot("japanese-undo.png")
@@ -1082,13 +1093,11 @@ def converted(word, reading):
     return text
 
 
-def undo_keeps(was, what):
-    """Undo after an edit that wasn't Mozc's: the app's undo (Ctrl+Z) may take back its own edits of was, but
-    Mozc's reading goes in nowhere."""
-    action(UNDO_ACTION)
-    settle()
-    text = field_text()
-    if not was.startswith(text) or any(0x3041 <= ord(c) <= 0x3096 for c in text):
+def undo_keeps(was, wrong, what):
+    """Undo after an edit that wasn't Mozc's: the app's undo (Ctrl+Z) goes, whatever it takes back, and not
+    Mozc's, which would have put its reading over other text (wrong)."""
+    undo("the app's")
+    if (text := field_text()) == wrong:
         raise Fail(f"{what}, then Undo: {was!r} became {text!r}")
     return text
 
@@ -1101,7 +1110,7 @@ def undo_after_cursor_move():
     for _ in range(2):
         adb("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
     time.sleep(1.5)
-    return f"{was!r}, the cursor moved, Undo -> {undo_keeps(was, 'the cursor moved')!r}"
+    return f"{was!r}, the cursor moved, Undo -> {undo_keeps(was, '日すし寿司', 'the cursor moved')!r}"
 
 
 def undo_after_paste():
@@ -1113,16 +1122,17 @@ def undo_after_paste():
     settle()
     if (was := field_text()) != "日本語xyz":
         raise Fail(f"日本語, then Paste: the field shows {was!r}")
-    return f"{was!r}, Undo -> {undo_keeps(was, 'pasted')!r}"
+    return f"{was!r}, Undo -> {undo_keeps(was, '日本語にほんご', 'pasted')!r}"
 
 
 def undo_while_composing():
     """#379: Undo while nihongo is typed and nothing converted: as before, the reading goes in as it is (and the
     app may undo it); it isn't left composing."""
     open_field()
+    if not any(n[0] in CLOSE_BAR for n in nodes()):
+        tap_label(OPEN_BAR)
     type_keys("nihongo")
-    action(UNDO_ACTION)
-    settle()
+    undo("the app's")
     text = field_text()
     got = candidates(nodes())
     if text not in ("にほんご", "") or "日本語" in got:

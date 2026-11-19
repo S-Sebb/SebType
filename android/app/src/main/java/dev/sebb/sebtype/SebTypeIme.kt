@@ -1202,7 +1202,10 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             // Nothing, if the field, language or search changed meanwhile
             finish {
                 if (st != null && undo && language == JAPANESE) {
-                    if (editor.engineUndo(st, composition(st), preedit)) {
+                    // Which undo went, for the checks: no typed text
+                    val mozc = editor.engineUndo(st, composition(st), preedit)
+                    Log.i(Engines.TAG, if (mozc) "Undo: Mozc's" else "Undo: the app's")
+                    if (mozc) {
                         show(st, applyText = false)
                         return@finish
                     }
