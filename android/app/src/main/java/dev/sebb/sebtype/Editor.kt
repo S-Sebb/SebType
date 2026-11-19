@@ -88,6 +88,12 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** The field says where its text starts in getSurroundingText (Android 12+): [check] reads that */
     private var surrounds = false
 
+    /**
+     * What an engine's [write] last committed, with the cursor right after it and nothing else done to the field
+     * since; else empty. 日本語's Undo takes back only that ([engineUndo], #379).
+     */
+    private var engineCommit = ""
+
     /** [model], or nothing known when [edit] can't say how the field changed */
     private inline fun model(edit: Model.() -> Boolean) {
         if (model?.edit() == false) model = null
@@ -204,6 +210,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
      * was composing left in the field as it is, when they can't: the engine must read the field again.
      */
     fun write(st: NativeState, composition: CharSequence?, then: (() -> Unit)? = null): Boolean {
+        val kept = engineCommit
         beginBatch()
         try {
             val range = st.recompose || st.deleteBefore > 0 || st.deleteAfter > 0
@@ -222,6 +229,11 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
             if (st.commitCursor != 0) moveCursor(st.commitCursor)
             if (composition != null) compose(composition)
             then?.invoke()
+            engineCommit = when {
+                st.commit.isNotEmpty() && st.commitCursor == 0 && composition.isNullOrEmpty() && then == null -> st.commit
+                range || st.commit.isNotEmpty() || !composition.isNullOrEmpty() || then != null -> ""
+                else -> kept
+            }
             return true
         } finally {
             placed = false
@@ -230,6 +242,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     }
 
     fun start(info: EditorInfo, kind: FieldKind) {
+        engineCommit = ""
         this.info = info
         this.kind = kind
         selStart = info.initialSelStart
@@ -251,6 +264,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         if (text.isEmpty()) return
         val ic = ic ?: return
         if (raw && text == "\n") return key(KeyEvent.KEYCODE_ENTER)
+        engineCommit = ""
         val start = if (composing && composeStart >= 0) composeStart else selStart
         ic.commitText(text, 1)
         model { replace(text, compose = false); true }
@@ -311,6 +325,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** Backspace: the selection, else the character (a whole emoji or accented letter) before the cursor. */
     fun deleteBefore() {
         val ic = ic ?: return
+        engineCommit = ""
         if (selEnd > selStart && selStart >= 0) {
             ic.commitText("", 1)
             model { replace("", compose = false); true }
@@ -364,6 +379,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         val at = (selStart + by).coerceAtLeast(0)
         ic?.setSelection(at, at)
         model = null
+        engineCommit = ""
         expect(at)
     }
 
@@ -373,6 +389,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
      * can't say where its cursor is gets arrow keys.
      */
     fun moveBy(by: Int) {
+        engineCommit = ""
         val ic = ic ?: return
         val s = snapshot(maxOf(0, -2 * by), maxOf(0, 2 * by))
         if (s == null) {
@@ -407,6 +424,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
      * as today's app does there: without the cursor's place, nothing tells where the text read starts.
      */
     fun selectWordsBefore(words: Int, done: Boolean) {
+        engineCommit = ""
         val ic = ic ?: return
         val w = swipe
         if (done) swipe = null
@@ -491,6 +509,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     }
 
     fun enter() {
+        engineCommit = ""
         val action = info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
         if (kind.enter != FieldKind.Enter.NEWLINE) ic?.performEditorAction(action)
         else commit("\n")
@@ -518,12 +537,29 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** A key event: what it does to the text is the field's, so what we expect of it is gone */
     private fun key(code: Int) {
         model = null
+        engineCommit = ""
         if (target == null) ime?.sendDownUpKeyEvents(code)
+    }
+
+    /**
+     * 日本語's Undo as Mozc answered it ([st], #379), written when it undid something: the reading of the
+     * conversion it committed back in its place, or a step back in what is being typed. False, with nothing
+     * written, when it changed nothing ([preedit]: what was being typed before it), or would delete other text
+     * than its own commit right before the cursor ([engineCommit]): the app's undo goes instead.
+     */
+    fun engineUndo(st: NativeState, composition: CharSequence, preedit: String): Boolean {
+        val deletes = st.deleteBefore > 0 || st.deleteAfter > 0
+        if (!st.taken || !deletes && st.commit.isEmpty() && st.preedit == preedit) return false
+        val c = engineCommit
+        if (deletes && (st.deleteAfter > 0 || selEnd != selStart || c.isEmpty() ||
+                c.codePointCount(0, c.length) != st.deleteBefore || textBefore(c.length) != c)) return false
+        return write(st, composition)
     }
 
     /** Undo (Ctrl+Z) and redo (Ctrl+Shift+Z): the field's own, as a hardware keyboard sends them */
     fun undo(redo: Boolean) {
         model = null
+        engineCommit = ""
         val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON or (if (redo) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0)
         val now = SystemClock.uptimeMillis()
         ic?.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Z, 0, meta))
@@ -533,6 +569,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     /** Select all, cut, copy or paste ([android.R.id]'s), as the field's own menu does them */
     fun menuAction(id: Int) {
         model = null
+        engineCommit = ""
         ic?.performContextMenuAction(id)
     }
 
@@ -577,6 +614,7 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         // The user's cursor in the word being typed; else what the field has is to be read again
         if (movedInside >= 0) model { region?.let { start = it.first + movedInside; end = start } != null }
         else if (external) model = null
+        if (external) engineCommit = ""
         return external
     }
 

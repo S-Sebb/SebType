@@ -10,7 +10,9 @@ import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import dev.sebb.sebtype.core.NativeState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.lang.reflect.Proxy
 
@@ -894,5 +896,78 @@ class EditorTest {
         assertEquals(4 until 9, field.cursor until field.end)
         editor.selectWordsBefore(1, true)
         assertEquals("big ", field.text)
+    }
+
+    /** 日本語 in [field], as SebTypeIme writes Mozc's states: its updates heard as they come ([hear]) */
+    private class Japanese(val field: Field) {
+        val editor = Editor(null, field.connection).also {
+            it.start(EditorInfo().apply {
+                inputType = InputType.TYPE_CLASS_TEXT
+                initialSelStart = field.cursor
+                initialSelEnd = field.end
+            }, FieldKind.of(null))
+        }
+
+        fun mozc(preedit: String = "", commit: String = "", delete: Int = 0) = NativeState(true, commit, delete, 0, 0, false, 0, 0,
+            if (preedit.isEmpty()) arrayOf() else arrayOf(preedit), BooleanArray(if (preedit.isEmpty()) 0 else 1), -1, arrayOf(), arrayOf(), -1)
+
+        fun write(st: NativeState) = editor.write(st, st.preedit).also { hear() }
+
+        /** Mozc's answer to Undo after it committed [word] read as [reading]: the reading back in the word's place */
+        fun undo(word: String, reading: String) =
+            mozc(reading, delete = word.length).let { editor.engineUndo(it, it.preedit, "") }.also { hear() }
+
+        fun hear() {
+            while (field.updates.isNotEmpty()) field.updates.removeFirst().let { editor.selectionChanged(it[0], it[1], it[2], it[3]) }
+        }
+
+        /** nihongo typed after the text, 日本語 picked */
+        fun commit() {
+            write(mozc("にほんご"))
+            write(mozc(commit = "日本語"))
+        }
+    }
+
+    /** #379: Undo right after a conversion: Mozc's reading back in its place, to convert again. */
+    @Test
+    fun undoAfterAConversionBringsItsReadingBack() {
+        val ja = Japanese(Field("abc", 3))
+        ja.commit()
+        assertEquals("abc日本語", ja.field.text)
+        assertTrue(ja.undo("日本語", "にほんご"))
+        assertEquals("abcにほんご", ja.field.text)
+        assertEquals(3 until 7, ja.field.region)
+    }
+
+    /** #379: the cursor moved after the conversion: Mozc's undo would replace other text (bc), so the app's goes. */
+    @Test
+    fun undoAfterTheCursorMovedLeavesTheTextToTheApp() {
+        val ja = Japanese(Field("abc", 3))
+        ja.commit()
+        ja.field.tap(3)
+        ja.hear()
+        assertFalse(ja.undo("日本語", "にほんご"))
+        assertEquals("abc日本語", ja.field.text)
+    }
+
+    /** #379: text pasted after the conversion: Mozc's undo would take the paste for its commit. */
+    @Test
+    fun undoAfterAPasteLeavesThePaste() {
+        val ja = Japanese(Field("abc", 3))
+        ja.commit()
+        ja.editor.menuAction(android.R.id.paste)
+        ja.field.edit(6, 6, "xyz")
+        assertFalse(ja.undo("日本語", "にほんご"))
+        assertEquals("abc日本語xyz", ja.field.text)
+    }
+
+    /** #379: while typing with nothing to undo, Mozc takes Undo and changes nothing: the app's undo goes. */
+    @Test
+    fun undoThatChangesNothingLeavesItToTheApp() {
+        val ja = Japanese(Field("", 0))
+        ja.write(ja.mozc("にほんご"))
+        val same = ja.mozc("にほんご")
+        assertFalse(ja.editor.engineUndo(same, same.preedit, "にほんご"))
+        assertEquals("にほんご", ja.field.text)
     }
 }

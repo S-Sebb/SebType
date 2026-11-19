@@ -1066,6 +1066,75 @@ def undo_conversion():
 check("ja-undo-conversion", undo_conversion, needs=["ja-chip"])
 
 
+PASTE_ACTION = ("Paste from Clipboard", "从剪贴板粘贴", "クリップボードから貼り付け")
+
+
+def converted(word, reading):
+    """reading typed in 日本語 after what the field has, word picked."""
+    before = field_text()
+    type_keys(reading)
+    tap_candidate(word)
+    settle()
+    if (text := field_text()) != before + word:
+        raise Fail(
+            f"{reading}, {word} picked after {before!r}: the field shows {text!r}"
+        )
+    return text
+
+
+def undo_keeps(was, what):
+    """Undo after an edit that wasn't Mozc's: the app's undo (Ctrl+Z) may take back its own edits of was, but
+    Mozc's reading goes in nowhere."""
+    action(UNDO_ACTION)
+    settle()
+    text = field_text()
+    if not was.startswith(text) or any(0x3041 <= ord(c) <= 0x3096 for c in text):
+        raise Fail(f"{what}, then Undo: {was!r} became {text!r}")
+    return text
+
+
+def undo_after_cursor_move():
+    """#379: 日本語 and 寿司 committed, the cursor moved back two: Undo leaves the text before it alone."""
+    open_field()
+    converted("日本語", "nihongo")
+    was = converted("寿司", "sushi")
+    for _ in range(2):
+        adb("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
+    time.sleep(1.5)
+    return f"{was!r}, the cursor moved, Undo -> {undo_keeps(was, 'the cursor moved')!r}"
+
+
+def undo_after_paste():
+    """#379: 日本語 committed, then xyz pasted: Undo doesn't take the paste for Mozc's commit."""
+    open_field(clip="xyz")
+    converted("日本語", "nihongo")
+    action(ALL_ACTIONS)
+    tap_label(PASTE_ACTION)
+    settle()
+    if (was := field_text()) != "日本語xyz":
+        raise Fail(f"日本語, then Paste: the field shows {was!r}")
+    return f"{was!r}, Undo -> {undo_keeps(was, 'pasted')!r}"
+
+
+def undo_while_composing():
+    """#379: Undo while nihongo is typed and nothing converted: as before, the reading goes in as it is (and the
+    app may undo it); it isn't left composing."""
+    open_field()
+    type_keys("nihongo")
+    action(UNDO_ACTION)
+    settle()
+    text = field_text()
+    got = candidates(nodes())
+    if text not in ("にほんご", "") or "日本語" in got:
+        raise Fail(f"nihongo typed, Undo: the field shows {text!r}, the bar {got[:6]}")
+    return f"nihongo typed, Undo -> {text!r}, the bar {got[:3]}"
+
+
+check("ja-undo-after-cursor-move", undo_after_cursor_move, needs=["ja-chip"])
+check("ja-undo-after-paste", undo_after_paste, needs=["ja-chip"])
+check("ja-undo-while-composing", undo_while_composing, needs=["ja-chip"])
+
+
 def fast_typing_ja():
     # The romaji stays in the field as Mozc's composition: every key, in order, or other kana.
     open_field()

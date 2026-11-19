@@ -361,6 +361,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             editor.finishComposing()
             post({ clear().recorded() }) { show(it, applyText = false) }
         }
+        // 日本語's undo is for Mozc's commit where the cursor was: it goes with the move (#379). In turn, after the keys
+        // waiting; one typed since has ended it already.
+        else if (external && lang == JAPANESE) waiting.run {
+            if (lang == JAPANESE) NativeCore.post { if (!engineComposing) clear().recorded() }
+        }
         // English reads the words around the cursor for its corrections and next words, and reopens the word
         // the cursor went into; a move inside the word being typed moves its cursor.
         if (lang == CHINESE && toEngine && external) chineseContext()
@@ -1177,25 +1182,35 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     /**
      * What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing.
-     * An [undo] in 日本語 goes to Mozc instead ([endTyping], #379), and [then] (the app's undo) only if Mozc undid nothing.
+     * 日本語's [undo] goes to Mozc instead ([endTyping], #379); [then] (the app's undo) only if Mozc's isn't written
+     * ([Editor.engineUndo]). Any other edit in 日本語 ends Mozc's undo: it would delete by where its commit was.
      */
     private fun finishTyping(undo: Boolean = false, then: () -> Unit) = waiting.switch { finish ->
         // As the keys typed before it left the language and field: it may run after them (#351)
         val language = lang
         val asked = keys.ask()
+        var preedit = ""
         NativeCore.post({
+            preedit = enginePreedit
             when (endTyping(language, engineComposing, undo)) {
                 EndTyping.NOTHING -> null
                 EndTyping.FLUSH -> flush()
                 EndTyping.CLEAR -> clear()
                 EndTyping.UNDO -> undo()
-            }?.recorded()
+            }?.recorded().also { if (language == JAPANESE && !undo) clear().recorded() }
         }) { st ->
             // Nothing, if the field, language or search changed meanwhile
             finish {
-                if (undo && language == JAPANESE && st?.taken == true) {
-                    show(st)
-                    return@finish
+                if (st != null && undo && language == JAPANESE) {
+                    if (editor.engineUndo(st, composition(st), preedit)) {
+                        show(st, applyText = false)
+                        return@finish
+                    }
+                    // Mozc undid nothing, or not where its commit is: what is typed stays as it is, as before
+                    // #379, Mozc forgets it, and the app undoes
+                    editor.finishComposing()
+                    NativeCore.post({ clear().recorded() }) { show(it, applyText = false) }
+                    return@finish then()
                 }
                 // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
                 if (st != null && fresh(asked)) {
