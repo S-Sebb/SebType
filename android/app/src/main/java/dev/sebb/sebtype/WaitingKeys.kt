@@ -1,6 +1,8 @@
 package dev.sebb.sebtype
 
 import dev.sebb.sebtype.Layout.Code
+import dev.sebb.sebtype.core.NativeCore.CHINESE
+import dev.sebb.sebtype.core.NativeCore.JAPANESE
 
 /**
  * The keyboard's one serial dispatcher for input (#351). THE RULE: every input action goes through it,
@@ -133,3 +135,18 @@ class WaitingKeys(
  */
 fun withoutEnglishShift(text: String, userShift: Boolean) =
     if (!userShift && text.length == 1 && text[0] in 'A'..'Z') text.lowercase() else text
+
+/** What an edit that ends typing (the keyboard's finishTyping) asks of the engine first */
+enum class EndTyping { NOTHING, FLUSH, CLEAR, UNDO }
+
+/**
+ * [EndTyping] for [lang], with the engine [composing] or not. 日本語's Undo is Mozc's own, as today's app's (#379):
+ * a conversion just committed comes back as its reading, and one being typed goes back a step, so nothing is
+ * flushed before it. Otherwise what is typed goes in (中文's pinyin is dropped) and the app does the edit.
+ */
+fun endTyping(lang: Int, composing: Boolean, undo: Boolean) = when {
+    undo && lang == JAPANESE -> EndTyping.UNDO
+    !composing -> EndTyping.NOTHING
+    lang == CHINESE -> EndTyping.CLEAR
+    else -> EndTyping.FLUSH
+}

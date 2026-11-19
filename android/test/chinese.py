@@ -1035,6 +1035,30 @@ check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
 check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
 
 
+UNDO_ACTION = ("Undo", "撤销", "元に戻す")
+
+
+def undo_conversion():
+    """#379: Undo after a conversion goes to Mozc, as today's app: the reading comes back, to convert again."""
+    open_field()
+    type_keys("nihongo")
+    tap_candidate("日本語")
+    settle()
+    if (text := field_text()) != "日本語":
+        raise Fail(f"nihongo, 日本語 picked: the field shows {text!r}")
+    action(UNDO_ACTION)
+    settle()
+    text = field_text()
+    got = candidates(nodes())
+    screenshot("japanese-undo.png")
+    if text != "にほんご" or "日本語" not in got:
+        raise Fail(f"Undo after 日本語: the field shows {text!r}, the bar {got[:6]}")
+    return f"日本語 committed, Undo -> {text!r}, the bar {got[:3]}"
+
+
+check("ja-undo-conversion", undo_conversion, needs=["ja-chip"])
+
+
 def fast_typing_ja():
     # The romaji stays in the field as Mozc's composition: every key, in order, or other kana.
     open_field()

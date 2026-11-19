@@ -1,6 +1,7 @@
 package dev.sebb.sebtype
 
 import dev.sebb.sebtype.Layout.Code
+import dev.sebb.sebtype.core.NativeCore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -174,5 +175,16 @@ class WaitingKeysTest {
         k.engineAnswers()
         assertEquals("x🌐rR", k.field.toString())
         assertFalse(k.english)
+    }
+
+    /** #379: 日本語's Undo is Mozc's, even while typing, so a conversion committed comes back; elsewhere the app's after what is typed goes in. */
+    @Test
+    fun undoInJapaneseGoesToMozc() {
+        assertEquals(EndTyping.UNDO, endTyping(NativeCore.JAPANESE, composing = false, undo = true))
+        assertEquals(EndTyping.UNDO, endTyping(NativeCore.JAPANESE, composing = true, undo = true))
+        assertEquals(EndTyping.FLUSH, endTyping(NativeCore.JAPANESE, composing = true, undo = false))
+        assertEquals(EndTyping.FLUSH, endTyping(NativeCore.ENGLISH, composing = true, undo = true))
+        assertEquals(EndTyping.CLEAR, endTyping(NativeCore.CHINESE, composing = true, undo = true))
+        assertEquals(EndTyping.NOTHING, endTyping(NativeCore.ENGLISH, composing = false, undo = true))
     }
 }
