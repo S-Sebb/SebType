@@ -23,6 +23,11 @@ void sebtype_mozc_close();
 // The PCs' learning in a private field: read-only history while learning is 0, in memory only (config1.db is
 // never written); learning off in config1.db stays off.
 void sebtype_mozc_set_learning(int learning);
+// The conversions the user picked over Mozc's first candidate since the last call, as reading<TAB>written lines
+// (freed with sebtype_mozc_free); none while learning is off. The sync's record of them (#409).
+int sebtype_mozc_take_learned(char **out, size_t *out_size);
+// Learns a conversion another device's user picked, as if picked here, also while learning is off (#374).
+int sebtype_mozc_learn(const char *key, size_t key_size, const char *value, size_t value_size, int64_t time);
 // A user dictionary file in any format Mozc imports (Mozc, MS-IME, ATOK, Kotoeri text) as a serialized
 // mozc.user_dictionary.UserDictionary in *out; entries it can't read are skipped.
 int sebtype_mozc_import_user_dictionary(const char *text, size_t size, char **out, size_t *out_size);

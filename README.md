@@ -82,7 +82,7 @@ The order of the languages is yours to change, in the phone's settings or the Co
 There is no SebType cloud. [sync-server](sync-server/README.md) is a small Python server (standard
 library only) that you run on a machine of yours, with HTTPS and a login of its own. Enter its address
 and login in the phone's **Settings › Sync & backup** or the Configurator. It carries what 中文 learned,
-your Japanese and English dictionaries, and the phone's crash reports, nothing else. Offline, everything
+the conversions you picked in Japanese on the PCs, your Japanese and English dictionaries, and the phone's crash reports, nothing else. Offline, everything
 is kept on the device and syncs later in the background; typing never waits for it.
 
 Bringing words from elsewhere (a Rime word list, Rime's learned words, Mozc or MS-IME dictionaries):

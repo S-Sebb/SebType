@@ -144,10 +144,10 @@ class Server(unittest.TestCase):
                 s.push(client, device, sync_dir), 0
             )  # unchanged: nothing sent
         device, sync_dir = s.rime_installation(dirs[0])
-        self.assertEqual(s.pull(client, device, sync_dir), (1, 0, 0))
+        self.assertEqual(s.pull(client, device, sync_dir), (1, 0, 0, 0))
         with open(os.path.join(sync_dir, "phone-0002", "rime_ice.userdb.txt")) as f:
             self.assertEqual(f.read(), "made up word of phone-0002\n")
-        self.assertEqual(s.pull(client, device, sync_dir), (0, 0, 0))
+        self.assertEqual(s.pull(client, device, sync_dir), (0, 0, 0, 0))
 
     def test_command_line_reads_the_password_from_stdin(self):
         """The Configurator's way (#180): the password on stdin, a refused login as exit code 3, and
@@ -213,7 +213,7 @@ class Server(unittest.TestCase):
         phone = "ぷるもに\tプルモニ語\t名詞\nぴよぽん\tピヨポン丸\t品詞なし\n"
         self.call("PUT", "/v1/files/phone-0004/mozc_dictionary.txt", phone.encode())
         self.call("PUT", "/v1/files/phone-0004/userdictionary.json", b"[]")
-        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 2, 0))
+        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 2, 0, 0))
         with open(db, "rb") as f:
             words = s.mozc_words(f.read())
         self.assertIn(("ぴよぽん", "ピヨポン丸", 0, ""), words)
@@ -225,13 +225,57 @@ class Server(unittest.TestCase):
             f.write(s.pb_field(2, mine) + s.pb_field(2, off))
         phone += "ぐるみん\tグルミン\t人名\n"
         self.call("PUT", "/v1/files/phone-0004/mozc_dictionary.txt", phone.encode())
-        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 1, 0))
+        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 1, 0, 0))
         with open(db, "rb") as f:
             stored = f.read()
         self.assertEqual(
             sorted(w for _, w, _, _ in s.mozc_words(stored)), ["グルミン", "モフリン堂"]
         )
         self.assertTrue(stored.startswith(s.pb_field(2, mine) + s.pb_field(2, off)))
+
+    def test_learned_conversions_sync_as_each_devices_record(self):
+        """#409: a PC's record of the conversions picked in Mozc goes up as it is, only when it changed;
+        another device's comes down next to it, for Mozc to learn; a server from before #409, which
+        keeps no record, still syncs the rest."""
+        self.call("DELETE", "/v1/files")
+        client = s.Client(self.url, "alice", "made-up-pass")
+        device, sync_dir = s.rime_installation(self.rime_dirs("pc-0009")[0])
+        mozc = tempfile.mkdtemp(dir=self.data)
+        db = os.path.join(mozc, "user_dictionary.db")
+        mine = "# SebType mozc_learned 1\nもふしゃ\t模符社\t100\n".encode()
+        with open(os.path.join(mozc, s.LEARNED_FILE), "wb") as f:
+            f.write(mine)
+        self.assertEqual(
+            s.push(client, device, sync_dir, db), 3
+        )  # with Rime's and Mozc's
+        self.assertEqual(
+            self.call("GET", "/v1/files/pc-0009/mozc_learned.txt")[1], mine
+        )
+        self.assertEqual(
+            s.push(client, device, sync_dir, db), 0
+        )  # unchanged: nothing sent
+
+        phone = "# SebType mozc_learned 1\nぷるしゃ\t普留社\t90\n".encode()
+        self.call("PUT", "/v1/files/phone-0010/mozc_learned.txt", phone)
+        self.assertEqual(s.pull(client, device, sync_dir), (0, 0, 0, 0))  # no Mozc here
+        self.assertEqual(s.pull(client, device, sync_dir, db), (1, 0, 0, 1))
+        with open(os.path.join(mozc, "mozc_learned", "phone-0010.txt"), "rb") as f:
+            self.assertEqual(f.read(), phone)
+        self.assertEqual(s.pull(client, device, sync_dir, db), (0, 0, 0, 0))
+
+        with open(os.path.join(mozc, s.LEARNED_FILE), "ab") as f:
+            f.write("もふしゃ\t模府社\t200\n".encode())
+        synced, s.synced = (
+            s.synced,
+            lambda name: name != s.LEARNED_FILE and synced(name),
+        )
+        try:
+            self.assertEqual(s.push(client, device, sync_dir, db), 0)
+        finally:
+            s.synced = synced
+        self.assertEqual(
+            self.call("GET", "/v1/files/pc-0009/mozc_learned.txt")[1], mine
+        )
 
     def test_deletions_and_edits_sync_between_two_pcs(self):
         """#273: a word added on one PC reaches the other in SebType's dictionary (My words), its
@@ -418,7 +462,7 @@ class Server(unittest.TestCase):
         )  # from that device's first sync: no time
         self.call("PUT", "/v1/files/zh-d/" + s.ZH_FILE, other)
         s.write_file(os.path.join(sync_dir, "zh-d", s.ZH_FILE), other)  # the old way
-        self.assertEqual(s.pull(client, device, sync_dir, rime_dir=d), (1, 0, 1))
+        self.assertEqual(s.pull(client, device, sync_dir, rime_dir=d), (1, 0, 1, 0))
         self.assertEqual(s.rime_words(d), [("pumoli", "噗莫里", s.NOUN, "")])
 
     def test_chinese_first_sync_cut_off_after_one_device(self):

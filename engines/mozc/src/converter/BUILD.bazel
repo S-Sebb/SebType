@@ -100,6 +100,7 @@ mozc_cc_library(
         "//prediction:__pkg__",
         "//rewriter:__pkg__",
         "//session:__pkg__",
+        "//sebtype:__pkg__",  # SebType (#409): the learned conversions sync
     ],
 )
 
@@ -370,6 +371,7 @@ mozc_cc_library(
         "//engine:__pkg__",
         "//prediction:__pkg__",
         "//rewriter:__pkg__",
+        "//sebtype:__pkg__",  # SebType (#409): the learned conversions sync
     ],
     deps = [
         ":attribute",
@@ -390,6 +392,7 @@ mozc_cc_library(
         "//prediction:predictor_interface",
         "//prediction:result",
         "//protocol:commands_cc_proto",
+        "//protocol:config_cc_proto",
         "//request:conversion_request",
         "//request:request_util",
         "//rewriter:rewriter_interface",

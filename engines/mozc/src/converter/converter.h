@@ -59,6 +59,12 @@
 namespace mozc {
 namespace converter {
 
+// SebType (#409): told of each conversion FinishConversion commits that the user picked over Mozc's first
+// candidate (what segment.db and the history learn as theirs), as its reading and what was written, so
+// SebType's sync can carry it to the user's other devices. Not called while learning is off or incognito.
+// Called on the converting thread.
+inline void (*sebtype_learned)(absl::string_view key, absl::string_view value) = nullptr;
+
 class Converter final : public ConverterInterface {
  public:
   using ImmutableConverterFactory =
@@ -190,6 +196,9 @@ class Converter final : public ConverterInterface {
   // cannot know which POS ids should be used for these directly-
   // input strings. This function estimates IDs from value heuristically.
   void CompletePosIds(Candidate* candidate) const;
+
+  void ReportPicks(const ConversionRequest& request,
+                   const Segments& segments) const;
 
   bool CommitSegmentValueInternal(Segments* segments, size_t segment_index,
                                   int candidate_index,
