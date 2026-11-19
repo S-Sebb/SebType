@@ -328,7 +328,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         applyMode()
         refresh()
         autoShift()
-        Sync.onKeyboardShown()
+        Sync.onKeyboardShown(this)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
