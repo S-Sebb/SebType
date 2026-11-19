@@ -6,7 +6,9 @@
 
 #if defined(SEBTYPE_ENGLISH) || defined(SEBTYPE_CHINESE_MODEL)
 #include <sebtype/hosts.h>
+#ifdef SEBTYPE_ENGLISH
 #include <sebtype_lm.h>
+#endif
 
 #include <condition_variable>
 #include <filesystem>
@@ -1013,6 +1015,45 @@ TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
   EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
   EXPECT_EQ(rime->picks.size(), 3u);
   EXPECT_FALSE(zh->composing());
+}
+
+// Paging and the arrow keys move the highlight within the model's list (#367): its order stays, and what
+// Space or a flush commits is the candidate highlighted there.
+TEST_F(ChineseTest, TheHighlightMovesWithinTheModelsList) {
+  start({}, [](FakeRime &r) { r.words["wo"] = {"我", "握", "窝", "卧", "沃"}; });  // a second page
+  typeAndWait("woaini");
+  const auto l = list();
+  ASSERT_EQ(l.at(0), "我爱你");
+  const int rimes = int(std::ranges::find(l, "握挨泥") - l.begin());
+  ASSERT_LT(rimes, int(l.size()));
+  zh->highlightAt(rimes);
+  EXPECT_EQ(list(), l);
+  EXPECT_EQ(zh->highlighted(), rimes);
+  zh->flush();
+  EXPECT_EQ(zh->takeCommit(), "握挨泥");
+
+  zh->setContext("", "", false);
+  typeAndWait("woaini");
+  ASSERT_EQ(list(), l);
+  ASSERT_GT(l.size(), 6u);
+  zh->changePage(true);
+  EXPECT_EQ(zh->highlighted(), 6);
+  EXPECT_EQ(zh->page().items.at(0).text, l[6]);
+  // A digit past the last page's end picks nothing, not Rime's candidate there on its own first page
+  ASSERT_LT(l.size(), 12u);
+  zh->key({static_cast<uint32_t>('1' + l.size() - 6), 0, false});
+  EXPECT_EQ(zh->takeCommit(), "");
+  EXPECT_TRUE(zh->composing());
+  EXPECT_EQ(list(), l);
+  EXPECT_EQ(zh->highlighted(), 6);
+  zh->key({0xff55, 0, false});  // Page Up
+  zh->key({0xff54, 0, false});  // Down
+  zh->key({0xff52, 0, false});  // Up
+  EXPECT_EQ(zh->highlighted(), 0);
+  EXPECT_EQ(list(), l);
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->learned.back(), "我爱你");
 }
 
 TEST_F(ChineseTest, PickingRimesCandidateSelectsItByRimesIndex) {
