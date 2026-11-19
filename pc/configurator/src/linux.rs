@@ -2,7 +2,7 @@
 //! pc/linux/setup-ime.sh. A running Fcitx5 is told over D-Bus (busctl); without one, the files are
 //! written and read when it starts.
 
-use crate::Candidates;
+use crate::{conf, Candidates};
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
@@ -160,7 +160,7 @@ fn reload_addon(addon: &str) {
     }
 }
 
-// --- INI files (SebType's settings and Fcitx5's addon configs) ---
+// --- INI files (Fcitx5's addon configs) ---
 
 fn ini_get(text: &str, key: &str) -> Option<String> {
     text.lines()
@@ -204,7 +204,8 @@ fn write_if_changed(path: &PathBuf, text: &str) -> io::Result<bool> {
 /// SebType's three languages, those on first in their order, then those off. Without settings all are on.
 pub fn langs() -> io::Result<Vec<(String, bool)>> {
     let text = fs::read_to_string(settings()).unwrap_or_default();
-    let order = ini_get(&text, "Order").unwrap_or_else(|| LANGS.join(","));
+    let order =
+        conf::value(&text, "Languages", "Order").map_or_else(|| LANGS.join(","), str::to_string);
     let mut out: Vec<(String, bool)> = Vec::new();
     for id in order.split(',').filter(|id| LANGS.contains(id)) {
         if !out.iter().any(|(i, _)| i == id) {
@@ -225,11 +226,26 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
         .filter(|(_, on)| *on)
         .map(|(id, _)| id.as_str())
         .collect();
-    let text = format!("[Languages]\nOrder={}\n", on.join(","));
-    if write_if_changed(&settings(), &text)? {
+    let order = format!("Order={}\n", on.join(","));
+    set_settings(|old| conf::set_section(old, "Languages", &order))
+}
+
+/// sebtype.conf with `change` made; the input method reads it again when it changed.
+fn set_settings(change: impl FnOnce(&str) -> String) -> io::Result<()> {
+    let old = fs::read_to_string(settings()).unwrap_or_default();
+    if write_if_changed(&settings(), &change(&old))? {
         reload_addon("sebtype");
     }
     Ok(())
+}
+
+// --- Learning: sebtype.conf's [Learning] ---
+
+pub fn learning() -> bool {
+    conf::learning(&fs::read_to_string(settings()).unwrap_or_default())
+}
+pub fn set_learning(on: bool) -> io::Result<()> {
+    set_settings(|old| conf::set_learning(old, on))
 }
 
 // --- The candidate window: Fcitx5's classic UI draws it for Chinese and Japanese alike ---
@@ -831,7 +847,6 @@ mod tests {
             full_width_punctuation: false,
             emoji: false,
             fuzzy: vec![true; 1],
-            learn: false,
             page_size: 8,
         };
         assert!(rime::save(&dir, &c).unwrap());
@@ -861,14 +876,19 @@ mod tests {
         }
         assert!(schema.contains("\"derive/^z/zh/\""), "fuzzy z = zh");
         assert!(schema.contains("menu:\n  page_size: 8\n"), "page size");
-        let translator = schema.split("\ntranslator:\n").nth(1).unwrap();
+        // Learning off is sebtype.conf's (#374): Rime keeps its learned words in use.
+        set_learning(false).unwrap();
+        assert!(!learning());
         assert!(
-            translator
-                .split("\n")
-                .take_while(|l| l.starts_with(' '))
-                .any(|l| l == "  enable_user_dict: false"),
-            "learn"
+            langs().unwrap()[0] == ("zh".into(), true),
+            "the languages kept"
         );
+        assert!(
+            !schema.contains("enable_user_dict: false"),
+            "learned words in use"
+        );
+        set_learning(true).unwrap();
+        assert!(learning());
 
         // Picnic with SebType's pig (#94); test.sh then draws this window in a nested KWin.
         let picnic = Candidates {

@@ -1,8 +1,9 @@
 // SebType Configurator (#72): SebType's settings on the PC. It keeps no settings file of its own: every
-// value is read from, and written to, the engines' own files (the ones setup-ime sets up), then the
-// engine is redeployed or restarted.
+// value is read from, and written to, the engines' own files (the ones setup-ime sets up) or SebType's
+// sebtype.conf, then the engine is redeployed, restarted or told.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod conf;
 mod mozc;
 mod patch;
 mod proto;
@@ -121,14 +122,12 @@ fn chinese(s: &State, ui: &Ui) -> rime::Chinese {
         full_width_punctuation: s.get_zh_full_punct(),
         emoji: s.get_zh_emoji(),
         fuzzy: ui.fuzzy.iter().map(|f| f.on).collect(),
-        learn: s.get_learn(),
         page_size: s.get_page_size(),
     }
 }
 fn japanese(s: &State) -> mozc::Japanese {
     mozc::Japanese {
         half_width_space: s.get_ja_half_space(),
-        learn: s.get_learn(),
     }
 }
 fn candidates(s: &State) -> Candidates {
@@ -154,6 +153,19 @@ fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
         platform::restart_mozc();
     }
     Ok(say(Msg::JaNextTime))
+}
+
+/// Learning in sebtype.conf, which the input method applies at once.
+fn apply_learning(on: bool, c: rime::Chinese, j: mozc::Japanese) -> Result<Toast, Toast> {
+    platform::set_learning(on).map_err(err)?;
+    // Saving drops an older Configurator's learning off, which hid the learned words (#374).
+    if mozc::old_learning_off(&platform::mozc_dir()) {
+        apply_japanese(j)?;
+    }
+    if rime::old_learning_off(&platform::rime_dir()) {
+        return apply_chinese(c);
+    }
+    Ok(say(Msg::Applied))
 }
 
 fn set_langs_model(app: &AppWindow, ui: &Ui, list: Vec<(String, bool)>) {
@@ -192,7 +204,11 @@ fn load(app: &AppWindow, ui: &Ui) {
     s.set_zh_full_punct(c.full_width_punctuation);
     s.set_zh_emoji(c.emoji);
     s.set_page_size(c.page_size.clamp(5, 9));
-    s.set_learn(if rime_dir.is_dir() { c.learn } else { j.learn });
+    s.set_learn(
+        platform::learning()
+            && !rime::old_learning_off(&rime_dir)
+            && !mozc::old_learning_off(&mozc_dir),
+    );
     s.set_ja_half_space(j.half_width_space);
     ui.fuzzy.set_vec(
         (0..rime::FUZZY.len())
@@ -364,6 +380,22 @@ fn main() -> Result<(), slint::PlatformError> {
             |_| 0,
         ));
     }
+    // For tests without a window (pc/linux/test-setup-ime.sh, pc/windows/setup/test-private.ps1): the
+    // Privacy page's learning switch, --learning on or off.
+    if let Some(i) = std::env::args().position(|a| a == "--learning") {
+        let on = std::env::args().nth(i + 1).as_deref() == Some("on");
+        let (c, j) = (
+            rime::load(&platform::rime_dir()),
+            mozc::load(&platform::mozc_dir()).unwrap_or_default(),
+        );
+        std::process::exit(match apply_learning(on, c, j) {
+            Ok(_) => 0,
+            Err((_, e)) => {
+                eprintln!("--learning: {e}");
+                1
+            }
+        });
+    }
     // For tests without a window (pc/windows/setup/test.ps1): the server, username and password on
     // stdin, one per line, saved as Server and login's Save does.
     if std::env::args().any(|a| a == "--save-login") {
@@ -507,19 +539,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
         move || {
             let app = weak.unwrap();
-            let (c, j) = (
-                chinese(&app.global::<State>(), &ui),
-                japanese(&app.global::<State>()),
-            );
-            run(Box::new(move || {
-                if platform::mozc_dir().is_dir() {
-                    apply_japanese(j)?;
-                }
-                if platform::rime_dir().is_dir() {
-                    return apply_chinese(c);
-                }
-                Ok(say(Msg::Applied))
-            }));
+            let s = app.global::<State>();
+            let (on, c, j) = (s.get_learn(), chinese(&s, &ui), japanese(&s));
+            run(Box::new(move || apply_learning(on, c, j)));
         }
     });
     s.on_ja_changed({

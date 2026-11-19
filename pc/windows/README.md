@@ -157,7 +157,9 @@ the display on (`-Trial` checks just that, without SebType; `-WatchTo` watches i
 
 `setup/test-private.ps1` checks the same way that a private field learns nothing new (#270): TsfHost.cs's field
 with the input scope `IS_PRIVATE`, which Chrome's and Edge's incognito windows and Firefox's private
-windows give, learns no 中文 or 日本語 pick and still suggests what was learned. `-Browsers` opens a page
+windows give, learns no 中文 or 日本語 pick and still suggests what was learned, and that with learning off
+in the Configurator (`--learning off`, #374) every field does the same, and on again learns. `-AnyDisplay` runs it
+where no one sits, as `test-tcsbackend.sh`'s `ONLY=private` does in the test user's session. `-Browsers` opens a page
 in Edge (and Chrome) InPrivate and normal, brings it to the front without a key and reads server.log,
 where the server notes each change of the field's learning. It needs a session with a display: a
 disconnected Remote Desktop session has no window in front (on TCSBackEnd, Administrator's session

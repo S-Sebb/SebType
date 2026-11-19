@@ -44,6 +44,8 @@ nobody's own input settings change, then removes the user and its profile:
    uninstall.
 -Only forget: forgetting learned words while the server runs (#375): a silent install, test-forget.ps1 (in the
    folder too) as the test user, not elevated, a silent uninstall.
+-Only private: private fields and the Configurator's learning off (#270, #374): a silent install,
+   test-private.ps1 (in the folder too) as the test user, not elevated, with -AnyDisplay, a silent uninstall.
 
 Results: one line per check in out\setup-results.txt, pictures in out\*.png; exit 0 only if all pass.
 -Driver and -Typing are the test user's own parts (elevated, and not elevated as apps run).
@@ -94,11 +96,14 @@ function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.Languag
 # ============================================================ typing, as the test user, not elevated
 if ($Typing) {
   try {
-    if ($Typing -eq 'not-ready') {  # its own script, which makes no keys (#275): no key server
-      $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\test-not-ready.ps1" -AnyDisplay -Out "$out\275" 2>&1 | Out-String
-      Set-Content -Encoding utf8 "$out\not-ready.log" $log
-      $lines = @(Get-Content -Encoding utf8 "$out\275\not-ready-results.txt" -ErrorAction SilentlyContinue | Where-Object { $_ })
-      if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result not-ready FAIL "no results: $($log.Trim())" }
+    # Scripts of their own, which make no keys through Remote Desktop (#275, #270): no key server.
+    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt' }
+    if ($own.ContainsKey($Typing)) {
+      $script, $dir, $file = $own[$Typing]
+      $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\$script" -AnyDisplay -Out "$out\$dir" 2>&1 | Out-String
+      Set-Content -Encoding utf8 "$out\$Typing.log" $log
+      $lines = @(Get-Content -Encoding utf8 "$out\$dir\$file" -ErrorAction SilentlyContinue | Where-Object { $_ })
+      if ($lines) { $lines | ForEach-Object { Add-Content -Encoding utf8 $results $_ } } else { Result $Typing FAIL "no results: $($log.Trim())" }
       return
     }
     if ($Typing -eq 'forget') {  # its own script, whose keys go to TSF's keystroke manager: no key server
@@ -743,10 +748,10 @@ namespace SebTypeSetupTest {
       Silent-Uninstall compare
       return
     }
-    if ($Only -eq 'not-ready') {
-      Check 'not-ready-install' { Silent not-ready-install @(); 'silent, all languages' }
-      Typing not-ready 900
-      Silent-Uninstall not-ready
+    if ($Only -in 'not-ready', 'private') {
+      Check "$Only-install" { Silent "$Only-install" @(); 'silent, all languages' }
+      Typing $Only 900
+      Silent-Uninstall $Only
       return
     }
     if ($Only -eq 'forget') {

@@ -22,7 +22,7 @@ const ASCII_PUNCT: &str = "switches/@1/reset";
 const TRADITIONAL: &str = "switches/@2/reset";
 const EMOJI: &str = "switches/@3/reset";
 const ALGEBRA: &str = "speller/algebra/+";
-const LEARN: &str = "translator/enable_user_dict";
+const LEARN: &str = "translator/enable_user_dict"; // only removed (old_learning_off)
 const PAGE_SIZE: &str = "menu/page_size";
 /// SebType's page size on the PCs (Decisions #2, #163), which the setup scripts write into
 /// default.custom.yaml; rime-ice's default.yaml has 5.
@@ -71,7 +71,6 @@ pub struct Chinese {
     pub full_width_punctuation: bool,
     pub emoji: bool,
     pub fuzzy: Vec<bool>,
-    pub learn: bool,
     pub page_size: i32,
 }
 
@@ -82,7 +81,6 @@ impl Default for Chinese {
             full_width_punctuation: true,
             emoji: true,
             fuzzy: vec![false; FUZZY.len()],
-            learn: true,
             page_size: DEFAULT_PAGE_SIZE,
         }
     }
@@ -118,9 +116,14 @@ pub fn load(dir: &Path) -> Chinese {
                     .all(|r| rules.contains(&format!("- {r}")))
             })
             .collect(),
-        learn: patch::value(&schema, LEARN) != Some("false"),
         page_size,
     }
+}
+
+/// Learning off as an older Configurator wrote it, which hid the learned words too (#374); the next
+/// save drops it. Learning is sebtype.conf's now (crate::conf).
+pub fn old_learning_off(dir: &Path) -> bool {
+    patch::value(&read(&dir.join(SCHEMA_PATCH)), LEARN) == Some("false")
 }
 
 fn page_size(defaults_patch: &str) -> i32 {
@@ -144,9 +147,6 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     }
     if !c.emoji {
         entries.push(format!("  {EMOJI}: 0  # SebType: no emoji in candidates"));
-    }
-    if !c.learn {
-        entries.push(format!("  {LEARN}: false  # SebType: don't learn"));
     }
     // Appended (not replaced): rime-ice's own rules give abbreviated pinyin.
     let rules: Vec<String> = (0..FUZZY.len())
@@ -425,7 +425,6 @@ mod tests {
             traditional: true,
             full_width_punctuation: false,
             emoji: false,
-            learn: false,
             page_size: 7,
             ..Chinese::default()
         };
@@ -446,6 +445,20 @@ mod tests {
             }
         )
         .unwrap());
+        assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
+        // An older Configurator's learning off, which hid the learned words, goes at the next save (#374).
+        let old = format!("{setup}  {LEARN}: false  # SebType: don't learn\n");
+        fs::write(d.join(SCHEMA_PATCH), &old).unwrap();
+        assert!(old_learning_off(&d));
+        assert!(save(
+            &d,
+            &Chinese {
+                page_size: 7,
+                ..Chinese::default()
+            }
+        )
+        .unwrap());
+        assert!(!old_learning_off(&d));
         assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
         fs::remove_dir_all(&d).unwrap();
     }

@@ -32,6 +32,7 @@ enum class Op : uint8_t {
   DeployWhenIdle,  // Deploy and Mozc, for a sync's pull: once typing is idle, as they drop what is being typed
   MozcWhenIdle,    // (#373); reply.busy until done
   Forget,    // lang: its engine forgets what it learned (the Configurator, #375); reply.busy until it is done
+  Settings,  // the core reads sebtype.conf again: the Configurator changed learning (#374)
 };
 
 struct Request {

@@ -170,7 +170,7 @@ export -f picnic_window
 check picnic-candidate-window 120 picnic_window
 
 # Sync (#180) with a sebtype_sync.py server on this PC, both ways, then delete on the server: a sandbox
-# of its own (the checks above turn learning off), with a made-up device id and no sync_dir, so Rime
+# of its own (the checks above change its settings), with a made-up device id and no sync_dir, so Rime
 # writes only there, a throwaway login in a private keyring (gnome-keyring), and made-up words.
 # shellcheck disable=SC2016,SC2086  # the inner script gets its paths as arguments; own_env is split
 private_sync() {

@@ -455,7 +455,7 @@ popup_words() {
   # Fedora's Fcitx5 shows the compact popup (あ) by default; the words checked below are the long popup's.
   kwriteconfig6 --file "$h/.config/fcitx5/config" --group Behavior --key CompactInputMethodInformation False
   private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-popup.log" "$out/popup-words.txt" <<'PY2'
-import os, subprocess, sys, time
+import subprocess, sys, time
 from gi.repository import Gio, GLib
 
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
@@ -770,7 +770,8 @@ fi
 # the app marks sensitive (Chromium's incognito windows, Qt's ImhSensitiveData), a word picked in 中文 and in
 # 日本語 is not learned, and what was learned before is still first; in a field that may learn the same pick is.
 # Mozc's settings file (here general_config and the MS-IME keymap) is never written for it. Forgetting 日本語 then
-# leaves no history behind (#373).
+# leaves no history behind (#373). The Configurator's learning off (#374) is the same everywhere, and turned on
+# again learns.
 private_field() {
   local h=$fake/private before
   mkdir -p "$h/.config/fcitx5"
@@ -780,7 +781,7 @@ private_field() {
   before=$(stat -c '%Y.%y %s' "$h/.config/mozc/config1.db"; sha256sum < "$h/.config/mozc/config1.db")
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
-  private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" "$h/.config/mozc" <<'PY'
+  private_bus "$h" 240 "${own_fcitx[@]}" python3 - "$fake/fcitx5-private.log" "$h/.config/mozc" "$PWD/../configurator/target/release/sebtype-configurator" <<'PY'
 import os, subprocess, sys, time
 from gi.repository import Gio, GLib
 
@@ -825,10 +826,14 @@ def commit(keys):
     return ''.join(committed)
 def rime_ready():  # Rime deploys on first use and takes no keys until then
     tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
-LANGS = {  # the first candidate, and the fourth picked
-    'zh': (lambda: commit([*'shishi', 'space']), lambda: commit([*'shishi', '4'])),
-    'ja': (lambda: commit([*'kisha', 'space', 'Return']), lambda: commit([*'kisha', *['space'] * 4, 'Return'])),
+LANGS = {  # the first candidate, and the nth picked
+    'zh': (lambda: commit([*'shishi', 'space']), lambda n: commit([*'shishi', str(n)])),
+    'ja': (lambda: commit([*'kisha', 'space', 'Return']), lambda n: commit([*'kisha', *['space'] * n, 'Return'])),
 }
+def learning(on):  # the Configurator's switch (#374), as its window sets it
+    r = subprocess.run([sys.argv[3], '--learning', 'on' if on else 'off'], capture_output=True, text=True, timeout=60)
+    if r.returncode: print(r.stdout[-2000:], r.stderr[-2000:])
+    return r.returncode == 0
 
 ok = True
 def check(name, got, want):
@@ -836,20 +841,34 @@ def check(name, got, want):
     ok &= got == want
     print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
 
-for lang, (first, fourth) in LANGS.items():
+for lang, (first, nth) in LANGS.items():
     call(*SEBTYPE, 'SetLanguage', '(s)', lang)
     field(False)
     if lang == 'zh': check('Rime deployed', wait(rime_ready, 60), True)
     top = first()
     field(True)
-    picked = fourth()
+    picked = nth(4)
     check(f'{lang}: a pick in a sensitive field', bool(picked) and picked != top, True)
     check(f'{lang}: a sensitive field learns nothing', first(), top)
     field(False)
-    check(f'{lang}: the same pick in a field that may learn', fourth(), picked)
+    check(f'{lang}: the same pick in a field that may learn', nth(4), picked)
     check(f'{lang}: a field that may learn learns it', first(), picked)
     field(True)
     check(f'{lang}: a sensitive field keeps what was learned', first(), picked)
+    # Learning off in the Configurator is the same (#374): what was learned stays in use, a pick isn't learned.
+    field(False)
+    check(f'{lang}: the Configurator turns learning off', learning(False), True)
+    if lang == 'zh': wait(rime_ready, 60)
+    check(f'{lang}: learning off keeps what was learned', first(), picked)
+    other = nth(3)
+    check(f'{lang}: a pick with learning off', bool(other) and other != picked, True)
+    check(f'{lang}: learning off learns nothing', first(), picked)
+    check(f'{lang}: the Configurator turns learning on', learning(True), True)
+    if lang == 'zh': wait(rime_ready, 60)
+    check(f'{lang}: learning on again keeps what was learned', first(), picked)
+    check(f'{lang}: the same pick with learning on', nth(3), other)
+    # Learned, it moves up from 3rd (Rime may keep the word committed more often ahead of it).
+    check(f'{lang}: learning on again learns it', other in (first(), nth(2)), True)
 # Forgetting 日本語 as the Configurator does (forget_mozc): Mozc restarts at once, saving and closing, then its
 # history files go; Mozc closing later (here as Fcitx5 exits) writes nothing back (#373).
 HISTORY = [os.path.join(sys.argv[2], f) for f in ('segment.db', 'boundary.db', 'cform.db', '.history.db')]
