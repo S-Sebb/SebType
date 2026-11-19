@@ -74,58 +74,67 @@ Model::Model(const std::string &path, int threads) {
         }, nullptr);
         llama_backend_init();
     });
-    auto mp = llama_model_default_params();
-    mp.n_gpu_layers = 0;
-    mp.progress_callback = [](float, void *) { return true; };  // no dots on stderr
-    mModel = llama_model_load_from_file(path.c_str(), mp);
-    if (!mModel) throw std::runtime_error("zh-lm: can't load " + path);
-    auto cp = llama_context_default_params();
-    cp.n_ctx = CELLS;
-    cp.n_batch = cp.n_ubatch = BATCH;
-    cp.n_seq_max = MAX_BRANCHES + 1;
-    cp.n_threads = cp.n_threads_batch = threads;
-    cp.kv_unified = true;
-    cp.no_perf = true;
-    mCtx = llama_init_from_model(mModel, cp);
-    if (!mCtx) throw std::runtime_error("zh-lm: can't make a context for " + path);
-    // Threads that last as long as the model: without them llama.cpp starts and ends THREADS - 1 threads for
-    // every decode, which the phone started on its little cores, where the rest of each step waited for them
-    // (#264). From the CPU backend, which may be a library loaded at run time (the phone's).
-    if (threads > 1) {
-        ggml_backend_reg_t cpu = ggml_backend_reg_by_name("CPU");
-        auto make = reinterpret_cast<decltype(&ggml_threadpool_new)>(ggml_backend_reg_get_proc_address(cpu, "ggml_threadpool_new"));
-        mFreePool = reinterpret_cast<void (*)(ggml_threadpool *)>(ggml_backend_reg_get_proc_address(cpu, "ggml_threadpool_free"));
-        auto params = ggml_threadpool_params_default(threads);
-        mPool = make && mFreePool ? make(&params) : nullptr;
-        if (mPool) llama_attach_threadpool(mCtx, mPool, nullptr);
-    }
-    mVocab = llama_model_get_vocab(mModel);
-    mVocabSize = llama_vocab_n_tokens(mVocab);
-    mBos = llama_vocab_bos(mVocab);
+    // A throw below skips ~Model(): what was made so far is freed here, or a Chinese engine that falls back to
+    // Rime and starts again keeps a model, a context and the pool's threads per try.
+    try {
+        auto mp = llama_model_default_params();
+        mp.n_gpu_layers = 0;
+        mp.progress_callback = [](float, void *) { return true; };  // no dots on stderr
+        mModel = llama_model_load_from_file(path.c_str(), mp);
+        if (!mModel) throw std::runtime_error("zh-lm: can't load " + path);
+        auto cp = llama_context_default_params();
+        cp.n_ctx = CELLS;
+        cp.n_batch = cp.n_ubatch = BATCH;
+        cp.n_seq_max = MAX_BRANCHES + 1;
+        cp.n_threads = cp.n_threads_batch = threads;
+        cp.kv_unified = true;
+        cp.no_perf = true;
+        mCtx = llama_init_from_model(mModel, cp);
+        if (!mCtx) throw std::runtime_error("zh-lm: can't make a context for " + path);
+        // Threads that last as long as the model: without them llama.cpp starts and ends THREADS - 1 threads for
+        // every decode, which the phone started on its little cores, where the rest of each step waited for them
+        // (#264). From the CPU backend, which may be a library loaded at run time (the phone's).
+        if (threads > 1) {
+            ggml_backend_reg_t cpu = ggml_backend_reg_by_name("CPU");
+            auto make = reinterpret_cast<decltype(&ggml_threadpool_new)>(ggml_backend_reg_get_proc_address(cpu, "ggml_threadpool_new"));
+            mFreePool = reinterpret_cast<void (*)(ggml_threadpool *)>(ggml_backend_reg_get_proc_address(cpu, "ggml_threadpool_free"));
+            auto params = ggml_threadpool_params_default(threads);
+            mPool = make && mFreePool ? make(&params) : nullptr;
+            if (mPool) llama_attach_threadpool(mCtx, mPool, nullptr);
+        }
+        mVocab = llama_model_get_vocab(mModel);
+        mVocabSize = llama_vocab_n_tokens(mVocab);
+        mBos = llama_vocab_bos(mVocab);
 
-    std::vector<bool> han1(mVocabSize);
-    mText.resize(mVocabSize);
-    for (int t = 0; t < mVocabSize; t++) {
-        const std::string raw = llama_vocab_get_text(mVocab, t);
-        mPiece.emplace(raw, t);
-        char buf[64];
-        const int n = llama_token_to_piece(mVocab, t, buf, sizeof buf, 0, true);
-        mText[t] = n > 0 ? std::string(buf, n) : "";
-        const bool control = llama_vocab_is_control(mVocab, t) || llama_vocab_is_eog(mVocab, t);
-        han1[t] = !control && han(codepoint(mText[t])) && mText[t].size() == 3;
+        std::vector<bool> han1(mVocabSize);
+        mText.resize(mVocabSize);
+        for (int t = 0; t < mVocabSize; t++) {
+            const std::string raw = llama_vocab_get_text(mVocab, t);
+            mPiece.emplace(raw, t);
+            char buf[64];
+            const int n = llama_token_to_piece(mVocab, t, buf, sizeof buf, 0, true);
+            mText[t] = n > 0 ? std::string(buf, n) : "";
+            const bool control = llama_vocab_is_control(mVocab, t) || llama_vocab_is_eog(mVocab, t);
+            han1[t] = !control && han(codepoint(mText[t])) && mText[t].size() == 3;
+        }
+        auto id = [&](const std::string &s) {
+            auto it = mPiece.find(s);
+            if (it == mPiece.end()) throw std::runtime_error("zh-lm: no piece " + s + ": not SebType's Chinese model");
+            return it->second;
+        };
+        mT = id("<T>"), mS = id("<S>"), mE = id("<E>"), mB = id("<B>");
+        for (char c = 'a'; c <= 'z'; c++) mLetter.push_back(id(std::string(1, c)));
+        for (int t = 0; t < mVocabSize; t++)
+            if (han1[t]) mHan.push_back(t);
+    } catch (...) {
+        release();
+        throw;
     }
-    auto id = [&](const std::string &s) {
-        auto it = mPiece.find(s);
-        if (it == mPiece.end()) throw std::runtime_error("zh-lm: no piece " + s + ": not SebType's Chinese model");
-        return it->second;
-    };
-    mT = id("<T>"), mS = id("<S>"), mE = id("<E>"), mB = id("<B>");
-    for (char c = 'a'; c <= 'z'; c++) mLetter.push_back(id(std::string(1, c)));
-    for (int t = 0; t < mVocabSize; t++)
-        if (han1[t]) mHan.push_back(t);
 }
 
-Model::~Model() {
+Model::~Model() { release(); }
+
+void Model::release() {
     if (mCtx) llama_free(mCtx);
     if (mPool) mFreePool(mPool);
     if (mModel) llama_model_free(mModel);

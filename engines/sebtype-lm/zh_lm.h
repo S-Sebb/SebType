@@ -64,6 +64,7 @@ private:
     std::vector<int> examplePrefix(const std::string &context, const std::string &typed) const;
     const float *advance(const std::vector<int> &prefix);
     void clearBranches();
+    void release();  // frees the model, its context and its threads
     // Decodes the example PREFIX after what the cache holds of it, and FOLLOWERS after it as a tree, each on a
     // sequence of its own, in one batch, into mNodes.
     void decodeExample(const std::vector<int> &prefix, const std::vector<std::vector<int>> &followers);
