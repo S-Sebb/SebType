@@ -322,7 +322,7 @@ component KeyboardPage inherits Page {
         Divider { }
         Row {
             title: @tr("Candidates per page");
-            detail: @tr("中文 (日本語 always shows 9)");
+            detail: @tr("中文 and 日本語");
             VerticalLayout { alignment: center;
                 Segmented {
                     options: ["5", "6", "7", "8", "9"];
@@ -398,8 +398,7 @@ component ThemePage inherits Page {
             clicked => { if State.picnic { State.picnic = false; State.theme-changed(); } } }
     }
     Text {
-        text: State.system == "Windows" ? @tr("日本語's candidate window is drawn by Mozc itself and stays as it is.")
-            : @tr("The candidate windows of 中文 and 日本語 both use this style.");
+        text: @tr("The candidate windows of 中文 and 日本語 both use this style.");
         color: Theme.muted;
         font-size: Theme.detail-size;
         wrap: word-wrap;

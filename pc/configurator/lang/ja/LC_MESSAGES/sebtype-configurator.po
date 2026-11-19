@@ -220,8 +220,8 @@ msgstr "候補ウィンドウ"
 msgid "Candidates per page"
 msgstr "1 ページの候補数"
 
-msgid "中文 (日本語 always shows 9)"
-msgstr "中文（日本語は常に 9 個）"
+msgid "中文 and 日本語"
+msgstr "中文と日本語"
 
 msgid "Layout"
 msgstr "並び"
@@ -252,9 +252,6 @@ msgstr "Shift だけを短く押す"
 
 msgid "System style"
 msgstr "システムのスタイル"
-
-msgid "日本語's candidate window is drawn by Mozc itself and stays as it is."
-msgstr "日本語の候補ウィンドウは Mozc が描くので、そのままです。"
 
 msgid "The candidate windows of 中文 and 日本語 both use this style."
 msgstr "中文と日本語の候補ウィンドウはどちらもこのスタイルです。"
