@@ -2,14 +2,21 @@
 # SebType's Linux packages: the input method (#190), the Fcitx5 add-on over SebType's core with Mozc in its
 # process, packaged by sebtype.spec (build.sh), and SebType's librime (#101), packaged by librime.spec
 # (build-librime.sh). Sourced by the build scripts, pc/linux/setup-ime.sh and the tests. Bump
-# SEBTYPE_RPM_RELEASE when core/, linux/ or engines/mozc changes, LIBRIME_SEBTYPE_RELEASE when engines/librime does.
+# SEBTYPE_RPM_RELEASE when what build.sh packs (SEBTYPE_SOURCES, SEBTYPE_MOZC) changes, LIBRIME_SEBTYPE_RELEASE
+# when engines/librime does.
+# A release carries both (#421): the sebtype RPM with the add-on, Mozc, the Configurator, the Chinese data and
+# setup's user part, and SebType's librime with its plugins, so a PC updates without a checkout.
 # SebType's version, the phone's and Windows' too (VERSION, #420).
 SEBTYPE_VERSION=$(<"$(dirname "${BASH_SOURCE[0]}")/../VERSION")
-SEBTYPE_RPM_RELEASE=15.fc44
+SEBTYPE_RPM_RELEASE=16.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
-# What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz.
-SEBTYPE_SOURCES=(core linux pc/icons)
+# What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz. The Configurator takes
+# the sync client and the phone's pig and font; the Chinese data librime's API headers.
+SEBTYPE_SOURCES=(VERSION core linux pc/icons pc/linux/setup-ime.sh pc/linux/mozc-keymap.tsv pc/configurator
+  sync-server/sebtype_sync.py android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+  android/app/src/main/res/font/sebtype_nunito_extrabold.ttf data/rime engines/librime/CMakeLists.txt
+  engines/librime/src/rime_api.h engines/librime/src/rime_api_deprecated.h engines/librime/src/rime_api_stdbool.h)
 SEBTYPE_MOZC=engines/mozc
 
 # fedora:44 as of 2026-11-09; its packages are what the builds link against.

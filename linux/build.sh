@@ -6,6 +6,7 @@
 #   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.<key>.x86_64.rpm
 #
 # Mozc's Bazel caches stay in ~/scratch/SebType/cache/mozc/work, so a rebuild compiles only what changed. Runs in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
+# The Configurator's crates and the Chinese data's sources (data/rime/build.sh) are cached there too.
 # Bazel downloads nothing (#361), as in the phone's Mozc builds (tools/mozc-bazel.sh): mozc_fetch fetches Bazel,
 # the registry's files and the archives tools/mozc-downloads.tsv lists, capped, into the phone's builds' cache,
 # and the spec runs that Bazel from there with downloads disabled.
@@ -37,7 +38,8 @@ bazel=$(mozc_fetch "$downloads")
 stage=$(rpm_stage)
 trap 'rm -rf "$stage"' EXIT
 pack_source "$root/$SEBTYPE_MOZC" "$stage/sources/mozc.tar.gz"
-tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -c "${SEBTYPE_SOURCES[@]}" |
+tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=pc/configurator/target \
+  -c "${SEBTYPE_SOURCES[@]}" |
   gzip -n > "$stage/sources/sebtype.tar.gz"
 
 # Builder image: the pinned Fedora with the spec's build dependencies. Built once per pin and spec; dnf's
@@ -57,7 +59,7 @@ set -euo pipefail
 rm -rf /work/sebtype-top
 rpmbuild -bb --define '_topdir /work/sebtype-top' --define '_sourcedir /sources' --define "sebtype_version $1" \
   --define "sebtype_release $2" --define 'debug_package %{nil}' --define "_smp_build_ncpus $3" \
-  --define 'bazel_root /work/bazel' --define "bazel $4" --define "mozc_downloads $5" /pkg.spec > /work/sebtype-build.log 2>&1 || { tail -30 /work/sebtype-build.log; exit 1; }
+  --define 'bazel_root /work/bazel' --define "bazel $4" --define "mozc_downloads $5" --define 'cache_root /work' /pkg.spec > /work/sebtype-build.log 2>&1 || { tail -30 /work/sebtype-build.log; exit 1; }
 cp /work/sebtype-top/RPMS/x86_64/*.rpm /out/
 EOF2
 )

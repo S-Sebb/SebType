@@ -48,7 +48,7 @@ librime_unpack "$own" || { echo "preflight: linux/build-librime.sh failed"; exit
 read -ra own_fcitx <<<"$(sebtype_run "$own")"
 
 check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh perf.sh compare.sh \
-  ../../linux/build.sh ../../linux/build-librime.sh
+  ../../linux/build.sh ../../linux/build-librime.sh ../../linux/test-rpms.sh
 
 # No two icon files differ only by case: a Windows checkout would keep one of them (#77).
 icon_case() { ! git ls-files ../icons | tr '[:upper:]' '[:lower:]' | sort | uniq -d | grep .; }
@@ -1250,5 +1250,28 @@ chinese_data() {
     o=$(fake_run < /dev/null) && grep -q "^change: install SebType's Chinese data" <<<"$o" && [[ -f $r/lua/sebtype_typo.lua ]]
 }
 check chinese-data-and-undo chinese_data
+
+# Setup's user part as the sebtype RPM installs it (sebtype-setup, #421), the release's packages installed, on
+# a fresh account with no checkout: it builds and installs nothing, takes the RPM's Configurator, Chinese data
+# and tray entry, and a rerun changes nothing.
+from_rpm() {
+  local f=$fake/from-rpm o; local h=$f/home d=$f/home/.local/share
+  mkdir -p "$h/.config" "$d"
+  echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$f/sebtype"
+  echo -n "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" > "$f/librime"
+  echo 'XMODIFIERS=@im=fcitx' > "$f/session-env"
+  run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$f" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$d" \
+    timeout 60 "$own/usr/libexec/sebtype/setup-ime.sh" < /dev/null; }
+  o=$(run) || return 1; echo "$o"
+  [[ ! -e $f/sudo.log ]] && ! grep -qE '^warning: librime|Build SebType|Rust' <<<"$o" && grep -q 'Default us 1 sebtype $' "$f/set.log" &&
+    cmp "$own/usr/libexec/sebtype/sebtype-configurator" "$d/sebtype/configurator/sebtype-configurator" &&
+    cmp "$own/usr/libexec/sebtype/sebtype-configurator.png" "$d/icons/hicolor/192x192/apps/sebtype-configurator.png" &&
+    cmp ../../linux/data/notificationitem.conf "$d/fcitx5/addon/notificationitem.conf" &&
+    [[ $(cat "$d/fcitx5/rime/sebtype-data.txt") == "$(sha256sum < "$own/usr/libexec/sebtype/rime-data.zip" | cut -d' ' -f1)" ]] &&
+    [[ -f $d/fcitx5/rime/build/rime_ice.table.bin ]] || return 1
+  o=$(run) || return 1; echo "$o"
+  grep -q '^done: 0 change(s)' <<<"$o"
+}
+check setup-from-rpm from_rpm
 
 ! grep -q '^FAIL' "$results"

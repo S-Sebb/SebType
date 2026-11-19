@@ -14,6 +14,21 @@ pc/linux/setup-ime.sh             # apply; safe to rerun
 It changes only this account's config. It uses sudo only to install missing packages, and only after
 asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>/` first.
 
+A release carries what the packages steps install, built by CI (`.github/workflows/linux-rpm.yml`, #421):
+the `sebtype` RPM and SebType's librime RPMs. Besides the input method and Mozc, `sebtype` holds what the
+per-account steps copy from: the Configurator, the Chinese data, the Mozc keymap and setup itself, as
+`sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs no packages;
+it does this account's steps with the release's files. An update installs the release's RPMs, then runs
+`sebtype-setup` as the user:
+
+```sh
+pkexec dnf install -y sebtype-<version>-<release>.x86_64.rpm librime{,-lua,-octagram}-<librime version>.x86_64.rpm \
+  [librime-predict, -tools and -devel, each one the PC has]
+sebtype-setup < /dev/null
+```
+
+`linux/test-rpms.sh <folder>` installs a release's RPMs that way in a fresh Fedora and checks them.
+
 ## What it does, and why
 
 | Step | Change | Fixes |

@@ -1,6 +1,9 @@
 # SebType's Linux input method (#190): one Fcitx5 add-on over SebType's core (core/, linux/), which hosts
 # librime for 中文 and Mozc for 日本語 (engines/mozc, as libsebtype-mozc.so in the add-on's process, #233).
-# build.sh sets the version, release, Bazel and its folders.
+# With it, what setup's user part installs into each account (#421), in %{_libexecdir}/sebtype: setup itself
+# (sebtype-setup), the Configurator (pc/configurator) and SebType's Chinese data (data/rime), so a PC with
+# this package and SebType's librime (librime.spec) needs no checkout or build tools.
+# build.sh sets the version, release, Bazel and its folders (cache_root keeps the crates and data's sources).
 
 # Private libraries: the add-on finds Mozc's by its RUNPATH ($ORIGIN/../sebtype), and nothing else may link it.
 %global __provides_exclude_from ^%{_libdir}/(fcitx5|sebtype)/.*\\.so$
@@ -11,11 +14,12 @@ Version:        %{sebtype_version}
 Release:        %{sebtype_release}
 Summary:        SebType: English, 中文 and 日本語 in one Fcitx5 input method
 # SebType's code MIT; core/src/rime.cpp and the tray LGPL-2.1-or-later (fcitx5-rime's, Fcitx5's); core/src/mozc.cpp
-# and Mozc BSD-3-Clause, with the licences of Mozc's data and third-party code (core/README.md).
-License:        MIT and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0
+# and Mozc BSD-3-Clause, with the licences of Mozc's data and third-party code (core/README.md); the Chinese data GPL-3.0-only
+# (rime-ice, 白霜) with OpenCC's Apache-2.0 (data/rime/build.sh's SOURCE.txt), the Configurator's crates their own.
+License:        MIT and GPL-3.0-only and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0
 URL:            https://github.com/S-Sebb/SebType
 
-# core/, linux/ and pc/icons, and engines/mozc, packed by build.sh
+# versions.sh's SEBTYPE_SOURCES and engines/mozc, packed by build.sh
 Source0:        sebtype.tar.gz
 Source1:        mozc.tar.gz
 
@@ -31,10 +35,25 @@ BuildRequires:  gtest-devel
 BuildRequires:  python3
 BuildRequires:  git-core
 BuildRequires:  unzip
+# The Configurator
+BuildRequires:  cargo
+BuildRequires:  rust
+BuildRequires:  fontconfig-devel
+# The Chinese data, compiled with Fedora's librime and OpenCC
+BuildRequires:  gcc
+BuildRequires:  opencc
+BuildRequires:  zip
+BuildRequires:  curl
 
 Requires:       fcitx5
 Requires:       fcitx5-data
 Requires:       librime-lua
+# What setup's first step installs, so an update installs a new one with this package: Fcitx5's modules for
+# XWayland and older apps, and Rime's grammar plugin (#127).
+Requires:       fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
+Requires:       librime-octagram
+# setup's user part
+Requires:       python3 unzip
 # The tray icons' folders; its file trigger updates hicolor's icon cache.
 Requires:       hicolor-icon-theme
 
@@ -61,12 +80,27 @@ popd
 cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
   -DCMAKE_INSTALL_LIBDIR=%{_lib} -DSEBTYPE_MOZC_LIB=$PWD/libsebtype-mozc.so
 ninja -C build -j %{_smp_build_ncpus}
+# The crates download once into cache_root; the build folder stays there too, so a rebuild compiles what changed.
+CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
+  --manifest-path pc/configurator/Cargo.toml --target-dir %{cache_root}/configurator-target
+HOME=%{cache_root}/home data/rime/build.sh chinese-data >/dev/null
 
 %check
 ctest --test-dir build/core --output-on-failure
 
 %install
 DESTDIR=%{buildroot} ninja -C build install
+# setup's user part, run from here: it finds these beside it (pc/linux/setup-ime.sh), and SebType's version in
+# versions.sh, which in the checkout reads it from VERSION.
+d=%{buildroot}%{_libexecdir}/sebtype
+install -Dpm 755 pc/linux/setup-ime.sh $d/setup-ime.sh
+install -pm 644 pc/linux/mozc-keymap.tsv $d/
+sed 's|^SEBTYPE_VERSION=.*|SEBTYPE_VERSION=%{version}|' linux/versions.sh > $d/versions.sh
+install -pm 755 %{cache_root}/configurator-target/release/sebtype-configurator $d/
+install -pm 644 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png $d/sebtype-configurator.png
+install -pm 644 chinese-data/rime/rime-data.zip $d/
+mkdir -p %{buildroot}%{_bindir}
+ln -s ../libexec/sebtype/setup-ime.sh %{buildroot}%{_bindir}/sebtype-setup
 
 %files
 %license engines/mozc/LICENSE
@@ -76,3 +110,5 @@ DESTDIR=%{buildroot} ninja -C build install
 %{_libdir}/sebtype
 %{_datadir}/icons/hicolor/*/status/sebtype-*.png
 %{_datadir}/icons/hicolor/scalable/status/sebtype-*.svg
+%{_bindir}/sebtype-setup
+%{_libexecdir}/sebtype

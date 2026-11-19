@@ -10,6 +10,9 @@
 # --undo-names gives the input methods back Fcitx5's own names (Keyboard - English (US), Rime, Mozc).
 # --undo-chinese-data puts Rime's folder back as it was before SebType's Chinese data.
 # Why each step exists, and the app checklist: pc/linux/README.md.
+# Run from a checkout, it builds SebType's packages, Configurator and Chinese data from it. Run as sebtype-setup,
+# from the sebtype RPM (#421), it is the user part of a release's install or update: the release's packages are
+# installed, and the Configurator, the Chinese data and the keymap come from beside it.
 set -euo pipefail
 
 dry=0 undo_librime=0 undo_fcitx5=0 undo_configurator=0 undo_names=0 undo_chinese_data=0
@@ -23,7 +26,8 @@ case ${1-} in
   '') ;;
   *) echo "usage: $0 [--dry-run | --undo-librime | --undo-fcitx5 | --undo-configurator | --undo-names | --undo-chinese-data]" >&2; exit 2 ;;
 esac
-here=$(dirname "$0")
+here=$(dirname "$(readlink -f "$0")")
+checkout=0; [[ -f $here/../../linux/build.sh ]] && checkout=1
 
 config=${XDG_CONFIG_HOME:-$HOME/.config}
 data=${XDG_DATA_HOME:-$HOME/.local/share}
@@ -133,8 +137,9 @@ command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (
 
 # SebType's input method (#190): linux/, packaged by linux/build.sh. SebType's librime (#101): engines/librime,
 # packaged as Fedora's package by linux/build-librime.sh. Its undo goes back to the Fedora release in the repositories.
+versions=$here/../../linux/versions.sh; ((checkout)) || versions=$here/versions.sh
 # shellcheck source-path=SCRIPTDIR source=../../linux/versions.sh
-source "$here/../../linux/versions.sh"
+source "$versions"
 installed() { rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
 restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
 undo_build() { # package [packages built with it...]
@@ -174,7 +179,7 @@ if ((${#missing[@]})); then
     read -rp "Install ${missing[*]} with 'sudo dnf install'? [y/N] " answer || answer=
     if [[ $answer == [yY]* ]]; then
       # librime's plugins come from librime's own build: SebType's, once librime is (1b)
-      if [[ " ${missing[*]} " == *" librime-octagram "* && $(installed librime) == *.sebtype* ]]; then
+      if ((checkout)) && [[ " ${missing[*]} " == *" librime-octagram "* && $(installed librime) == *.sebtype* ]]; then
         octagram_rpm=$(librime_rpm librime-octagram)
         [[ -f $octagram_rpm ]] || "$here/../../linux/build-librime.sh" >/dev/null
         missing=("${missing[@]/#librime-octagram/$octagram_rpm}")
@@ -195,11 +200,11 @@ fi
 
 # 1b. SebType's input method (#190) and SebType's librime in place of Fedora's, built from SebType's source by
 # linux/build.sh (about an hour the first time, in a container) and linux/build-librime.sh (a minute or five).
-# Built from this checkout, not taken from a release (#421): the rest of setup installs this checkout's data,
-# librime and Configurator, and a tree under test must run its own code.
+# Built from this checkout, not taken from a release (#421): a tree under test must run its own code. Run from
+# the RPM, setup comes with the release's packages, which the release's install or update installed.
 # SebType's librime replaces one Fedora release; Fedora's update to another one warns until linux/versions.sh follows it.
 sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
-if [[ $sebtype_now != "$sebtype_want" ]] &&
+if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
   change "install SebType's input method $sebtype_want, which hosts Rime and Mozc (asks before using sudo)"; then
   read -rp "Build SebType's input method if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
   if [[ $answer == [yY]* ]]; then
@@ -234,8 +239,12 @@ own_build() {
 # a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
 librime_rpms=()
 while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
-own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/../../linux/build-librime.sh" \
+if ((!checkout)); then
+  [[ $(installed librime) == "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" ]] ||
+    warn "librime isn't SebType's $LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE, the release's: Chinese typos onto the key above or below aren't corrected"
+else own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/../../linux/build-librime.sh" \
   "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
+fi
 
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
@@ -471,9 +480,10 @@ fi
 # notificationitem add-on, by this account's add-on entry over Fedora's. Fcitx5's classic UI then leaves
 # out its own tray icon, as it does for Fcitx5's item, so its menu with Input Method Settings never shows.
 tray_conf=$data/fcitx5/addon/notificationitem.conf
-if ! cmp -s "$here/../../linux/data/notificationitem.conf" "$tray_conf" &&
+tray_src=$here/../../linux/data/notificationitem.conf; ((checkout)) || tray_src=$here/../../share/sebtype/fcitx5/addon/notificationitem.conf
+if ! cmp -s "$tray_src" "$tray_conf" &&
   change "show SebType's tray menu in place of Fcitx5's with $tray_conf"; then
-  mkdir -p "${tray_conf%/*}"; cp "$here/../../linux/data/notificationitem.conf" "$tray_conf"
+  mkdir -p "${tray_conf%/*}"; cp "$tray_src" "$tray_conf"
   busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "SebType tray")"
 fi
 
@@ -560,9 +570,11 @@ fi
 # learned words, *.custom.yaml and an existing custom_phrase.txt stay. Dictionary sources the data has
 # prebuilt tables for are removed, or Rime would compile them instead. What it replaces or removes is
 # kept in $rime_before first, so --undo-chinese-data puts the folder back.
-rime_tmp=$(mktemp -d)
-if "$here/../../data/rime/build.sh" "$rime_tmp" > "$rime_tmp/build.log" 2>&1; then
-  rime_zip=$rime_tmp/rime/rime-data.zip rime_id=$(sha256sum < "$rime_zip" | cut -d' ' -f1)
+rime_tmp=$(mktemp -d) rime_zip=$here/rime-data.zip
+((!checkout)) || { "$here/../../data/rime/build.sh" "$rime_tmp" > "$rime_tmp/build.log" 2>&1 && rime_zip=$rime_tmp/rime/rime-data.zip; } ||
+  rime_zip=
+if [[ -n $rime_zip ]]; then
+  rime_id=$(sha256sum < "$rime_zip" | cut -d' ' -f1)
   if [[ $(cat "$rime_marker" 2>/dev/null) != "$rime_id" ]] &&
     change "install SebType's Chinese data with typo correction in $rime_dir (the files it replaces kept in $rime_before; undo: $0 --undo-chinese-data)"; then
     new=$rime_tmp/data
@@ -591,8 +603,11 @@ rm -r "$rime_tmp"
 
 # 14. SebType Configurator (#72): SebType's settings app, "SebType Configurator" in the app menu. Built
 # from pc/configurator with Rust's cargo (a few minutes the first time) whenever its sources are newer
-# than the build, then copied into this account with its launcher and the phone's icon.
+# than the build, then copied into this account with its launcher and the phone's icon. Run from the RPM, the
+# release's build beside it is copied.
 src_app=$here/../configurator built=$src_app/target/release/sebtype-configurator
+icon=$here/../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+((checkout)) || built=$here/sebtype-configurator icon=$here/sebtype-configurator.png
 want_desktop="[Desktop Entry]
 Type=Application
 Name=SebType Configurator
@@ -604,11 +619,12 @@ Icon=sebtype-configurator
 Categories=Settings;
 Keywords=SebType;IME;input method;Rime;Mozc;Fcitx;输入法;
 StartupWMClass=sebtype-configurator"
-stale=$( [[ -x $built ]] && find "$src_app" -path "$src_app/target" -prune -o -type f -newer "$built" -print -quit)
+# Unset where there is nothing to rebuild from: a failed $(...) in an assignment would end setup (set -e).
+stale=; ((checkout)) && [[ -x $built ]] && stale=$(find "$src_app" -path "$src_app/target" -prune -o -type f -newer "$built" -print -quit)
 if [[ ! -x $built || -n $stale ]] || ! cmp -s "$built" "$app_bin" || [[ $(cat "$app_desktop" 2>/dev/null) != "$want_desktop" ]] ||
-  ! cmp -s "$here/../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"; then
+  ! cmp -s "$icon" "$app_icon"; then
   if change "install SebType Configurator in $app_dir with its app-menu entry (undo: $0 --undo-configurator)"; then
-    if [[ ! -x $built || -n $stale ]]; then
+    if ((checkout)) && [[ ! -x $built || -n $stale ]]; then
       if command -v cargo >/dev/null; then
         cargo build --release --quiet --manifest-path "$src_app/Cargo.toml"
       else
@@ -618,7 +634,7 @@ if [[ ! -x $built || -n $stale ]] || ! cmp -s "$built" "$app_bin" || [[ $(cat "$
     if [[ -x $built ]]; then
       mkdir -p "$app_dir" "${app_desktop%/*}" "${app_icon%/*}"
       cp "$built" "$app_bin.new" && mv "$app_bin.new" "$app_bin"
-      cp "$here/../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" "$app_icon"
+      cp "$icon" "$app_icon"
       printf '%s\n' "$want_desktop" > "$app_desktop"
     fi
   fi
