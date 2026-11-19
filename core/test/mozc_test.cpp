@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "mozc_transport.h"
@@ -15,19 +16,19 @@ using mozc::commands::SessionCommand;
 namespace sebtype {
 namespace {
 
-// Ctrl+Backspace after a commit, as Mozc's Session::RequestUndo and Session::Undo answer it: the key only asks
-// for UNDO in its callback, and UNDO deletes the commit (記者) and converts it again.
+// As Mozc's session answers: Enter commits 記者, Ctrl+Backspace only asks for UNDO in its callback (Session::
+// RequestUndo), and UNDO deletes the commit and converts it again (Session::Undo).
 struct FakeMozc : MozcTransport {
   std::vector<SessionCommand::CommandType> commands;
   bool call(const Input &in, Output &out) override {
     out.set_id(1);
-    if (in.type() == Input::SEND_KEY && in.key().special_key() == mozc::commands::KeyEvent::BACKSPACE &&
-        in.key().modifier_keys_size() == 1 && in.key().modifier_keys(0) == mozc::commands::KeyEvent::CTRL) {
-      out.set_consumed(true);
+    out.set_consumed(true);
+    if (in.type() == Input::SEND_KEY && in.key().special_key() == mozc::commands::KeyEvent::ENTER) {
+      out.mutable_result()->set_value("記者");
+    } else if (in.type() == Input::SEND_KEY && in.key().special_key() == mozc::commands::KeyEvent::BACKSPACE) {
       out.mutable_callback()->mutable_session_command()->set_type(SessionCommand::UNDO);
     } else if (in.type() == Input::SEND_COMMAND) {
       commands.push_back(in.command().type());
-      out.set_consumed(true);
       if (in.command().type() == SessionCommand::UNDO) {
         out.mutable_deletion_range()->set_offset(-2);
         out.mutable_deletion_range()->set_length(2);
@@ -44,6 +45,7 @@ struct FakeMozc : MozcTransport {
   bool open() const override { return true; }
   bool loading() const override { return false; }
   void reload() override {}
+  int undos() const { return static_cast<int>(std::count(commands.begin(), commands.end(), SessionCommand::UNDO)); }
 };
 FakeMozc *fake = nullptr;
 
@@ -57,11 +59,39 @@ std::unique_ptr<MozcTransport> makeMozcTransport(const MozcPaths &) {
 
 }  // namespace sebtype
 
-TEST(MozcTest, CtrlBackspaceDeletesTheCommitAndConvertsItAgain) {
+namespace {
+constexpr Key Return{0xff0d}, CtrlBackspace{0xff08, mod::Ctrl};
+}
+
+TEST(MozcTest, CtrlBackspaceDeletesTheCommitJustBeforeTheCaretAndConvertsItAgain) {
   auto mozc = makeMozc({});
-  EXPECT_TRUE(mozc->key({0xff08, mod::Ctrl}));
-  EXPECT_EQ(fake->commands.back(), SessionCommand::UNDO);
+  mozc->key(Return);
+  EXPECT_EQ(mozc->takeCommit(), "記者");
+  mozc->setContext("今日の記者");
+  EXPECT_TRUE(mozc->key(CtrlBackspace));
+  EXPECT_EQ(fake->undos(), 1);
   EXPECT_EQ(mozc->takeEdit().deleteBefore, 2);
   EXPECT_EQ(mozc->preedit().text(), "記者");
   EXPECT_EQ(mozc->takeEdit().deleteBefore, 0);  // once
+  mozc->setContext("今日の");  // only the last commit
+  mozc->key(CtrlBackspace);
+  EXPECT_EQ(fake->undos(), 1);
+}
+
+// Mozc keeps its undo after focus moves; the commit it would delete is not in the new field (#376).
+TEST(MozcTest, CtrlBackspaceUndoesNothingWhereTheCommitIsNotBeforeTheCaret) {
+  auto mozc = makeMozc({});
+  mozc->key(Return);
+  mozc->clear();  // focus moved to another field
+  mozc->setContext("記者");
+  mozc->key(CtrlBackspace);
+  mozc->key(Return);
+  mozc->setContext("記者abcd");  // the caret moved
+  mozc->key(CtrlBackspace);
+  mozc->setContext("記者", {}, true);  // text selected
+  mozc->key(CtrlBackspace);
+  mozc->key(CtrlBackspace);  // an app that can't say, or delete it
+  EXPECT_EQ(fake->undos(), 0);
+  EXPECT_EQ(mozc->takeEdit().deleteBefore, 0);
+  EXPECT_EQ(mozc->preedit().text(), "");
 }

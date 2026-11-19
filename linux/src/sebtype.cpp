@@ -5,6 +5,7 @@
 #include <fcitx-utils/i18n.h>
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/standardpaths.h>
+#include <fcitx-utils/utf8.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputmethodmanager.h>
@@ -12,6 +13,7 @@
 #include <fcitx/text.h>
 #include <sebtype/hosts.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -179,6 +181,19 @@ std::vector<fcitx::InputMethodEntry> SebTypeEngine::listInputMethods() {
 void SebTypeEngine::keyEvent(const fcitx::InputMethodEntry &, fcitx::KeyEvent &event) {
   followField(event.inputContext());
   const auto &raw = event.rawKey();
+  // 日本語's undo of a commit (#376) deletes it only where the app gives the text before the cursor, and so can
+  // delete it too.
+  if (auto *ic = event.inputContext(); raw.sym() == FcitxKey_BackSpace && raw.states().test(fcitx::KeyState::Ctrl) &&
+                                       !event.isRelease() &&
+                                       ic->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) {
+    const auto &st = ic->surroundingText();
+    if (st.isValid()) {
+      const std::string &text = st.text();
+      const auto cursor = std::min<size_t>(st.cursor(), fcitx::utf8::length(text));
+      core_->setContext(text.substr(0, fcitx::utf8::ncharByteLength(text.begin(), cursor)), {},
+                        st.anchor() != st.cursor());
+    }
+  }
   if (core_->key({static_cast<uint32_t>(raw.sym()), coreMods(raw.states()), event.isRelease()})) {
     event.filterAndAccept();
   }

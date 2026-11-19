@@ -519,6 +519,11 @@ wchar_t TextService::typedChar(WPARAM wParam, LPARAM lParam) {
   return n == 1 && ch[0] >= 0x20 && ch[0] != 0x7f ? ch[0] : 0;
 }
 
+void TextService::dropTyping() {
+  Reply dropped;
+  server.call(Request{Op::Reset}, dropped);
+}
+
 bool TextService::send(const Request &request) {
   if (server.call(request, reply_)) {
     warned_ = false;
@@ -729,6 +734,8 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.lang = lang_;
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
+  if (q.key.sym == 0xff08 && (q.key.mods & mod::Ctrl) && !release && lang_ == Lang::Japanese)
+    q.before = textBefore(context);
   // Behind a settling edit, every key waits its turn, whether or not the server answers again: its reply would
   // replace what the edit commits. Key-ups and modifiers are the app's.
   if (settling_) {

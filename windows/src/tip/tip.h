@@ -117,6 +117,11 @@ class TextService final : public ITfTextInputProcessorEx,
   // are (as Mozc did), or a private one, where nothing typed is learned (#270).
   enum class Field { Unknown, Text, Private, Password };
   Field field(ITfContext *context);
+  // The app's text just before the caret (a few characters), empty when it has none, a selection, or can't
+  // say: 日本語's undo deletes its commit there (#376).
+  std::string textBefore(ITfContext *context);
+  // The server drops what is being typed (an undo the app's text couldn't take).
+  void dropTyping();
   void setOpen();
   void focus(ITfDocumentMgr *focus);
   // The server didn't take a key (#275): the key in grey with "!", and the popup at the first typed key.

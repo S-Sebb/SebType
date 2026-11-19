@@ -363,13 +363,13 @@ if ($Typing) {
           if ("$kata $hira $en $back" -ne 'ア あ a あ') { throw "Alt+`` gave '$kata', again '$hira'; Shift tap and Alt+`` '$en', Shift tap '$back'" }
           'あ → ア → あ; in English Alt+` stays English'
         }
-        # Ctrl+Backspace right after a commit undoes it (#376): 記者 goes and converts again, Escape gives きしゃ
-        # back, which Enter commits.
-        Check 'japanese-undo-commit' {
+        # Ctrl+Backspace right after a commit (#376): undone where Notepad gives the text before the caret (記者
+        # goes and converts again, Escape gives きしゃ, which Enter commits), else nothing; never typed twice.
+        Check 'japanese-undo-commit-notepad' {
           $first = Committed 'kisha '
           Keys 'Control_L+BackSpace' Escape Return; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
-          if ($first -eq 'きしゃ' -or $t -ne 'きしゃ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ)" }
-          "$first → $t"
+          if ($first -ne '記者' -or $t -notin 'きしゃ', '記者') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ, or 記者 untouched)" }
+          "$first → $(if ($t -eq '記者') { 'untouched: Notepad gave no text before the caret' } else { $t })"
         }
       }
     } finally { $np | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Job | Remove-Job -Force -ErrorAction SilentlyContinue }
@@ -402,6 +402,14 @@ if ($Typing) {
             throw "menu '$m', then a gave '$first'; menu '$m2', then '$second'"
           }
           "menu $($m -replace '\t.*') ($first), then $($m2 -replace '\t.*') ($second)"
+        }
+        # In a field whose text TSF can read and change, Ctrl+Backspace right after a commit undoes it (#376).
+        Check 'japanese-undo-commit' {
+          Field ja
+          TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+          Keys 'Control_L+BackSpace' Escape Return; Start-Sleep 1; $t = $tsf::Text().Trim()
+          if ($first -ne '記者' -or $t -notin 'きしゃ', 'キシャ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ)" }
+          "$first → $t"
         }
         Check 'picnic-window' $picnic
       } finally { $tsf::Stop() }

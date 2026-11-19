@@ -167,6 +167,7 @@ Reply handle(const Request &q, HANDLE pipe) {
         core->takeNotice(true);
       }
       followField(q.learning);
+      if (!q.before.empty()) core->setContext(q.before);
       taken = core->key(q.key);
       break;
     case Op::Select: core->select(q.index); break;
