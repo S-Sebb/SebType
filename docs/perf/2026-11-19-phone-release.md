@@ -81,6 +81,13 @@ hint session and pinning the model's thread to CPUs 4–7 both left the thread o
 leave the cpuset, so the owner released with this as a known limitation of the A001. Making English
 fast enough on the little cores is #406.
 
+Gboard, measured the same way on the same afternoon, alternating with SebType 201: each start was
+on the home screen, with the keyboard force-stopped and selected again, then Messages' compose field
+opened. Gboard was in `top-app` in all 20 starts, and in 20 more earlier that afternoon. SebType was
+in `nt_foreground` in 2 of its 20 starts, against #62's 6 of 10 earlier that day.
+`nt_foreground` allowed CPUs 0–7 in 38 of the 40 reads, so neither keyboard was slowed then. Gboard
+may be exempt from `nt_foreground`, but 20 SebType starts with 2 in it can't show that.
+
 - On the big cores the long field is fixed (#359): next words at the short field's 42 ms median, and
   17 of 18 spaces didn't wait (the one that did waited 81 ms). Its p95 is still 250 ms.
 - 中 misses #264's 20 ms p95 on both: 32 ms ranking and 137 ms next words on the big cores.
