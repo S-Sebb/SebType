@@ -6,8 +6,10 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
+struct ggml_threadpool;
 struct llama_context;
 struct llama_model;
 struct llama_vocab;
@@ -71,6 +73,8 @@ private:
 
     llama_model *mModel = nullptr;
     llama_context *mCtx = nullptr;
+    ggml_threadpool *mPool = nullptr;
+    void (*mFreePool)(ggml_threadpool *) = nullptr;
     const llama_vocab *mVocab = nullptr;
     int mVocabSize = 0;
     int mT = -1, mS = -1, mE = -1, mB = -1, mBos = -1;
@@ -89,6 +93,7 @@ private:
     std::vector<int> mExample;
     std::map<std::vector<int>, Node> mNodes;
     std::vector<std::vector<int>> mGuesses;  // generate()'s last candidates, which score() decodes too
+    std::pair<size_t, std::vector<Text>> mEmptyWords;  // nextWords() for an empty field, and its N
 };
 
 }  // namespace zh_lm

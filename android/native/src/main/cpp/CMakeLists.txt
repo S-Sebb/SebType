@@ -40,11 +40,25 @@ include(protobuf)
 set(RIME_TARGET rime-static)
 set(SEBTYPE_MOZC_LIB ${MOZC_LIBS_DIR}/${ANDROID_ABI}/libmozc.so CACHE FILEPATH "" FORCE)
 set(SEBTYPE_TESTS OFF CACHE BOOL "" FORCE)
+
+# llama.cpp for the models, before core/ adds its own static one: its CPU code in ggml's Android variants
+# (about 1 MB each), of which the process loads the best the phone can run (#264). The NDK's default armv8-a
+# has no dot product instructions, which made the models 2.5–3 times slower on the A001; the baseline variant
+# runs on every arm64 phone and on the emulator's ARM translation, which has none.
+set(BUILD_SHARED_LIBS ON)
+foreach(off LLAMA_BUILD_TESTS LLAMA_BUILD_TOOLS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_SERVER LLAMA_CURL GGML_OPENMP GGML_NATIVE)
+  set(${off} OFF CACHE BOOL "" FORCE)
+endforeach()
+set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+add_subdirectory(${LLAMA_DIR} ${RIME_JNI_BUILD_DIR}/llama EXCLUDE_FROM_ALL)
+set(BUILD_SHARED_LIBS OFF)
+
 add_subdirectory(${SEBTYPE_CORE_DIR} ${RIME_JNI_BUILD_DIR}/core)
 
 add_library(sebtype SHARED sebtype_jni.cpp)
 set_target_properties(sebtype PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(sebtype PRIVATE sebtype-core sebtype-english sebtype-chinese c++_static log android)  # android: ATrace (english.cpp, chinese.cpp)
+target_link_libraries(sebtype PRIVATE sebtype-core sebtype-english sebtype-chinese ggml c++_static log android)  # android: ATrace (english.cpp, chinese.cpp)
 target_link_options(sebtype PRIVATE
     -Wl,--gc-sections
     -Wl,--as-needed

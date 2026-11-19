@@ -13,6 +13,8 @@
 #include <optional>
 #include <stdexcept>
 
+#include "ggml-backend.h"
+#include "ggml-cpu.h"
 #include "llama.h"
 
 namespace zh_lm {
@@ -54,6 +56,7 @@ std::string lastChars(const std::string &s, size_t n) {
 
 // Adds the time until it goes out of scope to SLOT.
 struct Timer {
+    Timer(double &slot) : slot(slot) {}  // GCC 15 in C++17 can't emplace an aggregate
     double &slot;
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~Timer() { slot += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count(); }
@@ -85,6 +88,17 @@ Model::Model(const std::string &path, int threads) {
     cp.no_perf = true;
     mCtx = llama_init_from_model(mModel, cp);
     if (!mCtx) throw std::runtime_error("zh-lm: can't make a context for " + path);
+    // Threads that last as long as the model: without them llama.cpp starts and ends THREADS - 1 threads for
+    // every decode, which the phone started on its little cores, where the rest of each step waited for them
+    // (#264). From the CPU backend, which may be a library loaded at run time (the phone's).
+    if (threads > 1) {
+        ggml_backend_reg_t cpu = ggml_backend_reg_by_name("CPU");
+        auto make = reinterpret_cast<decltype(&ggml_threadpool_new)>(ggml_backend_reg_get_proc_address(cpu, "ggml_threadpool_new"));
+        mFreePool = reinterpret_cast<void (*)(ggml_threadpool *)>(ggml_backend_reg_get_proc_address(cpu, "ggml_threadpool_free"));
+        auto params = ggml_threadpool_params_default(threads);
+        mPool = make && mFreePool ? make(&params) : nullptr;
+        if (mPool) llama_attach_threadpool(mCtx, mPool, nullptr);
+    }
     mVocab = llama_model_get_vocab(mModel);
     mVocabSize = llama_vocab_n_tokens(mVocab);
     mBos = llama_vocab_bos(mVocab);
@@ -113,6 +127,7 @@ Model::Model(const std::string &path, int threads) {
 
 Model::~Model() {
     if (mCtx) llama_free(mCtx);
+    if (mPool) mFreePool(mPool);
     if (mModel) llama_model_free(mModel);
 }
 
@@ -445,6 +460,9 @@ std::vector<Text> Model::nextWords(const std::string &context, size_t n) {
         int seq;
     };
     const auto ctx = contextTokens(context);
+    // An empty field's are always the same, and asked for as it opens, while the phone is busiest (#264).
+    const bool empty = ctx.size() == 1;
+    if (empty && mEmptyWords.first == n) return mEmptyWords.second;
     const float *first = advance(ctx);
     llama_memory_t mem = llama_get_memory(mCtx);
     mBranches = 2 * NEXT_BEAM;
@@ -516,6 +534,7 @@ std::vector<Text> Model::nextWords(const std::string &context, size_t n) {
         }
     std::stable_sort(words.begin(), words.end(), [](const Text &a, const Text &b) { return a.logProb > b.logProb; });
     if (words.size() > n) words.resize(n);
+    if (empty) mEmptyWords = {n, words};
     return words;
 }
 
