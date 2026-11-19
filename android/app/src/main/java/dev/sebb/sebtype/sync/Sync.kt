@@ -30,6 +30,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.HttpsURLConnection
 import dev.sebb.sebtype.Engines
+import dev.sebb.sebtype.core.NativeCore
 import android.os.UserManager
 
 /** The user's own sync server and login (#12, Decisions #2: bring your own server, its own login). */
@@ -169,7 +170,8 @@ val Context.unlocked get() = getSystemService(UserManager::class.java).isUserUnl
  * others' (study report on #3, section 6). A sync downloads the other devices' changed snapshots,
  * lets Rime merge them and write this phone's, and uploads that; Rime runs only when something
  * changed. The same folders carry the Japanese and English personal dictionaries
- * ([PersonalDictionarySync], #14). It runs in the background while the keyboard is hidden: when it
+ * ([PersonalDictionarySync], #14), and the conversions picked in 日本語 (#409): each device's record of its picks,
+ * which Mozc keeps in its folder and learns the other devices' from (core/src/mozc_learned.h). It runs in the background while the keyboard is hidden: when it
  * hides (at most once a minute) and every half hour. Offline, Rime keeps learning as always and the
  * next sync takes everything along.
  */
@@ -180,6 +182,9 @@ object Sync {
     private const val RETRY_MS = 60_000L
     private val FILE = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,99}\\.userdb\\.txt")
     private val DEVICE = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+    // The conversions picked in 日本語: this phone's record, and the other devices' in LEARNED_DIR/<device>.txt.
+    private const val LEARNED = "mozc_learned.txt"
+    private const val LEARNED_DIR = "mozc_learned"
 
     sealed interface Status {
         data object Off : Status
@@ -290,10 +295,12 @@ object Sync {
         var remote = server.list()
         val ownBefore = installationId(context)
         PersonalDictionarySync.dropOldChineseCopies(context, sync)
+        var learned = false
         for(file in remote) {
             val dictionary = file.name in PersonalDictionarySync.FILES
-            if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || FILE.matches(file.name))) continue
-            val local = File(sync, "${file.device}/${file.name}")
+            val picks = file.name == LEARNED
+            if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || picks || FILE.matches(file.name))) continue
+            val local = if(picks) File(Engines.mozcDir(context), "$LEARNED_DIR/${file.device}.txt") else File(sync, "${file.device}/${file.name}")
             val old = local.takeIf { it.isFile }?.readBytes()
             if(old != null && sha256(old) == file.sha256) continue
             val bytes = server.download(file)
@@ -303,7 +310,14 @@ object Sync {
             val tmp = File(local.path + ".tmp")
             tmp.writeBytes(bytes)
             if(!tmp.renameTo(local)) throw IOException("can't save a download")
-            if(!dictionary) markMerge(context)
+            if(picks) learned = true else if(!dictionary) markMerge(context)
+        }
+        // Mozc learns the other devices' picks as it starts: a running one stops, and starts again with 日本語.
+        if(learned) Engines.onThread(NativeCore.JAPANESE) {
+            if(NativeCore.running(NativeCore.JAPANESE)) {
+                NativeCore.save(NativeCore.JAPANESE)
+                NativeCore.stop(NativeCore.JAPANESE)
+            }
         }
 
         if(mergeFile(context).exists() || remote.none { it.device == ownBefore }) {
@@ -319,7 +333,8 @@ object Sync {
         val own = installationId(context) ?: return Status.Synced(System.currentTimeMillis())
         if(own != ownBefore) remote = server.list()
         val uploaded = remote.filter { it.device == own }.associate { it.name to it.sha256 }
-        val files = File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().associate { it.name to it.readBytes() }
+        val files = File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().associate { it.name to it.readBytes() } +
+            listOfNotNull(File(Engines.mozcDir(context), LEARNED).takeIf { it.isFile }?.let { LEARNED to it.readBytes() })
         (files + PersonalDictionarySync.snapshots(context)).forEach { (name, bytes) ->
             if(uploaded[name] != sha256(bytes)) server.upload(own, name, bytes)
         }
