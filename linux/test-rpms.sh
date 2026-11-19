@@ -109,7 +109,11 @@ chinese_data() {
 check chinese-data chinese_data
 
 # Runs without a window: setup's --migrate on an account with nothing to move.
-configurator() { HOME=$(mktemp -d) /usr/libexec/sebtype/sebtype-configurator --migrate; }
+# and was built from this checkout's sources, not kept from an earlier build (#423).
+configurator() {
+  HOME=$(mktemp -d) /usr/libexec/sebtype/sebtype-configurator --migrate &&
+    [[ $(/usr/libexec/sebtype/sebtype-configurator --sources) == "$(configurator_sources /src)" ]]
+}
 check configurator-runs configurator
 
 exit $failed

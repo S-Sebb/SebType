@@ -52,6 +52,15 @@ sebtype_key() {
   rm -f "$index.sebtype-key.$$"
   return $rc
 }
+# configurator_sources <root>: a hash of the files the Configurator is built from under <root>, a checkout or
+# the spec's unpacked sources. The spec builds it in, and Cargo rebuilds when it changes: the packed sources'
+# times are all 0, so Cargo's own check by time would keep an older build (#423). linux/test-rpms.sh compares
+# it with the checkout's.
+configurator_sources() {
+  (cd "$1" && find pc/configurator sync-server/sebtype_sync.py android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png \
+    android/app/src/main/res/font/sebtype_nunito_extrabold.ttf -path pc/configurator/target -prune -o -type f -print0 |
+    LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | head -c 16)
+}
 # sebtype_rpm <key>: the cached RPM built from sources with that key (#326): two trees on different code
 # never share one, and a tree whose sources haven't changed reuses its own.
 sebtype_rpm() { echo "$SEBTYPE_CACHE/sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.$1.x86_64.rpm"; }

@@ -74,7 +74,9 @@ else result FAIL dry-run "see $out/test-release-dry-run.log"; fi
 rm -f "$out"/SebType-setup-*.exe
 
 # A setup run without the RPMs: refused after the setup is found.
-if ! dry_run "$no_rpm_sha" "$version" no-rpm && grep -q "no successful Linux RPM run" "$out/test-release-no-rpm.log"; then
+# The version that commit's setup run built (it predates VERSION: sebtype.iss's default), not this checkout's.
+no_rpm_version=$(git show "$no_rpm_sha:pc/windows/setup/sebtype.iss" | sed -n 's/^ *#define Version "\(.*\)"$/\1/p')
+if ! dry_run "$no_rpm_sha" "$no_rpm_version" no-rpm && grep -q "no successful Linux RPM run" "$out/test-release-no-rpm.log"; then
   result PASS no-rpm "refuses ${no_rpm_sha:0:10}, which has a setup run but no Linux RPM run"
 else result FAIL no-rpm "see $out/test-release-no-rpm.log"; fi
 rm -f "$out"/SebType-setup-*.exe

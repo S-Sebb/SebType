@@ -81,7 +81,8 @@ cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREF
   -DCMAKE_INSTALL_LIBDIR=%{_lib} -DSEBTYPE_MOZC_LIB=$PWD/libsebtype-mozc.so
 ninja -C build -j %{_smp_build_ncpus}
 # The crates download once into cache_root; the build folder stays there too, so a rebuild compiles what changed.
-CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
+# The sources' hash, built in (sebtype-configurator --sources), makes Cargo rebuild what changed: their times are 0.
+SEBTYPE_SOURCES=$(source linux/versions.sh && configurator_sources .) CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
   --manifest-path pc/configurator/Cargo.toml --target-dir %{cache_root}/configurator-target
 HOME=%{cache_root}/home data/rime/build.sh chinese-data >/dev/null
 
