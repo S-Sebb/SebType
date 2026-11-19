@@ -61,8 +61,9 @@ mapped (#414 did the same for 中). The table gives the model alone on the phone
 | dot product | 86 MB | 64 MB | 101 MB | 75 MB |
 
 Reading instead of mapping changed neither speed. The emulator's `en-model-waits-for-letter` check
-looked for the model in the keyboard's mappings. It now looks for the model's size in the bytes the
-keyboard has read.
+looked for the model in the keyboard's mappings. It now traces the keyboard's process with atrace and
+looks for English's `SebType load` section: none in the empty field, one after a letter, and no load
+error in the system log.
 
 ## Results on the phone
 

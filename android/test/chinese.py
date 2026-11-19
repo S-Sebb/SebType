@@ -1348,44 +1348,41 @@ def ja_unloads_when_idle():
 check("ja-unloads-when-idle", ja_unloads_when_idle, needs=["ja-chip"])
 
 
-def bytes_read():
-    """What the keyboard's process has read from files so far. The English model is read, not mapped
-    (#406), so its loading shows as this growing by the model's size."""
-    pid = adb("shell", "pidof", PKG).strip()
-    io = root(f"cat /proc/{pid}/io") if pid else ""
-    return next(
-        (int(line.split()[1]) for line in io.splitlines() if line.startswith("rchar:")),
-        0,
-    )
+def en_loads():
+    """How many times English began loading its model in the keyboard's process since trace_loads()
+    started: core/ marks each attempt with the trace section "SebType load" (english.cpp)."""
+    trace = root("atrace --async_dump")
+    return len(re.findall(r"B\|\d+\|SebType load\b", trace))
 
 
 def en_model_waits_for_letter():
     """English's prediction model loads only once a letter is typed (#56, Decisions #2)."""
-    model = int(
-        root(f"stat -c %s /data/user/0/{PKG}/no_backup/english/english.gguf").strip()
-    )
     open_field()
     if chip(nodes()):
         tap_globe()  # 日 -> EN
     stop_keyboard()
-    open_field()
-    before = bytes_read()
-    time.sleep(10)
-    if bytes_read() - before >= model:
-        raise Fail("the model loaded in an empty field before any letter")
-    before = bytes_read()
-    type_keys("th")
-    # No chip is EN or 中: in 中, th has Chinese candidates and no English model to load.
-    got = candidates(nodes())
-    if not all(c.isascii() for c in got):
-        raise Fail(f"th -> {got[:6]}: the keyboard is in 中, not EN")
-    wait_for(
-        "the model to load after a letter",
-        lambda: bytes_read() - before >= model,
-        60,
-        interval=2,
-    )
-    return "empty field: no model; after typing th: loaded"
+    adb("logcat", "-c")
+    # App-level tracing of the keyboard's process alone; atrace wants a category, and view is a light one.
+    root(f"atrace --async_start -b 4096 -a {PKG} view")
+    try:
+        open_field()
+        time.sleep(10)
+        if loads := en_loads():
+            raise Fail(
+                f"the model began loading {loads} time(s) in an empty field before any letter"
+            )
+        type_keys("th")
+        # No chip is EN or 中: in 中, th has Chinese candidates and no English model to load.
+        got = candidates(nodes())
+        if not all(c.isascii() for c in got):
+            raise Fail(f"th -> {got[:6]}: the keyboard is in 中, not EN")
+        loads = wait_for("the model to load after a letter", en_loads, 60, interval=2)
+    finally:
+        root("atrace --async_stop > /dev/null")
+    # The section also covers a load that failed, which core/ reports on stderr, in the system log.
+    if failed := [l for l in logcat().splitlines() if "sebtype-lm:" in l]:
+        raise Fail(f"the model failed to load after a letter: {failed[0]}")
+    return f"empty field: no load began; after typing th: {loads} load(s), none failed"
 
 
 check("en-model-waits-for-letter", en_model_waits_for_letter, needs=["ja-chip"])
