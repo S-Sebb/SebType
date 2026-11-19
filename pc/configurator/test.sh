@@ -319,8 +319,11 @@ EOF
     until_ 60 "[[ \$(runs end) == 3 ]]"
     active sebtype-sync.path || fail "the changes stopped the network trigger"
 
-    leftovers() {
-      ls "$units"/sebtype-sync.{path,timer,service} "$units"/sebtype-sync-network.service "$own"/{sync.json,network-state,schedule.lock} 2>/dev/null
+    leftovers() {  # true, naming them, if any is left
+      local f
+      for f in "$units"/sebtype-sync.{path,timer,service} "$units"/sebtype-sync-network.service "$own"/{sync.json,network-state,schedule.lock}; do
+        [[ -e $f ]] && echo "$f"
+      done | grep .
     }
     # The uninstall, held while it holds the schedule lock (its first systemctl waits for release undo).
     real=$(command -v systemctl); mkdir -p "$d/held"
@@ -341,7 +344,7 @@ EOF
     for x in sebtype-sync.path sebtype-sync-network.service sebtype-sync-soon.timer; do
       active "$x" && fail "$x still runs after the uninstall"
     done
-    leftovers && fail "files left after the uninstall"
+    left=$(leftovers) && fail "files left after the uninstall: $left"
     echo "the uninstall, with --network-changed and a sync waiting: no trigger, planned sync or file left"
 
     # A sync running through the uninstall (held in its pull by words.lock), ending after it.
@@ -354,7 +357,7 @@ EOF
     HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo2.log" 2>&1 || fail "the second uninstall failed: $(tail -5 "$d/undo2.log")"
     release words.lock
     until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) != activating ]]" || fail "the running sync never ended"
-    leftovers && fail "files left by the sync that ended after the uninstall"
+    left=$(leftovers) && fail "files left by the sync that ended after the uninstall: $left"
     echo "a sync running through the uninstall: no file left once it ended"
 ' _ "$d" "$bin" "$PWD" "$out"
 }
