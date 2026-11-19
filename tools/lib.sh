@@ -46,7 +46,7 @@ fi
 BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
 
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
-JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1)}
+JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1 || true)}  # none: no Android build here
 
 # build_host_ready: whether this build runs on the build host. If the host doesn't answer, it starts
 # Zscaler once and tries again; if it still doesn't, it says so and the build runs here.
