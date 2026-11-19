@@ -23,7 +23,7 @@ class FieldKind(
     val englishField: Int = field,
 ) {
     /** What the enter key does and shows */
-    enum class Enter { NEWLINE, GO, SEARCH, SEND, NEXT, PREVIOUS, DONE }
+    enum class Enter { NEWLINE, GO, SEARCH, SEND, NEXT, PREVIOUS, DONE, CUSTOM }
 
     /** Shown as incognito in the bar: the field itself learns nothing. */
     val incognito get() = !learns
@@ -34,7 +34,7 @@ class FieldKind(
             val variation = type and InputType.TYPE_MASK_VARIATION
             val options = info?.imeOptions ?: 0
             val noLearning = options and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
-            val enter = enter(options)
+            val enter = enter(options, info?.actionLabel != null)
             return when (type and InputType.TYPE_MASK_CLASS) {
                 InputType.TYPE_CLASS_NUMBER -> {
                     val pin = variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
@@ -58,8 +58,10 @@ class FieldKind(
             }
         }
 
-        private fun enter(options: Int): Enter {
+        /** As the old app read it: no action, then the app's own ([EditorInfo.actionLabel]), then a standard one */
+        private fun enter(options: Int, custom: Boolean): Enter {
             if (options and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return Enter.NEWLINE
+            if (custom) return Enter.CUSTOM
             return when (options and EditorInfo.IME_MASK_ACTION) {
                 EditorInfo.IME_ACTION_GO -> Enter.GO
                 EditorInfo.IME_ACTION_SEARCH -> Enter.SEARCH

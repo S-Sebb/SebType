@@ -2569,6 +2569,20 @@ def settings_action():
     return "All Actions, Settings -> SettingsActivity"
 
 
+def custom_enter_action():
+    """#381: in a field with an app's own action (label "Pay", id 42), Enter after a word sends that action,
+    as the old app did, not a newline; the key keeps the Enter icon, as the old app's did."""
+    to_english()
+    open_field("action")
+    type_text("hi")
+    spots = key_spots()
+    if "Enter" not in spots:
+        raise Fail(f"no Enter key among {sorted(spots)}")
+    adb("shell", "input", "tap", *map(str, spots["Enter"]))
+    wait_for("the field's action", lambda: field_text() == "action 42", 10)
+    return "Enter -> performEditorAction(42)"
+
+
 # --- A hardware (Bluetooth, USB) keyboard's keys, sent as key events (#284) ---
 
 
@@ -2660,6 +2674,7 @@ check("en-backspace-reverts", backspace_reverts, needs=["first-install"])
 check("en-reopen-word", reopen_word, needs=["first-install"])
 check("en-emoji-suggestion", emoji_suggestion, needs=["first-install"])
 check("settings-action", settings_action, needs=["first-install"])
+check("custom-enter-action", custom_enter_action, needs=["first-install"])
 check("clipboard-paste", clipboard_paste, needs=["first-install"])
 check("quick-clip", quick_clip, needs=["first-install"])
 check("quick-clip-secret", quick_clip_secret, needs=["first-install"])
