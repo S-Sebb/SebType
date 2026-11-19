@@ -363,11 +363,12 @@ if ($Typing) {
           if ("$kata $hira $en $back" -ne 'ア あ a あ') { throw "Alt+`` gave '$kata', again '$hira'; Shift tap and Alt+`` '$en', Shift tap '$back'" }
           'あ → ア → あ; in English Alt+` stays English'
         }
-        # Ctrl+Backspace right after a commit undoes it (#376): 記者 goes and きしゃ composes again, which Enter commits.
+        # Ctrl+Backspace right after a commit undoes it (#376): 記者 goes and converts again, Escape gives きしゃ
+        # back, which Enter commits.
         Check 'japanese-undo-commit' {
           $first = Committed 'kisha '
-          Keys 'Control_L+BackSpace' Return; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
-          if ($first -eq 'きしゃ' -or $t -ne 'きしゃ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace and Enter '$t' (want きしゃ)" }
+          Keys 'Control_L+BackSpace' Escape Return; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
+          if ($first -eq 'きしゃ' -or $t -ne 'きしゃ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ)" }
           "$first → $t"
         }
       }

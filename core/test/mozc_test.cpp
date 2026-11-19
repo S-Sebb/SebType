@@ -16,7 +16,7 @@ namespace sebtype {
 namespace {
 
 // Ctrl+Backspace after a commit, as Mozc's Session::RequestUndo and Session::Undo answer it: the key only asks
-// for UNDO in its callback, and UNDO deletes the commit (きしゃ → 記者) and gives its reading back.
+// for UNDO in its callback, and UNDO deletes the commit (記者) and converts it again.
 struct FakeMozc : MozcTransport {
   std::vector<SessionCommand::CommandType> commands;
   bool call(const Input &in, Output &out) override {
@@ -32,10 +32,10 @@ struct FakeMozc : MozcTransport {
         out.mutable_deletion_range()->set_offset(-2);
         out.mutable_deletion_range()->set_length(2);
         auto *seg = out.mutable_preedit()->add_segment();
-        seg->set_value("きしゃ");
-        seg->set_value_length(3);
-        seg->set_annotation(mozc::commands::Preedit::Segment::UNDERLINE);
-        out.mutable_preedit()->set_cursor(3);
+        seg->set_value("記者");
+        seg->set_value_length(2);
+        seg->set_annotation(mozc::commands::Preedit::Segment::HIGHLIGHT);
+        out.mutable_preedit()->set_cursor(2);
       }
     }
     return true;
@@ -57,11 +57,11 @@ std::unique_ptr<MozcTransport> makeMozcTransport(const MozcPaths &) {
 
 }  // namespace sebtype
 
-TEST(MozcTest, CtrlBackspaceUndoesTheCommitAndGivesItsReadingBack) {
+TEST(MozcTest, CtrlBackspaceDeletesTheCommitAndConvertsItAgain) {
   auto mozc = makeMozc({});
   EXPECT_TRUE(mozc->key({0xff08, mod::Ctrl}));
   EXPECT_EQ(fake->commands.back(), SessionCommand::UNDO);
   EXPECT_EQ(mozc->takeEdit().deleteBefore, 2);
-  EXPECT_EQ(mozc->preedit().text(), "きしゃ");
+  EXPECT_EQ(mozc->preedit().text(), "記者");
   EXPECT_EQ(mozc->takeEdit().deleteBefore, 0);  // once
 }

@@ -385,12 +385,14 @@ shift_tap(); check('Shift tap in ア turns English on', mode(), 'A')
 chord('Alt_L', 'grave'); check('Alt+` in English stays English', mode(), 'A')
 shift_tap(); check('Shift tap in English is ア again', mode(), 'ア')
 chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'sebtype-hira'))
-# Ctrl+Backspace right after a conversion's commit undoes it (#376): the commit is deleted, its reading composes.
+# Ctrl+Backspace right after a conversion's commit undoes it (#376): the commit is deleted and converts again, as
+# before Enter, and Escape gives its reading back.
 for k in [*'kisha', 'space', 'Return']: tap(k)
 done = committed[-1] if committed else ''
-chord('Control_L', 'BackSpace')
-check('Ctrl+Backspace after a commit deletes it and gives its reading back', (deleted, preedit[0]),
-      ([(-len(done), len(done))], 'きしゃ'))
+chord('Control_L', 'BackSpace'); undone = preedit[0]
+tap('Escape'); reading = preedit[0]
+check('Ctrl+Backspace after a commit deletes it and converts it again', (deleted, undone, reading),
+      ([(-len(done), len(done))], done, 'きしゃ'))
 tap('Escape')
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
