@@ -1348,28 +1348,43 @@ def ja_unloads_when_idle():
 check("ja-unloads-when-idle", ja_unloads_when_idle, needs=["ja-chip"])
 
 
-def model_mapped():
+def bytes_read():
+    """What the keyboard's process has read from files so far. The English model is read, not mapped
+    (#406), so its loading shows as this growing by the model's size."""
     pid = adb("shell", "pidof", PKG).strip()
-    # The model is english.gguf, copied out of the APK into no_backup/english/.
-    return pid and "english/english.gguf" in root(f"cat /proc/{pid}/maps")
+    io = root(f"cat /proc/{pid}/io") if pid else ""
+    return next(
+        (int(line.split()[1]) for line in io.splitlines() if line.startswith("rchar:")),
+        0,
+    )
 
 
 def en_model_waits_for_letter():
     """English's prediction model loads only once a letter is typed (#56, Decisions #2)."""
+    model = int(
+        root(f"stat -c %s /data/user/0/{PKG}/no_backup/english/english.gguf").strip()
+    )
     open_field()
     if chip(nodes()):
         tap_globe()  # 日 -> EN
     stop_keyboard()
     open_field()
+    before = bytes_read()
     time.sleep(10)
-    if model_mapped():
+    if bytes_read() - before >= model:
         raise Fail("the model loaded in an empty field before any letter")
+    before = bytes_read()
     type_keys("th")
     # No chip is EN or 中: in 中, th has Chinese candidates and no English model to load.
     got = candidates(nodes())
     if not all(c.isascii() for c in got):
         raise Fail(f"th -> {got[:6]}: the keyboard is in 中, not EN")
-    wait_for("the model to load after a letter", model_mapped, 60, interval=2)
+    wait_for(
+        "the model to load after a letter",
+        lambda: bytes_read() - before >= model,
+        60,
+        interval=2,
+    )
     return "empty field: no model; after typing th: loaded"
 
 
