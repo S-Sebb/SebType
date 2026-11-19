@@ -301,6 +301,31 @@ fn zh_words(ui: &Ui) -> Vec<rime::Word> {
         .collect()
 }
 
+/// Puts new in old's place (at the end if the sync removed old meanwhile) as the only entry of its word:
+/// a word edited into one already there takes that one's place.
+fn put_in_place<T>(
+    all: &mut Vec<T>,
+    old: impl Fn(&T) -> bool,
+    new: T,
+    same: impl Fn(&T, &T) -> bool,
+) {
+    let i = all.iter().position(old).unwrap_or(all.len());
+    let mut before = 0; // entries of new's word before i, which go
+    let mut k = 0;
+    all.retain(|w| {
+        let keep = k == i || !same(w, &new);
+        before += usize::from(!keep && k < i);
+        k += 1;
+        keep
+    });
+    let i = i - before;
+    if i < all.len() {
+        all[i] = new;
+    } else {
+        all.push(new);
+    }
+}
+
 fn export(backup: Backup, file: String) -> Result<Toast, Toast> {
     let Some(path) = rfd::FileDialog::new()
         .set_file_name(file)
@@ -658,6 +683,39 @@ fn main() -> Result<(), slint::PlatformError> {
             true
         }
     });
+    s.on_edit_zh_word({
+        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        move |i, word, code| {
+            let pinyin = rime::normalize_pinyin(&code);
+            if !rime::valid_word(&word, &pinyin) {
+                toast(&weak.unwrap(), say(Msg::PinyinLettersOnly));
+                return false;
+            }
+            let new = rime::Word {
+                word: word.trim().into(),
+                pinyin,
+            };
+            let mut all = zh_words(&ui);
+            let old = all[i as usize].clone();
+            put_in_place(&mut all, |w| *w == old, new.clone(), |a, b| a == b);
+            ui.zh_words.set_vec(
+                all.into_iter()
+                    .map(|w| ZhWord {
+                        word: w.word.into(),
+                        code: w.pinyin.into(),
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            run(Box::new(move || {
+                sync::words_locked(|| rime::edit_word(&platform::rime_dir(), &old, new))
+                    .and_then(|r| r)
+                    .map_err(err)?;
+                platform::redeploy_rime().map_err(err)?;
+                Ok(say(Msg::SavedZh))
+            }));
+            true
+        }
+    });
     s.on_remove_zh_word({
         let (ui, run) = (ui.clone(), run.clone());
         move |i| {
@@ -702,6 +760,53 @@ fn main() -> Result<(), slint::PlatformError> {
             }));
             true
         }
+    });
+    s.on_edit_ja_word({
+        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        move |i, reading, word, pos| {
+            if !mozc::valid_word(&reading, &word) {
+                toast(&weak.unwrap(), say(Msg::ReadingHiraganaOnly));
+                return false;
+            }
+            let shown = JaWord {
+                reading: reading.clone(),
+                word: word.trim().into(),
+                pos,
+            };
+            let mut all: Vec<JaWord> = ui.ja_words.iter().collect();
+            let old = all[i as usize].clone();
+            let key = |w: &JaWord| (w.reading.clone(), w.word.clone());
+            put_in_place(
+                &mut all,
+                |w| key(w) == key(&old),
+                shown.clone(),
+                |a, b| key(a) == key(b),
+            );
+            ui.ja_words.set_vec(all);
+            let word = |w: JaWord| mozc::Word {
+                reading: w.reading.into(),
+                word: w.word.into(),
+                pos: w.pos as usize,
+                mozc_pos: None,
+            };
+            let (old, new) = (word(old), word(shown));
+            run(Box::new(move || {
+                sync::words_locked(|| mozc::edit_word(&platform::mozc_dir(), &old, new))
+                    .and_then(|r| r)
+                    .map_err(err)?;
+                platform::restart_mozc();
+                Ok(say(Msg::SavedJa))
+            }));
+            true
+        }
+    });
+    s.on_word_matches(|query, word, code| {
+        let q = query.trim().to_lowercase();
+        let pinyin = rime::normalize_pinyin(&q); // "xiao ming" finds xiaoming
+        q.is_empty()
+            || word.to_lowercase().contains(&q)
+            || code.to_lowercase().contains(&q)
+            || (!pinyin.is_empty() && code.contains(&pinyin))
     });
     s.on_remove_ja_word({
         let (ui, run) = (ui.clone(), run.clone());

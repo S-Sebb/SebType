@@ -205,6 +205,18 @@ msgstr "追加"
 msgid "Delete"
 msgstr "削除"
 
+msgid "Edit"
+msgstr "編集"
+
+msgid "Pinyin"
+msgstr "ピンイン"
+
+msgid "Search: word or pinyin"
+msgstr "検索：単語またはピンイン"
+
+msgid "Search: word or reading"
+msgstr "検索：単語または読み"
+
 msgid "Mozc's user dictionary. Readings are in hiragana, e.g. {}."
 msgstr "Mozc のユーザー辞書です。読みはひらがなで入力します（例：{}）。"
 

@@ -244,6 +244,13 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
+/// Changes a word in My words as they are now (crate::put_in_place).
+pub fn edit_word(dir: &Path, old: &Word, new: Word) -> io::Result<bool> {
+    let mut all = words(dir);
+    crate::put_in_place(&mut all, |w| w == old, new, |a, b| a == b);
+    save_words(dir, &all)
+}
+
 /// Removes a word from My words as they are now.
 pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
     let mut all = words(dir);
@@ -497,7 +504,20 @@ mod tests {
         add_word(&d, other.clone()).unwrap();
         assert_eq!(words(&d), [w[0].clone(), other.clone()]);
         remove_word(&d, &w[0]).unwrap();
-        assert_eq!(words(&d), [other]);
+        assert_eq!(words(&d), [other.clone()]);
+        // Edit (#410) keeps the word's place; a word edited into one already there leaves one entry.
+        add_word(&d, w[0].clone()).unwrap();
+        let lin = Word {
+            word: "小林".into(),
+            pinyin: "xiaolin".into(),
+        };
+        edit_word(&d, &other, lin.clone()).unwrap();
+        assert_eq!(words(&d), [lin.clone(), w[0].clone()]);
+        edit_word(&d, &lin, w[0].clone()).unwrap();
+        assert_eq!(words(&d), [w[0].clone()]);
+        // One the sync removed meanwhile comes back at the end.
+        edit_word(&d, &other, lin.clone()).unwrap();
+        assert_eq!(words(&d), [w[0].clone(), lin]);
         save_words(&d, &[]).unwrap();
         assert_eq!(
             read(&d.join(PHRASES)),

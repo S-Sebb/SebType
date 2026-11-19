@@ -195,6 +195,10 @@ component ZhWordsPage inherits Page {
     back: true;
     property <string> word;
     property <string> code;
+    property <string> query;
+    property <int> editing: -1;   // the row being edited, in State.zh-words
+    property <string> edit-word;
+    property <string> edit-code;
     Info { text: @tr("Your own words, such as names. They come first when you type their pinyin."); }
     Card {
         HorizontalLayout {
@@ -211,12 +215,42 @@ component ZhWordsPage inherits Page {
         }
     }
     if State.zh-words.length > 0: Card {
-        for w[i] in State.zh-words: Row {
-            title: w.word;
-            line-above: i > 0;
-            detail: w.code;
-            VerticalLayout { alignment: center;
-                Button { text: @tr("Delete"); clicked => { State.remove-zh-word(i); } }
+        HorizontalLayout {
+            padding: Theme.row-padding-x;
+            Field { text <=> root.query; placeholder: @tr("Search: word or pinyin"); }
+        }
+        for w[i] in State.zh-words: Rectangle {
+            property <bool> shown: State.word-matches(root.query, w.word, w.code);
+            visible: shown;
+            height: shown ? item.preferred-height : 0;
+            item := VerticalLayout {
+                if root.editing != i: Row {
+                    title: w.word;
+                    line-above: true;
+                    detail: w.code;
+                    VerticalLayout { alignment: center;
+                        Button { text: @tr("Edit"); clicked => { root.edit-word = w.word; root.edit-code = w.code; root.editing = i; } }
+                    }
+                    VerticalLayout { alignment: center;
+                        Button { text: @tr("Delete"); clicked => { root.editing = -1; State.remove-zh-word(i); } }
+                    }
+                }
+                if root.editing == i: Rectangle {
+                    Divider { y: 0; width: parent.width; }
+                    HorizontalLayout {
+                        padding: Theme.row-padding-x;
+                        spacing: 10px;
+                        Field { text <=> root.edit-word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                        Field { text <=> root.edit-code; placeholder: @tr("Pinyin"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                        save := Button {
+                            text: @tr("Save");
+                            primary: true;
+                            enabled: root.edit-word != "" && root.edit-code != "";
+                            clicked => { if State.edit-zh-word(i, root.edit-word, root.edit-code) { root.editing = -1; } }
+                        }
+                        Button { text: @tr("Cancel"); clicked => { root.editing = -1; } }
+                    }
+                }
             }
         }
     }
@@ -228,6 +262,11 @@ component JaWordsPage inherits Page {
     property <string> reading;
     property <string> word;
     property <int> pos;
+    property <string> query;
+    property <int> editing: -1;   // the row being edited, in State.ja-words
+    property <string> edit-reading;
+    property <string> edit-word;
+    property <int> edit-pos;
     Info { text: @tr("Mozc's user dictionary. Readings are in hiragana, e.g. {}.", "せぶ → SebType"); }
     Card {
         VerticalLayout {
@@ -251,12 +290,52 @@ component JaWordsPage inherits Page {
         }
     }
     if State.ja-words.length > 0: Card {
-        for w[i] in State.ja-words: Row {
-            title: w.word;
-            line-above: i > 0;
-            detail: w.reading + " · " + State.ja-pos[w.pos];
-            VerticalLayout { alignment: center;
-                Button { text: @tr("Delete"); clicked => { State.remove-ja-word(i); } }
+        HorizontalLayout {
+            padding: Theme.row-padding-x;
+            Field { text <=> root.query; placeholder: @tr("Search: word or reading"); }
+        }
+        for w[i] in State.ja-words: Rectangle {
+            property <bool> shown: State.word-matches(root.query, w.word, w.reading);
+            visible: shown;
+            height: shown ? item.preferred-height : 0;
+            item := VerticalLayout {
+                if root.editing != i: Row {
+                    title: w.word;
+                    line-above: true;
+                    detail: w.reading + " · " + State.ja-pos[w.pos];
+                    VerticalLayout { alignment: center;
+                        Button {
+                            text: @tr("Edit");
+                            clicked => { root.edit-reading = w.reading; root.edit-word = w.word; root.edit-pos = w.pos; root.editing = i; }
+                        }
+                    }
+                    VerticalLayout { alignment: center;
+                        Button { text: @tr("Delete"); clicked => { root.editing = -1; State.remove-ja-word(i); } }
+                    }
+                }
+                if root.editing == i: Rectangle {
+                    Divider { y: 0; width: parent.width; }
+                    VerticalLayout {
+                        padding: Theme.row-padding-x;
+                        spacing: 10px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Field { text <=> root.edit-reading; placeholder: @tr("Reading (hiragana)"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                            Field { text <=> root.edit-word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                            save := Button {
+                                text: @tr("Save");
+                                primary: true;
+                                enabled: root.edit-reading != "" && root.edit-word != "";
+                                clicked => { if State.edit-ja-word(i, root.edit-reading, root.edit-word, root.edit-pos) { root.editing = -1; } }
+                            }
+                            Button { text: @tr("Cancel"); clicked => { root.editing = -1; } }
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            Segmented { options: State.ja-pos; current <=> root.edit-pos; }
+                        }
+                    }
+                }
             }
         }
     }

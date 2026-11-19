@@ -82,6 +82,24 @@ sandbox() { # [dir], $sb by default
   cp -r ~/.config/fcitx5 "$sb/config/"
   [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db ~/.config/mozc "$sb/config/"
   rsync -a --exclude='*.userdb' --exclude='*.userdb.txt' --exclude=sync ~/.local/share/fcitx5/rime "$sb/data/fcitx5/"
+  # My words are made-up ones, never this account's (#410), so the screenshots show the list's search and Edit.
+  local phrases=$sb/data/fcitx5/rime/custom_phrase.txt
+  [[ -f $phrases ]] && sed -i '/^# SebType: My words$/,$d' "$phrases"
+  printf '# SebType: My words\n小明\txiaoming\n张伟\tzhangwei\n' >> "$phrases"
+  mkdir -p "$sb/config/mozc"
+  python3 - "$sb/config/mozc/user_dictionary.db" <<'PY'
+import sys  # a UserDictionaryStorage (mozc.rs) with SebType's dictionary: せぶ → SebType, もふ → モフ
+def varint(n):
+    out = b""
+    while n > 0x7f: out += bytes([n & 0x7f | 0x80]); n >>= 7
+    return out + bytes([n])
+def field(number, data): return varint(number << 3 | 2) + varint(len(data)) + data
+def number(n, value): return varint(n << 3) + varint(value)
+d = number(1, 7) + field(3, b"SebType")
+for reading, word in (("せぶ", "SebType"), ("もふ", "モフ")):
+    d += field(4, field(1, reading.encode()) + field(2, word.encode()) + number(5, 1))
+open(sys.argv[1], "wb").write(field(2, d))
+PY
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$sb/config/fcitx5/profile"
 }

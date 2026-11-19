@@ -59,10 +59,14 @@ export global State {
     callback zh-changed();
     callback fuzzy-changed(int, bool);
     callback add-zh-word(string, string) -> bool;
+    callback edit-zh-word(int, string, string) -> bool;   // row, word, pinyin; false: not saved
     callback remove-zh-word(int);
     callback ja-changed();
     callback add-ja-word(string, string, int) -> bool;
+    callback edit-ja-word(int, string, string, int) -> bool;
     callback remove-ja-word(int);
+    // My words' search: whether a word or its pinyin or reading has the text typed (all match "")
+    pure callback word-matches(string, string, string) -> bool;
     callback candidates-changed();
     callback theme-changed();
     callback learn-changed();

@@ -181,6 +181,25 @@ pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
+/// Changes a word (its first entry with old's reading and spelling) in the dictionary as it is now
+/// (crate::put_in_place). A part of speech the window doesn't offer stays unless another is chosen.
+pub fn edit_word(dir: &Path, old: &Word, mut new: Word) -> io::Result<bool> {
+    let mut all = words(dir)?;
+    let key = |w: &Word| (w.reading.clone(), w.word.clone());
+    if let Some(w) = all.iter().find(|w| key(w) == key(old)) {
+        if w.pos == new.pos {
+            new.mozc_pos = w.mozc_pos;
+        }
+    }
+    crate::put_in_place(
+        &mut all,
+        |w| key(w) == key(old),
+        new,
+        |a, b| key(a) == key(b),
+    );
+    save_words(dir, &all)
+}
+
 /// Removes a word (every entry with its reading and spelling, as the sync does) from the dictionary
 /// as it is now.
 pub fn remove_word(dir: &Path, reading: &str, word: &str) -> io::Result<bool> {
@@ -340,6 +359,24 @@ mod tests {
             shown(&d),
             [("モフ".into(), 0, None), ("ピピ".into(), 0, Some(0))]
         );
+        // Edit (#410): a part of speech the window doesn't offer stays while Noun stays chosen, and a
+        // word edited into one already there leaves one entry, in the edited one's place.
+        let word = |reading: &str, word: &str, pos| Word {
+            reading: reading.into(),
+            word: word.into(),
+            pos,
+            mozc_pos: None,
+        };
+        assert!(edit_word(&d, &word("ぴぴ", "ピピ", 0), word("ぴぴ", "ピピピ", 0)).unwrap());
+        assert_eq!(
+            shown(&d),
+            [("モフ".into(), 0, None), ("ピピピ".into(), 0, Some(0))]
+        );
+        edit_word(&d, &word("ぴぴ", "ピピピ", 0), word("ぴぴ", "ピピピ", 2)).unwrap();
+        assert_eq!(shown(&d)[1], ("ピピピ".into(), 2, None));
+        edit_word(&d, &word("もふ", "モフ", 0), word("ぴぴ", "ピピピ", 1)).unwrap();
+        assert_eq!(shown(&d), [("ピピピ".into(), 1, None)]);
+        edit_word(&d, &word("ぴぴ", "ピピピ", 1), word("ぴぴ", "ピピ", 0)).unwrap();
         let all = fs::read(d.join(DICTIONARIES)).unwrap();
         let names: Vec<_> = proto::fields(&all)
             .unwrap()
