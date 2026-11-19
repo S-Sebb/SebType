@@ -361,6 +361,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             editor.finishComposing()
             post({ clear().recorded() }) { show(it, applyText = false) }
         }
+        // 日本語's undo is for Mozc's commit where the cursor was: it goes with the move (#379). In turn, after the keys
+        // waiting; one typed since has ended it already.
+        else if (external && lang == JAPANESE) waiting.run {
+            if (lang == JAPANESE) NativeCore.post { if (!engineComposing) clear().recorded() }
+        }
         // English reads the words around the cursor for its corrections and next words, and reopens the word
         // the cursor went into; a move inside the word being typed moves its cursor.
         if (lang == CHINESE && toEngine && external) chineseContext()
@@ -1155,7 +1160,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
                 startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 requestHideSelf(0)
             }
-            Action.UNDO, Action.REDO -> finishTyping { editor.undo(action == Action.REDO) }
+            Action.UNDO -> finishTyping(undo = true) { editor.undo(false) }
+            Action.REDO -> finishTyping { editor.undo(true) }
             Action.SELECT_ALL, Action.CUT, Action.COPY, Action.PASTE -> finishTyping {
                 editor.menuAction(when (action) {
                     Action.SELECT_ALL -> android.R.id.selectAll
@@ -1174,18 +1180,45 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         refresh()
     }
 
-    /** What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing */
-    private fun finishTyping(then: () -> Unit) = waiting.switch { finish ->
+    /**
+     * What is being typed goes into the field as it is (中文's pinyin is dropped), then [then]: an edit that isn't typing.
+     * 日本語's [undo] goes to Mozc instead ([endTyping], #379); [then] (the app's undo) only if Mozc's isn't written
+     * ([Editor.engineUndo]). Any other edit in 日本語 ends Mozc's undo: it would delete by where its commit was.
+     */
+    private fun finishTyping(undo: Boolean = false, then: () -> Unit) = waiting.switch { finish ->
         // As the keys typed before it left the language and field: it may run after them (#351)
-        val chinese = lang == CHINESE
+        val language = lang
         val asked = keys.ask()
-        NativeCore.post({ if (engineComposing) (if (chinese) clear() else flush()).recorded() else null }) { st ->
+        var preedit = ""
+        NativeCore.post({
+            preedit = enginePreedit
+            when (endTyping(language, engineComposing, undo)) {
+                EndTyping.NOTHING -> null
+                EndTyping.FLUSH -> flush()
+                EndTyping.CLEAR -> clear()
+                EndTyping.UNDO -> undo()
+            }?.recorded().also { if (language == JAPANESE && !undo) clear().recorded() }
+        }) { st ->
             // Nothing, if the field, language or search changed meanwhile
             finish {
+                if (st != null && undo && language == JAPANESE) {
+                    // Which undo went, for the checks: no typed text
+                    val mozc = editor.engineUndo(st, composition(st), preedit)
+                    Log.i(Engines.TAG, if (mozc) "Undo: Mozc's" else "Undo: the app's")
+                    if (mozc) {
+                        show(st, applyText = false)
+                        return@finish
+                    }
+                    // Mozc undid nothing, or not where its commit is: what is typed stays as it is, as before
+                    // #379, Mozc forgets it, and the app undoes
+                    editor.finishComposing()
+                    NativeCore.post({ clear().recorded() }) { show(it, applyText = false) }
+                    return@finish then()
+                }
                 // The edit itself is the user's: it goes ahead even when the word's result is stale (#280)
                 if (st != null && fresh(asked)) {
                     show(st)
-                    if (!chinese) editor.finishComposing()
+                    if (language != CHINESE) editor.finishComposing()
                 }
                 then()
             }
@@ -1240,7 +1273,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     /** Into the field, what is typed there first going in as it is; from a search, which then ends ([endsSearch]). */
     private fun intoField(endsSearch: Boolean = true, then: () -> Unit) {
-        if (searching == null) return finishTyping(then)
+        if (searching == null) return finishTyping(then = then)
         waiting.run {
             then()
             if (endsSearch) endSearch()

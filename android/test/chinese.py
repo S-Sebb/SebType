@@ -1035,6 +1035,116 @@ check("ja-katakana-mode", katakana_mode, needs=["ja-chip"])
 check("ja-new-field-resets", new_field_resets, needs=["ja-chip"])
 
 
+UNDO_ACTION = ("Undo", "撤销", "元に戻す")
+
+
+def action(labels):
+    """Opens the action bar if it is closed, then taps one of its actions. While something is typed the bar's
+    toggle is hidden, but an open bar's actions stay."""
+    ns = nodes()
+    if not any(n[0] in CLOSE_BAR or n[0] in labels for n in ns):
+        tap_label(OPEN_BAR)
+    tap_label(labels)
+
+
+def undo(expect):
+    """The action bar's Undo in 日本語; which undo went (SebTypeIme's log), expected to be expect's (#379)."""
+    adb("logcat", "-c")
+    action(UNDO_ACTION)
+    settle()
+    went = re.findall(r"Undo: (Mozc's|the app's)", logcat())
+    if went != [expect]:
+        raise Fail(f"Undo went to {went}, not [{expect!r}]")
+
+
+def undo_conversion():
+    """#379: Undo after a conversion goes to Mozc, as today's app: the reading comes back, to convert again."""
+    open_field()
+    type_keys("nihongo")
+    tap_candidate("日本語")
+    settle()
+    if (text := field_text()) != "日本語":
+        raise Fail(f"nihongo, 日本語 picked: the field shows {text!r}")
+    undo("Mozc's")
+    text = field_text()
+    got = candidates(nodes())
+    screenshot("japanese-undo.png")
+    if text != "にほんご" or "日本語" not in got:
+        raise Fail(f"Undo after 日本語: the field shows {text!r}, the bar {got[:6]}")
+    return f"日本語 committed, Undo -> {text!r}, the bar {got[:3]}"
+
+
+check("ja-undo-conversion", undo_conversion, needs=["ja-chip"])
+
+
+PASTE_ACTION = ("Paste from Clipboard", "从剪贴板粘贴", "クリップボードから貼り付け")
+
+
+def converted(word, reading):
+    """reading typed in 日本語 after what the field has, word picked."""
+    before = field_text()
+    type_keys(reading)
+    tap_candidate(word)
+    settle()
+    if (text := field_text()) != before + word:
+        raise Fail(
+            f"{reading}, {word} picked after {before!r}: the field shows {text!r}"
+        )
+    return text
+
+
+def undo_keeps(was, wrong, what):
+    """Undo after an edit that wasn't Mozc's: the app's undo (Ctrl+Z) goes, whatever it takes back, and not
+    Mozc's, which would have put its reading over other text (wrong)."""
+    undo("the app's")
+    if (text := field_text()) == wrong:
+        raise Fail(f"{what}, then Undo: {was!r} became {text!r}")
+    return text
+
+
+def undo_after_cursor_move():
+    """#379: 日本語 and 寿司 committed, the cursor moved back two: Undo leaves the text before it alone."""
+    open_field()
+    converted("日本語", "nihongo")
+    was = converted("寿司", "sushi")
+    for _ in range(2):
+        adb("shell", "input", "keyevent", "KEYCODE_DPAD_LEFT")
+    time.sleep(1.5)
+    return f"{was!r}, the cursor moved, Undo -> {undo_keeps(was, '日すし寿司', 'the cursor moved')!r}"
+
+
+def undo_after_paste():
+    """#379: 日本語 committed, then xyz pasted: Undo doesn't take the paste for Mozc's commit."""
+    open_field(clip="xyz")
+    converted("日本語", "nihongo")
+    action(ALL_ACTIONS)
+    tap_label(PASTE_ACTION)
+    settle()
+    if (was := field_text()) != "日本語xyz":
+        raise Fail(f"日本語, then Paste: the field shows {was!r}")
+    return f"{was!r}, Undo -> {undo_keeps(was, '日本語にほんご', 'pasted')!r}"
+
+
+def undo_while_composing():
+    """#379: Undo while nihongo is typed and nothing converted: as before, the reading goes in as it is (and the
+    app may undo it); it isn't left composing."""
+    open_field()
+    if not any(n[0] in CLOSE_BAR for n in nodes()):
+        tap_label(OPEN_BAR)
+    type_keys("nihongo")
+    undo("the app's")
+    text = field_text()
+    got = candidates(nodes())
+    if text not in ("にほんご", "") or "日本語" in got:
+        raise Fail(f"nihongo typed, Undo: the field shows {text!r}, the bar {got[:6]}")
+    return f"nihongo typed, Undo -> {text!r}, the bar {got[:3]}"
+
+
+check("ja-undo-after-cursor-move", undo_after_cursor_move, needs=["ja-chip"])
+check("ja-undo-after-paste", undo_after_paste, needs=["ja-chip"])
+check("ja-undo-while-composing", undo_while_composing, needs=["ja-chip"])
+
+
 def fast_typing_ja():
     # The romaji stays in the field as Mozc's composition: every key, in order, or other kana.
     open_field()
@@ -1400,13 +1510,6 @@ TALLER = ("Taller", "调高", "高く")
 SHORTER = ("Shorter", "调低", "低く")
 MOVE_KEYBOARD = "Move keyboard"
 RESIZE_CORNER = "Drag to resize"
-
-
-def action(labels):
-    """Opens the action bar if it is closed, then taps one of its actions."""
-    if not any(n[0] in CLOSE_BAR for n in nodes()):
-        tap_label(OPEN_BAR)
-    tap_label(labels)
 
 
 def node(label):
