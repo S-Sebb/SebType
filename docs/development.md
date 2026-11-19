@@ -321,8 +321,10 @@ Notes:
 - **Key positions** come from SebType's uniform layout at the default keyboard height. Each typing
   check verifies the text length afterwards and fails with "taps missed the keys" if they didn't land.
   The grid is portrait's: the test field stays upright even on a phone lying on its side, and the run
-  stops if the screen is turned anyway (#402). Monkey turns auto-rotate on when it ends, so the run puts
-  the device's rotation settings back afterwards.
+  stops before any typing if the screen is turned anyway, or on a device whose natural orientation is
+  landscape (#402). Monkey turns auto-rotate on when it ends, so the run puts the device's rotation
+  settings back exactly as it found them afterwards. `android/perf/test-rotation.sh` checks these
+  guards offline, against a fake adb.
 
 #### On the phone
 

@@ -50,6 +50,7 @@ check() { # name timeout
     else result PASS "$name" "$(grep -v '^#' "$work/$name.out" | tr '\n' ' ')"; fi
   else result FAIL "$name" "$(tail -1 "$work/$name.log") (see $work/$name.log)"; fi
 }
+passed() { grep -q "^PASS $1:" "$results"; } # phase
 val() { sed -n "s/^$2=//p" "$work/$1.out" 2>/dev/null | tail -1; } # phase key -> value
 
 # ---- Device helpers (run inside phases) ----
@@ -64,14 +65,19 @@ open_field() {
   local o; o=$(sh am start -W -S -n "$field_act" ${FIELD_ARGS:-} "$@") || { echo "test field didn't open: $(tail -2 <<<"$o" | tr '\n' ' ')" >&2; return 1; }
   sleep 3
 }
-geometry() { # keyboard grid from the screen width and the keyboard window's top, in px
-  W=$(sh wm size | awk -F'[ x]' '/Physical/ {print $3}' | tail -1)
+geometry() { # keyboard grid from the screen width and the keyboard window's top, in px, into run/geometry
+  rm -f "$work/geometry" # a failed measure leaves none: no typing from an older run's grid
+  local size; size=$(sh wm size | awk -F'[ x]' '/Physical/ {print $3 "x" $4}' | tail -1)
+  W=${size%x*}
   dpi=$(sh wm density | awk '/Physical/ {print $3}' | tail -1)
   top=$(sh dumpsys window InputMethod | sed -n 's/.*touchable region=SkRegion((\([0-9]*\),\([0-9]*\),.*/\2/p' | head -1)
   [[ -n $W && -n $dpi && -n $top ]] || { echo "keyboard window not found" >&2; return 1; }
-  # The grid is portrait's: a turned screen's keyboard top would aim every tap at other windows (#402)
+  # The grid is a portrait screen's, its width the physical one: a turned screen's keyboard top would aim
+  # every tap at other windows (#402). The physical size is the device's natural orientation's.
+  (( ${size#*x} > W )) || { echo "this device's natural orientation isn't portrait ($size): the key grid is portrait's" >&2; return 1; }
   local rot; rot=$(sh dumpsys window displays | grep -om1 'mRotation=ROTATION_[0-9]*')
   [[ $rot == mRotation=ROTATION_0 ]] || { echo "the screen isn't upright (${rot:-no rotation found}): taps would miss the keys" >&2; return 1; }
+  declare -p W dpi top > "$work/geometry"
 }
 rotation_keep() { # monkey turns auto-rotate on when it ends: the person's rotation settings go back after the run (#402)
   local k
@@ -79,7 +85,10 @@ rotation_keep() { # monkey turns auto-rotate on when it ends: the person's rotat
 }
 rotation_back() {
   local k v
-  while read -r k v; do [[ $v == null ]] || sh settings put system "$k" "$v"; done < "$work/rotation"
+  # A setting that wasn't there goes again: monkey may have made it
+  while read -r k v; do
+    if [[ $v == null ]]; then sh settings delete system "$k" > /dev/null; else sh settings put system "$k" "$v"; fi
+  done < "$work/rotation"
 }
 key_xy() { # key -> "x y". SebType's uniform layout has 10 key columns in every language; the row
   # centres are 69, 130, 190 and 249 dp below the keyboard's top (the action bar comes first) at
@@ -214,7 +223,7 @@ phase_first-open() { # the first keyboard open after install
   open_field
   sleep 5
   trace_stop first-open
-  geometry && declare -p W dpi top > "$work/geometry"
+  geometry
   opens first-open first
   sleep "$settle"; echo "pss_idle_kb=$(pss_kb idle)"
 }
@@ -367,7 +376,7 @@ phase_idle() { # opened in a fresh process, settled
   open_field
   # A keyboard whose process was just stopped can come up without showing: a tap on the field shows it.
   sh input tap 540 400; sleep 5
-  geometry && declare -p W dpi top > "$work/geometry"
+  geometry
   sleep "$settle"; echo "pss_idle_kb=$(pss_kb idle)"
 }
 globe_to() { # length the "ka " probe gives: tap the globe until the keyboard is in that language
@@ -407,7 +416,7 @@ compare_steps() { # under the device lock: another keyboard (IME_PKG, IME_ID, KE
     /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
     /data/local/tmp/sebtype-ui.xml' EXIT
   check compare-setup 300 || return 1
-  check idle 120
+  check idle 120; passed idle || return 1 # its grid aims every tap after it
   # COMPARE_ZH=1: the keyboard is in its Chinese (pinyin) layout now, as its owner left it; 中 first,
   # then English, then back to Chinese at the end.
   if [[ -n ${COMPARE_ZH:-} ]]; then check zh 600; fi
@@ -441,9 +450,8 @@ device_steps() { # under the device lock
   trap 'rotation_back; sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
     /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
     /data/local/tmp/sebtype-ui.xml' EXIT
-  check install 600 || return 1
-  grep -q '^PASS install' "$results" || return 1
-  check first-open 120
+  check install 600; passed install || return 1
+  check first-open 120; passed first-open || return 1 # its grid aims every tap after it
   check zh-deploy 660
   check en 600
   if [[ -n ${english:-} ]]; then check fast 300; check long 300; return; fi
@@ -471,7 +479,7 @@ if [[ ${1:-} == --compare-device ]]; then compare_steps; exit; fi
 if [[ ${1:-} == --soak-device ]]; then
   rotation_keep
   trap 'rotation_back; sh rm -f /data/local/tmp/sebtype-perf-taps.txt /data/local/tmp/sebtype-ui.xml' EXIT
-  check idle 120 && check soak $(( 60 * ${SOAK_MIN:-12} + 300 )); exit
+  check idle 120; passed idle && check soak $(( 60 * ${SOAK_MIN:-12} + 300 )); exit
 fi
 
 # ---- Preflight ----
