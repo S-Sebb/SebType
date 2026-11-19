@@ -293,6 +293,7 @@ class Mozc final : public Engine {
       mozc_->call(in, out);
     }
   }
+  std::string forgetError() const override { return mozc_->forgetError(); }
 
   // The PCs: the candidates per page 中文 has, for Mozc's own pages (its default is 9). The phone: the user
   // dictionaries it wrote (Mozc reads them again).

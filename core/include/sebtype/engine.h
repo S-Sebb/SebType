@@ -75,6 +75,9 @@ class Engine {
   // back, while typing or after a restart (#375). A Mozc that loads in the background does it there, busy()
   // until done.
   virtual void forget() {}
+  // Why the last forget() left something learned behind (a file it couldn't delete or a folder it couldn't
+  // read), once it isn't busy(); empty when it forgot everything.
+  virtual std::string forgetError() const { return {}; }
   // Reads its files again, which another program changed (Mozc's dictionary and settings); what was being
   // typed goes.
   virtual void reload() {}

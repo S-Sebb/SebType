@@ -4,8 +4,12 @@
 # In 中文 (shishi) and 日本語 (kisha) the 4th candidate is picked, and is then first: learned. The
 # Configurator's forget (its ignored test linux::tests::private_fcitx5_forgets, the app's own code) runs while
 # both engines are open and another app keeps typing (k a Escape, which learns nothing); then the first candidate
-# is the original one again, and still after Fcitx5 restarts.
+# is the original one again, and still after Fcitx5 restarts. The same for 日本語's prediction (Tab after きし
+# no longer suggests the word picked) and a character form it learns (a digit's width, which Mozc keeps for
+# the whole process), and at the end the Configurator says forgetting
+# failed when the input method couldn't delete what was learned (read-only folders).
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
+import os
 import signal
 import subprocess
 import sys
@@ -29,7 +33,7 @@ def result(name, ok, why):
 
 
 bus = dbus.SessionBus(mainloop=DBusGMainLoop())
-SYMS = {" ": 0x20, "\n": 0xFF0D, "\x1b": 0xFF1B}
+SYMS = {" ": 0x20, "\n": 0xFF0D, "\x1b": 0xFF1B, "\t": 0xFF09}
 
 
 def other_app():
@@ -154,11 +158,32 @@ class Fcitx:
 
 # The first candidate, and the 4th picked (Mozc: Space converts, each Space after it the next).
 WORDS = {"zh": ("shishi ", "shishi4"), "ja": ("kisha \n", "kisha    \n")}
+# Mozc's first prediction (Tab) for きし: its prediction history, which suggests the word picked above.
+PREDICT = "kisi\t\n"
+
+
+def width(digit, text):
+    """Whether Mozc's first candidate for the digit is half or full width (its learned form for all digits)."""
+    return {digit: "half", chr(0xFF10 + int(digit)): "full"}.get(text, f"'{text}'")
+
+
+def digit_form(f, digit):
+    return width(digit, f.type(digit + " \n"))
+
+
+def learn_digit_form(f, form):
+    """Commits 2 in the other width: Mozc's next digits come in that form, never typed before."""
+    for spaces in range(1, 9):
+        if width("2", f.type("2" + " " * spaces + "\n")) == form:
+            return True
+    return False
+
 
 f = Fcitx("first")
 first, picked = {}, {}
 for lang, (top, fourth) in WORDS.items():
     ready = f.language(lang)
+    predicted = f.type(PREDICT) if lang == "ja" else ""
     first[lang] = f.type(top)
     picked[lang] = f.type(fourth)
     again = f.type(top)
@@ -170,6 +195,21 @@ for lang, (top, fourth) in WORDS.items():
         and again == picked[lang],
         f"{'ready' if ready else 'never ready'}, first '{first[lang]}', 4th '{picked[lang]}', then first '{again}'",
     )
+now = f.type(PREDICT)
+result(
+    "ja-learns-prediction",
+    predicted != picked["ja"] and now == picked["ja"],
+    f"きし predicted '{predicted}', after '{picked['ja']}' '{now}'",
+)
+# Still in 日本語: digits each in a width of their own, none typed twice (or the history would choose).
+base = digit_form(f, "3")
+other = {"half": "full", "full": "half"}.get(base, "?")
+learned = learn_digit_form(f, other) and digit_form(f, "5")
+result(
+    "ja-learns-character-form",
+    learned == other,
+    f"3 is {base}, then 5 is {learned} after 2 in {other} width",
+)
 
 # Both engines are open, with what they learned in memory and on disk, and another app types meanwhile.
 typer = subprocess.Popen([sys.executable, __file__, out, "--other-app"])
@@ -200,6 +240,16 @@ for lang, (top, _) in WORDS.items():
         ready and now == first[lang],
         f"first '{now}', want '{first[lang]}'",
     )
+now = f.type(PREDICT)
+result(
+    "ja-prediction-forgotten-while-typing",
+    now not in ("", picked["ja"]),
+    f"きし predicted '{now}', not '{picked['ja']}'",
+)
+now = digit_form(f, "6")
+result(
+    "ja-character-form-forgotten-while-typing", now == base, f"6 is {now}, want {base}"
+)
 f.stop()
 
 f = Fcitx("restarted")
@@ -211,5 +261,47 @@ for lang, (top, _) in WORDS.items():
         ready and now == first[lang],
         f"first '{now}', want '{first[lang]}'",
     )
+now = f.type(PREDICT)
+result(
+    "ja-prediction-forgotten-after-restart",
+    now not in ("", picked["ja"]),
+    f"きし predicted '{now}', not '{picked['ja']}'",
+)
+now = digit_form(f, "7")
+result(
+    "ja-character-form-forgotten-after-restart", now == base, f"7 is {now}, want {base}"
+)
+
+# What the engines learned (made up here) in folders they can't delete from: the Configurator says it failed.
+dirs = [
+    f"{os.environ['XDG_DATA_HOME']}/fcitx5/rime",
+    f"{os.environ['XDG_CONFIG_HOME']}/mozc",
+]
+for d, name in zip(dirs, ("test.userdb.txt", "segment.db")):
+    with open(f"{d}/{name}", "w") as made_up:
+        made_up.write("made up\n")
+    os.chmod(d, 0o555)
+try:
+    forgot = subprocess.run(
+        [tests, "--ignored", "--exact", "linux::tests::private_fcitx5_forgets"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+finally:
+    for d in dirs:
+        os.chmod(d, 0o755)
+said = next(
+    (line for line in forgot.stdout.splitlines() if line.startswith("Rime: ")), ""
+)
+result(
+    "configurator-says-forgetting-failed",
+    forgot.returncode != 0
+    and said.count("Err(") == 2
+    and "test.userdb.txt" in said
+    and "segment.db" in said,
+    f"exit {forgot.returncode}, {said or 'no answer'}",
+)
 f.stop()
 sys.exit(1 if failed else 0)

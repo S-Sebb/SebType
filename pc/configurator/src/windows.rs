@@ -228,10 +228,18 @@ fn forget(lang: &str) -> io::Result<()> {
         .arg(format!("/forget:{lang}"))
         .creation_flags(NO_WINDOW)
         .status()?;
-    if !status.success() {
-        return Err(io::Error::other(format!(
-            "sebtype-server.exe /forget:{lang}: {status}"
-        )));
+    match status.code() {
+        Some(0) => {}
+        Some(6) => {
+            return Err(io::Error::other(format!(
+                "something learned couldn't be deleted (sebtype-server.exe /forget:{lang}; server.log says what)"
+            )))
+        }
+        _ => {
+            return Err(io::Error::other(format!(
+                "sebtype-server.exe /forget:{lang}: {status}"
+            )))
+        }
     }
     Ok(())
 }

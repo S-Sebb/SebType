@@ -141,6 +141,8 @@ std::tuple<std::string, bool, bool, std::string> Service::state() {
   return {langId(core.language()), core.latin(), core.alternate(), SebTypeEngine::iconName(core.icon())};
 }
 
+std::string Service::forget(const std::string &id) { return engine_->forget(langFromId(id)); }
+
 void Service::setLanguage(const std::string &id) {
   engine_->core().selectLanguage(langFromId(id));
   engine_->update(engine_->instance()->mostRecentInputContext());
@@ -224,9 +226,8 @@ void SebTypeEngine::save() {
   whenIdle(Core::Chore::Save, [this] { core_->forEachEngine([](Engine &e) { e.save(); }); });
 }
 
-// The Configurator's changes and forgetting deploy or restart Mozc at once (forgetting deletes Mozc's history
-// after the restart has closed it). A sync's pull asks with -when-idle: those drop what is being typed, so
-// they wait until typing is idle (#373).
+// The Configurator's changes deploy or restart Mozc at once. A sync's pull asks with -when-idle: those drop
+// what is being typed, so they wait until typing is idle (#373).
 void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig &) {
   const auto deploy = [this] {
     core_->engine(Lang::Chinese);
@@ -243,12 +244,6 @@ void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig
   else if (path == "mozc") restartMozc();
   else if (path == "deploy-when-idle") whenIdle(Core::Chore::Deploy, deploy);
   else if (path == "mozc-when-idle") whenIdle(Core::Chore::ReloadJapanese, restartMozc);
-  else if (path == "forget/zh" || path == "forget/ja") {
-    // The Configurator's Forget learned words: done when the call returns, between two keys (#375).
-    core_->engine(path == "forget/zh" ? Lang::Chinese : Lang::Japanese)->forget();
-    update(instance_->mostRecentInputContext());
-    updateStatus(instance_->mostRecentInputContext());
-  }
 }
 
 void SebTypeEngine::whenIdle(Core::Chore chore, std::function<void()> work) {
@@ -266,6 +261,14 @@ void SebTypeEngine::whenIdle(Core::Chore chore, std::function<void()> work) {
         }
         return true;
       });
+}
+
+std::string SebTypeEngine::forget(Lang lang) {
+  Engine *e = core_->engine(lang);
+  e->forget();
+  update(instance_->mostRecentInputContext());
+  updateStatus(instance_->mostRecentInputContext());
+  return e->forgetError();
 }
 
 void SebTypeEngine::update(fcitx::InputContext *ic) {

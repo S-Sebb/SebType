@@ -10,7 +10,9 @@ Keys go to TSF's keystroke manager in TsfHost.cs's field, as test-private.ps1's.
 (sebtype-configurator.exe --forget zh, ja: its own code without its window) then comes while both engines are
 open, Mozc with its history in memory only (it saves every few minutes), and Mozc's DLL held 8 s at its next read (as an antivirus scan
 holds it). The first candidate must be the original one again at once, and after the server restarts (/quit
-saves, and the next key starts a new one). Results: one line per check in <Out>\forget-results.txt; exit 0 only
+saves, and the next key starts a new one); the same for 日本語's prediction (Tab after きし no longer suggests
+the word picked: Mozc's history.db) and a character form it learned (a digit's width, kept for the whole
+process). Results: one line per check in <Out>\forget-results.txt; exit 0 only
 if all pass.
 #>
 param([string]$Out = "$env:USERPROFILE\scratch\SebType\375")
@@ -34,7 +36,7 @@ $tsf = [SebType.TsfHost]
 $tsf::NoInput = $true
 function Keys {
   foreach ($k in $args) {
-    $null = $tsf::Key($(switch ($k) { 'space' { 0x20 } 'Return' { 0x0D } 'Escape' { 0x1B } default { [byte][char]"$k".ToUpper() } }))
+    $null = $tsf::Key($(switch ($k) { 'space' { 0x20 } 'Return' { 0x0D } 'Escape' { 0x1B } 'Tab' { 0x09 } default { [byte][char]"$k".ToUpper() } }))
     $tsf::Settle(150)
   }
   $tsf::Settle(600)
@@ -57,6 +59,11 @@ $words = @{  # the first candidate, and the fourth picked
   zh = { Typed s h i s h i space }, { Typed s h i s h i 4 }
   ja = { Typed k i s h a space Return }, { Typed k i s h a space space space space Return }
 }
+function Predicted { Typed k i s i Tab Return }  # Mozc's first prediction for きし
+function DigitForm($d) {  # Mozc's first candidate for a digit: its learned width for all digits
+  $t = Typed $d space Return
+  if ($t -eq "$d") { 'half' } elseif ($t -eq [string][char](0xFF10 + [int]"$d")) { 'full' } else { "'$t'" }
+}
 function Forget($lang) {  # Privacy's Forget, without its window
   $p = Start-Process -PassThru -WindowStyle Hidden "$env:ProgramFiles\SebType\sebtype-configurator.exe" '--forget', $lang
   if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "--forget $lang took over 2 minutes" }
@@ -69,12 +76,44 @@ try {
   foreach ($lang in 'zh', 'ja') {
     Check "$lang-learns" {
       Lang $lang
+      if ($lang -eq 'ja') { $script:predicted = Predicted }
       $f, $fourth = $words[$lang]
       $first[$lang] = & $f
       $picked = & $fourth
       $again = & $f
       if (-not $picked -or $picked -eq $first[$lang] -or $again -ne $picked) { throw "first '$($first[$lang])', 4th '$picked', then first '$again'" }
+      $script:picked = $picked
       "first '$($first[$lang])', 4th '$picked' first after it"
+    }
+  }
+  Check 'ja-learns-prediction' {
+    $now = Predicted
+    if ($predicted -eq $picked -or $now -ne $picked) { throw "きし predicted '$predicted', after '$picked' '$now'" }
+    "きし predicted '$predicted', then '$now'"
+  }
+  # Digits each in a width of their own, none typed twice (or the history would choose).
+  $base = DigitForm 3
+  $other = @{ half = 'full'; full = 'half' }[$base]
+  Check 'ja-learns-character-form' {
+    for ($i = 1; $i -le 8 -and $learned -ne $other; $i++) {
+      $keys = @('2') + @('space') * $i + @('Return')
+      $t = Typed @keys
+      $learned = if ($t -eq '2') { 'half' } elseif ($t -eq [string][char]0xFF12) { 'full' } else { '?' }
+    }
+    $now = DigitForm 5
+    if ($now -ne $other) { throw "3 is $base, then 5 is $now after 2 in $other width" }
+    "3 is $base, 5 $now after 2 in $other width"
+  }
+  function JaForgotten($phase, $digit) {
+    Check "ja-prediction-forgotten-$phase" {
+      $now = Predicted
+      if (-not $now -or $now -eq $picked) { throw "きし predicted '$now', want not '$picked'" }
+      $now
+    }
+    Check "ja-character-form-forgotten-$phase" {
+      $now = DigitForm $digit
+      if ($now -ne $base) { throw "$digit is $now, want $base" }
+      $now
     }
   }
   Check 'configurator-forgets-zh' { Forget zh; 'sebtype-configurator --forget zh returned 0' }
@@ -93,6 +132,7 @@ try {
       $t
     }
   }
+  JaForgotten while-typing 6
   $p = Start-Process -PassThru -WindowStyle Hidden $server '/quit'
   $null = $p.WaitForExit(30000)
   Start-Sleep 3  # the old server saves and exits
@@ -104,6 +144,7 @@ try {
       $t
     }
   }
+  JaForgotten after-restart 7
 } finally {
   $tsf::Stop()
   Copy-Item "$env:TEMP\rime.sebtype\server.log" $Out -ErrorAction SilentlyContinue

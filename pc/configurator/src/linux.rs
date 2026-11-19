@@ -311,11 +311,26 @@ pub fn redeploy_rime() -> io::Result<()> {
     Ok(())
 }
 
-/// SebType's input method forgets before the call returns (#375): the engine closes its files, deletes what
-/// it learned and opens new ones, between two keys. Without Fcitx5 nothing has them open.
+/// SebType's input method forgets before it answers (#375): the engine closes its files, deletes what it
+/// learned and opens new ones, between two keys. Its answer is what it couldn't delete, and why. Without
+/// Fcitx5 nothing has them open.
 fn forget(lang: &str) -> io::Result<()> {
-    let uri = format!("fcitx://config/addon/sebtype/forget/{lang}");
-    controller("SetConfig", &["sv", &uri, "s", ""]).map(|_| ())
+    let out = busctl(&[
+        "--json=short",
+        "call",
+        "org.fcitx.Fcitx5",
+        "/sebtype",
+        "org.sebtype.Core1",
+        "Forget",
+        "s",
+        lang,
+    ])?;
+    let answer: serde_json::Value = serde_json::from_str(&out).map_err(io::Error::other)?;
+    match answer["data"][0].as_str() {
+        Some("") => Ok(()),
+        Some(left) => Err(io::Error::other(left.to_string())),
+        None => Err(io::Error::other(format!("Forget answered {out}"))),
+    }
 }
 
 pub fn forget_rime() -> io::Result<usize> {
@@ -667,10 +682,8 @@ mod tests {
     fn private_fcitx5_forgets() {
         assert!(fcitx_running(), "no Fcitx5 on this bus");
         // Mozc may hold what it learned in memory only: it saves every few minutes.
-        println!(
-            "Rime: {} learned, Mozc: {}",
-            forget_rime().unwrap(),
-            forget_mozc().unwrap()
-        );
+        let (rime, mozc) = (forget_rime(), forget_mozc());
+        println!("Rime: {rime:?}, Mozc: {mozc:?}");
+        assert!(rime.is_ok() && mozc.is_ok());
     }
 }

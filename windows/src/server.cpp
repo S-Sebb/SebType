@@ -12,7 +12,8 @@
 //   sebtype-server.exe /forget:zh|/forget:ja       the language's engine forgets what it learned (itself when
 //                                                 no server runs), for the Configurator (#375); returns when done;
 //                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
-//                                                 didn't take the request, 5 Rime still busy after 5 minutes
+//                                                 didn't take the request, 5 Rime still busy after 5 minutes,
+//                                                 6 something learned couldn't be deleted (server.log says what)
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
@@ -220,7 +221,9 @@ Reply handle(const Request &q, HANDLE pipe) {
       if (Engine *e = core->engine(q.lang)) e->forget();
       break;
   }
-  return state(taken, commit);
+  Reply r = state(taken, commit);
+  if (Engine *e = core->running(q.lang)) r.forgetError = e->forgetError();  // /forget's answer, once not busy
+  return r;
 }
 
 // Apps at any integrity level and in app containers (all application packages, and the restricted ones)
@@ -362,7 +365,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
       for (; e->busy(); Sleep(200))
         if (GetTickCount() - start > 300000) return failed(5, "still busy after 5 minutes");
       note(utf8(arg) + " in this process: " + std::to_string((GetTickCount() - start) / 1000) + " s");
-      return 0;
+      r.forgetError = e->forgetError();
+      return r.forgetError.empty() ? 0 : failed(6, r.forgetError.c_str());
     }
     // A server is starting: until it answers.
     CloseHandle(single);
@@ -377,7 +381,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   // Until Rime is done: setup's typing and the Configurator's next step need it.
   for (DWORD start = GetTickCount(); r.busy; Sleep(200)) {
     if (GetTickCount() - start > 300000) return failed(5, "still busy after 5 minutes");
-    if (!call(Request{Op::State}, r, 5000)) return failed(3, "the server didn't answer");
+    Request poll;
+    poll.lang = q.lang;  // its engine's forgetError
+    if (!call(poll, r, 5000)) return failed(3, "the server didn't answer");
   }
-  return 0;
+  return q.op == Op::Forget && !r.forgetError.empty() ? failed(6, r.forgetError.c_str()) : 0;
 }

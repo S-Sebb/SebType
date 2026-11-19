@@ -14,8 +14,12 @@ const DICTIONARY_NAME: &str = "SebType";
 /// Where the sync put other devices' words before #273; My words shows them and moves them into
 /// SebType's dictionary when it next saves.
 const OLD_SYNC_DICTIONARY: &str = "SebType sync";
-/// What the history files are: Mozc's learned conversions and predictions.
-const HISTORY: [&str; 4] = ["segment.db", "boundary.db", "cform.db", ".history.db"];
+/// What the history files are: Mozc's learned conversions, and its predictions and character forms
+/// (user_history_storage.cc names that file per OS); cform.db is older Mozcs'.
+#[cfg(windows)]
+const HISTORY: [&str; 4] = ["segment.db", "boundary.db", "history.db", "cform.db"];
+#[cfg(not(windows))]
+const HISTORY: [&str; 4] = ["segment.db", "boundary.db", ".history.db", "cform.db"];
 /// The parts of speech the window offers (State.ja-pos), as Mozc's PosType values.
 pub const POS: [u64; 6] = [1, 4, 5, 9, 8, 15]; // 名詞 固有名詞 人名 地名 組織 顔文字
 
