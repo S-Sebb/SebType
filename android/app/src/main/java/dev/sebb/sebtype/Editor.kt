@@ -89,8 +89,8 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     private var surrounds = false
 
     /**
-     * What an engine's [write] last committed, with the cursor right after it and nothing else done to the field
-     * since; else empty. 日本語's Undo takes back only that ([engineUndo], #379).
+     * What an engine's [write] last committed, with the cursor right after it (or after our composing text right
+     * after it) and nothing else done to the field since; else empty. 日本語's Undo takes back only that ([engineUndo], #379).
      */
     private var engineCommit = ""
 
@@ -230,7 +230,8 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
             if (composition != null) compose(composition)
             then?.invoke()
             engineCommit = when {
-                st.commit.isNotEmpty() && st.commitCursor == 0 && composition.isNullOrEmpty() && then == null -> st.commit
+                // A partial conversion's commit too, with the rest still composing after it
+                st.commit.isNotEmpty() && st.commitCursor == 0 && then == null -> st.commit
                 range || st.commit.isNotEmpty() || !composition.isNullOrEmpty() || then != null -> ""
                 else -> kept
             }
@@ -350,10 +351,14 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
     private fun delete(before: Int, after: Int, known: Boolean) {
         val ic = ic ?: return
         val m = model?.takeIf { known }
-        val text = m?.text?.substring(0, m.start) ?: ic.getTextBeforeCursor(2 * before, 0)?.toString().orEmpty()
+        // Unchecked (日本語's Undo of a partial conversion), the field deletes before the composing text, which
+        // moves back with it
+        val skip = if (m == null && composing) composeLength else 0
+        val text = m?.text?.substring(0, m.start) ?: ic.getTextBeforeCursor(2 * before + skip, 0)?.toString().orEmpty().dropLast(skip)
         // The cursor moves back by the UTF-16 length of what goes.
         val gone = text.length - text.offsetByCodePoints(text.length, -minOf(before, text.codePointCount(0, text.length)))
         ic.deleteSurroundingTextInCodePoints(before, after)
+        if (skip > 0 && composeStart >= 0) composeStart -= gone
         if (m != null) {
             val rest = m.text.substring(m.end)
             model { delete(gone, rest.offsetByCodePoints(0, minOf(after, rest.codePointCount(0, rest.length)))) }
@@ -551,8 +556,11 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
         val deletes = st.deleteBefore > 0 || st.deleteAfter > 0
         if (!st.taken || !deletes && st.commit.isEmpty() && st.preedit == preedit) return false
         val c = engineCommit
+        // What is composing after the commit (a partial conversion's rest), with the cursor at its end
+        val after = if (composing) composeLength else 0
         if (deletes && (st.deleteAfter > 0 || selEnd != selStart || c.isEmpty() ||
-                c.codePointCount(0, c.length) != st.deleteBefore || textBefore(c.length) != c)) return false
+                composing && selStart != composeStart + composeLength || c.codePointCount(0, c.length) != st.deleteBefore ||
+                textBefore(c.length + after).dropLast(after) != c)) return false
         return write(st, composition)
     }
 

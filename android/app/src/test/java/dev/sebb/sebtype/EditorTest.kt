@@ -917,8 +917,11 @@ class EditorTest {
         fun undo(word: String, reading: String) =
             mozc(reading, delete = word.length).let { editor.engineUndo(it, it.preedit, "") }.also { hear() }
 
-        fun hear() {
-            while (field.updates.isNotEmpty()) field.updates.removeFirst().let { editor.selectionChanged(it[0], it[1], it[2], it[3]) }
+        /** The field's updates; whether one wasn't ours */
+        fun hear(): Boolean {
+            var external = false
+            while (field.updates.isNotEmpty()) field.updates.removeFirst().let { if (editor.selectionChanged(it[0], it[1], it[2], it[3])) external = true }
+            return external
         }
 
         /** nihongo typed after the text, 日本語 picked */
@@ -937,6 +940,24 @@ class EditorTest {
         assertTrue(ja.undo("日本語", "にほんご"))
         assertEquals("abcにほんご", ja.field.text)
         assertEquals(3 until 7, ja.field.region)
+    }
+
+    /**
+     * #379: watashiha converted to 私は and 私 picked: Mozc commits it and は stays composing. Undo takes 私 back
+     * from before は: the whole reading composing again, and the field's update is ours (no reset of Mozc).
+     */
+    @Test
+    fun undoAfterAPartialConversionReopensIt() {
+        val ja = Japanese(Field("ab", 2))
+        ja.write(ja.mozc("私は"))
+        ja.write(ja.mozc("は", commit = "私"))
+        assertEquals("ab私は", ja.field.text)
+        val st = ja.mozc("わたしは", delete = 1)
+        assertTrue(ja.editor.engineUndo(st, st.preedit, "は"))
+        assertFalse(ja.hear())
+        assertEquals("abわたしは", ja.field.text)
+        assertEquals(2 until 6, ja.field.region)
+        assertEquals(6, ja.field.cursor)
     }
 
     /** #379: the cursor moved after the conversion: Mozc's undo would replace other text (bc), so the app's goes. */
