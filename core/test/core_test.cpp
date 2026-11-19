@@ -898,6 +898,8 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
 // #380: a personal word's shortcut offers it first, as in the FUTO-based app, but a space never replaces the
 // shortcut typed with it, with the model or without; not even with a dictionary word the main dictionary
 // would correct it to (the FUTO-based app's space typed "becuase" with this shortcut, "because" without).
+// Letters near a shortcut offer its word first too when the decoder ranks it first, as there; otherwise
+// they correct as usual ("becaus" to "because", with the shortcut or without).
 TEST_F(EnglishTest, APersonalWordsShortcutOffersItWithoutCorrectingToIt) {
   Settings s;
   s.englishWords = {{"plimbo vexter", 250, "qvz"}, {"because", 250, "becuase"}};
@@ -911,16 +913,17 @@ TEST_F(EnglishTest, APersonalWordsShortcutOffersItWithoutCorrectingToIt) {
       ASSERT_TRUE(ready(readies));
     }
     // At a sentence's start the phone types it with a capital, and the word comes capitalised too.
-    for (const auto &[typed, word] :
-         {std::pair{"qvz", "plimbo vexter"}, {"Qvz", "Plimbo vexter"}, {"becuase", "because"}}) {
+    for (const auto &[typed, word, committed] :
+         {std::tuple{"qvz", "plimbo vexter", "qvz "}, {"Qvz", "Plimbo vexter", "Qvz "},
+          {"qvx", "plimbo vexter", "qvx "}, {"becuase", "because", "becuase "}, {"becaus", "", "because "}}) {
       const std::string letters = typed;
       type(letters.substr(0, letters.size() - 1));
       const int ranked = readyCount();
       type(letters.substr(letters.size() - 1));
       if (!model.empty()) ASSERT_TRUE(ready(ranked));  // the model's ranking, which would put the phrase last
-      EXPECT_EQ(indexOf(word), 1) << testing::PrintToString(list());  // after the typed word
+      if (*word) EXPECT_EQ(indexOf(word), 1) << testing::PrintToString(list());  // after the typed word
       type(" ");
-      EXPECT_EQ(en->takeCommit(), letters + " ");
+      EXPECT_EQ(en->takeCommit(), committed) << model;
       en->clear();
     }
   }

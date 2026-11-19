@@ -869,13 +869,24 @@ class English : public Engine {
     if (!model_ready_ || typed_.empty()) return;
     // The model's ranking comes from the worker; a key never waits for it.
     // A personal word's shortcut offers it first, as the FUTO-based app did (#380): the model would rank a
-    // phrase it doesn't know last. Its words stay out of the ranking, whichever dictionary offers them, and
-    // while a shortcut comes first a space corrects nothing, as by AOSP's rule above.
+    // phrase it doesn't know last. That app put first the words of the shortcut typed, in any case, and a
+    // shortcut's word the decoder ranks first, as for letters near one ("qvx" for "qvz"), and then a space
+    // corrected nothing, as by AOSP's rule above. Those words stay out of the ranking, whichever dictionary
+    // offers them; other shortcuts' words the model ranks like any other ("because" for "becaus" still
+    // corrects with a shortcut "becuase").
+    const auto lower = [](std::vector<int> cps) {
+      for (int &c : cps) c = int(lowerCase(c));
+      return cps;
+    };
+    const auto typedLower = lower(typed_);
     shortcuts_.clear();
-    for (const Word &w : results)
-      if ((w.kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT) shortcuts_.push_back(w.word);
-    shortcutFirst_ =
-        !results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT;
+    const auto add = [&](const std::string &word) {
+      if (std::find(shortcuts_.begin(), shortcuts_.end(), word) == shortcuts_.end()) shortcuts_.push_back(word);
+    };
+    for (const PersonalWord &w : personalWords_)
+      if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
+    if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
+      add(results.front().word);
     Rank rank{context_, typed, {}, typedFound, 0};
     for (const Word &w : results)
       if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) == shortcuts_.end())
@@ -946,7 +957,7 @@ class English : public Engine {
   void showRanking(const sebtype_lm::Ranked &ranked) {
     auto strip = shortcuts_;
     strip.insert(strip.end(), ranked.strip.begin(), ranked.strip.end());
-    show(strip, shortcutFirst_ ? utf8(typed_) : ranked.committed);
+    show(strip, shortcuts_.empty() ? ranked.committed : utf8(typed_));
     modelStrip_ = true;
   }
 
@@ -1215,7 +1226,6 @@ class English : public Engine {
   std::string context_;               // the text before them
   std::vector<std::string> strip_;
   std::vector<std::string> shortcuts_;  // the personal words the letters typed are a shortcut for
-  bool shortcutFirst_ = false;          // the decoder's first result is one of them: nothing is corrected
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
   bool modelStrip_ = false;  // strip_ is the model's ranking, not the decoder's rule
   bool domains_ = false;     // the list is e-mail domains
