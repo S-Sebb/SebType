@@ -91,7 +91,7 @@ may be exempt from `nt_foreground`, but 20 SebType starts with 2 in it can't sho
 - On the big cores the long field is fixed (#359): next words at the short field's 42 ms median, and
   17 of 18 spaces didn't wait (the one that did waited 81 ms). Its p95 is still 250 ms.
 - 中 misses #264's 20 ms p95 on both: 32 ms ranking and 137 ms next words on the big cores
-  (since then 15 ms ranking: [中's model on the phone](2026-11-19-chinese-model.md)).
+  (since then 14–16 ms ranking and 12–31 ms next words: [中's model on the phone](2026-11-19-chinese-model.md)).
 - On the little cores, fast typing waits at every space (152 / 281 ms), and the long field's ranking
   is late or skipped for 14 of 18 spaces.
 
