@@ -171,4 +171,58 @@ class KeyTextTest {
         assertEquals(h * 1.08f, face.bottom - face.top, 1e-3f)
         assertEquals(50f + h / 2, (face.top + face.bottom) / 2, 1e-3f)
     }
+
+    // --- #382: a letter key follows the finger until it lifts ---
+
+    /** The key typed for a finger put down at the first point and lifted at the last, as KeyboardView's touch handling follows it */
+    private fun typed(path: List<Pair<Float, Float>>): String {
+        val rows = layout("letters").rows
+        val rowHeight = 59.3f * density
+        val laid = keyCells(rows, 411 * density, rowHeight, density, false)
+        val boxes = laid.map { it.second }
+        val height = keysHeight(rows, rowHeight, density)
+        var key = keyAt(boxes, path[0].first, path[0].second, height)!!
+        for ((x, y) in path.drop(1)) {
+            val over = keyAt(boxes, x, y, height) ?: continue
+            if (over != key && slides(laid[key].first, boxes[key], laid[over].first, x, y, 8 * density)) key = over
+        }
+        return laid[key].first.text
+    }
+
+    private fun box(text: String) = keyCells(layout("letters").rows, 411 * density, 59.3f * density, density, false)
+        .first { it.first.text == text }.second
+
+    @Test
+    fun aLetterSlidOntoItsNeighbourTypesTheNeighbour() {
+        val (q, w) = box("q") to box("w")
+        val y = (q.top + q.bottom) / 2
+        assertEquals("w", typed(listOf((q.left + q.right) / 2 to y, (w.left + w.right) / 2 to y)))
+        // Back again: the key it is on when it lifts
+        assertEquals("q", typed(listOf((q.left + q.right) / 2 to y, (w.left + w.right) / 2 to y, q.left + 2 to y)))
+    }
+
+    @Test
+    fun aFingerMovingWithinItsKeyOrJustOverTheEdgeKeepsIt() {
+        val q = box("q")
+        val y = (q.top + q.bottom) / 2
+        assertEquals("q", typed(listOf(q.left + 2 to y, q.right - 2 to y)))
+        // Under today's 8 dp past the edge, the key stays (hysteresis)
+        assertEquals("q", typed(listOf((q.left + q.right) / 2 to y, q.right + 7 * density to y)))
+        assertEquals("w", typed(listOf((q.left + q.right) / 2 to y, q.right + 9 * density to y)))
+    }
+
+    @Test
+    fun onlyLettersFollowTheFinger() {
+        val rows = layout("letters").rows
+        val laid = keyCells(rows, 411 * density, 59.3f * density, density, false)
+        val space = laid.first { it.first.code == Layout.Code.SPACE }
+        val shift = laid.first { it.first.code == Layout.Code.SHIFT }
+        val z = laid.first { it.first.text == "z" }
+        val far = 100 * density
+        // Space and Delete swipe, Shift chords: they keep their key
+        assertTrue(!slides(space.first, space.second, z.first, 0f, 0f, 0f))
+        assertTrue(!slides(shift.first, shift.second, z.first, z.second.left + far, z.second.top, 8 * density))
+        // A letter slid onto Space doesn't type a space
+        assertTrue(!slides(z.first, z.second, space.first, space.second.left + 1, space.second.top + 1, 0f))
+    }
 }

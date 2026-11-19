@@ -32,7 +32,8 @@ private operator fun RectF.component4() = bottom
 /**
  * The keys: one View drawn on a Canvas. It lays out a [Layout] page (with the number row over it when
  * asked), draws it in the Picnic look and turns touches into keys: a tap types on release, a long press
- * opens the key's choices, Delete repeats while held, a second finger types the first key at once. Every
+ * opens the key's choices, Delete repeats while held, a second finger types the first key at once, a finger
+ * slid onto another letter types that one. Every
  * key is a virtual view with a text label for TalkBack and the emulator checks (uiautomator).
  */
 @SuppressLint("ViewConstructor")
@@ -94,8 +95,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     var enter = FieldKind.Enter.NEWLINE
         set(value) { field = value; invalidate(); a11y.invalidateRoot() }
 
-    private class Cell(val key: Layout.Key, val rect: RectF)
+    private class Cell(val key: Layout.Key, val box: Box) {
+        val rect = RectF(box.left, box.top, box.right, box.bottom)
+    }
     private var cells = emptyList<Cell>()
+    private var boxes = emptyList<Box>()
     /** The keys' text sizes' share of today's: [keyTextScale] of the keys as laid out */
     private var textScale = 1f
     /** The key frames' pixel: today's, smaller with the text on keys smaller than any docked keyboard's */
@@ -169,8 +173,9 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val unit = (width - 2 * sidePadding) / 10f
         val half = SPLIT_HALF * (width - 2 * sidePadding) / 5f
         val out = keyCells(numberRow?.rows.orEmpty() + page?.rows.orEmpty(), width.toFloat(), rowHeight, density, split)
-            .map { (key, b) -> Cell(key, RectF(b.left, b.top, b.right, b.bottom)) }
+            .map { (key, b) -> Cell(key, b) }
         cells = out
+        boxes = out.map { it.box }
         textScale = keyTextScale(heightScale, (if (split) half else unit) / density)
         keyPx = maxOf(1, (px * textScale).roundToInt()).toFloat()
         // Sized once for the keyboard, as today's app does from its most common key (KeyboardView.setKeyboard):
@@ -301,7 +306,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     // --- Touch ---
 
-    private class Pointer(val cell: Cell, val downAt: Long, val downX: Float, val downY: Float) {
+    private class Pointer(var cell: Cell, val downAt: Long, val downX: Float, val downY: Float) {
         var panel: List<Pair<RectF, Layout.Key>>? = null
         var chosen = 0
         /** Shift, held while another key is typed: off again when it is let go */
@@ -315,6 +320,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private val pointers = HashMap<Int, Pointer>()
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    /** How far past its key's edge a finger slides onto the next one: today's 8 dp, 40 dp on tablets (config_key_hysteresis_distance) */
+    private val hysteresis = (if (resources.configuration.smallestScreenWidthDp >= 600) 40 else 8) * density
     private var lastShiftTap = 0L
     /** The settings' long-press time and key popup ([dev.sebb.sebtype.data.Prefs]) */
     var longPressMs = 300L
@@ -342,13 +349,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         }
     }
 
-    private fun cellAt(x: Float, y: Float): Cell? =
-        cells.firstOrNull { it.rect.contains(x, y) } ?: cells.minByOrNull {
-            // Between keys and at the edges, the nearest key
-            val dx = maxOf(it.rect.left - x, 0f, x - it.rect.right)
-            val dy = maxOf(it.rect.top - y, 0f, y - it.rect.bottom)
-            dx * dx + dy * dy
-        }?.takeIf { y >= 0 && y <= height }
+    private fun cellAt(x: Float, y: Float): Cell? = keyAt(boxes, x, y, height.toFloat())?.let { cells[it] }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -364,7 +365,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 val p = pointers[e.getPointerId(i)] ?: continue
                 p.x = e.getX(i)
                 p.y = e.getY(i)
-                if (p.panel == null) swipe(p)
+                if (p.panel == null) {
+                    swipe(p)
+                    cellAt(p.x, p.y)?.takeIf { it !== p.cell && slides(p.cell.key, p.cell.box, it.key, p.x, p.y, hysteresis) }
+                        ?.let { slide(p, it) }
+                }
                 p.panel?.let { panel ->
                     val x = e.getX(i) + layerOffset()[0]
                     val y = e.getY(i) + layerOffset()[1]
@@ -413,6 +418,15 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             }
         }
         pointers.values.filter { it.cell.key.code == Code.SHIFT && it !== p }.forEach { it.chorded = true }
+        invalidate()
+    }
+
+    /** The finger slid onto another letter: it types that one, its preview and long press with it, and buzzes only when it went down */
+    private fun slide(p: Pointer, cell: Cell) {
+        p.cell = cell
+        removeCallbacks(longPress)
+        if (previews) showPreview(cell)
+        if (cell.key.more.isNotEmpty()) postDelayed(longPress, longPressMs)
         invalidate()
     }
 
@@ -727,6 +741,31 @@ internal fun keyCells(rows: List<Layout.Row>, width: Float, rowHeight: Float, de
         y += h
     }
     return out
+}
+
+/** The key a finger is on in [cells]: the one under it, between keys and at the edges the nearest; none above or below the view */
+internal fun keyAt(cells: List<Box>, x: Float, y: Float, height: Float): Int? {
+    if (y < 0 || y > height) return null
+    cells.indexOfFirst { x >= it.left && x < it.right && y >= it.top && y < it.bottom }.takeIf { it >= 0 }?.let { return it }
+    return cells.indices.minByOrNull {
+        val c = cells[it]
+        val dx = maxOf(c.left - x, 0f, x - c.right)
+        val dy = maxOf(c.top - y, 0f, y - c.bottom)
+        dx * dx + dy * dy
+    }
+}
+
+/**
+ * Whether a finger held on [from] (its cell [box]), now at [x], [y] over [to], types [to] instead, as today's
+ * sliding key input does (AOSP's PointerTracker.isMajorEnoughMoveToBeOnNewKey): once it is [hysteresis] px past
+ * the key's edge. Only text keys follow the finger: Space and Delete swipe, Shift chords, and the other keys keep
+ * the key they were pressed on.
+ */
+internal fun slides(from: Layout.Key, box: Box, to: Layout.Key, x: Float, y: Float, hysteresis: Float): Boolean {
+    if (from.code != Layout.Code.TEXT || to.code != Layout.Code.TEXT) return false
+    val dx = maxOf(box.left - x, 0f, x - box.right)
+    val dy = maxOf(box.top - y, 0f, y - box.bottom)
+    return dx * dx + dy * dy >= hysteresis * hysteresis
 }
 
 /** Split: each half's share of the width */

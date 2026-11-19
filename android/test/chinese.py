@@ -1977,6 +1977,33 @@ def swipe_delete_words():
     return f"-> {got!r}"
 
 
+def slide_to_letter():
+    """A finger put down on one letter and slid onto its neighbour types the neighbour (#382); held there,
+    the long press opens the neighbour's choices (e's first is 3, w's is 2)."""
+    to_english()
+    got = []
+    for steps, hold in ((("q", "w"), 0), (("w", "e"), 1.5)):
+        open_field()
+        k = key_spots()
+        (x0, y0), (x1, y1) = k[steps[0]], k[steps[1]]
+        moves = "; ".join(
+            f"input motionevent MOVE {x0 + (x1 - x0) * i // 4} {y0}"
+            for i in range(1, 5)
+        )
+        adb(
+            "shell",
+            f"input motionevent DOWN {x0} {y0}; {moves}; sleep {hold}; input motionevent UP {x1} {y1}",
+        )
+        time.sleep(1.5)
+        settle()
+        got.append(field_text())
+    if [g.lower() for g in got] != ["w", "3"]:
+        raise Fail(
+            f"q slid onto w typed {got[0]!r}, w slid onto e and held typed {got[1]!r}"
+        )
+    return f"q -> w typed {got[0]!r}; w -> e, held, typed {got[1]!r}"
+
+
 def swipe_delete_cjk():
     """Delete swiped left a key in Chinese, then Japanese, deletes the last word, not the whole sentence:
     they have no spaces between words (#283)."""
@@ -2739,6 +2766,7 @@ check("modes-height", modes_height, needs=["first-install"])
 check("swipe-space-cursor", swipe_space_cursor, needs=["first-install"])
 check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
 check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
+check("slide-to-letter", slide_to_letter, needs=["first-install"])
 check("modes-floating-resized", floating_after_resize, needs=["first-install"])
 check("modes-floating-resize", floating_resize, needs=["first-install"])
 check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
