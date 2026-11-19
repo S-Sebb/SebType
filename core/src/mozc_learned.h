@@ -28,6 +28,11 @@ inline constexpr size_t kMaxBytes = 1 << 20;
 // before 1970 would rank in 2106. They stay in the records, so they come in once the clocks catch up.
 inline constexpr int64_t kEarliest = 1577836800;  // 2020-01-01
 inline constexpr int64_t kAhead = 24 * 60 * 60;
+// How far before now the latest replayed pick lands. Mozc's prediction scores an entry by its time less its
+// characters, and keeps values of at most 256 bytes (UserHistoryPredictor's kMaxStringLength), so a real pick made
+// after the replay always scores above it. The cost: another device's pick newer than one made here in the last
+// few minutes can rank below that one until the next pick here.
+inline constexpr int64_t kReplayHeadroom = 256;
 
 // (reading, written) → when it was last picked, in seconds since 1970. Each line of the record is
 // reading<TAB>written<TAB>time.
@@ -78,8 +83,9 @@ struct Other {
 // device ends with the same order. Picks from before Japanese was last forgotten here are left out everywhere:
 // this device's at or before `forgotten`, another's at or before its Other::forgotten. Forgotten stays forgotten
 // (Decisions #2, 2026-11-19) until picked again. Mozc ranks what it learned by when, in seconds, so each is learned
-// at its own time, but never after now, each after the one before it, and of one reading, far enough after that
-// it also comes first in Mozc's prediction, which takes a second off per character of the written form.
+// at its own time, but kReplayHeadroom before now at the latest, each after the one before it, and of one reading,
+// far enough after that it also comes first in Mozc's prediction, which takes a second off per character of the
+// written form.
 std::vector<Pick> toLearn(const Record &own, int64_t forgotten, const std::vector<Other> &others, int64_t now);
 
 }  // namespace sebtype::learned

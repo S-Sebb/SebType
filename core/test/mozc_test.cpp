@@ -104,8 +104,9 @@ TEST(MozcTest, CtrlBackspaceUndoesNothingWhereTheCommitIsNotBeforeTheCaret) {
 namespace learned = sebtype::learned;
 using learned::Other;
 using P = learned::Pick;
-// Times as seconds after T, a day in 2027; now is T + 1000 unless a test says otherwise.
-constexpr int64_t T = 1'800'000'000, Now = T + 1000;
+// Times as seconds after T, a day in 2027; now is T + 2000 unless a test says otherwise, so the picks here before
+// T + 1744 replay at their own time (kReplayHeadroom).
+constexpr int64_t T = 1'800'000'000, Now = T + 2000;
 
 TEST(MozcLearnedTest, ARecordReadsBackAsWrittenAndAnotherVersionReadsAsEmpty) {
   learned::Record r;
@@ -146,13 +147,14 @@ TEST(MozcLearnedTest, APickFromAClockAheadComesInOnceItIsPossible) {
   const learned::Record taken = learned::accept(b, T);
   EXPECT_TRUE(taken.empty());
   const std::string applied = learned::format(taken);  // kept as learned (mozc_inprocess.cpp)
-  EXPECT_EQ(learned::toLearn({}, 0, {{learned::accept(b, T + later), learned::accept(applied, T + later)}}, T + later),
+  EXPECT_EQ(learned::toLearn({}, 0, {{learned::accept(b, T + later), learned::accept(applied, T + later)}}, T + later + learned::kReplayHeadroom),
             (std::vector<P>{{"よみ", "X", T + later}}));
   const learned::Record own = learned::parse(b);
   EXPECT_EQ(learned::parse(learned::format(own)), own);  // made whole again as Mozc starts (learnOthers): kept
   const learned::Record c{{{"よみ", "Y"}, T - 10}};
-  EXPECT_EQ(learned::toLearn(own, 0, {{c, {}}}, T), (std::vector<P>{{"よみ", "Y", T - 10}}));
-  EXPECT_EQ(learned::toLearn(own, 0, {{c, {}}}, T + later), (std::vector<P>{{"よみ", "Y", T - 10}, {"よみ", "X", T + later}}));
+  EXPECT_EQ(learned::toLearn(own, 0, {{c, {}}}, T + learned::kReplayHeadroom), (std::vector<P>{{"よみ", "Y", T - 10}}));
+  EXPECT_EQ(learned::toLearn(own, 0, {{c, {}}}, T + later + learned::kReplayHeadroom),
+            (std::vector<P>{{"よみ", "Y", T - 10}, {"よみ", "X", T + later}}));
 }
 
 TEST(MozcLearnedTest, ARecordKeepsOnlyTheMostRecentPicks) {
@@ -182,7 +184,7 @@ TEST(MozcLearnedTest, TheSameReadingPickedDifferentlyOnTwoDevicesEndsTheSameOnBo
             (std::vector<P>{{"きしゃ", "帰社", T + 299}, {"きしゃ", "記者", T + 300}}));
   EXPECT_EQ(learned::toLearn(b, 0, {{a, {}}}, Now),
             (std::vector<P>{{"きしゃ", "帰社", T + 299}, {"きしゃ", "記者", T + 300}}));
-  EXPECT_EQ(learned::toLearn({}, 0, {{a, {}}}, T + 250), (std::vector<P>{{"きしゃ", "帰社", T + 250}}));
+  EXPECT_EQ(learned::toLearn({}, 0, {{a, {}}}, T + 250 + learned::kReplayHeadroom), (std::vector<P>{{"きしゃ", "帰社", T + 250}}));
 }
 
 // The later pick of a reading comes first in Mozc's prediction too, which scores an entry by its time less the
@@ -201,6 +203,11 @@ TEST(MozcLearnedTest, TheLaterPickComesFirstInPredictionToo) {
   }
   EXPECT_EQ(learned::toLearn(a, 0, {{b, {}}}, Now),
             (std::vector<P>{{"しんぶん", "新聞", T + 297}, {"しんぶん", "しんぶん", T + 300}}));
+  // A pick replayed as late as it can be still scores below a longer one picked here a second after it, or even
+  // in the same second as now, of the longest value Mozc keeps (#415 review).
+  const P replayed = learned::toLearn({}, 0, {{{{{"しんぶん", "新聞"}, Now}}, {}}}, Now)[0];
+  EXPECT_LT(score(replayed), score({"しんぶん", "しんぶん", Now + 1}));
+  EXPECT_LT(score(replayed), Now - 256);
 }
 
 // Only picks newer than the copy last learned come in; what was learned before, or forgotten since (its record
@@ -265,14 +272,15 @@ TEST(MozcLearnedTest, WhenJapaneseWasForgottenReadsBackAsWritten) {
   EXPECT_EQ(learned::parseForgotten("1800000500"), (learned::Forgotten{T + 500, {}}));
 }
 
-// Picks at or after now (now = T + 1000: at it and later) are learned a second apart counting back from now,
-// never ahead of it: a real pick made after them still ranks above them (#415 review).
-TEST(MozcLearnedTest, NoPickIsLearnedAfterNow) {
+// Picks kReplayHeadroom before now or later (here at T + 1000 and later) are learned a second apart counting back
+// from then, never closer to now: a real pick made after them still ranks above them (#415 review).
+TEST(MozcLearnedTest, NoPickIsLearnedCloseToNow) {
+  const int64_t now = T + 1000 + learned::kReplayHeadroom;
   const learned::Record r{{{"よみ", "A"}, T + 1000}, {{"よみ", "B"}, T + 1005}, {{"よみ", "C"}, T + 2000}};
-  EXPECT_EQ(learned::toLearn({}, 0, {{r, {}}}, Now),
+  EXPECT_EQ(learned::toLearn({}, 0, {{r, {}}}, now),
             (std::vector<P>{{"よみ", "A", T + 998}, {"よみ", "B", T + 999}, {"よみ", "C", T + 1000}}));
   const learned::Record tie{{{"よみ", "A"}, T + 1000}, {{"よみ", "B"}, T + 1000}};
-  EXPECT_EQ(learned::toLearn({}, 0, {{tie, {}}}, Now),
+  EXPECT_EQ(learned::toLearn({}, 0, {{tie, {}}}, now),
             (std::vector<P>{{"よみ", "A", T + 999}, {"よみ", "B", T + 1000}}));
 }
 

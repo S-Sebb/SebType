@@ -137,10 +137,12 @@ std::vector<Pick> toLearn(const Record &own, int64_t forgotten, const std::vecto
   }
   std::sort(picks.begin(), picks.end(), earlier);
   std::vector<Pick> out(picks.size());
-  // From the latest back: each at its own time, but before the one after it and never after now. Of one reading,
+  // From the latest back: each at its own time, but before the one after it and kReplayHeadroom before now at the
+  // latest, so a real pick made after it ranks above it. Of one reading,
   // the later one's prediction score (time less its characters) stays higher too.
   std::map<std::string, std::pair<int64_t, int64_t>> after;  // reading → the later pick's (time, characters)
-  int64_t next = now + 1;
+  const int64_t latest = now - kReplayHeadroom;
+  int64_t next = latest + 1;
   for (size_t i = picks.size(); i-- > 0;) {
     const auto &[time, value, key] = picks[i];
     const int64_t length = chars(*value);
@@ -151,9 +153,9 @@ std::vector<Pick> toLearn(const Record &own, int64_t forgotten, const std::vecto
     after[*key] = {next, length};
     out[i] = {*key, *value, next};
   }
-  // Spaced back past kEarliest: all moved forward together, so the order stays, and never past now.
+  // Spaced back past kEarliest: all moved forward together, so the order stays, and never past `latest`.
   if (!out.empty() && out.front().time < kEarliest) {
-    const int64_t by = std::min(kEarliest - out.front().time, now - out.back().time);
+    const int64_t by = std::min(kEarliest - out.front().time, latest - out.back().time);
     for (Pick &p : out) p.time += by;
   }
   return out;
