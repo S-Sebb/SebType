@@ -93,7 +93,9 @@ drawing: it's one frame per key, when the model is done.
 Not fixed. The frame can only come sooner if the model does less work or stops running, and either
 change costs suggestion quality, which the English harness's bars guard. Text on screen, typing
 latency and late frames are equal or better than today's. The emulator runs the model slower than a phone, so
-the gap there is likely smaller; a phone run would show it.
+the gap there is likely smaller. On the phone (2026-11-19, release 181), EN key → idle was 159 / 240 ms with the
+keyboard on the little cores only ([2026-11-19-phone-release.md](2026-11-19-phone-release.md)); on the big
+cores, on 2026-11-18, it was 49 / 66 ms ([2026-11-18-english-ranking.md](2026-11-18-english-ranking.md)).
 
 Tried and dropped: setting the space bar's label only when it changes, which saved a redraw of the
 key area on each candidate update. It didn't move key → idle in this run.

@@ -77,7 +77,9 @@ No janky keyboard frames in fast or long typing. EN had 4 keyboard frames past t
 - **Long field:** the next words for the 20,000-character text take about 460 ms each, and a ranking queues
   behind them. So 10 of 18 spaces wait for the ranking, 97 ms at the median and 249 ms at p95, and the space
   shows that much later. One space expected too long a wait and took the decoder's rule. #359 made the
-  long field's next words cheaper (below); the phone's numbers after it are still to be measured.
+  long field's next words cheaper (below). The phone run after it (2026-11-19, release 181) ran the
+  keyboard on the little cores only and can't show the gain: next words 192 ms in EN and 264 ms in the long
+  field ([2026-11-19-phone-release.md](2026-11-19-phone-release.md)).
 - The emulator's key → idle (about 330 ms median in #351) is Berberis: on the phone it is 49 ms.
 
 ## The long field's next words (#359)

@@ -170,7 +170,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest, or a cached file that is corrupt, replaced or deleted, is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
-| `MAIN_APK=<the FUTO-based app's last release> android/test/emulator.sh` | Adds `update-from-futo-app`: an update from that app keeps SebType picked and its words, Rime and Mozc data and settings (#262) |
+| `MAIN_APK=<the FUTO-based app's last release> android/test/emulator.sh` | Adds `update-from-futo-app`: an update from that app keeps SebType picked and its words, Rime and Mozc data and settings (#262). On a phone without root it compares the settings screens instead of the app's files (#353) |
 | `android/emulator.sh -- android/test/compare-screens.py OLD_APK NEW_APK FIELD_APK OUTDIR` | Screenshots of two builds' keyboards side by side, light and dark, for judging the look |
 | `android/build.sh unit-tests` | The app's unit tests (on yanglab16) |
 | `android/test/english/run.sh` | English quality next to pristine AOSP and the FUTO-based app's frozen numbers (`today.json`), on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
