@@ -896,10 +896,11 @@ TEST_F(EnglishTest, ThePhonesOptionsTurnCorrectionsOffAddPersonalWordsAndTypeDou
 }
 
 // #380: a personal word's shortcut offers it first, as in the FUTO-based app, but a space never replaces the
-// shortcut typed with it, with the model or without.
+// shortcut typed with it, with the model or without; not even with a dictionary word the main dictionary
+// would correct it to (the FUTO-based app's space typed "becuase" with this shortcut, "because" without).
 TEST_F(EnglishTest, APersonalWordsShortcutOffersItWithoutCorrectingToIt) {
   Settings s;
-  s.englishWords = {{"plimbo vexter", 250, "qvz"}};
+  s.englishWords = {{"plimbo vexter", 250, "qvz"}, {"because", 250, "becuase"}};
   for (const std::string model : {"", EN_MODEL}) {
     const int readies = readyCount();
     start(model);
@@ -910,16 +911,35 @@ TEST_F(EnglishTest, APersonalWordsShortcutOffersItWithoutCorrectingToIt) {
       ASSERT_TRUE(ready(readies));
     }
     // At a sentence's start the phone types it with a capital, and the word comes capitalised too.
-    for (const auto &[typed, word] : {std::pair{"qvz", "plimbo vexter"}, {"Qvz", "Plimbo vexter"}}) {
-      type(std::string(typed, 2));
+    for (const auto &[typed, word] :
+         {std::pair{"qvz", "plimbo vexter"}, {"Qvz", "Plimbo vexter"}, {"becuase", "because"}}) {
+      const std::string letters = typed;
+      type(letters.substr(0, letters.size() - 1));
       const int ranked = readyCount();
-      type(typed + 2);
+      type(letters.substr(letters.size() - 1));
       if (!model.empty()) ASSERT_TRUE(ready(ranked));  // the model's ranking, which would put the phrase last
       EXPECT_EQ(indexOf(word), 1) << testing::PrintToString(list());  // after the typed word
       type(" ");
-      EXPECT_EQ(en->takeCommit(), std::string(typed) + " ");
+      EXPECT_EQ(en->takeCommit(), letters + " ");
       en->clear();
     }
+  }
+}
+
+// A personal word that is also another one's shortcut stays a word, whichever comes first (#380).
+TEST_F(EnglishTest, APersonalWordThatIsAlsoAShortcutStaysAWord) {
+  start("");
+  const PersonalWord word{"zorblax", 250, ""}, phrase{"plimbo vexter", 250, "zorblax"};
+  for (const auto &words : {std::vector{word, phrase}, std::vector{phrase, word}}) {
+    Settings s;
+    s.englishWords = words;
+    en->applySettings(s, true);
+    type("zorbl");
+    EXPECT_TRUE(lists("zorblax")) << testing::PrintToString(list());
+    en->clear();
+    type("zorblax");
+    EXPECT_TRUE(lists("plimbo vexter")) << testing::PrintToString(list());
+    en->clear();
   }
 }
 #endif

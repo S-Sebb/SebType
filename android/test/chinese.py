@@ -2966,20 +2966,22 @@ def update_from_futo_app():
             type_keys(EN_WORD)
             tap_space()
         typed = field_text()
-        # As root, as in en-personal-word: Android's user dictionary ignores the shell user.
-        root(
-            f"content insert --uri {WORDS} --bind word:s:'{SHORTCUT_PHRASE}' --bind shortcut:s:{SHORTCUT}"
-            " --bind locale:s:en_US --bind frequency:i:250 --bind appid:i:0"
-        )
-        # Its strip has no accessibility nodes: the screenshot shows it, and a space what it commits.
-        open_field()
-        type_keys(SHORTCUT)
-        screenshot("380-old-shortcut.png")
-        tap_space()
-        old_space = field_text()
-        print(f"the old app: a space after {SHORTCUT} typed {old_space!r}")
-        if old_space.lower() != SHORTCUT + " ":
-            raise Fail(f"the old app's space after {SHORTCUT} typed {old_space!r}")
+        if ROOT:
+            # As root, as in en-personal-word: Android's user dictionary ignores the shell user. Without
+            # root the shortcut isn't checked (#380).
+            root(
+                f"content insert --uri {WORDS} --bind word:s:'{SHORTCUT_PHRASE}' --bind shortcut:s:{SHORTCUT}"
+                " --bind locale:s:en_US --bind frequency:i:250 --bind appid:i:0"
+            )
+            # Its strip has no accessibility nodes: the screenshot shows it, and a space what it commits.
+            open_field()
+            type_keys(SHORTCUT)
+            screenshot("380-old-shortcut.png")
+            tap_space()
+            old_space = field_text()
+            print(f"the old app: a space after {SHORTCUT} typed {old_space!r}")
+            if old_space.lower() != SHORTCUT + " ":
+                raise Fail(f"the old app's space after {SHORTCUT} typed {old_space!r}")
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
         old, history = (
             f"/data/user/0/{OLD_PKG}",
@@ -3092,9 +3094,9 @@ def update_from_futo_app():
             raise Fail(
                 f"after the update {EN_WORD[:5]} -> {en[:5]}, without the old app's {EN_WORD}"
             )
-        shortcut = candidates_for(SHORTCUT)
         # The old app offered the phrase first, and its space kept the shortcut typed (old_space).
-        if shortcut_offered(shortcut):
+        shortcut = candidates_for(SHORTCUT) if ROOT else ["not checked (no root shell)"]
+        if ROOT and shortcut_offered(shortcut):
             raise Fail(f"after the update: {shortcut_offered(shortcut)}")
         to_chinese()
         zh = expect_first("lh", zh_word)()
@@ -3149,7 +3151,8 @@ def update_from_futo_app():
             f" {EN_WORD[:5]} -> {en[:3]}; {SHORTCUT} -> {shortcut[:3]}; options kept; learning off kept"
         )
     finally:
-        root(f"content delete --uri {WORDS} --where \"word='{SHORTCUT_PHRASE}'\"")
+        if ROOT:
+            root(f"content delete --uri {WORDS} --where \"word='{SHORTCUT_PHRASE}'\"")
         as_old(False)
         adb("uninstall", OLD_PKG, check=False)
         # A fresh install for the checks after this one.
