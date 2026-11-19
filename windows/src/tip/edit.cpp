@@ -79,18 +79,16 @@ bool readBefore(TfEditCookie ec, ITfRange *range, LONG units, std::wstring &text
   return true;
 }
 
-// Deletes the characters just before the composition, or the caret when there is none: 日本語's undo of its
-// last commit. False, deleting nothing, when the app's text there doesn't read back whole.
-bool deleteBefore(TfEditCookie ec, ITfContext *context, ITfComposition *composition, int chars) {
+// Deletes the commit just before the composition, or the caret when there is none and nothing is selected:
+// 日本語's undo (#376). False, deleting nothing, when the app's text there isn't that commit.
+bool deleteBefore(TfEditCookie ec, ITfContext *context, ITfComposition *composition, const std::wstring &commit) {
   ITfRange *range = nullptr;
   if (composition) composition->GetRange(&range);
   else range = caret(ec, context);
   if (!range) return false;
   std::wstring text;
-  LONG moved = 0;
-  const LONG n = readBefore(ec, range, 2 * chars, text) ? suffix16(text, chars) : -1;
-  const bool done = n >= 0 && SUCCEEDED(range->ShiftStart(ec, static_cast<LONG>(text.size()) - n, &moved, nullptr)) &&
-                    moved == static_cast<LONG>(text.size()) - n && SUCCEEDED(range->SetText(ec, 0, L"", 0));
+  const bool done = !commit.empty() && readBefore(ec, range, static_cast<LONG>(commit.size()), text) &&
+                    text == commit && SUCCEEDED(range->SetText(ec, 0, L"", 0));
   range->Release();
   return done;
 }
@@ -99,12 +97,12 @@ bool deleteBefore(TfEditCookie ec, ITfContext *context, ITfComposition *composit
 
 std::string TextService::textBefore(ITfContext *context) {
   std::wstring text;
-  if (!committed16_) return {};
+  if (committed_.empty()) return {};
   editSession(
       context, clientId_,
       [&](TfEditCookie ec) {
         if (ITfRange *range = caret(ec, context)) {
-          if (!readBefore(ec, range, committed16_, text)) text.clear();
+          if (!readBefore(ec, range, static_cast<LONG>(committed_.size()), text)) text.clear();
           range->Release();
         }
         return S_OK;
@@ -149,24 +147,24 @@ HRESULT TextService::endComposition(TfEditCookie ec, ITfContext *context) {
   return S_OK;
 }
 
-HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
+std::wstring TextService::undone(int chars) const {
+  const LONG n = suffix16(committed_, chars);
+  return n < 0 ? std::wstring{} : committed_.substr(committed_.size() - n);
+}
+
+HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wstring &undone) {
   leaving_ = false;  // SebType is typing: a notice of its profile going was for its other language
   const std::wstring commit = utf16(reply_.commit);
   reply_.commit.clear();  // applied once
   const bool japanese = reply_.lang == Lang::Japanese;
 
-  // Where the commit can't be deleted the undo stops: its conversion would type it again after the commit.
-  if (reply_.deleteBefore > 0 && !deleteBefore(ec, context, composition_, std::exchange(reply_.deleteBefore, 0))) {
-    reply_.preedit = {};
-    reply_.page = {};
-    reply_.aux.clear();
-    dropTyping();
-  }
+  // Where the commit isn't just before the caret any more the undo stops: its conversion would type it again.
+  if (!undone.empty() && !deleteBefore(ec, context, composition_, undone)) dropUndo();
   const bool composing = !reply_.preedit.empty() || !reply_.page.empty() || !reply_.aux.empty();
 
   // The committed text goes where the composition is, or at the caret.
   if (!commit.empty()) {
-    committed16_ = static_cast<LONG>(commit.size());
+    committed_ = commit;
     if (composition_) {
       endComposition(ec, context, std::exchange(composition_, nullptr), commit);
     } else {

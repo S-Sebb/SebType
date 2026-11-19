@@ -411,15 +411,26 @@ if ($Typing) {
           if ($first -ne '記者' -or $t -notin 'きしゃ', 'キシャ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ)" }
           "$first → $t"
         }
-        # A field that refuses the undo's edit keeps its commit, and Enter doesn't type it again.
-        Check 'japanese-undo-refused' {
-          Field ja
-          TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
-          $tsf::RefuseLater = $true
-          try { Keys 'Control_L+BackSpace'; Start-Sleep 1 } finally { $tsf::RefuseLater = $false }
-          Keys Return; Start-Sleep 1; $t = $tsf::Text().Trim()
-          if ($first -ne '記者' -or $t -ne '記者') { throw "kisha + Space + Enter gave '$first', then a refused Ctrl+Backspace and Enter '$t' (want 記者 once)" }
-          "$first, kept"
+        # A field that refuses the undo's edit, or grants it only later (the key's release meanwhile), keeps its
+        # commit and the text around it, and Enter doesn't type it again.
+        foreach ($case in 'refused', 'deferred', 'deferred-dropped', 'deferred-caret-moved') {
+          Check "japanese-undo-$case" {
+            Field ja
+            $moved = $case -eq 'deferred-caret-moved'
+            if ($moved) { $tsf::SetText('ab') }
+            TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+            if ($case -eq 'refused') { $tsf::ReadOnly = $true } else { $tsf::WriteLater = $true }
+            try {
+              Keys 'Control_L+BackSpace'; Start-Sleep 1
+              if ($case -eq 'deferred-dropped') { $tsf::DropPending() }
+              if ($moved) { $tsf::Caret(3) }
+            } finally { $tsf::ReadOnly = $false; $tsf::WriteLater = $false }
+            Start-Sleep 1
+            if ($moved) { Keys Escape } else { Keys Return }
+            Start-Sleep 1; $t = $tsf::Text().Trim(); $want = if ($moved) { 'ab記者' } else { '記者' }
+            if ($first -ne $want -or $t -ne $want) { throw "kisha + Space + Enter gave '$first', then a $case Ctrl+Backspace and Enter or Escape '$t' (want $want)" }
+            "$first, kept"
+          }
         }
         # A commit over 32 UTF-16 units is undone too: 35 kana go and compose again, which Escape drops.
         Check 'japanese-undo-long-commit' {

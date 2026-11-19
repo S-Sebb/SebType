@@ -198,15 +198,19 @@ namespace SebType {
     // A lock that may wait waits for GrantPending, as in an app that grants it from its message loop, after
     // it handled the key (#275); one that may not is granted at once all the same.
     public bool Defer, Hold;
-    // An app that grants only the locks it can at once, and refuses a write that may wait (#376).
-    public bool RefuseLater;
+    // An app that grants reads at once but writes only later, from its message loop: it refuses a write that
+    // can't wait, and queues one that can until WriteLater is let go (or drops it, DropPending) (#376).
+    public bool WriteLater;
+    public void DropPending() { pendingLock = 0; }
     // A field read-only for a moment: its status says so, and it refuses a lock to write.
     bool readOnly;
     public bool ReadOnly { set { readOnly = value; sink.OnStatusChange(value ? 1u : 0u); } }
     public int RequestLock(uint flags, out int hrSession) {
       if (sink == null) { hrSession = E_INVALIDARG; return S_OK; }
-      if ((readOnly || (RefuseLater && (flags & TS_LF_SYNC) == 0)) && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) {
-        hrSession = TS_E_READONLY; return S_OK;
+      if (readOnly && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) { hrSession = TS_E_READONLY; return S_OK; }
+      if (WriteLater && (flags & TS_LF_READWRITE) == TS_LF_READWRITE) {
+        if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
+        pendingLock |= flags & TS_LF_READWRITE; hrSession = TS_S_ASYNC; return S_OK;
       }
       if (lockFlags != 0 || (Defer && (flags & TS_LF_SYNC) == 0)) {
         if ((flags & TS_LF_SYNC) != 0) { hrSession = TS_E_SYNCHRONOUS; return S_OK; }
@@ -604,7 +608,10 @@ namespace SebType {
     static void Left() { store.SelStart = store.SelEnd = Math.Max(0, store.SelStart - 1); store.AppEdit(store.SelStart, store.SelEnd, ""); }
     // Whether a key is down as this thread's keyboard state has it (GetKeyState).
     public static bool ReadOnly { set { OnUi(() => { store.ReadOnly = value; return 0; }); } }
-    public static bool RefuseLater { set { OnUi(() => { store.RefuseLater = value; return 0; }); } }
+    public static bool WriteLater { set { OnUi(() => { store.WriteLater = value; if (!value) store.GrantPending(); return 0; }); } }
+    public static void DropPending() { OnUi(() => { store.DropPending(); return 0; }); }
+    // The caret at a place in the text, as a click puts it there.
+    public static void Caret(int at) { OnUi(() => { store.SelStart = store.SelEnd = at; store.AppEdit(at, at, ""); return 0; }); }
     public static bool IsDown(int vk) { return OnUi(() => GetKeyState(vk) < 0); }
     // A key down or up in this thread's keyboard state only, as a modal loop that took a key leaves it.
     public static void SetKey(int vk, bool down) {

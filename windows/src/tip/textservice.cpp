@@ -519,7 +519,10 @@ wchar_t TextService::typedChar(WPARAM wParam, LPARAM lParam) {
   return n == 1 && ch[0] >= 0x20 && ch[0] != 0x7f ? ch[0] : 0;
 }
 
-void TextService::dropTyping() {
+void TextService::dropUndo() {
+  reply_.preedit = {};
+  reply_.page = {};
+  reply_.aux.clear();
   Reply dropped;
   server.call(Request{Op::Reset}, dropped);
 }
@@ -634,25 +637,24 @@ void TextService::stopWatching() {
 }
 
 void TextService::apply(ITfContext *context) {
+  // 日本語's undo (#376) edits now or not at all: later, the app's text or this reply may have changed. Where the
+  // app can't grant the edit at once, its commit stays and its conversion goes.
+  const int deleting = std::exchange(reply_.deleteBefore, 0);
+  const std::wstring commit = deleting > 0 ? undone(deleting) : std::wstring{};
+  if (deleting > 0 && commit.empty()) dropUndo();
   // A settling edit the app refused (a field read-only for a moment) is asked for again at the next key:
   // dropping it would let the server's next reply replace what it commits.
   if (context && FAILED(editSession(
                      context, clientId_,
-                     [this, context](TfEditCookie ec) {
-                       const HRESULT hr = update(ec, context);
+                     [this, context, commit](TfEditCookie ec) {
+                       const HRESULT hr = update(ec, context, commit);
                        rejected_ = false;
                        if (std::exchange(settling_, false)) replay();
                        return hr;
                      },
-                     false))) {
+                     !commit.empty()))) {
     rejected_ = settling_;
-    // An undo the app refused to edit: its commit stays, so its conversion must not commit it again.
-    if (std::exchange(reply_.deleteBefore, 0) > 0) {
-      reply_.preedit = {};
-      reply_.page = {};
-      reply_.aux.clear();
-      dropTyping();
-    }
+    if (!commit.empty()) dropUndo();
   }
   if (button_) button_->update();
   watchReadiness();
