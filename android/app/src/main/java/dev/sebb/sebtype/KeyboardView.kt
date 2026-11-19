@@ -220,7 +220,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private fun icon(key: Layout.Key) = when (key.code) {
         Code.SHIFT -> when (shift) { Shift.OFF -> Icon.SHIFT; Shift.ON -> Icon.SHIFT_ON; Shift.LOCKED -> Icon.SHIFT_LOCKED }
         Code.DELETE -> Icon.DELETE
-        Code.GLOBE -> Icon.GLOBE
+        Code.GLOBE, Code.KEYBOARDS -> Icon.GLOBE
         Code.ENTER -> when (enter) {
             FieldKind.Enter.NEWLINE, FieldKind.Enter.CUSTOM -> Icon.ENTER
             FieldKind.Enter.SEARCH -> Icon.SEARCH
@@ -602,6 +602,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         Code.DIGITS -> context.getString(R.string.key_digits)
         Code.LETTERS -> context.getString(R.string.key_letters)
         Code.GLOBE -> context.getString(R.string.key_language)
+        Code.KEYBOARDS -> context.getString(R.string.key_pick_keyboard)
         Code.SPACE -> context.getString(R.string.key_space)
         Code.ENTER -> context.getString(when (enter) {
             FieldKind.Enter.NEWLINE, FieldKind.Enter.CUSTOM -> R.string.key_enter

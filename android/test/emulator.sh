@@ -71,7 +71,7 @@ mozc_dict=$(grep -A3 'raw/builtin_mozc_data$' <<<"$("$bt/aapt2" dump resources "
 check mozc-dictionary bash -c "[[ -n '$mozc_dict' ]] && unzip -Zl '$apk' '$mozc_dict' | grep -q ' stor '"
 # One set of pages for all three languages.
 assets=$(unzip -Z1 "$apk" 'assets/layouts/*')
-layouts="letters.json symbols.json symbols2.json numbers.json numpad.json phone.json"
+layouts="letters.json symbols.json symbols2.json numbers.json numpad.json pin.json date.json time.json datetime.json phone.json"
 check uniform-layouts bash -c 'for f in $2; do
   grep -qx "assets/layouts/$f" <<<"$1" || { echo "missing $f"; exit 1; }; done' _ "$assets" "$layouts"
 # The Chinese data comes compiled (tables and 白霜's grammar), without the dictionary sources; its one

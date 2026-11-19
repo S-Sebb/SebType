@@ -544,6 +544,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             Code.DIGITS -> setPage(Page.DIGITS)
             Code.LETTERS -> setPage(Page.LETTERS)
             Code.GLOBE -> nextLanguage()
+            Code.KEYBOARDS -> onPickKeyboard()
             Code.SHIFT, Code.GAP -> {}
         }
         // By the field as the keys before left it: once their results have shown
