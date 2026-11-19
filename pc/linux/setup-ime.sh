@@ -50,8 +50,8 @@ if ((undo_configurator)); then
   for f in "$app_desktop" "$app_icon"; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }; done
   # Sync (#180): its half-hourly timer and network trigger (#377), its login in the keyring and its files.
   # The server's copy stays.
-  # With the Configurator's schedule lock (sync.rs, schedule_locked), so a sync ending or the network
-  # trigger plans nothing once this has begun: each finds sync.json gone.
+  # With the Configurator's schedule lock (sync.rs, schedule_locked), so a sync starting or ending or the
+  # network trigger plans nothing once this has begun: each finds sync.json gone.
   sync_units=$config/systemd/user
   if [[ -d $data/sebtype ]]; then exec {schedule_lock}>"$data/sebtype/schedule.lock"; flock "$schedule_lock"; fi
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
@@ -67,9 +67,10 @@ if ((undo_configurator)); then
     secret-tool clear service 'SebType sync' username login 2>/dev/null
   fi
   for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock}; do
+    # Released before it goes: a sync starting meanwhile would lock a new file while this holds the old (#401).
+    [[ $f == */schedule.lock && -n ${schedule_lock-} ]] && exec {schedule_lock}>&-
     [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }
   done
-  [[ -n ${schedule_lock-} ]] && exec {schedule_lock}>&-
   [[ -d $app_dir ]] && { echo "change: remove $app_dir"; rm -r "$app_dir"; }
   if [[ -f $classicui ]] && grep -q '^Theme=sebtype-picnic$' "$classicui"; then
     prev=$picnic_theme/previous
