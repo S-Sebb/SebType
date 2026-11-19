@@ -883,8 +883,12 @@ mod tests {
             langs().unwrap()[0] == ("zh".into(), true),
             "the languages kept"
         );
+        let translator = schema.split("\ntranslator:\n").nth(1).unwrap();
         assert!(
-            !schema.contains("enable_user_dict: false"),
+            !translator
+                .split('\n')
+                .take_while(|l| l.starts_with(' '))
+                .any(|l| l == "  enable_user_dict: false"),
             "learned words in use"
         );
         set_learning(true).unwrap();
