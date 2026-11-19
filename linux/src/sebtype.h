@@ -69,6 +69,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   // re-set of it at a key's release has no timer of Fcitx5's to hide it (#275).
   void hidePopupLater(fcitx::InputContext *ic);
   void hidePopup(fcitx::InputContext *ic);
+  // Core::whenIdle, run from Fcitx5's loop: tried at once, then each second until typing is idle.
+  void whenIdle(Core::Chore chore, std::function<void()> work);
 
   fcitx::Instance *instance_;
   std::unique_ptr<Core> core_;
@@ -78,6 +80,7 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   std::unique_ptr<Service> service_;
   std::unique_ptr<fcitx::EventSourceTime> poll_;
   std::unique_ptr<fcitx::EventSourceTime> hide_;
+  std::unique_ptr<fcitx::EventSourceTime> chores_;
 };
 
 }  // namespace sebtype

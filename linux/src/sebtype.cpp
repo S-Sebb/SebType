@@ -217,21 +217,45 @@ void SebTypeEngine::reloadConfig() {
   update(instance_->mostRecentInputContext());
 }
 
+// Fcitx5's autosave and the sync's Save (#373): Rime's save ends its session, so it waits until typing is idle.
+// Fcitx5's own save before it exits is done at once.
 void SebTypeEngine::save() {
-  core_->forEachEngine([](Engine &e) { e.save(); });
+  if (instance_->exiting()) return core_->forEachEngine([](Engine &e) { e.save(); });
+  whenIdle(Core::Chore::Save, [this] { core_->forEachEngine([](Engine &e) { e.save(); }); });
 }
 
+// The deploy and Mozc's restart drop what is being typed: they wait until typing is idle too (#373).
 void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig &) {
   if (path == "deploy") {
-    core_->engine(Lang::Chinese);
-    core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
-    updateStatus(instance_->mostRecentInputContext());
+    whenIdle(Core::Chore::Deploy, [this] {
+      core_->engine(Lang::Chinese);
+      core_->forEachEngine([](Engine &e) { e.deploy(); });  // Rime's, and Mozc's page size
+    });
   } else if (path == "mozc") {
     // Mozc reads its settings and dictionaries when it starts: it saves and closes, and the next 日本語 key
     // starts it again.
-    core_->stop(Lang::Japanese);
-    update(instance_->mostRecentInputContext());
+    whenIdle(Core::Chore::ReloadJapanese, [this] { core_->stop(Lang::Japanese); });
   }
+}
+
+void SebTypeEngine::whenIdle(Core::Chore chore, std::function<void()> work) {
+  core_->whenIdle(chore, [this, work = std::move(work)] {
+    work();
+    updateStatus(instance_->mostRecentInputContext());  // 中文's key turns grey while Rime deploys
+  });
+  if (chores_) {
+    chores_->setNextInterval(0);
+    chores_->setOneShot();
+    return;
+  }
+  chores_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC), 0, [this](fcitx::EventSourceTime *source, uint64_t) {
+        if (core_->runChores()) {
+          source->setNextInterval(1000000);
+          source->setOneShot();
+        }
+        return true;
+      });
 }
 
 void SebTypeEngine::update(fcitx::InputContext *ic) {

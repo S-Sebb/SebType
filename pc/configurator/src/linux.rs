@@ -345,9 +345,10 @@ pub fn python() -> Command {
 }
 
 /// Rime's sync, which SebType's input method runs when Fcitx5 saves: it merges the other devices' snapshots into
-/// the learned words and writes this PC's into `own`. Rime skips it while it is busy (deploying after
-/// a start), so it is asked again every 5 s until it has written, at most 30 s; without a running
-/// Fcitx5 there is nothing to wait for.
+/// the learned words and writes this PC's into `own`. The input method puts it off until typing is idle
+/// (#373) and Rime skips it while it is busy (deploying after a start), so it is asked again every 5 s
+/// until it has written, at most 30 s; a save later than that goes up with the next sync. Without a
+/// running Fcitx5 there is nothing to wait for.
 pub fn sync_rime(own: &Path) {
     let newest = || {
         fs::read_dir(own)

@@ -110,6 +110,7 @@ Reply state(bool taken, std::string commit = {}) {
   r.icon = core->icon();
   r.menu = core->menu();
   r.notice = core->takeNotice(true);
+  r.busy = core->choresWait();
   core->forEachEngine([&](Engine &e) { r.busy = r.busy || e.busy(); });
   return r;
 }
@@ -186,17 +187,24 @@ Reply handle(const Request &q, HANDLE pipe) {
       if (reset) core->clear();
       else note("reset: kept, another app has typed since");
       break;
+    // These drop what is being typed, so they wait until typing is idle (#373); runChores does them.
     case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet; Mozc's page size
-      core->engine(Lang::Chinese);
-      core->forEachEngine([](Engine &e) { e.deploy(); });
+      core->whenIdle(Core::Chore::Deploy, [] {
+        core->engine(Lang::Chinese);
+        core->forEachEngine([](Engine &e) { e.deploy(); });
+      });
       break;
     case Op::Sync:
-      core->engine(Lang::Chinese);
-      core->forEachEngine([](Engine &e) { e.save(); });
+      core->whenIdle(Core::Chore::Save, [] {
+        core->engine(Lang::Chinese);
+        core->forEachEngine([](Engine &e) { e.save(); });
+      });
       break;
     case Op::Quit: break;
     case Op::Mozc:  // in the background: 日本語 is grey until it is done (#312)
-      if (Engine *mozc = core->running(Lang::Japanese)) mozc->reload();
+      core->whenIdle(Core::Chore::ReloadJapanese, [] {
+        if (Engine *mozc = core->running(Lang::Japanese)) mozc->reload();
+      });
       break;
   }
   return state(taken, commit);
@@ -271,6 +279,13 @@ int run() {
   // The popup's words in Windows' display language when it is 中文 or 日本語 (#205).
   const LANGID ui = PRIMARYLANGID(GetUserDefaultUILanguage());
   host.setUiLanguage(ui == LANG_CHINESE ? Lang::Chinese : ui == LANG_JAPANESE ? Lang::Japanese : Lang::English);
+  // The deploys, syncs and Mozc reloads asked for, once typing is idle (#373).
+  std::thread([] {
+    for (;; Sleep(1000)) {
+      std::lock_guard<std::mutex> hold(lock);
+      core->runChores();
+    }
+  }).detach();
   const std::wstring name = pipeName();
   const auto instance = [&] {
     HANDLE pipe = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX,

@@ -110,7 +110,7 @@ std::string Settings::serialize() const {
 }
 
 Core::Core(EngineFactory factory, Settings settings, Clock clock)
-    : factory_(std::move(factory)), clock_(std::move(clock)) {
+    : factory_(std::move(factory)), clock_(std::move(clock)), lastKey_(clock_()) {
   setSettings(std::move(settings));
   lang_ = settings_.languages.front();
 }
@@ -245,6 +245,19 @@ bool Core::undo() {
 
 void Core::stop(Lang lang) { engines_.erase(lang); }
 
+void Core::whenIdle(Chore chore, std::function<void()> work) { chores_[chore] = std::move(work); }
+
+bool Core::runChores() {
+  if (chores_.empty()) return false;
+  bool busy = clock_() - lastKey_ < kIdle;
+  // One at a time, each after the one before is done: a Rime deploy skips itself while Rime saves.
+  forEachEngine([&](Engine &e) { busy = busy || e.composing() || e.busy(); });
+  if (busy) return true;
+  auto first = chores_.extract(chores_.begin());
+  first.mapped()();
+  return !chores_.empty();
+}
+
 bool Core::key(const Key &k) {
   if (k.sym == ks::Caps_Lock) {
     if (!k.release) capsLock_ = !(k.mods & mod::Lock);  // the state before this press
@@ -252,6 +265,7 @@ bool Core::key(const Key &k) {
     capsLock_ = k.mods & mod::Lock;
   }
   Engine *e = current();
+  lastKey_ = clock_();
 
   if (k.release) {
     if (auto it = std::ranges::find(swallow_, k.sym); it != swallow_.end()) {

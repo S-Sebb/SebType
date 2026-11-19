@@ -299,6 +299,34 @@ TEST_F(CoreTest, ALanguageThatIsNotReadyGreysItsKeyAndSaysSoOnce) {
   EXPECT_EQ(core.preedit().segments.size(), 1u);
 }
 
+// #373: a sync's save, a deploy or Mozc's reload drops what is being typed, so each waits until typing is idle:
+// nothing typed, no key for Core::kIdle and no engine busy; then they run one at a time, in Chore's order.
+TEST_F(CoreTest, ChoresWaitUntilTypingIsIdle) {
+  core.selectLanguage(Lang::Chinese);
+  type("ni");
+  FakeEngine &zh = *engines[Lang::Chinese];
+  std::vector<std::string> done;
+  core.whenIdle(Core::Chore::Save, [&] { done.push_back("save"), zh.clear(); });  // Rime's save ends its session
+  core.whenIdle(Core::Chore::Deploy, [&] { done.push_back("deploy"), zh.deploying = true; });
+  core.whenIdle(Core::Chore::Save, [&] { done.push_back("save"), zh.clear(); });  // asked again: done once
+  now += 1h;
+  EXPECT_TRUE(core.runChores());  // a word is being typed
+  type("hao");
+  EXPECT_EQ(core.preedit().text(), "nihao");
+  tap(' ');
+  now += 4s;
+  EXPECT_TRUE(core.runChores());  // the last key was too recent
+  EXPECT_TRUE(done.empty());
+  now += 1s;
+  EXPECT_TRUE(core.runChores());
+  EXPECT_EQ(done, (std::vector<std::string>{"deploy"}));
+  EXPECT_TRUE(core.runChores());  // Rime deploys
+  zh.deploying = false;
+  EXPECT_FALSE(core.runChores());
+  EXPECT_EQ(done, (std::vector<std::string>{"deploy", "save"}));
+  EXPECT_EQ(core.takeCommit(), "nihao0");
+}
+
 TEST_F(CoreTest, AltGraveSwitchesKanaBeforeTypingAndNotInEnglish) {
   core.selectLanguage(Lang::Japanese);
   EXPECT_EQ(core.takeNotice(true), "あ (Hiragana)");

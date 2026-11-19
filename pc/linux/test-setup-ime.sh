@@ -561,7 +561,8 @@ fi
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
-# Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301).
+# Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301). A sync's save and
+# a deploy wait until typing is idle (#373).
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
@@ -574,7 +575,7 @@ rime_label() {
   grep -q '^  menu/page_size: 6 ' "$r/default.custom.yaml" || { echo "default.custom.yaml has no page size 6"; return 1; }
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
-  private_bus "$h" 90 "${own_fcitx[@]}" python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
+  private_bus "$h" 120 "${own_fcitx[@]}" python3 - "$fake/fcitx5-rime.log" "$r" "$h/.config/fcitx5/config" <<'PY'
 import os, subprocess, sys, time
 from gi.repository import Gio, GLib
 
@@ -695,6 +696,18 @@ def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
     wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n
 check('a page shows 6 candidates (shi)', page('shi'), 6)
+# #373: the sync's Save and a deploy asked for mid-word wait until typing is idle: the word typed on keeps what
+# was typed before them, and Rime's save runs once typing stops (it writes this PC's snapshot).
+def sync_mid_word():
+    for c in 'ni': tap(c)
+    call(*CONTROLLER, 'Save')
+    call(*CONTROLLER, 'SetConfig', '(sv)', 'fcitx://config/addon/sebtype/deploy', GLib.Variant('s', ''))
+    wait(lambda: False, 1)
+    return first('hao')
+check('a sync and a deploy mid-word keep it: nihao gives 你好', sync_mid_word(), '你好')
+def saved():
+    return any(f.endswith('.userdb.txt') for _, _, files in os.walk(os.path.join(sys.argv[2], 'sync')) for f in files)
+check("Rime's save runs once typing is idle", wait(saved, 30), True)
 fcitx.terminate(); fcitx.wait(10)
 sys.exit(0 if ok else 1)
 PY
