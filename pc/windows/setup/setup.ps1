@@ -470,7 +470,7 @@ if ($bar.IsLegacySwitchingMode -ne $state.LegacySwitchingMode) {
 # names it) and its files. The server's copy stays (Decisions #2).
 & { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType sync' /f 2>&1 | Out-Null }
 [void][SebType.User32]::CredDeleteW('login.SebType sync', 1, 0)  # CRED_TYPE_GENERIC
-Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
+Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'schedule.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
 # SebType's own settings (the candidate window's).
 $conf = Join-Path $env:APPDATA 'SebType\sebtype.conf'
 Remove-Item $conf -ErrorAction SilentlyContinue

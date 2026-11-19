@@ -444,14 +444,18 @@ fn await_snapshot(
 }
 
 const SYNC_TIMER: &str = "sebtype-sync.timer";
+const SYNC_PATH: &str = "sebtype-sync.path";
+/// The one sync planned after the network changed: a transient timer (network_changed).
+const SYNC_SOON: &str = "sebtype-sync-soon";
+const NETWORK_STATE: &str = "network-state";
 
-fn sync_units(exe: &Path) -> [(&'static str, String); 2] {
+fn sync_units(exe: &Path) -> [(&'static str, String); 4] {
+    let exe = exe.display();
     [
         (
             "sebtype-sync.service",
             format!(
-                "[Unit]\nDescription=SebType sync with your own server\n\n[Service]\nType=oneshot\nExecStart=\"{}\" --sync\n",
-                exe.display()
+                "[Unit]\nDescription=SebType sync with your own server\n\n[Service]\nType=oneshot\nExecStart=\"{exe}\" --sync\n"
             ),
         ),
         (
@@ -459,10 +463,143 @@ fn sync_units(exe: &Path) -> [(&'static str, String); 2] {
             // As the phone: every half hour, and soon after login.
             "[Unit]\nDescription=SebType sync every half hour\n\n[Timer]\nOnStartupSec=2min\nOnUnitActiveSec=30min\n\n[Install]\nWantedBy=timers.target\n".into(),
         ),
+        (
+            SYNC_PATH,
+            // And when the network comes back (#377): the DNS servers change then, and systemd-resolved or
+            // NetworkManager rewrites its resolv.conf, which a user unit can watch without root.
+            "[Unit]\nDescription=SebType sync when the network comes back\n\n[Path]\n\
+             PathChanged=/run/systemd/resolve/resolv.conf\nPathChanged=/run/NetworkManager/resolv.conf\n\
+             PathChanged=/etc/resolv.conf\nUnit=sebtype-sync-network.service\n\n[Install]\nWantedBy=paths.target\n"
+                .into(),
+        ),
+        (
+            // Returns at once: systemd doesn't watch the paths while it runs. No start limit: the path's
+            // own limit is enough for something this quick, and hitting one would stop the trigger.
+            "sebtype-sync-network.service",
+            format!(
+                "[Unit]\nDescription=SebType sync planned after the network changed\nStartLimitIntervalSec=0\n\n[Service]\nType=oneshot\nExecStart=\"{exe}\" --network-changed\n"
+            ),
+        ),
     ]
 }
 
-/// Syncs every half hour with a systemd user timer while sync is on.
+/// The network trigger's state, in SebType's folder (#377): how many times the network has changed,
+/// and when the last sync started on CLOCK_BOOTTIME with the boot's id. That clock counts suspend, and
+/// setting the wall clock doesn't move it.
+#[derive(Debug, Default, PartialEq)]
+struct NetworkState {
+    changes: u64,
+    last_sync: Option<BootTime>,
+}
+type BootTime = (String, Duration);
+
+impl NetworkState {
+    fn load(dir: &Path) -> Self {
+        let text = fs::read_to_string(dir.join(NETWORK_STATE)).unwrap_or_default();
+        let mut s = Self::default();
+        for line in text.lines() {
+            match line.split(' ').collect::<Vec<_>>()[..] {
+                ["changes", n] => s.changes = n.parse().unwrap_or(0),
+                ["last-sync", boot, secs] => {
+                    s.last_sync = secs
+                        .parse()
+                        .ok()
+                        .map(|t| (boot.to_string(), Duration::from_secs_f64(t)))
+                }
+                _ => {}
+            }
+        }
+        s
+    }
+    fn save(&self, dir: &Path) -> io::Result<()> {
+        let mut text = format!("changes {}\n", self.changes);
+        if let Some((boot, t)) = &self.last_sync {
+            text += &format!("last-sync {boot} {}\n", t.as_secs_f64());
+        }
+        fs::create_dir_all(dir)?;
+        fs::write(dir.join(NETWORK_STATE), text)
+    }
+}
+
+/// /proc/uptime is CLOCK_BOOTTIME.
+fn boot_time() -> Option<BootTime> {
+    let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
+    let up = fs::read_to_string("/proc/uptime").ok()?;
+    let up: f64 = up.split(' ').next()?.parse().ok()?;
+    Some((boot.trim().to_string(), Duration::from_secs_f64(up)))
+}
+
+/// Since the last sync started, if it was on this boot.
+fn since(last: &Option<BootTime>, now: &Option<BootTime>) -> Option<Duration> {
+    match (last, now) {
+        (Some((b, then)), Some((boot, now))) if b == boot => now.checked_sub(*then),
+        _ => None,
+    }
+}
+
+// These run with the schedule locked (sync::schedule_locked), so none plans a sync once sync is off.
+
+/// The network changed (the path unit's --network-changed, #377): counts the change and plans one sync
+/// for it, which later changes join while it is planned.
+pub fn network_changed(enabled: bool) -> io::Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    let dir = sebtype_dir();
+    let mut s = NetworkState::load(&dir);
+    s.changes += 1;
+    s.save(&dir)?;
+    plan_network_sync(&s)
+}
+
+/// Notes when a sync starts, and returns the changes it has seen.
+pub fn sync_started() -> u64 {
+    let dir = sebtype_dir();
+    let mut s = NetworkState::load(&dir);
+    s.last_sync = boot_time();
+    let _ = s.save(&dir);
+    s.changes
+}
+
+/// A sync that was running when the network changed may have missed it, and the sync planned for the
+/// change may have come while it ran: it plans another.
+pub fn after_sync(seen: u64, enabled: bool) {
+    let s = NetworkState::load(&sebtype_dir());
+    if enabled && s.changes > seen {
+        let _ = plan_network_sync(&s);
+    }
+}
+
+fn plan_network_sync(s: &NetworkState) -> io::Result<()> {
+    let delay = network_sync_delay(since(&s.last_sync, &boot_time()));
+    // Fails while one is planned (its unit exists): that one takes this change too.
+    Command::new("systemd-run")
+        .args([
+            "--user",
+            "--quiet",
+            "--collect",
+            &format!("--unit={SYNC_SOON}"),
+            &format!("--on-active={}", delay.as_secs()),
+            "--timer-property=AccuracySec=1s",
+            "--timer-property=RemainAfterElapse=no",
+            "systemctl",
+            "--user",
+            "start",
+            "--no-block",
+            "sebtype-sync.service",
+        ])
+        .output()?;
+    Ok(())
+}
+
+/// A connection rewrites resolv.conf more than once: the sync waits for it to settle. Syncs start at
+/// least 2 minutes apart, so DNS rewritten after each one (a VPN) can't keep them going.
+fn network_sync_delay(since_last_sync: Option<Duration>) -> Duration {
+    let (settle, apart) = (Duration::from_secs(15), Duration::from_secs(120));
+    since_last_sync.map_or(settle, |t| apart.saturating_sub(t).max(settle))
+}
+
+/// Syncs every half hour and when the network comes back, with systemd user units, while sync is on.
 pub fn schedule(on: bool) -> io::Result<()> {
     let dir = config().join("systemd/user");
     let systemctl = |args: &[&str]| -> io::Result<()> {
@@ -483,15 +620,23 @@ pub fn schedule(on: bool) -> io::Result<()> {
             write_if_changed(&dir.join(name), text)?;
         }
         systemctl(&["daemon-reload"])?;
-        return systemctl(&["enable", "--now", SYNC_TIMER]);
+        return systemctl(&["enable", "--now", SYNC_TIMER, SYNC_PATH]);
     }
     if !dir.join(SYNC_TIMER).exists() {
         return Ok(());
     }
-    let _ = systemctl(&["disable", "--now", SYNC_TIMER]);
+    let _ = systemctl(&["disable", "--now", SYNC_TIMER, SYNC_PATH]);
+    // A --network-changed waiting for the schedule lock stops too.
+    let _ = systemctl(&[
+        "stop",
+        &format!("{SYNC_SOON}.timer"),
+        "sebtype-sync-network.service",
+    ]);
     for (name, _) in &units {
-        fs::remove_file(dir.join(name))?;
+        // A schedule from before #377 has only the service and the timer.
+        let _ = fs::remove_file(dir.join(name));
     }
+    let _ = fs::remove_file(sebtype_dir().join(NETWORK_STATE));
     systemctl(&["daemon-reload"])
 }
 
@@ -525,6 +670,69 @@ mod tests {
         assert_eq!(asked, 2, "asked again after 5 s");
         assert!(await_snapshot(&d, Duration::from_secs(6), || fs::write(&old, "new")).is_ok());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The network coming back plans a sync (#377): the path unit's service only plans it, so it never
+    /// blocks the trigger.
+    #[test]
+    fn sync_runs_when_the_network_comes_back() {
+        let units = sync_units(Path::new("/opt/sebtype/sebtype-configurator"));
+        let text = |name: &str| &units.iter().find(|(n, _)| *n == name).unwrap().1;
+        let path = text(SYNC_PATH);
+        assert!(path.contains("\n[Path]\nPathChanged=/run/systemd/resolve/resolv.conf\n"));
+        assert!(path.contains("\nPathChanged=/run/NetworkManager/resolv.conf\n"));
+        assert!(path.contains("\nUnit=sebtype-sync-network.service\n"));
+        assert!(path.ends_with("\n[Install]\nWantedBy=paths.target\n"));
+        let network = text("sebtype-sync-network.service");
+        assert!(
+            network.contains("\nStartLimitIntervalSec=0\n"),
+            "a burst would stop the trigger"
+        );
+        assert!(
+            network.contains("ExecStart=\"/opt/sebtype/sebtype-configurator\" --network-changed\n")
+        );
+        assert!(text("sebtype-sync.service")
+            .contains("ExecStart=\"/opt/sebtype/sebtype-configurator\" --sync\n"));
+    }
+
+    /// A network sync waits for the change to settle, and starts at least 2 minutes after the last.
+    #[test]
+    fn network_state_counts_on_the_boot_clock() {
+        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "target/test-tmp/network-state-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&d);
+        assert_eq!(NetworkState::load(&d), NetworkState::default());
+        let at = |boot: &str, t: f64| Some((boot.to_string(), Duration::from_secs_f64(t)));
+        let s = NetworkState {
+            changes: 3,
+            last_sync: at("b1", 100.5),
+        };
+        s.save(&d).unwrap();
+        assert_eq!(NetworkState::load(&d), s);
+        fs::remove_dir_all(&d).unwrap();
+        assert_eq!(
+            since(&at("b1", 100.5), &at("b1", 130.5)),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            since(&at("b1", 100.0), &at("b2", 130.0)),
+            None,
+            "another boot"
+        );
+        assert_eq!(since(&None, &at("b1", 130.0)), None);
+        let now = boot_time().unwrap();
+        assert_eq!(boot_time().unwrap().0, now.0);
+    }
+
+    #[test]
+    fn network_syncs_start_apart() {
+        let s = Duration::from_secs;
+        assert_eq!(network_sync_delay(None), s(15));
+        assert_eq!(network_sync_delay(Some(s(30))), s(90));
+        assert_eq!(network_sync_delay(Some(s(110))), s(15));
+        assert_eq!(network_sync_delay(Some(s(3600))), s(15));
     }
 
     #[test]

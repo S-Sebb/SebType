@@ -2,7 +2,8 @@
 //! Rime's sync folder, its My words (#272) and the Japanese dictionary, by sync-server/sebtype_sync.py's own pull and push.
 //! The server and username are kept in SebType's folder (sync.json, with the last sync's outcome); the
 //! password only in the system's keyring (Secret Service, Credential Manager), handed to the client on
-//! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour.
+//! its stdin. The schedule (platform::schedule) runs `sebtype-configurator --sync` every half hour, and
+//! on Linux the network trigger runs `--network-changed` (network_changed).
 
 use crate::{platform, rime};
 use serde::{Deserialize, Serialize};
@@ -49,17 +50,63 @@ fn dir() -> PathBuf {
 }
 
 pub fn load() -> Sync {
-    fs::read_to_string(dir().join("sync.json"))
+    load_in(&dir())
+}
+fn load_in(dir: &Path) -> Sync {
+    fs::read_to_string(dir.join("sync.json"))
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
 }
 
 fn save(s: &Sync) -> io::Result<()> {
-    fs::create_dir_all(dir())?;
-    let tmp = dir().join("sync.json.new");
+    save_in(&dir(), s)
+}
+fn save_in(dir: &Path, s: &Sync) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+    let tmp = dir.join("sync.json.new");
     fs::write(&tmp, serde_json::to_string_pretty(s)?)?;
-    fs::rename(tmp, dir().join("sync.json"))
+    fs::rename(tmp, dir.join("sync.json"))
+}
+
+/// Runs f with the schedule to itself, across processes: schedule changes (two Configurators may be
+/// open), the network trigger's plans, a sync's outcome and setup-ime.sh's uninstall (#377). Each reads
+/// sync's state inside it, so none puts back a schedule just turned off.
+pub fn schedule_locked<T>(f: impl FnOnce() -> T) -> io::Result<T> {
+    schedule_locked_in(&dir(), f)
+}
+fn schedule_locked_in<T>(dir: &Path, f: impl FnOnce() -> T) -> io::Result<T> {
+    fs::create_dir_all(dir)?;
+    locked_in(&dir.join("schedule.lock"), f)
+}
+
+fn change_schedule(
+    dir: &Path,
+    change: impl FnOnce(&mut Sync),
+    schedule: impl FnOnce(bool) -> io::Result<()>,
+) -> io::Result<Sync> {
+    schedule_locked_in(dir, || {
+        let mut s = load_in(dir);
+        let before = s.clone();
+        change(&mut s);
+        if s != before {
+            save_in(dir, &s)?;
+        }
+        schedule(s.enabled)?;
+        Ok(s)
+    })?
+}
+
+/// The network changed (the path unit's --network-changed, #377): plans a sync if sync is on.
+#[cfg(target_os = "linux")]
+pub fn network_changed() -> io::Result<()> {
+    schedule_locked(|| platform::network_changed(load().enabled))?
+}
+
+/// Makes the schedule again as this Configurator makes it, so one made by an older version gets what
+/// this one adds (the network trigger, #377).
+pub fn refresh_schedule() -> io::Result<Sync> {
+    change_schedule(&dir(), |_| {}, platform::schedule)
 }
 
 fn keyring() -> keyring::Result<keyring::Entry> {
@@ -97,27 +144,27 @@ pub fn save_login(server: String, user: String, password: &str) -> Result<Sync, 
     keyring()
         .and_then(|k| k.set_password(password))
         .map_err(|e| e.to_string())?;
-    let mut s = load();
-    let first = s.user.is_empty();
-    (s.server, s.user, s.status) = (server, user, Status::NotYet);
-    if first {
-        s.enabled = true;
-    }
-    s.ever_on |= s.enabled;
-    save(&s).map_err(|e| e.to_string())?;
-    if s.enabled {
-        platform::schedule(true).map_err(|e| e.to_string())?;
-    }
-    Ok(s)
+    let login = |s: &mut Sync| {
+        let first = s.user.is_empty();
+        (s.server, s.user, s.status) = (server, user, Status::NotYet);
+        if first {
+            s.enabled = true;
+        }
+        s.ever_on |= s.enabled;
+    };
+    let on = |on| if on { platform::schedule(true) } else { Ok(()) };
+    change_schedule(&dir(), login, on).map_err(|e| e.to_string())
 }
 
 pub fn set_enabled(on: bool) -> io::Result<Sync> {
-    let mut s = load();
-    s.enabled = on;
-    s.ever_on |= on;
-    save(&s)?;
-    platform::schedule(on)?;
-    Ok(s)
+    change_schedule(
+        &dir(),
+        |s| {
+            s.enabled = on;
+            s.ever_on |= on;
+        },
+        platform::schedule,
+    )
 }
 
 enum Failed {
@@ -236,6 +283,7 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
     if lock.is_err() {
         return Err(s);
     }
+    let seen = schedule_locked(platform::sync_started).unwrap_or_default();
     let mozc_db = platform::mozc_dir().join("user_dictionary.db");
     let mozc_db = platform::mozc_dir().is_dir().then_some(mozc_db.as_path());
     s.status = match sync_with(&s, &platform::rime_dir(), mozc_db) {
@@ -248,7 +296,15 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
         Err(Failed::Login) => Status::LoginFailed,
         Err(Failed::Offline) => Status::Offline,
     };
-    let _ = save(&s);
+    // Only the outcome: sync may have been turned off, or SebType removed, while this one ran.
+    let _ = schedule_locked(|| {
+        let mut now = load();
+        if !now.user.is_empty() {
+            (now.status, now.at) = (s.status, s.at);
+            let _ = save(&now);
+        }
+        platform::after_sync(seen, now.enabled);
+    });
     if s.status == Status::Synced {
         Ok(s)
     } else {
@@ -517,6 +573,70 @@ mod tests {
         deploy_if_pending(&flag, || Ok(())).unwrap();
         assert!(!flag.exists());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The startup refresh of one Configurator, slow to make the schedule, and sync turned off in another
+    /// meanwhile: the schedule ends off (#377). The refresh runs in a second process, this test's own
+    /// executable running slow_refresh_in_another_process.
+    #[test]
+    fn a_refresh_in_another_configurator_cant_bring_back_a_schedule_turned_off() {
+        let d = temp("schedule");
+        let on = Sync {
+            enabled: true,
+            ..Default::default()
+        };
+        save_in(&d, &on).unwrap();
+        let mut other = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "sync::tests::slow_refresh_in_another_process",
+            ])
+            .env("SEBTYPE_TEST_SCHEDULE_DIR", &d)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !d.join("refreshing").exists() {
+            assert!(
+                std::time::Instant::now() < end,
+                "the other process never refreshed"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let off = change_schedule(&d, |s| s.enabled = false, |on| made(&d, on)).unwrap();
+        assert!(other.wait().unwrap().success());
+        assert!(!off.enabled);
+        assert_eq!(
+            fs::read_to_string(d.join("made")).unwrap(),
+            "true\nfalse\n",
+            "the schedule ends off"
+        );
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn made(d: &Path, on: bool) -> io::Result<()> {
+        let mut f = fs::File::options()
+            .create(true)
+            .append(true)
+            .open(d.join("made"))?;
+        writeln!(f, "{on}")
+    }
+
+    #[test]
+    #[ignore]
+    fn slow_refresh_in_another_process() {
+        let d = PathBuf::from(std::env::var_os("SEBTYPE_TEST_SCHEDULE_DIR").unwrap());
+        change_schedule(
+            &d,
+            |_| {},
+            |on| {
+                fs::write(d.join("refreshing"), "")?;
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                made(&d, on)
+            },
+        )
+        .unwrap();
     }
 
     /// A word edit waits for a pull that holds the words, and the other way round (#272).
