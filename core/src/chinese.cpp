@@ -275,6 +275,7 @@ class Chinese final : public Engine {
     std::vector<std::string> rime;  // Rime's candidates the model scores
     std::vector<int> rimeIndex;     // their indexes in Rime's list
     bool traditional;
+    bool learned = false;           // Rime's first is a word the user taught it
   };
 
   // Keys Rime takes as "commit the first candidate, then this": printable ASCII but letters, digits, the
@@ -403,6 +404,7 @@ class Chinese final : public Engine {
       const auto rime = rime_->candidates(kScored);
       for (size_t i = 0; i < rime.size(); i++)
         if (wholeInput(rime[i].text, n)) job.rime.push_back(rime[i].text), job.rimeIndex.push_back(int(i));
+      job.learned = !rime.empty() && rime[0].learned;
     } else if (!text || (!context_.empty() && context_.back() == '\n')) {
       return want(std::nullopt);
     }
@@ -486,9 +488,11 @@ class Chinese final : public Engine {
       score[i] -= kRankWeight * std::log1p(float(job.rimeIndex[i]));
       items.push_back({{job.rime[i], {}}, job.rimeIndex[i], texts[i]});
     }
-    // Rime's first stays ahead of Rime's others: Rime puts there what the user picked before (its user
-    // dictionary), which the model can't see. The model's own candidates still compete with it.
-    if (!texts.empty() && job.rimeIndex[0] == 0) score[0] = *std::ranges::max_element(score);
+    // A word the user taught Rime, which its user dictionary puts first, stays ahead of Rime's others: the
+    // model can't see what the user picked before. The model's own candidates still compete with it. An
+    // unlearned first is ranked like the others: keeping every first ahead cost most of the model's gain on
+    // abbreviations (#369).
+    if (job.learned && !texts.empty() && job.rimeIndex[0] == 0) score[0] = *std::ranges::max_element(score);
     const auto generated = model.generate(context, letters, kBeam, static_cast<int>(letters.size()));
     if (revNow_ != job.rev) return {};
     for (const auto &g : generated) {
