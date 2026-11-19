@@ -50,26 +50,35 @@ if ((undo_configurator)); then
   for f in "$app_desktop" "$app_icon"; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }; done
   # Sync (#180): its half-hourly timer and network trigger (#377), its login in the keyring and its files.
   # The server's copy stays.
-  # With the Configurator's schedule lock (sync.rs, schedule_locked), so a sync ending or the network
-  # trigger plans nothing once this has begun: each finds sync.json gone.
+  # With the Configurator's schedule lock (sync.rs, schedule_locked), so a sync starting or ending or the
+  # network trigger plans nothing once this has begun: each finds sync.json gone.
   sync_units=$config/systemd/user
-  if [[ -d $data/sebtype ]]; then exec {schedule_lock}>"$data/sebtype/schedule.lock"; flock "$schedule_lock"; fi
+  # The Configurator makes the lock before it schedules anything: without it there is nothing to wait for.
+  # It holds it for seconds; one stuck holding it (suspended) mustn't stop the uninstall.
+  if [[ -f $data/sebtype/schedule.lock ]]; then
+    exec {schedule_lock}>"$data/sebtype/schedule.lock"
+    flock -w 30 "$schedule_lock" || {
+      warn "a SebType Configurator or sync has held sync's schedule lock for 30 s: removing sync without it; close it, or it may plan a sync again"
+      exec {schedule_lock}>&-; unset schedule_lock
+    }
+  fi
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
     echo "change: stop and remove SebType's sync timer and network trigger"
-    systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null
+    systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null || true
     # A sync planned after the network changed, and a --network-changed waiting for the lock.
-    systemctl --user stop sebtype-sync-soon.timer sebtype-sync-network.service 2>/dev/null
+    systemctl --user stop sebtype-sync-soon.timer sebtype-sync-network.service 2>/dev/null || true  # fails for one not there
     rm -f "$sync_units"/sebtype-sync.{timer,path,service} "$sync_units"/sebtype-sync-network.service
     systemctl --user daemon-reload 2>/dev/null
   fi
   if [[ -f $data/sebtype/sync.json ]] && command -v secret-tool >/dev/null; then
     echo "change: remove SebType's sync login from the keyring"
-    secret-tool clear service 'SebType sync' username login 2>/dev/null
+    secret-tool clear service 'SebType sync' username login 2>/dev/null || true  # none there, or no keyring
   fi
   for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock}; do
+    # Released before it goes: a sync starting meanwhile would lock a new file while this holds the old (#401).
+    [[ $f == */schedule.lock && -n ${schedule_lock-} ]] && exec {schedule_lock}>&-
     [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }
   done
-  [[ -n ${schedule_lock-} ]] && exec {schedule_lock}>&-
   [[ -d $app_dir ]] && { echo "change: remove $app_dir"; rm -r "$app_dir"; }
   if [[ -f $classicui ]] && grep -q '^Theme=sebtype-picnic$' "$classicui"; then
     prev=$picnic_theme/previous

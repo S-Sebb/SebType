@@ -1209,6 +1209,19 @@ octagram() {
 check grammar-plugin-install octagram
 check upgrade-from-old-icon-theme old_icon_theme
 check undo-configurator-and-reinstall undo_configurator
+# A Configurator stuck holding sync's schedule lock (#401): the uninstall waits 30 s for it, then removes
+# sync anyway and warns.
+undo_lock_held() {
+  local s=$h/.local/share/sebtype o t0
+  mkdir -p "$s"; : > "$s/schedule.lock"; echo '{}' > "$s/sync.json"
+  flock "$s/schedule.lock" sleep 50 & local holder=$!
+  sleep 0.5; t0=$SECONDS
+  o=$(fake_run --undo-configurator < /dev/null); local rc=$?
+  pkill -P "$holder" sleep; wait "$holder"; echo "$o"
+  ((rc == 0 && SECONDS - t0 >= 29)) && grep -q "^warning: .*held sync's schedule lock for 30 s" <<<"$o" &&
+    [[ ! -e $s/sync.json && ! -e $s/schedule.lock ]] && fake_run < /dev/null > /dev/null
+}
+check undo-configurator-with-schedule-lock-held undo_lock_held
 check undo-names-and-rename undo_names
 
 # SebType's Chinese data over an account's own rime-ice (#102): it replaces the files of the same name,

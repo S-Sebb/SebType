@@ -205,7 +205,10 @@ fn client(s: &Sync, args: &[&std::ffi::OsStr]) -> Result<String, Failed> {
 
 /// Runs f holding the lock file at path, which other processes wait for.
 fn locked_in<T>(path: &Path, f: impl FnOnce() -> T) -> io::Result<T> {
-    let file = fs::File::create(path)?;
+    locked(fs::File::create(path), f)
+}
+fn locked<T>(file: io::Result<fs::File>, f: impl FnOnce() -> T) -> io::Result<T> {
+    let file = file?;
     file.lock()?;
     Ok(f())
 }
@@ -275,15 +278,20 @@ fn lock() -> io::Result<fs::File> {
 /// outcome for the window. Err when a sync was due and didn't go through: Setup then keeps the words
 /// (setup.ps1).
 pub fn run(before_removal: bool) -> Result<Sync, Sync> {
+    let due = |s: &Sync| (s.enabled || before_removal && s.ever_on) && !s.user.is_empty();
     let lock = lock();
     let mut s = load();
-    if !(s.enabled || before_removal && s.ever_on) || s.user.is_empty() {
+    if !due(&s) {
         return Ok(s);
     }
     if lock.is_err() {
         return Err(s);
     }
-    let seen = schedule_locked(platform::sync_started).unwrap_or_default();
+    // Again with the schedule to itself: an uninstall this waited for has removed sync.json (#401).
+    let seen = match schedule_locked(|| due(&load()).then(platform::sync_started)) {
+        Ok(None) => return Ok(load()),
+        started => started.ok().flatten().unwrap_or_default(),
+    };
     let mozc_db = platform::mozc_dir().join("user_dictionary.db");
     let mozc_db = platform::mozc_dir().is_dir().then_some(mozc_db.as_path());
     s.status = match sync_with(&s, &platform::rime_dir(), mozc_db) {
@@ -296,15 +304,21 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
         Err(Failed::Login) => Status::LoginFailed,
         Err(Failed::Offline) => Status::Offline,
     };
-    // Only the outcome: sync may have been turned off, or SebType removed, while this one ran.
-    let _ = schedule_locked(|| {
-        let mut now = load();
-        if !now.user.is_empty() {
-            (now.status, now.at) = (s.status, s.at);
-            let _ = save(&now);
-        }
-        platform::after_sync(seen, now.enabled);
-    });
+    // Only the outcome: sync may have been turned off, or SebType removed, while this one ran. Not
+    // schedule_locked: that would make the lock file again after an uninstall removed it (#401).
+    let _ = locked(
+        fs::File::options()
+            .write(true)
+            .open(dir().join("schedule.lock")),
+        || {
+            let mut now = load();
+            if !now.user.is_empty() {
+                (now.status, now.at) = (s.status, s.at);
+                let _ = save(&now);
+            }
+            platform::after_sync(seen, now.enabled);
+        },
+    );
     if s.status == Status::Synced {
         Ok(s)
     } else {

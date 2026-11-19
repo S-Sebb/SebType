@@ -251,8 +251,8 @@ check private-forget 600 private_forget
 # - changes while a sync runs (held inside the sync, by holding its words.lock past the moment the sync
 #   planned for them comes) come to exactly one more sync once it ends;
 # - a change just after a sync waits until 2 minutes after it;
-# - setup-ime.sh's uninstall, with a --network-changed waiting for the schedule lock, leaves no trigger,
-#   planned sync or file behind.
+# - setup-ime.sh's uninstall, with a --network-changed and a sync waiting for the schedule lock it holds,
+#   leaves no trigger, planned sync or file behind, nor does a sync that was running and ends after it (#401).
 # shellcheck disable=SC2016  # the inner script gets its paths as arguments
 reconnect_sync() {
   local d=$sb/reconnect-account u
@@ -285,7 +285,7 @@ EOF
     done
     SYSTEMD_LOG_TARGET=console SYSTEMD_LOG_COLOR=0 /usr/lib/systemd/systemd --user --unit=sebtype-test.target > "$d/manager.log" 2>&1 & m=$!
     # systemd leaves its inaccessible/ files without permissions: the sandbox couldn'"'"'t be removed.
-    trap "release words.lock; release schedule.lock; kill $m; wait $m; cp \"$d/manager.log\" \"$4/configurator-test-reconnect-manager.log\"; chmod -R u+rwx \"\$XDG_RUNTIME_DIR\"" EXIT
+    trap "release words.lock; release undo; kill $m; wait $m; cp \"$d/manager.log\" \"$4/configurator-test-reconnect-manager.log\"; chmod -R u+rwx \"\$XDG_RUNTIME_DIR\"" EXIT
     until_ 10 "[[ -S \$XDG_RUNTIME_DIR/systemd/private ]]" || fail "the private systemd didn'"'"'t start"
     head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
     printf "http://127.0.0.1:9\nsebtype-test\n%s\n" "$(head -c 18 /dev/urandom | base64)" | "$bin" --save-login ||
@@ -319,23 +319,50 @@ EOF
     until_ 60 "[[ \$(runs end) == 3 ]]"
     active sebtype-sync.path || fail "the changes stopped the network trigger"
 
-    hold schedule.lock
+    leftovers() {  # true, naming them, if any is left
+      local f
+      for f in "$units"/sebtype-sync.{path,timer,service} "$units"/sebtype-sync-network.service "$own"/{sync.json,network-state,schedule.lock}; do
+        [[ -e $f ]] && echo "$f"
+      done | grep .
+    }
+    # The uninstall, held while it holds the schedule lock (its first systemctl waits for release undo).
+    real=$(command -v systemctl); mkdir -p "$d/held"
+    printf "#!/bin/sh\n[ \"\$2\" = disable ] && until [ -e %s/release-undo ]; do sleep 0.2; done\nexec %s \"\$@\"\n" "$d" "$real" > "$d/held/systemctl"
+    chmod +x "$d/held/systemctl"
+    HOME=$d PATH=$d/held:$PATH bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo.log" 2>&1 & undo=$!
+    until_ 10 "! flock -n \"\$own/schedule.lock\" true" || fail "the uninstall doesn'"'"'t take the schedule lock"
     change 13
     until_ 10 "[[ \$(systemctl --user is-active sebtype-sync-network.service) == activating ]]" ||
       fail "--network-changed isn'"'"'t waiting for the schedule lock"
-    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo.log" 2>&1 & undo=$!
-    sleep 1; release schedule.lock
-    wait $undo || fail "the uninstall failed"
+    systemctl --user start --no-block sebtype-sync.service
+    sleep 2; [[ $(systemctl --user is-active sebtype-sync.service) == activating ]] ||
+      fail "the sync isn'"'"'t waiting for the schedule lock"
+    release undo
+    wait $undo || fail "the uninstall failed: $(tail -5 "$d/undo.log")"
+    until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) != activating ]]" || fail "the waiting sync never ended"
     sleep 5
     for x in sebtype-sync.path sebtype-sync-network.service sebtype-sync-soon.timer; do
       active "$x" && fail "$x still runs after the uninstall"
     done
-    ls "$units"/sebtype-sync.{path,timer,service} "$units"/sebtype-sync-network.service "$own"/{sync.json,network-state} 2>/dev/null &&
-      fail "files left after the uninstall"
-    echo "the uninstall, with --network-changed waiting: no trigger, planned sync or file left"' _ "$d" "$bin" "$PWD" "$out"
+    left=$(leftovers) && fail "files left after the uninstall: $left"
+    echo "the uninstall, with --network-changed and a sync waiting: no trigger, planned sync or file left"
+
+    # A sync running through the uninstall (held in its pull by words.lock), ending after it.
+    printf "http://127.0.0.1:9\nsebtype-test\n%s\n" "$(head -c 18 /dev/urandom | base64)" | "$bin" --save-login ||
+      fail "--save-login again"
+    rm "$d/release-words.lock"; hold words.lock
+    systemctl --user start --no-block sebtype-sync.service
+    until_ 10 "[[ \$(runs start) == 5 ]]" || fail "the second sync didn'"'"'t start"
+    sleep 2
+    HOME=$d bash "$here/../linux/setup-ime.sh" --undo-configurator > "$d/undo2.log" 2>&1 || fail "the second uninstall failed: $(tail -5 "$d/undo2.log")"
+    release words.lock
+    until_ 30 "[[ \$(systemctl --user is-active sebtype-sync.service) != activating ]]" || fail "the running sync never ended"
+    left=$(leftovers) && fail "files left by the sync that ended after the uninstall: $left"
+    echo "a sync running through the uninstall: no file left once it ended"
+' _ "$d" "$bin" "$PWD" "$out"
 }
 export -f reconnect_sync
-check sync-on-network-reconnect 600 reconnect_sync
+check sync-on-network-reconnect 700 reconnect_sync
 
 check setup-ime 900 ../linux/test-setup-ime.sh
 

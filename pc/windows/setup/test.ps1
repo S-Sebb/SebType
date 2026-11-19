@@ -32,8 +32,9 @@ nobody's own input settings change, then removes the user and its profile:
    localhost, run by a copy of the Python Setup packs, with a throwaway login; the login saved as the
    Configurator's Save does (sebtype-configurator --save-login: Credential Manager, the task); made-up
    words of this PC's (Rime, Mozc) and of another device (test-sync.py); the "SebType sync" task run
-   once, then again from a network-connect event (#377); then a silent uninstall, which must sync first
-   and remove the task, the login and sync's files.
+   once, then again from a network-connect event (#377); then a silent uninstall, which must sync first,
+   wait for the schedule lock a Configurator holds (#401), go on after 30 s if it stays held, and remove
+   the task, the login and sync's files.
    The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
@@ -915,8 +916,29 @@ Set-Content '$login-code.txt' `$exit
         Check 'sync-other-device-reaches-pc' { Helper pc-has $rime $mozcDb }
         Check 'sync-uninstall-syncs-first-and-cleans-up' {
           $null = Helper add-mozc $mozcDb 'さいごて' 'サイゴ試験語'  # only the uninstall's sync can take this one up
+          $before = (Get-Content $syncJson -Raw -Encoding utf8 | ConvertFrom-Json).at
+          Start-Sleep 1  # sync.json keeps whole seconds
           Start-Process "$App\unins000.exe" '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\uninstall-sync.log`""
-          if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes' }
+          # Once the uninstall's sync is done, this holds the schedule lock as a Configurator's startup
+          # refresh would while it remakes the task: the uninstall waits for it (#401). Then as one stuck
+          # holding it: the uninstall goes on after 30 s, removes sync anyway and says so in its log.
+          $deadline = (Get-Date).AddSeconds(300)
+          while (-not (Test-Path $syncJson) -or (Get-Content $syncJson -Raw -Encoding utf8 | ConvertFrom-Json).at -le $before) {
+            if ((Get-Date) -gt $deadline) { throw 'the uninstall did not sync in 5 minutes' }
+            Start-Sleep -Milliseconds 50
+          }
+          $lock = [IO.File]::Open("$env:LOCALAPPDATA\SebType\schedule.lock", 'OpenOrCreate', 'ReadWrite', 'ReadWrite, Delete')
+          try {
+            while ($true) { try { $lock.Lock(0, 1); break } catch { Start-Sleep -Milliseconds 20 } }
+            if (-not (Test-Path $syncJson)) { throw 'the uninstall took the schedule lock first: nothing checked' }
+            Start-Sleep 10
+            if (-not (Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue)) { throw 'the uninstall removed the task while a Configurator held the schedule lock' }
+            if (-not (Wait-Until 600 { Uninstalled })) { throw 'the silent uninstall did not finish in 10 minutes with the schedule lock held' }
+          } finally { $lock.Close() }
+          $log = Get-Content "$env:LOCALAPPDATA\SebType\setup.log" -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+          if ($log -notmatch 'user: warning: sync removed without its schedule lock \(held for 30 s\).*Left: nothing') {
+            throw "no warning about the schedule lock in the uninstall's log: $("$log".Substring([Math]::Max(0, "$log".Length - 600)))"
+          }
           $synced = Helper server-has $url $syncUser $device mozc_dictionary.txt 'サイゴ試験語'
           $files = [int](Helper server-files $url $syncUser)
           if ($files -lt 4) { throw "the server keeps $files files, not this PC's and the other device's 4" }
@@ -927,7 +949,7 @@ Set-Content '$login-code.txt' `$exit
           $script:loginLeft = (Get-Content "$out\after-uninstall.txt" -Raw) -match 'target=.*login\.SebType sync'
           $left += @('sync.json', 'sync.lock', 'schedule.lock', 'sebtype_sync.py' | Where-Object { Test-Path "$env:LOCALAPPDATA\SebType\$_" })
           if ($left) { throw "left after uninstall: $($left -join ', ')" }
-          "synced first ($synced), the server's $files files kept; task and sync's files gone"
+          "synced first ($synced), the server's $files files kept; waited for the schedule lock, went on after 30 s and said so; task and sync's files gone"
         }
         # The uninstall runs elevated from this driver, whose token from Task Scheduler (a logon without a
         # password) can read Credential Manager but not change it, so setup.ps1's CredDeleteW can't remove
