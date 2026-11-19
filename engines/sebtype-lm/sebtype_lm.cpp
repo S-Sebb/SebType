@@ -200,14 +200,16 @@ std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> 
     return index;
 }
 
-float Model::logSoftmax(const float *logits, int token) const {
+Model::Norm Model::norm(const float *logits) const {
     const float top = *std::max_element(logits, logits + mVocabSize);
     double sum = 0;
     for (int t = 0; t < mVocabSize; t++) sum += std::exp(logits[t] - top);
-    return logits[token] - top - std::log(sum);
+    return {top, std::log(sum)};
 }
 
-float Model::logEnd(const float *logits, int *continuation) const {
+float Model::logSoftmax(const float *logits, int token, Norm n) { return logits[token] - n.top - n.log; }
+
+std::pair<float, float> Model::logEnd(const float *logits, int *continuation) const {
     const float top = *std::max_element(logits, logits + mVocabSize);
     double sum = 0, end = 0;
     int best = -1;
@@ -217,8 +219,8 @@ float Model::logEnd(const float *logits, int *continuation) const {
         if (mEndsWord[t]) end += p;
         else if (best < 0 || logits[t] > logits[best]) best = t;
     }
-    if (continuation) *continuation = best;
-    return std::log(end / sum);
+    *continuation = best;
+    return {std::log(end / sum), best >= 0 ? logSoftmax(logits, best, {top, std::log(sum)}) : -INFINITY};
 }
 
 std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
@@ -231,7 +233,8 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
                       [&](int a, int b) { return logits[a] > logits[b]; });
     first.resize(k);
     std::vector<float> lp;
-    for (int t : first) lp.push_back(logSoftmax(logits, t));
+    const Norm row = norm(logits);
+    for (int t : first) lp.push_back(logSoftmax(logits, t, row));
 
     // Each first piece either ends its word or goes on with its likeliest continuation.
     std::vector<std::vector<int>> followers;
@@ -240,9 +243,8 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
     std::vector<Word> words;
     for (size_t i = 0; i < first.size(); i++) {
         const float *after = llama_get_logits_ith(mCtx, index[i][0]);
-        int next = -1;
-        const float end = logEnd(after, &next);
-        const float more = next >= 0 ? logSoftmax(after, next) : -INFINITY;
+        int next;
+        const auto [end, more] = logEnd(after, &next);
         std::string word = mText[first[i]].substr(1);
         if (more > end) word += mText[next];
         words.push_back({word, lp[i] + std::max(end, more)});
@@ -268,20 +270,26 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     const float *logits = advance(prefix);
 
     const bool capital = sentenceStart(context);
+    const Norm row = norm(logits);
     std::vector<std::vector<int>> pieces;
     std::vector<float> out;
     for (std::string w : words) {
         if (capital && !w.empty()) w[0] = std::toupper(static_cast<unsigned char>(w[0]));
         pieces.push_back(tokenize(w, false));
-        out.push_back(pieces.back().empty() ? -INFINITY : logSoftmax(logits, pieces.back()[0]));
+        out.push_back(pieces.back().empty() ? -INFINITY : logSoftmax(logits, pieces.back()[0], row));
     }
     // A word of several pieces: the probability of each further piece after those before it.
     std::vector<std::vector<int>> followers;
     for (const auto &p : pieces) followers.emplace_back(p.begin(), p.end() - (p.empty() ? 0 : 1));
     const auto index = branch(followers);
+    std::map<int, Norm> norms;  // by batch index: words that start alike share their first pieces' rows
     for (size_t i = 0; i < pieces.size(); i++)
-        for (size_t j = 0; j < index[i].size(); j++)
-            out[i] += logSoftmax(llama_get_logits_ith(mCtx, index[i][j]), pieces[i][j + 1]);
+        for (size_t j = 0; j < index[i].size(); j++) {
+            const float *after = llama_get_logits_ith(mCtx, index[i][j]);
+            auto it = norms.find(index[i][j]);
+            if (it == norms.end()) it = norms.emplace(index[i][j], norm(after)).first;
+            out[i] += logSoftmax(after, pieces[i][j + 1], it->second);
+        }
     return out;
 }
 

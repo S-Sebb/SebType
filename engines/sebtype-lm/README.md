@@ -7,7 +7,7 @@
 - `bench/zh-keys.sh`: the Chinese model's jobs per key on a phone, timed on its big and little cores, with the
   app's llama.cpp build (#264, [results](../../docs/perf/2026-11-19-chinese-model.md)).
 - `english.gguf`: the model, trained by [tools/english-lm](../../tools/english-lm/README.md) (release r2, #236),
-  29,670,816 bytes, sha256 `34dd561818a45c4afb3dd68a73b53ad83668d9ef50cc19a1332c76cb21e42f62`. It is
+  quantised to Q8_0 (#406), 38,305,184 bytes, sha256 `58b90c6c60a96cdb69ba5d4a38d0a6a6c20bd22018fc02565d9c284ceb67beec`. It is
   licensed under CC BY-SA 4.0 (Decisions 6 of [the plan](../../docs/plans/android-own-keyboard.md)), with its
   training sources credited in [NOTICE](../../NOTICE) and listed in
   [SOURCES.md](../../tools/english-lm/SOURCES.md).
