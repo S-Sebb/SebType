@@ -27,9 +27,13 @@ if [[ ${1-} != --inside ]]; then
 fi
 
 failed=0
-check() { # name command...
-  local name=$1; shift
-  if timeout 900 "$@" > "/log/$name.log" 2>&1; then echo "PASS $name"
+check() { # name function...: each within 15 minutes (timeout can't run a function)
+  local name=$1 pid watch rc; shift
+  "$@" > "/log/$name.log" 2>&1 & pid=$!
+  { sleep 900; kill "$pid"; } 2>/dev/null & watch=$!
+  wait "$pid"; rc=$?
+  kill "$watch" 2>/dev/null
+  if ((rc == 0)); then echo "PASS $name"
   else echo "FAIL $name: see test-rpms/$name.log"; failed=1; fi
 }
 ours=$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE
@@ -78,7 +82,8 @@ expected() {
   done
   [[ $(readlink -f /usr/bin/sebtype-setup) == /usr/libexec/sebtype/setup-ime.sh ]] || { echo "sebtype-setup isn't setup"; return 1; }
   # What setup's user part copies is this checkout's.
-  cmp /src/pc/linux/setup-ime.sh /usr/libexec/sebtype/setup-ime.sh &&
+  # rpmbuild makes setup's #!/usr/bin/env bash /usr/bin/bash.
+  cmp <(tail -n +2 /src/pc/linux/setup-ime.sh) <(tail -n +2 /usr/libexec/sebtype/setup-ime.sh) &&
     cmp /src/pc/linux/mozc-keymap.tsv /usr/libexec/sebtype/mozc-keymap.tsv &&
     cmp /src/linux/data/notificationitem.conf /usr/share/sebtype/fcitx5/addon/notificationitem.conf &&
     cmp /src/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png /usr/libexec/sebtype/sebtype-configurator.png
@@ -98,7 +103,8 @@ libraries() {
 check libraries-found libraries
 
 chinese_data() {
-  unzip -tq /usr/libexec/sebtype/rime-data.zip && unzip -l /usr/libexec/sebtype/rime-data.zip | grep -q ' build/rime_ice.table.bin$'
+  # grep reads it all: -q would end unzip early, and pipefail fail it.
+  unzip -tq /usr/libexec/sebtype/rime-data.zip && unzip -Z1 /usr/libexec/sebtype/rime-data.zip | grep -x build/rime_ice.table.bin
 }
 check chinese-data chinese_data
 
