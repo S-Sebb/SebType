@@ -827,3 +827,34 @@ namespace SebType {
     }
   }
 }
+
+// A slow first open of a file, as an antivirus scan of a newly installed DLL makes it (#312): a batch oplock,
+// so the next open by anyone else waits until the oplock is let go, ms after that open asked.
+public static class SlowOpen {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern IntPtr CreateFileW(string path, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool DeviceIoControl(IntPtr h, uint code, IntPtr inBuf, uint inSize, IntPtr outBuf, uint outSize, out uint ret, IntPtr overlapped);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  public static int AskedAt;  // Environment.TickCount when the other open came; 0 before
+  // False when the oplock wasn't granted (the file is open elsewhere): nothing is slowed.
+  public static bool Hold(string path, int ms) {
+    AskedAt = 0;
+    IntPtr h = CreateFileW(path, 0x80000000 /* GENERIC_READ */, 7, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0x40000000 /* OVERLAPPED */, IntPtr.Zero);
+    if (h == new IntPtr(-1)) return false;
+    var broken = new ManualResetEvent(false);
+    IntPtr ov = Marshal.AllocHGlobal(IntPtr.Size * 2 + 8 + IntPtr.Size);
+    for (int i = 0; i < IntPtr.Size * 3 + 8; i++) Marshal.WriteByte(ov, i, 0);
+    Marshal.WriteIntPtr(ov, IntPtr.Size * 2 + 8, broken.SafeWaitHandle.DangerousGetHandle());
+    uint ret;
+    if (DeviceIoControl(h, 0x00090008 /* FSCTL_REQUEST_BATCH_OPLOCK */, IntPtr.Zero, 0, IntPtr.Zero, 0, out ret, ov) ||
+        Marshal.GetLastWin32Error() != 997 /* ERROR_IO_PENDING */) {
+      CloseHandle(h); Marshal.FreeHGlobal(ov); return false;
+    }
+    new Thread(() => {
+      if (broken.WaitOne(120000)) { AskedAt = Environment.TickCount; Thread.Sleep(ms); }
+      CloseHandle(h); Marshal.FreeHGlobal(ov);
+    }) { IsBackground = true }.Start();
+    return true;
+  }
+}

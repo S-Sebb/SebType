@@ -344,6 +344,20 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
         std::process::exit(sync::run(a == "--sync-before-removal").map_or(1, |_| 0));
     }
+    // For tests without a window (pc/windows/setup/test-forget.ps1, #375): Privacy's Forget for zh or ja.
+    if let Some(i) = std::env::args().position(|a| a == "--forget") {
+        let forgot = match std::env::args().nth(i + 1).as_deref() {
+            Some("zh") => platform::forget_rime(),
+            _ => platform::forget_mozc(),
+        };
+        std::process::exit(forgot.map_or_else(
+            |e| {
+                eprintln!("--forget: {e}");
+                1
+            },
+            |_| 0,
+        ));
+    }
     // For tests without a window (pc/windows/setup/test.ps1): the server, username and password on
     // stdin, one per line, saved as Server and login's Save does.
     if std::env::args().any(|a| a == "--save-login") {

@@ -280,6 +280,12 @@ class Mozc final : public Engine {
   }
 
   void forget() override {
+    if (!touch_) {  // the PCs: Mozc deletes its history files while closed (#375)
+      clear();
+      mozc_->forget();
+      session_ = 0;  // the new instance has none
+      return;
+    }
     for (auto type : {Input::CLEAR_USER_HISTORY, Input::CLEAR_USER_PREDICTION, Input::SYNC_DATA}) {
       Input in;
       in.set_type(type);

@@ -187,7 +187,14 @@ pub fn valid_word(reading: &str, word: &str) -> bool {
             .all(|c| ('\u{3041}'..='\u{309f}').contains(&c) || c == 'ー')
 }
 
-/// Deletes Mozc's history files; Mozc must be stopped first, or it writes them back.
+/// How many of Mozc's history files there are. A running Mozc forgets them itself
+/// (core/src/mozc_inprocess.cpp, #375).
+pub fn learned(dir: &Path) -> usize {
+    HISTORY.iter().filter(|f| dir.join(f).exists()).count()
+}
+
+/// Deletes Mozc's history files, with no Mozc running (Linux without Fcitx5); how many there were.
+#[cfg_attr(windows, allow(dead_code))]
 pub fn forget(dir: &Path) -> io::Result<usize> {
     let mut n = 0;
     for f in HISTORY {

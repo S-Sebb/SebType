@@ -22,6 +22,8 @@ class MozcTransport {
   virtual bool loading() const = 0;
   // Mozc saves and reads its files again (loading() meanwhile when it loads in the background).
   virtual void reload() = 0;
+  // The same, with Mozc's history files deleted while it is closed (the PCs, #375).
+  virtual void forget() = 0;
 };
 
 std::unique_ptr<MozcTransport> makeMozcTransport(const MozcPaths &paths);

@@ -244,29 +244,41 @@ pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// Deletes what Rime learned (its user dictionaries and their sync snapshots); the settings and the
-/// user's own words stay. Rime must restart (redeploy) afterwards.
-pub fn forget(dir: &Path) -> io::Result<usize> {
-    fn walk(dir: &Path, n: &mut usize) -> io::Result<()> {
+/// What Rime learned (its user dictionaries and their sync snapshots); the settings and the user's own
+/// words aren't in it. A running Rime forgets them itself (core/src/rime.cpp's forget, #375).
+pub fn learned(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
         for e in fs::read_dir(dir)? {
             let path = e?.path();
             let name = path.file_name().unwrap().to_string_lossy();
             if name.ends_with(".userdb") && path.is_dir() {
-                fs::remove_dir_all(&path)?;
-                *n += 1;
+                out.push(path);
             } else if name == SYNCED_WORDS {
             } else if name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct") {
-                fs::remove_file(&path)?;
-                *n += 1;
+                out.push(path);
             } else if path.is_dir() && !path.is_symlink() {
-                walk(&path, n)?;
+                walk(&path, out)?;
             }
         }
         Ok(())
     }
-    let mut n = 0;
-    walk(dir, &mut n)?;
-    Ok(n)
+    let mut out = vec![];
+    walk(dir, &mut out)?;
+    Ok(out)
+}
+
+/// Deletes what Rime learned, with no Rime running (Linux without Fcitx5); how many there were.
+#[cfg_attr(windows, allow(dead_code))]
+pub fn forget(dir: &Path) -> io::Result<usize> {
+    let learned = learned(dir)?;
+    for p in &learned {
+        if p.is_dir() {
+            fs::remove_dir_all(p)?;
+        } else {
+            fs::remove_file(p)?;
+        }
+    }
+    Ok(learned.len())
 }
 
 /// This PC's own folder in Rime's sync folder, `<sync_dir>/<installation_id>`, read from

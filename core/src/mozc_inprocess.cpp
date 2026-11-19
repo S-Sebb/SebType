@@ -63,21 +63,8 @@ class InProcess final : public MozcTransport {
   bool loading() const override { return loading_; }
   bool open() const override { return !loading_ && open_; }
 
-  // A reload asked for while Mozc loads is done by the loading thread before it says it is done: no key goes
-  // to the instance it replaces, and no one waits for the load.
-  void reload() override {
-    {
-      std::lock_guard<std::mutex> hold(state_);
-      if (loading_) {
-        reload_ = true;
-        return;
-      }
-      loading_ = !preload_.empty();
-    }
-    if (preload_.empty()) return load();
-    if (loader_.joinable()) loader_.join();  // done: loading_ was false
-    loader_ = std::thread([this] { loadInBackground(); });
-  }
+  void reload() override { restart(false); }
+  void forget() override { restart(true); }
 
   bool call(const mozc::commands::Input &in, mozc::commands::Output &out) override {
     if (!open()) return false;
@@ -108,11 +95,38 @@ class InProcess final : public MozcTransport {
   }
 
  private:
-  // Opens Mozc, or opens it again: it saves and reads its files again.
+  // A restart asked for while Mozc loads is done by the loading thread before it says it is done: no key goes
+  // to the instance it replaces, and no one waits for the load.
+  void restart(bool forget) {
+    {
+      std::lock_guard<std::mutex> hold(state_);
+      if (forget) forget_ = true;
+      if (loading_) {
+        reload_ = true;
+        return;
+      }
+      loading_ = !preload_.empty();
+    }
+    if (preload_.empty()) return load();
+    if (loader_.joinable()) loader_.join();  // done: loading_ was false
+    loader_ = std::thread([this] { loadInBackground(); });
+  }
+
+  // Opens Mozc, or opens it again: it saves and reads its files again; after forget() without its history.
   void load() {
     if (open_) sebtype_mozc_close();
+    open_ = false;
+    if (forget_.exchange(false)) forgetHistory();
     open_ = sebtype_mozc_open(profile_.c_str(), data_.c_str(), offset_, length_) != 0;
     learningSet_ = false;  // the new instance's
+  }
+
+  // Mozc's learned conversions and predictions (the Configurator's pc/configurator/src/mozc.rs HISTORY).
+  void forgetHistory() {
+    for (const char *name : {"segment.db", "boundary.db", "cform.db", ".history.db"}) {
+      std::error_code missing;  // one Mozc hasn't written yet
+      std::filesystem::remove(std::filesystem::u8path(profile_) / name, missing);
+    }
   }
 
   // Reads the DLL through first: see MozcPaths::preload.
@@ -134,8 +148,8 @@ class InProcess final : public MozcTransport {
 
   const std::string preload_, profile_, data_;
   const int64_t offset_, length_;
-  std::mutex state_;  // loading_ and reload_ between the loading thread and reload()
-  std::atomic<bool> open_{false}, loading_{false};
+  std::mutex state_;  // loading_ and reload_ between the loading thread and restart()
+  std::atomic<bool> open_{false}, loading_{false}, forget_{false};
   bool reload_ = false;
   std::thread loader_;
   std::optional<bool> learning_;

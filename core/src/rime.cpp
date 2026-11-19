@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -250,6 +251,15 @@ class Rime final : public Engine {
     start(true);
   }
 
+  // With Rime stopped, so no database is open and no sync writes a snapshot back (#375).
+  void forget() override {
+    api_->join_maintenance_thread();  // a deploy's tasks open the user dictionaries too
+    endSession();
+    api_->finalize();
+    forgetLearned();
+    start(false);
+  }
+
   // Saves learned words and merges the other devices' snapshots (Rime's sync, #12).
   void save() override {
     endSession();
@@ -285,6 +295,24 @@ class Rime final : public Engine {
       setOptions();
     }
     return true;
+  }
+
+  // What Rime learned: its user dictionaries (*.userdb) and their snapshots (*.userdb.txt, *.userdb.kct from
+  // older Rimes), in the sync folder too; My words' sync record stays (as the Configurator's rime.rs counts).
+  void forgetLearned() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    std::vector<fs::path> learned;
+    for (fs::recursive_directory_iterator it(fs::u8path(paths_.userDir), ec), end; !ec && it != end; it.increment(ec)) {
+      const std::string name = it->path().filename().string();
+      if (name.ends_with(".userdb") && it->is_directory(ec)) {
+        learned.push_back(it->path());
+        it.disable_recursion_pending();
+      } else if (name != "zh_my_words.userdb.txt" && (name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct"))) {
+        learned.push_back(it->path());
+      }
+    }
+    for (const auto &p : learned) fs::remove_all(p, ec);
   }
 
   void endSession() {

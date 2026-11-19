@@ -24,13 +24,14 @@ enum class Op : uint8_t {
   State,     // nothing, just the state
   Deploy,    // setup or the Configurator changed Rime's settings or data; reply.busy until it is applied
   Sync,      // save learned words and merge the other devices' (Rime's sync); reply.busy until done
-  Quit,      // the server exits (setup, the Configurator's forget)
+  Quit,      // the server exits (setup)
   Mozc,      // Mozc saves and closes, and starts again with its files at the next 日本語 key (setup, the
              // Configurator)
   Ready,     // lang: its icon in reply.icon while it isn't ready, and nothing else; changes nothing (#275)
   Reset,     // what is being typed is dropped: the server answers again after keys the app stopped waiting for
   DeployWhenIdle,  // Deploy and Mozc, for a sync's pull: once typing is idle, as they drop what is being typed
   MozcWhenIdle,    // (#373); reply.busy until done
+  Forget,    // lang: its engine forgets what it learned (the Configurator, #375); reply.busy until it is done
 };
 
 struct Request {

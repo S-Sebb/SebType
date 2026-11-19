@@ -243,6 +243,12 @@ void SebTypeEngine::setSubConfig(const std::string &path, const fcitx::RawConfig
   else if (path == "mozc") restartMozc();
   else if (path == "deploy-when-idle") whenIdle(Core::Chore::Deploy, deploy);
   else if (path == "mozc-when-idle") whenIdle(Core::Chore::ReloadJapanese, restartMozc);
+  else if (path == "forget/zh" || path == "forget/ja") {
+    // The Configurator's Forget learned words: done when the call returns, between two keys (#375).
+    core_->engine(path == "forget/zh" ? Lang::Chinese : Lang::Japanese)->forget();
+    update(instance_->mostRecentInputContext());
+    updateStatus(instance_->mostRecentInputContext());
+  }
 }
 
 void SebTypeEngine::whenIdle(Core::Chore chore, std::function<void()> work) {

@@ -111,6 +111,7 @@ optional floating language bar, Windows' own buttons (Help, Options, Restore).
 ```sh
 pc/windows/setup/test-tcsbackend.sh   # from nobara-pc; this commit's sebtype-setup artifact, or build/SebType-setup-*.exe
 ONLY=upgrade pc/windows/setup/test-tcsbackend.sh   # the update from the SebType before #190
+ONLY=forget pc/windows/setup/test-tcsbackend.sh    # forgetting learned words while the server runs (#375)
 ```
 
 It runs on TCSBackEnd under its device lock, in the background, and puts TCSBackEnd back as it found it
@@ -142,6 +143,7 @@ needs a PC that can be restarted after.
 | `round1-uninstall-pages`, `-uninstall-deletes-learned-words`, `round1-everything-as-before` | The uninstaller's confirm, progress and done; the account's input methods, switch keys, per-window setting, hotkeys and folders as before; SebType gone |
 | `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Japanese's words go) keeping a page size of 8 set before it, uninstall; as before |
 | `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept; typing as in round 1; uninstall; as before |
+| `zh-*`, `ja-*`, `configurator-forgets-*` (`ONLY=forget`) | `setup/test-forget.ps1` as the test user: a picked 4th candidate of shishi and kisha is learned; the Configurator's Forget (`sebtype-configurator.exe --forget zh`, `ja`) while both engines are open, Mozc's history in memory only and its DLL's next read held 8 s as an antivirus scan holds it; the first candidate is the original one again at once and after the server restarts (#375) |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
 
 `setup/test-focus-out.ps1` checks, on a PC with SebType installed and in the logged-on person's session,
