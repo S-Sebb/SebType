@@ -4,6 +4,8 @@
 # (data/rime/build.sh), Mozc (sebtype-mozc.dll from engines/mozc, by pc/windows/mozc/build.ps1), the Configurator
 # (configurator.yml) and the installer's pictures (pc/windows/setup/pictures.py). The setup is the
 # run's artifact "sebtype-setup"; pc/windows/setup/test-tcsbackend.sh tests it.
+# The account's artifact storage is shared (#418): what only the setup job packs is kept 1 day; the setup,
+# perf-rime and the Configurator (the tests and docs/install.md download them) 14 days from main, 3 from PRs.
 name: Windows setup
 
 on:
@@ -64,11 +66,13 @@ jobs:
           name: sebtype-rime
           path: out/rime/rime
           if-no-files-found: error
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: perf-rime
           path: out/rime/perf-rime.exe
           if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}
 
   configurator:
     uses: ./.github/workflows/configurator.yml
@@ -101,6 +105,7 @@ jobs:
           name: sebtype-service
           path: out/service
           if-no-files-found: error
+          retention-days: 1
 
   rime-data:
     runs-on: ubuntu-24.04
@@ -115,6 +120,7 @@ jobs:
           name: rime-data
           path: out/rime/rime-data.zip
           if-no-files-found: error
+          retention-days: 1
 
   pictures:
     runs-on: ubuntu-24.04
@@ -127,6 +133,7 @@ jobs:
           name: setup-pictures
           path: out/pictures
           if-no-files-found: error
+          retention-days: 1
 
   mozc:
     runs-on: windows-2022
@@ -187,6 +194,7 @@ jobs:
           name: mozc
           path: out/mozc
           if-no-files-found: error
+          retention-days: 1
 
   setup:
     needs: [rime, configurator, rime-data, pictures, mozc, service]
@@ -221,6 +229,7 @@ jobs:
           name: sebtype-setup
           path: pc/windows/setup/out/*.exe
           if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}
       # Setup run from a PowerShell 7 shell, as this step's is: the Windows PowerShell 5.1 its steps start
       # must not take PowerShell 7's PSModulePath and fail to load its own modules (#299).
       - name: Install from pwsh

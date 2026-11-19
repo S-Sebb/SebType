@@ -56,3 +56,4 @@ jobs:
           name: sebtype-configurator
           path: pc/configurator/target/release/sebtype-configurator.exe
           if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}
