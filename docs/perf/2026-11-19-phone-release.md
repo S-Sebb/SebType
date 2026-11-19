@@ -48,11 +48,55 @@ is the same ~5× gap as between this run and 2026-11-18's. Two of the owner's ap
 during the EN set (YouTube Music 14.6 s and Discord 11.7 s of CPU), and the phone was short of memory
 (0.5 GB free, 3.2 GB in swap), so this run can't say which of the two set the placement.
 
-**Still to do, with the owner present:** the idle re-run. `PERF_STOP="com.google.android.apps.youtube.music
-com.discord"` stops those apps under the device lock first. Repeat it several times, because the
-placement varies between runs (#62), and record each run's cores. A first try on 2026-11-19 stopped
-both apps (no media playing afterwards) but the phone was locked during the try. Only its Chinese
-setup was measured (table below); every other step failed at the lock screen.
+A first idle try on 2026-11-19 had the phone locked, so only its Chinese setup was measured (table
+below). A second one ran with the screen turned sideways: its taps missed the keys (#402, fixed in
+#403).
+
+## Speed on an idle phone: the cores still decide
+
+Release 0.1.30-sebtype.196 (main at bd7ebdd566), the owner present, the phone unlocked and upright,
+`PERF_STOP="com.google.android.apps.youtube.music com.discord"` (both stopped, no media playing),
+2.8–3.4 GB available. Five runs, each a fresh install: `--english` three times, `--chinese` twice (a
+third `--chinese` didn't start: another project held the phone). Cores are the keyboard process's CPU
+time in the EN set's trace, CPUs 0–3 (little) / 4–7 (big):
+
+| Run | Cores, little / big | EN ranking | EN next words | Fast: spaces that waited, wait | Long field: next words, spaces decided | 中 ranking | 中 next words |
+|---|---|---|---|---|---|---|---|
+| english-1 | 0.7 / 6.9 s | 22 / 46 ms | 42 / 65 ms | 0 of 18 | 43 / 250 ms, 18 of 18 | – | – |
+| english-2 | 24.6 / 0.2 s | 101 / 205 ms | 190 / 230 ms | 18 of 18, 152 / 281 ms | 641 / 1041 ms, 4 of 18 | – | – |
+| english-3 | 0.8 / 6.9 s | 21 / 45 ms | 41 / 61 ms | 0 of 18 | 43 / 250 ms, 18 of 18 | – | – |
+| chinese-1 | 24.5 / 0.2 s | 105 / 206 ms | 190 / 230 ms | – | – | 70 / 106 ms | 73 / 114 ms |
+| chinese-2 | 0.7 / 7.0 s | 21 / 46 ms | 42 / 74 ms | – | – | 21 / 32 ms | 29 / 137 ms |
+
+Each run stayed on one side for its whole process: the fast and long sets and the 中 set ran on the
+same cores as that run's EN set. With nothing else busy, two of five runs still got the little cores.
+So the busy run's little cores needn't have come from the owner's apps. This is #62's placement,
+and these runs can't tell what sets it.
+
+- On the big cores the long field is fixed (#359): next words at the short field's 42 ms median, and
+  17 of 18 spaces didn't wait (the one that did waited 81 ms). Its p95 is still 250 ms.
+- 中 misses #264's 20 ms p95 on both: 32 ms ranking and 137 ms next words on the big cores.
+- On the little cores, fast typing waits at every space (152 / 281 ms), and the long field's ranking
+  is late or skipped for 14 of 18 spaces.
+
+What doesn't depend on the cores: every key was typed (44 of 44 three times, 88 of 88, 中 14 of 14
+three times), no keyboard crashed, and key → text on screen was 14–18 / 19–23 ms (EN and fast; english-2's fast set: 18 / 89 ms)
+and 26–35 / 32–52 ms (long field). Janky keyboard frames: 0–0.3 % (fast), 0–1.5 % (long). The field's
+janky frames in the long field were 0–0.6 %, except english-2's 27.9 % (p95 frame 29 ms), on the
+little cores.
+
+| Metric, range over the five runs | Big-core runs | Little-core runs |
+|---|---|---|
+| Keyboard open, first after install | 1019–1179 ms | 988–1245 ms |
+| Chinese first-run setup (install + Rime's check) | 964–1138 ms | 1118–1141 ms |
+| RSS peak, first open with the Chinese setup | 212–219 MB | 218–219 MB |
+| PSS idle, first open, EN | 169–175 MB | 173–174 MB |
+| PSS after typing EN | 136–151 MB | 149–156 MB |
+| PSS after typing 中 | 205 MB | 234 MB |
+| EN key → keyboard idle | 48–49 / 67–68 ms | 156–158 / 240–241 ms |
+| 中 key → keyboard idle | 44 / 58 ms | 101 / 151 ms |
+
+The first open took about twice the busy run's 568–597 ms on every run, on both kinds of cores.
 
 Typing itself stayed fast: key → text on screen 16 / 20 ms (EN), 18 / 99 ms (fast), 35 / 49 ms (long);
 key handling 2 / 4 ms (EN) and 2 / 3 ms (中). No keyboard crashed.
