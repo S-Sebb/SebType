@@ -7,7 +7,9 @@
 # is the original one again, and still after Fcitx5 restarts. The same for 日本語's prediction (Tab after きし
 # no longer suggests the word picked) and a character form it learns (a digit's width, which Mozc keeps for
 # the whole process), and at the end the Configurator says forgetting
-# failed when the input method couldn't delete what was learned (read-only folders). Before forgetting, a
+# failed when the input method couldn't delete what was learned (read-only folders). Rime's sync folder is
+# outside its folder (installation.yaml's sync_dir, #396): a sync before forgetting puts 中文's snapshot there,
+# forgetting deletes it but not another file there, and a sync after it brings nothing back. Before forgetting, a
 # Forget for another language (D-Bus, or the Configurator's --forget) forgets nothing and Fcitx5 lives on.
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
 import os
@@ -181,6 +183,39 @@ def learn_digit_form(f, form):
     return False
 
 
+# Rime's sync folder outside its folder (#396), with a file that isn't Rime's.
+rime_dir = f"{os.environ['XDG_DATA_HOME']}/fcitx5/rime"
+sync_dir = f"{os.environ['HOME']}/outside-sync"
+os.makedirs(sync_dir, exist_ok=True)
+with open(f"{sync_dir}/notes.txt", "w") as notes:
+    notes.write("not Rime's\n")
+with open(f"{rime_dir}/installation.yaml") as y:
+    lines = [line for line in y if not line.startswith("sync_dir:")]
+with open(f"{rime_dir}/installation.yaml", "w") as y:
+    y.writelines(lines + [f'sync_dir: "{sync_dir}"\n'])
+snapshot = next(
+    f"{sync_dir}/{line.split(':', 1)[1].strip().strip(chr(34))}/rime_ice.userdb.txt"
+    for line in lines
+    if line.startswith("installation_id:")
+)
+
+
+def mtime():
+    return os.stat(snapshot).st_mtime_ns if os.path.exists(snapshot) else 0
+
+
+def sync(f):
+    """Fcitx5's save (the sync's), which syncs Rime once typing is idle: whether it wrote 中文's snapshot.
+    It isn't deleted first: a snapshot that Forget left would come back in this sync's merge."""
+    before = mtime()
+    f.obj("/controller").Save(dbus_interface="org.fcitx.Fcitx.Controller1")
+    for _ in range(120):
+        if mtime() > before:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 f = Fcitx("first")
 first, picked = {}, {}
 for lang, (top, fourth) in WORDS.items():
@@ -211,6 +246,13 @@ result(
     "ja-learns-character-form",
     learned == other,
     f"3 is {base}, then 5 is {learned} after 2 in {other} width",
+)
+
+synced = sync(f)
+result(
+    "zh-syncs-outside-rime-folder",
+    synced,
+    f"snapshot {'in' if synced else 'not in'} {sync_dir}",
 )
 
 # No language, or one that learns nothing: refused and nothing forgotten, by the Configurator's --forget and
@@ -261,6 +303,12 @@ result(
     f"exit {forgot.returncode}, see {out}/forget-configurator.log",
 )
 
+result(
+    "zh-snapshot-forgotten-outside-rime-folder",
+    not os.path.exists(snapshot) and os.path.exists(f"{sync_dir}/notes.txt"),
+    f"snapshot {'still there' if os.path.exists(snapshot) else 'gone'}, notes.txt "
+    f"{'kept' if os.path.exists(f'{sync_dir}/notes.txt') else 'deleted'}",
+)
 for lang, (top, _) in WORDS.items():
     ready = f.language(lang)
     now = f.type(top)
@@ -278,6 +326,13 @@ result(
 now = digit_form(f, "6")
 result(
     "ja-character-form-forgotten-while-typing", now == base, f"6 is {now}, want {base}"
+)
+synced = sync(f)
+now = f.language("zh") and f.type(WORDS["zh"][0])
+result(
+    "zh-forgotten-after-sync",
+    synced and now == first["zh"],
+    f"{'synced' if synced else 'no sync'}, first '{now}', want '{first['zh']}'",
 )
 f.stop()
 

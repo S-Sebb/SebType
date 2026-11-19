@@ -245,7 +245,8 @@ pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
 }
 
 /// What Rime learned (its user dictionaries and their sync snapshots); the settings and the user's own
-/// words aren't in it. A running Rime forgets them itself (core/src/rime.cpp's forget, #375).
+/// words aren't in it. A running Rime forgets them itself (core/src/rime.cpp's forget, #375). A sync folder
+/// outside Rime's folder (#396) may hold files that aren't Rime's: only its snapshots are in it.
 pub fn learned(dir: &Path) -> io::Result<Vec<PathBuf>> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
         for e in fs::read_dir(dir)? {
@@ -264,6 +265,12 @@ pub fn learned(dir: &Path) -> io::Result<Vec<PathBuf>> {
     }
     let mut out = vec![];
     walk(dir, &mut out)?;
+    let sync = sync_folder(dir);
+    if sync.is_dir() && !fs::canonicalize(&sync)?.starts_with(fs::canonicalize(dir)?) {
+        let mut found = vec![];
+        walk(&sync, &mut found)?;
+        out.extend(found.into_iter().filter(|p| !p.is_dir()));
+    }
     Ok(out)
 }
 
@@ -281,21 +288,25 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
     Ok(learned.len())
 }
 
+fn installation_value(dir: &Path, key: &str) -> Option<String> {
+    read(&dir.join("installation.yaml")).lines().find_map(|l| {
+        let v = l.trim().strip_prefix(key)?.trim_start().strip_prefix(':')?;
+        Some(v.split('#').next()?.trim().trim_matches('"').to_string())
+    })
+}
+
+/// Rime's sync folder: installation.yaml's sync_dir, else `<dir>/sync`.
+fn sync_folder(dir: &Path) -> PathBuf {
+    installation_value(dir, "sync_dir")
+        .filter(|v| !v.is_empty())
+        .map_or_else(|| dir.join("sync"), PathBuf::from)
+}
+
 /// This PC's own folder in Rime's sync folder, `<sync_dir>/<installation_id>`, read from
 /// installation.yaml as sync-server/sebtype_sync.py reads it; None before Rime's first start.
 pub fn own_sync_folder(dir: &Path) -> Option<PathBuf> {
-    let text = read(&dir.join("installation.yaml"));
-    let value = |key: &str| {
-        text.lines().find_map(|l| {
-            let v = l.trim().strip_prefix(key)?.trim_start().strip_prefix(':')?;
-            Some(v.split('#').next()?.trim().trim_matches('"').to_string())
-        })
-    };
-    let id = value("installation_id").filter(|v| !v.is_empty())?;
-    let sync = value("sync_dir")
-        .filter(|v| !v.is_empty())
-        .map_or_else(|| dir.join("sync"), PathBuf::from);
-    Some(sync.join(id))
+    let id = installation_value(dir, "installation_id").filter(|v| !v.is_empty())?;
+    Some(sync_folder(dir).join(id))
 }
 
 #[cfg(test)]
@@ -396,6 +407,43 @@ mod tests {
             "My words' sync record stays"
         );
         assert!(!d.join("rime_ice.userdb").exists() && d.join(PHRASES).exists());
+
+        // A sync folder outside Rime's folder (#396): its snapshots go, the rest there isn't Rime's.
+        let ext = d.with_extension("sync");
+        let _ = fs::remove_dir_all(&ext);
+        fs::create_dir_all(ext.join("abc/rime_ice.userdb")).unwrap();
+        for name in [
+            "rime_ice.userdb.txt",
+            "old.userdb.kct",
+            SYNCED_WORDS,
+            "notes.txt",
+        ] {
+            fs::write(ext.join("abc").join(name), "x").unwrap();
+        }
+        fs::write(
+            d.join("installation.yaml"),
+            format!(
+                "installation_id: \"abc\"\nsync_dir: \"{}\"\n",
+                ext.display()
+            ),
+        )
+        .unwrap();
+        assert_eq!(forget(&d).unwrap(), 2);
+        let left: Vec<_> = fs::read_dir(ext.join("abc"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left.len(), 3, "kept {left:?}");
+        assert!(ext.join("abc").join(SYNCED_WORDS).exists() && ext.join("abc/notes.txt").exists());
+        // Inside Rime's folder, each snapshot is counted once.
+        fs::write(d.join("sync/abc/rime_ice.userdb.txt"), "x").unwrap();
+        fs::write(
+            d.join("installation.yaml"),
+            format!("sync_dir: \"{}\"\n", d.join("sync").display()),
+        )
+        .unwrap();
+        assert_eq!(learned(&d).unwrap().len(), 1);
+        fs::remove_dir_all(&ext).unwrap();
         fs::remove_dir_all(&d).unwrap();
     }
 }

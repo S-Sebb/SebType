@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -301,6 +303,7 @@ class Rime final : public Engine {
 
   // What Rime learned: its user dictionaries (*.userdb) and their snapshots (*.userdb.txt, *.userdb.kct from
   // older Rimes), in the sync folder too; My words' sync record stays (as the Configurator's rime.rs counts).
+  // A sync folder outside the user folder (#396) may hold files that aren't Rime's: only snapshots go there.
   // Empty when all of it is gone, else the file or folder that failed and why.
   std::string forgetLearned() {
     namespace fs = std::filesystem;
@@ -308,27 +311,49 @@ class Rime final : public Engine {
       const std::u8string u = p.u8string();
       return std::string(u.begin(), u.end()) + ": " + ec.message();
     };
-    std::error_code ec;
     std::vector<fs::path> learned;
-    const fs::path dir = fs::u8path(paths_.userDir);
-    fs::recursive_directory_iterator it(dir, ec), end;
-    if (ec == std::errc::no_such_file_or_directory) return {};  // a profile that never learned
-    for (; !ec && it != end; it.increment(ec)) {
-      const std::string name = it->path().filename().string();
-      if (name.ends_with(".userdb") && it->is_directory(ec)) {
-        learned.push_back(it->path());
-        it.disable_recursion_pending();
-      } else if (name != "zh_my_words.userdb.txt" && (name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct"))) {
-        learned.push_back(it->path());
+    const auto scan = [&](const fs::path &dir, bool snapshotsOnly) -> std::string {
+      std::error_code ec;
+      fs::recursive_directory_iterator it(dir, ec), end;
+      if (ec == std::errc::no_such_file_or_directory) return {};  // a profile that never learned
+      for (; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.ends_with(".userdb") && it->is_directory(ec)) {
+          if (!snapshotsOnly) learned.push_back(it->path());
+          it.disable_recursion_pending();
+        } else if (name != "zh_my_words.userdb.txt" && (name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct"))) {
+          learned.push_back(it->path());
+        }
+        if (ec) return failed(it->path(), ec);
       }
-      if (ec) return failed(it->path(), ec);
-    }
-    if (ec) return failed(dir, ec);
+      return ec ? failed(dir, ec) : std::string();
+    };
+    const fs::path dir = fs::u8path(paths_.userDir);
+    if (std::string error = scan(dir, false); !error.empty()) return error;
+    const fs::path sync = syncDir(dir);
+    std::error_code ec;
+    const fs::path inUserDir = fs::weakly_canonical(sync, ec).lexically_relative(fs::weakly_canonical(dir, ec));
+    if (inUserDir.empty() || *inUserDir.begin() == "..")  // inside, the scan above had it
+      if (std::string error = scan(sync, true); !error.empty()) return error;
     for (const auto &p : learned)
       if (fs::remove_all(p, ec); ec) return failed(p, ec);  // one already gone is no error
     return {};
   }
 
+  // Rime's sync folder: installation.yaml's sync_dir, else <user folder>/sync. Read here, as Rime reads it: Rime
+  // reads it only in a maintenance or sync, so get_user_data_sync_dir may still say the default.
+  std::filesystem::path syncDir(const std::filesystem::path &userDir) {
+    std::ifstream in(userDir / "installation.yaml");
+    std::stringstream yaml;
+    yaml << in.rdbuf();
+    RimeConfig config = {};
+    std::filesystem::path sync = userDir / "sync";
+    if (api_->config_load_string(&config, yaml.str().c_str())) {
+      if (const char *v = api_->config_get_cstring(&config, "sync_dir"); v && *v) sync = std::filesystem::u8path(v);
+      api_->config_close(&config);
+    }
+    return sync;
+  }
 
   void endSession() {
     if (session_) api_->destroy_session(session_);
