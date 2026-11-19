@@ -411,6 +411,24 @@ if ($Typing) {
           if ($first -ne '記者' -or $t -notin 'きしゃ', 'キシャ') { throw "kisha + Space + Enter gave '$first', then Ctrl+Backspace, Escape and Enter '$t' (want きしゃ)" }
           "$first → $t"
         }
+        # A field that refuses the undo's edit keeps its commit, and Enter doesn't type it again.
+        Check 'japanese-undo-refused' {
+          Field ja
+          TypeText 'kisha '; Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+          $tsf::RefuseLater = $true
+          try { Keys 'Control_L+BackSpace'; Start-Sleep 1 } finally { $tsf::RefuseLater = $false }
+          Keys Return; Start-Sleep 1; $t = $tsf::Text().Trim()
+          if ($first -ne '記者' -or $t -ne '記者') { throw "kisha + Space + Enter gave '$first', then a refused Ctrl+Backspace and Enter '$t' (want 記者 once)" }
+          "$first, kept"
+        }
+        # A commit over 32 UTF-16 units is undone too: 35 kana go and compose again, which Escape drops.
+        Check 'japanese-undo-long-commit' {
+          Field ja
+          TypeText ('aiueo' * 7); Keys Return; Start-Sleep 1; $first = $tsf::Text().Trim()
+          Keys 'Control_L+BackSpace' Escape Escape; Start-Sleep 1; $t = $tsf::Text().Trim()
+          if ($first -ne ('あいうえお' * 7) -or $t -ne '') { throw "35 kana + Enter gave '$first', then Ctrl+Backspace and Escape '$t' (want nothing)" }
+          "35 kana, undone"
+        }
         Check 'picnic-window' $picnic
       } finally { $tsf::Stop() }
     }

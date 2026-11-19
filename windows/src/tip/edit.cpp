@@ -99,13 +99,17 @@ bool deleteBefore(TfEditCookie ec, ITfContext *context, ITfComposition *composit
 
 std::string TextService::textBefore(ITfContext *context) {
   std::wstring text;
-  editSession(context, clientId_, [&](TfEditCookie ec) {
-    if (ITfRange *range = caret(ec, context)) {
-      if (!readBefore(ec, range, 32, text)) text.clear();
-      range->Release();
-    }
-    return S_OK;
-  });
+  if (!committed16_) return {};
+  editSession(
+      context, clientId_,
+      [&](TfEditCookie ec) {
+        if (ITfRange *range = caret(ec, context)) {
+          if (!readBefore(ec, range, committed16_, text)) text.clear();
+          range->Release();
+        }
+        return S_OK;
+      },
+      true, TF_ES_READ);
   return utf8(text);
 }
 
@@ -162,6 +166,7 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context) {
 
   // The committed text goes where the composition is, or at the caret.
   if (!commit.empty()) {
+    committed16_ = static_cast<LONG>(commit.size());
     if (composition_) {
       endComposition(ec, context, std::exchange(composition_, nullptr), commit);
     } else {

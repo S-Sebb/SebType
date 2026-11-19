@@ -644,8 +644,16 @@ void TextService::apply(ITfContext *context) {
                        if (std::exchange(settling_, false)) replay();
                        return hr;
                      },
-                     false)))
+                     false))) {
     rejected_ = settling_;
+    // An undo the app refused to edit: its commit stays, so its conversion must not commit it again.
+    if (std::exchange(reply_.deleteBefore, 0) > 0) {
+      reply_.preedit = {};
+      reply_.page = {};
+      reply_.aux.clear();
+      dropTyping();
+    }
+  }
   if (button_) button_->update();
   watchReadiness();
 }
