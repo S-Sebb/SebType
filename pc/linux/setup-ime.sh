@@ -53,7 +53,8 @@ if ((undo_configurator)); then
   # With the Configurator's schedule lock (sync.rs, schedule_locked), so a sync starting or ending or the
   # network trigger plans nothing once this has begun: each finds sync.json gone.
   sync_units=$config/systemd/user
-  if [[ -d $data/sebtype ]]; then exec {schedule_lock}>"$data/sebtype/schedule.lock"; flock "$schedule_lock"; fi
+  # The Configurator makes the lock before it schedules anything: without it there is nothing to wait for.
+  if [[ -f $data/sebtype/schedule.lock ]]; then exec {schedule_lock}>"$data/sebtype/schedule.lock"; flock "$schedule_lock"; fi
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
     echo "change: stop and remove SebType's sync timer and network trigger"
     systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null || true
