@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Converts a checkpoint (train.py) to the GGUF model the loader reads, quantised to Q6_K as FUTO's is.
+# Converts a checkpoint (train.py) to the GGUF model the loader reads, quantised to Q8_0: on a phone's little
+# cores it ran 1.4 times as fast as FUTO's Q6_K, which has no dot product kernel there, and it is closer to the
+# checkpoint (#406).
 #
 #   tools/english-lm/export.sh CKPT_DIR OUT.gguf
-# LM_VENV and LM_NAME (tools/chinese-lm/export.sh) give another model's venv and name.
+# LM_VENV, LM_NAME and LM_QUANT (tools/chinese-lm/export.sh) give another model's venv, name and quantisation.
 set -euo pipefail
 ckpt=$1 out=$2
 venv=${LM_VENV:-$HOME/scratch/SebType/cache/english-lm-venv}
@@ -14,6 +16,6 @@ if [[ ! -x $llama/build/bin/llama-quantize ]]; then
 fi
 "$venv/bin/python" "$llama/convert_hf_to_gguf.py" "$ckpt" --outtype f32 --outfile "$out.f32" \
   --model-name "${LM_NAME:-SebType English}" > "$out.log" 2>&1
-"$llama/build/bin/llama-quantize" "$out.f32" "$out" Q6_K 1 >> "$out.log" 2>&1
+"$llama/build/bin/llama-quantize" "$out.f32" "$out" "${LM_QUANT:-Q8_0}" 1 >> "$out.log" 2>&1
 rm "$out.f32"
 ls -l "$out"

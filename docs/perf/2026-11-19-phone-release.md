@@ -93,7 +93,8 @@ may be exempt from `nt_foreground`, but 20 SebType starts with 2 in it can't sho
 - 中 misses #264's 20 ms p95 on both: 32 ms ranking and 137 ms next words on the big cores
   (since then 14–16 ms ranking and 12–31 ms next words: [中's model on the phone](2026-11-19-chinese-model.md)).
 - On the little cores, fast typing waits at every space (152 / 281 ms), and the long field's ranking
-  is late or skipped for 14 of 18 spaces.
+  is late or skipped for 14 of 18 spaces (since then no space waits in fast typing, and next words take
+  46–48 ms: [English on the phone's little cores](2026-11-19-english-little-cores.md)).
 
 What doesn't depend on the cores: every key was typed (44 of 44 three times, 88 of 88, 中 14 of 14
 three times), no keyboard crashed, and key → text on screen was 14–18 / 19–23 ms (EN and fast; english-2's fast set: 18 / 89 ms)

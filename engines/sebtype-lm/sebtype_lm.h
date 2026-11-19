@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 struct llama_context;
@@ -45,9 +46,17 @@ private:
     // Decodes each of FOLLOWERS after sequence 0, on a sequence of its own, with logits at every token, and
     // returns their indices for llama_get_logits_ith. The branches are gone at the next call.
     std::vector<std::vector<int>> branch(const std::vector<std::vector<int>> &followers);
-    float logSoftmax(const float *logits, int token) const;
-    // log P(the word ends here) and the likeliest piece continuing it, from the logits after its last piece.
-    float logEnd(const float *logits, int *continuation) const;
+    // A row of logits' normaliser, worked out once for all the tokens read from it: a pass over the
+    // vocabulary costs 0.5 ms on a phone's little cores (#406).
+    struct Norm {
+        float top;
+        double log;
+    };
+    Norm norm(const float *logits) const;
+    static float logSoftmax(const float *logits, int token, Norm n);
+    // From the logits after a word's last piece: log P(the word ends here), and log P of the likeliest piece
+    // continuing it, which goes in CONTINUATION (-1 and -inf if none).
+    std::pair<float, float> logEnd(const float *logits, int *continuation) const;
 
     llama_model *mModel = nullptr;
     llama_context *mCtx = nullptr;

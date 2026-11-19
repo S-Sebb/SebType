@@ -25,7 +25,8 @@ committed ([the report](../../docs/experiments/2026-11-16-english-everyday-text.
   written as people text: lowercase sentence starts, "i", dropped apostrophes and full stops, "u", "pls",
   "gonna" (`pack.py`). The real text messages of the NUS SMS Corpus show the model the true mix. The share was
   chosen on the dev sets with short trials ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md)).
-- Exported to GGUF and quantised to Q6_K like FUTO's (`export.sh`).
+- Exported to GGUF and quantised to Q8_0 (`export.sh`): Q6_K, FUTO's, ran 1.4 times as slow on a phone's little
+  cores (#406).
 
 On the phone, AOSP's decoder finds the candidates for the typed letters. The model scores each of the first 6
 and the typed word as `context <T>typed<S>candidate`, and `decide()` in `engines/sebtype-lm/sebtype_lm.cpp`
