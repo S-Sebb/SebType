@@ -117,7 +117,22 @@ Took timed(Guarded &g, Op op = Op::Key) {
 
 }  // namespace
 
+// A reply from a server before #375 (no forgets, langBusy, forgetError) still decodes; one from a newer one
+// carries them.
+void replySuffix() {
+  Reply now;
+  now.commit = "x", now.busy = true, now.forgets = true, now.langBusy = true, now.forgetError = "segment.db: denied";
+  const std::string full = encode(now);
+  Reply r;
+  CHECK(decode(full, r) && r.commit == "x" && r.busy && r.forgets && r.langBusy && r.forgetError == now.forgetError);
+  const std::string old = full.substr(0, full.size() - (2 + 4 + now.forgetError.size()));
+  Reply o;
+  CHECK(decode(old, o) && o.commit == "x" && o.busy && !o.forgets && !o.langBusy && o.forgetError.empty());
+  CHECK(!decode(full.substr(0, full.size() - 1), o));  // cut short within the suffix
+}
+
 int main() {
+  replySuffix();
   Reply r;
   if (call(Request{Op::State}, r, 0, 200)) {
     std::printf("SKIP a SebType server runs\n");

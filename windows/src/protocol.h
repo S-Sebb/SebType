@@ -66,8 +66,10 @@ struct Reply {
   std::vector<MenuItem> menu;
   std::string notice;  // the popup after a switch, once
   bool busy = false;   // Rime is deploying or saving
-  // request.lang's engine: still busy (its Forget not done; chores waiting for idle typing don't count), and
-  // what its last Forget left behind (Engine::forgetError)
+  // From #375, a suffix a server before it doesn't send: forgets says the server did the Forget asked for;
+  // request.lang's engine is still busy (its Forget not done; chores waiting for idle typing don't count), and
+  // what its last Forget left behind (Engine::forgetError).
+  bool forgets = false;
   bool langBusy = false;
   std::string forgetError;
 };
@@ -151,7 +153,7 @@ inline std::string encode(const Reply &r) {
   for (const auto &m : r.menu) {
     w.u32(m.kind), w.s(m.label), w.s(m.icon), w.b(m.checked), w.u32(static_cast<uint32_t>(m.lang));
   }
-  w.s(r.notice), w.b(r.busy), w.b(r.langBusy), w.s(r.forgetError);
+  w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError);
   return w.out;
 }
 
@@ -172,7 +174,8 @@ inline bool decode(const std::string &in, Reply &r) {
     m.kind = static_cast<MenuItem::Kind>(rd.u32()), m.label = rd.s(), m.icon = rd.s(), m.checked = rd.b();
     m.lang = static_cast<Lang>(rd.u32());
   }
-  r.notice = rd.s(), r.busy = rd.b(), r.langBusy = rd.b(), r.forgetError = rd.s();
+  r.notice = rd.s(), r.busy = rd.b();
+  if (!rd.atEnd()) r.forgets = rd.b(), r.langBusy = rd.b(), r.forgetError = rd.s();
   return rd.ok();
 }
 

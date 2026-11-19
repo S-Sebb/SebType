@@ -12,7 +12,8 @@ open, Mozc with its history in memory only (it saves every few minutes), and Moz
 holds it). The first candidate must be the original one again at once, and after the server restarts (/quit
 saves, and the next key starts a new one); the same for 日本語's prediction (Tab after きし no longer suggests
 the word picked: Mozc's history.db) and a character form it learned (a digit's width, kept for the whole
-process). Results: one line per check in <Out>\forget-results.txt; exit 0 only
+process). Forget zh runs while a sync's deploy waits for idle typing (#373) and must answer before it;
+Forget ja must still be going while Mozc's DLL is held. Results: one line per check in <Out>\forget-results.txt; exit 0 only
 if all pass.
 #>
 param([string]$Out = "$env:USERPROFILE\scratch\SebType\375")
@@ -64,10 +65,12 @@ function DigitForm($d) {  # Mozc's first candidate for a digit: its learned widt
   $t = Typed $d space Return
   if ($t -eq "$d") { 'half' } elseif ($t -eq [string][char](0xFF10 + [int]"$d")) { 'full' } else { "'$t'" }
 }
-function Forget($lang) {  # Privacy's Forget, without its window
-  $p = Start-Process -PassThru -WindowStyle Hidden "$env:ProgramFiles\SebType\sebtype-configurator.exe" '--forget', $lang
-  if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "--forget $lang took over 2 minutes" }
-  if ($p.ExitCode) { throw "--forget $lang exited with $($p.ExitCode)" }
+function StartForget($lang) {  # Privacy's Forget, without its window
+  Start-Process -PassThru -WindowStyle Hidden "$env:ProgramFiles\SebType\sebtype-configurator.exe" '--forget', $lang
+}
+function Finished($p, $what) {
+  if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "$what took over 2 minutes" }
+  if ($p.ExitCode) { throw "$what exited with $($p.ExitCode)" }
 }
 
 $first = @{}
@@ -116,13 +119,33 @@ try {
       $now
     }
   }
-  Check 'configurator-forgets-zh' { Forget zh; 'sebtype-configurator --forget zh returned 0' }
+  Check 'configurator-forgets-zh' {
+    # With a sync's deploy waiting until typing is idle (#373: ni still being typed), Forget is done at once
+    # and answers: it doesn't wait for that chore, nor go after it.
+    Lang zh
+    Keys n i
+    $chore = Start-Process -PassThru -WindowStyle Hidden $server '/deploy-when-idle'
+    Start-Sleep 2
+    if ($chore.HasExited) { throw "/deploy-when-idle didn't wait for idle typing (exit $($chore.ExitCode))" }
+    Finished (StartForget zh) '--forget zh'
+    $waiting = -not $chore.HasExited
+    $null = $tsf::Key(0x1B); $tsf::Settle(300); $tsf::Clear()  # idle: the deploy runs
+    if (-not $chore.WaitForExit(300000)) { Stop-Process -Id $chore.Id -Force; throw '/deploy-when-idle never ran' }
+    if (-not $waiting) { throw '--forget zh returned only after the idle deploy' }
+    'sebtype-configurator --forget zh returned 0 while a deploy waited for idle typing'
+  }
   Check 'configurator-forgets-ja' {
-    # Mozc's next read of its DLL held 8 s, as an antivirus scan holds it (TsfHost.cs's SlowOpen): a reload
-    # of Mozc, in the background, can't be over before anything that doesn't wait for it.
-    $held = [SlowOpen]::Hold("$env:ProgramFiles\SebType\sebtype-mozc.dll", 8000)
-    Forget ja
-    "sebtype-configurator --forget ja returned 0; Mozc's DLL $(if (-not $held) { 'not held (no oplock)' } elseif ([SlowOpen]::AskedAt) { 'held 8 s at its next read' } else { 'not read yet' })"
+    # Mozc's next read of its DLL held 8 s, as an antivirus scan holds it (TsfHost.cs's SlowOpen): Forget,
+    # which reloads Mozc in the background, must still be going while it is held, and answer after.
+    if (-not [SlowOpen]::Hold("$env:ProgramFiles\SebType\sebtype-mozc.dll", 8000)) { throw 'no oplock on the DLL' }
+    $p = StartForget ja
+    for ($i = 0; $i -lt 600 -and -not [SlowOpen]::AskedAt; $i++) { Start-Sleep -Milliseconds 100 }
+    if (-not [SlowOpen]::AskedAt) { Finished $p '--forget ja'; throw "Mozc's DLL was never read again" }
+    Start-Sleep 2
+    if ($p.HasExited) { throw "--forget ja returned (exit $($p.ExitCode)) while Mozc's DLL was held" }
+    Finished $p '--forget ja'
+    $held = ([Environment]::TickCount - [SlowOpen]::AskedAt) / 1000
+    "sebtype-configurator --forget ja still going 2 s into the 8 s hold of Mozc's DLL, returned 0 after $([int]$held) s"
   }
   foreach ($lang in 'zh', 'ja') {
     Check "$lang-forgotten-while-typing" {

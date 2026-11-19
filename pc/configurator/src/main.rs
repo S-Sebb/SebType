@@ -348,7 +348,8 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(i) = std::env::args().position(|a| a == "--forget") {
         let forgot = match std::env::args().nth(i + 1).as_deref() {
             Some("zh") => platform::forget_rime(),
-            _ => platform::forget_mozc(),
+            Some("ja") => platform::forget_mozc(),
+            other => Err(std::io::Error::other(format!("zh or ja, not {other:?}"))),
         };
         std::process::exit(forgot.map_or_else(
             |e| {

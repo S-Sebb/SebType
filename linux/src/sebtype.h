@@ -25,7 +25,8 @@ class Service : public fcitx::dbus::ObjectVTable<Service> {
   std::tuple<std::string, bool, bool, std::string> state();
   void setLanguage(const std::string &id);
   // The Configurator's Forget learned words for zh or ja (#375), at once, between two keys: Fcitx5's
-  // SetConfig can't answer. The answer is what was left behind and why, empty when all of it is gone.
+  // SetConfig can't answer. The answer is what was left behind and why, empty when all of it is gone; any
+  // other id forgets nothing and says so.
   std::string forget(const std::string &id);
 
  private:

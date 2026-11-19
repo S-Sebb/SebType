@@ -230,6 +230,11 @@ fn forget(lang: &str) -> io::Result<()> {
         .status()?;
     match status.code() {
         Some(0) => {}
+        Some(7) => {
+            return Err(io::Error::other(
+                "the SebType server running is too old to forget: sign out and in, then try again",
+            ))
+        }
         Some(6) => {
             return Err(io::Error::other(format!(
                 "something learned couldn't be deleted (sebtype-server.exe /forget:{lang}; server.log says what)"

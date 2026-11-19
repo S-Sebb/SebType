@@ -1,13 +1,14 @@
 # Forget learned words while SebType's input method runs (#375), in a private Fcitx5 that this script starts
 # and restarts (pc/configurator/test.sh's private-forget, inside its private D-Bus session and sandbox):
-#   python3 test-forget.py <out> <configurator tests executable>
+#   python3 test-forget.py <out> <configurator tests executable> <configurator>
 # In 中文 (shishi) and 日本語 (kisha) the 4th candidate is picked, and is then first: learned. The
 # Configurator's forget (its ignored test linux::tests::private_fcitx5_forgets, the app's own code) runs while
 # both engines are open and another app keeps typing (k a Escape, which learns nothing); then the first candidate
 # is the original one again, and still after Fcitx5 restarts. The same for 日本語's prediction (Tab after きし
 # no longer suggests the word picked) and a character form it learns (a digit's width, which Mozc keeps for
 # the whole process), and at the end the Configurator says forgetting
-# failed when the input method couldn't delete what was learned (read-only folders).
+# failed when the input method couldn't delete what was learned (read-only folders). Before forgetting, a
+# Forget for another language (D-Bus, or the Configurator's --forget) forgets nothing and Fcitx5 lives on.
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
 import os
 import signal
@@ -20,6 +21,7 @@ from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
 out, tests = sys.argv[1:3]
+app = sys.argv[3] if len(sys.argv) > 3 else ""
 failed = 0
 
 
@@ -209,6 +211,33 @@ result(
     "ja-learns-character-form",
     learned == other,
     f"3 is {base}, then 5 is {learned} after 2 in {other} width",
+)
+
+# No language, or one that learns nothing: refused and nothing forgotten, by the Configurator's --forget and
+# over D-Bus, where Fcitx5 still runs after.
+exits = {
+    " ".join(args): subprocess.run(
+        [app, "--forget", *args], check=False, capture_output=True, timeout=60
+    ).returncode
+    for args in ([], ["en"], ["JA"])
+}
+kept = {lang: f.language(lang) and f.type(WORDS[lang][0]) for lang in WORDS}
+result(
+    "configurator-forget-refuses-other-languages",
+    all(exits.values()) and kept == picked,
+    f"--forget exits {exits}, then first {kept}, want {picked}",
+)
+answers = {}
+for lang in ("en", "xx", ""):
+    try:
+        answers[lang] = str(f.core.Forget(lang))
+    except dbus.DBusException as e:
+        answers[lang] = f"no answer ({e.get_dbus_name()})"
+alive = f.p.poll() is None
+result(
+    "dbus-forget-refuses-other-languages",
+    alive and all(a and not a.startswith("no answer") for a in answers.values()),
+    f"{'Fcitx5 runs' if alive else f'Fcitx5 exited with {f.p.returncode}'}, answers {answers}",
 )
 
 # Both engines are open, with what they learned in memory and on disk, and another app types meanwhile.

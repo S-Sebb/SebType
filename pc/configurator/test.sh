@@ -238,7 +238,7 @@ private_forget() {
   sed -i 's|translator/enable_user_dict: false|translator/enable_user_dict: true|' "$d/data/fcitx5/rime/rime_ice.custom.yaml" 2>/dev/null
   rm -f "$out/forget-results.txt"
   private_dbus "$sb" -i PATH="$PATH" $own_env HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
-    -- python3 ../linux/test-forget.py "$out" "$tests"
+    -- python3 ../linux/test-forget.py "$out" "$tests" "$bin"
 }
 export -f private_forget
 check private-forget 600 private_forget

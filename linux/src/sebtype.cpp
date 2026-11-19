@@ -141,7 +141,10 @@ std::tuple<std::string, bool, bool, std::string> Service::state() {
   return {langId(core.language()), core.latin(), core.alternate(), SebTypeEngine::iconName(core.icon())};
 }
 
-std::string Service::forget(const std::string &id) { return engine_->forget(langFromId(id)); }
+std::string Service::forget(const std::string &id) {
+  if (id != "zh" && id != "ja") return "no language to forget: '" + id + "' (zh or ja)";  // English learns nothing
+  return engine_->forget(langFromId(id));
+}
 
 void Service::setLanguage(const std::string &id) {
   engine_->core().selectLanguage(langFromId(id));

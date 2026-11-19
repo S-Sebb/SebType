@@ -13,7 +13,8 @@
 //                                                 no server runs), for the Configurator (#375); returns when done;
 //                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
 //                                                 didn't take the request, 5 Rime still busy after 5 minutes,
-//                                                 6 something learned couldn't be deleted (server.log says what)
+//                                                 6 something learned couldn't be deleted (server.log says what),
+//                                                 7 the server running is too old to forget
 #include <sebtype/core.h>
 #include <sebtype/hosts.h>
 
@@ -222,7 +223,11 @@ Reply handle(const Request &q, HANDLE pipe) {
       break;
   }
   Reply r = state(taken, commit);
-  if (Engine *e = core->running(q.lang)) r.langBusy = e->busy(), r.forgetError = e->forgetError();  // for /forget
+  if (Engine *e = core->running(q.lang)) {  // for /forget
+    r.forgets = q.op == Op::Forget;
+    r.langBusy = e->busy();
+    r.forgetError = e->forgetError();
+  }
   return r;
 }
 
@@ -378,6 +383,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (!up) return failed(3, "the server didn't answer");
   }
   if (!call(q, r, 5000, 60000)) return failed(4, "the server didn't take the request");
+  if (q.op == Op::Forget && !r.forgets) return failed(7, "the server can't forget (one before #375 still runs)");
   // Until Rime is done: setup's typing and the Configurator's next step need it. A forget waits for its engine
   // only, not for a sync's chores waiting until typing is idle (#373).
   for (DWORD start = GetTickCount(); q.op == Op::Forget ? r.langBusy : r.busy; Sleep(200)) {
