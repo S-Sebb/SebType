@@ -25,6 +25,8 @@ const HISTORY: [&str; 4] = ["segment.db", "boundary.db", ".history.db", "cform.d
 const LEARNED: &str = "mozc_learned.txt";
 const OTHERS_LEARNED: &str = "mozc_learned";
 const LEARNED_HEADER: &str = "# SebType mozc_learned 1\n"; // core's learned::kHeader
+/// When Japanese was last forgotten, in seconds since 1970: no pick from before it is learned again.
+const FORGOTTEN: &str = "mozc_learned.forgotten";
 /// The parts of speech the window offers (State.ja-pos), as Mozc's PosType values.
 pub const POS: [u64; 6] = [1, 4, 5, 9, 8, 15]; // 名詞 固有名詞 人名 地名 組織 顔文字
 
@@ -266,8 +268,9 @@ pub fn learned(dir: &Path) -> usize {
 }
 
 /// Deletes Mozc's history files, with no Mozc running (Linux without Fcitx5); how many there were. As
-/// SebType's Mozc forgets (core/src/mozc_inprocess.cpp): the record of what was picked here is emptied, and
-/// the other devices' are kept as learned, so only what they pick from now on comes back (#409).
+/// SebType's Mozc forgets (core/src/mozc_inprocess.cpp): the record of what was picked here is emptied, the
+/// other devices' are kept as learned, and the time is kept, so only what any device picks from now on comes
+/// back (#409).
 #[cfg_attr(windows, allow(dead_code))]
 pub fn forget(dir: &Path) -> io::Result<usize> {
     let mut n = 0;
@@ -280,6 +283,10 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
     }
     if dir.is_dir() {
         write_file(&dir.join(LEARNED), LEARNED_HEADER)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        write_file(&dir.join(FORGOTTEN), now.to_string())?;
     }
     for (name, text) in others_learned(dir) {
         write_file(
@@ -592,6 +599,11 @@ mod tests {
         assert_eq!(forget(&d).unwrap(), 1);
         assert!(!d.join(HISTORY[0]).exists());
         assert_eq!(fs::read_to_string(d.join(LEARNED)).unwrap(), LEARNED_HEADER);
+        let forgotten: u64 = fs::read_to_string(d.join(FORGOTTEN))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(forgotten > 1_700_000_000);
         assert_eq!(
             fs::read_to_string(d.join(OTHERS_LEARNED).join("phone.applied")).unwrap(),
             phone

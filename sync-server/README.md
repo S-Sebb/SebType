@@ -47,15 +47,15 @@ come back to the others, and what it deletes stays deleted only there.
 When you convert a reading in Japanese and pick another candidate than the first, Mozc learns it and puts
 it first next time. Mozc's own files keep only hashes of what it learned, so SebType's Mozc also keeps a
 record of your picks, `mozc_learned.txt` in Mozc's folder: a `# SebType mozc_learned 1` line, then one
-`reading<TAB>written<TAB>time` line per pick, its most recent 5,000. The sync uploads it when it changed and
-puts the other devices' records in `mozc_learned/<device>.txt` beside it; when Mozc next starts it learns
+`reading<TAB>written<TAB>time` line per pick, at most its most recent 5,000. The sync uploads it when it changed
+and puts the other devices' records in `mozc_learned/<device>.txt` beside it (none over 1 MB); when Mozc next starts it learns
 each reading another device picked something for since, every pick known for it in time order, so the
 latest pick comes first on every device. Only the pick is learned, not the words around it, which Mozc
 also learns from on the device you typed on.
 
 - Learning off: nothing new is recorded, and other devices' picks are still learned, as from a private field.
-- Forget (Japanese): empties this device's record, which the next sync uploads so, and marks the other
-  devices' records as learned: what they picked before doesn't come back, only what they pick after.
+- Forget (Japanese): empties this device's record, which the next sync uploads so, and keeps when you forgot:
+  no pick from before it, on any device, is learned here again, only what is picked after.
 - A server from before #409 refuses the file; the PC syncs the rest without it.
 
 English words sync as before: a device takes in only the words another device's file gained since it

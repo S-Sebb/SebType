@@ -236,7 +236,7 @@ class Server(unittest.TestCase):
     def test_learned_conversions_sync_as_each_devices_record(self):
         """#409: a PC's record of the conversions picked in Mozc goes up as it is, only when it changed;
         another device's comes down next to it, for Mozc to learn; a server from before #409, which
-        keeps no record, still syncs the rest."""
+        keeps no record, still syncs the rest; one larger than Mozc takes in isn't downloaded."""
         self.call("DELETE", "/v1/files")
         client = s.Client(self.url, "alice", "made-up-pass")
         device, sync_dir = s.rime_installation(self.rime_dirs("pc-0009")[0])
@@ -262,6 +262,13 @@ class Server(unittest.TestCase):
         with open(os.path.join(mozc, "mozc_learned", "phone-0010.txt"), "rb") as f:
             self.assertEqual(f.read(), phone)
         self.assertEqual(s.pull(client, device, sync_dir, db), (0, 0, 0, 0))
+        # One past what Mozc takes in isn't downloaded at all.
+        big = b"# SebType mozc_learned 1\n" + b"x" * s.MAX_LEARNED
+        self.call("PUT", "/v1/files/phone-0011/mozc_learned.txt", big)
+        self.assertEqual(s.pull(client, device, sync_dir, db), (0, 0, 0, 0))
+        self.assertFalse(
+            os.path.exists(os.path.join(mozc, "mozc_learned", "phone-0011.txt"))
+        )
 
         with open(os.path.join(mozc, s.LEARNED_FILE), "ab") as f:
             f.write("もふしゃ\t模府社\t200\n".encode())

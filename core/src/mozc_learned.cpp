@@ -34,19 +34,42 @@ bool earlier(const Ordered &x, const Ordered &y) {
          : *std::get<1>(x) != *std::get<1>(y) ? *std::get<1>(x) < *std::get<1>(y)
                                               : *std::get<2>(x) < *std::get<2>(y);
 }
-}  // namespace
 
-std::string format(const Record &record) {
+std::vector<Ordered> ordered(const Record &record) {
   std::vector<Ordered> picks;
   for (const auto &[pick, time] : record) picks.emplace_back(time, &pick.second, &pick.first);
   std::sort(picks.begin(), picks.end(), earlier);
-  const size_t from = picks.size() > kMost ? picks.size() - kMost : 0;
-  std::string text(kHeader);
+  return picks;
+}
+
+std::string lines(const std::vector<Ordered> &picks, size_t from) {
+  std::string text;
   for (size_t i = from; i < picks.size(); ++i) {
     const auto &[time, value, key] = picks[i];
     text.append(*key).append("\t").append(*value).append("\t").append(std::to_string(time)).append("\n");
   }
   return text;
+}
+}  // namespace
+
+std::string format(const Record &record, size_t most) {
+  const std::vector<Ordered> picks = ordered(record);
+  return std::string(kHeader) + lines(picks, picks.size() > most ? picks.size() - most : 0);
+}
+
+Record accept(std::string_view text) {
+  if (text.size() > kMaxBytes) return {};
+  Record record = parse(text);
+  return record.size() <= kMost ? record : parse(format(record));
+}
+
+Recorded record(std::string_view file, const Record &picks) {
+  const size_t count = static_cast<size_t>(std::count(file.begin(), file.end(), '\n'));  // with the header's
+  if (file.starts_with(kHeader) && count - 1 + picks.size() <= kMost) return {lines(ordered(picks), 0), false};
+  Record whole = parse(file);
+  for (const auto &[pick, time] : picks) add(whole, pick.first, pick.second, time);
+  // Grown past kMost: cut back further, so the next picks append for a while again.
+  return {format(whole, file.starts_with(kHeader) ? kKeep : kMost), true};
 }
 
 void add(Record &record, const std::string &key, const std::string &value, int64_t time) {
@@ -54,11 +77,16 @@ void add(Record &record, const std::string &key, const std::string &value, int64
   if (!added) it->second = std::max(it->second, time);
 }
 
-std::vector<Pick> toLearn(const Record &own, const std::vector<std::pair<Record, Record>> &others, int64_t now) {
-  Record all = own;
+std::vector<Pick> toLearn(const Record &own, const std::vector<std::pair<Record, Record>> &others, int64_t forgotten,
+                          int64_t now) {
+  Record all;
   std::set<std::string> fresh;
-  for (const auto &[now, learned] : others) {
-    for (const auto &[pick, time] : now) {
+  for (const auto &[pick, time] : own) {
+    if (time > forgotten) add(all, pick.first, pick.second, time);
+  }
+  for (const auto &[record, learned] : others) {
+    for (const auto &[pick, time] : record) {
+      if (time <= forgotten) continue;
       add(all, pick.first, pick.second, time);
       const auto it = learned.find(pick);
       if (it == learned.end() || it->second < time) fresh.insert(pick.first);
@@ -69,10 +97,13 @@ std::vector<Pick> toLearn(const Record &own, const std::vector<std::pair<Record,
     if (fresh.contains(pick.first)) picks.emplace_back(time, &pick.second, &pick.first);
   }
   std::sort(picks.begin(), picks.end(), earlier);
-  std::vector<Pick> out;
-  for (const auto &[time, value, key] : picks) {
-    const int64_t at = std::min(time, now);
-    out.push_back({*key, *value, out.empty() ? at : std::max(at, out.back().time + 1)});
+  std::vector<Pick> out(picks.size());
+  // From the latest back: each at its own time, but before the one after it and never after now.
+  int64_t next = now + 1;
+  for (size_t i = picks.size(); i-- > 0;) {
+    const auto &[time, value, key] = picks[i];
+    next = std::min(time, next - 1);
+    out[i] = {*key, *value, next};
   }
   return out;
 }

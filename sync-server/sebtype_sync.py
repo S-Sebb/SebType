@@ -60,6 +60,7 @@ ZH_FILE = "zh_my_words.userdb.txt"
 # The conversions a device's user picked in Mozc (#409): its record, which SebType's Mozc keeps in Mozc's
 # folder (core/src/mozc_learned.h) and learns the other devices' records from, in mozc_learned/<device>.txt.
 LEARNED_FILE, LEARNED_DIR = "mozc_learned.txt", "mozc_learned"
+MAX_LEARNED = 1 << 20  # core's learned::kMaxBytes: a larger record isn't taken in
 MAX_FILE = 64 << 20  # a userdb snapshot of years of typing is a few MB
 CRASH = re.compile(r"crash-\d{8}-\d{6}-[0-9a-f]{6}\.txt")
 MAX_CRASH = 256 << 10  # a report is a stack trace and 200 log lines, a few dozen KB
@@ -778,6 +779,7 @@ def pull(client, device, sync_dir, mozc_db=None, rime_dir=None):
             or not (NAME.fullmatch(f["device"]) and synced(name))
             or name == WORDS_FILE
             or (name in (MOZC_FILE, LEARNED_FILE) and not mozc_db)
+            or (name == LEARNED_FILE and f.get("size", 0) > MAX_LEARNED)
             or (name == ZH_FILE and not rime_dir)
         ):
             continue

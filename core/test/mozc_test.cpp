@@ -132,16 +132,17 @@ TEST(MozcLearnedTest, TheSameReadingPickedDifferentlyOnTwoDevicesEndsTheSameOnBo
   const learned::Record phone{{{"きしゃ", "汽車"}, 100}, {{"せいか", "聖火"}, 20}};
   using P = learned::Pick;
   // On the PC, the phone's picks: that reading's picks oldest first, the PC's own later one last.
-  EXPECT_EQ(learned::toLearn(pc, {{phone, {}}}, 1000),
+  EXPECT_EQ(learned::toLearn(pc, {{phone, {}}}, 0, 1000),
             (std::vector<P>{{"せいか", "聖火", 20}, {"きしゃ", "汽車", 100}, {"きしゃ", "帰社", 200}}));
   // On the phone, the PC's: the same order for きしゃ.
-  EXPECT_EQ(learned::toLearn(phone, {{pc, {}}}, 1000),
+  EXPECT_EQ(learned::toLearn(phone, {{pc, {}}}, 0, 1000),
             (std::vector<P>{{"かんじ", "幹事", 10}, {"きしゃ", "汽車", 100}, {"きしゃ", "帰社", 200}}));
-  // At the same second, Mozc learns them a second apart; one from a clock ahead, at most now.
+  // At the same second, Mozc learns them a second apart, the earlier one a second back; one from a clock ahead,
+  // at most now.
   const learned::Record a{{{"きしゃ", "帰社"}, 300}}, b{{{"きしゃ", "記者"}, 300}};
-  EXPECT_EQ(learned::toLearn(a, {{b, {}}}, 1000), (std::vector<P>{{"きしゃ", "帰社", 300}, {"きしゃ", "記者", 301}}));
-  EXPECT_EQ(learned::toLearn(b, {{a, {}}}, 1000), (std::vector<P>{{"きしゃ", "帰社", 300}, {"きしゃ", "記者", 301}}));
-  EXPECT_EQ(learned::toLearn({}, {{a, {}}}, 250), (std::vector<P>{{"きしゃ", "帰社", 250}}));
+  EXPECT_EQ(learned::toLearn(a, {{b, {}}}, 0, 1000), (std::vector<P>{{"きしゃ", "帰社", 299}, {"きしゃ", "記者", 300}}));
+  EXPECT_EQ(learned::toLearn(b, {{a, {}}}, 0, 1000), (std::vector<P>{{"きしゃ", "帰社", 299}, {"きしゃ", "記者", 300}}));
+  EXPECT_EQ(learned::toLearn({}, {{a, {}}}, 0, 250), (std::vector<P>{{"きしゃ", "帰社", 250}}));
 }
 
 // Only picks newer than the copy last learned come in; what was learned before, or forgotten since (its record
@@ -149,9 +150,73 @@ TEST(MozcLearnedTest, TheSameReadingPickedDifferentlyOnTwoDevicesEndsTheSameOnBo
 TEST(MozcLearnedTest, OnlyNewPicksAreLearned) {
   const learned::Record before{{{"かんじ", "幹事"}, 10}};
   learned::Record now = before;
-  EXPECT_TRUE(learned::toLearn({}, {{now, before}}, 100).empty());
+  EXPECT_TRUE(learned::toLearn({}, {{now, before}}, 0, 100).empty());
   learned::add(now, "かんじ", "幹事", 30);  // picked again
   learned::add(now, "せいか", "聖火", 20);
-  EXPECT_EQ(learned::toLearn({}, {{now, before}}, 100),
+  EXPECT_EQ(learned::toLearn({}, {{now, before}}, 0, 100),
             (std::vector<learned::Pick>{{"せいか", "聖火", 20}, {"かんじ", "幹事", 30}}));
+}
+
+// A device that changed nothing since it was learned still counts: A learned C's Y at 300, then B's record brings
+// Y at 100 and X at 200, and Y stays first (#415 review).
+TEST(MozcLearnedTest, EveryDevicesRecordSettlesWhichPickWins) {
+  const learned::Record c{{{"よみ", "Y"}, 300}}, b{{{"よみ", "Y"}, 100}, {{"よみ", "X"}, 200}};
+  EXPECT_EQ(learned::toLearn({}, {{c, c}, {b, {}}}, 0, 1000),
+            (std::vector<learned::Pick>{{"よみ", "X", 200}, {"よみ", "Y", 300}}));
+}
+
+// After Forget (at 500), another device's earlier pick X stays forgotten when it later picks Y for the same
+// reading; picked again after the Forget, X comes back (Decisions #2, 2026-11-19).
+TEST(MozcLearnedTest, ForgottenPicksStayForgottenUntilPickedAgain) {
+  const learned::Record before{{{"よみ", "X"}, 400}};
+  learned::Record now = before;
+  learned::add(now, "よみ", "Y", 600);
+  EXPECT_EQ(learned::toLearn({}, {{now, before}}, 500, 1000), (std::vector<learned::Pick>{{"よみ", "Y", 600}}));
+  learned::Record again = now;
+  learned::add(again, "よみ", "X", 700);
+  EXPECT_EQ(learned::toLearn({}, {{again, now}}, 500, 1000),
+            (std::vector<learned::Pick>{{"よみ", "Y", 600}, {"よみ", "X", 700}}));
+  // This device's own picks from before the Forget are gone from its record; one after it counts.
+  EXPECT_EQ(learned::toLearn({{{"よみ", "Z"}, 450}, {{"よみ", "W"}, 800}}, {{now, before}}, 500, 1000),
+            (std::vector<learned::Pick>{{"よみ", "Y", 600}, {"よみ", "W", 800}}));
+}
+
+// Picks at or after now (now = 1000: at 1000 and later) are learned a second apart counting back from now, never
+// ahead of it: a real pick made after them still ranks above them (#415 review).
+TEST(MozcLearnedTest, NoPickIsLearnedAfterNow) {
+  const learned::Record r{{{"よみ", "A"}, 1000}, {{"よみ", "B"}, 1005}, {{"よみ", "C"}, 2000}};
+  EXPECT_EQ(learned::toLearn({}, {{r, {}}}, 0, 1000),
+            (std::vector<learned::Pick>{{"よみ", "A", 998}, {"よみ", "B", 999}, {"よみ", "C", 1000}}));
+  const learned::Record tie{{{"よみ", "A"}, 1000}, {{"よみ", "B"}, 1000}};
+  EXPECT_EQ(learned::toLearn({}, {{tie, {}}}, 0, 1000),
+            (std::vector<learned::Pick>{{"よみ", "A", 999}, {"よみ", "B", 1000}}));
+}
+
+// This device's record never passes kMost lines: a pick appends until then, and past it the record is rewritten
+// cut back to kKeep. Another device's record is taken in up to kMost picks, and not at all past kMaxBytes.
+TEST(MozcLearnedTest, RecordsStayWithinTheCap) {
+  learned::Record full;
+  for (int i = 0; i < static_cast<int>(learned::kMost); ++i) learned::add(full, "よみ" + std::to_string(i), "読", i);
+  const std::string text = learned::format(full);
+  const learned::Record pick{{{"きしゃ", "帰社"}, 99999}};
+  const learned::Recorded grown = learned::record(text, pick);
+  EXPECT_TRUE(grown.whole);
+  const learned::Record kept = learned::parse(grown.text);
+  EXPECT_EQ(kept.size(), learned::kKeep);
+  EXPECT_TRUE(kept.contains({"きしゃ", "帰社"}));
+  EXPECT_EQ(std::count(grown.text.begin(), grown.text.end(), '\n'), static_cast<long>(learned::kKeep) + 1);
+  learned::Record less = full;
+  less.erase({"よみ0", "読"});
+  const learned::Recorded appended = learned::record(learned::format(less), pick);
+  EXPECT_FALSE(appended.whole);
+  EXPECT_EQ(appended.text, "きしゃ\t帰社\t99999\n");
+  EXPECT_TRUE(learned::record("", pick).whole);  // a new record
+
+  learned::Record over = full;
+  for (int i = 0; i < 10; ++i) learned::add(over, "かな" + std::to_string(i), "仮", 100000 + i);
+  const learned::Record accepted = learned::accept(learned::format(over, learned::kMost + 10));
+  EXPECT_EQ(accepted.size(), learned::kMost);
+  EXPECT_TRUE(accepted.contains({"かな9", "仮"}));
+  EXPECT_FALSE(accepted.contains({"よみ0", "読"}));
+  EXPECT_TRUE(learned::accept(std::string(learned::kHeader) + std::string(learned::kMaxBytes, 'x') + "\n").empty());
 }
