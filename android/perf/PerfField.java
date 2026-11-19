@@ -34,7 +34,8 @@ import java.io.InputStream;
  * "chars" it starts with that much filler text, cursor at the end (the long-field case); the extra
  * "clip" copies that text just after it opens ("clipimage": a small PNG this app serves, #281), and "hidden"
  * keeps the keyboard down. "kind" makes it a password, PIN, visible-password, private, URL or email field, or
- * one that takes pasted images ("image": it then shows "image <type> <bytes>").
+ * one that takes pasted images ("image": it then shows "image <type> <bytes>"), or a one-line field with an
+ * app's own Enter action ("action": label "Pay", id 42; it then shows "action <id>", #381).
  * It records only the text length, as the Perfetto counter "sebperf_len", never the text.
  */
 public class PerfField extends Activity {
@@ -59,6 +60,10 @@ public class PerfField extends Activity {
             field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         } else if ("email".equals(kind)) {
             field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        } else if ("action".equals(kind)) {
+            field.setInputType(InputType.TYPE_CLASS_TEXT);
+            field.setImeActionLabel("Pay", 42);
+            field.setOnEditorActionListener((v, id, event) -> { v.setText("action " + id); return true; });
         }
         // No blinking cursor: every frame this app draws then comes from a text change.
         field.setCursorVisible(false);

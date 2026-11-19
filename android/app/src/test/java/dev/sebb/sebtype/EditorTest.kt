@@ -39,6 +39,8 @@ class EditorTest {
         var end = cursor
         /** The keyboard's reads of the field so far */
         var reads = 0
+        /** The editor actions the keyboard sent */
+        val actions = mutableListOf<Int>()
         var region: IntRange? = null
         /** An app that reports each edit's selection part-way too: the old text gone, the new not in yet */
         var intermediate = false
@@ -148,6 +150,7 @@ class EditorTest {
                 "setComposingText" -> true.also { replace(args[0].toString(), compose = true) }
                 "commitText" -> true.also { replace(args[0].toString(), compose = false) }
                 "finishComposingText" -> true.also { region = null; changed() }
+                "performEditorAction" -> true.also { actions += args[0] as Int }
                 else -> if (method.returnType == Boolean::class.javaPrimitiveType) true else null
             }
         } as InputConnection
@@ -990,5 +993,30 @@ class EditorTest {
         val same = ja.mozc("にほんご")
         assertFalse(ja.editor.engineUndo(same, same.preedit, "にほんご"))
         assertEquals("にほんご", ja.field.text)
+    }
+
+    /**
+     * #381: a field with an app's own action (actionLabel and actionId) gets that action on Enter, as the old app
+     * sent it; a standard action gets its own, and a multi-line field that asks for no action gets a newline.
+     */
+    @Test
+    fun enterSendsTheFieldsAction() {
+        fun enter(options: Int, label: String?): Pair<String, List<Int>> {
+            val field = Field("", 0)
+            val editor = Editor(null, field.connection)
+            val info = EditorInfo().apply {
+                inputType = InputType.TYPE_CLASS_TEXT
+                imeOptions = options
+                actionLabel = label
+                actionId = 42
+            }
+            editor.start(info, FieldKind.of(info))
+            editor.enter()
+            return field.text to field.actions
+        }
+        assertEquals("" to listOf(42), enter(EditorInfo.IME_ACTION_UNSPECIFIED, "Pay"))
+        assertEquals("" to listOf(42), enter(EditorInfo.IME_ACTION_DONE, "Pay"))
+        assertEquals("" to listOf(EditorInfo.IME_ACTION_SEARCH), enter(EditorInfo.IME_ACTION_SEARCH, null))
+        assertEquals("\n" to listOf<Int>(), enter(EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_ENTER_ACTION, "Pay"))
     }
 }

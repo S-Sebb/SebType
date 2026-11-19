@@ -215,7 +215,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         Code.DELETE -> Icon.DELETE
         Code.GLOBE -> Icon.GLOBE
         Code.ENTER -> when (enter) {
-            FieldKind.Enter.NEWLINE -> Icon.ENTER
+            FieldKind.Enter.NEWLINE, FieldKind.Enter.CUSTOM -> Icon.ENTER
             FieldKind.Enter.SEARCH -> Icon.SEARCH
             FieldKind.Enter.SEND -> Icon.SEND
             FieldKind.Enter.GO, FieldKind.Enter.NEXT -> Icon.NEXT
@@ -578,7 +578,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         Code.GLOBE -> context.getString(R.string.key_language)
         Code.SPACE -> context.getString(R.string.key_space)
         Code.ENTER -> context.getString(when (enter) {
-            FieldKind.Enter.NEWLINE -> R.string.key_enter
+            FieldKind.Enter.NEWLINE, FieldKind.Enter.CUSTOM -> R.string.key_enter
             FieldKind.Enter.SEARCH -> R.string.key_search
             FieldKind.Enter.SEND -> R.string.key_send
             FieldKind.Enter.GO -> R.string.key_go

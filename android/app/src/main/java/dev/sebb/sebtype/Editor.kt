@@ -515,9 +515,12 @@ class Editor(private val ime: InputMethodService?, private val target: InputConn
 
     fun enter() {
         engineCommit = ""
-        val action = info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
-        if (kind.enter != FieldKind.Enter.NEWLINE) ic?.performEditorAction(action)
-        else commit("\n")
+        when (kind.enter) {
+            FieldKind.Enter.NEWLINE -> commit("\n")
+            // The app's own action: its actionId, whatever it is (the old app's InputLogic)
+            FieldKind.Enter.CUSTOM -> ic?.performEditorAction(info!!.actionId)
+            else -> ic?.performEditorAction(info!!.imeOptions and EditorInfo.IME_MASK_ACTION)
+        }
     }
 
     /**
