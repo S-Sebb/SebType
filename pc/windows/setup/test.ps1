@@ -868,7 +868,7 @@ Set-Content '$login-code.txt' `$exit
           Plain "cmdkey /list 2>&1 | Out-File -Encoding utf8 '$out\after-uninstall.txt'" "$out\after-uninstall.txt"
           if (-not (Test-Path "$out\after-uninstall.txt")) { throw 'no Credential Manager listing after the uninstall' }
           $script:loginLeft = (Get-Content "$out\after-uninstall.txt" -Raw) -match 'target=.*login\.SebType sync'
-          $left += @('sync.json', 'sync.lock', 'sebtype_sync.py' | Where-Object { Test-Path "$env:LOCALAPPDATA\SebType\$_" })
+          $left += @('sync.json', 'sync.lock', 'schedule.lock', 'sebtype_sync.py' | Where-Object { Test-Path "$env:LOCALAPPDATA\SebType\$_" })
           if ($left) { throw "left after uninstall: $($left -join ', ')" }
           "synced first ($synced), the server's $files files kept; task and sync's files gone"
         }
