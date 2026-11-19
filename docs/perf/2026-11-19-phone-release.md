@@ -70,8 +70,16 @@ time in the EN set's trace, CPUs 0–3 (little) / 4–7 (big):
 
 Each run stayed on one side for its whole process: the fast and long sets and the 中 set ran on the
 same cores as that run's EN set. With nothing else busy, two of five runs still got the little cores.
-So the busy run's little cores needn't have come from the owner's apps. This is #62's placement,
-and these runs can't tell what sets it.
+So the busy run's little cores needn't have come from the owner's apps. This is #62's placement.
+
+What sets it ([#62](https://github.com/S-Sebb/SebType/issues/62#issuecomment-7012804195)): a
+keyboard process starts either in `top-app` (CPUs 0–7) or in Nothing's own cpuset `nt_foreground`,
+and it stays there for the whole life of the process. Google Play services and other Google system
+processes also run in `nt_foreground`. Its CPUs change: 0–3 during #62's runs, 0–7 when read again
+later that day. Of 10 fresh starts with the keyboard hidden, 6 landed in `nt_foreground`. An ADPF
+hint session and pinning the model's thread to CPUs 4–7 both left the thread on 0–3. The app can't
+leave the cpuset, so the owner released with this as a known limitation of the A001. Making English
+fast enough on the little cores is #406.
 
 - On the big cores the long field is fixed (#359): next words at the short field's 42 ms median, and
   17 of 18 spaces didn't wait (the one that did waited 81 ms). Its p95 is still 250 ms.
