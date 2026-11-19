@@ -11,9 +11,11 @@
 #endif
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -322,7 +324,7 @@ class Rime final : public Engine {
       return !ec;
     };
     const auto snapshot = [&](const fs::directory_entry &e) {
-      const std::string name = e.path().filename().string();
+      const std::string name = fileName(e.path());
       return name != "zh_my_words.userdb.txt" && e.is_regular_file(ec) &&
              (name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct"));
     };
@@ -330,7 +332,7 @@ class Rime final : public Engine {
     fs::recursive_directory_iterator it(dir, ec), end;
     if (ec == std::errc::no_such_file_or_directory) return {};  // a profile that never learned
     for (; !ec && it != end; it.increment(ec)) {
-      if (it->path().filename().string().ends_with(".userdb") && it->is_directory(ec)) {
+      if (fileName(it->path()).ends_with(".userdb") && it->is_directory(ec)) {
         if (!add(it->path())) break;
         it.disable_recursion_pending();
       } else if (snapshot(*it) && !add(it->path())) {
@@ -346,15 +348,18 @@ class Rime final : public Engine {
       if (!device->is_directory(ec)) continue;
       for (fs::directory_iterator file(device->path(), ec); !ec && file != fs::directory_iterator();
            file.increment(ec)) {
-        if (snapshot(*file) && file->path().extension() == ".txt" && rimeSnapshot(file->path()) && !add(file->path()))
-          break;
+        if (!snapshot(*file) || !fileName(file->path()).ends_with(".txt")) continue;
+        // One it can't read may be Rime's, and merge back once it can: not forgotten.
+        const std::optional<bool> rime = rimeSnapshot(file->path());
+        if (!rime) return failed(file->path(), "can't be read");
+        if (*rime && !add(file->path())) break;
       }
       if (ec) return failed(device->path(), ec.message());
     }
     if (ec && ec != std::errc::no_such_file_or_directory) return failed(sync, ec.message());
 
     for (const auto &p : learned) {
-      if (p.extension() == ".userdb") fs::remove_all(p, ec);
+      if (fileName(p).ends_with(".userdb")) fs::remove_all(p, ec);
       else fs::remove(p, ec);  // a link to a snapshot: the link
       if (ec) return failed(p, ec.message());  // one already gone is no error
     }
@@ -374,21 +379,42 @@ class Rime final : public Engine {
     if (!(yaml << in.rdbuf())) return "can't be read";
     RimeConfig config = {};
     if (!api_->config_load_string(&config, yaml.str().c_str())) return "isn't YAML";
-    // A null or no sync_dir is the default; any other scalar is a path to Rime.
+    // Only a null or no sync_dir is the default, and only a text a path, as the Configurator's rime.rs
+    // reads it; what Rime makes of the rest (a list or a map, or a file that isn't a mapping) isn't
+    // guessed. A tag or a key twice, which this API can't see, gives the path Rime itself takes.
+    const auto is = [&](auto begin, const char *key) {
+      RimeConfigIterator item;
+      const bool found = (api_->*begin)(&item, &config, key);
+      if (found) api_->config_end(&item);
+      return found;
+    };
+    const bool notPath = is(&RimeApi::config_begin_list, "sync_dir") || is(&RimeApi::config_begin_map, "sync_dir") ||
+                         is(&RimeApi::config_begin_list, "") || api_->config_get_cstring(&config, "");
     if (const char *v = api_->config_get_cstring(&config, "sync_dir")) sync = std::filesystem::u8path(v);
     api_->config_close(&config);
+    if (notPath) return "sync_dir isn't a path, or the file isn't a mapping";
     if (sync.is_absolute()) return {};
     const std::u8string u = sync.u8string();
     return "sync_dir '" + std::string(u.begin(), u.end()) + "' is relative, so the folder Rime syncs is unknown";
   }
 
-  // Whether a file starts as Rime writes a snapshot (TsvWriter, user_db.cc).
-  static bool rimeSnapshot(const std::filesystem::path &p) {
+  // Whether a file starts as Rime writes a snapshot (TsvWriter, user_db.cc); none when it can't be read.
+  static std::optional<bool> rimeSnapshot(const std::filesystem::path &p) {
     std::ifstream in(p);
     std::string line;
-    std::getline(in, line);
+    if (!in || (!std::getline(in, line) && in.bad())) return std::nullopt;
     if (line.ends_with('\r')) line.pop_back();
     return line == "# Rime user dictionary";
+  }
+
+  // A file's name as Rime's lookup matches it: in any case on Windows, whose folders ignore it.
+  static std::string fileName(const std::filesystem::path &p) {
+    const std::u8string u = p.filename().u8string();
+    std::string name(u.begin(), u.end());
+#ifdef _WIN32
+    std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
+#endif
+    return name;
   }
 
   void endSession() {
