@@ -1,6 +1,7 @@
 package dev.sebb.sebtype.settings
 
 import android.content.Context
+import android.content.Intent
 import android.database.ContentObserver
 import android.os.Bundle
 import android.os.Handler
@@ -22,6 +23,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -50,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.sebb.sebtype.Engines
 import dev.sebb.sebtype.R
+import dev.sebb.sebtype.Updates
 import dev.sebb.sebtype.data.Prefs
 import kotlinx.coroutines.flow.map
 
@@ -61,6 +64,8 @@ class SettingsActivity : ComponentActivity() {
     // Goes up when SebType is turned on or chosen, however that happens (Android's keyboard settings, the
     // picker, another app), so the wizard goes on or ends.
     private val changes = mutableIntStateOf(0)
+    // A screen to open on top, from an intent: About, from the update notification
+    private val opened = mutableStateOf<String?>(null)
     private val keyboards = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) { changes.intValue++ }
     }
@@ -72,12 +77,25 @@ class SettingsActivity : ComponentActivity() {
         for (name in listOf(Settings.Secure.DEFAULT_INPUT_METHOD, Settings.Secure.ENABLED_INPUT_METHODS)) {
             contentResolver.registerContentObserver(Settings.Secure.getUriFor(name), false, keyboards)
         }
-        setContent { PicnicTheme { App(changes.intValue) } }
+        if (savedInstanceState == null) installUpdate(intent)
+        setContent { PicnicTheme { App(changes.intValue, opened) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        installUpdate(intent)
+    }
+
+    private fun installUpdate(intent: Intent) {
+        if (!intent.getBooleanExtra(Updates.EXTRA_INSTALL, false)) return
+        opened.value = "about"
+        Updates.install(this)
     }
 
     override fun onResume() {
         super.onResume()
         changes.intValue++
+        Updates.resumed(this)
     }
 
     override fun onDestroy() {
@@ -138,7 +156,7 @@ fun setupRoute(saved: Int?, todaysApp: Boolean, atHome: Boolean): SetupRoute {
 }
 
 @Composable
-private fun App(changes: Int) {
+private fun App(changes: Int, opened: androidx.compose.runtime.MutableState<String?>) {
     val context = LocalContext.current
     val stack: SnapshotStateList<String> = rememberSaveable(
         saver = androidx.compose.runtime.saveable.listSaver(save = { it.toList() }, restore = { it.toMutableStateList() }),
@@ -152,6 +170,12 @@ private fun App(changes: Int) {
     val route = setupRoute(saved, todaysApp, stack.isEmpty())
     if (route.record != saved) LaunchedEffect(Unit) { Prefs.set(context, Prefs.SETUP, route.record) }
     if (route.setup) return Setup(state) { Prefs.set(context, Prefs.SETUP, Prefs.SETUP_DONE) }
+    opened.value?.let { screen ->
+        LaunchedEffect(screen) {
+            if (stack.lastOrNull() != screen) stack.add(screen)
+            opened.value = null
+        }
+    }
     BackHandler(stack.isNotEmpty()) { nav.back() }
     when (stack.lastOrNull()) {
         null -> Home(nav)
@@ -193,6 +217,10 @@ private fun Home(nav: Nav) {
             }
         }
         TryTyping()
+        // A newer release, as the notification shows it (#422)
+        if (Updates.available.collectAsState().value != null) Card {
+            UpdateItem(icon = { Badge(true) { Icon(Icons.Filled.Notifications, null, tint = Color.White) } })
+        }
         Card {
             NavItem(stringResource(R.string.sebtype_settings_languages),
                 Conf.languages().joinToString(" → ") { short.getValue(it) } + " · " +

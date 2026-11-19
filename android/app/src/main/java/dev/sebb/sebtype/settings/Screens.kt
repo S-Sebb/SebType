@@ -1,9 +1,15 @@
 package dev.sebb.sebtype.settings
 
+import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Column
@@ -47,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import dev.sebb.sebtype.BuildConfig
 import dev.sebb.sebtype.R
+import dev.sebb.sebtype.Updates
 import dev.sebb.sebtype.data.ChineseData
 import dev.sebb.sebtype.data.LearnedWords
 import dev.sebb.sebtype.data.Prefs
@@ -317,6 +324,60 @@ fun AboutScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_abou
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/S-Sebb/SebType/issues")))
         }
         NavItem(stringResource(R.string.sebtype_settings_credits), stringResource(R.string.settings_credits_subtitle)) { nav.go("credits") }
+    }
+    if (remember { Updates.enabled(context) }) {
+        SectionTag(stringResource(R.string.update_channel))
+        Card {
+            UpdateItem()
+            AutoUpdateSwitch()
+        }
+    }
+}
+
+/** The update (#422): a newer release to install, or the check for one */
+@Composable
+fun UpdateItem(icon: (@Composable () -> Unit)? = null) {
+    val context = LocalContext.current
+    val release by Updates.available.collectAsState()
+    val status by Updates.status.collectAsState()
+    val found = release
+    if (found != null) {
+        val subtitle = when (val s = status) {
+            is Updates.Status.Downloading -> stringResource(R.string.update_downloading, s.percent)
+            Updates.Status.NeedsPermission -> stringResource(R.string.update_allow)
+            Updates.Status.Installing -> stringResource(R.string.update_installing)
+            is Updates.Status.Failed -> stringResource(s.text, s.detail)
+            else -> stringResource(R.string.update_tap)
+        }
+        NavItem(stringResource(R.string.update_available, found.version), subtitle, icon, arrow = false) {
+            Updates.install(context as Activity)
+        }
+    } else {
+        val subtitle = stringResource(when (status) {
+            Updates.Status.Checking -> R.string.update_checking
+            Updates.Status.UpToDate -> R.string.update_up_to_date
+            Updates.Status.CheckFailed -> R.string.update_check_failed
+            else -> R.string.update_check_subtitle
+        })
+        NavItem(stringResource(R.string.update_check), subtitle, icon, arrow = false) { Updates.checkNow(context) }
+    }
+}
+
+/** The daily check's switch; Android 13+ asks to let it notify when someone first meets it or turns it on. */
+@Composable
+private fun AutoUpdateSwitch() {
+    val context = LocalContext.current
+    val on by Prefs.flow(context, Prefs.UPDATE_CHECK).collectAsState(Prefs[Prefs.UPDATE_CHECK])
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    fun askToNotify() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) ask.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    LaunchedEffect(Unit) { if (Prefs[Prefs.UPDATE_CHECK] && Updates.firstMet(context)) askToNotify() }
+    SwitchItem(stringResource(R.string.update_auto), stringResource(R.string.update_auto_subtitle), on) {
+        Prefs.set(context, Prefs.UPDATE_CHECK, it)
+        if (it) askToNotify()
     }
 }
 

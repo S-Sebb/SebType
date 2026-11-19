@@ -43,6 +43,8 @@ object Prefs {
     val DOUBLE_SPACE_PERIOD = Option(booleanPreferencesKey("pref_key_use_double_space_period"), true)
     val EMOJI_SUGGESTIONS = Option(booleanPreferencesKey("suggestEmojis"), true)
     val CLIPBOARD_HISTORY = Option(booleanPreferencesKey("enableClipboardHistory"), false)
+    /** The daily update check (#422), on as on the PCs */
+    val UPDATE_CHECK = Option(booleanPreferencesKey("sebtype_update_check"), true)
     /**
      * Setup's record (#285): none until the settings first open, [SETUP_TIPS_DUE] while setup runs, [SETUP_DONE]
      * after its last step's Done, or at once after an update over today's app ([setup]). [SETUP_UNSEEN] is a

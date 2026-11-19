@@ -163,6 +163,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 |---|---|
 | `android/test/emulator.sh` | The full emulator suite (below) |
 | `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
+| `android/test/update.sh` | The update check and install (#422) on the emulator, with a debug build and a made-up release served from this PC: About asks to notify, Check for updates finds it, the home screen's card, the request's headers, the daily job's notification, Install unknown apps, then Android's install prompt |
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
 | `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` on yanglab16 and loaded into Mozc here: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
 | `tools/test-hf-fetch.sh` | `tools/hf-fetch.sh` offline: a made-up token stays out of a `bash -x` trace and goes to the Hugging Face endpoint, not to the host it redirects to (#365) |

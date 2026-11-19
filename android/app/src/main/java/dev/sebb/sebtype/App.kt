@@ -6,7 +6,7 @@ import dev.sebb.sebtype.data.Prefs
 import dev.sebb.sebtype.sync.CrashReports
 import dev.sebb.sebtype.sync.Sync
 
-/** The keyboard's and the settings' process: crash reports, the update from today's app, the options and the sync. */
+/** The keyboard's and the settings' process: crash reports, the update from today's app, the options, the sync and the update check. */
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
@@ -15,5 +15,6 @@ class App : Application() {
         Migration.run(this)
         Prefs.watch(this)
         Sync.start(this)
+        Updates.start(this)
     }
 }

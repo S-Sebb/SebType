@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Only for the sync with the user's own server, over HTTPS (#12) -->
+    <!-- Only for the sync with the user's own server (#12) and the update check on GitHub (#422), over HTTPS -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The update check's notification and its install (#422); its daily job waits for a network, which
+         Android 14+ lets an app ask for only with ACCESS_NETWORK_STATE -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
@@ -62,5 +67,11 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- The daily update check and the installer's answers (#422) -->
+        <service
+            android:name=".UpdateJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name=".UpdateInstalled" android:exported="false" />
     </application>
 </manifest>
