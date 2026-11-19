@@ -271,10 +271,12 @@ fn save_with(dir: &Path, words: &[Word], orphans: &str) -> io::Result<bool> {
 }
 
 /// Adds a word to My words as they are now: the sync may have changed them since the window read them.
-pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
+/// Returns the list written, for the window to show.
+pub fn add_word(dir: &Path, word: Word) -> io::Result<Vec<Word>> {
     let mut all = words(dir);
     all.push(word);
-    save_words(dir, &all)
+    save_words(dir, &all)?;
+    Ok(all)
 }
 
 /// Changes the word at i in all, keeping what else its line has (crate::put_in_place); returns the comment
@@ -288,15 +290,22 @@ pub fn edit_in(all: &mut Vec<Word>, i: usize, mut new: Word) -> String {
     orphans
 }
 
-/// Changes the word at i of My words as shown (edit_in). Nothing changes, and false comes back, when My
-/// words are no longer as shown (the sync or another window changed them): i may be another word now.
-pub fn edit_word(dir: &Path, shown: &[Word], i: usize, new: Word) -> io::Result<bool> {
+/// Changes the word at i of My words as shown (edit_in), returning the list written. Nothing changes, and
+/// My words as they are now come back as Err, when they are no longer as shown (the sync or another
+/// window changed them): i may be another word now.
+pub fn edit_word(
+    dir: &Path,
+    shown: &[Word],
+    i: usize,
+    new: Word,
+) -> io::Result<Result<Vec<Word>, Vec<Word>>> {
     let mut all = words(dir);
     if all != shown {
-        return Ok(false);
+        return Ok(Err(all));
     }
     let orphans = edit_in(&mut all, i, new);
-    save_with(dir, &all, &orphans).map(|_| true)
+    save_with(dir, &all, &orphans)?;
+    Ok(Ok(all))
 }
 
 /// Removes the word at i of My words as shown, as edit_word.
@@ -572,20 +581,23 @@ mod tests {
         };
         let edit = |old: &Word, n, new| {
             let (shown, i) = at(old, n);
-            assert!(edit_word(&d, &shown, i, new).unwrap());
+            // The list written comes back, for the window to show.
+            assert_eq!(edit_word(&d, &shown, i, new).unwrap(), Ok(words(&d)));
         };
         let remove = |old: &Word, n| {
             let (shown, i) = at(old, n);
             assert!(remove_word(&d, &shown, i).unwrap());
         };
-        // Add and remove work on the file as the sync left it, not on the window's list.
+        // Add and remove work on the file as the sync left it, not on the window's list, and Add returns
+        // that file's list for the window to show.
         let other = Word {
             word: "噗莫".into(),
             pinyin: "pumo".into(),
             ..Default::default()
         };
-        add_word(&d, other.clone()).unwrap();
-        assert_eq!(words(&d), [w[0].clone(), other.clone()]);
+        let added = add_word(&d, other.clone()).unwrap();
+        assert_eq!(added, [w[0].clone(), other.clone()]);
+        assert_eq!(words(&d), added);
         remove(&w[0], 0);
         assert_eq!(words(&d), [other.clone()]);
         // Edit (#410) keeps the word's place; a word edited into one already there leaves one entry.
@@ -602,7 +614,11 @@ mod tests {
         // My words changed since they were shown (the sync took one out): Edit and Delete change nothing,
         // as the row may be another word now.
         let shown = [other.clone(), w[0].clone()];
-        assert!(!edit_word(&d, &shown, 1, lin.clone()).unwrap());
+        // Edit returns them as they are now, for the window to show behind the draft.
+        assert_eq!(
+            edit_word(&d, &shown, 1, lin.clone()).unwrap(),
+            Err(vec![w[0].clone()])
+        );
         assert!(!remove_word(&d, &shown, 1).unwrap());
         assert_eq!(words(&d), [w[0].clone()]);
         add_word(&d, lin.clone()).unwrap();
@@ -620,7 +636,7 @@ mod tests {
             ..Default::default()
         };
         edit(&lin, 0, lin2);
-        add_word(&d, other.clone()).unwrap();
+        assert_eq!(add_word(&d, other.clone()).unwrap(), words(&d));
         assert_eq!(
             read(&d.join(PHRASES)),
             format!("{head}{MARKER}\n# from the phone\n小明\txiaoming\t9\n小琳\txiaolin\n噗莫\tpumo\n# end\n")

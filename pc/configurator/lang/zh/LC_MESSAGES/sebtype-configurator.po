@@ -208,6 +208,9 @@ msgstr "删除"
 msgid "My words changed; try again"
 msgstr "我的词语已有变动，请再试一次"
 
+msgid "That word was removed meanwhile; your change is in Add"
+msgstr "这个词语刚被删除；你的修改已放在“添加”里"
+
 msgid "Edit"
 msgstr "编辑"
 

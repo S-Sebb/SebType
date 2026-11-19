@@ -196,10 +196,12 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
 }
 
 /// Adds a word to the dictionary as it is now: the sync may have changed it since the window read it.
-pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
+/// Returns the list written, for the window to show.
+pub fn add_word(dir: &Path, word: Word) -> io::Result<Vec<Word>> {
     let mut all = words(dir)?;
     all.push(word);
-    save_words(dir, &all)
+    save_words(dir, &all)?;
+    Ok(all)
 }
 
 /// Changes the word at i in all, keeping the entry's other fields (crate::put_in_place). A part of speech
@@ -214,16 +216,22 @@ pub fn edit_in(all: &mut Vec<Word>, i: usize, mut new: Word) {
     });
 }
 
-/// Changes the word at i of the dictionary as shown (edit_in). Nothing changes, and false comes back,
-/// when the dictionary is no longer as shown (the sync or another window changed it): i may be another
-/// word now.
-pub fn edit_word(dir: &Path, shown: &[Word], i: usize, new: Word) -> io::Result<bool> {
+/// Changes the word at i of the dictionary as shown (edit_in), returning the list written. Nothing
+/// changes, and the dictionary as it is now comes back as Err, when it is no longer as shown (the sync or
+/// another window changed it): i may be another word now.
+pub fn edit_word(
+    dir: &Path,
+    shown: &[Word],
+    i: usize,
+    new: Word,
+) -> io::Result<Result<Vec<Word>, Vec<Word>>> {
     let mut all = words(dir)?;
     if all != shown {
-        return Ok(false);
+        return Ok(Err(all));
     }
     edit_in(&mut all, i, new);
-    save_words(dir, &all).map(|_| true)
+    save_words(dir, &all)?;
+    Ok(Ok(all))
 }
 
 /// Removes the word at i of the dictionary as shown, as edit_word. Another entry of the same reading and
@@ -386,7 +394,10 @@ mod tests {
         };
         let edit = |old: &Word, n, new| {
             let (shown, i) = at(old, n);
-            assert!(edit_word(&d, &shown, i, new).unwrap());
+            assert_eq!(
+                edit_word(&d, &shown, i, new).unwrap(),
+                Ok(words(&d).unwrap())
+            );
         };
         let remove = |old: &Word, n| {
             let (shown, i) = at(old, n);
@@ -469,7 +480,9 @@ mod tests {
             0,
             word("もふ", "モフモフ", 1, None),
         );
-        add_word(&d, word("ぷる", "プル", 2, None)).unwrap();
+        // Add returns the list written, which the window keeps as shown: the next Edit must match it.
+        let added = add_word(&d, word("ぷる", "プル", 2, None)).unwrap();
+        assert_eq!(added, words(&d).unwrap());
         assert_eq!(
             words(&d).unwrap(),
             [
@@ -518,7 +531,10 @@ mod tests {
         // entries): the shown second row would now be the third, so Edit and Delete change nothing.
         let shown = [with("一"), with("二"), with("三")];
         save_words(&d, &shown[1..]).unwrap();
-        assert!(!edit_word(&d, &shown, 1, word("もふ", "モフー", 0, None)).unwrap());
+        assert_eq!(
+            edit_word(&d, &shown, 1, word("もふ", "モフー", 0, None)).unwrap(),
+            Err(shown[1..].to_vec())
+        );
         assert!(!remove_word(&d, &shown, 1).unwrap());
         assert_eq!(words(&d).unwrap(), shown[1..]);
         fs::remove_dir_all(&d).unwrap();

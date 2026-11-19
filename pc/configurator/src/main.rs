@@ -309,7 +309,7 @@ fn show_ja(ui: &Ui, words: Vec<mozc::Word>) {
     *ui.ja_shown.borrow_mut() = words;
 }
 
-/// The outcome of an Edit or Delete in the file: when My words had changed since they were shown, nothing
+/// The outcome of a Delete in the file: when My words had changed since they were shown, nothing
 /// was saved, and the lists show them as they are now.
 fn saved_or_reload(weak: &slint::Weak<AppWindow>, saved: bool) -> Result<(), Toast> {
     if saved {
@@ -317,6 +317,35 @@ fn saved_or_reload(weak: &slint::Weak<AppWindow>, saved: bool) -> Result<(), Toa
     }
     let _ = weak.upgrade_in_event_loop(|_| with_ui(show_words));
     Err(say(Msg::WordsChanged))
+}
+
+/// The outcome of an Edit in the file, for the window: saved, the list written shows and the editor
+/// closes. Otherwise the lists show My words as they are now and the editor stays open, with its draft,
+/// on the row edited, for Save to try again; when that row is gone, the draft goes into Add (to_add).
+fn edited<W: PartialEq + Send + 'static>(
+    weak: &slint::Weak<AppWindow>,
+    outcome: Result<Vec<W>, Vec<W>>,
+    old: W,
+    show: fn(&Ui, Vec<W>),
+    set_editing: fn(&State, i32),
+    to_add: impl FnOnce(&State) + Send + 'static,
+) -> Result<(), Toast> {
+    let (list, row, refused) = match outcome {
+        Ok(list) => (list, -1, None),
+        Err(now) => match now.iter().position(|w| *w == old) {
+            Some(k) => (now, k as i32, Some(Msg::WordsChanged)),
+            None => (now, -1, Some(Msg::WordGone)),
+        },
+    };
+    let _ = weak.upgrade_in_event_loop(move |app| {
+        let s = app.global::<State>();
+        with_ui(|ui| show(ui, list));
+        set_editing(&s, row);
+        if refused == Some(Msg::WordGone) {
+            to_add(&s);
+        }
+    });
+    refused.map_or(Ok(()), |m| Err(say(m)))
 }
 
 /// Puts new at i as the only entry of its word: a word edited into one already there takes that one's
@@ -684,10 +713,12 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut all = ui.zh_shown.borrow().clone();
             all.push(w.clone());
             show_zh(&ui, all);
+            let weak = weak.clone();
             run(Box::new(move || {
-                sync::words_locked(|| rime::add_word(&platform::rime_dir(), w))
+                let all = sync::words_locked(|| rime::add_word(&platform::rime_dir(), w))
                     .and_then(|r| r)
                     .map_err(err)?;
+                let _ = weak.upgrade_in_event_loop(|_| with_ui(|ui| show_zh(ui, all)));
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::SavedZh))
             }));
@@ -700,7 +731,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let pinyin = rime::normalize_pinyin(&code);
             if !rime::valid_word(&word, &pinyin) {
                 toast(&weak.unwrap(), say(Msg::PinyinLettersOnly));
-                return false;
+                return;
             }
             let new = rime::Word {
                 word: word.trim().into(),
@@ -708,20 +739,27 @@ fn main() -> Result<(), slint::PlatformError> {
                 ..Default::default()
             };
             let (shown, i) = (ui.zh_shown.borrow().clone(), i as usize);
-            let mut all = shown.clone();
-            rime::edit_in(&mut all, i, new.clone());
-            show_zh(&ui, all);
             let weak = weak.clone();
             run(Box::new(move || {
-                let saved =
+                let draft = new.clone();
+                let outcome =
                     sync::words_locked(|| rime::edit_word(&platform::rime_dir(), &shown, i, new))
                         .and_then(|r| r)
                         .map_err(err)?;
-                saved_or_reload(&weak, saved)?;
+                edited(
+                    &weak,
+                    outcome,
+                    shown[i].clone(),
+                    show_zh,
+                    |s, row| s.set_zh_editing(row),
+                    move |s| {
+                        s.set_zh_add_word(draft.word.into());
+                        s.set_zh_add_code(draft.pinyin.into());
+                    },
+                )?;
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::SavedZh))
             }));
-            true
         }
     });
     s.on_remove_zh_word({
@@ -759,10 +797,12 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut all = ui.ja_shown.borrow().clone();
             all.push(w.clone());
             show_ja(&ui, all);
+            let weak = weak.clone();
             run(Box::new(move || {
-                sync::words_locked(|| mozc::add_word(&platform::mozc_dir(), w))
+                let all = sync::words_locked(|| mozc::add_word(&platform::mozc_dir(), w))
                     .and_then(|r| r)
                     .map_err(err)?;
+                let _ = weak.upgrade_in_event_loop(|_| with_ui(|ui| show_ja(ui, all)));
                 platform::restart_mozc();
                 Ok(say(Msg::SavedJa))
             }));
@@ -774,7 +814,7 @@ fn main() -> Result<(), slint::PlatformError> {
         move |i, reading, word, pos| {
             if !mozc::valid_word(&reading, &word) {
                 toast(&weak.unwrap(), say(Msg::ReadingHiraganaOnly));
-                return false;
+                return;
             }
             let new = mozc::Word {
                 reading: reading.into(),
@@ -783,20 +823,28 @@ fn main() -> Result<(), slint::PlatformError> {
                 ..Default::default()
             };
             let (shown, i) = (ui.ja_shown.borrow().clone(), i as usize);
-            let mut all = shown.clone();
-            mozc::edit_in(&mut all, i, new.clone());
-            show_ja(&ui, all);
             let weak = weak.clone();
             run(Box::new(move || {
-                let saved =
+                let draft = new.clone();
+                let outcome =
                     sync::words_locked(|| mozc::edit_word(&platform::mozc_dir(), &shown, i, new))
                         .and_then(|r| r)
                         .map_err(err)?;
-                saved_or_reload(&weak, saved)?;
+                edited(
+                    &weak,
+                    outcome,
+                    shown[i].clone(),
+                    show_ja,
+                    |s, row| s.set_ja_editing(row),
+                    move |s| {
+                        s.set_ja_add_reading(draft.reading.into());
+                        s.set_ja_add_word(draft.word.into());
+                        s.set_ja_add_pos(draft.pos as i32);
+                    },
+                )?;
                 platform::restart_mozc();
                 Ok(say(Msg::SavedJa))
             }));
-            true
         }
     });
     s.on_word_matches(|query, word, code| {

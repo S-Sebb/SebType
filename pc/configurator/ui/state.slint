@@ -9,7 +9,7 @@ export struct JaWord { reading: string, word: string, pos: int }
 export enum Msg {
     none, applied, zh-redeployed, ja-next-time, theme-next-time, saved-zh, saved-ja, deleted-zh, deleted,
     nothing-learned, forgotten, exported, imported, not-a-backup, pinyin-letters-only,
-    reading-hiragana-only, words-changed, failed, sync-deleted, sync-delete-failed,
+    reading-hiragana-only, words-changed, word-gone, failed, sync-deleted, sync-delete-failed,
 }
 
 // What sync's switch says under it, as the phone's (ChineseSync.Status).
@@ -31,8 +31,17 @@ export global State {
     in-out property <bool> zh-emoji: true;
     in-out property <[Fuzzy]> fuzzy;
     in-out property <[ZhWord]> zh-words;
+    // My words' Add fields, and the row being edited (-1: none): an Edit that couldn't be saved stays
+    // open, or goes into the Add fields when its word is gone (main.rs).
+    in-out property <string> zh-add-word;
+    in-out property <string> zh-add-code;
+    in-out property <int> zh-editing: -1;
     in-out property <bool> ja-half-space;
     in-out property <[JaWord]> ja-words;
+    in-out property <string> ja-add-reading;
+    in-out property <string> ja-add-word;
+    in-out property <int> ja-add-pos;
+    in-out property <int> ja-editing: -1;
     // mozc::POS's order
     out property <[string]> ja-pos: [@tr("Noun"), @tr("Proper noun"), @tr("Person"), @tr("Place"), @tr("Organization"), @tr("Emoticon")];
 
@@ -59,11 +68,11 @@ export global State {
     callback zh-changed();
     callback fuzzy-changed(int, bool);
     callback add-zh-word(string, string) -> bool;
-    callback edit-zh-word(int, string, string) -> bool;   // row, word, pinyin; false: not saved
+    callback edit-zh-word(int, string, string);   // row, word, pinyin: the editor closes once it's saved
     callback remove-zh-word(int);
     callback ja-changed();
     callback add-ja-word(string, string, int) -> bool;
-    callback edit-ja-word(int, string, string, int) -> bool;
+    callback edit-ja-word(int, string, string, int);
     callback remove-ja-word(int);
     // My words' search: whether a word or its pinyin or reading has the text typed (all match "")
     pure callback word-matches(string, string, string) -> bool;
