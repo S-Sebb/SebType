@@ -28,8 +28,9 @@ fi
 mkdir -p "$TASK_OUT"
 setup_dir=$(mktemp -d "$TASK_OUT/release-setup.XXXXXX")
 trap 'rm -rf "$setup_dir"' EXIT
-run=$(gh run list --workflow windows-setup.yml --commit "$head" --status success --json databaseId \
-  -q '.[0].databaseId // empty')
+# Only main's own runs: a pull_request run reports its head's SHA but builds the merge with its base branch.
+run=$(gh run list --workflow windows-setup.yml --branch main --commit "$head" --status success --json databaseId,event \
+  -q '[.[] | select(.event == "push" or .event == "workflow_dispatch")][0].databaseId // empty')
 [[ -n $run ]] || { echo "release: no successful Windows setup run for $head (gh workflow run windows-setup.yml --ref main)" >&2; exit 1; }
 gh run download "$run" -n sebtype-setup -D "$setup_dir" >/dev/null ||
   { echo "release: run $run has no sebtype-setup artifact (expired?); run windows-setup.yml on main again" >&2; exit 1; }
