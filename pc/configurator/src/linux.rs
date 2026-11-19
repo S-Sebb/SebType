@@ -414,13 +414,14 @@ pub fn redeploy_rime_when_idle() -> io::Result<()> {
     }
     Ok(())
 }
-pub fn restart_mozc_when_idle() {
+pub fn restart_mozc_when_idle() -> io::Result<()> {
     if fcitx_running() {
-        let _ = controller(
+        controller(
             "SetConfig",
             &["sv", "fcitx://config/addon/sebtype/mozc-when-idle", "s", ""],
-        );
+        )?;
     }
+    Ok(())
 }
 
 /// Rime's sync, which SebType's input method runs when Fcitx5 saves: it merges the other devices' snapshots into

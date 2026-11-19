@@ -22,7 +22,8 @@ const ASCII_PUNCT: &str = "switches/@1/reset";
 const TRADITIONAL: &str = "switches/@2/reset";
 const EMOJI: &str = "switches/@3/reset";
 const ALGEBRA: &str = "speller/algebra/+";
-const LEARN: &str = "translator/enable_user_dict"; // only removed (drop_old_learning)
+/// An older Configurator's learning off (#374), as it wrote it: only removed (drop_old_learning).
+const OLD_LEARNING_OFF: &str = "translator/enable_user_dict: false  # SebType: don't learn";
 const PAGE_SIZE: &str = "menu/page_size";
 /// SebType's page size on the PCs (Decisions #2, #163), which the setup scripts write into
 /// default.custom.yaml; rime-ice's default.yaml has 5.
@@ -120,10 +121,13 @@ pub fn load(dir: &Path) -> Chinese {
     }
 }
 
-/// Learning off as an older Configurator wrote it, which hid the learned words too (#374). Learning is
-/// sebtype.conf's now (crate::conf); only drop_old_learning removes this, once sebtype.conf holds it.
+/// Learning off as an older Configurator wrote it, which hid the learned words too (#374): known by its
+/// comment, as an enable_user_dict someone wrote themselves is theirs. Learning is sebtype.conf's now
+/// (crate::conf); only drop_old_learning removes this, once sebtype.conf holds it.
 pub fn old_learning_off(dir: &Path) -> bool {
-    patch::value(&read(&dir.join(SCHEMA_PATCH)), LEARN) == Some("false")
+    read(&dir.join(SCHEMA_PATCH))
+        .lines()
+        .any(|l| l.trim() == OLD_LEARNING_OFF)
 }
 /// True when there was one (Rime then needs a redeploy).
 pub fn drop_old_learning(dir: &Path) -> io::Result<bool> {
@@ -131,7 +135,12 @@ pub fn drop_old_learning(dir: &Path) -> io::Result<bool> {
         return Ok(false);
     }
     let path = dir.join(SCHEMA_PATCH);
-    write(&path, &patch::set(&read(&path), &[LEARN], &[]))
+    let text = read(&path);
+    let kept: Vec<&str> = text
+        .lines()
+        .filter(|l| l.trim() != OLD_LEARNING_OFF)
+        .collect();
+    write(&path, &format!("{}\n", kept.join("\n")))
 }
 
 fn page_size(defaults_patch: &str) -> i32 {
@@ -456,7 +465,7 @@ mod tests {
         assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
         // An older Configurator's learning off (#374): another setting's save keeps it, as learning may
         // not be in sebtype.conf yet; drop_old_learning removes it.
-        let old = format!("{setup}  {LEARN}: false  # SebType: don't learn\n");
+        let old = format!("{setup}  {OLD_LEARNING_OFF}\n");
         fs::write(d.join(SCHEMA_PATCH), &old).unwrap();
         assert!(old_learning_off(&d));
         assert!(!save(
@@ -472,6 +481,12 @@ mod tests {
         assert!(!old_learning_off(&d));
         assert!(!drop_old_learning(&d).unwrap());
         assert_eq!(read(&d.join(SCHEMA_PATCH)), setup);
+        // One written by hand, without SebType's comment, is the person's own: kept (#374).
+        let own = format!("{setup}  translator/enable_user_dict: false\n");
+        fs::write(d.join(SCHEMA_PATCH), &own).unwrap();
+        assert!(!old_learning_off(&d));
+        assert!(!drop_old_learning(&d).unwrap());
+        assert_eq!(read(&d.join(SCHEMA_PATCH)), own);
         fs::remove_dir_all(&d).unwrap();
     }
 

@@ -276,8 +276,8 @@ pub fn sync_rime(_own: &Path) -> io::Result<()> {
 pub fn redeploy_rime_when_idle() -> io::Result<()> {
     server("/deploy-when-idle")
 }
-pub fn restart_mozc_when_idle() {
-    let _ = server("/mozc-when-idle");
+pub fn restart_mozc_when_idle() -> io::Result<()> {
+    server("/mozc-when-idle")
 }
 
 const SYNC_TASK: &str = "SebType sync";

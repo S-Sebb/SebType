@@ -4,6 +4,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod conf;
+mod migrate;
 mod mozc;
 mod patch;
 mod proto;
@@ -160,23 +161,30 @@ fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
 /// input method has the choice, or the engine it restarts would learn.
 fn apply_learning(on: bool) -> std::io::Result<()> {
     platform::set_learning(on)?;
-    if mozc::drop_old_learning(&platform::mozc_dir())? {
-        platform::restart_mozc();
-    }
-    if rime::drop_old_learning(&platform::rime_dir())? {
-        platform::redeploy_rime()?;
-    }
-    Ok(())
+    drop_old_learning()
+}
+/// The engines read their settings again once typing is idle, as a sync's pull has them do (#373): a
+/// start of the Configurator, or a scheduled sync, keeps what is being typed.
+fn drop_old_learning() -> std::io::Result<()> {
+    let pending = platform::sebtype_dir().join("learning-migration-pending");
+    migrate::drop_old(
+        &platform::rime_dir(),
+        &platform::mozc_dir(),
+        &pending,
+        |e| match e {
+            migrate::Engine::Rime => platform::redeploy_rime_when_idle(),
+            migrate::Engine::Mozc => platform::restart_mozc_when_idle(),
+        },
+    )
 }
 /// An older Configurator's learning off moves into sebtype.conf (#374): at every start, before anything
-/// saves Rime's or Mozc's settings, and from setup (--migrate) on an upgrade.
+/// saves Rime's or Mozc's settings, and from setup (--migrate) on an upgrade. A refresh left from one that
+/// didn't finish is retried.
 fn migrate_learning() -> std::io::Result<()> {
-    if rime::old_learning_off(&platform::rime_dir())
-        || mozc::old_learning_off(&platform::mozc_dir())
-    {
-        apply_learning(false)?;
+    if migrate::old_learning_off(&platform::rime_dir(), &platform::mozc_dir()) {
+        return apply_learning(false);
     }
-    Ok(())
+    drop_old_learning()
 }
 
 fn set_langs_model(app: &AppWindow, ui: &Ui, list: Vec<(String, bool)>) {
@@ -216,11 +224,7 @@ fn load(app: &AppWindow, ui: &Ui) {
     s.set_zh_emoji(c.emoji);
     s.set_page_size(c.page_size.clamp(5, 9));
     // Off too while an older Configurator's learning off stays (its migration failed).
-    s.set_learn(
-        platform::learning()
-            && !rime::old_learning_off(&rime_dir)
-            && !mozc::old_learning_off(&mozc_dir),
-    );
+    s.set_learn(platform::learning() && !migrate::old_learning_off(&rime_dir, &mozc_dir));
     s.set_ja_half_space(j.half_width_space);
     ui.fuzzy.set_vec(
         (0..rime::FUZZY.len())
