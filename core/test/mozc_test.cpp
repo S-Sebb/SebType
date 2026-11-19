@@ -45,6 +45,8 @@ struct FakeMozc : MozcTransport {
   bool open() const override { return true; }
   bool loading() const override { return false; }
   void reload() override {}
+  void forget() override {}
+  std::string forgetError() const override { return {}; }
   int undos() const { return static_cast<int>(std::count(commands.begin(), commands.end(), SessionCommand::UNDO)); }
 };
 FakeMozc *fake = nullptr;
