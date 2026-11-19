@@ -2,7 +2,7 @@
 //! SebType's installer (pc/windows/setup, #73). The candidate window's look is sebtype.conf's
 //! [Candidates], learning its [Learning]; the languages are the Windows user language list.
 
-use crate::{conf, Candidates};
+use crate::{conf, write_file, Candidates};
 use std::{
     env, fs, io,
     os::windows::process::CommandExt,
@@ -166,13 +166,7 @@ pub fn candidates() -> Candidates {
 /// sebtype.conf with `change` made; true when it changed.
 fn edit_conf(change: impl FnOnce(&str) -> String) -> io::Result<bool> {
     let old = fs::read_to_string(conf_path()).unwrap_or_default();
-    let new = change(&old);
-    if new == old {
-        return Ok(false);
-    }
-    fs::create_dir_all(conf_path().parent().unwrap())?;
-    fs::write(conf_path(), new)?;
-    Ok(true)
+    write_file(&conf_path(), change(&old))
 }
 
 /// The text service reads the window's look when it next shows it: nothing to restart.

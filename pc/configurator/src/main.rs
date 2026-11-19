@@ -46,6 +46,36 @@ struct Backup {
     candidates: Candidates,
     chinese_words: Vec<rime::Word>,
     japanese_words: Vec<mozc::Word>,
+    /// The Privacy switch (#374). A backup from before it has it as chinese.learn and japanese.learn.
+    learning: Option<bool>,
+}
+
+/// A backup's settings, learning from an older one's engine settings.
+fn parse_backup(text: &str) -> serde_json::Result<Backup> {
+    let v: serde_json::Value = serde_json::from_str(text)?;
+    let old = ["chinese", "japanese"]
+        .iter()
+        .find_map(|e| v[e]["learn"].as_bool());
+    let mut b: Backup = serde_json::from_value(v)?;
+    b.learning = b.learning.or(old);
+    Ok(b)
+}
+
+/// Writes `data` unless the file already holds it; true when it wrote. Through a file renamed over it, so a
+/// write cut off leaves the old file whole: never one cut short.
+pub fn write_file(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<bool> {
+    let data = data.as_ref();
+    if std::fs::read(path).ok().as_deref() == Some(data) {
+        return Ok(false);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".sebtype-tmp");
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(true)
 }
 
 fn lang_row(id: &str, on: bool) -> Lang {
@@ -290,8 +320,7 @@ fn import() -> Result<Option<Backup>, Toast> {
     else {
         return Ok(None);
     };
-    let b: Backup =
-        serde_json::from_str(&std::fs::read_to_string(path).map_err(err)?).map_err(err)?;
+    let b = parse_backup(&std::fs::read_to_string(path).map_err(err)?).map_err(err)?;
     if b.sebtype_configurator != 1 {
         return Err(say(Msg::NotABackup));
     }
@@ -314,6 +343,7 @@ fn import() -> Result<Option<Backup>, Toast> {
     if !b.languages.is_empty() {
         platform::set_langs(&b.languages).map_err(err)?;
     }
+    apply_learning(b.learning.unwrap_or(true)).map_err(err)?;
     Ok(Some(b))
 }
 
@@ -718,6 +748,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 candidates: candidates(&st),
                 chinese_words: zh_words(&ui),
                 japanese_words: mozc::words(&platform::mozc_dir()).unwrap_or_default(),
+                learning: Some(st.get_learn()),
             };
             let file = st.get_backup_file().into();
             run(Box::new(move || export(b, file)));
@@ -805,6 +836,33 @@ fn reload_after_import(app: &AppWindow, languages: Vec<(String, bool)>) {
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, fs, path::Path};
+
+    /// Learning goes in a backup and comes back (#374), from an older one's chinese.learn and japanese.learn too.
+    #[test]
+    fn a_backup_keeps_learning() {
+        let parse = |text: &str| super::parse_backup(text).unwrap().learning;
+        for on in [false, true] {
+            let b = super::Backup {
+                sebtype_configurator: 1,
+                learning: Some(on),
+                ..Default::default()
+            };
+            assert_eq!(parse(&serde_json::to_string(&b).unwrap()), Some(on));
+        }
+        let old = |learn| {
+            format!(
+                r#"{{"sebtype_configurator":1,"chinese":{{"traditional":true,"learn":{learn}}},"japanese":{{"half_width_space":true,"learn":{learn}}}}}"#
+            )
+        };
+        let b = super::parse_backup(&old(false)).unwrap();
+        assert_eq!(b.learning, Some(false));
+        assert!(b.chinese.traditional && b.japanese.half_width_space);
+        assert_eq!(parse(&old(true)), Some(true));
+        // Japanese only (no Rime folder when it was made).
+        let ja = r#"{"sebtype_configurator":1,"japanese":{"learn":false}}"#;
+        assert_eq!(parse(ja), Some(false));
+        assert_eq!(parse(r#"{"sebtype_configurator":1}"#), None);
+    }
 
     /// What the window shows the same in every language: names, keys, licences and the sample candidates.
     #[rustfmt::skip]

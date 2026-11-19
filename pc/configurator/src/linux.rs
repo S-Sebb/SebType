@@ -2,7 +2,7 @@
 //! pc/linux/setup-ime.sh. A running Fcitx5 is told over D-Bus (busctl); without one, the files are
 //! written and read when it starts.
 
-use crate::{conf, Candidates};
+use crate::{conf, write_file, Candidates};
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
@@ -188,17 +188,6 @@ fn ini_set(text: &str, key: &str, value: &str) -> String {
     out.join("\n") + "\n"
 }
 
-fn write_if_changed(path: &PathBuf, text: &str) -> io::Result<bool> {
-    if fs::read_to_string(path).ok().as_deref() == Some(text) {
-        return Ok(false);
-    }
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    fs::write(path, text)?;
-    Ok(true)
-}
-
 // --- Languages: SebType's settings, in Super+Space order (the first is home) ---
 
 /// SebType's three languages, those on first in their order, then those off. Without settings all are on.
@@ -233,7 +222,7 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
 /// sebtype.conf with `change` made; the input method reads it again when it changed.
 fn set_settings(change: impl FnOnce(&str) -> String) -> io::Result<()> {
     let old = fs::read_to_string(settings()).unwrap_or_default();
-    if write_if_changed(&settings(), &change(&old))? {
+    if write_file(&settings(), &change(&old))? {
         reload_addon("sebtype");
     }
     Ok(())
@@ -248,7 +237,7 @@ pub fn learning() -> bool {
 /// add-on doesn't (#374); Fcitx5 not running reads it when it starts.
 pub fn set_learning(on: bool) -> io::Result<()> {
     let path = settings();
-    write_if_changed(
+    write_file(
         &path,
         &conf::set_learning(&fs::read_to_string(&path).unwrap_or_default(), on),
     )?;
@@ -292,7 +281,7 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
     if c.picnic {
         fs::create_dir_all(theme_dir())?;
         for (name, text) in picnic_files(c.font_size) {
-            theme_changed |= write_if_changed(&theme_dir().join(name), &text)?;
+            theme_changed |= write_file(&theme_dir().join(name), &text)?;
         }
         if current.0.as_deref() != Some(PICNIC) {
             // Remember the system look, for 系统样式 and for setup-ime.sh --undo-configurator.
@@ -317,7 +306,7 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
             &ini_get(&prev, "DarkTheme").unwrap_or("default".into()),
         );
     }
-    let changed = write_if_changed(&path, &ui)? | theme_changed;
+    let changed = write_file(&path, &ui)? | theme_changed;
     if changed {
         reload_addon("classicui");
     }
@@ -648,7 +637,7 @@ pub fn schedule(on: bool) -> io::Result<()> {
     let units = sync_units(&env::current_exe()?);
     if on {
         for (name, text) in &units {
-            write_if_changed(&dir.join(name), text)?;
+            write_file(&dir.join(name), text)?;
         }
         systemctl(&["daemon-reload"])?;
         return systemctl(&["enable", "--now", SYNC_TIMER, SYNC_PATH]);

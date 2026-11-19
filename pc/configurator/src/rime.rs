@@ -1,7 +1,7 @@
 //! Chinese (rime-ice in Rime's user folder): the settings as patch entries, the user's own words in
 //! custom_phrase.txt, and forgetting learned words. The same files and rules as the phone (#41).
 
-use crate::patch;
+use crate::{patch, write_file};
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
@@ -91,17 +91,6 @@ fn read(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_default()
 }
 
-/// Writes `text` unless the file already holds it; true when it wrote.
-fn write(path: &Path, text: &str) -> io::Result<bool> {
-    if read(path) == text {
-        return Ok(false);
-    }
-    let tmp = path.with_extension("sebtype-tmp");
-    fs::write(&tmp, text)?;
-    fs::rename(&tmp, path)?;
-    Ok(true)
-}
-
 pub fn load(dir: &Path) -> Chinese {
     let schema = read(&dir.join(SCHEMA_PATCH));
     let rules = patch::block(&schema, ALGEBRA);
@@ -140,7 +129,7 @@ pub fn drop_old_learning(dir: &Path) -> io::Result<bool> {
         .lines()
         .filter(|l| l.trim() != OLD_LEARNING_OFF)
         .collect();
-    write(&path, &format!("{}\n", kept.join("\n")))
+    write_file(&path, &format!("{}\n", kept.join("\n")))
 }
 
 fn page_size(defaults_patch: &str) -> i32 {
@@ -177,7 +166,7 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     let schema = read(&path);
     let mut changed = false;
     if path.exists() || !entries.is_empty() {
-        changed |= write(
+        changed |= write_file(
             &path,
             &patch::set(
                 &schema,
@@ -190,7 +179,7 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     let defaults = read(&path);
     if page_size(&defaults) != c.page_size {
         let line = format!("  {PAGE_SIZE}: {}", c.page_size);
-        changed |= write(&path, &patch::set(&defaults, &[PAGE_SIZE], &[line]))?;
+        changed |= write_file(&path, &patch::set(&defaults, &[PAGE_SIZE], &[line]))?;
     }
     Ok(changed)
 }
@@ -245,7 +234,7 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     for w in words {
         text.push_str(&format!("{}\t{}\n", w.word.trim(), w.pinyin));
     }
-    write(&path, &text)
+    write_file(&path, &text)
 }
 
 /// Adds a word to My words as they are now: the sync may have changed them since the window read them.

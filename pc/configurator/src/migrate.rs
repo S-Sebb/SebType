@@ -1,7 +1,7 @@
 //! An older Configurator's learning off (#374), which hid the learned words: rime-ice's enable_user_dict
 //! and Mozc's NO_HISTORY. It moves to sebtype.conf, and the engines read their settings again.
 
-use crate::{mozc, rime};
+use crate::{mozc, rime, write_file};
 use std::{fs, io, path::Path};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -68,8 +68,7 @@ fn write_pending(pending: &Path, todo: &[Engine]) -> io::Result<()> {
         .filter(|(e, _)| todo.contains(e))
         .map(|(_, n)| *n)
         .collect();
-    fs::create_dir_all(pending.parent().unwrap())?;
-    fs::write(pending, names.join("\n") + "\n")
+    write_file(pending, names.join("\n") + "\n").map(|_| ())
 }
 
 #[cfg(test)]

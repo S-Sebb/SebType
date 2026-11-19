@@ -2,7 +2,7 @@
 //! in user_dictionary.db (My words, with the words the sync brings), and forgetting the input history. Field numbers are Mozc's
 //! protocol/config.proto and protocol/user_dictionary_storage.proto.
 
-use crate::proto;
+use crate::{proto, write_file};
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::Path};
 
@@ -34,16 +34,6 @@ fn read(path: &Path) -> io::Result<Vec<u8>> {
     }
 }
 
-fn write(path: &Path, data: &[u8]) -> io::Result<bool> {
-    if read(path)? == data {
-        return Ok(false);
-    }
-    let tmp = path.with_extension("sebtype-tmp");
-    fs::write(&tmp, data)?;
-    fs::rename(&tmp, path)?;
-    Ok(true)
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Japanese {
@@ -72,7 +62,7 @@ pub fn drop_old_learning(dir: &Path) -> io::Result<bool> {
         return Ok(false);
     }
     let path = dir.join(CONFIG);
-    write(
+    write_file(
         &path,
         &proto::set_varint(&read(&path)?, HISTORY_LEARNING_LEVEL, None).map_err(bad)?,
     )
@@ -84,7 +74,7 @@ pub fn save(dir: &Path, j: &Japanese) -> io::Result<bool> {
     let cfg = read(&path)?;
     let cfg = proto::set_varint(&cfg, SPACE_CHARACTER_FORM, j.half_width_space.then_some(2))
         .map_err(bad)?;
-    write(&path, &cfg)
+    write_file(&path, &cfg)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -181,7 +171,7 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
         dict.extend(proto::bytes_field(4, &e));
     }
     out.extend(proto::bytes_field(2, &dict));
-    write(&path, &out)
+    write_file(&path, &out)
 }
 
 /// Adds a word to the dictionary as it is now: the sync may have changed it since the window read it.
