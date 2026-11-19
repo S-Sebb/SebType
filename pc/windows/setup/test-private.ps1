@@ -70,9 +70,9 @@ function Field($private) {
   $tsf::Away($true); $tsf::Settle(500); $tsf::Away($false); $tsf::Settle(500)
 }
 function Typed { Keys @args; $t = $tsf::Text(); $tsf::Clear(); $t }
-$words = @{  # the first candidate, the fourth picked and the third
-  zh = { Typed s h i s h i space }, { Typed s h i s h i 4 }, { Typed s h i s h i 3 }
-  ja = { Typed k i s h a space Return }, { Typed k i s h a space space space space Return }, { Typed k i s h a space space space Return }
+$words = @{  # the first candidate, the fourth picked, the third and the second
+  zh = { Typed s h i s h i space }, { Typed s h i s h i 4 }, { Typed s h i s h i 3 }, { Typed s h i s h i 2 }
+  ja = { Typed k i s h a space Return }, { Typed k i s h a space space space space Return }, { Typed k i s h a space space space Return }, { Typed k i s h a space space Return }
 }
 # The Configurator's Privacy switch (#374), as its window sets it.
 function Learning($on) {
@@ -85,9 +85,11 @@ $tsf::Start()
 try {
   foreach ($lang in 'zh', 'ja') {
     Lang $lang
-    $first, $fourth, $third = $words[$lang]
+    $first, $fourth, $third, $second = $words[$lang]
     if ($lang -eq 'zh') { Keys n i; Start-Sleep 3; Keys Escape; $tsf::Clear() }  # the first key starts the server
-    Field $false; $top = & $first
+    Field $false
+    if ($lang -eq 'ja') { for ($i = 0; $i -lt 30 -and (& $first) -cmatch '^[a-z ]*$'; $i++) { Start-Sleep 1 } }  # Mozc loads at its first key (#312)
+    $top = & $first
     Field $true; $picked = & $fourth
     Check "$lang-private-pick" { if (-not $picked -or $picked -eq $top) { throw "the 4th candidate gave '$picked' (first '$top')" }; $picked }
     Check "$lang-private-learns-nothing" { $t = & $first; if ($t -ne $top) { throw "first is '$t', want '$top'" }; $t }
@@ -102,7 +104,11 @@ try {
     Check "$lang-learning-off-pick" { if (-not $other -or $other -eq $picked) { throw "the 3rd candidate gave '$other' (first '$picked')" }; $other }
     Check "$lang-learning-off-learns-nothing" { First-Is $first $picked }
     Check "$lang-learning-on-keeps-learned" { Learning $true; First-Is $first $picked }
-    Check "$lang-learning-on-learns" { $t = & $third; if ($t -ne $other) { throw "the 3rd candidate gave '$t', want '$other'" }; First-Is $first $other }
+    # Learned, it moves up from 3rd (Rime may keep the word committed more often ahead of it).
+    Check "$lang-learning-on-learns" {
+      $t = & $third; if ($t -ne $other) { throw "the 3rd candidate gave '$t', want '$other'" }
+      $a, $b = (& $first), (& $second); if ($other -notin $a, $b) { throw "first two are '$a', '$b', want '$other' among them" }; "$a, $b"
+    }
   }
 
   if ($Browsers) {
