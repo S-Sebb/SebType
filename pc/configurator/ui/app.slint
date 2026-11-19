@@ -90,6 +90,8 @@ export component AppWindow inherits Window {
         if m == Msg.ja-next-time { return @tr("Applied · 日本語 takes it from the next time you type"); }
         if m == Msg.theme-next-time { return @tr("Applied · from the next time the candidate window opens"); }
         if m == Msg.saved-zh { return @tr("Saved · 中文 redeployed"); }
+        if m == Msg.word-gone { return @tr("That word was removed meanwhile; your change is in Add"); }
+        if m == Msg.words-changed { return @tr("My words changed; try again"); }
         if m == Msg.saved-ja { return @tr("Saved · 日本語 takes it from the next time you type"); }
         if m == Msg.deleted-zh { return @tr("Deleted · 中文 redeployed"); }
         if m == Msg.deleted { return @tr("Deleted"); }

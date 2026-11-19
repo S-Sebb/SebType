@@ -184,10 +184,23 @@ pub fn save(dir: &Path, c: &Chinese) -> io::Result<bool> {
     Ok(changed)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Word {
     pub word: String,
     pub pinyin: String,
+    /// What the line has after the pinyin (a weight, a comment), and the lines without a word just above
+    /// it (comments, blank lines): kept as they are when My words are saved (#410).
+    #[serde(skip)]
+    pub rest: String,
+    #[serde(skip)]
+    pub above: String,
+}
+
+impl Word {
+    /// The same word: its spelling and pinyin (what else its line has goes with it).
+    pub fn same(&self, other: &Word) -> bool {
+        (&self.word, &self.pinyin) == (&other.word, &other.pinyin)
+    }
 }
 
 /// The code Rime matches: lowercase pinyin letters only, so "Xiao Ming" and "xiao'ming" both work.
@@ -206,22 +219,34 @@ pub fn valid_word(word: &str, pinyin: &str) -> bool {
 }
 
 pub fn words(dir: &Path) -> Vec<Word> {
-    read(&dir.join(PHRASES))
-        .lines()
-        .skip_while(|l| *l != MARKER)
-        .skip(1)
-        .filter_map(|l| {
-            let mut parts = l.split('\t');
-            Some(Word {
-                word: parts.next()?.to_string(),
-                pinyin: parts.next()?.to_string(),
-            })
-        })
-        .collect()
+    my_words(&read(&dir.join(PHRASES))).0
+}
+
+/// The words after the marker, and the lines without a word after the last one.
+fn my_words(text: &str) -> (Vec<Word>, String) {
+    let (mut words, mut above) = (vec![], String::new());
+    for l in text.lines().skip_while(|l| *l != MARKER).skip(1) {
+        let mut parts = l.splitn(3, '\t');
+        match (parts.next(), parts.next()) {
+            (Some(word), Some(pinyin)) if !l.starts_with('#') => words.push(Word {
+                word: word.into(),
+                pinyin: pinyin.into(),
+                rest: parts.next().map_or(String::new(), |r| format!("\t{r}")),
+                above: std::mem::take(&mut above),
+            }),
+            _ => above.push_str(&format!("{l}\n")),
+        }
+    }
+    (words, above)
 }
 
 /// Saves the user's words after rime-ice's own phrases. Rime reads them when it starts (a redeploy).
 pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
+    save_with(dir, words, "")
+}
+
+/// save_words, with the comment lines of words taken out from the end (take_out) before the old end's.
+fn save_with(dir: &Path, words: &[Word], orphans: &str) -> io::Result<bool> {
     let path = dir.join(PHRASES);
     let old = read(&path);
     let mut text: String = old
@@ -232,23 +257,78 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     text.push_str(MARKER);
     text.push('\n');
     for w in words {
-        text.push_str(&format!("{}\t{}\n", w.word.trim(), w.pinyin));
+        text.push_str(&format!(
+            "{}{}\t{}{}\n",
+            w.above,
+            w.word.trim(),
+            w.pinyin,
+            w.rest
+        ));
     }
+    text.push_str(orphans);
+    text.push_str(&my_words(&old).1);
     write_file(&path, &text)
 }
 
 /// Adds a word to My words as they are now: the sync may have changed them since the window read them.
-pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
+/// Returns the list written, for the window to show.
+pub fn add_word(dir: &Path, word: Word) -> io::Result<Vec<Word>> {
     let mut all = words(dir);
     all.push(word);
-    save_words(dir, &all)
+    save_words(dir, &all)?;
+    Ok(all)
 }
 
-/// Removes a word from My words as they are now.
-pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
+/// Changes the word at i in all, keeping what else its line has (crate::put_in_place); returns the comment
+/// lines that go to the end of My words (take_out).
+pub fn edit_in(all: &mut Vec<Word>, i: usize, mut new: Word) -> String {
+    (new.rest, new.above) = (all[i].rest.clone(), all[i].above.clone());
+    let mut orphans = String::new();
+    crate::put_in_place(all, i, new, Word::same, |all, j| {
+        orphans.push_str(&take_out(all, j))
+    });
+    orphans
+}
+
+/// Changes the word at i of My words as shown (edit_in), returning the list written. Nothing changes, and
+/// My words as they are now come back as Err, when they are no longer as shown (the sync or another
+/// window changed them): i may be another word now.
+pub fn edit_word(
+    dir: &Path,
+    shown: &[Word],
+    i: usize,
+    new: Word,
+) -> io::Result<Result<Vec<Word>, Vec<Word>>> {
     let mut all = words(dir);
-    all.retain(|w| w != word);
-    save_words(dir, &all)
+    if all != shown {
+        return Ok(Err(all));
+    }
+    let orphans = edit_in(&mut all, i, new);
+    save_with(dir, &all, &orphans)?;
+    Ok(Ok(all))
+}
+
+/// Removes the word at i of My words as shown, as edit_word.
+pub fn remove_word(dir: &Path, shown: &[Word], i: usize) -> io::Result<bool> {
+    let mut all = words(dir);
+    if all != shown {
+        return Ok(false);
+    }
+    let orphans = take_out(&mut all, i);
+    save_with(dir, &all, &orphans).map(|_| true)
+}
+
+/// Takes out the entry at i. The comment lines above it stay, above the next entry, or else returned
+/// for the end of My words.
+pub fn take_out(all: &mut Vec<Word>, i: usize) -> String {
+    let w = all.remove(i);
+    match all.get_mut(i) {
+        Some(next) => {
+            next.above.insert_str(0, &w.above);
+            String::new()
+        }
+        None => w.above,
+    }
 }
 
 /// What Rime learned (its user dictionaries and their snapshots, and the snapshots in its sync folder, which
@@ -486,22 +566,123 @@ mod tests {
         let w = vec![Word {
             word: "小明".into(),
             pinyin: normalize_pinyin("Xiao'Ming"),
+            ..Default::default()
         }];
         save_words(&d, &w).unwrap();
         assert_eq!(words(&d), w);
-        // Add and remove work on the file as the sync left it, not on the window's list.
+        // The window's row: the nth entry the same as w, in My words as shown (read now).
+        let at = |w: &Word, n: usize| {
+            let shown = words(&d);
+            let i = (0..shown.len())
+                .filter(|&i| shown[i].same(w))
+                .nth(n)
+                .unwrap();
+            (shown, i)
+        };
+        let edit = |old: &Word, n, new| {
+            let (shown, i) = at(old, n);
+            // The list written comes back, for the window to show.
+            assert_eq!(edit_word(&d, &shown, i, new).unwrap(), Ok(words(&d)));
+        };
+        let remove = |old: &Word, n| {
+            let (shown, i) = at(old, n);
+            assert!(remove_word(&d, &shown, i).unwrap());
+        };
+        // Add and remove work on the file as the sync left it, not on the window's list, and Add returns
+        // that file's list for the window to show.
         let other = Word {
             word: "噗莫".into(),
             pinyin: "pumo".into(),
+            ..Default::default()
         };
-        add_word(&d, other.clone()).unwrap();
-        assert_eq!(words(&d), [w[0].clone(), other.clone()]);
-        remove_word(&d, &w[0]).unwrap();
-        assert_eq!(words(&d), [other]);
-        save_words(&d, &[]).unwrap();
+        let added = add_word(&d, other.clone()).unwrap();
+        assert_eq!(added, [w[0].clone(), other.clone()]);
+        assert_eq!(words(&d), added);
+        remove(&w[0], 0);
+        assert_eq!(words(&d), [other.clone()]);
+        // Edit (#410) keeps the word's place; a word edited into one already there leaves one entry.
+        add_word(&d, w[0].clone()).unwrap();
+        let lin = Word {
+            word: "小林".into(),
+            pinyin: "xiaolin".into(),
+            ..Default::default()
+        };
+        edit(&other, 0, lin.clone());
+        assert_eq!(words(&d), [lin.clone(), w[0].clone()]);
+        edit(&lin, 0, w[0].clone());
+        assert_eq!(words(&d), [w[0].clone()]);
+        // My words changed since they were shown (the sync took one out): Edit and Delete change nothing,
+        // as the row may be another word now.
+        let shown = [other.clone(), w[0].clone()];
+        // Edit returns them as they are now, for the window to show behind the draft.
+        assert_eq!(
+            edit_word(&d, &shown, 1, lin.clone()).unwrap(),
+            Err(vec![w[0].clone()])
+        );
+        assert!(!remove_word(&d, &shown, 1).unwrap());
+        assert_eq!(words(&d), [w[0].clone()]);
+        add_word(&d, lin.clone()).unwrap();
+        assert_eq!(words(&d), [w[0].clone(), lin.clone()]);
+        // What else the lines have (a weight, comments between them) stays through Edit and Add.
+        let head = "# rime-ice\n你好\tnihao\t1\n";
+        fs::write(
+            d.join(PHRASES),
+            format!("{head}{MARKER}\n# from the phone\n小明\txiaoming\t9\n小林\txiaolin\n# end\n"),
+        )
+        .unwrap();
+        let lin2 = Word {
+            word: "小琳".into(),
+            pinyin: "xiaolin".into(),
+            ..Default::default()
+        };
+        edit(&lin, 0, lin2);
+        assert_eq!(add_word(&d, other.clone()).unwrap(), words(&d));
         assert_eq!(
             read(&d.join(PHRASES)),
-            format!("# rime-ice\n你好\tnihao\t1\n{MARKER}\n")
+            format!("{head}{MARKER}\n# from the phone\n小明\txiaoming\t9\n小琳\txiaolin\n噗莫\tpumo\n# end\n")
+        );
+        save_words(&d, &[]).unwrap();
+        assert_eq!(read(&d.join(PHRASES)), format!("{head}{MARKER}\n# end\n"));
+        // Of two identical rows, Edit and Delete change the one chosen (its occurrence), with its own line.
+        let ming = w[0].clone();
+        let mings = format!("{head}{MARKER}\n小明\txiaoming\t1\n小明\txiaoming\t2\n");
+        fs::write(d.join(PHRASES), &mings).unwrap();
+        let min = Word {
+            word: "小敏".into(),
+            pinyin: "xiaomin".into(),
+            ..Default::default()
+        };
+        edit(&ming, 1, min);
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n小明\txiaoming\t1\n小敏\txiaomin\t2\n")
+        );
+        fs::write(d.join(PHRASES), &mings).unwrap();
+        remove(&ming, 1);
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n小明\txiaoming\t1\n")
+        );
+        // A comment line stays when the word under it goes: over the next word, or at the end.
+        let noted =
+            format!("{head}{MARKER}\n# section note\n小明\txiaoming\n# lin\n小林\txiaolin\n");
+        fs::write(d.join(PHRASES), &noted).unwrap();
+        remove(&ming, 0);
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n# section note\n# lin\n小林\txiaolin\n")
+        );
+        fs::write(d.join(PHRASES), &noted).unwrap();
+        edit(&lin, 0, ming.clone()); // 小林 into 小明, which goes
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n# section note\n# lin\n小明\txiaoming\n")
+        );
+        fs::write(d.join(PHRASES), &noted).unwrap();
+        remove(&lin, 0);
+        assert_eq!(
+            read(&d.join(PHRASES)),
+            format!("{head}{MARKER}\n# section note\n小明\txiaoming\n# lin\n")
         );
         assert!(
             valid_word("小明", "xiaoming")

@@ -97,6 +97,10 @@ struct Ui {
     fuzzy: Rc<VecModel<Fuzzy>>,
     zh_words: Rc<VecModel<ZhWord>>,
     ja_words: Rc<VecModel<JaWord>>,
+    // My words as the lists show them, with what else each entry has: Edit and Delete change the file
+    // only while it still holds them (rime::edit_word).
+    zh_shown: std::cell::RefCell<Vec<rime::Word>>,
+    ja_shown: std::cell::RefCell<Vec<mozc::Word>>,
 }
 
 thread_local! {
@@ -265,40 +269,99 @@ fn load(app: &AppWindow, ui: &Ui) {
             .collect::<Vec<_>>(),
     );
     refresh_fuzzy(app, ui);
-    ui.zh_words.set_vec(
-        rime::words(&rime_dir)
-            .into_iter()
-            .map(|w| ZhWord {
-                word: w.word.into(),
-                code: w.pinyin.into(),
-            })
-            .collect::<Vec<_>>(),
-    );
-    ui.ja_words.set_vec(
-        mozc::words(&mozc_dir)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|w| JaWord {
-                reading: w.reading.into(),
-                word: w.word.into(),
-                pos: w.pos as i32,
-            })
-            .collect::<Vec<_>>(),
-    );
+    show_words(ui);
     let k = platform::candidates();
     s.set_vertical(k.vertical);
     s.set_font_size(k.font_size);
     s.set_picnic(k.picnic);
 }
 
-fn zh_words(ui: &Ui) -> Vec<rime::Word> {
-    ui.zh_words
-        .iter()
-        .map(|w| rime::Word {
-            word: w.word.into(),
-            pinyin: w.code.into(),
-        })
-        .collect()
+/// Shows My words as the files hold them now.
+fn show_words(ui: &Ui) {
+    show_zh(ui, rime::words(&platform::rime_dir()));
+    show_ja(ui, mozc::words(&platform::mozc_dir()).unwrap_or_default());
+}
+
+fn show_zh(ui: &Ui, words: Vec<rime::Word>) {
+    ui.zh_words.set_vec(
+        words
+            .iter()
+            .map(|w| ZhWord {
+                word: w.word.as_str().into(),
+                code: w.pinyin.as_str().into(),
+            })
+            .collect::<Vec<_>>(),
+    );
+    *ui.zh_shown.borrow_mut() = words;
+}
+
+fn show_ja(ui: &Ui, words: Vec<mozc::Word>) {
+    ui.ja_words.set_vec(
+        words
+            .iter()
+            .map(|w| JaWord {
+                reading: w.reading.as_str().into(),
+                word: w.word.as_str().into(),
+                pos: w.pos as i32,
+            })
+            .collect::<Vec<_>>(),
+    );
+    *ui.ja_shown.borrow_mut() = words;
+}
+
+/// The outcome of a Delete in the file: when My words had changed since they were shown, nothing
+/// was saved, and the lists show them as they are now.
+fn saved_or_reload(weak: &slint::Weak<AppWindow>, saved: bool) -> Result<(), Toast> {
+    if saved {
+        return Ok(());
+    }
+    let _ = weak.upgrade_in_event_loop(|_| with_ui(show_words));
+    Err(say(Msg::WordsChanged))
+}
+
+/// The outcome of an Edit in the file, for the window: saved, the list written shows and the editor
+/// closes. Otherwise the lists show My words as they are now and the editor stays open, with its draft,
+/// on the row edited, for Save to try again; when that row is gone, the draft goes into Add (to_add).
+fn edited<W: PartialEq + Send + 'static>(
+    weak: &slint::Weak<AppWindow>,
+    outcome: Result<Vec<W>, Vec<W>>,
+    old: W,
+    show: fn(&Ui, Vec<W>),
+    set_editing: fn(&State, i32),
+    to_add: impl FnOnce(&State) + Send + 'static,
+) -> Result<(), Toast> {
+    let (list, row, refused) = match outcome {
+        Ok(list) => (list, -1, None),
+        Err(now) => match now.iter().position(|w| *w == old) {
+            Some(k) => (now, k as i32, Some(Msg::WordsChanged)),
+            None => (now, -1, Some(Msg::WordGone)),
+        },
+    };
+    let _ = weak.upgrade_in_event_loop(move |app| {
+        let s = app.global::<State>();
+        with_ui(|ui| show(ui, list));
+        set_editing(&s, row);
+        if refused == Some(Msg::WordGone) {
+            to_add(&s);
+        }
+    });
+    refused.map_or(Ok(()), |m| Err(say(m)))
+}
+
+/// Puts new at i as the only entry of its word: a word edited into one already there takes that one's
+/// place. remove takes out the others.
+fn put_in_place<T>(
+    all: &mut Vec<T>,
+    mut i: usize,
+    new: T,
+    same: impl Fn(&T, &T) -> bool,
+    mut remove: impl FnMut(&mut Vec<T>, usize),
+) {
+    all[i] = new;
+    while let Some(j) = (0..all.len()).find(|&j| j != i && same(&all[j], &all[i])) {
+        remove(all, j);
+        i -= usize::from(j < i);
+    }
 }
 
 fn export(backup: Backup, file: String) -> Result<Toast, Toast> {
@@ -475,6 +538,8 @@ fn main() -> Result<(), slint::PlatformError> {
         fuzzy: Rc::new(VecModel::default()),
         zh_words: Rc::new(VecModel::default()),
         ja_words: Rc::new(VecModel::default()),
+        zh_shown: Default::default(),
+        ja_shown: Default::default(),
     });
     let s = app.global::<State>();
     s.set_version(env!("CARGO_PKG_VERSION").into());
@@ -643,33 +708,74 @@ fn main() -> Result<(), slint::PlatformError> {
             let w = rime::Word {
                 word: word.trim().into(),
                 pinyin,
+                ..Default::default()
             };
-            ui.zh_words.push(ZhWord {
-                word: w.word.as_str().into(),
-                code: w.pinyin.as_str().into(),
-            });
+            let mut all = ui.zh_shown.borrow().clone();
+            all.push(w.clone());
+            show_zh(&ui, all);
+            let weak = weak.clone();
             run(Box::new(move || {
-                sync::words_locked(|| rime::add_word(&platform::rime_dir(), w))
+                let all = sync::words_locked(|| rime::add_word(&platform::rime_dir(), w))
                     .and_then(|r| r)
                     .map_err(err)?;
+                let _ = weak.upgrade_in_event_loop(|_| with_ui(|ui| show_zh(ui, all)));
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::SavedZh))
             }));
             true
         }
     });
-    s.on_remove_zh_word({
-        let (ui, run) = (ui.clone(), run.clone());
-        move |i| {
-            let w = ui.zh_words.remove(i as usize);
-            let w = rime::Word {
-                word: w.word.into(),
-                pinyin: w.code.into(),
+    s.on_edit_zh_word({
+        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        move |i, word, code| {
+            let pinyin = rime::normalize_pinyin(&code);
+            if !rime::valid_word(&word, &pinyin) {
+                toast(&weak.unwrap(), say(Msg::PinyinLettersOnly));
+                return;
+            }
+            let new = rime::Word {
+                word: word.trim().into(),
+                pinyin,
+                ..Default::default()
             };
+            let (shown, i) = (ui.zh_shown.borrow().clone(), i as usize);
+            let weak = weak.clone();
             run(Box::new(move || {
-                sync::words_locked(|| rime::remove_word(&platform::rime_dir(), &w))
-                    .and_then(|r| r)
-                    .map_err(err)?;
+                let draft = new.clone();
+                let outcome =
+                    sync::words_locked(|| rime::edit_word(&platform::rime_dir(), &shown, i, new))
+                        .and_then(|r| r)
+                        .map_err(err)?;
+                edited(
+                    &weak,
+                    outcome,
+                    shown[i].clone(),
+                    show_zh,
+                    |s, row| s.set_zh_editing(row),
+                    move |s| {
+                        s.set_zh_add_word(draft.word.into());
+                        s.set_zh_add_code(draft.pinyin.into());
+                    },
+                )?;
+                platform::redeploy_rime().map_err(err)?;
+                Ok(say(Msg::SavedZh))
+            }));
+        }
+    });
+    s.on_remove_zh_word({
+        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        move |i| {
+            let (shown, i) = (ui.zh_shown.borrow().clone(), i as usize);
+            let mut all = shown.clone();
+            rime::take_out(&mut all, i);
+            show_zh(&ui, all);
+            let weak = weak.clone();
+            run(Box::new(move || {
+                let saved =
+                    sync::words_locked(|| rime::remove_word(&platform::rime_dir(), &shown, i))
+                        .and_then(|r| r)
+                        .map_err(err)?;
+                saved_or_reload(&weak, saved)?;
                 platform::redeploy_rime().map_err(err)?;
                 Ok(say(Msg::DeletedZh))
             }));
@@ -686,32 +792,83 @@ fn main() -> Result<(), slint::PlatformError> {
                 reading: reading.into(),
                 word: word.trim().into(),
                 pos: pos as usize,
-                mozc_pos: None,
+                ..Default::default()
             };
-            ui.ja_words.push(JaWord {
-                reading: w.reading.as_str().into(),
-                word: w.word.as_str().into(),
-                pos,
-            });
+            let mut all = ui.ja_shown.borrow().clone();
+            all.push(w.clone());
+            show_ja(&ui, all);
+            let weak = weak.clone();
             run(Box::new(move || {
-                sync::words_locked(|| mozc::add_word(&platform::mozc_dir(), w))
+                let all = sync::words_locked(|| mozc::add_word(&platform::mozc_dir(), w))
                     .and_then(|r| r)
                     .map_err(err)?;
+                let _ = weak.upgrade_in_event_loop(|_| with_ui(|ui| show_ja(ui, all)));
                 platform::restart_mozc();
                 Ok(say(Msg::SavedJa))
             }));
             true
         }
     });
-    s.on_remove_ja_word({
-        let (ui, run) = (ui.clone(), run.clone());
-        move |i| {
-            let w = ui.ja_words.remove(i as usize);
-            let (reading, word) = (w.reading.to_string(), w.word.to_string());
+    s.on_edit_ja_word({
+        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        move |i, reading, word, pos| {
+            if !mozc::valid_word(&reading, &word) {
+                toast(&weak.unwrap(), say(Msg::ReadingHiraganaOnly));
+                return;
+            }
+            let new = mozc::Word {
+                reading: reading.into(),
+                word: word.trim().into(),
+                pos: pos as usize,
+                ..Default::default()
+            };
+            let (shown, i) = (ui.ja_shown.borrow().clone(), i as usize);
+            let weak = weak.clone();
             run(Box::new(move || {
-                sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &reading, &word))
-                    .and_then(|r| r)
-                    .map_err(err)?;
+                let draft = new.clone();
+                let outcome =
+                    sync::words_locked(|| mozc::edit_word(&platform::mozc_dir(), &shown, i, new))
+                        .and_then(|r| r)
+                        .map_err(err)?;
+                edited(
+                    &weak,
+                    outcome,
+                    shown[i].clone(),
+                    show_ja,
+                    |s, row| s.set_ja_editing(row),
+                    move |s| {
+                        s.set_ja_add_reading(draft.reading.into());
+                        s.set_ja_add_word(draft.word.into());
+                        s.set_ja_add_pos(draft.pos as i32);
+                    },
+                )?;
+                platform::restart_mozc();
+                Ok(say(Msg::SavedJa))
+            }));
+        }
+    });
+    s.on_word_matches(|query, word, code| {
+        let q = query.trim().to_lowercase();
+        let pinyin = rime::normalize_pinyin(&q); // "xiao ming" finds xiaoming
+        q.is_empty()
+            || word.to_lowercase().contains(&q)
+            || code.to_lowercase().contains(&q)
+            || (!pinyin.is_empty() && code.contains(&pinyin))
+    });
+    s.on_remove_ja_word({
+        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        move |i| {
+            let (shown, i) = (ui.ja_shown.borrow().clone(), i as usize);
+            let mut all = shown.clone();
+            all.remove(i);
+            show_ja(&ui, all);
+            let weak = weak.clone();
+            run(Box::new(move || {
+                let saved =
+                    sync::words_locked(|| mozc::remove_word(&platform::mozc_dir(), &shown, i))
+                        .and_then(|r| r)
+                        .map_err(err)?;
+                saved_or_reload(&weak, saved)?;
                 platform::restart_mozc();
                 Ok(say(Msg::Deleted))
             }));
@@ -746,7 +903,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 chinese: chinese(&st, &ui),
                 japanese: japanese(&st),
                 candidates: candidates(&st),
-                chinese_words: zh_words(&ui),
+                chinese_words: ui.zh_shown.borrow().clone(),
                 japanese_words: mozc::words(&platform::mozc_dir()).unwrap_or_default(),
                 learning: Some(st.get_learn()),
             };

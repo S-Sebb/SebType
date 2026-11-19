@@ -205,6 +205,24 @@ msgstr "添加"
 msgid "Delete"
 msgstr "删除"
 
+msgid "My words changed; try again"
+msgstr "我的词语已有变动，请再试一次"
+
+msgid "That word was removed meanwhile; your change is in Add"
+msgstr "这个词语刚被删除；你的修改已放在“添加”里"
+
+msgid "Edit"
+msgstr "编辑"
+
+msgid "Pinyin"
+msgstr "拼音"
+
+msgid "Search: word or pinyin"
+msgstr "搜索：词语或拼音"
+
+msgid "Search: word or reading"
+msgstr "搜索：单词或读音"
+
 msgid "Mozc's user dictionary. Readings are in hiragana, e.g. {}."
 msgstr "Mozc 的用户词典。读音用平假名，例如 {}。"
 

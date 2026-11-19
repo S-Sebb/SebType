@@ -193,30 +193,63 @@ component FuzzyPage inherits Page {
 component ZhWordsPage inherits Page {
     title: @tr("My words") + " · 中文";
     back: true;
-    property <string> word;
-    property <string> code;
+    property <string> query;
+    property <string> edit-word;
+    property <string> edit-code;
+    // The fields start empty each time the page opens, as the edit draft (this page's) does.
+    init => { State.zh-editing = -1; State.zh-add-word = ""; State.zh-add-code = ""; }
     Info { text: @tr("Your own words, such as names. They come first when you type their pinyin."); }
     Card {
         HorizontalLayout {
             padding: Theme.row-padding-x;
             spacing: 10px;
-            Field { text <=> root.word; placeholder: @tr("Word, e.g. {}", "小明"); horizontal-stretch: 1; }
-            Field { text <=> root.code; placeholder: @tr("Pinyin, e.g. {}", "xiaoming"); horizontal-stretch: 1; accepted => { add.clicked(); } }
+            Field { text <=> State.zh-add-word; placeholder: @tr("Word, e.g. {}", "小明"); horizontal-stretch: 1; }
+            Field { text <=> State.zh-add-code; placeholder: @tr("Pinyin, e.g. {}", "xiaoming"); horizontal-stretch: 1; accepted => { add.clicked(); } }
             add := Button {
                 text: @tr("Add");
                 primary: true;
-                enabled: root.word != "" && root.code != "";
-                clicked => { if State.add-zh-word(root.word, root.code) { root.word = ""; root.code = ""; } }
+                enabled: State.zh-add-word != "" && State.zh-add-code != "";
+                clicked => { if State.add-zh-word(State.zh-add-word, State.zh-add-code) { State.zh-add-word = ""; State.zh-add-code = ""; } }
             }
         }
     }
     if State.zh-words.length > 0: Card {
-        for w[i] in State.zh-words: Row {
-            title: w.word;
-            line-above: i > 0;
-            detail: w.code;
-            VerticalLayout { alignment: center;
-                Button { text: @tr("Delete"); clicked => { State.remove-zh-word(i); } }
+        HorizontalLayout {
+            padding: Theme.row-padding-x;
+            Field { text <=> root.query; placeholder: @tr("Search: word or pinyin"); }
+        }
+        for w[i] in State.zh-words: Rectangle {
+            property <bool> shown: State.word-matches(root.query, w.word, w.code);
+            visible: shown;
+            height: shown ? item.preferred-height : 0;
+            item := VerticalLayout {
+                if State.zh-editing != i: Row {
+                    title: w.word;
+                    line-above: true;
+                    detail: w.code;
+                    VerticalLayout { alignment: center;
+                        Button { text: @tr("Edit"); clicked => { root.edit-word = w.word; root.edit-code = w.code; State.zh-editing = i; } }
+                    }
+                    VerticalLayout { alignment: center;
+                        Button { text: @tr("Delete"); clicked => { State.zh-editing = -1; State.remove-zh-word(i); } }
+                    }
+                }
+                if State.zh-editing == i: Rectangle {
+                    Divider { y: 0; width: parent.width; }
+                    HorizontalLayout {
+                        padding: Theme.row-padding-x;
+                        spacing: 10px;
+                        Field { text <=> root.edit-word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                        Field { text <=> root.edit-code; placeholder: @tr("Pinyin"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                        save := Button {
+                            text: @tr("Save");
+                            primary: true;
+                            enabled: root.edit-word != "" && root.edit-code != "";
+                            clicked => { State.edit-zh-word(i, root.edit-word, root.edit-code); }
+                        }
+                        Button { text: @tr("Cancel"); clicked => { State.zh-editing = -1; } }
+                    }
+                }
             }
         }
     }
@@ -225,9 +258,11 @@ component ZhWordsPage inherits Page {
 component JaWordsPage inherits Page {
     title: @tr("My words") + " · 日本語";
     back: true;
-    property <string> reading;
-    property <string> word;
-    property <int> pos;
+    property <string> query;
+    property <string> edit-reading;
+    property <string> edit-word;
+    property <int> edit-pos;
+    init => { State.ja-editing = -1; State.ja-add-reading = ""; State.ja-add-word = ""; State.ja-add-pos = 0; }
     Info { text: @tr("Mozc's user dictionary. Readings are in hiragana, e.g. {}.", "せぶ → SebType"); }
     Card {
         VerticalLayout {
@@ -235,28 +270,68 @@ component JaWordsPage inherits Page {
             spacing: 10px;
             HorizontalLayout {
                 spacing: 10px;
-                Field { text <=> root.reading; placeholder: @tr("Reading (hiragana)"); horizontal-stretch: 1; }
-                Field { text <=> root.word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { add.clicked(); } }
+                Field { text <=> State.ja-add-reading; placeholder: @tr("Reading (hiragana)"); horizontal-stretch: 1; }
+                Field { text <=> State.ja-add-word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { add.clicked(); } }
                 add := Button {
                     text: @tr("Add");
                     primary: true;
-                    enabled: root.reading != "" && root.word != "";
-                    clicked => { if State.add-ja-word(root.reading, root.word, root.pos) { root.reading = ""; root.word = ""; } }
+                    enabled: State.ja-add-reading != "" && State.ja-add-word != "";
+                    clicked => { if State.add-ja-word(State.ja-add-reading, State.ja-add-word, State.ja-add-pos) { State.ja-add-reading = ""; State.ja-add-word = ""; } }
                 }
             }
             HorizontalLayout {
                 alignment: start;
-                Segmented { options: State.ja-pos; current <=> root.pos; }
+                Segmented { options: State.ja-pos; current <=> State.ja-add-pos; }
             }
         }
     }
     if State.ja-words.length > 0: Card {
-        for w[i] in State.ja-words: Row {
-            title: w.word;
-            line-above: i > 0;
-            detail: w.reading + " · " + State.ja-pos[w.pos];
-            VerticalLayout { alignment: center;
-                Button { text: @tr("Delete"); clicked => { State.remove-ja-word(i); } }
+        HorizontalLayout {
+            padding: Theme.row-padding-x;
+            Field { text <=> root.query; placeholder: @tr("Search: word or reading"); }
+        }
+        for w[i] in State.ja-words: Rectangle {
+            property <bool> shown: State.word-matches(root.query, w.word, w.reading);
+            visible: shown;
+            height: shown ? item.preferred-height : 0;
+            item := VerticalLayout {
+                if State.ja-editing != i: Row {
+                    title: w.word;
+                    line-above: true;
+                    detail: w.reading + " · " + State.ja-pos[w.pos];
+                    VerticalLayout { alignment: center;
+                        Button {
+                            text: @tr("Edit");
+                            clicked => { root.edit-reading = w.reading; root.edit-word = w.word; root.edit-pos = w.pos; State.ja-editing = i; }
+                        }
+                    }
+                    VerticalLayout { alignment: center;
+                        Button { text: @tr("Delete"); clicked => { State.ja-editing = -1; State.remove-ja-word(i); } }
+                    }
+                }
+                if State.ja-editing == i: Rectangle {
+                    Divider { y: 0; width: parent.width; }
+                    VerticalLayout {
+                        padding: Theme.row-padding-x;
+                        spacing: 10px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Field { text <=> root.edit-reading; placeholder: @tr("Reading (hiragana)"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                            Field { text <=> root.edit-word; placeholder: @tr("Word"); horizontal-stretch: 1; accepted => { save.clicked(); } }
+                            save := Button {
+                                text: @tr("Save");
+                                primary: true;
+                                enabled: root.edit-reading != "" && root.edit-word != "";
+                                clicked => { State.edit-ja-word(i, root.edit-reading, root.edit-word, root.edit-pos); }
+                            }
+                            Button { text: @tr("Cancel"); clicked => { State.ja-editing = -1; } }
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            Segmented { options: State.ja-pos; current <=> root.edit-pos; }
+                        }
+                    }
+                }
             }
         }
     }

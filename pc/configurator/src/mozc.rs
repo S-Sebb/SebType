@@ -77,7 +77,7 @@ pub fn save(dir: &Path, j: &Japanese) -> io::Result<bool> {
     write_file(&path, &cfg)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Word {
     pub reading: String,
     pub word: String,
@@ -86,6 +86,18 @@ pub struct Word {
     /// kept as it is; pos is then 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mozc_pos: Option<u64>,
+    /// The entry's other fields (its comment, ones a newer Mozc adds) as they are, kept when the
+    /// dictionary is saved (#410).
+    #[serde(skip)]
+    pub rest: Vec<u8>,
+}
+
+impl Word {
+    /// The same entry: reading, spelling and part of speech (Add allows one word as two parts of speech).
+    pub fn same(&self, other: &Word) -> bool {
+        (&self.reading, &self.word, self.pos, self.mozc_pos)
+            == (&other.reading, &other.word, other.pos, other.mozc_pos)
+    }
 }
 
 fn string(b: &[u8]) -> String {
@@ -113,12 +125,13 @@ pub fn words(dir: &Path) -> io::Result<Vec<Word>> {
         }
         for e in fields.iter().filter(|f| f.number == 4) {
             let (mut reading, mut word, mut mozc_pos) = (String::new(), String::new(), POS[0]);
+            let mut rest = vec![];
             for f in proto::fields(e.bytes).map_err(bad)? {
                 match f.number {
                     1 => reading = string(f.bytes),
                     2 => word = string(f.bytes),
                     5 => mozc_pos = f.varint.unwrap_or(POS[0]),
-                    _ => {}
+                    _ => rest.extend_from_slice(f.whole),
                 }
             }
             let pos = POS.iter().position(|&p| p == mozc_pos);
@@ -127,6 +140,7 @@ pub fn words(dir: &Path) -> io::Result<Vec<Word>> {
                 word,
                 pos: pos.unwrap_or(0),
                 mozc_pos: pos.is_none().then_some(mozc_pos),
+                rest,
             });
         }
     }
@@ -138,7 +152,7 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     let path = dir.join(DICTIONARIES);
     let storage = read(&path)?;
     let mut out = vec![];
-    let mut id = None;
+    let (mut id, mut settings) = (None, vec![]);
     for f in proto::fields(&storage).map_err(bad)? {
         if f.number == 2 {
             let inner = proto::fields(f.bytes).map_err(bad)?;
@@ -148,6 +162,11 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
                     .any(|g| g.number == 3 && g.bytes == DICTIONARY_NAME.as_bytes())
                 {
                     id = inner.iter().find(|g| g.number == 1).and_then(|g| g.varint);
+                    // Its other fields (enabled, syncable) stay as they are.
+                    inner
+                        .iter()
+                        .filter(|g| ![1, 3, 4].contains(&g.number))
+                        .for_each(|g| settings.extend_from_slice(g.whole));
                 }
                 continue;
             }
@@ -163,11 +182,13 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
     });
     let mut dict = proto::varint_field(1, id);
     dict.extend(proto::bytes_field(3, DICTIONARY_NAME.as_bytes()));
+    dict.extend(settings);
     for w in words {
         let mut e = proto::bytes_field(1, w.reading.as_bytes());
         e.extend(proto::bytes_field(2, w.word.as_bytes()));
         let pos = w.mozc_pos.unwrap_or(POS[w.pos.min(POS.len() - 1)]);
         e.extend(proto::varint_field(5, pos));
+        e.extend(&w.rest);
         dict.extend(proto::bytes_field(4, &e));
     }
     out.extend(proto::bytes_field(2, &dict));
@@ -175,18 +196,53 @@ pub fn save_words(dir: &Path, words: &[Word]) -> io::Result<bool> {
 }
 
 /// Adds a word to the dictionary as it is now: the sync may have changed it since the window read it.
-pub fn add_word(dir: &Path, word: Word) -> io::Result<bool> {
+/// Returns the list written, for the window to show.
+pub fn add_word(dir: &Path, word: Word) -> io::Result<Vec<Word>> {
     let mut all = words(dir)?;
     all.push(word);
-    save_words(dir, &all)
+    save_words(dir, &all)?;
+    Ok(all)
 }
 
-/// Removes a word (every entry with its reading and spelling, as the sync does) from the dictionary
-/// as it is now.
-pub fn remove_word(dir: &Path, reading: &str, word: &str) -> io::Result<bool> {
+/// Changes the word at i in all, keeping the entry's other fields (crate::put_in_place). A part of speech
+/// the window doesn't offer stays unless another one is chosen.
+pub fn edit_in(all: &mut Vec<Word>, i: usize, mut new: Word) {
+    new.rest = all[i].rest.clone();
+    if new.pos == all[i].pos {
+        new.mozc_pos = all[i].mozc_pos;
+    }
+    crate::put_in_place(all, i, new, Word::same, |all, j| {
+        all.remove(j);
+    });
+}
+
+/// Changes the word at i of the dictionary as shown (edit_in), returning the list written. Nothing
+/// changes, and the dictionary as it is now comes back as Err, when it is no longer as shown (the sync or
+/// another window changed it): i may be another word now.
+pub fn edit_word(
+    dir: &Path,
+    shown: &[Word],
+    i: usize,
+    new: Word,
+) -> io::Result<Result<Vec<Word>, Vec<Word>>> {
     let mut all = words(dir)?;
-    all.retain(|w| (w.reading.as_str(), w.word.as_str()) != (reading, word));
-    save_words(dir, &all)
+    if all != shown {
+        return Ok(Err(all));
+    }
+    edit_in(&mut all, i, new);
+    save_words(dir, &all)?;
+    Ok(Ok(all))
+}
+
+/// Removes the word at i of the dictionary as shown, as edit_word. Another entry of the same reading and
+/// spelling stays: to the sync that word is still there.
+pub fn remove_word(dir: &Path, shown: &[Word], i: usize) -> io::Result<bool> {
+    let mut all = words(dir)?;
+    if all != shown {
+        return Ok(false);
+    }
+    all.remove(i);
+    save_words(dir, &all).map(|_| true)
 }
 
 /// Readings are hiragana (Mozc matches the kana the romaji turns into).
@@ -271,7 +327,7 @@ mod tests {
             reading: "せぶ".into(),
             word: "SebType".into(),
             pos: 1,
-            mozc_pos: None,
+            ..Default::default()
         }];
         save_words(&d, &w).unwrap();
         save_words(&d, &w).unwrap();
@@ -327,6 +383,26 @@ mod tests {
                 .map(|w| (w.word, w.pos, w.mozc_pos))
                 .collect()
         };
+        // The window's row: the nth entry the same as w, in the dictionary as shown (read now).
+        let at = |w: &Word, n: usize| {
+            let shown = words(&d).unwrap();
+            let i = (0..shown.len())
+                .filter(|&i| shown[i].same(w))
+                .nth(n)
+                .unwrap();
+            (shown, i)
+        };
+        let edit = |old: &Word, n, new| {
+            let (shown, i) = at(old, n);
+            assert_eq!(
+                edit_word(&d, &shown, i, new).unwrap(),
+                Ok(words(&d).unwrap())
+            );
+        };
+        let remove = |old: &Word, n| {
+            let (shown, i) = at(old, n);
+            assert!(remove_word(&d, &shown, i).unwrap());
+        };
         assert_eq!(
             shown(&d),
             [
@@ -335,10 +411,44 @@ mod tests {
                 ("プル".into(), 2, None),    // 人名
             ]
         );
-        assert!(remove_word(&d, "ぷる", "プル").unwrap());
+        let pul = Word {
+            reading: "ぷる".into(),
+            word: "プル".into(),
+            pos: 2,
+            ..Default::default()
+        };
+        remove(&pul, 0);
         assert_eq!(
             shown(&d),
             [("モフ".into(), 0, None), ("ピピ".into(), 0, Some(0))]
+        );
+        // Edit (#410) finds the entry by its part of speech too, Mozc's own one (as the window passes it on)
+        // included, and a word edited into one already there leaves one entry, in the edited one's place.
+        let word = |reading: &str, word: &str, pos, mozc_pos| Word {
+            reading: reading.into(),
+            word: word.into(),
+            pos,
+            mozc_pos,
+            rest: vec![],
+        };
+        let pipi = word("ぴぴ", "ピピピ", 0, Some(0));
+        edit(&word("ぴぴ", "ピピ", 0, Some(0)), 0, pipi.clone());
+        assert_eq!(
+            shown(&d),
+            [("モフ".into(), 0, None), ("ピピピ".into(), 0, Some(0))]
+        );
+        edit(&pipi, 0, word("ぴぴ", "ピピピ", 2, None));
+        assert_eq!(shown(&d)[1], ("ピピピ".into(), 2, None));
+        edit(
+            &word("もふ", "モフ", 0, None),
+            0,
+            word("ぴぴ", "ピピピ", 2, None),
+        );
+        assert_eq!(shown(&d), [("ピピピ".into(), 2, None)]);
+        edit(
+            &word("ぴぴ", "ピピピ", 2, None),
+            0,
+            word("ぴぴ", "ピピ", 0, None),
         );
         let all = fs::read(d.join(DICTIONARIES)).unwrap();
         let names: Vec<_> = proto::fields(&all)
@@ -356,6 +466,77 @@ mod tests {
             "one SebType dictionary, Mozc's own kept"
         );
         assert!(String::from_utf8_lossy(&all).contains("ピピ"));
+
+        // One word as two parts of speech (Add allows it): Edit changes the one chosen, and the other's
+        // comment (Mozc's entry field 4) stays through Edit and Add.
+        let comment = proto::bytes_field(4, "テスト用".as_bytes());
+        let noun = Word {
+            rest: comment.clone(),
+            ..word("もふ", "モフ", 0, None)
+        };
+        save_words(&d, &[noun.clone(), word("もふ", "モフ", 1, None)]).unwrap();
+        edit(
+            &word("もふ", "モフ", 1, None),
+            0,
+            word("もふ", "モフモフ", 1, None),
+        );
+        // Add returns the list written, which the window keeps as shown: the next Edit must match it.
+        let added = add_word(&d, word("ぷる", "プル", 2, None)).unwrap();
+        assert_eq!(added, words(&d).unwrap());
+        assert_eq!(
+            words(&d).unwrap(),
+            [
+                noun,
+                word("もふ", "モフモフ", 1, None),
+                word("ぷる", "プル", 2, None)
+            ]
+        );
+        edit(
+            &word("もふ", "モフ", 0, None),
+            0,
+            word("もふ", "もふ", 0, None),
+        );
+        assert_eq!(
+            words(&d).unwrap()[0].rest,
+            comment,
+            "the edited entry keeps its comment"
+        );
+        // Delete too removes only the entry chosen.
+        let (noun, name) = (word("もふ", "モフ", 0, None), word("もふ", "モフ", 1, None));
+        save_words(&d, &[noun.clone(), name.clone()]).unwrap();
+        remove(&name, 0);
+        assert_eq!(words(&d).unwrap(), [noun.clone()]);
+        // Of two identical entries with their own comments, Edit and Delete change the one chosen (its
+        // occurrence), and Edit keeps that one's comment.
+        let with = |comment: &str| Word {
+            rest: proto::bytes_field(4, comment.as_bytes()),
+            ..noun.clone()
+        };
+        save_words(&d, &[with("一"), with("二")]).unwrap();
+        edit(&noun, 1, word("もふ", "モフー", 0, None));
+        assert_eq!(
+            words(&d).unwrap(),
+            [
+                with("一"),
+                Word {
+                    word: "モフー".into(),
+                    ..with("二")
+                }
+            ]
+        );
+        save_words(&d, &[with("一"), with("二")]).unwrap();
+        remove(&noun, 1);
+        assert_eq!(words(&d).unwrap(), [with("一")]);
+        // The dictionary changed since it was shown (the sync took out the first of three identical
+        // entries): the shown second row would now be the third, so Edit and Delete change nothing.
+        let shown = [with("一"), with("二"), with("三")];
+        save_words(&d, &shown[1..]).unwrap();
+        assert_eq!(
+            edit_word(&d, &shown, 1, word("もふ", "モフー", 0, None)).unwrap(),
+            Err(shown[1..].to_vec())
+        );
+        assert!(!remove_word(&d, &shown, 1).unwrap());
+        assert_eq!(words(&d).unwrap(), shown[1..]);
         fs::remove_dir_all(&d).unwrap();
     }
 }

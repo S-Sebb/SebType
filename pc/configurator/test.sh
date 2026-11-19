@@ -49,7 +49,10 @@ if [[ -z ${HOLDING-} ]]; then
   ../../tools/build.sh 30 "sebtype configurator test build ($(git branch --show-current))" pc/configurator/build.sh \
     > /dev/null 2> "$out/configurator-test-build.log" ||
     { echo "preflight: the build failed, see $out/configurator-test-build.log"; exit 1; }
-  exec env HOLDING=1 devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
+  # SebType's Chinese data (data/rime/build.sh, cached), the Rime folder the sandbox starts from.
+  rime_data=$(../../tools/build.sh 10 "rime data for the configurator test" data/rime/build.sh 2>> "$out/configurator-test-build.log" | tail -1)
+  [[ -f $rime_data ]] || { echo "preflight: data/rime/build.sh failed, see $out/configurator-test-build.log"; exit 1; }
+  exec env HOLDING=1 RIME_DATA="$rime_data" devq -w 1800 -m 20 -n "sebtype configurator test ($(git branch --show-current))" \
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
 fi
 
@@ -64,7 +67,9 @@ release_build() { ldd "$bin" && ! ldd "$bin" | grep -q 'not found'; }
 export -f release_build; export bin
 check release-build 60 release_build
 
-# A sandbox account: copies of this account's engine settings, without Rime's and Mozc's learned words.
+# A sandbox account: SebType's Chinese data, settings files written here and made-up My words (#410).
+# Nothing of this account's comes in: no dictionary, learned words, snapshot, backup or settings file,
+# which could hold its own text (Mozc's romaji table, Fcitx5's phrases) or its sync folder.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
 # What the nested sessions start (ksecretd, the Documents portal) outlives their D-Bus: stop whatever
 # still runs in the sandbox.
@@ -76,12 +81,29 @@ cleanup() {
 trap cleanup EXIT
 # Each private D-Bus session runs through private_dbus (tools/lib.sh), its files removed with the sandbox.
 export -f private_dbus
+export RIME_DATA
 sandbox() { # [dir], $sb by default
-  local sb=${1:-$sb}
-  mkdir -p "$sb/config" "$sb/data/fcitx5"
-  cp -r ~/.config/fcitx5 "$sb/config/"
-  [[ -d ~/.config/mozc ]] && rsync -a --exclude='*history*' --exclude=segment.db --exclude=boundary.db --exclude=cform.db ~/.config/mozc "$sb/config/"
-  rsync -a --exclude='*.userdb' --exclude='*.userdb.txt' --exclude=sync ~/.local/share/fcitx5/rime "$sb/data/fcitx5/"
+  local sb=${1:-$sb} rime=${1:-$sb}/data/fcitx5/rime
+  mkdir -p "$sb/config/fcitx5" "$sb/config/mozc" "$rime"
+  unzip -q "$RIME_DATA" -d "$rime"
+  # setup-ime.sh's patches as compare.sh writes them; a made-up installation without a sync folder.
+  printf 'patch:\n  sebtype_typo/keyboard: pc\n' > "$rime/rime_ice.custom.yaml"
+  printf 'patch:\n  menu/page_size: 6\n' > "$rime/default.custom.yaml"
+  printf 'installation_id: "sebtype-test-pc"\n' > "$rime/installation.yaml"
+  printf '# SebType: My words\n小明\txiaoming\n张伟\tzhangwei\n' > "$sb/data/fcitx5/rime/custom_phrase.txt"
+  python3 - "$sb/config/mozc/user_dictionary.db" <<'PY'
+import sys  # a UserDictionaryStorage (mozc.rs) with SebType's dictionary: せぶ → SebType, もふ → モフ
+def varint(n):
+    out = b""
+    while n > 0x7f: out += bytes([n & 0x7f | 0x80]); n >>= 7
+    return out + bytes([n])
+def field(number, data): return varint(number << 3 | 2) + varint(len(data)) + data
+def number(n, value): return varint(n << 3) + varint(value)
+d = number(1, 7) + field(3, b"SebType")
+for reading, word in (("せぶ", "SebType"), ("もふ", "モフ")):
+    d += field(4, field(1, reading.encode()) + field(2, word.encode()) + number(5, 1))
+open(sys.argv[1], "wb").write(field(2, d))
+PY
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$sb/config/fcitx5/profile"
 }
@@ -117,7 +139,7 @@ done
 echo all-screens-ok
 SH
   chmod +x "$sb/shots.sh"
-  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
+  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl-sebtype-test-$$" --width 1000 --height 700 --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
@@ -177,7 +199,6 @@ private_sync() {
   local d=$sb/sync-account rime port
   sandbox "$d"; mkdir -p "$d/server"
   rime=$d/data/fcitx5/rime
-  sed -i '/^sync_dir:/d; s/^installation_id:.*/installation_id: "sebtype-test-pc"/' "$rime/installation.yaml"
   sed -i 's|translator/enable_user_dict: false|translator/enable_user_dict: true|' "$rime/rime_ice.custom.yaml" 2>/dev/null
   rm -f "$d/config/mozc/user_dictionary.db"  # only made-up Japanese words
   port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
