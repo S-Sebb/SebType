@@ -812,7 +812,7 @@ SENSITIVE = 1 << 36
 def field(sensitive):  # preedit, formatted, client-side panel; the core reads the flags at the next key
     call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39 | (SENSITIVE if sensitive else 0))
 call(ic, IC, 'FocusIn')
-KEYS = {'space': (0x20, 65), 'Return': (0xff0d, 36), 'Escape': (0xff1b, 9), '4': (0x34, 13),
+KEYS = {'space': (0x20, 65), 'Return': (0xff0d, 36), 'Escape': (0xff1b, 9), '2': (0x32, 11), '3': (0x33, 12), '4': (0x34, 13),
         **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
            for code, c in enumerate(row, first)}}
 def tap(name):
