@@ -7,6 +7,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
+use yaml_rust2::{Yaml, YamlLoader};
 
 const SCHEMA_PATCH: &str = "rime_ice.custom.yaml";
 const DEFAULT_PATCH: &str = "default.custom.yaml";
@@ -244,34 +245,72 @@ pub fn remove_word(dir: &Path, word: &Word) -> io::Result<bool> {
     save_words(dir, &all)
 }
 
-/// What Rime learned (its user dictionaries and their sync snapshots); the settings and the user's own
-/// words aren't in it. A running Rime forgets them itself (core/src/rime.cpp's forget, #375). A sync folder
-/// outside Rime's folder (#396) may hold files that aren't Rime's: only its snapshots are in it.
+/// What Rime learned (its user dictionaries and their snapshots, and the snapshots in its sync folder, which
+/// its sync merges back); the settings and the user's own words aren't in it. A running Rime forgets them
+/// itself (core/src/rime.cpp's forget, #375), the same way.
 pub fn learned(dir: &Path) -> io::Result<Vec<PathBuf>> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    let snapshot = |path: &Path, name: &str| {
+        name != SYNCED_WORDS
+            && (name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct"))
+            && path.is_file()
+    };
+    fn walk(
+        dir: &Path,
+        snapshot: &dyn Fn(&Path, &str) -> bool,
+        out: &mut Vec<PathBuf>,
+    ) -> io::Result<()> {
         for e in fs::read_dir(dir)? {
             let path = e?.path();
             let name = path.file_name().unwrap().to_string_lossy();
             if name.ends_with(".userdb") && path.is_dir() {
                 out.push(path);
-            } else if name == SYNCED_WORDS {
-            } else if name.ends_with(".userdb.txt") || name.ends_with(".userdb.kct") {
+            } else if snapshot(&path, &name) {
                 out.push(path);
             } else if path.is_dir() && !path.is_symlink() {
-                walk(&path, out)?;
+                walk(&path, snapshot, out)?;
             }
         }
         Ok(())
     }
-    let mut out = vec![];
-    walk(dir, &mut out)?;
-    let sync = sync_folder(dir);
-    if sync.is_dir() && !fs::canonicalize(&sync)?.starts_with(fs::canonicalize(dir)?) {
-        let mut found = vec![];
-        walk(&sync, &mut found)?;
-        out.extend(found.into_iter().filter(|p| !p.is_dir()));
+    let sync = sync_folder(dir)?;
+    let mut found = vec![];
+    walk(dir, &snapshot, &mut found)?;
+    // The sync folder may be anywhere, among files that aren't Rime's: only what Rime's sync merges, a
+    // snapshot it wrote directly in a device's folder (a link to one too, as Rime follows it).
+    match fs::read_dir(&sync) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        devices => {
+            for device in devices? {
+                let device = device?.path();
+                if !device.is_dir() {
+                    continue;
+                }
+                for file in fs::read_dir(&device)? {
+                    let path = file?.path();
+                    let name = path.file_name().unwrap().to_string_lossy();
+                    if name.ends_with(".txt") && snapshot(&path, &name) && rime_snapshot(&path) {
+                        found.push(path);
+                    }
+                }
+            }
+        }
     }
-    Ok(out)
+    // By its folder's real path: a sync folder inside Rime's folder is found twice.
+    let mut learned = std::collections::BTreeSet::new();
+    for p in found {
+        learned.insert(fs::canonicalize(p.parent().unwrap())?.join(p.file_name().unwrap()));
+    }
+    Ok(learned.into_iter().collect())
+}
+
+/// Whether a file starts as Rime writes a snapshot (TsvWriter, user_db.cc).
+fn rime_snapshot(path: &Path) -> bool {
+    use io::BufRead;
+    let mut line = String::new();
+    fs::File::open(path)
+        .and_then(|f| io::BufReader::new(f).read_line(&mut line))
+        .is_ok()
+        && line.trim_end_matches(['\r', '\n']) == "# Rime user dictionary"
 }
 
 /// Deletes what Rime learned, with no Rime running (Linux without Fcitx5); how many there were.
@@ -279,7 +318,8 @@ pub fn learned(dir: &Path) -> io::Result<Vec<PathBuf>> {
 pub fn forget(dir: &Path) -> io::Result<usize> {
     let learned = learned(dir)?;
     for p in &learned {
-        if p.is_dir() {
+        // A user dictionary is a folder; a link to a snapshot loses only the link.
+        if p.extension().is_some_and(|e| e == "userdb") {
             fs::remove_dir_all(p)?;
         } else {
             fs::remove_file(p)?;
@@ -288,25 +328,44 @@ pub fn forget(dir: &Path) -> io::Result<usize> {
     Ok(learned.len())
 }
 
-fn installation_value(dir: &Path, key: &str) -> Option<String> {
-    read(&dir.join("installation.yaml")).lines().find_map(|l| {
-        let v = l.trim().strip_prefix(key)?.trim_start().strip_prefix(':')?;
-        Some(v.split('#').next()?.trim().trim_matches('"').to_string())
-    })
+/// installation.yaml as Rime (yaml-cpp) reads it; None when there is none yet (before Rime's first start).
+fn installation(dir: &Path) -> io::Result<Option<Yaml>> {
+    let file = dir.join("installation.yaml");
+    let text = match fs::read_to_string(&file) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        r => r?,
+    };
+    let docs = YamlLoader::load_from_str(&text)
+        .map_err(|e| io::Error::other(format!("{}: {e}", file.display())))?;
+    Ok(Some(docs.into_iter().next().unwrap_or(Yaml::Null)))
 }
 
-/// Rime's sync folder: installation.yaml's sync_dir, else `<dir>/sync`.
-fn sync_folder(dir: &Path) -> PathBuf {
-    installation_value(dir, "sync_dir")
-        .filter(|v| !v.is_empty())
-        .map_or_else(|| dir.join("sync"), PathBuf::from)
+/// Rime's sync folder: installation.yaml's sync_dir, else `<dir>/sync` (Rime's deployment_tasks.cc). A
+/// relative one, which Rime takes from its working directory, is refused: the folder it syncs is unknown.
+fn sync_folder(dir: &Path) -> io::Result<PathBuf> {
+    let sync = match installation(dir)?.as_ref().map(|y| &y["sync_dir"]) {
+        // Rime takes any scalar as a path; null (as `~`) or none is its default.
+        Some(Yaml::String(v) | Yaml::Real(v)) => PathBuf::from(v),
+        Some(Yaml::Integer(v)) => PathBuf::from(v.to_string()),
+        Some(Yaml::Boolean(v)) => PathBuf::from(v.to_string()),
+        _ => return Ok(dir.join("sync")),
+    };
+    if !sync.is_absolute() {
+        return Err(io::Error::other(format!(
+            "installation.yaml's sync_dir {sync:?} is relative, so the folder Rime syncs is unknown"
+        )));
+    }
+    Ok(sync)
 }
 
 /// This PC's own folder in Rime's sync folder, `<sync_dir>/<installation_id>`, read from
-/// installation.yaml as sync-server/sebtype_sync.py reads it; None before Rime's first start.
+/// installation.yaml as Rime reads it; None before Rime's first start or when it can't tell.
 pub fn own_sync_folder(dir: &Path) -> Option<PathBuf> {
-    let id = installation_value(dir, "installation_id").filter(|v| !v.is_empty())?;
-    Some(sync_folder(dir).join(id))
+    let id = installation(dir).ok()??["installation_id"]
+        .as_str()
+        .filter(|v| !v.is_empty())?
+        .to_string();
+    Some(sync_folder(dir).ok()?.join(id))
 }
 
 #[cfg(test)]
@@ -408,42 +467,79 @@ mod tests {
         );
         assert!(!d.join("rime_ice.userdb").exists() && d.join(PHRASES).exists());
 
-        // A sync folder outside Rime's folder (#396): its snapshots go, the rest there isn't Rime's.
-        let ext = d.with_extension("sync");
-        let _ = fs::remove_dir_all(&ext);
-        fs::create_dir_all(ext.join("abc/rime_ice.userdb")).unwrap();
-        for name in [
-            "rime_ice.userdb.txt",
-            "old.userdb.kct",
-            SYNCED_WORDS,
-            "notes.txt",
-        ] {
-            fs::write(ext.join("abc").join(name), "x").unwrap();
+        // A sync folder outside Rime's folder (#396), such as a home folder: only the snapshots Rime's sync
+        // merges go, every device's (through a link too), and nothing else there.
+        let home = d.with_extension("home#rime");
+        let elsewhere = d.with_extension("elsewhere");
+        for f in [&home, &elsewhere] {
+            let _ = fs::remove_dir_all(f);
         }
+        let snapshot = "# Rime user dictionary\n#@/db_name\trime_ice\n";
+        let files = [
+            ("abc/rime_ice.userdb.txt", snapshot, false),
+            ("def/luna_pinyin.userdb.txt", snapshot, false),
+            ("abc/zh_my_words.userdb.txt", snapshot, true),
+            ("abc/notes.txt", "x", true),
+            ("abc/other.userdb.txt", "an app's own", true),
+            ("abc/dir.userdb.txt/inside.txt", "x", true),
+            ("abc/rime_ice.userdb/data", "x", true),
+            ("top.userdb.txt", snapshot, true),
+            ("archive/deep/custom.userdb.txt", snapshot, true),
+        ];
+        for (name, text, _) in files {
+            let p = home.join(name);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, text).unwrap();
+        }
+        fs::create_dir_all(&elsewhere).unwrap();
+        fs::write(elsewhere.join("rime_ice.userdb.txt"), snapshot).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&elsewhere, home.join("linked")).unwrap();
+        // Unquoted, as Rime reads it: the # is in the path, not a comment.
         fs::write(
             d.join("installation.yaml"),
             format!(
-                "installation_id: \"abc\"\nsync_dir: \"{}\"\n",
-                ext.display()
+                "installation_id: abc\nsync_dir: {}  # a comment\n",
+                home.display()
             ),
         )
         .unwrap();
-        assert_eq!(forget(&d).unwrap(), 2);
-        let left: Vec<_> = fs::read_dir(ext.join("abc"))
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        assert_eq!(left.len(), 3, "kept {left:?}");
-        assert!(ext.join("abc").join(SYNCED_WORDS).exists() && ext.join("abc/notes.txt").exists());
+        assert_eq!(own_sync_folder(&d), Some(home.join("abc")));
+        assert_eq!(forget(&d).unwrap(), if cfg!(unix) { 3 } else { 2 });
+        for (name, _, kept) in files {
+            assert_eq!(home.join(name).exists(), kept, "{name}");
+        }
+        assert!(!elsewhere.join("rime_ice.userdb.txt").exists());
+
+        // Quoted as YAML quotes; Rime's default when there is no sync_dir or it is null; refused when Rime
+        // would take it from its working directory, or installation.yaml isn't YAML.
+        let path = home.display().to_string();
+        for (yaml, want) in [
+            (format!("sync_dir: '{path}'"), Some(home.clone())),
+            (format!("sync_dir: \"{path}\""), Some(home.clone())),
+            ("sync_dir: ~".into(), Some(d.join("sync"))),
+            ("installation_id: abc".into(), Some(d.join("sync"))),
+            ("sync_dir: sync".into(), None),
+            ("sync_dir: ~/sync".into(), None),
+            ("sync_dir: \"\"".into(), None),
+            ("sync_dir: [".into(), None),
+        ] {
+            fs::write(d.join("installation.yaml"), &yaml).unwrap();
+            assert_eq!(sync_folder(&d).ok(), want, "{yaml}");
+        }
+        assert!(forget(&d).is_err(), "nothing deleted where it can't tell");
+
         // Inside Rime's folder, each snapshot is counted once.
-        fs::write(d.join("sync/abc/rime_ice.userdb.txt"), "x").unwrap();
+        fs::write(d.join("sync/abc/rime_ice.userdb.txt"), snapshot).unwrap();
         fs::write(
             d.join("installation.yaml"),
             format!("sync_dir: \"{}\"\n", d.join("sync").display()),
         )
         .unwrap();
         assert_eq!(learned(&d).unwrap().len(), 1);
-        fs::remove_dir_all(&ext).unwrap();
+        for f in [&home, &elsewhere] {
+            fs::remove_dir_all(f).unwrap();
+        }
         fs::remove_dir_all(&d).unwrap();
     }
 }

@@ -9,7 +9,8 @@
 # the whole process), and at the end the Configurator says forgetting
 # failed when the input method couldn't delete what was learned (read-only folders). Rime's sync folder is
 # outside its folder (installation.yaml's sync_dir, #396): a sync before forgetting puts 中文's snapshot there,
-# forgetting deletes it but not another file there, and a sync after it brings nothing back. Before forgetting, a
+# forgetting deletes it and another device's (through a link) but no other file there, and a sync after it
+# brings nothing back. Before forgetting, a
 # Forget for another language (D-Bus, or the Configurator's --forget) forgets nothing and Fcitx5 lives on.
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
 import os
@@ -183,21 +184,32 @@ def learn_digit_form(f, form):
     return False
 
 
-# Rime's sync folder outside its folder (#396), with a file that isn't Rime's.
+# Rime's sync folder outside its folder (#396), as a home folder may be, with a # in its path (unquoted YAML),
+# files that aren't Rime's snapshots or that its sync doesn't merge, and a device's folder through a link.
 rime_dir = f"{os.environ['XDG_DATA_HOME']}/fcitx5/rime"
-sync_dir = f"{os.environ['HOME']}/outside-sync"
-os.makedirs(sync_dir, exist_ok=True)
-with open(f"{sync_dir}/notes.txt", "w") as notes:
-    notes.write("not Rime's\n")
+sync_dir = f"{os.environ['HOME']}/outside#sync"
+SNAPSHOT = "# Rime user dictionary\n#@/db_name\trime_ice\n"
+KEPT = {
+    "notes.txt": "not Rime's\n",
+    "archive/deep/rime_ice.userdb.txt": SNAPSHOT,
+    "other/app.userdb.txt": "an app's own\n",
+    "other/dir.userdb.txt/inside": "x\n",
+}
+for name, text in {**KEPT, "../linked-device/rime_ice.userdb.txt": SNAPSHOT}.items():
+    os.makedirs(os.path.dirname(f"{sync_dir}/{name}"), exist_ok=True)
+    with open(f"{sync_dir}/{name}", "w") as made_up:
+        made_up.write(text)
+os.symlink(f"{os.environ['HOME']}/linked-device", f"{sync_dir}/linked")
 with open(f"{rime_dir}/installation.yaml") as y:
     lines = [line for line in y.read().splitlines() if not line.startswith("sync_dir:")]
 with open(f"{rime_dir}/installation.yaml", "w") as y:
-    y.write("\n".join(lines + [f'sync_dir: "{sync_dir}"']) + "\n")
+    y.write("\n".join(lines + [f"sync_dir: {sync_dir}"]) + "\n")
 snapshot = next(
     f"{sync_dir}/{line.split(':', 1)[1].strip().strip(chr(34))}/rime_ice.userdb.txt"
     for line in lines
     if line.startswith("installation_id:")
 )
+linked = f"{sync_dir}/linked/rime_ice.userdb.txt"
 
 
 def mtime():
@@ -303,11 +315,12 @@ result(
     f"exit {forgot.returncode}, see {out}/forget-configurator.log",
 )
 
+left = [p for p in (snapshot, linked) if os.path.exists(p)]
+gone = [name for name in KEPT if not os.path.exists(f"{sync_dir}/{name}")]
 result(
-    "zh-snapshot-forgotten-outside-rime-folder",
-    not os.path.exists(snapshot) and os.path.exists(f"{sync_dir}/notes.txt"),
-    f"snapshot {'still there' if os.path.exists(snapshot) else 'gone'}, notes.txt "
-    f"{'kept' if os.path.exists(f'{sync_dir}/notes.txt') else 'deleted'}",
+    "zh-snapshots-forgotten-outside-rime-folder",
+    not left and not gone,
+    f"snapshots left {left}, other files deleted {gone}",
 )
 for lang, (top, _) in WORDS.items():
     ready = f.language(lang)
