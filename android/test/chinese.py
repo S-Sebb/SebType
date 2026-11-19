@@ -1977,6 +1977,51 @@ def swipe_delete_words():
     return f"-> {got!r}"
 
 
+def slide_to_letter():
+    """A finger put down on one letter and slid onto its neighbour types the neighbour (#382); held there,
+    the long press opens the neighbour's choices (e's first is 3, w's is 2). The lift-off point counts: a last
+    MOVE 7 dp past q's edge (under the 8 dp threshold) and the UP 12 dp past it type w."""
+    to_english()
+    k = key_spots()
+    (qx, y), (wx, _), (ex, _) = k["q"], k["w"], k["e"]
+    edge = (qx + wx) // 2  # q's right edge: keys are a key width apart, edge to edge
+    dp = screen_density()
+    cases = (  # name, down, moves, hold, up, what it types
+        ("q -> w", qx, [qx + (wx - qx) * i // 4 for i in range(1, 5)], 0, wx, "w"),
+        (
+            "w -> e, held",
+            wx,
+            [wx + (ex - wx) * i // 4 for i in range(1, 5)],
+            1.5,
+            ex,
+            "3",
+        ),
+        (
+            "q, lifted 12 dp past its edge",
+            qx,
+            [edge + round(7 * dp)],
+            0,
+            edge + round(12 * dp),
+            "w",
+        ),
+    )
+    got = []
+    for name, down, moves, hold, up, want in cases:
+        open_field()
+        path = "; ".join(f"input motionevent MOVE {x} {y}" for x in moves)
+        adb(
+            "shell",
+            f"input motionevent DOWN {down} {y}; {path}; sleep {hold}; input motionevent UP {up} {y}",
+        )
+        time.sleep(1.5)
+        settle()
+        text = field_text()
+        got.append(f"{name} typed {text!r}")
+        if text.lower() != want:
+            raise Fail(f"{got[-1]}, not {want!r}; " + "; ".join(got[:-1]))
+    return "; ".join(got)
+
+
 def swipe_delete_cjk():
     """Delete swiped left a key in Chinese, then Japanese, deletes the last word, not the whole sentence:
     they have no spaces between words (#283)."""
@@ -2739,6 +2784,7 @@ check("modes-height", modes_height, needs=["first-install"])
 check("swipe-space-cursor", swipe_space_cursor, needs=["first-install"])
 check("swipe-delete-words", swipe_delete_words, needs=["first-install"])
 check("swipe-delete-cjk", swipe_delete_cjk, needs=["first-install"])
+check("slide-to-letter", slide_to_letter, needs=["first-install"])
 check("modes-floating-resized", floating_after_resize, needs=["first-install"])
 check("modes-floating-resize", floating_resize, needs=["first-install"])
 check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
