@@ -61,7 +61,7 @@ jobs:
         if: steps.built.outputs.cache-hit != 'true'
         run: |
           touch "$RUNNER_TEMP/start"
-          rpm=$(linux/build.sh) || { tail -50 "$WORK/sebtype-build.log"; exit 1; }
+          rpm=$(bash -x linux/build.sh) || { tail -50 "$WORK/sebtype-build.log"; exit 1; }
           mkdir -p out
           cp "$rpm" "out/${{ steps.inputs.outputs.rpm }}"
           # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and would
