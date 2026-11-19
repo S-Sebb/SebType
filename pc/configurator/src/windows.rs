@@ -377,6 +377,9 @@ pub fn schedule(on: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Task Scheduler runs the task for each network connection (sync_task): nothing more to plan.
+pub fn after_sync(_started: std::time::SystemTime) {}
+
 pub fn open_url(url: &str) {
     let _ = Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", url])

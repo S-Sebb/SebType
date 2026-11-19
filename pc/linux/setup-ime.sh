@@ -54,14 +54,15 @@ if ((undo_configurator)); then
   if [[ -f $sync_units/sebtype-sync.timer ]]; then
     echo "change: stop and remove SebType's sync timer and network trigger"
     systemctl --user disable --now sebtype-sync.timer sebtype-sync.path 2>/dev/null
-    rm -f "$sync_units"/sebtype-sync.{timer,path,service}
+    systemctl --user stop sebtype-sync-soon.timer 2>/dev/null  # a sync planned after the network changed
+    rm -f "$sync_units"/sebtype-sync.{timer,path,service} "$sync_units"/sebtype-sync-network.service
     systemctl --user daemon-reload 2>/dev/null
   fi
   if [[ -f $data/sebtype/sync.json ]] && command -v secret-tool >/dev/null; then
     echo "change: remove SebType's sync login from the keyring"
     secret-tool clear service 'SebType sync' username login 2>/dev/null
   fi
-  for f in "$data"/sebtype/sync.json "$data"/sebtype/sync.lock "$data"/sebtype/sebtype_sync.py; do
+  for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-changed}; do
     [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }
   done
   [[ -d $app_dir ]] && { echo "change: remove $app_dir"; rm -r "$app_dir"; }

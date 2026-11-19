@@ -344,6 +344,11 @@ fn main() -> Result<(), slint::PlatformError> {
     if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
         std::process::exit(sync::run(a == "--sync-before-removal").map_or(1, |_| 0));
     }
+    // The network trigger's: plans a sync soon (#377).
+    #[cfg(target_os = "linux")]
+    if std::env::args().any(|a| a == "--network-changed") {
+        std::process::exit(platform::network_changed().map_or(1, |_| 0));
+    }
     // For tests without a window (pc/windows/setup/test-forget.ps1, #375): Privacy's Forget for zh or ja.
     if let Some(i) = std::env::args().position(|a| a == "--forget") {
         let forgot = match std::env::args().nth(i + 1).as_deref() {
@@ -400,9 +405,8 @@ fn main() -> Result<(), slint::PlatformError> {
         .set_vec(["en", "zh", "ja"].map(|id| lang_row(id, true)).to_vec());
     load(&app, &ui);
     show_sync(&app, &sync::load(), false);
-    // A schedule made by an older Configurator gets what this one adds (the network trigger, #377).
     if sync::load().enabled {
-        std::thread::spawn(|| platform::schedule(true));
+        std::thread::spawn(sync::refresh_schedule);
     }
     UI.with(|u| *u.borrow_mut() = Some(ui.clone()));
     // The schedule syncs while the window is open too: its outcome shows up here.

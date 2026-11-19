@@ -49,17 +49,48 @@ fn dir() -> PathBuf {
 }
 
 pub fn load() -> Sync {
-    fs::read_to_string(dir().join("sync.json"))
+    load_in(&dir())
+}
+fn load_in(dir: &Path) -> Sync {
+    fs::read_to_string(dir.join("sync.json"))
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
 }
 
 fn save(s: &Sync) -> io::Result<()> {
-    fs::create_dir_all(dir())?;
-    let tmp = dir().join("sync.json.new");
+    save_in(&dir(), s)
+}
+fn save_in(dir: &Path, s: &Sync) -> io::Result<()> {
+    fs::create_dir_all(dir)?;
+    let tmp = dir.join("sync.json.new");
     fs::write(&tmp, serde_json::to_string_pretty(s)?)?;
-    fs::rename(tmp, dir().join("sync.json"))
+    fs::rename(tmp, dir.join("sync.json"))
+}
+
+/// One schedule change at a time, each made from sync's state as it is then, so the window's refresh
+/// at start can't put back a schedule just turned off (#377).
+static SCHEDULE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn change_schedule(
+    dir: &Path,
+    change: impl FnOnce(&mut Sync),
+    schedule: impl FnOnce(bool) -> io::Result<()>,
+) -> io::Result<Sync> {
+    let _one = SCHEDULE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut s = load_in(dir);
+    let before = s.clone();
+    change(&mut s);
+    if s != before {
+        save_in(dir, &s)?;
+    }
+    schedule(s.enabled)?;
+    Ok(s)
+}
+
+/// Makes the schedule again as this Configurator makes it, so one made by an older version gets what
+/// this one adds (the network trigger, #377).
+pub fn refresh_schedule() -> io::Result<Sync> {
+    change_schedule(&dir(), |_| {}, platform::schedule)
 }
 
 fn keyring() -> keyring::Result<keyring::Entry> {
@@ -97,27 +128,27 @@ pub fn save_login(server: String, user: String, password: &str) -> Result<Sync, 
     keyring()
         .and_then(|k| k.set_password(password))
         .map_err(|e| e.to_string())?;
-    let mut s = load();
-    let first = s.user.is_empty();
-    (s.server, s.user, s.status) = (server, user, Status::NotYet);
-    if first {
-        s.enabled = true;
-    }
-    s.ever_on |= s.enabled;
-    save(&s).map_err(|e| e.to_string())?;
-    if s.enabled {
-        platform::schedule(true).map_err(|e| e.to_string())?;
-    }
-    Ok(s)
+    let login = |s: &mut Sync| {
+        let first = s.user.is_empty();
+        (s.server, s.user, s.status) = (server, user, Status::NotYet);
+        if first {
+            s.enabled = true;
+        }
+        s.ever_on |= s.enabled;
+    };
+    let on = |on| if on { platform::schedule(true) } else { Ok(()) };
+    change_schedule(&dir(), login, on).map_err(|e| e.to_string())
 }
 
 pub fn set_enabled(on: bool) -> io::Result<Sync> {
-    let mut s = load();
-    s.enabled = on;
-    s.ever_on |= on;
-    save(&s)?;
-    platform::schedule(on)?;
-    Ok(s)
+    change_schedule(
+        &dir(),
+        |s| {
+            s.enabled = on;
+            s.ever_on |= on;
+        },
+        platform::schedule,
+    )
 }
 
 enum Failed {
@@ -216,11 +247,13 @@ fn sync_with(s: &Sync, rime_dir: &Path, mozc_db: Option<&Path>) -> Result<(), Fa
     Ok(())
 }
 
-/// One sync at a time, between the window and the schedule.
+/// One sync at a time, between the window and the schedule. sync.lock's time is when the last one
+/// started, which the network trigger keeps syncs apart by (platform::network_changed, #377).
 fn lock() -> io::Result<fs::File> {
     fs::create_dir_all(dir())?;
     let f = fs::File::create(dir().join("sync.lock"))?;
     f.lock()?;
+    f.set_modified(std::time::SystemTime::now())?;
     Ok(f)
 }
 
@@ -236,6 +269,7 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
     if lock.is_err() {
         return Err(s);
     }
+    let started = std::time::SystemTime::now();
     let mozc_db = platform::mozc_dir().join("user_dictionary.db");
     let mozc_db = platform::mozc_dir().is_dir().then_some(mozc_db.as_path());
     s.status = match sync_with(&s, &platform::rime_dir(), mozc_db) {
@@ -249,6 +283,7 @@ pub fn run(before_removal: bool) -> Result<Sync, Sync> {
         Err(Failed::Offline) => Status::Offline,
     };
     let _ = save(&s);
+    platform::after_sync(started);
     if s.status == Status::Synced {
         Ok(s)
     } else {
@@ -520,6 +555,50 @@ mod tests {
     }
 
     /// A word edit waits for a pull that holds the words, and the other way round (#272).
+    #[test]
+    fn a_slow_refresh_cant_bring_back_a_schedule_turned_off() {
+        // The window's refresh at start, slow to make the schedule, and sync turned off meanwhile (#377).
+        let d = temp("schedule");
+        let on = Sync {
+            enabled: true,
+            ..Default::default()
+        };
+        save_in(&d, &on).unwrap();
+        let made = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let refresh = std::thread::spawn({
+            let (d, made) = (d.clone(), made.clone());
+            move || {
+                change_schedule(
+                    &d,
+                    |_| {},
+                    |on| {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        made.lock().unwrap().push(on);
+                        Ok(())
+                    },
+                )
+            }
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let off = change_schedule(
+            &d,
+            |s| s.enabled = false,
+            |on| {
+                made.lock().unwrap().push(on);
+                Ok(())
+            },
+        );
+        refresh.join().unwrap().unwrap();
+        assert!(!off.unwrap().enabled);
+        assert_eq!(
+            *made.lock().unwrap(),
+            [true, false],
+            "the schedule ends off"
+        );
+        assert!(!load_in(&d).enabled);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
     #[test]
     fn word_edits_wait_for_each_other() {
         let d = temp("words-lock");
