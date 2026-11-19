@@ -189,11 +189,11 @@ pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
 pub fn learning() -> bool {
     conf::learning(&fs::read_to_string(conf_path()).unwrap_or_default())
 }
+/// The server applies it before /settings returns; a server that can't (one before #374) or didn't answer
+/// fails it. Told again on a retry, as the file may already say so while the server doesn't (#374).
 pub fn set_learning(on: bool) -> io::Result<()> {
-    if edit_conf(|old| conf::set_learning(old, on))? {
-        server("/settings")?;
-    }
-    Ok(())
+    edit_conf(|old| conf::set_learning(old, on))?;
+    server("/settings")
 }
 
 // --- Engines ---

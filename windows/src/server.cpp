@@ -9,7 +9,9 @@
 //                                                 tells the server (/deploy and /sync do it themselves when
 //                                                 none runs, and return when Rime is done), for setup and the
 //                                                 Configurator; /mozc: Mozc reads its files again;
-//                                                 /settings: the core reads sebtype.conf again;
+//                                                 /settings: the core reads sebtype.conf again, before it
+//                                                 returns (#374); exit codes as /forget's, 7 the server running
+//                                                 is too old to (none running reads it when it starts);
 //   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373)
 //   sebtype-server.exe /forget:zh|/forget:ja       the language's engine forgets what it learned (itself when
 //                                                 no server runs), for the Configurator (#375); returns when done;
@@ -238,6 +240,7 @@ Reply handle(const Request &q, HANDLE pipe) {
     case Op::Settings: core->setSettings(readSettings()); break;
   }
   Reply r = state(taken, commit);
+  r.settings = q.op == Op::Settings;
   if (Engine *e = core->running(q.lang)) {  // for /forget
     r.forgets = q.op == Op::Forget;
     r.langBusy = e->busy();
@@ -367,8 +370,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   else if (_wcsicmp(arg.c_str(), L"/settings") == 0) q.op = Op::Settings;
   else return run();
   Reply r;
-  // No server: nothing to tell, and one reads Mozc's files and sebtype.conf when it starts.
-  if (q.op == Op::Quit || q.op == Op::Mozc || q.op == Op::MozcWhenIdle || q.op == Op::Settings) return call(q, r, 5000), 0;
+  // No server: nothing to tell, and one reads Mozc's files when it starts.
+  if (q.op == Op::Quit || q.op == Op::Mozc || q.op == Op::MozcWhenIdle) return call(q, r, 5000), 0;
   const auto failed = [&](int code, const char *what) {
     note(std::string(utf8(arg)) + ": " + what + " (error " + std::to_string(GetLastError()) + "), exit " + std::to_string(code));
     return code;
@@ -380,6 +383,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     HANDLE single = CreateMutexW(nullptr, TRUE, kServerMutex);
     if (!single) return failed(2, "no mutex");
     if (GetLastError() != ERROR_ALREADY_EXISTS) {
+      if (q.op == Op::Settings) return 0;  // none runs: the next one reads sebtype.conf when it starts
       const DWORD start = GetTickCount();
       Engine *e = makeEngine(q.op == Op::Forget ? q.lang : Lang::Chinese).release();  // never closed: exiting ends its threads
       q.op == Op::Sync ? e->save() : q.op == Op::Forget ? e->forget() : e->deploy();  // with no server, no one types: at once
@@ -400,6 +404,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   }
   if (!call(q, r, 5000, 60000)) return failed(4, "the server didn't take the request");
   if (q.op == Op::Forget && !r.forgets) return failed(7, "the server can't forget (one before #375 still runs)");
+  if (q.op == Op::Settings) return r.settings ? 0 : failed(7, "the server can't read sebtype.conf again (one before #374 still runs)");
   // Until Rime is done: setup's typing and the Configurator's next step need it. A forget waits for its engine
   // only, not for a sync's chores waiting until typing is idle (#373).
   for (DWORD start = GetTickCount(); q.op == Op::Forget ? r.langBusy : r.busy; Sleep(200)) {

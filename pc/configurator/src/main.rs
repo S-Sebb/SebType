@@ -155,17 +155,28 @@ fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
     Ok(say(Msg::JaNextTime))
 }
 
-/// Learning in sebtype.conf, which the input method applies at once.
-fn apply_learning(on: bool, c: rime::Chinese, j: mozc::Japanese) -> Result<Toast, Toast> {
-    platform::set_learning(on).map_err(err)?;
-    // Saving drops an older Configurator's learning off, which hid the learned words (#374).
-    if mozc::old_learning_off(&platform::mozc_dir()) {
-        apply_japanese(j)?;
+/// Learning in sebtype.conf, which the input method applies at once. Then an older Configurator's learning
+/// off in Rime's and Mozc's own settings, which hid the learned words too (#374), goes: only once the
+/// input method has the choice, or the engine it restarts would learn.
+fn apply_learning(on: bool) -> std::io::Result<()> {
+    platform::set_learning(on)?;
+    if mozc::drop_old_learning(&platform::mozc_dir())? {
+        platform::restart_mozc();
     }
-    if rime::old_learning_off(&platform::rime_dir()) {
-        return apply_chinese(c);
+    if rime::drop_old_learning(&platform::rime_dir())? {
+        platform::redeploy_rime()?;
     }
-    Ok(say(Msg::Applied))
+    Ok(())
+}
+/// An older Configurator's learning off moves into sebtype.conf (#374): at every start, before anything
+/// saves Rime's or Mozc's settings, and from setup (--migrate) on an upgrade.
+fn migrate_learning() -> std::io::Result<()> {
+    if rime::old_learning_off(&platform::rime_dir())
+        || mozc::old_learning_off(&platform::mozc_dir())
+    {
+        apply_learning(false)?;
+    }
+    Ok(())
 }
 
 fn set_langs_model(app: &AppWindow, ui: &Ui, list: Vec<(String, bool)>) {
@@ -204,6 +215,7 @@ fn load(app: &AppWindow, ui: &Ui) {
     s.set_zh_full_punct(c.full_width_punctuation);
     s.set_zh_emoji(c.emoji);
     s.set_page_size(c.page_size.clamp(5, 9));
+    // Off too while an older Configurator's learning off stays (its migration failed).
     s.set_learn(
         platform::learning()
             && !rime::old_learning_off(&rime_dir)
@@ -355,6 +367,15 @@ fn sync_job(
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // Setup's step on an install or upgrade (pc/linux/setup-ime.sh, pc/windows/setup/setup.ps1): --migrate
+    // only migrates, and exits 1 if that failed.
+    let migrated = migrate_learning();
+    if let Err(e) = &migrated {
+        eprintln!("learning: {e}");
+    }
+    if std::env::args().any(|a| a == "--migrate") {
+        std::process::exit(i32::from(migrated.is_err()));
+    }
     // The schedule's sync (platform::schedule), and Setup's before it deletes learned words: no window.
     // Exit 1 when the sync was due and didn't go through: Setup then keeps the words (setup.ps1).
     if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
@@ -384,13 +405,9 @@ fn main() -> Result<(), slint::PlatformError> {
     // Privacy page's learning switch, --learning on or off.
     if let Some(i) = std::env::args().position(|a| a == "--learning") {
         let on = std::env::args().nth(i + 1).as_deref() == Some("on");
-        let (c, j) = (
-            rime::load(&platform::rime_dir()),
-            mozc::load(&platform::mozc_dir()).unwrap_or_default(),
-        );
-        std::process::exit(match apply_learning(on, c, j) {
+        std::process::exit(match apply_learning(on) {
             Ok(_) => 0,
-            Err((_, e)) => {
+            Err(e) => {
                 eprintln!("--learning: {e}");
                 1
             }
@@ -536,12 +553,13 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     s.on_learn_changed({
-        let (ui, weak, run) = (ui.clone(), app.as_weak(), run.clone());
+        let (weak, run) = (app.as_weak(), run.clone());
         move || {
-            let app = weak.unwrap();
-            let s = app.global::<State>();
-            let (on, c, j) = (s.get_learn(), chinese(&s, &ui), japanese(&s));
-            run(Box::new(move || apply_learning(on, c, j)));
+            let on = weak.unwrap().global::<State>().get_learn();
+            run(Box::new(move || {
+                apply_learning(on).map_err(err)?;
+                Ok(say(Msg::Applied))
+            }));
         }
     });
     s.on_ja_changed({

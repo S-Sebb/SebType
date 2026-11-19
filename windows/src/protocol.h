@@ -75,6 +75,8 @@ struct Reply {
   bool langBusy = false;
   std::string forgetError;
   int32_t deleteBefore = 0;  // characters before the caret to delete first: 日本語's undo of a commit (#376)
+  // From #374: the server read sebtype.conf again, for the Settings asked for. One before it doesn't know the op.
+  bool settings = false;
 };
 
 // Little-endian lengths and values, strings as UTF-8.
@@ -158,7 +160,7 @@ inline std::string encode(const Reply &r) {
   for (const auto &m : r.menu) {
     w.u32(m.kind), w.s(m.label), w.s(m.icon), w.b(m.checked), w.u32(static_cast<uint32_t>(m.lang));
   }
-  w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError), w.i32(r.deleteBefore);
+  w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError), w.i32(r.deleteBefore), w.b(r.settings);
   return w.out;
 }
 
@@ -183,6 +185,7 @@ inline bool decode(const std::string &in, Reply &r) {
   if (!rd.atEnd()) r.forgets = rd.b(), r.langBusy = rd.b(), r.forgetError = rd.s();
   // A server from before #376 sends no deletion; an older text service ignores it.
   r.deleteBefore = rd.atEnd() ? 0 : rd.i32();
+  if (!rd.atEnd()) r.settings = rd.b();
   return rd.ok();
 }
 

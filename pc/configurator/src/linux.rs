@@ -244,8 +244,18 @@ fn set_settings(change: impl FnOnce(&str) -> String) -> io::Result<()> {
 pub fn learning() -> bool {
     conf::learning(&fs::read_to_string(settings()).unwrap_or_default())
 }
+/// Fcitx5 has applied it when this returns. Told again on a retry, as the file may already say so while the
+/// add-on doesn't (#374); Fcitx5 not running reads it when it starts.
 pub fn set_learning(on: bool) -> io::Result<()> {
-    set_settings(|old| conf::set_learning(old, on))
+    let path = settings();
+    write_if_changed(
+        &path,
+        &conf::set_learning(&fs::read_to_string(&path).unwrap_or_default(), on),
+    )?;
+    if fcitx_running() {
+        controller("ReloadAddonConfig", &["s", "sebtype"])?;
+    }
+    Ok(())
 }
 
 // --- The candidate window: Fcitx5's classic UI draws it for Chinese and Japanese alike ---

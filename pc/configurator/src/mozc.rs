@@ -58,13 +58,24 @@ pub fn load(dir: &Path) -> io::Result<Japanese> {
 }
 
 /// Learning off as an older Configurator wrote it (NO_HISTORY), which stopped history predictions too
-/// (#374); the next save drops it. Learning is sebtype.conf's now (crate::conf): the input method keeps
-/// Mozc's history read-only while it is off.
+/// (#374). Learning is sebtype.conf's now (crate::conf): the input method keeps Mozc's history read-only
+/// while it is off. Only drop_old_learning removes this, once sebtype.conf holds it.
 pub fn old_learning_off(dir: &Path) -> bool {
     read(&dir.join(CONFIG))
         .ok()
         .and_then(|cfg| proto::get_varint(&cfg, HISTORY_LEARNING_LEVEL).ok()?)
         == Some(2)
+}
+/// True when there was one (Mozc then needs a restart).
+pub fn drop_old_learning(dir: &Path) -> io::Result<bool> {
+    if !old_learning_off(dir) {
+        return Ok(false);
+    }
+    let path = dir.join(CONFIG);
+    write(
+        &path,
+        &proto::set_varint(&read(&path)?, HISTORY_LEARNING_LEVEL, None).map_err(bad)?,
+    )
 }
 
 /// Writes config1.db, keeping every other field; true when it changed (Mozc then needs a restart).
@@ -73,7 +84,6 @@ pub fn save(dir: &Path, j: &Japanese) -> io::Result<bool> {
     let cfg = read(&path)?;
     let cfg = proto::set_varint(&cfg, SPACE_CHARACTER_FORM, j.half_width_space.then_some(2))
         .map_err(bad)?;
-    let cfg = proto::set_varint(&cfg, HISTORY_LEARNING_LEVEL, None).map_err(bad)?;
     write(&path, &cfg)
 }
 
@@ -247,13 +257,24 @@ mod tests {
         assert_eq!(load(&d).unwrap(), j);
         assert!(save(&d, &Japanese::default()).unwrap());
         assert_eq!(fs::read(d.join(CONFIG)).unwrap(), cfg);
-        // An older Configurator's learning off (NO_HISTORY) goes at the next save (#374).
+        // An older Configurator's learning off (NO_HISTORY, #374): another setting's save keeps it, as
+        // learning may not be in sebtype.conf yet; drop_old_learning removes it.
         let mut old = cfg.clone();
         old.extend(proto::varint_field(HISTORY_LEARNING_LEVEL, 2));
         fs::write(d.join(CONFIG), &old).unwrap();
         assert!(old_learning_off(&d));
+        assert!(save(
+            &d,
+            &Japanese {
+                half_width_space: true
+            }
+        )
+        .unwrap());
+        assert!(old_learning_off(&d));
         assert!(save(&d, &Japanese::default()).unwrap());
+        assert!(drop_old_learning(&d).unwrap());
         assert!(!old_learning_off(&d));
+        assert!(!drop_old_learning(&d).unwrap());
         assert_eq!(fs::read(d.join(CONFIG)).unwrap(), cfg);
 
         let w = vec![Word {
