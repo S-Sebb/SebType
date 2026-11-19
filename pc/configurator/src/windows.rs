@@ -276,6 +276,19 @@ pub fn sync_rime(_own: &Path) -> io::Result<()> {
 pub fn redeploy_rime_when_idle() -> io::Result<()> {
     server("/deploy-when-idle")
 }
+/// The same, returning once the server has it: an idle wait could last as long as someone types.
+pub fn queue_rime_redeploy() -> io::Result<()> {
+    let status = Command::new(env::current_exe()?.with_file_name("sebtype-server.exe"))
+        .args(["/deploy-when-idle", "/queue"])
+        .creation_flags(NO_WINDOW)
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "sebtype-server.exe /deploy-when-idle /queue: {status}"
+        )));
+    }
+    Ok(())
+}
 pub fn restart_mozc_when_idle() -> io::Result<()> {
     server("/mozc-when-idle")
 }

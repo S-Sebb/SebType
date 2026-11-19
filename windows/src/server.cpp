@@ -12,9 +12,11 @@
 //                                                 /settings: the core reads sebtype.conf again, before it
 //                                                 returns (#374); exit codes as /forget's, 7 the server running
 //                                                 is too old to (none running reads it when it starts);
-//   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373)
-//                                                 (and the Configurator's migration, #374); returns once queued,
-//                                                 failing when the server didn't take it
+//   sebtype-server.exe /deploy-when-idle|/mozc-when-idle  the same for a sync, once typing is idle (#373);
+//                                                 /deploy-when-idle returns when done, /mozc-when-idle once queued
+//   sebtype-server.exe /deploy-when-idle /queue    returns once queued, for the Configurator's migration (#374),
+//                                                 which mustn't wait for typing to end; both fail when the server
+//                                                 didn't take it
 //   sebtype-server.exe /forget:zh|/forget:ja       the language's engine forgets what it learned (itself when
 //                                                 no server runs), for the Configurator (#375); returns when done;
 //                                                 exit codes: 2 no mutex, 3 the server didn't answer, 4 it
@@ -359,6 +361,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   int argc = 0;
   wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
   const std::wstring arg = argv && argc > 1 ? argv[1] : L"";
+  const bool queue = argc > 2 && _wcsicmp(argv[2], L"/queue") == 0;
   LocalFree(argv);
   Request q;
   if (_wcsicmp(arg.c_str(), L"/deploy") == 0) q.op = Op::Deploy;
@@ -408,7 +411,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   if (!call(q, r, 5000, 60000)) return failed(4, "the server didn't take the request");
   if (q.op == Op::Forget && !r.forgets) return failed(7, "the server can't forget (one before #375 still runs)");
   if (q.op == Op::Settings) return r.settings ? 0 : failed(7, "the server can't read sebtype.conf again (one before #374 still runs)");
-  if (q.op == Op::MozcWhenIdle) return 0;  // queued: Mozc's restart waits for idle typing, not Rime
+  if (q.op == Op::MozcWhenIdle || queue) return 0;  // queued: it waits for idle typing, the caller doesn't
   // Until Rime is done: setup's typing and the Configurator's next step need it. A forget waits for its engine
   // only, not for a sync's chores waiting until typing is idle (#373).
   for (DWORD start = GetTickCount(); q.op == Op::Forget ? r.langBusy : r.busy; Sleep(200)) {

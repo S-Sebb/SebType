@@ -172,7 +172,7 @@ fn drop_old_learning() -> std::io::Result<()> {
         &platform::mozc_dir(),
         &pending,
         |e| match e {
-            migrate::Engine::Rime => platform::redeploy_rime_when_idle(),
+            migrate::Engine::Rime => platform::queue_rime_redeploy(),
             migrate::Engine::Mozc => platform::restart_mozc_when_idle(),
         },
     )

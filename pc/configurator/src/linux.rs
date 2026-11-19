@@ -414,6 +414,10 @@ pub fn redeploy_rime_when_idle() -> io::Result<()> {
     }
     Ok(())
 }
+/// Fcitx5 returns once it has the request.
+pub fn queue_rime_redeploy() -> io::Result<()> {
+    redeploy_rime_when_idle()
+}
 pub fn restart_mozc_when_idle() -> io::Result<()> {
     if fcitx_running() {
         controller(
