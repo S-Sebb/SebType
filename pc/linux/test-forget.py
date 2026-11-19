@@ -7,7 +7,11 @@
 # is the original one again, and still after Fcitx5 restarts. The same for 日本語's prediction (Tab after きし
 # no longer suggests the word picked) and a character form it learns (a digit's width, which Mozc keeps for
 # the whole process), and at the end the Configurator says forgetting
-# failed when the input method couldn't delete what was learned (read-only folders). Before forgetting, a
+# failed when the input method couldn't delete what was learned (read-only folders). Rime's sync folder is
+# outside its folder (installation.yaml's sync_dir, #396): a sync before forgetting puts 中文's snapshot there,
+# forgetting deletes it and another device's (through a link) but no other file there, and a sync after it
+# brings nothing back; the input method's forget fails when a snapshot there can't be read or sync_dir isn't a
+# path. Before forgetting, a
 # Forget for another language (D-Bus, or the Configurator's --forget) forgets nothing and Fcitx5 lives on.
 # Results: one line per check, also in <out>/forget-results.txt; exit 1 if a check fails.
 import os
@@ -181,6 +185,50 @@ def learn_digit_form(f, form):
     return False
 
 
+# Rime's sync folder outside its folder (#396), as a home folder may be, with a # in its path (unquoted YAML),
+# files that aren't Rime's snapshots or that its sync doesn't merge, and a device's folder through a link.
+rime_dir = f"{os.environ['XDG_DATA_HOME']}/fcitx5/rime"
+sync_dir = f"{os.environ['HOME']}/outside#sync"
+SNAPSHOT = "# Rime user dictionary\n#@/db_name\trime_ice\n"
+KEPT = {
+    "notes.txt": "not Rime's\n",
+    "archive/deep/rime_ice.userdb.txt": SNAPSHOT,
+    "other/app.userdb.txt": "an app's own\n",
+    "other/dir.userdb.txt/inside": "x\n",
+}
+for name, text in {**KEPT, "../linked-device/rime_ice.userdb.txt": SNAPSHOT}.items():
+    os.makedirs(os.path.dirname(f"{sync_dir}/{name}"), exist_ok=True)
+    with open(f"{sync_dir}/{name}", "w") as made_up:
+        made_up.write(text)
+os.symlink(f"{os.environ['HOME']}/linked-device", f"{sync_dir}/linked")
+with open(f"{rime_dir}/installation.yaml") as y:
+    lines = [line for line in y.read().splitlines() if not line.startswith("sync_dir:")]
+with open(f"{rime_dir}/installation.yaml", "w") as y:
+    y.write("\n".join(lines + [f"sync_dir: {sync_dir}"]) + "\n")
+snapshot = next(
+    f"{sync_dir}/{line.split(':', 1)[1].strip().strip(chr(34))}/rime_ice.userdb.txt"
+    for line in lines
+    if line.startswith("installation_id:")
+)
+linked = f"{sync_dir}/linked/rime_ice.userdb.txt"
+
+
+def mtime():
+    return os.stat(snapshot).st_mtime_ns if os.path.exists(snapshot) else 0
+
+
+def sync(f):
+    """Fcitx5's save (the sync's), which syncs Rime once typing is idle: whether it wrote 中文's snapshot.
+    It isn't deleted first: a snapshot that Forget left would come back in this sync's merge."""
+    before = mtime()
+    f.obj("/controller").Save(dbus_interface="org.fcitx.Fcitx.Controller1")
+    for _ in range(120):
+        if mtime() > before:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 f = Fcitx("first")
 first, picked = {}, {}
 for lang, (top, fourth) in WORDS.items():
@@ -211,6 +259,13 @@ result(
     "ja-learns-character-form",
     learned == other,
     f"3 is {base}, then 5 is {learned} after 2 in {other} width",
+)
+
+synced = sync(f)
+result(
+    "zh-syncs-outside-rime-folder",
+    synced,
+    f"snapshot {'in' if synced else 'not in'} {sync_dir}",
 )
 
 # No language, or one that learns nothing: refused and nothing forgotten, by the Configurator's --forget and
@@ -261,6 +316,13 @@ result(
     f"exit {forgot.returncode}, see {out}/forget-configurator.log",
 )
 
+left = [p for p in (snapshot, linked) if os.path.exists(p)]
+gone = [name for name in KEPT if not os.path.exists(f"{sync_dir}/{name}")]
+result(
+    "zh-snapshots-forgotten-outside-rime-folder",
+    not left and not gone,
+    f"snapshots left {left}, other files deleted {gone}",
+)
 for lang, (top, _) in WORDS.items():
     ready = f.language(lang)
     now = f.type(top)
@@ -278,6 +340,13 @@ result(
 now = digit_form(f, "6")
 result(
     "ja-character-form-forgotten-while-typing", now == base, f"6 is {now}, want {base}"
+)
+synced = sync(f)
+now = f.language("zh") and f.type(WORDS["zh"][0])
+result(
+    "zh-forgotten-after-sync",
+    synced and now == first["zh"],
+    f"{'synced' if synced else 'no sync'}, first '{now}', want '{first['zh']}'",
 )
 f.stop()
 
@@ -299,6 +368,40 @@ result(
 now = digit_form(f, "7")
 result(
     "ja-character-form-forgotten-after-restart", now == base, f"7 is {now}, want {base}"
+)
+
+
+def engine_forget():
+    """中文's forget in the input method itself (the Configurator refuses before asking it): what it said."""
+    return str(f.core.Forget("zh"))
+
+
+# A snapshot it can't read may merge back once it can, and a sync_dir that isn't a path may be any folder
+# to Rime: forgetting fails and says so.
+locked = f"{sync_dir}/locked-device/rime_ice.userdb.txt"
+os.makedirs(os.path.dirname(locked), exist_ok=True)
+with open(locked, "w") as made_up:
+    made_up.write(SNAPSHOT)
+os.chmod(locked, 0o000)
+said = engine_forget()
+os.chmod(locked, 0o644)
+result(
+    "zh-forget-fails-on-unreadable-snapshot",
+    said.endswith("rime_ice.userdb.txt: can't be read") and os.path.exists(locked),
+    f"said '{said}'",
+)
+os.remove(locked)
+with open(f"{rime_dir}/installation.yaml") as y:
+    kept_yaml = y.read()
+with open(f"{rime_dir}/installation.yaml", "w") as y:
+    y.write("\n".join(lines + [f"sync_dir: [{sync_dir}]"]) + "\n")
+said = engine_forget()
+with open(f"{rime_dir}/installation.yaml", "w") as y:
+    y.write(kept_yaml)
+result(
+    "zh-forget-refuses-sync-dir-not-a-path",
+    "isn't a path" in said,
+    f"said '{said}'",
 )
 
 # What the engines learned (made up here) in folders they can't delete from: the Configurator says it failed.

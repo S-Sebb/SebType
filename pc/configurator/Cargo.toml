@@ -14,6 +14,8 @@ rfd = "0.15"
 sys-locale = "0.3"
 # The time of the last sync, in this PC's time zone.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# installation.yaml, read as Rime (yaml-cpp) reads it (#396).
+yaml-rust2 = "0.13"
 
 # The sync password (#180): Secret Service on Linux (libdbus built in, so no dbus-devel is needed),
 # Credential Manager on Windows.
