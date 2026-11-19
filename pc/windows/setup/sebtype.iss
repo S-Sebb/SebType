@@ -7,9 +7,10 @@
 ; that SebType installed before #190, -User (as the person who runs Setup) sets up their account. Why each step
 ; exists: ../README.md.
 
-#ifndef Version
-  #define Version "0.1.0"
-#endif
+; The version is SebType's one version, the phone's too (VERSION, #420).
+#define VersionFile FileOpen(SourcePath + "\..\..\..\VERSION")
+#define Version Trim(FileRead(VersionFile))
+#expr FileClose(VersionFile)
 #ifndef Build
   #define Build "0"
 #endif

@@ -11,9 +11,10 @@
 # Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
 # Each run copies its APKs, inside the lock, to a folder of its own in app/build/runs/, so builds run at the
 # same time in one checkout can't swap each other's APK (#182). Prints the APK path last.
-# Version: <upstream-version>-sebtype.<first-parent commit count> for release (the FUTO-based app's version
-# name, kept so the numbers go on); debug builds are always <upstream-version>-sebtype.dev, code 1, so
-# BuildConfig doesn't change with every commit or branch and Gradle's build cache serves every worktree (#58).
+# Version: a release is named ../VERSION (SebType's one version, the Windows setup's too, #420), its code the
+# first-parent commit count, which goes on from the FUTO-based releases (0.1.30-sebtype.<count>); debug builds
+# are always <VERSION>-dev, code 1, so BuildConfig doesn't change with every commit or branch and Gradle's
+# build cache serves every worktree (#58).
 set -euo pipefail
 cd "$(dirname "$0")"
 source ../tools/lib.sh
@@ -37,10 +38,10 @@ sign_release() {
 unsigned=${SEBTYPE_UNSIGNED:-}
 signed=; [[ $kind == release ]] && signed=1
 if [[ -n $signed ]]; then
-  VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} build=$VERSION_CODE
+  VERSION_CODE=${VERSION_CODE:-$(git rev-list --first-parent --count HEAD)} VERSION_NAME=$(cat ../VERSION)
   [[ -n $unsigned || ( -f $keydir/sebtype-release.jks && -f $keydir/keystore.password ) ]] ||
     { echo "build: keystore missing in $keydir" >&2; exit 1; }
-else VERSION_CODE=1 build=dev; fi
+else VERSION_CODE=1 VERSION_NAME=$(cat ../VERSION)-dev; fi
 
 # Runs older than a day are gone: a caller uses its APK within minutes.
 mkdir -p app/build/runs
@@ -61,7 +62,6 @@ export JAVA_HOME=$JDK21
 [[ -x $JAVA_HOME/bin/javac ]] || { echo "build: JDK 21 not found (set JAVA_HOME_21)" >&2; exit 1; }
 [[ -d $ANDROID_HOME/ndk/28.2.13676358 ]] || { echo "build: NDK 28.2.13676358 missing in $ANDROID_HOME" >&2; exit 1; }
 
-VERSION_NAME="$(cat upstream-version)-sebtype.$build"
 export VERSION_CODE VERSION_NAME
 case $kind in
   release)
