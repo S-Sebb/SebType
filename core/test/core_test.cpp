@@ -1039,6 +1039,13 @@ TEST_F(ChineseTest, TheHighlightMovesWithinTheModelsList) {
   zh->changePage(true);
   EXPECT_EQ(zh->highlighted(), 6);
   EXPECT_EQ(zh->page().items.at(0).text, l[6]);
+  // A digit past the last page's end picks nothing, not Rime's candidate there on its own first page
+  ASSERT_LT(l.size(), 12u);
+  zh->key({static_cast<uint32_t>('1' + l.size() - 6), 0, false});
+  EXPECT_EQ(zh->takeCommit(), "");
+  EXPECT_TRUE(zh->composing());
+  EXPECT_EQ(list(), l);
+  EXPECT_EQ(zh->highlighted(), 6);
   zh->key({0xff55, 0, false});  // Page Up
   zh->key({0xff54, 0, false});  // Down
   zh->key({0xff52, 0, false});  // Up

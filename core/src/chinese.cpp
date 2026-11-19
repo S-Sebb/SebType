@@ -130,8 +130,13 @@ class Chinese final : public Engine {
       const int size = std::max(rime_->pageSize(), 1), start = highlight_ / size * size;
       const int digit = static_cast<int>(k.sym) - '1';
       Candidate c;
-      if (k.sym == ks::space || (digit >= 0 && digit < size && candidateAt(start + digit, c))) {
-        pick(k.sym == ks::space ? highlight_ : start + digit);
+      if (k.sym == ks::space) {
+        pick(highlight_);
+        return true;
+      }
+      // A digit past the last page's end picks nothing: Rime's own page isn't the one showing.
+      if (digit >= 0 && digit < size) {
+        if (candidateAt(start + digit, c)) pick(start + digit);
         return true;
       }
       if (k.sym == ks::Up || k.sym == ks::Down) {
