@@ -144,10 +144,12 @@ if (-not $RimeData) { $RimeData = Join-Path $PSScriptRoot 'rime-data.zip' }  # n
 New-Item -ItemType Directory -Force $StateDir | Out-Null
 $UserLog = Join-Path $StateDir 'setup.log'
 Start-Transcript -Append $UserLog | Out-Null
-# After an undo nothing of SebType's stays: its log and folders go too, unless something else is in them.
+$warned = $false
+# After an undo nothing of SebType's stays: its log and folders go too, unless something else is in them,
+# or the log holds a warning about what may be left.
 function Remove-UserFolder {
   Stop-Transcript | Out-Null
-  Remove-Item $UserLog
+  if (-not $warned) { Remove-Item $UserLog }
   foreach ($dir in (Join-Path $StateDir 'backup'), $StateDir) {
     Get-Item $dir -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item
   }
@@ -474,15 +476,38 @@ if ($bar.IsLegacySwitchingMode -ne $state.LegacySwitchingMode) {
 # names it) and its files. The server's copy stays (Decisions #2). With the Configurator's schedule lock
 # (sync.rs, schedule_locked), so a Configurator's startup refresh can't make the task again: it waits,
 # then finds sync.json gone (#401). Released before the lock file goes, so none locks a new one meanwhile.
+# A Configurator holds it for seconds; one stuck holding it (suspended, or waiting on schtasks) mustn't
+# stop the uninstall: after 30 s, or on any error but the lock being held, this goes on without it.
 $ScheduleLock = Join-Path $StateDir 'schedule.lock'
-$lock = if (Test-Path $StateDir) { [IO.File]::Open($ScheduleLock, 'OpenOrCreate', 'ReadWrite', 'ReadWrite, Delete') }
-# Overlaps the Configurator's lock, all of the file; FileStream.Lock doesn't wait.
-while ($lock) { try { $lock.Lock(0, 1); break } catch { Start-Sleep -Milliseconds 100 } }
+$lock = $unlocked = $null
+try {
+  $lock = if (Test-Path $StateDir) { [IO.File]::Open($ScheduleLock, 'OpenOrCreate', 'ReadWrite', 'ReadWrite, Delete') }
+  $deadline = (Get-Date).AddSeconds(30)
+  # Overlaps the Configurator's lock, all of the file; FileStream.Lock doesn't wait.
+  while ($lock) {
+    try { $lock.Lock(0, 1); break } catch {
+      $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+      if (($e.HResult -band 0xFFFF) -ne 33) { throw }  # ERROR_LOCK_VIOLATION: someone holds it
+      if ((Get-Date) -gt $deadline) { throw 'held for 30 s' }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+} catch {
+  $unlocked = "$($_.Exception.Message)"
+  if ($lock) { $lock.Close(); $lock = $null }
+}
 & { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType sync' /f 2>&1 | Out-Null }
 [void][SebType.User32]::CredDeleteW('login.SebType sync', 1, 0)  # CRED_TYPE_GENERIC
 Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
 if ($lock) { $lock.Close() }
 Remove-Item $ScheduleLock -Force -ErrorAction SilentlyContinue
+if ($unlocked) {
+  $warned = $true
+  $left = @(if (Get-ScheduledTask -TaskName 'SebType sync' -ErrorAction SilentlyContinue) { "the 'SebType sync' task" }) +
+    @('sync.json', 'schedule.lock' | Where-Object { Test-Path (Join-Path $StateDir $_) })
+  Write-Output ("user: warning: sync removed without its schedule lock ($unlocked); a SebType Configurator still running " +
+    "may make the 'SebType sync' task again. Left: $(if ($left) { $left -join ', ' } else { 'nothing' })")
+}
 # SebType's own settings (the candidate window's).
 $conf = Join-Path $env:APPDATA 'SebType\sebtype.conf'
 Remove-Item $conf -ErrorAction SilentlyContinue
