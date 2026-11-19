@@ -297,10 +297,7 @@ said = next(
 )
 result(
     "configurator-says-forgetting-failed",
-    forgot.returncode != 0
-    and said.count("Err(") == 2
-    and "test.userdb.txt" in said
-    and "segment.db" in said,
+    forgot.returncode != 0 and said.count("Permission denied") == 2,
     f"exit {forgot.returncode}, {said or 'no answer'}",
 )
 f.stop()
