@@ -15,6 +15,19 @@ object MozcLearnedSync {
     const val DIR = "mozc_learned"
     /** core's learned::kMaxBytes: a larger record isn't taken in, so it isn't downloaded. */
     const val MAX_BYTES = 1L shl 20
+    /** Every device ID this Mozc folder's record went up under (sebtype_sync.py's OWN_LEARNED). */
+    const val OWN = "mozc_learned.own"
+
+    /** One changes when Rime's installation is made anew: the record under an older one is this phone's own,
+     *  never another device's to learn (#415 review). */
+    fun ownIds(mozcDir: File): Set<String> =
+        File(mozcDir, OWN).takeIf { it.isFile }?.readText()?.split(Regex("\\s+"))?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+
+    /** Keeps [id] among [ownIds], before the record goes up under it. */
+    fun keepOwnId(mozcDir: File, id: String) {
+        val ids = ownIds(mozcDir)
+        if(id !in ids) File(mozcDir, OWN).writeText((ids + id).sorted().joinToString("") { "$it\n" })
+    }
 
     /**
      * Uploads each of [files] with [put]. A server from before #409 refuses this phone's record (404): the

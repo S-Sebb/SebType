@@ -67,6 +67,18 @@ class MozcLearnedSyncTest {
         assertEquals(11, read.sum())
     }
 
+    /** The IDs the phone's record went up under are kept, each once: a record under an older one is never taken
+     *  as another device's (#415 review). */
+    @Test
+    fun theIdsTheRecordWentUpUnderAreKept() {
+        assertEquals(emptySet<String>(), MozcLearnedSync.ownIds(tmp.root))
+        MozcLearnedSync.keepOwnId(tmp.root, "phone-b")
+        MozcLearnedSync.keepOwnId(tmp.root, "phone-a")
+        MozcLearnedSync.keepOwnId(tmp.root, "phone-b")
+        assertEquals(setOf("phone-a", "phone-b"), MozcLearnedSync.ownIds(tmp.root))
+        assertEquals("phone-a\nphone-b\n", File(tmp.root, MozcLearnedSync.OWN).readText())
+    }
+
     /** A server from before #409 refuses the phone's record: the files after it still go up; any other refusal
      *  fails the sync (#416 review). */
     @Test

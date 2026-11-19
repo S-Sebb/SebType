@@ -316,11 +316,12 @@ object Sync {
         var remote = server.list()
         val ownBefore = installationId(context)
         PersonalDictionarySync.dropOldChineseCopies(context, sync)
+        val mine = MozcLearnedSync.ownIds(Engines.mozcDir(context))
         for(file in remote) {
             val dictionary = file.name in PersonalDictionarySync.FILES
             val picks = file.name == MozcLearnedSync.FILE
             if(file.device == ownBefore || !DEVICE.matches(file.device) || !(dictionary || picks || FILE.matches(file.name))) continue
-            if(picks && file.size > MozcLearnedSync.MAX_BYTES) continue
+            if(picks && (file.size > MozcLearnedSync.MAX_BYTES || file.device in mine)) continue
             val local = if(picks) File(Engines.mozcDir(context), "${MozcLearnedSync.DIR}/${file.device}.txt") else File(sync, "${file.device}/${file.name}")
             val old = local.takeIf { it.isFile }?.readBytes()
             if(old != null && sha256(old) == file.sha256) continue
@@ -350,8 +351,10 @@ object Sync {
         val own = installationId(context) ?: return Status.Synced(System.currentTimeMillis())
         if(own != ownBefore) remote = server.list()
         val uploaded = remote.filter { it.device == own }.associate { it.name to it.sha256 }
+        val record = File(Engines.mozcDir(context), MozcLearnedSync.FILE).takeIf { it.isFile }
+        if(record != null) MozcLearnedSync.keepOwnId(Engines.mozcDir(context), own)
         val files = File(sync, own).listFiles { f -> FILE.matches(f.name) }.orEmpty().associate { it.name to it.readBytes() } +
-            listOfNotNull(File(Engines.mozcDir(context), MozcLearnedSync.FILE).takeIf { it.isFile }?.let { MozcLearnedSync.FILE to it.readBytes() })
+            listOfNotNull(record?.let { MozcLearnedSync.FILE to it.readBytes() })
         MozcLearnedSync.uploadAll((files + PersonalDictionarySync.snapshots(context)).filter { (name, bytes) -> uploaded[name] != sha256(bytes) }) { name, bytes ->
             server.upload(own, name, bytes)
         }
