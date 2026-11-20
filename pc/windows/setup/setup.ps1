@@ -438,6 +438,43 @@ if (-not $Undo) {
   # Configurator moves it to sebtype.conf, which keeps using it, before the engines next start.
   $p = Start-Process -Wait -PassThru (Join-Path $PSScriptRoot 'sebtype-configurator.exe') '--migrate'
   Write-Output "user: learning settings $(if ($p.ExitCode) { "not migrated (exit $($p.ExitCode)), the Configurator tries again when it starts" } else { 'current' })"
+  # The daily update check (#422): the Configurator's --check-updates as this user while they are logged
+  # on, which its toast needs; a day missed runs at the next chance. A newer release shows a toast; the
+  # Configurator's "Check for updates automatically" turns it off. Registered with schtasks /xml rather
+  # than Register-ScheduledTask so it works without elevation (just like SebType sync in windows.rs).
+  $taskXml = Join-Path $env:TEMP "sebtype-update-task-$PID.xml"
+  $exe = [Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'sebtype-configurator.exe'))
+  $who = [Security.SecurityElement]::Escape("$env:USERDOMAIN\$env:USERNAME")
+  $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T12:00:00</StartBoundary>
+      <RandomDelay>PT1H</RandomDelay>
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><UserId>$who</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>$exe</Command><Arguments>--check-updates</Arguments></Exec>
+  </Actions>
+</Task>
+"@
+  [IO.File]::WriteAllText($taskXml, $xml, [Text.Encoding]::Unicode)
+  try {
+    $out = & { $ErrorActionPreference = 'Continue'; schtasks.exe /create /tn 'SebType update check' /xml $taskXml /f 2>&1 }
+    if ($LASTEXITCODE) { throw "scheduling 'SebType update check' failed ($LASTEXITCODE): $($out -join ' ')" }
+  } finally { Remove-Item $taskXml -ErrorAction SilentlyContinue }
+  Write-Output 'user: daily update check scheduled'
   # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
   # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it
   # would be out of the apps' reach): the text service starts it at the first key, the Run key at logon.
@@ -498,6 +535,9 @@ try {
 }
 & { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType sync' /f 2>&1 | Out-Null }
 [void][SebType.User32]::CredDeleteW('login.SebType sync', 1, 0)  # CRED_TYPE_GENERIC
+# The daily update check (#422), its state and downloads.
+& { $ErrorActionPreference = 'Continue'; schtasks.exe /delete /tn 'SebType update check' /f 2>&1 | Out-Null }
+Remove-Item (Join-Path $StateDir 'update.json'), (Join-Path $StateDir 'updates') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $SyncFile, (Join-Path $StateDir 'sync.lock'), (Join-Path $StateDir 'sebtype_sync.py') -Force -ErrorAction SilentlyContinue
 if ($lock) { $lock.Close() }
 Remove-Item $ScheduleLock -Force -ErrorAction SilentlyContinue

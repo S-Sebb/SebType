@@ -1,6 +1,6 @@
 import { ScrollView, AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { State, SyncStatus } from "state.slint";
+import { State, SyncStatus, UpdateStatus } from "state.slint";
 import { Switch, Segmented, PixelFrame, Card, Row, Divider, SectionTag, PageTitle, Info, Button, Kbd, Field, TitleBar } from "widgets.slint";
 
 // Which group (page) and which screen inside it is shown, and the question waiting for an answer.
@@ -622,6 +622,43 @@ component AboutPage inherits Page {
             VerticalLayout { alignment: center;
                 PageTitle { text: @tr("SebType Configurator"); font-size: 18px; }
                 Text { text: @tr("Version {} · {}", State.version, State.system); color: Theme.muted; font-size: Theme.detail-size; }
+            }
+        }
+    }
+    SectionTag { text: @tr("Updates"); }
+    Card {
+        property <UpdateStatus> st: State.update-status;
+        property <bool> busy: st == UpdateStatus.checking || st == UpdateStatus.downloading || st == UpdateStatus.installing;
+        property <bool> offer: st == UpdateStatus.available || st == UpdateStatus.failed;
+        Row {
+            title: st == UpdateStatus.none ? @tr("Not checked yet")
+                : st == UpdateStatus.checking ? @tr("Checking…")
+                : st == UpdateStatus.up-to-date ? @tr("SebType is up to date")
+                : st == UpdateStatus.available ? @tr("SebType {} is available", State.update-version)
+                : st == UpdateStatus.offline ? @tr("Can't reach GitHub")
+                : st == UpdateStatus.downloading ? @tr("Downloading SebType {}…", State.update-version)
+                : st == UpdateStatus.installing ? @tr("Installing SebType {}…", State.update-version)
+                : st == UpdateStatus.installed ? @tr("SebType {} is installed. Reopen this window", State.update-version)
+                : @tr("The update didn't install");
+            detail: st == UpdateStatus.up-to-date ? @tr("Last checked {}", State.update-checked)
+                : st == UpdateStatus.available ? @tr("You have {}. Installing it needs an administrator's approval", State.update-installed)
+                : st == UpdateStatus.installed ? @tr("Log out and in, or turn Virtual Keyboard off and on, to use it")
+                : (st == UpdateStatus.offline || st == UpdateStatus.failed) ? State.update-error
+                : "";
+            if !busy && st != UpdateStatus.installed: VerticalLayout { alignment: center;
+                Button {
+                    text: st == UpdateStatus.available ? @tr("Update…") : st == UpdateStatus.failed ? @tr("Try again") : @tr("Check now");
+                    primary: st == UpdateStatus.available;
+                    clicked => { if offer { State.install-update(); } else { State.check-updates(); } }
+                }
+            }
+        }
+        Divider { }
+        Row {
+            title: @tr("Check for updates automatically");
+            detail: @tr("Once a day, from SebType's releases on GitHub");
+            VerticalLayout { alignment: center;
+                Switch { checked <=> State.update-auto; label: @tr("Check for updates automatically"); toggled => { State.update-auto-changed(); } }
             }
         }
     }

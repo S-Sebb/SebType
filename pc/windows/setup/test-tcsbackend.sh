@@ -15,6 +15,9 @@
 # test user's Remote Desktop session, its pictures in ~/scratch/SebType/<issue>/screens/windows-<SCALE>-<time>.
 # ONLY=forget runs only forgetting learned words while the server runs (#375): test-forget.ps1 as the test user.
 # ONLY=learned runs only Mozc's learned conversions sync (#409): test-learned-sync.ps1 as the test user.
+# ONLY=update runs only the daily update check (#422): its task after Setup, test-update.ps1 as the test user
+# against a release served on TCSBackEnd (nothing downloaded), the update's admin side (start-setup.ps1) refusing
+# a changed setup and upgrading from its checked copy, and the task and copies gone after uninstall.
 # ONLY=private runs only private fields and the Configurator's learning off (#270, #374): test-private.ps1 in
 # the test user's Remote Desktop session.
 # SCALE=150 (100 to 500) sets the session's display scaling (Remote Desktop's desktop scale factor).
@@ -57,12 +60,17 @@ perf=
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
   exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
+  # The Configurator's test build, which takes test-update.ps1's release on 127.0.0.1 (#422)
+  [ "${ONLY:-}" = update ] && { gh run download -R S-Sebb/SebType "$run" -n sebtype-configurator-update-test -D "$out/in" >/dev/null 2>&1 ||
+    missing=${missing:-"downloading sebtype-configurator-update-test from run $run failed"}; }
   # perf-rime.exe (from the librime build), for the Rime per-key check against the librime the setup installed (#133)
   [ -n "${PERF_RUN:-}" ] && gh run download -R S-Sebb/SebType "$run" -n perf-rime -D "$out/in" >/dev/null 2>&1
 else
   exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
 fi
 [ -n "${PERF_RUN:-}" ] && perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/rime/perf-rime.exe 2>/dev/null | head -1)
+update_test=
+[ "${ONLY:-}" = update ] && { update_test=$(ls "$out"/in/sebtype-configurator-update-test.exe 2>/dev/null) || missing=${missing:-'no sebtype-configurator-update-test.exe: CI builds it'}; }
 [ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
 old=
 if [ "${ONLY:-}" = upgrade ]; then
@@ -106,7 +114,7 @@ EOF
 cleanup() {  # what a run that died may leave: its session, user, profile, SebType, Weasel, Mozc, tasks and files
   # Uninstalling a text service late can change the Administrator's language list: it goes back as found.
   { echo "\$adminLanguages = '$(sed -n 's/^languages: //p' "$out/before.txt")'"; cat; } <<'EOF' | T=900 tps
-Get-ScheduledTask -TaskName SebType-setup*, 'SebType sync' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+Get-ScheduledTask -TaskName SebType-setup*, 'SebType sync', 'SebType update check' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'sebtype-setup-test' -or $_.ExecutablePath -match '\\(is-[^\\]+\.tmp|_iu[^\\]+)\\' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 # the session first: an account deleted while its session runs leaves its profile loaded until a reboot
@@ -160,7 +168,7 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" "$here/test-update-user.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi

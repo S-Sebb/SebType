@@ -390,3 +390,57 @@ msgstr "SebType 在 GitHub 上的问题页"
 
 msgid "Licence and credits"
 msgstr "许可与致谢"
+
+msgid "Updates"
+msgstr "更新"
+
+msgid "Not checked yet"
+msgstr "尚未检查"
+
+msgid "Checking…"
+msgstr "正在检查…"
+
+msgid "SebType is up to date"
+msgstr "SebType 已是最新版本"
+
+msgid "SebType {} is available"
+msgstr "SebType {} 可以更新了"
+
+msgid "Can't reach GitHub"
+msgstr "无法连接 GitHub"
+
+msgid "Downloading SebType {}…"
+msgstr "正在下载 SebType {}…"
+
+msgid "Installing SebType {}…"
+msgstr "正在安装 SebType {}…"
+
+msgid "SebType {} is installed. Reopen this window"
+msgstr "SebType {} 已安装，请重新打开本窗口"
+
+msgid "The update didn't install"
+msgstr "更新未能安装"
+
+msgid "Last checked {}"
+msgstr "上次检查：{}"
+
+msgid "You have {}. Installing it needs an administrator's approval"
+msgstr "当前版本 {}。安装需要管理员授权"
+
+msgid "Log out and in, or turn Virtual Keyboard off and on, to use it"
+msgstr "重新登录或关闭再打开虚拟键盘后生效"
+
+msgid "Update…"
+msgstr "更新…"
+
+msgid "Try again"
+msgstr "重试"
+
+msgid "Check now"
+msgstr "立即检查"
+
+msgid "Check for updates automatically"
+msgstr "自动检查更新"
+
+msgid "Once a day, from SebType's releases on GitHub"
+msgstr "每天一次，查看 GitHub 上 SebType 的新版本"

@@ -172,6 +172,9 @@ Name: "desktopicon"; Description: "{cm:Desktop}"; GroupDescription: "{cm:Shortcu
 
 [Files]
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; The Configurator's update (#422): the person's side and the admin side, run from here, where only admins write.
+Source: "update-user.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start-setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; The text service (64-bit, and 32-bit for 32-bit apps), its server, librime with Rime's shared data, and
 ; Mozc. An app that has the text service loaded keeps it until it closes.
 Source: "{#Service}\sebtype-server.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -200,12 +203,18 @@ Source: "{#Pictures}\finish-1.png"; Flags: dontcopy
 Source: "{#Pictures}\finish-2.png"; Flags: dontcopy
 
 [Icons]
-Name: "{autoprograms}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"
+; The update's toast (#422) shows under this shortcut's AppUserModelID (windows.rs, AUMID).
+Name: "{autoprograms}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"; AppUserModelID: "SebType.Configurator"
 Name: "{autodesktop}\{cm:Configurator}"; Filename: "{app}\sebtype-configurator.exe"; IconFilename: "{app}\sebtype.ico"; Tasks: desktopicon
 
 [Registry]
 ; The server starts at logon, as each user; the text service also starts it when it isn't running.
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SebType"; ValueData: """{app}\sebtype-server.exe"""; Flags: uninsdeletevalue
+
+; A click on the update's toast (#422) opens sebtype-configurator:update: the Configurator's About page.
+Root: HKLM; Subkey: "Software\Classes\sebtype-configurator"; ValueType: string; ValueData: "URL:SebType Configurator"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\sebtype-configurator"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKLM; Subkey: "Software\Classes\sebtype-configurator\shell\open\command"; ValueType: string; ValueData: """{app}\sebtype-configurator.exe"" --update"
 
 [Run]
 Filename: "{app}\sebtype-configurator.exe"; Description: "{cm:OpenConfigurator}"; Flags: nowait postinstall skipifsilent
@@ -218,6 +227,8 @@ Type: files; Name: "{app}\msvcp140*.dll*"
 Type: files; Name: "{app}\vcruntime140*.dll*"
 
 [UninstallDelete]
+; the update's checked copies of Setup (#422, start-setup.ps1)
+Type: filesandordirs; Name: "{app}\updates"
 Type: files; Name: "{app}\setup.log"
 Type: files; Name: "{app}\sebtype.dll.*.old"
 Type: files; Name: "{app}\x86\sebtype.dll.*.old"
@@ -274,6 +285,18 @@ begin
   Log(Text);
   if not Silent then
     MsgBox(Text, Typ, MB_OK);
+end;
+
+// /NOUSERSTEPS: the Configurator's update (#422, update-user.ps1) runs Setup elevated, so the original
+// user may be the administrator who approved UAC; it runs the person's steps itself, as them.
+function NoUserSteps: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/NOUSERSTEPS') = 0 then
+      Result := True;
 end;
 
 // Runs a setup.ps1 step; on failure says so (logged only in a silent run) and makes Setup's exit code 1.
@@ -400,7 +423,8 @@ procedure StopServers(AsOriginalUser: Boolean);
 var
   Code: Integer;
 begin
-  if FileExists(ExpandConstant('{app}\sebtype-server.exe')) then
+  // With /NOUSERSTEPS the person's own server has saved and quit already (update-user.ps1).
+  if FileExists(ExpandConstant('{app}\sebtype-server.exe')) and not (AsOriginalUser and NoUserSteps) then
     if AsOriginalUser then
       ExecAsOriginalUser(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code)
     else
@@ -454,10 +478,13 @@ begin
   WizardForm.StatusLabel.Caption := CustomMessage('Engines');
   StopServers(True);  // one an app started again from the old files since PrepareToInstall
   // How the account is before SebType, saved before the machine step changes it.
-  Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
+  if not NoUserSteps then
+    Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
   Step('-Machine', '-Machine -Languages ' + Chosen + ' -Log "' + ExpandConstant('{app}\setup.log') + '"',
     ExpandConstant('{app}\setup.log'), False);
   // The account of the person who started Setup, not the administrator's it may run as.
+  if NoUserSteps then
+    Exit;
   WizardForm.StatusLabel.Caption := CustomMessage('Account');
   Step('-User', '-User -Languages ' + Chosen, '%LOCALAPPDATA%\SebType\setup.log', True);
 end;

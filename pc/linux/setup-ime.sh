@@ -78,7 +78,18 @@ if ((undo_configurator)); then
     echo "change: remove SebType's sync login from the keyring"
     secret-tool clear service 'SebType sync' username login 2>/dev/null || true  # none there, or no keyring
   fi
-  for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock}; do
+  # The daily update check (#422), with a check still waiting on its notification, its state and downloads.
+  if [[ -f $sync_units/sebtype-update.timer ]]; then
+    echo "change: stop and remove SebType's daily update check"
+    systemctl --user disable --now sebtype-update.timer 2>/dev/null || true
+    systemctl --user stop sebtype-update.service 2>/dev/null || true
+    rm -f "$sync_units"/sebtype-update.{timer,service}
+    systemctl --user daemon-reload 2>/dev/null
+  fi
+  for updates in "${XDG_RUNTIME_DIR:-/nonexistent}/sebtype-updates" "${XDG_CACHE_HOME:-$HOME/.cache}/sebtype-updates"; do
+    [[ -d $updates ]] && { echo "change: remove $updates"; rm -r "$updates"; }
+  done
+  for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock,update.json}; do
     # Released before it goes: a sync starting meanwhile would lock a new file while this holds the old (#401).
     [[ $f == */schedule.lock && -n ${schedule_lock-} ]] && exec {schedule_lock}>&-
     [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; }
@@ -643,6 +654,39 @@ fi
 # Configurator moves it to sebtype.conf, which keeps using it. Nothing to do once moved.
 if ((!dry)) && [[ -x $app_bin ]]; then
   "$app_bin" --migrate || warn "SebType Configurator couldn't move learning off to SebType's settings; it tries again when it starts"
+fi
+
+# 14b. The daily update check (#422): the Configurator's --check-updates from a systemd user timer, once a
+# day and at the next login after a missed day. A newer release shows a notification; the Configurator's
+# "Check for updates automatically" turns it off. A click on the notification opens the Configurator from
+# the check's service, which keeps it running (KillMode=process).
+update_units=$config/systemd/user
+want_update_service="[Unit]
+Description=SebType's update check
+
+[Service]
+Type=oneshot
+ExecStart=\"$app_bin\" --check-updates
+KillMode=process"
+want_update_timer="[Unit]
+Description=SebType's update check once a day
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target"
+if [[ $(cat "$update_units/sebtype-update.service" 2>/dev/null) != "$want_update_service" ||
+  $(cat "$update_units/sebtype-update.timer" 2>/dev/null) != "$want_update_timer" ]] &&
+  change "schedule SebType's daily update check (undo: $0 --undo-configurator)"; then
+  mkdir -p "$update_units"
+  printf '%s\n' "$want_update_service" > "$update_units/sebtype-update.service"
+  printf '%s\n' "$want_update_timer" > "$update_units/sebtype-update.timer"
+  if ! { systemctl --user daemon-reload && systemctl --user enable --now sebtype-update.timer; }; then
+    warn "the daily update check couldn't start: systemctl --user enable --now sebtype-update.timer"
+  fi
 fi
 
 # Self-check of the live session.

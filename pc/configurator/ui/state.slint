@@ -15,6 +15,9 @@ export enum Msg {
 // What sync's switch says under it, as the phone's (ChineseSync.Status).
 export enum SyncStatus { off, not-yet, syncing, synced, offline, login-failed }
 
+// The About page's update section (#422): the last check's outcome, then the install's steps.
+export enum UpdateStatus { none, checking, up-to-date, available, offline, downloading, installing, installed, failed }
+
 export global State {
     in property <string> version;
     in property <string> system;          // "Linux" or "Windows"
@@ -58,6 +61,14 @@ export global State {
     in property <string> sync-server;        // the saved login, "" before the first
     in property <string> sync-user;
 
+    // Updates (#422)
+    in-out property <bool> update-auto: true;   // Check for updates automatically
+    in property <UpdateStatus> update-status;
+    in property <string> update-version;        // the newer release's
+    in property <string> update-installed;
+    in property <string> update-checked;        // when the last check went through
+    in property <string> update-error;          // why the check or the install failed
+
     // What the last change did, shown for a moment (main.rs's toast); app.slint words it.
     in-out property <Msg> toast;
     in property <string> toast-arg;          // the file for exported, the error for failed
@@ -86,4 +97,7 @@ export global State {
     callback save-login(string, string, string) -> bool;   // server, user, password; false: not an https address
     callback delete-on-server();
     callback open-help();
+    callback update-auto-changed();
+    callback check-updates();
+    callback install-update();
 }

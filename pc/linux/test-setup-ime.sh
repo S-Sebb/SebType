@@ -66,7 +66,8 @@ live_dry() {
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e '^would: install packages librime-octagram ' \
     -e 'English ⇄ the last other language' -e 'remove the old SebType icon theme' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
     -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" -e "^would: install SebType's input method" \
-    -e "^would: show SebType's tray menu" -e '^would: install packages librime-lua' && return 1
+    -e "^would: show SebType's tray menu" -e '^would: install packages librime-lua' \
+    -e "^would: schedule SebType's daily update check" && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
@@ -92,7 +93,7 @@ case \"\$*\" in
   'dnf install -y librime-octagram') echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/librime-octagram\" ;;
   'dnf distro-sync -y librime '*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
-stub systemctl 'cat "$FAKE/session-env" 2>/dev/null; true'
+stub systemctl 'echo "systemctl $*" >> "$FAKE/systemctl.log"; cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
 stub qdbus6 'echo "qdbus $*" >> "$FAKE/qdbus.log"'
 stub busctl 'case "$*" in
@@ -128,7 +129,7 @@ fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$
 
 fresh_dry() {
   local o; o=$(fake_run --dry-run < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^would:' <<<"$o") == 20 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
+  [[ $(grep -c '^would:' <<<"$o") == 21 ]] && grep -q 'QT_IM_MODULE=fcitx$' <<<"$(grep warning <<<"$o")" &&
     [[ ! -e $h/.config/kwinrc && ! -e $fake/kga.log && ! -e $fake/deploy.log && $(wc -c < "$h/.config/mozc/config1.db") == 11 && ! -e $h/.config/environment.d && -f $h/.local/share/flatpak/overrides/com.qq.QQ ]]
 }
 check fresh-dry-run-changes-nothing fresh_dry
@@ -157,7 +158,10 @@ configurator() {
   cmp ../configurator/target/release/sebtype-configurator "$d/sebtype/configurator/sebtype-configurator" &&
     grep -qx "Exec=$d/sebtype/configurator/sebtype-configurator" "$d/applications/sebtype-configurator.desktop" &&
     desktop-file-validate "$d/applications/sebtype-configurator.desktop" &&
-    [[ -f $d/icons/hicolor/192x192/apps/sebtype-configurator.png ]]
+    [[ -f $d/icons/hicolor/192x192/apps/sebtype-configurator.png ]] &&
+    # the daily update check (#422)
+    grep -qx "ExecStart=\"$d/sebtype/configurator/sebtype-configurator\" --check-updates" "$h/.config/systemd/user/sebtype-update.service" &&
+    grep -qx 'OnCalendar=daily' "$h/.config/systemd/user/sebtype-update.timer"
 }
 # Fcitx5's own switchers are empty, so Super+Space reaches SebType's input method (#190), all windows share
 # one state, the other settings stay, Fcitx5's clipboard, Unicode and quick phrase hotkeys are empty, and Fcitx5 reloaded it.
@@ -253,15 +257,18 @@ undo_names() {
     grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml"
 }
 
-# --undo-configurator removes the app and puts back the candidate window theme Picnic replaced; a second
+# --undo-configurator removes the app and its daily update check (#422), stopping a check that waits on its
+# notification, and puts back the candidate window theme Picnic replaced; a second
 # undo changes nothing, and setup installs it again.
 undo_configurator() {
   local d=$h/.local/share c=$h/.config/fcitx5/conf/classicui.conf o
   mkdir -p "$d/fcitx5/themes/sebtype-picnic" "${c%/*}"
   printf 'Theme=Nord\nDarkTheme=default-dark\n' > "$d/fcitx5/themes/sebtype-picnic/previous"
   printf 'Vertical Candidate List=False\nTheme=sebtype-picnic\nDarkTheme=sebtype-picnic\n' > "$c"
+  : > "$fake/systemctl.log"
   o=$(fake_run --undo-configurator < /dev/null) || return 1; echo "$o"
-  [[ $(grep -c '^change:' <<<"$o") == 5 && ! -e $d/sebtype/configurator && ! -e $d/applications/sebtype-configurator.desktop &&
+  grep -qx 'systemctl --user stop sebtype-update.service' "$fake/systemctl.log" || { echo "the update check wasn't stopped"; return 1; }
+  [[ $(grep -c '^change:' <<<"$o") == 6 && ! -e $d/sebtype/configurator && ! -e $h/.config/systemd/user/sebtype-update.timer && ! -e $d/applications/sebtype-configurator.desktop &&
     ! -e $d/icons/hicolor/192x192/apps/sebtype-configurator.png && ! -e $d/fcitx5/themes/sebtype-picnic ]] &&
     [[ $(cat "$c") == $'Vertical Candidate List=False\nTheme=Nord\nDarkTheme=default-dark' ]] &&
     o=$(fake_run --undo-configurator < /dev/null) && [[ -z $o ]] &&

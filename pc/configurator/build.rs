@@ -21,4 +21,9 @@ fn main() {
     // The Linux RPM's build (linux/sebtype.spec) names its sources: their files all have time 0, so the UI is
     // compiled again when they change.
     println!("cargo:rerun-if-env-changed=SEBTYPE_SOURCES");
+    // SebType's one version (VERSION, #420): the About page's, and the installed one the update check
+    // compares a release with on Windows.
+    let version = std::fs::read_to_string("../../VERSION").unwrap();
+    println!("cargo:rustc-env=SEBTYPE_VERSION={}", version.trim());
+    println!("cargo:rerun-if-changed=../../VERSION");
 }

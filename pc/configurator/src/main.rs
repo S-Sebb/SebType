@@ -10,6 +10,7 @@ mod patch;
 mod proto;
 mod rime;
 mod sync;
+mod update;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -90,6 +91,52 @@ fn language() -> &'static str {
         .into_iter()
         .find(|l| system.starts_with(l))
         .unwrap_or("en")
+}
+/// msgid → msgstr of a .po file.
+fn catalog(po: &str) -> std::collections::BTreeMap<String, String> {
+    let unquote = |l: &str| {
+        l.trim()
+            .trim_matches('"')
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+    };
+    let (mut map, mut id, mut text, mut in_id) = (
+        std::collections::BTreeMap::new(),
+        String::new(),
+        String::new(),
+        false,
+    );
+    for line in po.lines().chain(["msgid \"\""]) {
+        if let Some(rest) = line.strip_prefix("msgid ") {
+            if !id.is_empty() {
+                map.insert(std::mem::take(&mut id), std::mem::take(&mut text));
+            }
+            (id, text, in_id) = (unquote(rest), String::new(), true);
+        } else if let Some(rest) = line.strip_prefix("msgstr ") {
+            (text, in_id) = (unquote(rest), false);
+        } else if line.starts_with('"') {
+            if in_id {
+                id += &unquote(line)
+            } else {
+                text += &unquote(line)
+            }
+        }
+    }
+    map
+}
+
+/// A window string in the window's language, for text shown outside it (the update's notification): the
+/// same translations, from lang/.
+fn tr(english: &str) -> String {
+    let po = match language() {
+        "zh" => include_str!("../lang/zh/LC_MESSAGES/sebtype-configurator.po"),
+        "ja" => include_str!("../lang/ja/LC_MESSAGES/sebtype-configurator.po"),
+        _ => return english.into(),
+    };
+    catalog(po)
+        .remove(english)
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| english.into())
 }
 
 struct Ui {
@@ -463,6 +510,79 @@ fn sync_job(
     });
 }
 
+/// The About page's update section, from the last check.
+fn show_update(app: &AppWindow, u: &update::Update) {
+    let st = app.global::<State>();
+    st.set_update_auto(u.auto);
+    st.set_update_checked(
+        chrono::DateTime::from_timestamp(u.checked, 0)
+            .map(|t| {
+                t.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
+            .unwrap_or_default()
+            .into(),
+    );
+    st.set_update_installed(platform::installed_version().into());
+    // An update installed since the check isn't newer any more.
+    let newer = update::newer(&platform::installed_version(), &u.latest);
+    st.set_update_version(newer.clone().unwrap_or_default().into());
+    st.set_update_status(match (newer, u.checked) {
+        (Some(_), _) => UpdateStatus::Available,
+        (None, 0) => UpdateStatus::None,
+        (None, _) => UpdateStatus::UpToDate,
+    });
+}
+
+fn set_update_status(weak: &slint::Weak<AppWindow>, status: UpdateStatus, error: String) {
+    let _ = weak.upgrade_in_event_loop(move |app| {
+        let st = app.global::<State>();
+        st.set_update_status(status);
+        st.set_update_error(error.into());
+    });
+}
+
+/// Check now, off the window's thread.
+fn check_updates(weak: slint::Weak<AppWindow>) {
+    set_update_status(&weak, UpdateStatus::Checking, String::new());
+    std::thread::spawn(move || match update::check_and_save() {
+        Ok(_) => {
+            let _ = weak.upgrade_in_event_loop(|app| show_update(&app, &update::load()));
+        }
+        Err(e) => set_update_status(&weak, UpdateStatus::Offline, e),
+    });
+}
+
+/// Update…: the release's files, checked, then the system's installer with its admin prompt. On Windows
+/// Setup replaces this exe, so the window closes once Setup has started.
+fn install_update(weak: slint::Weak<AppWindow>) {
+    set_update_status(&weak, UpdateStatus::Downloading, String::new());
+    std::thread::spawn(move || {
+        let installed = (|| {
+            let (_, files) = update::check()?.ok_or("SebType is up to date".to_string())?;
+            let dir = update::private_dir().map_err(|e| e.to_string())?;
+            let installed = update::download(&files, &dir).and_then(|paths| {
+                set_update_status(&weak, UpdateStatus::Installing, String::new());
+                platform::install_update(&paths).map_err(|e| e.to_string())
+            });
+            // Windows' update goes on after this window closes, and removes the download once Setup has
+            // its own copy (update-user.ps1); a failed one leaves it here.
+            if cfg!(not(windows)) || installed.is_err() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+            installed
+        })();
+        match installed {
+            Err(e) => set_update_status(&weak, UpdateStatus::Failed, e),
+            Ok(()) if cfg!(windows) => {
+                let _ = slint::quit_event_loop();
+            }
+            Ok(()) => set_update_status(&weak, UpdateStatus::Installed, String::new()),
+        }
+    });
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // Which sources the Linux RPM built it from (linux/versions.sh, configurator_sources; "dev" elsewhere).
     if std::env::args().any(|a| a == "--sources") {
@@ -482,6 +602,16 @@ fn main() -> Result<(), slint::PlatformError> {
     // Exit 1 when the sync was due and didn't go through: Setup then keeps the words (setup.ps1).
     if let Some(a) = std::env::args().find(|a| a == "--sync" || a == "--sync-before-removal") {
         std::process::exit(sync::run(a == "--sync-before-removal").map_or(1, |_| 0));
+    }
+    // The schedule's daily update check (#422, sebtype-update.timer, the "SebType update check" task).
+    if std::env::args().any(|a| a == "--check-updates") {
+        std::process::exit(update::scheduled().map_or_else(
+            |e| {
+                eprintln!("--check-updates: {e}");
+                1
+            },
+            |_| 0,
+        ));
     }
     // The network trigger's: plans a sync soon (#377).
     #[cfg(target_os = "linux")]
@@ -547,7 +677,7 @@ fn main() -> Result<(), slint::PlatformError> {
         ja_shown: Default::default(),
     });
     let s = app.global::<State>();
-    s.set_version(env!("CARGO_PKG_VERSION").into());
+    s.set_version(env!("SEBTYPE_VERSION").into());
     s.set_system(platform::SYSTEM.into());
     s.set_ui_font(platform::ui_font(lang).into());
     s.set_langs(ModelRc::from(ui.langs.clone()));
@@ -588,6 +718,11 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     if let Some(p) = arg("--sub") {
         nav.set_sub(p);
+    }
+    // The update's notification (#422): the About page, checking.
+    let from_notification = args.iter().any(|a| a == "--update");
+    if from_notification {
+        nav.set_page(5);
     }
 
     let jobs = worker(app.as_weak());
@@ -974,6 +1109,34 @@ fn main() -> Result<(), slint::PlatformError> {
     });
     s.on_open_help(|| platform::open_url("https://github.com/S-Sebb/SebType/issues"));
 
+    show_update(&app, &update::load());
+    s.on_update_auto_changed({
+        let weak = app.as_weak();
+        move || {
+            let mut u = update::load();
+            u.auto = weak.unwrap().global::<State>().get_update_auto();
+            let saved = update::save(&u);
+            if let (Some(app), Err(e)) = (weak.upgrade(), saved) {
+                toast(&app, err(e));
+            }
+        }
+    });
+    s.on_check_updates({
+        let weak = app.as_weak();
+        move || check_updates(weak.clone())
+    });
+    s.on_install_update({
+        let weak = app.as_weak();
+        move || install_update(weak.clone())
+    });
+    if from_notification {
+        // after an update, what of it didn't work (Windows: its own side runs on after this window closed)
+        match platform::update_error() {
+            Some(e) => set_update_status(&app.as_weak(), UpdateStatus::Failed, e),
+            None => check_updates(app.as_weak()),
+        }
+    }
+
     app.run()
 }
 
@@ -997,7 +1160,8 @@ fn reload_after_import(app: &AppWindow, languages: Vec<(String, bool)>) {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs, path::Path};
+    use super::catalog;
+    use std::{fs, path::Path};
 
     /// Learning goes in a backup and comes back (#374), from an older one's chinese.learn and japanese.learn too.
     #[test]
@@ -1072,35 +1236,6 @@ mod tests {
             rest = &rest[end..];
         }
         out
-    }
-
-    /// msgid → msgstr of a .po file.
-    fn catalog(po: &str) -> BTreeMap<String, String> {
-        let unquote = |l: &str| {
-            l.trim()
-                .trim_matches('"')
-                .replace("\\\"", "\"")
-                .replace("\\\\", "\\")
-        };
-        let (mut map, mut id, mut text, mut in_id) =
-            (BTreeMap::new(), String::new(), String::new(), false);
-        for line in po.lines().chain(["msgid \"\""]) {
-            if let Some(rest) = line.strip_prefix("msgid ") {
-                if !id.is_empty() {
-                    map.insert(std::mem::take(&mut id), std::mem::take(&mut text));
-                }
-                (id, text, in_id) = (unquote(rest), String::new(), true);
-            } else if let Some(rest) = line.strip_prefix("msgstr ") {
-                (text, in_id) = (unquote(rest), false);
-            } else if line.starts_with('"') {
-                if in_id {
-                    id += &unquote(line)
-                } else {
-                    text += &unquote(line)
-                }
-            }
-        }
-        map
     }
 
     #[test]

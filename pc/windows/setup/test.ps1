@@ -47,6 +47,9 @@ nobody's own input settings change, then removes the user and its profile:
    folder too) as the test user, not elevated, a silent uninstall.
 -Only learned: Mozc's learned conversions sync (#409): a silent install, test-learned-sync.ps1 (in the folder
    too, with sebtype_sync.py) as the test user, not elevated, a silent uninstall.
+-Only update: the daily update check (#422): a silent install, its task, test-update.ps1 (in the folder too) as
+   the test user, not elevated, the update's admin side (the installed start-setup.ps1) refusing a changed
+   setup and upgrading from its checked copy in Program Files, a silent uninstall and the task and copies gone.
 -Only private: private fields and the Configurator's learning off (#270, #374): a silent install,
    test-private.ps1 (in the folder too) as the test user, not elevated, with -AnyDisplay, a silent uninstall.
 
@@ -100,7 +103,7 @@ function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.Languag
 if ($Typing) {
   try {
     # Scripts of their own, which make no keys through Remote Desktop (#275, #270): no key server.
-    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt' }
+    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt'; 'update' = 'test-update.ps1', '422', 'update-results.txt'; 'update-user' = 'test-update-user.ps1', '422', 'update-user-results.txt' }
     if ($own.ContainsKey($Typing)) {
       $script, $dir, $file = $own[$Typing]
       $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\$script" -AnyDisplay -Out "$out\$dir" 2>&1 | Out-String
@@ -758,6 +761,63 @@ namespace SebTypeSetupTest {
       Check "$Only-install" { Silent "$Only-install" @(); 'silent, all languages' }
       Typing $Only 900
       Silent-Uninstall $Only
+      return
+    }
+    if ($Only -eq 'update') {
+      # The daily update check (#422): Setup schedules it for the person, test-update.ps1 runs it against a
+      # release served here, and the uninstall removes it with its link.
+      Check 'update-install' { Silent update-install @(); 'silent, all languages' }
+      Check 'update-task-scheduled' {
+        $t = Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue
+        if (-not $t) { throw "no 'SebType update check' task" }
+        $a = $t.Actions[0]
+        if ($a.Execute -ne "$App\sebtype-configurator.exe" -or $a.Arguments -ne '--check-updates' -or $t.Principal.UserId -notmatch "\b$user$" -or
+          -not $t.Settings.StartWhenAvailable -or $t.Triggers[0].DaysInterval -ne 1) {
+          throw "the task runs '$($a.Execute) $($a.Arguments)' as $($t.Principal.UserId), daily: $($t.Triggers[0].DaysInterval), when available: $($t.Settings.StartWhenAvailable)"
+        }
+        "daily as $($t.Principal.UserId), and at the next chance after a missed day"
+      }
+      Typing update 300
+      # The update's admin side as update-user.ps1 runs it elevated (the installed start-setup.ps1, here
+      # without UAC: this runs elevated already): Setup only from its checked copy where only admins can write, and
+      # none of the person's steps; then its own side as the test user, not elevated (update-user.ps1).
+      function Start-Copy($sha) {
+        $said = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$App\start-setup.ps1" -Setup $setup -Sha $sha -Log "$out\setup-update-copy.log" 2>&1
+        $LASTEXITCODE, (($said | Out-String).Trim())
+      }
+      Check 'update-setup-refused-when-changed' {
+        $code, $said = Start-Copy ('0' * 64)
+        if ($code -ne 90) { throw "a SHA-256 that isn't the setup's: exit $code, $said" }
+        if (Get-ChildItem "$App\updates" -Directory -ErrorAction SilentlyContinue) { throw "a copy left in $App\updates" }
+        "exit 90: $said"
+      }
+      Check 'update-setup-from-protected-copy' {
+        $userLog = "$env:LOCALAPPDATA\SebType\setup.log"
+        $before = (Get-Item $userLog).Length
+        $code, $said = Start-Copy (Get-FileHash -Algorithm SHA256 $setup).Hash
+        if ($code -ne 0 -or $said -notmatch '^started (\d+) (.+)$') { throw "exit $code, $said" }
+        $id, $copy = [int]$Matches[1], $Matches[2]
+        if (-not $copy.StartsWith("$App\updates\update-")) { throw "Setup ran from $copy" }
+        $acl = (Get-Acl (Split-Path $copy)).Access | Where-Object { $_.FileSystemRights -match 'Write|Modify|FullControl' -and $_.AccessControlType -eq 'Allow' } |
+          ForEach-Object { $_.IdentityReference.Value } | Where-Object { $_ -notmatch 'Administrators|SYSTEM|TrustedInstaller|CREATOR OWNER' }
+        if ($acl) { throw "$copy's folder is writable by $($acl -join ', ')" }
+        $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+        if ($p -and -not $p.WaitForExit(900000)) { throw 'Setup ran over 15 minutes' }
+        if (-not (Select-String -Quiet -Path "$out\setup-update-copy.log" -Pattern 'Installation process succeeded')) { throw "Setup didn't finish: out\setup-update-copy.log" }
+        if ((Get-Item $userLog).Length -ne $before) { throw "Setup ran the person's steps: $userLog changed" }
+        "Setup ran from $copy (only admins can write there) and upgraded SebType, without the person's steps"
+      }
+      # Remove the task update-install made while elevated, so update-user must recreate it as the unelevated test user.
+      Unregister-ScheduledTask 'SebType update check' -Confirm:$false -ErrorAction SilentlyContinue
+      Typing update-user 600
+      Silent-Uninstall update
+      Check 'update-task-removed' {
+        $left = @(if (Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue) { 'the task' }) +
+          @(if (Test-Path 'HKLM:\SOFTWARE\Classes\sebtype-configurator') { 'the sebtype-configurator: link' }) +
+          @(if (Test-Path "$App\updates") { "$App\updates" })
+        if ($left) { throw "left: $($left -join ', ')" }
+        'the task, the link and the copies gone'
+      }
       return
     }
     if ($Only -in 'forget', 'learned') {

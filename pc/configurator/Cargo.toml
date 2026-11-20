@@ -16,11 +16,20 @@ sys-locale = "0.3"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # installation.yaml, read as Rime (yaml-cpp) reads it (#396).
 yaml-rust2 = "0.13"
+# An update's files, checked against the release's SHA-256 (#422).
+sha2 = "0.10"
+
+[features]
+# The tests' builds only (build.sh's sebtype-configurator-update-test): SEBTYPE_UPDATE_URL, a release
+# served on 127.0.0.1, in place of GitHub's (#422).
+update-test = []
 
 # The sync password (#180): Secret Service on Linux (libdbus built in, so no dbus-devel is needed),
 # Credential Manager on Windows.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+# The update's notification (#422), on the libdbus keyring builds in.
+dbus = "0.9"
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6", features = ["windows-native"] }
 

@@ -1,0 +1,48 @@
+<#
+An update's own side (#422, the installed update-user.ps1), as the logged-on person,
+not elevated: test.ps1's -Only update runs it as its test user once Setup has upgraded SebType with
+/NOUSERSTEPS. Run without its Setup (-NoSetup: UAC can't be clicked here), it must run Setup's steps for
+the person as this person: setup.ps1 -User -Save and -User with the languages Setup keeps, whose update task
+then runs as this person. Results: one line per check in <Out>\update-user-results.txt; exit 0 only if all pass.
+
+    powershell -ExecutionPolicy Bypass -File test-update-user.ps1 [-Out <folder>]
+#>
+param([string]$Out = "$env:USERPROFILE\scratch\SebType\422", [switch]$AnyDisplay)
+$ErrorActionPreference = 'Stop'
+$app = "$env:ProgramFiles\SebType"
+New-Item -ItemType Directory -Force $Out | Out-Null
+$results = "$Out\update-user-results.txt"
+Set-Content -Encoding utf8 $results ''
+function Result($name, $status, $why = '') {
+  $line = "$status $name$(if ($why) { ": $why" })"
+  Add-Content -Encoding utf8 $results $line; Write-Host $line
+}
+function Check($name, [scriptblock]$body) {
+  try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
+}
+
+Check 'update-user-steps-as-the-person' {
+  $userLog = "$env:LOCALAPPDATA\SebType\setup.log"
+  $errFile = "$env:LOCALAPPDATA\SebType\update-error.txt"
+  Remove-Item $errFile -Force -ErrorAction SilentlyContinue
+  $before = @(Get-Content -Encoding utf8 $userLog -ErrorAction SilentlyContinue).Count
+  $said = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$app\update-user.ps1" -NoSetup 2>&1
+  $code = $LASTEXITCODE
+  # the About page it opens afterwards (no window here: no OpenGL over Remote Desktop)
+  Start-Sleep 2; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  $said = ($said | Out-String).Trim()
+  $new = (Get-Content -Encoding utf8 $userLog -ErrorAction SilentlyContinue | Select-Object -Skip $before) -join "`n"
+  $err = if (Test-Path $errFile) { Get-Content -Raw $errFile } else { '' }
+  if ($code -ne 0 -or $said -ne 'approved' -or $err) {
+    throw "exit $code, said '$said'$(if ($err) { ", update-error.txt: $($err.Trim())" })$(if ($new) { "; setup.log: $($new.Trim())" })"
+  }
+  if ($new -notmatch 'user: saved how the account is before SebType' -or $new -notmatch 'user: done \(') {
+    throw "missing -User -Save or -User in setup.log: $new"
+  }
+  $t = Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue
+  if (-not $t -or $t.Principal.UserId -notmatch "\b$([regex]::Escape($env:USERNAME))$") { throw "the update task runs as '$($t.Principal.UserId)'" }
+  $done = ([regex]::Match($new, 'user: done \([^\r\n]*')).Value
+  "as $env:USERNAME: -User -Save and -User ran ($done); the update task runs as $($t.Principal.UserId)"
+}
+if (Select-String -Path $results -Pattern '^FAIL' -Quiet) { exit 1 }
+exit 0

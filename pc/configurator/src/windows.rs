@@ -375,6 +375,135 @@ pub fn sync_started() -> u64 {
 }
 pub fn after_sync(_seen: u64, _enabled: bool) {}
 
+// --- Updates (#422) ---
+
+pub fn installed_version() -> String {
+    crate::update::BUILT.into()
+}
+
+/// The downloads, in SebType's folder, which uninstalling removes.
+pub fn updates_dir() -> PathBuf {
+    sebtype_dir().join("updates")
+}
+
+/// The Start menu shortcut's AppUserModelID (sebtype.iss), which Windows shows a toast under.
+const AUMID: &str = "SebType.Configurator";
+
+fn xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// A toast. A click on it or its button opens sebtype-configurator:update, which Setup registers to open
+/// the About page (sebtype.iss), so nothing waits here.
+fn toast_xml(summary: &str, body: &str, action: &str) -> String {
+    let open = "sebtype-configurator:update";
+    format!(
+        "<toast activationType=\"protocol\" launch=\"{open}\"><visual><binding template=\"ToastGeneric\">\
+         <text>{}</text><text>{}</text></binding></visual><actions>\
+         <action content=\"{}\" activationType=\"protocol\" arguments=\"{open}\"/></actions></toast>",
+        xml(summary),
+        xml(body),
+        xml(action)
+    )
+}
+
+/// `shown` runs once Windows took the toast.
+pub fn notify_update(
+    summary: &str,
+    body: &str,
+    action: &str,
+    shown: &mut dyn FnMut(),
+) -> io::Result<()> {
+    let out = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!(
+                "$ErrorActionPreference = 'Stop'; \
+                 $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]; \
+                 $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]; \
+                 $x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml($env:SEBTYPE_TOAST); \
+                 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{AUMID}').Show([Windows.UI.Notifications.ToastNotification]::new($x))"
+            ),
+        ])
+        .env("SEBTYPE_TOAST", toast_xml(summary, body, action))
+        .creation_flags(NO_WINDOW)
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other(format!(
+            "toast: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    shown();
+    Ok(())
+}
+
+/// update-user.ps1's command line, installed next to this exe in Program Files (only admins can write
+/// there): short, whatever the paths.
+fn update_user_command(app: &Path, setup: &Path, sha: &str) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+    ]
+    .map(Into::into)
+    .into();
+    args.extend([
+        app.join("update-user.ps1").into(),
+        "-Setup".into(),
+        setup.into(),
+        "-Sha".into(),
+        sha.into(),
+    ]);
+    args
+}
+
+/// Installs the release's Setup (pc/windows/README.md) through update-user.ps1, which runs Setup with
+/// one UAC prompt from a copy start-setup.ps1 checked where only admins can write, and this person's
+/// steps as them. Returns once UAC is approved; the caller then quits, so Setup can replace this exe,
+/// and the About page opens again afterwards. The download stays: update-user.ps1 removes it.
+pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
+    use io::BufRead;
+    let (setup, sha) = files.first().ok_or_else(|| io::Error::other("no setup"))?;
+    let exe = env::current_exe()?;
+    let app = exe.parent().ok_or_else(|| io::Error::other("no folder"))?;
+    let mut user = Command::new("powershell.exe")
+        .args(update_user_command(app, setup, sha))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(NO_WINDOW)
+        .spawn()?;
+    let mut line = String::new();
+    io::BufReader::new(user.stdout.take().unwrap()).read_line(&mut line)?;
+    match line.trim() {
+        "approved" => Ok(()), // it runs on: Setup, then this person's steps
+        "cancelled" => Err(io::Error::other(
+            "not allowed: the admin prompt was cancelled",
+        )),
+        l => Err(io::Error::other(
+            l.strip_prefix("error: ")
+                .unwrap_or("the update didn't start")
+                .to_string(),
+        )),
+    }
+}
+
+/// What a finished update's own side couldn't do, once (update-user.ps1).
+pub fn update_error() -> Option<String> {
+    let file = sebtype_dir().join("update-error.txt");
+    let e = fs::read_to_string(&file).ok()?;
+    let _ = fs::remove_file(file);
+    Some(e)
+}
+
 pub fn open_url(url: &str) {
     let _ = Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", url])
@@ -386,8 +515,113 @@ pub fn open_url(url: &str) {
 mod tests {
     use super::*;
 
-    /// The sync task also runs when Windows connects to a network (#377), half a minute later, and never
-    /// twice at once.
+    /// A click on the toast or its button opens the About page through Setup's protocol; the text is escaped.
+    #[test]
+    fn the_toast_opens_the_about_page() {
+        let t = toast_xml("SebType 0.2.0 <is> available", "A & B", "Update…");
+        assert!(t.starts_with(
+            "<toast activationType=\"protocol\" launch=\"sebtype-configurator:update\">"
+        ));
+        assert!(t.contains("<text>SebType 0.2.0 &lt;is&gt; available</text><text>A &amp; B</text>"));
+        assert!(t.contains("activationType=\"protocol\" arguments=\"sebtype-configurator:update\""));
+    }
+
+    /// The admin side (here not elevated, from a copy in a folder of the test's) starts Setup from its
+    /// own copy once that has the release's SHA-256, and nothing when the download isn't the release's.
+    #[test]
+    fn an_update_starts_only_a_checked_copy_of_the_setup() {
+        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "target/test-tmp/start-setup-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("app")).unwrap();
+        let script = d.join("app/start-setup.ps1");
+        fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../windows/setup/start-setup.ps1"
+            ),
+            &script,
+        )
+        .unwrap();
+        // a stand-in for Setup that needs no admin (it refuses Setup's switches, and exits)
+        let setup = d.join("SebType setup.exe");
+        fs::copy(r"C:\Windows\System32\PING.EXE", &setup).unwrap();
+        let sha = crate::update::sha256_file(&setup).unwrap();
+        let run = |sha: &str| {
+            Command::new("powershell.exe")
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                ])
+                .arg(&script)
+                .arg("-Setup")
+                .arg(&setup)
+                .args(["-Sha", sha])
+                .output()
+                .unwrap()
+        };
+        let root = d.join("app/updates");
+        let out = run(&sha);
+        let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert!(!matches!(out.status.code(), Some(90 | 91)), "{out:?}");
+        let copy = said
+            .splitn(3, ' ')
+            .nth(2)
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        assert!(
+            said.starts_with("started ") && copy.starts_with(&root),
+            "{said}"
+        );
+        assert_eq!(crate::update::sha256_file(&copy).unwrap(), sha);
+        let out = run(&"0".repeat(64));
+        assert_eq!(out.status.code(), Some(90), "{out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("SebType setup.exe isn't the release's")
+        );
+        // nothing of the refused copy left (the first one may be: Windows holds an exe just run a moment)
+        let first = copy.parent().and_then(Path::file_name).unwrap();
+        let left: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(left.iter().all(|n| n == first), "{left:?}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// The admin side runs Setup without the person's steps: an administrator approving UAC for them
+    /// would get those (update-user.ps1 runs them as the person).
+    #[test]
+    fn an_update_runs_setup_without_the_persons_steps() {
+        let script = include_str!("../../windows/setup/start-setup.ps1");
+        assert!(script
+            .lines()
+            .any(|l| l.starts_with("$Arguments = @(") && l.contains("'/NOUSERSTEPS'")));
+    }
+
+    /// Windows takes 32,767 characters on a command line: the update's stays far from that with a long
+    /// account folder.
+    #[test]
+    fn an_updates_command_line_is_short() {
+        let long = format!(
+            r"C:\Users\{}\AppData\Local\SebType\updates\update-1",
+            "a".repeat(200)
+        );
+        let args = update_user_command(
+            Path::new(r"C:\Program Files\SebType"),
+            &Path::new(&long).join("SebType-setup-0.2.0.exe"),
+            &"0".repeat(64),
+        );
+        let length: usize = args.iter().map(|a| a.len() + 3).sum();
+        assert!(length < 1000, "{length}");
+    }
+
     #[test]
     fn sync_task_runs_when_the_network_comes_back() {
         let task = sync_task(Path::new(r"C:\Program Files\A&B\sebtype-configurator.exe"));

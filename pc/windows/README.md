@@ -73,6 +73,29 @@ instead of deleting it, and says so (#271); setting up that language again moves
 sync sends its words. When sync was never on, the words are deleted as before. `-User -Undo` then removes sync's scheduled task, its login in
 Credential Manager and its files in `%LOCALAPPDATA%\SebType`.
 
+**Updates (#422).** `setup.ps1 -User` schedules the task "SebType update check": `sebtype-configurator.exe
+--check-updates` once a day at noon, as the person while they are logged on, and at the next chance after a
+missed day. It asks GitHub for SebType's latest release (`releases/latest`; tags `v<MAJOR.MINOR.PATCH>`
+only, so the `v0.1.30-sebtype.N` tags from before 0.1.0 are never newer) and compares it with the
+Configurator's version (`VERSION`). A newer release shows a toast once, under the Start menu shortcut's
+AppUserModelID `SebType.Configurator`; clicking it opens `sebtype-configurator:update`, which Setup
+registers to open the Configurator's About page. There, Update… downloads `SebType-setup-<version>.exe` from
+the release's download address into a new folder in `%LOCALAPPDATA%\SebType\updates` and checks its size
+and SHA-256 against GitHub's (the asset's `digest`; none, no install). The update's own side
+(`update-user.ps1`, as the person, not elevated) then does Setup's steps for the person first (their server
+saves the learned words and quits; `setup.ps1 -User -Save`), and one UAC prompt elevates the admin side
+(`start-setup.ps1`). Setup installs both next to the Configurator in Program Files, where only admins can
+write, and they run from there with `-File`, the download and its SHA-256 as arguments. That copies the setup into a new folder in `%ProgramFiles%\SebType\updates`, where only
+admins can write, checks the copy's SHA-256 there and runs that copy as an upgrade (`/SILENT
+/SUPPRESSMSGBOXES /NORESTART`, the languages chosen before) with `/NOUSERSTEPS`: only the machine's part, so
+an administrator who approves UAC for someone else gets none of that person's steps. A download changed after
+the check never runs; the next update and the uninstall remove the copies, and the own side removes the
+download once Setup has finished. The Configurator closes once UAC
+is approved, so Setup can replace it. After Setup, the own side runs `setup.ps1 -User` with the languages
+Setup keeps, as the person, and opens the About page again, with what failed if anything did. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
+takes `SEBTYPE_UPDATE_URL`, a release on 127.0.0.1 (`test-update.ps1`). About's "Check for updates automatically" turns the daily
+check off, Check now checks at once. `-User -Undo` removes the task, `update.json` and the downloads.
+
 ### What it does, and why
 
 | Step | Change | Why |
@@ -144,6 +167,7 @@ needs a PC that can be restarted after.
 | `round2-*` | Silent: install with 中文 and 日本語 only (English after them), upgrade to English and 中文 (Japanese's words go) keeping a page size of 8 set before it, uninstall; as before |
 | `upgrade-*` (`ONLY=upgrade`) | The SebType before #190 (Weasel and Mozc, from main's last setup before it) with learned words, then this one over it: Weasel and Mozc gone with their registrations, the learned words kept; typing as in round 1; uninstall; as before |
 | `zh-*`, `ja-*`, `configurator-forgets-*` (`ONLY=forget`) | `setup/test-forget.ps1` as the test user: a picked 4th candidate of shishi and kisha is learned; the Configurator's Forget (`sebtype-configurator.exe --forget zh`, `ja`) while both engines are open, Mozc's history in memory only and its DLL's next read held 8 s as an antivirus scan holds it; the first candidate is the original one again at once and after the server restarts; so is きし's first prediction (Tab) and a digit's width Mozc learned; Forget zh answers while a sync's deploy waits for idle typing, and Forget ja is still going while Mozc's DLL is held (#375) |
+| `update-*` (`ONLY=update`) | The "SebType update check" task after Setup (daily, as the test user); `setup/test-update.ps1` as the test user: `--check-updates` against a release served on TCSBackEnd finds it, shows one toast and not a second, and `sebtype-configurator:update` opens the Configurator with `--update`; after the uninstall the task and the link are gone (#422) |
 | `machine-as-before`, `admin-input-as-before`, `tcsbackend-as-found` | No SebType, Weasel or Mozc registration left; the Administrator's input methods and TCSBackEnd's users, sessions and game backend as found |
 
 `setup/test-focus-out.ps1` checks, on a PC with SebType installed and in the logged-on person's session,
