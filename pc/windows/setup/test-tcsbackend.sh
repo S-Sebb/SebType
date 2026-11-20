@@ -16,7 +16,8 @@
 # ONLY=forget runs only forgetting learned words while the server runs (#375): test-forget.ps1 as the test user.
 # ONLY=learned runs only Mozc's learned conversions sync (#409): test-learned-sync.ps1 as the test user.
 # ONLY=update runs only the daily update check (#422): its task after Setup, test-update.ps1 as the test user
-# against a release served on TCSBackEnd (nothing downloaded or installed), and the task gone after uninstall.
+# against a release served on TCSBackEnd (nothing downloaded), the update's admin side (start-setup.ps1) refusing
+# a changed setup and upgrading from its checked copy, and the task and copies gone after uninstall.
 # ONLY=private runs only private fields and the Configurator's learning off (#270, #374): test-private.ps1 in
 # the test user's Remote Desktop session.
 # SCALE=150 (100 to 500) sets the session's display scaling (Remote Desktop's desktop scale factor).
@@ -168,7 +169,7 @@ if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
 if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
-  "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
+  "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" "$repo/pc/configurator/src/start-setup.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 mark 'inputs uploaded'

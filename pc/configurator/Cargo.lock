@@ -4242,6 +4242,7 @@ dependencies = [
 name = "sebtype-configurator"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "dbus",
  "keyring",

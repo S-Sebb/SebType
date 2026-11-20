@@ -224,6 +224,8 @@ Type: files; Name: "{app}\msvcp140*.dll*"
 Type: files; Name: "{app}\vcruntime140*.dll*"
 
 [UninstallDelete]
+; the update's checked copies of Setup (#422, start-setup.ps1)
+Type: filesandordirs; Name: "{app}\updates"
 Type: files; Name: "{app}\setup.log"
 Type: files; Name: "{app}\sebtype.dll.*.old"
 Type: files; Name: "{app}\x86\sebtype.dll.*.old"

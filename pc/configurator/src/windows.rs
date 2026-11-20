@@ -443,51 +443,63 @@ pub fn notify_update(
     Ok(())
 }
 
-/// Opens the setup so nothing can change or delete it (share: read only), checks its SHA-256 through that
-/// handle and starts it through the shell, so Windows asks for admin (UAC); the handle stays open until
-/// Setup exits. Prints "started" once Setup runs.
-const START_SETUP: &str = r#"$ErrorActionPreference = 'Stop'
-try {
-  $f = [IO.File]::Open($env:SEBTYPE_SETUP, 'Open', 'Read', 'Read')
-  $sha = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($f)).Replace('-', '').ToLower()
-  if ($sha -ne $env:SEBTYPE_SHA256) { [Console]::Out.WriteLine('changed'); exit 3 }
-  try { $p = Start-Process -PassThru -FilePath $env:SEBTYPE_SETUP -ArgumentList $env:SEBTYPE_SETUP_ARGS.Split(' ') }
-  catch { [Console]::Out.WriteLine('cancelled'); exit 2 }
-  [Console]::Out.WriteLine('started'); [Console]::Out.Flush()
-  $p.WaitForExit()
-} finally { if ($f) { $f.Dispose() } }"#;
-
-/// Starts the release's Setup as an upgrade runs (pc/windows/README.md): silent but for its progress,
-/// with the languages chosen before, from a PowerShell that holds the file (START_SETUP). Returns once
-/// Setup runs; the caller then quits: Setup replaces this exe.
-pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
-    start_setup(files, "/SILENT /SUPPRESSMSGBOXES /NORESTART").map(drop)
+/// The admin side's PowerShell (start-setup.ps1) with its values, for -EncodedCommand: nothing on the
+/// way can change it, and the values are base64, so no quoting.
+fn start_setup_command(setup: &Path, sha: &str, args: &[&str], root: Option<&Path>) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let value = |v: &str| {
+        format!(
+            "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{}')))",
+            STANDARD.encode(v)
+        )
+    };
+    let mut script = format!(
+        "$Setup = {}\n$Sha = {}\n$Arguments = @({})\n",
+        value(&setup.to_string_lossy()),
+        value(sha),
+        args.iter().map(|a| value(a)).collect::<Vec<_>>().join(", ")
+    );
+    if let Some(root) = root {
+        script += &format!("$Root = {}\n", value(&root.to_string_lossy()));
+    }
+    script += include_str!("start-setup.ps1");
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    STANDARD.encode(utf16)
 }
 
-/// The PowerShell that holds the setup, once Setup runs.
-fn start_setup(files: &[crate::update::Download], args: &str) -> io::Result<std::process::Child> {
-    use io::BufRead;
+/// Starts the release's Setup as an upgrade runs (pc/windows/README.md): silent but for its progress,
+/// with the languages chosen before. One UAC prompt elevates start-setup.ps1, which runs Setup from a
+/// copy it checked where only admins can write. Returns once Setup runs; the caller then quits: Setup
+/// replaces this exe.
+pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
     let (setup, sha) = files.first().ok_or_else(|| io::Error::other("no setup"))?;
-    let mut holder = Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", START_SETUP])
-        .env("SEBTYPE_SETUP", setup)
-        .env("SEBTYPE_SHA256", sha)
-        .env("SEBTYPE_SETUP_ARGS", args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
+    let command = start_setup_command(
+        setup,
+        sha,
+        &["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        None,
+    );
+    let out = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "try { $p = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru \
+             -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $env:SEBTYPE_START_SETUP } \
+             catch { exit 2 }; $p.WaitForExit(); exit $p.ExitCode",
+        ])
+        .env("SEBTYPE_START_SETUP", command)
         .creation_flags(NO_WINDOW)
-        .spawn()?;
-    let mut line = String::new();
-    io::BufReader::new(holder.stdout.take().unwrap()).read_line(&mut line)?;
-    match line.trim() {
-        "started" => Ok(holder), // it keeps holding the file until Setup exits
-        "changed" => Err(io::Error::other("the setup isn't the release's")),
-        "cancelled" => Err(io::Error::other(
+        .output()?;
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(2) => Err(io::Error::other(
             "not allowed: the admin prompt was cancelled",
         )),
-        _ => Err(io::Error::other(format!(
-            "the setup didn't start{}",
-            holder.wait().map_or(String::new(), |s| format!(" ({s})"))
+        Some(3) => Err(io::Error::other("the setup isn't the release's")),
+        code => Err(io::Error::other(format!(
+            "the setup didn't start ({})",
+            code.map_or("no exit code".into(), |c| c.to_string())
         ))),
     }
 }
@@ -514,40 +526,59 @@ mod tests {
         assert!(t.contains("activationType=\"protocol\" arguments=\"sebtype-configurator:update\""));
     }
 
-    /// The setup that starts is the one checked, and nothing can change or delete it until it exits: a
-    /// file changed after the download's check doesn't start.
+    /// The admin side (here not elevated, in a folder of the test's) starts Setup from its own copy
+    /// once that has the release's SHA-256, and nothing when the download isn't the release's.
     #[test]
-    fn an_update_starts_only_the_setup_it_checked() {
+    fn an_update_starts_only_a_checked_copy_of_the_setup() {
         let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "target/test-tmp/start-setup-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
-        // A stand-in for Setup that needs no admin and runs a few seconds: an exe, so this also shows one
-        // starts from the held file.
-        let setup = d.join("setup.exe");
+        let root = d.join("protected");
+        // a stand-in for Setup that needs no admin
+        let setup = d.join("SebType setup.exe");
         fs::copy(r"C:\Windows\System32\PING.EXE", &setup).unwrap();
         let sha = crate::update::sha256_file(&setup).unwrap();
-        let mut holder = start_setup(&[(setup.clone(), sha.clone())], "-n 4 127.0.0.1").unwrap();
+        let run = |sha: &str| {
+            Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-EncodedCommand"])
+                .arg(start_setup_command(
+                    &setup,
+                    sha,
+                    &["-n", "1", "127.0.0.1"],
+                    Some(&root),
+                ))
+                .output()
+                .unwrap()
+        };
+        let out = run(&sha);
+        let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        let copy = said
+            .splitn(3, ' ')
+            .nth(2)
+            .map(PathBuf::from)
+            .unwrap_or_default();
         assert!(
-            fs::OpenOptions::new().append(true).open(&setup).is_err(),
-            "writable while Setup runs"
+            said.starts_with("started ") && copy.starts_with(&root),
+            "{said}"
         );
+        assert_eq!(crate::update::sha256_file(&copy).unwrap(), sha);
+        let out = run(&"0".repeat(64));
+        assert_eq!(out.status.code(), Some(3), "{out:?}");
         assert!(
-            fs::remove_file(&setup).is_err(),
-            "deletable while Setup runs"
+            String::from_utf8_lossy(&out.stdout).contains("SebType setup.exe isn't the release's")
         );
-        assert!(
-            fs::rename(&setup, d.join("moved.exe")).is_err(),
-            "movable while Setup runs"
-        );
-        assert!(holder.wait().unwrap().success());
-        // Another file, not the one just run: Windows holds a freshly run exe a moment after it exits.
-        let changed = d.join("changed.exe");
-        fs::write(&changed, "changed").unwrap();
-        let e = start_setup(&[(changed, sha)], "-n 1 127.0.0.1").unwrap_err();
-        assert_eq!(e.to_string(), "the setup isn't the release's");
+        // nothing of the refused copy left (the first one may be: Windows holds an exe just run a moment)
+        let first = copy.parent().and_then(Path::file_name).unwrap();
+        let left: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(left.iter().all(|n| n == first), "{left:?}");
         let _ = fs::remove_dir_all(&d);
     }
 

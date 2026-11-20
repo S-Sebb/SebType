@@ -566,10 +566,8 @@ fn install_update(weak: slint::Weak<AppWindow>) {
                 set_update_status(&weak, UpdateStatus::Installing, String::new());
                 platform::install_update(&paths).map_err(|e| e.to_string())
             });
-            // Windows' Setup still runs from it, held open: the next install removes it.
-            if cfg!(not(windows)) {
-                let _ = std::fs::remove_dir_all(&dir);
-            }
+            // The admin side has its own copies.
+            let _ = std::fs::remove_dir_all(&dir);
             installed
         })();
         match installed {

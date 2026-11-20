@@ -48,7 +48,8 @@ nobody's own input settings change, then removes the user and its profile:
 -Only learned: Mozc's learned conversions sync (#409): a silent install, test-learned-sync.ps1 (in the folder
    too, with sebtype_sync.py) as the test user, not elevated, a silent uninstall.
 -Only update: the daily update check (#422): a silent install, its task, test-update.ps1 (in the folder too) as
-   the test user, not elevated, a silent uninstall and the task gone.
+   the test user, not elevated, the update's admin side (start-setup.ps1, in the folder too) refusing a changed
+   setup and upgrading from its checked copy in Program Files, a silent uninstall and the task and copies gone.
 -Only private: private fields and the Configurator's learning off (#270, #374): a silent install,
    test-private.ps1 (in the folder too) as the test user, not elevated, with -AnyDisplay, a silent uninstall.
 
@@ -777,12 +778,41 @@ namespace SebTypeSetupTest {
         "daily as $($t.Principal.UserId), and at the next chance after a missed day"
       }
       Typing update 300
+      # The update's admin side as the Configurator runs it elevated (start-setup.ps1, here without UAC:
+      # this runs elevated already): Setup only from its checked copy where only admins can write.
+      function Start-Copy($sha) {
+        $v = { param($s) "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))')))" }
+        $arguments = '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$out\setup-update-copy.log" | ForEach-Object { & $v $_ }
+        $script = "`$Setup = $(& $v $setup)`n`$Sha = $(& $v $sha)`n`$Arguments = @($($arguments -join ', '))`n" + (Get-Content -Raw "$root\start-setup.ps1")
+        $said = & powershell.exe -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))) 2>&1
+        $LASTEXITCODE, (($said | Out-String).Trim())
+      }
+      Check 'update-setup-refused-when-changed' {
+        $code, $said = Start-Copy ('0' * 64)
+        if ($code -ne 3) { throw "a SHA-256 that isn't the setup's: exit $code, $said" }
+        if (Get-ChildItem "$App\updates" -Directory -ErrorAction SilentlyContinue) { throw "a copy left in $App\updates" }
+        "exit 3: $said"
+      }
+      Check 'update-setup-from-protected-copy' {
+        $code, $said = Start-Copy (Get-FileHash -Algorithm SHA256 $setup).Hash
+        if ($code -ne 0 -or $said -notmatch '^started (\d+) (.+)$') { throw "exit $code, $said" }
+        $id, $copy = [int]$Matches[1], $Matches[2]
+        if (-not $copy.StartsWith("$App\updates\update-")) { throw "Setup ran from $copy" }
+        $acl = (Get-Acl (Split-Path $copy)).Access | Where-Object { $_.FileSystemRights -match 'Write|Modify|FullControl' -and $_.AccessControlType -eq 'Allow' } |
+          ForEach-Object { $_.IdentityReference.Value } | Where-Object { $_ -notmatch 'Administrators|SYSTEM|TrustedInstaller|CREATOR OWNER' }
+        if ($acl) { throw "$copy's folder is writable by $($acl -join ', ')" }
+        $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+        if ($p -and -not $p.WaitForExit(900000)) { throw 'Setup ran over 15 minutes' }
+        if (-not (Select-String -Quiet -Path "$out\setup-update-copy.log" -Pattern 'Installation process succeeded')) { throw "Setup didn't finish: out\setup-update-copy.log" }
+        "Setup ran from $copy (only admins can write there) and upgraded SebType"
+      }
       Silent-Uninstall update
       Check 'update-task-removed' {
         $left = @(if (Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue) { 'the task' }) +
-          @(if (Test-Path 'HKLM:\SOFTWARE\Classes\sebtype-configurator') { 'the sebtype-configurator: link' })
+          @(if (Test-Path 'HKLM:\SOFTWARE\Classes\sebtype-configurator') { 'the sebtype-configurator: link' }) +
+          @(if (Test-Path "$App\updates") { "$App\updates" })
         if ($left) { throw "left: $($left -join ', ')" }
-        'the task and the link gone'
+        'the task, the link and the copies gone'
       }
       return
     }

@@ -32,6 +32,8 @@ keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust", "
 dbus = "0.9"
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6", features = ["windows-native"] }
+# The update's admin side, passed to PowerShell as -EncodedCommand (#422).
+base64 = "0.23"
 
 [build-dependencies]
 slint-build = "1.18"

@@ -153,16 +153,21 @@ pub fn wanted(
                 .is_some_and(|(n, v)| n == name && (name != "sebtype" || v == version))
         })
     };
-    let Some(mut files) = RPMS.iter().map(|n| rpm(n)).collect::<Option<Vec<_>>>() else {
+    // An installed package the release doesn't replace would hold dnf to the old librime (#423).
+    let needed = RPMS
+        .iter()
+        .chain(RPMS_IF_INSTALLED.iter().filter(|n| installed(n)));
+    let (files, missing): (Vec<_>, Vec<_>) =
+        needed.map(|n| (n, rpm(n))).partition(|(_, a)| a.is_some());
+    if !missing.is_empty() {
+        let names: Vec<&str> = missing.iter().map(|(n, _)| **n).collect();
+        eprintln!(
+            "update: the release has no {arch} RPM of {}",
+            names.join(", ")
+        );
         return vec![];
-    };
-    files.extend(
-        RPMS_IF_INSTALLED
-            .iter()
-            .filter(|n| installed(n))
-            .filter_map(|n| rpm(n)),
-    );
-    files
+    }
+    files.into_iter().filter_map(|(_, a)| a).collect()
 }
 
 /// A test's release served on this PC: http://127.0.0.1:<port>/<path>, nothing else (no other host, no
@@ -452,6 +457,14 @@ mod tests {
         assert!(wanted(&all, "0.3.0", true, "x86_64", |_| false).is_empty());
         assert!(wanted(&all, "0.3.0", false, "x86_64", |_| false).is_empty());
         assert!(wanted(&all[..5], "0.2.0", false, "x86_64", |_| false).is_empty());
+        // An installed librime-tools the release has none of: dnf couldn't upgrade librime, so nothing.
+        assert!(wanted(&all[..6], "0.2.0", false, "x86_64", |p| p
+            == "librime-tools")
+        .is_empty());
+        assert_eq!(
+            wanted(&all[..6], "0.2.0", false, "x86_64", |_| false).len(),
+            4
+        );
     }
 
     /// Only a release on 127.0.0.1 (the tests' builds), however the address is written.

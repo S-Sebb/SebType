@@ -81,11 +81,13 @@ Configurator's version (`VERSION`). A newer release shows a toast once, under th
 AppUserModelID `SebType.Configurator`; clicking it opens `sebtype-configurator:update`, which Setup
 registers to open the Configurator's About page. There, Update… downloads `SebType-setup-<version>.exe` from
 the release's download address into a new folder in `%LOCALAPPDATA%\SebType\updates` and checks its size
-and SHA-256 against GitHub's (the asset's `digest`; none, no install). A PowerShell then opens the file
-sharing it for reading only, so nothing can change, move or delete it, checks the SHA-256 again through
-that handle, and runs it as an upgrade (`/SILENT /SUPPRESSMSGBOXES /NORESTART`, the languages chosen before)
-after UAC, holding the file until Setup exits; the Configurator closes once Setup runs, so Setup can replace
-it. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
+and SHA-256 against GitHub's (the asset's `digest`; none, no install). One UAC prompt then elevates the
+update's admin side (`pc/configurator/src/start-setup.ps1`, built into the Configurator and passed as
+`-EncodedCommand`). It copies the setup into a new folder in `%ProgramFiles%\SebType\updates`, where only
+admins can write, checks the copy's SHA-256 there and runs that copy as an upgrade (`/SILENT
+/SUPPRESSMSGBOXES /NORESTART`, the languages chosen before), so a download changed after the check never
+runs. The next update and the uninstall remove the copies. The Configurator closes once Setup runs, so
+Setup can replace it. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
 takes `SEBTYPE_UPDATE_URL`, a release on 127.0.0.1 (`test-update.ps1`). About's "Check for updates automatically" turns the daily
 check off, Check now checks at once. `-User -Undo` removes the task, `update.json` and the downloads.
 
