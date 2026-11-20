@@ -1,7 +1,7 @@
 <#
-An update's own side (#422, pc/configurator/src/update-user.ps1, next to this script), as the logged-on person,
+An update's own side (#422, the installed update-user.ps1), as the logged-on person,
 not elevated: test.ps1's -Only update runs it as its test user once Setup has upgraded SebType with
-/NOUSERSTEPS. Run without its Setup ($Elevated empty: UAC can't be clicked here), it must run Setup's steps for
+/NOUSERSTEPS. Run without its Setup (-NoSetup: UAC can't be clicked here), it must run Setup's steps for
 the person as this person: setup.ps1 -User -Save and -User with the languages Setup keeps, whose update task
 then runs as this person. Results: one line per check in <Out>\update-user-results.txt; exit 0 only if all pass.
 
@@ -26,9 +26,7 @@ Check 'update-user-steps-as-the-person' {
   Unregister-ScheduledTask 'SebType update check' -Confirm:$false -ErrorAction SilentlyContinue
   $userLog = "$env:LOCALAPPDATA\SebType\setup.log"
   $before = @(Get-Content -Encoding utf8 $userLog -ErrorAction SilentlyContinue).Count
-  $v = { param($s) "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))')))" }
-  $script = "`$App = $(& $v $app)`n`$State = $(& $v "$env:LOCALAPPDATA\SebType")`n`$Elevated = ''`n" + (Get-Content -Raw "$PSScriptRoot\update-user.ps1")
-  $said = & powershell.exe -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))) 2>&1
+  $said = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$app\update-user.ps1" -NoSetup 2>&1
   $code = $LASTEXITCODE
   # the About page it opens afterwards (no window here: no OpenGL over Remote Desktop)
   Start-Sleep 2; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

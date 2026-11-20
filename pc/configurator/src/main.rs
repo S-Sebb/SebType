@@ -566,8 +566,11 @@ fn install_update(weak: slint::Weak<AppWindow>) {
                 set_update_status(&weak, UpdateStatus::Installing, String::new());
                 platform::install_update(&paths).map_err(|e| e.to_string())
             });
-            // The admin side has its own copies.
-            let _ = std::fs::remove_dir_all(&dir);
+            // Windows' update goes on after this window closes, and removes the download once Setup has
+            // its own copy (update-user.ps1); a failed one leaves it here.
+            if cfg!(not(windows)) || installed.is_err() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
             installed
         })();
         match installed {

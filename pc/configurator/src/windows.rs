@@ -443,66 +443,39 @@ pub fn notify_update(
     Ok(())
 }
 
-/// A PowerShell script with values set before it, for -EncodedCommand: nothing on the way can change it,
-/// and the values are base64, so no quoting.
-fn encoded(values: &[(&str, &str)], arrays: &[(&str, &[&str])], script: &str) -> String {
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    let value = |v: &str| {
-        format!(
-            "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{}')))",
-            STANDARD.encode(v)
-        )
-    };
-    let mut all = String::new();
-    for (name, v) in values {
-        all += &format!("${name} = {}\n", value(v));
-    }
-    for (name, vs) in arrays {
-        let vs: Vec<String> = vs.iter().map(|v| value(v)).collect();
-        all += &format!("${name} = @({})\n", vs.join(", "));
-    }
-    all += script;
-    let utf16: Vec<u8> = all.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    STANDARD.encode(utf16)
+/// update-user.ps1's command line, installed next to this exe in Program Files (only admins can write
+/// there): short, whatever the paths.
+fn update_user_command(app: &Path, setup: &Path, sha: &str) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+    ]
+    .map(Into::into)
+    .into();
+    args.extend([
+        app.join("update-user.ps1").into(),
+        "-Setup".into(),
+        setup.into(),
+        "-Sha".into(),
+        sha.into(),
+    ]);
+    args
 }
 
-/// Setup as an update runs it: silent but for its progress, with the languages chosen before, and only
-/// the machine's part: the person's runs as them (update-user.ps1).
-const SETUP_ARGS: [&str; 4] = ["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOUSERSTEPS"];
-
-/// The admin side (start-setup.ps1) for this setup; `root` for the tests only.
-fn start_setup_command(setup: &Path, sha: &str, args: &[&str], root: Option<&Path>) -> String {
-    let (setup, root) = (setup.to_string_lossy(), root.map(|r| r.to_string_lossy()));
-    let mut values = vec![("Setup", &*setup), ("Sha", sha)];
-    values.extend(root.as_deref().map(|r| ("Root", r)));
-    encoded(
-        &values,
-        &[("Arguments", args)],
-        include_str!("start-setup.ps1"),
-    )
-}
-
-/// Installs the release's Setup (pc/windows/README.md) through update-user.ps1, which runs it with one UAC
-/// prompt from a copy start-setup.ps1 checked where only admins can write, and this person's steps as
-/// them. Returns once UAC is approved; the caller then quits, so Setup can replace this exe, and the
-/// About page opens again afterwards.
+/// Installs the release's Setup (pc/windows/README.md) through update-user.ps1, which runs Setup with
+/// one UAC prompt from a copy start-setup.ps1 checked where only admins can write, and this person's
+/// steps as them. Returns once UAC is approved; the caller then quits, so Setup can replace this exe,
+/// and the About page opens again afterwards. The download stays: update-user.ps1 removes it.
 pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
     use io::BufRead;
     let (setup, sha) = files.first().ok_or_else(|| io::Error::other("no setup"))?;
-    let app = env::current_exe()?;
-    let app = app.parent().ok_or_else(|| io::Error::other("no folder"))?;
-    let elevated = start_setup_command(setup, sha, &SETUP_ARGS, None);
-    let command = encoded(
-        &[
-            ("App", &app.to_string_lossy()),
-            ("State", &sebtype_dir().to_string_lossy()),
-            ("Elevated", &elevated),
-        ],
-        &[],
-        include_str!("update-user.ps1"),
-    );
+    let exe = env::current_exe()?;
+    let app = exe.parent().ok_or_else(|| io::Error::other("no folder"))?;
     let mut user = Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &command])
+        .args(update_user_command(app, setup, sha))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -553,8 +526,8 @@ mod tests {
         assert!(t.contains("activationType=\"protocol\" arguments=\"sebtype-configurator:update\""));
     }
 
-    /// The admin side (here not elevated, in a folder of the test's) starts Setup from its own copy
-    /// once that has the release's SHA-256, and nothing when the download isn't the release's.
+    /// The admin side (here not elevated, from a copy in a folder of the test's) starts Setup from its
+    /// own copy once that has the release's SHA-256, and nothing when the download isn't the release's.
     #[test]
     fn an_update_starts_only_a_checked_copy_of_the_setup() {
         let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
@@ -562,27 +535,40 @@ mod tests {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&d);
-        fs::create_dir_all(&d).unwrap();
-        let root = d.join("protected");
-        // a stand-in for Setup that needs no admin
+        fs::create_dir_all(d.join("app")).unwrap();
+        let script = d.join("app/start-setup.ps1");
+        fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../windows/setup/start-setup.ps1"
+            ),
+            &script,
+        )
+        .unwrap();
+        // a stand-in for Setup that needs no admin (it refuses Setup's switches, and exits)
         let setup = d.join("SebType setup.exe");
         fs::copy(r"C:\Windows\System32\PING.EXE", &setup).unwrap();
         let sha = crate::update::sha256_file(&setup).unwrap();
         let run = |sha: &str| {
             Command::new("powershell.exe")
-                .args(["-NoProfile", "-NonInteractive", "-EncodedCommand"])
-                .arg(start_setup_command(
-                    &setup,
-                    sha,
-                    &["-n", "1", "127.0.0.1"],
-                    Some(&root),
-                ))
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                ])
+                .arg(&script)
+                .arg("-Setup")
+                .arg(&setup)
+                .args(["-Sha", sha])
                 .output()
                 .unwrap()
         };
+        let root = d.join("app/updates");
         let out = run(&sha);
         let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        assert!(!matches!(out.status.code(), Some(90 | 91)), "{out:?}");
         let copy = said
             .splitn(3, ' ')
             .nth(2)
@@ -613,31 +599,27 @@ mod tests {
     /// would get those (update-user.ps1 runs them as the person).
     #[test]
     fn an_update_runs_setup_without_the_persons_steps() {
-        use base64::{engine::general_purpose::STANDARD, Engine};
-        let utf16 = STANDARD
-            .decode(start_setup_command(
-                Path::new(r"C:\a\SebType-setup-0.2.0.exe"),
-                "ab",
-                &SETUP_ARGS,
-                None,
-            ))
-            .unwrap();
-        let units: Vec<u16> = utf16
-            .chunks(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
-        let script = String::from_utf16(&units).unwrap();
-        let switch = STANDARD.encode("/NOUSERSTEPS");
-        assert!(
-            script
-                .lines()
-                .any(|l| l.starts_with("$Arguments = @(") && l.contains(&switch)),
-            "{script}"
+        let script = include_str!("../../windows/setup/start-setup.ps1");
+        assert!(script
+            .lines()
+            .any(|l| l.starts_with("$Arguments = @(") && l.contains("'/NOUSERSTEPS'")));
+    }
+
+    /// Windows takes 32,767 characters on a command line: the update's stays far from that with a long
+    /// account folder.
+    #[test]
+    fn an_updates_command_line_is_short() {
+        let long = format!(
+            r"C:\Users\{}\AppData\Local\SebType\updates\update-1",
+            "a".repeat(200)
         );
-        assert!(
-            !script.lines().any(|l| l.starts_with("$Root =")),
-            "the shipping one copies into Program Files"
+        let args = update_user_command(
+            Path::new(r"C:\Program Files\SebType"),
+            &Path::new(&long).join("SebType-setup-0.2.0.exe"),
+            &"0".repeat(64),
         );
+        let length: usize = args.iter().map(|a| a.len() + 3).sum();
+        assert!(length < 1000, "{length}");
     }
 
     #[test]

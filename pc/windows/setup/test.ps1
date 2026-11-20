@@ -48,7 +48,7 @@ nobody's own input settings change, then removes the user and its profile:
 -Only learned: Mozc's learned conversions sync (#409): a silent install, test-learned-sync.ps1 (in the folder
    too, with sebtype_sync.py) as the test user, not elevated, a silent uninstall.
 -Only update: the daily update check (#422): a silent install, its task, test-update.ps1 (in the folder too) as
-   the test user, not elevated, the update's admin side (start-setup.ps1, in the folder too) refusing a changed
+   the test user, not elevated, the update's admin side (the installed start-setup.ps1) refusing a changed
    setup and upgrading from its checked copy in Program Files, a silent uninstall and the task and copies gone.
 -Only private: private fields and the Configurator's learning off (#270, #374): a silent install,
    test-private.ps1 (in the folder too) as the test user, not elevated, with -AnyDisplay, a silent uninstall.
@@ -778,14 +778,11 @@ namespace SebTypeSetupTest {
         "daily as $($t.Principal.UserId), and at the next chance after a missed day"
       }
       Typing update 300
-      # The update's admin side as the Configurator runs it elevated (start-setup.ps1, here without UAC:
-      # this runs elevated already): Setup only from its checked copy where only admins can write, and
+      # The update's admin side as update-user.ps1 runs it elevated (the installed start-setup.ps1, here
+      # without UAC: this runs elevated already): Setup only from its checked copy where only admins can write, and
       # none of the person's steps; then its own side as the test user, not elevated (update-user.ps1).
       function Start-Copy($sha) {
-        $v = { param($s) "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))')))" }
-        $arguments = '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOUSERSTEPS', "/LOG=$out\setup-update-copy.log" | ForEach-Object { & $v $_ }
-        $script = "`$Setup = $(& $v $setup)`n`$Sha = $(& $v $sha)`n`$Arguments = @($($arguments -join ', '))`n" + (Get-Content -Raw "$root\start-setup.ps1")
-        $said = & powershell.exe -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))) 2>&1
+        $said = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$App\start-setup.ps1" -Setup $setup -Sha $sha -Log "$out\setup-update-copy.log" 2>&1
         $LASTEXITCODE, (($said | Out-String).Trim())
       }
       Check 'update-setup-refused-when-changed' {

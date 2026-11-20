@@ -172,6 +172,9 @@ Name: "desktopicon"; Description: "{cm:Desktop}"; GroupDescription: "{cm:Shortcu
 
 [Files]
 Source: "setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; The Configurator's update (#422): the person's side and the admin side, run from here, where only admins write.
+Source: "update-user.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start-setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; The text service (64-bit, and 32-bit for 32-bit apps), its server, librime with Rime's shared data, and
 ; Mozc. An app that has the text service loaded keeps it until it closes.
 Source: "{#Service}\sebtype-server.exe"; DestDir: "{app}"; Flags: ignoreversion

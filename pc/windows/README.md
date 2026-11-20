@@ -82,14 +82,15 @@ AppUserModelID `SebType.Configurator`; clicking it opens `sebtype-configurator:u
 registers to open the Configurator's About page. There, Update… downloads `SebType-setup-<version>.exe` from
 the release's download address into a new folder in `%LOCALAPPDATA%\SebType\updates` and checks its size
 and SHA-256 against GitHub's (the asset's `digest`; none, no install). The update's own side
-(`pc/configurator/src/update-user.ps1`, as the person, not elevated) then does Setup's steps for the person
-first (their server saves the learned words and quits; `setup.ps1 -User -Save`), and one UAC prompt elevates
-the admin side (`pc/configurator/src/start-setup.ps1`; both built into the Configurator and passed as
-`-EncodedCommand`). That copies the setup into a new folder in `%ProgramFiles%\SebType\updates`, where only
+(`update-user.ps1`, as the person, not elevated) then does Setup's steps for the person first (their server
+saves the learned words and quits; `setup.ps1 -User -Save`), and one UAC prompt elevates the admin side
+(`start-setup.ps1`). Setup installs both next to the Configurator in Program Files, where only admins can
+write, and they run from there with `-File`, the download and its SHA-256 as arguments. That copies the setup into a new folder in `%ProgramFiles%\SebType\updates`, where only
 admins can write, checks the copy's SHA-256 there and runs that copy as an upgrade (`/SILENT
 /SUPPRESSMSGBOXES /NORESTART`, the languages chosen before) with `/NOUSERSTEPS`: only the machine's part, so
 an administrator who approves UAC for someone else gets none of that person's steps. A download changed after
-the check never runs; the next update and the uninstall remove the copies. The Configurator closes once UAC
+the check never runs; the next update and the uninstall remove the copies, and the own side removes the
+download once Setup has finished. The Configurator closes once UAC
 is approved, so Setup can replace it. After Setup, the own side runs `setup.ps1 -User` with the languages
 Setup keeps, as the person, and opens the About page again, with what failed if anything did. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
 takes `SEBTYPE_UPDATE_URL`, a release on 127.0.0.1 (`test-update.ps1`). About's "Check for updates automatically" turns the daily

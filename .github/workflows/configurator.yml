@@ -9,6 +9,7 @@ on:
   pull_request:
     paths:
       - pc/configurator/**
+      - pc/windows/setup/start-setup.ps1
       - pc/icons/**
       - art/make-icon.py
       - art/icon.png
@@ -17,6 +18,7 @@ on:
     branches: [main]
     paths:
       - pc/configurator/**
+      - pc/windows/setup/start-setup.ps1
       - pc/icons/**
       - art/make-icon.py
       - art/icon.png

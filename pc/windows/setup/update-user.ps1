@@ -1,14 +1,21 @@
-# An update's own side on Windows (#422), as the person who clicked Update…, not elevated: the
-# Configurator builds it in and passes it as -EncodedCommand, after lines that set $App (SebType's folder),
-# $State (SebType's folder of the person's) and $Elevated (start-setup.ps1 with its values, encoded; for
-# the tests only, empty: no Setup).
-# Setup's steps for the person who runs it (sebtype.iss) run here, for this person, and Setup with
-# /NOUSERSTEPS does only the machine's: an administrator who approves UAC for them gets none of them.
-# Prints "approved" once UAC is approved: the Configurator then closes, so Setup can replace it; 2 and
-# "cancelled": UAC wasn't. After Setup, the person's steps; then the About page opens again, with what
-# failed if anything did (update-error.txt).
+<#
+An update's own side on Windows (#422), as the person who clicked Update..., not elevated: the Configurator
+starts it from SebType's folder in Program Files with the download it checked.
+
+    powershell -File update-user.ps1 -Setup <the download> -Sha <its SHA-256 from the release>
+    powershell -File update-user.ps1 -NoSetup     # the tests': the person's steps only
+
+Setup's steps for the person who runs it (sebtype.iss) run here, as this person, and Setup (start-setup.ps1,
+elevated: one UAC prompt) does only the machine's, so an administrator who approves UAC for them gets none of
+them. Prints "approved" once UAC is approved: the Configurator then closes, so Setup can replace it; exit 2
+and "cancelled": UAC wasn't. After Setup: the person's steps, the download's folder removed, and the About
+page opens again, with what failed if anything did (update-error.txt).
+#>
+param([string]$Setup, [string]$Sha, [switch]$NoSetup)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$App = $PSScriptRoot
+$State = "$env:LOCALAPPDATA\SebType"
 $approved = $false
 function Fail($why) {
   if (-not $approved) { [Console]::Out.WriteLine("error: $why"); exit 1 }
@@ -26,14 +33,19 @@ function Step([string[]]$arguments) {
 # before SebType is kept (once).
 if (Test-Path "$App\sebtype-server.exe") { Start-Process -Wait -WindowStyle Hidden "$App\sebtype-server.exe" '/quit' }
 Step '-User', '-Save'
-if ($Elevated) {
-  try { $p = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $Elevated }
+if (-not $NoSetup) {
+  if ($Sha -notmatch '^[0-9a-fA-F]{64}$' -or $Setup.Contains('"')) { Fail "not a download and its SHA-256: $Setup $Sha" }
+  # Start-Process joins the arguments with spaces: the path is quoted (no Windows path has a ").
+  $arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$App\start-setup.ps1`" -Setup `"$Setup`" -Sha $Sha"
+  try { $p = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList $arguments }
   catch { [Console]::Out.WriteLine('cancelled'); exit 2 }
 }
 $approved = $true
 [Console]::Out.WriteLine('approved'); [Console]::Out.Flush()
-if ($Elevated) {
+if (-not $NoSetup) {
   $p.WaitForExit()
+  # The download stays until here: the admin side copies it once it runs.
+  Remove-Item -Recurse -Force (Split-Path $Setup) -ErrorAction SilentlyContinue
   if ($p.ExitCode -eq 90) { Fail "the setup isn't the release's" }
   if ($p.ExitCode) { Fail "Setup exited with $($p.ExitCode) ($App\setup.log)" }
 }
