@@ -807,6 +807,8 @@ namespace SebTypeSetupTest {
         if ((Get-Item $userLog).Length -ne $before) { throw "Setup ran the person's steps: $userLog changed" }
         "Setup ran from $copy (only admins can write there) and upgraded SebType, without the person's steps"
       }
+      # Remove the task update-install made while elevated, so update-user must recreate it as the unelevated test user.
+      Unregister-ScheduledTask 'SebType update check' -Confirm:$false -ErrorAction SilentlyContinue
       Typing update-user 600
       Silent-Uninstall update
       Check 'update-task-removed' {

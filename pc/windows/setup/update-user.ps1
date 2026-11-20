@@ -51,7 +51,7 @@ if (-not $NoSetup) {
 }
 # The languages Setup set up, which it keeps for the next one.
 $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5C1E7A52-3D8B-4F7E-9E0B-7B3B5A1C7354}_is1'
-$languages = ((Get-ItemProperty $key).'Inno Setup: Selected Tasks' -split ',' | Where-Object { $_ -in 'en', 'zh', 'ja' }) -join ','
+$languages = ((Get-ItemProperty $key).'Inno Setup: Selected Tasks' -split '[, ]+' | Where-Object { $_ -in 'en', 'zh', 'ja' }) -join ','
 Step '-User', '-Languages', $languages
 Start-Process "$App\sebtype-configurator.exe" '--update'
 exit 0

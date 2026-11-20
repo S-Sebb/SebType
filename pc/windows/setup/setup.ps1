@@ -440,12 +440,40 @@ if (-not $Undo) {
   Write-Output "user: learning settings $(if ($p.ExitCode) { "not migrated (exit $($p.ExitCode)), the Configurator tries again when it starts" } else { 'current' })"
   # The daily update check (#422): the Configurator's --check-updates as this user while they are logged
   # on, which its toast needs; a day missed runs at the next chance. A newer release shows a toast; the
-  # Configurator's "Check for updates automatically" turns it off.
-  Register-ScheduledTask 'SebType update check' -Force `
-    -Action (New-ScheduledTaskAction -Execute (Join-Path $PSScriptRoot 'sebtype-configurator.exe') -Argument '--check-updates') `
-    -Trigger (New-ScheduledTaskTrigger -Daily -At 12:00 -RandomDelay (New-TimeSpan -Hours 1)) `
-    -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1)) `
-    -Principal (New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited) | Out-Null
+  # Configurator's "Check for updates automatically" turns it off. Registered with schtasks /xml rather
+  # than Register-ScheduledTask so it works without elevation (just like SebType sync in windows.rs).
+  $taskXml = Join-Path $env:TEMP "sebtype-update-task-$PID.xml"
+  $exe = [Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'sebtype-configurator.exe'))
+  $who = [Security.SecurityElement]::Escape("$env:USERDOMAIN\$env:USERNAME")
+  $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T12:00:00</StartBoundary>
+      <RandomDelay>PT1H</RandomDelay>
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><UserId>$who</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>$exe</Command><Arguments>--check-updates</Arguments></Exec>
+  </Actions>
+</Task>
+"@
+  [IO.File]::WriteAllText($taskXml, $xml, [Text.Encoding]::Unicode)
+  try {
+    $out = & { $ErrorActionPreference = 'Continue'; schtasks.exe /create /tn 'SebType update check' /xml $taskXml /f 2>&1 }
+    if ($LASTEXITCODE) { throw "scheduling 'SebType update check' failed ($LASTEXITCODE): $($out -join ' ')" }
+  } finally { Remove-Item $taskXml -ErrorAction SilentlyContinue }
   Write-Output 'user: daily update check scheduled'
   # Rime builds the data and patches when it redeploys: in this user's SebType server, or in /deploy
   # itself when none runs. It returns when Rime is done. Setup starts no server (from an elevated Setup it

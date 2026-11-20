@@ -22,22 +22,27 @@ function Check($name, [scriptblock]$body) {
 }
 
 Check 'update-user-steps-as-the-person' {
-  # The update task Setup's -User made comes again only from this run's -User, as whoever runs it.
-  Unregister-ScheduledTask 'SebType update check' -Confirm:$false -ErrorAction SilentlyContinue
   $userLog = "$env:LOCALAPPDATA\SebType\setup.log"
+  $errFile = "$env:LOCALAPPDATA\SebType\update-error.txt"
+  Remove-Item $errFile -Force -ErrorAction SilentlyContinue
   $before = @(Get-Content -Encoding utf8 $userLog -ErrorAction SilentlyContinue).Count
   $said = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$app\update-user.ps1" -NoSetup 2>&1
   $code = $LASTEXITCODE
   # the About page it opens afterwards (no window here: no OpenGL over Remote Desktop)
   Start-Sleep 2; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   $said = ($said | Out-String).Trim()
-  if ($code -ne 0 -or $said -ne 'approved') { throw "exit $code, said '$said'" }
-  if (Test-Path "$env:LOCALAPPDATA\SebType\update-error.txt") { throw "update-error.txt: $(Get-Content -Raw "$env:LOCALAPPDATA\SebType\update-error.txt")" }
-  $new = (Get-Content -Encoding utf8 $userLog | Select-Object -Skip $before) -join "`n"
-  if ($new -notmatch 'user: input methods') { throw "no -User step in setup.log since: $new" }
+  $new = (Get-Content -Encoding utf8 $userLog -ErrorAction SilentlyContinue | Select-Object -Skip $before) -join "`n"
+  $err = if (Test-Path $errFile) { Get-Content -Raw $errFile } else { '' }
+  if ($code -ne 0 -or $said -ne 'approved' -or $err) {
+    throw "exit $code, said '$said'$(if ($err) { ", update-error.txt: $($err.Trim())" })$(if ($new) { "; setup.log: $($new.Trim())" })"
+  }
+  if ($new -notmatch 'user: saved how the account is before SebType' -or $new -notmatch 'user: done \(') {
+    throw "missing -User -Save or -User in setup.log: $new"
+  }
   $t = Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue
   if (-not $t -or $t.Principal.UserId -notmatch "\b$([regex]::Escape($env:USERNAME))$") { throw "the update task runs as '$($t.Principal.UserId)'" }
-  "as $env:USERNAME: -User -Save and -User ran ($(([regex]::Match($new, 'user: input methods[^\r\n]*')).Value)); the update task runs as $($t.Principal.UserId)"
+  $done = ([regex]::Match($new, 'user: done \([^\r\n]*')).Value
+  "as $env:USERNAME: -User -Save and -User ran ($done); the update task runs as $($t.Principal.UserId)"
 }
 if (Select-String -Path $results -Pattern '^FAIL' -Quiet) { exit 1 }
 exit 0
