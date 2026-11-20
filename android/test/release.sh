@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tests android/release.sh without publishing (#420), and the release APK's version.
 #   ISSUE=<n> android/test/release.sh   one line per check; logs in ~/scratch/SebType/<ISSUE>/test-release-*.log
-# release.sh --dry-run runs in a clone whose origin/main is main's latest commit with a successful Windows
-# setup run (origin is a local repo, gh talks to GitHub through GH_REPO), with this checkout's release.sh laid
+# release.sh --dry-run runs in a clone whose origin/main is main's latest commit with successful Windows setup
+# and Linux RPM runs (origin is a local repo, gh talks to GitHub through GH_REPO), with this checkout's release.sh laid
 # over it. Nothing is tagged, pushed to GitHub or published. Exit 0 only if all pass.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -18,6 +18,13 @@ setup_sha=$(gh run list --workflow windows-setup.yml --branch main --status succ
 [[ -n $setup_sha ]] || { echo "preflight: no successful Windows setup run on main"; exit 1; }
 # A main commit (#416's) that never ran windows-setup.yml: it changed only the Android app.
 no_setup_sha=8eba6a8f90
+# A main commit (#419's) with a Windows setup run, from before linux-rpm.yml (#421).
+no_rpm_sha=45ae6594c8
+# Main's latest commit with both runs, which a release takes its setup and RPMs from.
+rpm_shas=$(gh run list --workflow linux-rpm.yml --branch main --status success --event push --limit 20 \
+  --json headSha -q '.[].headSha')
+both_sha=$(gh run list --workflow windows-setup.yml --branch main --status success --event push --limit 20 \
+  --json headSha -q '.[].headSha' | grep -m1 -xF -f <(echo "${rpm_shas:-none}"))
 # A PR's head with a successful pull_request run, which built the PR merged into its base, not this commit.
 pr_sha=$(gh run list --workflow windows-setup.yml --event pull_request --status success --limit 1 \
   --json headSha -q '.[0].headSha // empty')
@@ -48,10 +55,31 @@ dry_run() {
 
 # The version the setup run built: its commit's VERSION, or this checkout's before VERSION existed.
 version=$(git show "$setup_sha:VERSION" 2>/dev/null || cat VERSION)
-if dry_run "$setup_sha" "$version" dry-run && [[ -s $out/SebType-setup-$version.exe ]]; then
-  result PASS dry-run "SebType-setup-$version.exe from ${setup_sha:0:10}'s run"
+# The setup and the whole Linux set (the RPM names come from that commit's linux/versions.sh).
+both_dry() {
+  local v f
+  v=$(git show "$both_sha:VERSION") || return 1
+  dry_run "$both_sha" "$v" dry-run && [[ -s $out/SebType-setup-$v.exe ]] || return 1
+  # shellcheck disable=SC1090  # that commit's versions.sh
+  (source <(git show "$both_sha:linux/versions.sh" | sed "s|^SEBTYPE_VERSION=.*|SEBTYPE_VERSION=$v|")
+    for f in "$SEBTYPE_RPM" "${LIBRIME_PACKAGES[@]/%/-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm}"; do
+      [[ -s $out/$f ]] || { echo "missing $f" >> "$out/test-release-dry-run.log"; exit 1; }
+      rm -f "$out/$f"
+    done)
+}
+if [[ -z $both_sha ]]; then
+  result SKIP dry-run "no main commit has both a Windows setup and a Linux RPM run yet (once #423 is on main)"
+elif both_dry; then result PASS dry-run "the setup and the RPM set from ${both_sha:0:10}'s runs"
 else result FAIL dry-run "see $out/test-release-dry-run.log"; fi
-rm -f "$out/SebType-setup-$version.exe"
+rm -f "$out"/SebType-setup-*.exe
+
+# A setup run without the RPMs: refused after the setup is found.
+# The version that commit's setup run built (it predates VERSION: sebtype.iss's default), not this checkout's.
+no_rpm_version=$(git show "$no_rpm_sha:pc/windows/setup/sebtype.iss" | sed -n 's/^ *#define Version "\(.*\)"$/\1/p')
+if ! dry_run "$no_rpm_sha" "$no_rpm_version" no-rpm && grep -q "no successful Linux RPM run" "$out/test-release-no-rpm.log"; then
+  result PASS no-rpm "refuses ${no_rpm_sha:0:10}, which has a setup run but no Linux RPM run"
+else result FAIL no-rpm "see $out/test-release-no-rpm.log"; fi
+rm -f "$out"/SebType-setup-*.exe
 
 published=$(gh release list --limit 1 --exclude-drafts --json tagName -q '.[0].tagName')
 # On this checkout's HEAD, which tracks VERSION, as main will.

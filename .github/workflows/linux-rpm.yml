@@ -1,0 +1,106 @@
+# SebType's Linux RPMs for each release (#421): sebtype-<version>-<release>.x86_64.rpm (the input method, Mozc,
+# the Configurator, the Chinese data and setup's user part) and SebType's librime with its plugins, built by
+# linux/build.sh and linux/build-librime.sh as on a PC, in the pinned Fedora container nobara-pc runs
+# (linux/versions.sh), here with the runner to itself (tools/lib.sh). linux/test-rpms.sh installs them as an
+# update does. The run's artifact "sebtype-rpm" holds them all; android/release.sh attaches them.
+# Kept 14 days from main, 3 from PRs, like the Windows setup (#418).
+name: Linux RPM
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: &paths
+      # linux/versions.sh's SEBTYPE_SOURCES and SEBTYPE_MOZC, and engines/librime
+      - VERSION
+      - core/**
+      - linux/**
+      - pc/icons/**
+      - pc/linux/setup-ime.sh
+      - pc/linux/mozc-keymap.tsv
+      - pc/configurator/**
+      - sync-server/sebtype_sync.py
+      - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+      - android/app/src/main/res/font/sebtype_nunito_extrabold.ttf
+      - data/rime/**
+      - engines/mozc/**
+      - engines/librime/**
+      - tools/lib.sh
+      - tools/mozc-bazel.sh
+      - tools/mozc-downloads.tsv
+      - .github/workflows/linux-rpm.yml
+  push:
+    branches: [main]
+    paths: *paths
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    runs-on: ubuntu-24.04
+    env:
+      WORK: /home/runner/scratch/SebType/cache/mozc/work
+      DOWNLOADS: /home/runner/scratch/SebType/cache/mozc-android
+    steps:
+      - uses: actions/checkout@v4
+      - id: inputs
+        run: |
+          source linux/versions.sh
+          echo "rpm=$SEBTYPE_RPM" >> "$GITHUB_OUTPUT"
+          # What build.sh packs (sebtype_key) and what else the RPMs are built from.
+          echo "hash=$({ sebtype_key; git rev-parse HEAD:engines/librime; sha256sum tools/lib.sh tools/mozc-bazel.sh tools/mozc-downloads.tsv; } | sha256sum | head -c 16)" >> "$GITHUB_OUTPUT"
+      # The RPMs depend only on these: a run that changes none of them, a PR's on main's, takes the last build's.
+      - uses: actions/cache@v4
+        id: built
+        with:
+          path: out
+          key: sebtype-rpm-${{ steps.inputs.outputs.hash }}
+      # What Bazel would download (tools/mozc-downloads.tsv), fetched at the capped rate once per list.
+      - uses: actions/cache@v4
+        if: steps.built.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.DOWNLOADS }}
+          key: mozc-downloads-${{ hashFiles('tools/mozc-downloads.tsv') }}
+      # The Configurator's crates, and the Chinese data's sources (data/rime/build.sh), which the spec keeps there.
+      - uses: actions/cache@v4
+        if: steps.built.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ${{ env.WORK }}/cargo/registry
+            ${{ env.WORK }}/home/scratch/SebType/cache
+          key: sebtype-rpm-sources-${{ hashFiles('pc/configurator/Cargo.lock', 'data/rime/build.sh') }}
+          restore-keys: sebtype-rpm-sources-
+      # Bazel's disk cache from main's last build, so a change recompiles only what it touches.
+      - uses: actions/cache/restore@v4
+        if: steps.built.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.WORK }}/bazel/disk-cache
+          key: mozc-linux-bazel-${{ steps.inputs.outputs.hash }}
+          restore-keys: mozc-linux-bazel-
+      - name: Build
+        if: steps.built.outputs.cache-hit != 'true'
+        run: |
+          touch "$RUNNER_TEMP/start"
+          rpm=$(linux/build.sh) || { tail -50 "$WORK/sebtype-build.log"; exit 1; }
+          mkdir -p out
+          cp "$rpm" "out/${{ steps.inputs.outputs.rpm }}"
+          linux/build-librime.sh | xargs cp -t out
+          # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and would
+          # only grow the saved cache.
+          old=$(find "$WORK/bazel/disk-cache" -type f ! -newer "$RUNNER_TEMP/start" -print -delete | wc -l)
+          echo "Bazel cache: dropped $old unused entries, kept $(du -sh "$WORK/bazel/disk-cache" | cut -f1)"
+      # Only main's (and a manual run's) builds are saved: PRs build on main's, and each saved cache takes GBs
+      # of the repository's cache space.
+      - uses: actions/cache/save@v4
+        if: steps.built.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          path: ${{ env.WORK }}/bazel/disk-cache
+          key: mozc-linux-bazel-${{ steps.inputs.outputs.hash }}
+      - name: Install
+        run: linux/test-rpms.sh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-rpm
+          path: out/*.rpm
+          if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}

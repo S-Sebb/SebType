@@ -18,4 +18,7 @@ fn main() {
             .unwrap();
     }
     println!("cargo:rerun-if-env-changed=SEBTYPE_ICO");
+    // The Linux RPM's build (linux/sebtype.spec) names its sources: their files all have time 0, so the UI is
+    // compiled again when they change.
+    println!("cargo:rerun-if-env-changed=SEBTYPE_SOURCES");
 }

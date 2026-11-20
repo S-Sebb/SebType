@@ -464,6 +464,11 @@ fn sync_job(
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // Which sources the Linux RPM built it from (linux/versions.sh, configurator_sources; "dev" elsewhere).
+    if std::env::args().any(|a| a == "--sources") {
+        println!("{}", option_env!("SEBTYPE_SOURCES").unwrap_or("dev"));
+        return Ok(());
+    }
     // Setup's step on an install or upgrade (pc/linux/setup-ime.sh, pc/windows/setup/setup.ps1): --migrate
     // only migrates, and exits 1 if that failed.
     let migrated = migrate_learning();

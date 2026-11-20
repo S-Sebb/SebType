@@ -37,11 +37,16 @@ if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
     export BAZEL_CACHE
   fi
 fi
+# On a GitHub-hosted runner (.github/workflows/linux-rpm.yml) the build has the machine to itself: all its
+# cores and most of its memory, and no lock (build_lock).
+if [[ ${GITHUB_ACTIONS:-} == true ]]; then
+  BUILD_HOST=local BUILD_JOBS=$(nproc) BUILD_MEMORY_GB=$(( $(awk '/^MemTotal/ { print int($2 / 1048576) }' /proc/meminfo) - 2 ))
+fi
 # Bazel's output roots and caches (Mozc's builds).
 BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
 
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
-JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1)}
+JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1 || true)}  # none: no Android build here
 
 # build_host_ready: whether this build runs on the build host. If the host doesn't answer, it starts
 # Zscaler once and tries again; if it still doesn't, it says so and the build runs here.
@@ -126,6 +131,7 @@ sccache_env() {
 build_lock() {
   local minutes=$1 name=$2
   shift 2
+  [[ ${GITHUB_ACTIONS:-} != true ]] || { "$@"; return; }
   devq -w 3600 -m "$minutes" -P "${DEVQ_RANK:-2}" -n "$name" /tmp/agent-locks/sebtype/build.lock \
     systemd-run --user --scope --quiet -p CPUQuota="${BUILD_JOBS}00%" -p MemoryMax="${BUILD_MEMORY_GB}G" \
     -p MemorySwapMax=0 nice -n 19 ionice -c 3 "$@"

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Publishes SebType <VERSION> as a GitHub release of this repo, tagged v<VERSION>: the signed arm64 release
-# APK, where Obtainium picks it up, and the Windows setup CI built from the same commit (docs/install.md).
+# APK, where Obtainium picks it up, and what CI built from the same commit (docs/install.md): the Windows setup
+# and the Linux RPMs (#421: sebtype and SebType's librime, which the Linux update installs together).
 # Run from a clean checkout of origin/main, after the PR that bumps VERSION has merged and its Windows
-# setup run has passed.
+# setup and Linux RPM runs have passed.
 #   android/release.sh            build, check and publish
-#   android/release.sh --dry-run  check the tag and download the setup, then stop: no build, no release
+#   android/release.sh --dry-run  check the tag and download the setup and RPMs, then stop: no build, no release
 set -euo pipefail
 source "$(dirname "$0")/../tools/lib.sh"
+source "$(dirname "$0")/../linux/versions.sh"
 cd "$(dirname "$0")/.."
 dry=; [[ ${1:-} == --dry-run ]] && dry=1
 
@@ -24,22 +26,36 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null || gh release view "$ta
   echo "release: $tag exists; bump VERSION in a PR first" >&2; exit 1
 fi
 
-# The Windows setup from this commit's windows-setup.yml run, before anything is built or published.
+# What CI built from this commit, before anything is built or published.
 mkdir -p "$TASK_OUT"
-setup_dir=$(mktemp -d "$TASK_OUT/release-setup.XXXXXX")
-trap 'rm -rf "$setup_dir"' EXIT
-# Only main's own runs: a pull_request run reports its head's SHA but builds the merge with its base branch.
-run=$(gh run list --workflow windows-setup.yml --branch main --commit "$head" --status success --json databaseId,event \
-  -q '[.[] | select(.event == "push" or .event == "workflow_dispatch")][0].databaseId // empty')
-[[ -n $run ]] || { echo "release: no successful Windows setup run for $head (gh workflow run windows-setup.yml --ref main)" >&2; exit 1; }
-gh run download "$run" -n sebtype-setup -D "$setup_dir" >/dev/null ||
-  { echo "release: run $run has no sebtype-setup artifact (expired?); run windows-setup.yml on main again" >&2; exit 1; }
+ci=$(mktemp -d "$TASK_OUT/release-ci.XXXXXX")
+trap 'rm -rf "$ci"' EXIT
+# ci_artifact <workflow> <what> <artifact>: downloads <artifact> of this commit's successful <workflow> run into
+# $ci/<artifact> and prints the run's id. Only main's own runs: a pull_request run reports its head's SHA but
+# builds the merge with its base branch.
+ci_artifact() {
+  local run
+  run=$(gh run list --workflow "$1" --branch main --commit "$head" --status success --json databaseId,event \
+    -q '[.[] | select(.event == "push" or .event == "workflow_dispatch")][0].databaseId // empty')
+  [[ -n $run ]] || { echo "release: no successful $2 run for $head (gh workflow run $1 --ref main)" >&2; return 1; }
+  gh run download "$run" -n "$3" -D "$ci/$3" >/dev/null ||
+    { echo "release: run $run has no $3 artifact (expired?); run $1 on main again" >&2; return 1; }
+  echo "$run"
+}
+setup_run=$(ci_artifact windows-setup.yml "Windows setup" sebtype-setup)
 setup=$TASK_OUT/SebType-setup-$version.exe
-[[ -f $setup_dir/SebType-setup-$version.exe ]] ||
-  { echo "release: run $run built $(ls "$setup_dir"), not SebType-setup-$version.exe" >&2; exit 1; }
-mv "$setup_dir/SebType-setup-$version.exe" "$setup"
-echo "release: $tag, version code $(git rev-list --first-parent --count HEAD), setup from run $run" >&2
-[[ -z $dry ]] || { echo "release: dry run, $setup ready; nothing built or published"; exit; }
+[[ -f $ci/sebtype-setup/SebType-setup-$version.exe ]] ||
+  { echo "release: run $setup_run built $(ls "$ci/sebtype-setup"), not SebType-setup-$version.exe" >&2; exit 1; }
+mv "$ci/sebtype-setup/SebType-setup-$version.exe" "$setup"
+# The Linux set: sebtype of this VERSION and every librime package, which an update replaces together.
+rpm_run=$(ci_artifact linux-rpm.yml "Linux RPM" sebtype-rpm)
+rpms=()
+for f in "$SEBTYPE_RPM" "${LIBRIME_PACKAGES[@]/%/-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm}"; do
+  [[ -f $ci/sebtype-rpm/$f ]] || { echo "release: run $rpm_run built $(ls "$ci/sebtype-rpm"), not $f" >&2; exit 1; }
+  mv "$ci/sebtype-rpm/$f" "$TASK_OUT/$f"; rpms+=("$TASK_OUT/$f")
+done
+echo "release: $tag, version code $(git rev-list --first-parent --count HEAD), setup from run $setup_run, RPMs from run $rpm_run" >&2
+[[ -z $dry ]] || { echo "release: dry run, $setup and ${#rpms[@]} RPMs ready in $TASK_OUT; nothing built or published"; exit; }
 
 apk=$(android/build.sh release)
 asset=$TASK_OUT/SebType-$version-arm64-v8a.apk
@@ -49,6 +65,6 @@ cp "$apk" "$asset"
 apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
 "$apksigner" verify --print-certs "$asset" | grep -q 'CN=SebType' || { echo "release: APK not signed with the SebType key" >&2; exit 1; }
 
-gh release create "$tag" "$asset" "$setup" --target "$head" --title "SebType $version" \
-  --notes "SebType $version: the Android app (arm64-v8a, $(du -h "$asset" | cut -f1)) and the Windows setup ($(du -h "$setup" | cut -f1)). It installs as an update over the earlier releases, 0.1.30-sebtype.<n>, from when the Android app was based on FUTO Keyboard 0.1.30 (until #262); it now contains none of FUTO's code. SebType's own code (MIT) with the components README.md lists under their licences."
+gh release create "$tag" "$asset" "$setup" "${rpms[@]}" --target "$head" --title "SebType $version" \
+  --notes "SebType $version: the Android app (arm64-v8a, $(du -h "$asset" | cut -f1)) the Windows setup ($(du -h "$setup" | cut -f1)), and for Fedora and Nobara $SEBTYPE_RPM with SebType's librime $LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE, which install together (pc/linux/README.md). It installs as an update over the earlier releases, 0.1.30-sebtype.<n>, from when the Android app was based on FUTO Keyboard 0.1.30 (until #262); it now contains none of FUTO's code. SebType's own code (MIT) with the components README.md lists under their licences."
 echo "release: published $tag"
