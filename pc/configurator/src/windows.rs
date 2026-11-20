@@ -524,11 +524,12 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
-        // a stand-in for Setup that runs a few seconds, and needs no admin
-        let setup = d.join("setup.cmd");
-        fs::write(&setup, "@ping -n 4 127.0.0.1 >nul\r\n").unwrap();
+        // A stand-in for Setup that needs no admin and runs a few seconds: an exe, so this also shows one
+        // starts from the held file (a batch file's cmd.exe keeps it open past the holder).
+        let setup = d.join("setup.exe");
+        fs::copy(r"C:\Windows\System32\PING.EXE", &setup).unwrap();
         let sha = crate::update::sha256_file(&setup).unwrap();
-        let mut holder = start_setup(&[(setup.clone(), sha.clone())], "x").unwrap();
+        let mut holder = start_setup(&[(setup.clone(), sha.clone())], "-n 4 127.0.0.1").unwrap();
         assert!(
             fs::OpenOptions::new().append(true).open(&setup).is_err(),
             "writable while Setup runs"
@@ -538,13 +539,13 @@ mod tests {
             "deletable while Setup runs"
         );
         assert!(
-            fs::rename(&setup, d.join("moved.cmd")).is_err(),
+            fs::rename(&setup, d.join("moved.exe")).is_err(),
             "movable while Setup runs"
         );
         // free once Setup has exited and the holder with it
         assert!(holder.wait().unwrap().success());
-        fs::write(&setup, "@echo changed\r\n").unwrap();
-        let e = start_setup(&[(setup, sha)], "x").unwrap_err();
+        fs::write(&setup, "changed").unwrap();
+        let e = start_setup(&[(setup, sha)], "-n 1 127.0.0.1").unwrap_err();
         assert_eq!(e.to_string(), "the setup isn't the release's");
         fs::remove_dir_all(&d).unwrap();
     }
