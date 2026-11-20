@@ -461,10 +461,11 @@ try {
 /// with the languages chosen before, from a PowerShell that holds the file (START_SETUP). Returns once
 /// Setup runs; the caller then quits: Setup replaces this exe.
 pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
-    start_setup(files, "/SILENT /SUPPRESSMSGBOXES /NORESTART")
+    start_setup(files, "/SILENT /SUPPRESSMSGBOXES /NORESTART").map(drop)
 }
 
-fn start_setup(files: &[crate::update::Download], args: &str) -> io::Result<()> {
+/// The PowerShell that holds the setup, once Setup runs.
+fn start_setup(files: &[crate::update::Download], args: &str) -> io::Result<std::process::Child> {
     use io::BufRead;
     let (setup, sha) = files.first().ok_or_else(|| io::Error::other("no setup"))?;
     let mut holder = Command::new("powershell.exe")
@@ -479,7 +480,7 @@ fn start_setup(files: &[crate::update::Download], args: &str) -> io::Result<()> 
     let mut line = String::new();
     io::BufReader::new(holder.stdout.take().unwrap()).read_line(&mut line)?;
     match line.trim() {
-        "started" => Ok(()), // it keeps holding the file until Setup exits
+        "started" => Ok(holder), // it keeps holding the file until Setup exits
         "changed" => Err(io::Error::other("the setup isn't the release's")),
         "cancelled" => Err(io::Error::other(
             "not allowed: the admin prompt was cancelled",
@@ -527,7 +528,7 @@ mod tests {
         let setup = d.join("setup.cmd");
         fs::write(&setup, "@ping -n 4 127.0.0.1 >nul\r\n").unwrap();
         let sha = crate::update::sha256_file(&setup).unwrap();
-        start_setup(&[(setup.clone(), sha.clone())], "x").unwrap();
+        let mut holder = start_setup(&[(setup.clone(), sha.clone())], "x").unwrap();
         assert!(
             fs::OpenOptions::new().append(true).open(&setup).is_err(),
             "writable while Setup runs"
@@ -540,7 +541,8 @@ mod tests {
             fs::rename(&setup, d.join("moved.cmd")).is_err(),
             "movable while Setup runs"
         );
-        std::thread::sleep(std::time::Duration::from_secs(6));
+        // free once Setup has exited and the holder with it
+        assert!(holder.wait().unwrap().success());
         fs::write(&setup, "@echo changed\r\n").unwrap();
         let e = start_setup(&[(setup, sha)], "x").unwrap_err();
         assert_eq!(e.to_string(), "the setup isn't the release's");
