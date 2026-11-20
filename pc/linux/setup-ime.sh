@@ -78,15 +78,17 @@ if ((undo_configurator)); then
     echo "change: remove SebType's sync login from the keyring"
     secret-tool clear service 'SebType sync' username login 2>/dev/null || true  # none there, or no keyring
   fi
-  # The daily update check (#422), its state and downloads.
+  # The daily update check (#422), with a check still waiting on its notification, its state and downloads.
   if [[ -f $sync_units/sebtype-update.timer ]]; then
     echo "change: stop and remove SebType's daily update check"
     systemctl --user disable --now sebtype-update.timer 2>/dev/null || true
+    systemctl --user stop sebtype-update.service 2>/dev/null || true
     rm -f "$sync_units"/sebtype-update.{timer,service}
     systemctl --user daemon-reload 2>/dev/null
   fi
-  updates=${XDG_CACHE_HOME:-$HOME/.cache}/sebtype/updates
-  [[ -d $updates ]] && { echo "change: remove $updates"; rm -r "$updates"; }
+  for updates in "${XDG_RUNTIME_DIR:-/nonexistent}/sebtype-updates" "${XDG_CACHE_HOME:-$HOME/.cache}/sebtype-updates"; do
+    [[ -d $updates ]] && { echo "change: remove $updates"; rm -r "$updates"; }
+  done
   for f in "$data"/sebtype/{sync.json,sync.lock,sebtype_sync.py,network-state,schedule.lock,update.json}; do
     # Released before it goes: a sync starting meanwhile would lock a new file while this holds the old (#401).
     [[ $f == */schedule.lock && -n ${schedule_lock-} ]] && exec {schedule_lock}>&-

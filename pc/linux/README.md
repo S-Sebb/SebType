@@ -121,11 +121,16 @@ timer (`sebtype-update.timer`, at the next login after a missed day). It asks Gi
 release (`releases/latest`; tags `v<MAJOR.MINOR.PATCH>` only, so the `v0.1.30-sebtype.N` tags from before
 0.1.0 are never newer) and compares it with the newer of the Configurator's version (`VERSION`) and the
 installed `sebtype` package's. A newer release shows a notification once; clicking it opens the
-Configurator's About page. There, Update… downloads the release's RPMs for this PC (its arch and noarch,
-no source or debug packages, SebType's own among them) from the release's download address into
-`~/.cache/sebtype/updates`, checks each one's size against GitHub's, and installs them in one
-`pkexec dnf install -y` (one admin prompt). The new input method runs once Fcitx5 restarts: log out and
-in again; the Configurator never restarts it. About's "Check for updates automatically" turns the daily
+Configurator's About page. There, Update… downloads the release's RPMs (#423): `sebtype`, `librime`,
+`librime-lua` and `librime-octagram`, and `librime-predict`, `librime-tools` and `librime-devel` only where
+`rpm -q` finds them installed. They come from the release's download address into a new folder only this
+account can use (`$XDG_RUNTIME_DIR/sebtype-updates`), and each must have GitHub's size and SHA-256 (the
+asset's `digest`; a release without one installs nothing). One admin prompt (`pkexec`) then runs, as root,
+a script that copies them into a new folder only root can write, checks each SHA-256 there again and runs
+`dnf install -y` on those copies, so a file changed after the check isn't installed. Then
+`sebtype-setup </dev/null` does this account's part, without a prompt. The new input method runs once
+Fcitx5 restarts: log out and in again, or turn Virtual Keyboard off and on; the Configurator never restarts
+it, and its own window is the old one until it is reopened. About's "Check for updates automatically" turns the daily
 check off, Check now checks at once.
 
 To undo: `pc/linux/setup-ime.sh --undo-configurator`. It removes the app, its entry and its daily update
@@ -135,7 +140,8 @@ check, and puts back the candidate window look that Picnic replaced. Settings ma
 window shows has its 中文 and 日本語, every screen opened in each of the three languages in a nested
 virtual KWin (screenshots in `~/scratch/SebType/<issue>/configurator-shots`), a private Fcitx5 and Rime on
 a copy of this account's rime-ice taking the languages and Chinese settings the app writes, the daily
-update check against a release served on this PC with a fake notification server (`test-update.py`), and
+update check against a release served on this PC with a fake notification server (`test-update.py`, run
+with the test build `sebtype-configurator-update-test`, the only one that takes `SEBTYPE_UPDATE_URL`), and
 `test-setup-ime.sh`. The Windows build is the `sebtype-configurator` artifact of the Configurator
 workflow.
 

@@ -682,14 +682,24 @@ pub fn installed_version() -> String {
     }
 }
 
-/// The downloads, in this account's cache.
+/// Where an install's private download folder goes: the account's runtime folder (0700, in memory),
+/// else its cache.
 pub fn updates_dir() -> PathBuf {
-    xdg("XDG_CACHE_HOME", ".cache").join("sebtype/updates")
+    env::var_os("XDG_RUNTIME_DIR")
+        .filter(|d| !d.is_empty())
+        .map_or_else(|| xdg("XDG_CACHE_HOME", ".cache"), PathBuf::from)
+        .join("sebtype-updates")
 }
 
 /// The freedesktop notification, as SebType Configurator. A click on it or its button opens the
 /// About page, from this process, which waits for it (sebtype-update.service keeps what it starts).
-pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> {
+/// `shown` runs once the notification is up.
+pub fn notify_update(
+    summary: &str,
+    body: &str,
+    action: &str,
+    shown: &mut dyn FnMut(),
+) -> io::Result<()> {
     use dbus::{
         arg::{PropMap, Variant},
         blocking::Connection,
@@ -746,6 +756,7 @@ pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> 
         )
         .map_err(io::Error::other)?;
     seen.lock().unwrap().0 = id;
+    shown();
     let end = Instant::now() + Duration::from_secs(12 * 3600);
     let outcome = loop {
         if let Some(&(_, clicked)) = seen.lock().unwrap().1.iter().find(|(n, _)| *n == id) {
@@ -776,26 +787,68 @@ pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> 
     Ok(())
 }
 
-/// Installs the release's RPMs in one dnf transaction, with the system's admin prompt (polkit). The input
-/// method runs the new version once Fcitx5 restarts, at the next login: never restarted here.
-pub fn install_update(files: &[PathBuf]) -> io::Result<()> {
-    let out = Command::new("pkexec")
-        .args(["dnf", "install", "-y"])
-        .args(files)
-        .output()?;
-    match out.status.code() {
-        Some(0) => Ok(()),
-        Some(126 | 127) => Err(io::Error::other(
-            "not allowed: the admin prompt was cancelled",
-        )),
-        _ => Err(io::Error::other(
-            String::from_utf8_lossy(&out.stderr)
-                .lines()
-                .last()
-                .unwrap_or("dnf failed")
-                .to_string(),
-        )),
+/// The admin side of an update, run as root: copies each RPM into a new folder only root can write,
+/// checks it there against the SHA-256 it was downloaded with, and installs them from there, so a file
+/// changed after the Configurator's check isn't installed. Arguments: <sha256> <rpm>, for each. Exit 3: a
+/// file isn't the release's.
+const ROOT_INSTALL: &str = r#"set -eu
+d=$(mktemp -d)
+trap 'rm -rf "$d"' EXIT
+while [ $# -gt 1 ]; do
+  f=$d/$(basename -- "$2")
+  cp -- "$2" "$f"
+  printf '%s  %s\n' "$1" "$f" | sha256sum --check --status - || { echo "$(basename -- "$2") isn't the release's"; exit 3; }
+  shift 2
+done
+dnf install -y "$d"/*.rpm"#;
+
+fn root_install(program: &[&str], files: &[crate::update::Download]) -> Command {
+    let mut c = Command::new(program[0]);
+    c.args(&program[1..]).args(["-c", ROOT_INSTALL, "sh"]);
+    for (path, sha) in files {
+        c.arg(sha).arg(path);
     }
+    c
+}
+
+/// The last line a command printed, for its error.
+fn last_line(out: &std::process::Output, or: &str) -> String {
+    [&out.stderr, &out.stdout]
+        .iter()
+        .find_map(|o| {
+            let o = String::from_utf8_lossy(o);
+            o.lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
+        })
+        .unwrap_or_else(|| or.to_string())
+}
+
+/// Installs the release's RPMs in one dnf transaction, with the system's admin prompt (polkit), then
+/// sebtype-setup's part for this account, without one (pc/linux/README.md). The input method runs the new
+/// version once Fcitx5 restarts, at the next login: never restarted here.
+pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
+    let out = root_install(&["pkexec", "/bin/sh"], files).output()?;
+    match out.status.code() {
+        Some(0) => {}
+        Some(126 | 127) => {
+            return Err(io::Error::other(
+                "not allowed: the admin prompt was cancelled",
+            ))
+        }
+        _ => return Err(io::Error::other(last_line(&out, "dnf failed"))),
+    }
+    let out = Command::new("/usr/bin/sebtype-setup")
+        .stdin(std::process::Stdio::null())
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other(format!(
+            "sebtype-setup: {}",
+            last_line(&out, "failed")
+        )));
+    }
+    Ok(())
 }
 
 pub fn open_url(url: &str) {
@@ -805,6 +858,65 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The admin side of an update installs copies it checked itself: a file changed after the
+    /// Configurator's check makes it refuse; dnf (a stub here) gets the copies.
+    #[test]
+    fn an_update_installs_only_the_files_it_checked() {
+        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "target/test-tmp/root-install-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("bin")).unwrap();
+        let ran = d.join("dnf-ran");
+        fs::write(
+            d.join("bin/dnf"),
+            format!(
+                "#!/bin/sh\nshift 2; for f; do echo \"${{f##*/}} $(cat \"$f\")\"; done > '{}'\n",
+                ran.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(
+            d.join("bin/dnf"),
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let (a, b) = (
+            d.join("sebtype-0.2.0-1.fc44.x86_64.rpm"),
+            d.join("librime-1.16.1-2.fc44.x86_64.rpm"),
+        );
+        fs::write(&a, "hello").unwrap();
+        fs::write(&b, "world").unwrap();
+        let files = vec![
+            (a.clone(), crate::update::sha256_file(&a).unwrap()),
+            (b.clone(), crate::update::sha256_file(&b).unwrap()),
+        ];
+        let run = |files: &[crate::update::Download]| {
+            let path = format!("{}:{}", d.join("bin").display(), env::var("PATH").unwrap());
+            root_install(&["sh"], files)
+                .env("PATH", path)
+                .output()
+                .unwrap()
+        };
+        let out = run(&files);
+        assert!(out.status.success(), "{out:?}");
+        assert_eq!(
+            fs::read_to_string(&ran).unwrap(),
+            "librime-1.16.1-2.fc44.x86_64.rpm world\nsebtype-0.2.0-1.fc44.x86_64.rpm hello\n"
+        );
+        fs::remove_file(&ran).unwrap();
+        // replaced after the check
+        fs::write(&b, "w0rld").unwrap();
+        let out = run(&files);
+        assert_eq!(out.status.code(), Some(3), "{out:?}");
+        assert!(
+            last_line(&out, "").contains("librime-1.16.1-2.fc44.x86_64.rpm isn't the release's")
+        );
+        assert!(!ran.exists(), "dnf ran");
+        fs::remove_dir_all(&d).unwrap();
+    }
 
     /// A sync waits for Rime's snapshot, and fails when the save never came (typing never idle, #373), so
     /// the old snapshot doesn't go up and Setup keeps the words.

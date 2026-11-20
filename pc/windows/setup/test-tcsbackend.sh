@@ -59,12 +59,17 @@ perf=
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
   exe=$(ls "$out"/in/SebType-setup-*.exe 2>/dev/null | head -1)
+  # The Configurator's test build, which takes test-update.ps1's release on 127.0.0.1 (#422)
+  [ "${ONLY:-}" = update ] && { gh run download -R S-Sebb/SebType "$run" -n sebtype-configurator-update-test -D "$out/in" >/dev/null 2>&1 ||
+    missing=${missing:-"downloading sebtype-configurator-update-test from run $run failed"}; }
   # perf-rime.exe (from the librime build), for the Rime per-key check against the librime the setup installed (#133)
   [ -n "${PERF_RUN:-}" ] && gh run download -R S-Sebb/SebType "$run" -n perf-rime -D "$out/in" >/dev/null 2>&1
 else
   exe=$(ls -t "$repo"/build/SebType-setup-*.exe 2>/dev/null | head -1)
 fi
 [ -n "${PERF_RUN:-}" ] && perf=$(ls "$out"/in/perf-rime.exe "$repo"/build/rime/perf-rime.exe 2>/dev/null | head -1)
+update_test=
+[ "${ONLY:-}" = update ] && { update_test=$(ls "$out"/in/sebtype-configurator-update-test.exe 2>/dev/null) || missing=${missing:-'no sebtype-configurator-update-test.exe: CI builds it'}; }
 [ -n "$exe" ] || missing=${missing:-"no SebType-setup-*.exe: no successful Windows setup run for $head yet, none in build/"}
 old=
 if [ "${ONLY:-}" = upgrade ]; then
@@ -162,7 +167,7 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi

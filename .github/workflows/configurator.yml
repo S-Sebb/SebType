@@ -50,6 +50,11 @@ jobs:
           python ../../art/make-icon.py --windows ../../out
           Move-Item -Force ../../out/sebtype.ico $env:SEBTYPE_ICO
       - run: cargo test --release --locked
+      # The tests' build (#422), which takes a release served on 127.0.0.1: before the shipping one, so
+      # target/release keeps that.
+      - run: |
+          cargo build --release --locked --features update-test
+          Copy-Item target/release/sebtype-configurator.exe ../../out/sebtype-configurator-update-test.exe
       - run: cargo build --release --locked
       - uses: actions/upload-artifact@v4
         with:
@@ -57,3 +62,9 @@ jobs:
           path: pc/configurator/target/release/sebtype-configurator.exe
           if-no-files-found: error
           retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sebtype-configurator-update-test
+          path: out/sebtype-configurator-update-test.exe
+          if-no-files-found: error
+          retention-days: 1

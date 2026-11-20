@@ -93,7 +93,7 @@ case \"\$*\" in
   'dnf install -y librime-octagram') echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/librime-octagram\" ;;
   'dnf distro-sync -y librime '*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
-stub systemctl 'cat "$FAKE/session-env" 2>/dev/null; true'
+stub systemctl 'echo "systemctl $*" >> "$FAKE/systemctl.log"; cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
 stub qdbus6 'echo "qdbus $*" >> "$FAKE/qdbus.log"'
 stub busctl 'case "$*" in
@@ -257,14 +257,17 @@ undo_names() {
     grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml"
 }
 
-# --undo-configurator removes the app and its daily update check (#422), and puts back the candidate window theme Picnic replaced; a second
+# --undo-configurator removes the app and its daily update check (#422), stopping a check that waits on its
+# notification, and puts back the candidate window theme Picnic replaced; a second
 # undo changes nothing, and setup installs it again.
 undo_configurator() {
   local d=$h/.local/share c=$h/.config/fcitx5/conf/classicui.conf o
   mkdir -p "$d/fcitx5/themes/sebtype-picnic" "${c%/*}"
   printf 'Theme=Nord\nDarkTheme=default-dark\n' > "$d/fcitx5/themes/sebtype-picnic/previous"
   printf 'Vertical Candidate List=False\nTheme=sebtype-picnic\nDarkTheme=sebtype-picnic\n' > "$c"
+  : > "$fake/systemctl.log"
   o=$(fake_run --undo-configurator < /dev/null) || return 1; echo "$o"
+  grep -qx 'systemctl --user stop sebtype-update.service' "$fake/systemctl.log" || { echo "the update check wasn't stopped"; return 1; }
   [[ $(grep -c '^change:' <<<"$o") == 6 && ! -e $d/sebtype/configurator && ! -e $h/.config/systemd/user/sebtype-update.timer && ! -e $d/applications/sebtype-configurator.desktop &&
     ! -e $d/icons/hicolor/192x192/apps/sebtype-configurator.png && ! -e $d/fcitx5/themes/sebtype-picnic ]] &&
     [[ $(cat "$c") == $'Vertical Candidate List=False\nTheme=Nord\nDarkTheme=default-dark' ]] &&

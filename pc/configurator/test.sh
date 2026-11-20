@@ -415,13 +415,14 @@ export -f reconnect_sync
 check sync-on-network-reconnect 700 reconnect_sync
 
 # The daily update check (#422) against a release served here, with a fake notification server in a
-# private D-Bus session: notified once, a click opens About, the switch and the old tags (test-update.py).
+# private D-Bus session: notified once, a click opens About, the switch and the old tags, and the shipping
+# build ignoring the test's release (test-update.py).
 # Nothing is downloaded or installed.
 update_check() {
   local d=$sb/update-account
   mkdir -p "$d/config" "$d/data"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY -i PATH="$PATH" HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" \
-    XDG_CACHE_HOME="$d/cache" -- python3 test-update.py "$bin"
+    XDG_CACHE_HOME="$d/cache" -- python3 test-update.py "$bin-update-test" "$bin"
 }
 export -f update_check
 check update-check 300 update_check

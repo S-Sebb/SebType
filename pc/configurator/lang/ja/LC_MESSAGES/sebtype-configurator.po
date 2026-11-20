@@ -415,8 +415,8 @@ msgstr "SebType {} をダウンロードしています…"
 msgid "Installing SebType {}…"
 msgstr "SebType {} をインストールしています…"
 
-msgid "SebType {} is installed"
-msgstr "SebType {} をインストールしました"
+msgid "SebType {} is installed. Reopen this window"
+msgstr "SebType {} を導入済み。画面を開き直してください"
 
 msgid "The update didn't install"
 msgstr "アップデートをインストールできませんでした"
@@ -427,8 +427,8 @@ msgstr "前回の確認：{}"
 msgid "You have {}. Installing it needs an administrator's approval"
 msgstr "現在は {}。インストールには管理者の承認が必要"
 
-msgid "Log out and in again to start it"
-msgstr "ログアウトして再ログインすると使えます"
+msgid "Log out and in, or turn Virtual Keyboard off and on, to use it"
+msgstr "再ログインか仮想キーボードのオフ・オンで有効"
 
 msgid "Update…"
 msgstr "アップデート…"

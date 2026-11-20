@@ -80,9 +80,13 @@ only, so the `v0.1.30-sebtype.N` tags from before 0.1.0 are never newer) and com
 Configurator's version (`VERSION`). A newer release shows a toast once, under the Start menu shortcut's
 AppUserModelID `SebType.Configurator`; clicking it opens `sebtype-configurator:update`, which Setup
 registers to open the Configurator's About page. There, Update… downloads `SebType-setup-<version>.exe` from
-the release's download address into `%LOCALAPPDATA%\SebType\updates`, checks its size against GitHub's, and
-runs it as an upgrade (`/SILENT /SUPPRESSMSGBOXES /NORESTART`, the languages chosen before) after UAC; the
-Configurator closes so Setup can replace it. About's "Check for updates automatically" turns the daily
+the release's download address into a new folder in `%LOCALAPPDATA%\SebType\updates` and checks its size
+and SHA-256 against GitHub's (the asset's `digest`; none, no install). A PowerShell then opens the file
+sharing it for reading only, so nothing can change, move or delete it, checks the SHA-256 again through
+that handle, and runs it as an upgrade (`/SILENT /SUPPRESSMSGBOXES /NORESTART`, the languages chosen before)
+after UAC, holding the file until Setup exits; the Configurator closes once Setup runs, so Setup can replace
+it. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
+takes `SEBTYPE_UPDATE_URL`, a release on 127.0.0.1 (`test-update.ps1`). About's "Check for updates automatically" turns the daily
 check off, Check now checks at once. `-User -Undo` removes the task, `update.json` and the downloads.
 
 ### What it does, and why

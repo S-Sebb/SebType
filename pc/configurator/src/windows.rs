@@ -410,7 +410,13 @@ fn toast_xml(summary: &str, body: &str, action: &str) -> String {
     )
 }
 
-pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> {
+/// `shown` runs once Windows took the toast.
+pub fn notify_update(
+    summary: &str,
+    body: &str,
+    action: &str,
+    shown: &mut dyn FnMut(),
+) -> io::Result<()> {
     let out = Command::new("powershell.exe")
         .args([
             "-NoProfile",
@@ -433,30 +439,56 @@ pub fn notify_update(summary: &str, body: &str, action: &str) -> io::Result<()> 
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
+    shown();
     Ok(())
 }
 
+/// Opens the setup so nothing can change or delete it (share: read only), checks its SHA-256 through that
+/// handle and starts it through the shell, so Windows asks for admin (UAC); the handle stays open until
+/// Setup exits. Prints "started" once Setup runs.
+const START_SETUP: &str = r#"$ErrorActionPreference = 'Stop'
+try {
+  $f = [IO.File]::Open($env:SEBTYPE_SETUP, 'Open', 'Read', 'Read')
+  $sha = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($f)).Replace('-', '').ToLower()
+  if ($sha -ne $env:SEBTYPE_SHA256) { [Console]::Out.WriteLine('changed'); exit 3 }
+  try { $p = Start-Process -PassThru -FilePath $env:SEBTYPE_SETUP -ArgumentList $env:SEBTYPE_SETUP_ARGS.Split(' ') }
+  catch { [Console]::Out.WriteLine('cancelled'); exit 2 }
+  [Console]::Out.WriteLine('started'); [Console]::Out.Flush()
+  $p.WaitForExit()
+} finally { if ($f) { $f.Dispose() } }"#;
+
 /// Starts the release's Setup as an upgrade runs (pc/windows/README.md): silent but for its progress,
-/// with the languages chosen before. Through the shell, so Windows asks for admin (UAC). The caller then
-/// quits: Setup replaces this exe.
-pub fn install_update(files: &[PathBuf]) -> io::Result<()> {
-    let setup = files.first().ok_or_else(|| io::Error::other("no setup"))?;
-    let out = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "$ErrorActionPreference = 'Stop'; Start-Process -FilePath $env:SEBTYPE_SETUP -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART'",
-        ])
+/// with the languages chosen before, from a PowerShell that holds the file (START_SETUP). Returns once
+/// Setup runs; the caller then quits: Setup replaces this exe.
+pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
+    start_setup(files, "/SILENT /SUPPRESSMSGBOXES /NORESTART")
+}
+
+fn start_setup(files: &[crate::update::Download], args: &str) -> io::Result<()> {
+    use io::BufRead;
+    let (setup, sha) = files.first().ok_or_else(|| io::Error::other("no setup"))?;
+    let mut holder = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", START_SETUP])
         .env("SEBTYPE_SETUP", setup)
+        .env("SEBTYPE_SHA256", sha)
+        .env("SEBTYPE_SETUP_ARGS", args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .creation_flags(NO_WINDOW)
-        .output()?;
-    if !out.status.success() {
-        return Err(io::Error::other(
+        .spawn()?;
+    let mut line = String::new();
+    io::BufReader::new(holder.stdout.take().unwrap()).read_line(&mut line)?;
+    match line.trim() {
+        "started" => Ok(()), // it keeps holding the file until Setup exits
+        "changed" => Err(io::Error::other("the setup isn't the release's")),
+        "cancelled" => Err(io::Error::other(
             "not allowed: the admin prompt was cancelled",
-        ));
+        )),
+        _ => Err(io::Error::other(format!(
+            "the setup didn't start{}",
+            holder.wait().map_or(String::new(), |s| format!(" ({s})"))
+        ))),
     }
-    Ok(())
 }
 
 pub fn open_url(url: &str) {
@@ -470,8 +502,6 @@ pub fn open_url(url: &str) {
 mod tests {
     use super::*;
 
-    /// The sync task also runs when Windows connects to a network (#377), half a minute later, and never
-    /// twice at once.
     /// A click on the toast or its button opens the About page through Setup's protocol; the text is escaped.
     #[test]
     fn the_toast_opens_the_about_page() {
@@ -481,6 +511,40 @@ mod tests {
         ));
         assert!(t.contains("<text>SebType 0.2.0 &lt;is&gt; available</text><text>A &amp; B</text>"));
         assert!(t.contains("activationType=\"protocol\" arguments=\"sebtype-configurator:update\""));
+    }
+
+    /// The setup that starts is the one checked, and nothing can change or delete it until it exits: a
+    /// file changed after the download's check doesn't start.
+    #[test]
+    fn an_update_starts_only_the_setup_it_checked() {
+        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "target/test-tmp/start-setup-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        // a stand-in for Setup that runs a few seconds, and needs no admin
+        let setup = d.join("setup.cmd");
+        fs::write(&setup, "@ping -n 4 127.0.0.1 >nul\r\n").unwrap();
+        let sha = crate::update::sha256_file(&setup).unwrap();
+        start_setup(&[(setup.clone(), sha.clone())], "x").unwrap();
+        assert!(
+            fs::OpenOptions::new().append(true).open(&setup).is_err(),
+            "writable while Setup runs"
+        );
+        assert!(
+            fs::remove_file(&setup).is_err(),
+            "deletable while Setup runs"
+        );
+        assert!(
+            fs::rename(&setup, d.join("moved.cmd")).is_err(),
+            "movable while Setup runs"
+        );
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        fs::write(&setup, "@echo changed\r\n").unwrap();
+        let e = start_setup(&[(setup, sha)], "x").unwrap_err();
+        assert_eq!(e.to_string(), "the setup isn't the release's");
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

@@ -561,9 +561,16 @@ fn install_update(weak: slint::Weak<AppWindow>) {
     std::thread::spawn(move || {
         let installed = (|| {
             let (_, files) = update::check()?.ok_or("SebType is up to date".to_string())?;
-            let paths = update::download(&files, &platform::updates_dir())?;
-            set_update_status(&weak, UpdateStatus::Installing, String::new());
-            platform::install_update(&paths).map_err(|e| e.to_string())
+            let dir = update::private_dir().map_err(|e| e.to_string())?;
+            let installed = update::download(&files, &dir).and_then(|paths| {
+                set_update_status(&weak, UpdateStatus::Installing, String::new());
+                platform::install_update(&paths).map_err(|e| e.to_string())
+            });
+            // Windows' Setup still runs from it, held open: the next install removes it.
+            if cfg!(not(windows)) {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+            installed
         })();
         match installed {
             Err(e) => set_update_status(&weak, UpdateStatus::Failed, e),

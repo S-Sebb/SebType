@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """The daily update check (#422) on Linux, in a private D-Bus session (test.sh's update-check): a release
-served on 127.0.0.1 (SEBTYPE_UPDATE_URL) and a fake freedesktop notification server stand in for GitHub
+served on 127.0.0.1 (SEBTYPE_UPDATE_URL, which only the Configurator's test build takes) and a fake freedesktop notification server stand in for GitHub
 and the desktop, so nothing is downloaded or installed. Checked: a newer release is notified once and a
 click opens the About page; the same release isn't notified again; the switch off checks nothing; the
-tags from before 0.1.0 (v0.1.30-sebtype.N) are never newer; a notification closed opens nothing.
+tags from before 0.1.0 (v0.1.30-sebtype.N) are never newer; a notification closed opens nothing; the shipping
+build doesn't take the test's release.
 
-    test-update.py <sebtype-configurator>   # HOME and XDG_DATA_HOME: a sandbox account
+    test-update.py <sebtype-configurator-update-test> <sebtype-configurator>   # HOME, XDG_DATA_HOME: a sandbox
 """
 
 import http.server
@@ -20,7 +21,7 @@ import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
-app = sys.argv[1]
+app, shipping = sys.argv[1:3]
 state = os.path.join(os.environ["XDG_DATA_HOME"], "sebtype", "update.json")
 release = {}
 requests = []
@@ -91,14 +92,14 @@ notifications = Notifications()
 loop = GLib.MainLoop()
 
 
-def check_updates():
+def check_updates(exe=None, **env):
     """Runs --check-updates while the fake server answers: (exit code, stderr)."""
     out = {}
 
     def run():
         p = subprocess.run(
-            [app, "--check-updates"],
-            env=dict(os.environ, SEBTYPE_UPDATE_URL=f"{url}/latest.json"),
+            [exe or app, "--check-updates"],
+            env=dict(os.environ, SEBTYPE_UPDATE_URL=f"{url}/latest.json", **env),
             capture_output=True,
             text=True,
             timeout=60,
@@ -115,6 +116,10 @@ def make(tag, version):
     assets = [
         f"SebType-setup-{version}.exe",
         f"sebtype-{version}-1.fc44.x86_64.rpm",
+        *(
+            f"{p}-1.16.1-2.sebtype4.fc44.x86_64.rpm"
+            for p in ("librime", "librime-lua", "librime-octagram")
+        ),
         f"SebType-{version}-arm64-v8a.apk",
     ]
     release.clear()
@@ -201,6 +206,18 @@ result(
     "update-closed-opens-nothing",
     rc == 0 and len(n) == 2 and "opening" not in err,
     f"rc {rc}, stderr {err.strip()!r}",
+)
+
+# The shipping build goes to GitHub whatever SEBTYPE_UPDATE_URL says: here through a proxy that isn't
+# there, so it fails without the network.
+before = len(requests)
+rc, err = check_updates(
+    shipping, HTTPS_PROXY="http://127.0.0.1:9", https_proxy="http://127.0.0.1:9"
+)
+result(
+    "update-shipping-build-ignores-test-release",
+    rc == 1 and len(requests) == before and len(n) == 2,
+    f"rc {rc}, {len(requests) - before} request(s) here, stderr {err.strip()!r}",
 )
 
 server.shutdown()

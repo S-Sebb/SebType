@@ -4,8 +4,9 @@ The daily update check (#422), on a Windows PC with SebType installed, in the lo
 
     powershell -ExecutionPolicy Bypass -File test-update.ps1 [-Out <folder>]
 
-A release served on this PC with Setup's Python (SEBTYPE_UPDATE_URL, only to 127.0.0.1) stands in for GitHub:
-nothing is downloaded or installed. Checked: the Configurator's --check-updates finds the newer release, keeps
+A release served on this PC with Setup's Python stands in for GitHub, through the Configurator's test build
+(sebtype-configurator-update-test.exe next to this script, CI's artifact of that name), the one that takes
+SEBTYPE_UPDATE_URL: nothing is downloaded or installed. Checked: the Configurator's --check-updates finds the newer release, keeps
 it in update.json and shows its toast under SebType Configurator's AppUserModelID; a second check doesn't show
 it again; a click's sebtype-configurator: link opens the Configurator's About page. Results: one line per
 check in <Out>\update-results.txt; exit 0 only if all pass.
@@ -24,11 +25,13 @@ function Check($name, [scriptblock]$body) {
   try { $why = & $body; Result $name PASS $why } catch { Result $name FAIL $_.Exception.Message }
 }
 if (-not (Test-Path "$app\sebtype-configurator.exe")) { Write-Host 'BLOCKED preflight: SebType is not installed'; exit 1 }
+$test = "$PSScriptRoot\sebtype-configurator-update-test.exe"
+if (-not (Test-Path $test)) { Write-Host "BLOCKED preflight: no $test"; exit 1 }
 
 $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
 function Toasts { @([Windows.UI.Notifications.ToastNotificationManager]::History.GetHistory('SebType.Configurator') | ForEach-Object { $_.Content.GetXml() }) }
 function Check-Updates {
-  $p = Start-Process -PassThru "$app\sebtype-configurator.exe" '--check-updates'
+  $p = Start-Process -PassThru $test '--check-updates'
   if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw '--check-updates ran over 2 minutes' }
   if ($p.ExitCode) { throw "--check-updates exited with $($p.ExitCode)" }
 }

@@ -638,11 +638,11 @@ component AboutPage inherits Page {
                 : st == UpdateStatus.offline ? @tr("Can't reach GitHub")
                 : st == UpdateStatus.downloading ? @tr("Downloading SebType {}…", State.update-version)
                 : st == UpdateStatus.installing ? @tr("Installing SebType {}…", State.update-version)
-                : st == UpdateStatus.installed ? @tr("SebType {} is installed", State.update-version)
+                : st == UpdateStatus.installed ? @tr("SebType {} is installed. Reopen this window", State.update-version)
                 : @tr("The update didn't install");
             detail: st == UpdateStatus.up-to-date ? @tr("Last checked {}", State.update-checked)
                 : st == UpdateStatus.available ? @tr("You have {}. Installing it needs an administrator's approval", State.update-installed)
-                : st == UpdateStatus.installed ? @tr("Log out and in again to start it")
+                : st == UpdateStatus.installed ? @tr("Log out and in, or turn Virtual Keyboard off and on, to use it")
                 : (st == UpdateStatus.offline || st == UpdateStatus.failed) ? State.update-error
                 : "";
             if !busy && st != UpdateStatus.installed: VerticalLayout { alignment: center;
