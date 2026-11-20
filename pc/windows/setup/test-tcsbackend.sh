@@ -168,8 +168,8 @@ echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\
 if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
-  "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" "$repo/pc/configurator/src/start-setup.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
+if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" "$here/test-update-user.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+  "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" "$repo/pc/configurator/src/start-setup.ps1" "$repo/pc/configurator/src/update-user.ps1" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
 mark 'inputs uploaded'

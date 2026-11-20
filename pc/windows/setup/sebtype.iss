@@ -284,6 +284,18 @@ begin
     MsgBox(Text, Typ, MB_OK);
 end;
 
+// /NOUSERSTEPS: the Configurator's update (#422, update-user.ps1) runs Setup elevated, so the original
+// user may be the administrator who approved UAC; it runs the person's steps itself, as them.
+function NoUserSteps: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/NOUSERSTEPS') = 0 then
+      Result := True;
+end;
+
 // Runs a setup.ps1 step; on failure says so (logged only in a silent run) and makes Setup's exit code 1.
 procedure Step(Name, Arguments, LogFile: String; AsOriginalUser: Boolean);
 var
@@ -408,7 +420,8 @@ procedure StopServers(AsOriginalUser: Boolean);
 var
   Code: Integer;
 begin
-  if FileExists(ExpandConstant('{app}\sebtype-server.exe')) then
+  // With /NOUSERSTEPS the person's own server has saved and quit already (update-user.ps1).
+  if FileExists(ExpandConstant('{app}\sebtype-server.exe')) and not (AsOriginalUser and NoUserSteps) then
     if AsOriginalUser then
       ExecAsOriginalUser(ExpandConstant('{app}\sebtype-server.exe'), '/quit', '', SW_HIDE, ewWaitUntilTerminated, Code)
     else
@@ -462,10 +475,13 @@ begin
   WizardForm.StatusLabel.Caption := CustomMessage('Engines');
   StopServers(True);  // one an app started again from the old files since PrepareToInstall
   // How the account is before SebType, saved before the machine step changes it.
-  Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
+  if not NoUserSteps then
+    Step('-User -Save', '-User -Save', '%LOCALAPPDATA%\SebType\setup.log', True);
   Step('-Machine', '-Machine -Languages ' + Chosen + ' -Log "' + ExpandConstant('{app}\setup.log') + '"',
     ExpandConstant('{app}\setup.log'), False);
   // The account of the person who started Setup, not the administrator's it may run as.
+  if NoUserSteps then
+    Exit;
   WizardForm.StatusLabel.Caption := CustomMessage('Account');
   Step('-User', '-User -Languages ' + Chosen, '%LOCALAPPDATA%\SebType\setup.log', True);
 end;

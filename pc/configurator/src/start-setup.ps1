@@ -4,11 +4,11 @@
 # only admins can write.
 # Copies the download into a new folder in $Root, checks the copy's SHA-256 there and starts Setup from
 # it, so a download changed after the Configurator's check isn't run. Older copies go first.
-# Exit 0 and "started <pid> <copy>" once Setup runs; 3: the copy isn't the release's.
-# Exit 1 and the error's message on anything else.
+# Prints "started <pid> <copy>" once Setup runs, waits for it and exits with its exit code; 90: the copy
+# isn't the release's; 91 and the error's message: anything else.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-trap { [Console]::Out.WriteLine("error: $($_.Exception.Message)"); exit 1 }
+trap { [Console]::Out.WriteLine("error: $($_.Exception.Message)"); exit 91 }
 if (-not $Root) { $Root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'SebType\updates' }
 New-Item -ItemType Directory -Force $Root | Out-Null
 Get-ChildItem -LiteralPath $Root -Directory -Filter 'update-*' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
@@ -22,8 +22,9 @@ try { $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().
 if ($hash -ne $Sha) {
   Remove-Item -Recurse -Force $d
   [Console]::Out.WriteLine("$([IO.Path]::GetFileName($Setup)) isn't the release's")
-  exit 3
+  exit 90
 }
 $p = Start-Process -PassThru -FilePath $copy -ArgumentList $Arguments
-[Console]::Out.WriteLine("started $($p.Id) $copy")
-exit 0
+[Console]::Out.WriteLine("started $($p.Id) $copy"); [Console]::Out.Flush()
+$p.WaitForExit()
+exit $p.ExitCode

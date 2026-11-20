@@ -103,7 +103,7 @@ function Languages { ((Get-WinUserLanguageList) | ForEach-Object { "$($_.Languag
 if ($Typing) {
   try {
     # Scripts of their own, which make no keys through Remote Desktop (#275, #270): no key server.
-    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt'; 'update' = 'test-update.ps1', '422', 'update-results.txt' }
+    $own = @{ 'not-ready' = 'test-not-ready.ps1', '275', 'not-ready-results.txt'; 'private' = 'test-private.ps1', '374', 'private-results.txt'; 'update' = 'test-update.ps1', '422', 'update-results.txt'; 'update-user' = 'test-update-user.ps1', '422', 'update-user-results.txt' }
     if ($own.ContainsKey($Typing)) {
       $script, $dir, $file = $own[$Typing]
       $log = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\$script" -AnyDisplay -Out "$out\$dir" 2>&1 | Out-String
@@ -779,21 +779,24 @@ namespace SebTypeSetupTest {
       }
       Typing update 300
       # The update's admin side as the Configurator runs it elevated (start-setup.ps1, here without UAC:
-      # this runs elevated already): Setup only from its checked copy where only admins can write.
+      # this runs elevated already): Setup only from its checked copy where only admins can write, and
+      # none of the person's steps; then its own side as the test user, not elevated (update-user.ps1).
       function Start-Copy($sha) {
         $v = { param($s) "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))')))" }
-        $arguments = '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$out\setup-update-copy.log" | ForEach-Object { & $v $_ }
+        $arguments = '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOUSERSTEPS', "/LOG=$out\setup-update-copy.log" | ForEach-Object { & $v $_ }
         $script = "`$Setup = $(& $v $setup)`n`$Sha = $(& $v $sha)`n`$Arguments = @($($arguments -join ', '))`n" + (Get-Content -Raw "$root\start-setup.ps1")
         $said = & powershell.exe -NoProfile -NonInteractive -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))) 2>&1
         $LASTEXITCODE, (($said | Out-String).Trim())
       }
       Check 'update-setup-refused-when-changed' {
         $code, $said = Start-Copy ('0' * 64)
-        if ($code -ne 3) { throw "a SHA-256 that isn't the setup's: exit $code, $said" }
+        if ($code -ne 90) { throw "a SHA-256 that isn't the setup's: exit $code, $said" }
         if (Get-ChildItem "$App\updates" -Directory -ErrorAction SilentlyContinue) { throw "a copy left in $App\updates" }
-        "exit 3: $said"
+        "exit 90: $said"
       }
       Check 'update-setup-from-protected-copy' {
+        $userLog = "$env:LOCALAPPDATA\SebType\setup.log"
+        $before = (Get-Item $userLog).Length
         $code, $said = Start-Copy (Get-FileHash -Algorithm SHA256 $setup).Hash
         if ($code -ne 0 -or $said -notmatch '^started (\d+) (.+)$') { throw "exit $code, $said" }
         $id, $copy = [int]$Matches[1], $Matches[2]
@@ -804,8 +807,10 @@ namespace SebTypeSetupTest {
         $p = Get-Process -Id $id -ErrorAction SilentlyContinue
         if ($p -and -not $p.WaitForExit(900000)) { throw 'Setup ran over 15 minutes' }
         if (-not (Select-String -Quiet -Path "$out\setup-update-copy.log" -Pattern 'Installation process succeeded')) { throw "Setup didn't finish: out\setup-update-copy.log" }
-        "Setup ran from $copy (only admins can write there) and upgraded SebType"
+        if ((Get-Item $userLog).Length -ne $before) { throw "Setup ran the person's steps: $userLog changed" }
+        "Setup ran from $copy (only admins can write there) and upgraded SebType, without the person's steps"
       }
+      Typing update-user 600
       Silent-Uninstall update
       Check 'update-task-removed' {
         $left = @(if (Get-ScheduledTask 'SebType update check' -ErrorAction SilentlyContinue) { 'the task' }) +

@@ -443,9 +443,9 @@ pub fn notify_update(
     Ok(())
 }
 
-/// The admin side's PowerShell (start-setup.ps1) with its values, for -EncodedCommand: nothing on the
-/// way can change it, and the values are base64, so no quoting.
-fn start_setup_command(setup: &Path, sha: &str, args: &[&str], root: Option<&Path>) -> String {
+/// A PowerShell script with values set before it, for -EncodedCommand: nothing on the way can change it,
+/// and the values are base64, so no quoting.
+fn encoded(values: &[(&str, &str)], arrays: &[(&str, &[&str])], script: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let value = |v: &str| {
         format!(
@@ -453,55 +453,82 @@ fn start_setup_command(setup: &Path, sha: &str, args: &[&str], root: Option<&Pat
             STANDARD.encode(v)
         )
     };
-    let mut script = format!(
-        "$Setup = {}\n$Sha = {}\n$Arguments = @({})\n",
-        value(&setup.to_string_lossy()),
-        value(sha),
-        args.iter().map(|a| value(a)).collect::<Vec<_>>().join(", ")
-    );
-    if let Some(root) = root {
-        script += &format!("$Root = {}\n", value(&root.to_string_lossy()));
+    let mut all = String::new();
+    for (name, v) in values {
+        all += &format!("${name} = {}\n", value(v));
     }
-    script += include_str!("start-setup.ps1");
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    for (name, vs) in arrays {
+        let vs: Vec<String> = vs.iter().map(|v| value(v)).collect();
+        all += &format!("${name} = @({})\n", vs.join(", "));
+    }
+    all += script;
+    let utf16: Vec<u8> = all.encode_utf16().flat_map(u16::to_le_bytes).collect();
     STANDARD.encode(utf16)
 }
 
-/// Starts the release's Setup as an upgrade runs (pc/windows/README.md): silent but for its progress,
-/// with the languages chosen before. One UAC prompt elevates start-setup.ps1, which runs Setup from a
-/// copy it checked where only admins can write. Returns once Setup runs; the caller then quits: Setup
-/// replaces this exe.
+/// Setup as an update runs it: silent but for its progress, with the languages chosen before, and only
+/// the machine's part: the person's runs as them (update-user.ps1).
+const SETUP_ARGS: [&str; 4] = ["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOUSERSTEPS"];
+
+/// The admin side (start-setup.ps1) for this setup; `root` for the tests only.
+fn start_setup_command(setup: &Path, sha: &str, args: &[&str], root: Option<&Path>) -> String {
+    let (setup, root) = (setup.to_string_lossy(), root.map(|r| r.to_string_lossy()));
+    let mut values = vec![("Setup", &*setup), ("Sha", sha)];
+    values.extend(root.as_deref().map(|r| ("Root", r)));
+    encoded(
+        &values,
+        &[("Arguments", args)],
+        include_str!("start-setup.ps1"),
+    )
+}
+
+/// Installs the release's Setup (pc/windows/README.md) through update-user.ps1, which runs it with one UAC
+/// prompt from a copy start-setup.ps1 checked where only admins can write, and this person's steps as
+/// them. Returns once UAC is approved; the caller then quits, so Setup can replace this exe, and the
+/// About page opens again afterwards.
 pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
+    use io::BufRead;
     let (setup, sha) = files.first().ok_or_else(|| io::Error::other("no setup"))?;
-    let command = start_setup_command(
-        setup,
-        sha,
-        &["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-        None,
+    let app = env::current_exe()?;
+    let app = app.parent().ok_or_else(|| io::Error::other("no folder"))?;
+    let elevated = start_setup_command(setup, sha, &SETUP_ARGS, None);
+    let command = encoded(
+        &[
+            ("App", &app.to_string_lossy()),
+            ("State", &sebtype_dir().to_string_lossy()),
+            ("Elevated", &elevated),
+        ],
+        &[],
+        include_str!("update-user.ps1"),
     );
-    let out = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "try { $p = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru \
-             -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $env:SEBTYPE_START_SETUP } \
-             catch { exit 2 }; $p.WaitForExit(); exit $p.ExitCode",
-        ])
-        .env("SEBTYPE_START_SETUP", command)
+    let mut user = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &command])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
         .creation_flags(NO_WINDOW)
-        .output()?;
-    match out.status.code() {
-        Some(0) => Ok(()),
-        Some(2) => Err(io::Error::other(
+        .spawn()?;
+    let mut line = String::new();
+    io::BufReader::new(user.stdout.take().unwrap()).read_line(&mut line)?;
+    match line.trim() {
+        "approved" => Ok(()), // it runs on: Setup, then this person's steps
+        "cancelled" => Err(io::Error::other(
             "not allowed: the admin prompt was cancelled",
         )),
-        Some(3) => Err(io::Error::other("the setup isn't the release's")),
-        code => Err(io::Error::other(format!(
-            "the setup didn't start ({})",
-            code.map_or("no exit code".into(), |c| c.to_string())
-        ))),
+        l => Err(io::Error::other(
+            l.strip_prefix("error: ")
+                .unwrap_or("the update didn't start")
+                .to_string(),
+        )),
     }
+}
+
+/// What a finished update's own side couldn't do, once (update-user.ps1).
+pub fn update_error() -> Option<String> {
+    let file = sebtype_dir().join("update-error.txt");
+    let e = fs::read_to_string(&file).ok()?;
+    let _ = fs::remove_file(file);
+    Some(e)
 }
 
 pub fn open_url(url: &str) {
@@ -567,7 +594,7 @@ mod tests {
         );
         assert_eq!(crate::update::sha256_file(&copy).unwrap(), sha);
         let out = run(&"0".repeat(64));
-        assert_eq!(out.status.code(), Some(3), "{out:?}");
+        assert_eq!(out.status.code(), Some(90), "{out:?}");
         assert!(
             String::from_utf8_lossy(&out.stdout).contains("SebType setup.exe isn't the release's")
         );
@@ -580,6 +607,37 @@ mod tests {
             .collect();
         assert!(left.iter().all(|n| n == first), "{left:?}");
         let _ = fs::remove_dir_all(&d);
+    }
+
+    /// The admin side runs Setup without the person's steps: an administrator approving UAC for them
+    /// would get those (update-user.ps1 runs them as the person).
+    #[test]
+    fn an_update_runs_setup_without_the_persons_steps() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let utf16 = STANDARD
+            .decode(start_setup_command(
+                Path::new(r"C:\a\SebType-setup-0.2.0.exe"),
+                "ab",
+                &SETUP_ARGS,
+                None,
+            ))
+            .unwrap();
+        let units: Vec<u16> = utf16
+            .chunks(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        let script = String::from_utf16(&units).unwrap();
+        let switch = STANDARD.encode("/NOUSERSTEPS");
+        assert!(
+            script
+                .lines()
+                .any(|l| l.starts_with("$Arguments = @(") && l.contains(&switch)),
+            "{script}"
+        );
+        assert!(
+            !script.lines().any(|l| l.starts_with("$Root =")),
+            "the shipping one copies into Program Files"
+        );
     }
 
     #[test]

@@ -81,13 +81,17 @@ Configurator's version (`VERSION`). A newer release shows a toast once, under th
 AppUserModelID `SebType.Configurator`; clicking it opens `sebtype-configurator:update`, which Setup
 registers to open the Configurator's About page. There, Update… downloads `SebType-setup-<version>.exe` from
 the release's download address into a new folder in `%LOCALAPPDATA%\SebType\updates` and checks its size
-and SHA-256 against GitHub's (the asset's `digest`; none, no install). One UAC prompt then elevates the
-update's admin side (`pc/configurator/src/start-setup.ps1`, built into the Configurator and passed as
-`-EncodedCommand`). It copies the setup into a new folder in `%ProgramFiles%\SebType\updates`, where only
+and SHA-256 against GitHub's (the asset's `digest`; none, no install). The update's own side
+(`pc/configurator/src/update-user.ps1`, as the person, not elevated) then does Setup's steps for the person
+first (their server saves the learned words and quits; `setup.ps1 -User -Save`), and one UAC prompt elevates
+the admin side (`pc/configurator/src/start-setup.ps1`; both built into the Configurator and passed as
+`-EncodedCommand`). That copies the setup into a new folder in `%ProgramFiles%\SebType\updates`, where only
 admins can write, checks the copy's SHA-256 there and runs that copy as an upgrade (`/SILENT
-/SUPPRESSMSGBOXES /NORESTART`, the languages chosen before), so a download changed after the check never
-runs. The next update and the uninstall remove the copies. The Configurator closes once Setup runs, so
-Setup can replace it. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
+/SUPPRESSMSGBOXES /NORESTART`, the languages chosen before) with `/NOUSERSTEPS`: only the machine's part, so
+an administrator who approves UAC for someone else gets none of that person's steps. A download changed after
+the check never runs; the next update and the uninstall remove the copies. The Configurator closes once UAC
+is approved, so Setup can replace it. After Setup, the own side runs `setup.ps1 -User` with the languages
+Setup keeps, as the person, and opens the About page again, with what failed if anything did. The test build `sebtype-configurator-update-test` (CI's artifact of that name) is the only one that
 takes `SEBTYPE_UPDATE_URL`, a release on 127.0.0.1 (`test-update.ps1`). About's "Check for updates automatically" turns the daily
 check off, Check now checks at once. `-User -Undo` removes the task, `update.json` and the downloads.
 

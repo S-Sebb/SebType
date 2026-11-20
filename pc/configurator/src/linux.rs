@@ -851,6 +851,11 @@ pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
     Ok(())
 }
 
+/// The install runs in the window, which shows its errors: none left over.
+pub fn update_error() -> Option<String> {
+    None
+}
+
 pub fn open_url(url: &str) {
     let _ = Command::new("xdg-open").arg(url).spawn();
 }

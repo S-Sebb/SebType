@@ -1127,7 +1127,11 @@ fn main() -> Result<(), slint::PlatformError> {
         move || install_update(weak.clone())
     });
     if from_notification {
-        check_updates(app.as_weak());
+        // after an update, what of it didn't work (Windows: its own side runs on after this window closed)
+        match platform::update_error() {
+            Some(e) => set_update_status(&app.as_weak(), UpdateStatus::Failed, e),
+            None => check_updates(app.as_weak()),
+        }
     }
 
     app.run()
