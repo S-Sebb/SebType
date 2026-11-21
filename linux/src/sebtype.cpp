@@ -311,11 +311,12 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     // What focus moving away types in leaves out some of what shows (Rime's spaces between syllables): those
     // bytes don't commit. It is the rest of the preedit, in order.
     const std::string typed = core_->unfinished();
+    const bool inPanel = preeditInPanel(ic), pinyinRow = inPanel && core_->language() == Lang::Chinese;
     size_t at = 0;
     fcitx::Text text;
     for (const auto &s : p.segments) {
       fcitx::TextFormatFlags flags;
-      if (s.underline) flags |= fcitx::TextFormatFlag::Underline;
+      if (s.underline && !pinyinRow) flags |= fcitx::TextFormatFlag::Underline;
       if (s.highlight) flags |= fcitx::TextFormatFlag::HighLight;
       for (size_t from = 0, to; from < s.text.size(); from = to) {
         const bool kept = at < typed.size() && s.text[from] == typed[at];
@@ -324,8 +325,9 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
         text.append(s.text.substr(from, to - from), kept ? flags : flags | fcitx::TextFormatFlag::DontCommit);
       }
     }
-    text.setCursor(p.cursor);
-    if (preeditInPanel(ic)) panel.setPreedit(text);
+    // The pinyin row is Windows' (#447): no underline, nor the cursor Rime keeps at the start.
+    text.setCursor(pinyinRow ? -1 : p.cursor);
+    if (inPanel) panel.setPreedit(text);
     else panel.setClientPreedit(text);
     const auto aux = core_->aux();
     const Page page = core_->page();
