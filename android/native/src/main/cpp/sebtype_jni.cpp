@@ -325,21 +325,12 @@ jobject type(JNIEnv *env, jclass, jstring text) {
 }
 
 // The background setup's self-test: a language's candidates for [text], typed into its engine without
-// making it the current language, in an ordinary text field. What it typed is dropped again.
+// making it the current language (Engine::tryTyping).
 jobjectArray tryTyping(JNIEnv *env, jclass, jint l, jstring text) {
   std::lock_guard g(lock);
   std::vector<std::string> texts;
-  if (Engine *e = core->engine(lang(l))) {
-    e->setField(Field::Text);
-    e->clear();
-    for (char c : str(env, text)) e->key({static_cast<uint32_t>(static_cast<unsigned char>(c)), 0, false});
-    e->settle();
-    for (const auto &c : e->candidates(kMaxCandidates)) texts.push_back(c.text);
-    e->clear();
-    e->takeCommit();
-    e->takeEdit();
-    e->setField(core->field());
-  }
+  if (Engine *e = core->engine(lang(l)))
+    for (const auto &c : e->tryTyping(str(env, text), kMaxCandidates, core->field())) texts.push_back(c.text);
   return jstrings(env, texts);
 }
 

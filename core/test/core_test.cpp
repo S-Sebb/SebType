@@ -1251,6 +1251,17 @@ TEST_F(ChineseTest, AKeyChangesTheListOnceToTheModels) {
   EXPECT_FALSE(next.empty());
 }
 
+// The phone's setup self-test reads the list at once after its keys (#467): Rime's, never a list the hold
+// (#450) kept from before, which would fail it once the model has come quickly.
+TEST_F(ChineseTest, TheSelfTestSeesRimesListAtOnce) {
+  typeAndWait("woaini");
+  const auto l = zh->tryTyping("ni", 20, Field::Text);
+  ASSERT_FALSE(l.empty());
+  EXPECT_EQ(l[0].text, "你");
+  EXPECT_FALSE(zh->composing());
+  EXPECT_EQ(zh->takeCommit(), "");
+}
+
 // A tap while the list is kept (#450) picks the word shown, not Rime's candidate in its place.
 TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
   start(50ms);

@@ -57,6 +57,9 @@ class Engine {
   // the cursor moved inside the preedit (to a character from its start), undo, and the edit around a
   // commit (the PCs too: 日本語's undo deletes its commit).
   virtual std::vector<Candidate> candidates(int max);
+  // The phone's setup self-test (ranh → 然后): the engine's own list, up to max, for TEXT typed into an
+  // empty composition. What it typed goes again, and the field goes back to FIELD.
+  virtual std::vector<Candidate> tryTyping(const std::string &text, int max, Field field);
   virtual void setField(Field /*field*/) {}
   virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}
   // English: the keys' rectangles, and the field's text around the cursor whenever it changed other than by
