@@ -149,6 +149,18 @@ TEST_F(CoreTest, WinSpaceTogglesHomeAndLastOtherLanguage) {
   EXPECT_EQ(core.language(), Lang::Japanese);
 }
 
+// The keys that end the popup on Linux and Windows (#449): a typed key, not the switch's own keys or a modifier.
+TEST(TypesText, TypedKeysButNotModifiersShortcutsOrReleases) {
+  EXPECT_TRUE(typesText({'a'}));
+  EXPECT_TRUE(typesText({'A', mod::Shift}));
+  EXPECT_TRUE(typesText({'1'}));
+  EXPECT_FALSE(typesText({'a', 0, true}));
+  EXPECT_FALSE(typesText({' ', mod::Super}));  // Win+Space
+  EXPECT_FALSE(typesText({Super_L, mod::Super, true}));
+  EXPECT_FALSE(typesText({Shift_L}));
+  EXPECT_FALSE(typesText({'c', mod::Ctrl}));
+}
+
 TEST_F(CoreTest, SwitchingCommitsWhatIsTypedAndTheFirstLanguageIsHome) {
   core.setSettings(Settings::parse("[Languages]\nOrder=zh,en\n"));
   EXPECT_EQ(core.language(), Lang::English);  // still on: kept

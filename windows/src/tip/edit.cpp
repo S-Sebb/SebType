@@ -269,15 +269,17 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wst
     if (window_) window_->show(reply_, !japanese, caret_);
   }
 
-  // 中文's English mode switch says so for a moment, as Weasel's tip did.
+  // 中文's English mode switch says so for a moment, as Weasel's tip did. Not where the app gives no caret: it
+  // would show at the screen's top-left corner (#446), and the input indicator says the switch.
   if (!reply_.notice.empty() && window_ && !composing) {
     TF_SELECTION sel{};
     ULONG n = 0;
+    RECT caret{};
     if (SUCCEEDED(context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) && n) {
-      caret_ = caretRect(ec, context, sel.range);
+      caret = caretRect(ec, context, sel.range);
       sel.range->Release();
     }
-    window_->notice(reply_.notice, caret_);
+    if (caret.left || caret.top || caret.right || caret.bottom) window_->notice(reply_.notice, caret_ = caret);
   }
   reply_.notice.clear();
   return S_OK;

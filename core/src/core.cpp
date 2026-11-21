@@ -10,15 +10,13 @@ namespace sebtype {
 namespace {
 namespace ks {
 constexpr uint32_t space = 0x20, grave = 0x60, F = 0x46, f = 0x66;
-constexpr uint32_t Shift_L = 0xffe1, Shift_R = 0xffe2, Caps_Lock = 0xffe5, ISO_Level3_Shift = 0xfe03;
+constexpr uint32_t Shift_L = 0xffe1, Shift_R = 0xffe2, Caps_Lock = 0xffe5;
 }  // namespace ks
 
 // Rime's limit for a Shift tap (ascii_composer.cc): a longer press is Shift held, not a switch.
 constexpr auto kShiftTap = std::chrono::milliseconds(500);
 
 bool isShift(uint32_t sym) { return sym == ks::Shift_L || sym == ks::Shift_R; }
-// Shift, Ctrl, Caps Lock, Meta, Alt, Super, Hyper (0xffe1 to 0xffee) and AltGr.
-bool isModifier(uint32_t sym) { return (sym >= 0xffe1 && sym <= 0xffee) || sym == ks::ISO_Level3_Shift; }
 
 // The popup's mode words in English, 中文 and 日本語 (#205), worded as the Configurator words them where it
 // names the same mode: English letters (英文字母, 英字) and hiragana (平假名, ひらがな).
