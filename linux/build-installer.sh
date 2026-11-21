@@ -203,7 +203,12 @@ else
   /usr/bin/sebtype-setup </dev/null
 fi
 
-echo "SebType \$SEBTYPE_VERSION is installed. Log out and back in (or toggle Virtual Keyboard off and on in KDE System Settings) to start using it."
+if command -v busctl >/dev/null 2>&1 &&
+  [ "\$(busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 CurrentInputMethod 2>/dev/null | awk '{print \$2}' | tr -d '"' || true)" = sebtype ]; then
+  echo "SebType \$SEBTYPE_VERSION is installed and active. Press Win+Space to switch languages."
+else
+  echo "SebType \$SEBTYPE_VERSION is installed. Log out and back in (or toggle Virtual Keyboard off and on in KDE System Settings) to start using it."
+fi
 exit 0
 __SEBTYPE_PAYLOAD__
 EOF

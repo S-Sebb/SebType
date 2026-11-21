@@ -514,6 +514,9 @@ msgstr "簡体 ⇄ 繁体 を切り替え"
 msgid "Switch あ ⇄ ア"
 msgstr "あ ⇄ ア を切り替え"
 
+msgid "SebType is active now. Press Win+Space in any app to start typing."
+msgstr "SebType は今すぐ使えます。任意のアプリで Win+Space を押して入力を始めてください。"
+
 msgid "Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType."
 msgstr "再ログインするか、KDE システム設定で仮想キーボードをオフ・オンすると SebType を使い始められます。"
 

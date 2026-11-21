@@ -8,6 +8,7 @@ export global SetupState {
     in-out property <int> step;              // 0 Welcome, 1 Installing, 2 Account Sync, 3 Ready
     in-out property <int> install-phase;     // 0 packages (pkexec), 1 user setup, 2 failed
     in-out property <string> install-error;
+    in-out property <bool> live-active;
     in-out property <bool> sync-busy;
     in-out property <string> sync-error;
     in-out property <bool> open-configurator: true;
@@ -352,7 +353,9 @@ export component SetupWindow inherits Window {
                     }
                 }
                 Info {
-                    text: @tr("Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType.");
+                    text: SetupState.live-active
+                        ? @tr("SebType is active now. Press Win+Space in any app to start typing.")
+                        : @tr("Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType.");
                 }
                 HorizontalLayout {
                     alignment: space-between;

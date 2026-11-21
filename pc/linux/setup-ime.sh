@@ -257,6 +257,58 @@ else own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERS
   "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
 fi
 
+# KWin / Fcitx5 live-session helpers.
+kwin_reconfigure() {
+  local qdbus
+  qdbus=$(command -v qdbus6 || command -v qdbus-qt6 || true)
+  if [[ -n $qdbus ]]; then "$qdbus" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+  else busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure >/dev/null 2>&1 || true; fi
+}
+fcitx_on_dbus() { busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; }
+fcitx_under_kwin() {
+  local ppid
+  while read -r ppid; do
+    [[ -n $ppid && $(ps -o comm= -p "$ppid" 2>/dev/null || true) == kwin_wayland ]] && return 0
+  done < <(ps -o ppid= -C fcitx5 2>/dev/null || true)
+  return 1
+}
+wait_fcitx_up() {
+  local i
+  for ((i = 0; i < 25; i++)); do fcitx_on_dbus && return 0; sleep 0.2; done
+  fcitx_on_dbus
+}
+wait_fcitx_down() {
+  local i
+  for ((i = 0; i < 25; i++)); do ! fcitx_on_dbus && ! fcitx_under_kwin && return 0; sleep 0.2; done
+  ! fcitx_on_dbus
+}
+fcitx_has_deleted_libs() {
+  local pid
+  while read -r pid; do
+    [[ -r /proc/$pid/maps ]] || continue
+    grep -qE '(sebtype\.so|librime\.so).* \(deleted\)$' "/proc/$pid/maps" 2>/dev/null && return 0
+  done < <(pgrep -u "$(id -u)" -x fcitx5 2>/dev/null || true)
+  return 1
+}
+kwin_restart_fcitx5() {
+  local restored=0
+  _restore_kwin_im() {
+    ((restored)) && return 0
+    restored=1
+    kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop" || true
+    kwin_reconfigure
+  }
+  trap '_restore_kwin_im; trap - INT TERM; kill -s INT $$' INT
+  trap '_restore_kwin_im; trap - INT TERM; kill -s TERM $$' TERM
+  trap '_restore_kwin_im' RETURN
+  kwriteconfig6 --file kwinrc --group Wayland --key InputMethod ""
+  kwin_reconfigure
+  wait_fcitx_down || true
+  _restore_kwin_im
+  trap - RETURN INT TERM
+  wait_fcitx_up || true
+}
+
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
 fcitx_desktop=/usr/share/applications/org.fcitx.Fcitx5.desktop
@@ -264,8 +316,8 @@ if command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/nul
   if [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) != "$fcitx_desktop" ]]; then
     if change "set KWin's virtual keyboard to Fcitx 5 in $config/kwinrc"; then
       kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop"
-      qdbus=$(command -v qdbus6 || command -v qdbus-qt6 || true)
-      [[ -n $qdbus ]] && "$qdbus" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+      kwin_reconfigure
+      wait_fcitx_up || true
     fi
   fi
 fi
@@ -273,11 +325,12 @@ fi
 # 3. XWayland apps (Steam, WINE, Java, Xlib) reach Fcitx5 through XIM, picked by XMODIFIERS.
 # Written per user only when the session doesn't already have it (e.g. from /etc/environment).
 imfile=$config/environment.d/90-sebtype-im.conf
-if [[ $(systemctl --user show-environment | sed -n 's/^XMODIFIERS=//p') != @im=fcitx ]] &&
+if [[ $(systemctl --user show-environment 2>/dev/null | sed -n 's/^XMODIFIERS=//p' || true) != @im=fcitx ]] &&
   ! grep -qx 'XMODIFIERS=@im=fcitx' "$imfile" 2>/dev/null; then
   if change "write XMODIFIERS=@im=fcitx to $imfile (applies at next login)"; then
     mkdir -p "${imfile%/*}"
     echo 'XMODIFIERS=@im=fcitx' > "$imfile"
+    systemctl --user set-environment XMODIFIERS=@im=fcitx 2>/dev/null || true
   fi
 fi
 
@@ -329,10 +382,142 @@ for app in "${wayland_ime_apps[@]}"; do
     "add --enable-wayland-ime to ${id%.desktop}"
 done
 
+canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
+
+# Prints $1 (an Fcitx5 profile file, or /dev/null) updated so Groups/0 has sebtype first in place of
+# keyboard-us, rime and mozc, keeping any other IMs, Default Layout, and other groups.
+fcitx_profile_update() {
+  python3 - "$1" <<'PY'
+import re, sys
+
+path = sys.argv[1]
+try:
+    text = open(path, encoding='utf-8').read()
+except FileNotFoundError:
+    text = ''
+
+sections = []
+cur_name = None
+cur_lines = []
+for raw in text.splitlines():
+    s = raw.strip()
+    if s.startswith('[') and s.endswith(']'):
+        if cur_name is not None:
+            sections.append((cur_name, cur_lines))
+        cur_name = s[1:-1]
+        cur_lines = []
+    elif cur_name is not None and s:
+        cur_lines.append(raw)
+if cur_name is not None:
+    sections.append((cur_name, cur_lines))
+
+def parse_kv(lines):
+    out = []
+    for l in lines:
+        if '=' in l:
+            k, v = l.split('=', 1)
+            out.append((k, v))
+    return out
+
+g0_lines = None
+g0_items = {}
+other_sections = []
+has_group_order = False
+for name, lines in sections:
+    if name == 'Groups/0':
+        g0_lines = lines
+    elif m := re.fullmatch(r'Groups/0/Items/(\d+)', name):
+        g0_items[int(m.group(1))] = dict(parse_kv(lines))
+    else:
+        if name == 'GroupOrder':
+            has_group_order = True
+        other_sections.append((name, lines))
+
+if g0_lines is None:
+    g0_kv = [('Name', 'Default'), ('Default Layout', 'us'), ('DefaultIM', 'sebtype')]
+    group0_name = 'Default'
+else:
+    g0_kv = []
+    seen_default_im = False
+    seen_name = False
+    seen_layout = False
+    group0_name = 'Default'
+    for k, v in parse_kv(g0_lines):
+        if k == 'DefaultIM':
+            g0_kv.append(('DefaultIM', 'sebtype'))
+            seen_default_im = True
+        else:
+            if k == 'Name':
+                seen_name = True
+                group0_name = v or 'Default'
+            elif k == 'Default Layout':
+                seen_layout = True
+            g0_kv.append((k, v))
+    if not seen_name:
+        g0_kv.insert(0, ('Name', 'Default'))
+    if not seen_layout:
+        g0_kv.append(('Default Layout', 'us'))
+    if not seen_default_im:
+        g0_kv.append(('DefaultIM', 'sebtype'))
+
+sebtype_layout = ''
+kept = []
+for idx in sorted(g0_items):
+    item = g0_items[idx]
+    im = item.get('Name', '')
+    layout = item.get('Layout', '')
+    if im == 'sebtype':
+        sebtype_layout = layout
+    elif im and im not in ('keyboard-us', 'rime', 'mozc'):
+        kept.append((im, layout))
+items = [('sebtype', sebtype_layout)] + kept
+
+out = ['[Groups/0]']
+for k, v in g0_kv:
+    out.append(f'{k}={v}')
+for idx, (im, layout) in enumerate(items):
+    out.append('')
+    out.append(f'[Groups/0/Items/{idx}]')
+    out.append(f'Name={im}')
+    out.append(f'Layout={layout}')
+for name, lines in other_sections:
+    out.append('')
+    out.append(f'[{name}]')
+    out.extend(lines)
+if not has_group_order:
+    out.append('')
+    out.append('[GroupOrder]')
+    out.append(f'0={group0_name}')
+print('\n'.join(out))
+PY
+}
+
+# 6b. If KDE KWin is managing Fcitx5 and Fcitx5 isn't running yet, doesn't know sebtype yet, or still
+# holds deleted sebtype/librime libraries from an upgrade, toggle KWin's Virtual Keyboard off and back on
+# so Fcitx5 starts fresh and loads SebType immediately without requiring a re-login (#442).
+if ((!dry)) && command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1 &&
+  busctl --user status org.kde.KWin >/dev/null 2>&1 &&
+  [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) == "$fcitx_desktop" ]]; then
+  need_restart=0
+  if ! fcitx_on_dbus; then
+    need_restart=1
+  elif [[ -n $(installed sebtype) || -f /usr/lib64/fcitx5/sebtype.so ]] &&
+    ! busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
+    need_restart=1
+  elif fcitx_has_deleted_libs; then
+    need_restart=1
+  fi
+  if ((need_restart)) && change "restart Fcitx5 under KWin so it loads SebType"; then
+    kwin_restart_fcitx5
+  fi
+fi
+
 # 7. Input methods: SebType's one input method, which switches English, Chinese and Japanese itself (#190),
-# first in the first Fcitx5 group, in place of keyboard-us, rime and mozc; any others stay. Fcitx5 knows
-# it once it has restarted after step 1b.
-if busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; then
+# first in the first Fcitx5 group, in place of keyboard-us, rime and mozc; any others stay. When Fcitx5 is
+# running and knows sebtype, update it live over D-Bus and activate sebtype immediately; otherwise update
+# ~/.config/fcitx5/profile directly so Fcitx5 loads sebtype the next time it starts (#442).
+fcitx_profile=$config/fcitx5/profile
+if fcitx_on_dbus && busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
   call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
   group=$(call InputMethodGroups | awk '{print $3}' | tr -d '"')
   # Quoted strings of the reply: <layout> then <im> <im layout> pairs.
@@ -343,17 +528,27 @@ if busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; then
     [[ " sebtype keyboard-us rime mozc " == *" ${q[i]} "* ]] || ims+=("${q[i]}")
   done
   if [[ "${now[*]}" != "${ims[*]}" ]]; then
-    if ! call AvailableInputMethods | grep -q '"sebtype"'; then
-      warn "Fcitx5 doesn't know SebType's input method yet: $(restart_note "SebType input method"), then run this again"
-    elif change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc"; then
+    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc"; then
       args=()
       for im in "${ims[@]}"; do args+=("$im" ""); done
       call SetInputMethodGroupInfo 'ssa(ss)' "$group" "$layout" $((${#args[@]} / 2)) "${args[@]}"
+      call SetCurrentIM s sebtype >/dev/null 2>&1 || true
       call Save
     fi
+  elif ((!dry)) && [[ $(call CurrentInputMethod 2>/dev/null | awk '{print $2}' | tr -d '"' || true) != sebtype ]]; then
+    call SetCurrentIM s sebtype >/dev/null 2>&1 || true
   fi
 else
-  warn "Fcitx5 isn't running; log out and in again, then rerun to set up its input methods"
+  src=$fcitx_profile; [[ -f $src ]] || src=/dev/null
+  want=$(fcitx_profile_update "$src")
+  if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
+    change "set SebType as the input method in $fcitx_profile (backup in $backup)"; then
+    [[ -f $fcitx_profile ]] && save "$fcitx_profile"
+    mkdir -p "${fcitx_profile%/*}"; printf '%s\n' "$want" > "$fcitx_profile"
+  fi
+  if fcitx_on_dbus; then
+    warn "Fcitx5 doesn't know SebType's input method yet: $(restart_note "SebType input method")"
+  fi
 fi
 
 # 8. Super+Space is the only language switch, and it toggles English and the last other language (#93):
@@ -377,7 +572,6 @@ fcitx_global() { # prints the config with those settings, keeping everything els
     END { if (!hotkey) print "[Hotkey]\n" cleared
       if (!behavior) print "\n[Behavior]\nShareInputState=All" }' "$@"
 }
-canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
 src=$fcitx_conf; [[ -f $src ]] || src=/dev/null
 want=$(fcitx_global "$src")
 if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
@@ -693,8 +887,7 @@ if [[ $(cat "$update_units/sebtype-update.service" 2>/dev/null) != "$want_update
 fi
 
 # Self-check of the live session.
-parent=$(ps -o ppid= -C fcitx5 2>/dev/null | head -1 | tr -d ' ' || true)
-[[ -n $parent && $(ps -o comm= -p "$parent" 2>/dev/null || true) == kwin_wayland ]] ||
+fcitx_under_kwin ||
   warn "Fcitx5 isn't running under KWin yet; log out and in again"
 [[ $(systemctl --user show-environment 2>/dev/null | sed -n 's/^XMODIFIERS=//p' || true) == @im=fcitx ]] ||
   warn "XMODIFIERS=@im=fcitx isn't in this session yet; log out and in again"

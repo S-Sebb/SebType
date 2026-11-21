@@ -847,6 +847,20 @@ pub(crate) fn run_root_installer(installer: &Path) -> io::Result<()> {
     }
 }
 
+/// Parses `busctl --json=short call ... CurrentInputMethod` output (`{"type":"s","data":["sebtype"]}`).
+fn parse_current_im(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    v.get("data")?.get(0)?.as_str().map(str::to_string)
+}
+
+/// True when Fcitx5 is running on the session bus and its active input method is `sebtype` (#442).
+pub(crate) fn sebtype_active() -> bool {
+    controller("CurrentInputMethod", &[])
+        .ok()
+        .and_then(|out| parse_current_im(&out))
+        .is_some_and(|im| im == "sebtype")
+}
+
 /// Runs `/usr/bin/sebtype-setup </dev/null` for the invoking user.
 pub(crate) fn run_user_setup() -> io::Result<()> {
     let out = Command::new("/usr/bin/sebtype-setup")
@@ -976,6 +990,20 @@ mod tests {
         assert_eq!(asked, 2, "asked again after 5 s");
         assert!(await_snapshot(&d, Duration::from_secs(6), || fs::write(&old, "new")).is_ok());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn parses_current_input_method_from_busctl_json() {
+        assert_eq!(
+            parse_current_im(r#"{"type":"s","data":["sebtype"]}"#).as_deref(),
+            Some("sebtype")
+        );
+        assert_eq!(
+            parse_current_im(r#"{"type":"s","data":["keyboard-us"]}"#).as_deref(),
+            Some("keyboard-us")
+        );
+        assert_eq!(parse_current_im(r#"{"type":"s","data":[]}"#), None);
+        assert_eq!(parse_current_im("not json"), None);
     }
 
     /// The network coming back plans a sync (#377): the path unit's service only plans it, so it never

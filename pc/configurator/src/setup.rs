@@ -26,6 +26,7 @@ pub struct WizardState {
     pub step: Step,
     pub install_phase: InstallPhase,
     pub install_error: Option<String>,
+    pub live_active: bool,
     pub sync_signed_in: bool,
     pub open_configurator: bool,
 }
@@ -42,6 +43,7 @@ impl WizardState {
             step: Step::Welcome,
             install_phase: InstallPhase::Packages,
             install_error: None,
+            live_active: false,
             sync_signed_in: false,
             open_configurator: true,
         }
@@ -51,6 +53,7 @@ impl WizardState {
         self.step = Step::Installing;
         self.install_phase = InstallPhase::Packages;
         self.install_error = None;
+        self.live_active = false;
     }
 
     pub fn packages_installed(&mut self) {
@@ -65,8 +68,9 @@ impl WizardState {
         self.install_error = Some(error);
     }
 
-    pub fn install_succeeded(&mut self) {
+    pub fn install_succeeded(&mut self, live_active: bool) {
         self.install_error = None;
+        self.live_active = live_active;
         self.step = Step::Sync;
     }
 
@@ -121,6 +125,7 @@ pub fn run(
         g.set_step(st.step as i32);
         g.set_install_phase(st.install_phase.clone() as i32);
         g.set_install_error(st.install_error.clone().unwrap_or_default().into());
+        g.set_live_active(st.live_active);
         g.set_open_configurator(st.open_configurator);
     };
 
@@ -164,9 +169,11 @@ pub fn run(
                 });
                 match platform::run_user_setup() {
                     Ok(()) => {
+                        let live_active = platform::sebtype_active();
                         let _ = weak_bg.upgrade_in_event_loop(move |win| {
                             let g = win.global::<SetupState>();
                             g.set_install_error("".into());
+                            g.set_live_active(live_active);
                             g.set_step(Step::Sync as i32);
                         });
                     }
@@ -271,8 +278,9 @@ mod tests {
         st.packages_installed();
         assert_eq!(st.install_phase, InstallPhase::UserSetup);
 
-        st.install_succeeded();
+        st.install_succeeded(true);
         assert_eq!(st.step, Step::Sync);
+        assert!(st.live_active);
 
         st.sync_succeeded();
         assert_eq!(st.step, Step::Ready);
@@ -292,10 +300,12 @@ mod tests {
         st.start_install();
         assert_eq!(st.install_phase, InstallPhase::Packages);
         assert_eq!(st.install_error, None);
+        assert!(!st.live_active);
 
         st.packages_installed();
-        st.install_succeeded();
+        st.install_succeeded(false);
         assert_eq!(st.step, Step::Sync);
+        assert!(!st.live_active);
 
         st.skip_sync();
         assert_eq!(st.step, Step::Ready);
