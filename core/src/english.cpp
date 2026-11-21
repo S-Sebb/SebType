@@ -787,18 +787,19 @@ class English : public Engine {
   // the others; e-mail domains after "@"; with nothing typed, the next words: the model's once they come,
   // until then the dictionaries' (the learned words' n-grams).
   std::vector<std::string> list() {
-    if (!holding()) shown_ = currentList(), shownCorrection_ = correction_;
+    if (!holding()) shown_ = currentList(), shownCorrection_ = correction_, shownComposing_ = !typed_.empty();
     return shown_;
   }
   // Whether the list shown stays as it is, so a key changes it once, to the model's list (#450): until
   // settle() decodes the letters typed, then until the model's ranking or next words come, while they are
   // expected within kHold. A model known to be slower shows the decoder's list or the dictionaries' first.
+  // Not once the word it was for is committed: a tap on it then couldn't put its word in that one's place.
   bool holding() {
     if (!typed_.empty() && decodePending_) return true;
     if (!model_ready_) return false;
     std::lock_guard g(mutex_);
     if (!typed_.empty()) return rankPending_ && rankedGen_ != gen_ && expectedIn(rankTime_) <= kHold;
-    return nextGen_ != gen_ && field_ == Field::Text && main_ && !atEmail() &&
+    return !shownComposing_ && nextGen_ != gen_ && field_ == Field::Text && main_ && !atEmail() &&
            expectedIn(nextTime_) <= kHold;
   }
   std::vector<std::string> currentList() {
@@ -1253,6 +1254,7 @@ class English : public Engine {
   bool decodePending_ = false;  // the letters typed changed since the strip was made
   std::vector<std::string> shown_;  // the list last returned, which a tap picks from
   bool shownCorrection_ = false;    // shown_[0] is what a space commits instead of the typed word
+  bool shownComposing_ = false;     // shown_ was made for a word being typed
   std::string commit_;
   Edit edit_;
 

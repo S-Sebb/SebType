@@ -566,6 +566,14 @@ TEST_F(EnglishTest, AKeyChangesTheListOnceToTheModelsRanking) {
   EXPECT_EQ(list(), before);  // not the decoder's, "want" first
   for (int i = 0; i < 100 && list() == before; i++) std::this_thread::sleep_for(20ms);
   EXPECT_EQ(list().at(0), "what");
+  // A tap while the list is kept picks the word shown, in place of the letters typed since.
+  const auto shown = list();
+  en->key({'s', 0, false});
+  en->settle();
+  ASSERT_EQ(list(), shown);
+  en->selectAt(0);
+  EXPECT_EQ(en->takeCommit(), "what ");
+  EXPECT_NE(list(), shown);  // the list for a word committed goes at once
 }
 
 // A tap picks the word shown, even when the model's ranking has come since and moved another word there.
@@ -1215,7 +1223,26 @@ TEST_F(ChineseTest, AKeyChangesTheListOnceToTheModels) {
   type("i");
   EXPECT_EQ(list(), before);  // not Rime's, 握挨泥 first
   ASSERT_TRUE(ready(readies));
-  EXPECT_EQ(list().at(0), "我爱你");
+  const auto shown = list();
+  EXPECT_EQ(shown.at(0), "我爱你");
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_NE(list(), shown);  // the list for what was committed goes at once
+}
+
+// A tap while the list is kept (#450) picks the word shown, not Rime's candidate in its place.
+TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
+  start(50ms);
+  typeAndWait("woain");
+  const auto shown = list();
+  type("i");
+  ASSERT_EQ(list(), shown);
+  const auto rimes = rime->candidates(20);
+  size_t i = 0;
+  while (i < shown.size() && i < rimes.size() && shown[i] == rimes[i].text) i++;
+  ASSERT_LT(i, shown.size());
+  zh->selectAt(int(i));
+  EXPECT_TRUE((zh->takeCommit() + zh->preedit().text()).starts_with(shown[i])) << shown[i];
 }
 
 TEST_F(ChineseTest, TraditionalAndNextWords) {

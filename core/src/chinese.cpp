@@ -302,8 +302,9 @@ class Chinese final : public Engine {
       std::lock_guard g(mutex_);
       if (resultRev_ == rev_) model = result_;
       // Until the model's list comes the one shown stays, while it is expected within kHold: a key changes the
-      // list once, not to Rime's and then to the model's (#450). A pick meanwhile is Rime's, as before any list.
-      else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold) return;
+      // list once, not to Rime's and then to the model's (#450). Not once what it was for is committed: a tap
+      // on it then couldn't put its word in that one's place.
+      else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold && (rime_->composing() || !shownComposing_)) return;
     }
     const auto rime = rime_->candidates(max);
     if (model) items = std::move(*model);
@@ -315,18 +316,26 @@ class Chinese final : public Engine {
     }
     shown_ = std::move(items);
     shownRev_ = rev_;
+    shownComposing_ = rime_->composing();
     modelShown_ = model.has_value();
   }
 
   void pick(int index) {
     if (index < 0) return;
-    if (shownRev_ != rev_ || index >= static_cast<int>(shown_.size())) {
-      // No list shown for this revision (a key's own pick): Rime's order
+    if (index >= static_cast<int>(shown_.size())) {
+      // No list shown (a key's own pick): Rime's order
       rime_->selectAt(index);
       changed();
       return;
     }
-    const Item item = shown_[index];
+    Item item = shown_[index];
+    // A list kept from before the last change (#450): the word shown, which Rime's menu may have elsewhere
+    // or not at all (then it is committed as the model's own are).
+    if (shownRev_ != rev_) {
+      const auto rime = rime_->candidates(kTeachCandidates);
+      const auto at = std::ranges::find(rime, item.candidate.text, &Candidate::text);
+      item.rime = at == rime.end() ? -1 : int(at - rime.begin());
+    }
     // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
     // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
     // Both sections cover the pick's work: Rime's selection, teach()'s search piece by piece, the next list.
@@ -533,6 +542,7 @@ class Chinese final : public Engine {
   std::vector<Item> shown_;
   uint64_t shownRev_ = ~uint64_t{0};
   bool modelShown_ = false;  // shown_ is the model's
+  bool shownComposing_ = false;  // shown_ was made for something being typed
   int highlight_ = 0;        // in shown_, while it is the model's
 
   // Shared with the worker, under mutex_ (revNow_ also read in the model's steps).

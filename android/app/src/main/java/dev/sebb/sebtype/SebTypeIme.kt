@@ -845,8 +845,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             JAPANESE -> CandidateBar.Style.WIDE_FIRST
             else -> CandidateBar.Style.CELLS
         }
-        // English's correction is of the list shown, which a space keeps until the next words come (#450)
-        bar.show(candidates, composing, style, lang == ENGLISH && st?.selected == 0, barOpen, chip, badge, notice,
+        bar.show(candidates, composing, style, lang == ENGLISH && composing && st?.selected == 0, barOpen, chip, badge, notice,
             header, expanded, clip)
         val on = if (incognito) setOf(Action.INCOGNITO) else emptySet()
         val traditional = if (lang == CHINESE) Engines.setting("Chinese", "Traditional") == true else null
