@@ -81,7 +81,7 @@
     <string name="sebtype_settings_sync_delete_button">删除</string>
     <string name="sebtype_settings_sync_deleted">已在服务器上删除学到的词和词典</string>
     <string name="sebtype_settings_sync_delete_failed">无法连接服务器，没有删除任何内容</string>
-    <string name="sebtype_settings_sync_check_test">测试连接</string>
+    <string name="sebtype_settings_sync_check_test">刷新状态</string>
     <string name="sebtype_settings_sync_check_checking">正在检查服务器和账号…</string>
     <string name="sebtype_settings_sync_check_connected">已连接，服务器和账号都没问题</string>
     <string name="sebtype_settings_sync_check_unreachable">无法连接服务器，请检查地址和网络</string>

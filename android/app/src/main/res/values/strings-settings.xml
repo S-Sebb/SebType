@@ -85,7 +85,7 @@
     <string name="sebtype_settings_sync_delete_button">Delete</string>
     <string name="sebtype_settings_sync_deleted">Learned words and dictionaries deleted on the server</string>
     <string name="sebtype_settings_sync_delete_failed">Can\'t reach the server. Nothing was deleted</string>
-    <string name="sebtype_settings_sync_check_test">Test connection</string>
+    <string name="sebtype_settings_sync_check_test">Refresh status</string>
     <string name="sebtype_settings_sync_check_checking">Checking the server and login…</string>
     <string name="sebtype_settings_sync_check_connected">Connected. The server and login work</string>
     <string name="sebtype_settings_sync_check_unreachable">Can\'t reach the server. Check the address and your network</string>

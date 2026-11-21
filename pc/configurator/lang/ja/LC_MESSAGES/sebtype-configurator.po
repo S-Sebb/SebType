@@ -556,8 +556,8 @@ msgstr "サーバーの HTTPS 証明書が信頼されていません"
 msgid "Connection"
 msgstr "接続"
 
-msgid "Test connection"
-msgstr "接続をテスト"
+msgid "Refresh status"
+msgstr "状態を更新"
 
 msgid "Save anyway"
 msgstr "このまま保存"

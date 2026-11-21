@@ -82,7 +82,7 @@
     <string name="sebtype_settings_sync_delete_button">削除</string>
     <string name="sebtype_settings_sync_deleted">サーバー上の学習した単語と辞書を削除しました</string>
     <string name="sebtype_settings_sync_delete_failed">サーバーに接続できません。何も削除されていません</string>
-    <string name="sebtype_settings_sync_check_test">接続をテスト</string>
+    <string name="sebtype_settings_sync_check_test">状態を更新</string>
     <string name="sebtype_settings_sync_check_checking">サーバーとログインを確認中…</string>
     <string name="sebtype_settings_sync_check_connected">接続しました。サーバーとログインは正常です</string>
     <string name="sebtype_settings_sync_check_unreachable">サーバーに接続できません。アドレスとネットワークを確認してください</string>

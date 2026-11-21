@@ -1,7 +1,7 @@
 import { AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { State, SyncStatus, SyncCheck, SyncText, UpdateStatus } from "state.slint";
-import { Switch, Segmented, PixelFrame, Card, Row, Divider, SectionTag, PageTitle, Info, Button, Kbd, Field, TitleBar, ScrollView } from "widgets.slint";
+import { Switch, Segmented, PixelFrame, Card, Row, Divider, SectionTag, PageTitle, Info, Button, Kbd, Field, TitleBar, ScrollView, StatusMark } from "widgets.slint";
 
 // Which group (page) and which screen inside it is shown, and the question waiting for an answer.
 export global Nav {
@@ -553,12 +553,16 @@ component SyncPage inherits Page {
             title: @tr("Connection");
             detail: SyncText.check(State.sync-check);
             line-above: true;
-            VerticalLayout { alignment: center;
-                Button {
-                    text: @tr("Test connection");
+            HorizontalLayout { alignment: end; spacing: 10px;
+                if State.sync-check == SyncCheck.connected || SyncText.failed(State.sync-check): VerticalLayout {
+                    alignment: center;
+                    StatusMark { ok: State.sync-check == SyncCheck.connected; }
+                }
+                VerticalLayout { alignment: center; Button {
+                    text: @tr("Refresh status");
                     enabled: State.sync-check != SyncCheck.checking;
                     clicked => { State.check-connection(); }
-                }
+                } }
             }
         }
         if State.sync-user != "": Row {
@@ -608,11 +612,17 @@ component SyncLoginPage inherits Page {
             Field { text <=> root.user; }
             Text { text: @tr("Password"); color: Theme.ink; font-size: Theme.body-size; }
             Field { text <=> root.password; input-type: InputType.password; accepted => { save.clicked(); } }
-            if State.login-check != SyncCheck.none: Text {
-                text: SyncText.check(State.login-check);
-                color: SyncText.failed(State.login-check) ? Theme.danger : Theme.muted;
-                font-size: Theme.detail-size;
-                wrap: word-wrap;
+            if State.login-check != SyncCheck.none: HorizontalLayout {
+                spacing: 6px;
+                if SyncText.failed(State.login-check): StatusMark { ok: false; }
+                Text {
+                    text: SyncText.check(State.login-check);
+                    color: SyncText.failed(State.login-check) ? Theme.danger : Theme.muted;
+                    font-size: Theme.detail-size;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    wrap: word-wrap;
+                }
             }
             HorizontalLayout {
                 alignment: end;

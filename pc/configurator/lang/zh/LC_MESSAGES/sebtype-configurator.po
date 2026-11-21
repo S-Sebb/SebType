@@ -556,8 +556,8 @@ msgstr "服务器的 HTTPS 证书不受信任"
 msgid "Connection"
 msgstr "连接"
 
-msgid "Test connection"
-msgstr "测试连接"
+msgid "Refresh status"
+msgstr "刷新状态"
 
 msgid "Save anyway"
 msgstr "仍然保存"

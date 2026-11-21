@@ -1,7 +1,7 @@
 // SebType Linux GUI Setup Wizard (#435): Picnic-themed 4-step installer window
 // (Welcome -> Installing -> Account Sync -> Ready/Tips), launched by the self-extracting installer.
 import { Theme } from "theme.slint";
-import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge } from "widgets.slint";
+import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge, StatusMark } from "widgets.slint";
 import { SyncCheck, SyncText } from "state.slint";
 
 export global SetupState {
@@ -319,11 +319,19 @@ export component SetupWindow inherits Window {
                                 }
                             }
                         }
-                        if SetupState.sync-check != SyncCheck.none: Text {
-                            text: SyncText.check(SetupState.sync-check);
-                            color: SyncText.failed(SetupState.sync-check) ? Theme.danger : Theme.muted;
-                            font-size: Theme.detail-size;
-                            wrap: word-wrap;
+                        if SetupState.sync-check != SyncCheck.none: HorizontalLayout {
+                            spacing: 6px;
+                            if SetupState.sync-check == SyncCheck.connected || SyncText.failed(SetupState.sync-check): StatusMark {
+                                ok: SetupState.sync-check == SyncCheck.connected;
+                            }
+                            Text {
+                                text: SyncText.check(SetupState.sync-check);
+                                color: SyncText.failed(SetupState.sync-check) ? Theme.danger : Theme.muted;
+                                font-size: Theme.detail-size;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
+                            }
                         }
                         if SetupState.sync-error != "": Text {
                             text: SetupState.sync-error;

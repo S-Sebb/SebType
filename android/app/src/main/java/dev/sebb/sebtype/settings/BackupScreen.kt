@@ -5,7 +5,13 @@ import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -22,7 +28,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -108,8 +120,10 @@ private fun SyncSection() {
             account?.summary() ?: stringResource(R.string.sebtype_settings_sync_login_none)) {
             dialog = "login"
         }
-        if (account != null) NavItem(stringResource(R.string.sebtype_settings_sync_check_test),
-            connection?.let { checkText(it) }, arrow = false) { Sync.checkConnection(context) }
+        if (account != null) Item(stringResource(R.string.sebtype_settings_sync_check_test),
+            connection?.let { checkText(it) }, Modifier.clickable { Sync.checkConnection(context) }) {
+            connection?.let { CheckMark(it) }
+        }
         if (account != null) NavItem(stringResource(R.string.sebtype_settings_sync_delete),
             stringResource(R.string.sebtype_settings_sync_delete_subtitle)) { dialog = "delete" }
     }
@@ -128,6 +142,26 @@ internal fun checkText(check: Sync.Check) = stringResource(when (check) {
     Sync.Check.NotSebType -> R.string.sebtype_settings_sync_check_not_sebtype
     Sync.Check.Tls -> R.string.sebtype_settings_sync_check_tls
 })
+
+/** A check's outcome at a glance (#452): a green tick when it works, a berry X when it doesn't, nothing while checking. */
+@Composable
+internal fun CheckMark(check: Sync.Check, size: Dp = 24.dp) {
+    if (check == Sync.Check.Checking) return
+    val ok = check == Sync.Check.Connected
+    val color = if (ok) Good else Berry
+    // The Configurator's icons/tick.svg and cross.svg, on the same 24-unit grid.
+    Canvas(Modifier.size(size)) {
+        val u = this.size.width / 24f
+        val stroke = Stroke(width = 2.4f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val path = Path().apply {
+            if (ok) { moveTo(5f * u, 12.5f * u); lineTo(9.5f * u, 17f * u); lineTo(19f * u, 7.5f * u) }
+            else { moveTo(6.5f * u, 6.5f * u); lineTo(17.5f * u, 17.5f * u); moveTo(17.5f * u, 6.5f * u); lineTo(6.5f * u, 17.5f * u) }
+        }
+        drawPath(path, color, style = stroke)
+    }
+}
+
+private val Good = Color(0xFF3E8A4C)
 
 internal fun SyncAccount.summary() = "$user · ${server.removePrefix("https://")}"
 
@@ -179,8 +213,11 @@ internal fun SyncLoginDialog(close: () -> Unit) {
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 check?.let {
-                    Text(checkText(it), Modifier.padding(top = 8.dp),
-                        color = if (failed) MaterialTheme.colorScheme.error else Color.Unspecified)
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CheckMark(it, 20.dp)
+                        if (it != Sync.Check.Checking) Spacer(Modifier.width(6.dp))
+                        Text(checkText(it), color = if (failed) MaterialTheme.colorScheme.error else Color.Unspecified)
+                    }
                 }
             }
         },
