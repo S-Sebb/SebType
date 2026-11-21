@@ -107,11 +107,16 @@
     <string name="settings_reading">读音</string>
     <string name="settings_credits_intro">SebType 基于这些项目构建，感谢所有制作它们的人。</string>
     <string name="settings_credits_tag">致谢</string>
-    <string name="setup_step">设置 · 第 %1$d 步，共 3 步</string>
+    <string name="setup_step">设置 · 第 %1$d 步，共 4 步</string>
     <string name="setup_enable_text">欢迎使用 SebType。\n\n首先，请在 Android 的键盘列表中启用 SebType。</string>
     <string name="setup_choose_text">接下来，请选择 SebType 作为你正在使用的键盘。</string>
     <string name="setup_enable">启用 SebType</string>
     <string name="setup_choose">选择 SebType</string>
+    <string name="setup_sync_text">通过你自己的同步服务器，在多台设备间同步学到的词和自定义短语。也可以稍后在设置中开启。</string>
+    <string name="setup_sync_setup">设置同步</string>
+    <string name="setup_sync_skip">暂不设置</string>
+    <string name="setup_sync_signed_in">同步账号</string>
+    <string name="setup_continue">继续</string>
     <string name="setup_tips_text">设置完成。以下几点容易错过：</string>
     <string name="setup_done">完成</string>
     <string name="tips_globe">长按 🌐 可切换到其他键盘。</string>

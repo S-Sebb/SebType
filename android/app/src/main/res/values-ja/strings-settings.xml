@@ -108,11 +108,16 @@
     <string name="settings_reading">読み</string>
     <string name="settings_credits_intro">SebType はこれらのプロジェクトをもとに作られています。作ってくださった皆さんに感謝します。</string>
     <string name="settings_credits_tag">クレジット</string>
-    <string name="setup_step">設定 · ステップ %1$d/3</string>
+    <string name="setup_step">設定 · ステップ %1$d/4</string>
     <string name="setup_enable_text">SebType へようこそ。\n\nまず、Android のキーボード一覧で SebType をオンにしてください。</string>
     <string name="setup_choose_text">次に、入力に使うキーボードとして SebType を選んでください。</string>
     <string name="setup_enable">SebType をオンにする</string>
     <string name="setup_choose">SebType を選ぶ</string>
+    <string name="setup_sync_text">自分の同期サーバーを使って、学習した単語やユーザー辞書を端末間で同期できます。あとから設定で有効にすることもできます。</string>
+    <string name="setup_sync_setup">同期を設定</string>
+    <string name="setup_sync_skip">あとで</string>
+    <string name="setup_sync_signed_in">同期アカウント</string>
+    <string name="setup_continue">次へ</string>
     <string name="setup_tips_text">設定が完了しました。見落としやすい操作：</string>
     <string name="setup_done">完了</string>
     <string name="tips_globe">🌐 を長押しすると、ほかのキーボードに切り替えられます。</string>

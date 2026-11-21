@@ -512,8 +512,12 @@ def open_settings():
 def home_shown():
     if screen_has(HOME["about"]):
         return True
-    # A fresh install opens on setup until its last step's Done (#285), which a user presses once
-    if setup_step_shown() == 3:
+    # A fresh install opens on setup until its last step's Done (#285, #435), which a user presses once
+    step = setup_step_shown()
+    if step == 3:
+        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        return False
+    if step == 4:
         tap_text(DONE)
         return False
     # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
@@ -1814,6 +1818,8 @@ def backup_setup():
             )
         start_settings()
         wait_for("setup's step 3 on the new phone", step3_again, 30)
+        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        wait_step(4)
         tap_text(DONE)
         wait_for("home after Done", lambda: not setup_step_shown(), 15)
         export_backup(False, name)
@@ -1861,7 +1867,7 @@ SETUP_FILE = f"/data/data/{PKG}/files/datastore/settings.preferences_pb"
 def setup_step_shown():
     m = re.search(
         r"(?:step|第|ステップ) ?(\d)",
-        " ".join(label for label, *_ in nodes() if "3" in label),
+        " ".join(label for label, *_ in nodes() if "4" in label),
     )
     return int(m.group(1)) if m else None
 
@@ -1983,7 +1989,7 @@ def start_settings():
 
 
 def wait_step(step):
-    wait_for(f"setup's step {step} of 3", lambda: setup_step_shown() == step, 20)
+    wait_for(f"setup's step {step} of 4", lambda: setup_step_shown() == step, 20)
 
 
 def other_keyboard():
@@ -2114,6 +2120,8 @@ def left_and_back(before):
     return True
 
 
+SKIP_SYNC = labels("暂不设置", "Not now", "あとで")
+CONTINUE = labels("继续", "Continue", "次へ")
 DONE = labels("完成", "Done", "完了")
 
 
@@ -2127,8 +2135,8 @@ def step3_again():
 
 
 def setup_tips():
-    """A new user: steps 1 and 2 of 3, then the tips as step 3, which an interruption keeps; Done ends
-    setup for good. At large text each step's button can be reached and pressed."""
+    """A new user: steps 1 and 2 of 4, then account sync as step 3, then the tips as step 4, which an
+    interruption keeps; Done ends setup for good. At large text each step's button can be reached and pressed."""
     forget_setup()
     adb("shell", "ime", "disable", IME)
     try:
@@ -2142,6 +2150,13 @@ def setup_tips():
         large_text("setup-step2", labels("Choose SebType"), left_and_back)
         adb("shell", "ime", "set", IME)
         wait_step(3)
+        screenshot("setup-sync")
+        large_text(
+            "setup-sync",
+            SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE,
+            lambda before: setup_step_shown() == 4,
+        )
+        wait_step(4)
         wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
         screenshot("setup-tips")
         night = night_mode()
@@ -2151,10 +2166,12 @@ def setup_tips():
             screenshot("setup-tips-dark")
         finally:
             adb("shell", "cmd", "uimode", "night", night)
-        # Interrupted: the app stopped on step 3 comes back to it
+        # Interrupted: the app stopped before Done comes back to setup (step 3)
         adb("shell", "am", "force-stop", PKG)
         start_settings()
-        wait_for("setup's step 3 of 3 after a restart", step3_again, 30)
+        wait_for("setup's step 3 of 4 after a restart", step3_again, 30)
+        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        wait_step(4)
         # Done, pressed at large text in landscape, opens home (its title, at the top)
         large_text(
             "setup-tips",
@@ -2174,14 +2191,14 @@ def setup_tips():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
     return (
-        "steps 1, 2 and 3 of 3, each button "
+        "steps 1, 2, 3 and 4 of 4, each button "
         + (
             "scrolled to and pressed at large text (portrait and landscape)"
             if has_root()
             else "pressed (no large text on a phone)"
         )
         + ", "
-        "step 3 again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
+        "setup again after a restart, home after Done, after a restart and with another keyboard (settings-setup-*.png)"
     )
 
 
@@ -2193,8 +2210,10 @@ def setup_fresh_enabled():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
         start_settings()
-        wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
-        # Done, as the user would: the next checks expect home, and without root none can put it back
+        wait_for("setup's step 3 of 4 with fresh data", step3_again, 30)
+        # Skip sync and Done, as the user would: the next checks expect home, and without root none can put it back
+        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        wait_step(4)
         tap_text(DONE)
         wait_for("home after Done", lambda: not setup_step_shown(), 15)
         return "data cleared, SebType on and chosen: setup's step 3"
@@ -2204,7 +2223,7 @@ def setup_fresh_enabled():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
         start_settings()
-        wait_for("setup's step 3 of 3 with fresh data", step3_again, 30)
+        wait_for("setup's step 3 of 4 with fresh data", step3_again, 30)
     finally:
         write_prefs(saved)
     return "fresh data, SebType on and chosen: setup's step 3"
