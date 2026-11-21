@@ -259,8 +259,14 @@ SOFT = 24  # up to this size the shadow is hard and the face has no shine: blurr
 
 
 def grid(S):
-    """params() snapped to the pixel grid: each part in whole pixels, at least one (#441)."""
-    return tuple(max(1, round(v)) for v in params(S))
+    """params() snapped to the pixel grid: each part in whole pixels, at least one (#441). Below 24 px, a
+    pixel a part would leave the glyph a cramped face, so 16 and 20 px are set to look like 24 px's key
+    shrunk: 16 px has no cream border and no lip, and 20 px's face has no inset, so its sides meet the base
+    with no outline of their own."""
+    return SMALL.get(S) or tuple(max(1, round(v)) for v in params(S))
+
+
+SMALL = {16: (0, 1, 1, 4, 1, 1, 0), 20: (1, 1, 1, 4, 1, 0, 1)}  # as params() for S
 
 
 def layout(S):
@@ -491,9 +497,12 @@ def glyph_alpha(S, state):
     margin = fw * (
         0.17 if lang != "grey" else 0.06
     )  # the README drawing's room for the blush
+    if S < SOFT:  # no blush to leave room for: as wide as the face less a pixel a side
+        margin = 1
     box = (x0 + margin, y0 + fh * 0.04, x1 - margin, y1 - fh * 0.04)
     s, tx, ty = fit(GLYPHS[g], box, fh * HEIGHT[g[1]])
-    sw = S * 0.022  # the README drawing's stroke round the outline
+    # The README drawing's stroke round the outline; below 24 px it would close the glyphs' counters.
+    sw = S * 0.022 if S >= SOFT else 0.25
     ex, ey = edges(g)
     mirror = g[1] in SYMMETRIC
     mx = fit_axis(ex, s, tx, sw / 2, (x0 + x1) / 2, mirror)
@@ -541,7 +550,7 @@ def ellipse(cr, cx, cy, rx, ry, angle=0):
 def layers(S, state):
     """sticker()'s README drawing at S px, grid-fitted: the key's parts params()'s shares in whole pixels,
     so its straight edges fall on whole pixels, left-right symmetric; its corners and slanted sides
-    antialiased; the shine, glint and blush as drawn (Set E's blush: none at 16 px, a cheek a side to 28 px,
+    antialiased; the shine, glint and blush as drawn (Set E's blush: none below 24 px, a cheek a side to 28 px,
     two dashes a side from 32 px); the glyph by glyph_alpha(); the badge over it. Returns the drawing, what
     check()'s mirror test leaves out (shine, glint, blush, badge, an asymmetric glyph), the glyph's coverage
     and the badge's pixels."""
@@ -574,8 +583,10 @@ def layers(S, state):
     key(cr, k0, ky0, k1, ky1, t, max(r - bw, 0))
     fill(cr, gradient(ky0, ky1, top, bot))
 
+    fo = bw if fi else 0  # the face's side outline, none without an inset
+
     def under_face(cr):  # the face with its outline, which covers the base
-        rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
+        rounded(cr, fx0 - fo, fy0, fx1 + fo, fy1 + bw, rf + fo)
 
     under_face(cr)
     fill(cr, rgb(OUTLINE))
@@ -615,8 +626,8 @@ def layers(S, state):
                 cr.line_to(x + ln * 0.35, y - ln * 0.5)
                 cr.stroke()
     elif (
-        S >= 20 and lang != "grey"
-    ):  # one soft cheek per lower corner, as dashes would merge
+        S >= SOFT and lang != "grey"
+    ):  # one soft cheek per lower corner, as dashes would merge; below 24 px they would crowd the glyph
         for cx in (fx0 + 1.6, fx1 - 1.6):
             ellipse(cr, cx, fy1 - 1.5, 1.3, 0.9)
             fill(cr, rgb(BLUSH, 0.85))
@@ -730,17 +741,21 @@ def check(S, state, im):
     if bad:
         problems.append(f"not symmetric in rows {bad}")
     x0, x1, y0, y1, _ = layout(S)
-    bw = grid(S)[2]
-    row = px[
-        (y0 + y1) // 2, x0 - bw : x0 + 1
-    ]  # the face's outline, then the face, neither blended
-    if (row[:-1] != rgb255(OUTLINE)).any() or row[-1, :3].min() < 0xE0:
+    sb, _, bw, _, _, fi, _ = grid(S)
+    ring = "c" if sb else ""  # the sticker's cream border
+    if fi:  # the face's outline, then the face, neither blended
+        row = px[(y0 + y1) // 2, x0 - bw : x0 + 1]
+        side = (row[:-1] == rgb255(OUTLINE)).all()
+    else:  # the base, opaque, then the face
+        row = px[(y0 + y1) // 2, x0 - 1 : x0 + 1]
+        side = runs(row[:1])[0][0] == "b" and row[0, 3] == 255
+    if not side or row[-1, :3].min() < 0xE0:
         problems.append("the face's side off the grid")
     kinds = "".join(k for k, _, _ in runs(px[: y0 + 1, S // 2]))
-    if not re.fullmatch("_*co+c", kinds):
+    if not re.fullmatch(f"_*{ring}o+c", kinds):
         problems.append(f"top {kinds}: a straight edge off the grid")
     kinds = "".join(k for k, _, _ in runs(px[::-1, S // 2][: S - y1]))
-    if not re.fullmatch("[_b]*co+b+[lo]*", kinds) and not badge_px.any():
+    if not re.fullmatch(f"[_b]*{ring}o+b+[lo]*", kinds) and not badge_px.any():
         problems.append(f"bottom {kinds}: a straight edge off the grid")
     g = glyph * ~badge_px
     cols, rows = np.nonzero(g.any(axis=0))[0], np.nonzero(g.any(axis=1))[0]
@@ -766,8 +781,8 @@ def check(S, state, im):
 
 
 # How far a drawing may be from the README drawing at its size (check()), above SOFT and up to it: whole-pixel
-# outlines and a hard shadow change small keys more.
-DESIGN = (0.09, 0.13)
+# outlines, a hard shadow and 16 and 20 px's own keys change small keys more.
+DESIGN = (0.09, 0.15)
 
 
 def rgb255(c):
