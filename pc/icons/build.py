@@ -2,37 +2,37 @@
 """Writes SebType's tray icons (#63, "Set E" sticker keycap): pc/icons/<size>/<state>.png and
 pc/icons/scalable/<state>.svg.
 
-Each tray size (16 to 66 px, SIZES) is drawn at its own pixel size, not scaled from a larger drawing (#275: a
-large drawing scaled down had soft grey edges), by the same rules at every size (#441): the key's parts are
-params()'s shares of the size in whole pixels, at least one each, so a 16 px key is a 66 px key shrunk; its
-edges fall on whole pixels and only round corners shade their edge pixels. The glyph is drawn from its
-strokes' centrelines (LINES, traced from the fonts' glyphs) with one pen for every glyph at a size (stroke()),
-its strokes placed on the pixel grid by HINTS so they keep whole pixels and the font's counters
-(topology()); 中 and A are their own
-mirror images and every glyph is centred in the face to the pixel. The blush keeps a clear pixel from the
-glyph. check() fails the build on any drawing that breaks these rules. "scalable" is a
-48 px vector drawing with the design's full proportions, for other sizes; its glyphs are font outlines, so it
-needs no font. Fonts: Noto Sans CJK Black (中 あ ア, from the system's Noto Sans CJK VF) and Nunito ExtraBold
-(EN a A, android/app/src/main/res/font), both OFL. Needs fontTools, Pillow and pycairo. Linux's RPM installs them in
-hicolor (linux/CMakeLists.txt); Windows' .ico files hold the PNGs (windows/make_icons.py, #13, #65).
+The README drawing (sticker(), written as "scalable", a 48 px vector drawing with font outlines) is the design.
+Each tray size (16 to 66 px, SIZES) is that drawing drawn again at its own size and grid-fitted, so it looks
+like the vector drawing but crisp (#441): the key's parts are params()'s shares in whole pixels (at least one),
+so its outlines, face and base have hard edges; the glyph's outline (Noto Sans CJK Black for 中 あ ア, from the
+system's Noto Sans CJK VF; Nunito ExtraBold for EN a A, android/app/src/main/res/font; both OFL) has its stems,
+bars and extremes moved onto whole pixels, 中 and A mirror-exact and every glyph centred in the face to the
+pixel, and keeps its antialiased curves. Up to 24 px the shadow is hard and the face has no shine, as blurred
+they only smear. check() fails the build on a drawing that isn't grid-fitted or symmetric, or that strays from
+the vector drawing at its size. Needs fontTools, Pillow, pycairo and CairoSVG. Linux's RPM installs the PNGs
+(linux/CMakeLists.txt); Windows' .ico files hold them (windows/make_icons.py, #13, #65).
 """
 
 import io
+import re
 import sys
 from functools import cache
 from math import pi
 from pathlib import Path
 
 import cairo
+import cairosvg
 import numpy as np
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.cairoPen import CairoPen
+from fontTools.pens.recordingPen import RecordingPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
-from PIL import Image, ImageDraw
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 NOTO_CJK = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
@@ -255,11 +255,11 @@ def sticker(S, lang, g, state=""):
 # Windows' small icon at 100 % to 400 % (16 to 64 by 4, 48 and 56) and a 22 px Linux tray at 100 % to 300 %
 # (22, 28, 33, 39, 44, 55, 66), so neither scales one (#441).
 SIZES = (16, 20, 22, 24, 28, 32, 33, 36, 39, 40, 44, 48, 55, 56, 64, 66)
+SOFT = 24  # up to this size the shadow is hard and the face has no shine: blurred they only smear
 
 
 def grid(S):
-    """params() in whole pixels, one rule at every size: each part as it rounds, at least a pixel, so a 16 px
-    key is a 66 px key shrunk (#441)."""
+    """params() snapped to the pixel grid: each part in whole pixels, at least one (#441)."""
     return tuple(max(1, round(v)) for v in params(S))
 
 
@@ -271,409 +271,49 @@ def layout(S):
     return k0 + t + fi, S - k0 - t - fi, k0, ky1 - side - lip, side - bw
 
 
-@cache
-def stroke(S):
-    """The pen every glyph is drawn with at S px: 0.065 S in whole pixels, or thinner where a glyph would
-    otherwise join strokes or close or fill counters unlike the font's (topology()), and never wider than a
-    larger size's, so the weight doesn't drop as the size grows."""
-    if S != SIZES[-1]:
-        bigger = stroke(SIZES[SIZES.index(S) + 1])
-    else:
-        bigger = S
-    w = min(max(1, round(S * 0.065)), bigger)
-    keys = {g for _, g in STATES.values()}
-    while w > 1 and any(topology(glyph_mask(S, k, w, 0), k) for k in keys):
-        w -= 1
-    return w
-
-
-@cache
-def pen(S, key):
-    """The pen a glyph is drawn with: stroke(S). 中's centre stroke must sit on the face's middle, which no
-    stroke of a width without the face's parity can, so there all of 中 is drawn a pixel wider, unless that
-    fills its counters: then only its centre stroke is (glyph_mask())."""
-    w = stroke(S)
-    x0, x1 = layout(S)[:2]
-    if (
-        key[1] != "中"
-        or (x1 - x0 - w) % 2 == 0
-        or topology(glyph_mask(S, key, w + 1, 0), key)
-    ):
-        return w
-    return w + 1
-
-
-@cache
-def cut(S, key):
-    """How many points the glyph's last stroke loses at S px: none, or where even the thinnest pen joins its
-    strokes unlike the font's, as few as part them (あ's tail at 16 px would close its right lobe)."""
-    n = 0
-    while topology(glyph_mask(S, key, pen(S, key), n), key) and n < 3:
-        n += 1
-    return n
-
-
-# Each glyph's ink height as a share of the face's (the README drawing's) and the strokes' centrelines, traced
-# from the font's glyph: u across, v down its ink box. A list of points is straight strokes with square ends;
-# ("curve", points) a smooth stroke through them. The outermost centrelines are put a half stroke inside the
-# glyph's pixel box, so every glyph fills its box at every size.
-HEIGHT = {"中": 0.8, "あ": 0.8, "ア": 0.8, "EN": 0.66, "A": 0.66, "a": 0.6}
-WIDE = 0.84  # the widest a glyph is, as a share of the face's width (EN), leaving the blush its corners
-LINES = {
-    "中": [
-        [(0.085, 0.25), (0.915, 0.25), (0.915, 0.66), (0.085, 0.66), (0.085, 0.25)],
-        [(0.5, 0.04), (0.5, 0.96)],
-    ],
-    "EN": [
-        [(0.375, 0.096), (0.063, 0.096), (0.063, 0.905), (0.375, 0.905)],
-        [(0.063, 0.49), (0.33, 0.49)],
-        [(0.535, 0.905), (0.535, 0.096), (0.937, 0.905), (0.937, 0.096)],
-    ],
-    "A": [[(0.1, 0.93), (0.5, 0.06), (0.9, 0.93)], [(0.21, 0.69), (0.79, 0.69)]],
-    "a": [
-        (
-            "curve",
-            [
-                (0.2, 0.13),
-                (0.3, 0.1),
-                (0.5, 0.08),
-                (0.7, 0.12),
-                (0.83, 0.25),
-                (0.85, 0.4),
-            ],
-        ),
-        [(0.85, 0.4), (0.85, 0.92)],
-        (
-            "curve",
-            [
-                (0.85, 0.48),
-                (0.5, 0.48),
-                (0.2, 0.55),
-                (0.08, 0.72),
-                (0.17, 0.88),
-                (0.4, 0.92),
-                (0.65, 0.85),
-                (0.85, 0.68),
-            ],
-        ),
-    ],
-    "ア": [
-        [(0.03, 0.1), (0.88, 0.1)],
-        ("curve", [(0.88, 0.1), (0.8, 0.25), (0.7, 0.36), (0.62, 0.43)]),
-        ("curve", [(0.43, 0.3), (0.43, 0.5), (0.38, 0.68), (0.27, 0.82), (0.1, 0.93)]),
-    ],
-    "あ": [
-        [(0.06, 0.18), (0.86, 0.14)],
-        ("curve", [(0.39, 0.04), (0.38, 0.5), (0.38, 0.9)]),
-        (
-            "curve",
-            [
-                (0.7, 0.29),
-                (0.67, 0.45),
-                (0.61, 0.6),
-                (0.5, 0.73),
-                (0.3, 0.85),
-                (0.15, 0.87),
-                (0.06, 0.78),
-                (0.07, 0.62),
-                (0.2, 0.5),
-                (0.42, 0.43),
-                (0.65, 0.43),
-                (0.85, 0.5),
-                (0.94, 0.64),
-                (0.88, 0.8),
-                (0.72, 0.92),
-            ],
-        ),
-    ],
-}
-
-
-# Where each glyph's strokes go on the pixel grid, across (u) and down (v): its stroke centres and stroke
-# ends in order, and between two the least room in pixels: W is a clear pixel between two strokes (w + 1),
-# N room for a slant between two strokes (2w + 1), 1 a stroke end that passes another by a pixel. Every point of the glyph is placed by the piecewise-linear
-# map through these, so its straight strokes fall on whole pixels and its counters stay open.
-W, N = "W", "N"
-HINTS = {
-    "中": ([0.085, W, 0.5, W, 0.915], [0.04, 1, 0.25, W, 0.66, 1, 0.96]),
-    "EN": ([0.063, 1, 0.375, W, 0.535, N, 0.937], [0.096, W, 0.49, W, 0.905]),
-    "A": ([0.1, W, 0.5, W, 0.9], [0.06, W, 0.69, W, 0.93]),
-    "a": ([0.08, W, 0.85], [0.08, W, 0.48, W, 0.92]),
-    "ア": ([0.03, 1, 0.43, W, 0.62, 1, 0.88], [0.1, W, 0.93]),
-    "あ": (
-        [0.06, W, 0.38, W, 0.72, 1, 0.94],
-        [0.04, 1, 0.16, W, 0.29, 1, 0.43, W, 0.95],
-    ),
-}
-
-
-def room(gap, w):
-    return {W: w + 1, N: 2 * w + 1}.get(gap, gap)
-
-
-def grid_map(hint, extent, w):
-    """hint's stroke positions on extent px, as (u, pixel centre) pairs: spread as the glyph has them, each
-    stroke's first pixel whole, and at least the hint's room between them."""
-    keys, gaps = hint[::2], [room(g, w) for g in hint[1::2]]
-    q = [round((k - keys[0]) / (keys[-1] - keys[0]) * (extent - w)) for k in keys]
-    q[0], q[-1] = 0, extent - w
-    for i in range(1, len(q)):
-        q[i] = max(q[i], q[i - 1] + gaps[i - 1])
-    q[-1] = extent - w
-    for i in range(len(q) - 2, -1, -1):
-        q[i] = min(q[i], q[i + 1] - gaps[i])
-    return [(k, x + w / 2) for k, x in zip(keys, q)]
-
-
-def least(hint, w):
-    """The fewest pixels hint's strokes fit in."""
-    return w + sum(room(g, w) for g in hint[1::2])
-
-
-def label(m, eight):
-    """m's connected parts (through corners too if eight) numbered from 1, and how many there are."""
-    lab, n = np.zeros(m.shape, int), 0
-    steps = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    steps += [(-1, -1), (-1, 1), (1, -1), (1, 1)] if eight else []
-    for y, x in zip(*np.nonzero(m)):
-        if lab[y, x]:
-            continue
-        n += 1
-        lab[y, x], todo = n, [(y, x)]
-        while todo:
-            cy, cx = todo.pop()
-            for dy, dx in steps:
-                yy, xx = cy + dy, cx + dx
-                if (
-                    0 <= yy < m.shape[0]
-                    and 0 <= xx < m.shape[1]
-                    and m[yy, xx]
-                    and not lab[yy, xx]
-                ):
-                    lab[yy, xx] = n
-                    todo.append((yy, xx))
-    return lab, n
-
-
-def regions(m):
-    """m's ink parts (touching through corners) and its background regions (touching sideways) on a 1 px
-    margin: region 1 is the outside, the others are counters."""
-    p = np.pad(m, 1)
-    return label(p, True)[1], label(~p, False)[0]
-
-
-def window(m, k):
-    """Where a k x k square fits entirely in m (indexed by its corner)."""
-    c = np.pad(m.astype(int).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
-    return c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k] == k * k
-
-
-@cache
-def font_regions(key):
-    """The font's glyph, its ink box drawn 120 px tall, and its regions()."""
-    font, (xmin, ymin, xmax, ymax) = FONTS[key[0]], GLYPHS[key][1]
-    s = 120 / (ymax - ymin)
-    W, H = round((xmax - xmin) * s), 120
-    surface = cairo.ImageSurface(cairo.FORMAT_A8, W, H)
-    cr = cairo.Context(surface)
-    cr.scale(s, s)
-    cr.translate(-xmin, -ymin)
-    draw(font, key[1], CairoPen(font.getGlyphSet(), cr))
-    cr.fill()
-    surface.flush()
-    a = np.frombuffer(surface.get_data(), np.uint8).reshape(H, surface.get_stride())[
-        :, :W
-    ]
-    return a >= 128, *regions(a >= 128)
-
-
-@cache
-def font_apart(key, k):
-    """How many parts the font's glyph has whose gaps hold a k x k square."""
-    fink = font_regions(key)[0]
-    return label(~window(np.pad(~fink, k - 1, constant_values=True), k), True)[1]
-
-
-@cache
-def need(key, k):
-    """The font's counters that hold a k x k square."""
-    fbg = font_regions(key)[2]
-    return {n for n in range(2, fbg.max() + 1) if window(fbg == n, k).any()}
-
-
-def topology(m, key):
-    """What m, a glyph's pixels on its box, joins or closes that the font's glyph hasn't, where the font's
-    glyph shrunk to m's size has room for them: strokes touching that a pixel or more apart, a stroke broken,
-    a counter filled that holds a whole pixel, or strokes closing a counter the font hasn't. Each of m's
-    counters is the font's counter (or outside) that most of its pixels are nearest to."""
-    parts, bg = regions(m)
-    _, fparts, fbg = font_regions(key)
-    H, W = fbg.shape
-    k = max(1, round(H / m.shape[0]))  # a pixel of m on the font's drawing
-    apart = font_apart(key, k)
-    problems = (
-        [f"{parts} strokes apart, the font's {fparts}"]
-        if not apart <= parts <= fparts
-        else []
-    )
-    ys, xs = np.nonzero(fbg)
-    found = set()
-    for n in range(2, bg.max() + 1):
-        y, x = np.nonzero(bg == n)
-        fy = ((y - 0.5) / m.shape[0] * H).astype(
-            int
-        )  # the padded pixel's centre on the font's drawing
-        fx = ((x - 0.5) / m.shape[1] * W).astype(int)
-        near = [
-            fbg[a, b] or fbg[ys[i], xs[i]]
-            for a, b in zip(fy.clip(0, H - 1), fx.clip(0, W - 1))
-            for i in [np.argmin((ys - a) ** 2 + (xs - b) ** 2) if not fbg[a, b] else 0]
-        ]
-        found.add(max(set(near), key=near.count))
-    if 1 in found:
-        problems.append("strokes close a counter the font hasn't")
-    if missing := need(key, k) - found:
-        problems.append(f"{len(missing)} of the font's counters filled")
-    return problems
-
-
-def glyph_box(S, key, sw=None):
-    """The glyph's pixel box: x, y, width, height. Its height is HEIGHT of the face's, or less where its width
-    would pass WIDE of the face's; its width has the face's parity, so it centres to the pixel."""
-    x0, x1, y0, y1, _ = layout(S)
-    fw, fh = x1 - x0, y1 - y0
-    _, (xmin, ymin, xmax, ymax) = GLYPHS[key]
-    aspect = (xmax - xmin) / (ymax - ymin)
-    w = min(HEIGHT[key[1]] * fh * aspect, WIDE * fw)
-    gw = fw - 2 * round((fw - w) / 2)
-    gh = round(w / aspect)
-    # Never smaller than its strokes fit in, keeping the face's parity.
-    us, vs = HINTS[key[1]]
-    sw = sw or pen(S, key)
-    gw = max(gw, least(us, sw) + (fw - least(us, sw)) % 2)
-    gh = max(gh, least(vs, sw))
-    return x0 + (fw - gw) // 2, y0 + (fh - gh) // 2, gw, gh
-
-
-def catmull(points, n=24):
-    p = [points[0], *points, points[-1]]
-    out = [points[0]]
-    for i in range(1, len(p) - 2):
-        for k in range(1, n + 1):
-            t = k / n
-            out.append(
-                tuple(
-                    0.5
-                    * (
-                        2 * p[i][d]
-                        + (p[i + 1][d] - p[i - 1][d]) * t
-                        + (
-                            2 * p[i - 1][d]
-                            - 5 * p[i][d]
-                            + 4 * p[i + 1][d]
-                            - p[i + 2][d]
-                        )
-                        * t
-                        * t
-                        + (3 * p[i][d] - p[i - 1][d] - 3 * p[i + 1][d] + p[i + 2][d])
-                        * t**3
-                    )
-                    for d in (0, 1)
-                )
-            )
-    return out
-
-
-def segment(m, a, b, w, cap0, cap1):
-    """A stroke w px wide from centre a to centre b: the pixels whose centre is less than w/2 from it, so an
-    upright or level stroke is exactly w whole pixels and a slanted one as wide across; a square end
-    reaches w/2 past its point, an open end (inside a curve) stops at it with a round join."""
-    (x0, y0), (x1, y1) = a, b
-    ys, xs = np.mgrid[0 : m.shape[0], 0 : m.shape[1]] + 0.5
-    dx, dy = x1 - x0, y1 - y0
-    length = np.hypot(dx, dy)
-    if length == 0:
-        m |= np.hypot(xs - x0, ys - y0) < w / 2
-        return
-    along = ((xs - x0) * dx + (ys - y0) * dy) / length
-    across = ((xs - x0) * dy - (ys - y0) * dx) / length
-    if (
-        w == 1
-    ):  # a pixel line: one pixel a row (steep) or a column (flat), ties to one side
-        across *= length / max(abs(dx), abs(dy))
-        across = np.where((across > -0.5) & (across <= 0.5), 0, 1)
-    across = np.abs(across)
-    square = dx == 0 or dy == 0
-    lo, hi = (
-        -w / 2 if cap0 and square else 0,
-        length + (w / 2 if cap1 and square else 0),
-    )
-    m |= (across < w / 2) & (along >= lo) & (along < hi)
-    for (x, y), cap in (((x0, y0), cap0), ((x1, y1), cap1)):
-        if not (cap and square):
-            m |= np.hypot(xs - x, ys - y) < w / 2
-
-
-def glyph_mask(S, key, w=None, short=None):
-    """The glyph on its pixel box: its centrelines, placed by HINTS, stroked w px wide (pen()) by segment().
-    A SYMMETRIC glyph is united with its mirror image, so a centre stroke whose width hasn't the face's
-    parity comes out a pixel wider (中 at 16 px, see pen())."""
-    text = key[1]
-    w = w or pen(S, key)
-    short = cut(S, key) if short is None else short
-    _, _, gw, gh = glyph_box(S, key, w)
-    us, vs = HINTS[text]
-    mu, mv = grid_map(us, gw, w), grid_map(vs, gh, w)
-
-    def place(t, pairs):
-        for (k0, p0), (k1, p1) in zip(pairs, pairs[1:]):
-            if t <= k1 or (k1, p1) == pairs[-1]:
-                return p0 + (t - k0) * (p1 - p0) / (k1 - k0)
-
-    m = np.zeros((gh, gw), bool)
-    for n, line in enumerate(LINES[text]):
-        curve = line[0] == "curve"
-        if n == len(LINES[text]) - 1 and short:
-            line = ("curve", line[1][:-short]) if curve else line[:-short]
-        path = [
-            (place(u, mu), place(v, mv))
-            for u, v in (catmull(line[1]) if curve else line)
-        ]
-        for i, (a, b) in enumerate(zip(path, path[1:])):
-            segment(m, a, b, w, not curve or i == 0, not curve or i == len(path) - 2)
-    if (
-        text in SYMMETRIC
-    ):  # mirrored onto itself: a stroke on the middle that can't centre is a pixel wider
-        m |= m[:, ::-1]
-    return m
-
-
 def rgb(c, alpha=1.0):
     return tuple(int(c[i : i + 2], 16) / 255 for i in (1, 3, 5)) + (alpha,)
 
 
-def arc(cr, cx, cy, rx, ry, a0, a1):
-    cr.save()
-    cr.translate(cx, cy)
-    cr.scale(rx, ry)
-    cr.arc(0, 0, 1, a0, a1)
-    cr.restore()
-
-
 def key(cr, x0, y0, x1, y1, t, r):
-    """trap()'s shape on the pixel grid: the flare is taken into the top corners (each t px wider than tall),
-    so the top edge is as long and the sides are straight: only the corners have partly covered pixels."""
-    r = min(r, (x1 - x0) / 2 - t, (y1 - y0) / 2)
+    """trap()'s shape as cairo's path."""
+    h = max(y1 - y0, 1)
+
+    def quad(c, e):  # SVG's Q as a cubic
+        p = cr.get_current_point()
+        cr.curve_to(
+            p[0] + 2 / 3 * (c[0] - p[0]),
+            p[1] + 2 / 3 * (c[1] - p[1]),
+            e[0] + 2 / 3 * (c[0] - e[0]),
+            e[1] + 2 / 3 * (c[1] - e[1]),
+            *e,
+        )
+
     cr.new_path()
-    arc(cr, x1 - t - r, y0 + r, r + t, r, -pi / 2, 0)
-    arc(cr, x1 - r, y1 - r, r, r, 0, pi / 2)
-    arc(cr, x0 + r, y1 - r, r, r, pi / 2, pi)
-    arc(cr, x0 + t + r, y0 + r, r + t, r, pi, 3 * pi / 2)
+    cr.move_to(x0 + t + r, y0)
+    cr.line_to(x1 - t - r, y0)
+    quad((x1 - t, y0), (x1 - t + t * r / h, y0 + r))
+    cr.line_to(x1, y1 - r)
+    quad((x1, y1), (x1 - r, y1))
+    cr.line_to(x0 + r, y1)
+    quad((x0, y1), (x0, y1 - r))
+    cr.line_to(x0 + t - t * r / h, y0 + r)
+    quad((x0 + t, y0), (x0 + t + r, y0))
     cr.close_path()
 
 
 def rounded(cr, x0, y0, x1, y1, r):
-    key(cr, x0, y0, x1, y1, 0, r)
+    """SVG's rect with rx = ry = r."""
+    r = min(r, (x1 - x0) / 2, (y1 - y0) / 2)
+    cr.new_path()
+    for cx, cy, a in (
+        (x1 - r, y0 + r, -pi / 2),
+        (x1 - r, y1 - r, 0),
+        (x0 + r, y1 - r, pi / 2),
+        (x0 + r, y0 + r, pi),
+    ):
+        cr.arc(cx, cy, r, a, a + pi / 2)
+    cr.close_path()
 
 
 def gradient(y0, y1, top, bot):
@@ -694,14 +334,338 @@ def image(surface):
     return Image.open(io.BytesIO(b.getvalue())).convert("RGBA")
 
 
-def GLINT(S, k0, ky1, side):
-    """The glint's rectangle on the base: x, y, width, height."""
-    return (
-        round(k0 + S * 0.1 - S * 0.035),
-        round(ky1 - side * 0.45 - S * 0.06),
-        max(1, round(S * 0.07)),
-        max(2, round(S * 0.12)),
+def outline(key):
+    """The glyph's outline in font units, y down, as pen calls."""
+    pen = RecordingPen()
+    draw(FONTS[key[0]], key[1], pen)
+    return pen.value
+
+
+def replay(rec, cr, f=lambda p: p):
+    """rec's outline as cairo's path, each point through f."""
+    pen = CairoPen(None, cr)
+    for op, pts in rec:
+        getattr(pen, op)(*[f(p) for p in pts])
+
+
+@cache
+def edges(key):
+    """The glyph's edges across each axis, as (position, ink side) in font units: its upright (x) and level
+    (y) straight segments and each contour's extremes. Side +1: the ink is before the edge, -1 after it. The
+    side is looked for at several points of an edge, as the font's strokes overlap."""
+    rec = outline(key)
+    cr = cairo.Context(cairo.ImageSurface(cairo.FORMAT_A8, 1, 1))
+    replay(rec, cr)
+    found = ([], [])
+    contour, prev = [], None
+    for op, pts in rec + [("moveTo", [None])]:
+        if op == "closePath" and contour:  # its closing segment
+            op, pts = "lineTo", [contour[0]]
+            for a in (0, 1):
+                end = pts[-1]
+                if abs(end[a] - prev[a]) < 1 and abs(end[1 - a] - prev[1 - a]) > 20:
+                    found[a].extend(
+                        (end[a], end[1 - a] + (prev[1 - a] - end[1 - a]) * f)
+                        for f in (0.2, 0.5, 0.8)
+                    )
+            op, pts = "closePath", ()
+        if op in ("moveTo", "closePath", "endPath") and contour:
+            for a in (0, 1):
+                ends = (
+                    min(contour, key=lambda p: p[a]),
+                    max(contour, key=lambda p: p[a]),
+                )
+                found[a].extend((p[a], p[1 - a]) for p in ends)
+            contour = []
+        if op in ("lineTo", "qCurveTo", "curveTo") and prev:
+            end = pts[-1]
+            for a in (0, 1):  # straight along the other axis
+                if (
+                    op == "lineTo"
+                    and abs(end[a] - prev[a]) < 1
+                    and abs(end[1 - a] - prev[1 - a]) > 20
+                ):
+                    found[a].extend(
+                        (end[a], end[1 - a] + (prev[1 - a] - end[1 - a]) * f)
+                        for f in (0.2, 0.5, 0.8)
+                    )
+        if pts and pts[-1] is not None:
+            prev = pts[-1]
+            contour.append(prev)
+    out = []
+    for a in (0, 1):
+        sided = set()
+        for pos, at in found[a]:
+            point = lambda d: (pos + d, at) if a == 0 else (at, pos + d)
+            if cr.in_fill(*point(-3)) and not cr.in_fill(*point(3)):
+                sided.add((pos, 1))
+            elif cr.in_fill(*point(3)) and not cr.in_fill(*point(-3)):
+                sided.add((pos, -1))
+        out.append(sorted(sided))
+    return out
+
+
+def fit_axis(edges, scale, offset, half, centre, mirror):
+    """The piecewise-linear map from font to device position that puts every edge's ink boundary (the
+    outline plus half the README drawing's stroke) on a whole pixel, keeping each stem's width rounded (at
+    least a pixel) and the order of the edges. The outermost boundaries are put the same distance from
+    centre; with mirror, every edge is put where its mirror image across centre is, and a stem across the
+    middle takes the nearest width that can be centred there."""
+    marks = [(p * scale + offset, side) for p, side in edges]  # device position, side
+    own = sorted(marks)
+    if mirror:
+        marks = [m for m in marks if m[0] < centre - 0.01]
+        marks += [(2 * centre - d, -side) for d, side in marks]
+    marks.sort()
+    left = [m for m in marks if m[0] + m[1] * half <= centre] if mirror else marks
+    knots, last = [], None  # last: the previous kept edge's boundary, target and side
+    for d, side in left:
+        b = d + side * half
+        if (
+            last and side == 1 and last[2] == -1
+        ):  # a stem's far side: its width rounded, at least a pixel
+            t = last[1] + max(1, round(b - last[0]))
+        else:
+            t = round(b)
+        if last is not None and t <= last[1]:
+            if b - last[0] < 0.5:
+                continue
+            t = last[1] + 1
+        knots.append((d, t, side))
+        last = (b, t, side)
+    if mirror:
+        if (
+            left and left[-1][1] == -1
+        ):  # a stem across the middle: the width of the middle's parity nearest
+            i = own.index(
+                left[-1]
+            )  # its own (the font's, which may be a little off the middle), the
+            wd = (
+                own[i + 1][0] + half - last[0]
+                if i + 1 < len(own)
+                else 2 * (centre - last[0])
+            )
+            w = max(1, round(wd))
+            if (w - 2 * centre) % 2:
+                w = (
+                    w - 1 if w > 1 and wd - (w - 1) <= w + 1 - wd else w + 1
+                )  # thinner of two as near
+            knots[-1] = (knots[-1][0], centre - w / 2, -1)
+            for i in range(len(knots) - 2, -1, -1):
+                knots[i] = (
+                    knots[i][0],
+                    min(knots[i][1], knots[i + 1][1] - 1),
+                    knots[i][2],
+                )
+        knots += [(2 * centre - d, 2 * centre - t, -side) for d, t, side in knots]
+    elif knots:  # the outermost boundaries, centred
+        knots[-1] = (knots[-1][0], 2 * centre - knots[0][1], knots[-1][2])
+    knots = sorted((d, t - side * half) for d, t, side in knots)
+    ds, ts = [], []
+    for d, t in knots:
+        if not ds or (d > ds[-1] + 1e-6 and t > ts[-1] + 1e-6):
+            ds.append(d)
+            ts.append(t)
+    return ds, ts
+
+
+def warp(ds, ts, v):
+    if v <= ds[0]:
+        return v + ts[0] - ds[0]
+    if v >= ds[-1]:
+        return v + ts[-1] - ds[-1]
+    return float(np.interp(v, ds, ts))
+
+
+# Each glyph's ink height as a share of the face's, as the README drawing has it.
+HEIGHT = {"中": 0.8, "あ": 0.8, "ア": 0.8, "EN": 0.66, "A": 0.66, "a": 0.6}
+
+
+def glyph_alpha(S, state):
+    """The glyph's coverage on S px, from the README drawing's outline and stroke, grid-fitted: its stems,
+    bars and extremes on whole pixels, centred in the face to the pixel, 中 and A mirror-exact. Curves keep
+    their antialiasing."""
+    lang, g = STATES[state]
+    x0, x1, y0, y1, _ = layout(S)
+    fw, fh = x1 - x0, y1 - y0
+    margin = fw * (
+        0.17 if lang != "grey" else 0.06
+    )  # the README drawing's room for the blush
+    box = (x0 + margin, y0 + fh * 0.04, x1 - margin, y1 - fh * 0.04)
+    s, tx, ty = fit(GLYPHS[g], box, fh * HEIGHT[g[1]])
+    sw = S * 0.022  # the README drawing's stroke round the outline
+    ex, ey = edges(g)
+    mirror = g[1] in SYMMETRIC
+    mx = fit_axis(ex, s, tx, sw / 2, (x0 + x1) / 2, mirror)
+    my = fit_axis(ey, s, ty, sw / 2, (box[1] + box[3]) / 2, False)
+    # Filled and stroked as the README drawing, 8 x 8 samples a pixel, so a pixel both partly cover is
+    # covered by their union (cairo's antialiasing would add the two coverages as layers).
+    n = 8
+    surface = cairo.ImageSurface(cairo.FORMAT_A8, S * n, S * n)
+    cr = cairo.Context(surface)
+    cr.set_antialias(cairo.ANTIALIAS_NONE)
+    cr.scale(n, n)
+    replay(
+        outline(g), cr, lambda p: (warp(*mx, p[0] * s + tx), warp(*my, p[1] * s + ty))
     )
+    cr.set_line_width(sw)
+    cr.set_line_join(cairo.LINE_JOIN_ROUND)
+    cr.fill_preserve()
+    cr.stroke()
+    surface.flush()
+    a = np.frombuffer(surface.get_data(), np.uint8).reshape(
+        S * n, surface.get_stride()
+    )[:, : S * n]
+    a = np.round(a.reshape(S, n, S, n).mean(axis=(1, 3))).astype(int)
+    if (
+        mirror
+    ):  # its outline is near enough its mirror image; the pixels are made exactly so
+        c2 = x0 + x1
+        m = a.copy()
+        m[:, max(0, c2 - S) : min(S, c2)] = a[
+            :, min(S, c2) - 1 : max(0, c2 - S) - 1 if c2 > S else None : -1
+        ]
+        a = np.maximum(a, m)
+    return a
+
+
+def ellipse(cr, cx, cy, rx, ry, angle=0):
+    cr.save()
+    cr.translate(cx, cy)
+    cr.rotate(angle)
+    cr.scale(rx, ry)
+    cr.arc(0, 0, 1, 0, 2 * pi)
+    cr.restore()
+
+
+def layers(S, state):
+    """sticker()'s README drawing at S px, grid-fitted: the key's parts params()'s shares in whole pixels,
+    so its straight edges fall on whole pixels, left-right symmetric; its corners and slanted sides
+    antialiased; the shine, glint and blush as drawn (Set E's blush: none at 16 px, a cheek a side to 28 px,
+    two dashes a side from 32 px); the glyph by glyph_alpha(); the badge over it. Returns the drawing, what
+    check()'s mirror test leaves out (shine, glint, blush, badge, an asymmetric glyph), the glyph's coverage
+    and the badge's pixels."""
+    lang, (kind, text) = STATES[state]
+    sb, sh, bw, side, t, fi, lip = grid(S)
+    H, r = S - sh, round(S * 0.24)
+    top, bot = BASE[lang]
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+    cr = cairo.Context(surface)
+    key(
+        cr, sb, sb, S - sb, H - sb, t, r
+    )  # the key's outline, which the sticker's border is drawn under
+    k0, k1, ky0, ky1 = sb + bw, S - sb - bw, sb + bw, H - sb - bw
+    fx0, fx1, fy0, fy1 = k0 + t + fi, k1 - t - fi, ky0, ky1 - side
+    rf = round(max(r - bw - fi, 0) * 0.9)
+    shadow = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+    sc = cairo.Context(shadow)
+    if S <= SOFT:  # a hard shadow sh px under the sticker
+        key(sc, 0, sh, S, S, t, r + sb)
+    else:  # the README drawing's soft one
+        key(sc, 0.5, sh, S - 0.5, H + sh * 0.6, t, r + sb)
+    fill(sc, rgb(OUTLINE, 0.35))
+    shade = image(shadow)
+    if S > SOFT:
+        shade = shade.filter(ImageFilter.GaussianBlur(S / 40))
+    key(cr, 0, 0, S, H, t, r + sb)
+    fill(cr, rgb(STICKER))
+    key(cr, sb, sb, S - sb, H - sb, t, r)
+    fill(cr, rgb(OUTLINE))
+    key(cr, k0, ky0, k1, ky1, t, max(r - bw, 0))
+    fill(cr, gradient(ky0, ky1, top, bot))
+
+    def under_face(cr):  # the face with its outline, which covers the base
+        rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
+
+    under_face(cr)
+    fill(cr, rgb(OUTLINE))
+    rounded(cr, fx0, fy0, fx1, fy1, rf)  # the top face with a beige lip at its bottom
+    fill(cr, rgb(LIP))
+    rounded(cr, fx0, fy0, fx1, fy1 - lip, rf)
+    fill(cr, gradient(fy0, fy1 - lip, "#FFFCF5", "#FFF1E2"))
+    im = shade
+    im.alpha_composite(image(surface))
+    # Left-right symmetric: its left half mirrored (cairo shades the two sides' corners a little differently).
+    px = np.asarray(im).copy()
+    px[:, S - S // 2 :] = px[:, : S // 2][:, ::-1]
+    im = Image.fromarray(px)
+    extra = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+    cr = cairo.Context(extra)
+    fy1 -= lip
+    fw, fh = fx1 - fx0, fy1 - fy0
+    if S >= 32:  # glint on the base, lower left, under the face's edge
+        ellipse(cr, k0 + S * 0.1, ky1 - side * 0.45, S * 0.035, S * 0.06)
+        fill(cr, rgb("#FFFFFF", 0.45))
+        cr.set_operator(cairo.OPERATOR_DEST_OUT)
+        under_face(cr)
+        fill(cr, rgb("#FFFFFF"))
+        cr.set_operator(cairo.OPERATOR_OVER)
+    if S > SOFT:  # shine, top left of the face
+        ellipse(cr, fx0 + fw * 0.13, fy0 + fh * 0.2, S * 0.05, S * 0.03, -40 * pi / 180)
+        fill(cr, rgb("#FFFFFF"))
+    if S >= 32 and lang != "grey":  # two short slanted dashes each side
+        ln = S * 0.05
+        cr.set_line_width(S * 0.045)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_source_rgba(*rgb(BLUSH))
+        for side_x in (fx0 + fw * 0.085, fx1 - fw * 0.085):
+            for dx in (-S * 0.035, S * 0.035):
+                x, y = side_x + dx, fy0 + fh * 0.62
+                cr.move_to(x - ln * 0.35, y + ln * 0.5)
+                cr.line_to(x + ln * 0.35, y - ln * 0.5)
+                cr.stroke()
+    elif (
+        S >= 20 and lang != "grey"
+    ):  # one soft cheek per lower corner, as dashes would merge
+        for cx in (fx0 + 1.6, fx1 - 1.6):
+            ellipse(cr, cx, fy1 - 1.5, 1.3, 0.9)
+            fill(cr, rgb(BLUSH, 0.85))
+    over = image(extra)
+    badge = Image.new("RGBA", (S, S))
+    kind_badge = state.rpartition("-")[2]
+    if kind_badge in BADGE:  # over the glyph
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
+        cr = cairo.Context(surface)
+        br = max(S * 0.25, 4.5)
+        rim = max(1, round(S / 24)) if S < 48 else round(S * 0.04)
+        c = S - br - 0.2
+        cr.arc(c, c, br, 0, 2 * pi)
+        fill(cr, rgb(STICKER))
+        cr.arc(c, c, br - rim, 0, 2 * pi)
+        fill(cr, rgb(BADGE[kind_badge]))
+        inner = br - rim
+        if kind_badge == "wait":  # three square dots
+            dot = max(1, round(inner * 0.34))
+            pitch = max(
+                dot + 1, round(inner * 0.5)
+            )  # whole pixels, a gap at least a pixel wide
+            x = y = round(c - dot / 2)
+            for dx in (-pitch, 0, pitch):
+                cr.rectangle(x + dx, y, dot, dot)
+        else:  # "!": a bar, a gap, a dot
+            w, h = max(1, round(inner * 0.36)), inner * 1.4
+            x, top_y = round(c - w / 2), round(c - h / 2)
+            bar = round(h * 0.62)
+            cr.rectangle(x, top_y, w, bar)
+            cr.rectangle(x, max(round(c + h / 2 - w), top_y + bar + 1), w, w)
+        fill(cr, rgb("#FFFFFF"))
+        badge = image(surface)
+    glyph = glyph_alpha(S, state)
+    ink = Image.new("RGBA", (S, S), GREY_INK if lang == "grey" else INK)
+    ink.putalpha(Image.fromarray(glyph.astype(np.uint8)))
+    for layer in (over, ink, badge):
+        im.alpha_composite(layer)
+    badge_px = np.asarray(badge)[..., 3] > 0
+    skip = (
+        (np.asarray(over)[..., 3] > 0)
+        | badge_px
+        | ((glyph > 0) & (text not in SYMMETRIC))
+    )
+    return im, skip, glyph, badge_px
+
+
+def pixels(S, state):
+    return layers(S, state)[0]
 
 
 def runs(px):
@@ -727,301 +691,87 @@ def runs(px):
     return out
 
 
-def straight(m):
-    """The widths of m's upright strokes: each run of ink across a row that more rows than it is wide have
-    too, one under another at the same columns (a slant moves; a level stroke is wider than it is tall)."""
-    widths, tall = set(), {}
-    for row in m:
-        d = np.diff(np.r_[0, row.astype(int), 0])
-        spans = set(
-            zip(np.nonzero(d == 1)[0].tolist(), np.nonzero(d == -1)[0].tolist())
-        )
-        tall = {span: tall.get(span, 0) + 1 for span in spans}
-        widths |= {b - a for (a, b), n in tall.items() if n > b - a}
-    return widths
-
-
-def strokes(m, w, centre=False):
-    """What is wrong with the widths of m's strokes, drawn w px wide: an upright or level stroke not w px
-    across (with centre, a centre stroke a pixel wider, see pen()), or any stroke narrowing to a one-pixel
-    neck (a pixel with no ink beside it across or down)."""
-    widths = straight(m) | straight(m.T)
-    problems = (
-        [f"upright or level strokes {sorted(widths)} px wide, not {w}"]
-        if widths - {w, w + centre}
-        else []
+def vector(S, state):
+    """The README drawing (the 48 px design) drawn straight at S px."""
+    lang, g = STATES[state]
+    png = cairosvg.svg2png(
+        bytestring=sticker(48, lang, g, state).encode(), output_width=S, output_height=S
     )
-    if w > 1:
-        p = np.pad(m, 1)
-        neck = m & ~(p[1:-1, :-2] | p[1:-1, 2:]) & ~(p[:-2, 1:-1] | p[2:, 1:-1])
-        if neck.any():
-            problems.append(
-                f"a stroke narrows to a pixel in rows {sorted(set(np.nonzero(neck)[0].tolist()))}"
-            )
-    return problems
+    return Image.open(io.BytesIO(png)).convert("RGBA")
 
 
-def ink_of(px, lang):
-    return (
-        px[..., :3] == np.array(rgb(GREY_INK if lang == "grey" else INK)[:3]) * 255
-    ).all(axis=2) & (px[..., 3] == 255)
-
-
-def pens():
-    """The pen each size's PNGs were drawn with, as their upright and level strokes measure: {size: set of
-    widths}, 中 left out (see pen()) and checked by check()."""
-    out = {}
-    for S in SIZES:
-        out[S] = set()
-        for state, (lang, (_, text)) in STATES.items():
-            if lang == "grey" or text == "中":
-                continue
-            px = np.asarray(
-                Image.open(HERE / str(S) / f"{state}.png").convert("RGBA")
-            ).astype(int)
-            ink = ink_of(px, lang)
-            widths = straight(ink) | straight(ink.T)
-            out[S] |= widths
-    return out
+def premultiplied(im, blur):
+    a = np.asarray(im.filter(ImageFilter.GaussianBlur(blur)) if blur else im).astype(
+        float
+    )
+    return a[..., :3] * a[..., 3:] / 255
 
 
 def check(S, state, im):
     """What is wrong with a drawing:
-    - the glyph: not centred in the face to the pixel; not its own mirror image (SYMMETRIC); an upright or
-      level stroke not pen()'s width (中: stroke()'s, or a pixel wider for its parity), or a stroke narrowing to a pixel; strokes joined or counters
-      filled or closed unlike the font's (topology()); its box more than a pixel off glyph_box(); with a
-      badge, not the ready key's glyph;
-    - the key: not left-right symmetric; its face inset or base height more than a pixel off grid()'s;
-    - the blush: missing from 20 px, or nearer the glyph than a clear pixel.
-    Left out of the mirror test: the blush (both sides slant the same way, as in the concept), the glint
-    (lower left only) and the badge (lower right). Keys with a badge are measured as their ready key."""
+    - not what layers() draws now;
+    - the key: not left-right symmetric (the shine, glint, blush, badge and an asymmetric glyph left out);
+      a blended pixel where its straight edges meet, i.e. an edge off the pixel grid: the face's side (its
+      outline, then the face, across the middle row), the top (sticker, outline, face down the middle column) and the
+      bottom (base, outline, sticker up it);
+    - the glyph: not centred in the face to the pixel; 中 and A not mirror-exact;
+    - unlike the README drawing at that size: their pixels, each blurred by a pixel, further apart on
+      average than DESIGN allows."""
     lang, (kind, text) = STATES[state]
+    drawn, skip, glyph, badge_px = layers(S, state)
     px = np.asarray(im.convert("RGBA")).astype(int)
-    rgb_ = px[..., :3]
-    ink = ink_of(px, lang)
-    x0, x1, y0, y1, base = layout(S)
-    keep = np.ones((S, S), bool)
     problems = []
-    ready, _, kind_badge = state.rpartition("-")
-    if kind_badge in BADGE:  # the badge sits bottom right, over the face's corner
-        br = max(S * 0.25, 4.5)
-        keep[int(S - 2 * br - 1) :, int(S - 2 * br - 1) :] = False
-        # The glyph is the ready key's, which is checked centred.
-        r = np.asarray(
-            Image.open(HERE / str(S) / f"{ready}.png").convert("RGBA")
-        ).astype(int)
-        r_ink = (r[..., :3] == np.array(rgb(INK)[:3]) * 255).all(axis=2) & (
-            r[..., 3] == 255
-        )
-        if ((r_ink != ink) & keep).any():
-            problems.append(f"glyph not {ready}'s")
-    glyph_ink = ink & keep & keep[:, ::-1]
-    cols = np.nonzero(ink[:, x0:x1].any(axis=0))[0]
-    if len(cols) and kind_badge not in BADGE:
-        left, right = cols[0], x1 - x0 - 1 - cols[-1]
-        if left != right:
-            problems.append(f"glyph margins {left} left, {right} right")
-        rows = np.nonzero(ink.any(axis=1))[0]
-        _, _, gw, gh = glyph_box(S, (kind, text))
-        w, h = cols[-1] - cols[0] + 1, rows[-1] - rows[0] + 1
-        if abs(w - gw) > 1 or abs(h - gh) > 1:
-            problems.append(f"glyph {w} x {h} px, its box {gw} x {gh}")
-        w = pen(S, (kind, text))
-        problems += strokes(ink, w, text == "中" and (x1 - x0 - w) % 2 == 1)
-        if w - stroke(S) not in ((x1 - x0 - stroke(S)) % 2 if text == "中" else 0, 0):
-            problems.append(f"pen {w} px, the size's {stroke(S)}")
-        problems += topology(
-            ink[rows[0] : rows[-1] + 1, x0 + cols[0] : x0 + cols[-1] + 1], (kind, text)
-        )
-        row = px[(y0 + y1) // 2].copy()
-        row[ink[(y0 + y1) // 2]] = (255, 255, 255, 255)  # the glyph is on the face
-        across = runs(row)
-        kinds = "".join(k for k, _, _ in across)
-        if not kinds.lstrip("_").startswith("coboc"):
-            problems.append(
-                f"key's left side {kinds[:6]}, not sticker, outline, base, outline, face"
-            )
-        else:
-            face_x = across[kinds.index("oc", 3) + 1][1]
-            if abs(face_x - x0) > 1:
-                problems.append(f"face inset {face_x} px, its formula {x0}")
-        down = runs(px[::-1, S // 2])
-        kinds = "".join(k for k, _, _ in down).lstrip("_")
-        offset = len(down) - len(kinds)
-        if not kinds.startswith("cob"):
-            problems.append(
-                f"base under the face {kinds[:3]}, not sticker, outline, base"
-            )
-        elif abs(down[offset + 2][2] - base) > 1:
-            problems.append(f"base {down[offset + 2][2]} px high, its formula {base}")
-    if text in SYMMETRIC and (glyph_ink != glyph_ink[:, ::-1]).any():
-        problems.append("glyph not symmetric")
-    blush = (rgb_ == np.array(rgb(BLUSH)[:3]) * 255).all(axis=2)
-    if S >= 20 and lang != "grey" and not blush.any():
-        problems.append("no blush")
-    near = np.zeros_like(ink)
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            near |= np.roll(np.roll(ink, dy, 0), dx, 1)
-    if (near & blush).any():
-        problems.append("blush touches the glyph")
-    sb, sh, bw, side, t, fi, lip = grid(S)
-    gx, gy, gw, gh = GLINT(S, sb + bw, S - sh - sb - bw, side)
-    keep &= ~ink & ~blush
-    if S >= 32:
-        keep[gy : gy + gh, gx : gx + gw] = False
-    both = keep & keep[:, ::-1]
+    if (px != np.asarray(drawn)).any():
+        problems.append("not what build.py draws: run it")
+    both = ~skip & ~skip[:, ::-1]
     bad = sorted(
-        {int(y) for y in np.nonzero(((px != px[:, ::-1]).any(axis=2)) & both)[0]}
+        {int(y) for y in np.nonzero((px != px[:, ::-1]).any(axis=2) & both)[0]}
     )
     if bad:
-        problems.append(f"body not symmetric in rows {bad}")
+        problems.append(f"not symmetric in rows {bad}")
+    x0, x1, y0, y1, _ = layout(S)
+    bw = grid(S)[2]
+    row = px[
+        (y0 + y1) // 2, x0 - bw : x0 + 1
+    ]  # the face's outline, then the face, neither blended
+    if (row[:-1] != rgb255(OUTLINE)).any() or row[-1, :3].min() < 0xE0:
+        problems.append("the face's side off the grid")
+    kinds = "".join(k for k, _, _ in runs(px[: y0 + 1, S // 2]))
+    if not re.fullmatch("_*co+c", kinds):
+        problems.append(f"top {kinds}: a straight edge off the grid")
+    kinds = "".join(k for k, _, _ in runs(px[::-1, S // 2][: S - y1]))
+    if not re.fullmatch("[_b]*co+b+[lo]*", kinds) and not badge_px.any():
+        problems.append(f"bottom {kinds}: a straight edge off the grid")
+    g = glyph * ~badge_px
+    cols, rows = np.nonzero(g.any(axis=0))[0], np.nonzero(g.any(axis=1))[0]
+    if not badge_px.any() and cols[0] - x0 != x1 - 1 - cols[-1]:
+        problems.append(f"glyph margins {cols[0] - x0} left, {x1 - 1 - cols[-1]} right")
+    if (
+        text in SYMMETRIC
+        and (glyph != np.roll(glyph[:, ::-1], x0 + x1 - S, axis=1)).any()
+    ):
+        problems.append("glyph not its mirror image")
+    diff = (
+        np.abs(
+            premultiplied(im.convert("RGBA"), 1) - premultiplied(vector(S, state), 1)
+        ).mean()
+        / 255
+    )
+    limit = DESIGN[S <= SOFT]
+    if diff > limit:
+        problems.append(
+            f"{diff:.1%} from the README drawing (blurred), over {limit:.0%}"
+        )
     return problems
+
+
+# How far a drawing may be from the README drawing at its size (check()), above SOFT and up to it: whole-pixel
+# outlines and a hard shadow change small keys more.
+DESIGN = (0.09, 0.13)
 
 
 def rgb255(c):
     return tuple(round(v * 255) for v in rgb(c))
-
-
-def cheeks(S, glyph, px):
-    """The blush's pixels: from 32 px two short slanted dashes each side, as in the concept; at 20-28 px one
-    2 px cheek per lower corner, as dashes would merge into a strike-through. They keep a clear pixel from
-    the glyph (on either side, so the two sides match): where their place is taken they move down, then out
-    to the face's edge, and only then shrink. Only face pixels take blush."""
-    x0, x1, y0, y1, _ = layout(S)
-    fw, fh = x1 - x0, y1 - y0
-    taken = glyph | glyph[:, ::-1]
-    near = np.zeros_like(taken)
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            near |= np.roll(np.roll(taken, dy, 0), dx, 1)
-    face = (px[..., 3] == 255) & (px[..., :3].min(axis=2) >= 0xE0)
-    if S >= 32:
-        w = 1 if S < 48 else 2
-        n = 2 if S < 40 else 3
-        y = round(y0 + fh * 0.62)
-        side = x0 + fw * 0.085
-        xs = [round(side + dx - (n + w - 1) / 2) for dx in (-S * 0.035, S * 0.035)]
-        shapes = [(xs, n), (xs[:1], n), (xs[:1], 2)]
-    else:
-        w, y, shapes = 1, y1 - 2, [([x0, x0 + 1], 1), ([x0], 1)]
-    # Each place it may take, nearest first: out to the face's edge, in by a quarter face, down to the lip, a
-    # pixel up.
-    for dashes, n in shapes:
-        moves = sorted(
-            (
-                (dx, dy)
-                for dx in range(x0 - dashes[0], fw // 4)
-                for dy in range(-1, y1 - y)
-            ),
-            key=lambda m: (abs(m[0]) + abs(m[1]), m[1] < 0, m[0] > 0),
-        )
-        for dx, dy in moves:
-            left = [
-                (x + dx + i + a, y + dy - i + b)
-                for x in dashes
-                for i in range(n)
-                for a in range(w)
-                for b in range(w)
-            ]
-            lo, hi = min(p[0] for p in left), max(p[0] for p in left)
-            right = [
-                (x + x0 + x1 - 1 - hi - lo, yy) for x, yy in left
-            ]  # mirrored place, same slant
-            pts = left + right
-            if all(0 <= yy < S and face[yy, x] and not near[yy, x] for x, yy in pts):
-                return pts
-    return []
-
-
-def pixels(S, state):
-    """sticker()'s key at S px on its pixel grid: its edges on whole pixels (only round corners are partly
-    covered), its shadow, glint and blush in whole pixels, and the glyph by glyph_mask()."""
-    lang, (kind, text) = STATES[state]
-    sb, sh, bw, side, t, fi, lip = grid(S)
-    H, r = S - sh, S * 0.24
-    top, bot = BASE[lang]
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
-    cr = cairo.Context(surface)
-    if sh:  # a hard shadow, sh px under the sticker
-        key(cr, 0, sh, S, S, t, r + sb)
-        fill(cr, rgb(OUTLINE, 0.35))
-    key(cr, 0, 0, S, H, t, r + sb)
-    fill(cr, rgb(STICKER))
-    key(cr, sb, sb, S - sb, H - sb, t, r)
-    fill(cr, rgb(OUTLINE))
-    k0, k1, ky0, ky1 = sb + bw, S - sb - bw, sb + bw, H - sb - bw
-    key(cr, k0, ky0, k1, ky1, t, max(r - bw, 0))
-    fill(cr, gradient(ky0, ky1, top, bot))
-    fx0, fx1, fy0, fy1 = k0 + t + fi, k1 - t - fi, ky0, ky1 - side
-    rf = max(r - bw - fi, 0) * 0.9
-
-    def under_face(cr):  # the face with its outline, which covers the base
-        rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
-
-    under_face(cr)
-    fill(cr, rgb(OUTLINE))
-    rounded(cr, fx0, fy0, fx1, fy1, rf)  # the top face with a beige lip at its bottom
-    fill(cr, rgb(LIP))
-    fy1 -= lip
-    rounded(cr, fx0, fy0, fx1, fy1, rf)
-    fill(cr, gradient(fy0, fy1, "#FFFCF5", "#FFF1E2"))
-    # The body is left-right symmetric: its left half mirrored (cairo shades the corners of the two sides a
-    # little differently).
-    px = np.asarray(image(surface)).copy()
-    px[:, S - S // 2 :] = px[:, : S // 2][:, ::-1]
-    im = Image.fromarray(px)
-    if S >= 32:  # glint on the base, lower left, under the face's edge
-        glint = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
-        cr = cairo.Context(glint)
-        cr.rectangle(*GLINT(S, k0, ky1, side))
-        fill(cr, rgb("#FFFFFF", 0.45))
-        cr.set_operator(cairo.OPERATOR_DEST_OUT)
-        under_face(cr)
-        fill(cr, rgb("#FFFFFF"))
-        im.alpha_composite(image(glint))
-    gx, gy, gw, gh = glyph_box(S, (kind, text))
-    m = np.zeros((S, S), bool)
-    m[gy : gy + gh, gx : gx + gw] = glyph_mask(S, (kind, text))
-    if S >= 20 and lang != "grey":
-        for x, y in cheeks(S, m, np.asarray(im)):
-            im.putpixel((x, y), rgb255(BLUSH))
-    d = ImageDraw.Draw(im)
-    d.bitmap(
-        (0, 0),
-        Image.fromarray(m.astype(np.uint8) * 255),
-        fill=GREY_INK if lang == "grey" else INK,
-    )
-    kind_badge = state.rpartition("-")[2]
-    if kind_badge in BADGE:
-        br = max(S * 0.25, 4.5)
-        rim = max(1, round(S / 24)) if S < 48 else round(S * 0.04)
-        c = S - br - 0.2
-        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, S, S)
-        cr = cairo.Context(surface)
-        cr.arc(c, c, br, 0, 2 * pi)
-        fill(cr, rgb(STICKER))
-        cr.arc(c, c, br - rim, 0, 2 * pi)
-        fill(cr, rgb(BADGE[kind_badge]))
-        im.alpha_composite(image(surface))
-        d = ImageDraw.Draw(im)
-        inner = br - rim
-        if kind_badge == "wait":  # three square dots
-            dot = max(1, round(inner * 0.34))
-            pitch = max(
-                dot + 1, round(inner * 0.5)
-            )  # whole pixels, a gap at least a pixel wide
-            x, y = round(c - dot / 2), round(c - dot / 2)
-            for dx in (-pitch, 0, pitch):
-                d.rectangle((x + dx, y, x + dx + dot - 1, y + dot - 1), fill="#FFFFFF")
-        else:  # "!": a bar, a gap, a dot
-            w, h = max(1, round(inner * 0.36)), inner * 1.4
-            x, y0 = round(c - w / 2), round(c - h / 2)
-            bar = round(h * 0.62)
-            dot_y = max(round(c + h / 2 - w), y0 + bar + 1)
-            d.rectangle((x, y0, x + w - 1, y0 + bar - 1), fill="#FFFFFF")
-            d.rectangle((x, dot_y, x + w - 1, dot_y + w - 1), fill="#FFFFFF")
-    return im
 
 
 # --check: only checks the PNGs there are (exit 1 on a problem); otherwise draws them all, then checks them.
@@ -1033,24 +783,14 @@ if __name__ == "__main__":
             for S in SIZES:
                 (HERE / str(S)).mkdir(exist_ok=True)
                 pixels(S, state).save(HERE / str(S) / f"{state}.png", optimize=True)
-    widths = pens()
     bad = [
-        f"{S} px: glyphs drawn with pens {sorted(w)}"
-        for S, w in widths.items()
-        if len(w) != 1
-    ]
-    bad += [
-        f"{S} px: pen {max(widths[S])}, {T} px: {min(widths[T])}"
-        for S, T in zip(SIZES, SIZES[1:])
-        if widths[S] and widths[T] and max(widths[S]) > min(widths[T])
-    ]
-    bad += [
         f"{S}/{state}.png: {p}"
         for state in STATES
         for S in SIZES
         for p in check(S, state, Image.open(HERE / str(S) / f"{state}.png"))
     ]
     print(
-        "\n".join(bad) or f"{len(STATES) * len(SIZES)} drawings centred and symmetric"
+        "\n".join(bad)
+        or f"{len(STATES) * len(SIZES)} drawings grid-fitted, symmetric and like the README drawing"
     )
     sys.exit(1 if bad else 0)
