@@ -744,6 +744,8 @@ bool TextService::keyEvent(ITfContext *context, WPARAM wParam, LPARAM lParam, bo
   q.lang = lang_;
   q.learning = f != Field::Private;
   if (!key(wParam, lParam, release, q.key)) return true;
+  // Typing ends the popup after a switch at once (#449); a notice in this key's reply shows after it.
+  if (typesText(q.key) && window_ && window_->noticing()) window_->hide();
   if (q.key.sym == 0xff08 && (q.key.mods & mod::Ctrl) && !release && lang_ == Lang::Japanese)
     q.before = textBefore(context);
   // Behind a settling edit, every key waits its turn, whether or not the server answers again: its reply would

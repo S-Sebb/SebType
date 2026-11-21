@@ -498,6 +498,7 @@ def popup(language):  # the popup a Fcitx5 started with LANGUAGE=language shows 
         sub = bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
         call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
         call(ic, IC, 'FocusIn')
+        call(ic, IC, 'SetCursorRect', '(iiii)', 120, 640, 1, 20)  # a text field's caret: the popup shows by it (#446)
         # Fcitx5 shows its own popup (SebType (English)) once after it starts, to a focused input context: its
         # group-changed timer fires 30 ms later plus up to sd-event's default 250 ms accuracy. Switching before
         # that let it land just after SebType's 日本語 popup and replace it (#221), so the switch waits for it,
@@ -652,10 +653,10 @@ def up():
 wait(up, 10)
 ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-popups, candidates = [], [[]]
+popups, candidates, shown = [], [[]], ['']
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'UpdateClientSideUI':
-        text = ''.join(s for s, _ in params.unpack()[2])
+        text = shown[0] = ''.join(s for s, _ in params.unpack()[2])
         if text: popups.append(text)
         candidates[0] = params.unpack()[4]
 committed = []
@@ -665,10 +666,12 @@ bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_commit)
 call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
 call(ic, IC, 'FocusIn')
+CARET = (120, 640, 1, 20)
+call(ic, IC, 'SetCursorRect', '(iiii)', *CARET)  # a text field's caret: the popup shows by it (#446)
 
-SHIFT, CTRL = 1, 4
-KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'space': (0x20, 65), 'Escape': (0xff1b, 9),
-        'F': (0x46, 41), **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
+SHIFT, CTRL, SUPER = 1, 4, 0x40
+KEYS = {'Shift_L': (0xffe1, 50), 'Control_L': (0xffe3, 37), 'Super_L': (0xffeb, 133), 'space': (0x20, 65),
+        'Escape': (0xff1b, 9), 'F': (0x46, 41), '1': (0x31, 10), **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
                             for code, c in enumerate(row, first)}}
 def key(name, state=0, release=False):  # True when Fcitx5 took the key, False when it goes to the app
     taken = call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], state, release, 0)[0]
@@ -714,6 +717,22 @@ check('long popup reads 中文', switch(), '中文')
 with open(sys.argv[3], 'a') as f: f.write('\n[Behavior]\nCompactInputMethodInformation=True\n')
 call(*CONTROLLER, 'ReloadConfig')
 check('compact popup reads 中文', switch(), '中文')
+# #449: the popup stays its second while nothing is typed, the Win+Space keys that switched included, and the
+# first typed key ends it, also one that goes to the app (1 with no pinyin) or commits.
+def win_space():
+    key('Super_L'); key('space', SUPER); key('space', SUPER, True); key('Super_L', SUPER, True)
+def after(typing):  # what the popup shows after a switch to 中文 by Win+Space, then typing, then 0.3 s
+    call(*SEBTYPE, 'SetLanguage', '(s)', 'en'); wait(lambda: False, 1.2)
+    win_space(); typing(); wait(lambda: False, 0.3)
+    return shown[0]
+check('the popup stays after the Win+Space keys', after(lambda: None), '中文')
+check('it hides by itself after its second', wait(lambda: not shown[0], 1.5), True)
+check('a key that goes to the app ends it at once', after(lambda: tap('1')), '')
+check('a word committed ends it at once', after(lambda: first('ni')), '')
+# #446: Win+Space where the app gives no caret (no text field) shows no popup at the screen's corner.
+call(ic, IC, 'SetCursorRect', '(iiii)', 0, 0, 0, 0)
+check('no popup without a caret', after(lambda: None), '')
+call(ic, IC, 'SetCursorRect', '(iiii)', *CARET)
 check('simplified at first', houlai(), '后来')
 check('Ctrl+Shift+F is taken', ctrl('F', shift=True), True)
 check('traditional after Ctrl+Shift+F', houlai(), '後來')

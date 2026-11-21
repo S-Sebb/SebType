@@ -23,6 +23,13 @@ struct Key {
 // A touch keyboard sends characters: a tap of "a" is keysym a. Latin-1 keysyms are their code points, any
 // other character is X11's Unicode keysym.
 constexpr uint32_t charSym(char32_t c) { return c < 0x100 ? c : 0x1000000 + c; }
+// Shift, Ctrl, Caps Lock, Meta, Alt, Super, Hyper (0xffe1 to 0xffee) and AltGr (ISO_Level3_Shift).
+constexpr bool isModifier(uint32_t sym) { return (sym >= 0xffe1 && sym <= 0xffee) || sym == 0xfe03; }
+// A key that types: a press other than a modifier's or a Ctrl, Alt or Win shortcut. The first one ends the
+// popup after a switch at once (#449).
+constexpr bool typesText(const Key &k) {
+  return !k.release && !isModifier(k.sym) && !(k.mods & (mod::Ctrl | mod::Alt | mod::Super));
+}
 
 enum class Lang { English, Chinese, Japanese };
 

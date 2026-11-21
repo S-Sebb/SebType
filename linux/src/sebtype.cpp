@@ -127,6 +127,13 @@ uint32_t coreMods(fcitx::KeyStates s) {
   return m;
 }
 
+// Where the popup can go. Fcitx5 places it at the cursor the app gave, and at the screen's top-left corner
+// when there is none (#446: Win+Space in a window with no text field); the tray's icon says the switch then.
+// On Wayland's input method protocols the compositor places it and the app's cursor is never Fcitx5's.
+bool hasCaret(fcitx::InputContext *ic) {
+  return ic->frontendName().starts_with("wayland") || ic->cursorRect() != fcitx::Rect();
+}
+
 }  // namespace
 
 // Nothing typed in a password field or one the app calls sensitive is learned (#270), and the field keeps
@@ -194,9 +201,9 @@ void SebTypeEngine::keyEvent(const fcitx::InputMethodEntry &, fcitx::KeyEvent &e
                         st.anchor() != st.cursor());
     }
   }
-  if (core_->key({static_cast<uint32_t>(raw.sym()), coreMods(raw.states()), event.isRelease()})) {
-    event.filterAndAccept();
-  }
+  const Key key{static_cast<uint32_t>(raw.sym()), coreMods(raw.states()), event.isRelease()};
+  if (typesText(key)) shownUntil_ = 0;  // typing ends the popup at once (#449)
+  if (core_->key(key)) event.filterAndAccept();
   update(event.inputContext());
 }
 
@@ -327,7 +334,7 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     const uint64_t now = fcitx::now(CLOCK_MONOTONIC);
     const auto &config = instance_->globalConfig();
     auto notice = core_->takeNotice(config.compactInputMethodInformation());
-    if (!config.showInputMethodInformation()) notice.clear();
+    if (!config.showInputMethodInformation() || !hasCaret(ic)) notice.clear();
     if (notice.empty() && aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_) {
       panel.setAuxUp(fcitx::Text(shown_));
       hidePopupLater(ic);
