@@ -70,6 +70,9 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   fcitx::InputMethodEntry entry() const;
   // Tells the core whether what is typed in ic may be learned.
   void followField(fcitx::InputContext *ic);
+  // Whether what is typed shows in Fcitx5's panel, over the candidates, rather than in the app's text: 中文's
+  // pinyin row (#447), or an app that shows no preedit.
+  bool preeditInPanel(fcitx::InputContext *ic) const;
   // The tray and Plasma's input method panel read the icon and menu again when it changed, and while 中文 is
   // preparing they look again every half second, so the key turns back to 中 when Rime is done (#275).
   void updateStatus(fcitx::InputContext *ic);

@@ -253,6 +253,12 @@ msgstr "竖排"
 msgid "Font size"
 msgstr "字号"
 
+msgid "Pinyin above the candidates"
+msgstr "拼音显示在候选词上方"
+
+msgid "中文 · Off: in the text you type into"
+msgstr "中文 · 关闭时显示在正在输入的文字中"
+
 msgid "Shortcuts"
 msgstr "快捷键"
 

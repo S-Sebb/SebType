@@ -14,6 +14,10 @@
 
 namespace sebtype::win {
 
+// sebtype.conf [Candidates] PinyinRow (#447): 中文's pinyin in the window's top row (the default, as Weasel
+// drew it), else in the app's text as 日本語's kana are.
+bool pinyinRowSetting();
+
 class CandidateWindow {
  public:
   explicit CandidateWindow(TextService &service) : service_(service) {}

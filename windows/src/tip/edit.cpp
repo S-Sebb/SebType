@@ -1,6 +1,7 @@
 // SebType on Windows: what the server's reply does to the app's text, in an edit session: the committed
 // text, the composition and the candidate window at the caret. Chinese keeps its pinyin in the window and an
-// empty composition in the text (Weasel's inline_preedit: false); Japanese types inline, as Mozc did.
+// empty composition in the text (Weasel's inline_preedit: false) unless the Configurator's pinyin row is off
+// (#447); Japanese types inline, as Mozc did.
 // MIT, SebType.
 #include "candidate_window.h"
 #include "edit_session.h"
@@ -205,6 +206,7 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wst
     if (window_ && !window_->noticing()) window_->hide();
   } else {
     if (!composition_) {
+      pinyinRow_ = pinyinRowSetting();
       ITfInsertAtSelection *insert = nullptr;
       ITfContextComposition *compose = nullptr;
       ITfRange *range = nullptr;
@@ -216,9 +218,10 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wst
       if (range) range->Release();
       if (insert) insert->Release();
     }
+    const bool inlinePreedit = japanese || !pinyinRow_;
     ITfRange *range = nullptr;
     if (composition_ && SUCCEEDED(composition_->GetRange(&range))) {
-      if (japanese) {
+      if (inlinePreedit) {
         std::string text;
         for (const Segment &seg : reply_.preedit.segments) text += seg.text;
         const std::wstring text16 = utf16(text);
@@ -266,7 +269,7 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wst
       }
       range->Release();
     }
-    if (window_) window_->show(reply_, !japanese, caret_);
+    if (window_) window_->show(reply_, !inlinePreedit, caret_);
   }
 
   // 中文's English mode switch says so for a moment, as Weasel's tip did. Not where the app gives no caret: it

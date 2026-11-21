@@ -212,18 +212,21 @@ void SebTypeEngine::activate(const fcitx::InputMethodEntry &, fcitx::InputContex
   update(event.inputContext());
 }
 
-// Focus moving away, or the app's reset (a click elsewhere in the text), types in what is being typed (#277):
-// the app, or Fcitx5 for it, types in the preedit it shows (update() marks what it leaves out), so the
-// core only drops it. A preedit in Fcitx5's own panel SebType types in itself.
+bool SebTypeEngine::preeditInPanel(fcitx::InputContext *ic) const {
+  return (core_->language() == Lang::Chinese && core_->settings().pinyinRow) ||
+         !ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
+}
+
+// Focus moving away, the app's reset (a click elsewhere in the text) or another input method types in what is
+// being typed (#277): the app, or Fcitx5 for it, types in the preedit it shows (update() marks what it leaves
+// out), so the core only drops it. A preedit in Fcitx5's own panel SebType types in itself.
 void SebTypeEngine::reset(const fcitx::InputMethodEntry &, fcitx::InputContextEvent &event) {
-  core_->clear();
+  if (preeditInPanel(event.inputContext())) core_->focusOut();
+  else core_->clear();
   update(event.inputContext());
 }
 
 void SebTypeEngine::deactivate(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) {
-  if (event.type() == fcitx::EventType::InputContextFocusOut &&
-      !event.inputContext()->capabilityFlags().test(fcitx::CapabilityFlag::Preedit))
-    core_->focusOut();
   reset(entry, event);
 }
 
@@ -322,8 +325,8 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
       }
     }
     text.setCursor(p.cursor);
-    if (ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(text);
-    else panel.setPreedit(text);
+    if (preeditInPanel(ic)) panel.setPreedit(text);
+    else panel.setClientPreedit(text);
     const auto aux = core_->aux();
     const Page page = core_->page();
     if (!aux.empty()) panel.setAuxUp(fcitx::Text(aux));

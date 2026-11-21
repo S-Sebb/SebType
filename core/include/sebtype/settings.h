@@ -28,6 +28,9 @@ struct Settings {
   std::optional<bool> traditional, fullWidthPunctuation, emoji;
   // 日本語's: a space is always half-width (unset: Mozc's, full-width in kana).
   std::optional<bool> halfWidthSpace;
+  // 中文's pinyin in a row at the top of the PCs' candidate window (#447), as Weasel drew it; off, it is in the
+  // app's text, as 日本語's kana are.
+  bool pinyinRow = true;
   // Learning from what is typed, in every language.
   bool learning = true;
   // Leaving a language types in what is typed, as focus moving away does (the PCs' Win+Space, #301), or

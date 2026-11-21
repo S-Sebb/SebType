@@ -20,30 +20,21 @@ pub fn ui_font(lang: &str) -> &'static str {
     }
 }
 const PICNIC: &str = "sebtype-picnic";
-/// SebType's pig (logo.svg) at the start of the Picnic window (#94), rising above the box onto a tab
-/// at its top left (panel.svg, #162). Fcitx5 scales theme images with the DPI but not with the font, so
-/// the pig, the tab and the margins are sized here, in px at 96 dpi.
+/// SebType's pig (logo.svg) at the start of the Picnic window (#94), inside its top left corner as Windows
+/// draws it, so the window is one flat rectangle (#461). Fcitx5 scales theme images with the DPI but not
+/// with the font, so the pig and the margins are sized here, in px at 96 dpi.
 fn picnic_files(font_size: i32) -> [(&'static str, String); 6] {
-    let height = (16 + font_size * 6 / 5) * 12 / 7; // the pig: 48 at 10 pt, 75 at 24 pt
-    let width = (height * 158 + 80) / 160; // the logo image is 158x160
-                                           // The box Fcitx5 draws round one line of Noto Sans CJK (1.448 em): ContentMargin 7 + 9 and
-                                           // TextMargin 4 + 4, less the 2 px shadow. 41 at 10 pt.
+    // The box Fcitx5 draws round one line of Noto Sans CJK (1.448 em): ContentMargin 10 + 12 and
+    // TextMargin 4 + 4, less the 2 px shadow. 47 at 10 pt. The pig fills a one-line box (the switch
+    // popup) within the 2 px border and 3 px of cream: 37 at 10 pt, 64 at 24 pt.
     let line = (f64::from(font_size) * 4.0 / 3.0 * 1.448).round() as i32;
-    let box_h = 22 + line;
-    // The pig sits 6 px in and 5 px down from the tab's corner (border 2, 3 of cream), with its feet
-    // 2 px above the bottom border: the box's top is that far below the tab's.
-    let tab_h = height + 11 - box_h;
-    let tab_w = 6 + width + 11; // 3 of cream, the border and 6 more right of the pig
-    let (left, top) = (tab_w + 6, tab_h + 12); // the tab and its corners in panel.svg's fixed corner
-    let (w, h) = (left + 2 + 12, top + 2 + 14);
+    let height = 28 + line - 2 * 5;
+    let width = (height * 158 + 80) / 160; // the logo image is 158x160
     [
         (
             "theme.conf",
             include_str!("../fcitx5-theme/theme.conf")
-                .replace("@CONTENT_LEFT@", &(tab_w + 2).to_string())
-                .replace("@CONTENT_TOP@", &(tab_h + 7).to_string())
-                .replace("@PANEL_LEFT@", &left.to_string())
-                .replace("@PANEL_TOP@", &top.to_string()),
+                .replace("@CONTENT_LEFT@", &(5 + width + 5).to_string()),
         ),
         (
             "logo.svg",
@@ -53,10 +44,7 @@ fn picnic_files(font_size: i32) -> [(&'static str, String); 6] {
         ),
         (
             "panel.svg",
-            include_str!("../fcitx5-theme/panel.svg")
-                .replace("@WIDTH@", &w.to_string())
-                .replace("@HEIGHT@", &h.to_string())
-                .replace("@PATH@", &panel_outline(tab_w, tab_h, w, h)),
+            include_str!("../fcitx5-theme/panel.svg").into(),
         ),
         (
             "highlight.svg",
@@ -67,24 +55,6 @@ fn picnic_files(font_size: i32) -> [(&'static str, String); 6] {
     ]
 }
 
-/// The window's outline in a w x h panel.svg: the box from tab_h down, with a tab_w wide tab on its top
-/// left, both with the box's 12 px corners, and a 4 px curve where the tab meets the box's top. On the
-/// 2 px border's centre line, so the border fills the image's edge.
-fn panel_outline(tab_w: i32, tab_h: i32, w: i32, h: i32) -> String {
-    let (r, f) = (11, 4);
-    let (xt, yb, xr, yd) = (tab_w - 1, tab_h + 1, w - 1, h - 3);
-    format!(
-        "M1 {a}A{r} {r} 0 0 1 {a} 1H{b}A{r} {r} 0 0 1 {xt} {a}V{c}A{f} {f} 0 0 0 {d} {yb}H{e}\
-         A{r} {r} 0 0 1 {xr} {g}V{i}A{r} {r} 0 0 1 {e} {yd}H{a}A{r} {r} 0 0 1 1 {i}Z",
-        a = 1 + r,
-        b = xt - r,
-        c = yb - f,
-        d = xt + f,
-        e = xr - r,
-        g = yb + r,
-        i = yd - r,
-    )
-}
 /// SebType's languages, as its settings name them.
 const LANGS: [&str; 3] = ["en", "zh", "ja"];
 
@@ -260,10 +230,23 @@ pub fn candidates() -> Candidates {
             .and_then(|n| n.parse().ok())
             .unwrap_or(10),
         picnic: ini_get(&ui, "Theme").as_deref() == Some(PICNIC),
+        pinyin_row: conf::value(
+            &fs::read_to_string(settings()).unwrap_or_default(),
+            "Candidates",
+            "PinyinRow",
+        ) != Some("0"),
     }
 }
 
+/// The pinyin row is sebtype.conf's (the input method's); the rest classicui's.
 pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
+    set_settings(|old| {
+        conf::set_section(
+            old,
+            "Candidates",
+            if c.pinyin_row { "" } else { "PinyinRow=0\n" },
+        )
+    })?;
     let path = classicui();
     let mut ui = fs::read_to_string(&path).unwrap_or_default();
     let tf = |b: bool| if b { "True" } else { "False" };
@@ -1071,7 +1054,7 @@ mod tests {
 
     #[test]
     fn picnic_logo_follows_the_font_size() {
-        for (size, w, h, margin) in [(9, 43, 44, 62), (10, 47, 48, 66), (24, 74, 75, 93)] {
+        for (size, w, h, margin) in [(9, 35, 35, 45), (10, 37, 37, 47), (24, 63, 64, 73)] {
             let files = picnic_files(size);
             let text = |name: &str| &files.iter().find(|(n, _)| *n == name).unwrap().1;
             assert!(text("logo.svg").starts_with(&format!(
@@ -1085,27 +1068,6 @@ mod tests {
             assert!(
                 files.iter().all(|(_, t)| !t.contains('@')),
                 "a placeholder left at {size} pt"
-            );
-        }
-    }
-
-    #[test]
-    fn picnic_tab_has_room_for_its_corners_at_every_size() {
-        for size in 9..=24 {
-            let files = picnic_files(size);
-            let conf = &files[0].1;
-            let top: i32 = conf
-                .split("[InputPanel/ContentMargin]")
-                .nth(1)
-                .and_then(|m| m.lines().find_map(|l| l.strip_prefix("Top=")))
-                .unwrap()
-                .parse()
-                .unwrap();
-            // The tab rises tab_h = Top - 7 px: its 12 px corner and the 4 px curve into the box need 15.
-            assert!(
-                (15..=24).contains(&(top - 7)),
-                "tab {} px at {size} pt",
-                top - 7
             );
         }
     }
@@ -1213,15 +1175,29 @@ mod tests {
         assert!(learning());
 
         // Picnic with SebType's pig (#94); test.sh then draws this window in a nested KWin.
-        let picnic = Candidates {
+        // 中文's pinyin row off and on again (#447): sebtype.conf's, which the input method reads.
+        let mut picnic = Candidates {
             vertical: false,
             font_size: 10,
             picnic: true,
+            pinyin_row: false,
         };
         assert!(set_candidates(&picnic).unwrap());
+        assert!(!candidates().pinyin_row);
+        assert_eq!(
+            conf::value(
+                &fs::read_to_string(settings()).unwrap(),
+                "Candidates",
+                "PinyinRow"
+            ),
+            Some("0")
+        );
+        picnic.pinyin_row = true;
+        set_candidates(&picnic).unwrap();
+        assert!(candidates().pinyin_row);
         assert!(fs::read_to_string(theme_dir().join("logo.svg"))
             .unwrap()
-            .contains(" width=\"47\" height=\"48\" "));
+            .contains(" width=\"37\" height=\"37\" "));
         assert!(candidates().picnic);
     }
 

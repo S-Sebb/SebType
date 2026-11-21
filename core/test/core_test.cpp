@@ -445,12 +445,14 @@ TEST(SettingsTest, KeepsOnlyTheOptionsThatAreSet) {
   EXPECT_EQ(Settings{}.serialize(), "[Languages]\nOrder=en,zh,ja\n");
   const std::string conf =
       "[Languages]\nOrder=en,zh\n[Chinese]\nTraditional=true\nEmoji=false\n[Japanese]\nHalfWidthSpace=true\n"
-      "[Learning]\nOn=false\n";
+      "[Candidates]\nPinyinRow=0\n[Learning]\nOn=false\n";
   const Settings s = Settings::parse(conf);
   EXPECT_EQ(s.traditional, true);
   EXPECT_FALSE(s.fullWidthPunctuation.has_value());
   EXPECT_EQ(s.emoji, false);
   EXPECT_EQ(s.halfWidthSpace, true);
+  EXPECT_FALSE(s.pinyinRow);
+  EXPECT_TRUE(Settings{}.pinyinRow);
   EXPECT_FALSE(s.learning);
   EXPECT_EQ(s.serialize(), conf);
 }

@@ -160,6 +160,7 @@ pub fn candidates() -> Candidates {
         vertical: get("Vertical") != Some("0"),
         font_size: get("FontSize").and_then(|v| v.parse().ok()).unwrap_or(14),
         picnic: get("Picnic") == Some("1"),
+        pinyin_row: get("PinyinRow") != Some("0"),
     }
 }
 
@@ -172,8 +173,8 @@ fn edit_conf(change: impl FnOnce(&str) -> String) -> io::Result<bool> {
 /// The text service reads the window's look when it next shows it: nothing to restart.
 pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
     let lines = format!(
-        "Vertical={}\nFontSize={}\nPicnic={}\n",
-        c.vertical as u8, c.font_size, c.picnic as u8
+        "Vertical={}\nFontSize={}\nPicnic={}\nPinyinRow={}\n",
+        c.vertical as u8, c.font_size, c.picnic as u8, c.pinyin_row as u8
     );
     edit_conf(|old| conf::set_section(old, "Candidates", &lines))
 }

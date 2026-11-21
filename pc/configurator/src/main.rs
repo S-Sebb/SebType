@@ -29,12 +29,24 @@ use std::{rc::Rc, sync::mpsc, time::Duration};
 slint::include_modules!();
 
 /// The candidate window's look, as the platform draws it (page size is Rime's, in rime::Chinese).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Candidates {
     pub vertical: bool,
     pub font_size: i32,
     pub picnic: bool,
+    /// 中文's pinyin in a row at the window's top (#447); off, it is in the app's text.
+    pub pinyin_row: bool,
+}
+impl Default for Candidates {
+    fn default() -> Self {
+        Candidates {
+            vertical: false,
+            font_size: 0,
+            picnic: false,
+            pinyin_row: true,
+        }
+    }
 }
 
 /// What Export settings writes and Import settings reads.
@@ -223,6 +235,7 @@ fn candidates(s: &State) -> Candidates {
         vertical: s.get_vertical(),
         font_size: s.get_font_size(),
         picnic: s.get_picnic(),
+        pinyin_row: s.get_pinyin_row(),
     }
 }
 fn langs(ui: &Ui) -> Vec<(String, bool)> {
@@ -327,6 +340,7 @@ fn load(app: &AppWindow, ui: &Ui) {
     s.set_vertical(k.vertical);
     s.set_font_size(k.font_size);
     s.set_picnic(k.picnic);
+    s.set_pinyin_row(k.pinyin_row);
 }
 
 /// Shows My words as the files hold them now.
@@ -1365,6 +1379,19 @@ mod tests {
         let ja = r#"{"sebtype_configurator":1,"japanese":{"learn":false}}"#;
         assert_eq!(parse(ja), Some(false));
         assert_eq!(parse(r#"{"sebtype_configurator":1}"#), None);
+    }
+
+    /// 中文's pinyin row (#447) is on unless a backup turned it off, also in one from before it.
+    #[test]
+    fn a_backup_keeps_the_pinyin_row() {
+        let row = |text: &str| super::parse_backup(text).unwrap().candidates.pinyin_row;
+        assert!(row(
+            r#"{"sebtype_configurator":1,"candidates":{"picnic":true}}"#
+        ));
+        assert!(row(r#"{"sebtype_configurator":1}"#));
+        assert!(!row(
+            r#"{"sebtype_configurator":1,"candidates":{"pinyin_row":false}}"#
+        ));
     }
 
     /// What the window shows the same in every language: names, keys, licences and the sample candidates.

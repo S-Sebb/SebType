@@ -114,8 +114,9 @@ SebType's settings app (`pc/configurator`, Rust with Slint), the PC counterpart 
 with the same groups and wording: Languages (which languages are on and their order in the tray menu; Super+Space toggles the first one and the
 last other one; Chinese's
 简/繁 start, punctuation, emoji, fuzzy pinyin and own words; Japanese's half-width space and own words),
-Keyboard (candidates per page, row or column, text size; the shortcuts), Theme (the candidate window in
-SebType's Picnic look, with its pig at the start, rising above the window on a tab, or the system's), Privacy (learning, and forgetting what Rime or Mozc learned), Sync & backup
+Keyboard (candidates per page, row or column, text size, 中文's pinyin in a row over the candidates or in
+the text, #447; the shortcuts), Theme (the candidate window in SebType's Picnic look, one flat rectangle with
+its pig at the start as on Windows, #461, or the system's), Privacy (learning, and forgetting what Rime or Mozc learned), Sync & backup
 (sync with your own server, [sync-server/README.md](../../sync-server/README.md); export and import of the
 settings and own words) and About. It shows them in English, 中文
 or 日本語, following the system language (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`; Windows' display
