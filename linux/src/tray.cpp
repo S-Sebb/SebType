@@ -3,7 +3,7 @@
 // <wengxt@gmail.com>): see tray.h.
 #include "tray.h"
 
-#include <cairo.h>
+#include <png.h>
 #include <fcitx-utils/dbus/message.h>
 #include <fcitx-utils/i18n.h>
 #include <fcitx-utils/standardpaths.h>
@@ -66,26 +66,17 @@ StatusNotifierItem::Pixmaps StatusNotifierItem::iconPixmap() {
   std::error_code ec;
   const auto tray = fcitx::StandardPaths::global().locate(fcitx::StandardPathsType::Data, "sebtype/tray");
   for (const auto &dir : std::filesystem::directory_iterator(tray, ec)) {
-    cairo_surface_t *png = cairo_image_surface_create_from_png((dir.path() / (state + ".png")).c_str());
-    if (cairo_surface_status(png) == CAIRO_STATUS_SUCCESS) {
-      const int w = cairo_image_surface_get_width(png), h = cairo_image_surface_get_height(png);
-      const int stride = cairo_image_surface_get_stride(png);
-      const unsigned char *data = cairo_image_surface_get_data(png);
-      // Cairo's pixels are premultiplied native-endian words; the item's are straight ARGB, big-endian.
-      std::vector<uint8_t> argb;
-      argb.reserve(w * h * 4);
-      for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-          const uint32_t p = reinterpret_cast<const uint32_t *>(data + y * stride)[x];
-          const uint32_t a = p >> 24;
-          auto straight = [a](uint32_t c) { return static_cast<uint8_t>(a ? (c * 255 + a / 2) / a : 0); };
-          argb.insert(argb.end(), {static_cast<uint8_t>(a), straight(p >> 16 & 0xff), straight(p >> 8 & 0xff),
-                                   straight(p & 0xff)});
-        }
-      }
-      out.emplace_back(w, h, std::move(argb));
+    // libpng gives straight ARGB bytes, the item's format; cairo would premultiply, and dividing back changes
+    // the PNG's antialiased edges.
+    png_image png{};
+    png.version = PNG_IMAGE_VERSION;
+    if (png_image_begin_read_from_file(&png, (dir.path() / (state + ".png")).c_str())) {
+      png.format = PNG_FORMAT_ARGB;
+      std::vector<uint8_t> argb(PNG_IMAGE_SIZE(png));
+      if (png_image_finish_read(&png, nullptr, argb.data(), 0, nullptr))
+        out.emplace_back(png.width, png.height, std::move(argb));
     }
-    cairo_surface_destroy(png);
+    png_image_free(&png);
   }
   return out;
 }

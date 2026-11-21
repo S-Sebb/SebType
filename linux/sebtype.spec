@@ -29,7 +29,7 @@ BuildRequires:  ninja-build
 BuildRequires:  pkgconf-pkg-config
 BuildRequires:  fcitx5-devel
 # The tray's pixmaps (PNG)
-BuildRequires:  pkgconfig(cairo)
+BuildRequires:  pkgconfig(libpng)
 BuildRequires:  librime-devel
 BuildRequires:  protobuf-devel
 BuildRequires:  protobuf-compiler

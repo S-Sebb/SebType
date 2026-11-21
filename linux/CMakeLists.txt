@@ -14,7 +14,7 @@ include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cma
 include(GNUInstallDirs)
 pkg_get_variable(RIME_DATA_DIR rime pkgdatadir)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(Cairo REQUIRED IMPORTED_TARGET cairo)
+pkg_check_modules(PNG REQUIRED IMPORTED_TARGET libpng)
 
 add_library(sebtype MODULE src/sebtype.cpp src/tray.cpp)
 # Mozc's library (SEBTYPE_MOZC_LIB, from Bazel) goes to %{_libdir}/sebtype, beside Fcitx5's add-on folder. Set
@@ -22,7 +22,7 @@ add_library(sebtype MODULE src/sebtype.cpp src/tray.cpp)
 set_target_properties(sebtype PROPERTIES PREFIX "" INSTALL_RPATH "$ORIGIN/../sebtype" INSTALL_RPATH_USE_LINK_PATH OFF)
 target_compile_definitions(sebtype PRIVATE RIME_DATA_DIR="${RIME_DATA_DIR}")
 target_link_libraries(sebtype sebtype-core Fcitx5::Core Fcitx5::Module::DBus Fcitx5::Module::NotificationItem
-  PkgConfig::Cairo)
+  PkgConfig::PNG)
 
 install(TARGETS sebtype DESTINATION "${CMAKE_INSTALL_LIBDIR}/fcitx5")
 install(PROGRAMS ${SEBTYPE_MOZC_LIB} DESTINATION "${CMAKE_INSTALL_LIBDIR}/sebtype")
