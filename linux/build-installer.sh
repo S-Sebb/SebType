@@ -33,21 +33,41 @@ for f in "${all[@]}"; do
   [[ -f $dir/$f ]] || { echo "build-installer: missing $dir/$f" >&2; exit 1; }
 done
 
-manifest=$(cd "$dir" && sha256sum -- "${all[@]}")
-
 mkdir -p "$(dirname "$out")"
 tmp=$(mktemp "${out}.XXXXXX")
-trap 'rm -f "$tmp"' EXIT
+stage=$(mktemp -d)
+trap 'rm -rf "$tmp" "$stage"' EXIT
+
+# Extract sebtype-configurator at build time so the graphical setup wizard needs only tar at runtime.
+if [[ -f $dir/sebtype-configurator ]]; then
+  cp -- "$dir/sebtype-configurator" "$stage/sebtype-configurator"
+elif command -v rpm2cpio >/dev/null 2>&1 && command -v cpio >/dev/null 2>&1; then
+  rpm2cpio "$dir/$SEBTYPE_RPM" | cpio -i --to-stdout --quiet ./usr/libexec/sebtype/sebtype-configurator > "$stage/sebtype-configurator"
+elif command -v bsdtar >/dev/null 2>&1; then
+  bsdtar -xOf "$dir/$SEBTYPE_RPM" ./usr/libexec/sebtype/sebtype-configurator > "$stage/sebtype-configurator"
+elif command -v podman >/dev/null 2>&1; then
+  podman run --rm -v "$(cd "$dir" && pwd):/in:ro,z" "$BUILD_IMAGE" \
+    sh -c 'rpm2cpio "/in/$1" | cpio -i --to-stdout --quiet ./usr/libexec/sebtype/sebtype-configurator' sh "$SEBTYPE_RPM" > "$stage/sebtype-configurator"
+else
+  echo "build-installer: need rpm2cpio+cpio, bsdtar, or podman to extract sebtype-configurator from $SEBTYPE_RPM" >&2
+  exit 1
+fi
+[[ -s $stage/sebtype-configurator ]] || { echo "build-installer: failed to extract sebtype-configurator from $SEBTYPE_RPM" >&2; exit 1; }
+chmod 755 "$stage/sebtype-configurator"
+
+gui_sha=$(sha256sum "$stage/sebtype-configurator" | awk '{print $1}')
+manifest=$(printf '%s\n%s  sebtype-configurator\n' "$(cd "$dir" && sha256sum -- "${all[@]}")" "$gui_sha")
 
 cat > "$tmp" <<EOF
 #!/bin/sh
 # SebType $SEBTYPE_VERSION Linux installer (Fedora / Nobara, x86_64).
-# Installs SebType's RPMs (required packages plus any already-installed optional librime packages)
-# and runs sebtype-setup for the invoking user.
+# Launches the Picnic-themed GUI setup wizard when running in a graphical session (falling back to
+# terminal mode when headless or with --no-gui), installs SebType's RPMs, and runs sebtype-setup.
 set -eu
 
 SEBTYPE_VERSION='$SEBTYPE_VERSION'
 SEBTYPE_RPM='$SEBTYPE_RPM'
+SEBTYPE_GUI_SHA='$gui_sha'
 LIBRIME_RPM='librime-$ours.x86_64.rpm'
 LIBRIME_LUA_RPM='librime-lua-$ours.x86_64.rpm'
 LIBRIME_OCTAGRAM_RPM='librime-octagram-$ours.x86_64.rpm'
@@ -61,18 +81,22 @@ SebType $SEBTYPE_VERSION Linux installer (Fedora / Nobara, x86_64)
 
 Usage:
   sh SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh
+  sh SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh --no-gui
   sh SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh --install-rpms-only
   sh SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh --help
 
 Options:
+  --no-gui              Run in terminal mode even when a graphical session is active.
   --install-rpms-only   Install only the RPM packages (must run as root).
   -h, --help            Show this help and exit.
 USAGE
 }
 
 mode=full
+no_gui=0
 case "\${1:-}" in
   '') ;;
+  --no-gui) no_gui=1 ;;
   --install-rpms-only) mode=rpms ;;
   -h|--help) usage; exit 0 ;;
   *) echo "SebType installer: unknown option: \$1" >&2; usage >&2; exit 2 ;;
@@ -88,10 +112,15 @@ if [ -z "\$self" ]; then
 fi
 [ -f "\$self" ] || { echo "SebType installer: cannot locate installer file (\$0)" >&2; exit 1; }
 
-install_rpms() {
-  [ "\$(id -u)" -eq 0 ] || { echo "SebType installer: --install-rpms-only must run as root" >&2; exit 1; }
+payload_line() {
   line=\$(awk '/^__SEBTYPE_PAYLOAD__\$/ { print NR + 1; exit }' "\$self")
   [ -n "\$line" ] || { echo "SebType installer: payload marker not found" >&2; exit 1; }
+  printf '%s\n' "\$line"
+}
+
+install_rpms() {
+  [ "\$(id -u)" -eq 0 ] || { echo "SebType installer: --install-rpms-only must run as root" >&2; exit 1; }
+  line=\$(payload_line)
   tmp=\$(mktemp -d)
   chmod 700 "\$tmp"
   trap 'rm -rf "\$tmp"' EXIT
@@ -129,6 +158,32 @@ if [ "\$(id -u)" -eq 0 ]; then
   exit 0
 fi
 
+if [ "\$no_gui" -eq 0 ] && [ -n "\${DISPLAY:-}\${WAYLAND_DISPLAY:-}" ]; then
+  line=\$(payload_line)
+  gui_tmp=\$(mktemp -d)
+  chmod 700 "\$gui_tmp"
+  trap 'rm -rf "\$gui_tmp"' EXIT
+  tail -n "+\$line" "\$self" | tar -xf - -C "\$gui_tmp" sebtype-configurator
+  printf '%s  %s\n' "\$SEBTYPE_GUI_SHA" "\$gui_tmp/sebtype-configurator" | sha256sum --check --status - || {
+    echo "SebType installer: GUI checksum verification failed" >&2
+    exit 3
+  }
+  chmod 700 "\$gui_tmp/sebtype-configurator"
+  if "\$gui_tmp/sebtype-configurator" --setup "\$self" --started-file "\$gui_tmp/started"; then
+    rm -rf "\$gui_tmp"
+    trap - EXIT
+    exit 0
+  fi
+  if [ -f "\$gui_tmp/started" ]; then
+    rm -rf "\$gui_tmp"
+    trap - EXIT
+    exit 1
+  fi
+  rm -rf "\$gui_tmp"
+  trap - EXIT
+  echo "SebType installer: graphical setup could not start; falling back to terminal setup." >&2
+fi
+
 self_sha=\$(sha256sum "\$self" | awk '{print \$1}')
 root_run='set -eu; d=\$(mktemp -d); trap "rm -rf \"\$d\"" EXIT; chmod 700 "\$d"; cp -- "\$1" "\$d/setup.sh"; got=\$(sha256sum "\$d/setup.sh" | cut -d" " -f1); [ "\$got" = "\$2" ] || { echo "SebType installer changed before elevation" >&2; exit 3; }; /bin/sh "\$d/setup.sh" --install-rpms-only'
 if [ -t 0 ] && [ -t 1 ] && command -v sudo >/dev/null 2>&1; then
@@ -153,7 +208,7 @@ exit 0
 __SEBTYPE_PAYLOAD__
 EOF
 
-tar -cf - -C "$dir" -- "${all[@]}" >> "$tmp"
+tar -cf - -C "$dir" "${all[@]}" -C "$stage" sebtype-configurator >> "$tmp"
 chmod 755 "$tmp"
 mv -f "$tmp" "$out"
 echo "$out"

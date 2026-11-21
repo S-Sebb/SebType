@@ -163,6 +163,33 @@ ja.Failed=SebType のセットアップ中に問題が起きました（手順�
 en.Kept=SebType couldn't send the words it learned on this PC to your sync server, so it kept them in %1.%n%nThey come back when you set up SebType with that language again.
 zh.Kept=SebType 没能把它在这台电脑上学会的词发到你的同步服务器，所以把它们留在了 %1。%n%n下次装 SebType 时选上这个语言，它们就会回来。
 ja.Kept=この PC で SebType が覚えた言葉を同期サーバーに送れなかったので、%1 に残しました。%n%nもう一度その言語で SebType をセットアップすると戻ります。
+en.SyncTitle=Account sync
+zh.SyncTitle=账号同步
+ja.SyncTitle=アカウント同期
+en.SyncDesc=Optional. You can also set this up later in SebType Configurator.
+zh.SyncDesc=可选。也可以稍后在 SebType 设置里开启。
+ja.SyncDesc=任意です。あとから SebType 設定で有効にすることもできます。
+en.SyncSub=Sync your learned words and dictionaries across devices with your own sync server. Leave all fields blank to skip.
+zh.SyncSub=通过你自己的同步服务器，在多台设备间同步学到的词和自定义词库。全部留空即可跳过。
+ja.SyncSub=自分の同期サーバーを使って、学習した単語やユーザー辞書を端末間で同期できます。すべて空欄のまま［次へ］でスキップできます。
+en.SyncServer=Server address (sync.example.com):
+zh.SyncServer=服务器地址（sync.example.com）：
+ja.SyncServer=サーバーアドレス（sync.example.com）：
+en.SyncUser=Username:
+zh.SyncUser=用户名：
+ja.SyncUser=ユーザー名：
+en.SyncPassword=Password:
+zh.SyncPassword=密码：
+ja.SyncPassword=パスワード：
+en.SyncIncomplete=Fill in server, username, and password, or leave all three blank to skip.
+zh.SyncIncomplete=请填全服务器地址、用户名和密码，或全部留空以跳过。
+ja.SyncIncomplete=サーバーアドレス・ユーザー名・パスワードをすべて入力するか、すべて空欄にしてスキップしてください。
+en.SyncInvalidServer=Server address must be an https:// address.
+zh.SyncInvalidServer=服务器地址必须是 https:// 网址。
+ja.SyncInvalidServer=サーバーアドレスは https:// のアドレスにしてください。
+en.SyncSaveFailed=Could not save your sync login. Check your details or clear the fields to skip.
+zh.SyncSaveFailed=无法保存同步账号。请检查填写的内容，或清空后跳过。
+ja.SyncSaveFailed=同期アカウントを保存できませんでした。入力内容を確認するか、空欄にしてスキップしてください。
 
 [Tasks]
 Name: "en"; Description: "{cm:English}"; GroupDescription: "{cm:Languages}"
@@ -247,6 +274,7 @@ const
 
 var
   FailCode: Integer;
+  SyncPage: TInputQueryWizardPage;
 
 function AddFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
   external 'AddFontResourceExW@gdi32.dll stdcall';
@@ -395,15 +423,77 @@ begin
   Restyle(WizardForm.FinishedLabel, '', 0, Ink);
   Restyle(WizardForm.StatusLabel, '', 0, Ink);
   ExtractTemporaryFile('finish-' + Scale + '.png');
+  SyncPage := CreateInputQueryPage(wpInstalling, CustomMessage('SyncTitle'), CustomMessage('SyncDesc'), CustomMessage('SyncSub'));
+  SyncPage.Add(CustomMessage('SyncServer'), False);
+  SyncPage.Add(CustomMessage('SyncUser'), False);
+  SyncPage.Add(CustomMessage('SyncPassword'), True);
+  Body(SyncPage.SubCaptionLabel);
+  Body(SyncPage.PromptLabels[0]);
+  Body(SyncPage.PromptLabels[1]);
+  Body(SyncPage.PromptLabels[2]);
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = SyncPage.ID) and (Silent or NoUserSteps or (FailCode <> 0));
+end;
+
+// Saves the sync login as the invoking user via a short-lived file (never on the command line or in logs).
+function SaveSyncLogin(Server, User, Password: String): Boolean;
+var
+  CredFile: String;
+  Code: Integer;
+  Ok: Boolean;
+begin
+  Result := False;
+  CredFile := ExpandConstant('{localappdata}\SebType\sync-login.tmp');
+  ForceDirectories(ExtractFileDir(CredFile));
+  if not SaveStringToUTF8FileWithoutBOM(CredFile, Server + #10 + User + #10 + Password + #10, False) then
+  begin
+    Tell(CustomMessage('SyncSaveFailed'), mbError);
+    Exit;
+  end;
+  try
+    Ok := ExecAsOriginalUser(ExpandConstant('{app}\sebtype-configurator.exe'),
+      '--sync-login-file "' + CredFile + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  finally
+    DeleteFile(CredFile);
+  end;
+  if Ok and (Code = 0) then
+    Result := True
+  else if Ok and (Code = 2) then
+    Tell(CustomMessage('SyncInvalidServer'), mbError)
+  else
+    Tell(CustomMessage('SyncSaveFailed'), mbError);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  S, U, P: String;
 begin
   Result := True;
   if (CurPageID = wpSelectTasks) and (Chosen = '') then
   begin
     Tell(CustomMessage('NoLanguage'), mbInformation);
     Result := False;
+  end
+  else if CurPageID = SyncPage.ID then
+  begin
+    S := Trim(SyncPage.Values[0]);
+    U := Trim(SyncPage.Values[1]);
+    P := SyncPage.Values[2];
+    if (S = '') and (U = '') and (P = '') then
+      Exit;
+    if (S = '') or (U = '') or (P = '') then
+    begin
+      Tell(CustomMessage('SyncIncomplete'), mbInformation);
+      Result := False;
+      Exit;
+    end;
+    if SaveSyncLogin(S, U, P) then
+      SyncPage.Values[2] := ''
+    else
+      Result := False;
   end;
 end;
 

@@ -24,12 +24,15 @@ It changes only this account's config. It uses sudo only to install missing pack
 asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>/` first.
 
 A release carries one self-extracting installer (`SebType-setup-<version>-linux-x86_64.sh`), built by CI
-(`.github/workflows/linux-rpm.yml`, #421, #427) with `linux/build-installer.sh`: it packs the `sebtype` RPM
-and SebType's librime RPMs with their SHA-256 manifest. Besides the input method and Mozc, `sebtype` holds
-what the per-account steps copy from: the Configurator, the Chinese data, the Mozc keymap and setup itself,
-as `sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs no packages;
-it does this account's steps with the release's files. Running the installer elevates once (`sudo` or
-`pkexec`) to run `--install-rpms-only` (which verifies the embedded RPMs and installs `sebtype`, `librime`,
+(`.github/workflows/linux-rpm.yml`, #421, #427, #435) with `linux/build-installer.sh`: it packs the `sebtype`
+RPM, SebType's librime RPMs, and `sebtype-configurator` with their SHA-256 manifest. In a graphical session
+(unless `--no-gui` is passed) it launches the Picnic-themed GUI setup wizard (`sebtype-configurator --setup`),
+falling back to terminal mode when headless or if the GUI cannot start. Besides the input method and Mozc,
+`sebtype` holds what the per-account steps copy from: the Configurator, the Chinese data, the Mozc keymap and
+setup itself, as `sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs
+no packages; it does this account's steps with the release's files. Running the installer elevates once
+(`sudo` or `pkexec`) to run `--install-rpms-only` (which verifies the embedded RPMs and installs `sebtype`,
+`librime`,
 `librime-lua`, `librime-octagram`, plus `librime-predict`, `librime-tools` and `librime-devel` only where
 already installed), then runs `sebtype-setup` as your user.
 
