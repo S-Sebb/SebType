@@ -2,7 +2,7 @@
 """Writes SebType's tray icons (#63, "Set E" sticker keycap): pc/icons/<size>/<state>.png and
 pc/icons/scalable/<state>.svg.
 
-Each tray size (16, 20, 22, 24, 32, 40, 44, 48 and 64 px) is drawn at its own pixel size, not scaled from a
+Each tray size (16 to 66 px, SIZES) is drawn at its own pixel size, not scaled from a
 larger drawing, with the same shapes as the scalable one: its straight edges, strokes and glyphs fall on whole
 pixels with hard edges, and only the round corners shade their edge pixels; the glyph is the font hinted at
 that size (#275: a large drawing scaled down had soft grey edges). Small
@@ -242,15 +242,17 @@ def sticker(S, lang, g, state=""):
 
 
 # The approved drawings' whole pixels per tray size (#63): sticker border, shadow, outline, base side, flare,
-# face inset, lip. Other sizes take params()' proportions, rounded.
+# face inset, lip. Other sizes take params()' proportions, rounded (32 px too: its own grid's 2 px outline and
+# shadow made a smaller face than the scalable drawing's, #441).
 GRID = {
     16: (1, 0, 1, 2, 0, 0, 0),
     20: (1, 1, 1, 3, 0, 0, 1),
     22: (1, 1, 1, 4, 1, 1, 1),
     24: (1, 1, 1, 4, 1, 1, 1),
-    32: (2, 2, 2, 5, 2, 2, 2),
 }
-SIZES = (16, 20, 22, 24, 32, 40, 44, 48, 64)
+# Windows' small icon at 100 % to 400 % (16 to 64 by 4, 48 and 56) and a 22 px Linux tray at 100 % to 300 %
+# (22, 28, 33, 39, 44, 55, 66), so neither scales one (#441).
+SIZES = (16, 20, 22, 24, 28, 32, 33, 36, 39, 40, 44, 48, 55, 56, 64, 66)
 
 
 def grid(S):
