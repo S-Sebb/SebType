@@ -3,10 +3,14 @@
 // <wengxt@gmail.com>): see tray.h.
 #include "tray.h"
 
+#include <cairo.h>
 #include <fcitx-utils/dbus/message.h>
 #include <fcitx-utils/i18n.h>
+#include <fcitx-utils/standardpaths.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/inputcontext.h>
+
+#include <filesystem>
 
 #include "dbus_public.h"
 #include "sebtype.h"
@@ -47,23 +51,57 @@ void StatusNotifierItem::activate(int, int) {
   }
 }
 
-std::string StatusNotifierItem::iconName() {
+std::string StatusNotifierItem::icon() {
   auto *engine = parent_->engine();
-  return SebTypeEngine::iconName(engine ? engine->core().icon() : "en");
+  return engine ? engine->core().icon() : "en";
+}
+
+// Every size pc/icons draws, each at its own pixels (#275). A tray asks for its icon size times the screen's
+// scale (28 px for 22 at 125 %) and takes the pixmap of that size as it is. By name, KIconLoader rounds the
+// scale up and shrank hicolor's 22x22@2 (44 px) to 28 px, which blurred it (#441).
+StatusNotifierItem::Pixmaps StatusNotifierItem::iconPixmap() {
+  const std::string state = icon();
+  if (auto it = pixmaps_.find(state); it != pixmaps_.end()) return it->second;
+  Pixmaps &out = pixmaps_[state];
+  std::error_code ec;
+  const auto tray = fcitx::StandardPaths::global().locate(fcitx::StandardPathsType::Data, "sebtype/tray");
+  for (const auto &dir : std::filesystem::directory_iterator(tray, ec)) {
+    cairo_surface_t *png = cairo_image_surface_create_from_png((dir.path() / (state + ".png")).c_str());
+    if (cairo_surface_status(png) == CAIRO_STATUS_SUCCESS) {
+      const int w = cairo_image_surface_get_width(png), h = cairo_image_surface_get_height(png);
+      const int stride = cairo_image_surface_get_stride(png);
+      const unsigned char *data = cairo_image_surface_get_data(png);
+      // Cairo's pixels are premultiplied native-endian words; the item's are straight ARGB, big-endian.
+      std::vector<uint8_t> argb;
+      argb.reserve(w * h * 4);
+      for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+          const uint32_t p = reinterpret_cast<const uint32_t *>(data + y * stride)[x];
+          const uint32_t a = p >> 24;
+          auto straight = [a](uint32_t c) { return static_cast<uint8_t>(a ? (c * 255 + a / 2) / a : 0); };
+          argb.insert(argb.end(), {static_cast<uint8_t>(a), straight(p >> 16 & 0xff), straight(p >> 8 & 0xff),
+                                   straight(p & 0xff)});
+        }
+      }
+      out.emplace_back(w, h, std::move(argb));
+    }
+    cairo_surface_destroy(png);
+  }
+  return out;
 }
 
 StatusNotifierItem::ToolTip StatusNotifierItem::toolTip() {
   auto *engine = parent_->engine();
   std::string title = engine ? langName(engine->core().language())
                              : fcitx::translateDomain("fcitx5", "Input Method");
-  return {iconName(), Pixmaps{}, std::move(title), std::string()};
+  return {SebTypeEngine::iconName(icon()), Pixmaps{}, std::move(title), std::string()};
 }
 
 void StatusNotifierItem::notifyChanged() {
   if (!isRegistered()) return;
-  if (auto icon = iconName(); icon != lastIcon_) {
+  if (auto state = icon(); state != lastIcon_) {
     newIcon();
-    lastIcon_ = std::move(icon);
+    lastIcon_ = std::move(state);
   }
   if (auto title = std::get<2>(toolTip()); title != lastTitle_) {
     newToolTip();

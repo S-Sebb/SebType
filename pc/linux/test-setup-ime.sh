@@ -203,9 +203,13 @@ tray_icons() {
   [[ $(kreadconfig6 --file "$h/.config/kdeglobals" --group Icons --key Theme) == Fluent-dark &&
     ! -e $h/.local/share/icons/SebType && ! -e $fake/emit.log ]]
 }
-# The RPM has every icon the add-on asks for (sebtype-<state>, the states of pc/icons) at each hicolor size.
+# The RPM has every icon the add-on asks for: each state of pc/icons at every size it draws, for the tray's
+# pixmaps (#441), and as sebtype-<state> at each hicolor size, for the menu.
 rpm_icons() {
   local p n
+  for p in ../icons/*/*.png; do
+    cmp "$p" "$own/usr/share/sebtype/tray/${p#../icons/}" || return 1
+  done
   for p in 16:16x16 22:22x22 24:24x24 32:32x32 48:48x48 64:64x64 32:16x16@2 44:22x22@2 48:24x24@2 64:32x32@2 \
     scalable:scalable; do
     for n in en zh zh-a zh-caps hira kata ja-a ja-caps zh-wait zh-off hira-wait hira-off; do
@@ -1006,8 +1010,10 @@ win_space() {
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[GroupOrder]\n0=Default\n' \
     > "$h/.config/fcitx5/profile"
   private_bus "$h" 120 "${own_fcitx[@]}" python3 -W ignore - "$fake/fcitx5-menu.log" <<'PY'
-import subprocess, sys, time
-from gi.repository import Gio, GLib
+import glob, subprocess, sys, time
+import gi
+gi.require_version('GdkPixbuf', '2.0')
+from gi.repository import Gio, GLib, GdkPixbuf
 
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
 WATCHER = Gio.DBusNodeInfo.new_for_xml("""<node><interface name="org.kde.StatusNotifierWatcher">
@@ -1102,6 +1108,17 @@ def pick(name):  # clicks the input method in the tray menu
 check('menu reads English · 中文 · 日本語 with SebType icon names', [e[1:] for e in entries()],
       [('English', 'sebtype-en'), ('中文', 'sebtype-zh'), ('日本語', 'sebtype-hira')])
 check('starts in English', im(), 'keyboard-us')
+# The tray item has no icon name but English's key at every size pc/icons draws, pixel for pixel, so a tray
+# takes the one for its size and scaling as it is (#441).
+def straight_argb(png):  # GdkPixbuf's RGBA rows as the item's ARGB
+    px, w, n, stride = png.get_pixels(), png.get_width(), png.get_n_channels(), png.get_rowstride()
+    return b''.join(bytes((r[x + 3], r[x], r[x + 1], r[x + 2])) for y in range(png.get_height())
+                    for r in [px[y * stride:y * stride + w * n]] for x in range(0, w * n, n))
+item = call(sni, '/StatusNotifierItem', 'org.freedesktop.DBus.Properties', 'GetAll', '(s)', 'org.kde.StatusNotifierItem')[0]
+pngs = {GdkPixbuf.Pixbuf.new_from_file(p).get_width(): GdkPixbuf.Pixbuf.new_from_file(p) for p in glob.glob('../icons/*/en.png')}
+check('tray item sends English at every size as pixmaps, no icon name',
+      (item['IconName'], sorted((w, h, bytes(d) == straight_argb(pngs[w])) for w, h, d in item['IconPixmap'])),
+      ('', [(w, w, True) for w in sorted(pngs)]))
 CTRL, ALT = 4, 8
 check("Fcitx5's own hotkeys reach the app: Ctrl+; Ctrl+Alt+Shift+U Ctrl+Shift+U Super+` Super+;",
       [taken(0x3b, 47, CTRL), taken(0x55, 30, CTRL | ALT | SHIFT), taken(0x55, 30, CTRL | SHIFT),
