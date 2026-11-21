@@ -100,24 +100,27 @@ private fun SyncSection() {
             if (saved == null) dialog = "login" else Sync.setEnabled(context, saved, on)
         }
         NavItem(stringResource(R.string.sebtype_settings_sync_login),
-            account?.let { "${it.user} · ${it.server.removePrefix("https://")}" } ?: stringResource(R.string.sebtype_settings_sync_login_none)) {
+            account?.summary() ?: stringResource(R.string.sebtype_settings_sync_login_none)) {
             dialog = "login"
         }
         if (account != null) NavItem(stringResource(R.string.sebtype_settings_sync_delete),
             stringResource(R.string.sebtype_settings_sync_delete_subtitle)) { dialog = "delete" }
     }
     when (dialog) {
-        "login" -> LoginDialog { dialog = null }
+        "login" -> SyncLoginDialog { dialog = null }
         "delete" -> DeleteDialog { dialog = null }
     }
 }
 
+internal fun SyncAccount.summary() = "$user · ${server.removePrefix("https://")}"
+
 @Composable
-private fun LoginDialog(close: () -> Unit) {
+internal fun SyncLoginDialog(close: () -> Unit) {
     val context = LocalContext.current
     val saved = remember { SyncAccountStore.current.value }
-    var server by remember { mutableStateOf(saved?.server?.removePrefix("https://") ?: "") }
-    var user by remember { mutableStateOf(saved?.user ?: "") }
+    var server by rememberSaveable { mutableStateOf(saved?.server?.removePrefix("https://") ?: "") }
+    var user by rememberSaveable { mutableStateOf(saved?.user ?: "") }
+    // Keep password in process memory only (not serialized to system_server's savedInstanceState).
     var password by remember { mutableStateOf(saved?.password ?: "") }
     val url = SyncAccount.normalizeServer(server)
     val invalid = server.isNotBlank() && url == null

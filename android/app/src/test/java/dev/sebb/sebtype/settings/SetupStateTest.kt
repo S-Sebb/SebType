@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import dev.sebb.sebtype.data.Prefs
+import dev.sebb.sebtype.sync.SyncAccount
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -104,5 +105,24 @@ class SetupStateTest {
         Prefs.undo(phone, import) // Backup.restore's rollback
         assertEquals(preferencesOf(Prefs.SETUP.key to Prefs.SETUP_DONE, subtypes to setOf("en_US:"), Prefs.SOUND.key to false,
             Prefs.VIBRATE.key to true), phone.data.first())
+    }
+
+    /** #435: 4-step wizard progression: enable -> choose -> account sync -> tips. */
+    @Test
+    fun setupStepProgression() {
+        assertEquals(4, SETUP_STEPS)
+        assertEquals(1, setupStep(enabled = false, chosen = false, syncPassed = false))
+        assertEquals(1, setupStep(enabled = false, chosen = true, syncPassed = true))
+        assertEquals(2, setupStep(enabled = true, chosen = false, syncPassed = false))
+        assertEquals(2, setupStep(enabled = true, chosen = false, syncPassed = true))
+        assertEquals(3, setupStep(enabled = true, chosen = true, syncPassed = false))
+        assertEquals(4, setupStep(enabled = true, chosen = true, syncPassed = true))
+    }
+
+    /** Sync account summary strips https:// for display in BackupScreen and Setup step 3. */
+    @Test
+    fun syncAccountSummary() {
+        val account = SyncAccount("https://sync.example.com", "alice", "secret", enabled = true)
+        assertEquals("alice · sync.example.com", account.summary())
     }
 }

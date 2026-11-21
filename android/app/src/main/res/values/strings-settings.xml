@@ -111,11 +111,16 @@
     <string name="settings_reading">Reading</string>
     <string name="settings_credits_intro">SebType is built on these projects. Thank you to everyone who made them.</string>
     <string name="settings_credits_tag">Credits</string>
-    <string name="setup_step">Setup · step %1$d of 3</string>
+    <string name="setup_step">Setup · step %1$d of 4</string>
     <string name="setup_enable_text">Welcome to SebType.\n\nTo get started, turn SebType on in Android\'s list of keyboards.</string>
     <string name="setup_choose_text">Now choose SebType as the keyboard you type with.</string>
     <string name="setup_enable">Turn on SebType</string>
     <string name="setup_choose">Choose SebType</string>
+    <string name="setup_sync_text">Sync your learned words and custom phrases across devices with your own sync server. You can also set this up later in Settings.</string>
+    <string name="setup_sync_setup">Set up sync</string>
+    <string name="setup_sync_skip">Not now</string>
+    <string name="setup_sync_signed_in">Sync account</string>
+    <string name="setup_continue">Continue</string>
     <string name="setup_tips_text">You\'re all set. A few things that are easy to miss:</string>
     <string name="setup_done">Done</string>
     <string name="tips_globe">Hold 🌐 to switch to another keyboard.</string>
