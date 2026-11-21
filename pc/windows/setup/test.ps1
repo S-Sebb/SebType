@@ -878,7 +878,7 @@ namespace SebTypeSetupTest {
         Check 'sync-page-shown' {
           Start-Process $setup '/LANG=en', "/LOG=`"$out\setup-sync-page.log`""
           $script:h = Window TWizardForm
-          Click $h 'Next'; Page $h 'Your languages'
+          Page $h 'Next'; Click $h 'Next'; Page $h 'Your languages'  # the form shows before its buttons
           Click $h 'Install'; Page $h 'Account sync' 900
           # The server runs from a copy of Setup's Python, there by now: the uninstall removes {app}\python.
           Copy-Item -Recurse "$App\python" "$out\python"
