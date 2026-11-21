@@ -291,21 +291,23 @@ fcitx_has_deleted_libs() {
   return 1
 }
 kwin_restart_fcitx5() {
-  local restored=0
-  _restore_kwin_im() {
-    ((restored)) && return 0
-    restored=1
-    kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop" || true
+  (
+    restored=0
+    _restore_kwin_im() {
+      ((restored)) && return 0
+      restored=1
+      kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop" || return 1
+      kwin_reconfigure
+    }
+    trap '_restore_kwin_im || true' EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "" || true
     kwin_reconfigure
-  }
-  trap '_restore_kwin_im; trap - INT TERM; kill -s INT $$' INT
-  trap '_restore_kwin_im; trap - INT TERM; kill -s TERM $$' TERM
-  trap '_restore_kwin_im' RETURN
-  kwriteconfig6 --file kwinrc --group Wayland --key InputMethod ""
-  kwin_reconfigure
-  wait_fcitx_down || true
-  _restore_kwin_im
-  trap - RETURN INT TERM
+    wait_fcitx_down || true
+    _restore_kwin_im
+  )
   wait_fcitx_up || true
 }
 
