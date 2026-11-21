@@ -118,7 +118,7 @@ check configurator-runs configurator
 user_setup() {
   local home=/tmp/sebtype-tester
   rm -rf "$home"; mkdir -p "$home"; chown 1000:1000 "$home"
-  setpriv --reuid=1000 --regid=1000 --clear-groups env HOME="$home" USER=tester /usr/bin/sebtype-setup </dev/null &&
+  chroot --userspec=1000:1000 / env HOME="$home" USER=tester /usr/bin/sebtype-setup </dev/null &&
     [[ -x "$home/.local/share/sebtype/configurator/sebtype-configurator" ]] &&
     [[ -f "$home/.local/share/fcitx5/rime/sebtype-data.txt" ]]
 }
