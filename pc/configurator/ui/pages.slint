@@ -653,6 +653,50 @@ component AboutPage inherits Page {
                 }
             }
         }
+        if State.update-notes.length > 0: Divider { }
+        if State.update-notes.length > 0: notes-scroll := ScrollView {
+            height: min(notes-content.preferred-height, 240px);
+            content-width: self.visible-width;
+            notes-content := VerticalLayout {
+                width: notes-scroll.visible-width;
+                padding-left: Theme.row-padding-x;
+                padding-right: Theme.row-padding-x;
+                padding-top: 10px;
+                padding-bottom: 12px;
+                spacing: 4px;
+                alignment: start;
+                for line[i] in State.update-notes: VerticalLayout {
+                    padding-top: line.kind == 0 && i > 0 ? 6px : 0px;
+                    if line.kind == 0: Text {
+                        text: line.heading;
+                        color: Theme.ink;
+                        font-size: Theme.detail-size;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                    if line.kind == 1: HorizontalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "•";
+                            color: Theme.muted;
+                            font-size: Theme.detail-size;
+                            horizontal-stretch: 0;
+                        }
+                        StyledText {
+                            text: line.body;
+                            default-color: Theme.ink;
+                            default-font-size: Theme.detail-size;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    if line.kind == 2: StyledText {
+                        text: line.body;
+                        default-color: Theme.ink;
+                        default-font-size: Theme.detail-size;
+                    }
+                }
+            }
+        }
         Divider { }
         Row {
             title: @tr("Check for updates automatically");

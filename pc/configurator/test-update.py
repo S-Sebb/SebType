@@ -112,7 +112,7 @@ def check_updates(exe=None, **env):
     return out["rc"], out["err"]
 
 
-def make(tag, version):
+def make(tag, version, body=None):
     assets = [
         f"SebType-setup-{version}.exe",
         f"SebType-setup-{version}-linux-x86_64.sh",
@@ -125,6 +125,8 @@ def make(tag, version):
             dict(name=n, size=1, browser_download_url=f"{url}/{n}") for n in assets
         ],
     )
+    if body is not None:
+        release["body"] = body
 
 
 def saved():
@@ -141,7 +143,8 @@ def result(name, ok, why):
     print(f"{'PASS' if ok else 'FAIL'} {name}: {why}", flush=True)
 
 
-make("v99.0.0", "99.0.0")
+NOTES = "### New\n- **Patch notes.** Shown in About."
+make("v99.0.0", "99.0.0", body=f"\n  {NOTES}\n")
 rc, err = check_updates()
 n = notifications.shown
 ok = (
@@ -162,6 +165,7 @@ s = saved()
 result(
     "update-state-saved",
     s.get("latest") == "99.0.0"
+    and s.get("notes") == NOTES
     and s.get("notified") == "99.0.0"
     and s.get("checked", 0) > 0,
     f"{s}",
@@ -191,7 +195,10 @@ make("v0.1.30-sebtype.208", "0.1.30-sebtype.208")
 rc, err = check_updates()
 result(
     "update-old-sebtype-tag-not-newer",
-    rc == 0 and len(n) == 1 and saved().get("latest") == "",
+    rc == 0
+    and len(n) == 1
+    and saved().get("latest") == ""
+    and saved().get("notes") == "",
     f"rc {rc}, {saved()}",
 )
 

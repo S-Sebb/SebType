@@ -18,6 +18,9 @@ export enum SyncStatus { off, not-yet, syncing, synced, offline, login-failed }
 // The About page's update section (#422): the last check's outcome, then the install's steps.
 export enum UpdateStatus { none, checking, up-to-date, available, offline, downloading, installing, installed, failed }
 
+// One block of a GitHub release's patch notes (#428): kind 0 heading, 1 bullet, 2 plain text.
+export struct UpdateNote { kind: int, heading: string, body: styled-text }
+
 export global State {
     in property <string> version;
     in property <string> system;          // "Linux" or "Windows"
@@ -68,6 +71,7 @@ export global State {
     in property <string> update-installed;
     in property <string> update-checked;        // when the last check went through
     in property <string> update-error;          // why the check or the install failed
+    in property <[UpdateNote]> update-notes;    // parsed release notes for update-version (#428)
 
     // What the last change did, shown for a moment (main.rs's toast); app.slint words it.
     in-out property <Msg> toast;
