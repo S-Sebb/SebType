@@ -260,13 +260,12 @@ SOFT = 24  # up to this size the shadow is hard and the face has no shine: blurr
 
 def grid(S):
     """params() snapped to the pixel grid: each part in whole pixels, at least one (#441). Below 24 px, a
-    pixel a part would leave the glyph a cramped face, so 16 and 20 px are set to look like 24 px's key
-    shrunk: 16 px has no cream border and no lip, and 20 px's face has no inset, so its sides meet the base
-    with no outline of their own."""
+    pixel a part would leave the glyph a cramped face, so 16 px is set to look like 24 px's key shrunk: no
+    cream border and no lip."""
     return SMALL.get(S) or tuple(max(1, round(v)) for v in params(S))
 
 
-SMALL = {16: (0, 1, 1, 4, 1, 1, 0), 20: (1, 1, 1, 4, 1, 0, 1)}  # as params() for S
+SMALL = {16: (0, 1, 1, 4, 1, 1, 0)}  # as params() for S
 
 
 def layout(S):
@@ -487,13 +486,55 @@ def warp(ds, ts, v):
 HEIGHT = {"中": 0.8, "あ": 0.8, "ア": 0.8, "EN": 0.66, "A": 0.66, "a": 0.6}
 
 
+# Where grid-fitting the outline can't keep 24 px's look, the glyph drawn by hand, a row per string: 中 with a
+# 2 px stem through a box of 24 px's proportions, and EN with 2 px uprights. Grid-fitted, 16 px's 中 closed
+# into a blob, and 20 px's 中 and EN kept 1 px strokes or, with a heavier stroke, filled in.
+BITMAPS = {
+    (16, "中"): (
+        "...##...",
+        "########",
+        "#..##..#",
+        "#..##..#",
+        "#..##..#",
+        "########",
+        "...##...",
+    ),
+    (20, "中"): (
+        "...##...",
+        "########",
+        "#..##..#",
+        "#..##..#",
+        "#..##..#",
+        "########",
+        "...##...",
+        "...##...",
+    ),
+    (20, "EN"): (
+        "###.##..##",
+        "##..###.##",
+        "##..###.##",
+        "###.##.###",
+        "##..##.###",
+        "##..##..##",
+        "###.##..##",
+    ),
+}
+
+
 def glyph_alpha(S, state):
     """The glyph's coverage on S px, from the README drawing's outline and stroke, grid-fitted: its stems,
     bars and extremes on whole pixels, centred in the face to the pixel, 中 and A mirror-exact. Curves keep
-    their antialiasing."""
+    their antialiasing. BITMAPS' glyphs are as drawn there, centred in the face."""
     lang, g = STATES[state]
     x0, x1, y0, y1, _ = layout(S)
     fw, fh = x1 - x0, y1 - y0
+    if rows := BITMAPS.get((S, g[1])):
+        a = np.zeros((S, S), int)
+        left, top = (x0 + x1 - len(rows[0])) // 2, y0 + (fh - len(rows)) // 2
+        a[top : top + len(rows), left : left + len(rows[0])] = [
+            [255 * (c == "#") for c in r] for r in rows
+        ]
+        return a
     margin = fw * (
         0.17 if lang != "grey" else 0.06
     )  # the README drawing's room for the blush
@@ -583,10 +624,8 @@ def layers(S, state):
     key(cr, k0, ky0, k1, ky1, t, max(r - bw, 0))
     fill(cr, gradient(ky0, ky1, top, bot))
 
-    fo = bw if fi else 0  # the face's side outline, none without an inset
-
     def under_face(cr):  # the face with its outline, which covers the base
-        rounded(cr, fx0 - fo, fy0, fx1 + fo, fy1 + bw, rf + fo)
+        rounded(cr, fx0 - bw, fy0, fx1 + bw, fy1 + bw, rf + bw)
 
     under_face(cr)
     fill(cr, rgb(OUTLINE))
@@ -741,15 +780,12 @@ def check(S, state, im):
     if bad:
         problems.append(f"not symmetric in rows {bad}")
     x0, x1, y0, y1, _ = layout(S)
-    sb, _, bw, _, _, fi, _ = grid(S)
+    sb, _, bw = grid(S)[:3]
     ring = "c" if sb else ""  # the sticker's cream border
-    if fi:  # the face's outline, then the face, neither blended
-        row = px[(y0 + y1) // 2, x0 - bw : x0 + 1]
-        side = (row[:-1] == rgb255(OUTLINE)).all()
-    else:  # the base, opaque, then the face
-        row = px[(y0 + y1) // 2, x0 - 1 : x0 + 1]
-        side = runs(row[:1])[0][0] == "b" and row[0, 3] == 255
-    if not side or row[-1, :3].min() < 0xE0:
+    row = px[
+        (y0 + y1) // 2, x0 - bw : x0 + 1
+    ]  # the face's outline, then the face, neither blended
+    if (row[:-1] != rgb255(OUTLINE)).any() or row[-1, :3].min() < 0xE0:
         problems.append("the face's side off the grid")
     kinds = "".join(k for k, _, _ in runs(px[: y0 + 1, S // 2]))
     if not re.fullmatch(f"_*{ring}o+c", kinds):
@@ -781,7 +817,7 @@ def check(S, state, im):
 
 
 # How far a drawing may be from the README drawing at its size (check()), above SOFT and up to it: whole-pixel
-# outlines, a hard shadow and 16 and 20 px's own keys change small keys more.
+# outlines, a hard shadow and 16 px's own key change small keys more.
 DESIGN = (0.09, 0.15)
 
 
