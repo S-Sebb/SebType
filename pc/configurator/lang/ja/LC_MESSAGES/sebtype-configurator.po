@@ -525,3 +525,15 @@ msgstr "SebType 設定を開く"
 
 msgid "Finish"
 msgstr "完了"
+
+msgid "Minimize"
+msgstr "最小化"
+
+msgid "Maximize"
+msgstr "最大化"
+
+msgid "Restore"
+msgstr "元のサイズに戻す"
+
+msgid "Close"
+msgstr "閉じる"

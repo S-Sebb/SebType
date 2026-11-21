@@ -16,6 +16,9 @@ export global Theme {
     out property <length> row-min-height: 52px;
     out property <length> page-padding: 18px;
     out property <length> title-bar-height: 56px;
+    // Wayland's own title bar (#439): its three 30 px keys, and their space from the window's edge.
+    out property <length> controls-width: 98px;
+    out property <length> controls-margin: 12px;
 
     out property <color> ink: #4A2F22;
     out property <color> muted: #73533F;

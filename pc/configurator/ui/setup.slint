@@ -1,7 +1,7 @@
 // SebType Linux GUI Setup Wizard (#435): Picnic-themed 4-step installer window
 // (Welcome -> Installing -> Account Sync -> Ready/Tips), launched by the self-extracting installer.
 import { Theme } from "theme.slint";
-import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field } from "widgets.slint";
+import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge } from "widgets.slint";
 
 export global SetupState {
     in property <string> ui-font;
@@ -49,6 +49,9 @@ export component SetupWindow inherits Window {
     background: Theme.page;
     default-font-family: SetupState.ui-font;
     default-font-size: 14px;
+    no-frame: Chrome.frameless;
+    resize-border-width: Chrome.frameless ? 6px : 0;
+    maximized <=> Chrome.maximized;
 
     property <string> sync-server;
     property <string> sync-user;
@@ -65,10 +68,11 @@ export component SetupWindow inherits Window {
     }
 
     VerticalLayout {
-        // Cream title bar with pig icon and step indicator.
+        // Cream title bar with pig icon and step indicator; without a frame it moves the window (#439).
         Rectangle {
             height: 58px;
             background: Theme.card;
+            MoveArea { }
             HorizontalLayout {
                 padding-left: 18px;
                 padding-right: 18px;
@@ -106,6 +110,12 @@ export component SetupWindow inherits Window {
                             font-weight: 700;
                         }
                     }
+                }
+                if Chrome.frameless: WindowControls {
+                    y: (parent.height - Theme.frame - self.height) / 2;
+                    height: 30px;
+                    minimize => { root.minimized = true; }
+                    close => { root.close(); }
                 }
             }
             Rectangle {
@@ -387,4 +397,8 @@ export component SetupWindow inherits Window {
             }
         }
     }
+
+    // As AppWindow's: Wayland never says the window came back from the task bar.
+    Timer { interval: 500ms; running: Chrome.frameless && root.minimized; triggered => { root.minimized = false; } }
+    WindowEdge { }
 }

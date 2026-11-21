@@ -268,16 +268,69 @@ export component Field inherits PixelFrame {
     }
 }
 
-// The bar with a page's title, as the phone's: cream, with the frames' outline under it.
+// Wayland gets SebType's own title bar (#439): the window has no frame, its cream bars move it (a double
+// click maximizes) and WindowControls take the frame's buttons' place. Set before the window shows.
+export global Chrome {
+    in-out property <bool> frameless;
+    in-out property <bool> maximized;   // two-way bound to the window's
+}
+
+// Drags the window by a title bar, under the bar's buttons.
+export component MoveArea inherits WindowMoveArea {
+    enabled: Chrome.frameless;
+    TouchArea { double-clicked => { if Chrome.frameless { Chrome.maximized = !Chrome.maximized; } } }
+}
+
+component ChromeKey inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> close;
+    callback clicked;
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background: touch.has-hover ? (close ? Theme.key : Theme.pink) : transparent;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { clicked(); }
+    Image { source: root.icon; width: 18px; height: 18px; colorize: root.close && touch.has-hover ? white : Theme.ink; }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+// Minimize, maximize or restore, and close: round keys as the title bars' back key.
+export component WindowControls inherits HorizontalLayout {
+    callback minimize;
+    callback close;
+    spacing: 4px;
+    alignment: end;
+    ChromeKey { icon: @image-url("icons/minimize.svg"); label: @tr("Minimize"); clicked => { root.minimize(); } }
+    ChromeKey {
+        icon: Chrome.maximized ? @image-url("icons/restore.svg") : @image-url("icons/maximize.svg");
+        label: Chrome.maximized ? @tr("Restore") : @tr("Maximize");
+        clicked => { Chrome.maximized = !Chrome.maximized; }
+    }
+    ChromeKey { icon: @image-url("icons/close.svg"); label: @tr("Close"); close: true; clicked => { root.close(); } }
+}
+
+// The window's edge without a frame: the frames' outline all round, unless maximized.
+export component WindowEdge inherits Rectangle {
+    visible: Chrome.frameless && !Chrome.maximized;
+    border-width: Theme.frame;
+    border-color: Theme.outline;
+}
+
+// The bar with a page's title, as the phone's: cream, with the frames' outline under it. Without a frame
+// it moves the window, and the window's WindowControls sit at its right end.
 export component TitleBar inherits Rectangle {
     in property <string> text;
     in property <bool> back;
     callback go-back;
     height: Theme.title-bar-height;
     background: Theme.card;
+    MoveArea { }
     HorizontalLayout {
         padding-left: root.back ? 12px : Theme.page-padding;
-        padding-right: Theme.page-padding;
+        padding-right: Chrome.frameless ? Theme.controls-width + 2 * Theme.controls-margin : Theme.page-padding;
         padding-bottom: Theme.frame;
         spacing: 8px;
         if root.back: Rectangle {
@@ -295,4 +348,64 @@ export component TitleBar inherits Rectangle {
         PageTitle { text: root.text; vertical-alignment: center; overflow: elide; }
     }
     Rectangle { y: parent.height - Theme.frame; height: Theme.frame; background: Theme.outline; }
+}
+
+// A ScrollView with a Picnic scrollbar (#440) in place of Slint's thin grey one: a berry thumb in a
+// rounded track, outlined as the frames, in a column of its own beside the items. Drag the thumb, click
+// the track to page, or scroll the wheel anywhere.
+export component ScrollView inherits Rectangle {
+    out property <length> visible-width <=> flick.width;
+    out property <length> visible-height <=> flick.height;
+    property <length> bar: 12px;
+    property <length> maximum: max(0px, flick.content-height - flick.height);
+    property <bool> needed: maximum > 0;
+    property <length> inset: Theme.frame + 1px;   // the thumb inside the track's outline
+    property <length> track: root.height - 2 * inset;
+    property <length> thumb-size: maximum <= 0 ? track : max(36px, track * flick.height / flick.content-height);
+    min-height: 50px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+    flick := Flickable {
+        x: 0;
+        // The bar's column is kept even when it isn't shown: its coming and going would rewrap the items.
+        width: root.width - root.bar - 4px;
+        height: root.height;
+        @children
+    }
+    if root.needed: Rectangle {
+        x: root.width - root.bar - 2px;
+        width: root.bar;
+        border-radius: root.bar / 2;
+        background: Theme.off-track;
+        border-width: Theme.frame;
+        border-color: Theme.outline;
+        page := TouchArea {
+            clicked => {
+                if self.mouse-y < thumb.y {
+                    flick.content-y = min(0px, flick.content-y + flick.height);
+                } else if self.mouse-y > thumb.y + thumb.height {
+                    flick.content-y = max(-root.maximum, flick.content-y - flick.height);
+                }
+            }
+        }
+        thumb := Rectangle {
+            property <length> start;
+            x: root.inset;
+            width: parent.width - 2 * root.inset;
+            y: root.inset + (root.track - root.thumb-size) * (-flick.content-y / root.maximum);
+            height: root.thumb-size;
+            border-radius: self.width / 2;
+            background: drag.pressed ? Theme.key-low : drag.has-hover ? Theme.key-high : Theme.key;
+            drag := TouchArea {
+                mouse-cursor: MouseCursor.default;
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down { parent.start = -flick.content-y; }
+                }
+                moved => {
+                    flick.content-y = -max(0px, min(root.maximum,
+                        parent.start + (self.mouse-y - self.pressed-y) * root.maximum / (root.track - root.thumb-size)));
+                }
+            }
+        }
+    }
 }

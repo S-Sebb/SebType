@@ -3,11 +3,11 @@
 import "../../../android/app/src/main/res/font/sebtype_nunito_extrabold.ttf";
 import { Theme } from "theme.slint";
 import { State, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote } from "state.slint";
-import { Button, PageTitle, PixelFrame } from "widgets.slint";
+import { Button, PageTitle, PixelFrame, Chrome, MoveArea, WindowControls, WindowEdge } from "widgets.slint";
 import { Nav, Pages } from "pages.slint";
 import { SetupState, SetupWindow } from "setup.slint";
 
-export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote, SetupState, SetupWindow }
+export { State, Nav, Theme, Chrome, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote, SetupState, SetupWindow }
 
 component NavItem inherits Rectangle {
     in property <string> text;
@@ -52,6 +52,9 @@ export component AppWindow inherits Window {
     background: Theme.page;
     default-font-family: State.ui-font;
     default-font-size: 14px;
+    no-frame: Chrome.frameless;
+    resize-border-width: Chrome.frameless ? 6px : 0;
+    maximized <=> Chrome.maximized;
 
     HorizontalLayout {
         // As wide as its longest item: 同期とバックアップ is longer than 210 px in its pink tag.
@@ -59,11 +62,12 @@ export component AppWindow inherits Window {
             min-width: 210px;
             horizontal-stretch: 0;
             background: Theme.card;
+            MoveArea { height: header.y + header.height; }
             VerticalLayout {
                 padding: 12px;
                 spacing: 4px;
                 alignment: start;
-                HorizontalLayout {
+                header := HorizontalLayout {
                     padding-left: 4px;
                     padding-bottom: 12px;
                     spacing: 10px;
@@ -84,6 +88,18 @@ export component AppWindow inherits Window {
         }
         Pages { horizontal-stretch: 1; }
     }
+
+    if Chrome.frameless: WindowControls {
+        x: parent.width - Theme.controls-width - Theme.controls-margin;
+        y: (Theme.title-bar-height - Theme.frame - self.height) / 2;
+        width: Theme.controls-width;
+        height: 30px;
+        minimize => { root.minimized = true; }
+        close => { root.close(); }
+    }
+    // Wayland never says the window came back from the task bar: forget it was minimized, so the next
+    // click minimizes it again (un-minimizing does nothing there).
+    Timer { interval: 500ms; running: Chrome.frameless && root.minimized; triggered => { root.minimized = false; } }
 
     pure function message(m: Msg, arg: string) -> string {
         if m == Msg.applied { return @tr("Applied"); }
@@ -174,4 +190,6 @@ export component AppWindow inherits Window {
             }
         }
     }
+
+    WindowEdge { }
 }
