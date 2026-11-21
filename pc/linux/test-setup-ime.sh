@@ -48,7 +48,7 @@ librime_unpack "$own" || { echo "preflight: linux/build-librime.sh failed"; exit
 read -ra own_fcitx <<<"$(sebtype_run "$own")"
 
 check shellcheck uvx --from shellcheck-py shellcheck -x setup-ime.sh test-setup-ime.sh perf.sh compare.sh \
-  ../../linux/build.sh ../../linux/build-librime.sh ../../linux/test-rpms.sh
+  ../../linux/build.sh ../../linux/build-librime.sh ../../linux/build-installer.sh ../../linux/test-rpms.sh
 
 # No two icon files differ only by case: a Windows checkout would keep one of them (#77).
 icon_case() { ! git ls-files ../icons | tr '[:upper:]' '[:lower:]' | sort | uniq -d | grep .; }
@@ -99,7 +99,7 @@ stub qdbus6 'echo "qdbus $*" >> "$FAKE/qdbus.log"'
 stub busctl 'case "$*" in
   *" emit "*) echo "$*" >> "$FAKE/emit.log" ;;
   *SetConfig*) echo "$*" >> "$FAKE/deploy.log" ;;
-  *status*) ;;
+  *status*) [[ ! -e $FAKE/no-fcitx ]] ;;
   *setForeignShortcutKeys*) echo "$*" > "$FAKE/kga.log" ;;
   *shortcutKeys*) if [[ -e $FAKE/kga.log ]]; then echo "a(ai) 1 4 268435552 0 0 0"
     else echo "a(ai) 2 4 268435552 0 0 0 4 134217824 0 0 0"; fi ;;
@@ -107,6 +107,7 @@ stub busctl 'case "$*" in
   *AvailableInputMethods*) echo "a(ssssssb) 2 \"keyboard-us\" \"English\" \"\" \"\" \"\" \"en\" false \"sebtype\" \"SebType\" \"\" \"\" \"\" \"\" false" ;;
   *SetInputMethodGroupInfo*) echo "$*" > "$FAKE/set.log"
     echo "sa(ss) \"us\" 1 \"sebtype\" \"\"" > "$FAKE/group" ;;
+  *SetCurrentIM*) echo "$*" >> "$FAKE/current-im.log" ;;
   *InputMethodGroups*) echo "as 1 \"Default\"" ;;
   *InputMethodGroupInfo*) cat "$FAKE/group" 2>/dev/null || echo "sa(ss) \"us\" 1 \"keyboard-us\" \"\"" ;;
 esac'
@@ -142,7 +143,8 @@ fresh_apply() {
     grep -q '^Exec=env QT_IM_MODULE=fcitx /usr/bin/wechat' "$h/.local/share/applications/wechat.desktop" &&
     [[ ! -e $h/.local/share/flatpak/overrides/com.qq.QQ ]] &&
     ls "$h"/.local/share/sebtype/backup/*/com.qq.QQ "$h"/.local/share/sebtype/backup/*/wechat.desktop &&
-    grep -q 'Default us 1 sebtype $' "$fake/set.log" && [[ ! -e $fake/sudo.log ]] &&
+    grep -q 'Default us 1 sebtype $' "$fake/set.log" && grep -q 'SetCurrentIM s sebtype$' "$fake/current-im.log" &&
+    grep -qx 'systemctl --user set-environment XMODIFIERS=@im=fcitx' "$fake/systemctl.log" && [[ ! -e $fake/sudo.log ]] &&
     cmp ../../linux/data/notificationitem.conf "$h/.local/share/fcitx5/addon/notificationitem.conf" &&
     fcitx_hotkeys && mozc_keymap && tray_icons && grep -qx 'Label=中文' "$h/.local/share/fcitx5/inputmethod/rime.conf" &&
     grep -qx 'Name=日本語' "$h/.local/share/fcitx5/inputmethod/mozc.conf" &&
@@ -1280,5 +1282,94 @@ from_rpm() {
   grep -q '^done: 0 change(s)' <<<"$o"
 }
 check setup-from-rpm from_rpm
+
+# Offline Fcitx5 profile update (#442): when Fcitx5 isn't running, setup writes ~/.config/fcitx5/profile
+# directly — fresh profile, existing keyboard-us/rime/mozc profile, and an existing profile with an extra IM
+# (hangul) and custom layout/group preserved — and a rerun makes no profile change.
+offline_profile() {
+  local f=$fake/offline o p
+  local h=$f/home
+  p=$h/.config/fcitx5/profile
+  mkdir -p "$h/.config/fcitx5" "$h/.local/share" "$h/scratch/SebType/cache"
+  ln -sf "$rime_data" "$h/scratch/SebType/cache/"
+  : > "$f/no-fcitx"
+  echo -n "$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE" > "$f/sebtype"
+  echo -n "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" > "$f/librime"
+  echo 'XMODIFIERS=@im=fcitx' > "$f/session-env"
+  run() { env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$f" XDG_CONFIG_HOME="$h/.config" XDG_DATA_HOME="$h/.local/share" \
+    timeout 60 ./setup-ime.sh < /dev/null; }
+  # 1. Fresh profile (no file yet)
+  o=$(run) || return 1; echo "$o"
+  grep -qx 'Default Layout=us' "$p" && grep -qx 'DefaultIM=sebtype' "$p" && grep -qx 'Name=sebtype' "$p" &&
+    ! grep -qxE 'Name=(keyboard-us|rime|mozc)' "$p" || return 1
+  # Idempotent rerun
+  o=$(run) || return 1
+  ! grep -q 'fcitx5/profile' <<<"$o" || return 1
+  # 2. Existing profile with keyboard-us, rime, mozc
+  cat > "$p" <<'EOF'
+[Groups/0]
+Name=Default
+Default Layout=us
+DefaultIM=keyboard-us
+
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+
+[Groups/0/Items/1]
+Name=rime
+Layout=
+
+[Groups/0/Items/2]
+Name=mozc
+Layout=
+
+[GroupOrder]
+0=Default
+EOF
+  o=$(run) || return 1; echo "$o"
+  grep -qx 'DefaultIM=sebtype' "$p" && grep -qx 'Name=sebtype' "$p" &&
+    [[ $(grep -c '^\[Groups/0/Items/' "$p") == 1 ]] &&
+    ! grep -qxE 'Name=(keyboard-us|rime|mozc)' "$p" &&
+    ls "$h"/.local/share/sebtype/backup/*/profile >/dev/null || return 1
+  # 3. Existing profile with an extra IM (hangul), custom Default Layout, and a second group
+  cat > "$p" <<'EOF'
+[Groups/0]
+Name=Default
+Default Layout=gb
+DefaultIM=keyboard-us
+
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+
+[Groups/0/Items/1]
+Name=hangul
+Layout=kr
+
+[Groups/0/Items/2]
+Name=rime
+Layout=
+
+[Groups/1]
+Name=Other
+Default Layout=de
+DefaultIM=keyboard-de
+
+[Groups/1/Items/0]
+Name=keyboard-de
+Layout=
+
+[GroupOrder]
+0=Default
+1=Other
+EOF
+  o=$(run) || return 1; echo "$o"
+  grep -qx 'Default Layout=gb' "$p" && grep -qx 'DefaultIM=sebtype' "$p" &&
+    grep -qx 'Name=sebtype' "$p" && grep -qx 'Name=hangul' "$p" && grep -qx 'Layout=kr' "$p" &&
+    grep -qx '\[Groups/1\]' "$p" && grep -qx 'Name=keyboard-de' "$p" && grep -qx '1=Other' "$p" &&
+    ! grep -qxE 'Name=(keyboard-us|rime|mozc)' "$p" || return 1
+}
+check offline-profile-update offline_profile
 
 ! grep -q '^FAIL' "$results"
