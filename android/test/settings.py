@@ -2590,7 +2590,15 @@ SYNC_WRONG = (
 
 def sync_status():
     """The connection check (#452, #465): Sync & backup's tick for the login sync-setup saved, a wrong
-    password's X in the login dialog and, saved anyway, on the page; then the right one again."""
+    password's X in the login dialog and, saved anyway, on the page; then the right one again. Without
+    sync-setup's server (only this check named, or 中文 not up) it starts one and saves the login itself."""
+    if "server" not in SYNC:
+        start_sync_server()
+        go(HOME["backup"], SYNC_LOGIN)
+        set_text(0, f"10.0.2.2:{SYNC['port']}")
+        set_text(1, SYNC_USER)
+        set_text(2, SYNC_PASSWORD)
+        tap_text(labels("保存", "Save"))
     go(HOME["backup"])
     wait_for("Connected on Sync & backup", lambda: screen_contains(SYNC_CONNECTED), 30)
     screenshot("12-sync-status-connected")
@@ -3100,7 +3108,7 @@ check("incognito-off-learns-zh", learns_again("ni", "你", "sx"))
 check("incognito-off-learns-ja", learns_again("nihongo", "日本語", "hashi"))
 try:
     check("sync-setup", sync_setup)
-    check("sync-status", sync_status, needs=["sync-setup"])
+    check("sync-status", sync_status)
     check("sync-offline-learns", sync_offline_learns, needs=["sync-setup"])
     check("sync-online-uploads", sync_online_uploads, needs=["sync-offline-learns"])
     check("sync-other-device", sync_other_device, needs=["sync-online-uploads"])
