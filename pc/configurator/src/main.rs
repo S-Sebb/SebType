@@ -707,8 +707,10 @@ fn main() -> Result<(), slint::PlatformError> {
     // Headless account sync login (#435, used by Windows Setup): reads `server\nuser\npassword\n`
     // from stdin (`--sync-login`) or from a temp file (`--sync-login-file <path>`) that is removed
     // immediately after reading so passwords never appear in CLI args or logs. With `--check` (#452) it
-    // saves only a login that works, and otherwise exits with why not (sync::LoginError::Check).
-    let check_first = std::env::args().any(|a| a == "--check");
+    // saves only a login that works, and otherwise exits with why not (sync::LoginError::Check). With
+    // `--check-only` it saves nothing: Windows Setup shows the check's tick before it saves (#468).
+    let check_only = std::env::args().any(|a| a == "--check-only");
+    let check_first = check_only || std::env::args().any(|a| a == "--check");
     let save = move |(server, user, password): (String, String, String)| {
         if check_first {
             let check = sync::check(&server, &user, &password);
@@ -716,7 +718,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 return Err(sync::LoginError::Check(check));
             }
         }
-        sync::save_login(server, user, &password).map_err(sync::LoginError::Other)
+        if check_only {
+            return Ok(());
+        }
+        sync::save_login(server, user, &password)
+            .map(|_| ())
+            .map_err(sync::LoginError::Other)
     };
     if std::env::args().any(|a| a == "--sync-login") {
         let res = std::io::read_to_string(std::io::stdin())
