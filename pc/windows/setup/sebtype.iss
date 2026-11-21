@@ -448,24 +448,26 @@ var
   Cmd: String;
   Code: Integer;
   Lines: TArrayOfString;
-  Candidate: String;
+  Sid: String;
+  ProfileDir: String;
 begin
   Result := ExpandConstant('{localappdata}');
-  OutFile := ExpandConstant('{tmp}\orig-localappdata.txt');
+  OutFile := ExpandConstant('{tmp}\orig-sid.txt');
   QuotedOut := OutFile;
   StringChangeEx(QuotedOut, '''', '''''', True);
   DeleteFile(OutFile);
   Cmd := '-NoProfile -NonInteractive -Command "' +
     '$sid = (Get-CimInstance Win32_Process -Filter (''Name=''''explorer.exe'''' AND SessionId='' + (Get-Process -Id $PID).SessionId) | ' +
     'Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwnerSid).Sid; ' +
-    'if ($sid) { $p = (Get-ItemProperty (''HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'' + $sid)).ProfileImagePath; ' +
-    'if ($p) { [IO.File]::WriteAllText(''' + QuotedOut + ''', (Join-Path $p ''AppData\Local''), (New-Object Text.UTF8Encoding $false)) } }"';
+    'if ($sid) { [IO.File]::WriteAllText(''' + QuotedOut + ''', $sid, [Text.Encoding]::ASCII) }"';
   if Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) and
-     LoadStringsFromUTF8File(OutFile, Lines) and (GetArrayLength(Lines) > 0) then
+     LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) > 0) then
   begin
-    Candidate := Trim(Lines[0]);
-    if (Candidate <> '') and DirExists(Candidate) then
-      Result := Candidate;
+    Sid := Trim(Lines[0]);
+    if (Sid <> '') and
+       RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + Sid, 'ProfileImagePath', ProfileDir) and
+       (ProfileDir <> '') and DirExists(ProfileDir + '\AppData\Local') then
+      Result := ProfileDir + '\AppData\Local';
   end;
   DeleteFile(OutFile);
 end;
