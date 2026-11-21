@@ -566,6 +566,8 @@ class English : public Engine {
   void selectAt(int index) override {
     const auto l = shown_;
     if (index < 0 || size_t(index) >= l.size()) return;
+    // The list of a word committed since, kept until the next words come (#450): it can't replace that word.
+    if (shownComposing_ && typed_.empty()) return;
     const std::string &w = l[index];
     if (domains_) {  // the rest of an e-mail address: no space after it
       if (typed_.empty()) edit_.deleteBefore = int(codePoints(afterAt()).size());
@@ -793,13 +795,12 @@ class English : public Engine {
   // Whether the list shown stays as it is, so a key changes it once, to the model's list (#450): until
   // settle() decodes the letters typed, then until the model's ranking or next words come, while they are
   // expected within kHold. A model known to be slower shows the decoder's list or the dictionaries' first.
-  // Not once the word it was for is committed: a tap on it then couldn't put its word in that one's place.
   bool holding() {
     if (!typed_.empty() && decodePending_) return true;
     if (!model_ready_) return false;
     std::lock_guard g(mutex_);
     if (!typed_.empty()) return rankPending_ && rankedGen_ != gen_ && expectedIn(rankTime_) <= kHold;
-    return !shownComposing_ && nextGen_ != gen_ && field_ == Field::Text && main_ && !atEmail() &&
+    return nextGen_ != gen_ && field_ == Field::Text && main_ && !atEmail() &&
            expectedIn(nextTime_) <= kHold;
   }
   std::vector<std::string> currentList() {

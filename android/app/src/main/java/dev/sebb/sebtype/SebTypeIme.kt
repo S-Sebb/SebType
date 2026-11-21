@@ -1122,7 +1122,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val emoji = emojiAt
         if (emoji < 0 || index < emoji) return@run post({ selectCandidate(index).recorded() }) { show(it) }
         if (index > emoji) return@run post({ selectCandidate(index - 1).recorded() }) { show(it) }
-        // The emoji in place of the word
+        // The emoji in place of the word; with none typed it is on a word's list kept after its commit (#450)
+        if (!composing) return@run
         val text = emojiShown
         post({ clear().recorded() }) {
             if (show(it, then = { editor.commit(text) })) englishContext()

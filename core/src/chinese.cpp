@@ -302,9 +302,8 @@ class Chinese final : public Engine {
       std::lock_guard g(mutex_);
       if (resultRev_ == rev_) model = result_;
       // Until the model's list comes the one shown stays, while it is expected within kHold: a key changes the
-      // list once, not to Rime's and then to the model's (#450). Not once what it was for is committed: a tap
-      // on it then couldn't put its word in that one's place.
-      else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold && (rime_->composing() || !shownComposing_)) return;
+      // list once, not to Rime's and then to the model's (#450).
+      else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold) return;
     }
     const auto rime = rime_->candidates(max);
     if (model) items = std::move(*model);
@@ -332,6 +331,8 @@ class Chinese final : public Engine {
     // A list kept from before the last change (#450): the word shown, which Rime's menu may have elsewhere
     // or not at all (then it is committed as the model's own are).
     if (shownRev_ != rev_) {
+      // Made for what was committed since: it can't replace that, and a tap on it does nothing.
+      if (shownComposing_ && !rime_->composing()) return;
       const auto rime = rime_->candidates(kTeachCandidates);
       const auto at = std::ranges::find(rime, item.candidate.text, &Candidate::text);
       item.rime = at == rime.end() ? -1 : int(at - rime.begin());

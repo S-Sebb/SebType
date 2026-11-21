@@ -573,7 +573,20 @@ TEST_F(EnglishTest, AKeyChangesTheListOnceToTheModelsRanking) {
   ASSERT_EQ(list(), shown);
   en->selectAt(0);
   EXPECT_EQ(en->takeCommit(), "what ");
-  EXPECT_NE(list(), shown);  // the list for a word committed goes at once
+  // After a space the word's list stays until the model's next words, and a tap on it meanwhile does nothing.
+  type("is");
+  for (int i = 0; i < 100 && !lists("is"); i++) std::this_thread::sleep_for(20ms);
+  const auto word = list();
+  ASSERT_TRUE(lists("is"));
+  type(" ");
+  EXPECT_EQ(en->takeCommit(), "is ");
+  EXPECT_EQ(list(), word);
+  en->selectAt(0);
+  EXPECT_EQ(en->takeCommit(), "");
+  for (int i = 0; i < 100 && list() == word; i++) std::this_thread::sleep_for(20ms);
+  const auto next = list();
+  std::this_thread::sleep_for(300ms);
+  EXPECT_EQ(list(), next);  // one change, not the dictionaries' words and then the model's
 }
 
 // A tap picks the word shown, even when the model's ranking has come since and moved another word there.
@@ -1225,9 +1238,17 @@ TEST_F(ChineseTest, AKeyChangesTheListOnceToTheModels) {
   ASSERT_TRUE(ready(readies));
   const auto shown = list();
   EXPECT_EQ(shown.at(0), "我爱你");
+  // After a commit the list stays until the model's next words, and a tap on it meanwhile does nothing.
   zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), "我爱你");
-  EXPECT_NE(list(), shown);  // the list for what was committed goes at once
+  EXPECT_EQ(list(), shown);
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "");
+  for (int i = 0; i < 100 && list() == shown; i++) std::this_thread::sleep_for(20ms);
+  const auto next = list();
+  std::this_thread::sleep_for(300ms);
+  EXPECT_EQ(list(), next);  // one change, not an empty list and then the next words
+  EXPECT_FALSE(next.empty());
 }
 
 // A tap while the list is kept (#450) picks the word shown, not Rime's candidate in its place.
