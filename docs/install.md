@@ -44,20 +44,22 @@ the [latest release](https://github.com/S-Sebb/SebType/releases/latest) (no sign
 sh SebType-setup-<version>-linux-x86_64.sh
 ```
 
-It installs the `sebtype` package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's server),
-SebType's librime, SebType's Chinese data and the SebType Configurator, and sets the session up so that
-SebType types in every app, XWayland ones included. It asks once for administrator approval to install the
-packages, changes only your account's settings, and backs up every file it replaces. Log out and back in
-(or toggle Virtual Keyboard off and on in KDE System Settings) once it is done. Running a newer installer
-upgrades SebType and keeps what it learned. Installing from a checkout (`pc/linux/setup-ime.sh`), each
-step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
+It opens a graphical setup wizard (use `--no-gui` or run headless for terminal mode), installs the `sebtype`
+package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's server), SebType's librime, SebType's
+Chinese data and the SebType Configurator, sets the session up so that SebType types in every app, XWayland
+ones included, and lets you optionally sign in to Account Sync. It asks once for administrator approval to
+install the packages, changes only your account's settings, and backs up every file it replaces. Log out and
+back in (or toggle Virtual Keyboard off and on in KDE System Settings) once it is done. Running a newer
+installer upgrades SebType and keeps what it learned. Installing from a checkout (`pc/linux/setup-ime.sh`),
+each step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
 
 ## Windows
 
 Download `SebType-setup-<version>.exe` from the [latest release](https://github.com/S-Sebb/SebType/releases/latest)
-(no sign-in needed). Run it, pick the languages (English, 中文, 日本語) and confirm Windows' admin prompt. Running a newer
-installer upgrades SebType and keeps what it learned; uninstall it from Windows' Apps. What it changes,
-and the silent install: [pc/windows/README.md](../pc/windows/README.md).
+(no sign-in needed). Run it, pick the languages (English, 中文, 日本語), confirm Windows' admin prompt, and
+optionally sign in to Account Sync. Running a newer installer upgrades SebType and keeps what it learned;
+uninstall it from Windows' Apps. What it changes, and the silent install:
+[pc/windows/README.md](../pc/windows/README.md).
 
 ## Signing key
 

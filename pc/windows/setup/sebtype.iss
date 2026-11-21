@@ -163,6 +163,33 @@ ja.Failed=SebType のセットアップ中に問題が起きました（手順�
 en.Kept=SebType couldn't send the words it learned on this PC to your sync server, so it kept them in %1.%n%nThey come back when you set up SebType with that language again.
 zh.Kept=SebType 没能把它在这台电脑上学会的词发到你的同步服务器，所以把它们留在了 %1。%n%n下次装 SebType 时选上这个语言，它们就会回来。
 ja.Kept=この PC で SebType が覚えた言葉を同期サーバーに送れなかったので、%1 に残しました。%n%nもう一度その言語で SebType をセットアップすると戻ります。
+en.SyncTitle=Account sync
+zh.SyncTitle=账号同步
+ja.SyncTitle=アカウント同期
+en.SyncDesc=Optional. You can also set this up later in SebType Configurator.
+zh.SyncDesc=可选。也可以稍后在 SebType 设置里开启。
+ja.SyncDesc=任意です。あとから SebType 設定で有効にすることもできます。
+en.SyncSub=Sync your learned words and dictionaries across devices with your own sync server. Leave all fields blank to skip.
+zh.SyncSub=通过你自己的同步服务器，在多台设备间同步学到的词和自定义词库。全部留空即可跳过。
+ja.SyncSub=自分の同期サーバーを使って、学習した単語やユーザー辞書を端末間で同期できます。すべて空欄のまま［次へ］でスキップできます。
+en.SyncServer=Server address (sync.example.com):
+zh.SyncServer=服务器地址（sync.example.com）：
+ja.SyncServer=サーバーアドレス（sync.example.com）：
+en.SyncUser=Username:
+zh.SyncUser=用户名：
+ja.SyncUser=ユーザー名：
+en.SyncPassword=Password:
+zh.SyncPassword=密码：
+ja.SyncPassword=パスワード：
+en.SyncIncomplete=Fill in server, username, and password, or leave all three blank to skip.
+zh.SyncIncomplete=请填全服务器地址、用户名和密码，或全部留空以跳过。
+ja.SyncIncomplete=サーバーアドレス・ユーザー名・パスワードをすべて入力するか、すべて空欄にしてスキップしてください。
+en.SyncInvalidServer=Server address must be an https:// address.
+zh.SyncInvalidServer=服务器地址必须是 https:// 网址。
+ja.SyncInvalidServer=サーバーアドレスは https:// のアドレスにしてください。
+en.SyncSaveFailed=Could not save your sync login. Check your details or clear the fields to skip.
+zh.SyncSaveFailed=无法保存同步账号。请检查填写的内容，或清空后跳过。
+ja.SyncSaveFailed=同期アカウントを保存できませんでした。入力内容を確認するか、空欄にしてスキップしてください。
 
 [Tasks]
 Name: "en"; Description: "{cm:English}"; GroupDescription: "{cm:Languages}"
@@ -247,6 +274,7 @@ const
 
 var
   FailCode: Integer;
+  SyncPage: TInputQueryWizardPage;
 
 function AddFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
   external 'AddFontResourceExW@gdi32.dll stdcall';
@@ -395,15 +423,117 @@ begin
   Restyle(WizardForm.FinishedLabel, '', 0, Ink);
   Restyle(WizardForm.StatusLabel, '', 0, Ink);
   ExtractTemporaryFile('finish-' + Scale + '.png');
+  SyncPage := CreateInputQueryPage(wpInstalling, CustomMessage('SyncTitle'), CustomMessage('SyncDesc'), CustomMessage('SyncSub'));
+  SyncPage.Add(CustomMessage('SyncServer'), False);
+  SyncPage.Add(CustomMessage('SyncUser'), False);
+  SyncPage.Add(CustomMessage('SyncPassword'), True);
+  Body(SyncPage.SubCaptionLabel);
+  Body(SyncPage.PromptLabels[0]);
+  Body(SyncPage.PromptLabels[1]);
+  Body(SyncPage.PromptLabels[2]);
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = SyncPage.ID) and (Silent or NoUserSteps or (FailCode <> 0));
+end;
+
+// Resolves the invoking desktop user's %LOCALAPPDATA% so a cross-account UAC elevation writes the
+// short-lived credential handoff inside that user's own private profile directory (readable only by
+// that user, Administrators and SYSTEM). Falls back to {localappdata} when the same account elevated.
+function OriginalLocalAppData: String;
+var
+  OutFile: String;
+  QuotedOut: String;
+  Cmd: String;
+  Code: Integer;
+  Lines: TArrayOfString;
+  Sid: String;
+  ProfileDir: String;
+begin
+  Result := ExpandConstant('{localappdata}');
+  OutFile := ExpandConstant('{tmp}\orig-sid.txt');
+  QuotedOut := OutFile;
+  StringChangeEx(QuotedOut, '''', '''''', True);
+  DeleteFile(OutFile);
+  Cmd := '-NoProfile -NonInteractive -Command "' +
+    '$sid = (Get-CimInstance Win32_Process -Filter (''Name=''''explorer.exe'''' AND SessionId='' + (Get-Process -Id $PID).SessionId) | ' +
+    'Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwnerSid).Sid; ' +
+    'if ($sid) { [IO.File]::WriteAllText(''' + QuotedOut + ''', $sid, [Text.Encoding]::ASCII) }"';
+  if Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) and
+     LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) > 0) then
+  begin
+    Sid := Trim(Lines[0]);
+    if (Sid <> '') and
+       RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + Sid, 'ProfileImagePath', ProfileDir) and
+       (ProfileDir <> '') and DirExists(ProfileDir + '\AppData\Local') then
+      Result := ProfileDir + '\AppData\Local';
+  end;
+  DeleteFile(OutFile);
+end;
+
+// Saves the sync login as the invoking user via a short-lived file (never on the command line or in logs).
+function SaveSyncLogin(Server, User, Password: String): Boolean;
+var
+  CredFile: String;
+  Lines: TArrayOfString;
+  Code: Integer;
+  Ok: Boolean;
+begin
+  Result := False;
+  CredFile := OriginalLocalAppData + '\SebType\sync-login.tmp';
+  ForceDirectories(ExtractFileDir(CredFile));
+  SetArrayLength(Lines, 3);
+  Lines[0] := Server;
+  Lines[1] := User;
+  Lines[2] := Password;
+  Ok := False;
+  try
+    if not SaveStringsToUTF8FileWithoutBOM(CredFile, Lines, False) then
+    begin
+      Tell(CustomMessage('SyncSaveFailed'), mbError);
+      Exit;
+    end;
+    Ok := ExecAsOriginalUser(ExpandConstant('{app}\sebtype-configurator.exe'),
+      '--sync-login-file "' + CredFile + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  finally
+    DeleteFile(CredFile);
+  end;
+  if Ok and (Code = 0) then
+    Result := True
+  else if Ok and (Code = 2) then
+    Tell(CustomMessage('SyncInvalidServer'), mbError)
+  else
+    Tell(CustomMessage('SyncSaveFailed'), mbError);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  S, U, P: String;
 begin
   Result := True;
   if (CurPageID = wpSelectTasks) and (Chosen = '') then
   begin
     Tell(CustomMessage('NoLanguage'), mbInformation);
     Result := False;
+  end
+  else if CurPageID = SyncPage.ID then
+  begin
+    S := Trim(SyncPage.Values[0]);
+    U := Trim(SyncPage.Values[1]);
+    P := SyncPage.Values[2];
+    if (S = '') and (U = '') and (P = '') then
+      Exit;
+    if (S = '') or (U = '') or (P = '') then
+    begin
+      Tell(CustomMessage('SyncIncomplete'), mbInformation);
+      Result := False;
+      Exit;
+    end;
+    if SaveSyncLogin(S, U, P) then
+      SyncPage.Values[2] := ''
+    else
+      Result := False;
   end;
 end;
 

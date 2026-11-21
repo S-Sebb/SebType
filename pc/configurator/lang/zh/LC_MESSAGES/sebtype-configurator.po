@@ -444,3 +444,81 @@ msgstr "自动检查更新"
 
 msgid "Once a day, from SebType's releases on GitHub"
 msgstr "每天一次，查看 GitHub 上 SebType 的新版本"
+
+msgid "SebType Setup"
+msgstr "SebType 安装向导"
+
+msgid "Step {} of 4"
+msgstr "第 {} 步，共 4 步"
+
+msgid "Hi! Let's set up SebType"
+msgstr "你好！来装 SebType 吧"
+
+msgid "SebType types Chinese, Japanese and English on this PC, just like on your phone."
+msgstr "SebType 让这台电脑像你的手机一样输入中文、日本語和英文。"
+
+msgid "This installs Chinese (Rime with SebType's dictionary), Japanese (SebType's Mozc), and the SebType Configurator."
+msgstr "它会装好中文（Rime 和 SebType 的词库）、日本語（SebType 的 Mozc）和 SebType 设置。"
+
+msgid "Already have SebType? This updates it and keeps every word it has learned."
+msgstr "已经装过 SebType？这次会更新它，并保留它学会的每一个词。"
+
+msgid "Install"
+msgstr "安装"
+
+msgid "Setting up SebType"
+msgstr "正在安装 SebType"
+
+msgid "Installing SebType packages…"
+msgstr "正在安装 SebType 软件包…"
+
+msgid "Setting up your account…"
+msgstr "正在配置你的账户…"
+
+msgid "Installation didn't finish"
+msgstr "安装未能完成"
+
+msgid "Approve the administrator prompt when asked. The words SebType has learned stay."
+msgstr "请在提示时批准管理员授权。SebType 学会的词都会保留。"
+
+msgid "Configuring Fcitx5, Rime, Mozc, and SebType Configurator…"
+msgstr "正在配置 Fcitx5、Rime、Mozc 和 SebType 设置…"
+
+msgid "Retry"
+msgstr "重试"
+
+msgid "Account sync"
+msgstr "账号同步"
+
+msgid "Sync your learned words and dictionaries across devices with your own sync server. You can also set this up later in SebType Configurator."
+msgstr "通过你自己的同步服务器，在多台设备间同步学到的词和自定义词库。也可以稍后在 SebType 设置里开启。"
+
+msgid "Skip"
+msgstr "跳过"
+
+msgid "Sign in & continue"
+msgstr "登录并继续"
+
+msgid "SebType is ready!"
+msgstr "SebType 装好啦！"
+
+msgid "Switch EN → 中 → あ"
+msgstr "切换 EN → 中 → あ"
+
+msgid "Tap for quick English in 中文 or 日本語"
+msgstr "在中文或日本語里轻按一下临时输入英文"
+
+msgid "Switch 简 ⇄ 繁"
+msgstr "切换简 ⇄ 繁"
+
+msgid "Switch あ ⇄ ア"
+msgstr "切换 あ ⇄ ア"
+
+msgid "Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType."
+msgstr "重新登录，或在 KDE 系统设置里将虚拟键盘关掉再打开，即可开始使用 SebType。"
+
+msgid "Open SebType Configurator"
+msgstr "打开 SebType 设置"
+
+msgid "Finish"
+msgstr "完成"

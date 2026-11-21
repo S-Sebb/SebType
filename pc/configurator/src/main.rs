@@ -9,6 +9,7 @@ mod mozc;
 mod patch;
 mod proto;
 mod rime;
+mod setup;
 mod sync;
 mod update;
 
@@ -686,6 +687,58 @@ fn main() -> Result<(), slint::PlatformError> {
                 1
             }
         });
+    }
+    // Headless account sync login (#435, used by Windows Setup): reads `server\nuser\npassword\n`
+    // from stdin (`--sync-login`) or from a temp file (`--sync-login-file <path>`) that is removed
+    // immediately after reading so passwords never appear in CLI args or logs.
+    if std::env::args().any(|a| a == "--sync-login") {
+        let res = std::io::read_to_string(std::io::stdin())
+            .map_err(|e| sync::LoginError::Other(e.to_string()))
+            .and_then(|input| sync::parse_login_lines(&input))
+            .and_then(|(server, user, password)| {
+                sync::save_login(server, user, &password).map_err(sync::LoginError::Other)
+            });
+        std::process::exit(match res {
+            Ok(_) => 0,
+            Err(e) => {
+                eprintln!("--sync-login: {e}");
+                e.exit_code()
+            }
+        });
+    }
+    if let Some(i) = std::env::args().position(|a| a == "--sync-login-file") {
+        let res = match std::env::args().nth(i + 1) {
+            Some(path) => sync::read_login_file(std::path::Path::new(&path))
+                .and_then(|input| sync::parse_login_lines(&input))
+                .and_then(|(server, user, password)| {
+                    sync::save_login(server, user, &password).map_err(sync::LoginError::Other)
+                }),
+            None => Err(sync::LoginError::Other("missing file path".into())),
+        };
+        std::process::exit(match res {
+            Ok(_) => 0,
+            Err(e) => {
+                eprintln!("--sync-login-file: {e}");
+                e.exit_code()
+            }
+        });
+    }
+    // Linux Picnic-themed GUI setup wizard (#435): `--setup <installer-path> [--started-file <path>]`.
+    #[cfg(target_os = "linux")]
+    if let Some(i) = std::env::args().position(|a| a == "--setup") {
+        let Some(installer) = std::env::args().nth(i + 1) else {
+            eprintln!("--setup: missing installer path");
+            std::process::exit(2);
+        };
+        let started_file = std::env::args()
+            .position(|a| a == "--started-file")
+            .and_then(|j| std::env::args().nth(j + 1))
+            .map(std::path::PathBuf::from);
+        return setup::run(
+            std::path::PathBuf::from(installer),
+            started_file,
+            language(),
+        );
     }
     // Wayland matches the window to its launcher (and icon) by this id: sebtype-configurator.desktop.
     slint::BackendSelector::new().select()?;

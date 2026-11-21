@@ -1,0 +1,387 @@
+// SebType Linux GUI Setup Wizard (#435): Picnic-themed 4-step installer window
+// (Welcome -> Installing -> Account Sync -> Ready/Tips), launched by the self-extracting installer.
+import { Theme } from "theme.slint";
+import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field } from "widgets.slint";
+
+export global SetupState {
+    in property <string> ui-font;
+    in-out property <int> step;              // 0 Welcome, 1 Installing, 2 Account Sync, 3 Ready
+    in-out property <int> install-phase;     // 0 packages (pkexec), 1 user setup, 2 failed
+    in-out property <string> install-error;
+    in-out property <bool> sync-busy;
+    in-out property <string> sync-error;
+    in-out property <bool> open-configurator: true;
+
+    pure callback server-valid(string) -> bool;
+    pure callback can-submit(string, string, string) -> bool;
+    callback start-install();
+    callback save-sync(string, string, string);
+    callback skip-sync();
+    callback finish();
+}
+
+component TipRow inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> text;
+    spacing: 12px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    alignment: start;
+    Kbd { text: root.key; min-width: 108px; }
+    Text {
+        text: root.text;
+        color: Theme.ink;
+        font-size: Theme.body-size;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+        wrap: word-wrap;
+    }
+}
+
+export component SetupWindow inherits Window {
+    title: @tr("SebType Setup");
+    icon: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png");
+    preferred-width: 580px;
+    preferred-height: 500px;
+    min-width: 520px;
+    min-height: 460px;
+    background: Theme.page;
+    default-font-family: SetupState.ui-font;
+    default-font-size: 14px;
+
+    property <string> sync-server;
+    property <string> sync-user;
+    property <string> sync-password;
+
+    // Picnic checkered cloth background.
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("cloth.svg");
+        horizontal-tiling: repeat;
+        vertical-tiling: repeat;
+        image-rendering: pixelated;
+    }
+
+    VerticalLayout {
+        // Cream title bar with pig icon and step indicator.
+        Rectangle {
+            height: 58px;
+            background: Theme.card;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 12px;
+                Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 19px;
+                    background: #FFE4EC;
+                    clip: true;
+                    Image {
+                        source: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png");
+                        width: 38px;
+                        height: 38px;
+                    }
+                }
+                PageTitle {
+                    text: "SebType";
+                    font-size: 20px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PixelFrame {
+                        fill: Theme.pink;
+                        shadow: false;
+                        padding-x: 10px;
+                        padding-y: 3px;
+                        Text {
+                            text: @tr("Step {} of 4", SetupState.step + 1);
+                            color: Theme.ink;
+                            font-size: 12.5px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                y: parent.height - Theme.frame;
+                width: parent.width;
+                height: Theme.frame;
+                background: Theme.outline;
+            }
+        }
+
+        // Main wizard card.
+        VerticalLayout {
+            padding: 20px;
+            spacing: 14px;
+            vertical-stretch: 1;
+
+            // Step 0: Welcome
+            if SetupState.step == 0: VerticalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                Card {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 12px;
+                        alignment: center;
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 72px;
+                                height: 72px;
+                                border-radius: 36px;
+                                background: #FFE4EC;
+                                border-width: 2px;
+                                border-color: Theme.outline;
+                                clip: true;
+                                Image {
+                                    source: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png");
+                                    width: 72px;
+                                    height: 72px;
+                                }
+                            }
+                        }
+                        PageTitle {
+                            text: @tr("Hi! Let's set up SebType");
+                            color: Theme.key;
+                            font-size: 24px;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: @tr("SebType types Chinese, Japanese and English on this PC, just like on your phone.");
+                            color: Theme.ink;
+                            font-size: Theme.body-size;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                        Divider { }
+                        Text {
+                            text: @tr("This installs Chinese (Rime with SebType's dictionary), Japanese (SebType's Mozc), and the SebType Configurator.");
+                            color: Theme.ink;
+                            font-size: 14px;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: @tr("Already have SebType? This updates it and keeps every word it has learned.");
+                            color: Theme.muted;
+                            font-size: Theme.detail-size;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    Button {
+                        text: @tr("Install");
+                        primary: true;
+                        min-width: 120px;
+                        clicked => { SetupState.start-install(); }
+                    }
+                }
+            }
+
+            // Step 1: Installing
+            if SetupState.step == 1: VerticalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                Card {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 14px;
+                        alignment: center;
+                        PageTitle {
+                            text: @tr("Setting up SebType");
+                            color: Theme.key;
+                            font-size: 22px;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: SetupState.install-phase == 0 ? @tr("Installing SebType packages…")
+                                : SetupState.install-phase == 1 ? @tr("Setting up your account…")
+                                : @tr("Installation didn't finish");
+                            color: SetupState.install-phase == 2 ? Theme.danger : Theme.ink;
+                            font-size: 16px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                        if SetupState.install-phase != 2: Text {
+                            text: SetupState.install-phase == 0
+                                ? @tr("Approve the administrator prompt when asked. The words SebType has learned stay.")
+                                : @tr("Configuring Fcitx5, Rime, Mozc, and SebType Configurator…");
+                            color: Theme.muted;
+                            font-size: Theme.detail-size;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                        if SetupState.install-phase != 2: PixelFrame {
+                            height: 20px;
+                            fill: Theme.off-track;
+                            shadow: false;
+                            Rectangle {
+                                height: 10px;
+                                clip: true;
+                                Rectangle {
+                                    x: 0;
+                                    width: SetupState.install-phase == 0 ? parent.width * 0.45 : parent.width * 0.85;
+                                    height: parent.height;
+                                    background: Theme.key;
+                                    animate width { duration: 250ms; }
+                                }
+                            }
+                        }
+                        if SetupState.install-phase == 2 && SetupState.install-error != "": PixelFrame {
+                            fill: Theme.pink;
+                            shadow: false;
+                            padding-x: 12px;
+                            padding-y: 10px;
+                            Text {
+                                text: SetupState.install-error;
+                                color: Theme.danger;
+                                font-size: Theme.detail-size;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    if SetupState.install-phase == 2: Button {
+                        text: @tr("Retry");
+                        primary: true;
+                        min-width: 110px;
+                        clicked => { SetupState.start-install(); }
+                    }
+                }
+            }
+
+            // Step 2: Account Sync (optional)
+            if SetupState.step == 2: VerticalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                Card {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 8px;
+                        PageTitle {
+                            text: @tr("Account sync");
+                            color: Theme.key;
+                            font-size: 21px;
+                        }
+                        Text {
+                            text: @tr("Sync your learned words and dictionaries across devices with your own sync server. You can also set this up later in SebType Configurator.");
+                            color: Theme.muted;
+                            font-size: Theme.detail-size;
+                            wrap: word-wrap;
+                        }
+                        Text { text: @tr("Server address"); color: Theme.ink; font-size: Theme.body-size; }
+                        Field { text <=> root.sync-server; placeholder: "sync.example.com"; }
+                        if root.sync-server != "" && !SetupState.server-valid(root.sync-server): Text {
+                            text: @tr("An https:// address");
+                            color: Theme.danger;
+                            font-size: Theme.detail-size;
+                        }
+                        Text { text: @tr("Username"); color: Theme.ink; font-size: Theme.body-size; }
+                        Field { text <=> root.sync-user; }
+                        Text { text: @tr("Password"); color: Theme.ink; font-size: Theme.body-size; }
+                        Field {
+                            text <=> root.sync-password;
+                            input-type: InputType.password;
+                            accepted => {
+                                if !SetupState.sync-busy && SetupState.can-submit(root.sync-server, root.sync-user, root.sync-password) {
+                                    SetupState.save-sync(root.sync-server, root.sync-user, root.sync-password);
+                                }
+                            }
+                        }
+                        if SetupState.sync-error != "": Text {
+                            text: SetupState.sync-error;
+                            color: Theme.danger;
+                            font-size: Theme.detail-size;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: space-between;
+                    Button {
+                        text: @tr("Skip");
+                        enabled: !SetupState.sync-busy;
+                        min-width: 96px;
+                        clicked => {
+                            root.sync-password = "";
+                            SetupState.skip-sync();
+                        }
+                    }
+                    Button {
+                        text: @tr("Sign in & continue");
+                        primary: true;
+                        enabled: !SetupState.sync-busy && SetupState.can-submit(root.sync-server, root.sync-user, root.sync-password);
+                        clicked => {
+                            SetupState.save-sync(root.sync-server, root.sync-user, root.sync-password);
+                        }
+                    }
+                }
+            }
+
+            // Step 3: Ready / Tips
+            if SetupState.step == 3: VerticalLayout {
+                spacing: 12px;
+                vertical-stretch: 1;
+                Card {
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 8px;
+                        PageTitle {
+                            text: @tr("SebType is ready!");
+                            color: Theme.key;
+                            font-size: 22px;
+                        }
+                        TipRow { key: "Win+Space"; text: @tr("Switch EN → 中 → あ"); }
+                        TipRow { key: "Shift"; text: @tr("Tap for quick English in 中文 or 日本語"); }
+                        TipRow { key: "Ctrl+Shift+F"; text: @tr("Switch 简 ⇄ 繁"); }
+                        TipRow { key: "Alt+`"; text: @tr("Switch あ ⇄ ア"); }
+                    }
+                }
+                Info {
+                    text: @tr("Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType.");
+                }
+                HorizontalLayout {
+                    alignment: space-between;
+                    padding-top: 4px;
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Switch {
+                                checked <=> SetupState.open-configurator;
+                                label: @tr("Open SebType Configurator");
+                            }
+                        }
+                        Text {
+                            text: @tr("Open SebType Configurator");
+                            color: Theme.ink;
+                            font-size: Theme.body-size;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Button {
+                        text: @tr("Finish");
+                        primary: true;
+                        min-width: 110px;
+                        clicked => { SetupState.finish(); }
+                    }
+                }
+            }
+        }
+    }
+}

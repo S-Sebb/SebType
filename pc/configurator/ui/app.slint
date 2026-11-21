@@ -5,8 +5,9 @@ import { Theme } from "theme.slint";
 import { State, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote } from "state.slint";
 import { Button, PageTitle, PixelFrame } from "widgets.slint";
 import { Nav, Pages } from "pages.slint";
+import { SetupState, SetupWindow } from "setup.slint";
 
-export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote }
+export { State, Nav, Theme, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote, SetupState, SetupWindow }
 
 component NavItem inherits Rectangle {
     in property <string> text;

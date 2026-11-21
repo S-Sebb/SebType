@@ -444,3 +444,81 @@ msgstr "アップデートを自動で確認"
 
 msgid "Once a day, from SebType's releases on GitHub"
 msgstr "1 日 1 回、GitHub の SebType のリリースを確認します"
+
+msgid "SebType Setup"
+msgstr "SebType セットアップ"
+
+msgid "Step {} of 4"
+msgstr "ステップ {} / 4"
+
+msgid "Hi! Let's set up SebType"
+msgstr "こんにちは！SebType をはじめよう"
+
+msgid "SebType types Chinese, Japanese and English on this PC, just like on your phone."
+msgstr "SebType で、この PC でもスマホと同じように中国語・日本語・英語を入力できます。"
+
+msgid "This installs Chinese (Rime with SebType's dictionary), Japanese (SebType's Mozc), and the SebType Configurator."
+msgstr "中国語（Rime と SebType の辞書）、日本語（SebType の Mozc）、SebType 設定をインストールします。"
+
+msgid "Already have SebType? This updates it and keeps every word it has learned."
+msgstr "SebType をもうお使いですか？アップデートしても、覚えた言葉はそのまま残ります。"
+
+msgid "Install"
+msgstr "インストール"
+
+msgid "Setting up SebType"
+msgstr "SebType をセットアップしています"
+
+msgid "Installing SebType packages…"
+msgstr "SebType パッケージをインストールしています…"
+
+msgid "Setting up your account…"
+msgstr "アカウントを設定しています…"
+
+msgid "Installation didn't finish"
+msgstr "インストールが完了しませんでした"
+
+msgid "Approve the administrator prompt when asked. The words SebType has learned stay."
+msgstr "管理者認証が表示されたら許可してください。SebType が覚えた言葉はそのまま残ります。"
+
+msgid "Configuring Fcitx5, Rime, Mozc, and SebType Configurator…"
+msgstr "Fcitx5、Rime、Mozc、SebType 設定を構成しています…"
+
+msgid "Retry"
+msgstr "やり直す"
+
+msgid "Account sync"
+msgstr "アカウント同期"
+
+msgid "Sync your learned words and dictionaries across devices with your own sync server. You can also set this up later in SebType Configurator."
+msgstr "自分の同期サーバーを使って、学習した単語やユーザー辞書を端末間で同期できます。あとから SebType 設定で有効にすることもできます。"
+
+msgid "Skip"
+msgstr "スキップ"
+
+msgid "Sign in & continue"
+msgstr "サインインして続行"
+
+msgid "SebType is ready!"
+msgstr "SebType の準備ができました！"
+
+msgid "Switch EN → 中 → あ"
+msgstr "EN → 中 → あ を切り替え"
+
+msgid "Tap for quick English in 中文 or 日本語"
+msgstr "中国語や日本語で軽く押すと一時的に英語入力"
+
+msgid "Switch 简 ⇄ 繁"
+msgstr "簡体 ⇄ 繁体 を切り替え"
+
+msgid "Switch あ ⇄ ア"
+msgstr "あ ⇄ ア を切り替え"
+
+msgid "Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType."
+msgstr "再ログインするか、KDE システム設定で仮想キーボードをオフ・オンすると SebType を使い始められます。"
+
+msgid "Open SebType Configurator"
+msgstr "SebType 設定を開く"
+
+msgid "Finish"
+msgstr "完了"

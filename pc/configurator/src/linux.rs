@@ -801,7 +801,7 @@ cp -- "$2" "$f"
 printf '%s  %s\n' "$1" "$f" | sha256sum --check --status - || { echo "$(basename -- "$2") isn't the release's"; exit 3; }
 /bin/sh "$f" --install-rpms-only"#;
 
-fn root_install(program: &[&str], files: &[crate::update::Download]) -> Command {
+pub(crate) fn root_install(program: &[&str], files: &[crate::update::Download]) -> Command {
     let mut c = Command::new(program[0]);
     c.args(&program[1..]).args(["-c", ROOT_INSTALL, "sh"]);
     for (path, sha) in files {
@@ -811,7 +811,7 @@ fn root_install(program: &[&str], files: &[crate::update::Download]) -> Command 
 }
 
 /// The last line a command printed, for its error.
-fn last_line(out: &std::process::Output, or: &str) -> String {
+pub(crate) fn last_line(out: &std::process::Output, or: &str) -> String {
     [&out.stderr, &out.stdout]
         .iter()
         .find_map(|o| {
@@ -822,6 +822,53 @@ fn last_line(out: &std::process::Output, or: &str) -> String {
                 .map(|l| l.trim().to_string())
         })
         .unwrap_or_else(|| or.to_string())
+}
+
+/// Runs the self-extracting installer's root RPM step through pkexec, verifying its SHA-256 inside
+/// a root-only temp directory (TOCTOU-safe).
+pub(crate) fn run_root_installer(installer: &Path) -> io::Result<()> {
+    use sha2::{Digest, Sha256};
+    let mut file = fs::File::open(installer)?;
+    let mut hasher = Sha256::new();
+    io::copy(&mut file, &mut hasher)?;
+    let sha = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let files = vec![(installer.to_path_buf(), sha)];
+    let out = root_install(&["pkexec", "/bin/sh"], &files).output()?;
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(126 | 127) => Err(io::Error::other(
+            "not allowed: the admin prompt was cancelled",
+        )),
+        _ => Err(io::Error::other(last_line(&out, "installer failed"))),
+    }
+}
+
+/// Runs `/usr/bin/sebtype-setup </dev/null` for the invoking user.
+pub(crate) fn run_user_setup() -> io::Result<()> {
+    let out = Command::new("/usr/bin/sebtype-setup")
+        .stdin(std::process::Stdio::null())
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other(format!(
+            "sebtype-setup: {}",
+            last_line(&out, "failed")
+        )));
+    }
+    Ok(())
+}
+
+/// The installed Configurator binary (not the temporary one extracted during `--setup`).
+pub(crate) fn installed_configurator() -> PathBuf {
+    let user_bin = data().join("sebtype/configurator/sebtype-configurator");
+    if user_bin.is_file() {
+        user_bin
+    } else {
+        PathBuf::from("/usr/libexec/sebtype/sebtype-configurator")
+    }
 }
 
 /// Installs the release's RPMs through the self-extracting installer with the system's admin prompt
