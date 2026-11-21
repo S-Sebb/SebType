@@ -519,10 +519,12 @@ TEST_F(EnglishTest, SpaceCorrectsTyposAndKeepsWords) {
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
+  const int readies = readyCount();
   type("Becuase");
-  EXPECT_EQ(en->highlighted(), 0);
+  ASSERT_TRUE(ready(readies));  // the model's ranking, which the list waits for (#450)
   EXPECT_EQ(list().at(0), "Because");
   EXPECT_EQ(list().at(1), "Becuase");
+  EXPECT_EQ(en->highlighted(), 0);  // of the list shown
   type(" ");
   EXPECT_EQ(en->takeCommit(), "Because ");
   type("is ");
@@ -547,16 +549,39 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
   EXPECT_EQ(en->takeCommit(), "what ");
 }
 
+// A key changes the list once (#450): its own result and the decoder's leave the list shown as it was, and
+// the model's ranking, expected within the hold, takes its place.
+TEST_F(EnglishTest, AKeyChangesTheListOnceToTheModelsRanking) {
+  start(EN_MODEL, std::chrono::milliseconds(50));
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  const int readies = readyCount();
+  type("wah");
+  ASSERT_TRUE(ready(readies));  // the model's ranking for "wah"
+  const auto before = list();
+  en->key({'t', 0, false});
+  EXPECT_EQ(list(), before);  // the key's own result
+  en->settle();
+  EXPECT_EQ(list(), before);  // not the decoder's, "want" first
+  for (int i = 0; i < 100 && list() == before; i++) std::this_thread::sleep_for(20ms);
+  EXPECT_EQ(list().at(0), "what");
+}
+
 // A tap picks the word shown, even when the model's ranking has come since and moved another word there.
 TEST_F(EnglishTest, ATapPicksTheWordShownNotALaterRanking) {
   start(EN_MODEL, std::chrono::milliseconds(300));
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
-  const int readies = readyCount();
-  type("waht");
+  int readies = readyCount();
+  type("waht");  // timed: rankings take longer than the list waits for them (#450)
+  ASSERT_TRUE(ready(readies));
+  en->key({0xff08, 0, false});
+  type("t");
   const auto shown = list();  // the decoder's: the model's "what" isn't ranked yet
   ASSERT_EQ(shown.at(0), "want");
+  readies = readyCount();
   ASSERT_TRUE(ready(readies));  // ranked, not shown
   en->selectAt(0);
   EXPECT_EQ(en->takeCommit(), "want ");
@@ -587,8 +612,10 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   en->key({0xff08, 0, false});  // BackSpace: nothing typed after "very " again
   ASSERT_TRUE(ready(0));
   EXPECT_TRUE(lists("much")) << testing::PrintToString(list());
-  // Text changed meanwhile: the words for the old text don't show.
+  // Text changed meanwhile: the words for the old text give way to the new text's.
+  const int readies = readyCount();
   en->setContext("Thank you very much. See you ");
+  ASSERT_TRUE(ready(readies));
   EXPECT_FALSE(lists("much"));
 }
 
@@ -624,7 +651,9 @@ TEST(EnglishModel, ALongContextPredictsAsItsWindowAloneAndEditsEarlierTextAgain)
   EXPECT_TRUE(same(after, sebtype_lm::Model(EN_MODEL).nextWords(edited, 5)));
 }
 
+// Learning is the decoder's: without the model, whose ranking the list would wait for (#450).
 TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
+  start("");
   type("zorbly");
   en->selectAt(indexOf("zorbly"));
   EXPECT_EQ(en->takeCommit(), "zorbly ");
@@ -652,6 +681,7 @@ TEST_F(EnglishTest, PickedWordsAreLearnedKeptAndForgotten) {
 // #270: a private field (a private browser window on the PCs, incognito on the phone), as every frontend tells
 // the core, uses the words learned before but learns no new ones; a field that may learn learns again.
 TEST_F(EnglishTest, APrivateFieldKeepsLearnedWordsAndLearnsNoNewOnes) {
+  start("");  // learning is the decoder's, as above
   Core core([this](Lang lang) { return lang == Lang::English ? std::move(en) : nullptr; });
   auto typeIn = [&](const std::string &s) {
     core.setContext("");
@@ -1172,6 +1202,19 @@ TEST_F(ChineseTest, ALateListNeverShows) {
   EXPECT_EQ(list().at(0), "握挨泥");  // Rime's, until the model's for these letters
   ASSERT_TRUE(ready(before));
   EXPECT_EQ(readyCount(), before + 1);
+  EXPECT_EQ(list().at(0), "我爱你");
+}
+
+// A key changes the list once (#450): Rime's list for the new letters doesn't show before the model's, which
+// is expected within the hold.
+TEST_F(ChineseTest, AKeyChangesTheListOnceToTheModels) {
+  start(50ms);
+  typeAndWait("woain");
+  const auto before = list();
+  const int readies = readyCount();
+  type("i");
+  EXPECT_EQ(list(), before);  // not Rime's, 握挨泥 first
+  ASSERT_TRUE(ready(readies));
   EXPECT_EQ(list().at(0), "我爱你");
 }
 
