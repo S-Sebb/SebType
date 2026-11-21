@@ -74,6 +74,12 @@ class ActionRow(context: Context, private val texts: Texts, private val listener
             }
             return out
         }
+
+        internal fun iconSize(slotWidth: Float, density: Float) =
+            minOf(22 * density, maxOf(8 * density, slotWidth - 2 * density))
+
+        internal fun glyphSize(slotWidth: Float, density: Float) =
+            minOf(18 * density, maxOf(8 * density, slotWidth - 2 * density))
     }
 
     private val density = resources.displayMetrics.density
@@ -128,14 +134,16 @@ class ActionRow(context: Context, private val texts: Texts, private val listener
 
     override fun drawItem(canvas: Canvas, item: Item) {
         val r = item.rect
+        val icon = iconSize(r.width(), density)
         when (val tag = item.tag) {
-            All -> Icons.draw(canvas, Icon.MORE, r.centerX(), r.centerY(), 22 * density, Picnic.INK)
+            All -> Icons.draw(canvas, Icon.MORE, r.centerX(), r.centerY(), icon, Picnic.INK)
             Traditional -> {
                 val on = traditional == true
+                glyph.textSize = glyphSize(r.width(), density)
                 glyph.color = if (on) Picnic.BERRY else Picnic.INK
                 canvas.drawText(if (on) "繁" else "简", r.centerX(), r.centerY() - (glyph.ascent() + glyph.descent()) / 2f, glyph)
             }
-            is Action -> Icons.draw(canvas, tag.icon, r.centerX(), r.centerY(), 22 * density, if (tag in on) Picnic.BERRY else Picnic.INK)
+            is Action -> Icons.draw(canvas, tag.icon, r.centerX(), r.centerY(), icon, if (tag in on) Picnic.BERRY else Picnic.INK)
         }
     }
 }

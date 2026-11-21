@@ -11,7 +11,7 @@ class ActionRowTest {
     @Test
     fun chinesePutsTraditionalSecondAndFitsWidth() {
         val density = 2.625f
-        for (dp in listOf(320f, 360f, 412f, 600f)) {
+        for (dp in listOf(144f, 160f, 320f, 360f, 412f, 600f)) {
             val w = dp * density
             val slots = ActionRow.layout(w, density, pinned, traditional = false)
             assertEquals(listOf(ActionRow.All, ActionRow.Traditional) + pinned, slots.map { it.third })
@@ -19,7 +19,10 @@ class ActionRowTest {
             assertTrue("$dp dp overflows: ${slots.last().second} > $w", slots.last().second <= w + 1e-3f)
             for (i in 1 until slots.size) {
                 assertEquals(slots[i - 1].second, slots[i].first, 1e-3f)
-                assertTrue(slots[i].second > slots[i].first)
+                val slotW = slots[i].second - slots[i].first
+                assertTrue(slotW > 0f)
+                assertTrue("icon wider than slot at $dp dp", ActionRow.iconSize(slotW, density) <= slotW)
+                assertTrue("glyph wider than slot at $dp dp", ActionRow.glyphSize(slotW, density) <= slotW)
             }
         }
     }
