@@ -174,6 +174,42 @@ class Server(unittest.TestCase):
         self.assertEqual(run("delete", "made-up-pass").returncode, 0)
         self.assertEqual(json.loads(self.call("GET", "/v1/files")[1])["files"], [])
 
+    def test_check_tells_the_login_from_the_address(self):
+        """`check` (#452): the login works, the password is wrong, nobody listens, or another server
+        answers, which also redirects and must not get the login."""
+        self.assertEqual(s.check(s.Client(self.url, "alice", "made-up-pass")), 0)
+        self.assertEqual(s.check(s.Client(self.url, "alice", "wrong")), 3)
+        free = http.server.HTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler
+        )
+        nobody = f"http://127.0.0.1:{free.server_port}"
+        free.server_close()
+        self.assertEqual(
+            s.check(s.Client(nobody, "alice", "made-up-pass", timeout=5)), 1
+        )
+        seen = []
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.path)
+                self.send_response(302 if self.path.startswith("/v1") else 200)
+                self.send_header("Location", "/elsewhere")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        other = http.server.HTTPServer(("127.0.0.1", 0), Other)
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        try:
+            url = f"http://127.0.0.1:{other.server_port}"
+            self.assertEqual(s.check(s.Client(url, "alice", "made-up-pass")), 4)
+            self.assertEqual(seen, ["/v1/files"], "the redirect wasn't followed")
+        finally:
+            other.shutdown()
+            other.server_close()
+
     def test_mozc_dictionary_syncs_and_a_deleted_word_stays_deleted(self):
         """A PC's Mozc words go up in Mozc's export format; another device's new words come into a
         dictionary of their own, and a word deleted on the PC doesn't come back."""

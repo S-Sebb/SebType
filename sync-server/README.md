@@ -163,6 +163,13 @@ or path), the username and the password. Saving a first login turns "Sync learne
 at once; its line then shows when the last sync was, or why it failed. The login is encrypted with a
 key in the Android Keystore and kept out of backups, settings exports and logs.
 
+Save first checks the address and the login with one `GET /v1/files` to that address (no redirect is
+followed), and says what's wrong if they don't work: wrong username or password, the server can't be
+reached, the address isn't a SebType sync server (another answer, or a redirect), or its HTTPS certificate
+isn't trusted. It then offers Save anyway, as a server down today syncs later. Opening Sync & backup checks
+the saved login the same way, and so does its Refresh status row (#452), with a green tick or a berry X; a failed check shows only there,
+never while typing.
+
 "Delete learned words and dictionaries on the server" deletes every device's files on the server:
 learned words and dictionaries. It turns sync off. The words on the phone and on your other devices stay; turning sync on again
 uploads the phone's own.
@@ -178,7 +185,8 @@ Sync & backup in the SebType Configurator, on Linux and Windows, has the phone's
 and login takes the same address, username and password as the phone (an `https://` address; plain
 `http://` only to the PC itself, such as `http://127.0.0.1:8740`). Saving a first login turns "Sync
 learned words and dictionaries" on and syncs at once; its line then shows when the last sync was, or
-why it failed. The password is kept only in the system's keyring: Secret Service (KWallet, GNOME
+why it failed. Save, the Linux Setup's Account sync step and the Windows Setup's check the login first, and Sync &
+backup checks it as it opens and with Refresh status, as on the phone (#452, the client's `check`). The password is kept only in the system's keyring: Secret Service (KWallet, GNOME
 Keyring) on Linux, Credential Manager on Windows, as "SebType sync". The address and username are in
 SebType's folder (`~/.local/share/sebtype/sync.json`, `%LOCALAPPDATA%\SebType\sync.json`), with the last
 sync's outcome.

@@ -409,3 +409,12 @@ export component ScrollView inherits Rectangle {
         }
     }
 }
+
+// A sync check's outcome (#452): a green tick when it works, a berry X when it doesn't.
+export component StatusMark inherits Image {
+    in property <bool> ok;
+    source: root.ok ? @image-url("icons/tick.svg") : @image-url("icons/cross.svg");
+    width: 18px;
+    height: 18px;
+    colorize: root.ok ? Theme.good : Theme.key;
+}

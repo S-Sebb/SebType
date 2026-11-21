@@ -14,8 +14,12 @@ HTTP on 127.0.0.1 by default: put an HTTPS reverse proxy in front of it, or give
     sebtype_sync.py deluser --data DIR NAME          (also deletes the user's files and crash reports)
     sebtype_sync.py pull|push --server URL --user NAME (--password-file F | --password-stdin) --rime-dir DIR [--mozc-db F]
     sebtype_sync.py delete    --server URL --user NAME (--password-file F | --password-stdin)
+    sebtype_sync.py check     --server URL --user NAME (--password-file F | --password-stdin)
 
-The client exits with 3 when the server refuses the login, and 1 on any other failure.
+The client exits with 3 when the server refuses the login, and 1 on any other failure. `check` (#452)
+tests the address and the login with one GET /v1/files and tells failures apart: 3 the login, 1 no
+answer, 4 an answer that isn't a SebType sync server's, 5 HTTPS (an untrusted certificate). The client
+follows no redirects, so the login goes only to the address it was given.
 
 API, all with HTTP Basic auth:
     GET    /v1/files                  {"files": [{"device", "name", "size", "sha256"}]}
@@ -297,19 +301,43 @@ def rime_installation(rime_dir):
     )
 
 
+class NoRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args):
+        return None  # a 3xx is an HTTPError: the login isn't sent on to another address
+
+
 class Client:
-    def __init__(self, server, user, password):
+    def __init__(self, server, user, password, timeout=30):
         self.base = server.rstrip("/")
         self.auth = "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+        self.timeout = timeout
+        self.opener = urllib.request.build_opener(NoRedirects)
 
     def request(self, method, path, body=None):
         req = urllib.request.Request(self.base + path, data=body, method=method)
         req.add_header("Authorization", self.auth)
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with self.opener.open(req, timeout=self.timeout) as r:
             return r.read()
 
     def files(self):
         return json.loads(self.request("GET", "/v1/files"))["files"]
+
+
+def check(client):
+    """The exit code of `check`: 0 when the login works on a SebType sync server."""
+    try:
+        files = client.files()
+        return 0 if isinstance(files, list) else 4
+    except urllib.error.HTTPError as e:
+        return 3 if e.code in (401, 403) else 4
+    except urllib.error.URLError as e:
+        return 5 if isinstance(e.reason, ssl.SSLError) else 1
+    except ssl.SSLError:
+        return 5
+    except OSError:
+        return 1
+    except (ValueError, KeyError, TypeError):  # not JSON, or not the list
+        return 4
 
 
 def sha256_of(path):
@@ -870,6 +898,8 @@ def run_client(args):
     else:
         with open(args.password_file, encoding="utf-8") as f:
             password = f.read().strip()
+    if args.command == "check":
+        sys.exit(check(Client(args.server, args.user, password, timeout=15)))
     client = Client(args.server, args.user, password)
     if args.command != "delete":
         device, sync_dir = rime_installation(args.rime_dir)
@@ -912,7 +942,7 @@ def main():
         u.add_argument("name")
         if command == "adduser":
             u.add_argument("--password-stdin", action="store_true")
-    for command in ("pull", "push", "delete"):
+    for command in ("pull", "push", "delete", "check"):
         c = sub.add_parser(command)
         c.add_argument("--server", required=True)
         c.add_argument("--user", required=True)
@@ -921,8 +951,8 @@ def main():
         password.add_argument(
             "--password-stdin", action="store_true", help="the password's first line"
         )
-        if command == "delete":
-            continue  # every device's files of this user, on the server only
+        if command in ("delete", "check"):
+            continue  # on the server only
         c.add_argument(
             "--rime-dir", required=True, help="Rime's user dir, with installation.yaml"
         )

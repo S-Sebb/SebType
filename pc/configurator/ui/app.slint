@@ -2,12 +2,12 @@
 // settings (#41).
 import "../../../android/app/src/main/res/font/sebtype_nunito_extrabold.ttf";
 import { Theme } from "theme.slint";
-import { State, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote } from "state.slint";
+import { State, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, SyncCheck, UpdateNote } from "state.slint";
 import { Button, PageTitle, PixelFrame, Chrome, MoveArea, WindowControls, WindowEdge } from "widgets.slint";
 import { Nav, Pages } from "pages.slint";
 import { SetupState, SetupWindow } from "setup.slint";
 
-export { State, Nav, Theme, Chrome, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, UpdateNote, SetupState, SetupWindow }
+export { State, Nav, Theme, Chrome, Lang, Fuzzy, ZhWord, JaWord, Msg, SyncStatus, SyncCheck, UpdateNote, SetupState, SetupWindow }
 
 component NavItem inherits Rectangle {
     in property <string> text;

@@ -162,6 +162,55 @@ SH
 export -f shots; export out sb
 check every-screen-in-every-language 400 shots
 
+# Sync & backup checks the saved login as it opens (#452): with a sebtype_sync.py server on this PC and a
+# throwaway login in a private keyring, its Connection row says connected, then (the keyring's password
+# changed) wrong password, then (the server stopped) unreachable. The screenshots are kept for the eye, and
+# any two that look the same fail. English only: the words are checked by every-string-translated.
+# shellcheck disable=SC2016  # the inner scripts get their paths as arguments
+sync_check_shots() {
+  local d=$sb/sync-check port shots=$out/configurator-shots
+  mkdir -p "$d/server" "$d/config" "$d/data" "$shots"
+  port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+  cat > "$d/shots.sh" <<'SH'
+#!/usr/bin/env bash
+bin=$1 tests=$2 shots=$3 d=$4 s=$5
+exec >> "$d/status" 2>&1  # KWin doesn't pass its client's output on
+shot() {
+  LANGUAGE=en_US LANG=en_US.UTF-8 "$bin" --page 4 & pid=$!
+  sleep 5  # the check: a wrong password waits a second at the server
+  kill -0 $pid 2>/dev/null || { echo "$1: the app exited"; exit 1; }
+  spectacle -b -n -a -o "$shots/en-$1.png" 2>/dev/null
+  kill $pid; wait $pid 2>/dev/null
+  [[ -s $shots/en-$1.png ]] || { echo "$1: no screenshot"; exit 1; }
+  echo "$1 ok"
+}
+shot sync-connected
+SEBTYPE_TEST_SYNC_PASSWORD=made-up-wrong-password "$tests" --ignored --exact sync::tests::private_login > /dev/null || exit 1
+shot sync-login-failed
+kill "$s"
+shot sync-unreachable
+python3 -c 'import itertools, sys, numpy as n; from PIL import Image
+shots = {f: n.asarray(Image.open(f).convert("RGB")) for f in sys.argv[1:]}
+same = [(a, b) for a, b in itertools.combinations(shots, 2) if shots[a].shape == shots[b].shape and (shots[a] == shots[b]).all()]
+print("\n".join(f"{a} looks the same as {b}" for a, b in same) or "all-differ")' "$shots"/en-sync-{connected,login-failed,unreachable}.png
+SH
+  chmod +x "$d/shots.sh"
+  private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$d" XDG_CONFIG_HOME="$d/config" XDG_DATA_HOME="$d/data" -- bash -c '
+    d=$1 port=$2 server=$3/../../sync-server/sebtype_sync.py
+    SEBTYPE_TEST_SYNC_PASSWORD=$(head -c 18 /dev/urandom | base64)
+    printf "%s\n" "$SEBTYPE_TEST_SYNC_PASSWORD" | python3 -I "$server" adduser --data "$d/server" --password-stdin sebtype-test || exit 1
+    python3 -I "$server" serve --data "$d/server" --port "$port" > "$d/server.log" 2>&1 & s=$!
+    head -c 18 /dev/urandom | base64 | gnome-keyring-daemon --unlock --components=secrets --daemonize > /dev/null
+    export SEBTYPE_TEST_SYNC_SERVER=http://127.0.0.1:$port SEBTYPE_TEST_SYNC_USER=sebtype-test SEBTYPE_TEST_SYNC_PASSWORD
+    "$5" --ignored --exact sync::tests::private_login > /dev/null || exit 1
+    kwin_wayland --virtual --no-lockscreen --socket "wlc$$" --width 1000 --height 700 --exit-with-session \
+      "$d/shots.sh $4 $5 $6 $d $s"
+    kill $s 2>/dev/null; wait $s 2>/dev/null; true' _ "$d" "$port" "$PWD" "$bin" "$tests" "$shots" > "$out/configurator-test-sync-check-kwin.log" 2>&1
+  cat "$d/status"; grep -qx all-differ "$d/status"
+}
+export -f sync_check_shots; export tests
+check every-screen-sync-check 120 sync_check_shots
+
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
 # shellcheck disable=SC2016,SC2086  # the inner script gets its paths as arguments; own_env is split
 private_fcitx5() {

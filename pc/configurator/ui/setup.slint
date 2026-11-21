@@ -1,7 +1,8 @@
 // SebType Linux GUI Setup Wizard (#435): Picnic-themed 4-step installer window
 // (Welcome -> Installing -> Account Sync -> Ready/Tips), launched by the self-extracting installer.
 import { Theme } from "theme.slint";
-import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge } from "widgets.slint";
+import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge, StatusMark } from "widgets.slint";
+import { SyncCheck, SyncText } from "state.slint";
 
 export global SetupState {
     in property <string> ui-font;
@@ -11,6 +12,8 @@ export global SetupState {
     in-out property <bool> live-active;
     in-out property <bool> sync-busy;
     in-out property <string> sync-error;
+    // Sign in checks the address and login first (#452); after a failure it saves anyway.
+    in-out property <SyncCheck> sync-check;
     in-out property <bool> open-configurator: true;
 
     pure callback server-valid(string) -> bool;
@@ -56,6 +59,9 @@ export component SetupWindow inherits Window {
     property <string> sync-server;
     property <string> sync-user;
     property <string> sync-password;
+    changed sync-server => { SetupState.sync-check = SyncCheck.none; }
+    changed sync-user => { SetupState.sync-check = SyncCheck.none; }
+    changed sync-password => { SetupState.sync-check = SyncCheck.none; }
 
     // Picnic checkered cloth background.
     Image {
@@ -313,6 +319,20 @@ export component SetupWindow inherits Window {
                                 }
                             }
                         }
+                        if SetupState.sync-check != SyncCheck.none: HorizontalLayout {
+                            spacing: 6px;
+                            if SetupState.sync-check == SyncCheck.connected || SyncText.failed(SetupState.sync-check): StatusMark {
+                                ok: SetupState.sync-check == SyncCheck.connected;
+                            }
+                            Text {
+                                text: SyncText.check(SetupState.sync-check);
+                                color: SyncText.failed(SetupState.sync-check) ? Theme.danger : Theme.muted;
+                                font-size: Theme.detail-size;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
+                            }
+                        }
                         if SetupState.sync-error != "": Text {
                             text: SetupState.sync-error;
                             color: Theme.danger;
@@ -333,7 +353,7 @@ export component SetupWindow inherits Window {
                         }
                     }
                     Button {
-                        text: @tr("Sign in & continue");
+                        text: SyncText.failed(SetupState.sync-check) ? @tr("Save anyway & continue") : @tr("Sign in & continue");
                         primary: true;
                         enabled: !SetupState.sync-busy && SetupState.can-submit(root.sync-server, root.sync-user, root.sync-password);
                         clicked => {

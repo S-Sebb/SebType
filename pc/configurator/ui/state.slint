@@ -15,6 +15,24 @@ export enum Msg {
 // What sync's switch says under it, as the phone's (ChineseSync.Status).
 export enum SyncStatus { off, not-yet, syncing, synced, offline, login-failed }
 
+// What a connection check found (#452), as the phone's (Sync.Check): none before one.
+export enum SyncCheck { none, checking, connected, login-failed, unreachable, not-sebtype, tls }
+
+export global SyncText {
+    public pure function check(c: SyncCheck) -> string {
+        if c == SyncCheck.checking { return @tr("Checking the server and login…"); }
+        if c == SyncCheck.connected { return @tr("Connected. The server and login work"); }
+        if c == SyncCheck.login-failed { return @tr("Wrong username or password"); }
+        if c == SyncCheck.unreachable { return @tr("Can't reach the server. Check the address and your network"); }
+        if c == SyncCheck.not-sebtype { return @tr("That address isn't a SebType sync server"); }
+        if c == SyncCheck.tls { return @tr("The server's HTTPS certificate isn't trusted"); }
+        return "";
+    }
+    public pure function failed(c: SyncCheck) -> bool {
+        return c != SyncCheck.none && c != SyncCheck.checking && c != SyncCheck.connected;
+    }
+}
+
 // The About page's update section (#422): the last check's outcome, then the install's steps.
 export enum UpdateStatus { none, checking, up-to-date, available, offline, downloading, installing, installed, failed }
 
@@ -63,6 +81,8 @@ export global State {
     in property <string> sync-at;            // when the last sync went through, for synced
     in property <string> sync-server;        // the saved login, "" before the first
     in property <string> sync-user;
+    in-out property <SyncCheck> sync-check;  // the saved login's last check (#452)
+    in-out property <SyncCheck> login-check; // Server and login's, before it saves
 
     // Updates (#422)
     in-out property <bool> update-auto: true;   // Check for updates automatically
@@ -99,6 +119,9 @@ export global State {
     callback import-settings();
     callback sync-toggled(bool);
     callback save-login(string, string, string) -> bool;   // server, user, password; false: not an https address
+    // Checks a login and saves it if it works, then shows Sync & backup; false: not an https address.
+    callback check-login(string, string, string) -> bool;
+    callback check-connection();   // the saved login's
     callback delete-on-server();
     callback open-help();
     callback update-auto-changed();

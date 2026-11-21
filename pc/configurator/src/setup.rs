@@ -148,7 +148,7 @@ pub fn run(
     started_file: Option<std::path::PathBuf>,
     lang: &str,
 ) -> Result<(), slint::PlatformError> {
-    use crate::{platform, Chrome, SetupState, SetupWindow};
+    use crate::{platform, Chrome, SetupState, SetupWindow, SyncCheck};
     use slint::ComponentHandle;
     use std::{cell::RefCell, process::Command, rc::Rc};
 
@@ -256,13 +256,28 @@ pub fn run(
                 return;
             };
             let (user, password) = (user.trim().to_string(), password.to_string());
-            if let Some(win) = weak.upgrade() {
-                let g = win.global::<SetupState>();
-                g.set_sync_busy(true);
-                g.set_sync_error("".into());
+            let Some(win) = weak.upgrade() else { return };
+            let g = win.global::<SetupState>();
+            // After a check that failed, Save anyway: the login is kept without another check.
+            let check_first = matches!(g.get_sync_check(), SyncCheck::None | SyncCheck::Connected);
+            g.set_sync_busy(true);
+            g.set_sync_error("".into());
+            if check_first {
+                g.set_sync_check(SyncCheck::Checking);
             }
             let weak_bg = weak.clone();
             std::thread::spawn(move || {
+                if check_first {
+                    let check = sync::check(&server, &user, &password);
+                    if check != sync::Check::Connected {
+                        let _ = weak_bg.upgrade_in_event_loop(move |win| {
+                            let g = win.global::<SetupState>();
+                            g.set_sync_busy(false);
+                            g.set_sync_check(crate::sync_check(Some(check)));
+                        });
+                        return;
+                    }
+                }
                 let res = sync::save_login(server, user, &password);
                 let _ = weak_bg.upgrade_in_event_loop(move |win| {
                     let g = win.global::<SetupState>();
