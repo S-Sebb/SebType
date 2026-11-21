@@ -21,6 +21,7 @@
 #include <notificationitem_public.h>
 #include <sebtype/types.h>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -39,7 +40,8 @@ class StatusNotifierItem : public fcitx::dbus::ObjectVTable<StatusNotifierItem> 
   void scroll(int delta, const std::string &orientation);
   void activate(int, int);
   void secondaryActivate(int, int) {}
-  std::string iconName();
+  std::string icon();  // the state pc/icons draws: en, zh, ...
+  Pixmaps iconPixmap();
   ToolTip toolTip();
   void notifyChanged();
   void reset() {
@@ -61,8 +63,9 @@ class StatusNotifierItem : public fcitx::dbus::ObjectVTable<StatusNotifierItem> 
   FCITX_OBJECT_VTABLE_PROPERTY(title, "Title", "s", []() { return fcitx::translateDomain("fcitx5", "Input Method"); });
   FCITX_OBJECT_VTABLE_PROPERTY(status, "Status", "s", []() { return "Active"; });
   FCITX_OBJECT_VTABLE_PROPERTY(windowId, "WindowId", "i", []() { return 0; });
-  FCITX_OBJECT_VTABLE_PROPERTY(iconNameProperty, "IconName", "s", [this]() { return iconName(); });
-  FCITX_OBJECT_VTABLE_PROPERTY(iconPixmap, "IconPixmap", "a(iiay)", []() { return Pixmaps{}; });
+  // No name: the tray takes the pixmaps (#441).
+  FCITX_OBJECT_VTABLE_PROPERTY(iconNameProperty, "IconName", "s", []() { return ""; });
+  FCITX_OBJECT_VTABLE_PROPERTY(iconPixmapProperty, "IconPixmap", "a(iiay)", [this]() { return iconPixmap(); });
   FCITX_OBJECT_VTABLE_PROPERTY(overlayIconName, "OverlayIconName", "s", []() { return ""; });
   FCITX_OBJECT_VTABLE_PROPERTY(overlayIconPixmap, "OverlayIconPixmap", "a(iiay)", []() { return Pixmaps{}; });
   FCITX_OBJECT_VTABLE_PROPERTY(attentionIconName, "AttentionIconName", "s", []() { return ""; });
@@ -76,6 +79,7 @@ class StatusNotifierItem : public fcitx::dbus::ObjectVTable<StatusNotifierItem> 
   NotificationItem *parent_;
   int deltaAcc_ = 0;
   std::string lastIcon_, lastTitle_;
+  std::map<std::string, Pixmaps> pixmaps_;  // by state, read once
 };
 
 // The menu: SebType's (the languages, then the active one's switch), then Fcitx5's Restart and Exit.

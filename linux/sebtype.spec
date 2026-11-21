@@ -28,6 +28,8 @@ BuildRequires:  cmake
 BuildRequires:  ninja-build
 BuildRequires:  pkgconf-pkg-config
 BuildRequires:  fcitx5-devel
+# The tray's pixmaps (PNG)
+BuildRequires:  pkgconfig(cairo)
 BuildRequires:  librime-devel
 BuildRequires:  protobuf-devel
 BuildRequires:  protobuf-compiler
@@ -108,6 +110,7 @@ ln -s ../libexec/sebtype/setup-ime.sh %{buildroot}%{_bindir}/sebtype-setup
 %{_libdir}/fcitx5/sebtype.so
 %{_datadir}/fcitx5/addon/sebtype.conf
 %{_datadir}/sebtype/fcitx5/addon/notificationitem.conf
+%{_datadir}/sebtype/tray
 %{_libdir}/sebtype
 %{_datadir}/icons/hicolor/*/status/sebtype-*.png
 %{_datadir}/icons/hicolor/scalable/status/sebtype-*.svg

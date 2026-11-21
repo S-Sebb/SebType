@@ -10,7 +10,7 @@ import struct
 import sys
 from pathlib import Path
 
-SIZES = (16, 20, 24, 32, 40, 48, 64)
+SIZES = (16, 20, 24, 28, 32, 36, 40, 48, 56, 64)  # SM_CXSMICON at each scaling step
 STATES = (
     "zh",
     "zh-a",
