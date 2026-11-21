@@ -4,8 +4,10 @@ pc/icons/scalable/<state>.svg.
 
 Each tray size (16 to 66 px, SIZES) is drawn at its own pixel size, not scaled from a
 larger drawing, with the same shapes as the scalable one: its straight edges, strokes and glyphs fall on whole
-pixels with hard edges, and only the round corners shade their edge pixels; the glyph is the font hinted at
-that size (#275: a large drawing scaled down had soft grey edges). Small
+pixels with hard edges, and only the round corners shade their edge pixels (#275: a large drawing scaled down
+had soft grey edges). The glyph is the scalable drawing's glyph rastered at that size: a pixel is ink when at
+least half of it is, 中 and A are made their own mirror images, and every glyph is centred in the face to the
+pixel. check() fails the build on a glyph off-centre or a key not left-right symmetric. Small
 sizes keep the look with fewer details: blush from 20 px, the face's own outline from 22 px. "scalable" is a
 48 px vector drawing with the design's full proportions, for other sizes; its glyphs are font outlines, so it
 needs no font. Fonts: Noto Sans CJK Black (中 あ ア, from the system's Noto Sans CJK VF) and Nunito ExtraBold
@@ -21,12 +23,13 @@ from pathlib import Path
 import cairo
 import numpy as np
 from fontTools.pens.boundsPen import BoundsPen
+from fontTools.pens.cairoPen import CairoPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTCollection, TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
 NOTO_CJK = "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc"
@@ -48,27 +51,35 @@ FONTS = {
 }
 
 
-def glyph(font, text):
+def draw(font, text, pen):
     gs, cmap = font.getGlyphSet(), font.getBestCmap()
-    pen, bp, x = SVGPathPen(gs), BoundsPen(gs), 0
+    x = 0
     for ch in text:
         n = cmap[ord(ch)]
         gs[n].draw(TransformPen(pen, (1, 0, 0, -1, x, 0)))
-        gs[n].draw(TransformPen(bp, (1, 0, 0, -1, x, 0)))
         x += gs[n].width - (60 if len(text) > 1 else 0)  # tighten "EN" a little
+
+
+def glyph(font, text):
+    pen, bp = SVGPathPen(font.getGlyphSet()), BoundsPen(font.getGlyphSet())
+    draw(font, text, pen)
+    draw(font, text, bp)
     return pen.getCommands(), bp.bounds
+
+
+def fit(g, box, h):
+    """The scale and offset that make a glyph's ink h px tall (or narrower to fit the box), centred in box."""
+    _, (xmin, ymin, xmax, ymax) = g
+    s = min(h / (ymax - ymin), (box[2] - box[0]) / (xmax - xmin))
+    tx = (box[0] + box[2]) / 2 - (xmax + xmin) * s / 2
+    ty = (box[1] + box[3]) / 2 - (ymax + ymin) * s / 2
+    return s, tx, ty
 
 
 def place(g, box, h, stroke_px):
     """Glyph ink h px tall (or narrower to fit the box), centred in box, with a round stroke of stroke_px."""
-    d, (xmin, ymin, xmax, ymax) = g
-    s = h / (ymax - ymin)
-    bw = box[2] - box[0]
-    if (xmax - xmin) * s > bw:
-        s = bw / (xmax - xmin)
-    tx = (box[0] + box[2]) / 2 - (xmax - xmin) * s / 2 - xmin * s
-    ty = (box[1] + box[3]) / 2 - (ymax - ymin) * s / 2 - ymin * s
-    return f'<path transform="matrix({s:.5f} 0 0 {s:.5f} {tx:.3f} {ty:.3f})" stroke-width="{stroke_px / s:.2f}" d="{d}"/>'
+    s, tx, ty = fit(g, box, h)
+    return f'<path transform="matrix({s:.5f} 0 0 {s:.5f} {tx:.3f} {ty:.3f})" stroke-width="{stroke_px / s:.2f}" d="{g[0]}"/>'
 
 
 INK, OUTLINE, STICKER, LIP, BLUSH, FACE = (
@@ -103,10 +114,7 @@ STATES = {  # state: language, (font, text)
 }
 BADGE = {"wait": "#C2506A", "off": "#B03030"}
 GREY_INK = "#7D706A"
-SYMMETRIC = {
-    "中",
-    "A",
-}  # centred exactly; the others within a pixel, as their shapes lean
+SYMMETRIC = {"中", "A"}  # drawn as their own mirror images
 GLYPHS = {g: glyph(FONTS[g[0]], g[1]) for _, g in STATES.values()}
 
 
@@ -241,80 +249,60 @@ def sticker(S, lang, g, state=""):
     return "".join(o)
 
 
-# The approved drawings' whole pixels per tray size (#63): sticker border, shadow, outline, base side, flare,
-# face inset, lip. Other sizes take params()' proportions, rounded (32 px too: its own grid's 2 px outline and
-# shadow made a smaller face than the scalable drawing's, #441).
-GRID = {
-    16: (1, 0, 1, 2, 0, 0, 0),
-    20: (1, 1, 1, 3, 0, 0, 1),
-    22: (1, 1, 1, 4, 1, 1, 1),
-    24: (1, 1, 1, 4, 1, 1, 1),
-}
 # Windows' small icon at 100 % to 400 % (16 to 64 by 4, 48 and 56) and a 22 px Linux tray at 100 % to 300 %
 # (22, 28, 33, 39, 44, 55, 66), so neither scales one (#441).
 SIZES = (16, 20, 22, 24, 28, 32, 33, 36, 39, 40, 44, 48, 55, 56, 64, 66)
 
 
 def grid(S):
-    return GRID.get(S) or tuple(max(1, round(v)) for v in params(S))
+    """params() in whole pixels, the same rule at every size: the sticker border and the outline at least a
+    pixel, the other parts as they round (no shadow where it rounds to 0). Below 22 px, where the face has no
+    outline of its own, it has no flare or inset either, so the glyph keeps its pixels."""
+    sb, sh, bw, side, t, fi, lip = (round(v) for v in params(S))
+    if S < 22:
+        t = fi = 0
+    return max(1, sb), sh, max(1, bw), side, t, fi, lip
 
 
-def font(kind, px):
-    """Nunito ExtraBold, or Noto Sans CJK at its Black weight."""
-    if kind == "lat":
-        return ImageFont.truetype(str(NUNITO), px)
-    f = ImageFont.truetype(NOTO_CJK, px, index=2 if kind == "sc" else 0)
-    f.set_variation_by_axes([900])
-    return f
+def ink(S, key, box, h, stroke):
+    """place()'s glyph on S px: a pixel is ink where the outline and its stroke cover at least half of it
+    (8 x 8 samples). It is centred on the icon's middle, which is the face's: a SYMMETRIC glyph is united
+    with its mirror image before the pixels are decided, so they mirror too; another moves by up to half a
+    pixel, in eighths, to the nearest place where its ink has equal margins, and where there is none it is
+    drawn an eighth of a pixel smaller until there is."""
+    K = 8
+    font, text = FONTS[key[0]], key[1]
 
+    def cover(dx, s, tx, ty):
+        surface = cairo.ImageSurface(cairo.FORMAT_A8, S * K, S * K)
+        cr = cairo.Context(surface)
+        cr.set_antialias(cairo.ANTIALIAS_NONE)
+        cr.scale(K, K)
+        cr.translate(tx + dx, ty)
+        cr.scale(s, s)
+        draw(font, text, CairoPen(font.getGlyphSet(), cr))
+        cr.set_line_width(stroke / s)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.fill_preserve()
+        cr.stroke()
+        surface.flush()
+        a = (
+            np.frombuffer(surface.get_data(), np.uint8).reshape(S * K, -1)[:, : S * K]
+            > 0
+        )
+        if text in SYMMETRIC:
+            a |= a[:, ::-1]
+        return a.reshape(S, K, S, K).mean(axis=(1, 3)) >= 0.5
 
-def holes(im):
-    """The closed counters in a glyph mask: background areas that don't reach its edge."""
-    w, h = im.size
-    px = im.load()
-    seen, n = set(), 0
-    for start in ((x, y) for y in range(h) for x in range(w)):
-        if start in seen or px[start]:
-            continue
-        n += 1
-        todo, seen_here = [start], {start}
-        while todo:
-            x, y = todo.pop()
-            for q in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                if 0 <= q[0] < w and 0 <= q[1] < h and q not in seen_here and not px[q]:
-                    seen_here.add(q)
-                    todo.append(q)
-        seen |= seen_here
-    return n - 1  # the area around the glyph
-
-
-def bitmap(kind, text, w, h, parity):
-    """The glyph's ink as an L mask at most w x h, hinted at its own size: the largest that fits whose width
-    is even or odd as parity says (when it says), so it centres on whole pixels. Below 20 px its strokes are a pixel wider
-    (its ink twice, a pixel apart, letters a pixel further apart), as bold as the larger sizes, unless that
-    would close a counter: a size smaller rather than a lighter glyph."""
-    for px in range(h * 2, 4, -1):
-        f = font(kind, px)
-        bold = px < 20
-        im = Image.new("L", (px * 4, px * 2), 0)
-        d = ImageDraw.Draw(im)
-        d.fontmode = "1"  # hinted to whole pixels, no grey fringe
-        x = 2
-        for ch in text:
-            d.text((x, 2), ch, font=f, fill=255)
-            x += round(f.getlength(ch)) + bold
-        if bold:
-            wide = ImageChops.lighter(im, ImageChops.offset(im, 1, 0))
-            if holes(wide.crop(wide.getbbox())) == holes(im.crop(im.getbbox())):
-                im = wide
-        box = im.getbbox()
-        if (
-            box
-            and box[2] - box[0] <= w
-            and box[3] - box[1] <= h
-            and parity in (None, (box[2] - box[0]) % 2)
-        ):
-            return im.crop(box)
+    for less in range(K * 2):  # where no place centres it, an eighth of a pixel smaller
+        x0, y0, x1, y1 = box
+        fitted = fit(GLYPHS[key], (x0 + less / K, y0, x1 - less / K, y1), h - less / K)
+        for dx in sorted((i / K for i in range(-K // 2, K // 2 + 1)), key=abs):
+            m = cover(dx, *fitted)
+            cols = np.nonzero(m.any(axis=0))[0]
+            if cols[0] == S - 1 - cols[-1]:
+                return m
     raise ValueError(text)
 
 
@@ -381,8 +369,11 @@ def face(S):
 
 
 def check(S, state, im):
-    """What is wrong with a drawing: the glyph off centre in the face (its ink's left and right margins
-    differ, by more than a pixel for a glyph that isn't symmetric), or the body not a mirror image (the glyph, blush, glint and badge aside)."""
+    """What is wrong with a drawing: the glyph's ink not centred in the face to the pixel (with a badge: not
+    the ready key's glyph), a glyph that is symmetric (SYMMETRIC) not the mirror image of itself, or the rest
+    not left-right symmetric. Left out of the
+    mirror test: the blush (both sides slant the same way, as in the concept), the glint (lower left only) and
+    the badge (lower right)."""
     lang, (kind, text) = STATES[state]
     px = np.asarray(im.convert("RGBA")).astype(int)
     rgb_ = px[..., :3]
@@ -391,17 +382,28 @@ def check(S, state, im):
     ) & (px[..., 3] == 255)
     x0, x1 = face(S)
     keep = np.ones((S, S), bool)
-    if (
-        state.rpartition("-")[2] in BADGE
-    ):  # the badge sits bottom right, over the face's corner
+    problems = []
+    ready, _, kind_badge = state.rpartition("-")
+    if kind_badge in BADGE:  # the badge sits bottom right, over the face's corner
         br = max(S * 0.25, 4.5)
         keep[int(S - 2 * br - 1) :, int(S - 2 * br - 1) :] = False
-    cols = np.nonzero((ink & keep)[:, x0:x1].any(axis=0))[0]
-    problems = []
-    if len(cols):
+        # The glyph is the ready key's, which is checked centred.
+        r = np.asarray(
+            Image.open(HERE / str(S) / f"{ready}.png").convert("RGBA")
+        ).astype(int)
+        r_ink = (r[..., :3] == np.array(rgb(INK)[:3]) * 255).all(axis=2) & (
+            r[..., 3] == 255
+        )
+        if ((r_ink != ink) & keep).any():
+            problems.append(f"glyph not {ready}'s")
+    glyph_ink = ink & keep & keep[:, ::-1]
+    cols = np.nonzero(ink[:, x0:x1].any(axis=0))[0]
+    if len(cols) and kind_badge not in BADGE:
         left, right = cols[0], x1 - x0 - 1 - cols[-1]
-        if abs(left - right) > (0 if text in SYMMETRIC else 1):
+        if left != right:
             problems.append(f"glyph margins {left} left, {right} right")
+    if text in SYMMETRIC and (glyph_ink != glyph_ink[:, ::-1]).any():
+        problems.append("glyph not symmetric")
     blush = (rgb_ == np.array(rgb(BLUSH)[:3]) * 255).all(axis=2)
     sb, sh, bw, side, t, fi, lip = grid(S)
     gx, gy, gw, gh = GLINT(S, sb + bw, S - sh - sb - bw, side)
@@ -409,17 +411,17 @@ def check(S, state, im):
     if S >= 32:
         keep[gy : gy + gh, gx : gx + gw] = False
     both = keep & keep[:, ::-1]
-    rows = sorted(
+    bad = sorted(
         {int(y) for y in np.nonzero(((px != px[:, ::-1]).any(axis=2)) & both)[0]}
     )
-    if rows:
-        problems.append(f"body not symmetric in rows {rows}")
+    if bad:
+        problems.append(f"body not symmetric in rows {bad}")
     return problems
 
 
 def pixels(S, state):
     """sticker()'s key at S px on its pixel grid: its edges on whole pixels (only round corners are partly
-    covered), its shadow, glint and blush in whole pixels, and the glyph hinted at its size."""
+    covered), its shadow, glint and blush in whole pixels, and the glyph rastered by ink()."""
     lang, (kind, text) = STATES[state]
     sb, sh, bw, side, t, fi, lip = grid(S)
     H, r = S - sh, S * 0.24
@@ -469,7 +471,9 @@ def pixels(S, state):
         im.alpha_composite(image(glint))
     d = ImageDraw.Draw(im)
     fw, fh = fx1 - fx0, fy1 - fy0
-    blush = S >= 20 and lang != "grey"
+    # The grey key leaves the blush out but keeps its place, so its glyph is the coloured key's.
+    blush = S >= 20
+    cheek = d if lang != "grey" else ImageDraw.Draw(Image.new("RGBA", (S, S)))
     if blush and S >= 32:  # two short slanted dashes each side
         w = 1 if S < 48 else 2
         n = 2 if S < 40 else 3
@@ -477,28 +481,25 @@ def pixels(S, state):
         for side_x in (fx0 + fw * 0.085, fx1 - fw * 0.085):
             for dx in (-S * 0.035, S * 0.035):
                 x = round(side_x + dx - (n + w - 1) / 2)
+                if side_x < S / 2:
+                    blush_x1 = x + n + w - 1  # the first column right of the left cheek
                 for i in range(n):
-                    d.rectangle(
+                    cheek.rectangle(
                         (x + i, by - i, x + i + w - 1, by - i + w - 1), fill=BLUSH
                     )
     elif blush:  # 20-24 px: one cheek per lower corner
         for x in (fx0, fx1 - 2):
-            d.rectangle((x, fy1 - 2, x + 1, fy1 - 2), fill=BLUSH)
+            cheek.rectangle((x, fy1 - 2, x + 1, fy1 - 2), fill=BLUSH)
     margin = (fw * 0.17 if S >= 32 else fw * 0.1) if blush else fw * 0.06
+    if blush and S >= 32:  # the glyph beside the blush, not over it
+        margin = max(margin, blush_x1 - fx0)
     bx0, bx1, by0, by1 = fx0 + margin, fx1 - margin, fy0 + fh * 0.04, fy1 - fh * 0.04
-    # As tall as sticker()'s glyph with its stroke, which made the outlines bolder.
-    stroke = 0.4 if S < 24 else S * 0.022
-    gh = fh * (0.8 if kind != "lat" else 0.66 if text != "a" else 0.6) + stroke
-    m = bitmap(
-        kind,
-        text,
-        round(bx1 - bx0 + stroke),
-        round(min(gh, by1 - by0 + stroke)),
-        fw % 2 if text in SYMMETRIC else None,
-    )
+    gh = fh * (0.8 if kind != "lat" else 0.66 if text != "a" else 0.6)
+    # The design's stroke, half a pixel thinner: it closes small counters (あ at 28 px) otherwise.
+    m = ink(S, (kind, text), (bx0, by0, bx1, by1), gh, max(0, S * 0.022 - 0.5))
     d.bitmap(
-        ((fx0 + fx1 - m.width) // 2, round((by0 + by1 - m.height) / 2)),
-        m,
+        (0, 0),
+        Image.fromarray(m.astype(np.uint8) * 255),
         fill=GREY_INK if lang == "grey" else INK,
     )
     kind_badge = state.rpartition("-")[2]

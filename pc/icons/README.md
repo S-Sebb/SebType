@@ -11,8 +11,11 @@ python3 pc/icons/build.py
 ```
 
 Each size in `build.py`'s `SIZES` (16 to 66 px: Windows' small icon and a 22 px Linux tray at each display scaling) is drawn at its own pixel size, never scaled from another
-(#275): the keycap's rim and outline are whole pixels with hard edges, and the glyph is hinted at that size
-with no grey fringe. Small sizes keep the look with fewer details: blush from 20 px, the face's own outline
+(#275): the keycap's rim and outline are whole pixels with hard edges, and the glyph is the vector glyph
+rastered at that size with no grey fringe (a pixel is ink when at least half of it is), 中 and A drawn as their
+own mirror images. The build fails if a glyph is off-centre by a pixel or a key isn't left-right symmetric;
+the check leaves out only the blush (both sides slant the same way), the glint (lower left) and the badge
+(lower right). Small sizes keep the look with fewer details: blush from 20 px, the face's own outline
 from 22 px. `scalable` is a 48 px vector drawing for any other size. States: `en`, `zh`, `zh-a`, `zh-caps`, `hira`, `kata`, `ja-a`, `ja-caps`, and while 中文 or 日本語 isn't ready (#275)
 the key in grey with a badge: `zh-wait` and `hira-wait` ("…", preparing), `zh-off` and `hira-off` ("!", unavailable).
 
