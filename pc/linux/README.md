@@ -6,6 +6,15 @@ phone) and plain English, and switches between them itself. `setup-ime.sh` sets 
 Plasma Wayland session, XWayland apps included, with nothing set by hand. It targets Fedora-family
 systems (Nobara, Fedora).
 
+Download `SebType-setup-<version>-linux-x86_64.sh` from the
+[latest release](https://github.com/S-Sebb/SebType/releases/latest) and run:
+
+```sh
+sh SebType-setup-<version>-linux-x86_64.sh
+```
+
+From a checkout of this repository, you can also build and set it up directly:
+
 ```sh
 pc/linux/setup-ime.sh --dry-run   # print what would change, change nothing
 pc/linux/setup-ime.sh             # apply; safe to rerun
@@ -14,20 +23,17 @@ pc/linux/setup-ime.sh             # apply; safe to rerun
 It changes only this account's config. It uses sudo only to install missing packages, and only after
 asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>/` first.
 
-A release carries what the packages steps install, built by CI (`.github/workflows/linux-rpm.yml`, #421):
-the `sebtype` RPM and SebType's librime RPMs. Besides the input method and Mozc, `sebtype` holds what the
-per-account steps copy from: the Configurator, the Chinese data, the Mozc keymap and setup itself, as
-`sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs no packages;
-it does this account's steps with the release's files. An update installs the release's RPMs, then runs
-`sebtype-setup` as the user:
+A release carries one self-extracting installer (`SebType-setup-<version>-linux-x86_64.sh`), built by CI
+(`.github/workflows/linux-rpm.yml`, #421, #427) with `linux/build-installer.sh`: it packs the `sebtype` RPM
+and SebType's librime RPMs with their SHA-256 manifest. Besides the input method and Mozc, `sebtype` holds
+what the per-account steps copy from: the Configurator, the Chinese data, the Mozc keymap and setup itself,
+as `sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs no packages;
+it does this account's steps with the release's files. Running the installer elevates once (`sudo` or
+`pkexec`) to run `--install-rpms-only` (which verifies the embedded RPMs and installs `sebtype`, `librime`,
+`librime-lua`, `librime-octagram`, plus `librime-predict`, `librime-tools` and `librime-devel` only where
+already installed), then runs `sebtype-setup` as your user.
 
-```sh
-pkexec dnf install -y sebtype-<version>-<release>.x86_64.rpm librime{,-lua,-octagram}-<librime version>.x86_64.rpm \
-  [librime-predict, -tools and -devel, each one the PC has]
-sebtype-setup < /dev/null
-```
-
-`linux/test-rpms.sh <folder>` installs a release's RPMs that way in a fresh Fedora and checks them.
+`linux/test-rpms.sh <installer>` installs a release's installer that way in a fresh Fedora and checks it.
 
 ## What it does, and why
 
@@ -121,17 +127,15 @@ timer (`sebtype-update.timer`, at the next login after a missed day). It asks Gi
 release (`releases/latest`; tags `v<MAJOR.MINOR.PATCH>` only, so the `v0.1.30-sebtype.N` tags from before
 0.1.0 are never newer) and compares it with the newer of the Configurator's version (`VERSION`) and the
 installed `sebtype` package's. A newer release shows a notification once; clicking it opens the
-Configurator's About page. There, Update… downloads the release's RPMs (#423): `sebtype`, `librime`,
-`librime-lua` and `librime-octagram`, and `librime-predict`, `librime-tools` and `librime-devel` only where
-`rpm -q` finds them installed. They come from the release's download address into a new folder only this
-account can use (`$XDG_RUNTIME_DIR/sebtype-updates`), and each must have GitHub's size and SHA-256 (the
-asset's `digest`; a release without one installs nothing). One admin prompt (`pkexec`) then runs, as root,
-a script that copies them into a new folder only root can write, checks each SHA-256 there again and runs
-`dnf install -y` on those copies, so a file changed after the check isn't installed. Then
-`sebtype-setup </dev/null` does this account's part, without a prompt. The new input method runs once
-Fcitx5 restarts: log out and in again, or turn Virtual Keyboard off and on; the Configurator never restarts
-it, and its own window is the old one until it is reopened. About's "Check for updates automatically" turns the daily
-check off, Check now checks at once.
+Configurator's About page. There, Update… downloads `SebType-setup-<version>-linux-x86_64.sh` (#427) from
+the release's download address into a new folder only this account can use (`$XDG_RUNTIME_DIR/sebtype-updates`),
+checking GitHub's size and SHA-256 (the asset's `digest`; a release without one installs nothing). One admin
+prompt (`pkexec`) then runs, as root, a script that copies the installer into a new folder only root can write,
+checks its SHA-256 there again and runs `/bin/sh "$copy" --install-rpms-only`, so a file changed after the
+check isn't run. Then `sebtype-setup </dev/null` does this account's part, without a prompt. The new input
+method runs once Fcitx5 restarts: log out and in again, or turn Virtual Keyboard off and on; the Configurator
+never restarts it, and its own window is the old one until it is reopened. About's "Check for updates
+automatically" turns the daily check off, Check now checks at once.
 
 To undo: `pc/linux/setup-ime.sh --undo-configurator`. It removes the app, its entry and its daily update
 check, and puts back the candidate window look that Picnic replaced. Settings made with it stay.

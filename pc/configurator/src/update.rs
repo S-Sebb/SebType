@@ -108,66 +108,21 @@ pub fn sha256_file(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", h.finalize()))
 }
 
-/// The packages SebType's Fedora release installs (pc/linux/README.md, #423): its own and the librime
-/// it builds against; librime's other packages only where they are already installed.
-const RPMS: [&str; 4] = ["sebtype", "librime", "librime-lua", "librime-octagram"];
-const RPMS_IF_INSTALLED: [&str; 3] = ["librime-predict", "librime-tools", "librime-devel"];
-
-/// An RPM file's package name and version: <name>-<version>-<release>.<arch>.rpm.
-fn package<'a>(file: &'a str, arch: &str) -> Option<(&'a str, &'a str)> {
-    let nvr = file
-        .strip_suffix(".rpm")?
-        .strip_suffix(arch)?
-        .strip_suffix('.')?;
-    let (nv, _) = nvr.rsplit_once('-')?;
-    nv.rsplit_once('-')
-}
-
-pub fn rpm_installed(name: &str) -> bool {
-    Command::new("rpm")
-        .args(["-q", "--quiet", name])
-        .status()
-        .is_ok_and(|s| s.success())
-}
-
-/// What this PC installs from a release of `version`, or nothing when the release lacks part of it.
-/// Windows: its setup. Linux: SebType's RPMs of this machine's arch, the optional ones for the packages
-/// `installed` finds.
-pub fn wanted(
-    assets: &[Asset],
-    version: &str,
-    windows: bool,
-    arch: &str,
-    installed: impl Fn(&str) -> bool,
-) -> Vec<Asset> {
-    let safe = |a: &&Asset| !a.name.contains(['/', '\\']) && !a.name.starts_with('.');
-    let find =
-        |pred: &dyn Fn(&Asset) -> bool| assets.iter().filter(safe).find(|a| pred(a)).cloned();
-    if windows {
-        let name = format!("SebType-setup-{version}.exe");
-        return find(&|a| a.name == name).into_iter().collect();
-    }
-    let rpm = |name: &str| {
-        find(&|a| {
-            package(&a.name, arch)
-                .is_some_and(|(n, v)| n == name && (name != "sebtype" || v == version))
-        })
+/// What this PC installs from a release of `version`, or nothing when the release lacks it.
+/// Windows: SebType-setup-<version>.exe. Linux: SebType-setup-<version>-linux-<arch>.sh (#427).
+pub fn wanted(assets: &[Asset], version: &str, windows: bool, arch: &str) -> Vec<Asset> {
+    let name = if windows {
+        format!("SebType-setup-{version}.exe")
+    } else {
+        format!("SebType-setup-{version}-linux-{arch}.sh")
     };
-    // An installed package the release doesn't replace would hold dnf to the old librime (#423).
-    let needed = RPMS
+    assets
         .iter()
-        .chain(RPMS_IF_INSTALLED.iter().filter(|n| installed(n)));
-    let (files, missing): (Vec<_>, Vec<_>) =
-        needed.map(|n| (n, rpm(n))).partition(|(_, a)| a.is_some());
-    if !missing.is_empty() {
-        let names: Vec<&str> = missing.iter().map(|(n, _)| **n).collect();
-        eprintln!(
-            "update: the release has no {arch} RPM of {}",
-            names.join(", ")
-        );
-        return vec![];
-    }
-    files.into_iter().filter_map(|(_, a)| a).collect()
+        .filter(|a| !a.name.contains(['/', '\\']) && !a.name.starts_with('.'))
+        .find(|a| a.name == name)
+        .cloned()
+        .into_iter()
+        .collect()
 }
 
 /// A test's release served on this PC: http://127.0.0.1:<port>/<path>, nothing else (no other host, no
@@ -242,13 +197,7 @@ pub fn check() -> Result<Option<(String, Vec<Asset>)>, String> {
     let Some(v) = newer(&platform::installed_version(), &r.tag_name) else {
         return Ok(None);
     };
-    let files = wanted(
-        &r.assets,
-        &v,
-        cfg!(windows),
-        std::env::consts::ARCH,
-        rpm_installed,
-    );
+    let files = wanted(&r.assets, &v, cfg!(windows), std::env::consts::ARCH);
     Ok((!files.is_empty()).then_some((v, files)))
 }
 
@@ -414,57 +363,27 @@ mod tests {
         let all: Vec<Asset> = [
             "SebType-0.2.0-arm64-v8a.apk",
             "SebType-setup-0.2.0.exe",
-            "sebtype-0.2.0-1.fc44.x86_64.rpm",
-            "librime-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-lua-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-octagram-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-predict-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-tools-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-devel-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-debuginfo-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "sebtype-0.2.0-1.fc44.src.rpm",
-            "sebtype-0.2.0-1.fc44.aarch64.rpm",
+            "SebType-setup-0.2.0-linux-x86_64.sh",
         ]
         .map(asset)
         .into();
         assert_eq!(
-            names(wanted(&all, "0.2.0", true, "x86_64", |_| true)),
+            names(wanted(&all, "0.2.0", true, "x86_64")),
             ["SebType-setup-0.2.0.exe"]
         );
-        let base = [
-            "sebtype-0.2.0-1.fc44.x86_64.rpm",
-            "librime-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-lua-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-            "librime-octagram-1.16.1-2.sebtype4.fc44.x86_64.rpm",
-        ];
         assert_eq!(
-            names(wanted(&all, "0.2.0", false, "x86_64", |_| false)),
-            base
-        );
-        // librime's other packages only where they are installed already
-        let mut with_tools = base.to_vec();
-        with_tools.push("librime-tools-1.16.1-2.sebtype4.fc44.x86_64.rpm");
-        assert_eq!(
-            names(wanted(&all, "0.2.0", false, "x86_64", |p| p == "librime-tools")),
-            with_tools
+            names(wanted(&all, "0.2.0", false, "x86_64")),
+            ["SebType-setup-0.2.0-linux-x86_64.sh"]
         );
         assert_eq!(
-            names(wanted(&all, "0.2.0", false, "aarch64", |_| false)),
+            names(wanted(&all, "0.2.0", false, "aarch64")),
             Vec::<String>::new(),
-            "no librime of that arch"
+            "no Linux installer of that arch"
         );
-        // Another version's setup or SebType, or a release without a required package, installs nothing.
-        assert!(wanted(&all, "0.3.0", true, "x86_64", |_| false).is_empty());
-        assert!(wanted(&all, "0.3.0", false, "x86_64", |_| false).is_empty());
-        assert!(wanted(&all[..5], "0.2.0", false, "x86_64", |_| false).is_empty());
-        // An installed librime-tools the release has none of: dnf couldn't upgrade librime, so nothing.
-        assert!(wanted(&all[..6], "0.2.0", false, "x86_64", |p| p
-            == "librime-tools")
-        .is_empty());
-        assert_eq!(
-            wanted(&all[..6], "0.2.0", false, "x86_64", |_| false).len(),
-            4
-        );
+        // Another version's setup, or a release without this system's installer, installs nothing.
+        assert!(wanted(&all, "0.3.0", true, "x86_64").is_empty());
+        assert!(wanted(&all, "0.3.0", false, "x86_64").is_empty());
+        assert!(wanted(&all[..2], "0.2.0", false, "x86_64").is_empty());
     }
 
     /// Only a release on 127.0.0.1 (the tests' builds), however the address is written.

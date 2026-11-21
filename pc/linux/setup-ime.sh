@@ -260,11 +260,13 @@ fi
 # 2. KWin starts Fcitx5 as the Wayland input method (System Settings → Keyboard → Virtual Keyboard).
 # Native Wayland GTK, Qt and Electron apps get the IME through it with no environment variables.
 fcitx_desktop=/usr/share/applications/org.fcitx.Fcitx5.desktop
-if [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) != "$fcitx_desktop" ]]; then
-  if change "set KWin's virtual keyboard to Fcitx 5 in $config/kwinrc"; then
-    kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop"
-    qdbus=$(command -v qdbus6 || command -v qdbus-qt6 || true)
-    [[ -n $qdbus ]] && "$qdbus" org.kde.KWin /KWin reconfigure >/dev/null
+if command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1; then
+  if [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) != "$fcitx_desktop" ]]; then
+    if change "set KWin's virtual keyboard to Fcitx 5 in $config/kwinrc"; then
+      kwriteconfig6 --file kwinrc --group Wayland --key InputMethod "$fcitx_desktop"
+      qdbus=$(command -v qdbus6 || command -v qdbus-qt6 || true)
+      [[ -n $qdbus ]] && "$qdbus" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    fi
   fi
 fi
 
@@ -476,7 +478,8 @@ fi
 # that theme goes, and the one it inherits is active again. One the user picked since stays.
 old_theme=$data/icons/SebType
 if [[ -d $old_theme ]] && change "remove the old SebType icon theme $old_theme"; then
-  if [[ $(kreadconfig6 --file kdeglobals --group Icons --key Theme) == SebType ]]; then
+  if command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1 &&
+    [[ $(kreadconfig6 --file kdeglobals --group Icons --key Theme) == SebType ]]; then
     inherited=$(sed -n 's/^Inherits=//p' "$old_theme/index.theme")
     if [[ -n $inherited ]]; then kwriteconfig6 --file kdeglobals --group Icons --key Theme "$inherited"
     else kwriteconfig6 --file kdeglobals --group Icons --key Theme --delete; fi
@@ -690,10 +693,10 @@ if [[ $(cat "$update_units/sebtype-update.service" 2>/dev/null) != "$want_update
 fi
 
 # Self-check of the live session.
-parent=$(ps -o ppid= -C fcitx5 | head -1 | tr -d ' ')
-[[ -n $parent && $(ps -o comm= -p "$parent") == kwin_wayland ]] ||
+parent=$(ps -o ppid= -C fcitx5 2>/dev/null | head -1 | tr -d ' ' || true)
+[[ -n $parent && $(ps -o comm= -p "$parent" 2>/dev/null || true) == kwin_wayland ]] ||
   warn "Fcitx5 isn't running under KWin yet; log out and in again"
-[[ $(systemctl --user show-environment | sed -n 's/^XMODIFIERS=//p') == @im=fcitx ]] ||
+[[ $(systemctl --user show-environment 2>/dev/null | sed -n 's/^XMODIFIERS=//p' || true) == @im=fcitx ]] ||
   warn "XMODIFIERS=@im=fcitx isn't in this session yet; log out and in again"
 
 if ((dry)); then echo "dry run: $changes change(s) to make, $todo warning(s)"

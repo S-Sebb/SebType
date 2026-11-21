@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2329  # the checks run through check()
-# Tests a release's Linux RPMs (#421) as the Configurator's update installs them (#422), in a fresh pinned
-# Fedora (versions.sh) whose librime is Fedora's, with librime-tools: the update command replaces every
-# librime package, SebType's version is VERSION's, every installed file is the package's, the files setup's
-# user part copies are this checkout's, and every library finds what it links.
+# Tests a release's Linux installer (#421, #427) as the Configurator's update installs it (#422), in a fresh
+# pinned Fedora (versions.sh) whose librime is Fedora's, with librime-tools: --install-rpms-only replaces
+# every installed librime package without pulling in uninstalled optional ones, SebType's version is
+# VERSION's, every installed file is the package's, the files setup's user part copies are this checkout's,
+# every library finds what it links, and sebtype-setup runs cleanly as a normal user.
 #
-#   linux/test-rpms.sh DIR   # DIR: sebtype-*.rpm and SebType's librime*.rpm (CI's artifact sebtype-rpm)
+#   linux/test-rpms.sh INSTALLER   # SebType-setup-<version>-linux-x86_64.sh (CI's artifact sebtype-linux-setup)
 #
 # One line per check; logs in ~/scratch/SebType/<task>/test-rpms/. Exits 0 only when all pass.
 set -uo pipefail
@@ -16,13 +17,11 @@ source "$here/versions.sh"
 if [[ ${1-} != --inside ]]; then
   # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
   source "$here/../tools/lib.sh"
-  dir=$(readlink -f "${1:?usage: linux/test-rpms.sh DIR}")
+  installer=$(readlink -f "${1:?usage: linux/test-rpms.sh INSTALLER}")
   command -v podman >/dev/null || { echo "preflight: podman missing"; exit 1; }
-  for f in "$SEBTYPE_RPM" "${LIBRIME_PACKAGES[@]/%/-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm}"; do
-    [[ -f $dir/$f ]] || { echo "preflight: $dir/$f missing"; exit 1; }
-  done
+  [[ -f $installer ]] || { echo "preflight: $installer missing"; exit 1; }
   log=$TASK_OUT/test-rpms; rm -rf "$log"; mkdir -p "$log"
-  exec podman run --rm -v "$dir:/rpms:ro,z" -v "$here/..:/src:ro,z" -v "$log:/log:z" "$BUILD_IMAGE" \
+  exec podman run --rm -v "$installer:/installer.sh:ro,z" -v "$here/..:/src:ro,z" -v "$log:/log:z" "$BUILD_IMAGE" \
     bash /src/linux/test-rpms.sh --inside
 fi
 
@@ -34,34 +33,33 @@ check() { # name function...: each within 15 minutes (timeout can't run a functi
   wait "$pid"; rc=$?
   kill "$watch" 2>/dev/null
   if ((rc == 0)); then echo "PASS $name"
-  else echo "FAIL $name: see test-rpms/$name.log"; failed=1; fi
+  else echo "FAIL $name: see test-rpms/$name.log"; tail -n 30 "/log/$name.log" || true; failed=1; fi
 }
 ours=$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE
-rpms=/rpms
 
-dnf -y -q --setopt=throttle=35M install fcitx5 librime librime-lua librime-octagram librime-tools > /log/before.log 2>&1 ||
+echo 'throttle=35M' >> /etc/dnf/dnf.conf
+dnf -y -q install fcitx5 librime librime-lua librime-octagram librime-tools > /log/before.log 2>&1 ||
   { echo "preflight: Fedora's fcitx5 and librime don't install (see test-rpms/before.log)"; exit 1; }
 
-# The update's command, as #423 gives it to the updater: sebtype, librime and the two plugins sebtype needs, and
-# every other librime package the PC has.
+# The update's admin step (#427): extracts and verifies the embedded RPMs, installs sebtype, librime,
+# librime-lua, librime-octagram, and only the optional librime packages already installed (librime-tools).
 update() {
-  local set=("$rpms/$SEBTYPE_RPM") p
-  for p in librime librime-lua librime-octagram; do set+=("$rpms/$p-$ours.x86_64.rpm"); done
-  for p in librime-predict librime-tools librime-devel; do
-    rpm -q "$p" >/dev/null && set+=("$rpms/$p-$ours.x86_64.rpm")
-  done
-  echo "dnf install -y ${set[*]}"
-  dnf -y --setopt=throttle=35M install "${set[@]}"
+  sh /installer.sh --help &&
+    sh /installer.sh --install-rpms-only
 }
 check update-installs update
 
-# sebtype is VERSION's; every librime package is SebType's; setup's versions.sh knows VERSION.
+# sebtype is VERSION's; every installed librime package is SebType's; uninstalled optional librime
+# packages weren't pulled in; setup's versions.sh knows VERSION.
 versions() {
   local want p now
   want=$(< /src/VERSION)
   [[ $(rpm -q --qf '%{VERSION}-%{RELEASE}' sebtype) == "$want-$SEBTYPE_RPM_RELEASE" ]] || { echo "sebtype: $(rpm -q sebtype), not $want"; return 1; }
   for p in librime librime-lua librime-octagram librime-tools; do
     now=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$p"); [[ $now == "$ours" ]] || { echo "$p: $now, not $ours"; return 1; }
+  done
+  for p in librime-predict librime-devel; do
+    ! rpm -q "$p" >/dev/null 2>&1 || { echo "optional $p was unexpectedly installed"; return 1; }
   done
   [[ $(bash -c 'source /usr/libexec/sebtype/versions.sh; echo "$SEBTYPE_VERSION"') == "$want" ]]
 }
@@ -115,5 +113,15 @@ configurator() {
     [[ $(/usr/libexec/sebtype/sebtype-configurator --sources) == "$(configurator_sources /src)" ]]
 }
 check configurator-runs configurator
+
+# The user part of the installer: sebtype-setup runs cleanly as a non-root user (without needing useradd/su).
+user_setup() {
+  local home=/tmp/sebtype-tester
+  rm -rf "$home"; mkdir -p "$home"; chown 1000:1000 "$home"
+  chroot --userspec=1000:1000 / env HOME="$home" USER=tester /usr/bin/sebtype-setup </dev/null &&
+    [[ -x "$home/.local/share/sebtype/configurator/sebtype-configurator" ]] &&
+    [[ -f "$home/.local/share/fcitx5/rime/sebtype-data.txt" ]]
+}
+check user-setup user_setup
 
 exit $failed

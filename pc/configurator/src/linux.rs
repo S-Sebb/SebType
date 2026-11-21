@@ -787,20 +787,19 @@ pub fn notify_update(
     Ok(())
 }
 
-/// The admin side of an update, run as root: copies each RPM into a new folder only root can write,
-/// checks it there against the SHA-256 it was downloaded with, and installs them from there, so a file
-/// changed after the Configurator's check isn't installed. Arguments: <sha256> <rpm>, for each. Exit 3: a
-/// file isn't the release's.
+/// The admin side of an update, run as root: copies the installer into a new folder only root can
+/// write, checks it there against the SHA-256 it was downloaded with, and runs its RPM install step
+/// from that copy, so a file changed after the Configurator's check isn't run. Arguments: <sha256>
+/// <installer>. Exit 3: the file isn't the release's.
 const ROOT_INSTALL: &str = r#"set -eu
+[ $# -eq 2 ] || { echo "expected sha256 and installer"; exit 2; }
 d=$(mktemp -d)
+chmod 700 "$d"
 trap 'rm -rf "$d"' EXIT
-while [ $# -gt 1 ]; do
-  f=$d/$(basename -- "$2")
-  cp -- "$2" "$f"
-  printf '%s  %s\n' "$1" "$f" | sha256sum --check --status - || { echo "$(basename -- "$2") isn't the release's"; exit 3; }
-  shift 2
-done
-dnf install -y "$d"/*.rpm"#;
+f=$d/$(basename -- "$2")
+cp -- "$2" "$f"
+printf '%s  %s\n' "$1" "$f" | sha256sum --check --status - || { echo "$(basename -- "$2") isn't the release's"; exit 3; }
+/bin/sh "$f" --install-rpms-only"#;
 
 fn root_install(program: &[&str], files: &[crate::update::Download]) -> Command {
     let mut c = Command::new(program[0]);
@@ -825,10 +824,13 @@ fn last_line(out: &std::process::Output, or: &str) -> String {
         .unwrap_or_else(|| or.to_string())
 }
 
-/// Installs the release's RPMs in one dnf transaction, with the system's admin prompt (polkit), then
-/// sebtype-setup's part for this account, without one (pc/linux/README.md). The input method runs the new
-/// version once Fcitx5 restarts, at the next login: never restarted here.
+/// Installs the release's RPMs through the self-extracting installer with the system's admin prompt
+/// (polkit), then sebtype-setup's part for this account, without one (pc/linux/README.md). The input
+/// method runs the new version once Fcitx5 restarts, at the next login: never restarted here.
 pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
+    if files.len() != 1 {
+        return Err(io::Error::other("no installer"));
+    }
     let out = root_install(&["pkexec", "/bin/sh"], files).output()?;
     match out.status.code() {
         Some(0) => {}
@@ -837,7 +839,7 @@ pub fn install_update(files: &[crate::update::Download]) -> io::Result<()> {
                 "not allowed: the admin prompt was cancelled",
             ))
         }
-        _ => return Err(io::Error::other(last_line(&out, "dnf failed"))),
+        _ => return Err(io::Error::other(last_line(&out, "installer failed"))),
     }
     let out = Command::new("/usr/bin/sebtype-setup")
         .stdin(std::process::Stdio::null())
@@ -864,8 +866,9 @@ pub fn open_url(url: &str) {
 mod tests {
     use super::*;
 
-    /// The admin side of an update installs copies it checked itself: a file changed after the
-    /// Configurator's check makes it refuse; dnf (a stub here) gets the copies.
+    /// The admin side of an update runs a copy of the installer it checked itself: a file changed
+    /// after the Configurator's check makes it refuse; the stub installer runs from the copy with
+    /// --install-rpms-only.
     #[test]
     fn an_update_installs_only_the_files_it_checked() {
         let d = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
@@ -873,53 +876,34 @@ mod tests {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&d);
-        fs::create_dir_all(d.join("bin")).unwrap();
-        let ran = d.join("dnf-ran");
+        fs::create_dir_all(&d).unwrap();
+        let ran = d.join("installer-ran");
+        let installer = d.join("SebType-setup-0.2.0-linux-x86_64.sh");
         fs::write(
-            d.join("bin/dnf"),
-            format!(
-                "#!/bin/sh\nshift 2; for f; do echo \"${{f##*/}} $(cat \"$f\")\"; done > '{}'\n",
-                ran.display()
-            ),
+            &installer,
+            format!("#!/bin/sh\necho \"$0|$*\" > '{}'\n", ran.display()),
         )
         .unwrap();
-        fs::set_permissions(
-            d.join("bin/dnf"),
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
-        )
-        .unwrap();
-        let (a, b) = (
-            d.join("sebtype-0.2.0-1.fc44.x86_64.rpm"),
-            d.join("librime-1.16.1-2.fc44.x86_64.rpm"),
-        );
-        fs::write(&a, "hello").unwrap();
-        fs::write(&b, "world").unwrap();
-        let files = vec![
-            (a.clone(), crate::update::sha256_file(&a).unwrap()),
-            (b.clone(), crate::update::sha256_file(&b).unwrap()),
-        ];
-        let run = |files: &[crate::update::Download]| {
-            let path = format!("{}:{}", d.join("bin").display(), env::var("PATH").unwrap());
-            root_install(&["sh"], files)
-                .env("PATH", path)
-                .output()
-                .unwrap()
-        };
-        let out = run(&files);
+        let files = vec![(
+            installer.clone(),
+            crate::update::sha256_file(&installer).unwrap(),
+        )];
+        let out = root_install(&["sh"], &files).output().unwrap();
         assert!(out.status.success(), "{out:?}");
-        assert_eq!(
-            fs::read_to_string(&ran).unwrap(),
-            "librime-1.16.1-2.fc44.x86_64.rpm world\nsebtype-0.2.0-1.fc44.x86_64.rpm hello\n"
-        );
+        let got = fs::read_to_string(&ran).unwrap();
+        let (path, args) = got.trim().split_once('|').unwrap();
+        assert_ne!(Path::new(path), installer, "ran original instead of copy");
+        assert!(path.ends_with("/SebType-setup-0.2.0-linux-x86_64.sh"));
+        assert_eq!(args, "--install-rpms-only");
         fs::remove_file(&ran).unwrap();
         // replaced after the check
-        fs::write(&b, "w0rld").unwrap();
-        let out = run(&files);
+        fs::write(&installer, "#!/bin/sh\necho tampered\n").unwrap();
+        let out = root_install(&["sh"], &files).output().unwrap();
         assert_eq!(out.status.code(), Some(3), "{out:?}");
         assert!(
-            last_line(&out, "").contains("librime-1.16.1-2.fc44.x86_64.rpm isn't the release's")
+            last_line(&out, "").contains("SebType-setup-0.2.0-linux-x86_64.sh isn't the release's")
         );
-        assert!(!ran.exists(), "dnf ran");
+        assert!(!ran.exists(), "installer ran");
         fs::remove_dir_all(&d).unwrap();
     }
 

@@ -115,11 +115,7 @@ def check_updates(exe=None, **env):
 def make(tag, version):
     assets = [
         f"SebType-setup-{version}.exe",
-        f"sebtype-{version}-1.fc44.x86_64.rpm",
-        *(
-            f"{p}-1.16.1-2.sebtype4.fc44.x86_64.rpm"
-            for p in ("librime", "librime-lua", "librime-octagram")
-        ),
+        f"SebType-setup-{version}-linux-x86_64.sh",
         f"SebType-{version}-arm64-v8a.apk",
     ]
     release.clear()

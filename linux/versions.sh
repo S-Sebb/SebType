@@ -8,8 +8,9 @@
 # setup's user part, and SebType's librime with its plugins, so a PC updates without a checkout.
 # SebType's version, the phone's and Windows' too (VERSION, #420).
 SEBTYPE_VERSION=$(<"$(dirname "${BASH_SOURCE[0]}")/../VERSION")
-SEBTYPE_RPM_RELEASE=16.fc44
+SEBTYPE_RPM_RELEASE=1.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
+SEBTYPE_LINUX_SETUP=SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
 # What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz. The Configurator takes
 # the sync client and the phone's pig and font; the Chinese data librime's API headers.
