@@ -220,7 +220,7 @@ says to log in again if not.
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
 rerun run on a fake fresh account including the install of SebType's input method, the removal of an older setup's icon theme, SebType's librime and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, that a sensitive field, and learning off in the Configurator, learn no 中文 or 日本語 picks and keep what was learned (`private-field`), the Chinese popup
-text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为) and 6 candidates per page (a page size of the user's own kept) in a private Fcitx5 running SebType's input method on SebType's
+text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为), 6 candidates per page (a page size of the user's own kept) and the wheel's paging of 中文 and 日本語 candidates (#443) in a private Fcitx5 running SebType's input method on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
 icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method and librime without installing them:
 Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`, and `bwrap` mounts librime over Fedora's for that Fcitx5 alone. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
@@ -228,7 +228,8 @@ Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`, and `bwrap` mounts librime o
 ## App checklist
 
 In each app: type `ranh` → 然后 (Rime), switch to Mozc and type `nihongo` → 日本語, type plain
-English, and check that the candidate window sits next to the text cursor. `fcitx5-diagnose` lists
+English, and check that the candidate window sits next to the text cursor and that the mouse wheel over it
+pages the candidates (#443; the tests reach the same paging through D-Bus, not the compositor's pointer). `fcitx5-diagnose` lists
 each app's input context and the frontend it uses.
 
 | Path | App | Expected frontend |

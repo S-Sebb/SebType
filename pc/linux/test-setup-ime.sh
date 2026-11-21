@@ -339,6 +339,8 @@ committed, preedit = [], ['']
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'CommitString': committed.append(params.unpack()[0])
     elif name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+    elif name == 'UpdateClientSideUI': ui.append(params.unpack())
+ui = []
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
 call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)  # preedit, formatted, client-side panel
 call(ic, IC, 'FocusIn')
@@ -393,6 +395,36 @@ shift_tap(); check('Shift tap in ア turns English on', mode(), 'A')
 chord('Alt_L', 'grave'); check('Alt+` in English stays English', mode(), 'A')
 shift_tap(); check('Shift tap in English is ア again', mode(), 'ア')
 chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'sebtype-hira'))
+# #443: the mouse wheel over the candidate window pages it. classicui's wheel calls the list's prev() or next()
+# when it says it has that page, as the client-side panel's PrevPage and NextPage do here. A notch past the
+# first or last page changes nothing, and nothing ends what is being typed.
+def shown():  # the page's words, whether it has a page before and after it, and whether a word is typed
+    u = ui[-1]
+    return tuple(t for _, t in u[4]), u[7], u[8], bool(preedit[0])
+def wheel(down):
+    n = len(ui)
+    call(ic, IC, 'NextPage' if down else 'PrevPage')
+    end = time.time() + 0.5
+    while time.time() < end and len(ui) == n: GLib.MainContext.default().iteration(False)
+    end = time.time() + 0.05  # and the preedit after it
+    while time.time() < end: GLib.MainContext.default().iteration(False)
+    return shown()
+def wheel_pages(name):
+    first = shown()
+    check(f'{name}: the first page has a next one', first[1:3], (False, True))
+    check(f'{name}: wheel up on the first page changes nothing', wheel(False), first)
+    second = wheel(True)
+    check(f'{name}: wheel down shows the next page', (second[0] != first[0], second[1], second[3]), (True, True, True))
+    check(f'{name}: wheel up shows the first page again', wheel(False), first)
+    last, pages = first, 1
+    while last[2] and pages < 100: last, pages = wheel(True), pages + 1
+    check(f'{name}: wheel down reaches the last page', (last[2], last[3]), (False, True))
+    check(f'{name}: wheel down on the last page changes nothing', wheel(True), last)
+for k in 'kisha': tap(k)
+one = shown()  # Mozc's suggestions: one page
+check('the wheel over one page changes nothing', (one[1:3], wheel(True), wheel(False)), ((False, False), one, one))
+tap('space'); tap('space'); wheel_pages('converting kisha')  # the second space shows the candidates
+tap('Escape'); tap('Escape')
 # Ctrl+Backspace right after a commit (#376), in fields that keep their text as an app does (the caret at its
 # end) and say it to Fcitx5 (surrounding text) or not: the commit goes and converts again as before Enter, and
 # Escape gives its reading back; but never in another field, or where the app can't delete it.
@@ -653,12 +685,13 @@ def up():
 wait(up, 10)
 ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-popups, candidates, shown = [], [[]], ['']
+popups, candidates, shown, ui = [], [[]], [''], []
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'UpdateClientSideUI':
         text = shown[0] = ''.join(s for s, _ in params.unpack()[2])
         if text: popups.append(text)
         candidates[0] = params.unpack()[4]
+        ui.append(params.unpack())
 committed = []
 def on_commit(_c, _s, _p, _i, name, params):
     if name == 'CommitString': committed.append(params.unpack()[0])
@@ -770,6 +803,32 @@ def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
     wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n
 check('a page shows 6 candidates (shi)', page('shi'), 6)
+# #443: the mouse wheel over the candidate window pages it. classicui's wheel calls the list's prev() or next()
+# when it says it has that page, as the client-side panel's PrevPage and NextPage do here. A notch past the
+# first or last page changes nothing, and nothing ends what is being typed.
+def page_shown():  # the page's words, whether it has a page before and after it, and whether a word is typed
+    u = ui[-1]
+    return tuple(t for _, t in u[4]), u[7], u[8], bool(preedit[0])
+def wheel(down):
+    n = len(ui)
+    call(ic, IC, 'NextPage' if down else 'PrevPage')
+    wait(lambda: len(ui) > n, 0.5); wait(lambda: False, 0.03)
+    return page_shown()
+def wheel_pages(name):
+    first = page_shown()
+    check(f'{name}: the first page has a next one', first[1:3], (False, True))
+    check(f'{name}: wheel up on the first page changes nothing', wheel(False), first)
+    second = wheel(True)
+    check(f'{name}: wheel down shows the next page', (second[0] != first[0], second[1], second[3]), (True, True, True))
+    check(f'{name}: wheel up shows the first page again', wheel(False), first)
+    last, pages = first, 1
+    while last[2] and pages < 100: last, pages = wheel(True), pages + 1
+    check(f'{name}: wheel down reaches the last page', (last[2], last[3]), (False, True))
+    check(f'{name}: wheel down on the last page changes nothing', wheel(True), last)
+for c in 'shi': tap(c)
+wait(lambda: candidates[0], 2)
+wheel_pages('shi')
+tap('Escape')
 # #373: the sync's Save and its deploy asked for mid-word wait until typing is idle: the word typed on keeps what
 # was typed before them, and Rime's save runs once typing stops (it writes this PC's snapshot).
 def sync_mid_word():
