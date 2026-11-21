@@ -27,6 +27,8 @@ pub struct Update {
     pub checked: i64,
     /// The newer release it found ("" when none was newer).
     pub latest: String,
+    /// The release notes (GitHub release body) of `latest` ("" when none).
+    pub notes: String,
     /// The release the daily check has notified: each one is offered once.
     pub notified: String,
 }
@@ -36,6 +38,7 @@ impl Default for Update {
             auto: true,
             checked: 0,
             latest: String::new(),
+            notes: String::new(),
             notified: String::new(),
         }
     }
@@ -74,7 +77,7 @@ pub fn newer(installed: &str, tag: &str) -> Option<String> {
     (parse(installed).is_none_or(|i| v > i)).then(|| format!("{}.{}.{}", v.0, v.1, v.2))
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct Asset {
     pub name: String,
     pub size: u64,
@@ -87,7 +90,137 @@ pub struct Asset {
 struct Release {
     tag_name: String,
     #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
     assets: Vec<Asset>,
+}
+
+/// A newer release found on GitHub, with the files this PC installs and its release notes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Available {
+    pub version: String,
+    pub assets: Vec<Asset>,
+    pub notes: String,
+}
+
+/// One styled run inside a release-notes line (#428).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteSpan {
+    pub text: String,
+    pub bold: bool,
+}
+
+/// One block of a GitHub release's body, parsed without HTML (#428).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NoteLine {
+    Heading(String),
+    Bullet(Vec<NoteSpan>),
+    Text(Vec<NoteSpan>),
+}
+
+/// Parses GitHub release notes markdown into headings (`#`/`##`/`###`), bullets (`- `/` * `),
+/// and plain lines with inline `**bold**` spans. Untrusted HTML or other markdown stays plain text.
+pub fn parse_notes(markdown: &str) -> Vec<NoteLine> {
+    let mut out = Vec::new();
+    for raw in markdown.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line
+            .strip_prefix("### ")
+            .or_else(|| line.strip_prefix("## "))
+            .or_else(|| line.strip_prefix("# "))
+        {
+            let text = rest.trim();
+            if !text.is_empty() {
+                out.push(NoteLine::Heading(text.to_string()));
+            }
+        } else if let Some(rest) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+            let text = rest.trim();
+            if !text.is_empty() {
+                out.push(NoteLine::Bullet(parse_inline_bold(text)));
+            }
+        } else {
+            out.push(NoteLine::Text(parse_inline_bold(line)));
+        }
+    }
+    out
+}
+
+pub fn parse_inline_bold(text: &str) -> Vec<NoteSpan> {
+    let mut spans = Vec::new();
+    let mut i = 0;
+    let mut plain_start = 0;
+    while i < text.len() {
+        let Some(open_rel) = text[i..].find("**") else {
+            break;
+        };
+        let open = i + open_rel;
+        let Some(close_rel) = text[open + 2..].find("**") else {
+            break;
+        };
+        let close = open + 2 + close_rel;
+        if close == open + 2 {
+            i = close + 2;
+            continue;
+        }
+        if open > plain_start {
+            spans.push(NoteSpan {
+                text: text[plain_start..open].to_string(),
+                bold: false,
+            });
+        }
+        spans.push(NoteSpan {
+            text: text[open + 2..close].to_string(),
+            bold: true,
+        });
+        i = close + 2;
+        plain_start = i;
+    }
+    if plain_start < text.len() {
+        spans.push(NoteSpan {
+            text: text[plain_start..].to_string(),
+            bold: false,
+        });
+    }
+    spans
+}
+
+fn escape_markdown(text: &str, out: &mut String) {
+    for c in text.chars() {
+        if c.is_ascii_punctuation() {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+}
+
+/// Converts parsed inline bold spans to Slint StyledText without interpreting raw HTML or other markdown.
+pub fn spans_to_styled_text(spans: &[NoteSpan]) -> slint::StyledText {
+    let mut md = String::new();
+    for span in spans {
+        if span.bold {
+            let trimmed = span.text.trim();
+            if trimmed.is_empty() {
+                escape_markdown(&span.text, &mut md);
+            } else {
+                let start = span.text.find(trimmed).unwrap();
+                let end = start + trimmed.len();
+                md.push_str(&span.text[..start]);
+                md.push_str("**");
+                escape_markdown(trimmed, &mut md);
+                md.push_str("**");
+                md.push_str(&span.text[end..]);
+            }
+        } else {
+            escape_markdown(&span.text, &mut md);
+        }
+    }
+    slint::StyledText::from_markdown(&md).unwrap_or_else(|_| {
+        let plain: String = spans.iter().map(|s| s.text.as_str()).collect();
+        slint::StyledText::from_plain_text(&plain)
+    })
 }
 
 /// The asset's SHA-256 from the release, which the install is bound to: an asset without one isn't
@@ -172,7 +305,7 @@ fn curl(url: &str) -> Command {
     c
 }
 
-fn latest_release() -> Result<Release, String> {
+fn latest_release() -> Result<Vec<u8>, String> {
     let (api, _) = source();
     let out = curl(&api)
         .args([
@@ -187,18 +320,38 @@ fn latest_release() -> Result<Release, String> {
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
-    serde_json::from_slice(&out.stdout).map_err(|e| format!("GitHub's answer: {e}"))
+    Ok(out.stdout)
+}
+
+fn parse_release(
+    json: &[u8],
+    installed: &str,
+    windows: bool,
+    arch: &str,
+) -> Result<Option<Available>, String> {
+    let r: Release = serde_json::from_slice(json).map_err(|e| format!("GitHub's answer: {e}"))?;
+    let Some(version) = newer(installed, &r.tag_name) else {
+        return Ok(None);
+    };
+    let assets = wanted(&r.assets, &version, windows, arch);
+    let notes = r.body.as_deref().map(str::trim).unwrap_or("").to_string();
+    Ok((!assets.is_empty()).then_some(Available {
+        version,
+        assets,
+        notes,
+    }))
 }
 
 /// The newer release and what this PC would install from it, or None when the installed one is current.
 /// A release without this PC's files counts as none.
-pub fn check() -> Result<Option<(String, Vec<Asset>)>, String> {
-    let r = latest_release()?;
-    let Some(v) = newer(&platform::installed_version(), &r.tag_name) else {
-        return Ok(None);
-    };
-    let files = wanted(&r.assets, &v, cfg!(windows), std::env::consts::ARCH);
-    Ok((!files.is_empty()).then_some((v, files)))
+pub fn check() -> Result<Option<Available>, String> {
+    let json = latest_release()?;
+    parse_release(
+        &json,
+        &platform::installed_version(),
+        cfg!(windows),
+        std::env::consts::ARCH,
+    )
 }
 
 /// A new folder for one install's downloads, which only this account can use: in updates_dir (the
@@ -270,13 +423,23 @@ fn now() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// Checks and keeps the outcome: the newer version, if any.
+/// Checks and keeps the outcome: the newer version and its release notes, if any.
 pub fn check_and_save() -> Result<Option<String>, String> {
-    let found = check()?.map(|(v, _)| v);
+    let found = check()?;
     let mut u = load();
-    (u.checked, u.latest) = (now(), found.clone().unwrap_or_default());
+    u.checked = now();
+    match &found {
+        Some(a) => {
+            u.latest = a.version.clone();
+            u.notes = a.notes.clone();
+        }
+        None => {
+            u.latest.clear();
+            u.notes.clear();
+        }
+    }
     let _ = save(&u);
-    Ok(found)
+    Ok(found.map(|a| a.version))
 }
 
 /// The schedule's daily check (`--check-updates`).
@@ -543,5 +706,113 @@ mod tests {
             |_, _| Ok(()),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn release_parses_body_and_old_cached_state_defaults_notes() {
+        let with_body = serde_json::json!({
+            "tag_name": "v0.2.0",
+            "body": "\n  ### New\n- **Updates.** Checks daily.\n  ",
+            "assets": [{
+                "name": "SebType-setup-0.2.0-linux-x86_64.sh",
+                "size": 1,
+                "browser_download_url": format!("{DOWNLOADS}v0.2.0/SebType-setup-0.2.0-linux-x86_64.sh")
+            }]
+        });
+        let avail = parse_release(
+            &serde_json::to_vec(&with_body).unwrap(),
+            "0.1.0",
+            false,
+            "x86_64",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(avail.version, "0.2.0");
+        assert_eq!(avail.notes, "### New\n- **Updates.** Checks daily.");
+
+        // Missing, null, and whitespace-only bodies all yield empty notes.
+        for body in [None, Some(serde_json::Value::Null), Some("  \n\t ".into())] {
+            let mut obj = with_body.clone();
+            match body {
+                None => {
+                    obj.as_object_mut().unwrap().remove("body");
+                }
+                Some(v) => {
+                    obj["body"] = v;
+                }
+            }
+            let avail = parse_release(&serde_json::to_vec(&obj).unwrap(), "0.1.0", false, "x86_64")
+                .unwrap()
+                .unwrap();
+            assert_eq!(avail.notes, "");
+        }
+
+        // Older cached update.json lacking `notes` deserializes cleanly.
+        let old: Update =
+            serde_json::from_str(r#"{"auto":true,"checked":123,"latest":"0.2.0","notified":""}"#)
+                .unwrap();
+        assert_eq!(old.latest, "0.2.0");
+        assert_eq!(old.notes, "");
+    }
+
+    #[test]
+    fn parse_notes_handles_headings_bullets_bold_and_edge_cases() {
+        let span = |text: &str, bold: bool| NoteSpan {
+            text: text.into(),
+            bold,
+        };
+        let md = "\
+### New
+- **Automatic updates.** Checks GitHub once a day.
+* Plain bullet without bold.
+
+## Improved
+- Faster **startup** and **prediction** on launch.
+
+# Fixed
+- Keeps **unclosed bold as plain text.
+- Ignores **** empty markers.
+<b>Raw HTML</b> stays plain text.
+";
+        assert_eq!(
+            parse_notes(md),
+            vec![
+                NoteLine::Heading("New".into()),
+                NoteLine::Bullet(vec![
+                    span("Automatic updates.", true),
+                    span(" Checks GitHub once a day.", false),
+                ]),
+                NoteLine::Bullet(vec![span("Plain bullet without bold.", false)]),
+                NoteLine::Heading("Improved".into()),
+                NoteLine::Bullet(vec![
+                    span("Faster ", false),
+                    span("startup", true),
+                    span(" and ", false),
+                    span("prediction", true),
+                    span(" on launch.", false),
+                ]),
+                NoteLine::Heading("Fixed".into()),
+                NoteLine::Bullet(vec![span("Keeps **unclosed bold as plain text.", false)]),
+                NoteLine::Bullet(vec![span("Ignores **** empty markers.", false)]),
+                NoteLine::Text(vec![span("<b>Raw HTML</b> stays plain text.", false)]),
+            ]
+        );
+
+        assert_eq!(parse_notes(""), Vec::<NoteLine>::new());
+        assert_eq!(parse_notes("   \n\t\n  "), Vec::<NoteLine>::new());
+
+        // spans_to_styled_text safely converts all lines without errors or interpreting raw HTML.
+        for line in parse_notes(md) {
+            if let NoteLine::Bullet(spans) | NoteLine::Text(spans) = line {
+                let plain: String = spans.iter().map(|s| s.text.as_str()).collect();
+                let styled = spans_to_styled_text(&spans);
+                // Bold spans differ from plain text; plain/HTML-only lines match plain text.
+                if spans.iter().any(|s| s.bold) {
+                    assert_ne!(styled, slint::StyledText::from_plain_text(&plain));
+                } else {
+                    assert_eq!(styled, slint::StyledText::from_plain_text(&plain));
+                }
+            }
+        }
     }
 }

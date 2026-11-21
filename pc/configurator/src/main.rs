@@ -528,6 +528,31 @@ fn show_update(app: &AppWindow, u: &update::Update) {
     // An update installed since the check isn't newer any more.
     let newer = update::newer(&platform::installed_version(), &u.latest);
     st.set_update_version(newer.clone().unwrap_or_default().into());
+    let notes: Vec<UpdateNote> = if newer.is_some() {
+        update::parse_notes(&u.notes)
+            .into_iter()
+            .map(|line| match line {
+                update::NoteLine::Heading(h) => UpdateNote {
+                    kind: 0,
+                    heading: h.into(),
+                    body: Default::default(),
+                },
+                update::NoteLine::Bullet(spans) => UpdateNote {
+                    kind: 1,
+                    heading: Default::default(),
+                    body: update::spans_to_styled_text(&spans),
+                },
+                update::NoteLine::Text(spans) => UpdateNote {
+                    kind: 2,
+                    heading: Default::default(),
+                    body: update::spans_to_styled_text(&spans),
+                },
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    st.set_update_notes(ModelRc::new(VecModel::from(notes)));
     st.set_update_status(match (newer, u.checked) {
         (Some(_), _) => UpdateStatus::Available,
         (None, 0) => UpdateStatus::None,
@@ -560,9 +585,9 @@ fn install_update(weak: slint::Weak<AppWindow>) {
     set_update_status(&weak, UpdateStatus::Downloading, String::new());
     std::thread::spawn(move || {
         let installed = (|| {
-            let (_, files) = update::check()?.ok_or("SebType is up to date".to_string())?;
+            let available = update::check()?.ok_or("SebType is up to date".to_string())?;
             let dir = update::private_dir().map_err(|e| e.to_string())?;
-            let installed = update::download(&files, &dir).and_then(|paths| {
+            let installed = update::download(&available.assets, &dir).and_then(|paths| {
                 set_update_status(&weak, UpdateStatus::Installing, String::new());
                 platform::install_update(&paths).map_err(|e| e.to_string())
             });
