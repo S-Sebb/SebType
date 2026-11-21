@@ -537,3 +537,30 @@ msgstr "还原"
 
 msgid "Close"
 msgstr "关闭"
+
+msgid "Checking the server and login…"
+msgstr "正在检查服务器和账号…"
+
+msgid "Connected. The server and login work"
+msgstr "已连接，服务器和账号都没问题"
+
+msgid "Can't reach the server. Check the address and your network"
+msgstr "无法连接服务器，请检查地址和网络"
+
+msgid "That address isn't a SebType sync server"
+msgstr "这个地址不是 SebType 同步服务器"
+
+msgid "The server's HTTPS certificate isn't trusted"
+msgstr "服务器的 HTTPS 证书不受信任"
+
+msgid "Connection"
+msgstr "连接"
+
+msgid "Test connection"
+msgstr "测试连接"
+
+msgid "Save anyway"
+msgstr "仍然保存"
+
+msgid "Save anyway & continue"
+msgstr "仍然保存并继续"

@@ -190,6 +190,22 @@ ja.SyncInvalidServer=サーバーアドレスは https:// のアドレスにし�
 en.SyncSaveFailed=Could not save your sync login. Check your details or clear the fields to skip.
 zh.SyncSaveFailed=无法保存同步账号。请检查填写的内容，或清空后跳过。
 ja.SyncSaveFailed=同期アカウントを保存できませんでした。入力内容を確認するか、空欄にしてスキップしてください。
+; Next checks the address and login before it saves them (#452), as the Configurator's Save does.
+en.SyncCheckLogin=Wrong username or password.
+zh.SyncCheckLogin=用户名或密码错误。
+ja.SyncCheckLogin=ユーザー名またはパスワードが違います。
+en.SyncCheckUnreachable=Can't reach the server. Check the address and your network.
+zh.SyncCheckUnreachable=无法连接服务器，请检查地址和网络。
+ja.SyncCheckUnreachable=サーバーに接続できません。アドレスとネットワークを確認してください。
+en.SyncCheckNotSebType=That address isn't a SebType sync server.
+zh.SyncCheckNotSebType=这个地址不是 SebType 同步服务器。
+ja.SyncCheckNotSebType=このアドレスは SebType の同期サーバーではありません。
+en.SyncCheckTls=The server's HTTPS certificate isn't trusted.
+zh.SyncCheckTls=服务器的 HTTPS 证书不受信任。
+ja.SyncCheckTls=サーバーの HTTPS 証明書が信頼されていません。
+en.SyncSaveAnyway=%1%n%nSave this login anyway? Sync then tries again later. Choose No to change it.
+zh.SyncSaveAnyway=%1%n%n仍然保存这个账号吗？之后会再次尝试同步。选择“否”可以修改。
+ja.SyncSaveAnyway=%1%n%nこのまま保存しますか？同期はあとで再試行します。修正する場合は［いいえ］を選んでください。
 
 [Tasks]
 Name: "en"; Description: "{cm:English}"; GroupDescription: "{cm:Languages}"
@@ -472,15 +488,29 @@ begin
   DeleteFile(OutFile);
 end;
 
-// Saves the sync login as the invoking user via a short-lived file (never on the command line or in logs).
-function SaveSyncLogin(Server, User, Password: String): Boolean;
+// The Configurator's --check exit codes (sync.rs, LoginError::exit_code): why a login doesn't work, or ''.
+function SyncCheckMessage(Code: Integer): String;
+begin
+  case Code of
+    11: Result := CustomMessage('SyncCheckLogin');
+    12: Result := CustomMessage('SyncCheckUnreachable');
+    13: Result := CustomMessage('SyncCheckNotSebType');
+    14: Result := CustomMessage('SyncCheckTls');
+  else
+    Result := '';
+  end;
+end;
+
+// Runs the Configurator's --sync-login-file as the invoking user with a short-lived file (never on the
+// command line or in logs): its exit code, or -1.
+function RunSyncLogin(Server, User, Password, Extra: String): Integer;
 var
   CredFile: String;
   Lines: TArrayOfString;
   Code: Integer;
   Ok: Boolean;
 begin
-  Result := False;
+  Result := -1;
   CredFile := OriginalLocalAppData + '\SebType\sync-login.tmp';
   ForceDirectories(ExtractFileDir(CredFile));
   SetArrayLength(Lines, 3);
@@ -490,18 +520,34 @@ begin
   Ok := False;
   try
     if not SaveStringsToUTF8FileWithoutBOM(CredFile, Lines, False) then
-    begin
-      Tell(CustomMessage('SyncSaveFailed'), mbError);
       Exit;
-    end;
     Ok := ExecAsOriginalUser(ExpandConstant('{app}\sebtype-configurator.exe'),
-      '--sync-login-file "' + CredFile + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+      '--sync-login-file "' + CredFile + '"' + Extra, '', SW_HIDE, ewWaitUntilTerminated, Code);
+    if Ok then
+      Result := Code;
   finally
     DeleteFile(CredFile);
   end;
-  if Ok and (Code = 0) then
+end;
+
+// Checks the sync login and saves it if it works; one that doesn't is saved only if the person says so.
+function SaveSyncLogin(Server, User, Password: String): Boolean;
+var
+  Code: Integer;
+  Why: String;
+begin
+  Result := False;
+  Code := RunSyncLogin(Server, User, Password, ' --check');
+  Why := SyncCheckMessage(Code);
+  if Why <> '' then
+  begin
+    if MsgBox(FmtMessage(CustomMessage('SyncSaveAnyway'), [Why]), mbConfirmation, MB_YESNO) <> IDYES then
+      Exit;
+    Code := RunSyncLogin(Server, User, Password, '');
+  end;
+  if Code = 0 then
     Result := True
-  else if Ok and (Code = 2) then
+  else if Code = 2 then
     Tell(CustomMessage('SyncInvalidServer'), mbError)
   else
     Tell(CustomMessage('SyncSaveFailed'), mbError);

@@ -537,3 +537,30 @@ msgstr "元のサイズに戻す"
 
 msgid "Close"
 msgstr "閉じる"
+
+msgid "Checking the server and login…"
+msgstr "サーバーとログインを確認中…"
+
+msgid "Connected. The server and login work"
+msgstr "接続しました。サーバーとログインは正常です"
+
+msgid "Can't reach the server. Check the address and your network"
+msgstr "サーバーに接続できません。アドレスとネットワークを確認してください"
+
+msgid "That address isn't a SebType sync server"
+msgstr "このアドレスは SebType の同期サーバーではありません"
+
+msgid "The server's HTTPS certificate isn't trusted"
+msgstr "サーバーの HTTPS 証明書が信頼されていません"
+
+msgid "Connection"
+msgstr "接続"
+
+msgid "Test connection"
+msgstr "接続をテスト"
+
+msgid "Save anyway"
+msgstr "このまま保存"
+
+msgid "Save anyway & continue"
+msgstr "このまま保存して続行"

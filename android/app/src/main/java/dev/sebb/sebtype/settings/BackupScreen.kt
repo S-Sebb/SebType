@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,10 +78,13 @@ private fun SyncSection() {
     val context = LocalContext.current
     val account by SyncAccountStore.current.collectAsState()
     val status by Sync.status.collectAsState()
+    val connection by Sync.connection.collectAsState()
     var dialog by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { SyncAccountStore.load(context) }
         Sync.refresh(context)
+        // The page shows the account's state as it is now (#452), apart from the last sync's outcome.
+        if (SyncAccountStore.current.value != null) Sync.checkConnection(context)
     }
     SectionTag(stringResource(R.string.sebtype_settings_sync))
     Card {
@@ -103,6 +108,8 @@ private fun SyncSection() {
             account?.summary() ?: stringResource(R.string.sebtype_settings_sync_login_none)) {
             dialog = "login"
         }
+        if (account != null) NavItem(stringResource(R.string.sebtype_settings_sync_check_test),
+            connection?.let { checkText(it) }, arrow = false) { Sync.checkConnection(context) }
         if (account != null) NavItem(stringResource(R.string.sebtype_settings_sync_delete),
             stringResource(R.string.sebtype_settings_sync_delete_subtitle)) { dialog = "delete" }
     }
@@ -111,6 +118,16 @@ private fun SyncSection() {
         "delete" -> DeleteDialog { dialog = null }
     }
 }
+
+@Composable
+internal fun checkText(check: Sync.Check) = stringResource(when (check) {
+    Sync.Check.Checking -> R.string.sebtype_settings_sync_check_checking
+    Sync.Check.Connected -> R.string.sebtype_settings_sync_check_connected
+    Sync.Check.LoginFailed -> R.string.sebtype_settings_sync_login_failed
+    Sync.Check.Unreachable -> R.string.sebtype_settings_sync_check_unreachable
+    Sync.Check.NotSebType -> R.string.sebtype_settings_sync_check_not_sebtype
+    Sync.Check.Tls -> R.string.sebtype_settings_sync_check_tls
+})
 
 internal fun SyncAccount.summary() = "$user · ${server.removePrefix("https://")}"
 
@@ -124,6 +141,17 @@ internal fun SyncLoginDialog(close: () -> Unit) {
     var password by remember { mutableStateOf(saved?.password ?: "") }
     val url = SyncAccount.normalizeServer(server)
     val invalid = server.isNotBlank() && url == null
+    val scope = rememberCoroutineScope()
+    // Save checks the address and login first (#452); a failure stays here with its reason, and Save
+    // anyway keeps the login all the same (sync is opportunistic: a server down today syncs later).
+    var check by remember(server, user, password) { mutableStateOf<Sync.Check?>(null) }
+    val failed = check != null && check != Sync.Check.Checking && check != Sync.Check.Connected
+    fun save(checked: Sync.Check) {
+        // A first login turns sync on; a changed one keeps it as it was.
+        val account = SyncAccount(url!!, user, password, enabled = saved?.enabled ?: true)
+        Sync.setEnabled(context, account, account.enabled, checked)
+        close()
+    }
     AlertDialog(
         onDismissRequest = close,
         title = { Text(stringResource(R.string.sebtype_settings_sync_login)) },
@@ -150,15 +178,24 @@ internal fun SyncLoginDialog(close: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.padding(top = 8.dp),
                 )
+                check?.let {
+                    Text(checkText(it), Modifier.padding(top = 8.dp),
+                        color = if (failed) MaterialTheme.colorScheme.error else Color.Unspecified)
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = url != null && user.isNotEmpty() && password.isNotEmpty(), onClick = {
-                // A first login turns sync on; a changed one keeps it as it was.
-                val account = SyncAccount(url!!, user, password, enabled = saved?.enabled ?: true)
-                Sync.setEnabled(context, account, account.enabled)
-                close()
-            }) { Text(stringResource(R.string.sebtype_settings_save)) }
+            TextButton(enabled = url != null && user.isNotEmpty() && password.isNotEmpty() && check != Sync.Check.Checking, onClick = {
+                val failure = check
+                if (failed) save(failure!!)
+                else {
+                    check = Sync.Check.Checking
+                    scope.launch {
+                        val result = Sync.check(SyncAccount(url!!, user, password, enabled = false))
+                        if (result == Sync.Check.Connected) save(result) else check = result
+                    }
+                }
+            }) { Text(stringResource(if (failed) R.string.sebtype_settings_sync_check_save_anyway else R.string.sebtype_settings_save)) }
         },
         dismissButton = { TextButton(onClick = close) { Text(stringResource(android.R.string.cancel)) } },
     )

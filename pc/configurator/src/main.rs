@@ -489,6 +489,17 @@ fn show_sync(app: &AppWindow, s: &sync::Sync, syncing: bool) {
     });
 }
 
+fn sync_check(c: Option<sync::Check>) -> SyncCheck {
+    match c {
+        None => SyncCheck::None,
+        Some(sync::Check::Connected) => SyncCheck::Connected,
+        Some(sync::Check::LoginFailed) => SyncCheck::LoginFailed,
+        Some(sync::Check::Unreachable) => SyncCheck::Unreachable,
+        Some(sync::Check::NotSebType) => SyncCheck::NotSebtype,
+        Some(sync::Check::Tls) => SyncCheck::Tls,
+    }
+}
+
 /// Runs a sync step off the window's thread (a sync can take a while, so not on the settings' worker),
 /// then syncs if sync is on, showing "Syncing…" meanwhile.
 fn sync_job(
@@ -695,14 +706,23 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     // Headless account sync login (#435, used by Windows Setup): reads `server\nuser\npassword\n`
     // from stdin (`--sync-login`) or from a temp file (`--sync-login-file <path>`) that is removed
-    // immediately after reading so passwords never appear in CLI args or logs.
+    // immediately after reading so passwords never appear in CLI args or logs. With `--check` (#452) it
+    // saves only a login that works, and otherwise exits with why not (sync::LoginError::Check).
+    let check_first = std::env::args().any(|a| a == "--check");
+    let save = move |(server, user, password): (String, String, String)| {
+        if check_first {
+            let check = sync::check(&server, &user, &password);
+            if check != sync::Check::Connected {
+                return Err(sync::LoginError::Check(check));
+            }
+        }
+        sync::save_login(server, user, &password).map_err(sync::LoginError::Other)
+    };
     if std::env::args().any(|a| a == "--sync-login") {
         let res = std::io::read_to_string(std::io::stdin())
             .map_err(|e| sync::LoginError::Other(e.to_string()))
             .and_then(|input| sync::parse_login_lines(&input))
-            .and_then(|(server, user, password)| {
-                sync::save_login(server, user, &password).map_err(sync::LoginError::Other)
-            });
+            .and_then(save);
         std::process::exit(match res {
             Ok(_) => 0,
             Err(e) => {
@@ -715,9 +735,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let res = match std::env::args().nth(i + 1) {
             Some(path) => sync::read_login_file(std::path::Path::new(&path))
                 .and_then(|input| sync::parse_login_lines(&input))
-                .and_then(|(server, user, password)| {
-                    sync::save_login(server, user, &password).map_err(sync::LoginError::Other)
-                }),
+                .and_then(save),
             None => Err(sync::LoginError::Other("missing file path".into())),
         };
         std::process::exit(match res {
@@ -1157,17 +1175,85 @@ fn main() -> Result<(), slint::PlatformError> {
             })
         }
     });
+    // When the saved login's state was last set: Sync & backup, opened again just after a login was checked
+    // or saved, doesn't check it again (nor read the keyring before the save has written it).
+    let checked_at = std::sync::Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
     s.on_save_login({
         let weak = app.as_weak();
+        let checked_at = checked_at.clone();
         move |server, user, password| {
             let Some(server) = sync::normalize_server(&server) else {
                 return false;
             };
+            *checked_at.lock().unwrap() = Some(std::time::Instant::now());
             let (user, password) = (user.trim().to_string(), password.to_string());
             sync_job(weak.clone(), move || {
                 sync::save_login(server, user, &password)
             });
             true
+        }
+    });
+    s.on_check_login({
+        let weak = app.as_weak();
+        let checked_at = checked_at.clone();
+        move |server, user, password| {
+            let Some(server) = sync::normalize_server(&server) else {
+                return false;
+            };
+            let (user, password) = (user.trim().to_string(), password.to_string());
+            if let Some(app) = weak.upgrade() {
+                app.global::<State>().set_login_check(SyncCheck::Checking);
+            }
+            let (weak, checked_at) = (weak.clone(), checked_at.clone());
+            let shown = (server.clone(), user.clone(), password.clone());
+            std::thread::spawn(move || {
+                let check = sync::check(&server, &user, &password);
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    let st = app.global::<State>();
+                    // Edited meanwhile, or left: this check is no one's now.
+                    let nav = app.global::<Nav>();
+                    if st.get_login_check() != SyncCheck::Checking
+                        || nav.get_page() != 4
+                        || nav.get_sub() != 1
+                    {
+                        return;
+                    }
+                    st.set_login_check(sync_check(Some(check)));
+                    if check == sync::Check::Connected {
+                        let (server, user, password) = shown;
+                        *checked_at.lock().unwrap() = Some(std::time::Instant::now());
+                        st.set_sync_check(SyncCheck::Connected);
+                        st.set_login_check(SyncCheck::None);
+                        nav.set_sub(0);
+                        sync_job(app.as_weak(), move || {
+                            sync::save_login(server, user, &password)
+                        });
+                    }
+                });
+            });
+            true
+        }
+    });
+    s.on_check_connection({
+        let weak = app.as_weak();
+        move || {
+            let Some(app) = weak.upgrade() else { return };
+            let st = app.global::<State>();
+            let recent = checked_at
+                .lock()
+                .unwrap()
+                .is_some_and(|t| t.elapsed() < Duration::from_secs(5));
+            if st.get_sync_check() == SyncCheck::Checking || recent {
+                return;
+            }
+            st.set_sync_check(SyncCheck::Checking);
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let check = sync::check_saved();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.global::<State>().set_sync_check(sync_check(check));
+                });
+            });
         }
     });
     s.on_delete_on_server({

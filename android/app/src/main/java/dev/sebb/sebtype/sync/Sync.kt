@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.SystemClock
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -29,6 +29,9 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLException
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import dev.sebb.sebtype.Engines
 import dev.sebb.sebtype.core.NativeCore
 import android.os.UserManager
@@ -115,16 +118,20 @@ class SyncHttpError(val code: Int) : IOException("HTTP $code")
  * is the update check on GitHub ([dev.sebb.sebtype.Updates]). HTTPS only (the app's
  * network security config forbids cleartext too), Basic auth, the API of `sync-server/sebtype_sync.py`.
  */
-class SyncServer(private val account: SyncAccount) {
+@OptIn(ExperimentalEncodingApi::class)
+class SyncServer(
+    private val account: SyncAccount,
+    // The tests' seam: a local plain-HTTP server stands in for the HTTPS one.
+    private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpsURLConnection },
+) {
     data class RemoteFile(val device: String, val name: String, val sha256: String, val size: Long = 0)
 
-    private val auth = "Basic " + Base64.encodeToString(
-        "${account.user}:${account.password}".toByteArray(), Base64.NO_WRAP)
+    private val auth = "Basic " + Base64.encode("${account.user}:${account.password}".toByteArray())
 
     private fun <T> request(method: String, path: String, body: ByteArray? = null, read: (HttpURLConnection) -> T): T {
         val url = URL(account.server + path)
         if(url.protocol != "https") throw IOException("not https")
-        val c = url.openConnection() as HttpsURLConnection
+        val c = open(url)
         try {
             c.requestMethod = method
             c.connectTimeout = 15_000
@@ -200,6 +207,43 @@ object Sync {
 
     private val mutableStatus = MutableStateFlow<Status>(Status.Off)
     val status: StateFlow<Status> = mutableStatus
+
+    /** What a connection check found (#452): the address and the login, apart from the last sync's outcome. */
+    enum class Check { Checking, Connected, LoginFailed, Unreachable, NotSebType, Tls }
+
+    private val mutableConnection = MutableStateFlow<Check?>(null)
+    /** The saved account's last check, for the Sync page; null before one. */
+    val connection: StateFlow<Check?> = mutableConnection
+
+    /** One list of the files, the lightest request that needs the login; never retried or redirected. */
+    fun check(server: SyncServer): Check = try {
+        server.list()
+        Check.Connected
+    } catch(e: SyncLoginFailed) {
+        Check.LoginFailed
+    } catch(e: SSLException) {
+        Check.Tls
+    } catch(e: SyncHttpError) {
+        Check.NotSebType // another server, or a redirect elsewhere
+    } catch(e: JSONException) {
+        Check.NotSebType
+    } catch(e: IOException) {
+        Check.Unreachable
+    }
+
+    /** Checks [account] off the main thread. */
+    suspend fun check(account: SyncAccount): Check = withContext(Dispatchers.IO) { check(SyncServer(account)) }
+
+    /** Checks the saved account in the background, shown by [connection]; nothing without one. */
+    fun checkConnection(context: Context) {
+        val app = context.applicationContext
+        if(mutableConnection.value == Check.Checking) return
+        mutableConnection.value = Check.Checking
+        scope.launch {
+            val account = if(app.unlocked) SyncAccountStore.load(app) else null
+            mutableConnection.value = account?.let { check(SyncServer(it)) }
+        }
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
@@ -362,7 +406,8 @@ object Sync {
     }
 
     /** Saves the account with sync on or off, in the background, and syncs at once when on. */
-    fun setEnabled(context: Context, account: SyncAccount, enabled: Boolean) {
+    fun setEnabled(context: Context, account: SyncAccount, enabled: Boolean, checked: Check? = null) {
+        if(checked != null) mutableConnection.value = checked
         val app = context.applicationContext
         scope.launch {
             SyncAccountStore.save(app, account.copy(enabled = enabled))

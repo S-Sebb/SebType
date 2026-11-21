@@ -1,6 +1,6 @@
 import { AboutSlint } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { State, SyncStatus, UpdateStatus } from "state.slint";
+import { State, SyncStatus, SyncCheck, SyncText, UpdateStatus } from "state.slint";
 import { Switch, Segmented, PixelFrame, Card, Row, Divider, SectionTag, PageTitle, Info, Button, Kbd, Field, TitleBar, ScrollView } from "widgets.slint";
 
 // Which group (page) and which screen inside it is shown, and the question waiting for an answer.
@@ -521,6 +521,8 @@ component PrivacyPage inherits Page {
 // Sync's wording is the phone's sync screen's (#14).
 component SyncPage inherits Page {
     title: @tr("Sync & backup");
+    // The page shows the account's state as it is now (#452), apart from the last sync's outcome.
+    init => { if State.sync-user != "" { State.check-connection(); } }
     SectionTag { text: @tr("Sync"); }
     Card {
         Row {
@@ -546,6 +548,18 @@ component SyncPage inherits Page {
             detail: State.sync-user == "" ? @tr("Not set") : State.sync-user + " · " + State.sync-server;
             arrow: true;
             clicked => { Nav.sub = 1; }
+        }
+        if State.sync-user != "": Row {
+            title: @tr("Connection");
+            detail: SyncText.check(State.sync-check);
+            line-above: true;
+            VerticalLayout { alignment: center;
+                Button {
+                    text: @tr("Test connection");
+                    enabled: State.sync-check != SyncCheck.checking;
+                    clicked => { State.check-connection(); }
+                }
+            }
         }
         if State.sync-user != "": Row {
             title: @tr("Delete learned words and dictionaries on the server");
@@ -577,6 +591,12 @@ component SyncLoginPage inherits Page {
     property <string> user: State.sync-user;
     property <string> password;
     property <bool> invalid;
+    // Save checks the address and login first (#452); a failure stays here with its reason, and Save anyway
+    // keeps the login all the same (sync is opportunistic: a server down today syncs later).
+    init => { State.login-check = SyncCheck.none; }
+    changed server => { State.login-check = SyncCheck.none; }
+    changed user => { State.login-check = SyncCheck.none; }
+    changed password => { State.login-check = SyncCheck.none; }
     Card {
         VerticalLayout {
             padding: Theme.row-padding-x;
@@ -588,18 +608,29 @@ component SyncLoginPage inherits Page {
             Field { text <=> root.user; }
             Text { text: @tr("Password"); color: Theme.ink; font-size: Theme.body-size; }
             Field { text <=> root.password; input-type: InputType.password; accepted => { save.clicked(); } }
+            if State.login-check != SyncCheck.none: Text {
+                text: SyncText.check(State.login-check);
+                color: SyncText.failed(State.login-check) ? Theme.danger : Theme.muted;
+                font-size: Theme.detail-size;
+                wrap: word-wrap;
+            }
             HorizontalLayout {
                 alignment: end;
                 spacing: 10px;
                 padding-top: 6px;
                 Button { text: @tr("Cancel"); clicked => { Nav.sub = 0; } }
                 save := Button {
-                    text: @tr("Save");
+                    text: SyncText.failed(State.login-check) ? @tr("Save anyway") : @tr("Save");
                     primary: true;
-                    enabled: root.server != "" && root.user != "" && root.password != "";
+                    enabled: root.server != "" && root.user != "" && root.password != "" && State.login-check != SyncCheck.checking;
                     clicked => {
                         if !self.enabled { return; }
-                        if State.save-login(root.server, root.user, root.password) { root.password = ""; Nav.sub = 0; } else { root.invalid = true; }
+                        if SyncText.failed(State.login-check) {
+                            State.sync-check = State.login-check;
+                            if State.save-login(root.server, root.user, root.password) { root.password = ""; Nav.sub = 0; }
+                        } else {
+                            root.invalid = !State.check-login(root.server, root.user, root.password);
+                        }
                     }
                 }
             }

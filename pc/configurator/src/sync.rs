@@ -144,6 +144,8 @@ pub fn normalize_server(text: &str) -> Option<String> {
 pub enum LoginError {
     EmptyField,
     InvalidServer,
+    /// `--check` found the login doesn't work: nothing saved.
+    Check(Check),
     Other(String),
 }
 
@@ -152,6 +154,11 @@ impl LoginError {
         match self {
             Self::InvalidServer => 2,
             Self::EmptyField => 3,
+            // Setup tells these apart (sebtype.iss, SyncCheckMessage).
+            Self::Check(Check::LoginFailed) => 11,
+            Self::Check(Check::Unreachable | Check::Connected) => 12,
+            Self::Check(Check::NotSebType) => 13,
+            Self::Check(Check::Tls) => 14,
             Self::Other(_) => 1,
         }
     }
@@ -162,6 +169,7 @@ impl std::fmt::Display for LoginError {
         match self {
             Self::EmptyField => write!(f, "server, username, and password are required"),
             Self::InvalidServer => write!(f, "not an https address"),
+            Self::Check(c) => write!(f, "the login doesn't work: {c:?}"),
             Self::Other(e) => write!(f, "{e}"),
         }
     }
@@ -222,34 +230,94 @@ enum Failed {
     Offline,
 }
 
+/// What a connection check found (#452): the address and the login, apart from the last sync's outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Check {
+    Connected,
+    LoginFailed,
+    Unreachable,
+    NotSebType,
+    Tls,
+}
+
+/// Checks a login with the client's `check`: one list of the files, the lightest request that needs the
+/// login, to that address only (the client follows no redirect).
+pub fn check(server: &str, user: &str, password: &str) -> Check {
+    checked(run_client(server, user, password, &["check".as_ref()]))
+}
+
+fn checked(client: Result<String, Option<i32>>) -> Check {
+    match client {
+        Ok(_) => Check::Connected,
+        Err(Some(3)) => Check::LoginFailed,
+        Err(Some(4)) => Check::NotSebType,
+        Err(Some(5)) => Check::Tls,
+        Err(_) => Check::Unreachable,
+    }
+}
+
+/// [check] with the saved login; None without one.
+pub fn check_saved() -> Option<Check> {
+    let s = load();
+    if s.user.is_empty() {
+        return None;
+    }
+    Some(match keyring().and_then(|k| k.get_password()) {
+        Ok(password) => check(&s.server, &s.user, &password),
+        Err(_) => Check::LoginFailed,
+    })
+}
+
 /// Runs sebtype_sync.py with the login: its output, or how it failed.
 fn client(s: &Sync, args: &[&std::ffi::OsStr]) -> Result<String, Failed> {
     let password = keyring()
         .and_then(|k| k.get_password())
         .map_err(|_| Failed::Login)?;
+    run_client(&s.server, &s.user, &password, args).map_err(|code| match code {
+        Some(3) => Failed::Login,
+        _ => Failed::Offline,
+    })
+}
+
+/// sebtype_sync.py's output, or its exit code (None when it didn't run).
+fn run_client(
+    server: &str,
+    user: &str,
+    password: &str,
+    args: &[&std::ffi::OsStr],
+) -> Result<String, Option<i32>> {
     let script = dir().join("sebtype_sync.py");
     if fs::read_to_string(&script).ok().as_deref() != Some(CLIENT) {
-        fs::create_dir_all(dir()).map_err(|_| Failed::Offline)?;
-        fs::write(&script, CLIENT).map_err(|_| Failed::Offline)?;
+        fs::create_dir_all(dir()).map_err(|_| None)?;
+        fs::write(&script, CLIENT).map_err(|_| None)?;
     }
+    run_script(&script, server, user, password, args)
+}
+
+fn run_script(
+    script: &Path,
+    server: &str,
+    user: &str,
+    password: &str,
+    args: &[&std::ffi::OsStr],
+) -> Result<String, Option<i32>> {
     let mut child = platform::python()
         .args(["-I", "-X", "utf8"])
-        .arg(&script)
+        .arg(script)
         .args(args)
-        .args(["--server", &s.server, "--user", &s.user, "--password-stdin"])
+        .args(["--server", server, "--user", user, "--password-stdin"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|_| Failed::Offline)?;
+        .map_err(|_| None)?;
     let mut stdin = child.stdin.take().unwrap();
     let _ = writeln!(stdin, "{password}");
     drop(stdin);
-    let out = child.wait_with_output().map_err(|_| Failed::Offline)?;
+    let out = child.wait_with_output().map_err(|_| None)?;
     match out.status.code() {
         Some(0) => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
-        Some(3) => Err(Failed::Login),
-        _ => Err(Failed::Offline),
+        code => Err(code),
     }
 }
 
@@ -633,6 +701,73 @@ mod tests {
         })
         .unwrap();
         assert!(run(false).is_err());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// The connection check (#452) with the client against a real sebtype_sync.py server on a free local
+    /// port and a made-up login: the client is the repo's own, so no profile folder is written. Linux only:
+    /// on Windows the client runs with the Python Setup installs.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_check_tells_a_wrong_password_from_an_unreachable_server() {
+        let d = temp("check");
+        let script =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sync-server/sebtype_sync.py");
+        let data = d.to_str().unwrap();
+        let mut add = std::process::Command::new("python3")
+            .args(["-I"])
+            .arg(&script)
+            .args(["adduser", "--data", data, "--password-stdin", "alice"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        writeln!(add.stdin.take().unwrap(), "made-up-pass").unwrap();
+        assert!(add.wait().unwrap().success());
+        let free = || {
+            std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port()
+        };
+        let port = free();
+        let mut server = std::process::Command::new("python3")
+            .args(["-I"])
+            .arg(&script)
+            .args(["serve", "--data", data, "--port", &port.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+            assert!(
+                std::time::Instant::now() < end,
+                "the sync server didn't start"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let check = |port: u16, password: &str| {
+            let server = format!("http://127.0.0.1:{port}");
+            checked(run_script(
+                &script,
+                &server,
+                "alice",
+                password,
+                &["check".as_ref()],
+            ))
+        };
+        let results = (
+            check(port, "made-up-pass"),
+            check(port, "wrong-pass"),
+            check(free(), "made-up-pass"),
+        );
+        server.kill().unwrap();
+        let _ = server.wait();
+        assert_eq!(
+            results,
+            (Check::Connected, Check::LoginFailed, Check::Unreachable)
+        );
         fs::remove_dir_all(&d).unwrap();
     }
 

@@ -82,6 +82,13 @@
     <string name="sebtype_settings_sync_delete_button">削除</string>
     <string name="sebtype_settings_sync_deleted">サーバー上の学習した単語と辞書を削除しました</string>
     <string name="sebtype_settings_sync_delete_failed">サーバーに接続できません。何も削除されていません</string>
+    <string name="sebtype_settings_sync_check_test">接続をテスト</string>
+    <string name="sebtype_settings_sync_check_checking">サーバーとログインを確認中…</string>
+    <string name="sebtype_settings_sync_check_connected">接続しました。サーバーとログインは正常です</string>
+    <string name="sebtype_settings_sync_check_unreachable">サーバーに接続できません。アドレスとネットワークを確認してください</string>
+    <string name="sebtype_settings_sync_check_not_sebtype">このアドレスは SebType の同期サーバーではありません</string>
+    <string name="sebtype_settings_sync_check_tls">サーバーの HTTPS 証明書が信頼されていません</string>
+    <string name="sebtype_settings_sync_check_save_anyway">このまま保存</string>
     <!-- The new app's own (#254) -->
     <string name="settings_keyboard">キーボード</string>
     <string name="settings_keyboard_subtitle">数字行、キー音と振動</string>
