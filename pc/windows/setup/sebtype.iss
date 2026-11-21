@@ -438,22 +438,60 @@ begin
   Result := (PageID = SyncPage.ID) and (Silent or NoUserSteps or (FailCode <> 0));
 end;
 
+// Resolves the invoking desktop user's %LOCALAPPDATA% so a cross-account UAC elevation writes the
+// short-lived credential handoff inside that user's own private profile directory (readable only by
+// that user, Administrators and SYSTEM). Falls back to {localappdata} when the same account elevated.
+function OriginalLocalAppData: String;
+var
+  OutFile: String;
+  QuotedOut: String;
+  Cmd: String;
+  Code: Integer;
+  Lines: TArrayOfString;
+  Candidate: String;
+begin
+  Result := ExpandConstant('{localappdata}');
+  OutFile := ExpandConstant('{tmp}\orig-localappdata.txt');
+  QuotedOut := OutFile;
+  StringChangeEx(QuotedOut, '''', '''''', True);
+  DeleteFile(OutFile);
+  Cmd := '-NoProfile -NonInteractive -Command "' +
+    '$sid = (Get-CimInstance Win32_Process -Filter (''Name=''''explorer.exe'''' AND SessionId='' + (Get-Process -Id $PID).SessionId) | ' +
+    'Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwnerSid).Sid; ' +
+    'if ($sid) { $p = (Get-ItemProperty (''HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'' + $sid)).ProfileImagePath; ' +
+    'if ($p) { [IO.File]::WriteAllText(''' + QuotedOut + ''', (Join-Path $p ''AppData\Local''), (New-Object Text.UTF8Encoding $false)) } }"';
+  if Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) and
+     LoadStringsFromUTF8File(OutFile, Lines) and (GetArrayLength(Lines) > 0) then
+  begin
+    Candidate := Trim(Lines[0]);
+    if (Candidate <> '') and DirExists(Candidate) then
+      Result := Candidate;
+  end;
+  DeleteFile(OutFile);
+end;
+
 // Saves the sync login as the invoking user via a short-lived file (never on the command line or in logs).
 function SaveSyncLogin(Server, User, Password: String): Boolean;
 var
   CredFile: String;
+  Lines: TArrayOfString;
   Code: Integer;
   Ok: Boolean;
 begin
   Result := False;
-  CredFile := ExpandConstant('{localappdata}\SebType\sync-login.tmp');
+  CredFile := OriginalLocalAppData + '\SebType\sync-login.tmp';
   ForceDirectories(ExtractFileDir(CredFile));
-  if not SaveStringToUTF8FileWithoutBOM(CredFile, Server + #10 + User + #10 + Password + #10, False) then
-  begin
-    Tell(CustomMessage('SyncSaveFailed'), mbError);
-    Exit;
-  end;
+  SetArrayLength(Lines, 3);
+  Lines[0] := Server;
+  Lines[1] := User;
+  Lines[2] := Password;
+  Ok := False;
   try
+    if not SaveStringsToUTF8FileWithoutBOM(CredFile, Lines, False) then
+    begin
+      Tell(CustomMessage('SyncSaveFailed'), mbError);
+      Exit;
+    end;
     Ok := ExecAsOriginalUser(ExpandConstant('{app}\sebtype-configurator.exe'),
       '--sync-login-file "' + CredFile + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
   finally

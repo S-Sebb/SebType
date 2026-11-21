@@ -47,7 +47,7 @@ elif command -v bsdtar >/dev/null 2>&1; then
   bsdtar -xOf "$dir/$SEBTYPE_RPM" ./usr/libexec/sebtype/sebtype-configurator > "$stage/sebtype-configurator"
 elif command -v podman >/dev/null 2>&1; then
   podman run --rm -v "$(cd "$dir" && pwd):/in:ro,z" "$BUILD_IMAGE" \
-    sh -c 'rpm2cpio "/in/$1" | cpio -i --to-stdout --quiet ./usr/libexec/sebtype/sebtype-configurator' sh "$SEBTYPE_RPM" > "$stage/sebtype-configurator"
+    sh -c 'rpm2archive -n -f pax - < "/in/$1" | tar -xO ./usr/libexec/sebtype/sebtype-configurator' sh "$SEBTYPE_RPM" > "$stage/sebtype-configurator"
 else
   echo "build-installer: need rpm2cpio+cpio, bsdtar, or podman to extract sebtype-configurator from $SEBTYPE_RPM" >&2
   exit 1
