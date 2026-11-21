@@ -431,6 +431,49 @@ begin
   if ScaleX(100) >= 150 then Result := '2' else Result := '1';
 end;
 
+// What the sync page says under its fields: Mark 0 nothing, 1 a tick, 2 an X. Painted at once, as Setup
+// waits for the Configurator next.
+procedure ShowSync(Mark: Integer; Text: String);
+begin
+  case Mark of
+    1: begin SyncMark.Caption := #$2714; SyncMark.Font.Color := Good; end;
+    2: begin SyncMark.Caption := #$2718; SyncMark.Font.Color := Berry; end;
+  else
+    SyncMark.Caption := '';
+  end;
+  SyncStatus.Caption := Text;
+  if Mark = 2 then
+    SyncStatus.Font.Color := Berry
+  else
+    SyncStatus.Font.Color := Ink;
+  SyncPage.Surface.Update;
+end;
+
+// Next's caption, the button widened to the left (Back with it) for a longer one.
+procedure SetNextCaption(Caption: String);
+var
+  W, Delta: Integer;
+begin
+  W := WizardForm.CalculateButtonWidth([Caption]);
+  if W < NextWidth then
+    W := NextWidth;
+  Delta := W - WizardForm.NextButton.Width;
+  WizardForm.NextButton.Caption := Caption;
+  WizardForm.NextButton.Left := WizardForm.NextButton.Left - Delta;
+  WizardForm.NextButton.Width := W;
+  WizardForm.BackButton.Left := WizardForm.BackButton.Left - Delta;
+end;
+
+// A changed field needs a new check.
+procedure SyncFieldChanged(Sender: TObject);
+begin
+  if SyncFailed then
+    SetNextCaption(SetupMessage(msgButtonNext));
+  SyncFailed := False;
+  if SyncStatus.Caption <> '' then
+    ShowSync(0, '');
+end;
+
 procedure InitializeWizard;
 var
   I: Integer;
@@ -561,49 +604,6 @@ begin
   finally
     DeleteFile(CredFile);
   end;
-end;
-
-// What the sync page says under its fields: Mark 0 nothing, 1 a tick, 2 an X. Painted at once, as Setup
-// waits for the Configurator next.
-procedure ShowSync(Mark: Integer; Text: String);
-begin
-  case Mark of
-    1: begin SyncMark.Caption := #$2714; SyncMark.Font.Color := Good; end;
-    2: begin SyncMark.Caption := #$2718; SyncMark.Font.Color := Berry; end;
-  else
-    SyncMark.Caption := '';
-  end;
-  SyncStatus.Caption := Text;
-  if Mark = 2 then
-    SyncStatus.Font.Color := Berry
-  else
-    SyncStatus.Font.Color := Ink;
-  SyncPage.Surface.Update;
-end;
-
-// Next's caption, the button widened to the left (Back with it) for a longer one.
-procedure SetNextCaption(Caption: String);
-var
-  W, Delta: Integer;
-begin
-  W := WizardForm.CalculateButtonWidth([Caption]);
-  if W < NextWidth then
-    W := NextWidth;
-  Delta := W - WizardForm.NextButton.Width;
-  WizardForm.NextButton.Caption := Caption;
-  WizardForm.NextButton.Left := WizardForm.NextButton.Left - Delta;
-  WizardForm.NextButton.Width := W;
-  WizardForm.BackButton.Left := WizardForm.BackButton.Left - Delta;
-end;
-
-// A changed field needs a new check.
-procedure SyncFieldChanged(Sender: TObject);
-begin
-  if SyncFailed then
-    SetNextCaption(SetupMessage(msgButtonNext));
-  SyncFailed := False;
-  if SyncStatus.Caption <> '' then
-    ShowSync(0, '');
 end;
 
 // Checks the sync login, shows what the check found and saves a login that works; one that doesn't is
