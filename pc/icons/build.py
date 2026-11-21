@@ -288,11 +288,27 @@ def stroke(S):
 
 
 @cache
+def pen(S, key):
+    """The pen a glyph is drawn with: stroke(S). 中's centre stroke must sit on the face's middle, which no
+    stroke of a width without the face's parity can, so there all of 中 is drawn a pixel wider, unless that
+    fills its counters: then only its centre stroke is (glyph_mask())."""
+    w = stroke(S)
+    x0, x1 = layout(S)[:2]
+    if (
+        key[1] != "中"
+        or (x1 - x0 - w) % 2 == 0
+        or topology(glyph_mask(S, key, w + 1, 0), key)
+    ):
+        return w
+    return w + 1
+
+
+@cache
 def cut(S, key):
     """How many points the glyph's last stroke loses at S px: none, or where even the thinnest pen joins its
     strokes unlike the font's, as few as part them (あ's tail at 16 px would close its right lobe)."""
     n = 0
-    while topology(glyph_mask(S, key, stroke(S), n), key) and n < 3:
+    while topology(glyph_mask(S, key, pen(S, key), n), key) and n < 3:
         n += 1
     return n
 
@@ -533,7 +549,7 @@ def glyph_box(S, key, sw=None):
     gh = round(w / aspect)
     # Never smaller than its strokes fit in, keeping the face's parity.
     us, vs = HINTS[key[1]]
-    sw = sw or stroke(S)
+    sw = sw or pen(S, key)
     gw = max(gw, least(us, sw) + (fw - least(us, sw)) % 2)
     gh = max(gh, least(vs, sw))
     return x0 + (fw - gw) // 2, y0 + (fh - gh) // 2, gw, gh
@@ -599,11 +615,11 @@ def segment(m, a, b, w, cap0, cap1):
 
 
 def glyph_mask(S, key, w=None, short=None):
-    """The glyph on its pixel box: its centrelines, placed by HINTS, stroked w px wide (stroke()) by
-    segment(). A SYMMETRIC glyph is united with its mirror image, so 中's centre stroke is a pixel wider
-    where the pen's parity isn't the face's: no stroke that wide can sit on the face's middle."""
+    """The glyph on its pixel box: its centrelines, placed by HINTS, stroked w px wide (pen()) by segment().
+    A SYMMETRIC glyph is united with its mirror image, so a centre stroke whose width hasn't the face's
+    parity comes out a pixel wider (中 at 16 px, see pen())."""
     text = key[1]
-    w = w or stroke(S)
+    w = w or pen(S, key)
     short = cut(S, key) if short is None else short
     _, _, gw, gh = glyph_box(S, key, w)
     us, vs = HINTS[text]
@@ -727,7 +743,7 @@ def straight(m):
 
 def strokes(m, w, centre=False):
     """What is wrong with the widths of m's strokes, drawn w px wide: an upright or level stroke not w px
-    across (a centre stroke may be a pixel wider, see glyph_mask()), or any stroke narrowing to a one-pixel
+    across (with centre, a centre stroke a pixel wider, see pen()), or any stroke narrowing to a one-pixel
     neck (a pixel with no ink beside it across or down)."""
     widths = straight(m) | straight(m.T)
     problems = (
@@ -752,27 +768,27 @@ def ink_of(px, lang):
 
 
 def pens():
-    """The pen each size's PNGs were drawn with, as their upright and level strokes measure (中's thinner
-    ones: its centre stroke may be a pixel wider): {size: set of widths}."""
+    """The pen each size's PNGs were drawn with, as their upright and level strokes measure: {size: set of
+    widths}, 中 left out (see pen()) and checked by check()."""
     out = {}
     for S in SIZES:
         out[S] = set()
         for state, (lang, (_, text)) in STATES.items():
-            if lang == "grey":
+            if lang == "grey" or text == "中":
                 continue
             px = np.asarray(
                 Image.open(HERE / str(S) / f"{state}.png").convert("RGBA")
             ).astype(int)
             ink = ink_of(px, lang)
             widths = straight(ink) | straight(ink.T)
-            out[S] |= {min(widths)} if text == "中" and widths else widths
+            out[S] |= widths
     return out
 
 
 def check(S, state, im):
     """What is wrong with a drawing:
     - the glyph: not centred in the face to the pixel; not its own mirror image (SYMMETRIC); an upright or
-      level stroke not stroke()'s width, or a stroke narrowing to a pixel; strokes joined or counters
+      level stroke not pen()'s width (中: stroke()'s, or a pixel wider for its parity), or a stroke narrowing to a pixel; strokes joined or counters
       filled or closed unlike the font's (topology()); its box more than a pixel off glyph_box(); with a
       badge, not the ready key's glyph;
     - the key: not left-right symmetric; its face inset or base height more than a pixel off grid()'s;
@@ -810,7 +826,10 @@ def check(S, state, im):
         w, h = cols[-1] - cols[0] + 1, rows[-1] - rows[0] + 1
         if abs(w - gw) > 1 or abs(h - gh) > 1:
             problems.append(f"glyph {w} x {h} px, its box {gw} x {gh}")
-        problems += strokes(ink, stroke(S), text == "中")
+        w = pen(S, (kind, text))
+        problems += strokes(ink, w, text == "中" and (x1 - x0 - w) % 2 == 1)
+        if w - stroke(S) not in ((x1 - x0 - stroke(S)) % 2 if text == "中" else 0, 0):
+            problems.append(f"pen {w} px, the size's {stroke(S)}")
         problems += topology(
             ink[rows[0] : rows[-1] + 1, x0 + cols[0] : x0 + cols[-1] + 1], (kind, text)
         )

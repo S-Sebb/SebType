@@ -18,8 +18,9 @@ are their own mirror images. The pen is 0.065 of the size in whole pixels, thinn
 otherwise join its strokes or fill its counters, and never thinner than a smaller size's. A 1 px pen draws pixel
 lines (one pixel a row or column). The build fails on a drawing that breaks a rule:
 - a glyph off-centre by a pixel;
-- an upright or level stroke not the size's pen, a stroke narrowing to a pixel, a size whose glyphs have
-  different pens, or a pen thinner than a smaller size's;
+- an upright or level stroke not the glyph's pen, a stroke narrowing to a pixel, a size whose glyphs (中 aside)
+  have different pens, a pen thinner than a smaller size's, or 中's pen other than the size's or a pixel more
+  where its parity needs it;
 - strokes touching that are a pixel or more apart in the font shrunk to the glyph's size, a counter filled
   that holds a whole pixel there (あ's, 中's two, A's, a's), or strokes closing a counter the font hasn't;
 - a glyph box more than a pixel off its share of the face;
@@ -29,8 +30,11 @@ lines (one pixel a row or column). The build fails on a drawing that breaks a ru
   way), the glint (lower left) and the badge (lower right).
 
 Two rules bend, and the check says so:
-- 中's centre stroke must sit on the face's middle, so it is a pixel wider than the pen where the pen hasn't
-  the face's parity (no stroke of the pen's width can be centred there).
+- 中's centre stroke must sit on the face's middle, which no stroke of a width without the face's parity can.
+  There all of 中 (box and centre stroke) is drawn a pixel wider than the size's pen, so 中 has one stroke
+  width and is a pixel bolder than the other glyphs: at 16-24, 33, 40-48 and 55 px. So 中 is thinner at 36
+  than at 33 px and at 56 than at 55 px. Where the wider pen would fill its counters, only its centre stroke
+  is wider (no size does now).
 - Where even a 1 px pen closes a counter the font hasn't, the glyph's last stroke ends a point early (あ's tail
   at 16 and 20 px, which would close its right lobe).
 
