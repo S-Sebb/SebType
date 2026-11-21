@@ -13,6 +13,7 @@ find_package(Fcitx5ModuleNotificationItem REQUIRED)
 include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cmake" OPTIONAL)
 include(GNUInstallDirs)
 pkg_get_variable(RIME_DATA_DIR rime pkgdatadir)
+find_package(PkgConfig REQUIRED)
 pkg_check_modules(Cairo REQUIRED IMPORTED_TARGET cairo)
 
 add_library(sebtype MODULE src/sebtype.cpp src/tray.cpp)
