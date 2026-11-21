@@ -6,8 +6,9 @@ Each tray size (16 to 66 px, SIZES) is drawn at its own pixel size, not scaled f
 large drawing scaled down had soft grey edges), by the same rules at every size (#441): the key's parts are
 params()'s shares of the size in whole pixels, at least one each, so a 16 px key is a 66 px key shrunk; its
 edges fall on whole pixels and only round corners shade their edge pixels. The glyph is drawn from its
-strokes' centrelines (LINES, traced from the fonts' glyphs) with one pen width per size (stroke()), its
-strokes placed on the pixel grid by HINTS so they keep whole pixels and open counters; 中 and A are their own
+strokes' centrelines (LINES, traced from the fonts' glyphs) with one pen for every glyph at a size (stroke()),
+its strokes placed on the pixel grid by HINTS so they keep whole pixels and the font's counters
+(topology()); 中 and A are their own
 mirror images and every glyph is centred in the face to the pixel. The blush keeps a clear pixel from the
 glyph. check() fails the build on any drawing that breaks these rules. "scalable" is a
 48 px vector drawing with the design's full proportions, for other sizes; its glyphs are font outlines, so it
@@ -18,12 +19,14 @@ hicolor (linux/CMakeLists.txt); Windows' .ico files hold the PNGs (windows/make_
 
 import io
 import sys
+from functools import cache
 from math import pi
 from pathlib import Path
 
 import cairo
 import numpy as np
 from fontTools.pens.boundsPen import BoundsPen
+from fontTools.pens.cairoPen import CairoPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.subset import Options, Subsetter
@@ -268,12 +271,30 @@ def layout(S):
     return k0 + t + fi, S - k0 - t - fi, k0, ky1 - side - lip, side - bw
 
 
-def stroke(S, text):
-    """The glyphs' stroke width, one formula of the size. 中's centre stroke has the face's parity so it sits
-    on the middle: 中 takes the next width up where the formula's hasn't (at 16 px its box can't, see
-    glyph_mask())."""
-    w = max(1, round(S * 0.065))
-    return w + (text == "中" and (S - w) % 2)
+@cache
+def stroke(S):
+    """The pen every glyph is drawn with at S px: 0.065 S in whole pixels, or thinner where a glyph would
+    otherwise join strokes or close or fill counters unlike the font's (topology()), and never wider than a
+    larger size's, so the weight doesn't drop as the size grows."""
+    if S != SIZES[-1]:
+        bigger = stroke(SIZES[SIZES.index(S) + 1])
+    else:
+        bigger = S
+    w = min(max(1, round(S * 0.065)), bigger)
+    keys = {g for _, g in STATES.values()}
+    while w > 1 and any(topology(glyph_mask(S, k, w, 0), k) for k in keys):
+        w -= 1
+    return w
+
+
+@cache
+def cut(S, key):
+    """How many points the glyph's last stroke loses at S px: none, or where even the thinnest pen joins its
+    strokes unlike the font's, as few as part them (あ's tail at 16 px would close its right lobe)."""
+    n = 0
+    while topology(glyph_mask(S, key, stroke(S), n), key) and n < 3:
+        n += 1
+    return n
 
 
 # Each glyph's ink height as a share of the face's (the README drawing's) and the strokes' centrelines, traced
@@ -297,7 +318,7 @@ LINES = {
         (
             "curve",
             [
-                (0.13, 0.19),
+                (0.2, 0.13),
                 (0.3, 0.1),
                 (0.5, 0.08),
                 (0.7, 0.12),
@@ -327,29 +348,25 @@ LINES = {
     ],
     "あ": [
         [(0.06, 0.18), (0.86, 0.14)],
-        (
-            "curve",
-            [(0.41, 0.04), (0.39, 0.3), (0.37, 0.55), (0.39, 0.75), (0.42, 0.93)],
-        ),
+        ("curve", [(0.39, 0.04), (0.38, 0.5), (0.38, 0.9)]),
         (
             "curve",
             [
-                (0.68, 0.27),
-                (0.63, 0.46),
-                (0.5, 0.66),
-                (0.33, 0.8),
-                (0.17, 0.86),
-                (0.07, 0.8),
-                (0.06, 0.66),
-                (0.15, 0.52),
-                (0.35, 0.42),
-                (0.55, 0.38),
-                (0.75, 0.41),
-                (0.9, 0.52),
-                (0.92, 0.68),
-                (0.82, 0.82),
-                (0.62, 0.92),
-                (0.55, 0.94),
+                (0.7, 0.29),
+                (0.67, 0.45),
+                (0.61, 0.6),
+                (0.5, 0.73),
+                (0.3, 0.85),
+                (0.15, 0.87),
+                (0.06, 0.78),
+                (0.07, 0.62),
+                (0.2, 0.5),
+                (0.42, 0.43),
+                (0.65, 0.43),
+                (0.85, 0.5),
+                (0.94, 0.64),
+                (0.88, 0.8),
+                (0.72, 0.92),
             ],
         ),
     ],
@@ -367,7 +384,10 @@ HINTS = {
     "A": ([0.1, W, 0.5, W, 0.9], [0.06, W, 0.69, W, 0.93]),
     "a": ([0.08, W, 0.85], [0.08, W, 0.48, W, 0.92]),
     "ア": ([0.03, 1, 0.43, W, 0.62, 1, 0.88], [0.1, W, 0.93]),
-    "あ": ([0.06, W, 0.39, W, 0.92], [0.04, 1, 0.16, W, 0.4, W, 0.94]),
+    "あ": (
+        [0.06, W, 0.38, W, 0.72, 1, 0.94],
+        [0.04, 1, 0.16, W, 0.29, 1, 0.43, W, 0.95],
+    ),
 }
 
 
@@ -394,7 +414,114 @@ def least(hint, w):
     return w + sum(room(g, w) for g in hint[1::2])
 
 
-def glyph_box(S, key):
+def label(m, eight):
+    """m's connected parts (through corners too if eight) numbered from 1, and how many there are."""
+    lab, n = np.zeros(m.shape, int), 0
+    steps = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    steps += [(-1, -1), (-1, 1), (1, -1), (1, 1)] if eight else []
+    for y, x in zip(*np.nonzero(m)):
+        if lab[y, x]:
+            continue
+        n += 1
+        lab[y, x], todo = n, [(y, x)]
+        while todo:
+            cy, cx = todo.pop()
+            for dy, dx in steps:
+                yy, xx = cy + dy, cx + dx
+                if (
+                    0 <= yy < m.shape[0]
+                    and 0 <= xx < m.shape[1]
+                    and m[yy, xx]
+                    and not lab[yy, xx]
+                ):
+                    lab[yy, xx] = n
+                    todo.append((yy, xx))
+    return lab, n
+
+
+def regions(m):
+    """m's ink parts (touching through corners) and its background regions (touching sideways) on a 1 px
+    margin: region 1 is the outside, the others are counters."""
+    p = np.pad(m, 1)
+    return label(p, True)[1], label(~p, False)[0]
+
+
+def window(m, k):
+    """Where a k x k square fits entirely in m (indexed by its corner)."""
+    c = np.pad(m.astype(int).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+    return c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k] == k * k
+
+
+@cache
+def font_regions(key):
+    """The font's glyph, its ink box drawn 120 px tall, and its regions()."""
+    font, (xmin, ymin, xmax, ymax) = FONTS[key[0]], GLYPHS[key][1]
+    s = 120 / (ymax - ymin)
+    W, H = round((xmax - xmin) * s), 120
+    surface = cairo.ImageSurface(cairo.FORMAT_A8, W, H)
+    cr = cairo.Context(surface)
+    cr.scale(s, s)
+    cr.translate(-xmin, -ymin)
+    draw(font, key[1], CairoPen(font.getGlyphSet(), cr))
+    cr.fill()
+    surface.flush()
+    a = np.frombuffer(surface.get_data(), np.uint8).reshape(H, surface.get_stride())[
+        :, :W
+    ]
+    return a >= 128, *regions(a >= 128)
+
+
+@cache
+def font_apart(key, k):
+    """How many parts the font's glyph has whose gaps hold a k x k square."""
+    fink = font_regions(key)[0]
+    return label(~window(np.pad(~fink, k - 1, constant_values=True), k), True)[1]
+
+
+@cache
+def need(key, k):
+    """The font's counters that hold a k x k square."""
+    fbg = font_regions(key)[2]
+    return {n for n in range(2, fbg.max() + 1) if window(fbg == n, k).any()}
+
+
+def topology(m, key):
+    """What m, a glyph's pixels on its box, joins or closes that the font's glyph hasn't, where the font's
+    glyph shrunk to m's size has room for them: strokes touching that a pixel or more apart, a stroke broken,
+    a counter filled that holds a whole pixel, or strokes closing a counter the font hasn't. Each of m's
+    counters is the font's counter (or outside) that most of its pixels are nearest to."""
+    parts, bg = regions(m)
+    _, fparts, fbg = font_regions(key)
+    H, W = fbg.shape
+    k = max(1, round(H / m.shape[0]))  # a pixel of m on the font's drawing
+    apart = font_apart(key, k)
+    problems = (
+        [f"{parts} strokes apart, the font's {fparts}"]
+        if not apart <= parts <= fparts
+        else []
+    )
+    ys, xs = np.nonzero(fbg)
+    found = set()
+    for n in range(2, bg.max() + 1):
+        y, x = np.nonzero(bg == n)
+        fy = ((y - 0.5) / m.shape[0] * H).astype(
+            int
+        )  # the padded pixel's centre on the font's drawing
+        fx = ((x - 0.5) / m.shape[1] * W).astype(int)
+        near = [
+            fbg[a, b] or fbg[ys[i], xs[i]]
+            for a, b in zip(fy.clip(0, H - 1), fx.clip(0, W - 1))
+            for i in [np.argmin((ys - a) ** 2 + (xs - b) ** 2) if not fbg[a, b] else 0]
+        ]
+        found.add(max(set(near), key=near.count))
+    if 1 in found:
+        problems.append("strokes close a counter the font hasn't")
+    if missing := need(key, k) - found:
+        problems.append(f"{len(missing)} of the font's counters filled")
+    return problems
+
+
+def glyph_box(S, key, sw=None):
     """The glyph's pixel box: x, y, width, height. Its height is HEIGHT of the face's, or less where its width
     would pass WIDE of the face's; its width has the face's parity, so it centres to the pixel."""
     x0, x1, y0, y1, _ = layout(S)
@@ -404,9 +531,9 @@ def glyph_box(S, key):
     w = min(HEIGHT[key[1]] * fh * aspect, WIDE * fw)
     gw = fw - 2 * round((fw - w) / 2)
     gh = round(w / aspect)
-    # Never smaller than its strokes fit in (中 at 16 px), keeping the face's parity.
+    # Never smaller than its strokes fit in, keeping the face's parity.
     us, vs = HINTS[key[1]]
-    sw = stroke(S, key[1]) if not (key[1] == "中" and S < 20) else 1
+    sw = sw or stroke(S)
     gw = max(gw, least(us, sw) + (fw - least(us, sw)) % 2)
     gh = max(gh, least(vs, sw))
     return x0 + (fw - gw) // 2, y0 + (fh - gh) // 2, gw, gh
@@ -453,7 +580,13 @@ def segment(m, a, b, w, cap0, cap1):
         m |= np.hypot(xs - x0, ys - y0) < w / 2
         return
     along = ((xs - x0) * dx + (ys - y0) * dy) / length
-    across = np.abs((xs - x0) * dy - (ys - y0) * dx) / length
+    across = ((xs - x0) * dy - (ys - y0) * dx) / length
+    if (
+        w == 1
+    ):  # a pixel line: one pixel a row (steep) or a column (flat), ties to one side
+        across *= length / max(abs(dx), abs(dy))
+        across = np.where((across > -0.5) & (across <= 0.5), 0, 1)
+    across = np.abs(across)
     square = dx == 0 or dy == 0
     lo, hi = (
         -w / 2 if cap0 and square else 0,
@@ -465,16 +598,16 @@ def segment(m, a, b, w, cap0, cap1):
             m |= np.hypot(xs - x, ys - y) < w / 2
 
 
-def glyph_mask(S, key):
-    """The glyph on its pixel box: its centrelines, placed by HINTS, stroked w px wide by segment(). A
-    SYMMETRIC glyph is united with its mirror image. 中 at 16 px: 2 px strokes would close its box, so its box is
-    1 px and its centre stroke 2 px."""
+def glyph_mask(S, key, w=None, short=None):
+    """The glyph on its pixel box: its centrelines, placed by HINTS, stroked w px wide (stroke()) by
+    segment(). A SYMMETRIC glyph is united with its mirror image, so 中's centre stroke is a pixel wider
+    where the pen's parity isn't the face's: no stroke that wide can sit on the face's middle."""
     text = key[1]
-    _, _, gw, gh = glyph_box(S, key)
-    w = stroke(S, text)
-    thin = text == "中" and S < 20
+    w = w or stroke(S)
+    short = cut(S, key) if short is None else short
+    _, _, gw, gh = glyph_box(S, key, w)
     us, vs = HINTS[text]
-    mu, mv = grid_map(us, gw, 1 if thin else w), grid_map(vs, gh, 1 if thin else w)
+    mu, mv = grid_map(us, gw, w), grid_map(vs, gh, w)
 
     def place(t, pairs):
         for (k0, p0), (k1, p1) in zip(pairs, pairs[1:]):
@@ -484,15 +617,14 @@ def glyph_mask(S, key):
     m = np.zeros((gh, gw), bool)
     for n, line in enumerate(LINES[text]):
         curve = line[0] == "curve"
-        width = 1 if thin and n == 0 else w
+        if n == len(LINES[text]) - 1 and short:
+            line = ("curve", line[1][:-short]) if curve else line[:-short]
         path = [
             (place(u, mu), place(v, mv))
             for u, v in (catmull(line[1]) if curve else line)
         ]
         for i, (a, b) in enumerate(zip(path, path[1:])):
-            segment(
-                m, a, b, width, not curve or i == 0, not curve or i == len(path) - 2
-            )
+            segment(m, a, b, w, not curve or i == 0, not curve or i == len(path) - 2)
     if (
         text in SYMMETRIC
     ):  # mirrored onto itself: a stroke on the middle that can't centre is a pixel wider
@@ -593,13 +725,14 @@ def straight(m):
     return widths
 
 
-def strokes(m, w):
+def strokes(m, w, centre=False):
     """What is wrong with the widths of m's strokes, drawn w px wide: an upright or level stroke not w px
-    across, or any stroke narrowing to a one-pixel neck (a pixel with no ink beside it across or down)."""
+    across (a centre stroke may be a pixel wider, see glyph_mask()), or any stroke narrowing to a one-pixel
+    neck (a pixel with no ink beside it across or down)."""
     widths = straight(m) | straight(m.T)
     problems = (
         [f"upright or level strokes {sorted(widths)} px wide, not {w}"]
-        if widths - {w}
+        if widths - {w, w + centre}
         else []
     )
     if w > 1:
@@ -612,10 +745,36 @@ def strokes(m, w):
     return problems
 
 
+def ink_of(px, lang):
+    return (
+        px[..., :3] == np.array(rgb(GREY_INK if lang == "grey" else INK)[:3]) * 255
+    ).all(axis=2) & (px[..., 3] == 255)
+
+
+def pens():
+    """The pen each size's PNGs were drawn with, as their upright and level strokes measure (中's thinner
+    ones: its centre stroke may be a pixel wider): {size: set of widths}."""
+    out = {}
+    for S in SIZES:
+        out[S] = set()
+        for state, (lang, (_, text)) in STATES.items():
+            if lang == "grey":
+                continue
+            px = np.asarray(
+                Image.open(HERE / str(S) / f"{state}.png").convert("RGBA")
+            ).astype(int)
+            ink = ink_of(px, lang)
+            widths = straight(ink) | straight(ink.T)
+            out[S] |= {min(widths)} if text == "中" and widths else widths
+    return out
+
+
 def check(S, state, im):
     """What is wrong with a drawing:
-    - the glyph: not centred in the face to the pixel; not its own mirror image (SYMMETRIC); a stroke
-      thinner or wider than stroke() (where a round pen that wide doesn't fit, or one a pixel wider does); its box more than a pixel off glyph_box(); with a badge, not the ready key's glyph;
+    - the glyph: not centred in the face to the pixel; not its own mirror image (SYMMETRIC); an upright or
+      level stroke not stroke()'s width, or a stroke narrowing to a pixel; strokes joined or counters
+      filled or closed unlike the font's (topology()); its box more than a pixel off glyph_box(); with a
+      badge, not the ready key's glyph;
     - the key: not left-right symmetric; its face inset or base height more than a pixel off grid()'s;
     - the blush: missing from 20 px, or nearer the glyph than a clear pixel.
     Left out of the mirror test: the blush (both sides slant the same way, as in the concept), the glint
@@ -623,9 +782,7 @@ def check(S, state, im):
     lang, (kind, text) = STATES[state]
     px = np.asarray(im.convert("RGBA")).astype(int)
     rgb_ = px[..., :3]
-    ink = (rgb_ == np.array(rgb(GREY_INK if lang == "grey" else INK)[:3]) * 255).all(
-        axis=2
-    ) & (px[..., 3] == 255)
+    ink = ink_of(px, lang)
     x0, x1, y0, y1, base = layout(S)
     keep = np.ones((S, S), bool)
     problems = []
@@ -653,10 +810,10 @@ def check(S, state, im):
         w, h = cols[-1] - cols[0] + 1, rows[-1] - rows[0] + 1
         if abs(w - gw) > 1 or abs(h - gh) > 1:
             problems.append(f"glyph {w} x {h} px, its box {gw} x {gh}")
-        if not (
-            text == "中" and S < 20
-        ):  # glyph_mask(): a 1 px box, a 2 px centre stroke
-            problems += strokes(ink, stroke(S, text))
+        problems += strokes(ink, stroke(S), text == "中")
+        problems += topology(
+            ink[rows[0] : rows[-1] + 1, x0 + cols[0] : x0 + cols[-1] + 1], (kind, text)
+        )
         row = px[(y0 + y1) // 2].copy()
         row[ink[(y0 + y1) // 2]] = (255, 255, 255, 255)  # the glyph is on the face
         across = runs(row)
@@ -857,7 +1014,18 @@ if __name__ == "__main__":
             for S in SIZES:
                 (HERE / str(S)).mkdir(exist_ok=True)
                 pixels(S, state).save(HERE / str(S) / f"{state}.png", optimize=True)
+    widths = pens()
     bad = [
+        f"{S} px: glyphs drawn with pens {sorted(w)}"
+        for S, w in widths.items()
+        if len(w) != 1
+    ]
+    bad += [
+        f"{S} px: pen {max(widths[S])}, {T} px: {min(widths[T])}"
+        for S, T in zip(SIZES, SIZES[1:])
+        if widths[S] and widths[T] and max(widths[S]) > min(widths[T])
+    ]
+    bad += [
         f"{S}/{state}.png: {p}"
         for state in STATES
         for S in SIZES
