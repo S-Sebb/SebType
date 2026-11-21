@@ -33,7 +33,7 @@ check() { # name function...: each within 15 minutes (timeout can't run a functi
   wait "$pid"; rc=$?
   kill "$watch" 2>/dev/null
   if ((rc == 0)); then echo "PASS $name"
-  else echo "FAIL $name: see test-rpms/$name.log"; failed=1; fi
+  else echo "FAIL $name: see test-rpms/$name.log"; tail -n 30 "/log/$name.log" || true; failed=1; fi
 }
 ours=$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE
 
@@ -114,12 +114,13 @@ configurator() {
 }
 check configurator-runs configurator
 
-# The user part of the installer: sebtype-setup runs cleanly as a non-root user.
+# The user part of the installer: sebtype-setup runs cleanly as a non-root user (without needing useradd/su).
 user_setup() {
-  useradd -m tester
-  su - tester -c '/usr/bin/sebtype-setup </dev/null' &&
-    [[ -x /home/tester/.local/share/sebtype/configurator/sebtype-configurator ]] &&
-    [[ -f /home/tester/.local/share/fcitx5/rime/sebtype-data.txt ]]
+  local home=/tmp/sebtype-tester
+  rm -rf "$home"; mkdir -p "$home"; chown 1000:1000 "$home"
+  setpriv --reuid=1000 --regid=1000 --clear-groups env HOME="$home" USER=tester /usr/bin/sebtype-setup </dev/null &&
+    [[ -x "$home/.local/share/sebtype/configurator/sebtype-configurator" ]] &&
+    [[ -f "$home/.local/share/fcitx5/rime/sebtype-data.txt" ]]
 }
 check user-setup user_setup
 
