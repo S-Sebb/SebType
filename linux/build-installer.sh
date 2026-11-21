@@ -129,12 +129,14 @@ if [ "\$(id -u)" -eq 0 ]; then
   exit 0
 fi
 
+self_sha=\$(sha256sum "\$self" | awk '{print \$1}')
+root_run='set -eu; d=\$(mktemp -d); trap "rm -rf \"\$d\"" EXIT; chmod 700 "\$d"; cp -- "\$1" "\$d/setup.sh"; got=\$(sha256sum "\$d/setup.sh" | cut -d" " -f1); [ "\$got" = "\$2" ] || { echo "SebType installer changed before elevation" >&2; exit 3; }; /bin/sh "\$d/setup.sh" --install-rpms-only'
 if [ -t 0 ] && [ -t 1 ] && command -v sudo >/dev/null 2>&1; then
-  sudo /bin/sh "\$self" --install-rpms-only
+  sudo /bin/sh -c "\$root_run" sh "\$self" "\$self_sha"
 elif command -v pkexec >/dev/null 2>&1; then
-  pkexec /bin/sh "\$self" --install-rpms-only
+  pkexec /bin/sh -c "\$root_run" sh "\$self" "\$self_sha"
 elif command -v sudo >/dev/null 2>&1; then
-  sudo /bin/sh "\$self" --install-rpms-only
+  sudo /bin/sh -c "\$root_run" sh "\$self" "\$self_sha"
 else
   echo "SebType installer: neither sudo nor pkexec found; run as root with --install-rpms-only, then run sebtype-setup as your user." >&2
   exit 1
