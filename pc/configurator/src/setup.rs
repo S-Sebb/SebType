@@ -104,19 +104,59 @@ pub fn can_submit_sync(server: &str, user: &str, password: &str) -> bool {
         && sync::normalize_server(server).is_some()
 }
 
+/// KWin takes a Wayland window's icon from the launcher its app id names, and the wizard runs before
+/// SebType's launcher is installed (#439): a hidden launcher of its own, with the pig, until it closes.
+pub struct WizardLauncher(Vec<std::path::PathBuf>);
+
+impl WizardLauncher {
+    pub const APP_ID: &'static str = "sebtype-setup";
+
+    pub fn write(data: &std::path::Path) -> std::io::Result<Self> {
+        const PIG: &[u8] = include_bytes!(
+            "../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"
+        );
+        let icon = data.join("sebtype/setup-icon.png");
+        let desktop = data.join(format!("applications/{}.desktop", Self::APP_ID));
+        let made = WizardLauncher(vec![desktop.clone(), icon.clone()]); // removes what was written if one fails
+        for p in &made.0 {
+            std::fs::create_dir_all(p.parent().unwrap())?;
+        }
+        std::fs::write(&icon, PIG)?;
+        // Exec=true: an application entry needs one, and NoDisplay keeps it out of the menus.
+        std::fs::write(
+            &desktop,
+            format!(
+                "[Desktop Entry]\nType=Application\nName=SebType Setup\nIcon={}\nExec=true\nNoDisplay=true\n",
+                icon.display()
+            ),
+        )?;
+        Ok(made)
+    }
+}
+
+impl Drop for WizardLauncher {
+    fn drop(&mut self) {
+        for p in &self.0 {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub fn run(
     installer: std::path::PathBuf,
     started_file: Option<std::path::PathBuf>,
     lang: &str,
 ) -> Result<(), slint::PlatformError> {
-    use crate::{platform, SetupState, SetupWindow};
+    use crate::{platform, Chrome, SetupState, SetupWindow};
     use slint::ComponentHandle;
     use std::{cell::RefCell, process::Command, rc::Rc};
 
+    let _launcher = WizardLauncher::write(&platform::data()).ok();
     slint::BackendSelector::new().select()?;
-    slint::set_xdg_app_id("sebtype-configurator")?;
+    slint::set_xdg_app_id(WizardLauncher::APP_ID)?;
     let win = SetupWindow::new()?;
+    win.global::<Chrome>().set_frameless(crate::own_title_bar());
     let _ = slint::select_bundled_translation(lang);
 
     let state = Rc::new(RefCell::new(WizardState::new()));
@@ -264,6 +304,25 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wizard_launcher_names_the_pig_and_goes_when_dropped() {
+        let data =
+            std::env::temp_dir().join(format!("sebtype-wizard-launcher-{}", std::process::id()));
+        let desktop = data.join("applications/sebtype-setup.desktop");
+        let icon = data.join("sebtype/setup-icon.png");
+        let launcher = WizardLauncher::write(&data).unwrap();
+        let entry = std::fs::read_to_string(&desktop).unwrap();
+        assert!(
+            entry.contains(&format!("\nIcon={}\n", icon.display())),
+            "{entry}"
+        );
+        assert!(entry.contains("\nNoDisplay=true\n"), "{entry}");
+        assert!(std::fs::read(&icon).unwrap().starts_with(b"\x89PNG"));
+        drop(launcher);
+        assert!(!desktop.exists() && !icon.exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
 
     #[test]
     fn wizard_happy_path_with_sync() {

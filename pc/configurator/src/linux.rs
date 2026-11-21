@@ -100,7 +100,7 @@ fn xdg(var: &str, fallback: &str) -> PathBuf {
 fn config() -> PathBuf {
     xdg("XDG_CONFIG_HOME", ".config")
 }
-fn data() -> PathBuf {
+pub fn data() -> PathBuf {
     xdg("XDG_DATA_HOME", ".local/share")
 }
 pub fn rime_dir() -> PathBuf {
