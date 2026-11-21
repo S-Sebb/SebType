@@ -225,7 +225,9 @@ def expanded_candidates():
     button = max(
         (x, y)
         for label, x, y, top, cls in ns
-        if row[0] < y < row[1] and cls == "android.widget.Button"
+        if row[0] < y < row[1]
+        and cls == "android.widget.Button"
+        and label in MORE_CANDIDATES
     )
     tap(*button)
     time.sleep(1.5)
@@ -1186,7 +1188,8 @@ KEEP_CLIPBOARD = labels(
 )
 BAR_CONTROLS.update((*INCOGNITO_ON, *INCOGNITO_FIELD, *OPEN_BAR, *CLOSE_BAR))
 # The new keyboard's bar: its expand button
-BAR_CONTROLS.update(labels("更多候选词", "More candidates", "候補をもっと見る"))
+MORE_CANDIDATES = labels("更多候选词", "More candidates", "候補をもっと見る")
+BAR_CONTROLS.update(MORE_CANDIDATES)
 BAR_CONTROLS.update(labels("收起候选词", "Fewer candidates", "候補を閉じる"))
 
 

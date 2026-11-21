@@ -82,6 +82,8 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         private set
     /** Where the scrolling candidates start: after the fixed controls on the left */
     private var start = 0f
+    /** Whether the expand/collapse button is shown at the right end of the bar (#429) */
+    private var showExpand = false
 
     private object Role {
         const val CANDIDATE = "android.widget.TextView"
@@ -139,8 +141,9 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
                 end = minOf(end, width - w - 4 * density)
             }
             titleRoom = end - button - 6 * density - 8 * density
-            setItems(out, 0f)
+            showExpand = false
             start = width.toFloat()
+            setItems(out, 0f)
             return
         }
         chip?.let {
@@ -159,11 +162,11 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         }
         start = x
         val slots = style == Style.SLOTS
-        val end = if (slots) width.toFloat() else width - button
         var extent = 0f
         val notice = notice
         val clip = clip
         if (notice != null) {
+            showExpand = false
             out += Item(RectF(x, 0f, width.toFloat(), h), notice, Role.CANDIDATE, tag = Kind.NOTICE)
         } else {
             // The copied text on a chip, up to a third of the bar, before any next words
@@ -178,13 +181,13 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
             if (slots) {
                 // Left, middle, right: the candidates' indices in each
                 val order = if (corrected) listOf(2, 0, 1) else listOf(1, 0, 2)
-                val w = (end - start) / 3
+                val w = (width - start) / 3
                 order.forEachIndexed { slot, i ->
                     val c = candidates.getOrNull(i) ?: return@forEachIndexed
                     val l = start + slot * w
                     out += Item(RectF(l, 0f, l + w, h), if (corrected && i == 1) "\"$c\"" else c, Role.CANDIDATE, tag = i)
                 }
-                cx = end
+                cx = width.toFloat()
             } else candidates.forEachIndexed { i, c ->
                 val min = if (i == 0 && style == Style.WIDE_FIRST) wideWidth else cellWidth
                 val w = maxOf(min, text.measureText(c) + 16 * density)
@@ -192,8 +195,9 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
                 cx += w
             }
             extent = cx - start
-            if (!slots && (candidates.isNotEmpty() || expanded))
-                out += Item(RectF(end, 0f, width.toFloat(), h),
+            showExpand = showExpandButton(slots, expanded, extent, width - start)
+            if (showExpand)
+                out += Item(RectF(width - button, 0f, width.toFloat(), h),
                     texts[if (expanded) R.string.fewer_candidates else R.string.more_candidates],
                     Role.BUTTON, fixed = true, tag = Kind.EXPAND)
         }
@@ -205,7 +209,7 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
     /** How many candidates start inside the bar: the expanded view goes on after them */
     fun shownCount() = items.count { it.tag is Int && it.rect.left < viewport() }
 
-    override fun viewport() = width - start - (if (style != Style.SLOTS && (candidates.isNotEmpty() || expanded)) button else 0f)
+    override fun viewport() = candidateViewport(width - start, showExpand, button)
 
     override fun origin() = start
 
@@ -320,3 +324,11 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
 
 /** The header's title, shrunk to fit, is drawn while at least this big */
 private const val MIN_TITLE_DP = 11f
+
+/** Whether the expand/collapse button is shown at the right end of the bar (#429). */
+internal fun showExpandButton(slots: Boolean, expanded: Boolean, extent: Float, available: Float) =
+    !slots && (expanded || (extent > 0f && extent > available))
+
+/** The scrolling candidates' viewport width: full room after controls, minus the expand button when shown. */
+internal fun candidateViewport(available: Float, showExpand: Boolean, button: Float) =
+    available - (if (showExpand) button else 0f)
