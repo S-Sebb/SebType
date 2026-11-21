@@ -64,6 +64,9 @@ constexpr size_t kNextWords = 5;      // the model's next words asked for; block
 constexpr size_t kContextChars = 1000;  // the text before the cursor kept; the model reads 300 of it
 // How long a space waits for the model's ranking of the word before the decoder's rule decides (#310).
 constexpr std::chrono::milliseconds kRankWait{400};
+// How long the list shown waits for the model's after a key, so it changes once (#450): the phone's rankings
+// and next words take 12-56 ms at p95, on the little cores too (docs/perf/2026-11-19-english-little-cores.md).
+constexpr std::chrono::milliseconds kHold{100};
 // Typing options: not a gesture, no full edit distance, offensive words blocked, locale weight 1.0.
 constexpr int kOptions[] = {0, 0, 1, 0, 1000};
 namespace ks {
@@ -557,12 +560,14 @@ class English : public Engine {
     return true;
   }
   // Of the list last shown: a ranking that came since is shown first (list() takes it).
-  int highlighted() override { return correction_ ? 0 : -1; }
+  int highlighted() override { return shownCorrection_ ? 0 : -1; }
 
   // A tap picks from the list last shown, never from a ranking that came after it (#310).
   void selectAt(int index) override {
     const auto l = shown_;
     if (index < 0 || size_t(index) >= l.size()) return;
+    // The list of a word committed since, kept until the next words come (#450): it can't replace that word.
+    if (shownComposing_ && typed_.empty()) return;
     const std::string &w = l[index];
     if (domains_) {  // the rest of an e-mail address: no space after it
       if (typed_.empty()) edit_.deleteBefore = int(codePoints(afterAt()).size());
@@ -784,8 +789,19 @@ class English : public Engine {
   // the others; e-mail domains after "@"; with nothing typed, the next words: the model's once they come,
   // until then the dictionaries' (the learned words' n-grams).
   std::vector<std::string> list() {
-    shown_ = currentList();
+    if (!holding()) shown_ = currentList(), shownCorrection_ = correction_, shownComposing_ = !typed_.empty();
     return shown_;
+  }
+  // Whether the list shown stays as it is, so a key changes it once, to the model's list (#450): until
+  // settle() decodes the letters typed, then until the model's ranking or next words come, while they are
+  // expected within kHold. A model known to be slower shows the decoder's list or the dictionaries' first.
+  bool holding() {
+    if (!typed_.empty() && decodePending_) return true;
+    if (!model_ready_) return false;
+    std::lock_guard g(mutex_);
+    if (!typed_.empty()) return rankPending_ && rankedGen_ != gen_ && expectedIn(rankTime_) <= kHold;
+    return nextGen_ != gen_ && field_ == Field::Text && main_ && !atEmail() &&
+           expectedIn(nextTime_) <= kHold;
   }
   std::vector<std::string> currentList() {
     if (!typed_.empty()) {
@@ -940,7 +956,7 @@ class English : public Engine {
       std::unique_lock l(mutex_);
       if (!rankPending_) outcome = modelStrip_ ? "ready" : "none";
       else if (rankedGen_ == gen_) outcome = "ready";
-      else if (rankExpectedIn() > kRankWait) outcome = "skipped";
+      else if (expectedIn(rankTime_) > kRankWait) outcome = "skipped";
       else outcome = ranked_.wait_for(l, kRankWait, [&] { return rankedGen_ == gen_; }) ? "waited" : "late";
       ranked = posted();
     }
@@ -964,12 +980,12 @@ class English : public Engine {
   // How long until the ranking asked for at gen_ is expected to come, by the times the worker took so far:
   // what is left of the job it is on, and the ranking itself unless that is the job. A job past its time
   // is taken to need its time again: the worker is behind, so it is no sign of the ranking coming soon.
-  // Under mutex_.
-  std::chrono::steady_clock::duration rankExpectedIn() const {
+  // With nextTime_, the same for the next words. Under mutex_.
+  std::chrono::steady_clock::duration expectedIn(std::chrono::steady_clock::duration time) const {
     using Duration = std::chrono::steady_clock::duration;
     const auto now = std::chrono::steady_clock::now();
     const Duration left = !busy_ ? Duration{} : busyUntil_ > now ? busyUntil_ - now : busyUntil_ - busyStart_;
-    return busy_ && rankingGen_ == gen_ ? left : left + rankTime_;
+    return busy_ && rankingGen_ == gen_ ? left : left + time;
   }
 
   std::string decision() {
@@ -1238,6 +1254,8 @@ class English : public Engine {
   bool selection_ = false;     // text is selected
   bool decodePending_ = false;  // the letters typed changed since the strip was made
   std::vector<std::string> shown_;  // the list last returned, which a tap picks from
+  bool shownCorrection_ = false;    // shown_[0] is what a space commits instead of the typed word
+  bool shownComposing_ = false;     // shown_ was made for a word being typed
   std::string commit_;
   Edit edit_;
 
@@ -1256,7 +1274,7 @@ class English : public Engine {
   sebtype_lm::Ranked rankedWords_;
   uint64_t rankedGen_ = ~uint64_t{0};
   bool rankPending_ = false;
-  // The worker's job, for a space deciding whether to wait (rankExpectedIn)
+  // The worker's job, for a space deciding whether to wait (expectedIn)
   bool busy_ = false;
   std::chrono::steady_clock::time_point busyStart_, busyUntil_;
   uint64_t rankingGen_ = ~uint64_t{0};

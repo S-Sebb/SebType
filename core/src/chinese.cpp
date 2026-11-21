@@ -1,9 +1,10 @@
 // SebType core: SebType's Chinese model (engines/sebtype-lm/zh_lm, tools/chinese-lm) around 中文's Rime engine
 // (#264, the experiment of #259: docs/experiments/2026-11-16-chinese-lm.md). MIT, SebType.
 //
-// Threads: keys go to Rime on the caller's thread (the phone's engine thread), and Rime's list shows at once.
-// The model loads on a worker thread when the engine starts, and after each change reranks Rime's first
-// candidates, adds its own and, with nothing typed, predicts the next words there, as English's model does.
+// Threads: keys go to Rime on the caller's thread (the phone's engine thread). The model loads on a worker
+// thread when the engine starts, and after each change reranks Rime's first candidates, adds its own and,
+// with nothing typed, predicts the next words there, as English's model does. Until its list comes, the
+// list shown stays, so a key changes it once (#450); Rime's shows at once while the model takes longer.
 // The worker announces its list through READY; the frontend reads it with candidates(). Each list carries the
 // revision it was asked for, which every change (a key, a pick, the field's text, the settings) moves on,
 // so a list that comes late never shows.
@@ -21,6 +22,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
@@ -42,6 +44,9 @@ constexpr float kRankWeight = 0.5f, kOwnRank = 4;
 constexpr size_t kNextWords = 5;
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
+// How long the list shown waits for the model's after a change, so a key changes it once (#450): the phone's
+// rankings and next words take 14-107 ms at p95, by its cores (docs/perf/2026-11-19-chinese-model.md).
+constexpr std::chrono::milliseconds kHold{100};
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
 }
@@ -296,6 +301,9 @@ class Chinese final : public Engine {
     {
       std::lock_guard g(mutex_);
       if (resultRev_ == rev_) model = result_;
+      // Until the model's list comes the one shown stays, while it is expected within kHold: a key changes the
+      // list once, not to Rime's and then to the model's (#450).
+      else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold) return;
     }
     const auto rime = rime_->candidates(max);
     if (model) items = std::move(*model);
@@ -307,18 +315,28 @@ class Chinese final : public Engine {
     }
     shown_ = std::move(items);
     shownRev_ = rev_;
+    shownComposing_ = rime_->composing();
     modelShown_ = model.has_value();
   }
 
   void pick(int index) {
     if (index < 0) return;
-    if (shownRev_ != rev_ || index >= static_cast<int>(shown_.size())) {
-      // No list shown for this revision (a key's own pick): Rime's order
+    if (index >= static_cast<int>(shown_.size())) {
+      // No list shown (a key's own pick): Rime's order
       rime_->selectAt(index);
       changed();
       return;
     }
-    const Item item = shown_[index];
+    Item item = shown_[index];
+    // A list kept from before the last change (#450): the word shown, which Rime's menu may have elsewhere
+    // or not at all (then it is committed as the model's own are).
+    if (shownRev_ != rev_) {
+      // Made for what was committed since: it can't replace that, and a tap on it does nothing.
+      if (shownComposing_ && !rime_->composing()) return;
+      const auto rime = rime_->candidates(kTeachCandidates);
+      const auto at = std::ranges::find(rime, item.candidate.text, &Candidate::text);
+      item.rime = at == rime.end() ? -1 : int(at - rime.begin());
+    }
     // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
     // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
     // Both sections cover the pick's work: Rime's selection, teach()'s search piece by piece, the next list.
@@ -418,6 +436,7 @@ class Chinese final : public Engine {
     wanted_ = std::move(job);
     revNow_ = rev_;
     if (!asked) return;
+    askedRev_ = rev_;
     wake_.notify_all();
     if (paths_.synchronous) done_.wait(l, [&] { return resultRev_ == rev_ || !loading_ && !model_; });
   }
@@ -445,6 +464,7 @@ class Chinese final : public Engine {
       Job job = std::move(*wanted_);
       wanted_.reset();
       working_ = job.rev;
+      const auto start = std::chrono::steady_clock::now();
       l.unlock();
       std::vector<Item> items;
       std::string context = job.traditional ? t2s(job.context) : job.context;
@@ -465,6 +485,7 @@ class Chinese final : public Engine {
       if (job.rev != revNow_) continue;  // typed on meanwhile
       result_ = std::move(items);
       resultRev_ = job.rev;
+      jobTime_ = std::chrono::steady_clock::now() - start;
       done_.notify_all();
       l.unlock();
       if (ready_) ready_();
@@ -522,6 +543,7 @@ class Chinese final : public Engine {
   std::vector<Item> shown_;
   uint64_t shownRev_ = ~uint64_t{0};
   bool modelShown_ = false;  // shown_ is the model's
+  bool shownComposing_ = false;  // shown_ was made for something being typed
   int highlight_ = 0;        // in shown_, while it is the model's
 
   // Shared with the worker, under mutex_ (revNow_ also read in the model's steps).
@@ -532,6 +554,8 @@ class Chinese final : public Engine {
   std::optional<Job> wanted_;
   std::vector<Item> result_;
   uint64_t resultRev_ = ~uint64_t{0};
+  uint64_t askedRev_ = ~uint64_t{0};          // the last revision the model was asked a list for
+  std::chrono::steady_clock::duration jobTime_{};  // how long the last list that came took
   std::atomic<uint64_t> revNow_{0};
   std::atomic<uint64_t> working_{~uint64_t{0}};
 };
