@@ -197,6 +197,13 @@ class Chinese final : public Engine {
       if (shown_[i].rime == h) return static_cast<int>(i);
     return h;
   }
+  // The self-test checks the data Rime deployed, so it reads Rime's list, which shows at once: this one keeps
+  // the list shown until the model's comes (#450), and would read the list from before (#467).
+  std::vector<Candidate> tryTyping(const std::string &text, int max, Field field) override {
+    auto list = rime_->tryTyping(text, max, field);
+    changed();
+    return list;
+  }
   void selectAt(int index) override { pick(index); }
   // In the model's list the highlight moves within it; Rime's own highlight stays on its first.
   void highlightAt(int index) override {

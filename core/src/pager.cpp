@@ -39,6 +39,19 @@ std::vector<Candidate> Engine::candidates(int max) {
   return list;
 }
 
+std::vector<Candidate> Engine::tryTyping(const std::string &text, int max, Field field) {
+  setField(Field::Text);
+  clear();
+  for (char c : text) key({static_cast<uint32_t>(static_cast<unsigned char>(c)), 0, false});
+  settle();
+  auto list = candidates(max);
+  clear();
+  takeCommit();
+  takeEdit();
+  setField(field);
+  return list;
+}
+
 void Engine::select(int indexOnPage) { selectAt(pageStart(*this) + indexOnPage); }
 
 void Engine::changePage(bool next) {
