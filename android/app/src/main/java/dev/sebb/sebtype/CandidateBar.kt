@@ -54,6 +54,8 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         textSize = 18 * density
         color = Picnic.INK
     }
+    /** An English slot's word, shrunk to fit (#454) */
+    private val slotText = Paint(text)
     private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Picnic.fonts(context).first
         textSize = 14 * density
@@ -236,14 +238,19 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         val cy = r.centerY()
         when (val tag = item.tag) {
             is Int -> {
-                // English's chip hugs the word in its slot, as today's
-                val half = if (style == Style.SLOTS) minOf(r.width() / 2 - 5 * density, maxOf(24 * density, text.measureText(item.label) / 2 + 10 * density))
-                    else r.width() / 2 - 5 * density
+                // English's slots shrink a long word to fit, or cut it, and the chip hugs it inside the slot (#454)
+                val slots = style == Style.SLOTS
+                val (label, size) = if (slots) fitSlot(item.label, r.width() - 2 * SLOT_PAD_DP * density, text.textSize, MIN_SLOT_DP * density) {
+                    text.measureText(it)
+                } else item.label to text.textSize
+                slotText.textSize = size
+                val w = slotText.measureText(label)
+                val half = if (slots) maxOf(24 * density, w / 2 + (SLOT_PAD_DP - 5) * density) else r.width() / 2 - 5 * density
                 if (tag == 0) PixelFrame.CHIP.draw(canvas, r.centerX() - half, r.top + 7 * density, r.centerX() + half, r.bottom - 7 * density, px)
                 // A thin line between candidates; English's slots have one before the middle and the right one.
                 val line = if (style == Style.SLOTS) r.left > 0.5f else tag != 0
                 if (line) fill.apply { color = Picnic.OUTLINE }.let { canvas.drawRect(r.left, cy - 12.5f * density, r.left + density, cy + 12.5f * density, it) }
-                canvas.drawText(item.label, r.centerX() - text.measureText(item.label) / 2, cy + text.textSize * 0.35f, text)
+                canvas.drawText(label, r.centerX() - w / 2, cy + size * 0.35f, slotText)
             }
             Kind.NOTICE -> canvas.drawText(item.label, r.left + 8 * density, cy + small.textSize * 0.35f, small)
             // Over a panel: ← and its title, as today's action panel
@@ -324,6 +331,33 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
 
 /** The header's title, shrunk to fit, is drawn while at least this big */
 private const val MIN_TITLE_DP = 11f
+
+/** An English slot's room on each side of its word: the chip's 5 dp inset and its padding around the word */
+private const val SLOT_PAD_DP = 13f
+
+/** An English candidate shrinks to fit its slot down to this size, then is cut */
+private const val MIN_SLOT_DP = 11f
+
+/**
+ * [label] fitted to [room]: its text size, at most [size] and at least [min], and the label itself, cut in the
+ * middle with … if it still doesn't fit, so words that differ at either end stay apart. [measure] is the width
+ * of a string at [size].
+ */
+internal fun fitSlot(label: String, room: Float, size: Float, min: Float, measure: (String) -> Float): Pair<String, Float> {
+    val w = measure(label)
+    if (w <= room) return label to size
+    val fit = maxOf(min, size * room / w)
+    val scale = fit / size
+    if (w * scale <= room) return label to fit
+    var keep = label.length - 1
+    while (keep > 1) {
+        val head = (keep + 1) / 2
+        val cut = label.take(head) + "…" + label.takeLast(keep - head)
+        if (measure(cut) * scale <= room) return cut to fit
+        keep--
+    }
+    return label.take(1) + "…" to fit
+}
 
 /** Whether the expand/collapse button is shown at the right end of the bar (#429). */
 internal fun showExpandButton(slots: Boolean, expanded: Boolean, extent: Float, available: Float) =
