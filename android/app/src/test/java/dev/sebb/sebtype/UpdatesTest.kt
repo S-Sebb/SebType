@@ -16,13 +16,16 @@ import java.util.concurrent.CountDownLatch
 
 class UpdatesTest {
     /** GitHub's latest release as its API answers, cut to what the check reads */
-    private fun latest(tag: String, vararg assets: String) = JSONObject()
-        .put("tag_name", tag)
-        .put("html_url", "https://github.com/S-Sebb/SebType/releases/tag/$tag")
-        .put("assets", JSONArray(assets.map {
-            JSONObject().put("name", it).put("browser_download_url", "https://github.com/S-Sebb/SebType/releases/download/$tag/$it")
-        }))
-        .toString()
+    private fun latest(tag: String, vararg assets: String, body: Any? = null): String {
+        val o = JSONObject()
+            .put("tag_name", tag)
+            .put("html_url", "https://github.com/S-Sebb/SebType/releases/tag/$tag")
+            .put("assets", JSONArray(assets.map {
+                JSONObject().put("name", it).put("browser_download_url", "https://github.com/S-Sebb/SebType/releases/download/$tag/$it")
+            }))
+        if (body != null) o.put("body", body)
+        return o.toString()
+    }
 
     @Test
     fun newerReleaseOffersItsArm64Apk() {
@@ -101,5 +104,72 @@ class UpdatesTest {
         val ok = FakeSession(failWrite = false)
         Updates.handOff(ok, File("SebType.apk"))
         assertEquals(listOf("write", "commit", "close"), ok.calls)
+    }
+
+    @Test
+    fun releaseParsesBodyAndIgnoresBlankOrMissingBody() {
+        val withBody = latest("v0.2.0", "SebType-0.2.0-arm64-v8a.apk", body = "\n  ### New\n- **Updates.** Checks daily.\n  ")
+        assertEquals("### New\n- **Updates.** Checks daily.", Updates.release(withBody, "0.1.0")?.notes)
+
+        val missing = latest("v0.2.0", "SebType-0.2.0-arm64-v8a.apk")
+        assertNull(Updates.release(missing, "0.1.0")?.notes)
+
+        val empty = latest("v0.2.0", "SebType-0.2.0-arm64-v8a.apk", body = "   \n\t  ")
+        assertNull(Updates.release(empty, "0.1.0")?.notes)
+
+        val jsonNull = latest("v0.2.0", "SebType-0.2.0-arm64-v8a.apk", body = JSONObject.NULL)
+        assertNull(Updates.release(jsonNull, "0.1.0")?.notes)
+    }
+
+    @Test
+    fun parseNotesHandlesHeadingsBulletsBoldAndEdgeCases() {
+        val md = """
+            ### New
+            - **Automatic updates.** Checks GitHub once a day.
+            - Plain bullet without bold.
+
+            ### Improved
+            - Faster **startup** and **prediction** on launch.
+
+            ### Fixed
+            - Keeps **unclosed bold as plain text.
+            - Ignores **** empty markers.
+            <b>Raw HTML</b> stays plain text.
+        """.trimIndent()
+
+        assertEquals(
+            listOf(
+                Updates.NoteLine.Heading("New"),
+                Updates.NoteLine.Bullet(listOf(
+                    Updates.NoteSpan("Automatic updates.", bold = true),
+                    Updates.NoteSpan(" Checks GitHub once a day.", bold = false),
+                )),
+                Updates.NoteLine.Bullet(listOf(
+                    Updates.NoteSpan("Plain bullet without bold.", bold = false),
+                )),
+                Updates.NoteLine.Heading("Improved"),
+                Updates.NoteLine.Bullet(listOf(
+                    Updates.NoteSpan("Faster ", bold = false),
+                    Updates.NoteSpan("startup", bold = true),
+                    Updates.NoteSpan(" and ", bold = false),
+                    Updates.NoteSpan("prediction", bold = true),
+                    Updates.NoteSpan(" on launch.", bold = false),
+                )),
+                Updates.NoteLine.Heading("Fixed"),
+                Updates.NoteLine.Bullet(listOf(
+                    Updates.NoteSpan("Keeps **unclosed bold as plain text.", bold = false),
+                )),
+                Updates.NoteLine.Bullet(listOf(
+                    Updates.NoteSpan("Ignores **** empty markers.", bold = false),
+                )),
+                Updates.NoteLine.Text(listOf(
+                    Updates.NoteSpan("<b>Raw HTML</b> stays plain text.", bold = false),
+                )),
+            ),
+            Updates.parseNotes(md),
+        )
+
+        assertEquals(emptyList<Updates.NoteLine>(), Updates.parseNotes(null))
+        assertEquals(emptyList<Updates.NoteLine>(), Updates.parseNotes("   \n  "))
     }
 }

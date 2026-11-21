@@ -51,8 +51,18 @@ import java.util.concurrent.TimeUnit
  * APK signed with SebType's key.
  */
 object Updates {
-    /** A release newer than this app: its version (x.y.z) and its arm64 APK's URL */
-    data class Release(val version: String, val apk: String)
+    /** A release newer than this app: its version (x.y.z), its arm64 APK's URL, and its release notes (markdown, if any) */
+    data class Release(val version: String, val apk: String, val notes: String? = null)
+
+    /** One styled run inside a release-notes line */
+    data class NoteSpan(val text: String, val bold: Boolean = false)
+
+    /** One block of a GitHub release's body, parsed without HTML (#428) */
+    sealed interface NoteLine {
+        data class Heading(val text: String) : NoteLine
+        data class Bullet(val spans: List<NoteSpan>) : NoteLine
+        data class Text(val spans: List<NoteSpan>) : NoteLine
+    }
 
     sealed interface Status {
         data object Idle : Status
@@ -142,15 +152,64 @@ object Updates {
         if (!newer(version, versionName)) return null
         val assets = o.optJSONArray("assets") ?: return null
         val name = "SebType-$version-arm64-v8a.apk"
+        // JSONObject.optString returns the literal "null" for JSON null, so check isNull first.
+        val notes = if (o.isNull("body")) null else o.optString("body").trim().ifEmpty { null }
         return (0 until assets.length()).map(assets::getJSONObject).firstOrNull { it.optString("name") == name }
-            ?.let { Release(version, it.getString("browser_download_url")) }
+            ?.let { Release(version, it.getString("browser_download_url"), notes) }
+    }
+
+    /**
+     * Parses GitHub release notes markdown into headings (`###`), bullets (`- `), and plain lines with inline
+     * `**bold**` spans. Untrusted HTML or other markdown is rendered as plain text.
+     */
+    fun parseNotes(markdown: String?): List<NoteLine> {
+        if (markdown.isNullOrBlank()) return emptyList()
+        val out = mutableListOf<NoteLine>()
+        for (raw in markdown.lines()) {
+            val line = raw.trim()
+            if (line.isEmpty()) continue
+            when {
+                line.startsWith("### ") -> line.removePrefix("### ").trim().takeIf { it.isNotEmpty() }
+                    ?.let { out += NoteLine.Heading(it) }
+                line.startsWith("- ") -> line.removePrefix("- ").trim().takeIf { it.isNotEmpty() }
+                    ?.let { out += NoteLine.Bullet(parseInlineBold(it)) }
+                else -> out += NoteLine.Text(parseInlineBold(line))
+            }
+        }
+        return out
+    }
+
+    internal fun parseInlineBold(text: String): List<NoteSpan> {
+        val spans = mutableListOf<NoteSpan>()
+        var i = 0
+        var plainStart = 0
+        while (i < text.length) {
+            val open = text.indexOf("**", i)
+            if (open < 0) break
+            val close = text.indexOf("**", open + 2)
+            if (close < 0) break
+            if (close == open + 2) {
+                i = close + 2
+                continue
+            }
+            if (open > plainStart) spans += NoteSpan(text.substring(plainStart, open), bold = false)
+            spans += NoteSpan(text.substring(open + 2, close), bold = true)
+            i = close + 2
+            plainStart = i
+        }
+        if (plainStart < text.length) spans += NoteSpan(text.substring(plainStart), bold = false)
+        return spans
     }
 
     private fun saved(context: Context): Release? {
         val p = store(context)
-        val release = Release(p.getString("version", null) ?: return null, p.getString("apk", null) ?: return null)
+        val release = Release(
+            p.getString("version", null) ?: return null,
+            p.getString("apk", null) ?: return null,
+            p.getString("notes", null)?.trim()?.ifEmpty { null },
+        )
         if (newer(release.version, BuildConfig.VERSION_NAME)) return release
-        p.edit().remove("version").remove("apk").apply() // installed since
+        p.edit().remove("version").remove("apk").remove("notes").apply() // installed since
         return null
     }
 
@@ -187,8 +246,11 @@ object Updates {
         }
         val p = store(context)
         p.edit().apply {
-            if (release == null) remove("version").remove("apk")
-            else putString("version", release.version).putString("apk", release.apk)
+            if (release == null) remove("version").remove("apk").remove("notes")
+            else {
+                putString("version", release.version).putString("apk", release.apk)
+                if (release.notes == null) remove("notes") else putString("notes", release.notes)
+            }
         }.apply()
         available.value = release
         if (!notify) status.value = if (release == null) Status.UpToDate else Status.Idle
