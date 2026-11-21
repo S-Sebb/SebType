@@ -146,6 +146,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     /** The emoji English's word names, and its index in the bar (-1: none) */
     private var emojiShown = ""
     private var emojiAt = -1
+    /** The list [emojiShown] was named with */
+    private var emojiFor: List<String>? = null
     private var keysSent: Int? = null
 
     /** English's results and the keys they are for (#280) */
@@ -800,13 +802,18 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             waiting.hasKeys() -> waiting.reading()
             else -> st?.preedit.orEmpty()
         }
-        // English's word may name an emoji: it takes the bar's third place
-        val named = if (lang == ENGLISH && composing && kind.pad == null && Prefs[Prefs.EMOJI_SUGGESTIONS])
-            Emoji.forWord(this, st!!.preedit) else null
+        // English's word may name an emoji: it takes the bar's third place. It goes with the list it was named
+        // with, which core/ keeps showing after a key until the list for its letters comes (#450).
+        val words = st?.candidates?.asList()
+        if (words != emojiFor) {
+            emojiFor = words
+            emojiShown = (if (lang == ENGLISH && composing && kind.pad == null && Prefs[Prefs.EMOJI_SUGGESTIONS])
+                Emoji.forWord(this, st!!.preedit) else null).orEmpty()
+        }
+        val named = emojiShown.ifEmpty { null }
         val candidates = (st?.candidates?.toMutableList() ?: mutableListOf()).also { list ->
             emojiAt = if (named != null) minOf(2, list.size) else -1
             if (named != null) list.add(emojiAt, named)
-            emojiShown = named.orEmpty()
         }
         val notice = if (lang != CHINESE || kind.pad != null) null else when (Engines.chinese) {
             Engines.Chinese.PREPARING -> getString(R.string.chinese_preparing)
@@ -838,7 +845,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             JAPANESE -> CandidateBar.Style.WIDE_FIRST
             else -> CandidateBar.Style.CELLS
         }
-        bar.show(candidates, composing, style, lang == ENGLISH && composing && st?.selected == 0, barOpen, chip, badge, notice,
+        // English's correction is of the list shown, which a space keeps until the next words come (#450)
+        bar.show(candidates, composing, style, lang == ENGLISH && st?.selected == 0, barOpen, chip, badge, notice,
             header, expanded, clip)
         val on = if (incognito) setOf(Action.INCOGNITO) else emptySet()
         val traditional = if (lang == CHINESE) Engines.setting("Chinese", "Traditional") == true else null
