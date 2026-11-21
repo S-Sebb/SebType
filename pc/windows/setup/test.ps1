@@ -908,7 +908,15 @@ namespace SebTypeSetupTest {
           $win::Fill($h, [string[]]($url, $syncUser, $syncPassword))
           $null = Shot TWizardForm '6-sync-connected-filled'
           Click $h 'Next'
-          Page $h 'SebType is ready' 120  # no message box: the check passed and the login was saved
+          try { Page $h 'SebType is ready' 120 }  # no message box: the check passed and the login was saved
+          catch {
+            # Why, from the Configurator Setup ran (its stderr, which Setup doesn't keep)
+            $f = "$out\sync-login-again.txt"
+            [IO.File]::WriteAllText($f, "$url`n$syncUser`n$syncPassword`n")
+            $p = Start-Process -PassThru -Wait "$App\sebtype-configurator.exe" '--sync-login-file', "`"$f`"", '--check' -RedirectStandardError "$out\sync-login-again.err"
+            Remove-Item $f -ErrorAction SilentlyContinue
+            throw "$($_.Exception.Message); the Configurator again: exit $($p.ExitCode) $(Get-Content "$out\sync-login-again.err" -Raw -ErrorAction SilentlyContinue)"
+          }
           $null = Shot TWizardForm '6-sync-connected-finish'
           $j = Get-Content "$env:LOCALAPPDATA\SebType\sync.json" -Raw -Encoding utf8 | ConvertFrom-Json
           if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
