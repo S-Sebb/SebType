@@ -14,7 +14,8 @@ in their pixel-framed cards on the cloth (#87). Then, with the system switched t
 that every screen shows no English SebType string (#120, settings-ja-*.png in LOGDIR). Then incognito (#31):
 password and private fields and the sticky toggle learn nothing in English, 中文 and 日本語 and keep no
 clipboard copy, but still offer what was learned before; the toggle survives a restart, and turned off,
-learning resumes. Then sync with a local sync-server (#12, made-up login and words): offline a learned
+learning resumes. Then sync with a local sync-server (#12, made-up login and words): the connection check's
+connected and wrong-password states on Sync & backup and in its login dialog (#452), offline a learned
 word stays on the phone, back online a keyboard hide uploads it, a word in another device's folder on
 the server is offered after a sync, so are made-up Japanese and English personal words (#14), whose
 phone-side counterparts reach the phone's folder, a conversion picked in 日本語 reaches the server and another
@@ -2579,6 +2580,51 @@ def sync_setup():
     return f"login saved, sync on; the phone's folder {SYNC['device'][:8]}… arrived; status Last synced"
 
 
+SYNC_CONNECTED = ("已连接", "Connected. The server", "接続しました")
+SYNC_WRONG = (
+    "用户名或密码错误",
+    "Wrong username or password",
+    "ユーザー名またはパスワードが違います",
+)
+
+
+def sync_status():
+    """The connection check (#452, #465): Sync & backup's tick for the login sync-setup saved, a wrong
+    password's X in the login dialog and, saved anyway, on the page; then the right one again. Without
+    sync-setup's server (only this check named, or 中文 not up) it starts one and saves the login itself."""
+    if "server" not in SYNC:
+        start_sync_server()
+        go(HOME["backup"], SYNC_LOGIN)
+        set_text(0, f"10.0.2.2:{SYNC['port']}")
+        set_text(1, SYNC_USER)
+        set_text(2, SYNC_PASSWORD)
+        tap_text(labels("保存", "Save"))
+    go(HOME["backup"])
+    wait_for("Connected on Sync & backup", lambda: screen_contains(SYNC_CONNECTED), 30)
+    screenshot("12-sync-status-connected")
+    go(HOME["backup"], SYNC_LOGIN)
+    set_text(2, "not-the-password")
+    tap_text(labels("保存", "Save"))
+    wait_for(
+        "Wrong username or password in the dialog",
+        lambda: screen_contains(SYNC_WRONG),
+        30,
+    )
+    screenshot("12-sync-login-wrong-password")
+    tap_text(labels("仍然保存", "Save anyway", "このまま保存"))
+    wait_for(
+        "Wrong username or password on Sync & backup",
+        lambda: screen_contains(SYNC_WRONG),
+        30,
+    )
+    screenshot("12-sync-status-wrong-password")
+    go(HOME["backup"], SYNC_LOGIN)
+    set_text(2, SYNC_PASSWORD)
+    tap_text(labels("保存", "Save"))
+    wait_for("Connected again", lambda: screen_contains(SYNC_CONNECTED), 30)
+    return "Connected for the saved login; a wrong password: Wrong username or password in the dialog and, saved anyway, on the page; Connected again"
+
+
 def sync_offline_learns():
     SYNC["airplane"] = adb(
         "shell", "settings", "get", "global", "airplane_mode_on"
@@ -3062,6 +3108,7 @@ check("incognito-off-learns-zh", learns_again("ni", "你", "sx"))
 check("incognito-off-learns-ja", learns_again("nihongo", "日本語", "hashi"))
 try:
     check("sync-setup", sync_setup)
+    check("sync-status", sync_status)
     check("sync-offline-learns", sync_offline_learns, needs=["sync-setup"])
     check("sync-online-uploads", sync_online_uploads, needs=["sync-offline-learns"])
     check("sync-other-device", sync_other_device, needs=["sync-online-uploads"])
