@@ -118,8 +118,9 @@ internal fun SyncAccount.summary() = "$user · ${server.removePrefix("https://")
 internal fun SyncLoginDialog(close: () -> Unit) {
     val context = LocalContext.current
     val saved = remember { SyncAccountStore.current.value }
-    var server by remember { mutableStateOf(saved?.server?.removePrefix("https://") ?: "") }
-    var user by remember { mutableStateOf(saved?.user ?: "") }
+    var server by rememberSaveable { mutableStateOf(saved?.server?.removePrefix("https://") ?: "") }
+    var user by rememberSaveable { mutableStateOf(saved?.user ?: "") }
+    // Keep password in process memory only (not serialized to system_server's savedInstanceState).
     var password by remember { mutableStateOf(saved?.password ?: "") }
     val url = SyncAccount.normalizeServer(server)
     val invalid = server.isNotBlank() && url == null
