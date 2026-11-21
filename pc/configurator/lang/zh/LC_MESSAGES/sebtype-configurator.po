@@ -525,3 +525,15 @@ msgstr "打开 SebType 设置"
 
 msgid "Finish"
 msgstr "完成"
+
+msgid "Minimize"
+msgstr "最小化"
+
+msgid "Maximize"
+msgstr "最大化"
+
+msgid "Restore"
+msgstr "还原"
+
+msgid "Close"
+msgstr "关闭"

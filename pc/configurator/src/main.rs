@@ -86,6 +86,11 @@ fn lang_row(id: &str, on: bool) -> Lang {
 
 /// The window's language: the system's when it is 中文 or 日本語, else English (#118). Slint picks the
 /// same one by itself; choosing it here keeps the font in step with it.
+/// Wayland gets SebType's own title bar (#439); X11 and Windows keep the system's frame, which shows the pig.
+fn own_title_bar() -> bool {
+    cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
 fn language() -> &'static str {
     let system = sys_locale::get_locale().unwrap_or_default();
     ["zh", "ja"]
@@ -744,6 +749,7 @@ fn main() -> Result<(), slint::PlatformError> {
     slint::BackendSelector::new().select()?;
     slint::set_xdg_app_id("sebtype-configurator")?;
     let app = AppWindow::new()?;
+    app.global::<Chrome>().set_frameless(own_title_bar());
     let lang = language();
     let _ = slint::select_bundled_translation(lang);
     let ui = Rc::new(Ui {
