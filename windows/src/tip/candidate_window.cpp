@@ -356,7 +356,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
     if (seg.highlight) highlight = static_cast<int>(segments.size());
     segments.push_back(utf16(seg.text));
   }
-  std::wstring w = pageWord(segments, highlight, preeditRow);
+  std::wstring w = pageWord(segments, highlight, reply.lang == Lang::Chinese);  // Rime's, in the row or inline
   l.keepWidth = shown && !rescaled && w == word_ ? l.width : 0;
   word_ = std::move(w);
   caret_ = caret;
