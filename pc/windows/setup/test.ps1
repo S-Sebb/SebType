@@ -39,7 +39,8 @@ nobody's own input settings change, then removes the user and its profile:
 -Only sync-page: only Setup's sync page (#435, #465): an install in English as a person does it; once the page
    shows, sebtype_sync.py (in the folder) serving on localhost with Setup's Python and a throwaway login; the
    page given a wrong password (Wrong username or password, Save anyway? answered No: the page stays), then
-   the right one (no box, the finish page, sync on in sync.json), with pictures (73-5-*, 73-6-*); a silent uninstall.
+   the right one (no Save anyway? box, the finish page, sync on in sync.json; the save, which needs Credential Manager,
+   is INFO where the driver's elevated token lacks it), with pictures (73-5-*, 73-6-*); a silent uninstall.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
    the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
@@ -908,22 +909,37 @@ namespace SebTypeSetupTest {
           $win::Fill($h, [string[]]($url, $syncUser, $syncPassword))
           $null = Shot TWizardForm '6-sync-connected-filled'
           Click $h 'Next'
-          try { Page $h 'SebType is ready' 120 }  # no message box: the check passed and the login was saved
+          # The check passing shows no box (a failing one asks Save anyway?). Saving then needs Credential
+          # Manager, which this driver's elevated token from Task Scheduler doesn't have (as in -Only sync):
+          # Setup says it couldn't save, and the Configurator, run again, says why.
+          $saved = $true
+          try { Page $h 'SebType is ready' 120 }
           catch {
-            # Why, from the Configurator Setup ran (its stderr, which Setup doesn't keep)
+            $m = Find-Message
+            if ($m) { $win::Shot($m, "$out\73-6-sync-connected-save.png") }
             $f = "$out\sync-login-again.txt"
             [IO.File]::WriteAllText($f, "$url`n$syncUser`n$syncPassword`n")
             $p = Start-Process -PassThru -Wait "$App\sebtype-configurator.exe" '--sync-login-file', "`"$f`"", '--check' -RedirectStandardError "$out\sync-login-again.err"
             Remove-Item $f -ErrorAction SilentlyContinue
-            throw "$($_.Exception.Message); the Configurator again: exit $($p.ExitCode) $(Get-Content "$out\sync-login-again.err" -Raw -ErrorAction SilentlyContinue)"
+            $why = "exit $($p.ExitCode) $(Get-Content "$out\sync-login-again.err" -Raw -ErrorAction SilentlyContinue)".Trim()
+            # Exit 1, not a check's 11-14: the check passed and only the save failed.
+            if (-not $m -or $p.ExitCode -ne 1 -or $why -notlike '*ERROR_NO_SUCH_LOGON_SESSION*') { throw "$($_.Exception.Message); the Configurator again: $why" }
+            Click $m 'OK'
+            $win::Fill($h, [string[]]('', '', ''))
+            Click $h 'Next'; Page $h 'SebType is ready' 60
+            $saved = $false
+            Result 'sync-page-saves-login' INFO "not checkable here: the check passed (no Save anyway? box) but saving needs Credential Manager, which the elevated driver's token lacks ($why)"
           }
           $null = Shot TWizardForm '6-sync-connected-finish'
-          $j = Get-Content "$env:LOCALAPPDATA\SebType\sync.json" -Raw -Encoding utf8 | ConvertFrom-Json
-          if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
+          if ($saved) {
+            $j = Get-Content "$env:LOCALAPPDATA\SebType\sync.json" -Raw -Encoding utf8 | ConvertFrom-Json
+            if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
+          }
           Click $h 'Finish'
           if (-not (Wait-Until 60 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close' }
           Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
-          'no message box, the finish page, sync on for the local server in sync.json'
+          if ($saved) { 'no Save anyway? box, the finish page, sync on for the local server in sync.json' }
+          else { 'no Save anyway? box: the check passed; the save is INFO above; the finish page' }
         }
         Silent-Uninstall 'sync-page'
       } finally {
