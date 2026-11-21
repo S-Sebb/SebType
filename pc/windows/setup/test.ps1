@@ -36,6 +36,10 @@ nobody's own input settings change, then removes the user and its profile:
    wait for the schedule lock a Configurator holds (#401), go on after 30 s if it stays held, and remove
    the task, the login and sync's files.
    The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
+-Only sync-page: only Setup's sync page (#435, #465): an install in English as a person does it; once the page
+   shows, sebtype_sync.py (in the folder) serving on localhost with Setup's Python and a throwaway login; the
+   page given a wrong password (Wrong username or password, Save anyway? answered No: the page stays), then
+   the right one (no box, the finish page, sync on in sync.json), with pictures (73-5-*, 73-6-*); a silent uninstall.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
    the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
@@ -544,11 +548,20 @@ namespace SebTypeSetupTest {
       }
       // Buttons that aren't windows: a task dialog's take TDM_CLICK_BUTTON with the id (IDOK 1, IDYES 6);
       // any other message box takes Enter, for its default button (Yes in the confirm, OK in the last one).
-      int id = caption == "OK" ? 1 : caption == "Yes" ? 6 : 0;
+      // No (IDNO 7) takes its N accelerator instead.
+      int id = caption == "OK" ? 1 : caption == "Yes" ? 6 : caption == "No" ? 7 : 0;
       if (id == 0) return false;
+      byte key = (byte)(id == 7 ? 0x4E : 0x0D);
       if (Cls(p) == "#32770") PostMessage(p, 0x0466, (IntPtr)id, IntPtr.Zero);
-      else { Front(p); keybd_event(0x0D, 0, 0, UIntPtr.Zero); keybd_event(0x0D, 0, 2, UIntPtr.Zero); }
+      else { Front(p); keybd_event(key, 0, 0, UIntPtr.Zero); keybd_event(key, 0, 2, UIntPtr.Zero); }
       return true;
+    }
+    // Fills the page's visible edit boxes, top to bottom (an input query page's fields), with WM_SETTEXT.
+    public static void Fill(IntPtr p, string[] values) {
+      var edits = Children(p).FindAll(h => Cls(h).IndexOf("Edit", StringComparison.OrdinalIgnoreCase) >= 0);
+      edits.Sort((a, b) => { RECT ra, rb; GetWindowRect(a, out ra); GetWindowRect(b, out rb); return ra.T.CompareTo(rb.T); });
+      if (edits.Count != values.Length) throw new ArgumentException(edits.Count + " edit boxes, want " + values.Length + ": " + Texts(p));
+      for (int i = 0; i < values.Length; i++) { IntPtr r; SendMessageTimeout(edits[i], 0x000C, IntPtr.Zero, new StringBuilder(values[i]), 2, 2000, out r); }
     }
     // Windows lets a process take the foreground right after it sent input: an Alt tap first.
     static void Front(IntPtr h) {
@@ -857,6 +870,60 @@ namespace SebTypeSetupTest {
       Check-AsBefore upgrade
       return
     }
+    if ($Only -eq 'sync-page') {
+      $syncUser = 'sebtype-sync-test'
+      $syncPassword = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+      $server = $null
+      try {
+        Check 'sync-page-shown' {
+          Start-Process $setup '/LANG=en', "/LOG=`"$out\setup-sync-page.log`""
+          $script:h = Window TWizardForm
+          Click $h 'Next'; Page $h 'Your languages'
+          Click $h 'Install'; Page $h 'Account sync' 900
+          # The server runs from a copy of Setup's Python, there by now: the uninstall removes {app}\python.
+          Copy-Item -Recurse "$App\python" "$out\python"
+          $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $listener.Start()
+          $script:port = $listener.LocalEndpoint.Port; $listener.Stop()
+          $null = $syncPassword | & "$out\python\python.exe" -I "$root\sebtype_sync.py" adduser --data "$out\sync-server" --password-stdin $syncUser
+          $script:server = Start-Process "$out\python\python.exe" -PassThru -NoNewWindow -RedirectStandardError "$out\sync-server.log" `
+            -ArgumentList '-I', "`"$root\sebtype_sync.py`"", 'serve', '--data', "`"$out\sync-server`"", '--port', $port
+          if (-not (Wait-Until 30 { try { (New-Object Net.Sockets.TcpClient '127.0.0.1', $port).Close(); $true } catch { $false } })) { throw "no server on port $port" }
+          'after the install, with sebtype_sync.py on localhost and a throwaway login'
+        }
+        $url = "http://127.0.0.1:$port"
+        Check 'sync-page-wrong-password' {
+          $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password'))
+          $null = Shot TWizardForm '5-sync-wrong-password-filled'
+          Click $h 'Next'
+          $m = Message 120
+          $win::Shot($m, "$out\73-5-sync-wrong-password.png")
+          $said = $win::Texts($m) + ' ' + $win::Text($m)
+          Click $m 'No'
+          if (-not (Wait-Until 30 { -not (Find-Message) })) { throw "the message box stayed after No: $said" }
+          if ($said -notlike '*Wrong username or password*') { throw "Setup said: $said" }
+          if (-not ($win::Texts($h) -like '*Account sync*')) { throw "No left the sync page: $($win::Texts($h))" }
+          'Wrong username or password, Save anyway? No keeps the page'
+        }
+        Check 'sync-page-connected' {
+          $win::Fill($h, [string[]]($url, $syncUser, $syncPassword))
+          $null = Shot TWizardForm '6-sync-connected-filled'
+          Click $h 'Next'
+          Page $h 'SebType is ready' 120  # no message box: the check passed and the login was saved
+          $null = Shot TWizardForm '6-sync-connected-finish'
+          $j = Get-Content "$env:LOCALAPPDATA\SebType\sync.json" -Raw -Encoding utf8 | ConvertFrom-Json
+          if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
+          Click $h 'Finish'
+          if (-not (Wait-Until 60 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close' }
+          Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
+          'no message box, the finish page, sync on for the local server in sync.json'
+        }
+        Silent-Uninstall 'sync-page'
+      } finally {
+        if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item -Recurse -Force "$out\python", "$out\sync-server" -ErrorAction SilentlyContinue
+      }
+      return
+    }
     if ($Only -eq 'sync') {
       Check 'sync-install' { Silent sync-install @(); 'silent, all languages' }
       # The server runs from a copy of Setup's Python: the uninstaller removes {app}\python, which it holds.
@@ -1061,11 +1128,12 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       $h = Shot TWizardForm '1-welcome-en'
       Click $h 'Next'; Page $h 'Your languages'; $null = Shot TWizardForm '2-languages'
       Click $h 'Install'; Page $h 'Installing the input methods' 120; $null = Shot TWizardForm '3-installing'
-      Page $h 'SebType is ready' 900; $null = Shot TWizardForm '4-finish'
+      Page $h 'Account sync' 900; $null = Shot TWizardForm '4-sync'; Click $h 'Next'  # blank: skipped (#435)
+      Page $h 'SebType is ready' 60; $null = Shot TWizardForm '4-finish'
       Click $h 'Finish'
       if (-not (Wait-Until 60 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close' }
       Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
-      'welcome, languages, installing, finish'
+      'welcome, languages, installing, sync (skipped), finish'
     }
     Save-MachineLog round1-install; Stop-Setup
     Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$ZhTip] ja[$JaTip]"
