@@ -205,10 +205,10 @@ SH
     "$5" --ignored --exact sync::tests::private_login > /dev/null || exit 1
     kwin_wayland --virtual --no-lockscreen --socket "wlc$$" --width 1000 --height 700 --exit-with-session \
       "$d/shots.sh $4 $5 $6 $d $s"
-    kill $s 2>/dev/null; wait $s 2>/dev/null; true' _ "$d" "$port" "$PWD" "$bin" "$tests" "$shots" > "$sb/kwin-sync-check.log" 2>&1
+    kill $s 2>/dev/null; wait $s 2>/dev/null; true' _ "$d" "$port" "$PWD" "$bin" "$tests" "$shots" > "$out/configurator-test-sync-check-kwin.log" 2>&1
   cat "$d/status"; grep -qx all-differ "$d/status"
 }
-export -f sync_check_shots
+export -f sync_check_shots; export tests
 check every-screen-sync-check 120 sync_check_shots
 
 # Fcitx5 and Rime take the languages and Chinese settings the app writes (the ignored Rust test).
