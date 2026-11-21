@@ -846,7 +846,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val rowShown = barOpen && shown == Panel.NONE
         actionRow.visibility = if (rowShown) View.VISIBLE else View.GONE
         content.extra = if (barOpen && overKeys) (ActionRow.HEIGHT_DP * resources.displayMetrics.density).toInt() else 0
-        if (rowShown) actionRow.show(Action.pinned(this), on)
+        if (rowShown) actionRow.show(Action.pinned(this), on, traditional)
         val autofilling = autofill.showing && candidates.isEmpty() && shown == Panel.NONE
         autofill.visibility = if (autofilling) View.VISIBLE else View.GONE
         bar.visibility = if (autofilling) View.INVISIBLE else View.VISIBLE

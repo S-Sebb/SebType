@@ -40,50 +40,86 @@ enum class Action(val label: Int, val icon: Icon) {
 }
 
 /**
- * The action bar, a row over the candidate bar (whose button opens and closes it): ⋯ (All Actions), then
- * the shortcuts 56 dp apart, as today's.
+ * The action bar, a row over the candidate bar (whose button opens and closes it): ⋯ (All Actions), 中文's
+ * 简/繁 toggle in Chinese mode (#430), then the shortcuts up to 56 dp apart.
  */
 @SuppressLint("ViewConstructor")
 class ActionRow(context: Context, private val texts: Texts, private val listener: Listener) : ItemsView(context, vertical = false) {
     interface Listener {
         fun onAllActions()
         fun onAction(action: Action)
+        fun onTraditional(on: Boolean)
     }
+
+    internal object All
+    internal object Traditional
 
     companion object {
         const val HEIGHT_DP = 40
+
+        internal fun layout(width: Float, density: Float, actions: List<Action>, traditional: Boolean?): List<Triple<Float, Float, Any>> {
+            val first = 45 * density
+            val rest = actions.size + if (traditional != null) 1 else 0
+            val step = minOf(56 * density, (width - first) / maxOf(Action.MAX_PINNED, rest))
+            val out = ArrayList<Triple<Float, Float, Any>>(1 + rest)
+            out += Triple(0f, first, All)
+            var i = 0
+            if (traditional != null) {
+                val l = first + i++ * step
+                out += Triple(l, l + step, Traditional)
+            }
+            actions.forEach { a ->
+                val l = first + i++ * step
+                out += Triple(l, l + step, a)
+            }
+            return out
+        }
+
+        internal fun iconSize(slotWidth: Float, density: Float) =
+            minOf(22 * density, maxOf(8 * density, slotWidth - 2 * density))
+
+        internal fun glyphSize(slotWidth: Float, density: Float) =
+            minOf(18 * density, maxOf(8 * density, slotWidth - 2 * density))
     }
 
     private val density = resources.displayMetrics.density
+    private val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 18 * density
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
     private var actions = emptyList<Action>()
     private var on = emptySet<Action>()
+    private var traditional: Boolean? = null
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) =
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (HEIGHT_DP * density).toInt())
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = rebuild()
 
-    /** [on]: actions drawn as turned on (incognito) */
-    fun show(actions: List<Action>, on: Set<Action>) {
-        if (actions == this.actions && on == this.on) return
+    /** [on]: actions drawn as turned on (incognito); [traditional]: null outside 中文 */
+    fun show(actions: List<Action>, on: Set<Action>, traditional: Boolean?) {
+        if (actions == this.actions && on == this.on && traditional == this.traditional) return
         this.actions = actions
         this.on = on
+        this.traditional = traditional
         rebuild()
     }
-
-    private object All
 
     private fun rebuild() {
         if (width == 0) return
         val h = height.toFloat()
-        val first = 45 * density
-        val step = minOf(56 * density, (width - first) / Action.MAX_PINNED)
-        val out = ArrayList<Item>()
-        out += Item(RectF(0f, 0f, first, h), texts[R.string.menu_title], "android.widget.Button", fixed = true, tag = All)
-        actions.forEachIndexed { i, a ->
-            val l = first + i * step
-            out += Item(RectF(l, 0f, l + step, h), texts[a.label], "android.widget.Button",
-                fixed = true, checked = if (a == Action.INCOGNITO) a in on else null, tag = a)
+        val out = layout(width.toFloat(), density, actions, traditional).map { (l, r, tag) ->
+            when (tag) {
+                All -> Item(RectF(l, 0f, r, h), texts[R.string.menu_title], "android.widget.Button", fixed = true, tag = All)
+                Traditional -> Item(RectF(l, 0f, r, h), if (traditional == true) "繁體" else "简体", "android.widget.Button",
+                    fixed = true, checked = traditional, tag = Traditional)
+                else -> {
+                    val a = tag as Action
+                    Item(RectF(l, 0f, r, h), texts[a.label], "android.widget.Button",
+                        fixed = true, checked = if (a == Action.INCOGNITO) a in on else null, tag = a)
+                }
+            }
         }
         setItems(out, 0f)
     }
@@ -91,15 +127,23 @@ class ActionRow(context: Context, private val texts: Texts, private val listener
     override fun onTap(item: Item) {
         when (val tag = item.tag) {
             All -> listener.onAllActions()
+            Traditional -> listener.onTraditional(traditional != true)
             is Action -> listener.onAction(tag)
         }
     }
 
     override fun drawItem(canvas: Canvas, item: Item) {
         val r = item.rect
+        val icon = iconSize(r.width(), density)
         when (val tag = item.tag) {
-            All -> Icons.draw(canvas, Icon.MORE, r.centerX(), r.centerY(), 22 * density, Picnic.INK)
-            is Action -> Icons.draw(canvas, tag.icon, r.centerX(), r.centerY(), 22 * density, if (tag in on) Picnic.BERRY else Picnic.INK)
+            All -> Icons.draw(canvas, Icon.MORE, r.centerX(), r.centerY(), icon, Picnic.INK)
+            Traditional -> {
+                val on = traditional == true
+                glyph.textSize = glyphSize(r.width(), density)
+                glyph.color = if (on) Picnic.BERRY else Picnic.INK
+                canvas.drawText(if (on) "繁" else "简", r.centerX(), r.centerY() - (glyph.ascent() + glyph.descent()) / 2f, glyph)
+            }
+            is Action -> Icons.draw(canvas, tag.icon, r.centerX(), r.centerY(), icon, if (tag in on) Picnic.BERRY else Picnic.INK)
         }
     }
 }
