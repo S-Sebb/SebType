@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Publishes SebType <VERSION> as a GitHub release of this repo, tagged v<VERSION>: the signed arm64 release
-# APK, where Obtainium picks it up, and what CI built from the same commit (docs/install.md): the Windows setup
-# and the Linux RPMs (#421: sebtype and SebType's librime, which the Linux update installs together).
+# Publishes SebType <VERSION> as a GitHub release of this repo, tagged v<VERSION>: one installer per
+# platform (Decisions #2, #427): the signed arm64 release APK, where Obtainium picks it up, and what CI built
+# from the same commit (docs/install.md): the Windows setup and the Linux installer.
 # Run from a clean checkout of origin/main, after the PR that bumps VERSION has merged and its Windows
 # setup and Linux RPM runs have passed.
 #   android/release.sh            build, check and publish
-#   android/release.sh --dry-run  check the tag and download the setup and RPMs, then stop: no build, no release
+#   android/release.sh --dry-run  check the tag and download the PC installers, then stop: no build, no release
 set -euo pipefail
 source "$(dirname "$0")/../tools/lib.sh"
 source "$(dirname "$0")/../linux/versions.sh"
@@ -47,15 +47,14 @@ setup=$TASK_OUT/SebType-setup-$version.exe
 [[ -f $ci/sebtype-setup/SebType-setup-$version.exe ]] ||
   { echo "release: run $setup_run built $(ls "$ci/sebtype-setup"), not SebType-setup-$version.exe" >&2; exit 1; }
 mv "$ci/sebtype-setup/SebType-setup-$version.exe" "$setup"
-# The Linux set: sebtype of this VERSION and every librime package, which an update replaces together.
-rpm_run=$(ci_artifact linux-rpm.yml "Linux RPM" sebtype-rpm)
-rpms=()
-for f in "$SEBTYPE_RPM" "${LIBRIME_PACKAGES[@]/%/-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm}"; do
-  [[ -f $ci/sebtype-rpm/$f ]] || { echo "release: run $rpm_run built $(ls "$ci/sebtype-rpm"), not $f" >&2; exit 1; }
-  mv "$ci/sebtype-rpm/$f" "$TASK_OUT/$f"; rpms+=("$TASK_OUT/$f")
-done
-echo "release: $tag, version code $(git rev-list --first-parent --count HEAD), setup from run $setup_run, RPMs from run $rpm_run" >&2
-[[ -z $dry ]] || { echo "release: dry run, $setup and ${#rpms[@]} RPMs ready in $TASK_OUT; nothing built or published"; exit; }
+# The Linux installer: one self-extracting script packing sebtype and SebType's librime (#427).
+linux_run=$(ci_artifact linux-rpm.yml "Linux installer" sebtype-linux-setup)
+linux_setup=$TASK_OUT/$SEBTYPE_LINUX_SETUP
+[[ -f $ci/sebtype-linux-setup/$SEBTYPE_LINUX_SETUP ]] ||
+  { echo "release: run $linux_run built $(ls "$ci/sebtype-linux-setup"), not $SEBTYPE_LINUX_SETUP" >&2; exit 1; }
+mv "$ci/sebtype-linux-setup/$SEBTYPE_LINUX_SETUP" "$linux_setup"
+echo "release: $tag, version code $(git rev-list --first-parent --count HEAD), Windows setup from run $setup_run, Linux installer from run $linux_run" >&2
+[[ -z $dry ]] || { echo "release: dry run, $setup and $linux_setup ready in $TASK_OUT; nothing built or published"; exit; }
 
 apk=$(android/build.sh release)
 asset=$TASK_OUT/SebType-$version-arm64-v8a.apk
@@ -65,6 +64,6 @@ cp "$apk" "$asset"
 apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
 "$apksigner" verify --print-certs "$asset" | grep -q 'CN=SebType' || { echo "release: APK not signed with the SebType key" >&2; exit 1; }
 
-gh release create "$tag" "$asset" "$setup" "${rpms[@]}" --target "$head" --title "SebType $version" \
-  --notes "SebType $version: the Android app (arm64-v8a, $(du -h "$asset" | cut -f1)) the Windows setup ($(du -h "$setup" | cut -f1)), and for Fedora and Nobara $SEBTYPE_RPM with SebType's librime $LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE, which install together (pc/linux/README.md). It installs as an update over the earlier releases, 0.1.30-sebtype.<n>, from when the Android app was based on FUTO Keyboard 0.1.30 (until #262); it now contains none of FUTO's code. SebType's own code (MIT) with the components README.md lists under their licences."
+gh release create "$tag" "$asset" "$setup" "$linux_setup" --target "$head" --title "SebType $version" \
+  --notes "SebType $version: the Android app (arm64-v8a, $(du -h "$asset" | cut -f1)), the Windows setup ($(du -h "$setup" | cut -f1)), and the Linux installer for Fedora and Nobara ($SEBTYPE_LINUX_SETUP, $(du -h "$linux_setup" | cut -f1); run \`sh $SEBTYPE_LINUX_SETUP\`, see pc/linux/README.md). It installs as an update over the earlier releases, 0.1.30-sebtype.<n>, from when the Android app was based on FUTO Keyboard 0.1.30 (until #262); it now contains none of FUTO's code. SebType's own code (MIT) with the components README.md lists under their licences."
 echo "release: published $tag"

@@ -37,18 +37,20 @@ between SebType and your other keyboards with the navigation-bar keyboard icon.
 
 ## Linux
 
-For KDE Plasma on Wayland, on Fedora or Nobara. From a checkout of this repository:
+For KDE Plasma on Wayland, on Fedora or Nobara. Download `SebType-setup-<version>-linux-x86_64.sh` from
+the [latest release](https://github.com/S-Sebb/SebType/releases/latest) (no sign-in needed) and run:
 
 ```
-pc/linux/setup-ime.sh --dry-run   # show what it would change
-pc/linux/setup-ime.sh             # set it up; safe to run again
+sh SebType-setup-<version>-linux-x86_64.sh
 ```
 
-It builds and installs the `sebtype` package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's
-server), SebType's Chinese data and the SebType Configurator, and sets the session up so that SebType
-types in every app, XWayland ones included. It changes only your account's settings, asks before it
-uses sudo to install packages, and backs up every file it replaces. Log in again once it is done.
-Each step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
+It installs the `sebtype` package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's server),
+SebType's librime, SebType's Chinese data and the SebType Configurator, and sets the session up so that
+SebType types in every app, XWayland ones included. It asks once for administrator approval to install the
+packages, changes only your account's settings, and backs up every file it replaces. Log out and back in
+(or toggle Virtual Keyboard off and on in KDE System Settings) once it is done. Running a newer installer
+upgrades SebType and keeps what it learned. Installing from a checkout (`pc/linux/setup-ime.sh`), each
+step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
 
 ## Windows
 
@@ -77,14 +79,17 @@ From a clean checkout of `origin/main`:
 android/release.sh
 ```
 
-It publishes SebType `<version>` from the repo's `VERSION` file, the one version of the phone app and the
-Windows setup: a release tagged `v<version>` with the signed arm64 APK, built under the shared build lock
-(`/tmp/agent-locks/sebtype/build.lock`), and `SebType-setup-<version>.exe`, which the
-[Windows setup workflow](https://github.com/S-Sebb/SebType/actions/workflows/windows-setup.yml) built from
-the same commit. Each release bumps `VERSION` in its own PR, whose merge runs that workflow on main; the
+It publishes SebType `<version>` from the repo's `VERSION` file, the one version of the phone app, Windows
+setup and Linux installer: a release tagged `v<version>` with one installer per platform: the signed arm64
+APK, built under the shared build lock (`/tmp/agent-locks/sebtype/build.lock`), `SebType-setup-<version>.exe`
+from the [Windows setup workflow](https://github.com/S-Sebb/SebType/actions/workflows/windows-setup.yml), and
+`SebType-setup-<version>-linux-x86_64.sh` from the
+[Linux RPM workflow](https://github.com/S-Sebb/SebType/actions/workflows/linux-rpm.yml), both built from the
+same commit. Each release bumps `VERSION` in its own PR, whose merge runs those workflows on main; the
 script refuses a tag that already exists, and stops before publishing anything when that commit has no
-successful run or its `sebtype-setup` artifact has expired (**Run workflow** on `main` builds it again).
-`android/release.sh --dry-run` checks the tag and downloads the setup without building or publishing, and
+successful run or its `sebtype-setup` / `sebtype-linux-setup` artifact has expired (**Run workflow** on
+`main` builds it again).
+`android/release.sh --dry-run` checks the tag and downloads the PC installers without building or publishing, and
 `android/test/release.sh` tests the script without publishing. The APK's version code is the number of
 commits on main, so every release from main upgrades the previous one, the `0.1.30-sebtype.<n>` releases
 from when the app was based on FUTO Keyboard included. Needs JDK 21 in `~/.local/share/jdks/` (or

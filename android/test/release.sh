@@ -20,11 +20,14 @@ setup_sha=$(gh run list --workflow windows-setup.yml --branch main --status succ
 no_setup_sha=8eba6a8f90
 # A main commit (#419's) with a Windows setup run, from before linux-rpm.yml (#421).
 no_rpm_sha=45ae6594c8
-# Main's latest commit with both runs, which a release takes its setup and RPMs from.
+# Main's latest commit with both runs and the single Linux installer (#427).
 rpm_shas=$(gh run list --workflow linux-rpm.yml --branch main --status success --event push --limit 20 \
   --json headSha -q '.[].headSha')
-both_sha=$(gh run list --workflow windows-setup.yml --branch main --status success --event push --limit 20 \
-  --json headSha -q '.[].headSha' | grep -m1 -xF -f <(echo "${rpm_shas:-none}"))
+both_sha=
+while read -r sha; do
+  [[ -n $sha ]] && git cat-file -e "$sha:linux/build-installer.sh" 2>/dev/null && { both_sha=$sha; break; }
+done < <(gh run list --workflow windows-setup.yml --branch main --status success --event push --limit 20 \
+  --json headSha -q '.[].headSha' | grep -xF -f <(echo "${rpm_shas:-none}"))
 # A PR's head with a successful pull_request run, which built the PR merged into its base, not this commit.
 pr_sha=$(gh run list --workflow windows-setup.yml --event pull_request --status success --limit 1 \
   --json headSha -q '.[0].headSha // empty')
@@ -53,31 +56,27 @@ dry_run() {
     timeout 300 "$tmp/clone/android/release.sh" --dry-run > "$out/test-release-$3.log" 2>&1
 }
 
-# The version the setup run built: its commit's VERSION, or this checkout's before VERSION existed.
-version=$(git show "$setup_sha:VERSION" 2>/dev/null || cat VERSION)
-# The setup and the whole Linux set (the RPM names come from that commit's linux/versions.sh).
+# The Windows setup and the single Linux installer (#427).
 both_dry() {
-  local v f
+  local v
   v=$(git show "$both_sha:VERSION") || return 1
-  dry_run "$both_sha" "$v" dry-run && [[ -s $out/SebType-setup-$v.exe ]] || return 1
-  # shellcheck disable=SC1090  # that commit's versions.sh
-  (source <(git show "$both_sha:linux/versions.sh" | sed "s|^SEBTYPE_VERSION=.*|SEBTYPE_VERSION=$v|")
-    for f in "$SEBTYPE_RPM" "${LIBRIME_PACKAGES[@]/%/-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm}"; do
-      [[ -s $out/$f ]] || { echo "missing $f" >> "$out/test-release-dry-run.log"; exit 1; }
-      rm -f "$out/$f"
-    done)
+  dry_run "$both_sha" "$v" dry-run &&
+    [[ -s $out/SebType-setup-$v.exe && -s $out/SebType-setup-$v-linux-x86_64.sh ]] || return 1
+  rm -f "$out/SebType-setup-$v-linux-x86_64.sh"
 }
 if [[ -z $both_sha ]]; then
-  result SKIP dry-run "no main commit has both a Windows setup and a Linux RPM run yet (once #423 is on main)"
-elif both_dry; then result PASS dry-run "the setup and the RPM set from ${both_sha:0:10}'s runs"
+  result SKIP dry-run "no main commit has both a Windows setup and a Linux installer run yet (once #427 is on main)"
+elif both_dry; then result PASS dry-run "the Windows setup and Linux installer from ${both_sha:0:10}'s runs"
 else result FAIL dry-run "see $out/test-release-dry-run.log"; fi
-rm -f "$out"/SebType-setup-*.exe
+rm -f "$out"/SebType-setup-*.exe "$out"/SebType-setup-*-linux-x86_64.sh
 
-# A setup run without the RPMs: refused after the setup is found.
+# A setup run without the Linux installer: refused after the setup is found.
 # The version that commit's setup run built (it predates VERSION: sebtype.iss's default), not this checkout's.
 no_rpm_version=$(git show "$no_rpm_sha:pc/windows/setup/sebtype.iss" | sed -n 's/^ *#define Version "\(.*\)"$/\1/p')
-if ! dry_run "$no_rpm_sha" "$no_rpm_version" no-rpm && grep -q "no successful Linux RPM run" "$out/test-release-no-rpm.log"; then
-  result PASS no-rpm "refuses ${no_rpm_sha:0:10}, which has a setup run but no Linux RPM run"
+if gh release view "v$no_rpm_version" >/dev/null 2>&1; then
+  result SKIP no-rpm "v$no_rpm_version is already published, so ${no_rpm_sha:0:10} stops at the tag check"
+elif ! dry_run "$no_rpm_sha" "$no_rpm_version" no-rpm && grep -q "no successful Linux installer run" "$out/test-release-no-rpm.log"; then
+  result PASS no-rpm "refuses ${no_rpm_sha:0:10}, which has a setup run but no Linux installer run"
 else result FAIL no-rpm "see $out/test-release-no-rpm.log"; fi
 rm -f "$out"/SebType-setup-*.exe
 
@@ -87,11 +86,13 @@ if ! dry_run "$(git rev-parse HEAD)" "${published#v}" tag-exists && grep -q "rel
   result PASS tag-exists "refuses $published"
 else result FAIL tag-exists "see $out/test-release-tag-exists.log"; fi
 
-if ! dry_run "$no_setup_sha" "$version" no-setup && grep -q "no successful Windows setup run" "$out/test-release-no-setup.log"; then
+# An unpublished version so release.sh passes the tag check and reaches the CI run checks.
+unpublished=99.99.99
+if ! dry_run "$no_setup_sha" "$unpublished" no-setup && grep -q "no successful Windows setup run" "$out/test-release-no-setup.log"; then
   result PASS no-setup "refuses a commit without a setup run"
 else result FAIL no-setup "see $out/test-release-no-setup.log"; fi
 
-if ! dry_run "$pr_sha" "$version" pr-run && grep -q "no successful Windows setup run" "$out/test-release-pr-run.log"; then
+if ! dry_run "$pr_sha" "$unpublished" pr-run && grep -q "no successful Windows setup run" "$out/test-release-pr-run.log"; then
   result PASS pr-run "refuses ${pr_sha:0:10}, whose only run is a PR's"
 else result FAIL pr-run "see $out/test-release-pr-run.log"; fi
 
