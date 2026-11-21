@@ -1,5 +1,7 @@
 package dev.sebb.sebtype
 
+import dev.sebb.sebtype.core.NativeState
+
 /**
  * English's results and the keys they are for (#280). The engine works ahead of the field, and a result is
  * written where the cursor is when it comes. Once the field changed other than by the keys (the user moved
@@ -42,4 +44,47 @@ class Keys {
         reads++
         typed.clear()
     }
+}
+
+/**
+ * The text before the cursor as the engine's results so far leave it, kept on the engine thread, so an English
+ * letter typed ahead of the field gets its capital by the text it will follow (#241). Every result counts: a
+ * picked suggestion's commit left out made the next word's first letter a capital (#453).
+ */
+class EngineText {
+    private val before = StringBuilder()
+    /** What the engine has typed after the last result, in the field's composing text */
+    var preedit = ""
+        private set
+    val composing get() = preedit.isNotEmpty()
+
+    /** The field's text before what the engine has typed, as read */
+    fun read(text: String) {
+        before.setLength(0)
+        before.append(text)
+    }
+
+    /** Another field: [text] before the cursor, nothing typed */
+    fun enter(text: String) {
+        read(text)
+        preedit = ""
+    }
+
+    /** A result, as the field takes it: a word it reopened becomes what is typed, then its deletion and commit */
+    fun record(st: NativeState) {
+        if (st.recompose) drop(st.composeBefore)
+        drop(st.deleteBefore)
+        before.append(st.commit)
+        preedit = st.preedit
+    }
+
+    /** A key the engine didn't take, done in the field: [text] typed, or Delete's character (null) gone */
+    fun typed(text: String?) {
+        if (text != null) before.append(text) else drop(1)
+    }
+
+    private fun drop(n: Int) = before.setLength(maxOf(0, before.length - n))
+
+    /** The text a letter typed now follows */
+    override fun toString() = "$before$preedit"
 }

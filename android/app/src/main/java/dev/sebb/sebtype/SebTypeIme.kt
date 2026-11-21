@@ -128,17 +128,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     private var resizing = false
     /** What the last shown result was typing; keys still on the engine thread may have changed it. */
     private val composing get() = state?.preedit?.isNotEmpty() == true
-    // Whether the engine has something typed after its last call: read and written on the engine thread
-    // only, so a key decides by what the keys before it typed, shown or not.
-    private var engineComposing = false
-    private var enginePreedit = ""
-    private fun NativeState.recorded() = also {
-        engineComposing = preedit.isNotEmpty()
-        enginePreedit = preedit
-    }
-    // English: the text before the cursor as the keys sent so far leave it, on the engine thread too, so a
-    // letter typed ahead of the engine gets the field's capital by the text it will follow (#241).
-    private val engineBefore = StringBuilder()
+    // What the engine has typed after its last call, and the text before it: read and written on the engine
+    // thread only, so a key decides by what the keys before it typed, shown or not.
+    private val engineText = EngineText()
+    private val engineComposing get() = engineText.composing
+    private fun NativeState.recorded() = also { engineText.record(it) }
     // English keys posted and not yet run on the engine thread
     private val englishKeysAhead = java.util.concurrent.atomic.AtomicInteger()
     // English's options and personal words as last sent to core/ (the engine thread's)
@@ -399,9 +393,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         post({
             // No word reopened where it couldn't be placed (#280): as with a selection, the engine reopens none
             setContext(around.before, around.after, !around.reopen)
-            engineBefore.setLength(0)
-            engineBefore.append(around.before)
-            state().recorded().also { if (it.recompose) engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
+            engineText.read(around.before)
+            state().recorded()
         }) {
             // The app changed the text since, with its update still to come
             show(it)
@@ -475,21 +468,15 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             clear()
             selectLanguage(lang)
             setField(field, learning)
-            engineBefore.setLength(0)
-            before?.let {
-                setContext(it, around.after, !around.reopen)
-                engineBefore.append(it)
-            }
+            // Nothing typed in the new field: the next letter's capital reads no word left from the last one
+            engineText.enter(before.orEmpty())
+            before?.let { setContext(it, around.after, !around.reopen) }
             if (chineseBefore != null && running(CHINESE)) setContext(chineseBefore, around.after, false)
             // A new field (or 日本語 again) starts on あ (#38). Mozc starts on あ by itself; asking a stopped
             // one would load it here, ahead of the keys.
             if (lang == JAPANESE && running(JAPANESE)) setAlternate(false)
-            // Nothing typed in the new field: the next letter's capital reads no word left from the last one
-            engineComposing = false
-            enginePreedit = ""
             // The word the cursor is at, reopened: it becomes the composing text
             before?.let { state().takeIf { it.recompose }?.recorded() }
-                ?.also { engineBefore.setLength(maxOf(0, engineBefore.length - it.composeBefore)) }
         }) {
             if (it != null) show(it)
         }
@@ -555,10 +542,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             if (lang == ENGLISH && toEngine && NativeCore.idle) {
                 // All shown: the field is what the engine thread's copy should be (less the word typed).
                 val before = editor.knownBefore(SHIFT_CONTEXT).dropLast(state?.preedit?.length ?: 0)
-                NativeCore.post {
-                    engineBefore.setLength(0)
-                    engineBefore.append(before)
-                }
+                NativeCore.post { engineText.read(before) }
             }
         }
     }
@@ -620,13 +604,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             post({
                 englishKeysAhead.decrementAndGet()
                 val s = sym()
-                val st = (if (x >= 0) keyAt(s, 0, x, y) else key(s, 0)).recorded()
-                if (st.deleteBefore > 0) engineBefore.setLength(maxOf(0, engineBefore.length - st.deleteBefore))
-                engineBefore.append(st.commit)
-                if (!st.taken) {
-                    if (typed != null) engineBefore.append(typed) else if (engineBefore.isNotEmpty()) engineBefore.setLength(engineBefore.length - 1)
-                }
-                st
+                (if (x >= 0) keyAt(s, 0, x, y) else key(s, 0)).recorded().also { if (!it.taken) engineText.typed(typed) }
             }, key) {
                 // What the key does when the engine doesn't take it goes in as checked with the engine's edit
                 show(it, then = if (!it.taken) otherwise else null)
@@ -646,8 +624,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
                 val lower = text.lowercase()
                 var cased = lower
                 send({
-                    val upper = caps != 0 &&
-                        android.text.TextUtils.getCapsMode("$engineBefore$enginePreedit", engineBefore.length + enginePreedit.length, caps) != 0
+                    val after = engineText.toString()
+                    val upper = caps != 0 && android.text.TextUtils.getCapsMode(after, after.length, caps) != 0
                     cased = if (upper) lower.uppercase() else lower
                     NativeCore.charSym(cased.codePointAt(0))
                 }, lower) { editor.commit(cased) }
@@ -1201,7 +1179,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val asked = keys.ask()
         var preedit = ""
         NativeCore.post({
-            preedit = enginePreedit
+            preedit = engineText.preedit
             when (endTyping(language, engineComposing, undo)) {
                 EndTyping.NOTHING -> null
                 EndTyping.FLUSH -> flush()
