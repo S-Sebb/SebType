@@ -82,6 +82,7 @@ std::unique_ptr<Engine> SebTypeEngine::makeEngine(Lang lang) {
     ChineseModelPaths paths{model, (rimeUser / "opencc").string(), std::thread::hardware_concurrency() >= 4 ? 2 : 1};
     paths.nextWords = false;  // the box shows only while typing, as with Rime alone
     paths.fieldText = false;  // the context is what was typed since the last key the app took itself
+    paths.readings = (rimeUser / "sebtype_readings.txt").string();  // from SebType's Chinese data, as OpenCC's
     // The model's list arrives on its worker: drawn from Fcitx5's loop, in the box as it is (#495).
     return withChineseModel(std::move(rime), paths, [this] {
       instance_->eventDispatcher().schedule([this] { modelReady(); });

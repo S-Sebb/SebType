@@ -407,6 +407,19 @@ if ($Typing) {
           }
           throw "youkuaiyoouhao: 又快又好 isn't one of page 1's six (picking 6 gave '$t')"
         }
+        # #503: the model's guesses that read the letters otherwise (当, dang) come after Rime's first two pages when
+        # its first is a dictionary word, as for dan; the readings that tell them come with the Chinese data. Each of
+        # the two pages' twelve is picked in turn, and none may be 当.
+        Check 'chinese-dan-before-dang' {
+          if (-not (Test-Path "$env:APPDATA\Rime\sebtype_readings.txt")) { throw 'no sebtype_readings.txt in %APPDATA%\Rime' }
+          $got = foreach ($i in 0..11) {
+            Keys Escape 'Control_L+a' BackSpace; TypeText 'dan'; Start-Sleep 1
+            Keys (@('equal') * [math]::Floor($i / 6) + "$($i % 6 + 1)")
+            $tsf::EditText($h).Trim()
+          }
+          if ($got -contains '当') { throw "dan's first two pages hold 当: $($got -join ' ')" }
+          $got -join ' '
+        }
         Check 'chinese-shift-tap' {
           Keys 'Control_L+a' BackSpace; TypeText 'ni'; Keys Shift_L; TypeText 'ok'; Keys Shift_L; TypeText 'ranhou '
           Start-Sleep 1; $t = $tsf::EditText($h).Trim()

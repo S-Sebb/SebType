@@ -152,7 +152,7 @@ fresh_apply() {
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  menu/page_size: 6 ' "$h/.local/share/fcitx5/rime/default.custom.yaml" &&
-    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data &&
+    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt && -f $h/.local/share/fcitx5/rime/sebtype_readings.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data &&
     restarted_once "$o"
 }
 # What the running Fcitx5 loads only when it starts (the tray, the names) needs no login or Virtual Keyboard
@@ -670,7 +670,7 @@ fi
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163). 中文's
 # model (#495) puts 是的 first for shide, where Rime alone puts 使得, in the box as it shows, and with Rime's
-# corrections (#478) 又快又好 on page 1 for youkuaiyoouhao.
+# corrections (#478) 又快又好 on page 1 for youkuaiyoouhao, and dan's characters before its 当 (#503).
 # Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301); a switch back to 中文
 # ends the Shift tap's English (#489). A sync's save and
 # a deploy wait until typing is idle (#373). The pinyin shows in a row over the candidates, or in the app's text
@@ -825,6 +825,20 @@ def on_page(keys, want):  # whether want is on the first page once Rime's correc
     tap('Escape')
     return got
 check("a slip that reads as pinyin: youkuaiyoouhao gives 又快又好 on page 1", on_page('youkuaiyoouhao', '又快又好'), True)
+# #503: the model's guesses that read the letters otherwise come after Rime's first two pages, when its first is a
+# dictionary word: dan's characters before 当 (dang), in the first 20 the pages show.
+def dan_before_dang():
+    for c in 'dan': tap(c)
+    quiet(0.6)
+    got = [t for _, t in candidates[0]]
+    while len(got) < 20 and ui[-1][8]:
+        n = len(ui); call(ic, IC, 'NextPage'); wait(lambda: len(ui) > n, 1); quiet()
+        got += [t for _, t in candidates[0]]
+    tap('Escape')
+    got = got[:20]
+    late = [c for c in '但单弹蛋淡' if c not in got or ('当' in got and got.index(c) > got.index('当'))]
+    return late and (late, got)  # dan's characters missing or after 当, and the list
+check("dan's characters before 当 (a misreading of the model's)", dan_before_dang(), [])
 # #277: focus moving away mid-word types the pinyin in as its letters, without Rime's spaces between
 # syllables, and the next word starts fresh: through Fcitx5 for an app that shows the preedit itself, and
 # from SebType for one whose preedit is in Fcitx5's panel.

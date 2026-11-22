@@ -64,6 +64,8 @@ The PCs run it too (#495), without next words (`ChineseModelPaths::nextWords`): 
 Nor do they pass the field's text (`fieldText`): the model's context is what was typed, and a key the app takes
 itself with nothing composing (Backspace, an arrow, Ctrl+A) or a focus change ends it. Their hosts read the box
 through `page()`, whose next read is the turn for Rime's corrections, and `updating()` holds until those are weighed.
+The characters' readings (`readings`, which tell the model's misreadings) are `sebtype_readings.txt` in Rime's user
+folder, where setup unzips SebType's Chinese data.
 llama.cpp is built for AVX2 (`GGML_NATIVE=OFF`), and an older CPU gets Rime alone. The Fcitx5 add-on draws the
 model's list from Fcitx5's loop when `ready` comes; Windows' text service, across the server's pipe, asks again
 (`Op::Refresh`) every 16 ms while the reply says `Engine::updating()`. `chinese.gguf` ships in the RPM

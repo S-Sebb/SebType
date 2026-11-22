@@ -38,6 +38,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <optional>
@@ -130,7 +131,7 @@ struct Readings {
   std::set<std::string> syllables;
 
   explicit Readings(const std::string &path) {
-    std::ifstream in(path);
+    std::ifstream in(std::filesystem::u8path(path));  // UTF-8, as Windows' %APPDATA% may not be ASCII
     if (!in) std::fprintf(stderr, "sebtype: can't read %s\n", path.c_str());
     for (std::string line; std::getline(in, line);) {
       const size_t tab = line.find('\t');
