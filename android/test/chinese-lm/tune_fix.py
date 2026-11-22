@@ -7,8 +7,9 @@ core's weights): per set, model.dev-SET.tsv (rank, keys, target, …) and its .d
 for the model's own or -2 for a correction, log probability, text). For each set, the share of items with
 the target first and on the first page (5) without corrections and with them, ranked as chinese.cpp does:
 the model's list by its score less 0.5 · ln(1 + Rime's rank), its own and the correction at rank 4; the
-correction first when it beats the list's first by MARGIN, else last on the first page when within
-FLOOR. Only Rime's first correction counts, as in chinese.cpp. Without MARGIN and FLOOR, a sweep: each pair's slips gain and the clean sets' losses.
+correction first when it beats the list's first by MARGIN (negative: trails it by less than -MARGIN; core's
+kFixLead is -MARGIN), else last on the first page when within FLOOR. Only Rime's first correction counts, as
+in chinese.cpp. Without MARGIN and FLOOR, a sweep: each pair's slips gain and the clean sets' losses.
 """
 
 import math
@@ -118,8 +119,8 @@ def main():
         return
     print("margin floor | " + " | ".join(names))
     print("base | " + " | ".join(f"{base[n][0]:.1f}/{base[n][1]:.1f}" for n in names))
-    for margin in (-1, 0, 0.5, 1, 1.5, 2, 3, 4):
-        for floor in (-math.inf, 0, 1, 2, 3, 5):
+    for margin in (1, 0, -0.25, -0.5, -0.75, -1, -1.5, -2, -3):
+        for floor in (-math.inf, 2, 3, 4, 5):
             r = score(data, margin, floor)
             print(
                 f"{margin} {floor} | "

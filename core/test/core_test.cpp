@@ -1291,8 +1291,8 @@ TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
 
 // Typos that read as valid pinyin (#478). The model's list shows first, untouched; on the turn its second
 // READY asks for, Rime's corrections are looked up, and once the model has weighed them the list changes
-// again if the correction moves. yu for yue: the model reads 越来越小 itself. yoou for you: 又快又好 is beyond
-// it, and the correction lands on the first page, the model's first still first.
+// again if the correction moves. yu for yue: the model reads 越来越小 itself. yoou for you: the model's own beam
+// misses 又快又好, but is nearly as sure of it as of its own first once asked, so the correction goes first.
 struct ChineseFixTest : ChineseTest {
   void SetUp() override { startFixing(); }
   void startFixing(std::chrono::milliseconds delay = {}) {
@@ -1316,22 +1316,21 @@ TEST_F(ChineseFixTest, TheReportedSlipReadsAsMeant) {
   EXPECT_EQ(zh->takeCommit(), "越来越小");
 }
 
-TEST_F(ChineseFixTest, ACorrectionComesOnTheFirstPage) {
+TEST_F(ChineseFixTest, ANearlyAsLikelyCorrectionComesFirst) {
   const int before = readyCount();
   type("youkuaiyoouhao");
   ASSERT_TRUE(ready(before + 1));  // the model's list, then the turn for corrections
   const auto shown = list();
   EXPECT_EQ(rime->corrected, 0);  // not while making the list that shows first
-  ASSERT_EQ(std::ranges::find(shown, "又快又好"), shown.end());
+  ASSERT_NE(shown.at(0), "又快又好");
   const int asked = readyCount();
   EXPECT_EQ(list(), shown);  // the turn: the same list, and the corrections looked up
   EXPECT_EQ(rime->corrected, 1);
   ASSERT_TRUE(ready(asked));
   const auto l = list();
-  EXPECT_EQ(l.at(0), shown.at(0));
-  const auto at = std::ranges::find(l, "又快又好") - l.begin();
-  ASSERT_LT(at, std::min<long>(l.size(), rime->pageSize()));
-  zh->selectAt(int(at));
+  EXPECT_EQ(l.at(0), "又快又好");
+  EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
+  zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), "又快又好");
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }

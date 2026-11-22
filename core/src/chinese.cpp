@@ -20,7 +20,7 @@
 // Typos that read as valid pinyin (#478: yuelaiyuxiao, 越来越小 meant): once the model's list for the input
 // has shown, the worker asks READY again, and on that turn of the caller's thread Rime reads the input with
 // typo corrections in a session of its own (Engine::corrections). The model scores those on the worker, and
-// the list changes once more: the likeliest first when the model is clearly surer of it than of the list's
+// the list changes once more: the correction first when the model is about as sure of it as of the list's
 // first, else on the first page when nearly as sure. Keys never wait for either.
 #include <sebtype/hosts.h>
 
@@ -57,12 +57,12 @@ constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each p
 // How long the list shown waits for the model's after a change, so a key changes it once (#450): the phone's
 // rankings and next words take 14-107 ms at p95, by its cores (docs/perf/2026-11-19-chinese-model.md).
 constexpr std::chrono::milliseconds kHold{100};
-// Phrase-level correction (#478): by how much (log probability) Rime's best correction must beat the list's
-// first to go first, or may trail it and still go last on the first page. Tuned on the slip set with the clean
-// sentences as the guard (android/test/chinese-lm/tune_fix.py): the model's own beam already finds what it is
-// surer of, so a correction lands on the first page far more often than first, and weighing Rime's next
-// corrections too gained nothing. The model weighs it once typing pauses for kFixPause.
-constexpr float kFixMargin = 1, kFixFloor = 4;
+// Phrase-level correction (#478): how far (log probability) Rime's best correction may trail the list's first
+// and still go first, or go last on the first page. Tuned on the slip set with the clean sets as the guard
+// (android/test/chinese-lm/tune_fix.py): the model's own beam already finds most of what it is surer of, and
+// trailing by more than 0.75 cost the partial-pinyin sets their first places; weighing Rime's next corrections
+// too gained nothing. The model weighs it once typing pauses for kFixPause.
+constexpr float kFixLead = 0.75f, kFixFloor = 4;
 constexpr std::chrono::milliseconds kFixPause{300};
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
@@ -612,7 +612,7 @@ class Chinese final : public Engine {
   }
 
   // Puts Rime's correction into the model's list ITEMS, whose first scored FIRST: first when the model is
-  // kFixMargin surer of it, last on the first page when it is at most kFixFloor less sure. False if it
+  // at most kFixLead less sure of it, last on the first page when at most kFixFloor less sure. False if it
   // stays where it is.
   bool fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
            Converter &s2t) {
@@ -621,7 +621,7 @@ class Chinese final : public Engine {
       if (c != '\'') letters += c;
     const float lp = model.score(context, letters, {job.fix})[0] - kRankWeight * std::log1p(kOwnRank);
     size_t at;
-    if (lp > first + kFixMargin) at = 0;
+    if (lp > first - kFixLead) at = 0;
     else if (lp > first - kFixFloor) at = std::max(job.pageSize, 1) - 1;
     else return false;
     Item item = own(job.fix, job.traditional, s2t);
