@@ -1396,19 +1396,22 @@ TEST_F(ChineseFixTest, ANearlyAsLikelyCorrectionComesFirst) {
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }
 
-// Windows' text service asks again until the correction has been weighed too (#495), not only the model's list.
+// Windows' text service asks again until the correction has been weighed too (#495), not only the model's list;
+// the PCs' hosts read the box through page(), whose next read is the turn for corrections.
 TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
+  rime->words["you"] = {"有", "又", "由", "友", "油", "游", "右", "优"};  // a full page, as Rime's
   const int before = readyCount();
   type("youkuaiyoouhao");
   EXPECT_TRUE(zh->updating());
   ASSERT_TRUE(ready(before + 1));
-  ASSERT_NE(list().at(0), "又快又好");
+  ASSERT_NE(zh->page().items.at(0).text, "又快又好");
   EXPECT_TRUE(zh->updating());
   const int asked = readyCount();
-  list();  // the text service's next ask looks the corrections up
+  zh->page();  // the text service's next ask looks the corrections up
+  EXPECT_EQ(rime->corrected, 1);
   EXPECT_TRUE(zh->updating());
   ASSERT_TRUE(ready(asked));
-  EXPECT_EQ(list().at(0), "又快又好");
+  EXPECT_EQ(zh->page().items.at(0).text, "又快又好");
   EXPECT_FALSE(zh->updating());
 }
 

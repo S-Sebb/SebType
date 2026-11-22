@@ -275,7 +275,9 @@ class Chinese final : public Engine {
   int pageSize() override { return rime_->pageSize(); }
   bool candidateAt(int index, Candidate &out) override {
     if (index < 0) return false;
-    if (static_cast<int>(shown_.size()) <= index || shownRev_ != rev_ || shownResult_ != results_)
+    // The turn for Rime's corrections (#478) is a list made again: the PCs' hosts read the box only through here.
+    if (static_cast<int>(shown_.size()) <= index || shownRev_ != rev_ || shownResult_ != results_ ||
+        (fixDue_ == rev_ && fixAsked_ != rev_))
       list(index + 1 + std::max(rime_->pageSize(), 1));
     if (index >= static_cast<int>(shown_.size())) return false;
     out = shown_[index].candidate;
