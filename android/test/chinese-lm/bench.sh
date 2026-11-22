@@ -8,8 +8,8 @@
 #                                    NAME=VALUE: zhbench's options; after --, those a third stack ("gen", the
 #                                    model with its own candidates) adds to them. CHINESE_CORE=1 adds the
 #                                    keyboard's own code ("core", zhbench's core=1), with the model.
-#   android/test/chinese-lm/bench.sh --dev DEV_DIR OUT_DIR MODEL.gguf [NAME=VALUE...]  only the model, on the
-#                                                                    dev sets in DEV_DIR (tune.py)
+#   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh --dev DEV_DIR OUT_DIR MODEL.gguf [NAME=VALUE...]  only
+#                                    the model (and the keyboard's own code), on the dev sets in DEV_DIR (tune.py)
 #
 # Writes each stack's results per set and score.py's summary to ~/scratch/SebType/<issue>/chinese/RUN_NAME/
 # and prints the results' paths, the summary's last.
@@ -72,7 +72,7 @@ stacks=(rime)
 [[ $model ]] && stacks+=(model)
 ((${#gen[@]})) && stacks+=(gen)
 [[ $model && ${CHINESE_CORE:-} ]] && stacks+=(core)
-[[ $dev ]] && stacks=(model)
+[[ $dev ]] && stacks=(model ${CHINESE_CORE:+core})
 jobs=()
 for stack in "${stacks[@]}"; do
   for set in "${sets[@]}"; do

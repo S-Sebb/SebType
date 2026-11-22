@@ -74,6 +74,7 @@ struct ChineseModelPaths {
   // The Chinese harness (android/test/chinese-lm): each change returns once the model's list for it has
   // come, so a key's time is Rime's and the model's.
   bool synchronous = false;
+  std::string readings;  // rime-data's sebtype_readings.txt: each character's pinyin, "字<TAB>reading" lines
 };
 // READY runs on the worker when the model's list for what is typed (or the next words) has come: the
 // frontend posts it to its own thread and reads candidates() there, as for English.

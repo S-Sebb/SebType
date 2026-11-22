@@ -222,13 +222,15 @@ void setEnglishPaths(JNIEnv *env, jclass, jstring dictionary, jlong offset, jlon
   core->stop(Lang::English);
 }
 
-// 中文's model and OpenCC's folder (for 繁); a change restarts 中文. Until this is called Rime runs alone.
-void setChineseModel(JNIEnv *env, jclass, jstring model, jstring opencc) {
+// 中文's model, OpenCC's folder (for 繁) and the characters' readings; a change restarts 中文. Until this is
+// called Rime runs alone.
+void setChineseModel(JNIEnv *env, jclass, jstring model, jstring opencc, jstring readings) {
   std::lock_guard g(lock);
-  const std::string m = str(env, model), o = str(env, opencc);
-  if (m == chineseModel.model && o == chineseModel.opencc) return;
+  const std::string m = str(env, model), o = str(env, opencc), r = str(env, readings);
+  if (m == chineseModel.model && o == chineseModel.opencc && r == chineseModel.readings) return;
   chineseModel.model = m;
   chineseModel.opencc = o;
+  chineseModel.readings = r;
   // 2 threads: on the A001 (#264) they took 中's ranking from 16 / 26 ms per key (p50 / p95) with 4 to 9 / 15 ms.
   // 4 left no big core for the keyboard's own threads, which the model's then waited for at every step.
   chineseModel.threads = std::thread::hardware_concurrency() > 1 ? 2 : 1;
@@ -463,7 +465,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"setMozcData", "(Ljava/lang/String;Ljava/lang/String;JJ)V", reinterpret_cast<void *>(setMozcData)},
       {"setEnglishPaths", "(Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;)V",
        reinterpret_cast<void *>(setEnglishPaths)},
-      {"setChineseModel", "(Ljava/lang/String;Ljava/lang/String;)V", reinterpret_cast<void *>(setChineseModel)},
+      {"setChineseModel", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", reinterpret_cast<void *>(setChineseModel)},
       {"setSettings", "(Ljava/lang/String;)V", reinterpret_cast<void *>(setSettings)},
       {"setEnglishOptions", "(ZZ[Ljava/lang/String;[I[Ljava/lang/String;)V", reinterpret_cast<void *>(setEnglishOptions)},
       {"settings", "()Ljava/lang/String;", reinterpret_cast<void *>(settings)},

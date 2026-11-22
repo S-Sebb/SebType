@@ -12,6 +12,12 @@
 // What the model reads: the field's text before the composition and Rime's input, while no part of it is
 // chosen (after a partial pick Rime alone lists the rest). It scores Rime's candidates that cover the whole
 // input, by their characters against Rime's syllables, and leaves the others in Rime's order after its own.
+// The model's own candidates that read the letters otherwise than Rime does (n as ng, a whole syllable as one
+// cut short: 当 for dan, #503) go after Rime's first two pages' candidates for the whole input when Rime's
+// first is a dictionary word for all of it (但 for dan): the model was trained to accept those slips, which
+// fuzzy pinyin off rules out ahead of a word typed as it is. Behind a sentence Rime pieced together (其则么早
+// for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
+// characters' readings in rime-data's sebtype_readings.txt (8105's).
 // Picking one of Rime's candidates selects it in Rime by its own index; picking one of the model's teaches
 // Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand.
 // 繁: Rime converts its own candidates (rime-ice's traditionalization); the model reads simplified text, so
@@ -32,9 +38,12 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <fstream>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 
 #include "trace.h"
@@ -96,6 +105,59 @@ size_t syllables(const std::string &preedit) {
   }
   return n;
 }
+
+// Rime's preedit's syllables: "ni hao ma" → ni, hao, ma; "xi'an" → xi, an; ü as v, as the readings spell it.
+std::vector<std::string> syllableList(const std::string &preedit) {
+  std::vector<std::string> out;
+  std::string cur;
+  for (size_t i = 0; i <= preedit.size(); i++) {
+    if (i < preedit.size() && preedit.compare(i, 2, "ü") == 0) {
+      cur += 'v', i++;
+    } else if (i < preedit.size() && preedit[i] >= 'a' && preedit[i] <= 'z') {
+      cur += preedit[i];
+    } else if (!cur.empty()) {
+      out.push_back(std::move(cur));
+      cur.clear();
+    }
+  }
+  return out;
+}
+
+// Each Han character's pinyin readings, from rime-data's sebtype_readings.txt ("字<TAB>reading" lines), and
+// every syllable among them.
+struct Readings {
+  std::unordered_map<char32_t, std::vector<std::string>> of;
+  std::set<std::string> syllables;
+
+  explicit Readings(const std::string &path) {
+    std::ifstream in(path);
+    if (!in) std::fprintf(stderr, "sebtype: can't read %s\n", path.c_str());
+    for (std::string line; std::getline(in, line);) {
+      const size_t tab = line.find('\t');
+      if (tab == std::string::npos) continue;
+      const auto cps = codePoints(line.substr(0, tab));
+      if (cps.size() != 1) continue;
+      const std::string r = line.substr(tab + 1);
+      of[cps[0]].push_back(r);
+      syllables.insert(r);
+    }
+  }
+
+  // Whether TEXT reads as SYLLABLES as Rime reads them: a character per syllable, each with that syllable
+  // among its readings, or one starting with it where the syllable is no whole one (an initial, "zho").
+  bool spell(const std::string &text, const std::vector<std::string> &syl) const {
+    const auto cps = codePoints(text);
+    if (cps.size() != syl.size()) return false;
+    for (size_t i = 0; i < cps.size(); i++) {
+      const auto it = of.find(cps[i]);
+      if (it == of.end()) return false;
+      const bool whole = syllables.count(syl[i]) > 0;
+      if (std::ranges::none_of(it->second, [&](const std::string &r) { return whole ? r == syl[i] : r.starts_with(syl[i]); }))
+        return false;
+    }
+    return true;
+  }
+};
 
 // A candidate the model can score: Han characters only, one per syllable of the whole input. Partial ones
 // (你好 for nihaoma), Rime's English words, emoji and the clock aren't.
@@ -304,6 +366,7 @@ class Chinese final : public Engine {
     Candidate candidate;
     int rime = -1;           // Rime's index; -1: the model's own
     std::string simplified;  // the model's own: its text as the model wrote it
+    bool misread = false;    // the model's own, reading the letters otherwise than Rime (#503)
   };
   // What the worker is asked for: the model's list for Rime's input (empty: next words) after CONTEXT.
   struct Job {
@@ -316,6 +379,8 @@ class Chinese final : public Engine {
     bool fixable = false;           // Rime can correct the input (#478)
     std::string fix;                // Rime's best correction of the input, for the list made already (#478)
     int pageSize = 0;
+    std::vector<std::string> syllables;  // Rime's, for the input
+    bool word = false;                   // Rime's first is a dictionary word for all of it (#503)
   };
 
   // Keys Rime takes as "commit the first candidate, then this": printable ASCII but letters, digits, the
@@ -342,13 +407,35 @@ class Chinese final : public Engine {
       // list once, not to Rime's and then to the model's (#450).
       else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold) return;
     }
-    const auto rime = rime_->candidates(max);
-    if (model) items = std::move(*model);
+    // Two of Rime's pages (10): about what the phone's bar and its expanded view's first row show, so the
+    // common characters of what was typed come first (淡 is Rime's 6th for dan).
+    const int misreadAfter = 2 * rime_->pageSize();
+    const auto rime = rime_->candidates(std::max(max, misreadAfter));
+    std::vector<Item> misread;
+    // The model's misreadings (but those Rime lists too: fuzzy pinyin on) come after the last of Rime's first
+    // two pages that spells the whole input.
+    if (model)
+      for (auto &it : *model)
+        (it.misread && std::ranges::find(rime, it.candidate.text, &Candidate::text) == rime.end() ? misread : items)
+            .push_back(std::move(it));
+    int after = -1;
+    if (!misread.empty()) {
+      const size_t n = syllables(rime_->preedit().text());
+      for (int i = 0; i < int(rime.size()) && i < misreadAfter; i++)
+        if (wholeInput(rime[i].text, n)) after = i;
+    }
+    const auto addMisread = [&] {
+      for (auto &m : misread) items.push_back(std::move(m));
+      misread.clear();
+    };
+    if (after < 0) addMisread();
     for (size_t i = 0; i < rime.size(); i++) {
-      if (std::ranges::any_of(items, [&](const Item &it) { return it.rime == int(i); })) continue;
-      auto same = std::ranges::find_if(items, [&](const Item &it) { return it.rime < 0 && it.candidate.text == rime[i].text; });
-      if (same != items.end()) same->rime = int(i), same->candidate.comment = rime[i].comment;
-      else items.push_back({rime[i], int(i), {}});
+      if (std::ranges::none_of(items, [&](const Item &it) { return it.rime == int(i); })) {
+        auto same = std::ranges::find_if(items, [&](const Item &it) { return it.rime < 0 && it.candidate.text == rime[i].text; });
+        if (same != items.end()) same->rime = int(i), same->candidate.comment = rime[i].comment;
+        else items.push_back({rime[i], int(i), {}});
+      }
+      if (int(i) == after) addMisread();
     }
     shown_ = std::move(items);
     shownRev_ = rev_;
@@ -473,10 +560,12 @@ class Chinese final : public Engine {
           !std::ranges::all_of(job.input, [](char c) { return (c >= 'a' && c <= 'z') || c == '\''; }))
         return want(std::nullopt);
       const size_t n = syllables(p.text());
+      job.syllables = syllableList(p.text());
       const auto rime = rime_->candidates(kScored);
       for (size_t i = 0; i < rime.size(); i++)
         if (wholeInput(rime[i].text, n)) job.rime.push_back(rime[i].text), job.rimeIndex.push_back(int(i));
       job.learned = !rime.empty() && rime[0].learned;
+      job.word = !rime.empty() && !rime[0].sentence && wholeInput(rime[0].text, n);
       job.fixable = rime_->corrects();
     } else if (!text || (!context_.empty() && context_.back() == '\n')) {
       return want(std::nullopt);
@@ -500,6 +589,7 @@ class Chinese final : public Engine {
   void work() {
     std::unique_ptr<zh_lm::Model> model;
     Converter s2t(paths_.opencc + "/s2t.json"), t2s(paths_.opencc + "/t2s.json");
+    const Readings readings(paths_.readings);
     {
       TraceSection section("SebType zh load");
       try {
@@ -546,7 +636,7 @@ class Chinese final : public Engine {
           for (const auto &w : model->nextWords(context, kNextWords)) items.push_back(own(w.text, job.traditional, s2t));
         } else {
           TraceSection section("SebType zh rank");
-          items = rank(*model, job, context, t2s, s2t, first);
+          items = rank(*model, readings, job, context, t2s, s2t, first);
         }
       } catch (const std::exception &e) {
         std::fprintf(stderr, "sebtype: %s\n", e.what());
@@ -576,8 +666,8 @@ class Chinese final : public Engine {
   }
 
   // Rime's scored candidates and the model's own, best first, by the experiment's rule.
-  std::vector<Item> rank(zh_lm::Model &model, const Job &job, const std::string &context, Converter &t2s, Converter &s2t,
-                         std::optional<float> &first) {
+  std::vector<Item> rank(zh_lm::Model &model, const Readings &readings, const Job &job, const std::string &context,
+                         Converter &t2s, Converter &s2t, std::optional<float> &first) {
     std::string letters;
     for (char c : job.input)
       if (c != '\'') letters += c;
@@ -597,6 +687,7 @@ class Chinese final : public Engine {
     for (const auto &g : generated) {
       if (std::ranges::any_of(items, [&](const Item &it) { return it.simplified == g.text; })) continue;
       items.push_back(own(g.text, job.traditional, s2t));
+      items.back().misread = job.word && !readings.spell(g.text, job.syllables);
       score.push_back(g.logProb - ownPenalty);
     }
     // A word the user taught Rime, which its user dictionary puts first, stays first: the model can't see
@@ -607,6 +698,8 @@ class Chinese final : public Engine {
     std::vector<size_t> order(items.size());
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return score[a] > score[b]; });
+    // Misreadings last, as list() shows them: the first is the one shown first.
+    std::ranges::stable_partition(order, [&](size_t i) { return !items[i].misread; });
     std::vector<Item> out;
     for (size_t i : order) out.push_back(std::move(items[i]));
     if (!order.empty()) first = score[order[0]];
@@ -630,6 +723,7 @@ class Chinese final : public Engine {
     if (const auto same = std::ranges::find(items, job.fix, &Item::simplified); same != items.end()) {
       if (size_t(same - items.begin()) <= at) return false;  // as high already
       item = std::move(*same);
+      item.misread = false;  // Rime's reading
       items.erase(same);
     }
     items.insert(items.begin() + std::min(at, items.size()), std::move(item));

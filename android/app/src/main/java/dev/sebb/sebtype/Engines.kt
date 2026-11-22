@@ -129,13 +129,14 @@ object Engines {
     /**
      * 中文's model (#264) loads with Rime and stops with it. It is copied on 中文's own thread, ahead of the
      * setup's start of Rime, so a first start doesn't restart Rime; until it is there Rime runs alone. 繁 reads
-     * OpenCC's tables in the installed Chinese data.
+     * OpenCC's tables in the installed Chinese data, and the model the characters' readings there (#503).
      */
     private fun prepareChineseModel(app: Context) {
         val model = File(app.noBackupFilesDir, CHINESE_MODEL).path
         val opencc = File(sharedDir(app), "opencc").path
-        if (copyModel(app, CHINESE_MODEL, worker) { NativeCore.setChineseModel(model, opencc) })
-            NativeCore.setChineseModel(model, opencc)
+        val readings = File(sharedDir(app), "sebtype_readings.txt").path
+        if (copyModel(app, CHINESE_MODEL, worker) { NativeCore.setChineseModel(model, opencc, readings) })
+            NativeCore.setChineseModel(model, opencc, readings)
     }
 
     /** Saves the words English learned (AOSP's user history, in its files) */
