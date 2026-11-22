@@ -1173,6 +1173,143 @@ def gboard_size():
     return summary
 
 
+NAV_OVERLAYS = {
+    "3-button": "com.android.internal.systemui.navbar.threebutton",
+    "gesture": "com.android.internal.systemui.navbar.gestural",
+}
+
+
+def nav_bar():
+    """The navigation bar's frame (left, top, right, bottom) as the system lays it out now, or None."""
+    frames = [
+        tuple(map(int, m.groups()))
+        for m in re.finditer(
+            r"type=navigationBars frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\] visible=true",
+            adb("shell", "dumpsys", "window"),
+        )
+    ]
+    return max(frames, key=lambda f: (f[2] - f[0]) * (f[3] - f[1]), default=None)
+
+
+def keys_clear_of_nav_bar(step):
+    """The keys, their bottom row included, don't reach into the navigation bar; '' or what overlaps."""
+    wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+    time.sleep(1)  # the window's show animation and any later inset change settle
+    nodes()
+    l, t, r, b = keyboard_frame
+    bar = nav_bar()
+    if bar and l < bar[2] and bar[0] < r and t < bar[3] and bar[1] < b:
+        screenshot(f"nav-bar-{step.replace(' ', '-')}")
+        return f"{step}: keys {keyboard_frame} reach into the navigation bar {bar}"
+    return ""
+
+
+def nav_bar_clear():
+    """The keyboard sits above the navigation bar (#472) with 3-button and gesture navigation: when it
+    first shows, after a turn to landscape and back, after switching apps and back, when it is hidden
+    and shown again and in a full-screen app, five times over (it went under the bar only now and then)."""
+    overlays = adb("shell", "cmd", "overlay", "list")
+    before = next(
+        (
+            o
+            for o in NAV_OVERLAYS.values()
+            if re.search(rf"\[x\] {re.escape(o)}$", overlays, re.MULTILINE)
+        ),
+        None,
+    )
+    if not before:
+        raise Skip(
+            "neither 3-button nor gesture navigation is on, which this can't put back"
+        )
+    rotation = {
+        k: adb("shell", "settings", "get", "system", k).strip()
+        for k in ("user_rotation", "accelerometer_rotation")
+    }
+
+    def turn(quarter):
+        adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+        adb("shell", "settings", "put", "system", "user_rotation", str(quarter))
+        time.sleep(3)
+
+    def field_again():
+        adb("shell", "am", "start", "-n", FIELD)
+        time.sleep(1)
+        if not keys(nodes()):
+            tap(
+                *next(
+                    (x, y)
+                    for _, x, y, _, cls in nodes()
+                    if cls == "android.widget.EditText"
+                )
+            )
+
+    steps = (
+        ("first show", lambda: None),
+        ("landscape", lambda: turn(1)),
+        ("portrait again", lambda: turn(0)),
+        (
+            "other app and back",
+            lambda: (
+                adb("shell", "input", "keyevent", "KEYCODE_HOME"),
+                time.sleep(2),
+                field_again(),
+            ),
+        ),
+        (
+            "hidden and shown",
+            lambda: (
+                adb("shell", "input", "keyevent", "KEYCODE_BACK"),
+                time.sleep(1),
+                field_again(),
+            ),
+        ),
+    )
+    problems = []
+
+    def look(step):
+        problem = keys_clear_of_nav_bar(step)
+        if problem:
+            problems.append(problem)
+
+    looked = 0
+    try:
+        for mode, overlay in NAV_OVERLAYS.items():
+            adb("shell", "cmd", "overlay", "enable-exclusive", "--category", overlay)
+            time.sleep(3)
+            open_field()
+            for round_ in range(5):
+                for step, act in steps[bool(round_) :]:  # the first show once
+                    act()
+                    looked += 1
+                    look(f"{mode} {step} {round_ + 1}")
+            # Last, an app in full screen: its navigation bar hidden until the keyboard comes up
+            adb(
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-f",
+                "0x10008000",
+                "-n",
+                FIELD,
+                "--ez",
+                "nobars",
+                "true",
+            )
+            looked += 1
+            look(f"{mode} full-screen app")
+    finally:
+        adb("shell", "cmd", "overlay", "enable-exclusive", "--category", before)
+        for k, v in rotation.items():
+            if v == "null":
+                adb("shell", "settings", "delete", "system", k)
+            else:
+                adb("shell", "settings", "put", "system", k, v)
+    if problems:
+        raise Fail(f"{len(problems)} of {looked}: " + "; ".join(problems[:4]))
+    return f"the keys clear of the navigation bar in all {looked} looks, 3-button and gesture"
+
+
 # --- Incognito (#31): the action bar button, its badge, and what is learned and copied meanwhile ---
 
 INCOGNITO = labels("无痕模式", "Incognito", "シークレットモード")
@@ -2307,6 +2444,7 @@ check("settings-no-theme-choice", no_theme_choice)
 check("settings-dark-mode-picnic", dark_mode_picnic)
 check("settings-picnic-look", picnic_look)
 check("settings-picnic-size", gboard_size)
+check("settings-nav-bar", nav_bar_clear)
 check("settings-smooth-scrolling", smooth_scrolling)
 
 

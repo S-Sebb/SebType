@@ -22,6 +22,8 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
 import android.view.inputmethod.InputContentInfo;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.EditText;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -103,6 +105,12 @@ public class PerfField extends Activity {
                 ? WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 : WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
         getWindow().setSoftInputMode(keyboard | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        // "nobars": an app in full screen, its navigation bar hidden until swiped in (#472)
+        if (getIntent().getBooleanExtra("nobars", false)) {
+            getWindow().getInsetsController().setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            getWindow().getInsetsController().hide(WindowInsets.Type.navigationBars());
+        }
     }
 
     /** A field that takes a pasted PNG or JPEG, and shows its type and size instead. */
