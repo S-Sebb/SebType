@@ -658,8 +658,11 @@ void TextService::refresh() {
   q.lang = lang_;
   Reply r;
   const DWORD until = refreshUntil_;
-  if (settling_ || !context_ || static_cast<LONG>(GetTickCount() - until) >= 0 || !server.call(q, r) || !r.refreshed)
-    return stopRefreshing();
+  if (settling_ || !context_ || static_cast<LONG>(GetTickCount() - until) >= 0) return stopRefreshing();
+  // A key's edit runs when the app lets it (TF_ES_ASYNCDONTCARE) and takes its commit from reply_ then: until it
+  // has, this tick waits, as replacing reply_ would drop the commit.
+  if (!reply_.commit.empty()) return;
+  if (!server.call(q, r) || !r.refreshed) return stopRefreshing();
   reply_ = std::move(r);
   apply(context_);
   refreshUntil_ = until;  // two seconds from the key, not from each ask
