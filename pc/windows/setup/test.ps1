@@ -388,6 +388,15 @@ if ($Typing) {
           if ($t -ne '然后') { throw "ranhou + Space gave '$t'" }
           $t
         }
+        # #495: 中文's model puts 是的 first for shide, where Rime alone puts 使得. Its list comes after the keys, and the
+        # text service shows it in the box before Space picks it; server.log says whether the model runs.
+        Check 'chinese-model' {
+          Keys 'Control_L+a' BackSpace; TypeText 'shide'; Start-Sleep 1; Keys space; Start-Sleep 1
+          $t = $tsf::EditText($h).Trim()
+          $log = Get-Content "$env:TEMP\rime.sebtype\server.log" -Encoding utf8 -ErrorAction SilentlyContinue | Select-String '中文: ' | Select-Object -Last 1
+          if ($t -ne '是的') { throw "shide, a second, then Space gave '$t' (Rime alone: 使得); server.log: '$log'" }
+          "$t, $($log -replace '^.*中文: ')"
+        }
         Check 'chinese-shift-tap' {
           Keys 'Control_L+a' BackSpace; TypeText 'ni'; Keys Shift_L; TypeText 'ok'; Keys Shift_L; TypeText 'ranhou '
           Start-Sleep 1; $t = $tsf::EditText($h).Trim()
