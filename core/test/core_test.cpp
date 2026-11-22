@@ -1322,7 +1322,8 @@ TEST_F(ChineseTest, FlushCommitsWhatAPartialCandidateLeaves) {
 }
 
 // Rime's user dictionary puts a word picked before first (沃门 here, learned): it stays ahead of the model's
-// favourite of Rime's, 我们. Rime's first that the user never picked is ranked like Rime's others (#369).
+// favourite of Rime's, 我们, and of the model's own candidates (握挨泥 over 我爱你, #482: a phrase taught once
+// comes first). Rime's first that the user never picked is ranked like Rime's others (#369).
 TEST_F(ChineseTest, OnlyALearnedRimeFirstStaysAhead) {
   const auto women = [](FakeRime &r) { r.words["women"] = {"沃门", "我们"}, r.words["men"] = {"们"}; };
   start({}, [&](FakeRime &r) { women(r), r.userWords = {"沃门"}; });
@@ -1338,6 +1339,13 @@ TEST_F(ChineseTest, OnlyALearnedRimeFirstStaysAhead) {
   ASSERT_GE(l.size(), 2u);
   EXPECT_EQ(l[0], "我们");
   EXPECT_NE(std::ranges::find(l, "沃门"), l.end());
+
+  start({}, [](FakeRime &r) { r.userWords = {"握挨泥"}; });
+  typeAndWait("woaini");
+  l = list();
+  ASSERT_GE(l.size(), 2u);
+  EXPECT_EQ(l[0], "握挨泥");
+  EXPECT_NE(std::ranges::find(l, "我爱你"), l.end());
 }
 
 TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
