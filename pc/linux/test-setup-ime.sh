@@ -413,7 +413,7 @@ chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 
 # first or last page changes nothing, and nothing ends what is being typed.
 def shown():  # the page's words, whether it has a page before and after it, and whether a word is typed
     u = ui[-1]
-    return tuple(t for _, t in u[4]), u[7], u[8], bool(typing())
+    return tuple(t for _, t in u[4]), u[7], u[8], bool(preedit[0])
 def wheel(down):
     n = len(ui)
     call(ic, IC, 'NextPage' if down else 'PrevPage')
