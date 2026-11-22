@@ -32,6 +32,7 @@ log_path = os.path.join(logdir, "update-adb.log")
 
 ABOUT = ("About", "关于", "情報")
 DONE = ("Done", "完成", "完了")
+NOT_NOW = ("Not now", "暂不设置", "あとで")  # setup's sync step
 CHECK = ("Check for updates", "检查更新", "アップデートを確認")
 AUTO = ("Check for updates automatically", "自动检查更新", "アップデートを自動で確認")
 AVAILABLE = tuple(
@@ -244,8 +245,10 @@ def open_home():
         ns = nodes()
         if find(ABOUT, ns):
             return True
-        if find(DONE, ns):  # a fresh install opens on setup until its last step's Done
-            tap_text(DONE)
+        # A fresh install opens on setup: past its sync step, to its last step's Done
+        for step in (NOT_NOW, DONE):
+            if find(step, ns):
+                tap_text(step)
         return False
 
     wait_for("the settings' home screen", home, 60)
@@ -317,6 +320,8 @@ def daily_notification():
         ),
         60,
     )
+    time.sleep(1)  # the status bar's icon, for the eye (#473)
+    screenshot("status-bar")
     adb("shell", "cmd", "statusbar", "expand-notifications")
     wait_for("the notification in the shade", lambda: shown(AVAILABLE), 10)
     screenshot("notification")
