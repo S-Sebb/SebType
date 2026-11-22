@@ -700,7 +700,11 @@ namespace SebTypeSetupTest {
     $win::Shot($p.MainWindowHandle, "$out\73-configurator-langs-$what.png")
     if ($l -notlike "en-US[[]0409:00000409[]]*" -or $l -notlike "* ja[[]$JaTip[]]*" -or $l -like "*$ZhTip*") { throw "input methods $l after English and 日本語 only" }
     $zh = if ($l -like '*zh-Hans-CN*') { 'on' } else { 'off' }
-    if ($shown -ne "English=on 中文=$zh 日本語=on") { throw "the Configurator shows $shown for $l" }
+    if ($shown -ne "English=on 中文=$zh 日本語=on") {
+      # What the Configurator's own read of the list (windows.rs language_list) gives here, as bytes.
+      $o = & powershell.exe -NoProfile -NonInteractive -Command "`$env:PSModulePath = [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine'); [Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-WinUserLanguageList | ForEach-Object { `$_.LanguageTag + '|' + (`$_.InputMethodTips -join ',') }" 2>&1
+      throw "the Configurator shows $shown for $l; its PowerShell read gives (exit $LASTEXITCODE): $(($o | ForEach-Object { "$_" }) -join ' / ')"
+    }
     "$l; the Configurator: $shown"
   }
   function Wizard-Shot($name) { $h = Wizard-Handle; Start-Sleep 1; $win::Shot($h, "$out\73-$name.png"); $h }
