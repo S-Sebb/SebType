@@ -5,6 +5,8 @@
 # PCs' keyboard setting, and checks each against the floor measured when #478 (words: #482) was fixed, so
 # that slips keep landing, common words keep their usual spelling and correctly typed input doesn't get
 # worse or slower.
+# Also sets/split.tsv (#485): inputs that split two ways (jiangeshen: jian ge shen or jiang e shen), whose
+# split shown in the preedit must have its first syllable's commonest character on the first two pages.
 #   data/rime/bench/slips.sh     one line per check; ranks in ~/scratch/SebType/<issue>/slips/
 # Needs gcc, librime and librime-lua 1.16.1 with SebType's librime-octagram (Fedora, as on nobara-pc).
 # About a minute.
@@ -35,15 +37,16 @@ head -1 "$here/sets/slips.tsv" > "$work/prime.tsv"
 bench "$work/prime.tsv" > /dev/null 2>&1
 
 failed=0
-check() { # set top1_floor page1_floor [p95_ceiling_us]
-  local set=$1 r
+check() { # set top1_floor page1_floor [p95_ceiling_us]; with DEPTH=n, among the first n instead of page 1
+  local set=$1 r first="page 1"
+  [[ -n ${DEPTH-} ]] && first="first $DEPTH"
   if ! bench "$here/sets/$set.tsv" > "$out/$set.tsv" 2> "$out/$set.log"; then
     echo "FAIL $set: rimebench failed, see $out/$set.log"; failed=1; return
   fi
   r=$(awk -F'\t' '{n++; a += $1 == 0; b += $1 >= 0} END {printf "%.1f %.1f", 100 * a / n, 100 * b / n}' "$out/$set.tsv")
   read -r top1 page1 <<< "$r"
   p95=$(sed -n 's/.*key_p95_us=\([0-9]*\).*/\1/p' "$out/$set.log")
-  local line="$set: top-1 $top1 % (floor $2), page 1 $page1 % (floor $3), key p95 $((p95 / 1000)).$((p95 % 1000 / 100)) ms${4:+ (ceiling $(($4 / 1000)) ms)}"
+  local line="$set: top-1 $top1 % (floor $2), $first $page1 % (floor $3), key p95 $((p95 / 1000)).$((p95 % 1000 / 100)) ms${4:+ (ceiling $(($4 / 1000)) ms)}"
   if awk -v a="$top1" -v b="$page1" -v x="$2" -v y="$3" -v t="$p95" -v c="${4:-0}" \
     'BEGIN { exit !(a >= x && b >= y && (c == 0 || t <= c)) }'; then echo "PASS $line"; else echo "FAIL $line"; failed=1; fi
 }
@@ -58,6 +61,7 @@ check news-partial 53.6 82.1
 check words 86.3 97.8
 reported=$(paste "$out/words.tsv" <(cut -f3 "$here/sets/words.tsv") | awk -F'\t' '$5 == "reported" && $1 != 0 {print $2 " -> " $4}')
 [[ -z $reported ]] && echo "PASS words: the reported words come first" || { echo "FAIL words: not first: $reported"; failed=1; }
+DEPTH=10 check split 0 100  # the first two pages of 5; before #485, 33.7 %
 # What each kind of slip got, for the PR.
 paste <(cut -f3 "$here/sets/slips.tsv") "$out/slips.tsv" | awk -F'\t' '{n[$1]++; t[$1] += $2 == 0; p[$1] += $2 >= 0}
   END {for (k in n) printf "  %s: %d of %d first, %d on page 1\n", k, t[k], n[k], p[k]}' | sort
