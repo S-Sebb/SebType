@@ -1289,36 +1289,52 @@ TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
   EXPECT_TRUE((zh->takeCommit() + zh->preedit().text()).starts_with(shown[i])) << shown[i];
 }
 
-// A typo that reads as valid pinyin (#478): yu for yue. The model's list shows first, untouched; on the turn
-// its second READY asks for, Rime's corrections are looked up, and once the model has weighed them the list
-// changes again, the correction first.
+// Typos that read as valid pinyin (#478). The model's list shows first, untouched; on the turn its second
+// READY asks for, Rime's corrections are looked up, and once the model has weighed them the list changes
+// again. yu for yue: the model reads 越来越小 itself. su for suo: 理所当然 is beyond it, and the correction
+// lands on the first page, the model's first still first.
 struct ChineseFixTest : ChineseTest {
   void SetUp() override { startFixing(); }
   void startFixing(std::chrono::milliseconds delay = {}) {
     start(delay, [](FakeRime &r) {
-      r.words.insert({{"yue", {"越"}}, {"lai", {"来"}}, {"yu", {"鱼"}}, {"xiao", {"小"}}});
+      r.words.insert({{"yue", {"越"}}, {"lai", {"来"}}, {"yu", {"鱼"}}, {"xiao", {"小"}}, {"li", {"李"}},
+                      {"su", {"素"}}, {"dang", {"当"}}, {"ran", {"然"}}});
       r.full["yuelaiyuxiao"] = "越来鱼小";
       r.fixes["yuelaiyuxiao"] = {"越来越小", "越来越少"};
+      r.full["lisudangran"] = "李素当然";
+      r.fixes["lisudangran"] = {"理所当然", "历史当然"};
     });
   }
 };
 
-TEST_F(ChineseFixTest, ATypoThatReadsAsPinyinIsCorrectedFirst) {
+TEST_F(ChineseFixTest, TheReportedSlipReadsAsMeant) {
   const int before = readyCount();
   type("yuelaiyuxiao");
+  ASSERT_TRUE(ready(before + 1));
+  list();  // the turn for corrections
+  ASSERT_TRUE(ready(before + 2));
+  EXPECT_EQ(list().at(0), "越来越小");
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "越来越小");
+}
+
+TEST_F(ChineseFixTest, ACorrectionComesOnTheFirstPage) {
+  const int before = readyCount();
+  type("lisudangran");
   ASSERT_TRUE(ready(before + 1));  // the model's list, then the turn for corrections
   const auto shown = list();
   EXPECT_EQ(rime->corrected, 0);  // not while making the list that shows first
-  EXPECT_NE(shown.at(0), "越来越小");
+  ASSERT_EQ(std::ranges::find(shown, "理所当然"), shown.end());
   const int asked = readyCount();
   EXPECT_EQ(list(), shown);  // the turn: the same list, and the corrections looked up
   EXPECT_EQ(rime->corrected, 1);
   ASSERT_TRUE(ready(asked));
   const auto l = list();
-  EXPECT_EQ(l.at(0), "越来越小");
-  EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
-  zh->key({' ', 0, false});
-  EXPECT_EQ(zh->takeCommit(), "越来越小");
+  EXPECT_EQ(l.at(0), shown.at(0));
+  const auto at = std::ranges::find(l, "理所当然") - l.begin();
+  EXPECT_LT(at, rime->pageSize());
+  zh->selectAt(int(at));
+  EXPECT_EQ(zh->takeCommit(), "理所当然");
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }
 
@@ -1326,7 +1342,7 @@ TEST_F(ChineseFixTest, ATypoThatReadsAsPinyinIsCorrectedFirst) {
 TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   startFixing(300ms);
   const int before = readyCount();
-  type("yuelaiyuxiao");
+  type("lisudangran");
   ASSERT_TRUE(ready(before + 1));
   const auto shown = list();
   list();  // corrections asked, their list 0.3 s away
@@ -1334,7 +1350,7 @@ TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   EXPECT_EQ(zh->takeCommit(), shown.at(0));
   std::this_thread::sleep_for(400ms);
   const auto after = list();
-  EXPECT_EQ(std::ranges::find(after, "越来越小"), after.end());
+  EXPECT_EQ(std::ranges::find(after, "理所当然"), after.end());
 }
 
 TEST_F(ChineseTest, TraditionalAndNextWords) {
