@@ -1291,8 +1291,8 @@ TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
 
 // Typos that read as valid pinyin (#478). The model's list shows first, untouched; on the turn its second
 // READY asks for, Rime's corrections are looked up, and once the model has weighed them the list changes
-// again, if the correction moves. yu for yue: the model reads 越来越小 itself. yoou for you: 又快又好 is beyond it, and the correction
-// lands on the first page, the model's first still first.
+// again if the correction moves. yu for yue: the model reads 越来越小 itself. yoou for you: 又快又好 is beyond
+// it, and the correction lands on the first page, the model's first still first.
 struct ChineseFixTest : ChineseTest {
   void SetUp() override { startFixing(); }
   void startFixing(std::chrono::milliseconds delay = {}) {
