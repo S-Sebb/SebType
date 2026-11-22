@@ -60,11 +60,17 @@ key or a pick before the corrected list comes drops it; only a key during the we
 score, waits for it. Its trace sections, "SebType zh load", "zh rank", "zh next", "zh
 fixes" (the lookup), "zh fix" (the weighing) and "zh pick", are in `android/perf`'s traces.
 
+The PCs run it too (#495), without next words (`ChineseModelPaths::nextWords`): their box shows only while typing.
+llama.cpp is built for AVX2 (`GGML_NATIVE=OFF`), and an older CPU gets Rime alone. The Fcitx5 add-on draws the
+model's list from Fcitx5's loop when `ready` comes; Windows' text service, across the server's pipe, asks again
+(`Op::Refresh`) every 16 ms while the reply says `Engine::updating()`. `chinese.gguf` ships in the RPM
+(`/usr/share/sebtype`) and beside `sebtype-server.exe`.
+
 ## Tests
 
 `test/core_test.cpp` checks the riskiest paths with stand-in engines: language switching, the Shift tap,
 简/繁, あ ⇄ ア, the popups and paging 6 to a page, the touch paths and both `commitOnSwitch` values. `linux/build.sh` runs them in its container on every
-build (`%check` in `linux/sebtype.spec`). Built with English, it also tests the English engine on the real
+build (`%check` in `linux/sebtype.spec`), with 中文's model. Built with English, it also tests the English engine on the real
 dictionary and model: `test/english.sh` builds and runs that on yanglab16. The English harness
 (`android/test/english/run.sh`) measures its quality against today's keyboard. Built with 中文's model, it tests
 the model around a stand-in Rime: `test/chinese.sh` builds and runs that on yanglab16, and the Chinese harness
