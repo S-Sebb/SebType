@@ -1017,7 +1017,7 @@ TEST_F(EnglishTest, APersonalWordThatIsAlsoAShortcutStaysAWord) {
 // (FULL's sentence for all of it first, then the words that start it, longest first), and picks that consume
 // their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛. A flush commits
 // what Rime previews, its first candidate, and learns nothing. A first candidate in LEARNED comes marked as
-// learned, as Rime's data marks a word from its user dictionary.
+// learned, as Rime's data marks a word from its user dictionary. FIXES are its corrections by input (#478).
 struct FakeRime : Engine {
   std::map<std::string, std::vector<std::string>> words{
       {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
@@ -1028,6 +1028,8 @@ struct FakeRime : Engine {
   std::vector<int> picks;
   std::vector<std::string> learned;
   std::set<std::string> userWords;
+  std::map<std::string, std::vector<std::string>> fixes;
+  int corrected = 0;  // corrections() asked
 
   struct Item {
     std::string text;
@@ -1101,6 +1103,14 @@ struct FakeRime : Engine {
   void setLatin(bool) override {}
   bool alternate() override { return alt; }
   void setAlternate(bool on) override { alt = on; }
+  bool corrects() override { return !fixes.empty(); }
+  std::vector<Candidate> corrections(const std::string &letters, int max) override {
+    corrected++;
+    std::vector<Candidate> out;
+    for (const auto &t : fixes[letters])
+      if (int(out.size()) < max) out.push_back({t, {}});
+    return out;
+  }
 };
 
 // The model around FakeRime, with the committed model and the system's OpenCC tables.
@@ -1277,6 +1287,53 @@ TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
   ASSERT_LT(i, shown.size());
   zh->selectAt(int(i));
   EXPECT_TRUE((zh->takeCommit() + zh->preedit().text()).starts_with(shown[i])) << shown[i];
+}
+
+// A typo that reads as valid pinyin (#478): yu for yue. The model's list shows first, untouched; on the turn
+// its second READY asks for, Rime's corrections are looked up, and once the model has weighed them the list
+// changes again, the correction first.
+struct ChineseFixTest : ChineseTest {
+  void SetUp() override { startFixing(); }
+  void startFixing(std::chrono::milliseconds delay = {}) {
+    start(delay, [](FakeRime &r) {
+      r.words.insert({{"yue", {"越"}}, {"lai", {"来"}}, {"yu", {"鱼"}}, {"xiao", {"小"}}});
+      r.full["yuelaiyuxiao"] = "越来鱼小";
+      r.fixes["yuelaiyuxiao"] = {"越来越小", "越来越少"};
+    });
+  }
+};
+
+TEST_F(ChineseFixTest, ATypoThatReadsAsPinyinIsCorrectedFirst) {
+  const int before = readyCount();
+  type("yuelaiyuxiao");
+  ASSERT_TRUE(ready(before + 1));  // the model's list, then the turn for corrections
+  const auto shown = list();
+  EXPECT_EQ(rime->corrected, 0);  // not while making the list that shows first
+  EXPECT_NE(shown.at(0), "越来越小");
+  const int asked = readyCount();
+  EXPECT_EQ(list(), shown);  // the turn: the same list, and the corrections looked up
+  EXPECT_EQ(rime->corrected, 1);
+  ASSERT_TRUE(ready(asked));
+  const auto l = list();
+  EXPECT_EQ(l.at(0), "越来越小");
+  EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "越来越小");
+  EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
+}
+
+// Space before the corrected list comes commits the list shown, and the correction never shows after it.
+TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
+  startFixing(300ms);
+  const int before = readyCount();
+  type("yuelaiyuxiao");
+  ASSERT_TRUE(ready(before + 1));
+  const auto shown = list();
+  list();  // corrections asked, their list 0.3 s away
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), shown.at(0));
+  std::this_thread::sleep_for(400ms);
+  EXPECT_EQ(std::ranges::find(list(), "越来越小"), list().end());
 }
 
 TEST_F(ChineseTest, TraditionalAndNextWords) {

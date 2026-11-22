@@ -66,7 +66,7 @@ class Rime final : public Engine {
   }
 
   ~Rime() override {
-    if (session_) api_->destroy_session(session_);
+    endSession();
     api_->finalize();
   }
 
@@ -164,6 +164,27 @@ class Rime final : public Engine {
       if (api_->get_property(session_, "sebtype_learned", learned.data(), learned.size() - 1))
         list[0].learned = list[0].text == learned.data();
     }
+    return list;
+  }
+
+  // A session of its own, so the composition stays as it is; its schema has no learning, and 繁 is the
+  // Chinese model's to apply.
+  bool corrects() override { return true; }
+  std::vector<Candidate> corrections(const std::string &letters, int max) override {
+    std::vector<Candidate> list;
+    if (!ready()) return list;
+    if (!corrSession_ || !api_->find_session(corrSession_)) {
+      corrSession_ = api_->create_session();
+      if (!corrSession_ || !api_->select_schema(corrSession_, "sebtype_corr")) return list;
+    }
+    api_->set_input(corrSession_, letters.c_str());
+    RimeCandidateListIterator it{};
+    if (api_->candidate_list_begin(corrSession_, &it)) {
+      while (static_cast<int>(list.size()) < max && api_->candidate_list_next(&it))
+        list.push_back({it.candidate.text ? it.candidate.text : "", it.candidate.comment ? it.candidate.comment : ""});
+      api_->candidate_list_end(&it);
+    }
+    api_->clear_composition(corrSession_);
     return list;
   }
 
@@ -424,7 +445,8 @@ class Rime final : public Engine {
 
   void endSession() {
     if (session_) api_->destroy_session(session_);
-    session_ = 0;
+    if (corrSession_) api_->destroy_session(corrSession_);
+    session_ = corrSession_ = 0;
     cache_.clear();
   }
 
@@ -486,7 +508,7 @@ class Rime final : public Engine {
   RimePaths paths_;
   RimeApi *api_;
   RimeTraits traits_{};
-  RimeSessionId session_ = 0;
+  RimeSessionId session_ = 0, corrSession_ = 0;
   bool trim_ = false;  // a start (perhaps a deploy) ran since the last trim
   std::string forgetError_;
   bool plain_ = false;

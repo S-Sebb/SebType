@@ -63,6 +63,10 @@ class Engine {
   // The phone's setup self-test (ranh → 然后): the engine's own list, up to max, for TEXT typed into an
   // empty composition. What it typed goes again, and the field goes back to FIELD.
   virtual std::vector<Candidate> tryTyping(const std::string &text, int max, Field field);
+  // 中文 (#478): up to max of Rime's candidates for LETTERS read with typo corrections (the data's
+  // sebtype_corr schema, in a session of its own), whatever is typed: SebType's Chinese model weighs them.
+  virtual std::vector<Candidate> corrections(const std::string & /*letters*/, int /*max*/) { return {}; }
+  virtual bool corrects() { return false; }  // whether corrections() can give any
   virtual void setField(Field /*field*/) {}
   virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}
   // English: the keys' rectangles, and the field's text around the cursor whenever it changed other than by

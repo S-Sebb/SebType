@@ -16,6 +16,12 @@
 // Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand.
 // 繁: Rime converts its own candidates (rime-ice's traditionalization); the model reads simplified text, so
 // OpenCC's t2s turns Rime's candidates and the field's text into it, and s2t the model's into 繁.
+//
+// Typos that read as valid pinyin (#478: yuelaiyuxiao, 越来越小 meant): once the model's list for the input
+// has shown, the worker asks READY again, and on that turn of the caller's thread Rime reads the input with
+// typo corrections in a session of its own (Engine::corrections). The model scores those on the worker, and
+// the list changes once more: the likeliest first when the model is clearly surer of it than of the list's
+// first, else on the first page when nearly as sure. Keys never wait for either.
 #include <sebtype/hosts.h>
 
 #include <opencc.h>
@@ -51,6 +57,11 @@ constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each p
 // How long the list shown waits for the model's after a change, so a key changes it once (#450): the phone's
 // rankings and next words take 14-107 ms at p95, by its cores (docs/perf/2026-11-19-chinese-model.md).
 constexpr std::chrono::milliseconds kHold{100};
+// Phrase-level correction (#478): Rime's corrections the model scores, and by how much (log probability) the
+// best must beat the list's first to go first, or may trail it and still go last on the first page. Tuned on
+// the slip set with the clean sentences as the guard (android/test/chinese-lm, fix=1).
+constexpr int kFixes = 8;
+constexpr float kFixMargin = FIX_MARGIN, kFixFloor = FIX_FLOOR;
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
 }
@@ -193,7 +204,8 @@ class Chinese final : public Engine {
   int pageSize() override { return rime_->pageSize(); }
   bool candidateAt(int index, Candidate &out) override {
     if (index < 0) return false;
-    if (static_cast<int>(shown_.size()) <= index || shownRev_ != rev_) list(index + 1 + std::max(rime_->pageSize(), 1));
+    if (static_cast<int>(shown_.size()) <= index || shownRev_ != rev_ || shownResult_ != results_)
+      list(index + 1 + std::max(rime_->pageSize(), 1));
     if (index >= static_cast<int>(shown_.size())) return false;
     out = shown_[index].candidate;
     return true;
@@ -297,6 +309,9 @@ class Chinese final : public Engine {
     std::vector<int> rimeIndex;     // their indexes in Rime's list
     bool traditional;
     bool learned = false;           // Rime's first is a word the user taught it
+    bool fixable = false;           // Rime can correct the input (#478)
+    std::vector<std::string> fixes;  // Rime's corrections of the input, for the list made already (#478)
+    int pageSize = 0;
   };
 
   // Keys Rime takes as "commit the first candidate, then this": printable ASCII but letters, digits, the
@@ -311,10 +326,13 @@ class Chinese final : public Engine {
   // Makes the list shown for the current revision, up to MAX of Rime's: the model's first when it has come,
   // then Rime's others in Rime's order. A candidate of the model's own that Rime has too is Rime's.
   void list(int max) {
+    // The model's list for the input has shown, and the worker asked for this turn: Rime's corrections (#478).
+    if (modelShown_ && shownRev_ == rev_ && fixDue_ == rev_ && fixAsked_ != rev_) askFixes();
     std::vector<Item> items;
     std::optional<std::vector<Item>> model;
     {
       std::lock_guard g(mutex_);
+      shownResult_ = results_;
       if (resultRev_ == rev_) model = result_;
       // Until the model's list comes the one shown stays, while it is expected within kHold: a key changes the
       // list once, not to Rime's and then to the model's (#450).
@@ -332,6 +350,20 @@ class Chinese final : public Engine {
     shownRev_ = rev_;
     shownComposing_ = rime_->composing();
     modelShown_ = model.has_value();
+    // The harness waits for the corrected list too.
+    if (paths_.synchronous && modelShown_ && fixDue_ == rev_ && fixAsked_ != rev_) list(max);
+  }
+
+  // The second job for this revision: Rime's corrections of its input, which the model weighs against the
+  // list it made.
+  void askFixes() {
+    fixAsked_ = rev_;
+    TraceSection section("SebType zh fixes");
+    Job job{rev_, context_, rime_->input(), {}, {}, rime_->alternate()};
+    job.pageSize = rime_->pageSize();
+    for (auto &c : rime_->corrections(job.input, kFixes))
+      if (const auto cps = codePoints(c.text); !cps.empty() && std::ranges::all_of(cps, han)) job.fixes.push_back(std::move(c.text));
+    if (!job.fixes.empty()) want(std::move(job));
   }
 
   void pick(int index) {
@@ -439,6 +471,7 @@ class Chinese final : public Engine {
       for (size_t i = 0; i < rime.size(); i++)
         if (wholeInput(rime[i].text, n)) job.rime.push_back(rime[i].text), job.rimeIndex.push_back(int(i));
       job.learned = !rime.empty() && rime[0].learned;
+      job.fixable = rime_->corrects();
     } else if (!text || (!context_.empty() && context_.back() == '\n')) {
       return want(std::nullopt);
     }
@@ -452,8 +485,10 @@ class Chinese final : public Engine {
     revNow_ = rev_;
     if (!asked) return;
     askedRev_ = rev_;
+    const uint64_t before = results_;
     wake_.notify_all();
-    if (paths_.synchronous) done_.wait(l, [&] { return resultRev_ == rev_ || !loading_ && !model_; });
+    if (paths_.synchronous)
+      done_.wait(l, [&] { return (resultRev_ == rev_ && results_ != before) || !loading_ && !model_; });
   }
 
   void work() {
@@ -478,18 +513,30 @@ class Chinese final : public Engine {
       if (stop_) return;
       Job job = std::move(*wanted_);
       wanted_.reset();
+      // Corrections weigh against the list made for the same revision, which must have come.
+      std::vector<Item> made;
+      std::optional<float> first;  // the score of the list's first, which a correction must beat
+      if (!job.fixes.empty()) {
+        if (resultRev_ != job.rev || !resultFirst_) continue;
+        made = result_;
+        first = resultFirst_;
+      }
       working_ = job.rev;
       const auto start = std::chrono::steady_clock::now();
       l.unlock();
       std::vector<Item> items;
       std::string context = job.traditional ? t2s(job.context) : job.context;
       try {
-        if (job.input.empty()) {
+        if (!job.fixes.empty()) {
+          TraceSection section("SebType zh fix");
+          items = std::move(made);
+          fix(*model, job, context, items, *first, s2t);
+        } else if (job.input.empty()) {
           TraceSection section("SebType zh next");
           for (const auto &w : model->nextWords(context, kNextWords)) items.push_back(own(w.text, job.traditional, s2t));
         } else {
           TraceSection section("SebType zh rank");
-          items = rank(*model, job, context, t2s, s2t);
+          items = rank(*model, job, context, t2s, s2t, first);
         }
       } catch (const std::exception &e) {
         std::fprintf(stderr, "sebtype: %s\n", e.what());
@@ -499,11 +546,17 @@ class Chinese final : public Engine {
       l.lock();
       if (job.rev != revNow_) continue;  // typed on meanwhile
       result_ = std::move(items);
+      resultFirst_ = first;
       resultRev_ = job.rev;
-      jobTime_ = std::chrono::steady_clock::now() - start;
+      results_++;
+      if (job.fixes.empty()) jobTime_ = std::chrono::steady_clock::now() - start;
+      // A list for the input: once it has shown, the caller's thread looks up the corrections (askFixes).
+      const bool fixes = job.fixable && job.fixes.empty() && first;
+      if (fixes) fixDue_ = job.rev;
       done_.notify_all();
       l.unlock();
       if (ready_) ready_();
+      if (ready_ && fixes) ready_();
       l.lock();
     }
   }
@@ -513,7 +566,8 @@ class Chinese final : public Engine {
   }
 
   // Rime's scored candidates and the model's own, best first, by the experiment's rule.
-  std::vector<Item> rank(zh_lm::Model &model, const Job &job, const std::string &context, Converter &t2s, Converter &s2t) {
+  std::vector<Item> rank(zh_lm::Model &model, const Job &job, const std::string &context, Converter &t2s, Converter &s2t,
+                         std::optional<float> &first) {
     std::string letters;
     for (char c : job.input)
       if (c != '\'') letters += c;
@@ -545,7 +599,33 @@ class Chinese final : public Engine {
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return score[a] > score[b]; });
     std::vector<Item> out;
     for (size_t i : order) out.push_back(std::move(items[i]));
+    if (!order.empty()) first = score[order[0]];
     return out;
+  }
+
+  // Puts the likeliest of Rime's corrections into the model's list ITEMS, whose first scored FIRST: first when
+  // the model is kFixMargin surer of it, last on the first page when it is at most kFixFloor less sure.
+  void fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
+           Converter &s2t) {
+    std::string letters;
+    for (char c : job.input)
+      if (c != '\'') letters += c;
+    const std::vector<float> score = model.score(context, letters, job.fixes);
+    const size_t best = std::ranges::max_element(score) - score.begin();
+    const float lp = score[best] - kRankWeight * std::log1p(kOwnRank);
+    const std::string &text = job.fixes[best];
+    if (!items.empty() && items[0].simplified == text) return;
+    size_t at;
+    if (lp > first + kFixMargin) at = 0;
+    else if (lp > first - kFixFloor) at = std::max(job.pageSize, 1) - 1;
+    else return;
+    Item item = own(text, job.traditional, s2t);
+    if (const auto same = std::ranges::find(items, text, &Item::simplified); same != items.end()) {
+      if (size_t(same - items.begin()) <= at) return;  // as high already
+      item = std::move(*same);
+      items.erase(same);
+    }
+    items.insert(items.begin() + std::min(at, items.size()), std::move(item));
   }
 
   std::unique_ptr<Engine> rime_;
@@ -563,6 +643,8 @@ class Chinese final : public Engine {
   bool modelShown_ = false;  // shown_ is the model's
   bool shownComposing_ = false;  // shown_ was made for something being typed
   int highlight_ = 0;        // in shown_, while it is the model's
+  uint64_t fixAsked_ = ~uint64_t{0};  // the revision whose corrections were looked up
+  uint64_t shownResult_ = 0;          // results_ when shown_ was made
 
   // Shared with the worker, under mutex_ (revNow_ also read in the model's steps).
   std::thread worker_;
@@ -571,7 +653,10 @@ class Chinese final : public Engine {
   bool stop_ = false, loading_ = true, model_ = false;
   std::optional<Job> wanted_;
   std::vector<Item> result_;
+  std::optional<float> resultFirst_;  // the model's score of result_'s first
   uint64_t resultRev_ = ~uint64_t{0};
+  std::atomic<uint64_t> results_{0};             // lists that came, ever
+  std::atomic<uint64_t> fixDue_{~uint64_t{0}};   // the revision whose corrections the worker asked for (#478)
   uint64_t askedRev_ = ~uint64_t{0};          // the last revision the model was asked a list for
   std::chrono::steady_clock::duration jobTime_{};  // how long the last list that came took
   std::atomic<uint64_t> revNow_{0};
