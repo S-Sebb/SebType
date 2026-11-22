@@ -295,7 +295,7 @@ object Updates {
         val open = PendingIntent.getActivity(context, 0, installIntent(context),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.update_available, release.version))
             .setContentText(context.getString(R.string.update_tap))
             .setContentIntent(open)
