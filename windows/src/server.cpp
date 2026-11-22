@@ -193,10 +193,13 @@ Reply handle(const Request &q, HANDLE pipe) {
     case Op::FocusOut: core->focusOut(); break;
     case Op::FocusIn:  // each app may have its own language (Windows' per-app input setting)
       followField(q.learning);
-      [[fallthrough]];
-    case Op::Language:
       if (core->language() != q.lang) core->selectLanguage(q.lang);
       core->takeNotice(true);  // Windows shows its own switcher
+      break;
+    case Op::Language:  // also from another keyboard, which the core never saw: the language starts fresh (#489)
+      if (core->language() != q.lang) core->selectLanguage(q.lang);
+      core->endLatin(q.lang);
+      core->takeNotice(true);
       break;
     case Op::Menu: {
       const auto menu = core->menu();

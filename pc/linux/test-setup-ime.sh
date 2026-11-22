@@ -311,7 +311,7 @@ fi
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
 # can't see it) running SebType's input method (#190) on a second fake account set up by setup-ime.sh: Shift tap toggles
 # あ ⇄ English in every Mozc state, Shift+K and Ctrl+Shift don't, and Alt+` toggles あ ⇄ ア and leaves
-# English alone (#117), Ctrl+Backspace right after a commit undoes it only there (#376); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
+# English alone (#117), a switch back to 日本語 ends the Shift tap's English and keeps ア (#489), Ctrl+Backspace right after a commit undoes it only there (#376); the tray (a stand-in for Plasma's kimpanel on that bus) gets the icon of each mode. Caps Lock (A) has no D-Bus way in: it is
 # checked on the desktop (pc/linux/README.md). Its fcitx5 is found by the fake HOME in its environment and
 # stopped afterwards.
 mozc_keys() {
@@ -408,6 +408,13 @@ shift_tap(); check('Shift tap in ア turns English on', mode(), 'A')
 chord('Alt_L', 'grave'); check('Alt+` in English stays English', mode(), 'A')
 shift_tap(); check('Shift tap in English is ア again', mode(), 'ア')
 chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 'sebtype-hira'))
+# #489: a switch back to 日本語 types kana at once, not the Shift tap's English it was left in, and ア stays.
+chord('Alt_L', 'grave'); shift_tap()
+english = call(*SEBTYPE, 'State')[1]
+call(*SEBTYPE, 'SetLanguage', '(s)', 'en'); call(*SEBTYPE, 'SetLanguage', '(s)', 'ja')
+check('back to 日本語 after a Shift tap types ア', (english, mode(), tray[0], call(*SEBTYPE, 'State')[3]),
+      (True, 'ア', 'sebtype-kata', 'sebtype-kata'))
+chord('Alt_L', 'grave')
 # #443: the mouse wheel over the candidate window pages it. classicui's wheel calls the list's prev() or next()
 # when it says it has that page, as the client-side panel's PrevPage and NextPage do here. A notch past the
 # first or last page changes nothing, and nothing ends what is being typed.
@@ -662,7 +669,8 @@ fi
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
-# Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301). A sync's save and
+# Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301); a switch back to 中文
+# ends the Shift tap's English (#489). A sync's save and
 # a deploy wait until typing is idle (#373). The pinyin shows in a row over the candidates, or in the app's text
 # with the Configurator's pinyin row off (#447).
 rime_label() {
@@ -815,6 +823,14 @@ def switch_away():
     call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
     return typed, first('ni')
 check('switching to 日本語 types in nihao', switch_away(), ('nihao', '你'))
+# #489: a switch back to 中文 types Chinese at once, not the Shift tap's English it was left in.
+def back_from(other):  # after a Shift tap, a switch to other and back: English then, English now, the icon, ni
+    tap('Shift_L'); english = call(*SEBTYPE, 'State')[1]
+    call(*SEBTYPE, 'SetLanguage', '(s)', other); call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+    _, latin, _, icon = call(*SEBTYPE, 'State')
+    return english, latin, icon, first('ni')
+check('back to 中文 from English after a Shift tap types Chinese', back_from('en'), (True, False, 'sebtype-zh', '你'))
+check('back to 中文 from 日本語 after a Shift tap types Chinese', back_from('ja'), (True, False, 'sebtype-zh', '你'))
 # #447: by default the pinyin is in a row over the candidates (Fcitx5's panel), not in the app's text, and the
 # app's reset (a click elsewhere in the text) types it in; the Configurator's pinyin row off puts it in the app's
 # text, at once.

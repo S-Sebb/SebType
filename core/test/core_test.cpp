@@ -223,6 +223,23 @@ TEST_F(CoreTest, ShiftTapTogglesEnglishLettersOnlyWhenAlone) {
   for (uint32_t s : engines[Lang::Chinese]->seen) EXPECT_NE(s, Shift_L);
 }
 
+// #489: a switch back to 中文 or 日本語 types the language, not the Shift tap's English it was left in; ア stays.
+TEST_F(CoreTest, SwitchingBackEndsTheShiftTapsEnglish) {
+  core.selectLanguage(Lang::Japanese);
+  core.setAlternate(true);
+  shiftTap();
+  winSpace();
+  winSpace();
+  EXPECT_EQ(core.language(), Lang::Japanese);
+  EXPECT_FALSE(core.latin());
+  EXPECT_EQ(core.icon(), "kata");
+  core.selectLanguage(Lang::Chinese);
+  shiftTap();
+  core.selectLanguage(Lang::English);
+  core.selectLanguage(Lang::Chinese);
+  EXPECT_EQ(core.icon(), "zh");
+}
+
 TEST_F(CoreTest, CapsLockShowsCapitalA) {
   core.selectLanguage(Lang::Japanese);
   shiftTap();

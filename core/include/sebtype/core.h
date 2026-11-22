@@ -41,6 +41,10 @@ class Core {
   void toggleLanguage();
   // The phone's 🌐: the next language that is on, after the last back to the first.
   void cycleLanguage();
+  // Ends a language's Shift tap English (#489), so a switch into it types the language at once (あ/ア stays).
+  // Every switch of the core does it for the language left; Windows also when it switches into SebType from
+  // another keyboard, which the core never sees.
+  void endLatin(Lang lang);
   const Settings &settings() const { return settings_; }
   void setSettings(Settings settings);
 

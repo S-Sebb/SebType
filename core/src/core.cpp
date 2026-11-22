@@ -155,10 +155,15 @@ void Core::switchTo(Lang lang) {
   // The PCs type in what focus moving away does (#301): pinyin as its letters, Japanese as converted.
   if (settings_.commitOnSwitch) commit_ += unfinished();
   if (auto *e = running(lang_)) e->clear();
+  endLatin(lang_);
   lang_ = lang;
   if (lang != settings_.languages.front()) lastOther_ = lang;
   notice_ = true;
   warned_ = false;  // the new language says its own state
+}
+
+void Core::endLatin(Lang lang) {
+  if (auto *e = running(lang); e && e->latin()) e->setLatin(false);
 }
 
 void Core::selectLanguage(Lang lang) { switchTo(lang); }
