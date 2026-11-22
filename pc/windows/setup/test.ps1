@@ -675,7 +675,8 @@ namespace SebTypeSetupTest {
     $opened
   }
   function Configurator-Process { Wait-Until 30 { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -in 'SebType Configurator', 'SebType 设置' } | Select-Object -First 1 } }
-  # The Configurator's language switches once it has read Windows' list (they show off, disabled, until then).
+  # The Configurator's language switches once it has read Windows' list (they show off, disabled, until then;
+  # a switch tells UI Automation when it is disabled).
   function Configurator-Langs($p) {
     $r = Wait-Until 60 {
       $all = $uia::FromHandle($p.MainWindowHandle).FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
@@ -695,8 +696,8 @@ namespace SebTypeSetupTest {
   # Pinyin on a Chinese Windows) stay, and the Configurator shows a language on wherever Windows lists it.
   function Check-EnJa($p, $what) {
     $l = Languages
-    $win::Shot($p.MainWindowHandle, "$out\73-configurator-langs-$what.png")
     $shown = Configurator-Langs $p
+    $win::Shot($p.MainWindowHandle, "$out\73-configurator-langs-$what.png")
     if ($l -notlike "en-US[[]0409:00000409[]]*" -or $l -notlike "* ja[[]$JaTip[]]*" -or $l -like "*$ZhTip*") { throw "input methods $l after English and 日本語 only" }
     $zh = if ($l -like '*zh-Hans-CN*') { 'on' } else { 'off' }
     if ($shown -ne "English=on 中文=$zh 日本語=on") { throw "the Configurator shows $shown for $l" }
@@ -1006,7 +1007,7 @@ namespace SebTypeSetupTest {
       Check 'common-page-finish' {
         Ui-Click '跳过'; $null = Ui-Find 'SebType 装好啦！'
         $null = Wizard-Shot '6-ready-zh'
-        $c = Wizard-Finish '完成'
+        $script:c = Wizard-Finish '完成'
         'Skip leads to the ready page; 完成 closes the wizard and opens the Configurator'
       }
       Check 'common-page-languages' {

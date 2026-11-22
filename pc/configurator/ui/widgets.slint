@@ -16,6 +16,7 @@ export component Switch inherits Rectangle {
     accessible-checkable: true;
     accessible-checked: checked;
     accessible-label: label;
+    accessible-enabled: enabled;
     accessible-action-default => { if enabled { checked = !checked; toggled(checked); } }
     Rectangle {
         width: root.checked ? 20px : 14px;
