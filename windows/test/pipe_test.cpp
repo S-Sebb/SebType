@@ -117,18 +117,21 @@ Took timed(Guarded &g, Op op = Op::Key) {
 
 }  // namespace
 
-// A reply from a server before #375 (no forgets, langBusy, forgetError), #376 (no deleteBefore) or #374 (no
-// settings) still decodes, with what it lacks 0 or false, so the caller can tell; one from a newer one carries
-// them. So does a request from a text service before #376 (no before).
+// A reply from a server before #375 (no forgets, langBusy, forgetError), #376 (no deleteBefore), #374 (no
+// settings) or #495 (no updating, refreshed) still decodes, with what it lacks 0 or false, so the caller can tell;
+// one from a newer one carries them. So does a request from a text service before #376 (no before).
 void replySuffix() {
   Reply now;
   now.commit = "x", now.busy = true, now.forgets = true, now.langBusy = true, now.forgetError = "segment.db: denied";
-  now.deleteBefore = 2, now.settings = true;
+  now.deleteBefore = 2, now.settings = true, now.updating = true, now.refreshed = true;
   const std::string full = encode(now);
   Reply r;
   CHECK(decode(full, r) && r.commit == "x" && r.busy && r.forgets && r.langBusy && r.forgetError == now.forgetError &&
-        r.deleteBefore == 2 && r.settings);
-  const std::string before374 = full.substr(0, full.size() - 1);
+        r.deleteBefore == 2 && r.settings && r.updating && r.refreshed);
+  const std::string before495 = full.substr(0, full.size() - 2);
+  Reply u;
+  CHECK(decode(before495, u) && u.settings && !u.updating && !u.refreshed);
+  const std::string before374 = before495.substr(0, before495.size() - 1);
   Reply b;
   CHECK(decode(before374, b) && b.deleteBefore == 2 && !b.settings);
   const std::string before376 = before374.substr(0, before374.size() - 4);
@@ -147,8 +150,18 @@ void replySuffix() {
   CHECK(decode(asked.substr(0, asked.size() - 4 - q.before.size()), d) && d.before.empty());
 }
 
+// A Refresh reads the typing only for the app that typed last (#495): another app's would take its commit.
+void refreshOnlyForTheTypingApp() {
+  Composer c;
+  Request k{Op::Key}, mine{Op::Refresh}, other{Op::Refresh};
+  k.client = mine.client = 1, other.client = 2;
+  c.resets(k);
+  CHECK(c.resets(mine) && !c.resets(other));
+}
+
 int main() {
   replySuffix();
+  refreshOnlyForTheTypingApp();
   Reply r;
   if (call(Request{Op::State}, r, 0, 200)) {
     std::printf("SKIP a SebType server runs\n");
