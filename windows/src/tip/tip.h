@@ -161,6 +161,7 @@ class TextService final : public ITfTextInputProcessorEx,
   Lang lang_ = Lang::Chinese;
   Reply reply_;
   bool leaving_ = false;  // another keyboard is being activated: what was typed is dropped (#301)
+  bool pinyinRow_ = true;  // pinyinRowSetting(), read as each word starts
   RECT caret_{};
   // OnTestKeyDown already sent this key; OnKeyDown takes its answer instead of sending it again.
   struct Tested {

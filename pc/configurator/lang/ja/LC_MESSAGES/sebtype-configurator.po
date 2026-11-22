@@ -253,6 +253,12 @@ msgstr "縦"
 msgid "Font size"
 msgstr "文字サイズ"
 
+msgid "Pinyin above the candidates"
+msgstr "ピンインを候補の上に表示"
+
+msgid "中文 · Off: in the text you type into"
+msgstr "中文 · オフにすると入力中の文字の中に表示"
+
 msgid "Shortcuts"
 msgstr "ショートカット"
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Types into a private Fcitx5 on this D-Bus session and saves its candidate window (#94), for test.sh.
 
-    candidate-window.py OUT.png [KEYS]        # needs python3-dbus, python3-xlib, Pillow, NumPy; KEYS: nihao
+    candidate-window.py OUT.png [KEYS [LANG]]   # needs python3-dbus, python3-xlib, Pillow, NumPy; nihao zh
 
-Runs inside a nested KWin with Xwayland, where Fcitx5 draws with X11 (classicui on xcb). It talks to
-Fcitx5 as an app would (an input context with inline preedit, in SebType's 中文), waits for the window's size to
-settle, saves its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS TAB`: the pink pixels
-where the Picnic theme draws SebType's pig, left of the candidates, and 1 if the window's top is a tab
-(#162): drawn at the left, clear at the right.
+Runs inside a nested KWin with Xwayland, where Fcitx5 draws with X11 (classicui on xcb). It talks to Fcitx5
+as an app would (an input context with inline preedit, in SebType's LANG; with KEYS "", the popup of a switch
+to LANG), waits for the window's size to settle, saves its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS FLAT`: the pink pixels
+where the Picnic theme draws SebType's pig, left of the candidates, and 1 if the window is one flat
+rectangle (#461): its top border drawn at the left and the right, as no tab rising above it is.
 """
 
 import sys
@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 from Xlib import X, display
 
-out, keys = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "nihao")
+out, keys, lang = (sys.argv[1:] + ["nihao", "zh"][len(sys.argv) - 2 :])[:3]
 bus = dbus.SessionBus()
 fcitx = bus.get_object("org.fcitx.Fcitx5", "/org/freedesktop/portal/inputmethod")
 path, _ = dbus.Interface(fcitx, "org.fcitx.Fcitx.InputMethod1").CreateInputContext(
@@ -32,9 +32,13 @@ ic.SetCapability(
 )  # Preedit | FormattedPreedit: the app shows the preedit
 ic.FocusIn()
 ic.SetCursorRect(60, 60, 1, 20)
-dbus.Interface(
+core = dbus.Interface(
     bus.get_object("org.fcitx.Fcitx5", "/sebtype"), "org.sebtype.Core1"
-).SetLanguage("zh")
+)
+if not keys:  # the switch's popup (no KEYS: "")
+    core.SetLanguage("en")
+    time.sleep(1.5)
+core.SetLanguage(lang)
 
 
 def type_keys(keysyms):
@@ -92,5 +96,5 @@ Image.fromarray(rgb.astype(np.uint8)).save(out)
 # The pig's pink (about #f5a0b4) in the first 40 px; the theme's own pinks are darker (#c2506a).
 r, g, b = (rgb[:, :40, i] for i in range(3))
 pink = int(((r > 220) & (g > 120) & (g < 200) & (b > 140) & (r - g > 40)).sum())
-tab = int(a[3, 10] > 0 and a[3, size[0] - 15] == 0)
-print(f"{size[0]}x{size[1]} {pink} {tab}")
+flat = int(a[1, 14] > 0 and a[1, size[0] - 14] > 0)
+print(f"{size[0]}x{size[1]} {pink} {flat}")

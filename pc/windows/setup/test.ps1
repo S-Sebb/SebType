@@ -255,21 +255,29 @@ if ($Typing) {
       $tsf::Settle(500); $tsf::Clear()
     }
     # The Picnic window with SebType's pig (#94, #162), as the Configurator writes it (sebtype.conf), at
-    # 14 pt: pictures 162-sebtype-horizontal.png and -vertical.png, and the same for Japanese.
+    # 14 pt: pictures 162-sebtype-horizontal.png and -vertical.png, and the same for Japanese. 中文 also with the
+    # Configurator's pinyin row off (#447): the pinyin is in the field's text, not in the window.
     $picnic = {
       $conf = "$env:APPDATA\SebType\sebtype.conf"
       New-Item -ItemType Directory -Force (Split-Path $conf) | Out-Null
       $sizes = foreach ($lang in 'zh', 'ja') {
         Field $lang
+        if ($lang -eq 'ja') {  # Mozc starts with 日本語's first key: until it is ready, keys reach the field (#275)
+          $null = Wait-Until 30 { $tsf::Clear(); Keys a; Start-Sleep 1; $kana = $tsf::Text() -match 'あ'; Keys Escape Escape; $kana }
+        }
         if ($lang -eq 'zh') {  # the popup a Shift tap shows, a picture only (#205): 205-popup-zh.png
           Keys Shift_L; $null = $tsf::CandidateWindow("$out\205-popup-zh.png"); Keys Shift_L; Start-Sleep 2
         }
-        foreach ($o in 'horizontal', 'vertical') {
-          Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'vertical'))", 'FontSize=14', 'Picnic=1'
+        foreach ($o in @('horizontal', 'vertical') + $(if ($lang -eq 'zh') { 'no-pinyin-row' })) {
+          Set-Content -Encoding ascii $conf '[Candidates]', "Vertical=$([int]($o -eq 'vertical'))", 'FontSize=14', 'Picnic=1',
+            "PinyinRow=$([int]($o -ne 'no-pinyin-row'))"
           $tsf::Clear(); if ($lang -eq 'zh') { TypeText 'nihao' } else { TypeText 'nihongo'; Keys space space }
           Start-Sleep 2
           $size = $tsf::CandidateWindow("$out\162-sebtype-$lang-$o.png"); $text = $tsf::Text(); Keys Escape Escape
           if (-not $size) { throw "no candidate window ($lang, $o), the field holds '$text', active $($tsf::Active())" }
+          if ($lang -eq 'zh' -and ($text -match 'ni ?hao') -ne ($o -eq 'no-pinyin-row')) {
+            throw "中文 $o`: the field holds '$text'"
+          }
           "$lang $o $size"
         }
       }

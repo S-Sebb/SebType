@@ -404,7 +404,7 @@ chord('Alt_L', 'grave'); check('Alt+` is あ again', (mode(), tray[0]), ('あ', 
 # first or last page changes nothing, and nothing ends what is being typed.
 def shown():  # the page's words, whether it has a page before and after it, and whether a word is typed
     u = ui[-1]
-    return tuple(t for _, t in u[4]), u[7], u[8], bool(preedit[0])
+    return tuple(t for _, t in u[4]), u[7], u[8], bool(typing())
 def wheel(down):
     n = len(ui)
     call(ic, IC, 'NextPage' if down else 'PrevPage')
@@ -654,7 +654,8 @@ fi
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
 # Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301). A sync's save and
-# a deploy wait until typing is idle (#373).
+# a deploy wait until typing is idle (#373). The pinyin shows in a row over the candidates, or in the app's text
+# with the Configurator's pinyin row off (#447).
 rime_label() {
   local h=$fake/zh r
   r=$h/.local/share/fcitx5/rime
@@ -689,9 +690,10 @@ def up():
 wait(up, 10)
 ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-popups, candidates, shown, ui = [], [[]], [''], []
+popups, candidates, shown, ui, panel = [], [[]], [''], [], ['']
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'UpdateClientSideUI':
+        panel[0] = ''.join(s for s, _ in params.unpack()[0])  # the pinyin row (#447)
         text = shown[0] = ''.join(s for s, _ in params.unpack()[2])
         if text: popups.append(text)
         candidates[0] = params.unpack()[4]
@@ -732,8 +734,9 @@ preedit = ['']
 def on_preedit(_c, _s, _p, _i, name, params):
     if name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_preedit)
+typing = lambda: preedit[0] or panel[0]  # in the app's text or the pinyin row
 def rime_ready():  # Rime deploys on first use and takes no keys until then: n shows a preedit once it does
-    tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
+    tap('n'); ready = wait(lambda: typing() == 'n', 0.5); tap('Escape'); return ready
 
 SEBTYPE = ('/sebtype', 'org.sebtype.Core1')
 def switch():  # the popup text shown when switching from English to Chinese
@@ -803,6 +806,29 @@ def switch_away():
     call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
     return typed, first('ni')
 check('switching to 日本語 types in nihao', switch_away(), ('nihao', '你'))
+# #447: by default the pinyin is in a row over the candidates (Fcitx5's panel), not in the app's text, and the
+# app's reset (a click elsewhere in the text) types it in; the Configurator's pinyin row off puts it in the app's
+# text, at once.
+def where_typed():  # (the pinyin row, the app's text) while ni is typed
+    for c in 'ni': tap(c)
+    wait(lambda: candidates[0], 2); got = (panel[0], preedit[0]); tap('Escape'); return got
+check('ni shows in the pinyin row', where_typed(), ('ni', ''))
+def reset():
+    committed.clear()
+    for c in 'nihao': tap(c)
+    call(ic, IC, 'Reset'); wait(lambda: committed, 2)
+    return ''.join(committed)
+check("the app's reset types in nihao from the pinyin row", reset(), 'nihao')
+conf = os.path.join(os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config'), 'sebtype', 'sebtype.conf')
+old = open(conf).read() if os.path.exists(conf) else None
+os.makedirs(os.path.dirname(conf), exist_ok=True)
+with open(conf, 'w') as f: f.write((old or '') + '\n[Candidates]\nPinyinRow=0\n')
+call(*CONTROLLER, 'ReloadAddonConfig', '(s)', 'sebtype')
+check("with the pinyin row off ni shows in the app's text", where_typed(), ('', 'ni'))
+if old is None: os.remove(conf)
+else: open(conf, 'w').write(old)
+call(*CONTROLLER, 'ReloadAddonConfig', '(s)', 'sebtype')
+check('ni shows in the pinyin row again', where_typed(), ('ni', ''))
 def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
     wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n
@@ -812,7 +838,7 @@ check('a page shows 6 candidates (shi)', page('shi'), 6)
 # first or last page changes nothing, and nothing ends what is being typed.
 def page_shown():  # the page's words, whether it has a page before and after it, and whether a word is typed
     u = ui[-1]
-    return tuple(t for _, t in u[4]), u[7], u[8], bool(preedit[0])
+    return tuple(t for _, t in u[4]), u[7], u[8], bool(typing())
 def wheel(down):
     n = len(ui)
     call(ic, IC, 'NextPage' if down else 'PrevPage')

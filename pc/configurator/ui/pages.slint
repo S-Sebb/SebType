@@ -352,7 +352,7 @@ component CandidateSample inherits Rectangle {
     VerticalLayout {
         padding: 6px;
         spacing: 4px;
-        Text { text: "ni hao"; color: picnic ? Theme.muted : #555555; font-size: root.size * 0.85; }
+        if State.pinyin-row: Text { text: "ni hao"; color: picnic ? Theme.muted : #555555; font-size: root.size * 0.85; }
         if !root.vertical: HorizontalLayout {
             spacing: 6px;
             for w[i] in root.words: Rectangle {
@@ -423,6 +423,14 @@ component KeyboardPage inherits Page {
             HorizontalLayout { alignment: center; spacing: 8px;
                 Button { text: "A−"; enabled: State.font-size > 9; clicked => { State.font-size -= 1; State.candidates-changed(); } }
                 Button { text: "A+"; enabled: State.font-size < 24; clicked => { State.font-size += 1; State.candidates-changed(); } }
+            }
+        }
+        Divider { }
+        Row {
+            title: @tr("Pinyin above the candidates");
+            detail: @tr("中文 · Off: in the text you type into");
+            VerticalLayout { alignment: center;
+                Switch { checked <=> State.pinyin-row; label: @tr("Pinyin above the candidates"); toggled => { State.candidates-changed(); } }
             }
         }
     }

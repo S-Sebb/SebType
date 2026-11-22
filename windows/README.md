@@ -15,12 +15,13 @@ says what it sets up.
   (`server.log`: starts, requests over a second, the commands' failures) are in `%TEMP%\rime.sebtype`.
 - `sebtype.dll` (`src/tip/`): the text service, one COM class with a 中文 (zh-CN) and a 日本語 (ja-JP)
   profile. It sends each key to the server and shows its reply:
-  - Chinese keeps the pinyin in the candidate window, Japanese types inline with Mozc's underlines
-    (`edit.cpp`).
+  - Chinese keeps the pinyin in the candidate window's top row (or inline with the Configurator's pinyin row
+    off, #447), Japanese types inline with Mozc's underlines (`edit.cpp`).
   - The candidate window (`candidate_window.cpp`) has Weasel's layout and metrics, in Windows' own colours (light or dark mode, the accent, high contrast; #279)
     or SebType's Picnic with the pig at the start (#162), with the same space between the candidates and
     the pig as on Linux. `%APPDATA%\SebType\sebtype.conf` `[Candidates]` sets it (`Vertical`, `FontSize`,
-    `Picnic`); the Configurator writes it, and the window reads it each time it shows.
+    `Picnic`, `PinyinRow`); the Configurator writes it, and the window reads it each time it shows (the
+    pinyin row as each word starts).
   - The input indicator's button (`langbar.cpp`) shows SebType's keycaps (`pc/icons`, made into `.ico`
     files by `make_icons.py`); its right-click menu is the language's one switch, and a left click
     toggles English letters.

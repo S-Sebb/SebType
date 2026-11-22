@@ -84,6 +84,8 @@ Settings Settings::parse(std::string_view ini) {
       else if (key == "Emoji") s.emoji = flag(value);
     } else if (section == "Japanese" && key == "HalfWidthSpace") {
       s.halfWidthSpace = flag(value);
+    } else if (section == "Candidates" && key == "PinyinRow") {
+      s.pinyinRow = value != "0";
     } else if (section == "Learning" && key == "On") {
       s.learning = flag(value);
     }
@@ -103,6 +105,7 @@ std::string Settings::serialize() const {
   put("Emoji", emoji);
   if (!chinese.empty()) out += "[Chinese]\n" + chinese;
   if (halfWidthSpace) out += std::string("[Japanese]\nHalfWidthSpace=") + (*halfWidthSpace ? "true" : "false") + "\n";
+  if (!pinyinRow) out += "[Candidates]\nPinyinRow=0\n";
   if (!learning) out += "[Learning]\nOn=false\n";
   return out;
 }

@@ -69,10 +69,13 @@ struct Settings {
   bool vertical = true, picnic = false;
   int fontSize = 14;
 };
-Settings readSettings() {
+std::wstring settingsFile() {
   wchar_t appData[MAX_PATH] = L"";
   GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
-  const std::wstring file = std::wstring(appData) + L"\\SebType\\sebtype.conf";
+  return std::wstring(appData) + L"\\SebType\\sebtype.conf";
+}
+Settings readSettings() {
+  const std::wstring file = settingsFile();
   Settings s;
   s.vertical = GetPrivateProfileIntW(L"Candidates", L"Vertical", 1, file.c_str()) != 0;
   s.picnic = GetPrivateProfileIntW(L"Candidates", L"Picnic", 0, file.c_str()) != 0;
@@ -104,6 +107,10 @@ RECT workArea(const RECT &caret) {
 }
 
 }  // namespace
+
+bool pinyinRowSetting() {
+  return GetPrivateProfileIntW(L"Candidates", L"PinyinRow", 1, settingsFile().c_str()) != 0;
+}
 
 CandidateWindow::~CandidateWindow() {
   if (hwnd_) DestroyWindow(hwnd_);
@@ -349,7 +356,7 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
     if (seg.highlight) highlight = static_cast<int>(segments.size());
     segments.push_back(utf16(seg.text));
   }
-  std::wstring w = pageWord(segments, highlight, preeditRow);
+  std::wstring w = pageWord(segments, highlight, reply.lang == Lang::Chinese);  // Rime's, in the row or inline
   l.keepWidth = shown && !rescaled && w == word_ ? l.width : 0;
   word_ = std::move(w);
   caret_ = caret;

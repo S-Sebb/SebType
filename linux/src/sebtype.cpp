@@ -90,7 +90,11 @@ class List final : public fcitx::CandidateList, public fcitx::PageableCandidateL
     setPageable(this);
     for (size_t i = 0; i < page.items.size(); ++i) {
       words_.push_back(std::make_unique<Word>(engine, static_cast<int>(i), page.items[i]));
-      labels_.emplace_back(i < page.labels.size() ? page.labels[i] : "");
+      // Windows' "1." (#447): the core's labels end in a space, Rime's as "1 " and Mozc's as "1. ".
+      std::string label = i < page.labels.size() ? page.labels[i] : "";
+      while (!label.empty() && label.back() == ' ') label.pop_back();
+      if (!label.empty() && label.back() != '.') label += '.';
+      labels_.emplace_back(label.empty() ? label : label + " ");
     }
   }
   const fcitx::Text &label(int idx) const override { return labels_.at(idx); }
@@ -212,18 +216,21 @@ void SebTypeEngine::activate(const fcitx::InputMethodEntry &, fcitx::InputContex
   update(event.inputContext());
 }
 
-// Focus moving away, or the app's reset (a click elsewhere in the text), types in what is being typed (#277):
-// the app, or Fcitx5 for it, types in the preedit it shows (update() marks what it leaves out), so the
-// core only drops it. A preedit in Fcitx5's own panel SebType types in itself.
+bool SebTypeEngine::preeditInPanel(fcitx::InputContext *ic) const {
+  return (core_->language() == Lang::Chinese && core_->settings().pinyinRow) ||
+         !ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
+}
+
+// Focus moving away, the app's reset (a click elsewhere in the text) or another input method types in what is
+// being typed (#277): the app, or Fcitx5 for it, types in the preedit it shows (update() marks what it leaves
+// out), so the core only drops it. A preedit in Fcitx5's own panel SebType types in itself.
 void SebTypeEngine::reset(const fcitx::InputMethodEntry &, fcitx::InputContextEvent &event) {
-  core_->clear();
+  if (preeditInPanel(event.inputContext())) core_->focusOut();
+  else core_->clear();
   update(event.inputContext());
 }
 
 void SebTypeEngine::deactivate(const fcitx::InputMethodEntry &entry, fcitx::InputContextEvent &event) {
-  if (event.type() == fcitx::EventType::InputContextFocusOut &&
-      !event.inputContext()->capabilityFlags().test(fcitx::CapabilityFlag::Preedit))
-    core_->focusOut();
   reset(entry, event);
 }
 
@@ -308,11 +315,12 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     // What focus moving away types in leaves out some of what shows (Rime's spaces between syllables): those
     // bytes don't commit. It is the rest of the preedit, in order.
     const std::string typed = core_->unfinished();
+    const bool inPanel = preeditInPanel(ic), pinyinRow = inPanel && core_->language() == Lang::Chinese;
     size_t at = 0;
     fcitx::Text text;
     for (const auto &s : p.segments) {
       fcitx::TextFormatFlags flags;
-      if (s.underline) flags |= fcitx::TextFormatFlag::Underline;
+      if (s.underline && !pinyinRow) flags |= fcitx::TextFormatFlag::Underline;
       if (s.highlight) flags |= fcitx::TextFormatFlag::HighLight;
       for (size_t from = 0, to; from < s.text.size(); from = to) {
         const bool kept = at < typed.size() && s.text[from] == typed[at];
@@ -321,12 +329,15 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
         text.append(s.text.substr(from, to - from), kept ? flags : flags | fcitx::TextFormatFlag::DontCommit);
       }
     }
-    text.setCursor(p.cursor);
-    if (ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(text);
-    else panel.setPreedit(text);
+    // The pinyin row is Windows' (#447): no underline, nor the cursor Rime keeps at the start.
+    text.setCursor(pinyinRow ? -1 : p.cursor);
+    if (inPanel) panel.setPreedit(text);
+    else panel.setClientPreedit(text);
     const auto aux = core_->aux();
     const Page page = core_->page();
     if (!aux.empty()) panel.setAuxUp(fcitx::Text(aux));
+    // Windows' box keeps its top row, with the page arrows, over candidates alone (#447).
+    else if (!page.empty() && (!inPanel || text.empty())) panel.setAuxUp(fcitx::Text(" "));
     if (!page.empty()) panel.setCandidateList(std::make_unique<List>(this, ic, page));
     // The key's release resets the panel too: a popup still showing over an empty panel stays for its
     // second (Fcitx5 hides it only while it is the panel's sole text). A new popup replaces it: Fcitx5
