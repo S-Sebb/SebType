@@ -113,7 +113,11 @@ names_note="Fcitx5 shows the new names once it restarts: log in again, or turn S
 # What a running Fcitx5 loads only when it starts: restarted once at the end, under KWin, so nothing waits
 # for a login (#445).
 restart_for=()
-restart_later() { busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && restart_for+=("$1"); return 0; }
+restart_later() {
+  [[ " ${restart_for[*]} " == *" $1 "* ]] && return 0
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && restart_for+=("$1")
+  return 0
+}
 if ((undo_names)); then
   for f in "$im_dir"/{rime,mozc,keyboard-us}.conf; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; changes=1; }; done
   if grep -q '^  schema/name: ".中文"' "$rime_custom" 2>/dev/null; then
