@@ -59,6 +59,8 @@ class Core {
   std::string unfinished();
   // Commits what is being typed as the engine would (the phone's 🌐 key in an app's own field).
   void flush();
+  // Commits the keys typed as they are, the letters before pinyin or kana (the phone's 🌐, #492).
+  void flushInput();
 
   // Touch keyboards (the phone): the candidates as one list, not paged (the bar scrolls up to max), the
   // highlighted one in it, and a tap on one.

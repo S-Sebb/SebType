@@ -30,6 +30,9 @@ class Engine {
   virtual std::string unfinished() { return preedit().text(); }
   // Commits what is being typed (leaving the language), or drops it.
   virtual void flush() = 0;
+  // Commits the keys typed as they are (the phone's 🌐, #492): "phizz", not its pinyin split or kana. An engine
+  // that keeps no keys drops them.
+  virtual void flushInput() { clear(); }
   virtual void clear() = 0;
 
   // Candidates. Engines that hand the core their whole list are paged by the core (pager.h); an engine

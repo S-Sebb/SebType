@@ -357,6 +357,12 @@ jobject flush(JNIEnv *env, jclass) {
   return state(env, true);
 }
 
+jobject flushInput(JNIEnv *env, jclass) {
+  std::lock_guard g(lock);
+  core->flushInput();
+  return state(env, true);
+}
+
 jobject clear(JNIEnv *env, jclass) {
   std::lock_guard g(lock);
   core->clear();
@@ -474,6 +480,7 @@ extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *javaVm, void *) {
       {"moveCursor", i.c_str(), reinterpret_cast<void *>(moveCursor)},
       {"undo", st.c_str(), reinterpret_cast<void *>(undo)},
       {"flush", st.c_str(), reinterpret_cast<void *>(flush)},
+      {"flushInput", st.c_str(), reinterpret_cast<void *>(flushInput)},
       {"clear", st.c_str(), reinterpret_cast<void *>(clear)},
       {"state", st.c_str(), reinterpret_cast<void *>(current)},
       {"chineseState", st.c_str(), reinterpret_cast<void *>(chineseState)},

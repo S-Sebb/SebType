@@ -135,6 +135,8 @@ object NativeCore {
     @JvmStatic external fun undo(): NativeState
     /** Commits what is typed. */
     @JvmStatic external fun flush(): NativeState
+    /** Commits the keys typed as they are: the letters, not their pinyin or kana. */
+    @JvmStatic external fun flushInput(): NativeState
     /** Drops what is typed. */
     @JvmStatic external fun clear(): NativeState
     @JvmStatic external fun state(): NativeState

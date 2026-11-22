@@ -124,6 +124,11 @@ class Rime final : public Engine {
     clear();
   }
 
+  void flushInput() override {
+    commit_ += input();
+    clear();
+  }
+
   void clear() override {
     if (ready()) api_->clear_composition(session_);
     cache_.clear();
