@@ -70,6 +70,8 @@ if(SEBTYPE_ENGLISH OR SEBTYPE_CHINESE_MODEL)
       set(${off} OFF CACHE BOOL "" FORCE)
     endforeach()
     add_subdirectory(${LLAMA_DIR} llama EXCLUDE_FROM_ALL)
+    # llama.cpp is C++17: in C++20 its u8"" literals are char8_t, which MSVC won't take as char (#495).
+    set_target_properties(llama PROPERTIES CXX_STANDARD 17)
   endif()
   if(NOT TARGET sebtype_lm)
     add_subdirectory(${ENGINES}/sebtype-lm sebtype-lm)
