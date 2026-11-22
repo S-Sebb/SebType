@@ -3,10 +3,14 @@
 // <wengxt@gmail.com>): see tray.h.
 #include "tray.h"
 
+#include <png.h>
 #include <fcitx-utils/dbus/message.h>
 #include <fcitx-utils/i18n.h>
+#include <fcitx-utils/standardpaths.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/inputcontext.h>
+
+#include <filesystem>
 
 #include "dbus_public.h"
 #include "sebtype.h"
@@ -47,23 +51,48 @@ void StatusNotifierItem::activate(int, int) {
   }
 }
 
-std::string StatusNotifierItem::iconName() {
+std::string StatusNotifierItem::icon() {
   auto *engine = parent_->engine();
-  return SebTypeEngine::iconName(engine ? engine->core().icon() : "en");
+  return engine ? engine->core().icon() : "en";
+}
+
+// Every size pc/icons draws, each at its own pixels (#275). A tray asks for its icon size times the screen's
+// scale (28 px for 22 at 125 %) and takes the pixmap of that size as it is. By name, KIconLoader rounds the
+// scale up and shrank hicolor's 22x22@2 (44 px) to 28 px, which blurred it (#441).
+StatusNotifierItem::Pixmaps StatusNotifierItem::iconPixmap() {
+  const std::string state = icon();
+  if (auto it = pixmaps_.find(state); it != pixmaps_.end()) return it->second;
+  Pixmaps &out = pixmaps_[state];
+  std::error_code ec;
+  const auto tray = fcitx::StandardPaths::global().locate(fcitx::StandardPathsType::Data, "sebtype/tray");
+  for (const auto &dir : std::filesystem::directory_iterator(tray, ec)) {
+    // libpng gives straight ARGB bytes, the item's format; cairo would premultiply, and dividing back changes
+    // the PNG's antialiased edges.
+    png_image png{};
+    png.version = PNG_IMAGE_VERSION;
+    if (png_image_begin_read_from_file(&png, (dir.path() / (state + ".png")).c_str())) {
+      png.format = PNG_FORMAT_ARGB;
+      std::vector<uint8_t> argb(PNG_IMAGE_SIZE(png));
+      if (png_image_finish_read(&png, nullptr, argb.data(), 0, nullptr))
+        out.emplace_back(png.width, png.height, std::move(argb));
+    }
+    png_image_free(&png);
+  }
+  return out;
 }
 
 StatusNotifierItem::ToolTip StatusNotifierItem::toolTip() {
   auto *engine = parent_->engine();
   std::string title = engine ? langName(engine->core().language())
                              : fcitx::translateDomain("fcitx5", "Input Method");
-  return {iconName(), Pixmaps{}, std::move(title), std::string()};
+  return {SebTypeEngine::iconName(icon()), Pixmaps{}, std::move(title), std::string()};
 }
 
 void StatusNotifierItem::notifyChanged() {
   if (!isRegistered()) return;
-  if (auto icon = iconName(); icon != lastIcon_) {
+  if (auto state = icon(); state != lastIcon_) {
     newIcon();
-    lastIcon_ = std::move(icon);
+    lastIcon_ = std::move(state);
   }
   if (auto title = std::get<2>(toolTip()); title != lastTitle_) {
     newToolTip();
