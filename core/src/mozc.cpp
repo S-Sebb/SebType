@@ -177,6 +177,7 @@ class Mozc final : public Engine {
   bool composing() override { return !preedit_.empty(); }
 
   void flush() override { command(SessionCommand::SUBMIT); }
+  void flushInput() override { command(SessionCommand::COMMIT_RAW_TEXT); }
   void clear() override {
     // The phone also forgets the text before the cursor that Mozc predicts from (its client's resetContext).
     if (touch_) command(SessionCommand::RESET_CONTEXT);

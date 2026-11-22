@@ -181,6 +181,10 @@ class Chinese final : public Engine {
     rime_->flush();
     changed();
   }
+  void flushInput() override {
+    rime_->flushInput();
+    changed();
+  }
   void clear() override {
     rime_->clear();
     changed();

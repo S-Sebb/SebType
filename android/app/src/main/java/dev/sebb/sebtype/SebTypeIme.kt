@@ -655,9 +655,14 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         NativeCore.drain() // what the keys before typed shows in this language
         val order = Engines.languages()
         val next = order[(order.indexOf(lang) + 1) % order.size]
-        // What is being typed is dropped (core/ doesn't commit it on a switch); English's word stays as it shows,
-        // as today's app keeps it, and a word reopened was the field's text already (#280).
-        if (lang == ENGLISH) editor.finishComposing() else editor.compose("")
+        // English's word stays as it shows, and a word reopened was the field's text already (#280). 中文's and
+        // 日本語's letters go in as typed (#492): phizz, not its pinyin or kana. Shown before the switch, as the
+        // keys before it were.
+        if (lang == ENGLISH) editor.finishComposing()
+        else {
+            post({ if (engineComposing) flushInput().recorded() else null }) { if (it != null) show(it) }
+            NativeCore.drain()
+        }
         strip.preedit = ""
         Engines.inUse(lang, false)
         lang = next

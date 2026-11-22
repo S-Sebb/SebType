@@ -182,6 +182,13 @@ void Core::flush() {
   }
 }
 
+void Core::flushInput() {
+  if (auto *e = running(lang_)) {
+    e->flushInput();
+    commit_ += e->takeCommit();
+  }
+}
+
 std::vector<Candidate> Core::candidates(int max) {
   auto *e = current();
   return e ? e->candidates(max) : std::vector<Candidate>{};
