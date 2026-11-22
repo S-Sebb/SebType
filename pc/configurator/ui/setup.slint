@@ -2,8 +2,13 @@
 // settings (#444) -> Account Sync -> Ready/Tips), launched by Linux's self-extracting installer. Windows
 // Setup copies the files itself and opens it at Common settings (#471).
 import { Theme } from "theme.slint";
-import { Switch, Segmented, PixelFrame, Card, Row, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge, StatusMark } from "widgets.slint";
+import { Switch, Segmented, PixelFrame, Card, Row, Divider, PageTitle, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge, StatusMark } from "widgets.slint";
 import { SyncCheck, SyncText } from "state.slint";
+
+// One of the last page's checks (#445). kind: 0 SebType's input method runs where apps reach it (Linux),
+// 1 the session started with what setup set (Linux), 2 a global IM module in `file` at `line` (Linux; `own`:
+// the person's file, which the button changes), 3 SebType's text service in Windows' language list.
+export struct ReadyCheck { kind: int, ok: bool, own: bool, file: string, line: int, text: string }
 
 export global SetupState {
     in property <string> ui-font;
@@ -12,7 +17,11 @@ export global SetupState {
     in-out property <int> step;              // 0 Welcome, 1 Installing, 2 Common settings, 3 Account Sync, 4 Ready
     in-out property <int> install-phase;     // 0 packages (pkexec), 1 user setup, 2 failed
     in-out property <string> install-error;
-    in-out property <bool> live-active;
+    // The last page's checks, done or with a button that does what is left; asked again while it shows.
+    in property <[ReadyCheck]> ready-checks;
+    in property <bool> ready;
+    in property <int> fixing: -1;            // the check whose button runs
+    in property <string> ready-error;
     in-out property <bool> sync-busy;
     in-out property <string> sync-error;
     // Sign in checks the address and login first (#452); after a failure it saves anyway.
@@ -36,6 +45,8 @@ export global SetupState {
     callback save-sync(string, string, string);
     callback skip-sync();
     callback finish();
+    callback recheck();
+    callback fix(int);
 }
 
 // A language's switch with its name, which stays the same in every language.
@@ -46,6 +57,41 @@ component LangSwitch inherits HorizontalLayout {
     spacing: 6px;
     VerticalLayout { alignment: center; Switch { checked <=> root.checked; enabled: root.enabled; label: root.name; } }
     Text { text: root.name; color: Theme.ink; font-size: Theme.body-size; vertical-alignment: center; }
+}
+
+component CheckRow inherits HorizontalLayout {
+    in property <ReadyCheck> check;
+    in property <bool> busy;
+    callback fix();
+    spacing: 10px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    VerticalLayout { alignment: center; StatusMark { ok: root.check.ok; } }
+    Text {
+        text: root.check.kind == 0 ? (root.check.ok ? @tr("SebType's input method is on in every app") : @tr("SebType's input method isn't on in every app yet"))
+            : root.check.kind == 1 ? (root.check.ok ? @tr("Apps start with SebType's settings") : @tr("Log out and back in once, so apps like Steam and WINE type with SebType too"))
+            : root.check.kind == 2 ? (root.check.ok ? @tr("Turned off: {}", root.check.text) : @tr("“{0}” in {1} (line {2}) keeps apps from using SebType", root.check.text, root.check.file, root.check.line))
+            : (root.check.ok ? @tr("SebType is in Windows' input methods") : @tr("SebType is missing from Windows' input methods for 中文 or 日本語"));
+        color: Theme.ink;
+        font-size: Theme.body-size;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+        wrap: word-wrap;
+    }
+    if !root.check.ok: VerticalLayout {
+        alignment: center;
+        Button {
+            text: root.busy ? "…"
+                : root.check.kind == 0 ? @tr("Turn on")
+                : root.check.kind == 1 ? @tr("Log out")
+                : root.check.kind == 2 ? (root.check.own ? @tr("Turn off") : @tr("Open file"))
+                : @tr("Add");
+            primary: true;
+            enabled: !root.busy;
+            min-width: 96px;
+            clicked => { root.fix(); }
+        }
+    }
 }
 
 component TipRow inherits HorizontalLayout {
@@ -506,22 +552,48 @@ export component SetupWindow inherits Window {
                 Card {
                     VerticalLayout {
                         padding: 18px;
-                        spacing: 8px;
+                        spacing: 6px;
                         PageTitle {
-                            text: @tr("SebType is ready!");
+                            text: SetupState.ready ? @tr("SebType is ready!") : @tr("Almost ready");
                             color: Theme.key;
                             font-size: 22px;
                         }
+                        if !SetupState.ready && SetupState.ready-checks.length > 0: Text {
+                            text: @tr("One more step for SebType to type in every app:");
+                            color: Theme.muted;
+                            font-size: Theme.detail-size;
+                            wrap: word-wrap;
+                        }
+                        if SetupState.ready-checks.length == 0: Text {
+                            text: @tr("Checking…");
+                            color: Theme.muted;
+                            font-size: Theme.detail-size;
+                        }
+                        for check[i] in SetupState.ready-checks: CheckRow {
+                            check: check;
+                            busy: SetupState.fixing == i;
+                            fix => { SetupState.fix(i); }
+                        }
+                        if SetupState.ready-error != "": Text {
+                            text: SetupState.ready-error;
+                            color: Theme.danger;
+                            font-size: Theme.detail-size;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                Card {
+                    VerticalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        padding-top: 10px;
+                        padding-bottom: 10px;
+                        spacing: 2px;
                         TipRow { key: "Win+Space"; text: @tr("Switch EN → 中 → あ"); }
                         TipRow { key: "Shift"; text: @tr("Tap for quick English in 中文 or 日本語"); }
                         TipRow { key: "Ctrl+Shift+F"; text: @tr("Switch 简 ↔ 繁"); }
                         TipRow { key: "Alt+`"; text: @tr("Switch あ ↔ ア"); }
                     }
-                }
-                Info {
-                    text: SetupState.live-active
-                        ? @tr("SebType is active now. Press Win+Space in any app to start typing.")
-                        : @tr("Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType.");
                 }
                 HorizontalLayout {
                     alignment: space-between;
@@ -553,6 +625,11 @@ export component SetupWindow inherits Window {
             }
         }
     }
+
+    // The last page checks again every few seconds, so a step done elsewhere ticks by itself.
+    property <int> step: SetupState.step;
+    changed step => { if step == 4 { SetupState.recheck(); } }
+    Timer { interval: 2s; running: SetupState.step == 4 && SetupState.fixing < 0; triggered => { SetupState.recheck(); } }
 
     // As AppWindow's: Wayland never says the window came back from the task bar.
     Timer { interval: 500ms; running: Chrome.frameless && root.minimized; triggered => { root.minimized = false; } }

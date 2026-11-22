@@ -28,7 +28,6 @@ pub struct WizardState {
     pub step: Step,
     pub install_phase: InstallPhase,
     pub install_error: Option<String>,
-    pub live_active: bool,
     pub sync_signed_in: bool,
     pub open_configurator: bool,
 }
@@ -45,7 +44,6 @@ impl WizardState {
             step: Step::Welcome,
             install_phase: InstallPhase::Packages,
             install_error: None,
-            live_active: false,
             sync_signed_in: false,
             open_configurator: true,
         }
@@ -55,7 +53,6 @@ impl WizardState {
         self.step = Step::Installing;
         self.install_phase = InstallPhase::Packages;
         self.install_error = None;
-        self.live_active = false;
     }
 
     pub fn packages_installed(&mut self) {
@@ -70,9 +67,8 @@ impl WizardState {
         self.install_error = Some(error);
     }
 
-    pub fn install_succeeded(&mut self, live_active: bool) {
+    pub fn install_succeeded(&mut self) {
         self.install_error = None;
-        self.live_active = live_active;
         self.step = Step::Common;
     }
 
@@ -185,6 +181,65 @@ impl Common {
     }
 }
 
+/// What the last page checks (#445): each row is done, or says what is left with a button that does it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // each system makes only its own
+pub enum Need {
+    /// Linux: Fcitx5 runs SebType's input method. The button runs SebType's setup for this account again.
+    InputMethod,
+    /// Linux: KDE's session started with XMODIFIERS and without a global IM module, which only a login
+    /// gives the apps it starts (X11 apps reach SebType through XMODIFIERS). The button logs out.
+    LogIn,
+    /// Linux: a global `*_IM_MODULE` line, which SebType leaves to the person (pc/linux/README.md). The
+    /// button opens the file.
+    ImModule {
+        file: std::path::PathBuf,
+        line: usize,
+        text: String,
+    },
+    /// Windows: each 中文 and 日本語 in the language list has SebType's text service. The button adds it.
+    Languages,
+}
+
+/// This check's rows, with those an earlier one showed and this one doesn't find any more kept, done, in
+/// their place: a step stays on the page, ticked, once the person has done it.
+pub fn keep_done(before: &[(Need, bool)], mut now: Vec<(Need, bool)>) -> Vec<(Need, bool)> {
+    for (i, (need, _)) in before.iter().enumerate() {
+        if !now.iter().any(|(n, _)| n == need) {
+            now.insert(i.min(now.len()), (need.clone(), true));
+        }
+    }
+    now
+}
+
+/// The page's rows, as SetupState's ready-checks shows them.
+fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
+    checks
+        .iter()
+        .map(|(need, ok)| {
+            let (kind, file, line, text) = match need {
+                Need::InputMethod => (0, String::new(), 0, String::new()),
+                Need::LogIn => (1, String::new(), 0, String::new()),
+                Need::ImModule { file, line, text } => {
+                    (2, file.display().to_string(), *line as i32, text.clone())
+                }
+                Need::Languages => (3, String::new(), 0, String::new()),
+            };
+            // A line in the person's own file is turned off by the button; a system file opens.
+            let own = matches!(need, Need::ImModule { file, .. }
+                if std::fs::OpenOptions::new().append(true).open(file).is_ok());
+            crate::ReadyCheck {
+                kind,
+                ok: *ok,
+                own,
+                file: file.into(),
+                line,
+                text: text.into(),
+            }
+        })
+        .collect()
+}
+
 /// Inline validation for the Account Sync server field: empty is allowed (no error shown before
 /// typing); non-empty must normalize to a valid https:// (or localhost http://) address.
 pub fn server_input_valid(server: &str) -> bool {
@@ -271,17 +326,14 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
     let update = std::env::args().any(|a| a == "--upgrade");
     let state = Rc::new(RefCell::new(WizardState::new()));
     if after_install {
-        // Windows' text service is on as Setup ends; only the languages page is Setup's own.
-        let mut st = state.borrow_mut();
-        st.step = Step::Common;
-        st.live_active = true;
+        // Only the languages page is Setup's own.
+        state.borrow_mut().step = Step::Common;
     }
     let sync_ui = |win: &SetupWindow, st: &WizardState| {
         let g = win.global::<SetupState>();
         g.set_step(st.step as i32);
         g.set_install_phase(st.install_phase.clone() as i32);
         g.set_install_error(st.install_error.clone().unwrap_or_default().into());
-        g.set_live_active(st.live_active);
         g.set_open_configurator(st.open_configurator);
     };
 
@@ -332,7 +384,6 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
                     });
                     match platform::run_user_setup() {
                         Ok(()) => {
-                            let live_active = platform::sebtype_active();
                             let (common, langs) = (
                                 Common::load_for(update),
                                 platform::langs().unwrap_or_default(),
@@ -340,7 +391,6 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
                             let _ = weak_bg.upgrade_in_event_loop(move |win| {
                                 let g = win.global::<SetupState>();
                                 g.set_install_error("".into());
-                                g.set_live_active(live_active);
                                 show_common(&win, &common, &langs);
                                 g.set_step(Step::Common as i32);
                             });
@@ -500,6 +550,63 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
         }
     });
 
+    // The last page checks what SebType needs while it shows (#445): the page's timer asks every few
+    // seconds, one check at a time, off the window's thread (Windows' takes PowerShell a second).
+    let checks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(Need, bool)>::new()));
+    let checking = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let recheck = {
+        let weak = win.as_weak();
+        let (checks, checking) = (checks.clone(), checking.clone());
+        move || {
+            use std::sync::atomic::Ordering;
+            if checking.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let (weak, checks, checking) = (weak.clone(), checks.clone(), checking.clone());
+            std::thread::spawn(move || {
+                let rows = {
+                    let mut c = checks.lock().unwrap();
+                    *c = keep_done(&c, platform::ready_checks());
+                    ready_rows(&c)
+                };
+                checking.store(false, Ordering::SeqCst);
+                let _ = weak.upgrade_in_event_loop(move |win| {
+                    let g = win.global::<SetupState>();
+                    g.set_ready(rows.iter().all(|r| r.ok));
+                    g.set_ready_checks(Rc::new(slint::VecModel::from(rows)).into());
+                });
+            });
+        }
+    };
+    g.on_recheck(recheck.clone());
+    g.on_fix({
+        let weak = win.as_weak();
+        move |i| {
+            let Some(need) = checks
+                .lock()
+                .unwrap()
+                .get(i as usize)
+                .map(|(n, _)| n.clone())
+            else {
+                return;
+            };
+            let Some(win) = weak.upgrade() else { return };
+            let g = win.global::<SetupState>();
+            g.set_fixing(i);
+            g.set_ready_error("".into());
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let done = platform::fix(&need).map_err(|e| e.to_string());
+                let _ = weak.upgrade_in_event_loop(move |win| {
+                    let g = win.global::<SetupState>();
+                    g.set_fixing(-1);
+                    g.set_ready_error(done.err().unwrap_or_default().into());
+                    g.invoke_recheck();
+                });
+            });
+        }
+    });
+
     // For screenshots (pc/configurator/test.sh): --step N opens that step, Common settings as installed;
     // --theme picnic or system shows it in that style.
     if let Some(step) = std::env::args()
@@ -512,6 +619,7 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
             &platform::langs().unwrap_or_default(),
         );
         g.set_step(step);
+        recheck();
     }
     if let Some(theme) = std::env::args().skip_while(|a| a != "--theme").nth(1) {
         g.set_picnic(theme != "system");
@@ -578,9 +686,8 @@ mod tests {
         st.packages_installed();
         assert_eq!(st.install_phase, InstallPhase::UserSetup);
 
-        st.install_succeeded(true);
+        st.install_succeeded();
         assert_eq!(st.step, Step::Common);
-        assert!(st.live_active);
 
         st.common_saved();
         assert_eq!(st.step, Step::Sync);
@@ -603,12 +710,10 @@ mod tests {
         st.start_install();
         assert_eq!(st.install_phase, InstallPhase::Packages);
         assert_eq!(st.install_error, None);
-        assert!(!st.live_active);
 
         st.packages_installed();
-        st.install_succeeded(false);
+        st.install_succeeded();
         assert_eq!(st.step, Step::Common);
-        assert!(!st.live_active);
         st.common_saved();
         assert_eq!(st.step, Step::Sync);
 
@@ -673,6 +778,45 @@ mod tests {
             }
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #445: a step the person did stays on the last page, ticked, in its place; the page is ready once
+    /// every row is.
+    #[test]
+    fn a_done_step_stays_ticked() {
+        let module = |line| Need::ImModule {
+            file: "/home/a/.profile".into(),
+            line,
+            text: "export QT_IM_MODULE=fcitx".into(),
+        };
+        let first = keep_done(
+            &[],
+            vec![
+                (Need::InputMethod, true),
+                (module(3), false),
+                (module(9), false),
+                (Need::LogIn, false),
+            ],
+        );
+        let now = keep_done(
+            &first,
+            vec![
+                (Need::InputMethod, true),
+                (module(9), false),
+                (Need::LogIn, false),
+            ],
+        );
+        assert_eq!(now[1], (module(3), true));
+        assert_eq!(now.len(), 4);
+        let rows = ready_rows(&now);
+        assert_eq!(
+            rows.iter().map(|r| (r.kind, r.ok)).collect::<Vec<_>>(),
+            [(0, true), (2, true), (2, false), (1, false)]
+        );
+        assert!(
+            !rows[1].own,
+            "a file that isn't there isn't the person's to change"
+        );
     }
 
     #[test]

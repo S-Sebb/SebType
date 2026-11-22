@@ -113,10 +113,10 @@ pub fn langs() -> io::Result<Vec<(String, bool)>> {
     Ok(out)
 }
 
-pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
-    let list = language_list()?;
+/// Windows' language list as given: each language tag with its input methods, comma-separated.
+fn write_language_list(list: &[(String, String)]) -> io::Result<()> {
     let mut lines = vec!["$l = New-WinUserLanguageList en-US; $l.Clear()".to_string()];
-    let mut add = |tag: &str, tips: &str| {
+    for (tag, tips) in list {
         lines.push(format!(
             "$x = New-Object Microsoft.InternationalSettings.Commands.WinUserLanguage '{tag}'"
         ));
@@ -127,7 +127,15 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
             }
         }
         lines.push("$l.Add($x)".into());
-    };
+    }
+    lines.push("Set-WinUserLanguageList $l -Force".into());
+    powershell(&lines.join("; ")).map(|_| ())
+}
+
+pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
+    let list = language_list()?;
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut add = |tag: &str, tips: &str| out.push((tag.to_string(), tips.to_string()));
     for (id, _) in langs.iter().filter(|(_, on)| *on) {
         let tag = TAGS.iter().find(|(i, _)| i == id).unwrap().1;
         // A language turned back on gets SebType's text service.
@@ -148,8 +156,64 @@ pub fn set_langs(langs: &[(String, bool)]) -> io::Result<()> {
     {
         add(tag, tips);
     }
-    lines.push("Set-WinUserLanguageList $l -Force".into());
-    powershell(&lines.join("; ")).map(|_| ())
+    write_language_list(&out)
+}
+
+// --- The setup wizard's ready check (#445) ---
+
+/// The languages Setup set up last (setup.ps1's state, `Chosen`).
+fn chosen() -> Vec<String> {
+    let text =
+        fs::read_to_string(appdata("LOCALAPPDATA").join("SebType\\setup.json")).unwrap_or_default();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap_or_default();
+    match &v["Chosen"] {
+        serde_json::Value::String(one) => vec![one.clone()],
+        serde_json::Value::Array(all) => all
+            .iter()
+            .filter_map(|l| Some(l.as_str()?.to_string()))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The list with SebType's text service on each chosen 中文 and 日本語, the language added where it's gone;
+/// None when nothing is missing.
+fn with_text_service(
+    list: &[(String, String)],
+    chosen: &[String],
+) -> Option<Vec<(String, String)>> {
+    let mut out = list.to_vec();
+    for (id, tip) in [("zh", ZH_TIP), ("ja", JA_TIP)] {
+        if !chosen.iter().any(|c| c == id) {
+            continue;
+        }
+        let tag = TAGS.iter().find(|(i, _)| *i == id).unwrap().1;
+        match out.iter_mut().find(|(t, _)| t == tag) {
+            Some((_, tips)) if tips.split(',').any(|t| t.eq_ignore_ascii_case(tip)) => {}
+            Some((_, tips)) if tips.is_empty() => *tips = tip.to_string(),
+            Some((_, tips)) => *tips = format!("{tip},{tips}"),
+            None => out.push((tag.to_string(), tip.to_string())),
+        }
+    }
+    (out != list).then_some(out)
+}
+
+/// The wizard's last page: SebType's text service on each language Setup set up. Setup does that itself, so
+/// this fails only when something took it off since (#445).
+pub(crate) fn ready_checks() -> Vec<(crate::setup::Need, bool)> {
+    let ok = language_list().is_ok_and(|list| with_text_service(&list, &chosen()).is_none());
+    vec![(crate::setup::Need::Languages, ok)]
+}
+
+pub(crate) fn fix(need: &crate::setup::Need) -> io::Result<()> {
+    match need {
+        crate::setup::Need::Languages => match with_text_service(&language_list()?, &chosen()) {
+            Some(list) => write_language_list(&list),
+            None => Ok(()),
+        },
+        _ => Ok(()),
+    }
 }
 
 // --- The candidate window: sebtype.conf's [Candidates], which the text service reads ---
@@ -522,6 +586,37 @@ pub fn open_url(url: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #445: a chosen language whose SebType input method was taken off gets it back, first; a language
+    /// removed comes back with it; a language not chosen, or one that has it, stays as it is.
+    #[test]
+    fn the_ready_check_puts_back_sebtypes_input_method() {
+        let ms_pinyin =
+            "0804:{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}{FA550B04-5AD7-411F-A5AC-CA038EC515D7}";
+        let list = |l: &[(&str, &str)]| -> Vec<(String, String)> {
+            l.iter()
+                .map(|(t, tips)| (t.to_string(), tips.to_string()))
+                .collect()
+        };
+        let both = ["zh".to_string(), "ja".to_string()];
+        let ready = list(&[
+            ("en-US", "0409:00000409"),
+            ("zh-Hans-CN", ZH_TIP),
+            ("ja", JA_TIP),
+        ]);
+        assert_eq!(with_text_service(&ready, &both), None);
+        assert_eq!(
+            with_text_service(&list(&[("en-US", ""), ("zh-Hans-CN", ms_pinyin)]), &both),
+            Some(list(&[
+                ("en-US", ""),
+                ("zh-Hans-CN", &format!("{ZH_TIP},{ms_pinyin}")),
+                ("ja", JA_TIP)
+            ]))
+        );
+        // 中文 kept with Microsoft Pinyin only, as the person had it, when Setup didn't set it up.
+        let own = list(&[("zh-Hans-CN", ms_pinyin), ("ja", JA_TIP)]);
+        assert_eq!(with_text_service(&own, &["ja".to_string()]), None);
+    }
 
     /// A click on the toast or its button opens the About page through Setup's protocol; the text is escaped.
     #[test]

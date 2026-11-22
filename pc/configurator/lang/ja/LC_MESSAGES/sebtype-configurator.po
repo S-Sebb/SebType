@@ -520,11 +520,47 @@ msgstr "簡体 ↔ 繁体 を切り替え"
 msgid "Switch あ ↔ ア"
 msgstr "あ ↔ ア を切り替え"
 
-msgid "SebType is active now. Press Win+Space in any app to start typing."
-msgstr "SebType は今すぐ使えます。任意のアプリで Win+Space を押して入力を始めてください。"
+msgid "Almost ready"
+msgstr "あと少しです"
 
-msgid "Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType."
-msgstr "再ログインするか、KDE システム設定で仮想キーボードをオフ・オンすると SebType を使い始められます。"
+msgid "One more step for SebType to type in every app:"
+msgstr "あと 1 ステップで、SebType がどのアプリでも使えます："
+
+msgid "SebType's input method is on in every app"
+msgstr "SebType の入力方式はすべてのアプリでオンです"
+
+msgid "SebType's input method isn't on in every app yet"
+msgstr "SebType の入力方式はまだすべてのアプリでオンになっていません"
+
+msgid "Apps start with SebType's settings"
+msgstr "アプリは SebType の設定で起動します"
+
+msgid "Log out and back in once, so apps like Steam and WINE type with SebType too"
+msgstr "一度ログアウトしてログインし直すと、Steam や WINE などのアプリでも SebType で入力できます"
+
+msgid "Turned off: {}"
+msgstr "オフにしました：{}"
+
+msgid "“{0}” in {1} (line {2}) keeps apps from using SebType"
+msgstr "{1}（{2} 行目）の「{0}」があると、アプリで SebType が使えません"
+
+msgid "SebType is in Windows' input methods"
+msgstr "SebType は Windows の入力方式に入っています"
+
+msgid "SebType is missing from Windows' input methods for 中文 or 日本語"
+msgstr "Windows の中文または日本語の入力方式に SebType がありません"
+
+msgid "Turn on"
+msgstr "オンにする"
+
+msgid "Log out"
+msgstr "ログアウト"
+
+msgid "Turn off"
+msgstr "オフにする"
+
+msgid "Open file"
+msgstr "ファイルを開く"
 
 msgid "Open SebType Configurator"
 msgstr "SebType 設定を開く"

@@ -520,11 +520,47 @@ msgstr "切换简 ↔ 繁"
 msgid "Switch あ ↔ ア"
 msgstr "切换 あ ↔ ア"
 
-msgid "SebType is active now. Press Win+Space in any app to start typing."
-msgstr "SebType 已生效，现在就可以在任意应用里按 Win+Space 开始输入。"
+msgid "Almost ready"
+msgstr "快好啦"
 
-msgid "Log out and back in, or toggle Virtual Keyboard off and on in KDE System Settings, to start using SebType."
-msgstr "重新登录，或在 KDE 系统设置里将虚拟键盘关掉再打开，即可开始使用 SebType。"
+msgid "One more step for SebType to type in every app:"
+msgstr "还差一步，SebType 就能在所有应用里打字："
+
+msgid "SebType's input method is on in every app"
+msgstr "SebType 输入法已在所有应用里开启"
+
+msgid "SebType's input method isn't on in every app yet"
+msgstr "SebType 输入法还没在所有应用里开启"
+
+msgid "Apps start with SebType's settings"
+msgstr "应用启动时已带上 SebType 的设置"
+
+msgid "Log out and back in once, so apps like Steam and WINE type with SebType too"
+msgstr "注销并重新登录一次，Steam、WINE 等应用也能用 SebType 打字"
+
+msgid "Turned off: {}"
+msgstr "已停用：{}"
+
+msgid "“{0}” in {1} (line {2}) keeps apps from using SebType"
+msgstr "{1}（第 {2} 行）里的“{0}”会让应用用不了 SebType"
+
+msgid "SebType is in Windows' input methods"
+msgstr "SebType 已在 Windows 的输入法里"
+
+msgid "SebType is missing from Windows' input methods for 中文 or 日本語"
+msgstr "Windows 的中文或日本語输入法里缺少 SebType"
+
+msgid "Turn on"
+msgstr "开启"
+
+msgid "Log out"
+msgstr "注销"
+
+msgid "Turn off"
+msgstr "停用"
+
+msgid "Open file"
+msgstr "打开文件"
 
 msgid "Open SebType Configurator"
 msgstr "打开 SebType 设置"
