@@ -681,11 +681,26 @@ namespace SebTypeSetupTest {
       $all = $uia::FromHandle($p.MainWindowHandle).FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
       $sw = @($all | Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.CheckBox' -and $_.Current.Name -in 'English', '中文', '日本語' })
       if ($sw.Count -eq 3 -and ($sw | Where-Object { $_.Current.IsEnabled })) {
-        ($sw | ForEach-Object { "$($_.Current.Name)=$(if ($_.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq 'On') { 'on' } else { 'off' })" }) -join ' '
+        ($sw | ForEach-Object {
+          $t = $null
+          if ($_.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern, [ref]$t)) { "$($_.Current.Name)=$(if ($t.Current.ToggleState -eq 'On') { 'on' } else { 'off' })" }
+          else { "$($_.Current.Name)=? (patterns: $(($_.GetSupportedPatterns() | ForEach-Object ProgrammaticName) -join ','))" }
+        }) -join ' '
       }
     }
     if (-not $r) { throw 'the Configurator showed no language switches ready in 60 s' }
     $r
+  }
+  # SebType's English and 日本語 only: an account's own other input methods (Windows' 中文 with Microsoft
+  # Pinyin on a Chinese Windows) stay, and the Configurator shows a language on wherever Windows lists it.
+  function Check-EnJa($p, $what) {
+    $l = Languages
+    $win::Shot($p.MainWindowHandle, "$out\73-configurator-langs-$what.png")
+    $shown = Configurator-Langs $p
+    if ($l -notlike "en-US[[]0409:00000409[]]*" -or $l -notlike "* ja[[]$JaTip[]]*" -or $l -like "*$ZhTip*") { throw "input methods $l after English and 日本語 only" }
+    $zh = if ($l -like '*zh-Hans-CN*') { 'on' } else { 'off' }
+    if ($shown -ne "English=on 中文=$zh 日本語=on") { throw "the Configurator shows $shown for $l" }
+    "$l; the Configurator: $shown"
   }
   function Wizard-Shot($name) { $h = Wizard-Handle; Start-Sleep 1; $win::Shot($h, "$out\73-$name.png"); $h }
   function Stop-Wizard { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1 }
@@ -995,10 +1010,7 @@ namespace SebTypeSetupTest {
         'Skip leads to the ready page; 完成 closes the wizard and opens the Configurator'
       }
       Check 'common-page-languages' {
-        $l = Languages; $shown = Configurator-Langs $c; Stop-Wizard
-        if ($l -ne "en-US[0409:00000409] ja[$JaTip]") { throw "input methods $l after English and 日本語 only" }
-        if ($shown -ne 'English=on 中文=off 日本語=on') { throw "the Configurator shows $shown" }
-        "$l; the Configurator: $shown"
+        try { Check-EnJa $c wizard } finally { Stop-Wizard }
       }
       # Each page in both themes and both languages, for comparing with Linux's (#471).
       Check 'common-page-pictures' {
@@ -1012,13 +1024,9 @@ namespace SebTypeSetupTest {
       Silent-Uninstall 'common-page'
       Check 'common-page-silent-languages' {
         Silent common-page-silent @('/TASKS="en,ja"')
-        $l = Languages
         Start-Process "$App\sebtype-configurator.exe"
         $c = Configurator-Process; if (-not $c) { throw 'the Configurator opened no window' }
-        $shown = Configurator-Langs $c; Stop-Wizard
-        if ($l -ne "en-US[0409:00000409] ja[$JaTip]") { throw "input methods $l after /TASKS=en,ja" }
-        if ($shown -ne 'English=on 中文=off 日本語=on') { throw "the Configurator shows $shown" }
-        "silent /TASKS=en,ja: $l; the Configurator: $shown"
+        try { "silent /TASKS=en,ja: $(Check-EnJa $c silent)" } finally { Stop-Wizard }
       }
       Silent-Uninstall 'common-page-silent'
       return

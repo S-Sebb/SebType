@@ -254,7 +254,9 @@ fn apply_chinese(c: rime::Chinese) -> Result<Toast, Toast> {
 fn save_candidates(c: &rime::Chinese, k: &Candidates) -> std::io::Result<()> {
     let deployed = rime::save(&platform::rime_dir(), c)?;
     platform::set_candidates(k)?;
-    if deployed {
+    // Without Rime's data here yet (中文 not set up), the deploy that brings it reads these settings; one now
+    // would hold the setup wizard's Next for minutes with nothing to deploy (#471).
+    if deployed && platform::rime_dir().join("build").is_dir() {
         platform::redeploy_rime()?;
     }
     Ok(())
