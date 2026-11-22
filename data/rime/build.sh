@@ -28,6 +28,10 @@ RIME_FROST_SHA256=4f4998ae83f63d757c0a4ace192f69d48265bddfabe231642b73e3739ed0f2
 # 白霜 core: its rime_frost.dict.yaml without the cn_dicts_cell domain dictionaries (undocumented
 # origin) or tencent (which 白霜 leaves out too).
 FROST_CORE=(8105 41448 base ext others corrections)
+# jieba's word frequencies (MIT), only to check which spellings mainland text uses (#482, usage_words.py).
+JIEBA_COMMIT=67fa2e36e72f69d9134b8a1037b83fbb070b9775
+JIEBA_URL=https://raw.githubusercontent.com/fxsjy/jieba/$JIEBA_COMMIT/jieba/dict.txt
+JIEBA_SHA256=7197c3211ddd98962b036cdf40324d1ea2bfaa12bd028e68faa70111a88e12a8
 # Full pinyin is SebType's only Chinese scheme (Decisions #2, Chinese menu, #117): rime-ice's 9-key and
 # double-pinyin schemes are left out. melt_eng and radical_pinyin stay: rime_ice uses them.
 # OpenCC's simplified → traditional conversion, which rime-ice's 简/繁 switch (traditionalization, #36)
@@ -48,7 +52,7 @@ OPENCC_TS_CHARACTERS_SHA256=6b5a0a799bea2bb22c001f635eaa3fc2904310f0c08addbff275
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=9
+BUNDLE_REVISION=10
 
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
@@ -56,7 +60,7 @@ librime=/usr/lib64/librime.so.1
 libopencc=/usr/lib64/libopencc.so.1.1
 mkdir -p "$cache" "$out"
 
-key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
+key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$here/usage_words.py" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
 zip=$cache/rime-data-$key.zip
 version="rime-ice $RIME_ICE_VERSION + rime-frost $RIME_FROST_VERSION, sebtype $BUNDLE_REVISION"
 
@@ -79,7 +83,7 @@ if [[ ! -f $zip ]]; then
   s=$work/shared
   mkdir -p "$s" "$work/frost"
   unzip -q "$(fetch "$RIME_ICE_URL" "$RIME_ICE_SHA256")" -d "$s"
-  unzip -q "$(fetch "$RIME_FROST_URL" "$RIME_FROST_SHA256")" rime_frost.dict.yaml zh-moqi.gram 'cn_dicts/*' -d "$work/frost"
+  unzip -q "$(fetch "$RIME_FROST_URL" "$RIME_FROST_SHA256")" rime_frost.dict.yaml zh-moqi.gram essay.txt 'cn_dicts/*' -d "$work/frost"
 
   # rime-ice's own dictionary gives way to 白霜 core's, under rime-ice's name: the schemas, Lua and the
   # learned words (rime_ice.userdb) all refer to it by that name.
@@ -87,6 +91,8 @@ if [[ ! -f $zip ]]; then
   mkdir "$s/cn_dicts"
   for d in "${FROST_CORE[@]}"; do mv "$work/frost/cn_dicts/$d.dict.yaml" "$s/cn_dicts/"; done
   mv "$work/frost/zh-moqi.gram" "$s/"
+  python3 -I "$here/usage_words.py" "$s" "$work/frost/essay.txt" "$(fetch "$OPENCC_URL/dictionary/TSPhrases.txt" "$OPENCC_TS_PHRASES_SHA256")" \
+    "$(fetch "$OPENCC_URL/dictionary/TSCharacters.txt" "$OPENCC_TS_CHARACTERS_SHA256")" "$(fetch "$JIEBA_URL" "$JIEBA_SHA256")"
   cp "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$s/lua/"
   # rime-ice ships only its emoji table in opencc/; the 简/繁 switch needs OpenCC's s2t.
   printf '%s\n' '#include <string>' \
@@ -109,6 +115,9 @@ assert n == 1, "name not found in rime_frost.dict.yaml"
 imports = re.findall(r"^  - cn_dicts/(\w+)", head, re.M)
 assert imports == core, f"白霜's core list changed: {imports}"
 head = "\n".join(l for l in head.split("\n") if not l.startswith("  - cn_dicts_cell/"))
+# The spellings 白霜 core leaves out (#482, usage_words.py).
+head, n = re.subn(r"^(  - cn_dicts/corrections\b.*\n)", r"\1  - cn_dicts/sebtype_usage\n", head, flags=re.M)
+assert n == 1, "corrections import not found in rime_frost.dict.yaml"
 open(f"{shared}/rime_ice.dict.yaml", "w", encoding="utf-8").write(head + sep + body)
 
 p = f"{shared}/rime_ice.schema.yaml"
@@ -279,7 +288,9 @@ LICENSE file next to this one. Built by data/rime/build.sh in https://github.com
 
 Changes to rime-ice: its dictionary (cn_dicts/) is replaced by rime-frost's cn_dicts/ ${FROST_CORE[*]}
 under the name rime_ice (rime_ice.dict.yaml is rime-frost's rime_frost.dict.yaml without its
-cn_dicts_cell imports); the schema rime_ice gets rime-frost's zh-moqi grammar
+cn_dicts_cell imports), plus cn_dicts/sebtype_usage: the words of rime-frost's essay.txt that its core
+leaves out where mainland text uses them over the core's word for the same pinyin (SebType's
+data/rime/usage_words.py, checked against jieba's dict.txt, MIT, https://github.com/fxsjy/jieba/tree/$JIEBA_COMMIT); the schema rime_ice gets rime-frost's zh-moqi grammar
 (non_collocation_penalty -4, contextual_suggestions off); default.yaml lists only rime_ice, remembers
 only the traditionalization switch, drops the Control+Shift+3 and 4 switch keys and has no switcher
 hotkeys (F4, Control+grave, Control+Shift+grave); in rime_ice the
