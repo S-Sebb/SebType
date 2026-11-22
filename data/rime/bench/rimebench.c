@@ -1,8 +1,8 @@
 // Types each "keys<TAB>expected" line of INPUT one key at a time, reading the candidate menu after
-// every key as the keyboard does, and prints the rank of expected among the first page (-1: not
-// there), the keys, the expected text and the first candidate. Nothing is committed, so nothing is
-// learned between lines.
-//   rimebench SHARED USER SCHEMA INPUT [PLUGIN.so ...]   stderr: key_p50_us, key_p95_us, rss_kb
+// every key as the keyboard does, and prints the rank of expected among the first page, or among the
+// first DEPTH candidates when that is set (-1: not there), the keys, the expected text and the first
+// candidate. Nothing is committed, so nothing is learned between lines.
+//   [DEPTH=n] rimebench SHARED USER SCHEMA INPUT [PLUGIN.so ...]   stderr: key_p50_us, key_p95_us, rss_kb
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +22,7 @@ static int cmp(const void *a, const void *b) {
 }
 
 int main(int argc, char **argv) {
+  const int depth = getenv("DEPTH") ? atoi(getenv("DEPTH")) : 0;
   if (argc < 5) { fprintf(stderr, "usage: rimebench SHARED USER SCHEMA INPUT [PLUGIN.so ...]\n"); return 2; }
   const char *modules[8] = {"default"};
   int m = 1;
@@ -63,6 +64,12 @@ int main(int argc, char **argv) {
       if (n < cap) keys[n++] = now_us() - t;
     }
     int rank = -1;
+    RimeCandidateListIterator it = {0};
+    if (depth && api->candidate_list_begin(s, &it)) {
+      for (int i = 0; i < depth && rank < 0 && api->candidate_list_next(&it); ++i)
+        if (!strcmp(it.candidate.text, want)) rank = i;
+      api->candidate_list_end(&it);
+    }
     char first[256] = "";
     RIME_STRUCT(RimeContext, ctx);
     if (api->get_context(s, &ctx)) {
