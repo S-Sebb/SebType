@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
     char *want = strchr(line, '\t');
     if (!want) continue;
     *want++ = 0;
-    want[strcspn(want, "\n")] = 0;
+    want[strcspn(want, "\t\n")] = 0;
     api->clear_composition(s);
     for (const char *k = line; *k; ++k) {
       double t = now_us();

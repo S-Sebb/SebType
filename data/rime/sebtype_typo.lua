@@ -1,7 +1,9 @@
 -- SebType's typo correction (#46): when librime's own best candidate looks like a typo, asks the
 -- correction translator (corr: librime's correction on, sentences off) and ranks its candidates by how
--- likely the typo is on this keyboard. A correction's score is its dictionary log weight with
--- librime's flat correction penalty swapped for log P(typed | intended) from a keyboard model: phone
+-- likely the typo is on this keyboard. librime corrects only slips onto a neighbouring key; corr's own
+-- prism (sebtype_corr, #478) adds each syllable with a letter dropped, doubled or swapped as fuzz
+-- spellings. A correction's score is its dictionary log weight with librime's flat correction penalty
+-- (a fuzz spelling's, for those) swapped for log P(typed | intended) from a keyboard model: phone
 -- taps scatter as a Gaussian of 0.55 key widths (Gboard's spatial model, Sivek & Riley 2022) on
 -- SebType's grid; a PC hits ANSI neighbour keys.
 -- A correction never goes before an exact candidate that reads the input as full pinyin, or one that
@@ -11,6 +13,7 @@
 local M = {}
 
 local CORRECTION = -4.605170185988091 -- librime's credibility of a corrected syllable, log(0.01)
+local FUZZ = -0.6931471805599453 -- librime's credibility of a fuzz spelling, log(0.5)
 local ROWS = { "qwertyuiop", "asdfghjkl", "zxcvbnm" }
 local BUFFER = 10 -- exact candidates re-ranked with the corrections; the rest pass as they come
 
@@ -57,9 +60,9 @@ function M.init(env)
   env.corr = Component.Translator(env.engine, "corr", "script_translator")
 end
 
--- -log P(typed | meant) for one syllable: weighted Damerau-Levenshtein from typed to any prefix of
--- meant (abbreviations and completions are librime's to price, as in its own matching).
-local function syllable_cost(env, t, p)
+-- -log P(typed | meant) for one syllable: weighted Damerau-Levenshtein from typed to meant, or to any
+-- prefix of it for the last syllable (completions are librime's to price, as in its own matching).
+local function syllable_cost(env, t, p, whole)
   local m, n = #t, #p
   local d = {}
   for i = 0, m do
@@ -78,6 +81,7 @@ local function syllable_cost(env, t, p)
       d[i][j] = v
     end
   end
+  if whole then return d[m][n] end
   local best = math.huge
   for j = 1, n do best = math.min(best, d[m][j]) end
   return best
@@ -99,23 +103,28 @@ local function score(env, cand, input)
   local w = weight(cand)
   if not meant or not w then return nil end
   local typed = input:sub(cand.start + 1, cand._end):gsub("'", "")
-  local cost, pos, n = 0, 1, 0
+  local cost, pos, n, penalty = 0, 1, 0, 0
   local parts = {}
   for s in meant:gmatch("%S+") do parts[#parts + 1] = s end
-  local i = 0
-  for t in cand.preedit:gmatch("[^ ']+") do
-    i = i + 1
-    local s, p = typed:sub(pos, pos + #t - 1), parts[i]
+  local pieces = {}
+  for t in cand.preedit:gmatch("[^ ']+") do pieces[#pieces + 1] = t end
+  if #pieces ~= #parts then return nil end
+  for i, t in ipairs(pieces) do
+    local s, p, last = typed:sub(pos, pos + #t - 1), parts[i], i == #pieces
     pos = pos + #t
-    if not p then return nil end
-    if p:sub(1, #s) ~= s then
+    -- typed as meant: in full, as its initial (an abbreviation) or, the last one, unfinished
+    if s ~= p and s ~= p:sub(1, 1) and s ~= p:match("^[zcs]h") and not (last and p:sub(1, #s) == s) then
       if #s == 1 then return nil end -- a lone letter is an initial, abbreviating some word: not a typo
-      cost = cost + syllable_cost(env, s, p)
+      cost = cost + syllable_cost(env, s, p, not last)
+      -- a slip onto another key is librime's correction; any other edit is a fuzz spelling
+      local diff = 0
+      for k = 1, #s do diff = diff + (s:sub(k, k) ~= p:sub(k, k) and 1 or 0) end
+      penalty = penalty + ((#s == #p and diff == 1) and CORRECTION or FUZZ)
       n = n + 1
     end
   end
-  if i ~= #parts or pos ~= #typed + 1 or n == 0 then return nil end
-  return w - n * CORRECTION - cost
+  if pos ~= #typed + 1 or n == 0 then return nil end
+  return w - penalty - cost
 end
 
 -- Whether the input reads as this candidate's full pinyin, every syllable typed out, or as its
