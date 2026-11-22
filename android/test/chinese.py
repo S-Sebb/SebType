@@ -889,6 +889,23 @@ check(
 )
 
 
+def correction_on_first_page():
+    """A slip that reads as pinyin (#478): youkuaiyoouhao, 又快又好 meant, which neither Rime nor the model's
+    own beam reads. Rime's correction, which the model weighs once typing pauses, comes on the first page
+    (5) within the seconds type_keys waits, and picking it writes it."""
+    open_field()
+    got = candidates_for("youkuaiyoouhao", expand=True)
+    if "又快又好" not in got[:5]:
+        raise Fail(f"youkuaiyoouhao -> {got[:8]}")
+    tap_candidate("又快又好")
+    if (field := field_text()) != "又快又好":
+        raise Fail(f"picking 又快又好 wrote {field!r}")
+    return f"youkuaiyoouhao -> {got[:5]}"
+
+
+check("zh-model-correction", correction_on_first_page, needs=["first-install"])
+
+
 def model_context_after_idle_stop():
     """Rime stops 3 minutes after 中 was left, and starts again when 中 comes back. Its model then reads the
     field's text, which was entered while it was stopped: 国 is among the next words after 中华人民共和."""

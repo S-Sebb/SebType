@@ -44,6 +44,7 @@ struct Options {
     int profile = 0;
     int threads = 1;       // the model's
     int core = 0;
+    int fix = 0;           // Rime's corrections (sebtype_corr, #478) the model scores after the last key, dumped as -2
 };
 
 struct Scored {
@@ -120,7 +121,7 @@ int main(int argc, char **argv) {
         const std::map<std::string, float *> floats{{"rankWeight", &opt.rankWeight}, {"generatedRank", &opt.generatedRank}};
         const std::map<std::string, int *> ints{{"rerank", &opt.rerank}, {"generate", &opt.generate}, {"dump", &opt.dump},
                                               {"profile", &opt.profile}, {"threads", &opt.threads},
-                                              {"core", &opt.core}};
+                                              {"core", &opt.core}, {"fix", &opt.fix}};
         if (floats.count(kv[0])) *floats.at(kv[0]) = std::stof(kv[1]);
         else if (ints.count(kv[0])) *ints.at(kv[0]) = std::stoi(kv[1]);
         else return std::cerr << "unknown option " << kv[0] << "\n", 2;
@@ -213,6 +214,21 @@ int main(int argc, char **argv) {
             for (size_t j = 0; j < scored.rime.size(); j++)
                 dump << item << "\t" << j << "\t" << scored.logProb[j] << "\t" << scored.rime[j] << "\n";
             for (const auto &g : scored.generated) dump << item << "\t-1\t" << g.logProb << "\t" << g.text << "\n";
+            if (model && last && opt.dump && opt.fix) {
+                std::vector<std::string> fixes;
+                for (const auto &c : rime->corrections(keys, opt.fix)) {
+                    const auto cps = c.text;
+                    bool hanOnly = !cps.empty();
+                    for (size_t b = 0; b < cps.size();) {
+                        const unsigned char u = cps[b];
+                        hanOnly = hanOnly && u >= 0xe3 && u <= 0xe9;  // 3-byte UTF-8 in U+3000..U+9FFF
+                        b += u < 0x80 ? 1 : (u >> 5) == 6 ? 2 : (u >> 4) == 14 ? 3 : 4;
+                    }
+                    if (hanOnly) fixes.push_back(c.text);
+                }
+                const auto lp = model->score(context, keys, fixes);
+                for (size_t j = 0; j < fixes.size(); j++) dump << item << "\t-2\t" << lp[j] << "\t" << fixes[j] << "\n";
+            }
             keysOut << std::chrono::duration<double, std::micro>(clock::now() - t0).count() << "\n";
             if (prof.is_open()) {
                 prof << i + 1 << "\t" << rimeUs;

@@ -53,7 +53,7 @@ OPENCC_TS_CHARACTERS_SHA256=6b5a0a799bea2bb22c001f635eaa3fc2904310f0c08addbff275
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=11
+BUNDLE_REVISION=12
 
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
@@ -204,11 +204,18 @@ def slips(y):
     out |= {y[:i] + y[i] + y[i:] for i in range(len(y))}
     out |= {y[:i] + y[i + 1] + y[i] + y[i + 2:] for i in range(len(y) - 1) if y[i] != y[i + 1]}
     return sorted(out - {y})
+# The schema is also one SebType's Chinese model types into, in a session of its own, for corrections of
+# input that reads as valid pinyin (core/src/chinese.cpp, #478): sentences over the slips, with 白霜's grammar.
 with open(f"{shared}/sebtype_corr.schema.yaml", "w", encoding="utf-8") as f:
-    f.write("# SebType: the prism of rime_ice's typo corrections (#478), built from rime_ice's speller\n"
+    f.write("# SebType: rime_ice's typo corrections (#478), built from rime_ice's speller\n"
             "schema:\n  schema_id: sebtype_corr\n  name: sebtype_corr\n  version: \"1\"\n"
-            "speller:\n  algebra:\n" + algebra + "".join(f"    - fuzz/^{y}$/{t}/\n" for y in syllables for t in slips(y))
-            + "translator:\n  dictionary: rime_ice\n  prism: sebtype_corr\n")
+            "engine:\n  processors:\n    - speller\n  segmentors:\n    - abc_segmentor\n  translators:\n    - script_translator\n"
+            "  filters:\n    - uniquifier\n"
+            "speller:\n  alphabet: zyxwvutsrqponmlkjihgfedcba\n  delimiter: \" '\"\n  algebra:\n" + algebra
+            + "".join(f"    - fuzz/^{y}$/{t}/\n" for y in syllables for t in slips(y))
+            + "translator:\n  dictionary: rime_ice\n  prism: sebtype_corr\n  enable_correction: true\n"
+            "  enable_user_dict: false\n  enable_word_completion: false\n  contextual_suggestions: false\n"
+            "grammar:\n  language: zh-moqi\n  non_collocation_penalty: -4\n")
 
 p = f"{shared}/default.yaml"
 s = open(p, encoding="utf-8").read()
@@ -274,6 +281,9 @@ EOF
   grep -qx 'first=翀嬿琰' "$work/words.out" || { echo "rime-data: the user's word list isn't offered: chongyanyan -> $(cat "$work/words.out")" >&2; exit 1; }
   rebuilt=$(cd "$work/words/build" && ls | grep -v '\.yaml$' || true)
   [[ $rebuilt == sebtype.table.bin ]] || { echo "rime-data: a word list compiled more than its pack: $rebuilt" >&2; exit 1; }
+  # sebtype_corr's sentences correct a slip that reads as valid pinyin (#478): yu for yue.
+  "$work/deploy" "$s" "$work/phone" sebtype_corr yuelaiyuxiao > "$work/corr.out" 2> "$work/corr.log"
+  grep -qx 'first=越来越小' "$work/corr.out" || { echo "rime-data: sebtype_corr doesn't correct: yuelaiyuxiao -> $(cat "$work/corr.out")" >&2; exit 1; }
   # The 简/繁 switch on: traditional output from the shipped OpenCC data.
   "$work/deploy" "$s" "$work/hant" rime_ice houlai traditionalization > "$work/hant.out" 2> "$work/hant.log"
   grep -qx 'first=後來' "$work/hant.out" || { echo "rime-data: 繁 doesn't convert: houlai -> $(cat "$work/hant.out")" >&2; exit 1; }

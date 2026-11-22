@@ -1,7 +1,9 @@
 """Makes the slip set (#478): common phrases typed with one slip each, by kind, to check that 中文's typo
 correction puts the intended phrase first or on page 1.
 
-  python3 -I make-slips.py SETS_DIR   # writes slips.tsv (keys, phrase, kind) into SETS_DIR
+  python3 -I make-slips.py SETS_DIR [HARNESS_SETS_DIR]
+      writes slips.tsv (keys, phrase, kind) into SETS_DIR, and the same items in the Chinese harness's
+      form (context, keys, phrase, kind; android/test/chinese-lm/sets) into HARNESS_SETS_DIR
 
 Each phrase gets one slip of each kind, at a seeded random letter: drop (a letter missing), double (a
 letter typed twice), swap (two letters swapped) and near (a neighbouring key on a PC's ANSI keyboard,
@@ -106,6 +108,9 @@ def main():
             out.append((slip(rng, keys, kind), text, kind))
     with open(f"{sys.argv[1]}/slips.tsv", "w", encoding="utf-8") as f:
         f.writelines("\t".join(item) + "\n" for item in out)
+    if sys.argv[2:]:
+        with open(f"{sys.argv[2]}/slips.tsv", "w", encoding="utf-8") as f:
+            f.writelines("\t" + "\t".join(item) + "\n" for item in out)
 
 
 main()

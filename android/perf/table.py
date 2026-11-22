@@ -200,11 +200,13 @@ for name, ph in (("EN", "en"), ("Fast typing", "fast"), ("Long field", "long")):
         ph,
         f"the {n['waited'] + n['late']} spaces that waited",
     )
-# 中文's model (#264): its "SebType zh rank" and "SebType zh next" sections, each job's own time. A key's
+# 中文's model (#264): its "SebType zh rank", "zh next", "zh fixes" and "zh fix" sections, each job's own time. A key's
 # Rime list shows before it; a job superseded by the next key ends early and isn't counted apart.
 for job, what in (
     ("zh rank", "order and candidates for the letters typed"),
     ("zh next", "next words"),
+    ("zh fixes", "typo corrections looked up (#478), on the keyboard's thread"),
+    ("zh fix", "weighing of the corrections"),
 ):
     times = [float(r["ms"]) for r in rows("zh", ".jobs") if r["job"] == job]
     row(
