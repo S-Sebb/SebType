@@ -700,7 +700,9 @@ namespace SebTypeSetupTest {
     $win::Shot($p.MainWindowHandle, "$out\73-configurator-langs-$what.png")
     if ($l -notlike "en-US[[]0409:00000409[]]*" -or $l -notlike "* ja[[]$JaTip[]]*" -or $l -like "*$ZhTip*") { throw "input methods $l after English and 日本語 only" }
     $zh = if ($l -like '*zh-Hans-CN*') { 'on' } else { 'off' }
-    if ($shown -ne "English=on 中文=$zh 日本語=on") { throw "the Configurator shows $shown for $l" }
+    # In Win+Space order, as Windows lists them.
+    $sorted = [string[]]($shown -split ' '); [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    if (($sorted -join ' ') -ne "English=on 中文=$zh 日本語=on") { throw "the Configurator shows $shown for $l" }
     "$l; the Configurator: $shown"
   }
   function Wizard-Shot($name) { $h = Wizard-Handle; Start-Sleep 1; $win::Shot($h, "$out\73-$name.png"); $h }
