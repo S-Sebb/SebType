@@ -48,7 +48,9 @@ nobody's own input settings change, then removes the user and its profile:
    System style (the wizard turning plain at once), Horizontal and 8 chosen and Next, each read back with
    sebtype-configurator --common-settings get; Skip to the ready page and 完成, then Windows' input methods and
    the Configurator's language switches (English and 日本語 on, 中文 off); each page (2-4) in both themes
-   and both languages (73-wizard-<lang>-<step>-<theme>); a silent uninstall; then a silent
+   and both languages (73-wizard-<lang>-<step>-<theme>); the ready page's step with SebType's 日本語 taken off
+   the language list, in both themes and languages (73-wizard-<lang>-4-<theme>-step), its 添加 putting it back
+   (#445); a silent uninstall; then a silent
    install with /TASKS="en,ja" and the same language checks, and its silent uninstall.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
@@ -1007,6 +1009,7 @@ namespace SebTypeSetupTest {
         $now
       }
       Check 'common-page-finish' {
+        # The title waits for the page's own check of SebType's text service in the language list (#445).
         Ui-Click '跳过'; $null = Ui-Find 'SebType 装好啦！'
         $null = Wizard-Shot '6-ready-zh'
         $script:c = Wizard-Finish '完成'
@@ -1023,6 +1026,28 @@ namespace SebTypeSetupTest {
           Stop-Wizard
         } } }
         '12 pictures: steps 2-4, Picnic and System style, English and 中文'
+      }
+      # The last page's guided step (#445): with SebType's 日本語 taken off the language list (as a person could
+      # in Settings), the page says what is left, in both themes and languages; its Add button puts it back
+      # and the page turns ready by itself.
+      Check 'common-page-ready-step' {
+        $l = Get-WinUserLanguageList
+        foreach ($x in $l) { if ($x.LanguageTag -eq 'ja') { [void]$x.InputMethodTips.Remove($JaTip) } }
+        Set-WinUserLanguageList $l -Force -WarningAction SilentlyContinue
+        if ((Languages) -like "*$JaTip*") { throw "SebType's 日本語 stayed in $(Languages)" }
+        foreach ($lang in 'en', 'zh') { foreach ($theme in 'picnic', 'system') {
+          Start-Process "$App\sebtype-configurator.exe" '--setup-after-install', '--lang', $lang, '--step', 4, '--theme', $theme
+          $null = Ui-Find @{ en = 'Almost ready'; zh = '快好啦' }[$lang] 30
+          $null = Wizard-Shot "wizard-$lang-4-$theme-step"
+          if ($lang -eq 'en' -or $theme -eq 'picnic') { Stop-Wizard }
+        } }
+        try {
+          Ui-Click '添加'
+          $null = Ui-Find 'SebType 装好啦！' 60
+          $null = Wizard-Shot 'wizard-zh-4-system-step-done'
+        } finally { Stop-Wizard }
+        if ((Languages) -notlike "* ja[[]$JaTip*") { throw "添加 left $(Languages)" }
+        "Almost ready without SebType's 日本語; 添加 gave back $(Languages)"
       }
       Silent-Uninstall 'common-page'
       Check 'common-page-silent-languages' {

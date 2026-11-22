@@ -110,6 +110,14 @@ fi
 # Rime schema name that makes Chinese read 中文.
 im_dir=$data/fcitx5/inputmethod rime_dir=$data/fcitx5/rime rime_custom=$data/fcitx5/rime/rime_ice.custom.yaml
 names_note="Fcitx5 shows the new names once it restarts: log in again, or turn System Settings → Keyboard → Virtual Keyboard off and back on"
+# What a running Fcitx5 loads only when it starts: restarted once at the end, under KWin, so nothing waits
+# for a login (#445).
+restart_for=()
+restart_later() {
+  [[ " ${restart_for[*]} " == *" $1 "* ]] && return 0
+  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && restart_for+=("$1")
+  return 0
+}
 if ((undo_names)); then
   for f in "$im_dir"/{rime,mozc,keyboard-us}.conf; do [[ -f $f ]] && { echo "change: remove $f"; rm "$f"; changes=1; }; done
   if grep -q '^  schema/name: ".中文"' "$rime_custom" 2>/dev/null; then
@@ -196,8 +204,7 @@ if ((${#missing[@]})); then
         missing=("${missing[@]/#librime-octagram/$octagram_rpm}")
       fi
       sudo dnf install -y "${missing[@]}"
-      [[ " ${missing[*]} " == *octagram* ]] && busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 &&
-        warn "$(restart_note "grammar plugin")"
+      [[ " ${missing[*]} " == *octagram* ]] && restart_later "grammar plugin"
     else warn "packages not installed: ${missing[*]}"; fi
   fi
 fi
@@ -222,7 +229,7 @@ if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
     key=$(sebtype_key); rpm=$(sebtype_rpm "$key")
     [[ -f $rpm ]] || SEBTYPE_SOURCES_KEY=$key "$here/../../linux/build.sh" >/dev/null
     sudo dnf install -y "$rpm"
-    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "SebType input method"), then run this again"
+    restart_later "SebType input method"
   else warn "SebType's input method isn't installed, so typing stays as it was"; fi
 fi
 # own_build <package> <Fedora's version-release> <SebType's version-release> <build command> <what it adds>
@@ -240,7 +247,7 @@ own_build() {
           # shellcheck disable=SC2086  # word-split: a script and its arguments
           [[ -f $1 ]] || $build >/dev/null
           sudo dnf install -y "$@"
-          busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "$pkg")"
+          restart_later "$pkg"
         else warn "$pkg stays Fedora's: $without"; fi
       fi ;;
     *) warn "$pkg $now isn't the version SebType's build is for ($fedora): $without until linux/versions.sh follows it" ;;
@@ -497,9 +504,12 @@ PY
 # 6b. If KDE KWin is managing Fcitx5 and Fcitx5 isn't running yet, doesn't know sebtype yet, or still
 # holds deleted sebtype/librime libraries from an upgrade, toggle KWin's Virtual Keyboard off and back on
 # so Fcitx5 starts fresh and loads SebType immediately without requiring a re-login (#442).
-if ((!dry)) && command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1 &&
-  busctl --user status org.kde.KWin >/dev/null 2>&1 &&
-  [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) == "$fcitx_desktop" ]]; then
+kwin_runs_fcitx() {
+  command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfig6 >/dev/null 2>&1 &&
+    busctl --user status org.kde.KWin >/dev/null 2>&1 &&
+    [[ $(kreadconfig6 --file kwinrc --group Wayland --key InputMethod) == "$fcitx_desktop" ]]
+}
+if ((!dry)) && kwin_runs_fcitx; then
   need_restart=0
   if ! fcitx_on_dbus; then
     need_restart=1
@@ -511,6 +521,7 @@ if ((!dry)) && command -v kreadconfig6 >/dev/null 2>&1 && command -v kwriteconfi
   fi
   if ((need_restart)) && change "restart Fcitx5 under KWin so it loads SebType"; then
     kwin_restart_fcitx5
+    restart_for=()
   fi
 fi
 
@@ -694,7 +705,7 @@ tray_src=$here/../../linux/data/notificationitem.conf; ((checkout)) || tray_src=
 if ! cmp -s "$tray_src" "$tray_conf" &&
   change "show SebType's tray menu in place of Fcitx5's with $tray_conf"; then
   mkdir -p "${tray_conf%/*}"; cp "$tray_src" "$tray_conf"
-  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$(restart_note "SebType tray")"
+  restart_later "SebType tray"
 fi
 
 rime_changed=0  # steps 12 to 13b set it; 13c deploys
@@ -717,7 +728,7 @@ if { [[ $(cat "$rime_im" 2>/dev/null) != "$want_im" ]] || [[ $(cat "$src") != "$
   printf '%s\n' "$want_im" > "$rime_im"; printf '%s\n' "$want_custom" > "$rime_custom"
   rime_changed=1
   # Fcitx5 reads input method entries when it starts.
-  busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$names_note"
+  restart_later "input method names"
 fi
 
 # 12b. Japanese reads 日本語 and English reads English in the tray menu and the switch popup (#92), not
@@ -736,7 +747,7 @@ Configurable=True"
   if [[ $(cat "$f" 2>/dev/null) != "$want_im" ]] && change "name $id $name in $f (undo: $0 --undo-names)"; then
     [[ -f $f ]] && save "$f"
     mkdir -p "$im_dir"; printf '%s\n' "$want_im" > "$f"
-    busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && warn "$names_note"
+    restart_later "input method names"
   fi
 done
 
@@ -886,6 +897,13 @@ if [[ $(cat "$update_units/sebtype-update.service" 2>/dev/null) != "$want_update
   if ! { systemctl --user daemon-reload && systemctl --user enable --now sebtype-update.timer; }; then
     warn "the daily update check couldn't start: systemctl --user enable --now sebtype-update.timer"
   fi
+fi
+
+# Once more for what Fcitx5 loads when it starts (the tray, the names, packages), as 6b does (#445).
+if ((${#restart_for[@]})); then
+  if kwin_runs_fcitx; then
+    change "restart Fcitx5 under KWin so it loads the new ${restart_for[*]}" && kwin_restart_fcitx5
+  else warn "$(restart_note "${restart_for[*]}")"; fi
 fi
 
 # Self-check of the live session.

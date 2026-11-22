@@ -2,7 +2,7 @@
 # Checks the SebType Configurator (#72) on Linux without touching the live desktop: unit tests, every
 # string translated into 中文 and 日本語 (#118), the release build, every screen opened in English, 中文
 # and 日本語 as the system language in a nested virtual KWin (screenshots kept) in SebType's own title bar
-# (#439), the setup wizard's last three pages in Picnic and the System style (#444, #471), a private Fcitx5 and
+# (#439), the setup wizard's last three pages in Picnic and the System style (#444, #471; the last with steps left, #445), a private Fcitx5 and
 # Rime taking what the app writes, the Picnic candidate window it writes drawn with SebType's pig (#94),
 # its sync with a local sebtype_sync.py server both ways (#180), its forgetting of learned words while the engines run (#375), its daily update check against a release served here (#422), and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
@@ -156,6 +156,9 @@ SH
   mkdir -p "$sb/data/sebtype"
   notes="### New$(printf '\\n- **Change %s.** Something SebType does better now.' $(seq 12))"
   printf '{"auto": true, "checked": %s, "latest": "99.0.0", "notified": "", "notes": "%s"}\n' "$(date +%s)" "$notes" > "$sb/data/sebtype/update.json"
+  # The wizard's last page (#445) with a global IM module to turn off, in the sandbox's own profile, and no
+  # Fcitx5 on the private bus: its two steps left, each with its button.
+  echo 'export GTK_IM_MODULE=fcitx' > "$sb/.profile"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl$$" --width 1000 --height 700 --exit-with-session \
     "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer' 'setupcommon:--setup $sb/no-installer --step 2' 'setupcommon-system:--setup $sb/no-installer --step 2 --theme system' 'setupsync:--setup $sb/no-installer --step 3' 'setupsync-system:--setup $sb/no-installer --step 3 --theme system' 'setupready:--setup $sb/no-installer --step 4' 'setupready-system:--setup $sb/no-installer --step 4 --theme system'" > "$sb/kwin.log" 2>&1

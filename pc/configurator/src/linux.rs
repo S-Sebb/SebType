@@ -856,6 +856,212 @@ pub(crate) fn sebtype_active() -> bool {
         .is_some_and(|im| im == "sebtype")
 }
 
+// --- The setup wizard's ready check (#445) ---
+
+/// The files pc/linux/setup-ime.sh looks in for a global `*_IM_MODULE`.
+fn env_files() -> Vec<PathBuf> {
+    let home = home();
+    let mut files = vec![
+        PathBuf::from("/etc/environment"),
+        PathBuf::from("/etc/profile"),
+    ];
+    for dir in [
+        PathBuf::from("/etc/environment.d"),
+        PathBuf::from("/usr/lib/environment.d"),
+        config().join("environment.d"),
+        config().join("plasma-workspace/env"),
+        PathBuf::from("/etc/profile.d"),
+    ] {
+        let mut found: Vec<PathBuf> = fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "conf" || e == "sh"))
+            .collect();
+        found.sort();
+        files.extend(found);
+    }
+    for f in [
+        ".profile",
+        ".bash_profile",
+        ".bashrc",
+        ".zshenv",
+        ".zprofile",
+    ] {
+        files.push(home.join(f));
+    }
+    files
+}
+
+/// `GTK_IM_MODULE=…` or `export QT_IM_MODULE=…`: a global IM module, which overrides Wayland text-input.
+fn im_module_line(line: &str) -> bool {
+    let l = line.trim_start();
+    let l = l
+        .strip_prefix("export")
+        .filter(|r| r.starts_with(char::is_whitespace))
+        .map_or(l, str::trim_start);
+    l.split_once('=').is_some_and(|(name, _)| {
+        name.strip_suffix("_IM_MODULE").is_some_and(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        })
+    })
+}
+
+fn im_modules(files: &[PathBuf]) -> Vec<crate::setup::Need> {
+    let mut out = Vec::new();
+    for file in files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        for (i, l) in text.lines().enumerate().filter(|(_, l)| im_module_line(l)) {
+            out.push(crate::setup::Need::ImModule {
+                file: file.clone(),
+                line: i + 1,
+                text: l.trim().to_string(),
+            });
+        }
+    }
+    out
+}
+
+/// The apps Plasma starts get plasmashell's environment, which only a login sets: XMODIFIERS for XWayland
+/// apps, and no global IM module. Without Plasma, this process's own.
+fn session_env() -> String {
+    procs("plasmashell")
+        .first()
+        .and_then(|pid| fs::read(format!("/proc/{pid}/environ")).ok())
+        .map(|e| String::from_utf8_lossy(&e).replace('\0', "\n"))
+        .unwrap_or_else(|| env::vars().map(|(k, v)| format!("{k}={v}\n")).collect())
+}
+
+fn session_ready(environ: &str) -> bool {
+    environ.lines().any(|l| l == "XMODIFIERS=@im=fcitx") && !environ.lines().any(im_module_line)
+}
+
+/// This account's processes named `name`.
+fn procs(name: &str) -> Vec<u32> {
+    use std::os::unix::fs::MetadataExt;
+    let uid = |path: &str| fs::metadata(path).map(|m| m.uid()).ok();
+    let me = uid("/proc/self");
+    fs::read_dir("/proc")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().to_str()?.parse().ok())
+        .filter(|pid: &u32| {
+            fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|c| c.trim_end() == name)
+                && uid(&format!("/proc/{pid}")) == me
+        })
+        .collect()
+}
+
+fn parent(pid: u32) -> Option<u32> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // After the command's closing parenthesis: state, then the parent's pid.
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+/// Fcitx5s not started by KWin: Wayland apps reach only the one KWin runs (System Settings → Virtual Keyboard).
+fn fcitx_outside_kwin() -> Vec<u32> {
+    if busctl(&["status", "org.kde.KWin"]).is_err() {
+        return Vec::new();
+    }
+    procs("fcitx5")
+        .into_iter()
+        .filter(|&pid| {
+            parent(pid)
+                .and_then(|p| fs::read_to_string(format!("/proc/{p}/comm")).ok())
+                .is_none_or(|c| c.trim_end() != "kwin_wayland")
+        })
+        .collect()
+}
+
+/// What the wizard's last page shows: SebType's input method running where every app reaches it, any
+/// global IM module, and a session started with what setup-ime.sh set (#445).
+pub(crate) fn ready_checks() -> Vec<(crate::setup::Need, bool)> {
+    use crate::setup::Need;
+    let mut checks = vec![(
+        Need::InputMethod,
+        sebtype_active() && fcitx_outside_kwin().is_empty(),
+    )];
+    checks.extend(im_modules(&env_files()).into_iter().map(|n| (n, false)));
+    // Only when it's needed: most sessions have what setup set from the start.
+    if !session_ready(&session_env()) {
+        checks.push((Need::LogIn, false));
+    }
+    checks
+}
+
+/// What a ready check's button does.
+pub(crate) fn fix(need: &crate::setup::Need) -> io::Result<()> {
+    use crate::setup::Need;
+    match need {
+        // An Fcitx5 KWin didn't start goes, so setup's restart under KWin (#442) starts the one apps reach.
+        Need::InputMethod => {
+            let stray = fcitx_outside_kwin();
+            for pid in &stray {
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+            }
+            let t = Instant::now();
+            while stray
+                .iter()
+                .any(|p| Path::new(&format!("/proc/{p}")).exists())
+                && t.elapsed() < Duration::from_secs(5)
+            {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            run_user_setup()
+        }
+        // Plasma's own Log out dialog, where the person confirms.
+        Need::LogIn => busctl(&[
+            "call",
+            "org.kde.LogoutPrompt",
+            "/LogoutPrompt",
+            "org.kde.LogoutPrompt",
+            "promptLogout",
+        ])
+        .map(|_| ()),
+        Need::ImModule { file, line, text } => {
+            if fs::OpenOptions::new().append(true).open(file).is_ok() {
+                turn_off_line(file, *line, text)
+            } else {
+                // A system file: the person's editor, which asks for the admin password to save.
+                Command::new("xdg-open").arg(file).spawn().map(|_| ())
+            }
+        }
+        Need::Languages => Ok(()),
+    }
+}
+
+/// Comments out the line, marked so it can be found and put back.
+fn turn_off_line(file: &Path, line: usize, text: &str) -> io::Result<()> {
+    let old = fs::read_to_string(file)?;
+    let mut lines: Vec<String> = old.lines().map(str::to_string).collect();
+    match lines.get_mut(line - 1) {
+        Some(l) if l.trim() == text => *l = format!("# Turned off by SebType Setup (#445): {l}"),
+        _ => {
+            return Err(io::Error::other(format!(
+                "{}:{line} changed",
+                file.display()
+            )))
+        }
+    }
+    let mut new = lines.join("\n");
+    if old.ends_with('\n') {
+        new.push('\n');
+    }
+    // In place, not renamed over: a dotfile may be a link into the person's dotfiles.
+    fs::write(file, new)
+}
+
 /// Runs `/usr/bin/sebtype-setup </dev/null` for the invoking user.
 pub(crate) fn run_user_setup() -> io::Result<()> {
     let out = Command::new("/usr/bin/sebtype-setup")
@@ -985,6 +1191,42 @@ mod tests {
         assert_eq!(asked, 2, "asked again after 5 s");
         assert!(await_snapshot(&d, Duration::from_secs(6), || fs::write(&old, "new")).is_ok());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// #445: the ready check finds a global IM module as setup-ime.sh does, and its button turns off only
+    /// that line; a session counts as started for SebType with XMODIFIERS and no IM module.
+    #[test]
+    fn global_im_module_found_and_turned_off() {
+        let d = std::env::temp_dir().join(format!("sebtype-im-module-{}", std::process::id()));
+        fs::create_dir_all(&d).unwrap();
+        let f = d.join(".profile");
+        fs::write(
+            &f,
+            "# QT_IM_MODULE=fcitx\nexport PATH=$PATH:~/bin\n  export QT_IM_MODULE=fcitx\nGTK_IM_MODULE=ibus\nMY_GTK_IM_MODULE_X=1\n",
+        )
+        .unwrap();
+        let found = im_modules(std::slice::from_ref(&f));
+        let crate::setup::Need::ImModule { line, text, .. } = &found[0] else {
+            panic!()
+        };
+        assert_eq!(
+            (found.len(), *line, text.as_str()),
+            (2, 3, "export QT_IM_MODULE=fcitx")
+        );
+        turn_off_line(&f, *line, text).unwrap();
+        assert_eq!(im_modules(std::slice::from_ref(&f)).len(), 1);
+        assert!(fs::read_to_string(&f).unwrap().contains(
+            "\n# Turned off by SebType Setup (#445):   export QT_IM_MODULE=fcitx\nGTK_IM_MODULE=ibus\n"
+        ));
+        // A line that moved since the check isn't touched.
+        assert!(turn_off_line(&f, 1, "GTK_IM_MODULE=ibus").is_err());
+        let _ = fs::remove_dir_all(&d);
+
+        assert!(session_ready("HOME=/home/a\nXMODIFIERS=@im=fcitx\n"));
+        assert!(!session_ready("HOME=/home/a\n"));
+        assert!(!session_ready(
+            "XMODIFIERS=@im=fcitx\nGTK_IM_MODULE=fcitx\n"
+        ));
     }
 
     #[test]

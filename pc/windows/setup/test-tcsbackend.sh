@@ -16,7 +16,8 @@
 # ONLY=common-page runs only the setup wizard's Common settings page (#444, #471) in 中文: a new account's
 # settings shown (Picnic), English and 日本語 only kept through the wizard (and through a silent /TASKS), others
 # chosen and saved by Next, each read back from the Configurator, with
-# pictures (73-4-common-zh*, 73-6-ready-zh) and each page in both themes and languages (73-wizard-*).
+# pictures (73-4-common-zh*, 73-6-ready-zh) and each page in both themes and languages (73-wizard-*), and the
+# ready page's step with SebType's 日本語 taken off the language list, its button putting it back (#445).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
 # ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the

@@ -152,7 +152,16 @@ fresh_apply() {
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  menu/page_size: 6 ' "$h/.local/share/fcitx5/rime/default.custom.yaml" &&
-    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data
+    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data &&
+    restarted_once "$o"
+}
+# What the running Fcitx5 loads only when it starts (the tray, the names) needs no login or Virtual Keyboard
+# toggle (#445): setup restarts it under KWin once, at the end, with KWin's input method put back.
+restarted_once() {
+  [[ $(grep -c '^change: restart Fcitx5 under KWin' <<<"$1") == 1 ]] &&
+    grep -q '^change: restart Fcitx5 under KWin so it loads the new SebType tray input method names$' <<<"$1" &&
+    ! grep -q 'Virtual Keyboard\|log in again' <<<"$1" && [[ $(grep -c 'KWin reconfigure' "$fake/qdbus.log") -ge 3 ]] &&
+    [[ $(kreadconfig6 --file "$h/.config/kwinrc" --group Wayland --key InputMethod) == /usr/share/applications/org.fcitx.Fcitx5.desktop ]]
 }
 # The Configurator is in the app menu, starts this account's copy of the build, and has the pig icon.
 configurator() {
