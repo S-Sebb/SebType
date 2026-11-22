@@ -2,6 +2,7 @@
 // input panel (classicui: the candidate window and the switch popup). MIT, SebType.
 #include "sebtype.h"
 
+#include <fcitx-config/rawconfig.h>
 #include <fcitx-utils/i18n.h>
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/standardpaths.h>
@@ -17,6 +18,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <sstream>
 
 #include "dbus_public.h"
@@ -59,6 +61,14 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
   }
   return makeMozc({mozcProfile(), rimeUser.string()});
 }
+
+// The Configurator's Picnic theme (pc/configurator/src/linux.rs). While a popup shows, its theme.conf is the
+// pill's and the box's waits beside it, so a restart after a crash puts the box's back.
+fs::path picnicTheme() {
+  return fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "themes" /
+         "sebtype-picnic" / "theme.conf";
+}
+fs::path picnicBox() { return fs::path(picnicTheme()).replace_extension("box"); }
 
 Lang langFromId(const std::string &id) {
   for (Lang l : {Lang::English, Lang::Chinese, Lang::Japanese})
@@ -167,13 +177,14 @@ void Service::setLanguage(const std::string &id) {
 SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
     : instance_(instance), core_(std::make_unique<Core>(makeEngine, readSettings())) {
   core_->setUiLanguage(systemLanguage());
+  setPill(false);
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
     service_ = std::make_unique<Service>(this);
     dbus->call<fcitx::IDBusModule::bus>()->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
   }
 }
 
-SebTypeEngine::~SebTypeEngine() = default;
+SebTypeEngine::~SebTypeEngine() { setPill(false); }
 
 // The entry's language is the current one (en, zh or ja), as keyboard-us's, rime's and mozc's were: classicui
 // gives it to Pango (UseInputMethodLanguageToDisplayText), which picks the Chinese or Japanese forms of a glyph.
@@ -346,10 +357,12 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     const auto &config = instance_->globalConfig();
     auto notice = core_->takeNotice(config.compactInputMethodInformation());
     if (!config.showInputMethodInformation() || !hasCaret(ic)) notice.clear();
-    if (notice.empty() && aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_) {
+    const bool reshown = notice.empty() && aux.empty() && page.empty() && p.segments.empty() && now < shownUntil_;
+    if (reshown) {
       panel.setAuxUp(fcitx::Text(shown_));
       hidePopupLater(ic);
     }
+    setPill(reshown || !notice.empty());
     // 日本語's undo of a commit (Ctrl+Backspace) deletes it: the characters before the cursor.
     if (const int n = core_->takeEdit().deleteBefore) ic->deleteSurroundingText(-n, n);
     if (auto commit = core_->takeCommit(); !commit.empty()) ic->commitString(commit);
@@ -375,9 +388,41 @@ void SebTypeEngine::hidePopupLater(fcitx::InputContext *ic) {
 
 void SebTypeEngine::hidePopup(fcitx::InputContext *ic) {
   shownUntil_ = 0;
+  setPill(false);
   if (!ic || shown_.empty() || ic->inputPanel().auxUp().toString() != shown_) return;
   ic->inputPanel().setAuxUp(fcitx::Text());
   ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+}
+
+// Fcitx5's theme has one content margin for every popup, so its left one, the pig's room, would stay blank
+// beside a popup too low for the pig (#476). Windows' popup is the text with its 12 px margin round it
+// (candidate_layout.cpp): 9 here, with the 3 px TextMargin. Fcitx5 reads a theme only from its file, and its
+// classicui.conf stays as it is; Picnic's file is swapped and classicui reloads it before it draws.
+void SebTypeEngine::setPill(bool pill) {
+  if (pill == pill_) return;
+  pill_ = pill;
+  auto *ui = instance_->addonManager().addon("classicui");
+  std::error_code ec;
+  if (!pill) {
+    if (!fs::exists(picnicBox())) return;
+    fs::rename(picnicBox(), picnicTheme(), ec);
+  } else {
+    fcitx::RawConfig config;
+    if (!ui || instance_->currentUI() != "classicui" || !ui->getConfig()) return;
+    ui->getConfig()->save(config);
+    const auto *theme = config.valueByPath("Theme");
+    if (!theme || *theme != "sebtype-picnic") return;
+    std::ifstream in(picnicTheme());
+    std::stringstream box;
+    box << in.rdbuf();
+    if (!in) return;
+    const std::regex margin(R"((\[InputPanel/ContentMargin\]\nLeft=)\d+(\nRight=)\d+)");
+    const fs::path tmp = fs::path(picnicTheme()).replace_extension("pill");
+    std::ofstream(picnicBox()) << box.str();
+    std::ofstream(tmp) << std::regex_replace(box.str(), margin, "$019$029");
+    fs::rename(tmp, picnicTheme(), ec);
+  }
+  if (!ec && ui) ui->reloadConfig();
 }
 
 void SebTypeEngine::updateStatus(fcitx::InputContext *ic) {

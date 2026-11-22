@@ -226,7 +226,8 @@ check private-fcitx5-and-rime 300 private_fcitx5
 
 # The Picnic window that test wrote draws SebType's pig at the start (#94), inside one flat rectangle (#461):
 # 中文 horizontal and vertical with the pinyin row over the candidates, 中文 with that row off (#447) and
-# 日本語, and the popup of a switch to 中文. A private Fcitx5 on X11 in a nested KWin, typed into over D-Bus. The screenshots are kept for the eye.
+# 日本語, and the popup of a switch to 中文, a pill without the pig's room, then 中文 typed at once over it,
+# with the pig back (#476). A private Fcitx5 on X11 in a nested KWin, typed into over D-Bus. The screenshots are kept for the eye.
 picnic_window() {
   cat > "$sb/picnic.sh" <<'SH'
 #!/usr/bin/env bash
@@ -247,19 +248,24 @@ for _ in $(seq 240); do
   sleep 1
 done
 kill $f; wait $f
-for o in horizontal vertical no-pinyin-row ja switch; do
+for o in horizontal vertical no-pinyin-row ja switch switch-then-type; do
   sed -i "s/^Vertical Candidate List=.*/Vertical Candidate List=$([[ $o == vertical ]] && echo True || echo False)/" "$ui"
   cp "$conf.kept" "$conf"; [[ $o == no-pinyin-row ]] && printf '[Candidates]\nPinyinRow=0\n' >> "$conf"
   fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,sebtype > "$out/configurator-picnic-fcitx5-$o.log" 2>&1 & f=$!
   for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
   sleep 3  # Rime loads its schema
   case $o in ja) keys=("nihongo  " ja) ;; switch) keys=("" zh) ;; *) keys=(nihao zh) ;; esac  # Windows' test's keys
-  read -r size pink flat < <(python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png" "${keys[@]}")
+  read -r size pink flat gap < <([[ $o == switch-then-type ]] && export SWITCH=1; python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png" "${keys[@]}")
   kill $f; wait $f
-  # The one-line switch popup is too low for the pig, which Fcitx5 then leaves out, as Windows does (#447).
-  if [[ ${flat:-0} == 1 && ( ${pink:-0} -gt 100 || ( $o == switch && ${pink:-1} == 0 ) ) ]]; then echo "$o ok: $size, $pink logo pixels, flat"
-  else echo "$o: no logo in a flat rectangle (${size:-no window}, ${pink:-0} logo pixels, flat ${flat:-0})"; fi
+  # The switch popup is a pill, the language with Windows' margin round it and no pig's room (#476).
+  if [[ ${flat:-0} == 1 && ( ${pink:-0} -gt 100 || ( $o == switch && ${pink:-99} -lt 20 && ${gap#-} -le 3 ) ) ]]
+  then echo "$o ok: $size, $pink logo pixels, flat, $gap px more room left of the text"
+  else echo "$o: no logo in a flat rectangle, or a pill with room left (${size:-no window}, ${pink:-0} logo pixels, flat ${flat:-0}, $gap px more left)"; fi
 done
+# The candidate box's theme is back once Fcitx5 quits, even within the popup's second.
+theme=$sb/data/fcitx5/themes/sebtype-picnic
+if [[ ! -e $theme/theme.box ]] && ! grep -qzP 'ContentMargin\]\nLeft=9\n' "$theme/theme.conf"; then echo "box-theme ok: back"
+else echo "box-theme: $(grep -A2 ContentMargin "$theme/theme.conf" | tr '\n' ' ')"; fi
 mv "$conf.kept" "$conf"
 SH
   chmod +x "$sb/picnic.sh"; rm -f "$out/configurator-picnic.status"
@@ -267,7 +273,7 @@ SH
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY $own_env HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --xwayland --no-lockscreen --socket "wp$$" --width 1000 --height 700 --exit-with-session \
     "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
-  cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 5 ]]
+  cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 7 ]]
 }
 export -f picnic_window
 check picnic-candidate-window 450 picnic_window

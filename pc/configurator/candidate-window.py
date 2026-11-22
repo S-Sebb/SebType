@@ -5,11 +5,14 @@
 
 Runs inside a nested KWin with Xwayland, where Fcitx5 draws with X11 (classicui on xcb). It talks to Fcitx5
 as an app would (an input context with inline preedit, in SebType's LANG; with KEYS "", the popup of a switch
-to LANG), waits for the window's size to settle, saves its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS FLAT`: the pink pixels
-where the Picnic theme draws SebType's pig, left of the candidates, and 1 if the window is one flat
-rectangle (#461): its top border drawn at the left and the right, as no tab rising above it is.
+to LANG; with SWITCH=1, KEYS typed at once after that switch), waits for the window's size to settle, saves
+its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS FLAT GAP`: the pink pixels where the
+Picnic theme draws SebType's pig, left of the candidates, 1 if the window is one flat rectangle (#461): its
+top border drawn at the left and the right, as no tab rising above it is, and how many px more room the
+text has at its left than at its right (about 0 for the switch popup's pill, #476).
 """
 
+import os
 import sys
 import time
 
@@ -35,7 +38,9 @@ ic.SetCursorRect(60, 60, 1, 20)
 core = dbus.Interface(
     bus.get_object("org.fcitx.Fcitx5", "/sebtype"), "org.sebtype.Core1"
 )
-if not keys:  # the switch's popup (no KEYS: "")
+if not keys or os.environ.get(
+    "SWITCH"
+):  # the switch's popup (no KEYS: ""), or KEYS typed over it
     core.SetLanguage("en")
     time.sleep(1.5)
 core.SetLanguage(lang)
@@ -97,4 +102,7 @@ Image.fromarray(rgb.astype(np.uint8)).save(out)
 r, g, b = (rgb[:, :40, i] for i in range(3))
 pink = int(((r > 220) & (g > 120) & (g < 200) & (b > 140) & (r - g > 40)).sum())
 flat = int(a[1, 14] > 0 and a[1, size[0] - 14] > 0)
-print(f"{size[0]}x{size[1]} {pink} {flat}")
+# The text's dark pixels inside the 3 px border: how much wider the room left of it is than the room right.
+dark = np.flatnonzero((rgb[4:-4, 4:-4].max(axis=2) < 150).any(axis=0))
+gap = int(dark[0] - (size[0] - 9 - dark[-1])) if dark.size else 0
+print(f"{size[0]}x{size[1]} {pink} {flat} {gap}")
