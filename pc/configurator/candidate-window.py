@@ -6,11 +6,11 @@
 Runs inside a nested KWin with Xwayland, where Fcitx5 draws with X11 (classicui on xcb). It talks to Fcitx5
 as an app would (an input context with inline preedit, in SebType's LANG; with KEYS "", the popup of a switch
 to LANG; with SWITCH=1, KEYS typed at once after that switch), waits for the window's size to settle, saves
-its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS FLAT GAP FILL ICON`: the pink pixels where the
+its pixels over a light desktop and prints `WIDTHxHEIGHT LOGO_PIXELS FLAT GAP BORDER FILL ICON`: the pink pixels where the
 Picnic theme draws SebType's pig, left of the candidates, 1 if the window is one flat rectangle (#461): its
 top border drawn at the left and the right, as no tab rising above it is, and how many px more room the
-text has at its left than at its right (about 0 for the switch popup's pill, #476), the fill's colour inside
-the left border and the tray's icon (sebtype-zh) then.
+text has at its left than at its right (about 0 for the switch popup's pill, #476), the left border's colour
+and the fill's inside it, and the tray's icon (sebtype-zh) then.
 """
 
 import os
@@ -106,6 +106,6 @@ flat = int(a[1, 14] > 0 and a[1, size[0] - 14] > 0)
 # The text's dark pixels inside the 3 px border: how much wider the room left of it is than the room right.
 dark = np.flatnonzero((rgb[4:-4, 4:-4].max(axis=2) < 150).any(axis=0))
 gap = int(dark[0] - (size[0] - 9 - dark[-1])) if dark.size else 0
-# The fill inside the left border: the pill's is the tray key's colour (#476).
-fill = "%02x%02x%02x" % tuple(rgb[size[1] // 2, 5])
-print(f"{size[0]}x{size[1]} {pink} {flat} {gap} {fill} {core.State()[3]}")
+# The left border and the fill inside it: the pill's border is the tray key's colour (#476).
+border, fill = ("%02x%02x%02x" % tuple(rgb[size[1] // 2, x]) for x in (1, 5))
+print(f"{size[0]}x{size[1]} {pink} {flat} {gap} {border} {fill} {core.State()[3]}")

@@ -832,10 +832,10 @@ def keycap_header():
     """The key's colours for C++: the switch popup's pill takes them (#476)."""
     hex_ = lambda c: "0x" + c[1:].lower()
     cases = "".join(
-        f'  if (icon == "{state}") return {hex_(BASE[lang][0])};\n'
+        f'  if (icon == "{state}") return {hex_(BASE[lang][1])};\n'
         for state, (lang, _) in STATES.items()
     )
-    return f"""// SebType's tray key (Set E, #63): its base's colours, for the switch popup's pill (#476). Written by
+    return f"""// SebType's tray key (Set E, #63): its base's colours, for the switch popup's pill's border (#476). Written by
 // pc/icons/build.py from its own: change them there.
 #pragma once
 
@@ -844,9 +844,10 @@ def keycap_header():
 
 namespace sebtype::keycap {{
 
-// The base's top colour of the tray key pc/icons/<size>/<icon>.png: its language's, grey while not ready.
+// The base's bottom colour of the tray key pc/icons/<size>/<icon>.png: its language's, grey while not ready;
+// else the key's outline.
 constexpr uint32_t base(std::string_view icon) {{
-{cases}  return {hex_(STICKER)};
+{cases}  return {hex_(OUTLINE)};
 }}
 
 }}  // namespace sebtype::keycap

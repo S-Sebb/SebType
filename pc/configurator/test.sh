@@ -226,8 +226,8 @@ check private-fcitx5-and-rime 300 private_fcitx5
 
 # The Picnic window that test wrote draws SebType's pig at the start (#94), inside one flat rectangle (#461):
 # 中文 horizontal and vertical with the pinyin row over the candidates, 中文 with that row off (#447) and
-# 日本語, and the popups of switches to 中文, EN and 日本語, pills in the tray key's colours without the pig's
-# room, then 中文 typed at once over the first, with the pig back (#476). A private Fcitx5 on X11 in a nested KWin, typed into over D-Bus. The screenshots are kept for the eye.
+# 日本語, and the popups of switches to 中文, EN and 日本語, pills bordered in the tray key's colours without
+# the pig's room, then 中文 typed at once over the first, with the pig back (#476). A private Fcitx5 on X11 in a nested KWin, typed into over D-Bus. The screenshots are kept for the eye.
 picnic_window() {
   cat > "$sb/picnic.sh" <<'SH'
 #!/usr/bin/env bash
@@ -255,16 +255,18 @@ for o in horizontal vertical no-pinyin-row ja switch switch-en switch-ja switch-
   for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
   sleep 3  # Rime loads its schema
   case $o in ja) keys=("nihongo  " ja) ;; switch) keys=("" zh) ;; switch-en | switch-ja) keys=("" "${o#switch-}") ;; *) keys=(nihao zh) ;; esac  # Windows' test's keys
-  read -r size pink flat gap fill icon < <([[ $o == switch-then-type ]] && export SWITCH=1; python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png" "${keys[@]}")
+  read -r size pink flat gap border fill icon < <([[ $o == switch-then-type ]] && export SWITCH=1; python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png" "${keys[@]}")
   kill $f; wait $f
-  # The switch popup is a pill, the language with Windows' margin round it and no pig's room, filled with the
-  # tray key's colour as pc/icons/build.py wrote it for C++ (#476).
+  # The switch popup is a pill, the language with Windows' margin round it and no pig's room, in the box's
+  # cream with a border of the tray key's colour, as pc/icons/build.py wrote it for C++ (#476).
   key=$(sed -n "s/.*\"${icon#sebtype-}\") return 0x\(.*\);/\1/p" "$here/../../core/include/sebtype/keycap.h")
   if [[ $o == switch* && $o != *-then-* ]]; then
-    if [[ ${flat:-0} == 1 && ${gap#-} -le 3 && -n $key && $fill == "$key" ]]
-    then echo "$o ok: $size pill, $gap px more room left of the text, #$fill as $icon"
-    else echo "$o: no pill in the key's colour (${size:-no window}, flat ${flat:-0}, $gap px more left, #$fill, $icon #$key)"; fi
-  elif [[ ${flat:-0} == 1 && ${pink:-0} -gt 100 ]]; then echo "$o ok: $size, $pink logo pixels, flat, #$fill"
+    if [[ ${flat:-0} == 1 && ${gap#-} -le 3 && -n $key && $border == "$key" && $fill == "$cream" ]]
+    then echo "$o ok: $size pill, $gap px more room left of the text, #$fill in #$border as $icon"
+    else echo "$o: no pill in the key's colour (${size:-no window}, flat ${flat:-0}, $gap px more left, #$fill in #$border, $icon #$key)"; fi
+  elif [[ ${flat:-0} == 1 && ${pink:-0} -gt 100 ]]; then
+    cream=$fill  # the box's
+    echo "$o ok: $size, $pink logo pixels, flat, #$fill"
   else echo "$o: no logo in a flat rectangle (${size:-no window}, ${pink:-0} logo pixels, flat ${flat:-0})"; fi
 done
 # The candidate box's theme is back once Fcitx5 quits, even within the popup's second.

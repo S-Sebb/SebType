@@ -80,8 +80,8 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   // re-set of it at a key's release has no timer of Fcitx5's to hide it (#275).
   void hidePopupLater(fcitx::InputContext *ic);
   void hidePopup(fcitx::InputContext *ic);
-  // Picnic draws the popup as a pill in the tray key's colours (icon: pc/icons' name), without the pig's room
-  // the candidate box keeps; "" puts the box back (#476).
+  // Picnic draws the popup as a pill bordered in the tray key's colour (icon: pc/icons' name), without the
+  // pig's room the candidate box keeps; "" puts the box back (#476).
   void setPill(const std::string &icon);
   // Core::whenIdle, run from Fcitx5's loop: tried at once, then each second until typing is idle.
   void whenIdle(Core::Chore chore, std::function<void()> work);

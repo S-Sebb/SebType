@@ -254,9 +254,9 @@ void CandidateWindow::draw() {
     const auto card = D2D1::RoundedRect(
         D2D1::RectF(border / 2, border / 2, l.width - border / 2, l.height - border / 2), kCornerRadius * s,
         kCornerRadius * s);
-    color(pillBack_ ? pillBack_ : style_.colors.back);
+    color(style_.colors.back);
     target_->FillRoundedRectangle(card, brush);
-    color(style_.colors.border);
+    color(pillBorder_ ? pillBorder_ : style_.colors.border);
     target_->DrawRoundedRectangle(card, brush, border);
 
     for (size_t i = 0; i < l.preedit.size(); ++i) {
@@ -317,7 +317,7 @@ void CandidateWindow::place(const RECT &caret) {
 }
 
 void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &caret) {
-  pillBack_ = 0;
+  pillBorder_ = 0;
   CandidateLayout &l = layout_;
   l.preedit.clear();
   preeditHighlight_ = -1;
@@ -373,8 +373,8 @@ void CandidateWindow::notice(const std::string &text, const std::string &icon, c
   ScreenPixels screen;
   if (text.empty() || !create()) return;
   loadStyle(dpiAt(caret));
-  // The top of the tray key's base, in Picnic's brown border and ink, as the key's outline and glyph.
-  pillBack_ = style_.picnic ? keycap::base(icon) : 0;
+  // Picnic's cream and ink, in a border of the tray key's base colour.
+  pillBorder_ = style_.picnic ? keycap::base(icon) : 0;
   CandidateLayout &l = layout_;
   l.preedit = {utf16(text)};
   preeditHighlight_ = -1;

@@ -410,8 +410,8 @@ void SebTypeEngine::hidePopup(fcitx::InputContext *ic) {
 
 // Fcitx5's theme has one content margin for every popup, so its left one, the pig's room, would stay blank
 // beside a popup too low for the pig (#476). Windows' popup is the text with its 12 px margin round it
-// (candidate_layout.cpp): 9 here, with the 3 px TextMargin. The pill is filled with the top of the tray key's
-// base (pc/icons/build.py), in Picnic's brown border and ink, as the key's outline and glyph. Fcitx5 reads a
+// (candidate_layout.cpp): 9 here, with the 3 px TextMargin. The pill is the box's cream and ink, its border the
+// tray key's base colour (pc/icons/build.py). Fcitx5 reads a
 // theme only from its file, and its classicui.conf stays as it is; Picnic's file is swapped and classicui
 // reloads it before it draws.
 void SebTypeEngine::setPill(const std::string &icon) {
@@ -431,10 +431,10 @@ void SebTypeEngine::setPill(const std::string &icon) {
     if (!fs::exists(picnicBox()) && !writeFile(picnicBox(), readFile(picnicTheme()))) return;
     const std::string box = readFile(picnicBox()), panel = readFile(picnicDir() / "panel.svg");
     if (box.empty() || panel.empty()) return;
-    char fill[16];
-    std::snprintf(fill, sizeof fill, "fill=\"#%06x\"", keycap::base(icon));
+    char stroke[24];
+    std::snprintf(stroke, sizeof stroke, "stroke=\"#%06x\"", keycap::base(icon));
     const std::regex margin(R"((\[InputPanel/ContentMargin\]\nLeft=)\d+(\nRight=)\d+)");
-    if (!writeFile(picnicDir() / "pill.svg", std::regex_replace(panel, std::regex(R"(fill="#\w+")"), fill)) ||
+    if (!writeFile(picnicDir() / "pill.svg", std::regex_replace(panel, std::regex(R"(stroke="#\w+")"), stroke)) ||
         !writeFile(picnicTheme(), std::regex_replace(std::regex_replace(box, margin, "$019$029"),
                                                      std::regex("Image=panel.svg"), "Image=pill.svg")))
       return;
