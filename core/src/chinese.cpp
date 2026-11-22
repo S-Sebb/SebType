@@ -59,9 +59,10 @@ constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each p
 constexpr std::chrono::milliseconds kHold{100};
 // Phrase-level correction (#478): Rime's corrections the model scores, and by how much (log probability) the
 // best must beat the list's first to go first, or may trail it and still go last on the first page. Tuned on
-// the slip set with the clean sentences as the guard (android/test/chinese-lm, fix=1).
+// the slip set with the clean sentences as the guard (android/test/chinese-lm/tune_fix.py): the model's own beam
+// already finds what it is surer of, so a correction lands on the first page far more often than first.
 constexpr int kFixes = 8;
-constexpr float kFixMargin = 1, kFixFloor = 3;  // tuned on the slip set (#478)
+constexpr float kFixMargin = 1, kFixFloor = 3;
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
 }
