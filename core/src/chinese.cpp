@@ -38,6 +38,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <optional>
@@ -130,7 +131,7 @@ struct Readings {
   std::set<std::string> syllables;
 
   explicit Readings(const std::string &path) {
-    std::ifstream in(path);
+    std::ifstream in(std::filesystem::u8path(path));  // UTF-8, as Windows' %APPDATA% may not be ASCII
     if (!in) std::fprintf(stderr, "sebtype: can't read %s\n", path.c_str());
     for (std::string line; std::getline(in, line);) {
       const size_t tab = line.find('\t');
@@ -235,7 +236,11 @@ class Chinese final : public Engine {
       }
       if (commitsFirst(k.sym)) pick(highlight_);
     }
-    const bool taken = rime_->key(k);
+    const bool composing = rime_->composing(), taken = rime_->key(k);
+    if (!k.release && !taken && !composing && !paths_.fieldText && (k.sym < 0xffe1 || k.sym > 0xffee)) {
+      if (k.sym >= 0x20 && k.sym < 0x7f && !(k.mods & (mod::Ctrl | mod::Alt | mod::Super))) remember(std::string(1, char(k.sym)));
+      else context_.clear();
+    }
     if (!k.release) changed();
     return taken;
   }
@@ -264,13 +269,16 @@ class Chinese final : public Engine {
   }
   void clear() override {
     rime_->clear();
+    if (!paths_.fieldText) context_.clear();
     changed();
   }
 
   int pageSize() override { return rime_->pageSize(); }
   bool candidateAt(int index, Candidate &out) override {
     if (index < 0) return false;
-    if (static_cast<int>(shown_.size()) <= index || shownRev_ != rev_ || shownResult_ != results_)
+    // The turn for Rime's corrections (#478) is a list made again: the PCs' hosts read the box only through here.
+    if (static_cast<int>(shown_.size()) <= index || shownRev_ != rev_ || shownResult_ != results_ ||
+        (fixDue_ == rev_ && fixAsked_ != rev_))
       list(index + 1 + std::max(rime_->pageSize(), 1));
     if (index >= static_cast<int>(shown_.size())) return false;
     out = shown_[index].candidate;
@@ -359,6 +367,11 @@ class Chinese final : public Engine {
   void save() override { rime_->save(); }
   bool busy() override { return rime_->busy(); }
   bool available() override { return rime_->available(); }
+  bool updating() override {
+    std::lock_guard g(mutex_);
+    if (askedRev_ == rev_ && resultRev_ != rev_ && (loading_ || model_)) return true;
+    return fixDue_ == rev_ && fixDone_ != rev_;  // Rime's corrections are still to be weighed (#478)
+  }
   std::string input() override { return rime_->input(); }
 
  private:
@@ -457,6 +470,8 @@ class Chinese final : public Engine {
         job.fix = std::move(c.text);
         return want(std::move(job));
       }
+    std::lock_guard g(mutex_);
+    fixDone_ = rev_;  // none to weigh
   }
 
   void pick(int index) {
@@ -567,7 +582,7 @@ class Chinese final : public Engine {
       job.learned = !rime.empty() && rime[0].learned;
       job.word = !rime.empty() && !rime[0].sentence && wholeInput(rime[0].text, n);
       job.fixable = rime_->corrects();
-    } else if (!text || (!context_.empty() && context_.back() == '\n')) {
+    } else if (!text || !paths_.nextWords || (!context_.empty() && context_.back() == '\n')) {
       return want(std::nullopt);
     }
     want(std::move(job));
@@ -616,7 +631,10 @@ class Chinese final : public Engine {
         // A key meanwhile drops it, so the next key's list never waits behind it.
         if (!paths_.synchronous && wake_.wait_for(l, kFixPause, [&] { return stop_ || wanted_ || revNow_ != job.rev; }))
           continue;
-        if (resultRev_ != job.rev || !resultFirst_) continue;
+        if (resultRev_ != job.rev || !resultFirst_) {
+          fixDone_ = job.rev;
+          continue;
+        }
         made = result_;
         first = resultFirst_;
       }
@@ -650,6 +668,7 @@ class Chinese final : public Engine {
       resultRev_ = job.rev;
       results_++;
       if (job.fix.empty()) jobTime_ = std::chrono::steady_clock::now() - start;
+      else fixDone_ = job.rev;
       // A list for the input: once it has shown, the caller's thread looks up the corrections (askFixes).
       const bool fixes = job.fixable && job.fix.empty() && first;
       if (fixes) fixDue_ = job.rev;
@@ -759,6 +778,7 @@ class Chinese final : public Engine {
   uint64_t resultRev_ = ~uint64_t{0};
   std::atomic<uint64_t> results_{0};             // lists that came, ever
   std::atomic<uint64_t> fixDue_{~uint64_t{0}};   // the revision whose corrections the worker asked for (#478)
+  uint64_t fixDone_ = ~uint64_t{0};             // the revision whose corrections were weighed, or had none
   uint64_t askedRev_ = ~uint64_t{0};          // the last revision the model was asked a list for
   std::chrono::steady_clock::duration jobTime_{};  // how long the last list that came took
   std::atomic<uint64_t> revNow_{0};

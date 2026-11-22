@@ -1147,7 +1147,8 @@ struct ChineseTest : testing::Test {
   std::unique_ptr<Engine> zh;
 
   void SetUp() override { start(); }
-  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}) {
+  // pc: as the PCs' hosts set it up (#495), with no next words and no field text.
+  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}, bool pc = false) {
     zh.reset();
     auto r = std::make_unique<FakeRime>();
     if (setUp) setUp(*r);
@@ -1164,6 +1165,7 @@ struct ChineseTest : testing::Test {
     }
     ChineseModelPaths paths{ZH_MODEL, ZH_OPENCC, 1, delay};
     paths.readings = readings;
+    paths.nextWords = paths.fieldText = !pc;
     zh = withChineseModel(std::move(r), paths, [this] {
       std::lock_guard g(mutex);
       readies++;
@@ -1394,6 +1396,25 @@ TEST_F(ChineseFixTest, ANearlyAsLikelyCorrectionComesFirst) {
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }
 
+// Windows' text service asks again until the correction has been weighed too (#495), not only the model's list;
+// the PCs' hosts read the box through page(), whose next read is the turn for corrections.
+TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
+  rime->words["you"] = {"有", "又", "由", "友", "油", "游", "右", "优"};  // a full page, as Rime's
+  const int before = readyCount();
+  type("youkuaiyoouhao");
+  EXPECT_TRUE(zh->updating());
+  ASSERT_TRUE(ready(before + 1));
+  ASSERT_NE(zh->page().items.at(0).text, "又快又好");
+  EXPECT_TRUE(zh->updating());
+  const int asked = readyCount();
+  zh->page();  // the text service's next ask looks the corrections up
+  EXPECT_EQ(rime->corrected, 1);
+  EXPECT_TRUE(zh->updating());
+  ASSERT_TRUE(ready(asked));
+  EXPECT_EQ(zh->page().items.at(0).text, "又快又好");
+  EXPECT_FALSE(zh->updating());
+}
+
 // Space before the corrected list comes commits the list shown, and the correction never shows after it.
 TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   startFixing(300ms);
@@ -1425,6 +1446,48 @@ TEST_F(ChineseTest, TraditionalAndNextWords) {
   EXPECT_NE(std::ranges::find(next, "好"), next.end());
   zh->selectAt(int(std::ranges::find(next, "好") - next.begin()));
   EXPECT_EQ(zh->takeCommit(), "好");
+}
+
+// The PCs' box (#495): no next words, so a commit closes it at once.
+TEST_F(ChineseTest, WithoutNextWordsACommitEmptiesTheList) {
+  start(50ms, {}, true);
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  const int before = readyCount();
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_TRUE(list().empty());
+  std::this_thread::sleep_for(200ms);
+  EXPECT_EQ(readyCount(), before);
+  EXPECT_TRUE(list().empty());
+}
+
+// Windows' text service asks again while the model's list is still to come (#495).
+TEST_F(ChineseTest, UpdatingUntilTheModelsListComes) {
+  start(100ms, {}, true);
+  typeAndWait("woaini");
+  EXPECT_FALSE(zh->updating());
+  const int before = readyCount();
+  type("w");
+  EXPECT_TRUE(zh->updating());
+  ASSERT_TRUE(ready(before));
+  EXPECT_FALSE(zh->updating());
+  zh->clear();  // nothing typed, no next words: nothing to come
+  EXPECT_FALSE(zh->updating());
+}
+
+// The PCs never pass the field's text: a key the app takes with nothing composing ends the context, which
+// otherwise would pick for text no longer there (#495: after 后来 deleted, xkaoshi gave 消失, not 小时).
+TEST_F(ChineseTest, OnThePCsAKeyTheAppTakesEndsTheContext) {
+  start({}, [](FakeRime &r) { r.words["guo"] = {"过", "国", "锅"}; }, true);
+  zh->setContext("中华人民共和", "", false);  // Linux passes it at Ctrl+Backspace
+  typeAndWait("guo");
+  ASSERT_EQ(list().at(0), "国");
+  for (int i = 0; i < 3; i++) zh->key({0xff08, 0, false});
+  ASSERT_FALSE(zh->composing());
+  zh->key({0xff08, 0, false});  // the app's: it deletes 和, and with it what came before is unknown
+  typeAndWait("guo");
+  EXPECT_EQ(list().at(0), "过");
 }
 
 TEST_F(ChineseTest, PunctuationCommitsTheModelsFirst) {

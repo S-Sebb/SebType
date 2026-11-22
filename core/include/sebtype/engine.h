@@ -99,6 +99,9 @@ class Engine {
   virtual bool busy() { return false; }
   // False when it can't take keys and isn't busy: it didn't load (#275).
   virtual bool available() { return true; }
+  // A list for what is typed now is still to come from the engine's worker (中文's model): a frontend without
+  // its READY callback, Windows' text service across the server's pipe, asks for the candidates again (#495).
+  virtual bool updating() { return false; }
 };
 
 }  // namespace sebtype

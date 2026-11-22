@@ -388,6 +388,38 @@ if ($Typing) {
           if ($t -ne '然后') { throw "ranhou + Space gave '$t'" }
           $t
         }
+        # #495: 中文's model puts 是的 first for shide, where Rime alone puts 使得. Its list comes after the keys, and the
+        # text service shows it in the box before Space picks it; server.log says whether the model runs.
+        Check 'chinese-model' {
+          Keys 'Control_L+a' BackSpace; TypeText 'shide'; Start-Sleep 1; Keys space; Start-Sleep 1
+          $t = $tsf::EditText($h).Trim()
+          $log = Get-Content "$env:TEMP\rime.sebtype\server.log" -Encoding utf8 -ErrorAction SilentlyContinue | Select-String '中文: ' | Select-Object -Last 1
+          if ($t -ne '是的') { throw "shide, a second, then Space gave '$t' (Rime alone: 使得); server.log: '$log'" }
+          "$t, $($log -replace '^.*中文: ')"
+        }
+        # #478 with the model: a slip that reads as pinyin, its correction on page 1 once weighed (0.3 s after the keys).
+        # The window can't be read here: each of the page's six is picked in turn, and one must be 又快又好.
+        Check 'chinese-correction' {
+          foreach ($k in 1..6) {
+            Keys Escape 'Control_L+a' BackSpace; TypeText 'youkuaiyoouhao'; Start-Sleep 1; Keys "$k"
+            $t = $tsf::EditText($h).Trim()
+            if ($t -eq '又快又好') { return "又快又好 at $k" }
+          }
+          throw "youkuaiyoouhao: 又快又好 isn't one of page 1's six (picking 6 gave '$t')"
+        }
+        # #503: the model's guesses that read the letters otherwise (当, dang) come after Rime's first two pages when
+        # its first is a dictionary word, as for dan; the readings that tell them come with the Chinese data. Each of
+        # the two pages' twelve is picked in turn, and none may be 当.
+        Check 'chinese-dan-before-dang' {
+          if (-not (Test-Path "$env:APPDATA\Rime\sebtype_readings.txt")) { throw 'no sebtype_readings.txt in %APPDATA%\Rime' }
+          $got = foreach ($i in 0..11) {
+            Keys Escape 'Control_L+a' BackSpace; TypeText 'dan'  # the model's list comes within a key's 0.5 s
+            Keys (@('equal') * [math]::Floor($i / 6) + "$($i % 6 + 1)")
+            $tsf::EditText($h).Trim()
+          }
+          if ($got -contains '当') { throw "dan's first two pages hold 当: $($got -join ' ')" }
+          $got -join ' '
+        }
         Check 'chinese-shift-tap' {
           Keys 'Control_L+a' BackSpace; TypeText 'ni'; Keys Shift_L; TypeText 'ok'; Keys Shift_L; TypeText 'ranhou '
           Start-Sleep 1; $t = $tsf::EditText($h).Trim()
@@ -789,7 +821,8 @@ namespace SebTypeSetupTest {
       'silent'
     }
   }
-  function Typing($phase, [int]$seconds = 300) {
+  # 'all' takes about 5 minutes (#503's dan check added 40 s); past the limit the driver goes on under it.
+  function Typing($phase, [int]$seconds = 420) {
     Set-Content "$out\typing-phase.txt" $phase
     Start-ScheduledTask SebType-setup-typing
     if (-not (Wait-Until $seconds { Test-Path "$out\typing-$phase-done" })) { Result "typing-$phase" FAIL "the typing checks took over $seconds s" }

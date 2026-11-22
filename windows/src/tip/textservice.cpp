@@ -167,8 +167,10 @@ class AttributeEnum final : public IEnumTfDisplayAttributeInfo {
 // The app's calls to the server (pipe.h): its threads share it.
 Guarded server;
 
-// The text service whose readiness timer runs on this thread: one per thread, the focused one.
+// The text service whose readiness timer runs on this thread: one per thread, the focused one; and the one whose
+// candidates are asked for again.
 thread_local TextService *watching = nullptr;
+thread_local TextService *refreshing = nullptr;
 
 bool notReady(const std::string &icon) { return icon.ends_with("-wait") || icon.ends_with("-off"); }
 
@@ -284,6 +286,7 @@ STDMETHODIMP TextService::Deactivate() {
     context_ = nullptr;
   }
   stopWatching();
+  stopRefreshing();
   window_.reset();
   endReplay();
   held_.clear();
@@ -395,7 +398,7 @@ STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focused, ITfDocumentMgr *) 
 // The thread's keyboard focus: only the app in front watches whether its language is ready again.
 STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
   if (foreground) watchReadiness();
-  else stopWatching();
+  else stopWatching(), stopRefreshing();
   return S_OK;
 }
 
@@ -421,6 +424,7 @@ void TextService::focus(ITfDocumentMgr *focused) {
   replayed_.clear();
   settling_ = rejected_ = false;
   stopWatching();
+  stopRefreshing();
   if (focused && SUCCEEDED(focused->GetTop(&context_)) && context_) {
     Request q{Op::FocusIn};
     q.lang = lang_;
@@ -636,6 +640,40 @@ void TextService::stopWatching() {
   if (watching == this) watching = nullptr;
 }
 
+// 16 ms: a frame. The model's list takes about 5 to 20 ms on a PC (#495); each ask is one call to the server.
+void TextService::watchUpdates() {
+  if (!reply_.updating) return stopRefreshing();
+  refreshUntil_ = GetTickCount() + 2000;
+  if (refresh_) return;
+  if (refreshing && refreshing != this) refreshing->stopRefreshing();
+  refreshing = this;
+  refresh_ = SetTimer(nullptr, 0, 16, [](HWND, UINT, UINT_PTR, DWORD) {
+    if (refreshing) refreshing->refresh();
+  });
+}
+
+// Never starts a server, and changes nothing when another app has typed since (the server says so).
+void TextService::refresh() {
+  Request q{Op::Refresh};
+  q.lang = lang_;
+  Reply r;
+  const DWORD until = refreshUntil_;
+  if (settling_ || !context_ || static_cast<LONG>(GetTickCount() - until) >= 0) return stopRefreshing();
+  // A key's edit runs when the app lets it (TF_ES_ASYNCDONTCARE) and takes its commit from reply_ then: until it
+  // has, this tick waits, as replacing reply_ would drop the commit.
+  if (!reply_.commit.empty()) return;
+  if (!server.call(q, r) || !r.refreshed) return stopRefreshing();
+  reply_ = std::move(r);
+  apply(context_);
+  refreshUntil_ = until;  // two seconds from the key, not from each ask
+}
+
+void TextService::stopRefreshing() {
+  if (refresh_) KillTimer(nullptr, refresh_);
+  refresh_ = 0;
+  if (refreshing == this) refreshing = nullptr;
+}
+
 void TextService::apply(ITfContext *context) {
   // 日本語's undo (#376) edits now or not at all: later, the app's text or this reply may have changed. Where the
   // app can't grant the edit at once, its commit stays and its conversion goes.
@@ -658,6 +696,7 @@ void TextService::apply(ITfContext *context) {
   }
   if (button_) button_->update();
   watchReadiness();
+  watchUpdates();
 }
 
 void TextService::hold(WPARAM wParam, LPARAM lParam) {

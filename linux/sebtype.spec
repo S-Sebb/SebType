@@ -1,5 +1,6 @@
 # SebType's Linux input method (#190): one Fcitx5 add-on over SebType's core (core/, linux/), which hosts
-# librime for 中文 and Mozc for 日本語 (engines/mozc, as libsebtype-mozc.so in the add-on's process, #233).
+# librime for 中文 and Mozc for 日本語 (engines/mozc, as libsebtype-mozc.so in the add-on's process, #233), and
+# 中文's model around Rime (core/src/chinese.cpp on llama.cpp, engines/sebtype-lm/chinese.gguf, #495).
 # With it, what setup's user part installs into each account (#421), in %{_libexecdir}/sebtype: setup itself
 # (sebtype-setup), the Configurator (pc/configurator) and SebType's Chinese data (data/rime), so a PC with
 # this package and SebType's librime (librime.spec) needs no checkout or build tools.
@@ -15,13 +16,16 @@ Release:        %{sebtype_release}
 Summary:        SebType: English, 中文 and 日本語 in one Fcitx5 input method
 # SebType's code MIT; core/src/rime.cpp and the tray LGPL-2.1-or-later (fcitx5-rime's, Fcitx5's); core/src/mozc.cpp
 # and Mozc BSD-3-Clause, with the licences of Mozc's data and third-party code (core/README.md); the Chinese data GPL-3.0-only
-# (rime-ice, 白霜) with OpenCC's Apache-2.0 (data/rime/build.sh's SOURCE.txt), the Configurator's crates their own.
-License:        MIT and GPL-3.0-only and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0
+# (rime-ice, 白霜) with OpenCC's Apache-2.0 (data/rime/build.sh's SOURCE.txt), the Configurator's crates their own;
+# llama.cpp MIT, the Chinese model CC-BY-SA-4.0 (engines/sebtype-lm/README.md).
+License:        MIT and GPL-3.0-only and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0 and CC-BY-SA-4.0
 URL:            https://github.com/S-Sebb/SebType
 
 # versions.sh's SEBTYPE_SOURCES and engines/mozc, packed by build.sh
 Source0:        sebtype.tar.gz
 Source1:        mozc.tar.gz
+# llama.cpp at engines/sebtype-lm/fetch-llama.sh's pin, packed by build.sh
+Source2:        llama.tar.gz
 
 BuildRequires:  gcc-c++
 BuildRequires:  cmake
@@ -31,6 +35,8 @@ BuildRequires:  fcitx5-devel
 # The tray's pixmaps (PNG)
 BuildRequires:  pkgconfig(libpng)
 BuildRequires:  librime-devel
+# 中文's model: OpenCC for its 繁 (core/src/chinese.cpp)
+BuildRequires:  opencc-devel
 BuildRequires:  protobuf-devel
 BuildRequires:  protobuf-compiler
 BuildRequires:  gtest-devel
@@ -66,7 +72,7 @@ SebType's input method: English, Chinese (Rime) and Japanese (Mozc) in one Fcitx
 SebType's tray menu.
 
 %prep
-%setup -q -c -n sebtype -a 1
+%setup -q -c -n sebtype -a 1 -a 2
 mkdir -p engines && mv mozc engines/
 
 %build
@@ -80,7 +86,7 @@ pushd engines/mozc/src
 install -pm 755 bazel-bin/sebtype/libsebtype-mozc.so ../../../libsebtype-mozc.so
 popd
 cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-  -DCMAKE_INSTALL_LIBDIR=%{_lib} -DSEBTYPE_MOZC_LIB=$PWD/libsebtype-mozc.so
+  -DCMAKE_INSTALL_LIBDIR=%{_lib} -DSEBTYPE_MOZC_LIB=$PWD/libsebtype-mozc.so -DLLAMA_DIR=$PWD/llama
 ninja -C build -j %{_smp_build_ncpus}
 # The crates download once into cache_root; the build folder stays there too, so a rebuild compiles what changed.
 # The sources' hash, built in (sebtype-configurator --sources), makes Cargo rebuild what changed: their times are 0.
@@ -112,6 +118,7 @@ ln -s ../libexec/sebtype/setup-ime.sh %{buildroot}%{_bindir}/sebtype-setup
 %{_datadir}/fcitx5/addon/sebtype.conf
 %{_datadir}/sebtype/fcitx5/addon/notificationitem.conf
 %{_datadir}/sebtype/tray
+%{_datadir}/sebtype/chinese.gguf
 %{_libdir}/sebtype
 %{_datadir}/icons/hicolor/*/status/sebtype-*.png
 %{_datadir}/icons/hicolor/scalable/status/sebtype-*.svg

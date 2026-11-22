@@ -70,6 +70,8 @@ if(SEBTYPE_ENGLISH OR SEBTYPE_CHINESE_MODEL)
       set(${off} OFF CACHE BOOL "" FORCE)
     endforeach()
     add_subdirectory(${LLAMA_DIR} llama EXCLUDE_FROM_ALL)
+    # llama.cpp is C++17: in C++20 its u8"" literals are char8_t, which MSVC won't take as char (#495).
+    set_target_properties(llama PROPERTIES CXX_STANDARD 17)
   endif()
   if(NOT TARGET sebtype_lm)
     add_subdirectory(${ENGINES}/sebtype-lm sebtype-lm)
@@ -95,11 +97,14 @@ if(SEBTYPE_ENGLISH)
 endif()
 
 # 中文's model around Rime (src/chinese.cpp, #264), with OpenCC for 繁: the target libopencc on Android
-# (android/native builds it for librime), the system's elsewhere.
+# (android/native builds it for librime), vcpkg's on Windows, the system's on Linux.
 if(SEBTYPE_CHINESE_MODEL)
   add_library(sebtype-chinese STATIC src/chinese.cpp)
   if(TARGET libopencc)
     set(OPENCC_TARGET libopencc)
+  elseif(WIN32)
+    find_package(OpenCC CONFIG REQUIRED)  # vcpkg's (windows/build.ps1)
+    set(OPENCC_TARGET OpenCC::OpenCC)
   else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(OpenCC REQUIRED IMPORTED_TARGET opencc)

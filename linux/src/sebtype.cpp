@@ -22,6 +22,7 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <thread>
 
 #include "dbus_public.h"
 #include "tray.h"
@@ -56,15 +57,41 @@ std::string mozcProfile() {
   return fs::is_directory(old) ? old.string() : (configHome() / "mozc").string();
 }
 
-std::unique_ptr<Engine> makeEngine(Lang lang) {
+// SebType's Chinese model (#495), installed beside the tray icons; found in XDG's data folders, so the tests'
+// unpacked RPM finds its own. ggml is built for AVX2 with FMA and F16C (linux/CMakeLists.txt's GGML_NATIVE=OFF):
+// an older CPU types with Rime alone rather than crash Fcitx5.
+std::string chineseModel() {
+  __builtin_cpu_init();
+  if (!__builtin_cpu_supports("avx2") || !__builtin_cpu_supports("fma") || !__builtin_cpu_supports("f16c")) return {};
+  return fcitx::StandardPaths::global().locate(fcitx::StandardPathsType::Data, "sebtype/chinese.gguf").string();
+}
+
+}  // namespace
+
+std::unique_ptr<Engine> SebTypeEngine::makeEngine(Lang lang) {
   if (lang == Lang::English) return nullptr;  // keys go to the app as typed
   const auto rimeUser = fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "rime";
   if (lang == Lang::Chinese) {
     fs::create_directories(rimeUser);
-    return makeRime({RIME_DATA_DIR, rimeUser.string()});
+    auto rime = makeRime({RIME_DATA_DIR, rimeUser.string()});
+    static const std::string model = chineseModel();
+    if (model.empty()) return rime;
+    // OpenCC's s2t and t2s for 繁 come with SebType's Chinese data (data/rime/build.sh), in Rime's user folder.
+    // Two threads: on a laptop's i7-11800H they took the model's list from 12 / 23 ms per key (p50 / p95) with one
+    // to 8 / 18 ms, for a third more CPU (#495).
+    ChineseModelPaths paths{model, (rimeUser / "opencc").string(), std::thread::hardware_concurrency() >= 4 ? 2 : 1};
+    paths.nextWords = false;  // the box shows only while typing, as with Rime alone
+    paths.fieldText = false;  // the context is what was typed since the last key the app took itself
+    paths.readings = (rimeUser / "sebtype_readings.txt").string();  // from SebType's Chinese data, as OpenCC's
+    // The model's list arrives on its worker: drawn from Fcitx5's loop, in the box as it is (#495).
+    return withChineseModel(std::move(rime), paths, [this] {
+      instance_->eventDispatcher().schedule([this] { modelReady(); });
+    });
   }
   return makeMozc({mozcProfile(), rimeUser.string()});
 }
+
+namespace {
 
 // The Configurator's Picnic theme (pc/configurator/src/linux.rs). While a popup shows, its theme.conf is the
 // pill's and the box's waits beside it, so a restart after a crash puts the box's back.
@@ -189,7 +216,7 @@ void Service::setLanguage(const std::string &id) {
 }
 
 SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
-    : instance_(instance), core_(std::make_unique<Core>(makeEngine, readSettings())) {
+    : instance_(instance), core_(std::make_unique<Core>([this](Lang l) { return makeEngine(l); }, readSettings())) {
   core_->setUiLanguage(systemLanguage());
   setPill("");
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
@@ -390,6 +417,11 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     }
   }
   updateStatus(ic);
+}
+
+void SebTypeEngine::modelReady() {
+  auto *ic = instance_->mostRecentInputContext();
+  if (ic && ic->hasFocus() && core_->language() == Lang::Chinese && core_->running(Lang::Chinese)) update(ic);
 }
 
 void SebTypeEngine::hidePopupLater(fcitx::InputContext *ic) {

@@ -149,6 +149,11 @@ class TextService final : public ITfTextInputProcessorEx,
   void watchReadiness();
   void pollReadiness();
   void stopWatching();
+  // While the reply says 中文's model has yet to send its list (#495), the candidates are asked for again every
+  // timer tick, for at most two seconds, and the box shows them in place.
+  void watchUpdates();
+  void refresh();
+  void stopRefreshing();
 
   std::atomic<long> refs_{1};
   ITfThreadMgr *threadMgr_ = nullptr;
@@ -181,6 +186,8 @@ class TextService final : public ITfTextInputProcessorEx,
   bool replaying_ = false;             // the replayed keys are the app's: the text service lets them by
   bool warned_ = false;      // the popup said the server doesn't answer, once until it does
   UINT_PTR poll_ = 0;        // watchReadiness's timer
+  UINT_PTR refresh_ = 0;     // watchUpdates's
+  DWORD refreshUntil_ = 0;   // its GetTickCount deadline
 };
 
 }  // namespace sebtype::win

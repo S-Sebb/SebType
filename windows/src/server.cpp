@@ -101,11 +101,31 @@ Settings readSettings() {
   return Settings::parse(s.str());
 }
 
+// SebType's Chinese model (#495), beside the server. ggml is built for AVX2 (windows/CMakeLists.txt): an older CPU
+// types with Rime alone rather than crash the server.
+std::string chineseModel() {
+  const auto model = exeDir() / L"chinese.gguf";
+  return IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE) && std::filesystem::exists(model) ? u8(model) : "";
+}
+
 std::unique_ptr<Engine> makeEngine(Lang lang) {
   // The folders SebType's Weasel and Mozc (and its mozc_server.exe before #233) used, so learned words and
   // settings carry over.
-  if (lang == Lang::Chinese)
-    return makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(logDir())});
+  if (lang == Lang::Chinese) {
+    auto rime = makeRime({u8(exeDir() / L"data"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime"), u8(logDir())});
+    static const std::string model = chineseModel();
+    note(model.empty() ? "中文: Rime alone (no chinese.gguf, or a CPU without AVX2)" : "中文: with its model");
+    if (model.empty()) return rime;
+    // OpenCC's s2t and t2s for 繁 are in Rime's shared data, under Program Files: OpenCC opens its files by
+    // narrow paths, which a user folder's non-ASCII name would break. The text service asks for the model's
+    // list (Op::Refresh) while the reply says updating, so the engine needs no READY.
+    // Two threads, as on Linux (linux/src/sebtype.cpp).
+    ChineseModelPaths paths{model, u8(exeDir() / L"data" / L"opencc"), std::thread::hardware_concurrency() >= 4 ? 2 : 1};
+    paths.nextWords = false;  // the box shows only while typing, as with Rime alone
+    paths.fieldText = false;  // the context is what was typed since the last key the app took itself
+    paths.readings = u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime" / L"sebtype_readings.txt");  // setup unzips SebType's Chinese data there
+    return withChineseModel(std::move(rime), paths, nullptr);
+  }
   // Mozc loads in its own thread, and 日本語 is grey until then (#312).
   if (lang == Lang::Japanese) {
     MozcPaths paths{u8(knownFolder(FOLDERID_LocalAppDataLow) / L"Mozc"), u8(knownFolder(FOLDERID_RoamingAppData) / L"Rime")};
@@ -136,6 +156,7 @@ Reply state(bool taken, std::string commit = {}) {
   r.notice = core->takeNotice(true);
   r.busy = core->choresWait();
   core->forEachEngine([&](Engine &e) { r.busy = r.busy || e.busy(); });
+  if (Engine *e = core->running(core->language())) r.updating = e->updating();
   return r;
 }
 
@@ -224,6 +245,12 @@ Reply handle(const Request &q, HANDLE pipe) {
       if (reset) core->clear();
       else note("reset: kept, another app has typed since");
       break;
+    case Op::Refresh: {  // the typing app's state, the model's list in its page; nothing for another app
+      if (!reset) return {};
+      Reply r = state(false);
+      r.refreshed = true;
+      return r;
+    }
     case Op::Deploy:  // Rime's, started for it when no app has typed Chinese yet; Mozc's page size
       deploy();
       break;

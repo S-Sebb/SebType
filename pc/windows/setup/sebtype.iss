@@ -174,6 +174,8 @@ Source: "start-setup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Service}\sebtype-server.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Service}\sebtype.dll"; DestDir: "{app}"; Flags: ignoreversion regserver
 Source: "{#Service}\x86\sebtype.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit
+; 中文's model (#495), which the server runs around Rime (windows/build.ps1 copies it from engines/sebtype-lm).
+Source: "{#Service}\chinese.gguf"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Rime}\rime.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Rime}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
 Source: "{#In}\mozc\sebtype-mozc.dll"; DestDir: "{app}"; Flags: ignoreversion

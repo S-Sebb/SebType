@@ -38,6 +38,9 @@ bazel=$(mozc_fetch "$downloads")
 stage=$(rpm_stage)
 trap 'rm -rf "$stage"' EXIT
 pack_source "$root/$SEBTYPE_MOZC" "$stage/sources/mozc.tar.gz"
+llama=$("$root/engines/sebtype-lm/fetch-llama.sh")
+tar -C "$llama" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=.git --transform 's,^\.,llama,' -c . |
+  gzip -n > "$stage/sources/llama.tar.gz"
 tar -C "$root" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=pc/configurator/target \
   -c "${SEBTYPE_SOURCES[@]}" |
   gzip -n > "$stage/sources/sebtype.tar.gz"

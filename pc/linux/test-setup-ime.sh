@@ -152,7 +152,7 @@ fresh_apply() {
     grep -q '^  schema/name: ".中文"' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$h/.local/share/fcitx5/rime/rime_ice.custom.yaml" &&
     grep -q '^  menu/page_size: 6 ' "$h/.local/share/fcitx5/rime/default.custom.yaml" &&
-    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data &&
+    [[ -f $h/.local/share/fcitx5/rime/lua/sebtype_typo.lua && -f $h/.local/share/fcitx5/rime/sebtype-data.txt && -f $h/.local/share/fcitx5/rime/sebtype_readings.txt ]] && grep -q 'setForeignShortcutKeys asa(ai) 4 kwin .* 1 4 268435552 0 0 0$' "$fake/kga.log" && configurator && rime_data &&
     restarted_once "$o"
 }
 # What the running Fcitx5 loads only when it starts (the tray, the names) needs no login or Virtual Keyboard
@@ -668,7 +668,9 @@ fi
 # (#46) with a PC keyboard: xoaoshi (o for its neighbour i) gives 小时 first, and so does xkaoshi (k for
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
-# default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163).
+# default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163). 中文's
+# model (#495) puts 是的 first for shide, where Rime alone puts 使得, in the box as it shows, and with Rime's
+# corrections (#478) 又快又好 on page 1 for youkuaiyoouhao, and dan's characters before its 当 (#503).
 # Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301); a switch back to 中文
 # ends the Shift tap's English (#489). A sync's save and
 # a deploy wait until typing is idle (#373). The pinyin shows in a row over the candidates, or in the app's text
@@ -800,6 +802,43 @@ check('typo xoaoshi gives 小时 first', first('xoaoshi'), '小时')
 check('typo xkaoshi (k under i, SebType librime) gives 小时 first', first('xkaoshi'), '小时')
 check('typo nihap (p beside o) gives 你好 first', first('nihap'), '你好')
 check('beirendingwei gives 被认定为 first (the grammar file; without it 被人定位)', first('beirendingwei'), '被认定为')
+# #495: 中文's model reorders Rime's list once its list comes after the keys, in the box as it shows: shide gives
+# 是的 first (Rime alone: 使得), and the box never empties between the keys and the model's list.
+def quiet(secs=0.15):  # candidates show and no update came for secs: the model's list, if any, is in
+    wait(lambda: candidates[0], 2)
+    n = len(ui)
+    while wait(lambda: len(ui) > n, secs): n = len(ui)
+def model_first(keys, want):
+    n = len(ui)
+    for c in keys: tap(c)
+    wait(lambda: candidates[0] and candidates[0][0][1] == want, 3); quiet()
+    lists = [u[4] for u in ui[n:]]
+    shown = lists[next((i for i, l in enumerate(lists) if l), len(lists)):]
+    got = (candidates[0][0][1] if candidates[0] else None, all(shown))
+    tap('Escape')
+    return got
+check("the model's list: shide gives 是的 first, the box shown throughout", model_first('shide', '是的'), ('是的', True))
+def on_page(keys, want):  # whether want is on the first page once Rime's corrections are weighed too (0.3 s after)
+    for c in keys: tap(c)
+    quiet(0.6)
+    got = want in [c[1] for c in candidates[0]]
+    tap('Escape')
+    return got
+check("a slip that reads as pinyin: youkuaiyoouhao gives 又快又好 on page 1", on_page('youkuaiyoouhao', '又快又好'), True)
+# #503: the model's guesses that read the letters otherwise come after Rime's first two pages, when its first is a
+# dictionary word: dan's characters before 当 (dang), in the first 20 the pages show.
+def dan_before_dang():
+    for c in 'dan': tap(c)
+    quiet(0.6)
+    got = [t for _, t in candidates[0]]
+    while len(got) < 20 and ui[-1][8]:
+        n = len(ui); call(ic, IC, 'NextPage'); wait(lambda: len(ui) > n, 1); quiet()
+        got += [t for _, t in candidates[0]]
+    tap('Escape')
+    got = got[:20]
+    late = [c for c in '但单弹蛋淡' if c not in got or ('当' in got and got.index(c) > got.index('当'))]
+    return late and (late, got)  # dan's characters missing or after 当, and the list
+check("dan's characters before 当 (a misreading of the model's)", dan_before_dang(), [])
 # #277: focus moving away mid-word types the pinyin in as its letters, without Rime's spaces between
 # syllables, and the next word starts fresh: through Fcitx5 for an app that shows the preedit itself, and
 # from SebType for one whose preedit is in Fcitx5's panel.
@@ -856,7 +895,7 @@ call(*CONTROLLER, 'ReloadAddonConfig', '(s)', 'sebtype')
 check('ni shows in the pinyin row again', where_typed(), ('ni', ''))
 def page(keys):  # how many candidates the first page of keys shows
     for c in keys: tap(c)
-    wait(lambda: candidates[0], 2); n = len(candidates[0]); tap('Escape'); return n
+    quiet(); n = len(candidates[0]); tap('Escape'); return n
 check('a page shows 6 candidates (shi)', page('shi'), 6)
 # #443: the mouse wheel over the candidate window pages it. classicui's wheel calls the list's prev() or next()
 # when it says it has that page, as the client-side panel's PrevPage and NextPage do here. A notch past the
@@ -881,7 +920,7 @@ def wheel_pages(name):
     check(f'{name}: wheel down reaches the last page', (last[2], last[3]), (False, True))
     check(f'{name}: wheel down on the last page changes nothing', wheel(True), last)
 for c in 'shi': tap(c)
-wait(lambda: candidates[0], 2)
+quiet()
 wheel_pages('shi')
 tap('Escape')
 # #373: the sync's Save and its deploy asked for mid-word wait until typing is idle: the word typed on keeps what
