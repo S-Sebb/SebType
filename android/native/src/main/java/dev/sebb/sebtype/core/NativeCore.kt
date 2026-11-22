@@ -103,8 +103,8 @@ object NativeCore {
      * learned words; a change restarts English. Until this is called there is no English engine.
      */
     @JvmStatic external fun setEnglishPaths(dictionary: String, offset: Long, length: Long, model: String, userDir: String)
-    /** 中文's model and OpenCC's folder (for 繁); a change restarts 中文. Until this is called Rime runs alone. */
-    @JvmStatic external fun setChineseModel(model: String, opencc: String)
+    /** 中文's model, OpenCC's folder (for 繁) and the characters' readings; a change restarts 中文. Until this is called Rime runs alone. */
+    @JvmStatic external fun setChineseModel(model: String, opencc: String, readings: String)
     @JvmStatic external fun setSettings(conf: String)
     /** English's phone options: autocorrect, the double-space period, the personal dictionary's English words */
     @JvmStatic external fun setEnglishOptions(autocorrect: Boolean, doubleSpacePeriod: Boolean, words: Array<String>, frequencies: IntArray, shortcuts: Array<String?>)

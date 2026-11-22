@@ -8,8 +8,8 @@
 # yanglab16 with tools/build.sh.
 #
 # The zip is the Rime shared dir: rime-ice's files (minus the schemas other than full pinyin), 白霜's
-# zh-moqi.gram, SebType's sebtype.dict.yaml (the pack that reads the user's own word list, #11) and
-# build/ with the compiled tables. The dictionary sources aren't shipped: librime
+# zh-moqi.gram, SebType's sebtype.dict.yaml (the pack that reads the user's own word list, #11),
+# sebtype_readings.txt (each character's pinyin, for SebType's Chinese model, #503) and build/ with the compiled tables. The dictionary sources aren't shipped: librime
 # uses the prebuilt tables as they are when a table's source is missing, so it neither checksums nor
 # rebuilds them. Both projects are GPL-3.0; the zip carries the licence and SOURCE.txt (pinned
 # sources and what was changed). The same zip suits the PCs (Linux and Windows run librime 1.16.1 too).
@@ -53,7 +53,7 @@ OPENCC_TS_CHARACTERS_SHA256=6b5a0a799bea2bb22c001f635eaa3fc2904310f0c08addbff275
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=12
+BUNDLE_REVISION=13
 
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
@@ -265,6 +265,11 @@ EOF
     { grep '^E' "$work/deploy.log" | head -5 >&2; echo "rime-data: self-test ranh -> $(tail -1 "$work/deploy.out")" >&2; exit 1; }
   mv "$work/user/build" "$s/build"
   rm -f "$s"/build/*.txt # dumps, not read by Rime
+  # Each character's readings, as 8105 (白霜's common characters) spells them: SebType's Chinese model tells
+  # its own candidates that read the letters otherwise than Rime from those that don't (#503).
+  awk -F'\t' 'NF >= 2 && $2 ~ /^[a-z]+$/ && !seen[$1 "\t" $2]++ { print $1 "\t" $2 }' "$s/cn_dicts/8105.dict.yaml" \
+    > "$s/sebtype_readings.txt"
+  grep -qx $'当\tdang' "$s/sebtype_readings.txt" || { echo "rime-data: sebtype_readings.txt has no 当 dang" >&2; exit 1; }
   # Dictionary sources: compiled into build/, so not shipped (their source is linked in SOURCE.txt).
   rm -rf "$s"/cn_dicts "$s"/rime_ice.dict.yaml "$s"/radical_pinyin.dict.yaml "$s"/melt_eng.dict.yaml "$s"/en_dicts/*.dict.yaml
 
@@ -327,7 +332,8 @@ GPL-3.0) puts first a dictionary word split by 个 (健个身 for jiangeshen) wh
 looking words up through a third translator, sebtype_word. lua/sebtype_split.lua (SebType's, GPL-3.0)
 moves candidates that split the input otherwise than the first one behind those that split it the same way. rime_ice's translator also reads the pack sebtype
 (sebtype.dict.yaml, SebType's), which imports the user's own word list, sebtype_words.dict.yaml in
-Rime's user folder, when there is one. The dictionary sources are compiled
+Rime's user folder, when there is one. sebtype_readings.txt (SebType's) lists each character of
+cn_dicts/8105 with its readings there, for SebType's Chinese model. The dictionary sources are compiled
 into build/ with librime $LIBRIME_VERSION and not included here: they are at the source links above.
 
 opencc/s2t.json, STPhrases.ocd2 and STCharacters.ocd2 are OpenCC $OPENCC_VERSION's (Apache License 2.0,

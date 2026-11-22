@@ -135,6 +135,7 @@ int main(int argc, char **argv) {
     if (core) {
         sebtype::ChineseModelPaths zh{argv[5], std::string(argv[1]) + "/opencc", opt.threads};
         zh.synchronous = true;
+        zh.readings = std::string(argv[1]) + "/sebtype_readings.txt";
         rime = sebtype::withChineseModel(std::move(rime), zh, nullptr);
     }
 

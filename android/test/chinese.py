@@ -581,12 +581,13 @@ def dan_cut_cell():
     )
 
 
-def dan_only_dan():
-    # #503: with fuzzy pinyin off (a fresh install's default), dan lists dan's characters only, no 当 (dang).
-    got = candidates_for("dan", expand=True)[:12]
-    ang = [c for c in got if c in ("当", "档", "党", "挡", "荡")]
-    if ang:
-        raise Fail(f"dan -> {got}: {ang} read dan as dang")
+def dan_before_dang():
+    # #503: with fuzzy pinyin off (a fresh install's default), the model's 当 (dang) comes after dan's own.
+    got = candidates_for("dan", expand=True)[:20]
+    dan = [c for c in ("但", "单", "弹", "蛋", "淡") if c in got]
+    late = [c for c in dan if "当" in got and got.index(c) > got.index("当")]
+    if len(dan) < 5 or late:
+        raise Fail(f"dan -> {got}: {late or 'dan characters missing'} after 当")
     return f"dan -> {got}"
 
 
@@ -840,7 +841,7 @@ check("fresh-nothing-external", nothing_external, needs=["first-install"])
 check("ranh", expect_first("ranh", "然后"), needs=["first-install"])
 check("lh-in-bar", lh_in_top, needs=["first-install"])
 check("dan-cut-cell", dan_cut_cell, needs=["first-install"])
-check("dan-only-dan", dan_only_dan, needs=["first-install"])
+check("dan-before-dang", dan_before_dang, needs=["first-install"])
 
 
 def fast_typing_zh():
