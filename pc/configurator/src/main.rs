@@ -728,55 +728,6 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-    // Headless account sync login (#435, used by Windows Setup): reads `server\nuser\npassword\n`
-    // from stdin (`--sync-login`) or from a temp file (`--sync-login-file <path>`) that is removed
-    // immediately after reading so passwords never appear in CLI args or logs. With `--check` (#452) it
-    // saves only a login that works, and otherwise exits with why not (sync::LoginError::Check). With
-    // `--check-only` it saves nothing: Windows Setup shows the check's tick before it saves (#468).
-    let check_only = std::env::args().any(|a| a == "--check-only");
-    let check_first = check_only || std::env::args().any(|a| a == "--check");
-    let save = move |(server, user, password): (String, String, String)| {
-        if check_first {
-            let check = sync::check(&server, &user, &password);
-            if check != sync::Check::Connected {
-                return Err(sync::LoginError::Check(check));
-            }
-        }
-        if check_only {
-            return Ok(());
-        }
-        sync::save_login(server, user, &password)
-            .map(|_| ())
-            .map_err(sync::LoginError::Other)
-    };
-    if std::env::args().any(|a| a == "--sync-login") {
-        let res = std::io::read_to_string(std::io::stdin())
-            .map_err(|e| sync::LoginError::Other(e.to_string()))
-            .and_then(|input| sync::parse_login_lines(&input))
-            .and_then(save);
-        std::process::exit(match res {
-            Ok(_) => 0,
-            Err(e) => {
-                eprintln!("--sync-login: {e}");
-                e.exit_code()
-            }
-        });
-    }
-    if let Some(i) = std::env::args().position(|a| a == "--sync-login-file") {
-        let res = match std::env::args().nth(i + 1) {
-            Some(path) => sync::read_login_file(std::path::Path::new(&path))
-                .and_then(|input| sync::parse_login_lines(&input))
-                .and_then(save),
-            None => Err(sync::LoginError::Other("missing file path".into())),
-        };
-        std::process::exit(match res {
-            Ok(_) => 0,
-            Err(e) => {
-                eprintln!("--sync-login-file: {e}");
-                e.exit_code()
-            }
-        });
-    }
     // Common settings (#444) as the person who started Windows Setup: `--common-settings get <file>` writes
     // what the setup wizard shows first, `--common-settings set [--upgrade] key=value…` saves them where
     // Setup runs silently (#471).
