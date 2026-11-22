@@ -48,7 +48,7 @@ OPENCC_TS_CHARACTERS_SHA256=6b5a0a799bea2bb22c001f635eaa3fc2904310f0c08addbff275
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=8
+BUNDLE_REVISION=9
 
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
@@ -152,6 +152,7 @@ s += f"""
 # the best exact candidate looks like a typo.
 corr:
   dictionary: rime_ice
+  prism: sebtype_corr
   enable_correction: true
   enable_sentence: false
   enable_user_dict: false
@@ -166,7 +167,27 @@ corr:
 {preedit.group(1)}sebtype_typo:
   keyboard: phone  # pc on Linux and Windows (their setup scripts)
 """
+# corr's prism (#478): rime_ice's spellings, and each syllable with one letter dropped (not its first: that
+# slows every key for few slips), doubled or swapped, as fuzz spellings. librime corrects only slips onto a
+# neighbouring key. A schema of its own, so the main translator's prism stays exact.
+s, n = re.subn(r"^    - radical_pinyin .*\n", lambda m: m.group(0) + "    - sebtype_corr  # SebType: typo corrections (#478)\n",
+               s, count=1, flags=re.M)
+assert n == 1, f"dependencies not found in {p}"
 open(p, "w", encoding="utf-8").write(s)
+algebra = re.search(r"^  algebra:\n((?:    .*\n|\n)+)", s, re.M).group(1)
+syllables = sorted({y for l in open(f"{shared}/cn_dicts/8105.dict.yaml", encoding="utf-8").read().partition("\n...\n")[2].split("\n")
+                    if l.count("\t") >= 1 and not l.startswith("#") for y in l.split("\t")[1].split()})
+assert 400 < len(syllables) < 450 and "yue" in syllables, f"{len(syllables)} syllables in 8105.dict.yaml"
+def slips(y):
+    out = {y[:i] + y[i + 1:] for i in range(1, len(y)) if len(y) > 2}
+    out |= {y[:i] + y[i] + y[i:] for i in range(len(y))}
+    out |= {y[:i] + y[i + 1] + y[i] + y[i + 2:] for i in range(len(y) - 1) if y[i] != y[i + 1]}
+    return sorted(out - {y})
+with open(f"{shared}/sebtype_corr.schema.yaml", "w", encoding="utf-8") as f:
+    f.write("# SebType: the prism of rime_ice's typo corrections (#478), built from rime_ice's speller\n"
+            "schema:\n  schema_id: sebtype_corr\n  name: sebtype_corr\n  version: \"1\"\n"
+            "speller:\n  algebra:\n" + algebra + "".join(f"    - fuzz/^{y}$/{t}/\n" for y in syllables for t in slips(y))
+            + "translator:\n  dictionary: rime_ice\n  prism: sebtype_corr\n")
 
 p = f"{shared}/default.yaml"
 s = open(p, encoding="utf-8").read()
@@ -264,7 +285,8 @@ only the traditionalization switch, drops the Control+Shift+3 and 4 switch keys 
 hotkeys (F4, Control+grave, Control+Shift+grave); in rime_ice the
 switches but traditionalization have no states, so menus don't show them;
 weasel.yaml, squirrel.yaml, t9 and the double-pinyin schemas are left out. rime_ice.schema.yaml gets SebType's
-typo correction: a second translator, corr, with librime's correction on, ranked by
+typo correction: a second translator, corr, with librime's correction on and its own prism from
+sebtype_corr.schema.yaml (SebType's: rime_ice's spellings and slips of them), ranked by
 lua/sebtype_typo.lua (SebType's, GPL-3.0); its last filter, lua/sebtype_learned.lua (SebType's,
 GPL-3.0), tells SebType's Chinese model when the first candidate is a learned word. rime_ice's translator also reads the pack sebtype
 (sebtype.dict.yaml, SebType's), which imports the user's own word list, sebtype_words.dict.yaml in
