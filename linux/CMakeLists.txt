@@ -25,6 +25,8 @@ add_library(sebtype MODULE src/sebtype.cpp src/tray.cpp)
 # on the target: Fcitx5's compiler settings override CMAKE_INSTALL_RPATH.
 set_target_properties(sebtype PROPERTIES PREFIX "" INSTALL_RPATH "$ORIGIN/../sebtype" INSTALL_RPATH_USE_LINK_PATH OFF)
 target_compile_definitions(sebtype PRIVATE RIME_DATA_DIR="${RIME_DATA_DIR}")
+# llama.cpp's and ggml's symbols stay inside the add-on: another add-on in Fcitx5's process may bring its own.
+target_link_options(sebtype PRIVATE -Wl,--exclude-libs,ALL)
 target_link_libraries(sebtype sebtype-core sebtype-chinese Fcitx5::Core Fcitx5::Module::DBus Fcitx5::Module::NotificationItem
   PkgConfig::PNG)
 
