@@ -28,7 +28,8 @@ RIME_FROST_SHA256=4f4998ae83f63d757c0a4ace192f69d48265bddfabe231642b73e3739ed0f2
 # 白霜 core: its rime_frost.dict.yaml without the cn_dicts_cell domain dictionaries (undocumented
 # origin) or tencent (which 白霜 leaves out too).
 FROST_CORE=(8105 41448 base ext others corrections)
-# jieba's word frequencies (MIT), only to check which spellings mainland text uses (#482, usage_words.py).
+# jieba's word frequencies (MIT), to order core's words by use and check which spellings mainland text uses
+# (#482, usage_words.py).
 JIEBA_COMMIT=67fa2e36e72f69d9134b8a1037b83fbb070b9775
 JIEBA_URL=https://raw.githubusercontent.com/fxsjy/jieba/$JIEBA_COMMIT/jieba/dict.txt
 JIEBA_SHA256=7197c3211ddd98962b036cdf40324d1ea2bfaa12bd028e68faa70111a88e12a8
@@ -287,8 +288,9 @@ LICENSE file next to this one. Built by data/rime/build.sh in https://github.com
   $RIME_FROST_URL (sha256 $RIME_FROST_SHA256)
     source: https://github.com/gaboolic/rime-frost/tree/$RIME_FROST_COMMIT
 
-Changes to rime-ice: its dictionary (cn_dicts/) is replaced by rime-frost's cn_dicts/ ${FROST_CORE[*]}
-under the name rime_ice (rime_ice.dict.yaml is rime-frost's rime_frost.dict.yaml without its
+Changes to rime-ice: its dictionary (cn_dicts/) is replaced by rime-frost's cn_dicts/ ${FROST_CORE[*]},
+whose words sharing a pinyin are re-ordered by their counts in rime-frost's essay.txt and jieba's dict.txt
+and their rime-frost weight (SebType's data/rime/usage_words.py), under the name rime_ice (rime_ice.dict.yaml is rime-frost's rime_frost.dict.yaml without its
 cn_dicts_cell imports), plus cn_dicts/sebtype_usage: the words of rime-frost's essay.txt that its core
 leaves out where mainland text uses them over the core's word for the same pinyin (SebType's
 data/rime/usage_words.py, checked against jieba's dict.txt, MIT, https://github.com/fxsjy/jieba/tree/$JIEBA_COMMIT); the schema rime_ice gets rime-frost's zh-moqi grammar

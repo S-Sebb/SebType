@@ -1,7 +1,10 @@
 // Types each "keys<TAB>expected" line of INPUT one key at a time, reading the candidate menu after
 // every key as the keyboard does, and prints the rank of expected among the first page, or among the
-// first DEPTH candidates when that is set (-1: not there), the keys, the expected text and the first
-// candidate. Nothing is committed, so nothing is learned between lines.
+// first DEPTH candidates when that is set (-1: not there), the keys, the expected text, the first
+// candidate and what sebtype_learned.lua says the first is learned as (the text the model keeps first,
+// #369; empty: not learned). Nothing is committed, so nothing is learned between lines, except on a line
+// "keys<TAB>expected<TAB>learn PIECE...": its keys are typed and its pieces picked one after another, as a
+// user teaches Rime a phrase, before it is ranked.
 //   [DEPTH=n] rimebench SHARED USER SCHEMA INPUT [PLUGIN.so ...]   stderr: key_p50_us, key_p95_us, rss_kb
 #include <dlfcn.h>
 #include <stdio.h>
@@ -14,6 +17,33 @@ static double now_us(void) {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
   return t.tv_sec * 1e6 + t.tv_nsec / 1e3;
+}
+
+static void type(RimeApi *api, RimeSessionId s, const char *keys, double *times, size_t *n, size_t cap) {
+  api->clear_composition(s);
+  for (const char *k = keys; *k; ++k) {
+    double t = now_us();
+    api->process_key(s, *k, 0);
+    RIME_STRUCT(RimeContext, kc);
+    if (api->get_context(s, &kc)) api->free_context(&kc);
+    if (times && *n < cap) times[(*n)++] = now_us() - t;
+  }
+}
+
+// Picks each space-separated piece among the candidates for what is left, then takes the commit.
+static void teach(RimeApi *api, RimeSessionId s, char *pieces) {
+  for (char *piece = strtok(pieces, " "); piece; piece = strtok(NULL, " ")) {
+    RimeCandidateListIterator it = {0};
+    int found = -1;
+    if (api->candidate_list_begin(s, &it)) {
+      while (found < 0 && it.index < 300 && api->candidate_list_next(&it))
+        if (!strcmp(it.candidate.text, piece)) found = it.index;
+      api->candidate_list_end(&it);
+    }
+    if (found < 0 || !api->select_candidate(s, found)) { fprintf(stderr, "can't pick %s\n", piece); break; }
+  }
+  RIME_STRUCT(RimeCommit, c);
+  if (api->get_commit(s, &c)) api->free_commit(&c);
 }
 
 static int cmp(const void *a, const void *b) {
@@ -54,15 +84,14 @@ int main(int argc, char **argv) {
     char *want = strchr(line, '\t');
     if (!want) continue;
     *want++ = 0;
-    want[strcspn(want, "\t\n")] = 0;
-    api->clear_composition(s);
-    for (const char *k = line; *k; ++k) {
-      double t = now_us();
-      api->process_key(s, *k, 0);
-      RIME_STRUCT(RimeContext, kc);
-      if (api->get_context(s, &kc)) api->free_context(&kc);
-      if (n < cap) keys[n++] = now_us() - t;
+    want[strcspn(want, "\n")] = 0;
+    char *rest = strchr(want, '\t');
+    if (rest) *rest++ = 0;
+    if (rest && !strncmp(rest, "learn ", 6)) {
+      type(api, s, line, NULL, NULL, 0);
+      teach(api, s, rest + 6);
     }
+    type(api, s, line, keys, &n, cap);
     int rank = -1;
     RimeCandidateListIterator it = {0};
     if (depth && api->candidate_list_begin(s, &it)) {
@@ -70,7 +99,8 @@ int main(int argc, char **argv) {
         if (!strcmp(it.candidate.text, want)) rank = i;
       api->candidate_list_end(&it);
     }
-    char first[256] = "";
+    char first[256] = "", learned[256] = "";
+    api->get_property(s, "sebtype_learned", learned, sizeof learned);
     RIME_STRUCT(RimeContext, ctx);
     if (api->get_context(s, &ctx)) {
       if (ctx.menu.num_candidates) snprintf(first, sizeof first, "%s", ctx.menu.candidates[0].text);
@@ -78,7 +108,7 @@ int main(int argc, char **argv) {
         if (!strcmp(ctx.menu.candidates[i].text, want)) rank = i;
       api->free_context(&ctx);
     }
-    printf("%d\t%s\t%s\t%s\n", rank, line, want, first);
+    printf("%d\t%s\t%s\t%s\t%s\n", rank, line, want, first, learned);
   }
   qsort(keys, n, sizeof *keys, cmp);
   long rss = 0;

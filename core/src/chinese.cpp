@@ -41,6 +41,10 @@ namespace {
 // of 2 of its own, and ranks by its log probability less 0.5 · ln(1 + Rime's rank), its own counting as rank 4.
 constexpr int kScored = 4, kBeam = 2;
 constexpr float kRankWeight = 0.5f, kOwnRank = 4;
+// With no Chinese text before the cursor the model knows no more than Rime's dictionary, which it otherwise
+// overrules for words typed alone (按住 → 安卓, #482): there Rime's order weighs 2 · ln(1 + rank) and the
+// model's own candidates 3 more. Tuned on dev sets typed with nothing before them (words, clauses, typos).
+constexpr float kAloneRankWeight = 2, kAloneOwnPenalty = 3;
 constexpr size_t kNextWords = 5;
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
@@ -512,23 +516,26 @@ class Chinese final : public Engine {
     std::vector<std::string> texts;
     for (const auto &t : job.rime) texts.push_back(job.traditional ? t2s(t) : t);
     std::vector<float> score = model.score(context, letters, texts);
+    const bool alone = std::ranges::none_of(codePoints(context), han);
+    const float rankWeight = alone ? kAloneRankWeight : kRankWeight;
+    const float ownPenalty = alone ? kAloneOwnPenalty : kRankWeight * std::log1p(kOwnRank);
     std::vector<Item> items;
     for (size_t i = 0; i < texts.size(); i++) {
-      score[i] -= kRankWeight * std::log1p(float(job.rimeIndex[i]));
+      score[i] -= rankWeight * std::log1p(float(job.rimeIndex[i]));
       items.push_back({{job.rime[i], {}}, job.rimeIndex[i], texts[i]});
     }
-    // A word the user taught Rime, which its user dictionary puts first, stays ahead of Rime's others: the
-    // model can't see what the user picked before. The model's own candidates still compete with it. An
-    // unlearned first is ranked like the others: keeping every first ahead cost most of the model's gain on
-    // abbreviations (#369).
-    if (job.learned && !texts.empty() && job.rimeIndex[0] == 0) score[0] = *std::ranges::max_element(score);
     const auto generated = model.generate(context, letters, kBeam, static_cast<int>(letters.size()));
     if (revNow_ != job.rev) return {};
     for (const auto &g : generated) {
       if (std::ranges::any_of(items, [&](const Item &it) { return it.simplified == g.text; })) continue;
       items.push_back(own(g.text, job.traditional, s2t));
-      score.push_back(g.logProb - kRankWeight * std::log1p(kOwnRank));
+      score.push_back(g.logProb - ownPenalty);
     }
+    // A word the user taught Rime, which its user dictionary puts first, stays first: the model can't see
+    // what the user picked before, so a phrase taught once comes first the next time (#482). An unlearned
+    // first is ranked like the others: keeping every first ahead cost most of the model's gain on
+    // abbreviations (#369).
+    if (job.learned && !texts.empty() && job.rimeIndex[0] == 0) score[0] = *std::ranges::max_element(score);
     std::vector<size_t> order(items.size());
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return score[a] > score[b]; });
