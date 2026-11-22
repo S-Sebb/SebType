@@ -84,7 +84,8 @@ cmake -S linux -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREF
 ninja -C build -j %{_smp_build_ncpus}
 # The crates download once into cache_root; the build folder stays there too, so a rebuild compiles what changed.
 # The sources' hash, built in (sebtype-configurator --sources), makes Cargo rebuild what changed: their times are 0.
-SEBTYPE_SOURCES=$(source linux/versions.sh && configurator_sources .) CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
+# No debug info: build.sh packs none (debug_package is nil), and with it the fat-LTO link runs out of memory (#496).
+RUSTFLAGS="${RUSTFLAGS:-} -Cdebuginfo=0" SEBTYPE_SOURCES=$(source linux/versions.sh && configurator_sources .) CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
   --manifest-path pc/configurator/Cargo.toml --target-dir %{cache_root}/configurator-target
 HOME=%{cache_root}/home data/rime/build.sh chinese-data >/dev/null
 
