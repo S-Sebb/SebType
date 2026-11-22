@@ -1,6 +1,7 @@
 // Types each "keys<TAB>expected" line of INPUT one key at a time, reading the candidate menu after
 // every key as the keyboard does, and prints the rank of expected among the first page (-1: not
-// there). Nothing is committed, so nothing is learned between lines.
+// there), the keys, the expected text and the first candidate. Nothing is committed, so nothing is
+// learned between lines.
 //   rimebench SHARED USER SCHEMA INPUT [PLUGIN.so ...]   stderr: key_p50_us, key_p95_us, rss_kb
 #include <dlfcn.h>
 #include <stdio.h>
@@ -62,13 +63,15 @@ int main(int argc, char **argv) {
       if (n < cap) keys[n++] = now_us() - t;
     }
     int rank = -1;
+    char first[256] = "";
     RIME_STRUCT(RimeContext, ctx);
     if (api->get_context(s, &ctx)) {
+      if (ctx.menu.num_candidates) snprintf(first, sizeof first, "%s", ctx.menu.candidates[0].text);
       for (int i = 0; i < ctx.menu.num_candidates && rank < 0; ++i)
         if (!strcmp(ctx.menu.candidates[i].text, want)) rank = i;
       api->free_context(&ctx);
     }
-    printf("%d\t%s\t%s\n", rank, line, want);
+    printf("%d\t%s\t%s\t%s\n", rank, line, want, first);
   }
   qsort(keys, n, sizeof *keys, cmp);
   long rss = 0;

@@ -10,6 +10,7 @@ set, drawn with seed 40 (the typo sets: `make-typos.py`, seed 46, from the even 
 | `*-partial` | full pinyin except the last syllable's initial (`ranh` → 然后) |
 | `typo-phone` | a `*-sent` clause of 2–8 characters with a phone typo (#46): touch slips on SebType's key grid, missing, extra and swapped letters in the shares measured on phones; 10 % have two (`jaiyoumeiyoi` → 还有没有) |
 | `typo-pc` | the same with a PC typo: ANSI neighbour keys, missing, extra and swapped letters in the desktop shares (`xinfqiumingshi` → 星球名是) |
+| `words` | a common 2–4-character word alone in full pinyin, at least twice as frequent as any other word with that pinyin, where another of them is one character away (`liuhuang` → 硫磺, #482, `make-words.py`, seed 482); the reported words last |
 
 Sources:
 
@@ -17,3 +18,5 @@ Sources:
   by thu-coai, MIT licence).
 - `news-*`: the 250 newest articles of Chinese Wikinews, 2025 to May 2026, in the zh-cn variant
   ([zh.wikinews.org](https://zh.wikinews.org), [CC BY 2.5](https://creativecommons.org/licenses/by/2.5/)).
+- `words`: wordfreq 3.2's large Chinese list ([rspeer/wordfreq](https://github.com/rspeer/wordfreq), data
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)), pinyin from pypinyin.
