@@ -532,12 +532,13 @@ class Chinese final : public Engine {
       const auto start = std::chrono::steady_clock::now();
       l.unlock();
       std::vector<Item> items;
+      bool changed = true;
       std::string context = job.traditional ? t2s(job.context) : job.context;
       try {
         if (!job.fix.empty()) {
           TraceSection section("SebType zh fix");
           items = std::move(made);
-          fix(*model, job, context, items, *first, s2t);
+          changed = fix(*model, job, context, items, *first, s2t);
         } else if (job.input.empty()) {
           TraceSection section("SebType zh next");
           for (const auto &w : model->nextWords(context, kNextWords)) items.push_back(own(w.text, job.traditional, s2t));
@@ -562,7 +563,7 @@ class Chinese final : public Engine {
       if (fixes) fixDue_ = job.rev;
       done_.notify_all();
       l.unlock();
-      if (ready_) ready_();
+      if (ready_ && changed) ready_();  // a correction that changed nothing redraws nothing
       if (ready_ && fixes) ready_();
       l.lock();
     }
@@ -611,8 +612,9 @@ class Chinese final : public Engine {
   }
 
   // Puts Rime's correction into the model's list ITEMS, whose first scored FIRST: first when the model is
-  // kFixMargin surer of it, last on the first page when it is at most kFixFloor less sure.
-  void fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
+  // kFixMargin surer of it, last on the first page when it is at most kFixFloor less sure. False if it
+  // stays where it is.
+  bool fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
            Converter &s2t) {
     std::string letters;
     for (char c : job.input)
@@ -621,14 +623,15 @@ class Chinese final : public Engine {
     size_t at;
     if (lp > first + kFixMargin) at = 0;
     else if (lp > first - kFixFloor) at = std::max(job.pageSize, 1) - 1;
-    else return;
+    else return false;
     Item item = own(job.fix, job.traditional, s2t);
     if (const auto same = std::ranges::find(items, job.fix, &Item::simplified); same != items.end()) {
-      if (size_t(same - items.begin()) <= at) return;  // as high already
+      if (size_t(same - items.begin()) <= at) return false;  // as high already
       item = std::move(*same);
       items.erase(same);
     }
     items.insert(items.begin() + std::min(at, items.size()), std::move(item));
+    return true;
   }
 
   std::unique_ptr<Engine> rime_;
