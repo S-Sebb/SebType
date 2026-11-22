@@ -203,13 +203,14 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
                     texts[if (expanded) R.string.fewer_candidates else R.string.more_candidates],
                     Role.BUTTON, fixed = true, tag = Kind.EXPAND)
         }
-        // Scrolling items are placed from 0; the view draws them after the controls.
+        // Scrolling items are placed from 0; the view draws them after the controls. While expanded the bar
+        // stays at its start, so the expanded view goes on right after what it shows (#491).
         setItems(out.map { if (it.fixed) it else Item(RectF(it.rect).apply { offset(-start, 0f) }, it.label, it.role, tag = it.tag) },
-            extent, keepScroll)
+            if (expanded) 0f else extent, keepScroll)
     }
 
-    /** How many candidates start inside the bar: the expanded view goes on after them */
-    fun shownCount() = items.count { it.tag is Int && it.rect.left < viewport() }
+    /** How many candidates the bar shows whole: the expanded view goes on after them */
+    fun shownCount() = wholeCandidates(items.filter { it.tag is Int }.map { it.rect.right }, viewport())
 
     override fun viewport() = candidateViewport(width - start, showExpand, button)
 
@@ -366,3 +367,6 @@ internal fun showExpandButton(slots: Boolean, expanded: Boolean, extent: Float, 
 /** The scrolling candidates' viewport width: full room after controls, minus the expand button when shown. */
 internal fun candidateViewport(available: Float, showExpand: Boolean, button: Float) =
     available - (if (showExpand) button else 0f)
+
+/** How many candidates, their right edges [rights] from the viewport's start, fit [viewport] whole (#491). */
+internal fun wholeCandidates(rights: List<Float>, viewport: Float) = rights.count { it <= viewport }

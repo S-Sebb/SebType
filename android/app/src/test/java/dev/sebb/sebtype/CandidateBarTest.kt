@@ -39,6 +39,14 @@ class CandidateBarTest {
         }
     }
 
+    /** #491: a candidate cut off by the expand arrow isn't shown, so the expanded view starts with it. */
+    @Test
+    fun cutCandidateGoesToTheExpandedView() {
+        val viewport = candidateViewport(available, true, button)
+        assertEquals(2, wholeCandidates(listOf(58f, 116f, viewport + 20f, viewport + 78f), viewport))
+        assertEquals(1, wholeCandidates(listOf(viewport, viewport + 58f), viewport))
+    }
+
     @Test
     fun slotsNeverShowExpand() {
         assertFalse(showExpandButton(slots = true, expanded = false, extent = available + 100f, available = available))
