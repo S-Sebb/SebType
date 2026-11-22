@@ -627,6 +627,7 @@ mod tests {
             vertical: false,
             font_size: 13,
             picnic: true,
+            pinyin_row: false,
         };
         let page = Common::from(rime::load(&dir), candidates.clone(), true);
         assert_eq!((page.traditional, page.page_size), (false, 6));
@@ -667,7 +668,8 @@ mod tests {
             Candidates {
                 vertical: true,
                 font_size: 13,
-                picnic: false
+                picnic: false,
+                pinyin_row: false,
             }
         );
         let _ = std::fs::remove_dir_all(&dir);
