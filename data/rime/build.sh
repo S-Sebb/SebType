@@ -53,7 +53,7 @@ OPENCC_TS_CHARACTERS_SHA256=6b5a0a799bea2bb22c001f635eaa3fc2904310f0c08addbff275
 LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 # Bump to make every install reinstall the bundle, e.g. after changing how the app sets it up.
-BUNDLE_REVISION=11
+BUNDLE_REVISION=12
 
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
