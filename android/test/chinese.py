@@ -1585,25 +1585,34 @@ def zh_waits_for_zh():
 check("zh-waits-for-zh", zh_waits_for_zh, needs=["ja-chip"])
 
 
-def globe_drops_pinyin():
-    """The globe in the middle of a pinyin drops it: nothing reaches the field, and no candidates or
-    pinyin are left above the keys (core/ doesn't commit on a switch, Decisions #2)."""
-    to_chinese()
-    open_field()
-    type_keys("nihao")
-    before = candidates(nodes())
-    if not before:
-        raise Fail("typed nihao in 中; no candidates")
-    tap_globe()
-    time.sleep(2)
-    ns = nodes()
-    left = [n[0] for n in ns if n[0] in ("nihao", "ni hao")]
-    text = field_text()
-    if text or candidates(ns) or left:
-        raise Fail(
-            f"after the globe: field {text!r}, bar {candidates(ns)[:4]}, pinyin {left}"
-        )
-    return f"nihao -> {before[:3]}; after the globe the field is empty and the bar and pinyin are gone"
+def globe_types_letters(to_language, name):
+    """The globe in the middle of a word to convert types its letters as they were tapped, phizz, not its
+    pinyin or kana, then switches; no candidates are left above the keys (#492)."""
+
+    def run():
+        to_language()
+        open_field()
+        type_keys("phizz")
+        before, shown = candidates(nodes()), field_text()
+        if not before:
+            raise Fail(f"typed phizz in {name}; no candidates")
+        tap_globe()
+        try:
+            text = wait_for(
+                "the field to show phizz",
+                lambda: field_text() == "phizz" and "phizz",
+                10,
+            )
+        except Fail:
+            text = field_text()
+        ns = nodes()
+        if text != "phizz" or candidates(ns):
+            raise Fail(
+                f"phizz in {name} (field {shown!r}), then the globe: field {text!r}, bar {candidates(ns)[:4]}"
+            )
+        return f"phizz in {name} (field {shown!r}, {before[:3]}); after the globe the field reads phizz"
+
+    return run
 
 
 def typed_as(text, want):
@@ -2863,7 +2872,10 @@ def en_failure_visible():
 check("hw-typing-zh", hw_typing(to_chinese, "nihao"), needs=["first-install"])
 check("hw-typing-ja", hw_typing(to_japanese, "hashi"), needs=["first-install"])
 check("en-failure-visible", en_failure_visible, needs=["first-install"])
-check("zh-globe-drops-pinyin", globe_drops_pinyin, needs=["ranh"])
+check("zh-globe-types-letters", globe_types_letters(to_chinese, "中"), needs=["ranh"])
+check(
+    "ja-globe-types-letters", globe_types_letters(to_japanese, "日"), needs=["ja-chip"]
+)
 # #39's four period checks (LiveSpacingTests in app/): the two the new keyboard can run, as typing.
 check(
     "en-period-space-stays",
