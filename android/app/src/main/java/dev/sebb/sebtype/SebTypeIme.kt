@@ -255,10 +255,13 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         for (v in listOf(root, stack)) v.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeFloating() }
         // The keys stay clear of the navigation bar the window reaches under. With gesture navigation the
         // keyboard's own bar (back and the keyboard switcher) is taller than the gesture area the
-        // navigation-bar inset gives: it is the tappable part.
+        // navigation-bar inset gives: it is the tappable part. Whether the bar shows or not, as Android's
+        // own keyboard window does (#472): the system shows the bar whenever a keyboard is up, but insets
+        // taken while it was still hidden (an app in full screen, the keyboard on its way up) left the
+        // bottom row under it.
         ViewCompat.setOnApplyWindowInsetsListener(panel) { v, insets ->
-            val bottom = maxOf(insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
-                insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom)
+            val bottom = maxOf(insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars()).bottom,
+                insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.tappableElement()).bottom)
             v.setPadding(0, 0, 0, bottom)
             // The resize frame's corner stays above it, out of the system's gesture area.
             (frame.layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom
@@ -301,6 +304,9 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // The window's insets again for a view the window already had: one dispatched before the view
+        // came into the window never reaches it, and an unchanged inset isn't dispatched again (#472).
+        ViewCompat.requestApplyInsets(root)
         if (!restarting) {
             page = Page.LETTERS
             shown = Panel.NONE
