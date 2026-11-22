@@ -77,7 +77,8 @@ std::unique_ptr<Engine> SebTypeEngine::makeEngine(Lang lang) {
     static const std::string model = chineseModel();
     if (model.empty()) return rime;
     // OpenCC's s2t and t2s for 繁 come with SebType's Chinese data (data/rime/build.sh), in Rime's user folder.
-    // Two threads: one left the model's list behind the key on a laptop's core (#495's bench).
+    // Two threads: on a laptop's i7-11800H they took the model's list from 12 / 23 ms per key (p50 / p95) with one
+    // to 8 / 18 ms, for a third more CPU (#495).
     ChineseModelPaths paths{model, (rimeUser / "opencc").string(), std::thread::hardware_concurrency() >= 4 ? 2 : 1};
     paths.nextWords = false;  // the box shows only while typing, as with Rime alone
     // The model's list arrives on its worker: drawn from Fcitx5's loop, in the box as it is (#495).

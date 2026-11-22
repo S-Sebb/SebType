@@ -119,6 +119,7 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
     // OpenCC's s2t and t2s for 繁 are in Rime's shared data, under Program Files: OpenCC opens its files by
     // narrow paths, which a user folder's non-ASCII name would break. The text service asks for the model's
     // list (Op::Refresh) while the reply says updating, so the engine needs no READY.
+    // Two threads, as on Linux (linux/src/sebtype.cpp).
     ChineseModelPaths paths{model, u8(exeDir() / L"data" / L"opencc"), std::thread::hardware_concurrency() >= 4 ? 2 : 1};
     paths.nextWords = false;  // the box shows only while typing, as with Rime alone
     return withChineseModel(std::move(rime), paths, nullptr);
