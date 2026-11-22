@@ -61,6 +61,9 @@ score, waits for it. Its trace sections, "SebType zh load", "zh rank", "zh next"
 fixes" (the lookup), "zh fix" (the weighing) and "zh pick", are in `android/perf`'s traces.
 
 The PCs run it too (#495), without next words (`ChineseModelPaths::nextWords`): their box shows only while typing.
+Nor do they pass the field's text (`fieldText`): the model's context is what was typed, and a key the app takes
+itself with nothing composing (Backspace, an arrow, Ctrl+A) or a focus change ends it. Their hosts read the box
+through `page()`, whose next read is the turn for Rime's corrections, and `updating()` holds until those are weighed.
 llama.cpp is built for AVX2 (`GGML_NATIVE=OFF`), and an older CPU gets Rime alone. The Fcitx5 add-on draws the
 model's list from Fcitx5's loop when `ready` comes; Windows' text service, across the server's pipe, asks again
 (`Op::Refresh`) every 16 ms while the reply says `Engine::updating()`. `chinese.gguf` ships in the RPM
