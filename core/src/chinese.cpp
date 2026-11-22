@@ -61,7 +61,7 @@ constexpr std::chrono::milliseconds kHold{100};
 // best must beat the list's first to go first, or may trail it and still go last on the first page. Tuned on
 // the slip set with the clean sentences as the guard (android/test/chinese-lm, fix=1).
 constexpr int kFixes = 8;
-constexpr float kFixMargin = FIX_MARGIN, kFixFloor = FIX_FLOOR;
+constexpr float kFixMargin = 1, kFixFloor = 3;  // tuned on the slip set (#478)
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
 }

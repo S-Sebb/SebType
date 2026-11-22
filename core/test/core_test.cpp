@@ -1333,7 +1333,8 @@ TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), shown.at(0));
   std::this_thread::sleep_for(400ms);
-  EXPECT_EQ(std::ranges::find(list(), "越来越小"), list().end());
+  const auto after = list();
+  EXPECT_EQ(std::ranges::find(after, "越来越小"), after.end());
 }
 
 TEST_F(ChineseTest, TraditionalAndNextWords) {
