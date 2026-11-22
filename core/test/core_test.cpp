@@ -1396,6 +1396,22 @@ TEST_F(ChineseFixTest, ANearlyAsLikelyCorrectionComesFirst) {
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }
 
+// Windows' text service asks again until the correction has been weighed too (#495), not only the model's list.
+TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
+  const int before = readyCount();
+  type("youkuaiyoouhao");
+  EXPECT_TRUE(zh->updating());
+  ASSERT_TRUE(ready(before + 1));
+  ASSERT_NE(list().at(0), "又快又好");
+  EXPECT_TRUE(zh->updating());
+  const int asked = readyCount();
+  list();  // the text service's next ask looks the corrections up
+  EXPECT_TRUE(zh->updating());
+  ASSERT_TRUE(ready(asked));
+  EXPECT_EQ(list().at(0), "又快又好");
+  EXPECT_FALSE(zh->updating());
+}
+
 // Space before the corrected list comes commits the list shown, and the correction never shows after it.
 TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   startFixing(300ms);

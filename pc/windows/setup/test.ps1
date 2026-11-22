@@ -397,6 +397,16 @@ if ($Typing) {
           if ($t -ne '是的') { throw "shide, a second, then Space gave '$t' (Rime alone: 使得); server.log: '$log'" }
           "$t, $($log -replace '^.*中文: ')"
         }
+        # #478 with the model: a slip that reads as pinyin, its correction on page 1 once weighed (0.3 s after the keys).
+        # The window can't be read here: each of the page's six is picked in turn, and one must be 又快又好.
+        Check 'chinese-correction' {
+          foreach ($k in 1..6) {
+            Keys Escape 'Control_L+a' BackSpace; TypeText 'youkuaiyoouhao'; Start-Sleep 1; Keys "$k"
+            $t = $tsf::EditText($h).Trim()
+            if ($t -eq '又快又好') { return "又快又好 at $k" }
+          }
+          throw "youkuaiyoouhao: 又快又好 isn't one of page 1's six (picking 6 gave '$t')"
+        }
         Check 'chinese-shift-tap' {
           Keys 'Control_L+a' BackSpace; TypeText 'ni'; Keys Shift_L; TypeText 'ok'; Keys Shift_L; TypeText 'ranhou '
           Start-Sleep 1; $t = $tsf::EditText($h).Trim()

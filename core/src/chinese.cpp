@@ -366,7 +366,8 @@ class Chinese final : public Engine {
   bool available() override { return rime_->available(); }
   bool updating() override {
     std::lock_guard g(mutex_);
-    return askedRev_ == rev_ && resultRev_ != rev_ && (loading_ || model_);
+    if (askedRev_ == rev_ && resultRev_ != rev_ && (loading_ || model_)) return true;
+    return fixDue_ == rev_ && fixDone_ != rev_;  // Rime's corrections are still to be weighed (#478)
   }
   std::string input() override { return rime_->input(); }
 
@@ -466,6 +467,8 @@ class Chinese final : public Engine {
         job.fix = std::move(c.text);
         return want(std::move(job));
       }
+    std::lock_guard g(mutex_);
+    fixDone_ = rev_;  // none to weigh
   }
 
   void pick(int index) {
@@ -625,7 +628,10 @@ class Chinese final : public Engine {
         // A key meanwhile drops it, so the next key's list never waits behind it.
         if (!paths_.synchronous && wake_.wait_for(l, kFixPause, [&] { return stop_ || wanted_ || revNow_ != job.rev; }))
           continue;
-        if (resultRev_ != job.rev || !resultFirst_) continue;
+        if (resultRev_ != job.rev || !resultFirst_) {
+          fixDone_ = job.rev;
+          continue;
+        }
         made = result_;
         first = resultFirst_;
       }
@@ -659,6 +665,7 @@ class Chinese final : public Engine {
       resultRev_ = job.rev;
       results_++;
       if (job.fix.empty()) jobTime_ = std::chrono::steady_clock::now() - start;
+      else fixDone_ = job.rev;
       // A list for the input: once it has shown, the caller's thread looks up the corrections (askFixes).
       const bool fixes = job.fixable && job.fix.empty() && first;
       if (fixes) fixDue_ = job.rev;
@@ -768,6 +775,7 @@ class Chinese final : public Engine {
   uint64_t resultRev_ = ~uint64_t{0};
   std::atomic<uint64_t> results_{0};             // lists that came, ever
   std::atomic<uint64_t> fixDue_{~uint64_t{0}};   // the revision whose corrections the worker asked for (#478)
+  uint64_t fixDone_ = ~uint64_t{0};             // the revision whose corrections were weighed, or had none
   uint64_t askedRev_ = ~uint64_t{0};          // the last revision the model was asked a list for
   std::chrono::steady_clock::duration jobTime_{};  // how long the last list that came took
   std::atomic<uint64_t> revNow_{0};

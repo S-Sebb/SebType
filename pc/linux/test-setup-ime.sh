@@ -669,7 +669,8 @@ fi
 # the i above it), which only SebType's librime corrects (#101), and nihap (p for o) 你好 (#135); and the
 # grammar plugin (#127): beirendingwei gives 被认定为, not 被人定位 as without the grammar file. The account's
 # default.custom.yaml has no page size, so setup's 6 is added to it and a page shows 6 candidates (#163). 中文's
-# model (#495) puts 是的 first for shide, where Rime alone puts 使得, in the box as it shows.
+# model (#495) puts 是的 first for shide, where Rime alone puts 使得, in the box as it shows, and with Rime's
+# corrections (#478) 又快又好 on page 1 for youkuaiyoouhao.
 # Focus moving away mid-word types the pinyin in (#277), and so does switching to 日本語 (#301); a switch back to 中文
 # ends the Shift tap's English (#489). A sync's save and
 # a deploy wait until typing is idle (#373). The pinyin shows in a row over the candidates, or in the app's text
@@ -817,6 +818,13 @@ def model_first(keys, want):
     tap('Escape')
     return got
 check("the model's list: shide gives 是的 first, the box shown throughout", model_first('shide', '是的'), ('是的', True))
+def on_page(keys, want):  # whether want is on the first page once Rime's corrections are weighed too (0.3 s after)
+    for c in keys: tap(c)
+    quiet(0.6)
+    got = want in [c[1] for c in candidates[0]]
+    tap('Escape')
+    return got
+check("a slip that reads as pinyin: youkuaiyoouhao gives 又快又好 on page 1", on_page('youkuaiyoouhao', '又快又好'), True)
 # #277: focus moving away mid-word types the pinyin in as its letters, without Rime's spaces between
 # syllables, and the next word starts fresh: through Fcitx5 for an app that shows the preedit itself, and
 # from SebType for one whose preedit is in Fcitx5's panel.
