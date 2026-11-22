@@ -13,7 +13,7 @@
 // chosen (after a partial pick Rime alone lists the rest). It scores Rime's candidates that cover the whole
 // input, by their characters against Rime's syllables, and leaves the others in Rime's order after its own.
 // The model's own candidates that read the letters otherwise than Rime does (n as ng, a whole syllable as one
-// cut short: 当 for dan, #503) go after Rime's first page's candidates for the whole input; the model was
+// cut short: 当 for dan, #503) go after Rime's first two pages' candidates for the whole input; the model was
 // trained to accept those slips, which fuzzy pinyin off rules out of the top. Rime's syllables decide, by
 // the characters' readings in rime-data's sebtype_readings.txt (8105's).
 // Picking one of Rime's candidates selects it in Rime by its own index; picking one of the model's teaches
@@ -404,10 +404,13 @@ class Chinese final : public Engine {
       // list once, not to Rime's and then to the model's (#450).
       else if (askedRev_ == rev_ && model_ && jobTime_ <= kHold) return;
     }
-    const auto rime = rime_->candidates(std::max(max, rime_->pageSize()));
+    // Two of Rime's pages (10): about what the phone's bar and its expanded view's first row show, so the
+    // common characters of what was typed come first (淡 is Rime's 6th for dan).
+    const int misreadAfter = 2 * rime_->pageSize();
+    const auto rime = rime_->candidates(std::max(max, misreadAfter));
     std::vector<Item> misread;
     // The model's misreadings (but those Rime lists too: fuzzy pinyin on) come after the last of Rime's first
-    // page that spells the whole input.
+    // two pages that spells the whole input.
     if (model)
       for (auto &it : *model)
         (it.misread && std::ranges::find(rime, it.candidate.text, &Candidate::text) == rime.end() ? misread : items)
@@ -415,7 +418,7 @@ class Chinese final : public Engine {
     int after = -1;
     if (!misread.empty()) {
       const size_t n = syllables(rime_->preedit().text());
-      for (int i = 0; i < int(rime.size()) && i < rime_->pageSize(); i++)
+      for (int i = 0; i < int(rime.size()) && i < misreadAfter; i++)
         if (wholeInput(rime[i].text, n)) after = i;
     }
     const auto addMisread = [&] {

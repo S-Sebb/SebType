@@ -1207,8 +1207,8 @@ TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
 }
 
 // The model's own candidates that read the letters otherwise (#503): for "dan" it adds 当 (dang), as it was
-// trained to read n as ng and a last syllable cut short; it comes after Rime's first page for dan.
-TEST_F(ChineseTest, TheModelsMisreadingsComeAfterRimesFirstPage) {
+// trained to read n as ng and a last syllable cut short; it comes after Rime's first two pages for dan.
+TEST_F(ChineseTest, TheModelsMisreadingsComeAfterRimesFirstPages) {
   start({}, [](FakeRime &r) { r.words["dan"] = {"但", "单", "弹", "蛋", "🥚", "淡", "丹", "氮", "胆", "担"}; });
   typeAndWait("dan");
   const auto l = list();
