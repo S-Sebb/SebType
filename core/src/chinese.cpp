@@ -59,10 +59,12 @@ constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each p
 constexpr std::chrono::milliseconds kHold{100};
 // Phrase-level correction (#478): how far (log probability) Rime's best correction may trail the list's first
 // and still go first, or go last on the first page. Tuned on the slip set with the clean sets as the guard
-// (android/test/chinese-lm/tune_fix.py): the model's own beam already finds most of what it is surer of, and
-// trailing by more than 0.75 cost the partial-pinyin sets their first places; weighing Rime's next corrections
-// too gained nothing. The model weighs it once typing pauses for kFixPause.
-constexpr float kFixLead = 0.75f, kFixFloor = 4;
+// (android/test/chinese-lm/tune_fix.py, with #482's weights for text typed alone): the model's own beam already
+// finds most of what it is surer of, and trailing by more than 0.5 cost the partial-pinyin and abbreviation sets
+// their first places; weighing Rime's next corrections too gained nothing. The correction counts as Rime's 5th
+// candidate, also alone: it is Rime's reading, where the beam's guesses get kAloneOwnPenalty. The model weighs it
+// once typing pauses for kFixPause.
+constexpr float kFixLead = 0.5f, kFixFloor = 4;
 constexpr std::chrono::milliseconds kFixPause{300};
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
