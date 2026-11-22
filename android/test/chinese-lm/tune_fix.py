@@ -6,9 +6,9 @@ OUT_DIR holds bench.sh --dev's model stack run with dump=1 fix=8 (rankWeight=0.5
 core's weights): per set, model.dev-SET.tsv (rank, keys, target, …) and its .dump (item, Rime's rank or -1
 for the model's own or -2 for a correction, log probability, text). For each set, the share of items with
 the target first and on the first page (5) without corrections and with them, ranked as chinese.cpp does:
-the model's list by its score less 0.5 · ln(1 + Rime's rank), its own and the corrections at rank 4; the
-best correction first when it beats the list's first by MARGIN, else last on the first page when within
-FLOOR. Without MARGIN and FLOOR, a sweep: each pair's slips gain and the clean sets' losses.
+the model's list by its score less 0.5 · ln(1 + Rime's rank), its own and the correction at rank 4; the
+correction first when it beats the list's first by MARGIN, else last on the first page when within
+FLOOR. Only Rime's first correction counts, as in chinese.cpp. Without MARGIN and FLOOR, a sweep: each pair's slips gain and the clean sets' losses.
 """
 
 import math
@@ -47,7 +47,8 @@ def load(out, sets, name):
         lit, fixes = [], []
         for r, lp, text in dump[i]:
             if r == -2:
-                fixes.append((lp - W * math.log1p(4), text))
+                if not fixes:
+                    fixes.append((lp - W * math.log1p(4), text))
             elif not any(t == text for _, t in lit):
                 lit.append((lp - W * math.log1p(4 if r < 0 else r), text))
         lit.sort(key=lambda x: -x[0])
@@ -60,7 +61,7 @@ def load(out, sets, name):
                 target,
                 rank,
                 lit[0][0] if lit else None,
-                max(fixes) if fixes else None,
+                fixes[0] if fixes else None,
                 order,
             )
         )

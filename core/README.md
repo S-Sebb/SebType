@@ -53,10 +53,11 @@ and goes with it, so it starts and stops with Rime.
 A slip that still reads as pinyin (`yuelaiyuxiao`, #478) gets a second look once the model's list has shown: the
 worker's list comes with a second `ready`, and on that turn the engine's thread asks Rime for its readings of the
 input with typo corrections (the data's `sebtype_corr` schema, in a session of its own, since librime isn't
-thread-safe). The model weighs them against its list: the best goes first when it is 1 (in log probability) surer
-of it than of the list's first, otherwise last on the first page when it is at most 3 less sure, tuned on
-`data/rime/bench/sets/slips.tsv` (`android/test/chinese-lm/tune_fix.py`). A key or a pick before the corrected list
-comes drops it, so typing never waits for it. Its trace sections, "SebType zh load", "zh rank", "zh next", "zh
+thread-safe). Once typing pauses for 0.3 s the model weighs Rime's best one against its list: it goes first when
+the model is 1 (in log probability) surer of it than of the list's first, otherwise last on the first page when
+it is at most 4 less sure, tuned on `data/rime/bench/sets/slips.tsv` (`android/test/chinese-lm/tune_fix.py`). A
+key or a pick before the corrected list comes drops it; only a key during the weighing itself, one phrase's
+score, waits for it. Its trace sections, "SebType zh load", "zh rank", "zh next", "zh
 fixes" (the lookup), "zh fix" (the weighing) and "zh pick", are in `android/perf`'s traces.
 
 ## Tests

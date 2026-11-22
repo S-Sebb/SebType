@@ -57,12 +57,13 @@ constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each p
 // How long the list shown waits for the model's after a change, so a key changes it once (#450): the phone's
 // rankings and next words take 14-107 ms at p95, by its cores (docs/perf/2026-11-19-chinese-model.md).
 constexpr std::chrono::milliseconds kHold{100};
-// Phrase-level correction (#478): Rime's corrections the model scores, and by how much (log probability) the
-// best must beat the list's first to go first, or may trail it and still go last on the first page. Tuned on
-// the slip set with the clean sentences as the guard (android/test/chinese-lm/tune_fix.py): the model's own beam
-// already finds what it is surer of, so a correction lands on the first page far more often than first.
-constexpr int kFixes = 8;
-constexpr float kFixMargin = 1, kFixFloor = 3;
+// Phrase-level correction (#478): by how much (log probability) Rime's best correction must beat the list's
+// first to go first, or may trail it and still go last on the first page. Tuned on the slip set with the clean
+// sentences as the guard (android/test/chinese-lm/tune_fix.py): the model's own beam already finds what it is
+// surer of, so a correction lands on the first page far more often than first, and weighing Rime's next
+// corrections too gained nothing. The model weighs it once typing pauses for kFixPause.
+constexpr float kFixMargin = 1, kFixFloor = 4;
+constexpr std::chrono::milliseconds kFixPause{300};
 namespace ks {
 constexpr uint32_t space = 0x20, BackSpace = 0xff08, Up = 0xff52, Down = 0xff54, Page_Up = 0xff55, Page_Down = 0xff56;
 }
@@ -311,7 +312,7 @@ class Chinese final : public Engine {
     bool traditional;
     bool learned = false;           // Rime's first is a word the user taught it
     bool fixable = false;           // Rime can correct the input (#478)
-    std::vector<std::string> fixes;  // Rime's corrections of the input, for the list made already (#478)
+    std::string fix;                // Rime's best correction of the input, for the list made already (#478)
     int pageSize = 0;
   };
 
@@ -362,9 +363,11 @@ class Chinese final : public Engine {
     TraceSection section("SebType zh fixes");
     Job job{rev_, context_, rime_->input(), {}, {}, rime_->alternate()};
     job.pageSize = rime_->pageSize();
-    for (auto &c : rime_->corrections(job.input, kFixes))
-      if (const auto cps = codePoints(c.text); !cps.empty() && std::ranges::all_of(cps, han)) job.fixes.push_back(std::move(c.text));
-    if (!job.fixes.empty()) want(std::move(job));
+    for (auto &c : rime_->corrections(job.input, 4))
+      if (const auto cps = codePoints(c.text); !cps.empty() && std::ranges::all_of(cps, han)) {
+        job.fix = std::move(c.text);
+        return want(std::move(job));
+      }
   }
 
   void pick(int index) {
@@ -517,7 +520,10 @@ class Chinese final : public Engine {
       // Corrections weigh against the list made for the same revision, which must have come.
       std::vector<Item> made;
       std::optional<float> first;  // the score of the list's first, which a correction must beat
-      if (!job.fixes.empty()) {
+      if (!job.fix.empty()) {
+        // A key meanwhile drops it, so the next key's list never waits behind it.
+        if (!paths_.synchronous && wake_.wait_for(l, kFixPause, [&] { return stop_ || wanted_ || revNow_ != job.rev; }))
+          continue;
         if (resultRev_ != job.rev || !resultFirst_) continue;
         made = result_;
         first = resultFirst_;
@@ -528,7 +534,7 @@ class Chinese final : public Engine {
       std::vector<Item> items;
       std::string context = job.traditional ? t2s(job.context) : job.context;
       try {
-        if (!job.fixes.empty()) {
+        if (!job.fix.empty()) {
           TraceSection section("SebType zh fix");
           items = std::move(made);
           fix(*model, job, context, items, *first, s2t);
@@ -550,9 +556,9 @@ class Chinese final : public Engine {
       resultFirst_ = first;
       resultRev_ = job.rev;
       results_++;
-      if (job.fixes.empty()) jobTime_ = std::chrono::steady_clock::now() - start;
+      if (job.fix.empty()) jobTime_ = std::chrono::steady_clock::now() - start;
       // A list for the input: once it has shown, the caller's thread looks up the corrections (askFixes).
-      const bool fixes = job.fixable && job.fixes.empty() && first;
+      const bool fixes = job.fixable && job.fix.empty() && first;
       if (fixes) fixDue_ = job.rev;
       done_.notify_all();
       l.unlock();
@@ -604,24 +610,20 @@ class Chinese final : public Engine {
     return out;
   }
 
-  // Puts the likeliest of Rime's corrections into the model's list ITEMS, whose first scored FIRST: first when
-  // the model is kFixMargin surer of it, last on the first page when it is at most kFixFloor less sure.
+  // Puts Rime's correction into the model's list ITEMS, whose first scored FIRST: first when the model is
+  // kFixMargin surer of it, last on the first page when it is at most kFixFloor less sure.
   void fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
            Converter &s2t) {
     std::string letters;
     for (char c : job.input)
       if (c != '\'') letters += c;
-    const std::vector<float> score = model.score(context, letters, job.fixes);
-    const size_t best = std::ranges::max_element(score) - score.begin();
-    const float lp = score[best] - kRankWeight * std::log1p(kOwnRank);
-    const std::string &text = job.fixes[best];
-    if (!items.empty() && items[0].simplified == text) return;
+    const float lp = model.score(context, letters, {job.fix})[0] - kRankWeight * std::log1p(kOwnRank);
     size_t at;
     if (lp > first + kFixMargin) at = 0;
     else if (lp > first - kFixFloor) at = std::max(job.pageSize, 1) - 1;
     else return;
-    Item item = own(text, job.traditional, s2t);
-    if (const auto same = std::ranges::find(items, text, &Item::simplified); same != items.end()) {
+    Item item = own(job.fix, job.traditional, s2t);
+    if (const auto same = std::ranges::find(items, job.fix, &Item::simplified); same != items.end()) {
       if (size_t(same - items.begin()) <= at) return;  // as high already
       item = std::move(*same);
       items.erase(same);
