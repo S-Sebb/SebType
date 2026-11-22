@@ -90,7 +90,11 @@ class List final : public fcitx::CandidateList, public fcitx::PageableCandidateL
     setPageable(this);
     for (size_t i = 0; i < page.items.size(); ++i) {
       words_.push_back(std::make_unique<Word>(engine, static_cast<int>(i), page.items[i]));
-      labels_.emplace_back(i < page.labels.size() ? page.labels[i] : "");
+      // Windows' "1." (#447): the core's labels end in a space, Rime's as "1 " and Mozc's as "1. ".
+      std::string label = i < page.labels.size() ? page.labels[i] : "";
+      while (!label.empty() && label.back() == ' ') label.pop_back();
+      if (!label.empty() && label.back() != '.') label += '.';
+      labels_.emplace_back(label.empty() ? label : label + " ");
     }
   }
   const fcitx::Text &label(int idx) const override { return labels_.at(idx); }
@@ -332,6 +336,8 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
     const auto aux = core_->aux();
     const Page page = core_->page();
     if (!aux.empty()) panel.setAuxUp(fcitx::Text(aux));
+    // Windows' box keeps its top row, with the page arrows, over candidates alone (#447).
+    else if (!page.empty() && (!inPanel || text.empty())) panel.setAuxUp(fcitx::Text(" "));
     if (!page.empty()) panel.setCandidateList(std::make_unique<List>(this, ic, page));
     // The key's release resets the panel too: a popup still showing over an empty panel stays for its
     // second (Fcitx5 hides it only while it is the panel's sole text). A new popup replaces it: Fcitx5

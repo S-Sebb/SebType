@@ -236,16 +236,28 @@ unset WAYLAND_DISPLAY  # Fcitx5 draws on Xwayland, where the window can be read 
 echo "Xft.dpi: 96" | xrdb -merge
 ui=$sb/config/fcitx5/conf/classicui.conf conf=$sb/config/sebtype/sebtype.conf
 cp "$conf" "$conf.kept"
+# The Rust test put setup's Chinese settings back: Rime deploys them once 中文 is typed in, here before any
+# window is kept, until its build folder has been quiet for 5 s.
+rime=$sb/data/fcitx5/rime; touch "$sb/picnic.start"
+fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,sebtype > "$out/configurator-picnic-fcitx5-deploy.log" 2>&1 & f=$!
+for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
+python3 "$here/candidate-window.py" "$sb/picnic-deploy.png" nihao zh > /dev/null
+for _ in $(seq 240); do
+  [[ -n $(find "$rime/build" -newer "$sb/picnic.start" -print -quit) && -z $(find "$rime/build" -newermt '5 seconds ago' -print -quit) ]] && break
+  sleep 1
+done
+kill $f; wait $f
 for o in horizontal vertical no-pinyin-row ja switch; do
   sed -i "s/^Vertical Candidate List=.*/Vertical Candidate List=$([[ $o == vertical ]] && echo True || echo False)/" "$ui"
   cp "$conf.kept" "$conf"; [[ $o == no-pinyin-row ]] && printf '[Candidates]\nPinyinRow=0\n' >> "$conf"
   fcitx5 -k --disable=all --enable=dbus,dbusfrontend,xcb,classicui,keyboard,sebtype > "$out/configurator-picnic-fcitx5-$o.log" 2>&1 & f=$!
   for _ in $(seq 100); do busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1 && break; sleep 0.1; done
   sleep 3  # Rime loads its schema
-  case $o in ja) keys=(ohayo ja) ;; switch) keys=("" zh) ;; *) keys=(nihao zh) ;; esac
+  case $o in ja) keys=("nihongo  " ja) ;; switch) keys=("" zh) ;; *) keys=(nihao zh) ;; esac  # Windows' test's keys
   read -r size pink flat < <(python3 "$here/candidate-window.py" "$out/configurator-picnic-$o.png" "${keys[@]}")
   kill $f; wait $f
-  if [[ ${pink:-0} -gt 100 && ${flat:-0} == 1 ]]; then echo "$o ok: $size, $pink logo pixels, flat"
+  # The one-line switch popup is too low for the pig, which Fcitx5 then leaves out, as Windows does (#447).
+  if [[ ${flat:-0} == 1 && ( ${pink:-0} -gt 100 || ( $o == switch && ${pink:-1} == 0 ) ) ]]; then echo "$o ok: $size, $pink logo pixels, flat"
   else echo "$o: no logo in a flat rectangle (${size:-no window}, ${pink:-0} logo pixels, flat ${flat:-0})"; fi
 done
 mv "$conf.kept" "$conf"
@@ -258,7 +270,7 @@ SH
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 5 ]]
 }
 export -f picnic_window
-check picnic-candidate-window 200 picnic_window
+check picnic-candidate-window 450 picnic_window
 
 # Sync (#180) with a sebtype_sync.py server on this PC, both ways, then delete on the server: a sandbox
 # of its own (the checks above change its settings), with a made-up device id and no sync_dir, so Rime

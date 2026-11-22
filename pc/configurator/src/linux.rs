@@ -24,17 +24,23 @@ const PICNIC: &str = "sebtype-picnic";
 /// draws it, so the window is one flat rectangle (#461). Fcitx5 scales theme images with the DPI but not
 /// with the font, so the pig and the margins are sized here, in px at 96 dpi.
 fn picnic_files(font_size: i32) -> [(&'static str, String); 6] {
-    // The box Fcitx5 draws round one line of Noto Sans CJK (1.448 em): ContentMargin 10 + 12 and
-    // TextMargin 4 + 4, less the 2 px shadow. 47 at 10 pt. The pig fills a one-line box (the switch
-    // popup) within the 2 px border and 3 px of cream: 37 at 10 pt, 64 at 24 pt.
+    // A line of Noto Sans CJK is 1.448 em, 2 px taller than Microsoft YaHei's on Windows: the pig is
+    // Windows' (its row and the 12 px margin, by 10/7), 52 px at 14 pt, at the 12 px margin, and the rows
+    // start 6 + 9 px right of it. Its 3 px TextMargin is the content's too. The arrows' images are as
+    // tall as the pinyin row (TextMargin 4 + 4), so they sit on its middle.
     let line = (f64::from(font_size) * 4.0 / 3.0 * 1.448).round() as i32;
-    let height = 28 + line - 2 * 5;
-    let width = (height * 158 + 80) / 160; // the logo image is 158x160
+    let height = (line - 2 + 12) * 10 / 7;
+    let width = height * 158 / 160; // the logo image is 158x160
+    let row = line + 8;
+    let arrow = |svg: &str| {
+        svg.replace("@ROW@", &row.to_string())
+            .replace("@MIDDLE@", &(f64::from(row) / 2.0).to_string())
+    };
     [
         (
             "theme.conf",
             include_str!("../fcitx5-theme/theme.conf")
-                .replace("@CONTENT_LEFT@", &(5 + width + 5).to_string()),
+                .replace("@CONTENT_LEFT@", &(12 + width + 6 + 9 - 3).to_string()),
         ),
         (
             "logo.svg",
@@ -50,8 +56,8 @@ fn picnic_files(font_size: i32) -> [(&'static str, String); 6] {
             "highlight.svg",
             include_str!("../fcitx5-theme/highlight.svg").into(),
         ),
-        ("prev.svg", include_str!("../fcitx5-theme/prev.svg").into()),
-        ("next.svg", include_str!("../fcitx5-theme/next.svg").into()),
+        ("prev.svg", arrow(include_str!("../fcitx5-theme/prev.svg"))),
+        ("next.svg", arrow(include_str!("../fcitx5-theme/next.svg"))),
     ]
 }
 
@@ -1054,7 +1060,7 @@ mod tests {
 
     #[test]
     fn picnic_logo_follows_the_font_size() {
-        for (size, w, h, margin) in [(9, 35, 35, 45), (10, 37, 37, 47), (24, 63, 64, 73)] {
+        for (size, w, h, margin) in [(9, 37, 38, 61), (14, 51, 52, 75), (24, 79, 80, 103)] {
             let files = picnic_files(size);
             let text = |name: &str| &files.iter().find(|(n, _)| *n == name).unwrap().1;
             assert!(text("logo.svg").starts_with(&format!(
@@ -1175,10 +1181,11 @@ mod tests {
         assert!(learning());
 
         // Picnic with SebType's pig (#94); test.sh then draws this window in a nested KWin.
-        // 中文's pinyin row off and on again (#447): sebtype.conf's, which the input method reads.
+        // 中文's pinyin row off and on again (#447): sebtype.conf's, which the input method reads. 14 pt, as
+        // Windows' test draws its window.
         let mut picnic = Candidates {
             vertical: false,
-            font_size: 10,
+            font_size: 14,
             picnic: true,
             pinyin_row: false,
         };
@@ -1197,8 +1204,11 @@ mod tests {
         assert!(candidates().pinyin_row);
         assert!(fs::read_to_string(theme_dir().join("logo.svg"))
             .unwrap()
-            .contains(" width=\"37\" height=\"37\" "));
+            .contains(" width=\"51\" height=\"52\" "));
         assert!(candidates().picnic);
+        // Back to setup's Chinese settings, for the candidate window test.sh then draws as Windows' test
+        // does: the Fcitx5 it starts deploys them.
+        rime::save(&dir, &Chinese::default()).unwrap();
     }
 
     /// The Configurator's forget while SebType's input method has Rime and Mozc open: run by
