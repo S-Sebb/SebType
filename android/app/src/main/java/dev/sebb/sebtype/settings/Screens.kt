@@ -68,7 +68,7 @@ import kotlin.math.roundToInt
 
 /** A switch for a phone-only option (DataStore) */
 @Composable
-private fun PrefSwitch(title: String, subtitle: String? = null, option: Prefs.Option<Boolean>) {
+internal fun PrefSwitch(title: String, subtitle: String? = null, option: Prefs.Option<Boolean>) {
     val context = LocalContext.current
     val on by Prefs.flow(context, option).collectAsState(Prefs[option])
     SwitchItem(title, subtitle, on) { Prefs.set(context, option, it) }
@@ -76,7 +76,7 @@ private fun PrefSwitch(title: String, subtitle: String? = null, option: Prefs.Op
 
 /** A switch for one of sebtype.conf's options, which every device shares */
 @Composable
-private fun ConfSwitch(title: String, subtitle: String?, section: String, key: String, default: Boolean) {
+internal fun ConfSwitch(title: String, subtitle: String?, section: String, key: String, default: Boolean) {
     val context = LocalContext.current
     SwitchItem(title, subtitle, Conf.get(section, key, default)) { Conf.set(context, section, key, it) }
 }
@@ -85,7 +85,7 @@ private fun ConfSwitch(title: String, subtitle: String?, section: String, key: S
 
 /** The globe order (#41): the languages that are on, in 🌐's order, then those that are off; drag ≡ to reorder. */
 @Composable
-private fun GlobeOrder() {
+internal fun GlobeOrder() {
     val context = LocalContext.current
     val on = Conf.languages()
     val rows = on + Conf.LANGUAGES.filter { it !in on }

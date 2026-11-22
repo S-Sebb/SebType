@@ -249,6 +249,18 @@ fn apply_chinese(c: rime::Chinese) -> Result<Toast, Toast> {
     }
     Ok(say(Msg::Applied))
 }
+/// The Keyboard page's candidate settings, and setup's Common settings page's (#444): Rime's page size in its
+/// files, then the window's look in the platform's.
+fn save_candidates(c: &rime::Chinese, k: &Candidates) -> std::io::Result<()> {
+    let deployed = rime::save(&platform::rime_dir(), c)?;
+    platform::set_candidates(k)?;
+    // Without Rime's data here yet (中文 not set up), the deploy that brings it reads these settings; one now
+    // would hold the setup wizard's Next for minutes with nothing to deploy (#471).
+    if deployed && platform::rime_dir().join("build").is_dir() {
+        platform::redeploy_rime()?;
+    }
+    Ok(())
+}
 fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
     if mozc::save(&platform::mozc_dir(), &j).map_err(err)? {
         platform::restart_mozc();
@@ -718,54 +730,28 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-    // Headless account sync login (#435, used by Windows Setup): reads `server\nuser\npassword\n`
-    // from stdin (`--sync-login`) or from a temp file (`--sync-login-file <path>`) that is removed
-    // immediately after reading so passwords never appear in CLI args or logs. With `--check` (#452) it
-    // saves only a login that works, and otherwise exits with why not (sync::LoginError::Check). With
-    // `--check-only` it saves nothing: Windows Setup shows the check's tick before it saves (#468).
-    let check_only = std::env::args().any(|a| a == "--check-only");
-    let check_first = check_only || std::env::args().any(|a| a == "--check");
-    let save = move |(server, user, password): (String, String, String)| {
-        if check_first {
-            let check = sync::check(&server, &user, &password);
-            if check != sync::Check::Connected {
-                return Err(sync::LoginError::Check(check));
-            }
-        }
-        if check_only {
-            return Ok(());
-        }
-        sync::save_login(server, user, &password)
-            .map(|_| ())
-            .map_err(sync::LoginError::Other)
-    };
-    if std::env::args().any(|a| a == "--sync-login") {
-        let res = std::io::read_to_string(std::io::stdin())
-            .map_err(|e| sync::LoginError::Other(e.to_string()))
-            .and_then(|input| sync::parse_login_lines(&input))
-            .and_then(save);
-        std::process::exit(match res {
-            Ok(_) => 0,
-            Err(e) => {
-                eprintln!("--sync-login: {e}");
-                e.exit_code()
-            }
-        });
-    }
-    if let Some(i) = std::env::args().position(|a| a == "--sync-login-file") {
-        let res = match std::env::args().nth(i + 1) {
-            Some(path) => sync::read_login_file(std::path::Path::new(&path))
-                .and_then(|input| sync::parse_login_lines(&input))
-                .and_then(save),
-            None => Err(sync::LoginError::Other("missing file path".into())),
+    // Common settings (#444) as the person who started Windows Setup: `--common-settings get <file>` writes
+    // what the setup wizard shows first, `--common-settings set [--upgrade] key=value…` saves them where
+    // Setup runs silently (#471).
+    if let Some(i) = std::env::args().position(|a| a == "--common-settings") {
+        let args: Vec<String> = std::env::args().skip(i + 1).collect();
+        let done = match args.first().map(String::as_str) {
+            Some("get") => args.get(1).map_or_else(
+                || Err(std::io::Error::other("missing file path")),
+                |file| std::fs::write(file, setup::Common::load().to_lines()),
+            ),
+            Some("set") => setup::Common::load_for(args.iter().any(|a| a == "--upgrade"))
+                .with(&args[1..])
+                .save(),
+            other => Err(std::io::Error::other(format!("get or set, not {other:?}"))),
         };
-        std::process::exit(match res {
-            Ok(_) => 0,
-            Err(e) => {
-                eprintln!("--sync-login-file: {e}");
-                e.exit_code()
-            }
-        });
+        std::process::exit(done.map_or_else(
+            |e| {
+                eprintln!("--common-settings: {e}");
+                1
+            },
+            |_| 0,
+        ));
     }
     // Linux Picnic-themed GUI setup wizard (#435): `--setup <installer-path> [--started-file <path>]`.
     #[cfg(target_os = "linux")]
@@ -779,10 +765,22 @@ fn main() -> Result<(), slint::PlatformError> {
             .and_then(|j| std::env::args().nth(j + 1))
             .map(std::path::PathBuf::from);
         return setup::run(
-            std::path::PathBuf::from(installer),
-            started_file,
+            setup::Start::Install {
+                installer: std::path::PathBuf::from(installer),
+                started_file,
+            },
             language(),
         );
+    }
+    // Windows Setup's pages after its file copy (#471), in Setup's language: `--setup-after-install
+    // [--lang en|zh|ja]`.
+    if std::env::args().any(|a| a == "--setup-after-install") {
+        let lang = std::env::args()
+            .skip_while(|a| a != "--lang")
+            .nth(1)
+            .and_then(|l| ["en", "zh", "ja"].into_iter().find(|&k| k == l))
+            .unwrap_or_else(language);
+        return setup::run(setup::Start::AfterInstall, lang);
     }
     // Wayland matches the window to its launcher (and icon) by this id: sebtype-configurator.desktop.
     slint::BackendSelector::new().select()?;
@@ -940,12 +938,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 candidates(&app.global::<State>()),
             );
             run(Box::new(move || {
-                let deployed = rime::save(&platform::rime_dir(), &c).map_err(err)?;
-                platform::set_candidates(&k).map_err(err)?;
-                if deployed {
-                    platform::redeploy_rime().map_err(err)?;
-                }
-                Ok(say(Msg::Applied))
+                save_candidates(&c, &k)
+                    .map(|_| say(Msg::Applied))
+                    .map_err(err)
             }));
         }
     });
@@ -1398,7 +1393,7 @@ mod tests {
     #[rustfmt::skip]
     const SAME_IN_EVERY_LANGUAGE: &[&str] = &[
         "SebType", "English", "中文", "日本語", " · 中文", " · 日本語", "zh", "ja", "Windows", "简体", "繁體", "Picnic",
-        "Mozc", "Nunito", "Win+Space", "Shift", "Alt+`", "Ctrl+Shift+F", "日本語 あ ⇄ ア", "中文 简 ⇄ 繁", "Win+V",
+        "Mozc", "Nunito", "Win+Space", "Shift", "Alt+`", "Ctrl+Shift+F", "日本語 あ ↔ ア", "中文 简 ↔ 繁", "Win+V",
         "Klipper", "A−", "A+", "小明", "xiaoming", "せぶ → SebType", "ni hao", "你好", "拟好", "你", "呢", "泥", "尼",
         "妮", "倪", "雾凇拼音 rime-ice · 白霜拼音 rime-frost", "Rime (librime)",
         "Rime (librime) · Fcitx5 · fcitx5-rime", "GPL-3.0", "BSD-3-Clause",

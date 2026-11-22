@@ -139,64 +139,6 @@ pub fn normalize_server(text: &str) -> Option<String> {
     ok.then_some(url)
 }
 
-/// Errors from headless `--sync-login` / `--sync-login-file` (#435).
-#[derive(Debug, PartialEq, Eq)]
-pub enum LoginError {
-    EmptyField,
-    InvalidServer,
-    /// `--check` found the login doesn't work: nothing saved.
-    Check(Check),
-    Other(String),
-}
-
-impl LoginError {
-    pub fn exit_code(&self) -> i32 {
-        match self {
-            Self::InvalidServer => 2,
-            Self::EmptyField => 3,
-            // Setup tells these apart (sebtype.iss, SyncCheckMessage).
-            Self::Check(Check::LoginFailed) => 11,
-            Self::Check(Check::Unreachable | Check::Connected) => 12,
-            Self::Check(Check::NotSebType) => 13,
-            Self::Check(Check::Tls) => 14,
-            Self::Other(_) => 1,
-        }
-    }
-}
-
-impl std::fmt::Display for LoginError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptyField => write!(f, "server, username, and password are required"),
-            Self::InvalidServer => write!(f, "not an https address"),
-            Self::Check(c) => write!(f, "the login doesn't work: {c:?}"),
-            Self::Other(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-/// Parses `server\nuser\npassword\n` for `--sync-login` / `--sync-login-file` without trimming the
-/// password (which may intentionally contain leading/trailing spaces).
-pub fn parse_login_lines(input: &str) -> Result<(String, String, String), LoginError> {
-    let input = input.strip_prefix('\u{feff}').unwrap_or(input);
-    let mut lines = input.lines();
-    let server = lines.next().unwrap_or("").trim();
-    let user = lines.next().unwrap_or("").trim();
-    let password = lines.next().unwrap_or("");
-    if server.is_empty() || user.is_empty() || password.is_empty() {
-        return Err(LoginError::EmptyField);
-    }
-    let server = normalize_server(server).ok_or(LoginError::InvalidServer)?;
-    Ok((server, user.to_string(), password.to_string()))
-}
-
-/// Reads credentials from a temp file and removes it immediately, even if reading fails.
-pub fn read_login_file(path: &Path) -> Result<String, LoginError> {
-    let result = fs::read_to_string(path);
-    let _ = fs::remove_file(path);
-    result.map_err(|e| LoginError::Other(e.to_string()))
-}
-
 /// Saves a login. A first one turns sync on; a changed one keeps sync as it was (as the phone).
 pub fn save_login(server: String, user: String, password: &str) -> Result<Sync, String> {
     keyring()
@@ -890,64 +832,6 @@ mod tests {
             waiter.join().unwrap() >= released,
             "ran only after the release"
         );
-        fs::remove_dir_all(&d).unwrap();
-    }
-
-    #[test]
-    fn parse_login_lines_validates_and_preserves_password_spaces() {
-        assert_eq!(
-            parse_login_lines("sync.example.com\n alice \n  p@ss  \n"),
-            Ok((
-                "https://sync.example.com".into(),
-                "alice".into(),
-                "  p@ss  ".into(),
-            ))
-        );
-        // UTF-8 BOM and CRLF (Windows Inno Setup).
-        assert_eq!(
-            parse_login_lines("\u{feff}https://sync.example.com/\r\nbob\r\nsecret\r\n"),
-            Ok((
-                "https://sync.example.com".into(),
-                "bob".into(),
-                "secret".into(),
-            ))
-        );
-        assert_eq!(
-            parse_login_lines("http://example.com\nalice\nsecret\n"),
-            Err(LoginError::InvalidServer)
-        );
-        assert_eq!(LoginError::InvalidServer.exit_code(), 2);
-        assert_eq!(
-            parse_login_lines("sync.example.com\nalice\n\n"),
-            Err(LoginError::EmptyField)
-        );
-        assert_eq!(
-            parse_login_lines("\nalice\nsecret\n"),
-            Err(LoginError::EmptyField)
-        );
-        assert_eq!(
-            parse_login_lines("sync.example.com\n   \nsecret\n"),
-            Err(LoginError::EmptyField)
-        );
-        assert_eq!(LoginError::EmptyField.exit_code(), 3);
-    }
-
-    #[test]
-    fn read_login_file_deletes_file_immediately() {
-        let d = temp("login-file");
-        let f = d.join("creds.tmp");
-        fs::write(&f, "sync.example.com\nalice\nsecret\n").unwrap();
-        let text = read_login_file(&f).unwrap();
-        assert!(!f.exists(), "credential file must be removed after reading");
-        assert_eq!(
-            parse_login_lines(&text).unwrap(),
-            (
-                "https://sync.example.com".into(),
-                "alice".into(),
-                "secret".into()
-            )
-        );
-        assert!(matches!(read_login_file(&f), Err(LoginError::Other(_))));
         fs::remove_dir_all(&d).unwrap();
     }
 }

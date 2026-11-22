@@ -97,7 +97,11 @@ object Prefs {
 
     fun <T> set(context: Context, option: Option<T>, value: T) {
         val app = context.applicationContext
-        scope.launch { app.store.edit { it[option.key] = value } }
+        scope.launch { set(app.store, option, value) }
+    }
+
+    suspend fun <T> set(store: DataStore<Preferences>, option: Option<T>, value: T) {
+        store.edit { it[option.key] = value }
     }
 
     /** Drops options the app no longer keeps there ([Migration]) */

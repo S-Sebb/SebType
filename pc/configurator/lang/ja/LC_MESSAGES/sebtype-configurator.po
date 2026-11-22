@@ -454,8 +454,8 @@ msgstr "1 日 1 回、GitHub の SebType のリリースを確認します"
 msgid "SebType Setup"
 msgstr "SebType セットアップ"
 
-msgid "Step {} of 4"
-msgstr "ステップ {} / 4"
+msgid "Step {} of {}"
+msgstr "ステップ {} / {}"
 
 msgid "Hi! Let's set up SebType"
 msgstr "こんにちは！SebType をはじめよう"
@@ -514,11 +514,11 @@ msgstr "EN → 中 → あ を切り替え"
 msgid "Tap for quick English in 中文 or 日本語"
 msgstr "中国語や日本語で軽く押すと一時的に英語入力"
 
-msgid "Switch 简 ⇄ 繁"
-msgstr "簡体 ⇄ 繁体 を切り替え"
+msgid "Switch 简 ↔ 繁"
+msgstr "簡体 ↔ 繁体 を切り替え"
 
-msgid "Switch あ ⇄ ア"
-msgstr "あ ⇄ ア を切り替え"
+msgid "Switch あ ↔ ア"
+msgstr "あ ↔ ア を切り替え"
 
 msgid "SebType is active now. Press Win+Space in any app to start typing."
 msgstr "SebType は今すぐ使えます。任意のアプリで Win+Space を押して入力を始めてください。"
@@ -570,3 +570,12 @@ msgstr "このまま保存"
 
 msgid "Save anyway & continue"
 msgstr "このまま保存して続行"
+
+msgid "Common settings"
+msgstr "よく使う設定"
+
+msgid "You can change all of these later in SebType Configurator."
+msgstr "どれもあとから SebType 設定で変更できます。"
+
+msgid "Next"
+msgstr "次へ"

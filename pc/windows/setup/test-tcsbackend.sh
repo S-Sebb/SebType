@@ -9,9 +9,14 @@
 # TCSBackEnd's own checks.
 # ONLY=sync runs only sync with your own server (#180): a local sebtype_sync.py with a throwaway login,
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
-# ONLY=sync-page runs only Setup's sync page (#435, #465, #468): an install as a person does it, its sync page
-# given a wrong password, an address nothing serves and then a local sebtype_sync.py's throwaway login, the check's
-# tick or X on the page each time, with pictures (73-5-*, 73-6-*), then a silent uninstall.
+# ONLY=sync-page runs only the setup wizard's sync page (#435, #465, #468, #471): an install as a person does
+# it, Inno handing over to the Configurator's wizard, its sync page given a wrong password (the status in the
+# page, Save anyway), a closed port and then a local sebtype_sync.py's throwaway login, with pictures
+# (73-5-*, 73-6-*), then a silent uninstall.
+# ONLY=common-page runs only the setup wizard's Common settings page (#444, #471) in 中文: a new account's
+# settings shown (Picnic), English and 日本語 only kept through the wizard (and through a silent /TASKS), others
+# chosen and saved by Next, each read back from the Configurator, with
+# pictures (73-4-common-zh*, 73-6-ready-zh) and each page in both themes and languages (73-wizard-*).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
 # ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the

@@ -89,7 +89,8 @@ fn server(arg: &str) -> io::Result<()> {
 // --- Languages ---
 
 fn language_list() -> io::Result<Vec<(String, String)>> {
-    let out = powershell("Get-WinUserLanguageList | ForEach-Object { $_.LanguageTag + '|' + ($_.InputMethodTips -join ',') }")?;
+    // In parentheses: Windows PowerShell passes the cmdlet's list down a pipe as one object, not each language.
+    let out = powershell("(Get-WinUserLanguageList) | ForEach-Object { $_.LanguageTag + '|' + ($_.InputMethodTips -join ',') }")?;
     Ok(out
         .lines()
         .filter_map(|l| l.split_once('|'))
@@ -162,6 +163,12 @@ pub fn candidates() -> Candidates {
         picnic: get("Picnic") == Some("1"),
         pinyin_row: get("PinyinRow") != Some("0"),
     }
+}
+
+/// Whether a candidate window style was ever saved: before that, setup offers Picnic (#471).
+pub fn candidates_chosen() -> bool {
+    let text = fs::read_to_string(conf_path()).unwrap_or_default();
+    conf::value(&text, "Candidates", "Picnic").is_some()
 }
 
 /// sebtype.conf with `change` made; true when it changed.

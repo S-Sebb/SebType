@@ -2,7 +2,7 @@
 # Checks the SebType Configurator (#72) on Linux without touching the live desktop: unit tests, every
 # string translated into 中文 and 日本語 (#118), the release build, every screen opened in English, 中文
 # and 日本語 as the system language in a nested virtual KWin (screenshots kept) in SebType's own title bar
-# (#439), a private Fcitx5 and
+# (#439), the setup wizard's last three pages in Picnic and the System style (#444, #471), a private Fcitx5 and
 # Rime taking what the app writes, the Picnic candidate window it writes drawn with SebType's pig (#94),
 # its sync with a local sebtype_sync.py server both ways (#180), its forgetting of learned words while the engines run (#375), its daily update check against a release served here (#422), and its install by setup-ime.sh. Engine files are copies in a
 # sandbox; learned words are never copied or forgotten. One line per check in
@@ -130,10 +130,12 @@ for lang in en_US zh_CN ja_JP; do
     spectacle -b -n -a -o "$d/$name.png" 2>/dev/null
     kill $pid; wait $pid 2>/dev/null
     [[ -s $d/$name.png ]] || { echo "$name: no screenshot"; exit 1; }
-    # SebType's own title bar on Wayland (#439): no KWin frame, the window edged in the Picnic outline.
+    # SebType's own title bar on Wayland (#439): no KWin frame, the window edged in the Picnic outline, or
+    # the System style's grey one (the setup wizard's, #471).
+    edge=5B331C; [[ $name == *-system ]] && edge=B4B4B4
     python3 -c 'import sys; from PIL import Image
-i = Image.open(sys.argv[1]).convert("RGB"); w, h = i.size
-sys.exit(any(i.getpixel(p) != (0x5B, 0x33, 0x1C) for p in ((0, 0), (w // 2, 0), (0, h // 2), (w - 1, h - 1))))' "$d/$name.png" ||
+i = Image.open(sys.argv[1]).convert("RGB"); w, h = i.size; e = bytes.fromhex(sys.argv[2])
+sys.exit(any(i.getpixel(p) != tuple(e) for p in ((0, 0), (w // 2, 0), (0, h // 2), (w - 1, h - 1))))' "$d/$name.png" "$edge" ||
       { echo "$name: not in SebType's own frame"; exit 1; }
     # The wizard's window finds the pig in its own hidden launcher, there while it runs.
     [[ ${spec%%:*} != setup || -f $XDG_DATA_HOME/applications/sebtype-setup.desktop ]] ||
@@ -156,7 +158,7 @@ SH
   printf '{"auto": true, "checked": %s, "latest": "99.0.0", "notified": "", "notes": "%s"}\n' "$(date +%s)" "$notes" > "$sb/data/sebtype/update.json"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl$$" --width 1000 --height 700 --exit-with-session \
-    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer'" > "$sb/kwin.log" 2>&1
+    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer' 'setupcommon:--setup $sb/no-installer --step 2' 'setupcommon-system:--setup $sb/no-installer --step 2 --theme system' 'setupsync:--setup $sb/no-installer --step 3' 'setupsync-system:--setup $sb/no-installer --step 3 --theme system' 'setupready:--setup $sb/no-installer --step 4' 'setupready-system:--setup $sb/no-installer --step 4 --theme system'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
 export -f shots; export out sb

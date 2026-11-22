@@ -16,6 +16,7 @@ export component Switch inherits Rectangle {
     accessible-checkable: true;
     accessible-checked: checked;
     accessible-label: label;
+    accessible-enabled: enabled;
     accessible-action-default => { if enabled { checked = !checked; toggled(checked); } }
     Rectangle {
         width: root.checked ? 20px : 14px;
@@ -87,17 +88,29 @@ export component PixelFrame inherits Rectangle {
     // As the phone's settings: the highlight is the fill 85 % of the way to white, the lowlight the line.
     property <color> high: pressed ? Theme.line : fill.mix(white, 0.15);
     property <color> low: pressed ? fill.mix(white, 0.15) : Theme.line;
-    if root.shadow && !root.pressed: Rectangle { x: root.width - root.w; y: 3 * root.w; width: root.w; height: root.height - 3 * root.w; background: Theme.drop; }
-    if root.shadow && !root.pressed: Rectangle { x: 3 * root.w; y: root.height - root.w; width: root.width - 4 * root.w; height: root.w; background: Theme.drop; }
-    Rectangle { x: root.w; y: root.w; width: root.width - 3 * root.w; height: root.height - 3 * root.w; background: root.fill; }
-    Rectangle { x: root.w; y: root.height - 3 * root.w; width: root.width - 3 * root.w; height: root.w; background: root.low; }
-    Rectangle { x: root.width - 3 * root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.low; }
-    Rectangle { x: root.w; y: root.w; width: root.width - 3 * root.w; height: root.w; background: root.high; }
-    Rectangle { x: root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.high; }
-    Rectangle { x: root.w; y: 0; width: root.width - 3 * root.w; height: root.w; background: root.outline; }
-    Rectangle { x: root.w; y: root.height - 2 * root.w; width: root.width - 3 * root.w; height: root.w; background: root.outline; }
-    Rectangle { x: 0; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.outline; }
-    Rectangle { x: root.width - 2 * root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.outline; }
+    // Picnic: the notched pixel frame.
+    if !Theme.plain: Rectangle {
+        if root.shadow && !root.pressed: Rectangle { x: root.width - root.w; y: 3 * root.w; width: root.w; height: root.height - 3 * root.w; background: Theme.drop; }
+        if root.shadow && !root.pressed: Rectangle { x: 3 * root.w; y: root.height - root.w; width: root.width - 4 * root.w; height: root.w; background: Theme.drop; }
+        Rectangle { x: root.w; y: root.w; width: root.width - 3 * root.w; height: root.height - 3 * root.w; background: root.fill; }
+        Rectangle { x: root.w; y: root.height - 3 * root.w; width: root.width - 3 * root.w; height: root.w; background: root.low; }
+        Rectangle { x: root.width - 3 * root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.low; }
+        Rectangle { x: root.w; y: root.w; width: root.width - 3 * root.w; height: root.w; background: root.high; }
+        Rectangle { x: root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.high; }
+        Rectangle { x: root.w; y: 0; width: root.width - 3 * root.w; height: root.w; background: root.outline; }
+        Rectangle { x: root.w; y: root.height - 2 * root.w; width: root.width - 3 * root.w; height: root.w; background: root.outline; }
+        Rectangle { x: 0; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.outline; }
+        Rectangle { x: root.width - 2 * root.w; y: root.w; width: root.w; height: root.height - 3 * root.w; background: root.outline; }
+    }
+    // System style: a plain rounded box, as the system's own controls.
+    if Theme.plain: Rectangle {
+        width: root.width - root.w;
+        height: root.height - root.w;
+        border-radius: 5px;
+        border-width: 1px;
+        border-color: root.outline;
+        background: root.pressed ? root.fill.darker(0.06) : root.fill;
+    }
     VerticalLayout {
         padding-left: 2 * root.w + root.padding-x;
         padding-right: 3 * root.w + root.padding-x;
@@ -113,7 +126,12 @@ export component Card inherits PixelFrame { }
 // The dashed line between a card's rows.
 export component Divider inherits Rectangle {
     height: Theme.frame;
-    Image {
+    if Theme.plain: Rectangle {
+        x: Theme.dash-inset;
+        width: parent.width - 2 * Theme.dash-inset;
+        background: Theme.line;
+    }
+    if !Theme.plain: Image {
         x: Theme.dash-inset;
         width: parent.width - 2 * Theme.dash-inset;
         height: parent.height;
@@ -246,6 +264,7 @@ export component Field inherits PixelFrame {
     accessible-role: text-input;
     accessible-label: placeholder;
     accessible-value: text;
+    accessible-action-set-value(v) => { text = v; }
     Rectangle {
         input := TextInput {
             text <=> root.text;

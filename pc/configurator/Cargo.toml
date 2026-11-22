@@ -6,7 +6,7 @@ publish = false
 description = "SebType Configurator: SebType's settings on Linux and Windows (#72)"
 
 [dependencies]
-# Only the winit backend with the OpenGL renderer: no Qt, one small binary on both systems.
+# Only the winit backend: no Qt, one small binary on both systems. OpenGL draws.
 slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "accessibility"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -32,6 +32,9 @@ keyring = { version = "3.6", features = ["sync-secret-service", "crypto-rust", "
 dbus = "0.9"
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6", features = ["windows-native"] }
+# Windows also has Slint's software renderer, for where there is no OpenGL 2: a Remote Desktop session, a VM
+# without a GPU (#471). Linux has Mesa's, and the RPM's LTO build runs out of memory with both.
+slint = { version = "1.18", default-features = false, features = ["renderer-software"] }
 
 [build-dependencies]
 slint-build = "1.18"
