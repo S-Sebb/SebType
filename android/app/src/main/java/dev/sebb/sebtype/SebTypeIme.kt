@@ -526,8 +526,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         dispatch(code, text, x, y, userShift)
     }
 
-    /** A key as tapped, now or when it stops waiting: [userShift], the user's Shift was on when it was tapped. */
-    private fun dispatch(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
+    /** A key as tapped, now or when it stops waiting: [userShift], the user's Shift when it was tapped. */
+    private fun dispatch(code: Code, text: String, x: Int, y: Int, userShift: Boolean?) {
         if (lang == ENGLISH && toEngine && code in ENGLISH_KEYS) english(code, text, x, y, userShift)
         else when (code) {
             Code.TEXT -> type(withoutEnglishShift(text, userShift))
@@ -595,12 +595,12 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
      * (a digit, a symbol, Enter, Delete with no word typed) does what it does after the engine committed the
      * word being typed. On the engine thread too, after the keys before it (#241).
      */
-    private fun english(code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
+    private fun english(code: Code, text: String, x: Int, y: Int, userShift: Boolean?) {
         // Sent again if the field changes before its result comes (#280)
         keys.type { key -> english(key, code, text, x, y, userShift) }
     }
 
-    private fun english(key: Keys.Key, code: Code, text: String, x: Int, y: Int, userShift: Boolean) {
+    private fun english(key: Keys.Key, code: Code, text: String, x: Int, y: Int, userShift: Boolean?) {
         /**
          * [sym] to the engine; if it doesn't take it, [otherwise] in the field, where [typed] goes on the
          * engine thread's copy of the text (null: Delete's character comes off).
@@ -624,15 +624,16 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
                 if (Character.charCount(cp) != text.length) return post({ flush().recorded() }, key) {
                     show(it, then = { editor.commit(text) })
                 }
-                if (!Character.isLetter(cp) || userShift) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
+                if (!Character.isLetter(cp)) return send({ NativeCore.charSym(cp) }, text) { editor.commit(text) }
                 // The field's capital, by the text this letter follows once the keys before it are in
                 val caps = if (Prefs[Prefs.CAPITALISE]) editor.capsFlags else 0
                 val lower = text.lowercase()
                 var cased = lower
                 send({
-                    val after = engineText.toString()
-                    val upper = caps != 0 && android.text.TextUtils.getCapsMode(after, after.length, caps) != 0
-                    cased = if (upper) lower.uppercase() else lower
+                    cased = englishLetter(text, userShift) {
+                        val after = engineText.toString()
+                        caps != 0 && android.text.TextUtils.getCapsMode(after, after.length, caps) != 0
+                    }
                     NativeCore.charSym(cased.codePointAt(0))
                 }, lower) { editor.commit(cased) }
             }

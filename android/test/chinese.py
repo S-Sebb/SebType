@@ -1966,6 +1966,32 @@ def caps_lock():
     return f"double tap -> Caps lock, ab -> {text!r}; a new field ends it"
 
 
+def shift_cancels_capital():
+    """#479: a tap on Shift at the start of a sentence cancels the field's capital: the keys show lower case and
+    the letter types in lower case. The next sentence has its capital again, and Shift turned on types one."""
+    to_english()
+    open_field()
+    wait_for(
+        "Shift on (the field's capital)",
+        lambda: "Shift on" in {label for label, *_ in nodes()},
+        KEYBOARD_WAIT,
+    )
+    tap_key("Shift on")
+    labels = {label for label, *_ in nodes()}
+    if "Shift" not in labels or "Q" in labels:
+        raise Fail(
+            f"Shift tapped at the start: the keys still show capitals ({sorted(labels)[:12]})"
+        )
+    type_text("hi. there ")
+    tap_key("Shift")
+    type_text("now")
+    if (text := field_text()) != "hi. There Now":
+        raise Fail(
+            f"Shift (cancel), hi. there, Shift, now -> {text!r}, not 'hi. There Now'"
+        )
+    return f"-> {text!r}"
+
+
 def modes_split():
     """Split: the keys in two halves, t and y far apart (g and v sit on both halves, as in today's app)."""
     to_english()
@@ -2819,6 +2845,7 @@ check(
 check("en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"])
 check("emoji-picks", emoji_picks, needs=["first-install"])
 check("caps-lock", caps_lock, needs=["en-model-waits-for-letter"])
+check("en-shift-cancels-capital", shift_cancels_capital, needs=["first-install"])
 check(
     "en-double-space-period",
     typed_as("yes  then", "Yes. Then"),
