@@ -18,6 +18,7 @@ on:
       - pc/windows/**
       - engines/librime/**
       - engines/mozc/**
+      - engines/sebtype-lm/**
       - pc/icons/**
       - pc/configurator/**
       - pc/linux/mozc-keymap.tsv
@@ -97,8 +98,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: vcpkg-cache
-          key: vcpkg-protobuf-x64-windows-static-${{ runner.os }}-${{ hashFiles('windows/build.ps1') }}
-          restore-keys: vcpkg-protobuf-x64-windows-static-${{ runner.os }}-
+          key: vcpkg-protobuf-opencc-x64-windows-static-${{ runner.os }}-${{ hashFiles('windows/build.ps1') }}
+          restore-keys: vcpkg-protobuf-opencc-x64-windows-static-${{ runner.os }}-
       - name: Build
         run: windows/build.ps1 -Rime in/rime -Out out/service
       - uses: actions/upload-artifact@v4

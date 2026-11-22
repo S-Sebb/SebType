@@ -68,6 +68,9 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
 
  private:
   fcitx::InputMethodEntry entry() const;
+  std::unique_ptr<Engine> makeEngine(Lang lang);
+  // The Chinese model's list for what is typed came (on its worker; this runs in Fcitx5's loop).
+  void modelReady();
   // Tells the core whether what is typed in ic may be learned.
   void followField(fcitx::InputContext *ic);
   // Whether what is typed shows in Fcitx5's panel, over the candidates, rather than in the app's text: 中文's

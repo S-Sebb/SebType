@@ -8,16 +8,19 @@
 # setup's user part, and SebType's librime with its plugins, so a PC updates without a checkout.
 # SebType's version, the phone's and Windows' too (VERSION, #420).
 SEBTYPE_VERSION=$(<"$(dirname "${BASH_SOURCE[0]}")/../VERSION")
-SEBTYPE_RPM_RELEASE=1.fc44
+SEBTYPE_RPM_RELEASE=2.fc44
 SEBTYPE_RPM=sebtype-$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE.x86_64.rpm
 SEBTYPE_LINUX_SETUP=SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
-# What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz. The Configurator takes
-# the sync client and the phone's pig and font; the Chinese data librime's API headers.
+# What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz, and llama.cpp at
+# fetch-llama.sh's pin as llama.tar.gz. The Configurator takes the sync client and the phone's pig and font; the
+# Chinese data librime's API headers; 中文's model (#495) its loader and chinese.gguf.
 SEBTYPE_SOURCES=(VERSION core linux pc/icons pc/linux/setup-ime.sh pc/linux/mozc-keymap.tsv pc/configurator
   sync-server/sebtype_sync.py android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   android/app/src/main/res/font/sebtype_nunito_extrabold.ttf data/rime engines/librime/CMakeLists.txt
-  engines/librime/src/rime_api.h engines/librime/src/rime_api_deprecated.h engines/librime/src/rime_api_stdbool.h)
+  engines/librime/src/rime_api.h engines/librime/src/rime_api_deprecated.h engines/librime/src/rime_api_stdbool.h
+  engines/sebtype-lm/CMakeLists.txt engines/sebtype-lm/fetch-llama.sh engines/sebtype-lm/sebtype_lm.cpp
+  engines/sebtype-lm/sebtype_lm.h engines/sebtype-lm/zh_lm.cpp engines/sebtype-lm/zh_lm.h engines/sebtype-lm/chinese.gguf)
 SEBTYPE_MOZC=engines/mozc
 
 # fedora:44 as of 2026-11-09; its packages are what the builds link against.

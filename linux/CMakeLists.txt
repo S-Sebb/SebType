@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(SEBTYPE_TESTS "Build the core's unit tests" ON)
+# 中文's model (#495), as on the phone: llama.cpp's source in LLAMA_DIR (engines/sebtype-lm/fetch-llama.sh), built
+# for any x86-64 CPU with AVX2 rather than the build host's (the add-on checks the CPU before it loads it).
+set(SEBTYPE_CHINESE_MODEL ON CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 add_subdirectory(../core core)
 
 find_package(Fcitx5Core REQUIRED)
@@ -21,13 +25,14 @@ add_library(sebtype MODULE src/sebtype.cpp src/tray.cpp)
 # on the target: Fcitx5's compiler settings override CMAKE_INSTALL_RPATH.
 set_target_properties(sebtype PROPERTIES PREFIX "" INSTALL_RPATH "$ORIGIN/../sebtype" INSTALL_RPATH_USE_LINK_PATH OFF)
 target_compile_definitions(sebtype PRIVATE RIME_DATA_DIR="${RIME_DATA_DIR}")
-target_link_libraries(sebtype sebtype-core Fcitx5::Core Fcitx5::Module::DBus Fcitx5::Module::NotificationItem
+target_link_libraries(sebtype sebtype-core sebtype-chinese Fcitx5::Core Fcitx5::Module::DBus Fcitx5::Module::NotificationItem
   PkgConfig::PNG)
 
 install(TARGETS sebtype DESTINATION "${CMAKE_INSTALL_LIBDIR}/fcitx5")
 install(PROGRAMS ${SEBTYPE_MOZC_LIB} DESTINATION "${CMAKE_INSTALL_LIBDIR}/sebtype")
 install(FILES data/sebtype.conf DESTINATION "${CMAKE_INSTALL_DATADIR}/fcitx5/addon")
 install(FILES data/notificationitem.conf DESTINATION "${CMAKE_INSTALL_DATADIR}/sebtype/fcitx5/addon")
+install(FILES ${CMAKE_SOURCE_DIR}/../engines/sebtype-lm/chinese.gguf DESTINATION "${CMAKE_INSTALL_DATADIR}/sebtype")
 
 # The tray icons (../pc/icons), each size drawn at its own pixels (#275). The tray item sends every size from
 # sebtype/tray as its pixmaps (#441). The menu's icons are named sebtype-<state> in hicolor, where every icon

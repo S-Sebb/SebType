@@ -33,6 +33,8 @@ enum class Op : uint8_t {
   MozcWhenIdle,    // (#373); reply.busy until done
   Forget,    // lang: its engine forgets what it learned (the Configurator, #375); reply.busy until it is done
   Settings,  // the core reads sebtype.conf again: the Configurator changed learning (#374)
+  Refresh,   // the candidates again, while reply.updating: reply.refreshed when this app is still the one typing
+             // (#495); sent only to a server that said updating, so one before it never sees the op
 };
 
 struct Request {
@@ -50,10 +52,11 @@ struct Request {
 // drops what is being typed only when it is that app's, never what another app typed since (#275).
 struct Composer {
   uint32_t client = 0;
-  // Whether q is a Reset that may drop what is being typed; a key or a pick makes q's app the one typing.
+  // Whether q is a Reset that may drop what is being typed, or a Refresh that may read it; a key or a pick makes
+  // q's app the one typing.
   bool resets(const Request &q) {
     if (q.op == Op::Key || q.op == Op::Select || q.op == Op::Page || q.op == Op::Latin) client = q.client;
-    return q.op == Op::Reset && q.client == client;
+    return (q.op == Op::Reset || q.op == Op::Refresh) && q.client == client;
   }
 };
 
@@ -77,6 +80,10 @@ struct Reply {
   int32_t deleteBefore = 0;  // characters before the caret to delete first: 日本語's undo of a commit (#376)
   // From #374: the server read sebtype.conf again, for the Settings asked for. One before it doesn't know the op.
   bool settings = false;
+  // From #495: 中文's model has yet to send its list for what is typed, so the text service asks again (Refresh);
+  // and the reply to a Refresh is this app's state (another app may have typed since).
+  bool updating = false;
+  bool refreshed = false;
 };
 
 // Little-endian lengths and values, strings as UTF-8.
@@ -161,6 +168,7 @@ inline std::string encode(const Reply &r) {
     w.u32(m.kind), w.s(m.label), w.s(m.icon), w.b(m.checked), w.u32(static_cast<uint32_t>(m.lang));
   }
   w.s(r.notice), w.b(r.busy), w.b(r.forgets), w.b(r.langBusy), w.s(r.forgetError), w.i32(r.deleteBefore), w.b(r.settings);
+  w.b(r.updating), w.b(r.refreshed);
   return w.out;
 }
 
@@ -186,6 +194,7 @@ inline bool decode(const std::string &in, Reply &r) {
   // A server from before #376 sends no deletion; an older text service ignores it.
   r.deleteBefore = rd.atEnd() ? 0 : rd.i32();
   if (!rd.atEnd()) r.settings = rd.b();
+  if (!rd.atEnd()) r.updating = rd.b(), r.refreshed = rd.b();
   return rd.ok();
 }
 

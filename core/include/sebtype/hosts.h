@@ -75,6 +75,9 @@ struct ChineseModelPaths {
   // come, so a key's time is Rime's and the model's.
   bool synchronous = false;
   std::string readings;  // rime-data's sebtype_readings.txt: each character's pinyin, "字<TAB>reading" lines
+  // The phone's strip shows the next words with nothing typed; the PCs' candidate box doesn't, where digits and
+  // space type themselves with nothing composing.
+  bool nextWords = true;
 };
 // READY runs on the worker when the model's list for what is typed (or the next words) has come: the
 // frontend posts it to its own thread and reads candidates() there, as for English.

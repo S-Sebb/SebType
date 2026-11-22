@@ -359,6 +359,10 @@ class Chinese final : public Engine {
   void save() override { rime_->save(); }
   bool busy() override { return rime_->busy(); }
   bool available() override { return rime_->available(); }
+  bool updating() override {
+    std::lock_guard g(mutex_);
+    return askedRev_ == rev_ && resultRev_ != rev_ && (loading_ || model_);
+  }
   std::string input() override { return rime_->input(); }
 
  private:
@@ -567,7 +571,7 @@ class Chinese final : public Engine {
       job.learned = !rime.empty() && rime[0].learned;
       job.word = !rime.empty() && !rime[0].sentence && wholeInput(rime[0].text, n);
       job.fixable = rime_->corrects();
-    } else if (!text || (!context_.empty() && context_.back() == '\n')) {
+    } else if (!text || !paths_.nextWords || (!context_.empty() && context_.back() == '\n')) {
       return want(std::nullopt);
     }
     want(std::move(job));

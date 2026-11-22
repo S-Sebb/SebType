@@ -26,6 +26,7 @@ on:
       - data/rime/**
       - engines/mozc/**
       - engines/librime/**
+      - engines/sebtype-lm/**
       - tools/lib.sh
       - tools/mozc-bazel.sh
       - tools/mozc-downloads.tsv

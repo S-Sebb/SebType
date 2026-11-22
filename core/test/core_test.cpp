@@ -1147,7 +1147,7 @@ struct ChineseTest : testing::Test {
   std::unique_ptr<Engine> zh;
 
   void SetUp() override { start(); }
-  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}) {
+  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}, bool nextWords = true) {
     zh.reset();
     auto r = std::make_unique<FakeRime>();
     if (setUp) setUp(*r);
@@ -1164,6 +1164,7 @@ struct ChineseTest : testing::Test {
     }
     ChineseModelPaths paths{ZH_MODEL, ZH_OPENCC, 1, delay};
     paths.readings = readings;
+    paths.nextWords = nextWords;
     zh = withChineseModel(std::move(r), paths, [this] {
       std::lock_guard g(mutex);
       readies++;
@@ -1425,6 +1426,34 @@ TEST_F(ChineseTest, TraditionalAndNextWords) {
   EXPECT_NE(std::ranges::find(next, "好"), next.end());
   zh->selectAt(int(std::ranges::find(next, "好") - next.begin()));
   EXPECT_EQ(zh->takeCommit(), "好");
+}
+
+// The PCs' box (#495): no next words, so a commit closes it at once.
+TEST_F(ChineseTest, WithoutNextWordsACommitEmptiesTheList) {
+  start(50ms, {}, false);
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  const int before = readyCount();
+  zh->key({' ', 0, false});
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_TRUE(list().empty());
+  std::this_thread::sleep_for(200ms);
+  EXPECT_EQ(readyCount(), before);
+  EXPECT_TRUE(list().empty());
+}
+
+// Windows' text service asks again while the model's list is still to come (#495).
+TEST_F(ChineseTest, UpdatingUntilTheModelsListComes) {
+  start(100ms, {}, false);
+  typeAndWait("woaini");
+  EXPECT_FALSE(zh->updating());
+  const int before = readyCount();
+  type("w");
+  EXPECT_TRUE(zh->updating());
+  ASSERT_TRUE(ready(before));
+  EXPECT_FALSE(zh->updating());
+  zh->clear();  // nothing typed, no next words: nothing to come
+  EXPECT_FALSE(zh->updating());
 }
 
 TEST_F(ChineseTest, PunctuationCommitsTheModelsFirst) {

@@ -1,6 +1,6 @@
 # SebType on Windows: the server (sebtype-server.exe, with the core) and the text service (sebtype.dll). The
 # server runs Mozc from sebtype-mozc.dll (pc/windows/mozc/build.ps1), installed beside it.
-#   cmake -S windows -B build -DRIME_ROOT=<librime> -DSEBTYPE_ICONS=<make_icons.py's output>
+#   cmake -S windows -B build -DRIME_ROOT=<librime> -DSEBTYPE_ICONS=<make_icons.py's output> -DLLAMA_DIR=<llama.cpp>
 # A 32-bit build for 32-bit apps takes -DSEBTYPE_TIP_ONLY=ON: the text service alone; it reaches the 64-bit
 # server over its pipe.
 cmake_minimum_required(VERSION 3.20)
@@ -50,10 +50,13 @@ if(NOT SEBTYPE_TIP_ONLY)
   add_custom_target(sebtype-mozc-implib DEPENDS ${MOZC_IMPLIB})
   set(SEBTYPE_MOZC_LIB ${MOZC_IMPLIB} CACHE FILEPATH "" FORCE)
   set(SEBTYPE_TESTS OFF CACHE BOOL "" FORCE)
+  # 中文's model (#495): llama.cpp's source in LLAMA_DIR, built for any x64 CPU with AVX2 (the server checks).
+  set(SEBTYPE_CHINESE_MODEL ON CACHE BOOL "" FORCE)
+  set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
   add_subdirectory(../core core)
   add_dependencies(sebtype-core sebtype-mozc-implib)
   add_executable(sebtype-server WIN32 src/server.cpp)
-  target_link_libraries(sebtype-server PRIVATE sebtype-core advapi32 shell32 ole32 delayimp)
+  target_link_libraries(sebtype-server PRIVATE sebtype-core sebtype-chinese advapi32 shell32 ole32 delayimp)
   # Mozc's DLL loads at the first 日本語 key, not with the server: Rime alone doesn't map its dictionary.
   target_link_options(sebtype-server PRIVATE /DELAYLOAD:sebtype-mozc.dll)
 endif()
