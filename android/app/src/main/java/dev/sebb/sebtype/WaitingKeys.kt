@@ -25,8 +25,8 @@ class WaitingKeys(
     /** Keys fed that waited for Rime's start, not only behind an edit: a count for the log, which tests read */
     private val fedForRime: (Int) -> Unit,
 ) {
-    /** A key, with what the keyboard knew when it was tapped: [userShift], the user's Shift was on. */
-    class Key(val code: Code, val text: String, val x: Int, val y: Int, val userShift: Boolean)
+    /** A key, with what the keyboard knew when it was tapped: [userShift], the user's Shift (KeyboardView.typedWithUserShift). */
+    class Key(val code: Code, val text: String, val x: Int, val y: Int, val userShift: Boolean?)
 
     private class Action(val run: () -> Unit)
 
@@ -133,8 +133,18 @@ class WaitingKeys(
  * A key's text outside English: only English turns Shift on by itself, so a capital A–Z there without the
  * user's Shift is English's, from a key tapped before the globe that waited its turn (#351).
  */
-fun withoutEnglishShift(text: String, userShift: Boolean) =
-    if (!userShift && text.length == 1 && text[0] in 'A'..'Z') text.lowercase() else text
+fun withoutEnglishShift(text: String, userShift: Boolean?) =
+    if (userShift != true && text.length == 1 && text[0] in 'A'..'Z') text.lowercase() else text
+
+/**
+ * An English letter as typed: in the case the user's Shift set ([userShift] true or false), else (null) a
+ * capital where the field asks for one ([fieldCapital]). Shift turned off cancels the field's capital (#479).
+ */
+fun englishLetter(text: String, userShift: Boolean?, fieldCapital: () -> Boolean) = when (userShift) {
+    true -> text
+    false -> text.lowercase()
+    null -> if (fieldCapital()) text.uppercase() else text.lowercase()
+}
 
 /** What an edit that ends typing (the keyboard's finishTyping) asks of the engine first */
 enum class EndTyping { NOTHING, FLUSH, CLEAR, UNDO }

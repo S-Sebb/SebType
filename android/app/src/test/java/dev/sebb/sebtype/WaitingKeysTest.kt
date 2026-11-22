@@ -11,7 +11,7 @@ class WaitingKeysTest {
     /** The keyboard around the queue: what reaches the field, in order, and the edits still waiting for the engine. */
     private class Keyboard {
         val field = StringBuilder()
-        val shifts = ArrayList<Boolean>()
+        val shifts = ArrayList<Boolean?>()
         var ready = true
         var english = true
         val engine = ArrayDeque<() -> Unit>()
@@ -25,7 +25,7 @@ class WaitingKeysTest {
         }
 
         /** A key tapped: held, or typed at once */
-        fun tap(text: String, userShift: Boolean = false, chineseStarting: Boolean = false, code: Code = Code.TEXT) {
+        fun tap(text: String, userShift: Boolean? = null, chineseStarting: Boolean = false, code: Code = Code.TEXT) {
             val key = WaitingKeys.Key(code, text, 1, 2, userShift)
             if (!q.hold(key, chineseStarting)) feed(key)
         }
@@ -69,9 +69,9 @@ class WaitingKeysTest {
         val k = Keyboard()
         k.edit("")
         k.tap("H", userShift = true)
-        k.tap("i", userShift = false)
+        k.tap("i")
         k.engineAnswers()
-        assertEquals(listOf(true, false), k.shifts)
+        assertEquals(listOf(true, null), k.shifts)
     }
 
     /** #351: letters typed while Rime starts wait, with what follows them, and leave the reading they type. */
@@ -170,11 +170,20 @@ class WaitingKeysTest {
         val k = Keyboard()
         k.edit("x")
         k.tap("🌐", code = Code.GLOBE)
-        k.tap("R", userShift = false)
+        k.tap("R")
         k.tap("R", userShift = true)
         k.engineAnswers()
         assertEquals("x🌐rR", k.field.toString())
         assertFalse(k.english)
+    }
+
+    /** #479: Shift turned off at the start of a sentence types the letter in lower case, as the keys show. */
+    @Test
+    fun shiftOffCancelsTheFieldsCapital() {
+        assertEquals("h", englishLetter("h", userShift = false) { true })
+        assertEquals("H", englishLetter("h", userShift = null) { true })
+        assertEquals("h", englishLetter("H", userShift = null) { false })
+        assertEquals("H", englishLetter("H", userShift = true) { false })
     }
 
     /** #379: 日本語's Undo is Mozc's, even while typing, so a conversion committed comes back; elsewhere the app's after what is typed goes in. */
