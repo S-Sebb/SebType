@@ -523,8 +523,8 @@ msgstr "切换 あ ↔ ア"
 msgid "Almost ready"
 msgstr "快好啦"
 
-msgid "One more step for SebType to type in every app:"
-msgstr "还差一步，SebType 就能在所有应用里打字："
+msgid "Still to do, so SebType types in every app:"
+msgstr "还差这些，SebType 就能在所有应用里打字："
 
 msgid "SebType's input method is on in every app"
 msgstr "SebType 输入法已在所有应用里开启"
