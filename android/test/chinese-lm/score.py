@@ -68,6 +68,7 @@ def summarise(out):
                 "items": n,
                 "top1": pct(sum(r == 0 for r in ranks), n),
                 "top3": pct(sum(0 <= r < 3 for r in ranks), n),
+                "page1": pct(sum(0 <= r < 5 for r in ranks), n),  # rime-ice's page of 5
             }
             if name.startswith("sent-"):
                 total = right = 0
@@ -204,8 +205,15 @@ def table(a, b):
         f"Typo fixed: intended text first / in the top 3 (phone typos and confusions, {n})",
         lambda s: f"{a[s]['typo']['top1']} / {a[s]['typo']['top3']} %",
     )
+    row("… on the first page (5)", lambda s: f"{a[s]['typo']['page1']} %")
     for k in a[stacks[0]]["typo"]["top1_by_kind"]:
         row(f"… first, {k}", lambda s: f"{a[s]['typo']['top1_by_kind'][k]} %")
+    # #478: everyday phrases with one dropped, doubled, swapped or neighbouring letter (make-slips.py).
+    n = a[stacks[0]]["slips"]["items"]
+    row(
+        f"Slip fixed: intended phrase first / on the first page (one slip in a common phrase, {n})",
+        lambda s: f"{a[s]['slips']['top1']} / {a[s]['slips']['page1']} %",
+    )
     for src in ("chat", "news"):
         n = a[stacks[0]][f"next-{src}"]["items"]
         row(
