@@ -12,6 +12,7 @@ set, drawn with seed 40 (the typo sets: `make-typos.py`, seed 46, from the even 
 | `typo-pc` | the same with a PC typo: ANSI neighbour keys, missing, extra and swapped letters in the desktop shares (`xinfqiumingshi` → 星球名是) |
 | `words` | a common 2–4-character word alone in full pinyin, at least twice as frequent as any other word with that pinyin, where another of them is one character away (`liuhuang` → 硫磺, #482, `make-words.py`, seed 482); the reported words last |
 | `split` | (#485, for `slips.sh`) a syllable ending in n that could end in ng, then ge, gai, gao, gou or gan (`jiangeshen`), 294 of them; expected is the commonest character of the first syllable the preedit shows (third column), which must be among the first 10 candidates |
+| `spoken` | (#484, for `slips.sh`) 50 everyday spoken phrases written by hand: 24 verb–object words split by 个 (`jiangeshen` → 健个身), 8 whose reading depends on the text before (the model harness's copy in `android/test/chinese-lm/spoken/` has it), 18 others; the third column is the kind |
 
 Sources:
 
