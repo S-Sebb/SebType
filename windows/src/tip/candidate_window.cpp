@@ -5,6 +5,8 @@
 
 #include "resource.h"
 
+#include <sebtype/keycap.h>
+
 #include <shellscalingapi.h>
 #include <winreg.h>
 #include <shlwapi.h>
@@ -252,7 +254,7 @@ void CandidateWindow::draw() {
     const auto card = D2D1::RoundedRect(
         D2D1::RectF(border / 2, border / 2, l.width - border / 2, l.height - border / 2), kCornerRadius * s,
         kCornerRadius * s);
-    color(style_.colors.back);
+    color(pillBack_ ? pillBack_ : style_.colors.back);
     target_->FillRoundedRectangle(card, brush);
     color(style_.colors.border);
     target_->DrawRoundedRectangle(card, brush, border);
@@ -315,6 +317,7 @@ void CandidateWindow::place(const RECT &caret) {
 }
 
 void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &caret) {
+  pillBack_ = 0;
   CandidateLayout &l = layout_;
   l.preedit.clear();
   preeditHighlight_ = -1;
@@ -366,10 +369,12 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
 }
 
-void CandidateWindow::notice(const std::string &text, const RECT &caret) {
+void CandidateWindow::notice(const std::string &text, const std::string &icon, const RECT &caret) {
   ScreenPixels screen;
   if (text.empty() || !create()) return;
   loadStyle(dpiAt(caret));
+  // The top of the tray key's base, in Picnic's brown border and ink, as the key's outline and glyph.
+  pillBack_ = style_.picnic ? keycap::base(icon) : 0;
   CandidateLayout &l = layout_;
   l.preedit = {utf16(text)};
   preeditHighlight_ = -1;

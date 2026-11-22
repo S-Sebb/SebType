@@ -13,8 +13,10 @@
 #include <fcitx/inputpanel.h>
 #include <fcitx/text.h>
 #include <sebtype/hosts.h>
+#include <sebtype/keycap.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -38,12 +40,14 @@ std::string env(const char *name, std::string fallback) {
 fs::path configHome() { return env("XDG_CONFIG_HOME", env("HOME", "") + "/.config"); }
 fs::path settingsPath() { return configHome() / "sebtype" / "sebtype.conf"; }
 
-Settings readSettings() {
-  std::ifstream f(settingsPath());
+std::string readFile(const fs::path &path) {
+  std::ifstream f(path);
   std::stringstream s;
   s << f.rdbuf();
-  return Settings::parse(s.str());
+  return s.str();
 }
+
+Settings readSettings() { return Settings::parse(readFile(settingsPath())); }
 
 // Mozc's own profile folder (base/system_util.cc): ~/.mozc when it exists, else XDG's. The Configurator
 // (pc/configurator/src/linux.rs) and setup-ime.sh use the same rule (#274).
@@ -64,11 +68,21 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
 
 // The Configurator's Picnic theme (pc/configurator/src/linux.rs). While a popup shows, its theme.conf is the
 // pill's and the box's waits beside it, so a restart after a crash puts the box's back.
-fs::path picnicTheme() {
+fs::path picnicDir() {
   return fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "themes" /
-         "sebtype-picnic" / "theme.conf";
+         "sebtype-picnic";
 }
-fs::path picnicBox() { return fs::path(picnicTheme()).replace_extension("box"); }
+fs::path picnicTheme() { return picnicDir() / "theme.conf"; }
+fs::path picnicBox() { return picnicDir() / "theme.box"; }
+
+// Writes text to path whole: Fcitx5 never reads half of it.
+bool writeFile(const fs::path &path, const std::string &text) {
+  const fs::path tmp = fs::path(path) += ".sebtype-tmp";
+  std::ofstream(tmp) << text;
+  std::error_code ec;
+  fs::rename(tmp, path, ec);
+  return !ec;
+}
 
 Lang langFromId(const std::string &id) {
   for (Lang l : {Lang::English, Lang::Chinese, Lang::Japanese})
@@ -177,14 +191,14 @@ void Service::setLanguage(const std::string &id) {
 SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
     : instance_(instance), core_(std::make_unique<Core>(makeEngine, readSettings())) {
   core_->setUiLanguage(systemLanguage());
-  setPill(false);
+  setPill("");
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
     service_ = std::make_unique<Service>(this);
     dbus->call<fcitx::IDBusModule::bus>()->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
   }
 }
 
-SebTypeEngine::~SebTypeEngine() { setPill(false); }
+SebTypeEngine::~SebTypeEngine() { setPill(""); }
 
 // The entry's language is the current one (en, zh or ja), as keyboard-us's, rime's and mozc's were: classicui
 // gives it to Pango (UseInputMethodLanguageToDisplayText), which picks the Chinese or Japanese forms of a glyph.
@@ -362,7 +376,7 @@ void SebTypeEngine::update(fcitx::InputContext *ic) {
       panel.setAuxUp(fcitx::Text(shown_));
       hidePopupLater(ic);
     }
-    setPill(reshown || !notice.empty());
+    setPill(reshown || !notice.empty() ? core_->icon() : "");
     // 日本語's undo of a commit (Ctrl+Backspace) deletes it: the characters before the cursor.
     if (const int n = core_->takeEdit().deleteBefore) ic->deleteSurroundingText(-n, n);
     if (auto commit = core_->takeCommit(); !commit.empty()) ic->commitString(commit);
@@ -388,7 +402,7 @@ void SebTypeEngine::hidePopupLater(fcitx::InputContext *ic) {
 
 void SebTypeEngine::hidePopup(fcitx::InputContext *ic) {
   shownUntil_ = 0;
-  setPill(false);
+  setPill("");
   if (!ic || shown_.empty() || ic->inputPanel().auxUp().toString() != shown_) return;
   ic->inputPanel().setAuxUp(fcitx::Text());
   ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
@@ -396,14 +410,16 @@ void SebTypeEngine::hidePopup(fcitx::InputContext *ic) {
 
 // Fcitx5's theme has one content margin for every popup, so its left one, the pig's room, would stay blank
 // beside a popup too low for the pig (#476). Windows' popup is the text with its 12 px margin round it
-// (candidate_layout.cpp): 9 here, with the 3 px TextMargin. Fcitx5 reads a theme only from its file, and its
-// classicui.conf stays as it is; Picnic's file is swapped and classicui reloads it before it draws.
-void SebTypeEngine::setPill(bool pill) {
-  if (pill == pill_) return;
-  pill_ = pill;
+// (candidate_layout.cpp): 9 here, with the 3 px TextMargin. The pill is filled with the top of the tray key's
+// base (pc/icons/build.py), in Picnic's brown border and ink, as the key's outline and glyph. Fcitx5 reads a
+// theme only from its file, and its classicui.conf stays as it is; Picnic's file is swapped and classicui
+// reloads it before it draws.
+void SebTypeEngine::setPill(const std::string &icon) {
+  if (icon == pill_) return;
+  pill_ = icon;
   auto *ui = instance_->addonManager().addon("classicui");
   std::error_code ec;
-  if (!pill) {
+  if (icon.empty()) {
     if (!fs::exists(picnicBox())) return;
     fs::rename(picnicBox(), picnicTheme(), ec);
   } else {
@@ -412,15 +428,16 @@ void SebTypeEngine::setPill(bool pill) {
     ui->getConfig()->save(config);
     const auto *theme = config.valueByPath("Theme");
     if (!theme || *theme != "sebtype-picnic") return;
-    std::ifstream in(picnicTheme());
-    std::stringstream box;
-    box << in.rdbuf();
-    if (!in) return;
+    if (!fs::exists(picnicBox()) && !writeFile(picnicBox(), readFile(picnicTheme()))) return;
+    const std::string box = readFile(picnicBox()), panel = readFile(picnicDir() / "panel.svg");
+    if (box.empty() || panel.empty()) return;
+    char fill[16];
+    std::snprintf(fill, sizeof fill, "fill=\"#%06x\"", keycap::base(icon));
     const std::regex margin(R"((\[InputPanel/ContentMargin\]\nLeft=)\d+(\nRight=)\d+)");
-    const fs::path tmp = fs::path(picnicTheme()).replace_extension("pill");
-    std::ofstream(picnicBox()) << box.str();
-    std::ofstream(tmp) << std::regex_replace(box.str(), margin, "$019$029");
-    fs::rename(tmp, picnicTheme(), ec);
+    if (!writeFile(picnicDir() / "pill.svg", std::regex_replace(panel, std::regex(R"(fill="#\w+")"), fill)) ||
+        !writeFile(picnicTheme(), std::regex_replace(std::regex_replace(box, margin, "$019$029"),
+                                                     std::regex("Image=panel.svg"), "Image=pill.svg")))
+      return;
   }
   if (!ec && ui) ui->reloadConfig();
 }
