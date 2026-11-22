@@ -191,21 +191,28 @@ en.SyncSaveFailed=Could not save your sync login. Check your details or clear th
 zh.SyncSaveFailed=无法保存同步账号。请检查填写的内容，或清空后跳过。
 ja.SyncSaveFailed=同期アカウントを保存できませんでした。入力内容を確認するか、空欄にしてスキップしてください。
 ; Next checks the address and login before it saves them (#452), as the Configurator's Save does.
-en.SyncCheckLogin=Wrong username or password.
-zh.SyncCheckLogin=用户名或密码错误。
-ja.SyncCheckLogin=ユーザー名またはパスワードが違います。
-en.SyncCheckUnreachable=Can't reach the server. Check the address and your network.
-zh.SyncCheckUnreachable=无法连接服务器，请检查地址和网络。
-ja.SyncCheckUnreachable=サーバーに接続できません。アドレスとネットワークを確認してください。
-en.SyncCheckNotSebType=That address isn't a SebType sync server.
-zh.SyncCheckNotSebType=这个地址不是 SebType 同步服务器。
-ja.SyncCheckNotSebType=このアドレスは SebType の同期サーバーではありません。
-en.SyncCheckTls=The server's HTTPS certificate isn't trusted.
-zh.SyncCheckTls=服务器的 HTTPS 证书不受信任。
-ja.SyncCheckTls=サーバーの HTTPS 証明書が信頼されていません。
-en.SyncSaveAnyway=%1%n%nSave this login anyway? Sync then tries again later. Choose No to change it.
-zh.SyncSaveAnyway=%1%n%n仍然保存这个账号吗？之后会再次尝试同步。选择“否”可以修改。
-ja.SyncSaveAnyway=%1%n%nこのまま保存しますか？同期はあとで再試行します。修正する場合は［いいえ］を選んでください。
+en.SyncChecking=Checking the server and login…
+zh.SyncChecking=正在检查服务器和账号…
+ja.SyncChecking=サーバーとログインを確認中…
+en.SyncConnected=Connected. The server and login work
+zh.SyncConnected=已连接，服务器和账号都没问题
+ja.SyncConnected=接続しました。サーバーとログインは正常です
+en.SyncCheckLogin=Wrong username or password
+zh.SyncCheckLogin=用户名或密码错误
+ja.SyncCheckLogin=ユーザー名またはパスワードが違います
+en.SyncCheckUnreachable=Can't reach the server. Check the address and your network
+zh.SyncCheckUnreachable=无法连接服务器，请检查地址和网络
+ja.SyncCheckUnreachable=サーバーに接続できません。アドレスとネットワークを確認してください
+en.SyncCheckNotSebType=That address isn't a SebType sync server
+zh.SyncCheckNotSebType=这个地址不是 SebType 同步服务器
+ja.SyncCheckNotSebType=このアドレスは SebType の同期サーバーではありません
+en.SyncCheckTls=The server's HTTPS certificate isn't trusted
+zh.SyncCheckTls=服务器的 HTTPS 证书不受信任
+ja.SyncCheckTls=サーバーの HTTPS 証明書が信頼されていません
+; Next after a failed check: it saves the login anyway, as the Linux wizard's Save anyway & continue.
+en.SyncSaveAnywayButton=Save anyway
+zh.SyncSaveAnywayButton=仍然保存
+ja.SyncSaveAnywayButton=このまま保存
 
 [Tasks]
 Name: "en"; Description: "{cm:English}"; GroupDescription: "{cm:Languages}"
@@ -286,11 +293,17 @@ Type: files; Name: "{app}\vcruntime140*.dll.*.old"
 const
   Ink = $222F4A;    // Picnic's ink #4A2F22 and key berry #C2506A, as TColor ($BBGGRR)
   Berry = $6A50C2;
+  Good = $4C8A3E;   // the Configurator's tick, #3E8A4C
   FR_PRIVATE = $10;
 
 var
   FailCode: Integer;
   SyncPage: TInputQueryWizardPage;
+  // The sync page's check (#468): a tick or an X and what it found, under the fields.
+  SyncMark, SyncStatus: TNewStaticText;
+  // The last check failed and the fields are as they were: Next saves the login anyway.
+  SyncFailed: Boolean;
+  NextWidth: Integer;
 
 function AddFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
   external 'AddFontResourceExW@gdi32.dll stdcall';
@@ -418,7 +431,52 @@ begin
   if ScaleX(100) >= 150 then Result := '2' else Result := '1';
 end;
 
+// What the sync page says under its fields: Mark 0 nothing, 1 a tick, 2 an X. Painted at once, as Setup
+// waits for the Configurator next.
+procedure ShowSync(Mark: Integer; Text: String);
+begin
+  case Mark of
+    1: begin SyncMark.Caption := #$2714; SyncMark.Font.Color := Good; end;
+    2: begin SyncMark.Caption := #$2718; SyncMark.Font.Color := Berry; end;
+  else
+    SyncMark.Caption := '';
+  end;
+  SyncStatus.Caption := Text;
+  if Mark = 2 then
+    SyncStatus.Font.Color := Berry
+  else
+    SyncStatus.Font.Color := Ink;
+  SyncPage.Surface.Update;
+end;
+
+// Next's caption, the button widened to the left (Back with it) for a longer one.
+procedure SetNextCaption(Caption: String);
+var
+  W, Delta: Integer;
+begin
+  W := WizardForm.CalculateButtonWidth([Caption]);
+  if W < NextWidth then
+    W := NextWidth;
+  Delta := W - WizardForm.NextButton.Width;
+  WizardForm.NextButton.Caption := Caption;
+  WizardForm.NextButton.Left := WizardForm.NextButton.Left - Delta;
+  WizardForm.NextButton.Width := W;
+  WizardForm.BackButton.Left := WizardForm.BackButton.Left - Delta;
+end;
+
+// A changed field needs a new check.
+procedure SyncFieldChanged(Sender: TObject);
+begin
+  if SyncFailed then
+    SetNextCaption(SetupMessage(msgButtonNext));
+  SyncFailed := False;
+  if SyncStatus.Caption <> '' then
+    ShowSync(0, '');
+end;
+
 procedure InitializeWizard;
+var
+  I: Integer;
 begin
   ExtractTemporaryFile('Jersey10-Regular.ttf');
   ExtractTemporaryFile('Nunito-Bold.ttf');
@@ -447,6 +505,24 @@ begin
   Body(SyncPage.PromptLabels[0]);
   Body(SyncPage.PromptLabels[1]);
   Body(SyncPage.PromptLabels[2]);
+  SyncMark := TNewStaticText.Create(SyncPage);
+  SyncMark.Parent := SyncPage.Surface;
+  SyncMark.Top := SyncPage.Edits[2].Top + SyncPage.Edits[2].Height + ScaleY(10);
+  SyncMark.Left := SyncPage.Edits[2].Left;
+  Restyle(SyncMark, 'Segoe UI Symbol', 11, Good);
+  SyncMark.Font.Style := [fsBold];
+  SyncStatus := TNewStaticText.Create(SyncPage);
+  SyncStatus.Parent := SyncPage.Surface;
+  SyncStatus.AutoSize := False;
+  SyncStatus.WordWrap := True;
+  SyncStatus.Top := SyncMark.Top + ScaleY(2);
+  SyncStatus.Left := SyncMark.Left + ScaleX(22);
+  SyncStatus.Width := SyncPage.SurfaceWidth - SyncStatus.Left;
+  SyncStatus.Height := SyncPage.SurfaceHeight - SyncStatus.Top;
+  Body(SyncStatus);
+  for I := 0 to 2 do
+    SyncPage.Edits[I].OnChange := @SyncFieldChanged;
+  NextWidth := WizardForm.NextButton.Width;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
@@ -530,27 +606,47 @@ begin
   end;
 end;
 
-// Checks the sync login and saves it if it works; one that doesn't is saved only if the person says so.
+// Checks the sync login, shows what the check found and saves a login that works; one that doesn't is
+// saved at the next Next (Save anyway) unless the fields change.
 function SaveSyncLogin(Server, User, Password: String): Boolean;
 var
   Code: Integer;
   Why: String;
 begin
   Result := False;
-  Code := RunSyncLogin(Server, User, Password, ' --check');
-  Why := SyncCheckMessage(Code);
-  if Why <> '' then
-  begin
-    if MsgBox(FmtMessage(CustomMessage('SyncSaveAnyway'), [Why]), mbConfirmation, MB_YESNO) <> IDYES then
-      Exit;
-    Code := RunSyncLogin(Server, User, Password, '');
+  Code := 0;
+  WizardForm.NextButton.Enabled := False;
+  try
+    if not SyncFailed then
+    begin
+      ShowSync(0, CustomMessage('SyncChecking'));
+      Code := RunSyncLogin(Server, User, Password, ' --check-only');
+      Why := SyncCheckMessage(Code);
+      if Why <> '' then
+      begin
+        ShowSync(2, Why);
+        SyncFailed := True;
+        SetNextCaption(CustomMessage('SyncSaveAnywayButton'));
+        Exit;
+      end;
+      if Code = 0 then
+      begin
+        // The tick stays a moment before the page moves on.
+        ShowSync(1, CustomMessage('SyncConnected'));
+        Sleep(1500);
+      end;
+    end;
+    if Code <> 2 then
+      Code := RunSyncLogin(Server, User, Password, '');
+    if Code = 0 then
+      Result := True
+    else if Code = 2 then
+      ShowSync(2, CustomMessage('SyncInvalidServer'))
+    else
+      ShowSync(2, CustomMessage('SyncSaveFailed'));
+  finally
+    WizardForm.NextButton.Enabled := True;
   end;
-  if Code = 0 then
-    Result := True
-  else if Code = 2 then
-    Tell(CustomMessage('SyncInvalidServer'), mbError)
-  else
-    Tell(CustomMessage('SyncSaveFailed'), mbError);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -572,7 +668,7 @@ begin
       Exit;
     if (S = '') or (U = '') or (P = '') then
     begin
-      Tell(CustomMessage('SyncIncomplete'), mbInformation);
+      ShowSync(2, CustomMessage('SyncIncomplete'));
       Result := False;
       Exit;
     end;
@@ -587,6 +683,12 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = wpSelectTasks then
     WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
+  // Inno sets Next's caption again on every page, and Back from the sync page leaves it widened.
+  if SyncFailed then
+    if CurPageID = SyncPage.ID then
+      SetNextCaption(CustomMessage('SyncSaveAnywayButton'))
+    else
+      SetNextCaption(WizardForm.NextButton.Caption);
   // The finish page's card shows the tray keys.
   if CurPageID = wpFinished then
     WizardForm.WizardBitmapImage2.PngImage.LoadFromFile(ExpandConstant('{tmp}\finish-' + Scale + '.png'));

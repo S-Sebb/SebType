@@ -9,9 +9,9 @@
 # TCSBackEnd's own checks.
 # ONLY=sync runs only sync with your own server (#180): a local sebtype_sync.py with a throwaway login,
 # made-up words both ways through the Configurator's task, and the uninstall's sync first (test.ps1).
-# ONLY=sync-page runs only Setup's sync page (#435, #465): an install as a person does it, its sync page given
-# a wrong password (the Save anyway? box, answered No) and then a local sebtype_sync.py's throwaway login, with
-# pictures of both (73-5-*, 73-6-*), then a silent uninstall.
+# ONLY=sync-page runs only Setup's sync page (#435, #465, #468): an install as a person does it, its sync page
+# given a wrong password, an address nothing serves and then a local sebtype_sync.py's throwaway login, the check's
+# tick or X on the page each time, with pictures (73-5-*, 73-6-*), then a silent uninstall.
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.
 # ONLY=not-ready runs only the tray key while 中文 or 日本語 isn't ready (#275): test-not-ready.ps1 in the

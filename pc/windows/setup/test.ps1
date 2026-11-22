@@ -38,9 +38,11 @@ nobody's own input settings change, then removes the user and its profile:
    The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
 -Only sync-page: only Setup's sync page (#435, #465): an install in English as a person does it; once the page
    shows, sebtype_sync.py (in the folder) serving on localhost with Setup's Python and a throwaway login; the
-   page given a wrong password (Wrong username or password, Save anyway? answered No: the page stays), then
-   the right one (no Save anyway? box, the finish page, sync on in sync.json; the save, which needs Credential Manager,
-   is INFO where the driver's elevated token lacks it), with pictures (73-5-*, 73-6-*); a silent uninstall.
+   page given a wrong password (Wrong username or password and Save anyway on the page, cleared by a changed
+   field), an address nothing serves (Can't reach the server), then the right one (the tick, the finish page,
+   sync on in sync.json; the save, which needs Credential Manager, is INFO where the driver's elevated token
+   lacks it, and Save anyway then fails to save on the page too), with pictures (73-5-*, 73-6-*);
+   no message box; a silent uninstall.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
    the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
@@ -575,6 +577,10 @@ namespace SebTypeSetupTest {
     public static void Shot(IntPtr h, string path) {
       Front(h);
       System.Threading.Thread.Sleep(700);
+      Grab(h, path);
+    }
+    // The window as it is now, in front or not: a state that lasts a moment (Setup's sync tick).
+    public static void Grab(IntPtr h, string path) {
       RECT r; GetWindowRect(h, out r);
       if (r.R - r.L < 1 || r.B - r.T < 1) throw new ArgumentException(Cls(h) + " '" + Text(h) + "' has no size to picture");
       using (var bmp = new Bitmap(r.R - r.L, r.B - r.T)) {
@@ -892,54 +898,69 @@ namespace SebTypeSetupTest {
           'after the install, with sebtype_sync.py on localhost and a throwaway login'
         }
         $url = "http://127.0.0.1:$port"
+        # What the page says under its fields (#468): no message box, Next becoming Save anyway on a failure.
+        function Sync-Status($text, $seconds = 120) {
+          $r = Wait-Until $seconds { if (Find-Message) { 'box' } elseif ($win::Texts($h) -like "*$text*") { 'page' } }
+          if ($r -eq 'box') { $m = Find-Message; $win::Shot($m, "$out\failed-$(Get-Date -Format HHmmss).png"); throw "a message box: $($win::Texts($m)) $($win::Text($m))" }
+          if (-not $r) { throw "no '$text' on the page in $seconds s: $($win::Texts($h))" }
+        }
         Check 'sync-page-wrong-password' {
           $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password'))
-          $null = Shot TWizardForm '5-sync-wrong-password-filled'
           Click $h 'Next'
-          $m = Message 120
-          $win::Shot($m, "$out\73-5-sync-wrong-password.png")
-          $said = $win::Texts($m) + ' ' + $win::Text($m)
-          Click $m 'No'
-          if (-not (Wait-Until 30 { -not (Find-Message) })) { throw "the message box stayed after No: $said" }
-          if ($said -notlike '*Wrong username or password*') { throw "Setup said: $said" }
-          if (-not ($win::Texts($h) -like '*Account sync*')) { throw "No left the sync page: $($win::Texts($h))" }
-          'Wrong username or password, Save anyway? No keeps the page'
+          Sync-Status 'Wrong username or password'
+          $null = Shot TWizardForm '5-sync-wrong-password'
+          if ($win::Texts($h) -notlike '*Save anyway*') { throw "no Save anyway button: $($win::Texts($h))" }
+          $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password-either'))
+          $t = $win::Texts($h)
+          if ($t -like '*Wrong username*' -or $t -like '*Save anyway*') { throw "a changed field kept the old check: $t" }
+          'Wrong username or password and Save anyway on the page; a changed field clears them'
+        }
+        Check 'sync-page-unreachable' {
+          $closed = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $closed.Start()
+          $free = $closed.LocalEndpoint.Port; $closed.Stop()
+          $win::Fill($h, [string[]]("http://127.0.0.1:$free", $syncUser, $syncPassword))
+          Click $h 'Next'
+          Sync-Status "Can't reach the server"
+          $null = Shot TWizardForm '5-sync-unreachable'
+          "Can't reach the server on the page"
         }
         Check 'sync-page-connected' {
           $win::Fill($h, [string[]]($url, $syncUser, $syncPassword))
-          $null = Shot TWizardForm '6-sync-connected-filled'
           Click $h 'Next'
-          # The check passing shows no box (a failing one asks Save anyway?). Saving then needs Credential
-          # Manager, which this driver's elevated token from Task Scheduler doesn't have (as in -Only sync):
-          # Setup says it couldn't save, and the Configurator, run again, says why.
-          $saved = $true
-          try { Page $h 'SebType is ready' 120 }
-          catch {
-            $m = Find-Message
-            if ($m) { $win::Shot($m, "$out\73-6-sync-connected-save.png") }
+          # The tick shows 1.5 s before Setup saves the login and moves on.
+          Sync-Status 'Connected. The server and login work' 60
+          $win::Grab($h, "$out\73-6-sync-connected.png")
+          # Saving needs Credential Manager, which this driver's elevated token from Task Scheduler doesn't
+          # have (as in -Only sync): the page says it couldn't save, and the Configurator, run again, says why.
+          $r = Wait-Until 60 { if ($win::Texts($h) -like '*SebType is ready*') { 'saved' } elseif ($win::Texts($h) -like '*Could not save your sync login*') { 'not saved' } }
+          if (-not $r) { throw "neither the finish page nor Could not save in 60 s: $($win::Texts($h))" }
+          if ($r -eq 'not saved') {
+            $null = Shot TWizardForm '6-sync-connected-not-saved'
             $f = "$out\sync-login-again.txt"
             [IO.File]::WriteAllText($f, "$url`n$syncUser`n$syncPassword`n")
             $p = Start-Process -PassThru -Wait "$App\sebtype-configurator.exe" '--sync-login-file', "`"$f`"", '--check' -RedirectStandardError "$out\sync-login-again.err"
             Remove-Item $f -ErrorAction SilentlyContinue
             $why = "exit $($p.ExitCode) $(Get-Content "$out\sync-login-again.err" -Raw -ErrorAction SilentlyContinue)".Trim()
             # Exit 1, not a check's 11-14: the check passed and only the save failed.
-            if (-not $m -or $p.ExitCode -ne 1 -or $why -notlike '*ERROR_NO_SUCH_LOGON_SESSION*') { throw "$($_.Exception.Message); the Configurator again: $why" }
-            Click $m 'OK'
+            if ($p.ExitCode -ne 1 -or $why -notlike '*ERROR_NO_SUCH_LOGON_SESSION*') { throw "Could not save on the page; the Configurator again: $why" }
+            Result 'sync-page-saves-login' INFO "not checkable here: the check passed (the tick) but saving needs Credential Manager, which the elevated driver's token lacks ($why)"
+            # Save anyway after a failed check saves without checking: here it fails the same way, on the page.
+            $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password'))
+            Click $h 'Next'; Sync-Status 'Wrong username or password'
+            Click $h 'Save anyway'; Sync-Status 'Could not save your sync login'
+            if ($win::Texts($h) -notlike '*Save anyway*') { throw "Save anyway went after a failed save: $($win::Texts($h))" }
             $win::Fill($h, [string[]]('', '', ''))
             Click $h 'Next'; Page $h 'SebType is ready' 60
-            $saved = $false
-            Result 'sync-page-saves-login' INFO "not checkable here: the check passed (no Save anyway? box) but saving needs Credential Manager, which the elevated driver's token lacks ($why)"
-          }
-          $null = Shot TWizardForm '6-sync-connected-finish'
-          if ($saved) {
+          } else {
             $j = Get-Content "$env:LOCALAPPDATA\SebType\sync.json" -Raw -Encoding utf8 | ConvertFrom-Json
             if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
           }
+          $null = Shot TWizardForm '6-sync-connected-finish'
           Click $h 'Finish'
           if (-not (Wait-Until 60 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close' }
           Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
-          if ($saved) { 'no Save anyway? box, the finish page, sync on for the local server in sync.json' }
-          else { 'no Save anyway? box: the check passed; the save is INFO above; the finish page' }
+          if ($r -eq 'saved') { 'the tick, the finish page, sync on for the local server in sync.json' }
+          else { 'the tick (the save is INFO above), Save anyway saving without a check, the finish page' }
         }
         Silent-Uninstall 'sync-page'
       } finally {
