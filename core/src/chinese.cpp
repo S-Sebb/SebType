@@ -13,9 +13,11 @@
 // chosen (after a partial pick Rime alone lists the rest). It scores Rime's candidates that cover the whole
 // input, by their characters against Rime's syllables, and leaves the others in Rime's order after its own.
 // The model's own candidates that read the letters otherwise than Rime does (n as ng, a whole syllable as one
-// cut short: 当 for dan, #503) go after Rime's first two pages' candidates for the whole input; the model was
-// trained to accept those slips, which fuzzy pinyin off rules out of the top. Rime's syllables decide, by
-// the characters' readings in rime-data's sebtype_readings.txt (8105's).
+// cut short: 当 for dan, #503) go after Rime's first two pages' candidates for the whole input when Rime's
+// first is a dictionary word for all of it (但 for dan): the model was trained to accept those slips, which
+// fuzzy pinyin off rules out ahead of a word typed as it is. Behind a sentence Rime pieced together (其则么早
+// for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
+// characters' readings in rime-data's sebtype_readings.txt (8105's).
 // Picking one of Rime's candidates selects it in Rime by its own index; picking one of the model's teaches
 // Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand.
 // 繁: Rime converts its own candidates (rime-ice's traditionalization); the model reads simplified text, so
@@ -378,6 +380,7 @@ class Chinese final : public Engine {
     std::string fix;                // Rime's best correction of the input, for the list made already (#478)
     int pageSize = 0;
     std::vector<std::string> syllables;  // Rime's, for the input
+    bool word = false;                   // Rime's first is a dictionary word for all of it (#503)
   };
 
   // Keys Rime takes as "commit the first candidate, then this": printable ASCII but letters, digits, the
@@ -562,6 +565,7 @@ class Chinese final : public Engine {
       for (size_t i = 0; i < rime.size(); i++)
         if (wholeInput(rime[i].text, n)) job.rime.push_back(rime[i].text), job.rimeIndex.push_back(int(i));
       job.learned = !rime.empty() && rime[0].learned;
+      job.word = !rime.empty() && !rime[0].sentence && wholeInput(rime[0].text, n);
       job.fixable = rime_->corrects();
     } else if (!text || (!context_.empty() && context_.back() == '\n')) {
       return want(std::nullopt);
@@ -683,7 +687,7 @@ class Chinese final : public Engine {
     for (const auto &g : generated) {
       if (std::ranges::any_of(items, [&](const Item &it) { return it.simplified == g.text; })) continue;
       items.push_back(own(g.text, job.traditional, s2t));
-      items.back().misread = !readings.spell(g.text, job.syllables);
+      items.back().misread = job.word && !readings.spell(g.text, job.syllables);
       score.push_back(g.logProb - ownPenalty);
     }
     // A word the user taught Rime, which its user dictionary puts first, stays first: the model can't see

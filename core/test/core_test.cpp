@@ -1034,7 +1034,7 @@ TEST_F(EnglishTest, APersonalWordThatIsAlsoAShortcutStaysAWord) {
 
 #ifdef SEBTYPE_CHINESE_MODEL
 // Rime as the model sees it: a few words by their pinyin, a candidate list for the input not yet chosen
-// (FULL's sentence for all of it first, then the words that start it, longest first), and picks that consume
+// (FULL's sentence for all of it first, marked as one, then the words that start it, longest first), and picks that consume
 // their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛. A flush commits
 // what Rime previews, its first candidate, and learns nothing. A first candidate in LEARNED comes marked as
 // learned, as Rime's data marks a word from its user dictionary. FIXES are its corrections by input (#478).
@@ -1107,7 +1107,12 @@ struct FakeRime : Engine {
   bool candidateAt(int i, Candidate &out) override {
     const auto l = list();
     if (i < 0 || i >= int(l.size())) return false;
-    out = {l[i].text, {}, i == 0 && userWords.count(l[i].text) > 0};
+    // FULL's text for the input is a sentence, unless it is one of the input's words too
+    const std::string left = in.substr(done);
+    const auto w = words.find(left);
+    const bool sentence = i == 0 && full.count(left) && full.at(left) == l[i].text &&
+                          (w == words.end() || std::ranges::find(w->second, l[i].text) == w->second.end());
+    out = {l[i].text, {}, i == 0 && userWords.count(l[i].text) > 0, sentence};
     return true;
   }
   int highlighted() override { return composing() ? 0 : -1; }
@@ -1214,6 +1219,18 @@ TEST_F(ChineseTest, TheModelsMisreadingsComeAfterRimesFirstPages) {
   const auto l = list();
   const auto dang = std::ranges::find(l, "当");
   for (const char *s : {"但", "单", "弹", "蛋", "淡"}) EXPECT_LT(std::ranges::find(l, s), dang) << s << " " << testing::PrintToString(l);
+}
+
+// Behind a sentence Rime pieced together (诞, made up as one here) a misreading keeps its place: there the
+// model's other readings are mostly typo fixes (#503).
+TEST_F(ChineseTest, AMisreadingKeepsItsPlaceBehindASentence) {
+  start({}, [](FakeRime &r) {
+    r.words["dan"] = {"但", "单", "弹", "蛋", "🥚", "淡", "丹", "氮", "胆", "担"};
+    r.full["dan"] = "诞";
+  });
+  typeAndWait("dan");
+  const auto l = list();
+  EXPECT_LT(std::ranges::find(l, "当"), std::ranges::find(l, "淡")) << testing::PrintToString(l);
 }
 
 // Paging and the arrow keys move the highlight within the model's list (#367): its order stays, and what

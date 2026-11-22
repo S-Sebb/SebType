@@ -159,10 +159,14 @@ class Rime final : public Engine {
     // The data's last filter names the first candidate when it is a learned word: the property holds its text.
     // Room for one byte more than the first's text and a terminator Rime's strncpy never overwrites: a
     // longer property doesn't match, and a learned phrase of any length is read whole.
+    // Likewise when it is a sentence Rime pieced together.
     if (!list.empty()) {
-      std::vector<char> learned(list[0].text.size() + 2, '\0');
-      if (api_->get_property(session_, "sebtype_learned", learned.data(), learned.size() - 1))
-        list[0].learned = list[0].text == learned.data();
+      const auto is = [&](const char *property) {
+        std::vector<char> value(list[0].text.size() + 2, '\0');
+        return api_->get_property(session_, property, value.data(), value.size() - 1) && list[0].text == value.data();
+      };
+      list[0].learned = is("sebtype_learned");
+      list[0].sentence = is("sebtype_sentence");
     }
     return list;
   }

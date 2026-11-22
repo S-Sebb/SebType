@@ -327,7 +327,7 @@ weasel.yaml, squirrel.yaml, t9 and the double-pinyin schemas are left out. rime_
 typo correction: a second translator, corr, with librime's correction on and its own prism from
 sebtype_corr.schema.yaml (SebType's: rime_ice's spellings and slips of them), ranked by
 lua/sebtype_typo.lua (SebType's, GPL-3.0); its last filter, lua/sebtype_learned.lua (SebType's,
-GPL-3.0), tells SebType's Chinese model when the first candidate is a learned word. lua/sebtype_ge.lua (SebType's,
+GPL-3.0), tells SebType's Chinese model when the first candidate is a learned word or a sentence. lua/sebtype_ge.lua (SebType's,
 GPL-3.0) puts first a dictionary word split by 个 (健个身 for jiangeshen) when the first candidate is a sentence,
 looking words up through a third translator, sebtype_word. lua/sebtype_split.lua (SebType's, GPL-3.0)
 moves candidates that split the input otherwise than the first one behind those that split it the same way. rime_ice's translator also reads the pack sebtype
