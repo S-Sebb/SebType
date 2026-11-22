@@ -4,6 +4,7 @@
 #   pc/windows/setup/test-tcsbackend.sh
 # PERF_RUN=1 adds the timing check (round1-rime-p95), for the final performance run only (#54).
 # ONLY=picnic runs only the Picnic candidate window's pictures (#162), with TCSBackEnd's own checks.
+# ONLY=quick-english runs only a switch into 中文 and 日本語 ending the Shift tap's English (#489).
 # ONLY=upgrade runs only the update from the SebType before #190 (Weasel and Mozc; its setup from the
 # newest successful "Windows setup" run on main without windows/build.ps1), typing and uninstall, with
 # TCSBackEnd's own checks.

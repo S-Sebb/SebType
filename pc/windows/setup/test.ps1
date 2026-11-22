@@ -24,6 +24,8 @@ nobody's own input settings change, then removes the user and its profile:
    Chinese (Japanese and its learned words go), uninstall.
 
 -Only picnic: only a silent install, the Picnic window's pictures and a silent uninstall (#162).
+-Only quick-english: only a silent install, a switch into 中文 and 日本語 ending the Shift tap's English (#489),
+   and a silent uninstall.
 -Only upgrade: only the update from the SebType before #190 (#190, #192): that one installed silently with
    all languages and learned words, then this one over it: Weasel and Mozc gone with their Start menu
    entries, SebType's text service in their place, the learned words kept; then typing and a silent
@@ -298,6 +300,43 @@ if ($Typing) {
       try { Check 'picnic-window' $picnic } finally { $tsf::Stop() }
       return
     }
+    # #489: a switch into 中文 or 日本語 types the language at once, whatever its Shift tap was left in, and the
+    # button (the taskbar's input indicator) shows the language's normal icon: back from English's keyboard and
+    # from SebType's other language, as Win+Space and the indicator switch profiles. 日本語's ア stays.
+    function First($lang) {  # what a first word gives: 你 or ni in 中文, あ, ア or a in 日本語
+      $tsf::Clear()
+      if ($lang -eq 'zh') { TypeText 'ni '; Start-Sleep 1; $t = $tsf::Text().Trim() }
+      else { Keys a; Start-Sleep 1; $t = $tsf::Text().Trim(); Keys Escape Escape }
+      $tsf::Clear(); $t
+    }
+    function ButtonIcon { $p = "$out\489-icon.png"; $tsf::ButtonIcon($p); [Convert]::ToBase64String([IO.File]::ReadAllBytes($p)) }
+    $quickEnglish = {
+      # Rime deploys and Mozc starts with the first use: until then keys reach the field (#275).
+      Field zh; if (-not (Wait-Until 90 { (First zh) -eq '你' })) { throw "中文 never typed 你 for ni" }
+      Field ja; if (-not (Wait-Until 30 { (First ja) -match '[あア]' })) { throw "日本語 never typed kana for a" }
+      if ((First ja) -eq 'あ') { Keys 'Alt_L+grave' }
+      $want = @{ zh = '你'; ja = 'ア' }
+      $seen = foreach ($pair in ('zh', 'en'), ('zh', 'ja'), ('ja', 'en'), ('ja', 'zh')) {
+        $lang, $via = $pair
+        Field $lang
+        $normal = ButtonIcon
+        Keys Shift_L; $quick = First $lang
+        if ($quick -eq $want[$lang]) { throw "$lang`: the Shift tap didn't turn English on ('$quick')" }
+        if ($via -eq 'en') { $tsf::ActivateLayout(0x409, '00000409'); $tsf::Settle(500) } else { Field $via }
+        Field $lang
+        $t = First $lang
+        if ($t -ne $want[$lang]) { throw "$lang after $via and back gave '$t' (want $($want[$lang])), the Shift tap '$quick'" }
+        if ((ButtonIcon) -ne $normal) { throw "$lang after $via and back: the button's icon isn't the one before the Shift tap" }
+        "$lang via $via`: $t"
+      }
+      Keys 'Alt_L+grave'  # 日本語 back to あ
+      $seen -join ', '
+    }
+    if ($Typing -eq 'quick-english') {
+      $tsf::Start()
+      try { Check 'quick-english-ends-on-switch' $quickEnglish } finally { $tsf::Stop() }
+      return
+    }
     $np = Start-Process notepad -PassThru
     try {
       $null = $np.WaitForInputIdle(10000)
@@ -486,6 +525,7 @@ if ($Typing) {
           "35 kana, undone"
         }
         Check 'picnic-window' $picnic
+        Check 'quick-english-ends-on-switch' $quickEnglish
       } finally { $tsf::Stop() }
     }
   } catch { Result "typing-$Typing" FAIL $_.Exception.Message } finally {
@@ -947,6 +987,13 @@ namespace SebTypeSetupTest {
       Check "$Only-install" { Silent "$Only-install" @(); 'silent, all languages' }
       Typing $Only 900
       Silent-Uninstall $Only
+      return
+    }
+    if ($Only -eq 'quick-english') {
+      # Only the Shift tap's English ending on a switch (#489): a silent install, the check, a silent uninstall.
+      Check 'quick-english-install' { Silent quick-english-install @(); 'silent, all languages' }
+      Typing quick-english
+      Silent-Uninstall quick-english
       return
     }
     if ($Only -eq 'picnic') {
@@ -1494,7 +1541,7 @@ Check 'admin-input-as-before' {
   if ((Languages) -ne $adminBefore.languages) { throw "this admin's input methods are $(Languages), were $($adminBefore.languages)" }
   'this admin''s input methods untouched'
 }
-foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'chinese-focus-out', 'japanese-all', 'japanese-alt-grave', 'chinese-tray-menu', 'japanese-tray-menu', 'picnic-window',
+foreach ($c in 'language-follows-windows', 'welcome-zh', 'welcome-ja', 'round1-install-pages', 'win-space-cycle', 'chinese-pinyin', 'chinese-focus-out', 'japanese-all', 'japanese-alt-grave', 'chinese-tray-menu', 'japanese-tray-menu', 'picnic-window', 'quick-english-ends-on-switch',
   'round1-upgrade', 'japanese-after-language-change', 'round1-uninstall-pages', 'round1-everything-as-before', 'round2-upgrade-drops-japanese', 'round2-everything-as-before') {
   if (-not $Only -and -not (Select-String -Quiet -SimpleMatch " $c" $results)) { Result $c SKIP 'did not run' }
 }
