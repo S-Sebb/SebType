@@ -550,9 +550,11 @@ export component SetupWindow inherits Window {
                 spacing: 12px;
                 vertical-stretch: 1;
                 Card {
+                    vertical-stretch: 1;
                     VerticalLayout {
                         padding: 18px;
                         spacing: 6px;
+                        alignment: start;
                         PageTitle {
                             text: SetupState.ready ? @tr("SebType is ready!") : SetupState.ready-checks.length == 0 ? @tr("Checking…") : @tr("Almost ready");
                             color: Theme.key;
@@ -577,7 +579,8 @@ export component SetupWindow inherits Window {
                         }
                     }
                 }
-                Card {
+                // The keys once there is nothing left to do: until then the steps have the room.
+                if SetupState.ready: Card {
                     VerticalLayout {
                         padding-left: 18px;
                         padding-right: 18px;

@@ -993,7 +993,10 @@ pub(crate) fn ready_checks() -> Vec<(crate::setup::Need, bool)> {
         sebtype_active() && fcitx_outside_kwin().is_empty(),
     )];
     checks.extend(im_modules(&env_files()).into_iter().map(|n| (n, false)));
-    checks.push((Need::LogIn, session_ready(&session_env())));
+    // Only when it's needed: most sessions have what setup set from the start.
+    if !session_ready(&session_env()) {
+        checks.push((Need::LogIn, false));
+    }
     checks
 }
 

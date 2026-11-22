@@ -212,6 +212,15 @@ pub fn keep_done(before: &[(Need, bool)], mut now: Vec<(Need, bool)>) -> Vec<(Ne
     now
 }
 
+/// A path in the home folder as `~/…`, which fits the page.
+fn home_short(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    match home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
 /// The page's rows, as SetupState's ready-checks shows them.
 fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
     checks
@@ -221,7 +230,7 @@ fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
                 Need::InputMethod => (0, String::new(), 0, String::new()),
                 Need::LogIn => (1, String::new(), 0, String::new()),
                 Need::ImModule { file, line, text } => {
-                    (2, file.display().to_string(), *line as i32, text.clone())
+                    (2, home_short(file), *line as i32, text.clone())
                 }
                 Need::Languages => (3, String::new(), 0, String::new()),
             };
