@@ -652,10 +652,25 @@ namespace SebTypeSetupTest {
   # read and driven through UI Automation (Slint's AccessKit tree), its pictures with $win::Shot.
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
   $uia = [Windows.Automation.AutomationElement]
+  # The wizard's window, by its title (Finish opens the Configurator's own), once it has its size.
+  function Wizard-Process {
+    Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object {
+      $_.MainWindowTitle -in 'SebType Setup', 'SebType 安装向导' -and $uia::FromHandle($_.MainWindowHandle).Current.BoundingRectangle.Width -gt 200
+    } | Select-Object -First 1
+  }
   function Wizard-Handle($seconds = 60) {
-    $h = Wait-Until $seconds { $p = Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($p) { $p.MainWindowHandle } }
+    $h = Wait-Until $seconds { $p = Wizard-Process; if ($p) { $p.MainWindowHandle } }
     if (-not $h) { throw "no setup wizard window in $seconds s; windows: $($win::Visible())" }
     $h
+  }
+  # Finish closes the wizard and, with Open SebType Configurator on (the default), opens the Configurator.
+  function Wizard-Finish($finish) {
+    $p = Wizard-Process
+    Ui-Click $finish
+    if (-not $p.WaitForExit(30000)) { throw "$finish left the wizard open" }
+    $opened = Wait-Until 30 { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -in 'SebType Configurator', 'SebType 设置' } }
+    Stop-Wizard
+    if (-not $opened) { throw "$finish closed the wizard but opened no Configurator" }
   }
   function Wizard-Shot($name) { $h = Wizard-Handle; Start-Sleep 1; $win::Shot($h, "$out\73-$name.png"); $h }
   function Stop-Wizard { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1 }
@@ -959,9 +974,8 @@ namespace SebTypeSetupTest {
       Check 'common-page-finish' {
         Ui-Click '跳过'; $null = Ui-Find 'SebType 装好啦！'
         $null = Wizard-Shot '6-ready-zh'
-        Ui-Click '完成'
-        if (-not (Wait-Until 30 { -not (Get-Process sebtype-configurator -ErrorAction SilentlyContinue) })) { throw '完成 left the wizard open' }
-        'Skip leads to the ready page; 完成 closes the wizard'
+        Wizard-Finish '完成'
+        'Skip leads to the ready page; 完成 closes the wizard and opens the Configurator'
       }
       # Each page in both themes and both languages, for comparing with Linux's (#471).
       Check 'common-page-pictures' {
@@ -1033,8 +1047,7 @@ namespace SebTypeSetupTest {
             if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
           } else { throw "after Connected, neither the ready page nor a save error: $(Ui-Texts)" }
           $null = Wizard-Shot '6-sync-connected-finish'
-          Ui-Click 'Finish'
-          if (-not (Wait-Until 30 { -not (Get-Process sebtype-configurator -ErrorAction SilentlyContinue) })) { throw 'Finish left the wizard open' }
+          Wizard-Finish 'Finish'
           if ($r -eq 'ready') { 'the tick, the ready page, sync on for the local server in sync.json' }
           else { 'the tick: the check passed; the save is INFO above; Skip, the ready page' }
         }
@@ -1255,8 +1268,7 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       $null = Ui-Find 'Common settings' 60; $null = Wizard-Shot '4-common'; Ui-Click 'Next'
       $null = Ui-Find 'Account sync'; $null = Wizard-Shot '4-sync'; Ui-Click 'Skip'
       $null = Ui-Find 'SebType is ready!'; $null = Wizard-Shot '4-finish'
-      Ui-Click 'Finish'
-      if (-not (Wait-Until 30 { -not (Get-Process sebtype-configurator -ErrorAction SilentlyContinue) })) { throw 'Finish left the wizard open' }
+      Wizard-Finish 'Finish'
       'welcome, languages, installing, then the wizard: common settings, sync (skipped), ready'
     }
     Save-MachineLog round1-install; Stop-Setup
