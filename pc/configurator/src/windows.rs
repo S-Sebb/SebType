@@ -89,7 +89,8 @@ fn server(arg: &str) -> io::Result<()> {
 // --- Languages ---
 
 fn language_list() -> io::Result<Vec<(String, String)>> {
-    let out = powershell("Get-WinUserLanguageList | ForEach-Object { $_.LanguageTag + '|' + ($_.InputMethodTips -join ',') }")?;
+    // In parentheses: Windows PowerShell passes the cmdlet's list down a pipe as one object, not each language.
+    let out = powershell("(Get-WinUserLanguageList) | ForEach-Object { $_.LanguageTag + '|' + ($_.InputMethodTips -join ',') }")?;
     Ok(out
         .lines()
         .filter_map(|l| l.split_once('|'))
