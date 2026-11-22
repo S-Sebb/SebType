@@ -554,7 +554,7 @@ export component SetupWindow inherits Window {
                         padding: 18px;
                         spacing: 6px;
                         PageTitle {
-                            text: SetupState.ready ? @tr("SebType is ready!") : @tr("Almost ready");
+                            text: SetupState.ready ? @tr("SebType is ready!") : SetupState.ready-checks.length == 0 ? @tr("Checking…") : @tr("Almost ready");
                             color: Theme.key;
                             font-size: 22px;
                         }
@@ -563,11 +563,6 @@ export component SetupWindow inherits Window {
                             color: Theme.muted;
                             font-size: Theme.detail-size;
                             wrap: word-wrap;
-                        }
-                        if SetupState.ready-checks.length == 0: Text {
-                            text: @tr("Checking…");
-                            color: Theme.muted;
-                            font-size: Theme.detail-size;
                         }
                         for check[i] in SetupState.ready-checks: CheckRow {
                             check: check;
