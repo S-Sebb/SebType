@@ -78,6 +78,10 @@ struct ChineseModelPaths {
   // The phone's strip shows the next words with nothing typed; the PCs' candidate box doesn't, where digits and
   // space type themselves with nothing composing.
   bool nextWords = true;
+  // The phone passes the field's text with each change (setContext). The PCs don't: there the context is what
+  // this engine committed and the characters it let through, and any other key it lets through with nothing
+  // composing (Backspace, an arrow, Ctrl+A) or a focus change ends it, as the app's text is no longer known.
+  bool fieldText = true;
 };
 // READY runs on the worker when the model's list for what is typed (or the next words) has come: the
 // frontend posts it to its own thread and reads candidates() there, as for English.

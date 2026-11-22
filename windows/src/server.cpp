@@ -122,6 +122,7 @@ std::unique_ptr<Engine> makeEngine(Lang lang) {
     // Two threads, as on Linux (linux/src/sebtype.cpp).
     ChineseModelPaths paths{model, u8(exeDir() / L"data" / L"opencc"), std::thread::hardware_concurrency() >= 4 ? 2 : 1};
     paths.nextWords = false;  // the box shows only while typing, as with Rime alone
+    paths.fieldText = false;  // the context is what was typed since the last key the app took itself
     return withChineseModel(std::move(rime), paths, nullptr);
   }
   // Mozc loads in its own thread, and 日本語 is grey until then (#312).

@@ -235,7 +235,11 @@ class Chinese final : public Engine {
       }
       if (commitsFirst(k.sym)) pick(highlight_);
     }
-    const bool taken = rime_->key(k);
+    const bool composing = rime_->composing(), taken = rime_->key(k);
+    if (!k.release && !taken && !composing && !paths_.fieldText && (k.sym < 0xffe1 || k.sym > 0xffee)) {
+      if (k.sym >= 0x20 && k.sym < 0x7f && !(k.mods & (mod::Ctrl | mod::Alt | mod::Super))) remember(std::string(1, char(k.sym)));
+      else context_.clear();
+    }
     if (!k.release) changed();
     return taken;
   }
@@ -264,6 +268,7 @@ class Chinese final : public Engine {
   }
   void clear() override {
     rime_->clear();
+    if (!paths_.fieldText) context_.clear();
     changed();
   }
 

@@ -1147,7 +1147,8 @@ struct ChineseTest : testing::Test {
   std::unique_ptr<Engine> zh;
 
   void SetUp() override { start(); }
-  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}, bool nextWords = true) {
+  // pc: as the PCs' hosts set it up (#495), with no next words and no field text.
+  void start(std::chrono::milliseconds delay = {}, std::function<void(FakeRime &)> setUp = {}, bool pc = false) {
     zh.reset();
     auto r = std::make_unique<FakeRime>();
     if (setUp) setUp(*r);
@@ -1164,7 +1165,7 @@ struct ChineseTest : testing::Test {
     }
     ChineseModelPaths paths{ZH_MODEL, ZH_OPENCC, 1, delay};
     paths.readings = readings;
-    paths.nextWords = nextWords;
+    paths.nextWords = paths.fieldText = !pc;
     zh = withChineseModel(std::move(r), paths, [this] {
       std::lock_guard g(mutex);
       readies++;
@@ -1454,6 +1455,20 @@ TEST_F(ChineseTest, UpdatingUntilTheModelsListComes) {
   EXPECT_FALSE(zh->updating());
   zh->clear();  // nothing typed, no next words: nothing to come
   EXPECT_FALSE(zh->updating());
+}
+
+// The PCs never pass the field's text: a key the app takes with nothing composing ends the context, which
+// otherwise would pick for text no longer there (#495: after 后来 deleted, xkaoshi gave 消失, not 小时).
+TEST_F(ChineseTest, OnThePCsAKeyTheAppTakesEndsTheContext) {
+  start({}, [](FakeRime &r) { r.words["guo"] = {"过", "国", "锅"}; }, true);
+  zh->setContext("中华人民共和", "", false);  // Linux passes it at Ctrl+Backspace
+  typeAndWait("guo");
+  ASSERT_EQ(list().at(0), "国");
+  for (int i = 0; i < 3; i++) zh->key({0xff08, 0, false});
+  ASSERT_FALSE(zh->composing());
+  zh->key({0xff08, 0, false});  // the app's: it deletes 和, and with it what came before is unknown
+  typeAndWait("guo");
+  EXPECT_EQ(list().at(0), "过");
 }
 
 TEST_F(ChineseTest, PunctuationCommitsTheModelsFirst) {
