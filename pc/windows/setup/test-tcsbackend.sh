@@ -14,7 +14,8 @@
 # page, Save anyway), a closed port and then a local sebtype_sync.py's throwaway login, with pictures
 # (73-5-*, 73-6-*), then a silent uninstall.
 # ONLY=common-page runs only the setup wizard's Common settings page (#444, #471) in 中文: a new account's
-# settings shown (Picnic), others chosen and saved by Next, each read back from the Configurator, with
+# settings shown (Picnic), English and 日本語 only kept through the wizard (and through a silent /TASKS), others
+# chosen and saved by Next, each read back from the Configurator, with
 # pictures (73-4-common-zh*, 73-6-ready-zh) and each page in both themes and languages (73-wizard-*).
 # ONLY=compare runs the final performance run's comparison with Microsoft's input methods (#54);
 # SOAK_MIN and COMPARE_IMES (comma-separated) narrow it.

@@ -44,10 +44,12 @@ nobody's own input settings change, then removes the user and its profile:
    right one (the tick, the ready page, sync on in sync.json; the save, which needs Credential Manager, is INFO
    where the driver's elevated token lacks it), with pictures (73-4-common-en, 73-5-*, 73-6-*); a silent uninstall.
 -Only common-page: only the setup wizard's Common settings page (#444, #471): an install in 中文 as a person
-   does it; the page showing a new account's settings (简体, Picnic, Vertical, 6; 73-4-common-zh), then 繁體,
+   does it, with English and 日本語 ticked only; the page showing a new account's settings (简体, Picnic, Vertical, 6; 73-4-common-zh), then 繁體,
    System style (the wizard turning plain at once), Horizontal and 8 chosen and Next, each read back with
-   sebtype-configurator --common-settings get; Skip to the ready page and 完成; each page (2-4) in both themes
-   and both languages (73-wizard-<lang>-<step>-<theme>); a silent uninstall.
+   sebtype-configurator --common-settings get; Skip to the ready page and 完成, then Windows' input methods and
+   the Configurator's language switches (English and 日本語 on, 中文 off); each page (2-4) in both themes
+   and both languages (73-wizard-<lang>-<step>-<theme>); a silent uninstall; then a silent
+   install with /TASKS="en,ja" and the same language checks, and its silent uninstall.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
    the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
@@ -668,9 +670,22 @@ namespace SebTypeSetupTest {
     $p = Wizard-Process
     Ui-Click $finish
     if (-not $p.WaitForExit(30000)) { throw "$finish left the wizard open" }
-    $opened = Wait-Until 30 { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -in 'SebType Configurator', 'SebType 设置' } }
-    Stop-Wizard
-    if (-not $opened) { throw "$finish closed the wizard but opened no Configurator" }
+    $opened = Configurator-Process
+    if (-not $opened) { Stop-Wizard; throw "$finish closed the wizard but opened no Configurator" }
+    $opened
+  }
+  function Configurator-Process { Wait-Until 30 { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -in 'SebType Configurator', 'SebType 设置' } | Select-Object -First 1 } }
+  # The Configurator's language switches once it has read Windows' list (they show off, disabled, until then).
+  function Configurator-Langs($p) {
+    $r = Wait-Until 60 {
+      $all = $uia::FromHandle($p.MainWindowHandle).FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
+      $sw = @($all | Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.CheckBox' -and $_.Current.Name -in 'English', '中文', '日本語' })
+      if ($sw.Count -eq 3 -and ($sw | Where-Object { $_.Current.IsEnabled })) {
+        ($sw | ForEach-Object { "$($_.Current.Name)=$(if ($_.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq 'On') { 'on' } else { 'off' })" }) -join ' '
+      }
+    }
+    if (-not $r) { throw 'the Configurator showed no language switches ready in 60 s' }
+    $r
   }
   function Wizard-Shot($name) { $h = Wizard-Handle; Start-Sleep 1; $win::Shot($h, "$out\73-$name.png"); $h }
   function Stop-Wizard { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1 }
@@ -688,9 +703,10 @@ namespace SebTypeSetupTest {
   function Ui-Click($name) { (Ui-Find $name 30 Button).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke(); Start-Sleep -Milliseconds 300 }
   function Ui-Fill($name, $value) { (Ui-Find $name 30 Edit).GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($value) }
   # Setup as a person runs it in $lang (its default languages), until the wizard's Common settings page.
-  function Install-Then-Wizard($lang, $what) {
+  # $tasks: the languages page's ticks before Install (Inno's /TASKS, as clicking them would leave them).
+  function Install-Then-Wizard($lang, $what, $tasks = 'en,zh,ja') {
     $next, $langs, $install, $common = @{ en = 'Next', 'Your languages', 'Install', 'Common settings'; zh = '下一步', '你的语言', '安装', '常用设置' }[$lang]
-    Start-Process $setup "/LANG=$lang", "/LOG=`"$out\setup-$what.log`""
+    Start-Process $setup "/LANG=$lang", "/TASKS=`"$tasks`"", "/LOG=`"$out\setup-$what.log`""
     $h = Window TWizardForm
     Page $h $next; Click $h $next; Page $h $langs  # the form shows before its buttons
     Click $h $install
@@ -953,7 +969,8 @@ namespace SebTypeSetupTest {
         ((Get-Content $f) | Where-Object { $_ }) -join ' '
       }
       Check 'common-page-defaults' {
-        Install-Then-Wizard zh common-page
+        # English and 日本語 only: the wizard must not lose the languages page's choice (#471).
+        Install-Then-Wizard zh common-page 'en,ja'
         $null = Wizard-Shot '4-common-zh'
         # A new account: 简体, Picnic, Vertical and 6 (#471: Picnic unless the account chose before).
         $want = 'traditional=0 page-size=6 picnic=1 vertical=1'
@@ -974,8 +991,14 @@ namespace SebTypeSetupTest {
       Check 'common-page-finish' {
         Ui-Click '跳过'; $null = Ui-Find 'SebType 装好啦！'
         $null = Wizard-Shot '6-ready-zh'
-        Wizard-Finish '完成'
+        $c = Wizard-Finish '完成'
         'Skip leads to the ready page; 完成 closes the wizard and opens the Configurator'
+      }
+      Check 'common-page-languages' {
+        $l = Languages; $shown = Configurator-Langs $c; Stop-Wizard
+        if ($l -ne "en-US[0409:00000409] ja[$JaTip]") { throw "input methods $l after English and 日本語 only" }
+        if ($shown -ne 'English=on 中文=off 日本語=on') { throw "the Configurator shows $shown" }
+        "$l; the Configurator: $shown"
       }
       # Each page in both themes and both languages, for comparing with Linux's (#471).
       Check 'common-page-pictures' {
@@ -987,6 +1010,17 @@ namespace SebTypeSetupTest {
         '12 pictures: steps 2-4, Picnic and System style, English and 中文'
       }
       Silent-Uninstall 'common-page'
+      Check 'common-page-silent-languages' {
+        Silent common-page-silent @('/TASKS="en,ja"')
+        $l = Languages
+        Start-Process "$App\sebtype-configurator.exe"
+        $c = Configurator-Process; if (-not $c) { throw 'the Configurator opened no window' }
+        $shown = Configurator-Langs $c; Stop-Wizard
+        if ($l -ne "en-US[0409:00000409] ja[$JaTip]") { throw "input methods $l after /TASKS=en,ja" }
+        if ($shown -ne 'English=on 中文=off 日本語=on') { throw "the Configurator shows $shown" }
+        "silent /TASKS=en,ja: $l; the Configurator: $shown"
+      }
+      Silent-Uninstall 'common-page-silent'
       return
     }
     if ($Only -eq 'sync-page') {
@@ -1047,7 +1081,7 @@ namespace SebTypeSetupTest {
             if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
           } else { throw "after Connected, neither the ready page nor a save error: $(Ui-Texts)" }
           $null = Wizard-Shot '6-sync-connected-finish'
-          Wizard-Finish 'Finish'
+          $null = Wizard-Finish 'Finish'; Stop-Wizard
           if ($r -eq 'ready') { 'the tick, the ready page, sync on for the local server in sync.json' }
           else { 'the tick: the check passed; the save is INFO above; Skip, the ready page' }
         }
@@ -1268,7 +1302,7 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       $null = Ui-Find 'Common settings' 60; $null = Wizard-Shot '4-common'; Ui-Click 'Next'
       $null = Ui-Find 'Account sync'; $null = Wizard-Shot '4-sync'; Ui-Click 'Skip'
       $null = Ui-Find 'SebType is ready!'; $null = Wizard-Shot '4-finish'
-      Wizard-Finish 'Finish'
+      $null = Wizard-Finish 'Finish'; Stop-Wizard
       'welcome, languages, installing, then the wizard: common settings, sync (skipped), ready'
     }
     Save-MachineLog round1-install; Stop-Setup
