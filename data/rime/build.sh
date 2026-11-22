@@ -61,7 +61,7 @@ librime=/usr/lib64/librime.so.1
 libopencc=/usr/lib64/libopencc.so.1.1
 mkdir -p "$cache" "$out"
 
-key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$here/sebtype_split.lua" "$here/usage_words.py" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
+key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$here/sebtype_split.lua" "$here/sebtype_ge.lua" "$here/usage_words.py" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
 zip=$cache/rime-data-$key.zip
 version="rime-ice $RIME_ICE_VERSION + rime-frost $RIME_FROST_VERSION, sebtype $BUNDLE_REVISION"
 
@@ -94,7 +94,7 @@ if [[ ! -f $zip ]]; then
   mv "$work/frost/zh-moqi.gram" "$s/"
   python3 -I "$here/usage_words.py" "$s" "$work/frost/essay.txt" "$(fetch "$OPENCC_URL/dictionary/TSPhrases.txt" "$OPENCC_TS_PHRASES_SHA256")" \
     "$(fetch "$OPENCC_URL/dictionary/TSCharacters.txt" "$OPENCC_TS_CHARACTERS_SHA256")" "$(fetch "$JIEBA_URL" "$JIEBA_SHA256")"
-  cp "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$here/sebtype_split.lua" "$s/lua/"
+  cp "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$here/sebtype_split.lua" "$here/sebtype_ge.lua" "$s/lua/"
   # rime-ice ships only its emoji table in opencc/; the 简/繁 switch needs OpenCC's s2t.
   printf '%s\n' '#include <string>' \
     'namespace opencc { void ConvertDictionary(const std::string &, const std::string &, const std::string &, const std::string &); }' \
@@ -148,7 +148,8 @@ s = s[:switches.start(1)] + fixed + s[switches.end(1):]
 # and ranked by sebtype_typo.lua. The main translator stays exact; without its own user dictionary the
 # second one neither learns twice nor shows learned words corrected. Its comments carry the corrected
 # spelling for the filter.
-s, n = re.subn(r"^  filters:\n", lambda m: m.group(0) + "    - lua_filter@*sebtype_typo  # SebType: typo corrections (#46)\n"
+s, n = re.subn(r"^  filters:\n", lambda m: m.group(0) + "    - lua_filter@*sebtype_ge  # SebType: a word split by 个 (#484)\n"
+               "    - lua_filter@*sebtype_typo  # SebType: typo corrections (#46)\n"
                "    - lua_filter@*sebtype_split  # SebType: the preedit's split first (#485)\n",
                s, count=1, flags=re.M)
 assert n == 1, f"filters not found in {p}"
@@ -176,7 +177,16 @@ corr:
     - xform/$/］/
   preedit_format:
 {preedit.group(1)}sebtype_typo:
-  keyboard: phone  # pc on Linux and Windows (their setup scripts)
+  keyboard: phone
+# SebType: whole dictionary words for lua/sebtype_ge.lua (#484), with rime_ice's prism
+sebtype_word:
+  dictionary: rime_ice
+  enable_sentence: false
+  enable_user_dict: false
+  enable_completion: false
+  enable_word_completion: false
+  enable_correction: false
+  contextual_suggestions: false  # pc on Linux and Windows (their setup scripts)
 """
 # corr's prism (#478): rime_ice's spellings, and each syllable with one letter dropped (not its first: that
 # slows every key for few slips), doubled or swapped, as fuzz spellings. librime corrects only slips onto a
@@ -302,7 +312,9 @@ weasel.yaml, squirrel.yaml, t9 and the double-pinyin schemas are left out. rime_
 typo correction: a second translator, corr, with librime's correction on and its own prism from
 sebtype_corr.schema.yaml (SebType's: rime_ice's spellings and slips of them), ranked by
 lua/sebtype_typo.lua (SebType's, GPL-3.0); its last filter, lua/sebtype_learned.lua (SebType's,
-GPL-3.0), tells SebType's Chinese model when the first candidate is a learned word. lua/sebtype_split.lua (SebType's, GPL-3.0)
+GPL-3.0), tells SebType's Chinese model when the first candidate is a learned word. lua/sebtype_ge.lua (SebType's,
+GPL-3.0) puts first a dictionary word split by 个 (健个身 for jiangeshen) when the first candidate is a sentence,
+looking words up through a third translator, sebtype_word. lua/sebtype_split.lua (SebType's, GPL-3.0)
 moves candidates that split the input otherwise than the first one behind those that split it the same way. rime_ice's translator also reads the pack sebtype
 (sebtype.dict.yaml, SebType's), which imports the user's own word list, sebtype_words.dict.yaml in
 Rime's user folder, when there is one. The dictionary sources are compiled

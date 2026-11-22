@@ -6,7 +6,9 @@
 # #482) was fixed, so that slips keep landing, common words keep their usual spelling and correctly typed
 # input doesn't get worse or slower; then teaches sets/learn.tsv's phrases with each keyboard's setting.
 # Also sets/split.tsv (#485): inputs that split two ways (jiangeshen: jian ge shen or jiang e shen), whose
-# split shown in the preedit must have its first syllable's commonest character on the first two pages.
+# split shown in the preedit must have its first syllable's commonest character on the first two pages;
+# and sets/spoken.tsv (#484): everyday spoken phrases, among them words split by 个 (健个身), which librime
+# alone must keep getting right (the context column is the model harness's).
 #   data/rime/bench/slips.sh     one line per check; ranks in ~/scratch/SebType/<issue>/slips/
 # Needs gcc, librime and librime-lua 1.16.1 with SebType's librime-octagram (Fedora, as on nobara-pc).
 # About a minute.
@@ -59,6 +61,7 @@ check news-partial 53.6 82.1
 # Common words typed alone (#482, make-words.py): the spelling mainland text uses comes first, and the
 # reported ones each come first.
 check words 89.5 97.8
+check spoken 87.5 95.5  # 88 % and 96 % with #484's sebtype_ge.lua; before it 72 %, split words 16 of 24
 reported=$(paste "$out/words.tsv" <(cut -f3 "$here/sets/words.tsv") | awk -F'\t' '$6 == "reported" && $1 != 0 {print $2 " -> " $4}')
 [[ -z $reported ]] && echo "PASS words: the reported words come first" || { echo "FAIL words: not first: $reported"; failed=1; }
 DEPTH=10 check split 0 100  # the first two pages of 5; before #485, 33.7 %
