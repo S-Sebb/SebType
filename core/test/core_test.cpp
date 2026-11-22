@@ -1447,7 +1447,7 @@ TEST_F(ChineseTest, TraditionalAndNextWords) {
 
 // The PCs' box (#495): no next words, so a commit closes it at once.
 TEST_F(ChineseTest, WithoutNextWordsACommitEmptiesTheList) {
-  start(50ms, {}, false);
+  start(50ms, {}, true);
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");
   const int before = readyCount();
@@ -1461,7 +1461,7 @@ TEST_F(ChineseTest, WithoutNextWordsACommitEmptiesTheList) {
 
 // Windows' text service asks again while the model's list is still to come (#495).
 TEST_F(ChineseTest, UpdatingUntilTheModelsListComes) {
-  start(100ms, {}, false);
+  start(100ms, {}, true);
   typeAndWait("woaini");
   EXPECT_FALSE(zh->updating());
   const int before = readyCount();
