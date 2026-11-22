@@ -1191,6 +1191,15 @@ TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
   EXPECT_FALSE(zh->composing());
 }
 
+// The model's own candidates spell what was typed (#503): for "dan" it adds 当 (dang), as it was trained to
+// read a last syllable cut short and n for ng, though fuzzy pinyin is off.
+TEST_F(ChineseTest, TheModelsOwnCandidatesSpellTheLetters) {
+  start({}, [](FakeRime &r) { r.words["dan"] = {"但", "单", "弹", "蛋", "🥚", "淡", "丹", "氮", "胆", "担"}; });
+  typeAndWait("dan");
+  const auto l = list();
+  for (const char *s : {"当", "档", "党", "挡", "荡"}) EXPECT_EQ(std::ranges::find(l, s), l.end()) << s;
+}
+
 // Paging and the arrow keys move the highlight within the model's list (#367): its order stays, and what
 // Space or a flush commits is the candidate highlighted there.
 TEST_F(ChineseTest, TheHighlightMovesWithinTheModelsList) {

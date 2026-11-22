@@ -581,6 +581,15 @@ def dan_cut_cell():
     )
 
 
+def dan_only_dan():
+    # #503: with fuzzy pinyin off (a fresh install's default), dan lists dan's characters only, no 当 (dang).
+    got = candidates_for("dan", expand=True)[:12]
+    ang = [c for c in got if c in ("当", "档", "党", "挡", "荡")]
+    if ang:
+        raise Fail(f"dan -> {got}: {ang} read dan as dang")
+    return f"dan -> {got}"
+
+
 def rq_date():
     got = candidates_for("rq")
     today = datetime.date.today().isoformat()
@@ -831,6 +840,7 @@ check("fresh-nothing-external", nothing_external, needs=["first-install"])
 check("ranh", expect_first("ranh", "然后"), needs=["first-install"])
 check("lh-in-bar", lh_in_top, needs=["first-install"])
 check("dan-cut-cell", dan_cut_cell, needs=["first-install"])
+check("dan-only-dan", dan_only_dan, needs=["first-install"])
 
 
 def fast_typing_zh():
