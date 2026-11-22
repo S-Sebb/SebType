@@ -413,7 +413,7 @@ if ($Typing) {
         Check 'chinese-dan-before-dang' {
           if (-not (Test-Path "$env:APPDATA\Rime\sebtype_readings.txt")) { throw 'no sebtype_readings.txt in %APPDATA%\Rime' }
           $got = foreach ($i in 0..11) {
-            Keys Escape 'Control_L+a' BackSpace; TypeText 'dan'; Start-Sleep 1
+            Keys Escape 'Control_L+a' BackSpace; TypeText 'dan'  # the model's list comes within a key's 0.5 s
             Keys (@('equal') * [math]::Floor($i / 6) + "$($i % 6 + 1)")
             $tsf::EditText($h).Trim()
           }
@@ -821,7 +821,8 @@ namespace SebTypeSetupTest {
       'silent'
     }
   }
-  function Typing($phase, [int]$seconds = 300) {
+  # 'all' takes about 5 minutes (#503's dan check added 40 s); past the limit the driver goes on under it.
+  function Typing($phase, [int]$seconds = 420) {
     Set-Content "$out\typing-phase.txt" $phase
     Start-ScheduledTask SebType-setup-typing
     if (-not (Wait-Until $seconds { Test-Path "$out\typing-$phase-done" })) { Result "typing-$phase" FAIL "the typing checks took over $seconds s" }
