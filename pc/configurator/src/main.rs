@@ -1391,7 +1391,7 @@ mod tests {
     #[rustfmt::skip]
     const SAME_IN_EVERY_LANGUAGE: &[&str] = &[
         "SebType", "English", "中文", "日本語", " · 中文", " · 日本語", "zh", "ja", "Windows", "简体", "繁體", "Picnic",
-        "Mozc", "Nunito", "Win+Space", "Shift", "Alt+`", "Ctrl+Shift+F", "日本語 あ ⇄ ア", "中文 简 ⇄ 繁", "Win+V",
+        "Mozc", "Nunito", "Win+Space", "Shift", "Alt+`", "Ctrl+Shift+F", "日本語 あ ↔ ア", "中文 简 ↔ 繁", "Win+V",
         "Klipper", "A−", "A+", "小明", "xiaoming", "せぶ → SebType", "ni hao", "你好", "拟好", "你", "呢", "泥", "尼",
         "妮", "倪", "雾凇拼音 rime-ice · 白霜拼音 rime-frost", "Rime (librime)",
         "Rime (librime) · Fcitx5 · fcitx5-rime", "GPL-3.0", "BSD-3-Clause",

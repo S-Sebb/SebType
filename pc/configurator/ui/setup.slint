@@ -70,9 +70,9 @@ export component SetupWindow inherits Window {
     title: @tr("SebType Setup");
     icon: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png");
     preferred-width: 580px;
-    preferred-height: 500px;
+    preferred-height: 560px;  // the sync page with its status and a two-line error (#471)
     min-width: 520px;
-    min-height: 460px;
+    min-height: 500px;
     background: Theme.page;
     default-font-family: SetupState.ui-font;
     default-font-size: 14px;
@@ -514,8 +514,8 @@ export component SetupWindow inherits Window {
                         }
                         TipRow { key: "Win+Space"; text: @tr("Switch EN → 中 → あ"); }
                         TipRow { key: "Shift"; text: @tr("Tap for quick English in 中文 or 日本語"); }
-                        TipRow { key: "Ctrl+Shift+F"; text: @tr("Switch 简 ⇄ 繁"); }
-                        TipRow { key: "Alt+`"; text: @tr("Switch あ ⇄ ア"); }
+                        TipRow { key: "Ctrl+Shift+F"; text: @tr("Switch 简 ↔ 繁"); }
+                        TipRow { key: "Alt+`"; text: @tr("Switch あ ↔ ア"); }
                     }
                 }
                 Info {

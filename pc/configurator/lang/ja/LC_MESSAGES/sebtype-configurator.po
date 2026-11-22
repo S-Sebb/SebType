@@ -514,11 +514,11 @@ msgstr "EN → 中 → あ を切り替え"
 msgid "Tap for quick English in 中文 or 日本語"
 msgstr "中国語や日本語で軽く押すと一時的に英語入力"
 
-msgid "Switch 简 ⇄ 繁"
-msgstr "簡体 ⇄ 繁体 を切り替え"
+msgid "Switch 简 ↔ 繁"
+msgstr "簡体 ↔ 繁体 を切り替え"
 
-msgid "Switch あ ⇄ ア"
-msgstr "あ ⇄ ア を切り替え"
+msgid "Switch あ ↔ ア"
+msgstr "あ ↔ ア を切り替え"
 
 msgid "SebType is active now. Press Win+Space in any app to start typing."
 msgstr "SebType は今すぐ使えます。任意のアプリで Win+Space を押して入力を始めてください。"
