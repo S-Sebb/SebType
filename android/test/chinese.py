@@ -547,6 +547,40 @@ def lh_in_top():
     return f"lh -> {got[:10]}, 厉害 at {got.index('厉害') + 1}"
 
 
+def bar_widths():
+    """Each bar candidate's width on screen: a cell the expand button cuts off is narrower than the rest."""
+    row = bar_row(nodes())
+    # The dump nodes() just made
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    widths = {}
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n.get("bounds", ""))
+        label = n.get("text") or n.get("content-desc") or ""
+        if m and label and n.get("class") == "android.widget.TextView":
+            x1, y1, x2, y2 = map(int, m.groups())
+            if row[0] < (y1 + y2) // 2 < row[1]:
+                widths[label] = x2 - x1
+    return widths
+
+
+def dan_cut_cell():
+    # #491: the bar cut 淡 to a sliver before its expand button, and the expanded view began after it.
+    got = candidates_for("dan")
+    widths = bar_widths()
+    # A single character's cell is the bar's narrowest whole one.
+    whole = min(w for c, w in widths.items() if len(c) == 1 and c != "淡")
+    in_bar = widths.get("淡", 0) >= whole - 2
+    grid = expanded_candidates()
+    if not in_bar and "淡" not in grid:
+        raise Fail(
+            f"dan -> bar {got} (淡 {widths.get('淡', 0)} px wide, a whole cell {whole}), expanded {grid[:6]}"
+        )
+    return (
+        f"dan -> bar {got} (淡 {widths.get('淡', 0)} px wide, a whole cell {whole}), expanded {grid[:6]}: "
+        f"淡 whole in the {'bar' if in_bar else 'expanded view'}"
+    )
+
+
 def rq_date():
     got = candidates_for("rq")
     today = datetime.date.today().isoformat()
@@ -796,6 +830,7 @@ def nothing_external():
 check("fresh-nothing-external", nothing_external, needs=["first-install"])
 check("ranh", expect_first("ranh", "然后"), needs=["first-install"])
 check("lh-in-bar", lh_in_top, needs=["first-install"])
+check("dan-cut-cell", dan_cut_cell, needs=["first-install"])
 
 
 def fast_typing_zh():
