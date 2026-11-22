@@ -5,6 +5,8 @@
 
 #include "resource.h"
 
+#include <sebtype/keycap.h>
+
 #include <shellscalingapi.h>
 #include <winreg.h>
 #include <shlwapi.h>
@@ -254,7 +256,7 @@ void CandidateWindow::draw() {
         kCornerRadius * s);
     color(style_.colors.back);
     target_->FillRoundedRectangle(card, brush);
-    color(style_.colors.border);
+    color(pillBorder_ ? pillBorder_ : style_.colors.border);
     target_->DrawRoundedRectangle(card, brush, border);
 
     for (size_t i = 0; i < l.preedit.size(); ++i) {
@@ -315,6 +317,7 @@ void CandidateWindow::place(const RECT &caret) {
 }
 
 void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &caret) {
+  pillBorder_ = 0;
   CandidateLayout &l = layout_;
   l.preedit.clear();
   preeditHighlight_ = -1;
@@ -366,10 +369,12 @@ void CandidateWindow::show(const Reply &reply, bool preeditRow, const RECT &care
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
 }
 
-void CandidateWindow::notice(const std::string &text, const RECT &caret) {
+void CandidateWindow::notice(const std::string &text, const std::string &icon, const RECT &caret) {
   ScreenPixels screen;
   if (text.empty() || !create()) return;
   loadStyle(dpiAt(caret));
+  // Picnic's cream and ink, in a border of the tray key's base colour.
+  pillBorder_ = style_.picnic ? keycap::base(icon) : 0;
   CandidateLayout &l = layout_;
   l.preedit = {utf16(text)};
   preeditHighlight_ = -1;

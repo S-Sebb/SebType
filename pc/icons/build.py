@@ -825,9 +825,40 @@ def rgb255(c):
     return tuple(round(v * 255) for v in rgb(c))
 
 
-# --check: only checks the PNGs there are (exit 1 on a problem); otherwise draws them all, then checks them.
+KEYCAP_H = HERE.parents[1] / "core/include/sebtype/keycap.h"
+
+
+def keycap_header():
+    """The key's colours for C++: the switch popup's pill takes them (#476)."""
+    hex_ = lambda c: "0x" + c[1:].lower()
+    cases = "".join(
+        f'  if (icon == "{state}") return {hex_(BASE[lang][1])};\n'
+        for state, (lang, _) in STATES.items()
+    )
+    return f"""// SebType's tray key (Set E, #63): its base's colours, for the switch popup's pill's border (#476). Written by
+// pc/icons/build.py from its own: change them there.
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+
+namespace sebtype::keycap {{
+
+// The base's bottom colour of the tray key pc/icons/<size>/<icon>.png: its language's, grey while not ready;
+// else the key's outline.
+constexpr uint32_t base(std::string_view icon) {{
+{cases}  return {hex_(OUTLINE)};
+}}
+
+}}  // namespace sebtype::keycap
+"""
+
+
+# --check: only checks the PNGs there are and keycap.h (exit 1 on a problem); otherwise draws them all and
+# writes keycap.h, then checks them.
 if __name__ == "__main__":
     if "--check" not in sys.argv:
+        KEYCAP_H.write_text(keycap_header())
         (HERE / "scalable").mkdir(exist_ok=True)
         for state, (lang, g) in STATES.items():
             (HERE / "scalable" / f"{state}.svg").write_text(sticker(48, lang, g, state))
@@ -840,6 +871,8 @@ if __name__ == "__main__":
         for S in SIZES
         for p in check(S, state, Image.open(HERE / str(S) / f"{state}.png"))
     ]
+    if KEYCAP_H.read_text() != keycap_header():
+        bad.append(f"{KEYCAP_H.name}: not written from these colours")
     print(
         "\n".join(bad)
         or f"{len(STATES) * len(SIZES)} drawings grid-fitted, symmetric and like the README drawing"

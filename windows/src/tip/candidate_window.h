@@ -26,8 +26,8 @@ class CandidateWindow {
   // Shows the reply's page (and its pinyin row when preeditRow) below the caret, or hides when there is
   // nothing to show.
   void show(const Reply &reply, bool preeditRow, const RECT &caret);
-  // The popup after a switch, for a moment.
-  void notice(const std::string &text, const RECT &caret);
+  // The popup after a switch, for a moment; in Picnic, in the colour of the tray key pc/icons' icon (#476).
+  void notice(const std::string &text, const std::string &icon, const RECT &caret);
   bool noticing() const { return noticing_; }
   void hide();
 
@@ -65,6 +65,7 @@ class CandidateWindow {
   std::wstring word_;
   int wheel_ = 0;  // the wheel's turn not yet a page
   bool noticing_ = false;  // a notice shows, until its timer
+  uint32_t pillBorder_ = 0;  // the notice's border in Picnic, else 0: the style's
   // Direct2D and DirectWrite, made once per window.
   ID2D1Factory *d2d_ = nullptr;
   IDWriteFactory *dwrite_ = nullptr;

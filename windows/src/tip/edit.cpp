@@ -282,7 +282,8 @@ HRESULT TextService::update(TfEditCookie ec, ITfContext *context, const std::wst
       caret = caretRect(ec, context, sel.range);
       sel.range->Release();
     }
-    if (caret.left || caret.top || caret.right || caret.bottom) window_->notice(reply_.notice, caret_ = caret);
+    if (caret.left || caret.top || caret.right || caret.bottom)
+      window_->notice(reply_.notice, reply_.icon, caret_ = caret);
   }
   reply_.notice.clear();
   return S_OK;
