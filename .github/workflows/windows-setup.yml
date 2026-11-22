@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: .github/apt-install.sh librsvg2-bin python3-pil python3-numpy fonts-noto-cjk
+      - run: .github/apt-install.sh python3-pil python3-numpy fonts-noto-cjk
       - run: python3 pc/windows/setup/pictures.py out/pictures
       - uses: actions/upload-artifact@v4
         with:

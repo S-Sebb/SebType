@@ -32,7 +32,7 @@ check off. Releases from before 0.1.0 (`v0.1.30-sebtype.N`) are never offered as
 
 ### Turn it on
 
-Open SebType from the launcher and follow its setup (enable the keyboard, then pick it). Switch
+Open SebType from the launcher and follow its setup (enable the keyboard, pick it, then choose the common settings). Switch
 between SebType and your other keyboards with the navigation-bar keyboard icon.
 
 ## Linux
@@ -47,7 +47,8 @@ sh SebType-setup-<version>-linux-x86_64.sh
 It opens a graphical setup wizard (use `--no-gui` or run headless for terminal mode), installs the `sebtype`
 package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's server), SebType's librime, SebType's
 Chinese data and the SebType Configurator, sets the session up so that SebType types in every app, XWayland
-ones included, and lets you optionally sign in to Account Sync. It asks once for administrator approval to
+ones included, lets you choose the common settings (languages, 简/繁, the theme, layout
+and page size) and optionally sign in to Account Sync. It asks once for administrator approval to
 install the packages, changes only your account's settings, and backs up every file it replaces. Log out and
 back in (or toggle Virtual Keyboard off and on in KDE System Settings) once it is done. Running a newer
 installer upgrades SebType and keeps what it learned. Installing from a checkout (`pc/linux/setup-ime.sh`),
@@ -56,8 +57,10 @@ each step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
 ## Windows
 
 Download `SebType-setup-<version>.exe` from the [latest release](https://github.com/S-Sebb/SebType/releases/latest)
-(no sign-in needed). Run it, pick the languages (English, 中文, 日本語), confirm Windows' admin prompt, and
-optionally sign in to Account Sync. Running a newer installer upgrades SebType and keeps what it learned;
+(no sign-in needed). Run it, pick the languages (English, 中文, 日本語), confirm Windows' admin prompt, choose the
+common settings (简/繁, the theme, layout and page size) and optionally sign in to Account Sync in the same setup wizard Linux
+uses, which the installed Configurator shows once the files are copied. Running a newer installer upgrades
+SebType and keeps what it learned;
 uninstall it from Windows' Apps. What it changes, and the silent install:
 [pc/windows/README.md](../pc/windows/README.md).
 

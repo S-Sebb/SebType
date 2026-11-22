@@ -36,13 +36,18 @@ nobody's own input settings change, then removes the user and its profile:
    wait for the schedule lock a Configurator holds (#401), go on after 30 s if it stays held, and remove
    the task, the login and sync's files.
    The folder also holds sebtype_sync.py (sync-server/) and test-sync.py.
--Only sync-page: only Setup's sync page (#435, #465): an install in English as a person does it; once the page
-   shows, sebtype_sync.py (in the folder) serving on localhost with Setup's Python and a throwaway login; the
-   page given a wrong password (Wrong username or password and Save anyway on the page, cleared by a changed
-   field), an address nothing serves (Can't reach the server), then the right one (the tick, the finish page,
-   sync on in sync.json; the save, which needs Credential Manager, is INFO where the driver's elevated token
-   lacks it, and Save anyway then fails to save on the page too), with pictures (73-5-*, 73-6-*);
-   no message box; a silent uninstall.
+-Only sync-page: only the setup wizard's sync page (#435, #465, #468, #471): an install in English as a person
+   does it, Inno closing after the copy and the installed Configurator's wizard showing the rest, driven
+   through UI Automation; once its sync page shows, sebtype_sync.py (in the folder) serving on localhost with
+   Setup's Python and a throwaway login; the page given a wrong password (Wrong username or password and Save
+   anyway & continue in the page, cleared by a field change), a closed port (Can't reach the server), then the
+   right one (the tick, the ready page, sync on in sync.json; the save, which needs Credential Manager, is INFO
+   where the driver's elevated token lacks it), with pictures (73-4-common-en, 73-5-*, 73-6-*); a silent uninstall.
+-Only common-page: only the setup wizard's Common settings page (#444, #471): an install in 中文 as a person
+   does it; the page showing a new account's settings (简体, Picnic, Vertical, 6; 73-4-common-zh), then 繁體,
+   System style (the wizard turning plain at once), Horizontal and 8 chosen and Next, each read back with
+   sebtype-configurator --common-settings get; Skip to the ready page and 完成; each page (2-4) in both themes
+   and both languages (73-wizard-<lang>-<step>-<theme>); a silent uninstall.
 -Only compare: the final performance run's comparison (#54): a silent install, what it put in the Start
    menu, then SebType's Chinese and Japanese, Microsoft Pinyin and Microsoft Japanese IME each typed in
    the TSF text field and timed per key, with their memory; 10+ minutes of mixed SebType typing
@@ -574,6 +579,14 @@ namespace SebTypeSetupTest {
       if (edits.Count != values.Length) throw new ArgumentException(edits.Count + " edit boxes, want " + values.Length + ": " + Texts(p));
       for (int i = 0; i < values.Length; i++) { IntPtr r; SendMessageTimeout(edits[i], 0x000C, IntPtr.Zero, new StringBuilder(values[i]), 2, 2000, out r); }
     }
+    // Picks item i of the page's n-th visible combo box, top to bottom, with CB_SETCURSEL: Inno reads a
+    // combo box's ItemIndex back from it.
+    public static void Select(IntPtr p, int n, int i) {
+      var boxes = Children(p).FindAll(h => Cls(h).IndexOf("ComboBox", StringComparison.OrdinalIgnoreCase) >= 0);
+      boxes.Sort((a, b) => { RECT ra, rb; GetWindowRect(a, out ra); GetWindowRect(b, out rb); return ra.T.CompareTo(rb.T); });
+      if (n >= boxes.Count) throw new ArgumentException(boxes.Count + " combo boxes, want " + (n + 1) + ": " + Texts(p));
+      IntPtr r; SendMessageTimeout(boxes[n], 0x014E, (IntPtr)i, null, 2, 2000, out r);
+    }
     // Windows lets a process take the foreground right after it sent input: an Alt tap first.
     static void Front(IntPtr h) {
       for (int i = 0; i < 5 && GetForegroundWindow() != h; i++) {
@@ -585,10 +598,6 @@ namespace SebTypeSetupTest {
     public static void Shot(IntPtr h, string path) {
       Front(h);
       System.Threading.Thread.Sleep(700);
-      Grab(h, path);
-    }
-    // The window as it is now, in front or not: a state that lasts a moment (Setup's sync tick).
-    public static void Grab(IntPtr h, string path) {
       RECT r; GetWindowRect(h, out r);
       if (r.R - r.L < 1 || r.B - r.T < 1) throw new ArgumentException(Cls(h) + " '" + Text(h) + "' has no size to picture");
       using (var bmp = new Bitmap(r.R - r.L, r.B - r.T)) {
@@ -639,6 +648,41 @@ namespace SebTypeSetupTest {
   }
   # A Setup or uninstaller started here and left showing is stopped, with the temporary copy it runs.
   function Stop-Setup { Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.tmp" -or $_.Name -like 'SebType-setup*' -or $_.Name -like 'unins000' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep 1 }
+  # After Install, Inno closes and the installed Configurator shows the rest of setup (#471): its window,
+  # read and driven through UI Automation (Slint's AccessKit tree), its pictures with $win::Shot.
+  Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+  $uia = [Windows.Automation.AutomationElement]
+  function Wizard-Handle($seconds = 60) {
+    $h = Wait-Until $seconds { $p = Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1; if ($p) { $p.MainWindowHandle } }
+    if (-not $h) { throw "no setup wizard window in $seconds s; windows: $($win::Visible())" }
+    $h
+  }
+  function Wizard-Shot($name) { $h = Wizard-Handle; Start-Sleep 1; $win::Shot($h, "$out\73-$name.png"); $h }
+  function Stop-Wizard { Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1 }
+  function Ui-All { $uia::FromHandle((Wizard-Handle)).FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) }
+  function Ui-Texts { (@(Ui-All) | ForEach-Object { $_.Current.Name } | Where-Object { $_ }) -join ' | ' }
+  # By name, and by kind where a label shares it (a field's caption above it): Button, Edit.
+  function Ui-Find-Now($name, $type) {
+    @(Ui-All) | Where-Object { $_.Current.Name -like $name -and (-not $type -or $_.Current.ControlType.ProgrammaticName -eq "ControlType.$type") } | Select-Object -First 1
+  }
+  function Ui-Find($name, $seconds = 30, $type) {
+    $e = Wait-Until $seconds { Ui-Find-Now $name $type }
+    if (-not $e) { throw "no '$name' $type in the wizard in $seconds s; it shows: $(Ui-Texts)" }
+    $e
+  }
+  function Ui-Click($name) { (Ui-Find $name 30 Button).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke(); Start-Sleep -Milliseconds 300 }
+  function Ui-Fill($name, $value) { (Ui-Find $name 30 Edit).GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($value) }
+  # Setup as a person runs it in $lang (its default languages), until the wizard's Common settings page.
+  function Install-Then-Wizard($lang, $what) {
+    $next, $langs, $install, $common = @{ en = 'Next', 'Your languages', 'Install', 'Common settings'; zh = '下一步', '你的语言', '安装', '常用设置' }[$lang]
+    Start-Process $setup "/LANG=$lang", "/LOG=`"$out\setup-$what.log`""
+    $h = Window TWizardForm
+    Page $h $next; Click $h $next; Page $h $langs  # the form shows before its buttons
+    Click $h $install
+    if (-not (Wait-Until 900 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close after Install' }
+    Save-MachineLog $what
+    $null = Ui-Find $common 60
+  }
   function Silent($what, [string[]]$arguments, $exe = $setup) {
     $p = Start-Process $exe -PassThru -ArgumentList (@('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$out\setup-$what.log`"") + $arguments)
     if (-not $p.WaitForExit(900000)) { throw "Setup ($what) ran over 15 minutes" }
@@ -885,16 +929,61 @@ namespace SebTypeSetupTest {
       Check-AsBefore upgrade
       return
     }
+    if ($Only -eq 'common-page') {
+      # This account's Common settings as the Configurator reads them (what the wizard's page shows and saves)
+      function Common-Settings {
+        $f = "$out\common-settings.txt"
+        $p = Start-Process -PassThru -Wait "$App\sebtype-configurator.exe" '--common-settings', 'get', "`"$f`""
+        if ($p.ExitCode) { throw "sebtype-configurator --common-settings get exited with $($p.ExitCode)" }
+        ((Get-Content $f) | Where-Object { $_ }) -join ' '
+      }
+      Check 'common-page-defaults' {
+        Install-Then-Wizard zh common-page
+        $null = Wizard-Shot '4-common-zh'
+        # A new account: 简体, Picnic, Vertical and 6 (#471: Picnic unless the account chose before).
+        $want = 'traditional=0 page-size=6 picnic=1 vertical=1'
+        $now = Common-Settings
+        if ($now -ne $want) { throw "a new account's settings: $now, want $want" }
+        "$now; Inno closed after Install and the Configurator's wizard showed 常用设置"
+      }
+      Check 'common-page-next-saves' {
+        foreach ($t in '繁體', '系统样式', '横排', '8') { Ui-Click $t }
+        # The theme previews at once (#471): the plain wizard, before Next saves anything.
+        $null = Wizard-Shot '4-common-zh-changed'
+        Ui-Click '下一步'; $null = Ui-Find '账号同步'
+        $want = 'traditional=1 page-size=8 picnic=0 vertical=0'
+        $now = Common-Settings
+        if ($now -ne $want) { throw "after 繁體, 系统样式, 横排 and 8: $now, want $want" }
+        $now
+      }
+      Check 'common-page-finish' {
+        Ui-Click '跳过'; $null = Ui-Find 'SebType 装好啦！'
+        $null = Wizard-Shot '6-ready-zh'
+        Ui-Click '完成'
+        if (-not (Wait-Until 30 { -not (Get-Process sebtype-configurator -ErrorAction SilentlyContinue) })) { throw '完成 left the wizard open' }
+        'Skip leads to the ready page; 完成 closes the wizard'
+      }
+      # Each page in both themes and both languages, for comparing with Linux's (#471).
+      Check 'common-page-pictures' {
+        foreach ($lang in 'en', 'zh') { foreach ($step in 2, 3, 4) { foreach ($theme in 'picnic', 'system') {
+          Start-Process "$App\sebtype-configurator.exe" '--setup-after-install', '--lang', $lang, '--step', $step, '--theme', $theme
+          $null = Wizard-Shot "wizard-$lang-$step-$theme"
+          Stop-Wizard
+        } } }
+        '12 pictures: steps 2-4, Picnic and System style, English and 中文'
+      }
+      Silent-Uninstall 'common-page'
+      return
+    }
     if ($Only -eq 'sync-page') {
       $syncUser = 'sebtype-sync-test'
       $syncPassword = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
       $server = $null
       try {
         Check 'sync-page-shown' {
-          Start-Process $setup '/LANG=en', "/LOG=`"$out\setup-sync-page.log`""
-          $script:h = Window TWizardForm
-          Page $h 'Next'; Click $h 'Next'; Page $h 'Your languages'  # the form shows before its buttons
-          Click $h 'Install'; Page $h 'Account sync' 900
+          Install-Then-Wizard en sync-page
+          $null = Wizard-Shot '4-common-en'
+          Ui-Click 'Next'; $null = Ui-Find 'Account sync'
           # The server runs from a copy of Setup's Python, there by now: the uninstall removes {app}\python.
           Copy-Item -Recurse "$App\python" "$out\python"
           $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $listener.Start()
@@ -906,72 +995,52 @@ namespace SebTypeSetupTest {
           'after the install, with sebtype_sync.py on localhost and a throwaway login'
         }
         $url = "http://127.0.0.1:$port"
-        # What the page says under its fields (#468): no message box, Next becoming Save anyway on a failure.
-        function Sync-Status($text, $seconds = 120) {
-          $r = Wait-Until $seconds { if (Find-Message) { 'box' } elseif ($win::Texts($h) -like "*$text*") { 'page' } }
-          if ($r -eq 'box') { $m = Find-Message; $win::Shot($m, "$out\failed-$(Get-Date -Format HHmmss).png"); throw "a message box: $($win::Texts($m)) $($win::Text($m))" }
-          if (-not $r) { throw "no '$text' on the page in $seconds s: $($win::Texts($h))" }
-        }
+        function Fill-Login($u, $p) { Ui-Fill 'Server address' $url; Ui-Fill 'Username' $u; Ui-Fill 'Password' $p }
         Check 'sync-page-wrong-password' {
-          $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password'))
-          Click $h 'Next'
-          Sync-Status 'Wrong username or password'
-          $null = Shot TWizardForm '5-sync-wrong-password'
-          if ($win::Texts($h) -notlike '*Save anyway*') { throw "no Save anyway button: $($win::Texts($h))" }
-          $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password-either'))
-          $t = $win::Texts($h)
-          if ($t -like '*Wrong username*' -or $t -like '*Save anyway*') { throw "a changed field kept the old check: $t" }
-          'Wrong username or password and Save anyway on the page; a changed field clears them'
+          Fill-Login $syncUser 'not-the-password'
+          Ui-Click 'Sign in & continue'
+          $null = Ui-Find 'Wrong username or password' 60
+          $null = Ui-Find 'Save anyway & continue' 10 Button
+          $null = Wizard-Shot '5-sync-wrong-password'
+          # Changing a field takes the failed check (and Save anyway) back.
+          Ui-Fill 'Password' 'not-the-password-2'
+          $null = Ui-Find 'Sign in & continue' 10 Button
+          'Wrong username or password and Save anyway & continue in the page; a field change clears both'
         }
         Check 'sync-page-unreachable' {
-          $closed = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $closed.Start()
-          $free = $closed.LocalEndpoint.Port; $closed.Stop()
-          $win::Fill($h, [string[]]("http://127.0.0.1:$free", $syncUser, $syncPassword))
-          Click $h 'Next'
-          Sync-Status "Can't reach the server"
-          $null = Shot TWizardForm '5-sync-unreachable'
-          "Can't reach the server on the page"
+          # A closed port: one the system just handed out and took back.
+          $closed = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $closed.Start(); $cp = $closed.LocalEndpoint.Port; $closed.Stop()
+          Ui-Fill 'Server address' "http://127.0.0.1:$cp"
+          Ui-Click 'Sign in & continue'
+          $null = Ui-Find "Can't reach the server. Check the address and your network" 60
+          $null = Wizard-Shot '5-sync-unreachable'
+          "Can't reach the server for a closed port"
         }
         Check 'sync-page-connected' {
-          $win::Fill($h, [string[]]($url, $syncUser, $syncPassword))
-          Click $h 'Next'
-          # The tick shows 1.5 s before Setup saves the login and moves on.
-          Sync-Status 'Connected. The server and login work' 60
-          $win::Grab($h, "$out\73-6-sync-connected.png")
-          # Saving needs Credential Manager, which this driver's elevated token from Task Scheduler doesn't
-          # have (as in -Only sync): the page says it couldn't save, and the Configurator, run again, says why.
-          $r = Wait-Until 60 { if ($win::Texts($h) -like '*SebType is ready*') { 'saved' } elseif ($win::Texts($h) -like '*Could not save your sync login*') { 'not saved' } }
-          if (-not $r) { throw "neither the finish page nor Could not save in 60 s: $($win::Texts($h))" }
-          if ($r -eq 'not saved') {
-            $null = Shot TWizardForm '6-sync-connected-not-saved'
-            $f = "$out\sync-login-again.txt"
-            [IO.File]::WriteAllText($f, "$url`n$syncUser`n$syncPassword`n")
-            $p = Start-Process -PassThru -Wait "$App\sebtype-configurator.exe" '--sync-login-file', "`"$f`"", '--check' -RedirectStandardError "$out\sync-login-again.err"
-            Remove-Item $f -ErrorAction SilentlyContinue
-            $why = "exit $($p.ExitCode) $(Get-Content "$out\sync-login-again.err" -Raw -ErrorAction SilentlyContinue)".Trim()
-            # Exit 1, not a check's 11-14: the check passed and only the save failed.
-            if ($p.ExitCode -ne 1 -or $why -notlike '*ERROR_NO_SUCH_LOGON_SESSION*') { throw "Could not save on the page; the Configurator again: $why" }
-            Result 'sync-page-saves-login' INFO "not checkable here: the check passed (the tick) but saving needs Credential Manager, which the elevated driver's token lacks ($why)"
-            # Save anyway after a failed check saves without checking: here it fails the same way, on the page.
-            $win::Fill($h, [string[]]($url, $syncUser, 'not-the-password'))
-            Click $h 'Next'; Sync-Status 'Wrong username or password'
-            Click $h 'Save anyway'; Sync-Status 'Could not save your sync login'
-            if ($win::Texts($h) -notlike '*Save anyway*') { throw "Save anyway went after a failed save: $($win::Texts($h))" }
-            $win::Fill($h, [string[]]('', '', ''))
-            Click $h 'Next'; Page $h 'SebType is ready' 60
-          } else {
+          Fill-Login $syncUser $syncPassword
+          Ui-Click 'Sign in & continue'
+          $null = Ui-Find 'Connected. The server and login work' 60
+          $null = Wizard-Shot '6-sync-connected'
+          # Saving then needs Credential Manager, which this driver's elevated token from Task Scheduler
+          # doesn't have (as in -Only sync): the page says why and stays.
+          $r = Wait-Until 30 { if (Ui-Find-Now 'SebType is ready!') { 'ready' } elseif (Ui-Find-Now '*ERROR_NO_SUCH_LOGON_SESSION*') { 'unsaved' } }
+          if ($r -eq 'unsaved') {
+            $null = Wizard-Shot '6-sync-connected-not-saved'
+            Result 'sync-page-saves-login' INFO 'not checkable here: the check passed (the tick showed) but saving needs Credential Manager, which the elevated driver''s token lacks (ERROR_NO_SUCH_LOGON_SESSION)'
+            Ui-Click 'Skip'; $null = Ui-Find 'SebType is ready!'
+          } elseif ($r -eq 'ready') {
             $j = Get-Content "$env:LOCALAPPDATA\SebType\sync.json" -Raw -Encoding utf8 | ConvertFrom-Json
             if (-not $j.enabled -or $j.server -ne $url) { throw "sync.json after the page: $($j | ConvertTo-Json -Compress)" }
-          }
-          $null = Shot TWizardForm '6-sync-connected-finish'
-          Click $h 'Finish'
-          if (-not (Wait-Until 60 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close' }
-          Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
-          if ($r -eq 'saved') { 'the tick, the finish page, sync on for the local server in sync.json' }
-          else { 'the tick (the save is INFO above), Save anyway saving without a check, the finish page' }
+          } else { throw "after Connected, neither the ready page nor a save error: $(Ui-Texts)" }
+          $null = Wizard-Shot '6-sync-connected-finish'
+          Ui-Click 'Finish'
+          if (-not (Wait-Until 30 { -not (Get-Process sebtype-configurator -ErrorAction SilentlyContinue) })) { throw 'Finish left the wizard open' }
+          if ($r -eq 'ready') { 'the tick, the ready page, sync on for the local server in sync.json' }
+          else { 'the tick: the check passed; the save is INFO above; Skip, the ready page' }
         }
         Silent-Uninstall 'sync-page'
       } finally {
+        Stop-Wizard
         if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
         Remove-Item -Recurse -Force "$out\python", "$out\sync-server" -ErrorAction SilentlyContinue
       }
@@ -1181,12 +1250,14 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       $h = Shot TWizardForm '1-welcome-en'
       Click $h 'Next'; Page $h 'Your languages'; $null = Shot TWizardForm '2-languages'
       Click $h 'Install'; Page $h 'Installing the input methods' 120; $null = Shot TWizardForm '3-installing'
-      Page $h 'Account sync' 900; $null = Shot TWizardForm '4-sync'; Click $h 'Next'  # blank: skipped (#435)
-      Page $h 'SebType is ready' 60; $null = Shot TWizardForm '4-finish'
-      Click $h 'Finish'
-      if (-not (Wait-Until 60 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close' }
-      Start-Sleep 3; Get-Process sebtype-configurator -ErrorAction SilentlyContinue | Stop-Process -Force
-      'welcome, languages, installing, sync (skipped), finish'
+      # Inno closes after the copy; the Configurator's wizard takes over (#471).
+      if (-not (Wait-Until 900 { -not (Get-Process | Where-Object { $_.Path -like "$env:TEMP\is-*" }) })) { throw 'Setup did not close after Install' }
+      $null = Ui-Find 'Common settings' 60; $null = Wizard-Shot '4-common'; Ui-Click 'Next'
+      $null = Ui-Find 'Account sync'; $null = Wizard-Shot '4-sync'; Ui-Click 'Skip'
+      $null = Ui-Find 'SebType is ready!'; $null = Wizard-Shot '4-finish'
+      Ui-Click 'Finish'
+      if (-not (Wait-Until 30 { -not (Get-Process sebtype-configurator -ErrorAction SilentlyContinue) })) { throw 'Finish left the wizard open' }
+      'welcome, languages, installing, then the wizard: common settings, sync (skipped), ready'
     }
     Save-MachineLog round1-install; Stop-Setup
     Check-Installed round1 en, zh, ja "en-US[0409:00000409] zh-Hans-CN[$ZhTip] ja[$JaTip]"

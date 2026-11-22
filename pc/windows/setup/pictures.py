@@ -5,15 +5,14 @@
 
 - sebtype.ico and pig.png: the phone's icon at every Windows size and the cut-out pig (art/make-icon.py).
 - cloth.png: SebChat's checkered picnic cloth with its pixel flowers, the wizard's background.
-- welcome-{1,2}.png, finish-{1,2}.png: the cream card on the left of the welcome and finish pages (164 x 314
-  at 100 % and 200 % scale): the pig on pink, "SebType", and the languages or the tray keys.
+- welcome-{1,2}.png: the cream card on the left of the welcome page (164 x 314 at 100 % and 200 % scale): the
+  pig on pink, "SebType", and the languages. The setup wizard shows the tray keys at the end (#471).
 - small-{1,2}.png: the pig in the top right corner of the other pages (55 x 55).
 
-Needs Pillow, NumPy, rsvg-convert (the tray keys, pc/icons) and Noto Sans CJK (the card's 中文 日本語).
+Needs Pillow, NumPy and Noto Sans CJK (the card's 中文 日本語).
 """
 
 import glob
-import io
 import subprocess
 import sys
 from pathlib import Path
@@ -91,66 +90,32 @@ def frame(w, h, u):
     return img
 
 
-def key(state, px):
-    """One Set E tray key (pc/icons, the 48 px drawing) at px pixels."""
-    png = subprocess.run(
-        [
-            "rsvg-convert",
-            "-w",
-            str(px),
-            "-h",
-            str(px),
-            str(root / f"pc/icons/scalable/{state}.svg"),
-        ],
-        check=True,
-        capture_output=True,
-    ).stdout
-    return Image.open(io.BytesIO(png)).convert("RGBA")
-
-
 for s in (1, 2):
     w, h = 164 * s, 314 * s
     middle = (w - 6 * s) // 2
-    for name in ("welcome", "finish"):
-        card = Image.new("RGBA", (w, h))
-        card.alpha_composite(frame(w - 8 * s, h - 16 * s, 2 * s), (4 * s, 8 * s))
-        d = ImageDraw.Draw(card)
-        d.rectangle((14 * s, 20 * s, w - 20 * s, 150 * s), PINK)
-        p = pig.resize(
-            (128 * s, round(128 * s * pig.height / pig.width)), Image.NEAREST
-        )
-        card.alpha_composite(
-            p, ((w - 6 * s - p.width) // 2, 24 * s + (126 * s - p.height) // 2)
-        )
-        d.text(
-            (middle, 178 * s),
-            "SebType",
-            font=ImageFont.truetype(JERSEY, 34 * s),
-            fill=INK,
-            anchor="mm",
-        )
-        if name == "finish":
-            k = 40 * s
-            for i, state in enumerate(("en", "zh", "hira")):
-                card.alpha_composite(key(state, k), (12 * s + i * (k + 4 * s), 205 * s))
-            d.text(
-                (middle, 268 * s),
-                "Win + Space",
-                font=ImageFont.truetype(JERSEY, 22 * s),
-                fill=INK,
-                anchor="mm",
-            )
-        else:
-            font = ImageFont.truetype(cjk, 14 * s, index=0)
-            try:  # the variable Noto Sans CJK (Fedora): its Bold, as Ubuntu's static file
-                font.set_variation_by_name("Bold")
-            except OSError:
-                pass
-            for i, line in enumerate(("中文", "日本語", "English")):
-                d.text(
-                    (middle, (216 + i * 22) * s), line, font=font, fill=INK, anchor="mm"
-                )
-        card.save(out / f"{name}-{s}.png", optimize=True)
+    card = Image.new("RGBA", (w, h))
+    card.alpha_composite(frame(w - 8 * s, h - 16 * s, 2 * s), (4 * s, 8 * s))
+    d = ImageDraw.Draw(card)
+    d.rectangle((14 * s, 20 * s, w - 20 * s, 150 * s), PINK)
+    p = pig.resize((128 * s, round(128 * s * pig.height / pig.width)), Image.NEAREST)
+    card.alpha_composite(
+        p, ((w - 6 * s - p.width) // 2, 24 * s + (126 * s - p.height) // 2)
+    )
+    d.text(
+        (middle, 178 * s),
+        "SebType",
+        font=ImageFont.truetype(JERSEY, 34 * s),
+        fill=INK,
+        anchor="mm",
+    )
+    font = ImageFont.truetype(cjk, 14 * s, index=0)
+    try:  # the variable Noto Sans CJK (Fedora): its Bold, as Ubuntu's static file
+        font.set_variation_by_name("Bold")
+    except OSError:
+        pass
+    for i, line in enumerate(("中文", "日本語", "English")):
+        d.text((middle, (216 + i * 22) * s), line, font=font, fill=INK, anchor="mm")
+    card.save(out / f"welcome-{s}.png", optimize=True)
     small = Image.new("RGBA", (55 * s, 55 * s))
     p = pig.resize((52 * s, round(52 * s * pig.height / pig.width)), Image.NEAREST)
     small.alpha_composite(

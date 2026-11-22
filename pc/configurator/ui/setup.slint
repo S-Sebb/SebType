@@ -1,12 +1,15 @@
-// SebType Linux GUI Setup Wizard (#435): Picnic-themed 4-step installer window
-// (Welcome -> Installing -> Account Sync -> Ready/Tips), launched by the self-extracting installer.
+// SebType's setup wizard (#435): Picnic-themed 5-step installer window (Welcome -> Installing -> Common
+// settings (#444) -> Account Sync -> Ready/Tips), launched by Linux's self-extracting installer. Windows
+// Setup copies the files itself and opens it at Common settings (#471).
 import { Theme } from "theme.slint";
-import { Switch, PixelFrame, Card, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge, StatusMark } from "widgets.slint";
+import { Switch, Segmented, PixelFrame, Card, Row, Divider, PageTitle, Info, Button, Kbd, Field, Chrome, MoveArea, WindowControls, WindowEdge, StatusMark } from "widgets.slint";
 import { SyncCheck, SyncText } from "state.slint";
 
 export global SetupState {
     in property <string> ui-font;
-    in-out property <int> step;              // 0 Welcome, 1 Installing, 2 Account Sync, 3 Ready
+    in property <int> first-step;            // 2 after Windows Setup, which welcomes and installs itself
+    in property <bool> show-langs: true;     // Windows Setup has its own languages page
+    in-out property <int> step;              // 0 Welcome, 1 Installing, 2 Common settings, 3 Account Sync, 4 Ready
     in-out property <int> install-phase;     // 0 packages (pkexec), 1 user setup, 2 failed
     in-out property <string> install-error;
     in-out property <bool> live-active;
@@ -15,13 +18,34 @@ export global SetupState {
     // Sign in checks the address and login first (#452); after a failure it saves anyway.
     in-out property <SyncCheck> sync-check;
     in-out property <bool> open-configurator: true;
+    // Common settings, as the Configurator's Languages, Keyboard and Theme pages have them.
+    in-out property <bool> lang-en: true;
+    in-out property <bool> lang-zh: true;
+    in-out property <bool> lang-ja: true;
+    in-out property <bool> traditional;
+    in-out property <int> page-size: 6;
+    in-out property <bool> picnic: true;
+    in-out property <bool> vertical;
+    in-out property <bool> common-busy;
+    in-out property <string> common-error;
 
     pure callback server-valid(string) -> bool;
     pure callback can-submit(string, string, string) -> bool;
     callback start-install();
+    callback save-common();
     callback save-sync(string, string, string);
     callback skip-sync();
     callback finish();
+}
+
+// A language's switch with its name, which stays the same in every language.
+component LangSwitch inherits HorizontalLayout {
+    in property <string> name;
+    in-out property <bool> checked;
+    in property <bool> enabled;
+    spacing: 6px;
+    VerticalLayout { alignment: center; Switch { checked <=> root.checked; enabled: root.enabled; label: root.name; } }
+    Text { text: root.name; color: Theme.ink; font-size: Theme.body-size; vertical-alignment: center; }
 }
 
 component TipRow inherits HorizontalLayout {
@@ -63,8 +87,13 @@ export component SetupWindow inherits Window {
     changed sync-user => { SetupState.sync-check = SyncCheck.none; }
     changed sync-password => { SetupState.sync-check = SyncCheck.none; }
 
+    // The Theme choice shows as the person picks it (#471): Picnic, or a plain system-looking wizard.
+    property <bool> plain: !SetupState.picnic;
+    init => { Theme.plain = self.plain; }
+    changed plain => { Theme.plain = self.plain; }
+
     // Picnic checkered cloth background.
-    Image {
+    if !Theme.plain: Image {
         width: 100%;
         height: 100%;
         source: @image-url("cloth.svg");
@@ -88,7 +117,7 @@ export component SetupWindow inherits Window {
                     height: 38px;
                     y: (parent.height - self.height) / 2;
                     border-radius: 19px;
-                    background: #FFE4EC;
+                    background: Theme.plain ? transparent : #FFE4EC;
                     clip: true;
                     Image {
                         source: @image-url("../../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png");
@@ -110,7 +139,7 @@ export component SetupWindow inherits Window {
                         padding-x: 10px;
                         padding-y: 3px;
                         Text {
-                            text: @tr("Step {} of 4", SetupState.step + 1);
+                            text: @tr("Step {} of {}", SetupState.step - SetupState.first-step + 1, 5 - SetupState.first-step);
                             color: Theme.ink;
                             font-size: 12.5px;
                             font-weight: 700;
@@ -280,8 +309,114 @@ export component SetupWindow inherits Window {
                 }
             }
 
-            // Step 2: Account Sync (optional)
+            // Step 2: Common settings (#444), shown as installed; Next keeps what isn't changed.
             if SetupState.step == 2: VerticalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                // One language always stays on, as on the Languages page.
+                property <int> langs-on: (SetupState.lang-en ? 1 : 0) + (SetupState.lang-zh ? 1 : 0) + (SetupState.lang-ja ? 1 : 0);
+                Card {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding-top: 14px;
+                        padding-bottom: 6px;
+                        VerticalLayout {
+                            padding-left: Theme.row-padding-x;
+                            padding-right: Theme.row-padding-x;
+                            padding-bottom: 4px;
+                            spacing: 4px;
+                            PageTitle {
+                                text: @tr("Common settings");
+                                color: Theme.key;
+                                font-size: 21px;
+                            }
+                            Text {
+                                text: @tr("You can change all of these later in SebType Configurator.");
+                                color: Theme.muted;
+                                font-size: Theme.detail-size;
+                                wrap: word-wrap;
+                            }
+                        }
+                        if SetupState.show-langs: Row {
+                            title: @tr("Languages");
+                            HorizontalLayout {
+                                spacing: 12px;
+                                alignment: end;
+                                LangSwitch { name: "English"; checked <=> SetupState.lang-en; enabled: !SetupState.lang-en || langs-on > 1; }
+                                LangSwitch { name: "中文"; checked <=> SetupState.lang-zh; enabled: !SetupState.lang-zh || langs-on > 1; }
+                                LangSwitch { name: "日本語"; checked <=> SetupState.lang-ja; enabled: !SetupState.lang-ja || langs-on > 1; }
+                            }
+                        }
+                        if SetupState.show-langs: Divider { }
+                        Row {
+                            title: "中文";
+                            VerticalLayout { alignment: center;
+                                Segmented {
+                                    options: ["简体", "繁體"];
+                                    current: SetupState.traditional ? 1 : 0;
+                                    selected(i) => { SetupState.traditional = i == 1; }
+                                }
+                            }
+                        }
+                        Divider { }
+                        Row {
+                            title: @tr("Theme");
+                            VerticalLayout { alignment: center;
+                                Segmented {
+                                    options: ["Picnic", @tr("System style")];
+                                    current: SetupState.picnic ? 0 : 1;
+                                    selected(i) => { SetupState.picnic = i == 0; }
+                                }
+                            }
+                        }
+                        Divider { }
+                        Row {
+                            title: @tr("Layout");
+                            VerticalLayout { alignment: center;
+                                Segmented {
+                                    options: [@tr("Horizontal"), @tr("Vertical")];
+                                    current: SetupState.vertical ? 1 : 0;
+                                    selected(i) => { SetupState.vertical = i == 1; }
+                                }
+                            }
+                        }
+                        Divider { }
+                        Row {
+                            title: @tr("Candidates per page");
+                            VerticalLayout { alignment: center;
+                                Segmented {
+                                    options: ["5", "6", "7", "8", "9"];
+                                    current: SetupState.page-size - 5;
+                                    selected(i) => { SetupState.page-size = i + 5; }
+                                }
+                            }
+                        }
+                        if SetupState.common-error != "": HorizontalLayout {
+                            padding-left: Theme.row-padding-x;
+                            padding-right: Theme.row-padding-x;
+                            Text {
+                                text: SetupState.common-error;
+                                color: Theme.danger;
+                                font-size: Theme.detail-size;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    Button {
+                        text: @tr("Next");
+                        primary: true;
+                        enabled: !SetupState.common-busy;
+                        min-width: 110px;
+                        clicked => { SetupState.save-common(); }
+                    }
+                }
+            }
+
+            // Step 3: Account Sync (optional)
+            if SetupState.step == 3: VerticalLayout {
                 spacing: 14px;
                 vertical-stretch: 1;
                 Card {
@@ -301,18 +436,19 @@ export component SetupWindow inherits Window {
                             wrap: word-wrap;
                         }
                         Text { text: @tr("Server address"); color: Theme.ink; font-size: Theme.body-size; }
-                        Field { text <=> root.sync-server; placeholder: "sync.example.com"; }
+                        Field { text <=> root.sync-server; placeholder: "sync.example.com"; accessible-label: @tr("Server address"); }
                         if root.sync-server != "" && !SetupState.server-valid(root.sync-server): Text {
                             text: @tr("An https:// address");
                             color: Theme.danger;
                             font-size: Theme.detail-size;
                         }
                         Text { text: @tr("Username"); color: Theme.ink; font-size: Theme.body-size; }
-                        Field { text <=> root.sync-user; }
+                        Field { text <=> root.sync-user; accessible-label: @tr("Username"); }
                         Text { text: @tr("Password"); color: Theme.ink; font-size: Theme.body-size; }
                         Field {
                             text <=> root.sync-password;
                             input-type: InputType.password;
+                            accessible-label: @tr("Password");
                             accepted => {
                                 if !SetupState.sync-busy && SetupState.can-submit(root.sync-server, root.sync-user, root.sync-password) {
                                     SetupState.save-sync(root.sync-server, root.sync-user, root.sync-password);
@@ -363,8 +499,8 @@ export component SetupWindow inherits Window {
                 }
             }
 
-            // Step 3: Ready / Tips
-            if SetupState.step == 3: VerticalLayout {
+            // Step 4: Ready / Tips
+            if SetupState.step == 4: VerticalLayout {
                 spacing: 12px;
                 vertical-stretch: 1;
                 Card {

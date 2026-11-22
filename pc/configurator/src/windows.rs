@@ -164,6 +164,12 @@ pub fn candidates() -> Candidates {
     }
 }
 
+/// Whether a candidate window style was ever saved: before that, setup offers Picnic (#471).
+pub fn candidates_chosen() -> bool {
+    let text = fs::read_to_string(conf_path()).unwrap_or_default();
+    conf::value(&text, "Candidates", "Picnic").is_some()
+}
+
 /// sebtype.conf with `change` made; true when it changed.
 fn edit_conf(change: impl FnOnce(&str) -> String) -> io::Result<bool> {
     let old = fs::read_to_string(conf_path()).unwrap_or_default();

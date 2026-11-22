@@ -44,28 +44,41 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.sebb.sebtype.R
+import dev.sebb.sebtype.data.Prefs
 import dev.sebb.sebtype.sync.SyncAccountStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-const val SETUP_STEPS = 4
+const val SETUP_STEPS = 5
+internal const val SETUP_COMMON = 3
+internal const val SETUP_SYNC = 4
+internal const val SETUP_TIPS = 5
 
-/** Which step of the setup wizard to show (1..4). */
-internal fun setupStep(enabled: Boolean, chosen: Boolean, syncPassed: Boolean): Int = when {
+/** Which step of the setup wizard to show (1..5). */
+internal fun setupStep(enabled: Boolean, chosen: Boolean, commonPassed: Boolean, syncPassed: Boolean): Int = when {
     !enabled -> 1
     !chosen -> 2
-    !syncPassed -> 3
-    else -> 4
+    !commonPassed -> SETUP_COMMON
+    !syncPassed -> SETUP_SYNC
+    else -> SETUP_TIPS
 }
+
+/** The common settings step's phone-only switches (#444), as the Keyboard screen shows them, at their defaults until changed. */
+internal val SETUP_SWITCHES = listOf(
+    Triple(R.string.settings_number_row, R.string.settings_number_row_subtitle, Prefs.NUMBER_ROW),
+    Triple(R.string.settings_vibrate, null, Prefs.VIBRATE),
+    Triple(R.string.settings_sound, null, Prefs.SOUND),
+)
 
 /**
  * The setup wizard (#53), as today's app shows it: the pig, the step, what to do and its buttons. Step 1 turns
- * SebType on in Android's keyboards, step 2 chooses it; each opens Android's own screen. Step 3 (#435) offers
- * optional account sync with the user's own server. Step 4 (#285) shows the tips, and its Done calls [done].
+ * SebType on in Android's keyboards, step 2 chooses it; each opens Android's own screen. Step 3 (#444) holds the
+ * most common settings, the same switches the settings screens show, already at their values. Step 4 (#435)
+ * offers optional account sync with the user's own server. Step 5 (#285) shows the tips, and its Done calls [done].
  * [state] is (on, chosen).
  *
  * Today's layout: the launcher icon's pig fills the top three quarters of the height the rest leaves (step 3
- * slightly less; step 4, with the tips, less than half), and the rest of that height stays empty under the
+ * slightly less; the settings and tips steps, less than half), and the rest of that height stays empty under the
  * button. When the screen is too short for that (landscape, large text) the pig keeps a small size and the
  * page scrolls, so the button can always be reached.
  */
@@ -74,11 +87,12 @@ fun Setup(state: Pair<Boolean, Boolean>, done: () -> Unit) = BoxWithConstraints(
     Modifier.fillMaxSize().cloth().windowInsetsPadding(WindowInsets.systemBars),
 ) {
     val context = LocalContext.current
+    var commonPassed by rememberSaveable { mutableStateOf(false) }
     var syncPassed by rememberSaveable { mutableStateOf(false) }
     var loginOpen by rememberSaveable { mutableStateOf(false) }
     val account by SyncAccountStore.current.collectAsState()
     LaunchedEffect(Unit) { withContext(Dispatchers.IO) { SyncAccountStore.load(context) } }
-    val step = setupStep(state.first, state.second, syncPassed)
+    val step = setupStep(state.first, state.second, commonPassed, syncPassed)
     val viewport = constraints.maxHeight
     val minPig = with(LocalDensity.current) { 96.dp.roundToPx() }
     // Its bitmap is loaded unscaled and scaled without smoothing so the pixel art's edges stay crisp.
@@ -92,30 +106,43 @@ fun Setup(state: Pair<Boolean, Boolean>, done: () -> Unit) = BoxWithConstraints(
             Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(start = 32.dp, top = 32.dp, end = 32.dp)) {
                     Column(Modifier.padding(16.dp)) {
-                        Text(stringResource(R.string.setup_step, step), fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
+                        Text(stringResource(R.string.setup_step, step, SETUP_STEPS), fontSize = 14.sp, lineHeight = 20.sp, color = Ink)
                         LinearProgressIndicator({ step / SETUP_STEPS.toFloat() }, Modifier.fillMaxWidth(), color = Berry, gapSize = 0.dp, drawStopIndicator = {})
                     }
-                    // Step 4's lead-in without letter spacing, as the tips below it, so it keeps to one line
-                    Text(stringResource(listOf(R.string.setup_enable_text, R.string.setup_choose_text, R.string.setup_sync_text, R.string.setup_tips_text)[step - 1]),
+                    // The tips' lead-in without letter spacing, as the tips below it, so it keeps to one line
+                    Text(stringResource(listOf(R.string.setup_enable_text, R.string.setup_choose_text, R.string.setup_common_text,
+                        R.string.setup_sync_text, R.string.setup_tips_text)[step - 1]),
                         Modifier.fillMaxWidth(), color = Ink, textAlign = TextAlign.Center,
-                        letterSpacing = if (step == 4) 0.sp else TextUnit.Unspecified)
+                        letterSpacing = if (step == SETUP_TIPS) 0.sp else TextUnit.Unspecified)
                 }
                 val signedIn = account
-                if (step == 3 && signedIn != null) {
+                if (step == SETUP_COMMON) {
+                    Spacer(Modifier.height(12.dp))
+                    GlobeOrder()
+                    Card {
+                        ConfSwitch(stringResource(R.string.setup_traditional), stringResource(R.string.setup_traditional_subtitle),
+                            "Chinese", "Traditional", false)
+                        SETUP_SWITCHES.forEach { (title, subtitle, option) ->
+                            PrefSwitch(stringResource(title), subtitle?.let { stringResource(it) }, option)
+                        }
+                    }
+                }
+                if (step == SETUP_SYNC && signedIn != null) {
                     Spacer(Modifier.height(12.dp))
                     Card {
                         NavItem(stringResource(R.string.setup_sync_signed_in), signedIn.summary()) { loginOpen = true }
                     }
                 }
-                if (step == 4) {
+                if (step == SETUP_TIPS) {
                     Spacer(Modifier.height(12.dp))
                     TipsCard()
                 }
-                val showSkip = step == 3 && signedIn == null
+                val showSkip = step == SETUP_SYNC && signedIn == null
                 val primaryLabel = when (step) {
                     1 -> R.string.setup_enable
                     2 -> R.string.setup_choose
-                    3 -> if (signedIn == null) R.string.setup_sync_setup else R.string.setup_continue
+                    SETUP_COMMON -> R.string.setup_continue
+                    SETUP_SYNC -> if (signedIn == null) R.string.setup_sync_setup else R.string.setup_continue
                     else -> R.string.setup_done
                 }
                 Button(
@@ -123,14 +150,15 @@ fun Setup(state: Pair<Boolean, Boolean>, done: () -> Unit) = BoxWithConstraints(
                         when (step) {
                             1 -> context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             2 -> context.getSystemService(InputMethodManager::class.java).showInputMethodPicker()
-                            3 -> if (signedIn == null) loginOpen = true else syncPassed = true
+                            SETUP_COMMON -> commonPassed = true
+                            SETUP_SYNC -> if (signedIn == null) loginOpen = true else syncPassed = true
                             else -> done()
                         }
                     },
                     Modifier.fillMaxWidth().padding(
                         start = 48.dp,
                         end = 48.dp,
-                        top = if (step == 4 || (step == 3 && signedIn != null)) 12.dp else 16.dp,
+                        top = if (step == SETUP_COMMON || step == SETUP_TIPS || (step == SETUP_SYNC && signedIn != null)) 12.dp else 16.dp,
                         bottom = if (showSkip) 4.dp else 48.dp,
                     ),
                     colors = ButtonDefaults.buttonColors(containerColor = Berry, contentColor = Color.White),
@@ -149,8 +177,8 @@ fun Setup(state: Pair<Boolean, Boolean>, done: () -> Unit) = BoxWithConstraints(
         val g = group.measure(c.copy(minHeight = 0))
         val free = (viewport - g.height).coerceAtLeast(0)
         val pigShare = when (step) {
-            4 -> 0.45f
-            3 -> 0.55f
+            SETUP_COMMON, SETUP_TIPS -> 0.45f
+            SETUP_SYNC -> 0.55f
             else -> 0.75f
         }
         val pigHeight = maxOf(minPig, (free * pigShare).toInt())

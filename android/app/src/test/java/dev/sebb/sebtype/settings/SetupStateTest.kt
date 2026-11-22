@@ -107,19 +107,34 @@ class SetupStateTest {
             Prefs.VIBRATE.key to true), phone.data.first())
     }
 
-    /** #435: 4-step wizard progression: enable -> choose -> account sync -> tips. */
+    /** #435, #444: 5-step wizard progression: enable -> choose -> common settings -> account sync -> tips. */
     @Test
     fun setupStepProgression() {
-        assertEquals(4, SETUP_STEPS)
-        assertEquals(1, setupStep(enabled = false, chosen = false, syncPassed = false))
-        assertEquals(1, setupStep(enabled = false, chosen = true, syncPassed = true))
-        assertEquals(2, setupStep(enabled = true, chosen = false, syncPassed = false))
-        assertEquals(2, setupStep(enabled = true, chosen = false, syncPassed = true))
-        assertEquals(3, setupStep(enabled = true, chosen = true, syncPassed = false))
-        assertEquals(4, setupStep(enabled = true, chosen = true, syncPassed = true))
+        assertEquals(5, SETUP_STEPS)
+        assertEquals(1, setupStep(enabled = false, chosen = false, commonPassed = false, syncPassed = false))
+        assertEquals(1, setupStep(enabled = false, chosen = true, commonPassed = true, syncPassed = true))
+        assertEquals(2, setupStep(enabled = true, chosen = false, commonPassed = false, syncPassed = false))
+        assertEquals(2, setupStep(enabled = true, chosen = false, commonPassed = true, syncPassed = true))
+        assertEquals(SETUP_COMMON, setupStep(enabled = true, chosen = true, commonPassed = false, syncPassed = false))
+        assertEquals(SETUP_SYNC, setupStep(enabled = true, chosen = true, commonPassed = true, syncPassed = false))
+        assertEquals(SETUP_TIPS, setupStep(enabled = true, chosen = true, commonPassed = true, syncPassed = true))
+        assertEquals(listOf(3, 4, 5), listOf(SETUP_COMMON, SETUP_SYNC, SETUP_TIPS))
     }
 
-    /** Sync account summary strips https:// for display in BackupScreen and Setup step 3. */
+    /**
+     * #444: the common settings step shows number row (off), vibration (on) and sound (off) at their defaults, so
+     * Continue alone keeps them; a switch turned there is saved as the Keyboard screen saves it.
+     */
+    @Test
+    fun commonSettingsStepSavesAChoice() = runBlocking {
+        assertEquals(listOf(Prefs.NUMBER_ROW, Prefs.VIBRATE, Prefs.SOUND), SETUP_SWITCHES.map { it.third })
+        assertEquals(listOf(false, true, false), SETUP_SWITCHES.map { it.third.default })
+        val phone = store()
+        Prefs.set(phone, Prefs.NUMBER_ROW, true)
+        assertEquals(preferencesOf(Prefs.NUMBER_ROW.key to true), phone.data.first())
+    }
+
+    /** Sync account summary strips https:// for display in BackupScreen and Setup's sync step. */
     @Test
     fun syncAccountSummary() {
         val account = SyncAccount("https://sync.example.com", "alice", "secret", enabled = true)

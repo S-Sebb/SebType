@@ -18,8 +18,12 @@ service and its server (`windows/build.ps1`), the Chinese data (`data/rime/build
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
 first dialog lets the person pick. Its pages are the welcome, the languages (English, 中文 and 日本語, each
-optional, and a desktop shortcut to the Configurator), the progress and the finish page, which shows the
-tray keys and Win+Space. It installs into `C:\Program Files\SebType` and lists SebType in Apps.
+optional, and a desktop shortcut to the Configurator) and the progress. Once the files are copied, Setup
+closes and the installed Configurator shows the rest in the setup wizard Linux uses
+(`--setup-after-install`): Common settings (简/繁, the theme, layout and page size; Picnic for a new
+account), Account sync and the tray keys. A silent install shows none of it: a new account gets the
+defaults, an update keeps its settings, and `/COMMON="picnic=0 vertical=0 page-size=8 traditional=1"` sets any of them. It
+installs into `C:\Program Files\SebType` and lists SebType in Apps.
 
 ```powershell
 SebType-setup-0.1.0.exe                                        # a person: UAC, then the pages
@@ -152,7 +156,7 @@ needs a PC that can be restarted after.
 | Check | What passes |
 |---|---|
 | `language-follows-windows` | Setup's language dialog offers Windows' display language (简体中文 on TCSBackEnd) |
-| `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`~/scratch/SebType/<issue>/73-*.png`): welcome in all three languages, languages, installing, finish |
+| `welcome-zh`, `welcome-ja`, `round1-install-pages` | Each page shows and is saved as a picture (`~/scratch/SebType/<issue>/73-*.png`): welcome in all three languages, languages, installing, then the wizard's common settings, sync (skipped) and ready pages |
 | `round1-installed`, `-input-methods`, `-only-win-space`, `-chinese`, `-japanese` | The interactive install with all three: SebType in Apps with its icon, its text service registered and no Weasel or Mozc, the list EN → 中 → 日 (the account's Chinese Microsoft Pinyin gone from it), Alt+Shift and Ctrl+Shift off, 中文 and 日本語 named so, the Chinese data deployed with its patches and 6 candidates per page, Mozc's keymap |
 | `win-space-cycle`, `chinese-pinyin`, `chinese-shift-tap`, `chinese-ctrl-shift-f`, `japanese-all` | In Notepad: Win+Space gives 中, 日, EN; `ranhou` → 然后; `ni` Shift `ok` Shift `ranhou` → `niok然后`; Ctrl+Shift+F `houlai` → 後來 and back → 后来; `nihongo` → 日本語 |
 | `chinese-focus-out` | In Notepad, `nihao` typed, a second Notepad brought to the front and back: `nihao` is in the text, and `ni` Space then gives `nihao你` (#277) |

@@ -3,13 +3,16 @@
 // cream items in the keys' notched pixel frames on the keyboard's cloth (cloth.svg), pink tags as
 // section headers and dashed lines between rows (#90). A change there is a change here.
 export global Theme {
+    // The setup wizard's System style (#471): a plain, system-looking window while the person tries that
+    // candidate window style. The Configurator itself is always Picnic.
+    in-out property <bool> plain;
     // The cloth's colour and its checks; the sidebar and title bar are cream, edged in the outline.
-    out property <color> page: #FBE9D6;
-    out property <color> check: #F7E3CC;
-    out property <color> card: #FFF7E8;
+    out property <color> page: plain ? #F3F3F3 : #FBE9D6;
+    out property <color> check: plain ? #F3F3F3 : #F7E3CC;
+    out property <color> card: plain ? #FFFFFF : #FFF7E8;
     // Frames are 2 dp thick, as on the phone; the hard shadow is the outline at 0x30.
-    out property <length> frame: 2px;
-    out property <color> drop: #5B331C30;
+    out property <length> frame: plain ? 1px : 2px;
+    out property <color> drop: plain ? #00000000 : #5B331C30;
     out property <length> card-gap: 12px;
     out property <length> dash-inset: 14px;
     out property <length> row-padding-x: 16px;
@@ -20,20 +23,20 @@ export global Theme {
     out property <length> controls-width: 98px;
     out property <length> controls-margin: 12px;
 
-    out property <color> ink: #4A2F22;
-    out property <color> muted: #73533F;
-    out property <color> line: #ECD0AE;
-    out property <color> pink: #FDE0E6;
-    out property <color> key: #C2506A;
-    out property <color> key-high: #E8778F;
-    out property <color> key-low: #92384E;
-    out property <color> outline: #5B331C;
-    out property <color> off-track: #F3DDBF;
-    out property <color> button: #E7C9A4;
-    out property <color> danger: #A8322D;
-    out property <color> good: #3E8A4C;      // a connection that works (#452), beside the berry X
+    out property <color> ink: plain ? #1B1B1B : #4A2F22;
+    out property <color> muted: plain ? #5D5D5D : #73533F;
+    out property <color> line: plain ? #E5E5E5 : #ECD0AE;
+    out property <color> pink: plain ? #EAF1FB : #FDE0E6;
+    out property <color> key: plain ? #0067C0 : #C2506A;
+    out property <color> key-high: plain ? #1975C5 : #E8778F;
+    out property <color> key-low: plain ? #005A9E : #92384E;
+    out property <color> outline: plain ? #B4B4B4 : #5B331C;
+    out property <color> off-track: plain ? #FFFFFF : #F3DDBF;
+    out property <color> button: plain ? #FBFBFB : #E7C9A4;
+    out property <color> danger: plain ? #C42B1C : #A8322D;
+    out property <color> good: plain ? #0F7B0F : #3E8A4C;      // a connection that works (#452), beside the berry X
 
-    out property <string> title-font: "Nunito";
+    out property <string> title-font: plain ? "" : "Nunito";
     out property <length> title-size: 22px;
     out property <length> section-size: 14px;
     out property <length> body-size: 15px;

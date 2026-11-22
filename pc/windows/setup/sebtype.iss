@@ -49,6 +49,8 @@ DefaultDirName={autopf}\SebType
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
+; Setup copies the files; then the Configurator's setup wizard shows the rest, as on Linux (#471).
+DisableFinishedPage=yes
 DisableWelcomePage=no
 ; Windows loads text services registered for the whole PC only, so SebType installs as admin.
 PrivilegesRequired=admin
@@ -100,12 +102,6 @@ ja.WizardInstalling=SebType をセットアップしています
 en.InstallingLabel=This takes about a minute. The words SebType has learned stay.
 zh.InstallingLabel=大约需要一分钟。SebType 学会的词都会保留。
 ja.InstallingLabel=1 分ほどかかります。SebType が覚えた言葉はそのまま残ります。
-en.FinishedHeadingLabel=SebType is ready!
-zh.FinishedHeadingLabel=SebType 装好啦！
-ja.FinishedHeadingLabel=SebType の準備ができました！
-en.FinishedLabel=Press Win+Space to switch EN → 中 → あ.%nIn Chinese or Japanese, tap Shift for quick English.%n%nCtrl+Shift+F switches 简 ⇄ 繁, and Alt+` switches あ ⇄ ア.
-zh.FinishedLabel=按 Win+Space 切换 EN → 中 → あ。%n在中文或日本語里，轻按一下 Shift 临时输入英文。%n%nCtrl+Shift+F 切换简 ⇄ 繁，Alt+` 切换 あ ⇄ ア。
-ja.FinishedLabel=Win+Space で EN → 中 → あ を切り替えます。%n中国語や日本語では、Shift を軽く押すと一時的に英語で入力できます。%n%nCtrl+Shift+F で簡体 ⇄ 繁体、Alt+` で あ ⇄ ア を切り替えます。
 ClickFinish=
 en.ConfirmUninstall=Remove SebType from this PC?%n%nThe words SebType has learned on this PC are deleted with it.
 zh.ConfirmUninstall=要从这台电脑上移除 SebType 吗？%n%nSebType 在这台电脑上学会的词也会一起删除。
@@ -142,9 +138,6 @@ ja.Desktop=デスクトップに SebType 設定
 en.Configurator=SebType Configurator
 zh.Configurator=SebType 设置
 ja.Configurator=SebType 設定
-en.OpenConfigurator=Open SebType Configurator
-zh.OpenConfigurator=打开 SebType 设置
-ja.OpenConfigurator=SebType 設定を開く
 en.NoLanguage=Pick at least one language.
 zh.NoLanguage=请至少选一种语言。
 ja.NoLanguage=言語を 1 つ以上選んでください。
@@ -163,56 +156,7 @@ ja.Failed=SebType のセットアップ中に問題が起きました（手順�
 en.Kept=SebType couldn't send the words it learned on this PC to your sync server, so it kept them in %1.%n%nThey come back when you set up SebType with that language again.
 zh.Kept=SebType 没能把它在这台电脑上学会的词发到你的同步服务器，所以把它们留在了 %1。%n%n下次装 SebType 时选上这个语言，它们就会回来。
 ja.Kept=この PC で SebType が覚えた言葉を同期サーバーに送れなかったので、%1 に残しました。%n%nもう一度その言語で SebType をセットアップすると戻ります。
-en.SyncTitle=Account sync
-zh.SyncTitle=账号同步
-ja.SyncTitle=アカウント同期
-en.SyncDesc=Optional. You can also set this up later in SebType Configurator.
-zh.SyncDesc=可选。也可以稍后在 SebType 设置里开启。
-ja.SyncDesc=任意です。あとから SebType 設定で有効にすることもできます。
-en.SyncSub=Sync your learned words and dictionaries across devices with your own sync server. Leave all fields blank to skip.
-zh.SyncSub=通过你自己的同步服务器，在多台设备间同步学到的词和自定义词库。全部留空即可跳过。
-ja.SyncSub=自分の同期サーバーを使って、学習した単語やユーザー辞書を端末間で同期できます。すべて空欄のまま［次へ］でスキップできます。
-en.SyncServer=Server address (sync.example.com):
-zh.SyncServer=服务器地址（sync.example.com）：
-ja.SyncServer=サーバーアドレス（sync.example.com）：
-en.SyncUser=Username:
-zh.SyncUser=用户名：
-ja.SyncUser=ユーザー名：
-en.SyncPassword=Password:
-zh.SyncPassword=密码：
-ja.SyncPassword=パスワード：
-en.SyncIncomplete=Fill in server, username, and password, or leave all three blank to skip.
-zh.SyncIncomplete=请填全服务器地址、用户名和密码，或全部留空以跳过。
-ja.SyncIncomplete=サーバーアドレス・ユーザー名・パスワードをすべて入力するか、すべて空欄にしてスキップしてください。
-en.SyncInvalidServer=Server address must be an https:// address.
-zh.SyncInvalidServer=服务器地址必须是 https:// 网址。
-ja.SyncInvalidServer=サーバーアドレスは https:// のアドレスにしてください。
-en.SyncSaveFailed=Could not save your sync login. Check your details or clear the fields to skip.
-zh.SyncSaveFailed=无法保存同步账号。请检查填写的内容，或清空后跳过。
-ja.SyncSaveFailed=同期アカウントを保存できませんでした。入力内容を確認するか、空欄にしてスキップしてください。
 ; Next checks the address and login before it saves them (#452), as the Configurator's Save does.
-en.SyncChecking=Checking the server and login…
-zh.SyncChecking=正在检查服务器和账号…
-ja.SyncChecking=サーバーとログインを確認中…
-en.SyncConnected=Connected. The server and login work
-zh.SyncConnected=已连接，服务器和账号都没问题
-ja.SyncConnected=接続しました。サーバーとログインは正常です
-en.SyncCheckLogin=Wrong username or password
-zh.SyncCheckLogin=用户名或密码错误
-ja.SyncCheckLogin=ユーザー名またはパスワードが違います
-en.SyncCheckUnreachable=Can't reach the server. Check the address and your network
-zh.SyncCheckUnreachable=无法连接服务器，请检查地址和网络
-ja.SyncCheckUnreachable=サーバーに接続できません。アドレスとネットワークを確認してください
-en.SyncCheckNotSebType=That address isn't a SebType sync server
-zh.SyncCheckNotSebType=这个地址不是 SebType 同步服务器
-ja.SyncCheckNotSebType=このアドレスは SebType の同期サーバーではありません
-en.SyncCheckTls=The server's HTTPS certificate isn't trusted
-zh.SyncCheckTls=服务器的 HTTPS 证书不受信任
-ja.SyncCheckTls=サーバーの HTTPS 証明書が信頼されていません
-; Next after a failed check: it saves the login anyway, as the Linux wizard's Save anyway & continue.
-en.SyncSaveAnywayButton=Save anyway
-zh.SyncSaveAnywayButton=仍然保存
-ja.SyncSaveAnywayButton=このまま保存
 
 [Tasks]
 Name: "en"; Description: "{cm:English}"; GroupDescription: "{cm:Languages}"
@@ -249,8 +193,6 @@ Source: "{#Repo}\art\fonts\OFL-Nunito.txt"; DestDir: "{app}\look"; Flags: ignore
 ; Setup's own, unpacked when needed.
 Source: "{#Repo}\art\fonts\Jersey10-Regular.ttf"; Flags: dontcopy
 Source: "{#Repo}\art\fonts\Nunito-Bold.ttf"; Flags: dontcopy
-Source: "{#Pictures}\finish-1.png"; Flags: dontcopy
-Source: "{#Pictures}\finish-2.png"; Flags: dontcopy
 
 [Icons]
 ; The update's toast (#422) shows under this shortcut's AppUserModelID (windows.rs, AUMID).
@@ -267,7 +209,10 @@ Root: HKLM; Subkey: "Software\Classes\sebtype-configurator"; ValueType: string; 
 Root: HKLM; Subkey: "Software\Classes\sebtype-configurator\shell\open\command"; ValueType: string; ValueData: """{app}\sebtype-configurator.exe"" --update"
 
 [Run]
-Filename: "{app}\sebtype-configurator.exe"; Description: "{cm:OpenConfigurator}"; Flags: nowait postinstall skipifsilent
+; The setup wizard's Common settings, Account sync and Ready pages (#471), as the person who started Setup.
+Filename: "{app}\sebtype-configurator.exe"; Parameters: "--setup-after-install --lang {language}{code:UpgradeFlag}"; Flags: nowait runasoriginaluser; Check: UserWizard
+; Without the wizard: a new account's Common settings, or /COMMON="picnic=0 page-size=7 …" (the wizard's keys).
+Filename: "{app}\sebtype-configurator.exe"; Parameters: "--common-settings set{code:UpgradeFlag} {param:COMMON|}"; Flags: runasoriginaluser runhidden; Check: SilentCommon
 
 ; What SebType installed before #233 for Mozc's own server (its C++ runtime too), left by PrepareToInstall
 ; where it was still loaded.
@@ -293,17 +238,12 @@ Type: files; Name: "{app}\vcruntime140*.dll.*.old"
 const
   Ink = $222F4A;    // Picnic's ink #4A2F22 and key berry #C2506A, as TColor ($BBGGRR)
   Berry = $6A50C2;
-  Good = $4C8A3E;   // the Configurator's tick, #3E8A4C
   FR_PRIVATE = $10;
 
 var
   FailCode: Integer;
-  SyncPage: TInputQueryWizardPage;
-  // The sync page's check (#468): a tick or an X and what it found, under the fields.
-  SyncMark, SyncStatus: TNewStaticText;
-  // The last check failed and the fields are as they were: Next saves the login anyway.
-  SyncFailed: Boolean;
-  NextWidth: Integer;
+  // SebType was here before this Setup: the setup wizard keeps its candidate window style (#471).
+  WasInstalled: Boolean;
 
 function AddFontResourceEx(Name: String; Flags: Cardinal; Reserved: Cardinal): Integer;
   external 'AddFontResourceExW@gdi32.dll stdcall';
@@ -431,251 +371,50 @@ begin
   if ScaleX(100) >= 150 then Result := '2' else Result := '1';
 end;
 
-// What the sync page says under its fields: Mark 0 nothing, 1 a tick, 2 an X. Painted at once, as Setup
-// waits for the Configurator next.
-procedure ShowSync(Mark: Integer; Text: String);
-begin
-  case Mark of
-    1: begin SyncMark.Caption := #$2714; SyncMark.Font.Color := Good; end;
-    2: begin SyncMark.Caption := #$2718; SyncMark.Font.Color := Berry; end;
-  else
-    SyncMark.Caption := '';
-  end;
-  SyncStatus.Caption := Text;
-  if Mark = 2 then
-    SyncStatus.Font.Color := Berry
-  else
-    SyncStatus.Font.Color := Ink;
-  SyncPage.Surface.Update;
-end;
-
-// Next's caption, the button widened to the left (Back with it) for a longer one.
-procedure SetNextCaption(Caption: String);
-var
-  W, Delta: Integer;
-begin
-  W := WizardForm.CalculateButtonWidth([Caption]);
-  if W < NextWidth then
-    W := NextWidth;
-  Delta := W - WizardForm.NextButton.Width;
-  WizardForm.NextButton.Caption := Caption;
-  WizardForm.NextButton.Left := WizardForm.NextButton.Left - Delta;
-  WizardForm.NextButton.Width := W;
-  WizardForm.BackButton.Left := WizardForm.BackButton.Left - Delta;
-end;
-
-// A changed field needs a new check.
-procedure SyncFieldChanged(Sender: TObject);
-begin
-  if SyncFailed then
-    SetNextCaption(SetupMessage(msgButtonNext));
-  SyncFailed := False;
-  if SyncStatus.Caption <> '' then
-    ShowSync(0, '');
-end;
-
 procedure InitializeWizard;
-var
-  I: Integer;
 begin
   ExtractTemporaryFile('Jersey10-Regular.ttf');
   ExtractTemporaryFile('Nunito-Bold.ttf');
   LoadFonts;
   Heading(WizardForm.WelcomeLabel1, 24);
-  Heading(WizardForm.FinishedHeadingLabel, 24);
   Heading(WizardForm.PageNameLabel, 16);
   WizardForm.WelcomeLabel1.Height := ScaleY(40);
-  WizardForm.FinishedHeadingLabel.Height := ScaleY(40);
   WizardForm.WelcomeLabel2.Top := WizardForm.WelcomeLabel1.Top + ScaleY(44);
-  WizardForm.FinishedLabel.Top := WizardForm.FinishedHeadingLabel.Top + ScaleY(44);
   WizardForm.PageNameLabel.Top := WizardForm.PageNameLabel.Top - ScaleY(6);
   WizardForm.PageNameLabel.Height := WizardForm.PageNameLabel.Height + ScaleY(8);
   Body(WizardForm.WelcomeLabel2);
   Body(WizardForm.PageDescriptionLabel);
   Body(WizardForm.SelectTasksLabel);
   Body(WizardForm.FilenameLabel);
-  Restyle(WizardForm.FinishedLabel, '', 0, Ink);
   Restyle(WizardForm.StatusLabel, '', 0, Ink);
-  ExtractTemporaryFile('finish-' + Scale + '.png');
-  SyncPage := CreateInputQueryPage(wpInstalling, CustomMessage('SyncTitle'), CustomMessage('SyncDesc'), CustomMessage('SyncSub'));
-  SyncPage.Add(CustomMessage('SyncServer'), False);
-  SyncPage.Add(CustomMessage('SyncUser'), False);
-  SyncPage.Add(CustomMessage('SyncPassword'), True);
-  Body(SyncPage.SubCaptionLabel);
-  Body(SyncPage.PromptLabels[0]);
-  Body(SyncPage.PromptLabels[1]);
-  Body(SyncPage.PromptLabels[2]);
-  SyncMark := TNewStaticText.Create(SyncPage);
-  SyncMark.Parent := SyncPage.Surface;
-  SyncMark.Top := SyncPage.Edits[2].Top + SyncPage.Edits[2].Height + ScaleY(10);
-  SyncMark.Left := SyncPage.Edits[2].Left;
-  Restyle(SyncMark, 'Segoe UI Symbol', 11, Good);
-  SyncMark.Font.Style := [fsBold];
-  SyncStatus := TNewStaticText.Create(SyncPage);
-  SyncStatus.Parent := SyncPage.Surface;
-  SyncStatus.AutoSize := False;
-  SyncStatus.WordWrap := True;
-  SyncStatus.Top := SyncMark.Top + ScaleY(2);
-  SyncStatus.Left := SyncMark.Left + ScaleX(22);
-  SyncStatus.Width := SyncPage.SurfaceWidth - SyncStatus.Left;
-  SyncStatus.Height := SyncPage.SurfaceHeight - SyncStatus.Top;
-  Body(SyncStatus);
-  for I := 0 to 2 do
-    SyncPage.Edits[I].OnChange := @SyncFieldChanged;
-  NextWidth := WizardForm.NextButton.Width;
 end;
 
-function ShouldSkipPage(PageID: Integer): Boolean;
+// The setup wizard after the file copy, unless Setup runs silently, for an update (/NOUSERSTEPS) or failed.
+function UserWizard: Boolean;
 begin
-  Result := (PageID = SyncPage.ID) and (Silent or NoUserSteps or (FailCode <> 0));
+  Result := not Silent and not NoUserSteps and (FailCode = 0);
 end;
 
-// Resolves the invoking desktop user's %LOCALAPPDATA% so a cross-account UAC elevation writes the
-// short-lived credential handoff inside that user's own private profile directory (readable only by
-// that user, Administrators and SYSTEM). Falls back to {localappdata} when the same account elevated.
-function OriginalLocalAppData: String;
-var
-  OutFile: String;
-  QuotedOut: String;
-  Cmd: String;
-  Code: Integer;
-  Lines: TArrayOfString;
-  Sid: String;
-  ProfileDir: String;
+function SilentCommon: Boolean;
 begin
-  Result := ExpandConstant('{localappdata}');
-  OutFile := ExpandConstant('{tmp}\orig-sid.txt');
-  QuotedOut := OutFile;
-  StringChangeEx(QuotedOut, '''', '''''', True);
-  DeleteFile(OutFile);
-  Cmd := '-NoProfile -NonInteractive -Command "' +
-    '$sid = (Get-CimInstance Win32_Process -Filter (''Name=''''explorer.exe'''' AND SessionId='' + (Get-Process -Id $PID).SessionId) | ' +
-    'Select-Object -First 1 | Invoke-CimMethod -MethodName GetOwnerSid).Sid; ' +
-    'if ($sid) { [IO.File]::WriteAllText(''' + QuotedOut + ''', $sid, [Text.Encoding]::ASCII) }"';
-  if Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) and
-     LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) > 0) then
-  begin
-    Sid := Trim(Lines[0]);
-    if (Sid <> '') and
-       RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + Sid, 'ProfileImagePath', ProfileDir) and
-       (ProfileDir <> '') and DirExists(ProfileDir + '\AppData\Local') then
-      Result := ProfileDir + '\AppData\Local';
-  end;
-  DeleteFile(OutFile);
+  Result := Silent and not NoUserSteps and (FailCode = 0);
 end;
 
-// The Configurator's --check exit codes (sync.rs, LoginError::exit_code): why a login doesn't work, or ''.
-function SyncCheckMessage(Code: Integer): String;
+function UpgradeFlag(Param: String): String;
 begin
-  case Code of
-    11: Result := CustomMessage('SyncCheckLogin');
-    12: Result := CustomMessage('SyncCheckUnreachable');
-    13: Result := CustomMessage('SyncCheckNotSebType');
-    14: Result := CustomMessage('SyncCheckTls');
+  if WasInstalled then
+    Result := ' --upgrade'
   else
     Result := '';
-  end;
-end;
-
-// Runs the Configurator's --sync-login-file as the invoking user with a short-lived file (never on the
-// command line or in logs): its exit code, or -1.
-function RunSyncLogin(Server, User, Password, Extra: String): Integer;
-var
-  CredFile: String;
-  Lines: TArrayOfString;
-  Code: Integer;
-  Ok: Boolean;
-begin
-  Result := -1;
-  CredFile := OriginalLocalAppData + '\SebType\sync-login.tmp';
-  ForceDirectories(ExtractFileDir(CredFile));
-  SetArrayLength(Lines, 3);
-  Lines[0] := Server;
-  Lines[1] := User;
-  Lines[2] := Password;
-  Ok := False;
-  try
-    if not SaveStringsToUTF8FileWithoutBOM(CredFile, Lines, False) then
-      Exit;
-    Ok := ExecAsOriginalUser(ExpandConstant('{app}\sebtype-configurator.exe'),
-      '--sync-login-file "' + CredFile + '"' + Extra, '', SW_HIDE, ewWaitUntilTerminated, Code);
-    if Ok then
-      Result := Code;
-  finally
-    DeleteFile(CredFile);
-  end;
-end;
-
-// Checks the sync login, shows what the check found and saves a login that works; one that doesn't is
-// saved at the next Next (Save anyway) unless the fields change.
-function SaveSyncLogin(Server, User, Password: String): Boolean;
-var
-  Code: Integer;
-  Why: String;
-begin
-  Result := False;
-  Code := 0;
-  WizardForm.NextButton.Enabled := False;
-  try
-    if not SyncFailed then
-    begin
-      ShowSync(0, CustomMessage('SyncChecking'));
-      Code := RunSyncLogin(Server, User, Password, ' --check-only');
-      Why := SyncCheckMessage(Code);
-      if Why <> '' then
-      begin
-        ShowSync(2, Why);
-        SyncFailed := True;
-        SetNextCaption(CustomMessage('SyncSaveAnywayButton'));
-        Exit;
-      end;
-      if Code = 0 then
-      begin
-        // The tick stays a moment before the page moves on.
-        ShowSync(1, CustomMessage('SyncConnected'));
-        Sleep(1500);
-      end;
-    end;
-    if Code <> 2 then
-      Code := RunSyncLogin(Server, User, Password, '');
-    if Code = 0 then
-      Result := True
-    else if Code = 2 then
-      ShowSync(2, CustomMessage('SyncInvalidServer'))
-    else
-      ShowSync(2, CustomMessage('SyncSaveFailed'));
-  finally
-    WizardForm.NextButton.Enabled := True;
-  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
-var
-  S, U, P: String;
 begin
   Result := True;
   if (CurPageID = wpSelectTasks) and (Chosen = '') then
   begin
     Tell(CustomMessage('NoLanguage'), mbInformation);
     Result := False;
-  end
-  else if CurPageID = SyncPage.ID then
-  begin
-    S := Trim(SyncPage.Values[0]);
-    U := Trim(SyncPage.Values[1]);
-    P := SyncPage.Values[2];
-    if (S = '') and (U = '') and (P = '') then
-      Exit;
-    if (S = '') or (U = '') or (P = '') then
-    begin
-      ShowSync(2, CustomMessage('SyncIncomplete'));
-      Result := False;
-      Exit;
-    end;
-    if SaveSyncLogin(S, U, P) then
-      SyncPage.Values[2] := ''
-    else
-      Result := False;
   end;
 end;
 
@@ -683,15 +422,6 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = wpSelectTasks then
     WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
-  // Inno sets Next's caption again on every page, and Back from the sync page leaves it widened.
-  if SyncFailed then
-    if CurPageID = SyncPage.ID then
-      SetNextCaption(CustomMessage('SyncSaveAnywayButton'))
-    else
-      SetNextCaption(WizardForm.NextButton.Caption);
-  // The finish page's card shows the tray keys.
-  if CurPageID = wpFinished then
-    WizardForm.WizardBitmapImage2.PngImage.LoadFromFile(ExpandConstant('{tmp}\finish-' + Scale + '.png'));
 end;
 
 // The servers stop so their files can be replaced: SebType's saves the learned words first, for the
@@ -734,6 +464,7 @@ begin
 end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  WasInstalled := RegKeyExists(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5C1E7A52-3D8B-4F7E-9E0B-7B3B5A1C7354}_is1');
   StopServers(True);
   MoveAside(ExpandConstant('{app}\sebtype.dll'));
   MoveAside(ExpandConstant('{app}\x86\sebtype.dll'));

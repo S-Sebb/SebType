@@ -249,6 +249,16 @@ fn apply_chinese(c: rime::Chinese) -> Result<Toast, Toast> {
     }
     Ok(say(Msg::Applied))
 }
+/// The Keyboard page's candidate settings, and setup's Common settings page's (#444): Rime's page size in its
+/// files, then the window's look in the platform's.
+fn save_candidates(c: &rime::Chinese, k: &Candidates) -> std::io::Result<()> {
+    let deployed = rime::save(&platform::rime_dir(), c)?;
+    platform::set_candidates(k)?;
+    if deployed {
+        platform::redeploy_rime()?;
+    }
+    Ok(())
+}
 fn apply_japanese(j: mozc::Japanese) -> Result<Toast, Toast> {
     if mozc::save(&platform::mozc_dir(), &j).map_err(err)? {
         platform::restart_mozc();
@@ -767,6 +777,29 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
+    // Common settings (#444) as the person who started Windows Setup: `--common-settings get <file>` writes
+    // what the setup wizard shows first, `--common-settings set [--upgrade] key=value…` saves them where
+    // Setup runs silently (#471).
+    if let Some(i) = std::env::args().position(|a| a == "--common-settings") {
+        let args: Vec<String> = std::env::args().skip(i + 1).collect();
+        let done = match args.first().map(String::as_str) {
+            Some("get") => args.get(1).map_or_else(
+                || Err(std::io::Error::other("missing file path")),
+                |file| std::fs::write(file, setup::Common::load().to_lines()),
+            ),
+            Some("set") => setup::Common::load_for(args.iter().any(|a| a == "--upgrade"))
+                .with(&args[1..])
+                .save(),
+            other => Err(std::io::Error::other(format!("get or set, not {other:?}"))),
+        };
+        std::process::exit(done.map_or_else(
+            |e| {
+                eprintln!("--common-settings: {e}");
+                1
+            },
+            |_| 0,
+        ));
+    }
     // Linux Picnic-themed GUI setup wizard (#435): `--setup <installer-path> [--started-file <path>]`.
     #[cfg(target_os = "linux")]
     if let Some(i) = std::env::args().position(|a| a == "--setup") {
@@ -779,10 +812,22 @@ fn main() -> Result<(), slint::PlatformError> {
             .and_then(|j| std::env::args().nth(j + 1))
             .map(std::path::PathBuf::from);
         return setup::run(
-            std::path::PathBuf::from(installer),
-            started_file,
+            setup::Start::Install {
+                installer: std::path::PathBuf::from(installer),
+                started_file,
+            },
             language(),
         );
+    }
+    // Windows Setup's pages after its file copy (#471), in Setup's language: `--setup-after-install
+    // [--lang en|zh|ja]`.
+    if std::env::args().any(|a| a == "--setup-after-install") {
+        let lang = std::env::args()
+            .skip_while(|a| a != "--lang")
+            .nth(1)
+            .and_then(|l| ["en", "zh", "ja"].into_iter().find(|&k| k == l))
+            .unwrap_or_else(language);
+        return setup::run(setup::Start::AfterInstall, lang);
     }
     // Wayland matches the window to its launcher (and icon) by this id: sebtype-configurator.desktop.
     slint::BackendSelector::new().select()?;
@@ -940,12 +985,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 candidates(&app.global::<State>()),
             );
             run(Box::new(move || {
-                let deployed = rime::save(&platform::rime_dir(), &c).map_err(err)?;
-                platform::set_candidates(&k).map_err(err)?;
-                if deployed {
-                    platform::redeploy_rime().map_err(err)?;
-                }
-                Ok(say(Msg::Applied))
+                save_candidates(&c, &k)
+                    .map(|_| say(Msg::Applied))
+                    .map_err(err)
             }));
         }
     });

@@ -454,8 +454,8 @@ msgstr "每天一次，查看 GitHub 上 SebType 的新版本"
 msgid "SebType Setup"
 msgstr "SebType 安装向导"
 
-msgid "Step {} of 4"
-msgstr "第 {} 步，共 4 步"
+msgid "Step {} of {}"
+msgstr "第 {} 步，共 {} 步"
 
 msgid "Hi! Let's set up SebType"
 msgstr "你好！来装 SebType 吧"
@@ -570,3 +570,12 @@ msgstr "仍然保存"
 
 msgid "Save anyway & continue"
 msgstr "仍然保存并继续"
+
+msgid "Common settings"
+msgstr "常用设置"
+
+msgid "You can change all of these later in SebType Configurator."
+msgstr "这些都可以稍后在 SebType 设置里更改。"
+
+msgid "Next"
+msgstr "下一步"

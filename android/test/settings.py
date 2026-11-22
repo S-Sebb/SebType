@@ -513,12 +513,15 @@ def open_settings():
 def home_shown():
     if screen_has(HOME["about"]):
         return True
-    # A fresh install opens on setup until its last step's Done (#285, #435), which a user presses once
+    # A fresh install opens on setup until its last step's Done (#285, #435, #444), which a user presses once
     step = setup_step_shown()
     if step == 3:
-        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        tap_text(CONTINUE)
         return False
     if step == 4:
+        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        return False
+    if step == 5:
         tap_text(DONE)
         return False
     # Just after SebType restarts the system can fall back to another keyboard; choosing SebType again
@@ -1819,8 +1822,9 @@ def backup_setup():
             )
         start_settings()
         wait_for("setup's step 3 on the new phone", step3_again, 30)
+        past_common()
         tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
-        wait_step(4)
+        wait_step(5)
         tap_text(DONE)
         wait_for("home after Done", lambda: not setup_step_shown(), 15)
         export_backup(False, name)
@@ -1868,9 +1872,25 @@ SETUP_FILE = f"/data/data/{PKG}/files/datastore/settings.preferences_pb"
 def setup_step_shown():
     m = re.search(
         r"(?:step|第|ステップ) ?(\d)",
-        " ".join(label for label, *_ in nodes() if "4" in label),
+        " ".join(label for label, *_ in nodes() if "5" in label),
     )
     return int(m.group(1)) if m else None
+
+
+def pressed_step(step):
+    """Whether setup shows step once its button was pressed, scrolling the page back up when the header
+    (the number) is out of view: at large text the next step keeps the scroll position the button was
+    pressed at."""
+
+    def reached(before):
+        for _ in range(3):
+            if setup_step_shown() == step:
+                return True
+            adb("shell", "input", "swipe", "540", "300", "540", "800", "300")
+            time.sleep(0.5)
+        return setup_step_shown() == step
+
+    return reached
 
 
 @functools.cache
@@ -1884,6 +1904,32 @@ def night_mode():
     if not m:
         raise Skip("night mode is custom, which this can't put back")
     return m.group(1)
+
+
+def system_locale(tag):
+    """Sets the system's language list to tag alone with emulator.sh's set-locale helper (the way
+    Settings does it, without a restart, which can crash the emulator; docs/development.md)."""
+    dex = "/data/local/tmp/sebtype-set-locale.dex"
+    adb("push", os.path.join(logdir, "set-locale.dex"), dex)
+    try:
+        adb(
+            "shell",
+            "app_process",
+            "-cp",
+            dex,
+            "/",
+            "dev.sebb.sebtype.setlocale.SetLocale",
+            tag,
+        )
+    finally:
+        adb("shell", "rm", "-f", dex, check=False)
+    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
+    wait_for(
+        f"the system in {tag}",
+        lambda: re.search(rf"[ -]{config}-", adb("shell", "am", "get-config")),
+        30,
+    )
+    time.sleep(3)  # open apps redraw in the new language
 
 
 def read_prefs():
@@ -1990,7 +2036,7 @@ def start_settings():
 
 
 def wait_step(step):
-    wait_for(f"setup's step {step} of 4", lambda: setup_step_shown() == step, 20)
+    wait_for(f"setup's step {step} of 5", lambda: setup_step_shown() == step, 20)
 
 
 def other_keyboard():
@@ -2126,6 +2172,12 @@ CONTINUE = labels("继续", "Continue", "次へ")
 DONE = labels("完成", "Done", "完了")
 
 
+def past_common():
+    """Setup's common settings (#444), step 3: Continue keeps them as they are, on to account sync."""
+    tap_text(CONTINUE)
+    wait_step(4)
+
+
 def step3_again():
     """Just after SebType stops, the system can fall back to another keyboard (setup's step 2): SebType is
     chosen again until step 3 shows."""
@@ -2136,8 +2188,8 @@ def step3_again():
 
 
 def setup_tips():
-    """A new user: steps 1 and 2 of 4, then account sync as step 3, then the tips as step 4, which an
-    interruption keeps; Done ends setup for good. At large text each step's button can be reached and pressed."""
+    """A new user: steps 1 and 2 of 5, then the common settings as step 3 (#444: number row off, in English and
+    中文), account sync as step 4, then the tips as step 5, which an interruption keeps; Done ends setup for good. At large text each step's button can be reached and pressed."""
     forget_setup()
     adb("shell", "ime", "disable", IME)
     try:
@@ -2151,13 +2203,26 @@ def setup_tips():
         large_text("setup-step2", labels("Choose SebType"), left_and_back)
         adb("shell", "ime", "set", IME)
         wait_step(3)
+        screenshot("setup-common")
+        if is_checked(labels("显示数字行", "Show number row")):
+            raise Fail("the common settings step's number row isn't shown off")
+        system_locale("zh-CN")
+        try:
+            wait_for(
+                "the common settings in 中文", lambda: screen_has(("显示数字行",)), 10
+            )
+            screenshot("setup-common-zh")
+        finally:
+            system_locale("en-US")
+        large_text("setup-common", CONTINUE, pressed_step(4))
+        wait_step(4)
         screenshot("setup-sync")
         large_text(
             "setup-sync",
             SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE,
-            lambda before: setup_step_shown() == 4,
+            pressed_step(5),
         )
-        wait_step(4)
+        wait_step(5)
         wait_for("the tips", lambda: screen_has(TIPS_SPACE), 10)
         screenshot("setup-tips")
         night = night_mode()
@@ -2170,9 +2235,10 @@ def setup_tips():
         # Interrupted: the app stopped before Done comes back to setup (step 3)
         adb("shell", "am", "force-stop", PKG)
         start_settings()
-        wait_for("setup's step 3 of 4 after a restart", step3_again, 30)
+        wait_for("setup's step 3 of 5 after a restart", step3_again, 30)
+        past_common()
         tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
-        wait_step(4)
+        wait_step(5)
         # Done, pressed at large text in landscape, opens home (its title, at the top)
         large_text(
             "setup-tips",
@@ -2192,7 +2258,7 @@ def setup_tips():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
     return (
-        "steps 1, 2, 3 and 4 of 4, each button "
+        "steps 1 to 5 of 5, each button "
         + (
             "scrolled to and pressed at large text (portrait and landscape)"
             if has_root()
@@ -2211,10 +2277,12 @@ def setup_fresh_enabled():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
         start_settings()
-        wait_for("setup's step 3 of 4 with fresh data", step3_again, 30)
-        # Skip sync and Done, as the user would: the next checks expect home, and without root none can put it back
+        wait_for("setup's step 3 of 5 with fresh data", step3_again, 30)
+        # Common settings, skip sync and Done, as the user would: the next checks expect home, and without root
+        # none can put it back
+        past_common()
         tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
-        wait_step(4)
+        wait_step(5)
         tap_text(DONE)
         wait_for("home after Done", lambda: not setup_step_shown(), 15)
         return "data cleared, SebType on and chosen: setup's step 3"
@@ -2224,7 +2292,7 @@ def setup_fresh_enabled():
         adb("shell", "ime", "enable", IME)
         adb("shell", "ime", "set", IME)
         start_settings()
-        wait_for("setup's step 3 of 4 with fresh data", step3_again, 30)
+        wait_for("setup's step 3 of 5 with fresh data", step3_again, 30)
     finally:
         write_prefs(saved)
     return "fresh data, SebType on and chosen: setup's step 3"
@@ -3021,32 +3089,6 @@ def english_on_screen(patterns):
             if any(p.fullmatch(part) for p in patterns):
                 found.add(part)
     return found
-
-
-def system_locale(tag):
-    """Sets the system's language list to tag alone with emulator.sh's set-locale helper (the way
-    Settings does it, without a restart, which can crash the emulator; docs/development.md)."""
-    dex = "/data/local/tmp/sebtype-set-locale.dex"
-    adb("push", os.path.join(logdir, "set-locale.dex"), dex)
-    try:
-        adb(
-            "shell",
-            "app_process",
-            "-cp",
-            dex,
-            "/",
-            "dev.sebb.sebtype.setlocale.SetLocale",
-            tag,
-        )
-    finally:
-        adb("shell", "rm", "-f", dex, check=False)
-    config = tag.replace("-", "-r")  # am get-config writes ja-JP as ja-rJP
-    wait_for(
-        f"the system in {tag}",
-        lambda: re.search(rf"[ -]{config}-", adb("shell", "am", "get-config")),
-        30,
-    )
-    time.sleep(3)  # open apps redraw in the new language
 
 
 def japanese_ui():

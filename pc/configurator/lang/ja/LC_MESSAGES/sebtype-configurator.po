@@ -454,8 +454,8 @@ msgstr "1 日 1 回、GitHub の SebType のリリースを確認します"
 msgid "SebType Setup"
 msgstr "SebType セットアップ"
 
-msgid "Step {} of 4"
-msgstr "ステップ {} / 4"
+msgid "Step {} of {}"
+msgstr "ステップ {} / {}"
 
 msgid "Hi! Let's set up SebType"
 msgstr "こんにちは！SebType をはじめよう"
@@ -570,3 +570,12 @@ msgstr "このまま保存"
 
 msgid "Save anyway & continue"
 msgstr "このまま保存して続行"
+
+msgid "Common settings"
+msgstr "よく使う設定"
+
+msgid "You can change all of these later in SebType Configurator."
+msgstr "どれもあとから SebType 設定で変更できます。"
+
+msgid "Next"
+msgstr "次へ"

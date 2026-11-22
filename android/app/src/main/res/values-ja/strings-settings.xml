@@ -115,11 +115,14 @@
     <string name="settings_reading">読み</string>
     <string name="settings_credits_intro">SebType はこれらのプロジェクトをもとに作られています。作ってくださった皆さんに感謝します。</string>
     <string name="settings_credits_tag">クレジット</string>
-    <string name="setup_step">設定 · ステップ %1$d/4</string>
+    <string name="setup_step">設定 · ステップ %1$d/%2$d</string>
     <string name="setup_enable_text">SebType へようこそ。\n\nまず、Android のキーボード一覧で SebType をオンにしてください。</string>
     <string name="setup_choose_text">次に、入力に使うキーボードとして SebType を選んでください。</string>
     <string name="setup_enable">SebType をオンにする</string>
     <string name="setup_choose">SebType を選ぶ</string>
+    <string name="setup_common_text">SebType の入力方法を選んでください。どれもあとから設定で変更できます。</string>
+    <string name="setup_traditional">繁体字中国語</string>
+    <string name="setup_traditional_subtitle">中文 を簡体字ではなく繁體で始めます</string>
     <string name="setup_sync_text">自分の同期サーバーを使って、学習した単語やユーザー辞書を端末間で同期できます。あとから設定で有効にすることもできます。</string>
     <string name="setup_sync_setup">同期を設定</string>
     <string name="setup_sync_skip">あとで</string>

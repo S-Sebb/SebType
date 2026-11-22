@@ -1,17 +1,19 @@
-//! Picnic-themed Linux GUI setup wizard (`--setup <installer-path>`, #435).
-//! The step state machine and Account Sync validation are pure Rust so they are unit-tested on
-//! every platform.
+//! The Picnic-themed setup wizard: Linux's (`--setup <installer-path>`, #435) from Welcome, Windows Setup's
+//! (`--setup-after-install`, #471) from Common settings (#444) once Setup has copied the files. The step
+//! state machine and Account Sync validation are pure Rust so they are unit-tested on every platform.
 
+// Installing is Linux's: Windows Setup copies the files itself.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
-use crate::sync;
+use crate::{platform, rime, sync, Candidates};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
     Welcome = 0,
     Installing = 1,
-    Sync = 2,
-    Ready = 3,
+    Common = 2,
+    Sync = 3,
+    Ready = 4,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,7 +73,13 @@ impl WizardState {
     pub fn install_succeeded(&mut self, live_active: bool) {
         self.install_error = None;
         self.live_active = live_active;
-        self.step = Step::Sync;
+        self.step = Step::Common;
+    }
+
+    pub fn common_saved(&mut self) {
+        if self.step == Step::Common {
+            self.step = Step::Sync;
+        }
     }
 
     pub fn skip_sync(&mut self) {
@@ -86,6 +94,94 @@ impl WizardState {
             self.sync_signed_in = true;
             self.step = Step::Ready;
         }
+    }
+}
+
+/// The Common settings page (#444): what it shows first is what the Configurator would, and Next saves it
+/// as the Configurator's Keyboard and Theme pages do, so a Next without a change keeps everything.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Common {
+    pub traditional: bool,
+    pub page_size: i32,
+    pub picnic: bool,
+    pub vertical: bool,
+    // The rest of the Configurator's settings, saved back as they were.
+    chinese: rime::Chinese,
+    candidates: Candidates,
+}
+
+impl Common {
+    pub fn load() -> Self {
+        Self::load_for(false)
+    }
+
+    /// An update over an earlier SebType keeps its candidate window as it is, chosen or not.
+    pub fn load_for(update: bool) -> Self {
+        Self::from(
+            rime::load(&platform::rime_dir()),
+            platform::candidates(),
+            update || platform::candidates_chosen(),
+        )
+    }
+
+    /// Picnic until the person has chosen a candidate window style (#471).
+    fn from(chinese: rime::Chinese, candidates: Candidates, chosen: bool) -> Self {
+        Common {
+            traditional: chinese.traditional,
+            page_size: chinese.page_size.clamp(5, 9),
+            picnic: candidates.picnic || !chosen,
+            vertical: candidates.vertical,
+            chinese,
+            candidates,
+        }
+    }
+
+    /// The Configurator's Chinese settings and candidate window, with this page's choices in them.
+    fn applied(&self) -> (rime::Chinese, Candidates) {
+        let chinese = rime::Chinese {
+            traditional: self.traditional,
+            page_size: self.page_size,
+            ..self.chinese.clone()
+        };
+        let candidates = Candidates {
+            picnic: self.picnic,
+            vertical: self.vertical,
+            ..self.candidates.clone()
+        };
+        (chinese, candidates)
+    }
+
+    pub fn save(&self) -> std::io::Result<()> {
+        let (chinese, candidates) = self.applied();
+        crate::save_candidates(&chinese, &candidates)
+    }
+
+    /// Windows Setup's page reads and sends them as `key=value` (main's `--common-settings`).
+    pub fn to_lines(&self) -> String {
+        let b = |on: bool| u8::from(on);
+        format!(
+            "traditional={}\npage-size={}\npicnic={}\nvertical={}\n",
+            b(self.traditional),
+            self.page_size,
+            b(self.picnic),
+            b(self.vertical)
+        )
+    }
+
+    /// These settings with the `key=value`s given changed; others are ignored.
+    pub fn with(mut self, pairs: &[String]) -> Self {
+        for (key, value) in pairs.iter().filter_map(|p| p.split_once('=')) {
+            match key {
+                "traditional" => self.traditional = value == "1",
+                "page-size" => {
+                    self.page_size = value.parse().map_or(self.page_size, |n: i32| n.clamp(5, 9))
+                }
+                "picnic" => self.picnic = value == "1",
+                "vertical" => self.vertical = value == "1",
+                _ => {}
+            }
+        }
+        self
     }
 }
 
@@ -142,24 +238,44 @@ impl Drop for WizardLauncher {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub fn run(
-    installer: std::path::PathBuf,
-    started_file: Option<std::path::PathBuf>,
-    lang: &str,
-) -> Result<(), slint::PlatformError> {
+/// Where the wizard starts.
+pub enum Start {
+    /// Linux: Welcome, then the installer at this path; `started_file` is written once the window shows.
+    Install {
+        installer: std::path::PathBuf,
+        started_file: Option<std::path::PathBuf>,
+    },
+    /// Windows Setup has welcomed, set the languages and copied the files.
+    AfterInstall,
+}
+
+pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
     use crate::{platform, Chrome, SetupState, SetupWindow, SyncCheck};
     use slint::ComponentHandle;
     use std::{cell::RefCell, process::Command, rc::Rc};
 
+    #[cfg(target_os = "linux")]
     let _launcher = WizardLauncher::write(&platform::data()).ok();
     slint::BackendSelector::new().select()?;
+    #[cfg(target_os = "linux")]
     slint::set_xdg_app_id(WizardLauncher::APP_ID)?;
     let win = SetupWindow::new()?;
     win.global::<Chrome>().set_frameless(crate::own_title_bar());
     let _ = slint::select_bundled_translation(lang);
 
+    let after_install = matches!(start, Start::AfterInstall);
+    // Windows Setup says so; Linux's installer hasn't run yet.
+    #[cfg(target_os = "linux")]
+    let update = platform::installed_configurator().exists();
+    #[cfg(not(target_os = "linux"))]
+    let update = std::env::args().any(|a| a == "--upgrade");
     let state = Rc::new(RefCell::new(WizardState::new()));
+    if after_install {
+        // Windows' text service is on as Setup ends; only the languages page is Setup's own.
+        let mut st = state.borrow_mut();
+        st.step = Step::Common;
+        st.live_active = true;
+    }
     let sync_ui = |win: &SetupWindow, st: &WizardState| {
         let g = win.global::<SetupState>();
         g.set_step(st.step as i32);
@@ -172,60 +288,126 @@ pub fn run(
     let g = win.global::<SetupState>();
     g.set_ui_font(platform::ui_font(lang).into());
     sync_ui(&win, &state.borrow());
+    if after_install {
+        g.set_first_step(Step::Common as i32);
+        g.set_show_langs(false);
+        show_common(&win, &Common::load_for(update), &[]);
+    }
 
     g.on_server_valid(|server| server_input_valid(&server));
     g.on_can_submit(|server, user, password| can_submit_sync(&server, &user, &password));
 
-    g.on_start_install({
-        let weak = win.as_weak();
-        let state = state.clone();
+    #[cfg(target_os = "linux")]
+    if let Start::Install { installer, .. } = &start {
         let installer = installer.clone();
-        move || {
-            {
-                let mut st = state.borrow_mut();
-                st.start_install();
-                if let Some(win) = weak.upgrade() {
-                    let g = win.global::<SetupState>();
-                    g.set_step(st.step as i32);
-                    g.set_install_phase(st.install_phase.clone() as i32);
-                    g.set_install_error("".into());
-                }
-            }
-            let weak_bg = weak.clone();
-            let installer_bg = installer.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = platform::run_root_installer(&installer_bg) {
-                    let msg = e.to_string();
-                    let _ = weak_bg.upgrade_in_event_loop(move |win| {
+        g.on_start_install({
+            let weak = win.as_weak();
+            let state = state.clone();
+            move || {
+                {
+                    let mut st = state.borrow_mut();
+                    st.start_install();
+                    if let Some(win) = weak.upgrade() {
                         let g = win.global::<SetupState>();
-                        g.set_install_phase(InstallPhase::Failed as i32);
-                        g.set_install_error(msg.into());
-                    });
-                    return;
-                }
-                let _ = weak_bg.upgrade_in_event_loop(move |win| {
-                    win.global::<SetupState>()
-                        .set_install_phase(InstallPhase::UserSetup as i32);
-                });
-                match platform::run_user_setup() {
-                    Ok(()) => {
-                        let live_active = platform::sebtype_active();
-                        let _ = weak_bg.upgrade_in_event_loop(move |win| {
-                            let g = win.global::<SetupState>();
-                            g.set_install_error("".into());
-                            g.set_live_active(live_active);
-                            g.set_step(Step::Sync as i32);
-                        });
+                        g.set_step(st.step as i32);
+                        g.set_install_phase(st.install_phase.clone() as i32);
+                        g.set_install_error("".into());
                     }
-                    Err(e) => {
+                }
+                let weak_bg = weak.clone();
+                let installer_bg = installer.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = platform::run_root_installer(&installer_bg) {
                         let msg = e.to_string();
                         let _ = weak_bg.upgrade_in_event_loop(move |win| {
                             let g = win.global::<SetupState>();
                             g.set_install_phase(InstallPhase::Failed as i32);
                             g.set_install_error(msg.into());
                         });
+                        return;
                     }
+                    let _ = weak_bg.upgrade_in_event_loop(move |win| {
+                        win.global::<SetupState>()
+                            .set_install_phase(InstallPhase::UserSetup as i32);
+                    });
+                    match platform::run_user_setup() {
+                        Ok(()) => {
+                            let live_active = platform::sebtype_active();
+                            let (common, langs) = (
+                                Common::load_for(update),
+                                platform::langs().unwrap_or_default(),
+                            );
+                            let _ = weak_bg.upgrade_in_event_loop(move |win| {
+                                let g = win.global::<SetupState>();
+                                g.set_install_error("".into());
+                                g.set_live_active(live_active);
+                                show_common(&win, &common, &langs);
+                                g.set_step(Step::Common as i32);
+                            });
+                        }
+                        Err(e) => {
+                            let msg = e.to_string();
+                            let _ = weak_bg.upgrade_in_event_loop(move |win| {
+                                let g = win.global::<SetupState>();
+                                g.set_install_phase(InstallPhase::Failed as i32);
+                                g.set_install_error(msg.into());
+                            });
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    g.on_save_common({
+        let weak = win.as_weak();
+        move || {
+            let Some(win) = weak.upgrade() else { return };
+            let g = win.global::<SetupState>();
+            let common = Common {
+                traditional: g.get_traditional(),
+                page_size: g.get_page_size(),
+                picnic: g.get_picnic(),
+                vertical: g.get_vertical(),
+                ..Common::load_for(update)
+            };
+            // The languages in their order, each on or off as the page shows it; none where Windows
+            // Setup's own page set them.
+            let langs: Vec<(String, bool)> = if !g.get_show_langs() {
+                Vec::new()
+            } else {
+                platform::langs().unwrap_or_default()
+            }
+            .into_iter()
+            .map(|(id, _)| {
+                let on = match id.as_str() {
+                    "en" => g.get_lang_en(),
+                    "zh" => g.get_lang_zh(),
+                    _ => g.get_lang_ja(),
+                };
+                (id, on)
+            })
+            .collect();
+            g.set_common_busy(true);
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let saved = if langs.is_empty() {
+                    Ok(())
+                } else {
+                    platform::set_langs(&langs)
                 }
+                .and_then(|_| common.save());
+                let _ = weak.upgrade_in_event_loop(move |win| {
+                    let g = win.global::<SetupState>();
+                    g.set_common_busy(false);
+                    match saved {
+                        Ok(()) => {
+                            g.set_common_error("".into());
+                            g.set_step(Step::Sync as i32);
+                        }
+                        Err(e) => g.set_common_error(e.to_string().into()),
+                    }
+                });
             });
         }
     });
@@ -277,6 +459,12 @@ pub fn run(
                         });
                         return;
                     }
+                    // The tick shows a moment before the page moves on (or says why saving failed).
+                    let _ = weak_bg.upgrade_in_event_loop(|win| {
+                        win.global::<SetupState>()
+                            .set_sync_check(SyncCheck::Connected);
+                    });
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
                 }
                 let res = sync::save_login(server, user, &password);
                 let _ = weak_bg.upgrade_in_event_loop(move |win| {
@@ -301,7 +489,10 @@ pub fn run(
         move || {
             if let Some(win) = weak.upgrade() {
                 if win.global::<SetupState>().get_open_configurator() {
+                    #[cfg(target_os = "linux")]
                     let bin = platform::installed_configurator();
+                    #[cfg(not(target_os = "linux"))]
+                    let bin = std::env::current_exe().unwrap_or_default();
                     let _ = Command::new(bin).spawn();
                 }
             }
@@ -309,11 +500,46 @@ pub fn run(
         }
     });
 
+    // For screenshots (pc/configurator/test.sh): --step N opens that step, Common settings as installed;
+    // --theme picnic or system shows it in that style.
+    if let Some(step) = std::env::args()
+        .position(|a| a == "--step")
+        .and_then(|i| std::env::args().nth(i + 1)?.parse().ok())
+    {
+        show_common(
+            &win,
+            &Common::load(),
+            &platform::langs().unwrap_or_default(),
+        );
+        g.set_step(step);
+    }
+    if let Some(theme) = std::env::args().skip_while(|a| a != "--theme").nth(1) {
+        g.set_picnic(theme != "system");
+    }
+
     win.show()?;
-    if let Some(path) = started_file {
+    if let Start::Install {
+        started_file: Some(path),
+        ..
+    } = &start
+    {
         let _ = std::fs::write(path, "1");
     }
     slint::run_event_loop()
+}
+
+/// The Common settings page shows these values.
+fn show_common(win: &crate::SetupWindow, common: &Common, langs: &[(String, bool)]) {
+    use slint::ComponentHandle;
+    let g = win.global::<crate::SetupState>();
+    let on = |id: &str| langs.iter().any(|(i, on)| i == id && *on);
+    g.set_lang_en(on("en"));
+    g.set_lang_zh(on("zh"));
+    g.set_lang_ja(on("ja"));
+    g.set_traditional(common.traditional);
+    g.set_page_size(common.page_size);
+    g.set_picnic(common.picnic);
+    g.set_vertical(common.vertical);
 }
 
 #[cfg(test)]
@@ -353,8 +579,11 @@ mod tests {
         assert_eq!(st.install_phase, InstallPhase::UserSetup);
 
         st.install_succeeded(true);
-        assert_eq!(st.step, Step::Sync);
+        assert_eq!(st.step, Step::Common);
         assert!(st.live_active);
+
+        st.common_saved();
+        assert_eq!(st.step, Step::Sync);
 
         st.sync_succeeded();
         assert_eq!(st.step, Step::Ready);
@@ -378,12 +607,70 @@ mod tests {
 
         st.packages_installed();
         st.install_succeeded(false);
-        assert_eq!(st.step, Step::Sync);
+        assert_eq!(st.step, Step::Common);
         assert!(!st.live_active);
+        st.common_saved();
+        assert_eq!(st.step, Step::Sync);
 
         st.skip_sync();
         assert_eq!(st.step, Step::Ready);
         assert!(!st.sync_signed_in);
+    }
+
+    /// #444: the page shows the installed defaults (6 per page, 简体), Next without a change writes nothing new,
+    /// and its choices reach Rime's files while the Configurator's other settings stay.
+    #[test]
+    fn common_settings_page_writes_the_settings() {
+        let dir = std::env::temp_dir().join(format!("sebtype-common-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let candidates = Candidates {
+            vertical: false,
+            font_size: 13,
+            picnic: true,
+        };
+        let page = Common::from(rime::load(&dir), candidates.clone(), true);
+        assert_eq!((page.traditional, page.page_size), (false, 6));
+        // Picnic until a style is chosen (#471); a chosen System style stays.
+        let system = Candidates {
+            picnic: false,
+            ..candidates.clone()
+        };
+        assert!(Common::from(rime::load(&dir), system.clone(), false).picnic);
+        assert!(!Common::from(rime::load(&dir), system, true).picnic);
+        let (c, k) = page.applied();
+        assert!(
+            !rime::save(&dir, &c).unwrap(),
+            "a Next without a change writes nothing"
+        );
+        assert_eq!(k, candidates);
+
+        let mut chinese = rime::load(&dir);
+        chinese.emoji = false;
+        rime::save(&dir, &chinese).unwrap();
+        let page = Common::from(rime::load(&dir), candidates.clone(), true).with(&[
+            "traditional=1".into(),
+            "page-size=8".into(),
+            "picnic=0".into(),
+            "vertical=1".into(),
+        ]);
+        assert_eq!(
+            page.to_lines(),
+            "traditional=1\npage-size=8\npicnic=0\nvertical=1\n"
+        );
+        let (c, k) = page.applied();
+        assert!(rime::save(&dir, &c).unwrap());
+        let saved = rime::load(&dir);
+        assert!(saved.traditional && !saved.emoji);
+        assert_eq!(saved.page_size, 8);
+        assert_eq!(
+            k,
+            Candidates {
+                vertical: true,
+                font_size: 13,
+                picnic: false
+            }
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

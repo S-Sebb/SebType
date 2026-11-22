@@ -244,6 +244,12 @@ pub fn candidates() -> Candidates {
     }
 }
 
+/// Whether a candidate window style was ever chosen: Picnic now, or once (it remembered the look it
+/// replaced). Before that, setup offers Picnic (#471).
+pub fn candidates_chosen() -> bool {
+    candidates().picnic || theme_dir().join("previous").exists()
+}
+
 /// The pinyin row is sebtype.conf's (the input method's); the rest classicui's.
 pub fn set_candidates(c: &Candidates) -> io::Result<bool> {
     set_settings(|old| {
