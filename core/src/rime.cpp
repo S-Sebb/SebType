@@ -171,6 +171,11 @@ class Rime final : public Engine {
     return list;
   }
 
+  // The data's last filter (sebtype_learned.lua) writes it to the user dictionary when the property changes.
+  void learn(const std::string &code, const std::string &text) override {
+    if (ready()) api_->set_property(session_, "sebtype_learn", (code + '\t' + text).c_str());
+  }
+
   // A session of its own, so the composition stays as it is; its schema has no learning, and 繁 is the
   // Chinese model's to apply.
   bool corrects() override { return true; }

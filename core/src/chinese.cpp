@@ -19,7 +19,10 @@
 // for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
 // characters' readings in rime-data's sebtype_readings.txt (8105's).
 // Picking one of Rime's candidates selects it in Rime by its own index; picking one of the model's teaches
-// Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand.
+// Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand. One
+// Rime has no pieces for (猫狗就要 for maogoujiya, where the model reads jiya as 就要) goes into Rime's user
+// dictionary under the syllables typed (#518), when Rime reads all of them as whole ones: then it is learned,
+// synced and forgotten as Rime's own picks are, and comes first the next time as they do.
 // 繁: Rime converts its own candidates (rime-ice's traditionalization); the model reads simplified text, so
 // OpenCC's t2s turns Rime's candidates and the field's text into it, and s2t the model's into 繁.
 //
@@ -387,6 +390,7 @@ class Chinese final : public Engine {
     int rime = -1;           // Rime's index; -1: the model's own
     std::string simplified;  // the model's own: its text as the model wrote it
     bool misread = false;    // the model's own, reading the letters otherwise than Rime (#503)
+    std::string code;        // the model's own: the input's syllables to learn it under ("mao gou ji ya", #518)
   };
   // What the worker is asked for: the model's list for Rime's input (empty: next words) after CONTEXT.
   struct Job {
@@ -503,6 +507,7 @@ class Chinese final : public Engine {
       const auto rime = rime_->candidates(kTeachCandidates);
       const auto at = std::ranges::find(rime, item.candidate.text, &Candidate::text);
       item.rime = at == rime.end() ? -1 : int(at - rime.begin());
+      item.code.clear();  // the syllables of the input it was made for
     }
     // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
     // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
@@ -524,7 +529,7 @@ class Chinese final : public Engine {
   // Commits the model's candidate ITEM, and selects the Rime candidates that spell it, piece by piece from
   // the start of the input, so Rime's user dictionary learns it as it would from the user's own picks. Where
   // Rime has no piece that starts what is left (a typo the model fixed), Rime commits nothing and learns
-  // nothing.
+  // nothing from the pieces, and learns the whole text under the input's syllables (item.code) instead.
   void teach(const Item &item) {
     const std::string &want = item.candidate.text;
     std::string left = want;
@@ -546,7 +551,10 @@ class Chinese final : public Engine {
     }
     // Rime's own commit (the pieces, converted by Rime) gives way to the text shown.
     rime_->takeCommit();
-    if (!taught) rime_->clear();
+    if (!taught) {
+      if (learning_ && !item.code.empty()) rime_->learn(item.code, item.simplified);
+      rime_->clear();
+    }
     commit_ += want;
     remember(want);
   }
@@ -674,6 +682,15 @@ class Chinese final : public Engine {
       if (paths_.rankDelay.count()) std::this_thread::sleep_for(paths_.rankDelay);
       l.lock();
       if (job.rev != revNow_) continue;  // typed on meanwhile
+      // A pick of the model's own that Rime can't spell is learned under the syllables typed (#518): only
+      // whole ones (not initials, "w m"), a character each, as Rime's user dictionary keeps its words.
+      if (!job.syllables.empty() &&
+          std::ranges::all_of(job.syllables, [&](const std::string &s) { return readings.syllables.count(s) > 0; })) {
+        std::string code;
+        for (const auto &s : job.syllables) code += (code.empty() ? "" : " ") + s;
+        for (auto &it : items)
+          if (it.rime < 0 && wholeInput(it.simplified, job.syllables.size())) it.code = code;
+      }
       result_ = std::move(items);
       resultFirst_ = first;
       resultRev_ = job.rev;
