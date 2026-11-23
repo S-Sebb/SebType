@@ -1,5 +1,5 @@
 {
- "name": "r1",
+ "name": "r2",
  "seed": 259,
  "context": 256,
  "model": {"hidden_size": 384, "intermediate_size": 1024, "num_hidden_layers": 8, "num_attention_heads": 6,

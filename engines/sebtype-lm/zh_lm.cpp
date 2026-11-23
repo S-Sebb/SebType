@@ -250,10 +250,14 @@ void Model::decodeExample(const std::vector<int> &prefix, const std::vector<std:
     size_t keep = 0;
     while (keep < mCached.size() && keep < prefix.size() && mCached[keep] == prefix[keep]) keep++;
     keep = std::min(keep, prefix.size() - 1);  // the last token is decoded again for its logits
+    // A tree after a start of what the cache holds (plain()'s, after the context of score()'s example) goes
+    // aside, on the branches alone: the cache keeps the example for the next key.
+    const bool aside = nSeqs > 0 && keep + 1 == prefix.size() && mCached.size() > prefix.size();
+    const int from = aside ? 1 : 0;
     clearBranches();
     llama_memory_t mem = llama_get_memory(mCtx);
-    llama_memory_seq_rm(mem, 0, keep, -1);
-    for (int s = 1; s <= nSeqs; s++) llama_memory_seq_cp(mem, 0, s, -1, -1);
+    if (!aside) llama_memory_seq_rm(mem, 0, keep, -1);
+    for (int s = 1; s <= nSeqs; s++) llama_memory_seq_cp(mem, 0, s, -1, aside ? keep : -1);
     mBranches = nSeqs;
     const size_t tail = prefix.size() - keep, total = tail + paths.size();
     const size_t nBatch = llama_n_batch(mCtx);
@@ -267,8 +271,8 @@ void Model::decodeExample(const std::vector<int> &prefix, const std::vector<std:
             if (i < tail) {
                 batch.token[k] = prefix[keep + i];
                 batch.pos[k] = keep + i;
-                batch.n_seq_id[k] = nSeqs + 1;
-                for (int s = 0; s <= nSeqs; s++) batch.seq_id[k][s] = s;
+                batch.n_seq_id[k] = nSeqs + 1 - from;
+                for (int s = from; s <= nSeqs; s++) batch.seq_id[k][s - from] = s;
                 batch.logits[k] = i + 1 == tail;
             } else {
                 const auto &path = paths[i - tail];
@@ -292,12 +296,13 @@ void Model::decodeExample(const std::vector<int> &prefix, const std::vector<std:
         timer.emplace(profile.us[Profile::ScoreNorm]);
         for (size_t i = std::max(first, tail - 1); i < last; i++) {
             const float *l = llama_get_logits_ith(mCtx, i - first);
-            if (i < tail) mNodes.emplace(std::vector<int>{}, node(l, 0));
+            if (i < tail) mNodes.emplace(std::vector<int>{}, node(l, from));
             else mNodes.emplace(paths[i - tail], node(l, seqs[i - tail][0]));
         }
     }
     llama_batch_free(batch);
-    mCached = mExample = prefix;
+    mExample = prefix;
+    if (!aside) mCached = prefix;
 }
 
 float Model::logNorm(const float *logits) const {
@@ -328,9 +333,21 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
         if (std::find(followers.begin(), followers.end(), g) == followers.end()) followers.push_back(g);
     timer.reset();
     decodeExample(prefix, followers);
+    return pathScores(pieces);
+}
+
+std::vector<float> Model::plain(const std::string &context, const std::vector<std::string> &texts) {
+    if (texts.empty()) return {};
+    std::vector<std::vector<int>> pieces;
+    for (const auto &text : texts) pieces.push_back(tokenize(text));
+    decodeExample(contextTokens(context), pieces);
+    return pathScores(pieces);
+}
+
+std::vector<float> Model::pathScores(const std::vector<std::vector<int>> &paths) {
     Timer norms{profile.us[Profile::ScoreNorm]};
     std::vector<float> out;
-    for (const auto &p : pieces) {
+    for (const auto &p : paths) {
         std::vector<int> path;
         out.push_back(0);
         for (size_t j = 0; j < p.size(); j++) {
@@ -340,6 +357,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
                 break;
             }
             out.back() += n->second.logits[p[j]] - n->second.norm;
+            if (p[j] == mE) out.back() += logEnd(n->second.logits.data());
             path.push_back(p[j]);
         }
     }
@@ -396,7 +414,8 @@ std::vector<Text> Model::generate(const std::string &context, const std::string 
             const float *l = beams[i].logits;
             const float norm = std::isnan(beams[i].norm) ? logNorm(l) : beams[i].norm;
             // Every beam's own end is a candidate, however its Han continuations rank against <E>.
-            if (!beams[i].tokens.empty()) done.push_back({beams[i].tokens, beams[i].logProb + l[mE] - norm});
+            if (!beams[i].tokens.empty())
+                done.push_back({beams[i].tokens, beams[i].logProb + l[mE] - norm + logEnd(l)});
             if (step == maxChars) continue;
             std::vector<int> top = mHan;
             const size_t k = std::min<size_t>(width, top.size());

@@ -39,6 +39,9 @@ struct Options {
     float rankWeight = 1;  // of -log(1 + Rime's rank): how much Rime's order counts against the model's
     int generate = 0;      // the model's own candidates (beam width), 0 for none
     float generatedRank = 8;  // the Rime rank a generated candidate counts as
+    float plain = 0;          // of the plain-text log probability (zh_lm plain(), #502), for Rime's candidates
+    float ownPlain = 0;       // the same for generated ones
+    int plainTop = 3;         // the first candidates the plain-text term re-orders
     int pageSize = 6;      // what the keyboard reads after each key
     int dump = 0;
     int profile = 0;
@@ -90,7 +93,16 @@ std::vector<std::string> rerank(zh_lm::Model &model, const Options &opt, const s
     if (pool.empty()) return list;
     std::vector<size_t> order(pool.size());
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
-    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return lp[a] + prior[a] > lp[b] + prior[b]; });
+    const auto better = [&](size_t a, size_t b) { return lp[a] + prior[a] > lp[b] + prior[b]; };
+    std::stable_sort(order.begin(), order.end(), better);
+    if (opt.plain || opt.ownPlain) {  // as core/src/chinese.cpp's rank()
+        const auto head = order.begin() + std::min<size_t>(order.size(), opt.plainTop);
+        std::vector<std::string> best;
+        for (auto i = order.begin(); i != head; ++i) best.push_back(pool[*i]);
+        const auto p = model.plain(context, best);
+        for (size_t j = 0; j < p.size(); j++) lp[order[j]] += (order[j] < k ? opt.plain : opt.ownPlain) * p[j];
+        std::stable_sort(order.begin(), head, better);
+    }
     std::vector<std::string> out;
     for (size_t i : order) out.push_back(pool[i]);
     for (size_t i = k; i < list.size(); i++)
@@ -118,10 +130,12 @@ int main(int argc, char **argv) {
     for (int i = 6; i < argc; i++) {
         const auto kv = split(argv[i], '=');
         if (kv.size() != 2) return std::cerr << "bad option " << argv[i] << "\n", 2;
-        const std::map<std::string, float *> floats{{"rankWeight", &opt.rankWeight}, {"generatedRank", &opt.generatedRank}};
+        const std::map<std::string, float *> floats{{"rankWeight", &opt.rankWeight}, {"generatedRank", &opt.generatedRank},
+                                                {"plain", &opt.plain}, {"ownPlain", &opt.ownPlain}};
         const std::map<std::string, int *> ints{{"rerank", &opt.rerank}, {"generate", &opt.generate}, {"dump", &opt.dump},
                                               {"profile", &opt.profile}, {"threads", &opt.threads},
-                                              {"core", &opt.core}, {"fix", &opt.fix}};
+                                              {"core", &opt.core}, {"fix", &opt.fix},
+                                              {"plainTop", &opt.plainTop}};
         if (floats.count(kv[0])) *floats.at(kv[0]) = std::stof(kv[1]);
         else if (ints.count(kv[0])) *ints.at(kv[0]) = std::stoi(kv[1]);
         else return std::cerr << "unknown option " << kv[0] << "\n", 2;

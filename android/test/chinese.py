@@ -900,10 +900,35 @@ check(
 )
 
 
+def split_word_after_context():
+    """#502: after 我再去, jiangeshen gives Rime's 健个身 first, not the model's own 剪个深, whose first character
+    suits the text before but whose rest doesn't."""
+    open_field()
+    type_keys("wozaiqu")
+    tap_candidate("我再去")
+    if (text := field_text()) != "我再去":
+        raise Fail(f"picked 我再去; the field shows {text!r}")
+    type_keys("jiangeshen")
+    got = []
+
+    def first():
+        got[:] = candidates(nodes())
+        return got[:1] == ["健个身"]
+
+    try:
+        wait_for("健个身 first", first, 30)
+    except Fail:
+        raise Fail(f"我再去 + jiangeshen -> {got[:6]}")
+    return f"我再去 + jiangeshen -> {got[:6]}"
+
+
+check("zh-model-split-word", split_word_after_context, needs=["first-install"])
+
+
 def correction_on_first_page():
-    """A slip that reads as pinyin (#478): youkuaiyoouhao, 又快又好 meant, which neither Rime nor the model's
-    own beam reads. Rime's correction, which the model weighs once typing pauses, comes on the first page
-    (5) within the seconds type_keys waits, and picking it writes it."""
+    """A slip that reads as pinyin (#478): youkuaiyoouhao, 又快又好 meant, which Rime doesn't read. Rime's
+    correction, which the model weighs once typing pauses (since #502 the model's own beam reads it too),
+    comes on the first page (5) within the seconds type_keys waits, and picking it writes it."""
     open_field()
     got = candidates_for("youkuaiyoouhao", expand=True)
     if "又快又好" not in got[:5]:

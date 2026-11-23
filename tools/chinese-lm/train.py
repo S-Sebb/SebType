@@ -34,10 +34,16 @@ def windows(data, wb, n, length, gen):
     )
 
 
+def between(x, start, stop):
+    """Where X is after a START and before its STOP (or at it), also when the window began between them."""
+    c = (x == start).cumsum(1) - (x == stop).cumsum(1)
+    # A window that began between them reaches -1 at the STOP: counted from there, it is 1 between them too.
+    return c - c.min(1, keepdim=True).values > 0
+
+
 def labels(x, t, s):
     """Next-token labels for X, with the examples' typed part (<T>, the letters, <S>) left out."""
-    c = (x == t).cumsum(1) - (x == s).cumsum(1)
-    inside = (c > 0) | (x == s)
+    inside = between(x, t, s) | (x == s)
     y = x[:, 1:].clone()
     y[inside[:, 1:]] = -100
     return x[:, :-1], y
@@ -130,8 +136,7 @@ def main(run, config_path):
             inp, y = labels(x, t, s)
             loss, bl = losses(inp, y, b)
             # The spans: from <S> up to the <E> after it.
-            c = (inp == s).long().cumsum(1) - (inp == e).long().cumsum(1)
-            in_span = (c > 0) & (y != -100)
+            in_span = between(inp, s, e) & (y != -100)
             text = (y != -100) & ~in_span
             total += loss[text].sum().item()
             n += text.sum().item()

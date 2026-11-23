@@ -1042,6 +1042,7 @@ struct FakeRime : Engine {
   std::map<std::string, std::vector<std::string>> words{
       {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
   std::map<std::string, std::string> full{{"woaini", "握挨泥"}, {"nihao", "你好"}};
+  std::map<std::string, std::string> spelled;  // an input's syllables, where preedit()'s rule can't find them
   std::string in, chosen, commit;
   size_t done = 0;
   bool alt = false;
@@ -1084,12 +1085,14 @@ struct FakeRime : Engine {
   Preedit preedit() override {
     if (in.empty()) return {};
     std::string syl;
-    for (size_t i = done; i < in.size();) {
-      size_t n = std::min<size_t>(3, in.size() - i);
-      while (n > 1 && !words.count(in.substr(i, n))) n--;
-      syl += (syl.empty() ? "" : " ") + in.substr(i, n);
-      i += n;
-    }
+    if (const auto s = spelled.find(in); !done && s != spelled.end()) syl = s->second;
+    else
+      for (size_t i = done; i < in.size();) {
+        size_t n = std::min<size_t>(3, in.size() - i);
+        while (n > 1 && !words.count(in.substr(i, n))) n--;
+        syl += (syl.empty() ? "" : " ") + in.substr(i, n);
+        i += n;
+      }
     Preedit p;
     if (!chosen.empty()) p.segments.push_back({chosen, true, false});
     p.segments.push_back({syl, true, true});
@@ -1274,6 +1277,14 @@ TEST_F(ChineseTest, TheHighlightMovesWithinTheModelsList) {
   EXPECT_EQ(rime->learned.back(), "我爱你");
 }
 
+// The model's own 剪个深 reads jiangeshen too, and its first character suits 我再去, but the text doesn't (#502).
+TEST_F(ChineseTest, RimesSplitWordOutranksTheModelsMisreading) {
+  start({}, [](FakeRime &r) { r.full["jiangeshen"] = "健个身", r.spelled["jiangeshen"] = "jian ge shen"; });
+  zh->setContext("我再去");
+  typeAndWait("jiangeshen");
+  EXPECT_EQ(list().at(0), "健个身");
+}
+
 TEST_F(ChineseTest, PickingRimesCandidateSelectsItByRimesIndex) {
   typeAndWait("nihao");
   const auto l = list();
@@ -1352,8 +1363,8 @@ TEST_F(ChineseTest, ATapWhileTheListIsKeptPicksTheWordShown) {
 
 // Typos that read as valid pinyin (#478). The model's list shows first, untouched; on the turn its second
 // READY asks for, Rime's corrections are looked up, and once the model has weighed them the list changes
-// again if the correction moves. yu for yue: the model reads 越来越小 itself. yoou for you: the model's own beam
-// misses 又快又好, but is nearly as sure of it as of its own first once asked, so the correction goes first.
+// again if the correction moves. yu for yue: the model reads 越来越小 itself. za for zai: the model's own beam
+// misses 心不在焉 (心不咋样), but is surer of it than of its own first once asked, so the correction goes first.
 struct ChineseFixTest : ChineseTest {
   void SetUp() override { startFixing(); }
   void startFixing(std::chrono::milliseconds delay = {}) {
@@ -1362,8 +1373,9 @@ struct ChineseFixTest : ChineseTest {
                       {"kuai", {"块"}}});
       r.full["yuelaiyuxiao"] = "越来鱼小";
       r.fixes["yuelaiyuxiao"] = {"越来越小", "越来越少"};
-      r.full["youkuaiyoouhao"] = "有块友好";
-      r.fixes["youkuaiyoouhao"] = {"又快又好", "有快有好"};
+      r.full["xinbuzayan"] = "新不咋盐";
+      r.spelled["xinbuzayan"] = "xin bu za yan";
+      r.fixes["xinbuzayan"] = {"心不在焉", "新不在焉"};
     });
   }
 };
@@ -1377,41 +1389,41 @@ TEST_F(ChineseFixTest, TheReportedSlipReadsAsMeant) {
   EXPECT_EQ(zh->takeCommit(), "越来越小");
 }
 
-TEST_F(ChineseFixTest, ANearlyAsLikelyCorrectionComesFirst) {
+TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   const int before = readyCount();
-  type("youkuaiyoouhao");
+  type("xinbuzayan");
   ASSERT_TRUE(ready(before + 1));  // the model's list, then the turn for corrections
   const auto shown = list();
   EXPECT_EQ(rime->corrected, 0);  // not while making the list that shows first
-  ASSERT_NE(shown.at(0), "又快又好");
+  ASSERT_NE(shown.at(0), "心不在焉");
   const int asked = readyCount();
   EXPECT_EQ(list(), shown);  // the turn: the same list, and the corrections looked up
   EXPECT_EQ(rime->corrected, 1);
   ASSERT_TRUE(ready(asked));
   const auto l = list();
-  EXPECT_EQ(l.at(0), "又快又好");
+  EXPECT_EQ(l.at(0), "心不在焉");
   EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
   zh->key({' ', 0, false});
-  EXPECT_EQ(zh->takeCommit(), "又快又好");
+  EXPECT_EQ(zh->takeCommit(), "心不在焉");
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }
 
 // Windows' text service asks again until the correction has been weighed too (#495), not only the model's list;
 // the PCs' hosts read the box through page(), whose next read is the turn for corrections.
 TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
-  rime->words["you"] = {"有", "又", "由", "友", "油", "游", "右", "优"};  // a full page, as Rime's
+  rime->words["xin"] = {"新", "心", "信", "欣", "辛", "芯", "薪", "馨"};  // a full page, as Rime's
   const int before = readyCount();
-  type("youkuaiyoouhao");
+  type("xinbuzayan");
   EXPECT_TRUE(zh->updating());
   ASSERT_TRUE(ready(before + 1));
-  ASSERT_NE(zh->page().items.at(0).text, "又快又好");
+  ASSERT_NE(zh->page().items.at(0).text, "心不在焉");
   EXPECT_TRUE(zh->updating());
   const int asked = readyCount();
   zh->page();  // the text service's next ask looks the corrections up
   EXPECT_EQ(rime->corrected, 1);
   EXPECT_TRUE(zh->updating());
   ASSERT_TRUE(ready(asked));
-  EXPECT_EQ(zh->page().items.at(0).text, "又快又好");
+  EXPECT_EQ(zh->page().items.at(0).text, "心不在焉");
   EXPECT_FALSE(zh->updating());
 }
 
@@ -1419,7 +1431,7 @@ TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
 TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   startFixing(300ms);
   const int before = readyCount();
-  type("youkuaiyoouhao");
+  type("xinbuzayan");
   ASSERT_TRUE(ready(before + 1));
   const auto shown = list();
   list();  // corrections asked, their list 0.3 s away
@@ -1427,7 +1439,7 @@ TEST_F(ChineseFixTest, SpaceBeforeTheCorrectionCommitsWhatIsShown) {
   EXPECT_EQ(zh->takeCommit(), shown.at(0));
   std::this_thread::sleep_for(400ms);
   const auto after = list();
-  EXPECT_EQ(std::ranges::find(after, "又快又好"), after.end());
+  EXPECT_EQ(std::ranges::find(after, "心不在焉"), after.end());
 }
 
 TEST_F(ChineseTest, TraditionalAndNextWords) {
