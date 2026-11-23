@@ -64,8 +64,9 @@ command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v 
 # The setup CI built from this commit, else one built here into build/ (ISCC under Wine, from CI's other
 # artifacts) while CI's Mozc build still runs.
 head=$(git -C "$repo" rev-parse HEAD)
-run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --commit "$head" --status success --json databaseId \
-  -q '.[0].databaseId // empty' 2>/dev/null)
+# Success is picked in -q, not with --status success, which can leave out a successful run for hours (#511).
+run=$(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --commit "$head" --json databaseId,conclusion \
+  -q '[.[] | select(.conclusion == "success")][0].databaseId // empty' 2>/dev/null)
 perf=
 if [ -n "$run" ]; then
   gh run download -R S-Sebb/SebType "$run" -n sebtype-setup -D "$out/in" >/dev/null 2>&1 || missing=${missing:-"downloading sebtype-setup from run $run failed"}
@@ -85,8 +86,8 @@ update_test=
 old=
 if [ "${ONLY:-}" = upgrade ]; then
   git -C "$repo" fetch -q origin main
-  for r in $(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch main --status success --limit 50 \
-      --json databaseId,headSha -q '.[] | "\(.databaseId):\(.headSha)"' 2>/dev/null); do
+  for r in $(gh run list -R S-Sebb/SebType --workflow windows-setup.yml --branch main --limit 50 \
+      --json databaseId,headSha,conclusion -q '.[] | select(.conclusion == "success") | "\(.databaseId):\(.headSha)"' 2>/dev/null); do
     git -C "$repo" cat-file -e "${r#*:}:windows/build.ps1" 2>/dev/null && continue
     gh run download -R S-Sebb/SebType "${r%%:*}" -n sebtype-setup -D "$out/old" >/dev/null 2>&1 && old=$(ls "$out"/old/SebType-setup-*.exe 2>/dev/null | head -1)
     break

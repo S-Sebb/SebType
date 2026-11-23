@@ -13,24 +13,25 @@ result() { echo "$1 $2${3:+: $3}"; [[ $1 != FAIL ]] || fails=$((fails + 1)); }
 
 command -v gh >/dev/null && gh auth status >/dev/null 2>&1 || { echo "preflight: gh is not logged in"; exit 1; }
 git fetch -q origin main
-setup_sha=$(gh run list --workflow windows-setup.yml --branch main --status success --event push --limit 1 \
-  --json headSha -q '.[0].headSha // empty')
+# Success is picked in -q, not with --status success, which can leave out a successful run for hours (#511).
+setup_sha=$(gh run list --workflow windows-setup.yml --branch main --event push --limit 20 \
+  --json headSha,conclusion -q '[.[] | select(.conclusion == "success")][0].headSha // empty')
 [[ -n $setup_sha ]] || { echo "preflight: no successful Windows setup run on main"; exit 1; }
 # A main commit (#416's) that never ran windows-setup.yml: it changed only the Android app.
 no_setup_sha=8eba6a8f90
 # A main commit (#419's) with a Windows setup run, from before linux-rpm.yml (#421).
 no_rpm_sha=45ae6594c8
 # Main's latest commit with both runs and the single Linux installer (#427).
-rpm_shas=$(gh run list --workflow linux-rpm.yml --branch main --status success --event push --limit 20 \
-  --json headSha -q '.[].headSha')
+rpm_shas=$(gh run list --workflow linux-rpm.yml --branch main --event push --limit 20 \
+  --json headSha,conclusion -q '.[] | select(.conclusion == "success") | .headSha')
 both_sha=
 while read -r sha; do
   [[ -n $sha ]] && git cat-file -e "$sha:linux/build-installer.sh" 2>/dev/null && { both_sha=$sha; break; }
-done < <(gh run list --workflow windows-setup.yml --branch main --status success --event push --limit 20 \
-  --json headSha -q '.[].headSha' | grep -xF -f <(echo "${rpm_shas:-none}"))
+done < <(gh run list --workflow windows-setup.yml --branch main --event push --limit 20 \
+  --json headSha,conclusion -q '.[] | select(.conclusion == "success") | .headSha' | grep -xF -f <(echo "${rpm_shas:-none}"))
 # A PR's head with a successful pull_request run, which built the PR merged into its base, not this commit.
-pr_sha=$(gh run list --workflow windows-setup.yml --event pull_request --status success --limit 1 \
-  --json headSha -q '.[0].headSha // empty')
+pr_sha=$(gh run list --workflow windows-setup.yml --event pull_request --limit 20 \
+  --json headSha,conclusion -q '[.[] | select(.conclusion == "success")][0].headSha // empty')
 [[ -n $pr_sha ]] && git fetch -q origin "$pr_sha" || { echo "preflight: no successful pull_request Windows setup run to fetch"; exit 1; }
 
 tmp=$(mktemp -d "$out/release-test.XXXXXX")

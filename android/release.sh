@@ -35,8 +35,9 @@ trap 'rm -rf "$ci"' EXIT
 # builds the merge with its base branch.
 ci_artifact() {
   local run
-  run=$(gh run list --workflow "$1" --branch main --commit "$head" --status success --json databaseId,event \
-    -q '[.[] | select(.event == "push" or .event == "workflow_dispatch")][0].databaseId // empty')
+  # Picks success in -q, not with --status success: GitHub's status filter can leave out a successful run for hours (#511).
+  run=$(gh run list --workflow "$1" --branch main --commit "$head" --json databaseId,event,conclusion \
+    -q '[.[] | select(.conclusion == "success" and (.event == "push" or .event == "workflow_dispatch"))][0].databaseId // empty')
   [[ -n $run ]] || { echo "release: no successful $2 run for $head (gh workflow run $1 --ref main)" >&2; return 1; }
   gh run download "$run" -n "$3" -D "$ci/$3" >/dev/null ||
     { echo "release: run $run has no $3 artifact (expired?); run $1 on main again" >&2; return 1; }
