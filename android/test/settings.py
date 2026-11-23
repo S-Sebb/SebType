@@ -2528,11 +2528,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SYNC_USER, SYNC_PASSWORD = "sebtype-test", "made-up-pass-4821"
 OTHER_DEVICE = "5e5e5e5e-0000-4000-8000-000000000012"  # a made-up second device
 OTHER_CODE, OTHER_WORD = "lu lu", "鹿芦"
-# The word the offline check learns, by the code it types: 繁 on shows 貓狗擠壓 where the file keeps
-# 猫狗挤压 (zh-hant-on in another run of the suite may leave it on, #36), the key is the code either way.
-# Rime's word, not the model's first: its own guess 猫狗就要 reads jiya otherwise, so Rime can't learn it (#510).
+# The words the offline check learns for the code it types: the model's own guess 猫狗就要, which reads jiya
+# otherwise, so Rime has no pieces for it and the model stores it under the syllables typed (#518), and
+# Rime's 猫狗挤压. 繁 on shows each converted where the file keeps the first spelling (zh-hant-on in another
+# run of the suite may leave it on, #36).
 SYNC_CODE = "maogoujiya"
-SYNC_WORDS = ("猫狗挤压", "貓狗擠壓")
+SYNC_PICKS = {"model": ("猫狗就要", "貓狗就要"), "rime": ("猫狗挤压", "貓狗擠壓")}
 SYNC = {}  # the server process, its port and data dir, the CA's file name on the emulator, airplane mode before
 NO_BACKUP = f"/data/data/{PKG}/no_backup"
 RIME_USER = f"/data/data/{PKG}/files/rime/user"
@@ -2744,16 +2745,23 @@ def server_snapshot(device):
         return f.read()
 
 
-def entry_line(snapshot):
-    """The offline check's word in a sync snapshot, or "" — found by its key, whose text 繁 may convert."""
+def entry_line(snapshot, text=None):
+    """A word the offline check learned in a sync snapshot (TEXT: that one), or "", by its code."""
     return next(
         (
             line
             for line in snapshot.splitlines()
             if line.split("\t")[0].replace(" ", "") == SYNC_CODE
+            and text in (None, line.split("\t")[1])
         ),
         "",
     )
+
+
+def entry_lines(snapshot):
+    """Both words the offline check learned in a sync snapshot, or None while one isn't there."""
+    lines = [entry_line(snapshot, words[0]) for words in SYNC_PICKS.values()]
+    return lines if all(lines) else None
 
 
 def sync_setup():
@@ -2838,11 +2846,22 @@ def sync_offline_learns():
         "shell", "settings", "get", "global", "airplane_mode_on"
     ).strip()
     airplane(True)
-    words = candidates_for(SYNC_CODE)
-    SYNC["word"] = next((w for w in words if w in SYNC_WORDS), None)
-    if not SYNC["word"]:
-        raise Fail(f"{SYNC_CODE} -> {words[:8]}, none of {SYNC_WORDS}")
-    tap_candidate(SYNC["word"])
+    # Rime's word first (it leaves the bar once the model's is learned), then the model's once its list shows.
+    for kind in ("rime", "model"):
+        open_field()
+        type_keys(SYNC_CODE)
+        words = SYNC_PICKS[kind]
+        SYNC[kind] = wait_for(
+            f"one of {words} for {SYNC_CODE}",
+            lambda: next((w for w in candidates(nodes()) if w in words), None),
+            60,
+        )
+        tap_candidate(SYNC[kind])
+    after = candidates_for(SYNC_CODE)
+    if after[0] != SYNC["model"]:
+        raise Fail(
+            f"picked {SYNC['rime']}, then {SYNC['model']}; then {SYNC_CODE} -> {after[:8]}"
+        )
     sync_by_hiding()
     go(HOME["backup"])
     wait_for(
@@ -2850,23 +2869,25 @@ def sync_offline_learns():
     )
     screenshot("12-sync-offline")
     if entry_line(server_snapshot(SYNC["device"])):
-        raise Fail(f"{SYNC['word']} reached the server in airplane mode")
-    return f"offline: picked {SYNC['word']} for {SYNC_CODE}; status Can't reach the server; not on the server"
+        raise Fail(f"{SYNC_CODE}'s words reached the server in airplane mode")
+    return (
+        f"offline: picked Rime's {SYNC['rime']} for {SYNC_CODE}, then the model's {SYNC['model']}, first the "
+        f"next time; status Can't reach the server; not on the server"
+    )
 
 
 def sync_online_uploads():
     airplane(False)
     sync_by_hiding()
-    snapshot = wait_for(
-        f"{SYNC['word']} on the server",
-        lambda: (s := server_snapshot(SYNC["device"])) and entry_line(s) and s,
+    lines = wait_for(
+        f"{SYNC['model']} and {SYNC['rime']} on the server",
+        lambda: entry_lines(server_snapshot(SYNC["device"])),
         90,
     )
     folders = os.listdir(sync_server_dir())
     if folders != [SYNC["device"]]:
         raise Fail(f"folders on the server: {folders}")
-    line = entry_line(snapshot)
-    return f"back online, a keyboard hide uploaded it: {line!r}; only the phone's own folder"
+    return f"back online, a keyboard hide uploaded both: {lines!r}; only the phone's own folder"
 
 
 def sync_other_device():
@@ -2933,7 +2954,9 @@ def sync_crash_report():
         if t not in report
     ]
     leaked = [
-        t for t in (SYNC["word"], OTHER_WORD, SYNC_USER, SYNC_PASSWORD) if t in report
+        t
+        for t in (SYNC["model"], SYNC["rime"], OTHER_WORD, SYNC_USER, SYNC_PASSWORD)
+        if t in report
     ]
     if missing or leaked:
         raise Fail(f"missing {missing}, leaked {leaked} (33-crash-report.txt)")

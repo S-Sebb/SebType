@@ -15,6 +15,7 @@
 #include <fstream>
 #include <mutex>
 #include <set>
+#include <sstream>
 #include <thread>
 
 #include <unistd.h>
@@ -1038,6 +1039,8 @@ TEST_F(EnglishTest, APersonalWordThatIsAlsoAShortcutStaysAWord) {
 // their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛. A flush commits
 // what Rime previews, its first candidate, and learns nothing. A first candidate in LEARNED comes marked as
 // learned, as Rime's data marks a word from its user dictionary. FIXES are its corrections by input (#478).
+// learn() puts a word into USERDICT under its syllables' letters, where it then comes first, learned (#518);
+// TAUGHT has its code and text, and LEARNED its text, as for a word learned from picks.
 struct FakeRime : Engine {
   std::map<std::string, std::vector<std::string>> words{
       {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
@@ -1049,6 +1052,8 @@ struct FakeRime : Engine {
   std::vector<int> picks;
   std::vector<std::string> learned;
   std::set<std::string> userWords;
+  std::map<std::string, std::string> userDict;  // letters → text
+  std::vector<std::string> taught;              // learn()'s "code\ttext"
   std::map<std::string, std::vector<std::string>> fixes;
   int corrected = 0;  // corrections() asked
 
@@ -1065,6 +1070,7 @@ struct FakeRime : Engine {
     std::vector<Item> out;
     const std::string left = in.substr(done);
     if (left.empty()) return out;
+    if (auto u = userDict.find(left); u != userDict.end()) out.push_back({shown(u->second), left.size()});
     if (auto f = full.find(left); f != full.end()) out.push_back({shown(f->second), left.size()});
     for (size_t n = left.size(); n > 0; n--)
       if (auto w = words.find(left.substr(0, n)); w != words.end())
@@ -1132,6 +1138,14 @@ struct FakeRime : Engine {
   bool alternate() override { return alt; }
   void setAlternate(bool on) override { alt = on; }
   bool corrects() override { return !fixes.empty(); }
+  void learn(const std::string &code, const std::string &text) override {
+    taught.push_back(code + '\t' + text);
+    learned.push_back(text);
+    std::string letters = code;
+    std::erase(letters, ' ');
+    userDict[letters] = text;
+    userWords.insert(text);
+  }
   std::vector<Candidate> corrections(const std::string &letters, int max) override {
     corrected++;
     std::vector<Candidate> out;
@@ -1156,7 +1170,8 @@ struct ChineseTest : testing::Test {
     auto r = std::make_unique<FakeRime>();
     if (setUp) setUp(*r);
     rime = r.get();
-    // The characters' readings, as rime-data's sebtype_readings.txt has them: FakeRime's words, and 当 (dang).
+    // The characters' readings, as rime-data's sebtype_readings.txt has them: FakeRime's words, its sentences
+    // spelled out, and 当 (dang).
     const auto readings = std::filesystem::temp_directory_path() / ("sebtype-readings-" + std::to_string(getpid()));
     {
       std::ofstream out(readings);
@@ -1165,6 +1180,13 @@ struct ChineseTest : testing::Test {
         for (const auto &[letters, texts] : words)
           for (const auto &t : texts)
             if (t.size() == 3) out << t << '\t' << letters << '\n';  // one Han character
+      for (const auto &[in, syl] : r->spelled) {
+        if (!r->full.count(in)) continue;
+        std::istringstream each(syl);
+        const std::string &text = r->full.at(in);
+        std::string one;
+        for (size_t at = 0; at + 3 <= text.size() && each >> one; at += 3) out << text.substr(at, 3) << '\t' << one << '\n';
+      }
     }
     ChineseModelPaths paths{ZH_MODEL, ZH_OPENCC, 1, delay};
     paths.readings = readings;
@@ -1202,8 +1224,8 @@ struct ChineseTest : testing::Test {
 
 TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
   typeAndWait("woaini");
-  // The model's own candidate first, then Rime's sentence; Space picks it, and Rime learns it piece by
-  // piece: 我 (wo), 爱 (ai), 你 (ni).
+  // The model's own candidate first, then Rime's sentence; Space picks it, and Rime learns it under the
+  // syllables typed (#518).
   const auto l = list();
   ASSERT_GE(l.size(), 2u);
   EXPECT_EQ(l[0], "我爱你");
@@ -1211,8 +1233,8 @@ TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
   EXPECT_EQ(zh->highlighted(), 0);
   zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), "我爱你");
-  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
-  EXPECT_EQ(rime->picks.size(), 3u);
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"wo ai ni\t我爱你"}));
+  EXPECT_TRUE(rime->picks.empty());
   EXPECT_FALSE(zh->composing());
 }
 
@@ -1405,7 +1427,8 @@ TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
   zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), "心不在焉");
-  EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
+  // Rime has no pieces that spell it: stored under the syllables typed, as the model's own are (#518)
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"xin bu za yan\t心不在焉"}));
 }
 
 // A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).
@@ -1464,7 +1487,7 @@ TEST_F(ChineseTest, TraditionalAndNextWords) {
   EXPECT_EQ(list().at(0), "我愛你");
   zh->selectAt(0);
   EXPECT_EQ(zh->takeCommit(), "我愛你");
-  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我愛你"}));
+  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));  // as Rime's dictionary has it
   // Nothing typed: the next words, in 繁 too, and picking one commits it.
   const int before = readyCount();
   zh->setContext("今天天氣很", "", false);
@@ -1577,8 +1600,13 @@ TEST_F(ChineseTest, OnlyALearnedRimeFirstStaysAhead) {
   EXPECT_NE(std::ranges::find(l, "全球最早"), l.end());
 }
 
+// Rime reads the input with initials (n for ni here): no syllables to store the model's pick under, so it
+// teaches Rime by its pieces.
 TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
-  start({}, [](FakeRime &r) { r.words["woai"] = {"我爱"}; });
+  start({}, [](FakeRime &r) {
+    r.words["woai"] = {"我爱"};
+    r.spelled["woaini"] = "wo ai n i";
+  });
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");
   zh->selectAt(0);
@@ -1590,7 +1618,10 @@ TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
 // Rime has no piece for what is left (as for a typo the model fixed): the model's text still commits, and
 // Rime, part chosen, learns nothing and keeps nothing.
 TEST_F(ChineseTest, AFailedTeachStillCommitsTheModelsText) {
-  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  start({}, [](FakeRime &r) {
+    r.words["ni"] = {"泥"};
+    r.spelled["woaini"] = "wo ai n i";
+  });
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");
   zh->selectAt(0);
@@ -1598,6 +1629,38 @@ TEST_F(ChineseTest, AFailedTeachStillCommitsTheModelsText) {
   EXPECT_EQ(rime->picks.size(), 2u);  // 我, 爱
   EXPECT_TRUE(rime->learned.empty());
   EXPECT_FALSE(zh->composing());
+}
+
+// A pick of the model's own that Rime has no pieces for (猫狗就要 for maogoujiya, #518) goes into Rime's user
+// dictionary under the syllables typed too, as Rime keeps a word it learned (which list() then keeps first);
+// also from a list kept after the field reported its text, as the phone does after each key (#450). With
+// learning off it doesn't.
+TEST_F(ChineseTest, AModelsPickRimeCantSpellIsLearnedUnderItsSyllables) {
+  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"wo ai ni\t我爱你"}));
+  typeAndWait("woaini");
+  EXPECT_EQ(list().at(0), "我爱你");
+  zh->clear();
+
+  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->setContext("");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"wo ai ni\t我爱你"}));
+
+  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  zh->applySettings({}, false);
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_TRUE(rime->taught.empty());
 }
 
 // 发 is 發 or 髮 in 繁: OpenCC's phrases choose by the word, 头发 → 頭髮.

@@ -67,6 +67,9 @@ class Engine {
   // sebtype_corr schema, in a session of its own), whatever is typed: SebType's Chinese model weighs them.
   virtual std::vector<Candidate> corrections(const std::string & /*letters*/, int /*max*/) { return {}; }
   virtual bool corrects() { return false; }  // whether corrections() can give any
+  // 中文 (#518): puts TEXT (simplified) into Rime's user dictionary under CODE, the syllables typed
+  // ("mao gou ji ya"), as if Rime had offered it and the user had picked it.
+  virtual void learn(const std::string & /*code*/, const std::string & /*text*/) {}
   virtual void setField(Field /*field*/) {}
   virtual void setKeys(Keys /*keys*/, bool /*landscape*/) {}
   // English: the keys' rectangles, and the field's text around the cursor whenever it changed other than by

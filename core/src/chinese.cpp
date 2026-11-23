@@ -18,8 +18,13 @@
 // fuzzy pinyin off rules out ahead of a word typed as it is. Behind a sentence Rime pieced together (其则么早
 // for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
 // characters' readings in rime-data's sebtype_readings.txt (8105's).
-// Picking one of Rime's candidates selects it in Rime by its own index; picking one of the model's teaches
-// Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand.
+// Picking one of Rime's candidates selects it in Rime by its own index. Picking one of the model's puts it
+// into Rime's user dictionary under the syllables typed when Rime reads them all as whole ones (#518), so it
+// is learned, synced and forgotten as Rime's own picks are, and comes first the next time as they do:
+// 猫狗就要 for maogoujiya too, where the model reads jiya as 就要 and Rime has no pieces for it. Selecting
+// pieces that spell it didn't do that: on the phone Rime's menu holds typo corrections (就 for ji), which
+// Rime learns nothing from. Initials (w m for 我没) have no syllables to store under: there it teaches Rime by
+// selecting the pieces that spell it.
 // 繁: Rime converts its own candidates (rime-ice's traditionalization); the model reads simplified text, so
 // OpenCC's t2s turns Rime's candidates and the field's text into it, and s2t the model's into 繁.
 //
@@ -387,6 +392,7 @@ class Chinese final : public Engine {
     int rime = -1;           // Rime's index; -1: the model's own
     std::string simplified;  // the model's own: its text as the model wrote it
     bool misread = false;    // the model's own, reading the letters otherwise than Rime (#503)
+    std::string code;        // the model's own: the input's syllables to learn it under ("mao gou ji ya", #518)
   };
   // What the worker is asked for: the model's list for Rime's input (empty: next words) after CONTEXT.
   struct Job {
@@ -465,6 +471,7 @@ class Chinese final : public Engine {
     shown_ = std::move(items);
     shownRev_ = rev_;
     shownComposing_ = rime_->composing();
+    shownInput_ = rime_->input();
     modelShown_ = model.has_value();
     // The harness waits for the corrected list too.
     if (paths_.synchronous && modelShown_ && fixDue_ == rev_ && fixAsked_ != rev_) list(max);
@@ -477,6 +484,7 @@ class Chinese final : public Engine {
     TraceSection section("SebType zh fixes");
     Job job{rev_, context_, rime_->input(), {}, {}, rime_->alternate()};
     job.pageSize = rime_->pageSize();
+    job.syllables = syllableList(rime_->preedit().text());  // to learn a correction picked under (#518)
     for (auto &c : rime_->corrections(job.input, 4))
       if (const auto cps = codePoints(c.text); !cps.empty() && std::ranges::all_of(cps, han)) {
         job.fix = std::move(c.text);
@@ -503,6 +511,9 @@ class Chinese final : public Engine {
       const auto rime = rime_->candidates(kTeachCandidates);
       const auto at = std::ranges::find(rime, item.candidate.text, &Candidate::text);
       item.rime = at == rime.end() ? -1 : int(at - rime.begin());
+      // Its syllables are the input's it was made for: kept while that is still the input (the phone's field
+      // reports its text after each key, which moves the revision on).
+      if (shownInput_ != rime_->input()) item.code.clear();
     }
     // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
     // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
@@ -521,15 +532,17 @@ class Chinese final : public Engine {
     changed();
   }
 
-  // Commits the model's candidate ITEM, and selects the Rime candidates that spell it, piece by piece from
-  // the start of the input, so Rime's user dictionary learns it as it would from the user's own picks. Where
-  // Rime has no piece that starts what is left (a typo the model fixed), Rime commits nothing and learns
-  // nothing.
+  // Commits the model's candidate ITEM and has Rime learn it: under the input's syllables (item.code), or
+  // without them by selecting the Rime candidates that spell it, piece by piece from the start of the input,
+  // as from the user's own picks. Where Rime has no piece that starts what is left (a typo the model fixed),
+  // Rime commits nothing and learns nothing.
   void teach(const Item &item) {
     const std::string &want = item.candidate.text;
     std::string left = want;
     bool taught = false;
-    if (learning_) {
+    if (learning_ && !item.code.empty()) {
+      rime_->learn(item.code, item.simplified);
+    } else if (learning_) {
       for (int step = 0; step < 32 && !left.empty() && rime_->composing(); step++) {
         int best = -1;
         size_t bestSize = 0;
@@ -674,6 +687,15 @@ class Chinese final : public Engine {
       if (paths_.rankDelay.count()) std::this_thread::sleep_for(paths_.rankDelay);
       l.lock();
       if (job.rev != revNow_) continue;  // typed on meanwhile
+      // A pick of the model's own is learned under the syllables typed (#518): only whole ones (not initials,
+      // "w m"), a character each, as Rime's user dictionary keeps its words.
+      if (!job.syllables.empty() &&
+          std::ranges::all_of(job.syllables, [&](const std::string &s) { return readings.syllables.count(s) > 0; })) {
+        std::string code;
+        for (const auto &s : job.syllables) code += (code.empty() ? "" : " ") + s;
+        for (auto &it : items)
+          if (it.rime < 0 && wholeInput(it.simplified, job.syllables.size())) it.code = code;
+      }
       result_ = std::move(items);
       resultFirst_ = first;
       resultRev_ = job.rev;
@@ -778,6 +800,7 @@ class Chinese final : public Engine {
   uint64_t shownRev_ = ~uint64_t{0};
   bool modelShown_ = false;  // shown_ is the model's
   bool shownComposing_ = false;  // shown_ was made for something being typed
+  std::string shownInput_;       // Rime's input shown_ was made for
   int highlight_ = 0;        // in shown_, while it is the model's
   uint64_t fixAsked_ = ~uint64_t{0};  // the revision whose corrections were looked up
   uint64_t shownResult_ = 0;          // results_ when shown_ was made
