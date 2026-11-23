@@ -2846,25 +2846,22 @@ def sync_offline_learns():
         "shell", "settings", "get", "global", "airplane_mode_on"
     ).strip()
     airplane(True)
-    # The model's guess first: its list comes after Rime's, and once learned it comes first as Rime's own.
-    open_field()
-    type_keys(SYNC_CODE)
-    words = SYNC_PICKS["model"]
-    SYNC["model"] = wait_for(
-        f"one of {words} for {SYNC_CODE}",
-        lambda: next((w for w in candidates(nodes()) if w in words), None),
-        60,
-    )
-    tap_candidate(SYNC["model"])
-    open_field()
-    type_keys(SYNC_CODE)
-    after = wait_for(f"candidates for {SYNC_CODE}", lambda: candidates(nodes()), 60)
+    # Rime's word first (it leaves the bar once the model's is learned), then the model's once its list shows.
+    for kind in ("rime", "model"):
+        open_field()
+        type_keys(SYNC_CODE)
+        words = SYNC_PICKS[kind]
+        SYNC[kind] = wait_for(
+            f"one of {words} for {SYNC_CODE}",
+            lambda: next((w for w in candidates(nodes()) if w in words), None),
+            60,
+        )
+        tap_candidate(SYNC[kind])
+    after = candidates_for(SYNC_CODE)
     if after[0] != SYNC["model"]:
-        raise Fail(f"picked {SYNC['model']}, then {SYNC_CODE} -> {after[:8]}")
-    SYNC["rime"] = next((w for w in after if w in SYNC_PICKS["rime"]), None)
-    if not SYNC["rime"]:
-        raise Fail(f"{SYNC_CODE} -> {after[:8]}, none of {SYNC_PICKS['rime']}")
-    tap_candidate(SYNC["rime"])
+        raise Fail(
+            f"picked {SYNC['rime']}, then {SYNC['model']}; then {SYNC_CODE} -> {after[:8]}"
+        )
     sync_by_hiding()
     go(HOME["backup"])
     wait_for(
@@ -2874,8 +2871,8 @@ def sync_offline_learns():
     if entry_line(server_snapshot(SYNC["device"])):
         raise Fail(f"{SYNC_CODE}'s words reached the server in airplane mode")
     return (
-        f"offline: picked the model's {SYNC['model']} for {SYNC_CODE}, first the next time, then Rime's "
-        f"{SYNC['rime']}; status Can't reach the server; not on the server"
+        f"offline: picked Rime's {SYNC['rime']} for {SYNC_CODE}, then the model's {SYNC['model']}, first the "
+        f"next time; status Can't reach the server; not on the server"
     )
 
 
