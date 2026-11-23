@@ -1625,7 +1625,16 @@ TEST_F(ChineseTest, AModelsPickRimeCantSpellIsLearnedUnderItsSyllables) {
   EXPECT_EQ(list().at(0), "我爱你");
   zh->clear();
 
-  rime->taught.clear();
+  // Likewise from a list kept after the field reported its text, as the phone does after each key (#450).
+  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  typeAndWait("woaini");
+  ASSERT_EQ(list().at(0), "我爱你");
+  zh->setContext("");
+  zh->selectAt(0);
+  EXPECT_EQ(zh->takeCommit(), "我爱你");
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"wo ai ni\t我爱你"}));
+
+  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
   zh->applySettings({}, false);
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");

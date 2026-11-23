@@ -469,6 +469,7 @@ class Chinese final : public Engine {
     shown_ = std::move(items);
     shownRev_ = rev_;
     shownComposing_ = rime_->composing();
+    shownInput_ = rime_->input();
     modelShown_ = model.has_value();
     // The harness waits for the corrected list too.
     if (paths_.synchronous && modelShown_ && fixDue_ == rev_ && fixAsked_ != rev_) list(max);
@@ -507,7 +508,9 @@ class Chinese final : public Engine {
       const auto rime = rime_->candidates(kTeachCandidates);
       const auto at = std::ranges::find(rime, item.candidate.text, &Candidate::text);
       item.rime = at == rime.end() ? -1 : int(at - rime.begin());
-      item.code.clear();  // the syllables of the input it was made for
+      // Its syllables are the input's it was made for: kept while that is still the input (the phone's field
+      // reports its text after each key, which moves the revision on).
+      if (shownInput_ != rime_->input()) item.code.clear();
     }
     // How a pick found the list: "model" (its order) or "rime" (Rime's alone, the model's not come yet or
     // not asked), and whether it picked Rime's candidate or the model's own; "next word" with nothing typed.
@@ -795,6 +798,7 @@ class Chinese final : public Engine {
   uint64_t shownRev_ = ~uint64_t{0};
   bool modelShown_ = false;  // shown_ is the model's
   bool shownComposing_ = false;  // shown_ was made for something being typed
+  std::string shownInput_;       // Rime's input shown_ was made for
   int highlight_ = 0;        // in shown_, while it is the model's
   uint64_t fixAsked_ = ~uint64_t{0};  // the revision whose corrections were looked up
   uint64_t shownResult_ = 0;          // results_ when shown_ was made
