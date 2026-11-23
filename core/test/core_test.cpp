@@ -15,6 +15,7 @@
 #include <fstream>
 #include <mutex>
 #include <set>
+#include <sstream>
 #include <thread>
 
 #include <unistd.h>
@@ -1169,7 +1170,8 @@ struct ChineseTest : testing::Test {
     auto r = std::make_unique<FakeRime>();
     if (setUp) setUp(*r);
     rime = r.get();
-    // The characters' readings, as rime-data's sebtype_readings.txt has them: FakeRime's words, and 当 (dang).
+    // The characters' readings, as rime-data's sebtype_readings.txt has them: FakeRime's words, its sentences
+    // spelled out, and 当 (dang).
     const auto readings = std::filesystem::temp_directory_path() / ("sebtype-readings-" + std::to_string(getpid()));
     {
       std::ofstream out(readings);
@@ -1178,6 +1180,13 @@ struct ChineseTest : testing::Test {
         for (const auto &[letters, texts] : words)
           for (const auto &t : texts)
             if (t.size() == 3) out << t << '\t' << letters << '\n';  // one Han character
+      for (const auto &[in, syl] : r->spelled) {
+        if (!r->full.count(in)) continue;
+        std::istringstream each(syl);
+        const std::string &text = r->full.at(in);
+        std::string one;
+        for (size_t at = 0; at + 3 <= text.size() && each >> one; at += 3) out << text.substr(at, 3) << '\t' << one << '\n';
+      }
     }
     ChineseModelPaths paths{ZH_MODEL, ZH_OPENCC, 1, delay};
     paths.readings = readings;
@@ -1418,7 +1427,8 @@ TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   EXPECT_NE(std::ranges::find(l, shown[0]), l.end());
   zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), "心不在焉");
-  EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
+  // Rime has no pieces that spell it: stored under the syllables typed, as the model's own are (#518)
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"xin bu za yan\t心不在焉"}));
 }
 
 // A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).

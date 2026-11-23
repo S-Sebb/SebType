@@ -484,6 +484,7 @@ class Chinese final : public Engine {
     TraceSection section("SebType zh fixes");
     Job job{rev_, context_, rime_->input(), {}, {}, rime_->alternate()};
     job.pageSize = rime_->pageSize();
+    job.syllables = syllableList(rime_->preedit().text());  // to learn a correction picked under (#518)
     for (auto &c : rime_->corrections(job.input, 4))
       if (const auto cps = codePoints(c.text); !cps.empty() && std::ranges::all_of(cps, han)) {
         job.fix = std::move(c.text);
