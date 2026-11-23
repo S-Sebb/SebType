@@ -18,11 +18,13 @@
 // fuzzy pinyin off rules out ahead of a word typed as it is. Behind a sentence Rime pieced together (其则么早
 // for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
 // characters' readings in rime-data's sebtype_readings.txt (8105's).
-// Picking one of Rime's candidates selects it in Rime by its own index; picking one of the model's teaches
-// Rime by selecting the pieces that spell it, so its user dictionary learns it as if picked by hand. One
-// Rime has no pieces for (猫狗就要 for maogoujiya, where the model reads jiya as 就要) goes into Rime's user
-// dictionary under the syllables typed (#518), when Rime reads all of them as whole ones: then it is learned,
-// synced and forgotten as Rime's own picks are, and comes first the next time as they do.
+// Picking one of Rime's candidates selects it in Rime by its own index. Picking one of the model's puts it
+// into Rime's user dictionary under the syllables typed when Rime reads them all as whole ones (#518), so it
+// is learned, synced and forgotten as Rime's own picks are, and comes first the next time as they do:
+// 猫狗就要 for maogoujiya too, where the model reads jiya as 就要 and Rime has no pieces for it. Selecting
+// pieces that spell it didn't do that: on the phone Rime's menu holds typo corrections (就 for ji), which
+// Rime learns nothing from. Initials (w m for 我没) have no syllables to store under: there it teaches Rime by
+// selecting the pieces that spell it.
 // 繁: Rime converts its own candidates (rime-ice's traditionalization); the model reads simplified text, so
 // OpenCC's t2s turns Rime's candidates and the field's text into it, and s2t the model's into 繁.
 //
@@ -529,15 +531,17 @@ class Chinese final : public Engine {
     changed();
   }
 
-  // Commits the model's candidate ITEM, and selects the Rime candidates that spell it, piece by piece from
-  // the start of the input, so Rime's user dictionary learns it as it would from the user's own picks. Where
-  // Rime has no piece that starts what is left (a typo the model fixed), Rime commits nothing and learns
-  // nothing from the pieces, and learns the whole text under the input's syllables (item.code) instead.
+  // Commits the model's candidate ITEM and has Rime learn it: under the input's syllables (item.code), or
+  // without them by selecting the Rime candidates that spell it, piece by piece from the start of the input,
+  // as from the user's own picks. Where Rime has no piece that starts what is left (a typo the model fixed),
+  // Rime commits nothing and learns nothing.
   void teach(const Item &item) {
     const std::string &want = item.candidate.text;
     std::string left = want;
     bool taught = false;
-    if (learning_) {
+    if (learning_ && !item.code.empty()) {
+      rime_->learn(item.code, item.simplified);
+    } else if (learning_) {
       for (int step = 0; step < 32 && !left.empty() && rime_->composing(); step++) {
         int best = -1;
         size_t bestSize = 0;
@@ -554,10 +558,7 @@ class Chinese final : public Engine {
     }
     // Rime's own commit (the pieces, converted by Rime) gives way to the text shown.
     rime_->takeCommit();
-    if (!taught) {
-      if (learning_ && !item.code.empty()) rime_->learn(item.code, item.simplified);
-      rime_->clear();
-    }
+    if (!taught) rime_->clear();
     commit_ += want;
     remember(want);
   }
@@ -685,8 +686,8 @@ class Chinese final : public Engine {
       if (paths_.rankDelay.count()) std::this_thread::sleep_for(paths_.rankDelay);
       l.lock();
       if (job.rev != revNow_) continue;  // typed on meanwhile
-      // A pick of the model's own that Rime can't spell is learned under the syllables typed (#518): only
-      // whole ones (not initials, "w m"), a character each, as Rime's user dictionary keeps its words.
+      // A pick of the model's own is learned under the syllables typed (#518): only whole ones (not initials,
+      // "w m"), a character each, as Rime's user dictionary keeps its words.
       if (!job.syllables.empty() &&
           std::ranges::all_of(job.syllables, [&](const std::string &s) { return readings.syllables.count(s) > 0; })) {
         std::string code;

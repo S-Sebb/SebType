@@ -1038,7 +1038,8 @@ TEST_F(EnglishTest, APersonalWordThatIsAlsoAShortcutStaysAWord) {
 // their letters, committing and learning once the whole input is chosen. 繁 turns 爱 into 愛. A flush commits
 // what Rime previews, its first candidate, and learns nothing. A first candidate in LEARNED comes marked as
 // learned, as Rime's data marks a word from its user dictionary. FIXES are its corrections by input (#478).
-// learn() puts a word into USERDICT under its syllables' letters, where it then comes first, learned (#518).
+// learn() puts a word into USERDICT under its syllables' letters, where it then comes first, learned (#518);
+// TAUGHT has its code and text, and LEARNED its text, as for a word learned from picks.
 struct FakeRime : Engine {
   std::map<std::string, std::vector<std::string>> words{
       {"wo", {"我", "握"}}, {"ai", {"爱", "挨"}}, {"ni", {"你", "泥"}}, {"hao", {"好"}}, {"nihao", {"你好"}}};
@@ -1138,6 +1139,7 @@ struct FakeRime : Engine {
   bool corrects() override { return !fixes.empty(); }
   void learn(const std::string &code, const std::string &text) override {
     taught.push_back(code + '\t' + text);
+    learned.push_back(text);
     std::string letters = code;
     std::erase(letters, ' ');
     userDict[letters] = text;
@@ -1213,8 +1215,8 @@ struct ChineseTest : testing::Test {
 
 TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
   typeAndWait("woaini");
-  // The model's own candidate first, then Rime's sentence; Space picks it, and Rime learns it piece by
-  // piece: 我 (wo), 爱 (ai), 你 (ni).
+  // The model's own candidate first, then Rime's sentence; Space picks it, and Rime learns it under the
+  // syllables typed (#518).
   const auto l = list();
   ASSERT_GE(l.size(), 2u);
   EXPECT_EQ(l[0], "我爱你");
@@ -1222,8 +1224,8 @@ TEST_F(ChineseTest, TheModelsOwnCandidateComesFirstAndTeachesRime) {
   EXPECT_EQ(zh->highlighted(), 0);
   zh->key({' ', 0, false});
   EXPECT_EQ(zh->takeCommit(), "我爱你");
-  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));
-  EXPECT_EQ(rime->picks.size(), 3u);
+  EXPECT_EQ(rime->taught, (std::vector<std::string>{"wo ai ni\t我爱你"}));
+  EXPECT_TRUE(rime->picks.empty());
   EXPECT_FALSE(zh->composing());
 }
 
@@ -1475,7 +1477,7 @@ TEST_F(ChineseTest, TraditionalAndNextWords) {
   EXPECT_EQ(list().at(0), "我愛你");
   zh->selectAt(0);
   EXPECT_EQ(zh->takeCommit(), "我愛你");
-  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我愛你"}));
+  EXPECT_EQ(rime->learned, (std::vector<std::string>{"我爱你"}));  // as Rime's dictionary has it
   // Nothing typed: the next words, in 繁 too, and picking one commits it.
   const int before = readyCount();
   zh->setContext("今天天氣很", "", false);
@@ -1588,8 +1590,13 @@ TEST_F(ChineseTest, OnlyALearnedRimeFirstStaysAhead) {
   EXPECT_NE(std::ranges::find(l, "全球最早"), l.end());
 }
 
+// Rime reads the input with initials (n for ni here): no syllables to store the model's pick under, so it
+// teaches Rime by its pieces.
 TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
-  start({}, [](FakeRime &r) { r.words["woai"] = {"我爱"}; });
+  start({}, [](FakeRime &r) {
+    r.words["woai"] = {"我爱"};
+    r.spelled["woaini"] = "wo ai n i";
+  });
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");
   zh->selectAt(0);
@@ -1601,7 +1608,10 @@ TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
 // Rime has no piece for what is left (as for a typo the model fixed): the model's text still commits, and
 // Rime, part chosen, learns nothing and keeps nothing.
 TEST_F(ChineseTest, AFailedTeachStillCommitsTheModelsText) {
-  start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
+  start({}, [](FakeRime &r) {
+    r.words["ni"] = {"泥"};
+    r.spelled["woaini"] = "wo ai n i";
+  });
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");
   zh->selectAt(0);
@@ -1612,7 +1622,8 @@ TEST_F(ChineseTest, AFailedTeachStillCommitsTheModelsText) {
 }
 
 // A pick of the model's own that Rime has no pieces for (猫狗就要 for maogoujiya, #518) goes into Rime's user
-// dictionary under the syllables typed, as Rime keeps a word it learned (which list() then keeps first). With
+// dictionary under the syllables typed too, as Rime keeps a word it learned (which list() then keeps first);
+// also from a list kept after the field reported its text, as the phone does after each key (#450). With
 // learning off it doesn't.
 TEST_F(ChineseTest, AModelsPickRimeCantSpellIsLearnedUnderItsSyllables) {
   start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
@@ -1625,7 +1636,6 @@ TEST_F(ChineseTest, AModelsPickRimeCantSpellIsLearnedUnderItsSyllables) {
   EXPECT_EQ(list().at(0), "我爱你");
   zh->clear();
 
-  // Likewise from a list kept after the field reported its text, as the phone does after each key (#450).
   start({}, [](FakeRime &r) { r.words["ni"] = {"泥"}; });
   typeAndWait("woaini");
   ASSERT_EQ(list().at(0), "我爱你");
