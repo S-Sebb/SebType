@@ -1408,6 +1408,22 @@ TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   EXPECT_TRUE(rime->learned.empty());  // Rime has no pieces that spell it
 }
 
+// A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).
+TEST_F(ChineseFixTest, ALearnedFirstStaysAheadOfACorrection) {
+  rime->userWords = {"新不咋盐"};
+  const int before = readyCount();
+  type("xinbuzayan");
+  ASSERT_TRUE(ready(before + 1));
+  EXPECT_EQ(list().at(0), "新不咋盐");
+  const int asked = readyCount();
+  list();  // the turn: the corrections looked up
+  ASSERT_EQ(rime->corrected, 1);
+  ASSERT_TRUE(ready(asked));
+  const auto l = list();
+  EXPECT_EQ(l.at(0), "新不咋盐");
+  EXPECT_EQ(l.at(1), "心不在焉");
+}
+
 // Windows' text service asks again until the correction has been weighed too (#495), not only the model's list;
 // the PCs' hosts read the box through page(), whose next read is the turn for corrections.
 TEST_F(ChineseFixTest, UpdatingUntilTheCorrectionIsWeighed) {
@@ -1551,6 +1567,14 @@ TEST_F(ChineseTest, OnlyALearnedRimeFirstStaysAhead) {
   ASSERT_GE(l.size(), 2u);
   EXPECT_EQ(l[0], "握挨泥");
   EXPECT_NE(std::ranges::find(l, "我爱你"), l.end());
+
+  // A word added under My words, which the model can't score (not Han): first too (#510).
+  start({}, [](FakeRime &r) { r.words["qqzz"] = {"sebword", "全球最早"}, r.userWords = {"sebword"}; });
+  typeAndWait("qqzz");
+  l = list();
+  ASSERT_GE(l.size(), 2u);
+  EXPECT_EQ(l[0], "sebword");
+  EXPECT_NE(std::ranges::find(l, "全球最早"), l.end());
 }
 
 TEST_F(ChineseTest, TeachingTakesRimesLongestPieces) {
