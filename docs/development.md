@@ -34,9 +34,10 @@ copies what it built back to the same path on nobara-pc, so the device tests and
 Only the tests themselves run on nobara-pc: the private Fcitx5 sessions, the emulator, the Configurator's
 screens. One command, run on nobara-pc as always:
 
-1. `build_host_ready` (`tools/lib.sh`) checks that `ssh yanglab16` answers. If it doesn't, it starts
-   Zscaler (`gtk-launch ZSTray`) and tries once more; if it still doesn't, it says so on stderr and the
-   build runs on nobara-pc.
+1. `build_host_ready` (`tools/lib.sh`) checks that `ssh yanglab16` answers. If it doesn't, it tries
+   once more with a longer timeout; then, only if Zscaler's tray (`ZSTray`) isn't running, it starts
+   Zscaler (`gtk-launch ZSTray`, which brings up its window) and tries a last time. If the host still
+   doesn't answer, it says so on stderr and the build runs on nobara-pc.
 2. `build_remotely` rsyncs the checkout, uncommitted changes included and what git ignores left out,
    to `~/scratch/SebType/<task>/<checkout>/` on yanglab16 (`<task>`: `ISSUE`, or the checkout's folder),
    runs the same script there, and copies back each file it prints. What git ignores stays on yanglab16,
@@ -167,6 +168,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
 | `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` on yanglab16 and loaded into Mozc here: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
 | `tools/test-hf-fetch.sh` | `tools/hf-fetch.sh` offline: a made-up token stays out of a `bash -x` trace and goes to the Hugging Face endpoint, not to the host it redirects to (#365) |
+| `tools/test-build-host.sh` | `build_host_ready` offline, with stub `ssh`, `pgrep` and `gtk-launch`: a slow first answer is retried before Zscaler, and Zscaler starts only when its tray isn't running; otherwise the build runs here (#520) |
 | `tools/check-downloads.py` (`--self-test`: its own cases) | Every `curl` and `wget` download is capped at 300 Mbit/s, and no script uses `Invoke-WebRequest` (#365); CI runs it on every PR |
 | `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest, or a cached file that is corrupt, replaced or deleted, is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |

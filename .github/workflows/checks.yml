@@ -1,5 +1,6 @@
 # Repository checks that need no build, on every PR: every download is capped at 300 Mbit/s, and
-# tools/hf-fetch.sh keeps the Hugging Face token out of traces and redirects (#365).
+# tools/hf-fetch.sh keeps the Hugging Face token out of traces and redirects (#365), and build_host_ready
+# starts Zscaler only when it must (#520).
 name: Checks
 
 on:
@@ -19,3 +20,4 @@ jobs:
       - run: python3 tools/check-downloads.py --self-test
       - run: python3 tools/check-downloads.py
       - run: tools/test-hf-fetch.sh
+      - run: tools/test-build-host.sh
