@@ -2530,7 +2530,9 @@ OTHER_DEVICE = "5e5e5e5e-0000-4000-8000-000000000012"  # a made-up second device
 OTHER_CODE, OTHER_WORD = "lu lu", "鹿芦"
 # The word the offline check learns, by the code it types: 繁 on shows 貓狗擠壓 where the file keeps
 # 猫狗挤压 (zh-hant-on in another run of the suite may leave it on, #36), the key is the code either way.
+# Rime's word, not the model's first: its own guess 猫狗就要 reads jiya otherwise, so Rime can't learn it (#510).
 SYNC_CODE = "maogoujiya"
+SYNC_WORDS = ("猫狗挤压", "貓狗擠壓")
 SYNC = {}  # the server process, its port and data dir, the CA's file name on the emulator, airplane mode before
 NO_BACKUP = f"/data/data/{PKG}/no_backup"
 RIME_USER = f"/data/data/{PKG}/files/rime/user"
@@ -2837,7 +2839,9 @@ def sync_offline_learns():
     ).strip()
     airplane(True)
     words = candidates_for(SYNC_CODE)
-    SYNC["word"] = words[0]
+    SYNC["word"] = next((w for w in words if w in SYNC_WORDS), None)
+    if not SYNC["word"]:
+        raise Fail(f"{SYNC_CODE} -> {words[:8]}, none of {SYNC_WORDS}")
     tap_candidate(SYNC["word"])
     sync_by_hiding()
     go(HOME["backup"])

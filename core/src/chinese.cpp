@@ -395,7 +395,6 @@ class Chinese final : public Engine {
     std::vector<std::string> rime;  // Rime's candidates the model scores
     std::vector<int> rimeIndex;     // their indexes in Rime's list
     bool traditional;
-    bool learned = false;           // Rime's first is a word the user taught it
     bool fixable = false;           // Rime can correct the input (#478)
     std::string fix;                // Rime's best correction of the input, for the list made already (#478)
     int pageSize = 0;
@@ -457,6 +456,12 @@ class Chinese final : public Engine {
       }
       if (int(i) == after) addMisread();
     }
+    // A word the user taught Rime or added under My words, which Rime puts first, stays first: the model can't
+    // see what the user picked before (#482), scores only Han text (sebword for qqzz) and Rime's corrections
+    // may outscore it (我们 over 我没 learned for wm, #510). An unlearned first is ranked like the others:
+    // keeping every first ahead cost most of the model's gain on abbreviations (#369).
+    if (model && !rime.empty() && rime[0].learned)
+      if (const auto at = std::ranges::find(items, 0, &Item::rime); at != items.end()) std::rotate(items.begin(), at, at + 1);
     shown_ = std::move(items);
     shownRev_ = rev_;
     shownComposing_ = rime_->composing();
@@ -586,7 +591,6 @@ class Chinese final : public Engine {
       const auto rime = rime_->candidates(kScored);
       for (size_t i = 0; i < rime.size(); i++)
         if (wholeInput(rime[i].text, n)) job.rime.push_back(rime[i].text), job.rimeIndex.push_back(int(i));
-      job.learned = !rime.empty() && rime[0].learned;
       job.word = !rime.empty() && !rime[0].sentence && wholeInput(rime[0].text, n);
       job.fixable = rime_->corrects();
     } else if (!text || !paths_.nextWords || (!context_.empty() && context_.back() == '\n')) {
@@ -727,15 +731,6 @@ class Chinese final : public Engine {
     for (size_t j = 0; j < plain.size(); j++)
       score[order[j]] += (items[order[j]].rime < 0 ? kOwnPlainWeight : kPlainWeight) * plain[j];
     std::stable_sort(order.begin(), head, better);
-    // A word the user taught Rime, which its user dictionary puts first, stays first: the model can't see
-    // what the user picked before, so a phrase taught once comes first the next time (#482). An unlearned
-    // first is ranked like the others: keeping every first ahead cost most of the model's gain on
-    // abbreviations (#369).
-    if (job.learned && !texts.empty() && job.rimeIndex[0] == 0) {
-      score[0] = score[order[0]];
-      const auto at = std::ranges::find(order, size_t{0});
-      std::rotate(order.begin(), at, at + 1);
-    }
     // Misreadings last, as list() shows them: the first is the one shown first.
     std::ranges::stable_partition(order, [&](size_t i) { return !items[i].misread; });
     std::vector<Item> out;
