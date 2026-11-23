@@ -48,14 +48,19 @@ BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1 || true)}  # none: no Android build here
 
-# build_host_ready: whether this build runs on the build host. If the host doesn't answer, it starts
-# Zscaler once and tries again; if it still doesn't, it says so and the build runs here.
+# build_host_ready: whether this build runs on the build host. If the host doesn't answer, it tries again
+# with a longer timeout (a slow moment on the lab network), then, only if Zscaler's tray isn't running,
+# starts Zscaler and tries once more: each start brings Zscaler's window up on the person's desktop (#520).
+# If the host still doesn't answer, it says so and the build runs here.
 build_host_ready() {
   [[ $BUILD_HOST != local ]] || return 1
-  local try=(ssh -o ConnectTimeout=10 -o BatchMode=yes "$BUILD_HOST" true)
-  "${try[@]}" 2>/dev/null && return
-  gtk-launch ZSTray >/dev/null 2>&1 && sleep 20 && "${try[@]}" 2>/dev/null && return
-  echo "build: $BUILD_HOST unreachable, also after starting Zscaler; building on $(uname -n) (SEBTYPE_BUILD_HOST=local skips the try)" >&2
+  local try=(ssh -o BatchMode=yes)
+  "${try[@]}" -o ConnectTimeout=10 "$BUILD_HOST" true 2>/dev/null && return
+  "${try[@]}" -o ConnectTimeout=30 "$BUILD_HOST" true 2>/dev/null && return
+  if ! pgrep -x ZSTray >/dev/null; then
+    gtk-launch ZSTray >/dev/null 2>&1 && sleep 20 && "${try[@]}" -o ConnectTimeout=30 "$BUILD_HOST" true 2>/dev/null && return
+  fi
+  echo "build: $BUILD_HOST unreachable; building on $(uname -n) (SEBTYPE_BUILD_HOST=local skips the try)" >&2
   BUILD_HOST=local
   return 1
 }
