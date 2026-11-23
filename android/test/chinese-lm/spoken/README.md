@@ -4,10 +4,11 @@
 24 verb–object words split by 个 (我再去 + `jiangeshen` → 健个身), 8 whose reading depends on the context
 (好困，我想 + `shuijiao` → 睡觉; 好饿，我想吃 → 水饺) and 18 other everyday phrases. `dev-nocontext.tsv` is
 the same without the context. Librime alone checks `data/rime/bench/sets/spoken.tsv`, the same phrases, in
-`slips.sh`. With the model, as the keyboard ranks (Rime's first 4, a beam of 2):
+`slips.sh`. With the model, as the keyboard ranks (Rime's first 4, a beam of 2, the first 3 re-ordered with the
+plain-text term):
 
     android/test/chinese-lm/bench.sh --dev android/test/chinese-lm/spoken OUT_DIR engines/sebtype-lm/chinese.gguf \
-      rerank=4 generate=2 rankWeight=0.5 generatedRank=4 dump=1
+      rerank=4 generate=2 rankWeight=0.5 generatedRank=4 plain=0.4 ownPlain=0.5 dump=1
 
 OUT_DIR is on the build host when run through `build_remotely` (tools/lib.sh): put it under the host's
 ~/scratch/SebType, not in the checkout, whose copy each run's rsync replaces.
@@ -16,6 +17,9 @@ OUT_DIR is on the build host when run through `build_remotely` (tools/lib.sh): p
 |---|---|---|
 | before #484 | 40 / 50 (split 17 / 24) | 32 / 50 (split 12 / 24) |
 | with sebtype_ge.lua | 41 / 50 (split 18 / 24) | 33 / 50 (split 13 / 24) |
+| model r2 and the plain-text term (#502) | 48 / 50 (split 24 / 24) | 41 / 50 (split 20 / 24) |
 
-Librime alone has all 24 split words first since #484; the model's own candidates (剪个深 for `jiangeshen`,
-log probability −1.8 against 健个身's −5.3) still outrank 6 of them.
+Librime alone has all 24 split words first since #484. Before #502 the model's own candidates (剪个深 for
+`jiangeshen`, log probability −1.8 against 健个身's −5.3) outranked 6 of them: given the letters, the model
+must spell them out once it has picked a first character that suits the context (剪), so the rest (个深) cost
+it little. As plain text after 我再去, 剪个深 is less likely than 健个身, and that term now re-orders the first 3.

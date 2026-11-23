@@ -61,6 +61,13 @@ constexpr float kRankWeight = 0.5f, kOwnRank = 4;
 // overrules for words typed alone (按住 → 安卓, #482): there Rime's order weighs 2 · ln(1 + rank) and the
 // model's own candidates 3 more. Tuned on dev sets typed with nothing before them (words, clauses, typos).
 constexpr float kAloneRankWeight = 2, kAloneOwnPenalty = 3;
+// The first kPlain by that score are then re-ordered with part of their log probability as plain text after
+// the context (zh_lm plain()) added, so that a text that fits the letters only by a wrong first character
+// (剪个深 for jiangeshen) loses there (#502): 0.4 of it for Rime's candidates and 0.5 for the model's own, which
+// no dictionary vouches for. Tuned on the dev sets; re-ordering more than the first 3 gained nothing there,
+// cost first places and top-3 places, and takes longer.
+constexpr size_t kPlain = 3;
+constexpr float kPlainWeight = 0.4f, kOwnPlainWeight = 0.5f;
 constexpr size_t kNextWords = 5;
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
@@ -709,14 +716,26 @@ class Chinese final : public Engine {
       items.back().misread = job.word && !readings.spell(g.text, job.syllables);
       score.push_back(g.logProb - ownPenalty);
     }
+    std::vector<size_t> order(items.size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = i;
+    const auto better = [&](size_t a, size_t b) { return score[a] > score[b]; };
+    std::stable_sort(order.begin(), order.end(), better);
+    const auto head = order.begin() + std::min(order.size(), kPlain);
+    std::vector<std::string> best;
+    for (auto i = order.begin(); i != head; ++i) best.push_back(items[*i].simplified);
+    const std::vector<float> plain = model.plain(context, best);
+    for (size_t j = 0; j < plain.size(); j++)
+      score[order[j]] += (items[order[j]].rime < 0 ? kOwnPlainWeight : kPlainWeight) * plain[j];
+    std::stable_sort(order.begin(), head, better);
     // A word the user taught Rime, which its user dictionary puts first, stays first: the model can't see
     // what the user picked before, so a phrase taught once comes first the next time (#482). An unlearned
     // first is ranked like the others: keeping every first ahead cost most of the model's gain on
     // abbreviations (#369).
-    if (job.learned && !texts.empty() && job.rimeIndex[0] == 0) score[0] = *std::ranges::max_element(score);
-    std::vector<size_t> order(items.size());
-    for (size_t i = 0; i < order.size(); i++) order[i] = i;
-    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return score[a] > score[b]; });
+    if (job.learned && !texts.empty() && job.rimeIndex[0] == 0) {
+      score[0] = score[order[0]];
+      const auto at = std::ranges::find(order, size_t{0});
+      std::rotate(order.begin(), at, at + 1);
+    }
     // Misreadings last, as list() shows them: the first is the one shown first.
     std::ranges::stable_partition(order, [&](size_t i) { return !items[i].misread; });
     std::vector<Item> out;
@@ -733,7 +752,8 @@ class Chinese final : public Engine {
     std::string letters;
     for (char c : job.input)
       if (c != '\'') letters += c;
-    const float lp = model.score(context, letters, {job.fix})[0] - kRankWeight * std::log1p(kOwnRank);
+    const float lp = model.score(context, letters, {job.fix})[0] - kRankWeight * std::log1p(kOwnRank) +
+                     kPlainWeight * model.plain(context, {job.fix})[0];
     size_t at;
     if (lp > first - kFixLead) at = 0;
     else if (lp > first - kFixFloor) at = std::max(job.pageSize, 1) - 1;

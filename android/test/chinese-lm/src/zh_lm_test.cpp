@@ -1,5 +1,6 @@
 // zh_lm's checks (bench.sh runs them before the sets): a tree of candidates larger than one batch scores as
-// each candidate does alone, and one larger than the cache leaves texts out instead of failing.
+// each candidate does alone, one larger than the cache leaves texts out instead of failing, and plain() keeps
+// score()'s example in the cache.
 // MIT, SebType.
 //
 //   zh_lm_test MODEL.gguf
@@ -46,5 +47,18 @@ int main(int argc, char **argv) {
     const bool left = std::isinf(over.back()) && std::fabs(over[0] - together[0]) < 1.0f;
     printf("%s: a text over the tree's room is left out\n", left ? "PASS" : "FAIL");
     failed += !left;
+    // plain() after score() decodes aside, keeping score()'s example in the cache (#502): it scores as it does
+    // right after prime(), and score() then scores as before.
+    const std::vector<std::string> short_{"我们", "我门", "握们去"};
+    model.prime(context);
+    const auto fresh = model.plain(context, short_);
+    const auto before = model.score(context, typed, short_);
+    const auto aside = model.plain(context, short_);
+    const auto after = model.score(context, typed, short_);
+    bool same = true;
+    for (size_t t = 0; t < short_.size(); t++)
+        same = same && std::fabs(fresh[t] - aside[t]) < 0.1f && std::fabs(before[t] - after[t]) < 0.1f;
+    printf("%s: plain() beside score()'s example changes neither\n", same ? "PASS" : "FAIL");
+    failed += !same;
     return failed ? 1 : 0;
 }

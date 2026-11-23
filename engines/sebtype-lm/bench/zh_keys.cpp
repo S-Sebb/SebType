@@ -1,6 +1,6 @@
 // sebtype-zh-keys: the Chinese model's jobs as core/src/chinese.cpp runs them while android/perf/perf.sh's 中 set
 // is typed, timed one by one (#264). Built for the phone by zh-keys.sh, to run under taskset on its big or
-// little cores. Each letter: score() of 4 candidates, then generate() with a beam of 2; each space commits the
+// little cores. Each letter: score() of 4 candidates, generate() with a beam of 2 and plain() of 3; each space commits the
 // first and asks nextWords(), as does the empty field before the first key. Rime isn't here: a second copy of
 // the model stands in for it, its own beam of 4 for the letters (untimed), so the scored texts are likely ones
 // of the right length, as Rime's first 4 are. MIT, SebType.
@@ -65,7 +65,13 @@ int main(int argc, char **argv) {
             model.profile = {};
             t0 = clock::now();
             model.score(context, letters, texts);
-            model.generate(context, letters, 2, static_cast<int>(letters.size()));
+            const auto own = model.generate(context, letters, 2, static_cast<int>(letters.size()));
+            // The first 3 again as plain text (#502): the model's own first, then Rime's.
+            std::vector<std::string> best;
+            for (const auto &g : own) best.push_back(g.text);
+            for (const auto &t : texts) best.push_back(t);
+            best.resize(std::min<size_t>(best.size(), 3));
+            model.plain(context, best);
             rank.push_back(ms(t0));
             line("rank", letters, rank.back());
         }

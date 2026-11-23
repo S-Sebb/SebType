@@ -44,13 +44,19 @@ public:
     // Reads CONTEXT ahead, as the keyboard would when the text before the cursor changes, so the calls below
     // decode only what follows it.
     void prime(const std::string &context);
-    // For each of TEXTS, log P(text, then its end | CONTEXT, the letters TYPED): the model's pinyin example
-    // "context <T>typed<S>text<E>".
+    // For each of TEXTS, log P(text, then its end, and a word ending with it | CONTEXT, the letters TYPED): the
+    // model's pinyin example "context <T>typed<S>text<E>", with <B>'s chance that a word ends at its last
+    // character, so that a text which stops inside a word (剪个深) scores low (#502).
     std::vector<float> score(const std::string &context, const std::string &typed, const std::vector<std::string> &texts);
     // The model's own candidates for TYPED: a beam search of WIDTH from <S>, where every beam also ends at <E>,
     // best first, each with its log probability as score() would give it. After score() with the same CONTEXT
     // and TYPED, it decodes only the steps off the texts score() decoded.
     std::vector<Text> generate(const std::string &context, const std::string &typed, int width, int maxChars);
+    // For each of TEXTS, log P(text | CONTEXT) as plain text, with no letters: score() alone overrates a text
+    // whose first character fits the letters and the context but whose rest doesn't (剪个深 for jiangeshen),
+    // as the letters leave the model no choice once it is there (#502). Call it after generate(), which
+    // reuses score()'s tree.
+    std::vector<float> plain(const std::string &context, const std::vector<std::string> &texts);
     // The N likeliest words (1 to 4 Han characters, ending where the model's <B> says a word ends) after CONTEXT.
     std::vector<Text> nextWords(const std::string &context, size_t n);
 
@@ -68,6 +74,8 @@ private:
     // Decodes the example PREFIX after what the cache holds of it, and FOLLOWERS after it as a tree, each on a
     // sequence of its own, in one batch, into mNodes.
     void decodeExample(const std::vector<int> &prefix, const std::vector<std::vector<int>> &followers);
+    // Each of PATHS' log probability in the tree decodeExample() left, with <B> at an <E>; -inf for one left out.
+    std::vector<float> pathScores(const std::vector<std::vector<int>> &paths);
     // log softmax over every token but <B>.
     float logNorm(const float *logits) const;
     float logEnd(const float *logits) const;  // log sigmoid of <B>'s logit: a word ends at this token

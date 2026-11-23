@@ -15,6 +15,9 @@ at most 14 characters. The letters typed are, for the span's syllables:
 - 10 %: each syllable's first letter (spans of 2-4 characters);
 - 15 %: full pinyin with the last syllable cut to its first letters (ranh → 然后);
 - 5 %: some syllables, at random, cut to their first letter (nihaom → 你好吗).
+A fifth of the spans whose last word has two characters or more end inside it (CUT): the letters and the span
+stop at the same character, and the rest of the word follows <E> as text. The span's last character then
+teaches the <B> logit whether the text there ends a word (#502).
 train.py doesn't train the model to predict the typed letters, only the span after <S> and the <E> closing it.
 Word boundaries are jieba's; they teach the <B> logit (tokenizer.py) for the next words after a commit.
 """
@@ -33,6 +36,7 @@ jieba.setLogLevel(60)
 MIX = {"wikipedia": 0.6, "lccc": 2.0, "wikinews": 3.0, "oasst2": 3.0}
 EVERY = 30
 MAX_SPAN = 14
+CUT = 0.2
 WORKERS = 12
 
 sp = piece = None
@@ -102,7 +106,12 @@ def segment(rng, text, toks, wb):
             ):
                 span += words[k]
                 k += 1
-            sy = common.syllables(span) if span else None
+            # Some spans end inside their last word, so that the <B> logit at a span's end learns from the
+            # text whether a word ends there: were every span whole words, the letters running out would say.
+            cut = 0
+            if k > w and len(words[k - 1]) > 1 and rng.random() < CUT:
+                cut = rng.randint(1, len(words[k - 1]) - 1)
+            sy = common.syllables(span[: len(span) - cut]) if span else None
             if sy:
                 toks.append(T)
                 wb.append(2)
@@ -112,12 +121,17 @@ def segment(rng, text, toks, wb):
                 toks.append(S)
                 wb.append(2)
                 for j in range(w, k):
-                    for i, c in enumerate(words[j]):
+                    word = words[j]
+                    for i, c in enumerate(word):
+                        if j == k - 1 and i == len(word) - cut:
+                            toks.append(E)
+                            wb.append(2)
                         p = ids(c)
                         toks.extend(p)
-                        wb.extend([2] * (len(p) - 1) + [int(i == len(words[j]) - 1)])
-                toks.append(E)
-                wb.append(2)
+                        wb.extend([2] * (len(p) - 1) + [int(i == len(word) - 1)])
+                if not cut:
+                    toks.append(E)
+                    wb.append(2)
                 at += len(span)
                 w = k
                 continue

@@ -16,13 +16,21 @@ has the results. Nothing here ships.
   characters), the training text holds the letters typed for it: `<T>`, the letters, `<S>`, the span, `<E>`. The
   letters are its full pinyin (45 %), full pinyin with a phone typo or a zh/z, ch/c, sh/s, ng/n confusion
   (25 %), initials only (10 %), its last syllable cut short (15 %) or some syllables abbreviated (5 %)
-  (`common.py`, `pack.py`). The loss skips the letters: the model learns the span from them and the text before.
+  (`common.py`, `pack.py`). The loss skips the letters, wherever a training window starts (`test_train.py`): the
+  model learns the span from them and the text before. A fifth of the spans end inside their last word, the
+  rest of it following `<E>` as text.
 - **Word ends.** A fifth special token, `<B>`, is never an input: its logit is trained, by binary cross-entropy,
-  to say whether a word (by jieba) ends at each character. Next-word prediction uses it to know where to stop.
+  to say whether a word (by jieba) ends at each character. Next-word prediction uses it to know where to stop,
+  and a candidate's score includes it at the candidate's last character: as spans may stop inside a word, it
+  learns there from the text, not from the letters running out, so 剪个深 for `jiangeshen` scores low (#502).
 
 In the loader (`engines/sebtype-lm/zh_lm.cpp`, which the harness and core/ share), the model scores Rime's first candidates as
 `context <T>letters<S>candidate<E>` and re-ranks them with Rime's order (`rerank`, `rankWeight`); it can add
-its own candidates by beam search (`generate`), and with nothing typed it proposes next words. `tune.py`
+its own candidates by beam search (`generate`), and with nothing typed it proposes next words. The first 3 are
+then re-ordered with part of their probability as plain text after the context added (`plain()`; `plain`,
+`ownPlain`, `plainTop`): given the letters, the model must spell them out once it has picked a first character,
+so the example's score alone can't tell a text whose first character fits but whose rest doesn't (剪个深 for
+`jiangeshen`, #502). `tune.py`
 tunes those settings on dev sets (`make_sets.py --dev`), never on the test sets.
 
 ## Running it

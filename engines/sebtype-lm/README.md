@@ -14,7 +14,7 @@
 
 - `zh_lm.h`, `zh_lm.cpp`: the Chinese model's loader (#259, #264), SebType's own code under the MIT licence.
 - `chinese.gguf`: the Chinese model, trained by [tools/chinese-lm](../../tools/chinese-lm/README.md) (release
-  r1, #259), 17,035,808 bytes, sha256 `d544a19dbe89b4f95fdd629525e87125ed3a9ea08f4c9d632ab75d0f9a4c9192`.
+  r2, #502), 17,035,808 bytes, sha256 `8ea83e1fabe26ecd58c72adc8da8956cbc4202c3a2bec99a0ff351317709603f`.
   CC BY-SA 4.0 too, as part of its text is share-alike, with its sources credited in [NOTICE](../../NOTICE)
   and listed in [SOURCES.md](../../tools/chinese-lm/SOURCES.md). `core/src/chinese.cpp` runs it around Rime;
   the Chinese harness (`android/test/chinese-lm/run.sh`) measures it.
