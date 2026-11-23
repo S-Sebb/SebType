@@ -4,7 +4,9 @@
 // candidate and what sebtype_learned.lua says the first is learned as (the text the model keeps first,
 // #369; empty: not learned). Nothing is committed, so nothing is learned between lines, except on a line
 // "keys<TAB>expected<TAB>learn PIECE...": its keys are typed and its pieces picked one after another, as a
-// user teaches Rime a phrase, before it is ranked.
+// user teaches Rime a phrase, before it is ranked; or "keys<TAB>expected<TAB>store SYLLABLE...": its keys are
+// typed and expected is stored under the syllables, as SebType's model does with a pick Rime has no pieces
+// for (sebtype_learned.lua's property sebtype_learn, #518).
 //   [DEPTH=n] rimebench SHARED USER SCHEMA INPUT [PLUGIN.so ...]   stderr: key_p50_us, key_p95_us, rss_kb
 #include <dlfcn.h>
 #include <stdio.h>
@@ -90,6 +92,12 @@ int main(int argc, char **argv) {
     if (rest && !strncmp(rest, "learn ", 6)) {
       type(api, s, line, NULL, NULL, 0);
       teach(api, s, rest + 6);
+    } else if (rest && !strncmp(rest, "store ", 6)) {
+      char entry[1024];
+      snprintf(entry, sizeof entry, "%s\t%s", rest + 6, want);
+      type(api, s, line, NULL, NULL, 0);
+      api->set_property(s, "sebtype_learn", entry);
+      api->clear_composition(s);
     }
     type(api, s, line, keys, &n, cap);
     int rank = -1;

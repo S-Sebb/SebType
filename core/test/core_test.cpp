@@ -1623,7 +1623,6 @@ TEST_F(ChineseTest, AModelsPickRimeCantSpellIsLearnedUnderItsSyllables) {
   EXPECT_EQ(rime->taught, (std::vector<std::string>{"wo ai ni\t我爱你"}));
   typeAndWait("woaini");
   EXPECT_EQ(list().at(0), "我爱你");
-  EXPECT_TRUE(zh->candidates(1).at(0).learned);
   zh->clear();
 
   rime->taught.clear();

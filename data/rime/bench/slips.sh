@@ -65,7 +65,8 @@ check spoken 87.5 95.5  # 88 % and 96 % with #484's sebtype_ge.lua; before it 72
 reported=$(paste "$out/words.tsv" <(cut -f3 "$here/sets/words.tsv") | awk -F'\t' '$6 == "reported" && $1 != 0 {print $2 " -> " $4}')
 [[ -z $reported ]] && echo "PASS words: the reported words come first" || { echo "FAIL words: not first: $reported"; failed=1; }
 DEPTH=10 check split 0 100  # the first two pages of 5; before #485, 33.7 %
-# A phrase taught once by picking its pieces (#482, sets/learn.tsv) comes first the next time, and Rime
+# A phrase taught once by picking its pieces (#482, sets/learn.tsv), or stored under its syllables as the
+# model stores a pick Rime has no pieces for (#518), comes first the next time, and Rime
 # marks it learned, so SebType's model keeps it first (#369); with each keyboard's setting, in a fresh
 # user dir.
 for kb in pc phone; do
@@ -73,7 +74,7 @@ for kb in pc phone; do
   [[ $kb == phone ]] && printf 'patch:\n  sebtype_typo/keyboard: phone\n' > "$work/learn-$kb/rime_ice.custom.yaml"
   timeout 300 "$work/rimebench" "$work/data" "$work/learn-$kb" rime_ice "$here/sets/learn.tsv" "$plugins/librime-lua.so" \
     "$plugins/librime-octagram.so" > "$out/learn-$kb.tsv" 2> "$out/learn-$kb.log"
-  bad=$(paste "$out/learn-$kb.tsv" <(cut -f3 "$here/sets/learn.tsv") | awk -F'\t' '$6 ~ /^learn / && ($1 != 0 || $5 != $3) {print $2 " -> " $4 " (learned: " $5 ")"}')
+  bad=$(paste "$out/learn-$kb.tsv" <(cut -f3 "$here/sets/learn.tsv") | awk -F'\t' '$6 ~ /^(learn|store) / && ($1 != 0 || $5 != $3) {print $2 " -> " $4 " (learned: " $5 ")"}')
   [[ -s $out/learn-$kb.tsv && -z $bad ]] && echo "PASS learn ($kb): taught phrases come first, marked learned" ||
     { echo "FAIL learn ($kb): ${bad:-rimebench failed, see $out/learn-$kb.log}"; failed=1; }
 done
