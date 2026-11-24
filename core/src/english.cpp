@@ -865,18 +865,19 @@ class English : public Engine {
       if (lexicon)
         for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
 
-    // A contraction typed without its apostrophe ("ive", "dont", "youre", #529) is what a space commits
-    // unless the letters are a word themselves ("were", "well", "its"); a capital I asks for the pronoun's
-    // ("Ill", "Id"). The model can't decide these: its texting-style training text drops apostrophes, so it
-    // keeps "dont" and reads "ive" as "give".
+    // A contraction typed without its apostrophe ("ive", "dont", "youre", #529), and "i" for "I", is what a
+    // space commits unless the letters are a word themselves, as typed or in lower case ("were", "well",
+    // "its"); a capital I asks for the pronoun's ("Ill", "Id"). The model can't decide these: its
+    // texting-style training text drops apostrophes and writes "i", so it keeps "dont" and "i" and reads
+    // "ive" as "give".
     const std::string bare = lowerCaseWord(typed);
     const auto unquoted = [](std::string w) {
       std::erase(w, '\'');
       return w;
     };
-    const bool word = std::ranges::any_of(results, [&](const Word &w) { return lowerCaseWord(w.word) == bare; });
+    const bool word = std::ranges::any_of(results, [&](const Word &w) { return w.word == typed || w.word == bare; });
     for (const Word &w : results)
-      if (w.word.find('\'') != std::string::npos && unquoted(lowerCaseWord(w.word)) == bare &&
+      if ((w.word.find('\'') != std::string::npos || w.word == "I") && unquoted(lowerCaseWord(w.word)) == bare &&
           (!word || (typed_[0] == 'I' && w.word.starts_with("I'")))) {
         contraction_ = w.word;
         break;

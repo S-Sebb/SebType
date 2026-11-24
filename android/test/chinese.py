@@ -2941,15 +2941,41 @@ check(
     typed_as("hello. how", "Hello. How"),
     needs=["first-install"],
 )
-# #529: contractions typed without their apostrophe are corrected to them; "were" stays a word.
-check(
-    "en-contractions",
-    typed_as(
-        "so ive heard youre right im sure i dont know were here ",
-        "So I've heard you're right I'm sure I don't know were here ",
-    ),
-    needs=["first-install"],
-)
+
+
+def contractions():
+    """#529: contractions typed without their apostrophe are corrected to them by the model's ranking too
+    (the decoder alone already corrected them); "were" stays a word."""
+    to_english()
+    open_field()
+    type_text("so ")
+    # The next words after a space come from the model alone on a fresh install: it has loaded.
+    wait_for("the model's next words", lambda: candidates(nodes()), 60)
+    # Each space after the word's ranking has come, as on a phone: here, under ARM translation, a space
+    # typed at once doesn't wait for so slow a model and the decoder decides.
+    for word in [
+        "ive",
+        "heard",
+        "youre",
+        "right",
+        "im",
+        "sure",
+        "i",
+        "dont",
+        "know",
+        "were",
+        "here",
+    ]:
+        type_text(word)
+        time.sleep(3)
+        type_text(" ")
+    want = "So I've heard you're right I'm sure I don't know were here "
+    if (got := field_text()) != want:
+        raise Fail(f"the field shows {got!r}, not {want!r}")
+    return f"-> {got!r}"
+
+
+check("en-contractions", contractions, needs=["first-install"])
 check("en-picked-suggestion-period", picked_suggestion_period, needs=["first-install"])
 check("emoji-picks", emoji_picks, needs=["first-install"])
 check("caps-lock", caps_lock, needs=["en-model-waits-for-letter"])

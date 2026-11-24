@@ -572,16 +572,15 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
   EXPECT_EQ(en->takeCommit(), "what ");
 }
 
-// A contraction typed without its apostrophe is offered first and a space corrects to it (#529), by the
-// decoder's rule and by the model's; letters that are a word themselves, as "were" or "well", stay.
+// A contraction typed without its apostrophe, and "i", is offered first and a space corrects it (#529), by
+// the decoder's rule and by the model's; letters that are a word themselves, as "were" or "well", stay.
 TEST_F(EnglishTest, ContractionsWithoutTheirApostropheAreCorrected) {
   const std::vector<std::pair<std::string, std::string>> cases = {
-      {"Ive", "I've"},     {"ive", "I've"},       {"Im", "I'm"},         {"im", "I'm"},
-      {"Ill", "I'll"},     {"Id", "I'd"},         {"dont", "don't"},     {"Dont", "Don't"},
-      {"cant", "can't"},   {"wont", "won't"},     {"didnt", "didn't"},   {"doesnt", "doesn't"},
-      {"isnt", "isn't"},   {"wasnt", "wasn't"},   {"youre", "you're"},   {"theyre", "they're"},
-      {"thats", "that's"}, {"whats", "what's"},   {"youve", "you've"},   {"its", "its"},
-      {"were", "were"},    {"well", "well"},      {"hell", "hell"}};
+      {"i", "I"}, {"Ive", "I've"}, {"ive", "I've"}, {"Im", "I'm"}, {"im", "I'm"}, {"Ill", "I'll"},
+      {"Id", "I'd"}, {"dont", "don't"}, {"Dont", "Don't"}, {"cant", "can't"}, {"wont", "won't"},
+      {"didnt", "didn't"}, {"doesnt", "doesn't"}, {"isnt", "isn't"}, {"wasnt", "wasn't"}, {"youre", "you're"},
+      {"theyre", "they're"}, {"thats", "that's"}, {"whats", "what's"}, {"youve", "you've"}, {"its", "its"},
+      {"were", "were"}, {"well", "well"}, {"hell", "hell"}};
   for (const bool model : {false, true}) {
     start(model ? EN_MODEL : "");
     if (model) {
