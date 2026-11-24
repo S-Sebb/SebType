@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import random
+import subprocess
 import sys
 import tempfile
 from collections import Counter
@@ -139,6 +140,20 @@ check(
     "o'clock" in got and "you're" in got and "O'Clock" not in got,
     got,
 )
+starts = [
+    written(line)[k].split()[0]
+    for line, k in (
+        ('"YOU\'RE late"', 0),
+        ('He stopped. "DON\'T go"', 2),
+        ("He stopped. (O'Clock news)", 2),
+        ('He said, "YOU\'RE late"', 2),
+    )
+]
+check(
+    "examples: a quoted sentence start keeps its capital",
+    starts == ["You're", "Don't", "O'clock", "You're"],
+    starts,
+)
 check(
     "examples: cant elsewhere stays",
     written("they speak in cant")[-1] == "cant",
@@ -204,6 +219,17 @@ check(
     got,
 )
 
+# dev.sh: a harness run that fails first still waits for the slower ones, then fails.
+with tempfile.TemporaryDirectory() as d:
+    script = f"""set -euo pipefail
+    source <(sed -n '/^wait_all() {{/,/^}}/p' {HERE / "dev.sh"})
+    (exit 1) & a=$!
+    (sleep 1; touch {d}/slow) & b=$!
+    wait_all $a $b 2> /dev/null && exit 0
+    [[ -e {d}/slow ]] && exit 3"""
+    code = subprocess.run(["bash", "-c", script]).returncode
+check("dev.sh: waits for every run, then fails", code == 3, code)
+
 # MIX: windows drawn by token give each source the share pilot r4 trained on, with PILOT_MIX's windows drawn
 # by <s> (segments). Estimated from 100 runs of 50 lines of each corpus file: runs, as the line after a random
 # byte follows a long line more often (in oasst2 a short question follows a long answer).
@@ -247,6 +273,7 @@ for k in ("contractions", "apostrophes", "homographs", "capitals"):
         "kept fixed": 50.0,
         "restored fixed": 50.0,
         "capitalised": 0,
+        "lowercased": 0,
     }
 aosp["homographs"].update({"fixed": 58.1, "kept fixed": 63.2, "restored fixed": 50.0})
 
@@ -268,5 +295,8 @@ check("bar: keeping every homograph fails", not passes(core))
 core = json.loads(json.dumps(aosp))
 core["contractions"]["capitalised"] = 1
 check("bar: a contraction in a title's case fails", not passes(core))
+core = json.loads(json.dumps(aosp))
+core["capitals"]["lowercased"] = 1
+check("bar: a lost capital fails", not passes(core))
 
 sys.exit(1 if failures else 0)

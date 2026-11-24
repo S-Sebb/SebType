@@ -126,6 +126,7 @@ SHORT_RE = re.compile(
     ),
     re.IGNORECASE,
 )
+OPENING = "[\"'(\\[\u201c\u2018]"  # opening quotes and brackets
 SENTENCE_START = re.compile(r"(^|[.!?] +)([A-Z])(?=[a-z' ])")
 SENTENCE_START_INSIDE = re.compile(r"([.!?] +)([A-Z])(?=[a-z' ])")
 # A word an example can go in front of: after the line's start, a space, a quote or a bracket.
@@ -296,11 +297,14 @@ def encode_line(rng, line, texting, chat=False):
         pos, first = 0, True
         for start, end, second in examples(rng, seg):
             before = seg[pos:start]
-            at_start = (
-                si == 0
-                and not seg[:start].strip()
-                or bool(re.search(r"[.!?]\s+$", seg[:start]))
-            )
+            # A sentence starts after a full stop, or at the line's start, an opening quote or bracket
+            # between ('He stopped. "Don't'); after one mid-sentence a capital the source wrote stays
+            # ('He said, "YOU'RE' is "You're" once standard() puts YOU'RE in the dictionary's case).
+            at_start = bool(
+                re.search(r"(?:[.!?]\s+|^\s*)" + OPENING + "*$", seg[:start])
+            ) and (si == 0 or not re.match(r"\s*" + OPENING + "*$", seg[:start]))
+            quoted = bool(re.search(OPENING + "$", seg[:start]))
+            at_start |= quoted and seg[start].isupper()
             if before.endswith(
                 " "
             ):  # the example's word brings its own space marker, as on the phone

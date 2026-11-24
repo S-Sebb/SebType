@@ -13,7 +13,8 @@ how many keys the target was first in the top 3 (0: never).
   capitals, where the intended word may be the typed one): fixed = a space commits the intended word; top1 / top3 = the
   intended word is first / among the first three suggestions. homographs' kept fixed / restored fixed: fixed
   over the rows whose target is the typed word / its contraction. capitalised: how many commits are the
-  intended word with a capital it doesn't have ("O'Clock" for "o'clock").
+  intended word with a capital it doesn't have ("O'Clock" for "o'clock"); lowercased: without one it has
+  ("don't" for "Don't" at a sentence start).
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -234,6 +235,19 @@ def bar(path, today_path):
             -1,
         )
     )
+    # And one that lost its capital: a sentence start, "I", a name (#556).
+    lowercased = lambda s: sum(
+        s[n]["lowercased"]
+        for n in ("contractions", "apostrophes", "homographs", "capitals")
+    )
+    checks.append(
+        (
+            "contractions, apostrophes, homographs, capitals lowercased wrongly <= AOSP's",
+            lowercased(ours),
+            lowercased(aosp),
+            -1,
+        )
+    )
     for set_name in ("clean", "phone-typos"):
         checks.append(
             (
@@ -274,12 +288,16 @@ def main(run_dir):
                 s["saved"] = pct(full - spent, full)
             else:
                 s["fixed"] = pct(sum(r[2] == r[1] for r in rows), len(rows))
-                s["capitalised"] = sum(
-                    r[2] != r[1]
-                    and r[2].lower() == r[1].lower()
-                    and any(c.isupper() and t.islower() for c, t in zip(r[2], r[1]))
-                    for r in rows
-                )
+                for k, wrong in (
+                    ("capitalised", lambda c, t: c.isupper() and t.islower()),
+                    ("lowercased", lambda c, t: c.islower() and t.isupper()),
+                ):
+                    s[k] = sum(
+                        r[2] != r[1]
+                        and r[2].lower() == r[1].lower()
+                        and any(wrong(c, t) for c, t in zip(r[2], r[1]))
+                        for r in rows
+                    )
                 if set_name == "homographs":
                     # Keeping every typed word fixes most rows: the rows that keep it and those that restore
                     # the apostrophe are barred apart.

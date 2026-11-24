@@ -12,6 +12,14 @@ cd "$(dirname "$0")/../.."
 source tools/lib.sh
 export JAVA_HOME=$JDK21  # for jni.h
 here=android/test/english
+
+# wait_all PID...: waits for every one, then fails if any did. A bare wait returns 0 whatever the runs did, and
+# stopping at the first failure would leave the others writing into the next checkpoint's files (select.sh).
+wait_all() {
+  local pid failed=0
+  for pid in "$@"; do wait "$pid" || failed=1; done
+  ((failed == 0)) || { echo "dev.sh: a harness run failed" >&2; return 1; }
+}
 aosp=$HOME/scratch/SebType/cache/aosp-latinime-127336e9f29d
 build=$run/harness-build
 cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DAOSP_JNI="$aosp/native/jni" \
@@ -26,7 +34,7 @@ for set in "$run"/dev/*.tsv; do
     $here/layout.tsv data/en-dict/en_US.dict "$model" &
   pids+=($!)
 done
-for pid in "${pids[@]}"; do wait "$pid"; done  # a bare wait returns 0 whatever the runs did
+wait_all "${pids[@]}"
 python3 -I $here/score.py "$out" > "$out/summary.json"
 python3 -c "import json,sys; s=json.load(open(sys.argv[1]))['sebtype']; [print(k, {m: v for m, v in s[k].items() if 'ms' not in m}) for k in sorted(s)]; print('NEXT', *(s[k]['top3'] for k in ('next-chat', 'next-news', 'next-texts')))" "$out/summary.json"
 [[ -z $ckpt ]] || $py -I tools/english-lm/parity.py "$ckpt" "$run/dev/parity.tsv" "$run/dev/parity.dump"
