@@ -204,6 +204,25 @@ bool insideQuoteOrAfterDigit(const std::string &text) {
   return quotes % 2 == 1;
 }
 
+// Whether WORD (in lower case) is a contraction typed without its apostrophe as often as with it: a "n't"
+// or a pronoun's ("i've", "you're", "that's"), not "who're" ("whore") or a possessive ("pc's" for "pcs").
+bool isContraction(const std::string &word) {
+  const size_t at = word.find('\'');
+  if (at == std::string::npos || word.find('\'', at + 1) != std::string::npos) return false;
+  if (word.ends_with("n't")) return at > 0;
+  static const std::vector<std::string> persons = {"i", "you", "we", "they", "he", "she", "it", "that", "there", "who"};
+  static const std::map<std::string, std::vector<std::string>> stems = {
+      {"'m", {"i"}},
+      {"'ve", {"i", "you", "we", "they", "who"}},
+      {"'re", {"you", "we", "they"}},
+      {"'ll", persons},
+      {"'d", persons},
+      {"'s", {"he", "she", "it", "that", "there", "here", "what", "where", "who", "let"}},
+  };
+  const auto it = stems.find(word.substr(at));
+  return it != stems.end() && std::ranges::find(it->second, word.substr(0, at)) != it->second.end();
+}
+
 std::string withCase(const std::string &word, const std::vector<int> &typed) {
   if (typed.empty() || char32_t(typed[0]) == lowerCase(typed[0])) return word;
   const bool allCaps = typed.size() > 1 && std::all_of(typed.begin(), typed.end(), [](int c) {
@@ -866,21 +885,27 @@ class English : public Engine {
         for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
 
     // A contraction typed without its apostrophe ("ive", "dont", "youre", #529), and "i" for "I", is what a
-    // space commits unless the letters are a word themselves, as typed or in lower case ("were", "well",
-    // "its"); a capital I asks for the pronoun's ("Ill", "Id"). The model can't decide these: its
-    // texting-style training text drops apostrophes and writes "i", so it keeps "dont" and "i" and reads
-    // "ive" as "give".
+    // space commits. The model can't decide these: its texting-style training text drops apostrophes and
+    // writes "i", so it keeps "dont" and "i" and reads "ive" as "give". Not for letters that are a word in
+    // any case ("were", "well", "Ill", "fridays"), a learned or personal word or a personal word's shortcut
+    // (they come first, #380), nor for capitals ("IVE", "ID").
     const std::string bare = lowerCaseWord(typed);
-    const auto unquoted = [](std::string w) {
-      std::erase(w, '\'');
-      return w;
-    };
-    const bool word = std::ranges::any_of(results, [&](const Word &w) { return w.word == typed || w.word == bare; });
-    for (const Word &w : results)
-      if ((w.word.find('\'') != std::string::npos || w.word == "I") && unquoted(lowerCaseWord(w.word)) == bare &&
-          (!word || (typed_[0] == 'I' && w.word.starts_with("I'")))) {
-        contraction_ = w.word;
-        break;
+    const bool capitals = typed_.size() > 1 && std::ranges::all_of(typed_, [](int c) { return char32_t(c) == upperCase(c); });
+    const bool known =
+        main_->offensive(bare) ||  // the decoder never offers it
+        std::ranges::any_of(results, [&](const Word &w) { return w.word != "I" && lowerCaseWord(w.word) == bare; }) ||
+        std::ranges::any_of(personalWords_, [&](const PersonalWord &w) {
+          return lowerCaseWord(w.word) == bare || lowerCaseWord(w.shortcut) == bare;
+        });
+    if (!capitals && !known)
+      for (const Word &w : results) {
+        std::string letters = lowerCaseWord(w.word);
+        const bool contraction = w.word == "I" || isContraction(letters);
+        std::erase(letters, '\'');
+        if (contraction && letters == bare) {
+          contraction_ = w.word;
+          break;
+        }
       }
 
     // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.

@@ -573,14 +573,19 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
 }
 
 // A contraction typed without its apostrophe, and "i", is offered first and a space corrects it (#529), by
-// the decoder's rule and by the model's; letters that are a word themselves, as "were" or "well", stay.
+// the decoder's rule and by the model's. Letters that are a word in any case stay, as do capitals and
+// possessives of other words ("pcs", not "PC's").
 TEST_F(EnglishTest, ContractionsWithoutTheirApostropheAreCorrected) {
-  const std::vector<std::pair<std::string, std::string>> cases = {
-      {"i", "I"}, {"Ive", "I've"}, {"ive", "I've"}, {"Im", "I'm"}, {"im", "I'm"}, {"Ill", "I'll"},
-      {"Id", "I'd"}, {"dont", "don't"}, {"Dont", "Don't"}, {"cant", "can't"}, {"wont", "won't"},
-      {"didnt", "didn't"}, {"doesnt", "doesn't"}, {"isnt", "isn't"}, {"wasnt", "wasn't"}, {"youre", "you're"},
-      {"theyre", "they're"}, {"thats", "that's"}, {"whats", "what's"}, {"youve", "you've"}, {"its", "its"},
-      {"were", "were"}, {"well", "well"}, {"hell", "hell"}};
+  const std::vector<std::pair<std::string, std::string>> corrected = {
+      {"i", "I"}, {"Ive", "I've"}, {"ive", "I've"}, {"Im", "I'm"}, {"im", "I'm"}, {"dont", "don't"},
+      {"Dont", "Don't"}, {"cant", "can't"}, {"wont", "won't"}, {"didnt", "didn't"}, {"doesnt", "doesn't"},
+      {"isnt", "isn't"}, {"wasnt", "wasn't"}, {"youre", "you're"}, {"theyre", "they're"}, {"thats", "that's"},
+      {"whats", "what's"}, {"youve", "you've"}};
+  // Not to their contraction or possessive, whatever else a space makes of them
+  const std::vector<std::pair<std::string, std::string>> notTo = {
+      {"its", "it's"}, {"were", "we're"}, {"well", "we'll"}, {"hell", "he'll"}, {"shell", "she'll"},
+      {"Ill", "I'll"}, {"Is", "I's"}, {"ID", "I'D"}, {"ILL", "I'LL"}, {"fridays", "Friday's"},
+      {"os", "O's"}, {"js", "J's"}, {"pcs", "PC's"}, {"williams", "William's"}};
   for (const bool model : {false, true}) {
     start(model ? EN_MODEL : "");
     if (model) {
@@ -588,14 +593,65 @@ TEST_F(EnglishTest, ContractionsWithoutTheirApostropheAreCorrected) {
       en->key({0xff08, 0, false});
       ASSERT_TRUE(ready(0));
     }
-    for (const auto &[typed, word] : cases) {
-      en->setContext("so ");
-      type(typed);
-      for (int i = 0; i < 100 && model && indexOf(word) != 0; i++) std::this_thread::sleep_for(20ms);
-      EXPECT_EQ(indexOf(word), 0) << typed << (model ? " (model)" : "");
+    const auto word = [&](const std::string &typed) {  // TYPED's list, the model's ranking once it has come
+      en->setContext(std::isupper(static_cast<unsigned char>(typed[0])) ? "" : "so ");
+      for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
+      const int readies = readyCount();
+      en->settle();  // one ranking, for all the letters
+      if (model) EXPECT_TRUE(ready(readies)) << typed;
+    };
+    for (const auto &[typed, want] : corrected) {
+      word(typed);
+      EXPECT_EQ(indexOf(want), 0) << typed << (model ? " (model): " : ": ") << testing::PrintToString(list());
       type(" ");
-      EXPECT_EQ(en->takeCommit(), word + " ") << typed << (model ? " (model)" : "");
+      EXPECT_EQ(en->takeCommit(), want + " ") << typed << (model ? " (model)" : "");
     }
+    for (const auto &[typed, unwanted] : notTo) {
+      word(typed);
+      EXPECT_NE(indexOf(unwanted), 0) << typed << (model ? " (model): " : ": ") << testing::PrintToString(list());
+      type(" ");
+      EXPECT_NE(en->takeCommit(), unwanted + " ") << typed << (model ? " (model)" : "");
+    }
+  }
+}
+
+// A personal word, a personal word's shortcut and a learned word aren't taken for a contraction (#529, #380).
+TEST_F(EnglishTest, PersonalAndLearnedWordsKeepTheirLettersFromContractions) {
+  Settings s;
+  s.englishWords = {{"Ill", 250, ""}, {"plimbo vexter", 250, "dont"}};
+  for (const std::string model : {"", EN_MODEL}) {
+    std::filesystem::remove_all(EN_USER_DIR);
+    std::filesystem::create_directories(EN_USER_DIR);
+    const int readies = readyCount();
+    start(model);
+    en->applySettings(s, true);
+    if (!model.empty()) {
+      type("a");
+      en->key({0xff08, 0, false});
+      ASSERT_TRUE(ready(readies));
+    }
+    const auto word = [&](const std::string &typed) {  // TYPED's list, the model's ranking once it has come
+      en->setContext("so ");
+      for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
+      const int ranked = readyCount();
+      en->settle();
+      if (!model.empty()) EXPECT_TRUE(ready(ranked)) << typed;
+    };
+    word("theyre");
+    en->selectAt(indexOf("theyre"));
+    EXPECT_EQ(en->takeCommit(), "theyre ");
+    for (const auto &[typed, offered] : {std::pair{"Ill", ""}, {"dont", "plimbo vexter"}}) {
+      const std::string letters = typed;
+      word(letters);
+      if (*offered) EXPECT_EQ(indexOf(offered), 1) << testing::PrintToString(list());  // after the typed word
+      type(" ");
+      EXPECT_EQ(en->takeCommit(), letters + " ") << model << ": " << typed;
+    }
+    // The model may still correct a learned word to another, as before (here "there").
+    word("theyre");
+    EXPECT_NE(indexOf("they're"), 0) << testing::PrintToString(list());
+    type(" ");
+    EXPECT_NE(en->takeCommit(), "they're ") << model;
   }
 }
 

@@ -2951,8 +2951,9 @@ def contractions():
     type_text("so ")
     # The next words after a space come from the model alone on a fresh install: it has loaded.
     wait_for("the model's next words", lambda: candidates(nodes()), 60)
-    # Each space after the word's ranking has come, as on a phone: here, under ARM translation, a space
-    # typed at once doesn't wait for so slow a model and the decoder decides.
+    # A contraction's space once the bar shows it first, as the model's ranking does on a phone: here,
+    # under ARM translation, a space typed at once doesn't wait for so slow a model and the decoder decides.
+    shown = {"ive": "I've", "youre": "you're", "im": "I'm", "i": "I", "dont": "don't"}
     for word in [
         "ive",
         "heard",
@@ -2967,7 +2968,15 @@ def contractions():
         "here",
     ]:
         type_text(word)
-        time.sleep(3)
+        if word in shown:
+            try:
+                wait_for(
+                    f"{shown[word]} first for {word}",
+                    lambda: candidates(nodes())[:1] == [shown[word]],
+                    30,
+                )
+            except Fail as e:
+                raise Fail(f"{e}; the bar shows {candidates(nodes())[:6]}") from None
         type_text(" ")
     want = "So I've heard you're right I'm sure I don't know were here "
     if (got := field_text()) != want:
