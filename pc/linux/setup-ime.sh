@@ -259,13 +259,12 @@ wait_fcitx_down() {
   for ((i = 0; i < 25; i++)); do ! fcitx_on_dbus && ! fcitx_under_kwin && return 0; sleep 0.2; done
   ! fcitx_on_dbus
 }
+# Only the Fcitx5 that owns the session bus name, the one setup configures and restarts: another Fcitx5 of
+# this user (a test's private one, or the desktop's while setup configures a test account) isn't ours (#535).
 fcitx_has_deleted_libs() {
   local pid
-  while read -r pid; do
-    [[ -r /proc/$pid/maps ]] || continue
-    grep -qE '(sebtype\.so|librime\.so).* \(deleted\)$' "/proc/$pid/maps" 2>/dev/null && return 0
-  done < <(pgrep -u "$(id -u)" -x fcitx5 2>/dev/null || true)
-  return 1
+  pid=$(busctl --user status org.fcitx.Fcitx5 2>/dev/null | sed -n 's/^PID=//p')
+  [[ -n $pid ]] && grep -qE '(sebtype\.so|librime\.so).* \(deleted\)$' "/proc/$pid/maps" 2>/dev/null
 }
 kwin_restart_fcitx5() {
   (
