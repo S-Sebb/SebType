@@ -81,17 +81,18 @@ mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/sh
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
 # sebtype (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release;
 # any other package is installed, as $FAKE/<package>'s version-release once that file exists, and not while
-# it is empty. The fake sudo logs and applies dnf's install of SebType's RPMs and their distro-sync back to
+# it is empty. The fake sudo logs and applies dnf's install of SebType's RPMs and their swap back to
 # Fedora's, and the removal and install of Fcitx5's own settings.
-stub rpm 'p=${*: -1}; [[ $p == sebtype || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $2 == --qf ]] && cat "$FAKE/$p"; true'
+stub rpm 'p=${*: -1}; [[ $p == sebtype || $p == kcm-fcitx5 || $p == fcitx5-configtool || -f $FAKE/$p ]] || exit 0; [[ -s $FAKE/$p ]] || exit 1; [[ $* == *--qf* ]] && cat "$FAKE/$p"; true'
 stub sudo "echo \"sudo \$*\" >> \"\$FAKE/sudo.log\"
 case \"\$*\" in
   'dnf install -y '*/sebtype-$SEBTYPE_VERSION-*) echo -n '$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE' > \"\$FAKE/sebtype\" ;;
-  'dnf install -y '*/librime-*) for r in \"\${@:4}\"; do p=\${r##*/}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
+  'dnf install -y '*/sebtype-librime-*) for r in \"\${@:4}\"; do p=\${r##*/sebtype-}; echo -n '$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE' > \"\$FAKE/\${p%-$LIBRIME_VERSION-*}\"; done ;;
   'dnf remove -y '*) for p in \"\${@:4}\"; do : > \"\$FAKE/\$p\"; done ;;
   'dnf install -y kcm-fcitx5'*|'dnf install -y fcitx5-configtool'*) for p in \"\${@:4}\"; do echo -n 5.1.16-1.fc44 > \"\$FAKE/\$p\"; done ;;
   'dnf install -y librime-octagram') echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/librime-octagram\" ;;
-  'dnf distro-sync -y librime '*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
+  'dnf do -y --action=remove sebtype-librime '*) for p in \"\${@:4}\"; do [[ \$p == --action=* || \$p == sebtype-* ]] ||
+    echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
 stub systemctl 'echo "systemctl $*" >> "$FAKE/systemctl.log"; cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'
@@ -1359,7 +1360,8 @@ own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup chec
   o=$(fake_run < /dev/null) || return 1; echo "$o"
   ! grep -q " $p " <<<"$o" || return 1
   o=$(fake_run "--undo-$p" < /dev/null) || return 1; echo "$o"
-  [[ $(tail -1 "$fake/sudo.log") == "sudo dnf distro-sync -y ${pkgs[*]}" && $(cat "$fake/$p") == "$fedora" ]] &&
+  local swap=(); for o in "${pkgs[@]}"; do swap+=(--action=remove "sebtype-$o" --action=install "$o"); done
+  [[ $(tail -1 "$fake/sudo.log") == "sudo dnf do -y ${swap[*]}" && $(cat "$fake/$p") == "$fedora" ]] &&
     o=$(fake_run "--undo-$p" < /dev/null) && [[ -z $o ]] || return 1
   echo -n 9.9.9-1.fc45 > "$fake/$p"
   o=$(fake_run < /dev/null) || return 1; echo "$o"
@@ -1367,9 +1369,9 @@ own_swap() { # Fedora's-version-release package rpm [package rpm...]: setup chec
 }
 # librime with its Lua plugin, which must be the same build
 check librime-install-and-undo own_swap "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" \
-  librime "$h/scratch/SebType/cache/librime/librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
-  librime-lua "$h/scratch/SebType/cache/librime/librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
-  librime-octagram "$h/scratch/SebType/cache/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
+  librime "$h/scratch/SebType/cache/librime/sebtype-librime-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
+  librime-lua "$h/scratch/SebType/cache/librime/sebtype-librime-lua-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm" \
+  librime-octagram "$h/scratch/SebType/cache/librime/sebtype-librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"
 # Fcitx5's own settings (#182): setup removes kcm-fcitx5 and fcitx5-configtool after a yes, a rerun
 # leaves it, and --undo-fcitx5 puts both back.
 fcitx5_settings() {
@@ -1390,7 +1392,7 @@ check fcitx5-settings-removed-and-restored fcitx5_settings
 # The grammar plugin (#127): a missing librime-octagram is installed, Fedora's beside Fedora's librime and
 # SebType's build beside SebType's (Fedora's requires Fedora's librime).
 octagram() {
-  local ours=$h/scratch/SebType/cache/librime/librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm release o
+  local ours=$h/scratch/SebType/cache/librime/sebtype-librime-octagram-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm release o
   for release in "$LIBRIME_FEDORA_RELEASE" "$LIBRIME_SEBTYPE_RELEASE"; do
     echo -n "$LIBRIME_VERSION-$release" > "$fake/librime"; : > "$fake/librime-octagram"; rm -f "$fake/sudo.log"
     o=$(echo y | fake_run) || return 1; echo "$o"

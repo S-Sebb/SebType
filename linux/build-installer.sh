@@ -18,14 +18,14 @@ out=${2:-$SEBTYPE_LINUX_SETUP}
 ours=$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE
 required=(
   "$SEBTYPE_RPM"
-  "librime-$ours.x86_64.rpm"
-  "librime-lua-$ours.x86_64.rpm"
-  "librime-octagram-$ours.x86_64.rpm"
+  "sebtype-librime-$ours.x86_64.rpm"
+  "sebtype-librime-lua-$ours.x86_64.rpm"
+  "sebtype-librime-octagram-$ours.x86_64.rpm"
 )
 optional=(
-  "librime-predict-$ours.x86_64.rpm"
-  "librime-tools-$ours.x86_64.rpm"
-  "librime-devel-$ours.x86_64.rpm"
+  "sebtype-librime-predict-$ours.x86_64.rpm"
+  "sebtype-librime-tools-$ours.x86_64.rpm"
+  "sebtype-librime-devel-$ours.x86_64.rpm"
 )
 all=("${required[@]}" "${optional[@]}")
 
@@ -68,12 +68,12 @@ set -eu
 SEBTYPE_VERSION='$SEBTYPE_VERSION'
 SEBTYPE_RPM='$SEBTYPE_RPM'
 SEBTYPE_GUI_SHA='$gui_sha'
-LIBRIME_RPM='librime-$ours.x86_64.rpm'
-LIBRIME_LUA_RPM='librime-lua-$ours.x86_64.rpm'
-LIBRIME_OCTAGRAM_RPM='librime-octagram-$ours.x86_64.rpm'
-LIBRIME_PREDICT_RPM='librime-predict-$ours.x86_64.rpm'
-LIBRIME_TOOLS_RPM='librime-tools-$ours.x86_64.rpm'
-LIBRIME_DEVEL_RPM='librime-devel-$ours.x86_64.rpm'
+LIBRIME_RPM='sebtype-librime-$ours.x86_64.rpm'
+LIBRIME_LUA_RPM='sebtype-librime-lua-$ours.x86_64.rpm'
+LIBRIME_OCTAGRAM_RPM='sebtype-librime-octagram-$ours.x86_64.rpm'
+LIBRIME_PREDICT_RPM='sebtype-librime-predict-$ours.x86_64.rpm'
+LIBRIME_TOOLS_RPM='sebtype-librime-tools-$ours.x86_64.rpm'
+LIBRIME_DEVEL_RPM='sebtype-librime-devel-$ours.x86_64.rpm'
 
 usage() {
   cat <<'USAGE'
@@ -136,7 +136,8 @@ MANIFEST
   for pair in "librime-predict:\$LIBRIME_PREDICT_RPM" "librime-tools:\$LIBRIME_TOOLS_RPM" "librime-devel:\$LIBRIME_DEVEL_RPM"; do
     pkg=\${pair%%:*}
     rpm=\${pair#*:}
-    if rpm -q --quiet "\$pkg" 2>/dev/null; then
+    # Fedora's package or SebType's, which provides its name
+    if rpm -q --quiet --whatprovides "\$pkg" 2>/dev/null; then
       set -- "\$@" "\$tmp/\$rpm"
     fi
   done

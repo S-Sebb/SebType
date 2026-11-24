@@ -159,13 +159,17 @@ command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (
 versions=$here/../../linux/versions.sh; ((checkout)) || versions=$here/versions.sh
 # shellcheck source-path=SCRIPTDIR source=../../linux/versions.sh
 source "$versions"
-installed() { rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
+# A package's version-release, or that of SebType's package in its place (sebtype-librime provides librime, #527)
+installed() { rpm -q --whatprovides --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
 restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
-undo_build() { # package [packages built with it...]
-  local now; now=$(installed "$1")
+undo_build() { # package [packages built with it...]: Fedora's names
+  local now p swap=(); now=$(installed "$1")
   if [[ $now == *.sebtype* ]]; then
     echo "change: replace SebType's $* $now with Fedora's"
-    sudo dnf distro-sync -y "$@"
+    # SebType's packages obsolete Fedora's, so neither install nor distro-sync brings Fedora's back: one
+    # transaction removes SebType's and installs Fedora's, so whatever needs librime stays installed.
+    for p; do swap+=(--action=remove "sebtype-$p" --action=install "$p"); done
+    sudo dnf "do" -y "${swap[@]}"
     restart_note "$1"
   fi
   exit 0
@@ -192,7 +196,7 @@ fi
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
   librime-lua librime-octagram)
 missing=()
-for p in "${pkgs[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
+for p in "${pkgs[@]}"; do [[ -n $(installed "$p") ]] || missing+=("$p"); done
 if ((${#missing[@]})); then
   if change "install packages ${missing[*]} (asks before using sudo)"; then
     read -rp "Install ${missing[*]} with 'sudo dnf install'? [y/N] " answer || answer=
@@ -220,7 +224,8 @@ fi
 # linux/build.sh (about an hour the first time, in a container) and linux/build-librime.sh (a minute or five).
 # Built from this checkout, not taken from a release (#421): a tree under test must run its own code. Run from
 # the RPM, setup comes with the release's packages, which the release's install or update installed.
-# SebType's librime replaces one Fedora release; Fedora's update to another one warns until linux/versions.sh follows it.
+# SebType's librime replaces one Fedora release, and system updates keep it (librime.spec, #527); a librime
+# of another version (installed before setup) warns until linux/versions.sh follows it.
 sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
 if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
   change "install SebType's input method $sebtype_want, which hosts Rime and Mozc (asks before using sudo)"; then

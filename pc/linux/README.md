@@ -32,9 +32,8 @@ falling back to terminal mode when headless or if the GUI cannot start. Besides 
 setup itself, as `sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs
 no packages; it does this account's steps with the release's files. Running the installer elevates once
 (`sudo` or `pkexec`) to run `--install-rpms-only` (which verifies the embedded RPMs and installs `sebtype`,
-`librime`,
-`librime-lua`, `librime-octagram`, plus `librime-predict`, `librime-tools` and `librime-devel` only where
-already installed), then runs `sebtype-setup` as your user.
+`sebtype-librime`, `sebtype-librime-lua` and `sebtype-librime-octagram`, plus `sebtype-librime-predict`,
+`-tools` and `-devel` only where Fedora's `librime-predict`, `librime-tools` or `librime-devel` is installed), then runs `sebtype-setup` as your user.
 
 Nothing is left to do by hand in the usual case: setup restarts Fcitx5 under KWin itself whenever the running
 one has to load something new (SebType's input method, its tray, the input method names, a package), so
@@ -225,8 +224,11 @@ Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
 
 The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
 sentences. `linux/build-librime.sh` builds it with `linux/librime.spec` (Fedora's spec) and Fedora's
-copies of its plugins, which must match it. Its release `2.sebtype4.fc44` sorts above Fedora's `2.fc44`. To undo:
-`pc/linux/setup-ime.sh --undo-librime`.
+copies of its plugins, which must match it. Its packages are named `sebtype-librime`, `sebtype-librime-lua`
+and so on, and provide and obsolete Fedora's `librime` packages, which they replace: a system update
+(`dnf distro-sync`, which Nobara's updater runs, moves each package name to the repositories' version, up
+or down) keeps them, as no repository has their names (#527). To undo, in one transaction that keeps
+`sebtype` installed: `pc/linux/setup-ime.sh --undo-librime` (or `sebtype-setup --undo-librime`).
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
 restarts. At the end it checks that Fcitx5 runs under KWin and that the session has `XMODIFIERS`, and

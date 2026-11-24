@@ -4,7 +4,8 @@
 # pinned Fedora (versions.sh) whose librime is Fedora's, with librime-tools: --install-rpms-only replaces
 # every installed librime package without pulling in uninstalled optional ones, SebType's version is
 # VERSION's, every installed file is the package's, the files setup's user part copies are this checkout's,
-# every library finds what it links, and sebtype-setup runs cleanly as a normal user.
+# every library finds what it links, sebtype-setup runs cleanly as a normal user, a system update (dnf
+# distro-sync, as Nobara's updater runs it) keeps SebType's librime (#527), and --undo-librime brings back Fedora's.
 #
 #   linux/test-rpms.sh INSTALLER   # SebType-setup-<version>-linux-x86_64.sh (CI's artifact sebtype-linux-setup)
 #
@@ -49,23 +50,29 @@ update() {
 }
 check update-installs update
 
+# Every installed librime package is SebType's (sebtype-<name>, in Fedora's place) and no Fedora one is left.
+librime_ours() {
+  local p now
+  for p in librime librime-lua librime-octagram librime-tools; do
+    now=$(rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}' "sebtype-$p"); [[ $now == "sebtype-$p-$ours" ]] || { echo "$now, not sebtype-$p-$ours"; return 1; }
+    ! rpm -q "$p" || { echo "Fedora's $p is still installed"; return 1; }
+  done
+}
 # sebtype is VERSION's; every installed librime package is SebType's; uninstalled optional librime
 # packages weren't pulled in; setup's versions.sh knows VERSION.
 versions() {
-  local want p now
+  local want p
   want=$(< /src/VERSION)
   [[ $(rpm -q --qf '%{VERSION}-%{RELEASE}' sebtype) == "$want-$SEBTYPE_RPM_RELEASE" ]] || { echo "sebtype: $(rpm -q sebtype), not $want"; return 1; }
-  for p in librime librime-lua librime-octagram librime-tools; do
-    now=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$p"); [[ $now == "$ours" ]] || { echo "$p: $now, not $ours"; return 1; }
-  done
+  librime_ours || return 1
   for p in librime-predict librime-devel; do
-    ! rpm -q "$p" >/dev/null 2>&1 || { echo "optional $p was unexpectedly installed"; return 1; }
+    ! rpm -q --whatprovides "$p" >/dev/null 2>&1 || { echo "optional $p was unexpectedly installed"; return 1; }
   done
   [[ $(bash -c 'source /usr/libexec/sebtype/versions.sh; echo "$SEBTYPE_VERSION"') == "$want" ]]
 }
 check versions versions
 
-ours_installed() { rpm -qa --qf '%{NAME}\n' | grep -xE 'sebtype|librime(-.*)?'; }
+ours_installed() { rpm -qa --qf '%{NAME}\n' | grep -xE 'sebtype(-librime(-.*)?)?'; }
 # Every file of the installed packages is as packed (size, digest, mode, links).
 # shellcheck disable=SC2046  # one package name per word
 verify() { rpm -V $(ours_installed) && rpm -ql $(ours_installed); }
@@ -128,5 +135,23 @@ user_setup() {
     ! grep -qxE 'Name=(keyboard-us|rime|mozc)' "$profile"
 }
 check user-setup user_setup
+
+# A system update keeps SebType's librime (#527): Nobara's updater distro-syncs every package to the
+# repositories' version, which put Fedora's librime back while SebType's was named librime.
+system_update() { dnf -y --best distro-sync && dnf -y upgrade && librime_ours; }
+check system-update-keeps-librime system_update
+
+# --undo-librime swaps every SebType librime package for Fedora's in one transaction, sebtype staying
+# installed, and a later update keeps Fedora's. setup asks for sudo; the container runs as root.
+undo_librime() {
+  local p
+  printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/sudo; chmod +x /usr/local/bin/sudo
+  /usr/bin/sebtype-setup --undo-librime </dev/null && dnf -y --best distro-sync || return 1
+  for p in librime librime-lua librime-octagram librime-tools; do
+    [[ $(rpm -q --qf '%{RELEASE}' "$p") == "$LIBRIME_FEDORA_RELEASE" ]] || { echo "$p: $(rpm -q "$p"), not Fedora's"; return 1; }
+  done
+  ! rpm -qa | grep '^sebtype-librime' && rpm -q sebtype
+}
+check undo-librime undo_librime
 
 exit $failed

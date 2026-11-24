@@ -36,10 +36,11 @@ LIBRIME_SOURCES=(
   librime-octagram.tar.gz cf0ebfa6af1d80607e0ef477145b8fcdaabbd6fdc3877a2fe7834509d6a327728dcf5397b19897b31b8e4a19defeeb0daabaa0790db8a5d8c13e3c2129eba537
   librime-predict.tar.gz 18886685d38efe8384d1c3d3c7c178f79b9cb9e32d5063586c332f1b1c7b559e869fd2623ede2d088e855ebd82a0368fe83bbffa78a793d660d233a5c82c71c8
 )
-LIBRIME_SEBTYPE_RELEASE=2.sebtype4.fc44
+LIBRIME_SEBTYPE_RELEASE=2.sebtype5.fc44
+# Fedora's names. SebType's packages are sebtype-<name> and provide <name> (librime.spec, #527).
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
 LIBRIME_CACHE=$HOME/scratch/SebType/cache/librime
-librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package
+librime_rpm() { echo "$LIBRIME_CACHE/sebtype-$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # Fedora's name
 
 # sebtype_key: a hash of what build.sh packs, as it is in this tree now, committed or not (new and deleted
 # files too), but not what git ignores. git hashes the files into a copy of the tree's index, so it reads again

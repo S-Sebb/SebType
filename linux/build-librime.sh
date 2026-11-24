@@ -2,7 +2,7 @@
 # Builds SebType's librime RPMs (#101): engines/librime with librime.spec (Fedora's spec), which also builds
 # the plugins from Fedora's own copies, in the pinned Fedora container. Prints the RPMs' paths.
 #
-#   linux/build-librime.sh    # -> ~/scratch/SebType/cache/librime/librime{,-lua,...}-<version>-<release>.x86_64.rpm
+#   linux/build-librime.sh    # -> ~/scratch/SebType/cache/librime/sebtype-librime{,-lua,...}-<version>-<release>.x86_64.rpm
 #
 # One to five minutes, in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
 # Runs on yanglab16 when it answers (tools/lib.sh, #225) and copies the RPMs back to the same paths here.
