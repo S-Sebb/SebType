@@ -85,7 +85,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private var page: Layout? = null
     private var numberRow: Layout? = null
-    /** The rows the keyboard keeps the height of on every page: the letters' with the field's number row (#531) */
+    /** The rows every page fills, see [pageRowHeight] */
     private var fillRows = 0f
     var shift = Shift.OFF
         private set
@@ -132,8 +132,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         id = R.id.keyboard
     }
 
-    /** [fillRows]: a page with fewer rows stretches them to this many, so the keyboard keeps its height (#531). */
-    fun setPage(page: Layout, numberRow: Layout?, currency: String, fillRows: Float = 0f) {
+    fun setPage(page: Layout, numberRow: Layout?, currency: String, fillRows: Float) {
         if (this.page === page && this.numberRow === numberRow && this.currency == currency && this.fillRows == fillRows) return
         val before = tallRows
         this.page = page
