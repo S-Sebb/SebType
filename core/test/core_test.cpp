@@ -558,6 +558,26 @@ TEST_F(EnglishTest, SpaceCorrectsTyposAndKeepsWords) {
   EXPECT_EQ(en->takeCommit(), "pu ");
 }
 
+// #555: a word picked as typed is learned, and typed again a space keeps it, with the model as without it.
+TEST_F(EnglishTest, ALearnedWordTypedAgainStaysWithTheModel) {
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  const auto word = [&](const std::string &typed) {  // TYPED's list, the model's ranking once it has come
+    en->setContext("so ");
+    for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
+    const int ranked = readyCount();
+    en->settle();
+    ASSERT_TRUE(ready(ranked));
+  };
+  word("theyre");
+  en->selectAt(indexOf("theyre"));
+  EXPECT_EQ(en->takeCommit(), "theyre ");
+  word("theyre");
+  type(" ");
+  EXPECT_EQ(en->takeCommit(), "theyre ");
+}
+
 // A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
 // right after the letters, before that ranking has come, waits for it and corrects by the model.
 TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
@@ -661,6 +681,35 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   en->setContext("Thank you very much. See you ");
   ASSERT_TRUE(ready(readies));
   EXPECT_FALSE(lists("much"));
+}
+
+// A word's score ends it (#561): without that, "don" scored at least as well as "don't" (▁don ' t), whose
+// pieces it starts, whatever was typed.
+TEST(EnglishModel, AWordsScoreEndsItSoItLosesToTheLongerWordItStarts) {
+  sebtype_lm::Model model(EN_MODEL);
+  const auto lp = model.score("I", "dont", {"don", "don't"});
+  EXPECT_LT(lp[0], lp[1]);
+}
+
+// Next words are whole words (#561): a contraction is three pieces (▁didn ' t), and none ends in "'".
+TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
+  sebtype_lm::Model model(EN_MODEL);
+  bool contraction = false;
+  for (const auto &w : model.nextWords("Sorry I", 5)) {
+    EXPECT_NE(w.word.back(), '\'') << w.word;
+    contraction |= w.word.find('\'') != std::string::npos;
+  }
+  EXPECT_TRUE(contraction);
+}
+
+// decide() corrects one letter only to its capital (i to I, #561), and never a word only learned (#555).
+TEST(EnglishDecide, ALoneLetterGetsOnlyItsCapitalAndALearnedWordStays) {
+  const std::vector<sebtype_lm::Candidate> i{{"I", 1}, {"in", 1}};
+  EXPECT_EQ(sebtype_lm::decide("i", i, false, {-1, -20, -30}).committed, "I");
+  EXPECT_EQ(sebtype_lm::decide("i", i, false, {-20, -1, -30}).committed, "i");
+  const std::vector<sebtype_lm::Candidate> theyre{{"there", 0.3f}, {"theyre", 1}};
+  EXPECT_EQ(sebtype_lm::decide("theyre", theyre, true, {-0.1f, -13}).committed, "there");
+  EXPECT_EQ(sebtype_lm::decide("theyre", theyre, true, {-0.1f, -13}, true).committed, "theyre");
 }
 
 // The model reads a window of the text before the cursor whose start stays put while the text grows, so a

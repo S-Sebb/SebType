@@ -903,7 +903,7 @@ class English : public Engine {
       if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
     if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
       add(results.front().word);
-    Rank rank{context_, typed, {}, typedFound, 0};
+    Rank rank{context_, typed, {}, typedFound, typedFound && !main_->has(typed), 0};
     for (const Word &w : results)
       if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) == shortcuts_.end())
         rank.candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
@@ -1192,7 +1192,7 @@ class English : public Engine {
         {
           TraceSection section("SebType rank");
           std::lock_guard g(modelMutex_);
-          ranked = sebtype_lm::rank(*model_, r.context, r.typed, r.candidates, r.typedIsWord);
+          ranked = sebtype_lm::rank(*model_, r.context, r.typed, r.candidates, r.typedIsWord, r.typedIsLearned);
         }
         std::this_thread::sleep_for(paths_.rankDelay);
         l.lock();
@@ -1265,6 +1265,7 @@ class English : public Engine {
     std::string context, typed;
     std::vector<sebtype_lm::Candidate> candidates;
     bool typedIsWord;
+    bool typedIsLearned;  // only the learned or personal words have it, so the model never corrects it (#555)
     uint64_t gen;
   };
   std::thread worker_;

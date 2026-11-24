@@ -43,20 +43,24 @@ private:
     std::vector<int> contextTokens(const std::string &context);
     // Brings sequence 0 to PREFIX, decoding only what the cache doesn't hold; returns the logits after it.
     const float *advance(const std::vector<int> &prefix);
-    // Decodes each of FOLLOWERS after sequence 0, on a sequence of its own, with logits at every token, and
-    // returns their indices for llama_get_logits_ith. The branches are gone at the next call.
-    std::vector<std::vector<int>> branch(const std::vector<std::vector<int>> &followers);
-    // A row of logits' normaliser, worked out once for all the tokens read from it: a pass over the
-    // vocabulary costs 0.5 ms on a phone's little cores (#406).
-    struct Norm {
+    // Decodes each of FOLLOWERS on a sequence of its own, after sequence 0's tokens before its place in FROM
+    // (default: all of them), with logits at every token, and returns their indices for llama_get_logits_ith.
+    // The branches are gone at the next call.
+    std::vector<std::vector<int>> branch(const std::vector<std::vector<int>> &followers,
+                                         const std::vector<size_t> &from = {});
+    // What is read from a row of logits, in one pass over the vocabulary, which costs 0.5 ms on a phone's
+    // little cores (#406): its normaliser, log P(the word before ends here), and the likeliest piece continuing
+    // that word (-1 if none).
+    struct Row {
         float top;
         double log;
+        float end;
+        int next;
     };
-    Norm norm(const float *logits) const;
-    static float logSoftmax(const float *logits, int token, Norm n);
-    // From the logits after a word's last piece: log P(the word ends here), and log P of the likeliest piece
-    // continuing it, which goes in CONTINUATION (-1 and -inf if none).
-    std::pair<float, float> logEnd(const float *logits, int *continuation) const;
+    Row row(const float *logits) const;
+    static float logSoftmax(const float *logits, int token, const Row &r);
+    // Drops the sequences branch() left.
+    void dropBranches();
 
     llama_model *mModel = nullptr;
     llama_context *mCtx = nullptr;
@@ -84,12 +88,14 @@ struct Ranked {
 // The words rank() asks the model about: the decoder's first candidates and the typed word, last.
 std::vector<std::string> rankedWords(const std::string &typed, const std::vector<Candidate> &candidates);
 // CANDIDATES: the decoder's, best first, the typed word among them if the dictionary has it (TYPED_IS_WORD).
-// LOG_PROBS: Model::score for rankedWords().
+// LOG_PROBS: Model::score for rankedWords(). TYPED_IS_LEARNED: the typed word is one the user's learned or
+// personal words have and the dictionary doesn't, which a space keeps as typed.
 Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates, bool typedIsWord,
-              const std::vector<float> &logProbs);
+              const std::vector<float> &logProbs, bool typedIsLearned = false);
 inline Ranked rank(Model &model, const std::string &context, const std::string &typed,
-                   const std::vector<Candidate> &candidates, bool typedIsWord) {
-    return decide(typed, candidates, typedIsWord, model.score(context, typed, rankedWords(typed, candidates)));
+                   const std::vector<Candidate> &candidates, bool typedIsWord, bool typedIsLearned = false) {
+    return decide(typed, candidates, typedIsWord, model.score(context, typed, rankedWords(typed, candidates)),
+                  typedIsLearned);
 }
 
 }  // namespace sebtype_lm
