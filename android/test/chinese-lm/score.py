@@ -73,12 +73,14 @@ def summarise(out):
             if name.startswith(("sent-", "long-")):
                 total = right = short = 0
                 for it, r in zip(items, rows):
-                    words = it[3].split(" ")
-                    total += len(words)
                     top1 = r[3].split("|")[0] if r[3] else ""
-                    right += words_right(it[2], words, top1)
                     short += len(top1) < len(it[2])
-                m["words"] = pct(right, total)
+                    if "typo" not in name:  # the note: the clause's words
+                        words = it[3].split(" ")
+                        total += len(words)
+                        right += words_right(it[2], words, top1)
+                if total:
+                    m["words"] = pct(right, total)
                 # A first candidate that leaves out part of what was typed (#563).
                 m["short"] = pct(short, n)
             if name == "typo":
@@ -196,6 +198,15 @@ def table(a, b):
             f"Long clause right at rank 1 / first shorter than typed (13-25 characters, {src}, {n})",
             lambda s: (
                 f"{a[s][f'long-{src}']['top1']} / {a[s][f'long-{src}']['short']} %"
+            ),
+        )
+    for src in ("chat", "news"):
+        n = a[stacks[0]][f"long-typo-{src}"]["items"]
+        row(
+            f"… with typos: right at rank 1 / in the top 3 / first shorter than typed ({src}, {n})",
+            lambda s: (
+                f"{a[s][f'long-typo-{src}']['top1']} / {a[s][f'long-typo-{src}']['top3']}"
+                f" / {a[s][f'long-typo-{src}']['short']} %"
             ),
         )
     for kind, what in (
