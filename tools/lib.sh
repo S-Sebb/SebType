@@ -159,10 +159,15 @@ build_lock() {
 # - RLIMIT_CORE=1, so the kernel hands no crash in the session to systemd-coredump, and none raises a
 #   DrKonqi notice on the user's desktop.
 private_dbus() {
-  local rt link s env=()
+  local rt link l s env=()
   rt=$(mktemp -d "$1/run.XXXX"); shift  # 0700
-  link=$rt
-  [[ -n ${XDG_RUNTIME_DIR-} ]] && link=$(mktemp -u "$XDG_RUNTIME_DIR/sebtype-bus.XXXX") && ln -s "$rt" "$link"
+  link=$rt  # without XDG_RUNTIME_DIR (CI, cron) the long path: only --xwayland callers need the short one
+  if [[ -n ${XDG_RUNTIME_DIR-} ]]; then
+    # Links stay after the session: its Documents portal may still unmount <link>/doc once dbus-run-session
+    # has returned. Earlier sessions' links whose sandbox is gone are swept here instead.
+    find "$XDG_RUNTIME_DIR" -maxdepth 1 -name 'sebtype-bus.*' -xtype l -delete
+    l=$(mktemp -u "$XDG_RUNTIME_DIR/sebtype-bus.XXXX") && ln -s "$rt" "$l" && link=$l
+  fi
   while [[ $1 != -- ]]; do env+=("$1"); shift; done; shift
   mkdir "$rt/masked"
   for s in /usr/share/dbus-1/services/org.freedesktop.portal.Desktop.service \
@@ -173,7 +178,4 @@ private_dbus() {
   printf '<busconfig>\n  <servicedir>%s</servicedir>\n  <include>/usr/share/dbus-1/session.conf</include>\n</busconfig>\n' \
     "$rt/masked" > "$rt/bus.conf"
   env "${env[@]}" XDG_RUNTIME_DIR="$link" prlimit --core=1 -- dbus-run-session --config-file="$rt/bus.conf" -- "$@"
-  s=$?
-  [[ $link == "$rt" ]] || rm -f "$link"
-  return $s
 }
