@@ -9,7 +9,8 @@
 
 Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key, and after
 how many keys the target was first in the top 3 (0: never).
-- Typo sets (phone-typos, text-typos, misspellings): fixed = a space commits the intended word; top1 / top3 = the
+- Typo sets (phone-typos, text-typos, misspellings, and #556's contractions, apostrophes, homographs and
+  capitals, where the intended word may be the typed one): fixed = a space commits the intended word; top1 / top3 = the
   intended word is first / among the first three suggestions.
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
@@ -98,7 +99,7 @@ def table(s1, s2, today=None):
             cells.append(fmt(x, y) if x else "–")
         print(f"| {label} | " + " | ".join(cells) + " |")
 
-    n = lambda s: f"{a[cols[0]][s]['items']:,}"
+    n = lambda s: f"{next(a[k][s] for k in cols if s in a[k])['items']:,}"
     print(
         "| Measure (set, items) | " + " | ".join(dict(STACKS)[k] for k in cols) + " |"
     )
@@ -117,6 +118,17 @@ def table(s1, s2, today=None):
             f"Intended word first / in the top 3 ({name})",
             s,
             lambda x, y: f"{x['top1']} / {x['top3']} %",
+        )
+    for s, name in (
+        ("contractions", "contractions typed without the apostrophe"),
+        ("apostrophes", "contractions in sentences, typed without it"),
+        ("homographs", "bare forms that are words too"),
+        ("capitals", "capitalised words"),
+    ):
+        row(
+            f"Right word committed ({name}, {n(s)})",
+            s,
+            lambda x, y: f"{x['fixed']} %",
         )
     row(
         f"Correct word wrongly changed (clean words, {n('clean')})",
@@ -160,9 +172,10 @@ def table(s1, s2, today=None):
 def bar(path, today_path):
     """The plan's quality bar (§2): the keyboard's English against today's, one line per gated row."""
     today = json.loads(Path(today_path).read_text())["today"]
-    ours = json.loads(Path(path).read_text())["core"]
+    summary = json.loads(Path(path).read_text())
+    ours, aosp = summary["core"], summary["aosp"]
     checks = []
-    for set_name in ("phone-typos", "misspellings"):
+    for set_name in ("phone-typos", "misspellings", "text-typos"):
         for k in ("fixed", "top1", "top3"):
             checks.append(
                 (
@@ -180,12 +193,22 @@ def bar(path, today_path):
             -1,
         )
     )
-    for set_name in ("next-chat", "next-news"):
+    for set_name in ("next-chat", "next-news", "next-texts"):
         checks.append(
             (
                 f"{set_name} top3 >= 90 % of today",
                 ours[set_name]["top3"],
                 round(0.9 * today[set_name]["top3"], 1),
+                1,
+            )
+        )
+    # #556's sets: today.json has no numbers for them, so the bar is AOSP's decoder alone, in the same run.
+    for set_name in ("contractions", "apostrophes", "homographs", "capitals"):
+        checks.append(
+            (
+                f"{set_name} fixed >= AOSP's",
+                ours[set_name]["fixed"],
+                aosp[set_name]["fixed"],
                 1,
             )
         )

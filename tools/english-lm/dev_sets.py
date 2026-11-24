@@ -3,12 +3,17 @@ lines (corpus.py's *.dev.txt), never from the harness's test sets.
 
   dev_sets.py RUN_DIR
 
-Writes RUN_DIR/dev/{next-chat,next-news,clean,phone-typos,misspellings,next-texts,text-typos}.tsv: chat from
+Writes RUN_DIR/dev/{next-chat,next-news,clean,phone-typos,misspellings,next-texts,text-typos,apostrophes,
+capitals,homographs}.tsv: chat from
 oasst2 and Dolly, news from Wikinews, as in the harness's register (SODA's chit-chat has too few words the
 dictionary lacks to tune the autocorrection on), typed with the harness's touch and typo model (make_sets.py). The typed sets take every
 word of their sentences, 70 % of each source's words clean, 30 % with typos. The misspellings are noise.py's
 spelling mistakes with no context. The texting sets come from NUS SMS messages, as the harness's do: every
-lowercase word of 200 messages, and one typo in a word of three letters or more of each of the others.
+lowercase word of 200 messages, and one typo in a word of three letters or more of each of the others, each
+target the word its letters mean (make_sets.py's intended(): "dont" is "don't").
+#556's: apostrophes and capitals as the harness's (make_sets.py's sentence_rows()), from the held-out lines of
+the chat sources and Wikinews; homographs, every bare form that is a word too ("its", "well") in those lines,
+typed as it is, and every contraction it is the bare form of ("it's", "we'll"), typed without its apostrophe.
 """
 
 import random
@@ -18,7 +23,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "android/test/english"))
 # Run with python -I, which drops the script's own folder from the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from make_sets import row, sentences, tap, targets, typo
+from make_sets import (
+    WORD,
+    dictionary,
+    intended_of,
+    row,
+    sentence_rows,
+    sentences,
+    tap,
+    targets,
+    typo,
+)
 from noise import spelling
 
 
@@ -63,6 +78,51 @@ def main(run):
             row("", m, w, [tap(rng, ch, True) for ch in m]) + "\n" for m, w in pairs
         )
     )
+    words = dictionary()
+    intended = intended_of(words)
+    everyday = list(
+        dict.fromkeys(
+            sentences(
+                read("oasst2", "dolly", "soda", "bst", "topical-chat", "wikinews")
+            )
+        )
+    )
+    apostrophes, capitals = sentence_rows(rng, everyday, words, 400, 400)
+    (out / "apostrophes.tsv").write_text("".join(r + "\n" for r in apostrophes))
+    (out / "capitals.tsv").write_text("".join(r + "\n" for r in capitals))
+    homographs = {
+        "its",
+        "were",
+        "well",
+        "hell",
+        "shell",
+        "shed",
+        "wed",
+        "ill",
+        "id",
+        "lets",
+        "cant",
+        "wont",
+    }
+    rows = []
+    for s in everyday:
+        for m in WORD.finditer(s):
+            bare = m.group().replace("'", "")
+            if (
+                bare in homographs
+                and m.start() > 0
+                and s[m.end() : m.end() + 1] in ("", *" .,!?;:")
+            ):
+                rows.append(
+                    row(
+                        s[: m.start()].rstrip(),
+                        bare,
+                        m.group(),
+                        [tap(rng, ch, True) for ch in bare],
+                    )
+                )
+    rng.shuffle(rows)
+    (out / "homographs.tsv").write_text("".join(r + "\n" for r in rows[:400]))
     texts = [
         t
         for t in dict.fromkeys(read("nus-sms"))
@@ -70,11 +130,15 @@ def main(run):
     ]
     rng.shuffle(texts)
     (out / "next-texts.tsv").write_text(
-        "".join(row(c, "", w) + "\n" for t in texts[:200] for c, w in targets(t, 1))
+        "".join(
+            row(c, "", intended(w)) + "\n"
+            for t in texts[:200]
+            for c, w in targets(t, 1)
+        )
     )
     (out / "text-typos.tsv").write_text(
         "".join(
-            row(c, typed, w, taps) + "\n"
+            row(c, typed, intended(w), taps) + "\n"
             for t in texts[200:]
             for c, w in [rng.choice([x for x in targets(t, 3)])]
             for typed, taps in [typo(rng, w)]
