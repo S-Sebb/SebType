@@ -176,9 +176,10 @@ device_suite() {
       "$adb" -s "$serial" shell ime enable "$ime" >/dev/null
       "$adb" -s "$serial" install -r "$field_apk" >/dev/null
     fi
-    # chinese.py appends its own result lines; this line only records whether it ran to the end. The update
-    # from MAIN_APK (the FUTO-based app learning first) adds about a quarter of an hour.
-    PATH=$(dirname "$adb"):$PATH T=$([[ -n ${MAIN_APK:-} ]] && echo 5400 || echo 3600) check chinese-run \
+    # chinese.py appends its own result lines; this line only records whether it ran to the end. Its ~100
+    # checks take about 75 minutes (check-times.txt, #524); the update from MAIN_APK (the FUTO-based app
+    # learning first) adds about a quarter of an hour.
+    PATH=$(dirname "$adb"):$PATH T=$([[ -n ${MAIN_APK:-} ]] && echo 7200 || echo 5400) check chinese-run \
       python3 -I android/test/chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
     # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
     PATH=$(dirname "$adb"):$PATH T=3600 check settings-run python3 -I android/test/settings.py "$serial" "$results" "$out"
@@ -188,7 +189,7 @@ device_suite() {
 }
 export -f result check set_locale device_checks device_suite
 export adb apk futo_apk field_apk locale_dex results pkg ime
-android/emulator.sh -P 1 -w 1800 -m 50 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
+android/emulator.sh -P 1 -w 1800 -m "$([[ -n $SEBTYPE_CHECKS ]] && echo 50 || echo 135)" -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log"
 # The device suite always records install-beside-futo; without it the device steps never ran, whatever the
 # lock's exit status says (#241: a run passed on the host checks alone).
