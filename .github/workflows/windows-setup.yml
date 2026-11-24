@@ -252,10 +252,18 @@ jobs:
           $l = "$env:ProgramFiles\SebType\licenses"
           Get-ChildItem -Recurse -File $l | ForEach-Object { $_.FullName.Substring($l.Length + 1) }
           $missing = 'SebType-LICENSE.txt', 'Rime-data-GPL-3.0.txt', 'rime\librime-octagram-LICENSE.txt', 'rime\rime-prelude-LICENSE.txt',
+            'rime\Lua-LICENSE.txt', 'rime\X11-keysym-LICENSE.txt',
             'server\llama.cpp-LICENSE.txt', 'server\protobuf-LICENSE.txt', 'mozc\Mozc-LICENSE.txt', 'mozc\WIL-LICENSE.txt' |
             Where-Object { -not (Test-Path "$l\$_") }
           if ($missing) { throw "missing: $missing" }
+          $empty = Get-ChildItem -Recurse -File $l | Where-Object Length -eq 0
+          if ($empty) { throw "empty: $($empty.Name)" }
           if (-not (Select-String -Quiet 'Neither the name' "$l\rime\darts-clone-LICENSE.txt")) { throw "rime\darts-clone-LICENSE.txt isn't librime's" }
+          # The GPL-3.0 snapshot this replaced (#544) would pass the check above by name alone
+          $octagram = "$l\rime\librime-octagram-LICENSE.txt"
+          if (-not (Select-String -Quiet 'Redistribution and use' $octagram) -or (Select-String -Quiet 'GENERAL PUBLIC LICENSE' $octagram)) {
+            throw "rime\librime-octagram-LICENSE.txt isn't BSD-3-Clause"
+          }
           if (Get-ChildItem -Recurse $l -Filter '*tclap*') { throw "tclap's licence: it isn't linked" }
       # A silent Setup and uninstall whose account steps fail exit instead of waiting on an error box nobody
       # can click (#311): /VERYSILENT alone, as pc/windows/README.md documents it. A file where the account's
