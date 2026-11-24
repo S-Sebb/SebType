@@ -22,7 +22,7 @@ Seed 259; the same sources give the same sets. The pinyin is read for the item's
 | partial-chat, partial-news | 400 each | a 2-4-character word in full pinyin but its last syllable's first letter (ranh → 然后) |
 | typo | 800 (500 chat, 300 news) | a clause of 2-8 characters with one phone typo or pinyin confusion (10 % two) |
 | next-chat, next-news | 1,500 and 1,000 | nothing: the next word (jieba's) after the text before it |
-| variants | up to 300 (100 each) | spellings Rime takes that training's pinyin didn't have before #557: lue/nue for lve/nve, zh/ch/sh whole in abbreviations (chsh → 城市), and one of the app's other fuzzy pairs (l/n, f/h, r/l, k/g) |
+| variants | up to 300 (100 each) | spellings that training's pinyin didn't have before #557: lue/nue for lve/nve and zh/ch/sh whole in abbreviations (chsh → 城市), which Rime takes, and one of the app's other fuzzy pairs (l/n, f/h, r/l, k/g), which it takes only when the user turns that pair on (off by default, as here: a typo to fix) |
 """
 
 import itertools

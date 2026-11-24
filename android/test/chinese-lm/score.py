@@ -249,7 +249,7 @@ def table(a, b):
     )
     n = a[stacks[0]]["variants"]["items"]
     row(
-        f"Other spellings Rime takes: intended text first / in the top 3 ({n})",
+        f"Spellings training lacked before #557 (lue, chsh; fuzzy pairs, off in Rime by default): intended text first / in the top 3 ({n})",
         lambda s: f"{a[s]['variants']['top1']} / {a[s]['variants']['top3']} %",
     )
     for k in a[stacks[0]]["variants"]["top1_by_kind"]:
