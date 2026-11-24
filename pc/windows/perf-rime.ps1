@@ -21,6 +21,7 @@ $ErrorActionPreference = 'Stop'
 # old-looking files there, prebuilt tables included, which Rime would then rebuild (#537).
 $work = Join-Path $env:LOCALAPPDATA "SebType\perf-$PID"
 try {
+  New-Item -ItemType Directory -Force (Split-Path $work) | Out-Null  # Copy-Item makes no parent folders
   if ($Rime -like '*.zip') { Expand-Archive $Rime $work } else { Copy-Item $Rime $work -Recurse }
   $inputs = Join-Path $work 'perf-inputs.txt'
   # The same generic phrases as pc/linux/perf.sh: abbreviations, words and a long sentence.
