@@ -669,9 +669,9 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     private fun globe() =
         switchTo(globeTarget(Engines.languages(), lang, Prefs[Prefs.QUICK_SWITCH], prefs.getInt("other_language", ENGLISH)))
 
-    /** A language the list showed but the settings have turned off since (split screen) is no longer picked */
     override fun languagesOn() = Engines.languages().let { on -> on.map { it to name(it) } to on.indexOf(lang) }
 
+    /** A language the list showed but the settings have turned off since (split screen) is no longer picked */
     override fun onPickLanguage(lang: Int) = waiting.run {
         if (lang in Engines.languages()) switchTo(lang)
     }
