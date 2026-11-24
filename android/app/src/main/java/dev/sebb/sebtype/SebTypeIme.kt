@@ -773,8 +773,10 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         if (!views) return
         val code = when (lang) { CHINESE -> "zh"; JAPANESE -> "ja"; else -> "en" }
         val layout = Layout.load(this, kind.pad ?: page.file, code)
-        val numberRow = if ((kind.numberRow || Prefs[Prefs.NUMBER_ROW]) && kind.pad == null && page == Page.LETTERS) Layout.load(this, "numbers", code) else null
-        keyboard.setPage(layout, numberRow, if (lang == ENGLISH) "$" else "¥")
+        // The number row shows over the letters; the other pages keep the keyboard as tall (#531).
+        val numbers = if ((kind.numberRow || Prefs[Prefs.NUMBER_ROW]) && kind.pad == null) Layout.load(this, "numbers", code) else null
+        val fillRows = if (numbers == null) 0f else rowsHeight(Layout.load(this, Page.LETTERS.file, code).rows + numbers.rows)
+        keyboard.setPage(layout, numbers?.takeIf { page == Page.LETTERS }, if (lang == ENGLISH) "$" else "¥", fillRows)
         keyboard.spaceLabel = when (lang) { CHINESE -> "中文"; JAPANESE -> "日本語"; else -> "English" }
         if (lang == JAPANESE) {
             val keys = if (page == Page.LETTERS) NativeCore.KEYS_KANA else NativeCore.KEYS_SYMBOLS

@@ -85,6 +85,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private var page: Layout? = null
     private var numberRow: Layout? = null
+    /** The rows every page fills, see [pageRowHeight] */
+    private var fillRows = 0f
     var shift = Shift.OFF
         private set
     /** The space bar's label: the language's name */
@@ -130,14 +132,15 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         id = R.id.keyboard
     }
 
-    fun setPage(page: Layout, numberRow: Layout?, currency: String) {
-        if (this.page === page && this.numberRow === numberRow && this.currency == currency) return
-        val heightChanged = rows(this.page, this.numberRow) != rows(page, numberRow)
+    fun setPage(page: Layout, numberRow: Layout?, currency: String, fillRows: Float) {
+        if (this.page === page && this.numberRow === numberRow && this.currency == currency && this.fillRows == fillRows) return
+        val before = tallRows
         this.page = page
         this.numberRow = numberRow
         this.currency = currency
+        this.fillRows = fillRows
         cancelTouches()
-        if (heightChanged) requestLayout() else layoutCells()
+        if (tallRows != before) requestLayout() else layoutCells()
         invalidate()
         a11y.invalidateRoot()
     }
@@ -158,17 +161,20 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         a11y.invalidateRoot()
     }
 
-    private fun rows(page: Layout?, numberRow: Layout?) =
-        (page?.rows.orEmpty() + numberRow?.rows.orEmpty()).sumOf { it.height.toDouble() }.toFloat()
+    private val shownRows get() = numberRow?.rows.orEmpty() + page?.rows.orEmpty()
+    /** The keyboard's height in rows */
+    private val tallRows get() = maxOf(rowsHeight(shownRows), fillRows)
+    /** This page's rows' height in px, stretched to [fillRows] */
+    private val pageRowHeight get() = pageRowHeight(shownRows, fillRows, rowHeight)
 
     /** The keys' height in px at [scale] (a [heightScale]), and the scale that gives them [height] px */
-    fun heightAt(scale: Float) = topPadding + rows(page, numberRow) * ROW * density * scale
-    fun scaleFor(height: Float) = (height - topPadding) / (rows(page, numberRow) * ROW * density)
+    fun heightAt(scale: Float) = topPadding + tallRows * ROW * density * scale
+    fun scaleFor(height: Float) = (height - topPadding) / (tallRows * ROW * density)
     /** The height scale at which four rows are [dp] dp: today's floating keyboard sets its height as four rows' */
     fun scaleForFourRows(dp: Float) = dp / (4 * ROW)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(keysHeight(numberRow?.rows.orEmpty() + page?.rows.orEmpty(), rowHeight, density)).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), ceil(keysHeight(shownRows, pageRowHeight, density)).toInt())
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) = layoutCells()
@@ -176,7 +182,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     private fun layoutCells() {
         val unit = (width - 2 * sidePadding) / 10f
         val half = SPLIT_HALF * (width - 2 * sidePadding) / 5f
-        val out = keyCells(numberRow?.rows.orEmpty() + page?.rows.orEmpty(), width.toFloat(), rowHeight, density, split)
+        val out = keyCells(shownRows, width.toFloat(), pageRowHeight, density, split)
             .map { (key, b) -> Cell(key, b) }
         cells = out
         keys = out.map { it.key }
@@ -728,7 +734,20 @@ internal data class Box(val left: Float, val top: Float, val right: Float, val b
 
 /** The keys' height in px: the space above them and their rows, each [rowHeight] px times its own height */
 internal fun keysHeight(rows: List<Layout.Row>, rowHeight: Float, density: Float) =
-    TOP_PADDING_DP * density + rows.sumOf { it.height.toDouble() }.toFloat() * rowHeight
+    TOP_PADDING_DP * density + rowsHeight(rows) * rowHeight
+
+/** The rows' height in rows: the number row is 0.9 of one */
+internal fun rowsHeight(rows: List<Layout.Row>) = rows.sumOf { it.height.toDouble() }.toFloat()
+
+/**
+ * A page's row height in px: [rowHeight], or taller when its rows come short of [fillRows] rows. With a number
+ * row on the letters (the setting, a password or e-mail field), the symbols and digits pages fill its height
+ * too, as Gboard's do: a keyboard changing height between pages moves the app above it (#531).
+ */
+internal fun pageRowHeight(rows: List<Layout.Row>, fillRows: Float, rowHeight: Float): Float {
+    val own = rowsHeight(rows)
+    return if (own > 0 && own < fillRows) rowHeight * fillRows / own else rowHeight
+}
 
 /**
  * The keys' cells, where they are touched, in a view [width] px wide. Split: each half keeps 5 key widths in
