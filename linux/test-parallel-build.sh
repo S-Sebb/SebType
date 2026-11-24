@@ -37,8 +37,9 @@ for c in a b; do
   # build_remotely takes the files to copy from git.
   git -C "$work/$c" init -q && git -C "$work/$c" add -A
   rpms+=("$(cd "$work/$c" && source linux/versions.sh && sebtype_rpm "$(sebtype_key)")")
+  # The timeout covers the build lock's wait (3 h for linux/build.sh's 120 minutes) and the build.
   # shellcheck disable=SC2016  # expands in the copy's shell
-  (cd "$work/$c" && timeout 7200 bash -c 'source linux/versions.sh && sebtype_unpack "$1"' _ "$work/$c-own") \
+  (cd "$work/$c" && timeout 18000 bash -c 'source linux/versions.sh && sebtype_unpack "$1"' _ "$work/$c-own") \
     >/dev/null 2>"$TASK_OUT/parallel-build-$c.log" &
   pids+=($!)
 done
@@ -60,7 +61,7 @@ done
 
 # Unchanged sources: the cached RPM is unpacked again, not rebuilt (a rebuild has another build time inside).
 # shellcheck disable=SC2016
-unpack_a() { (cd "$work/a" && timeout 7200 bash -c 'source linux/versions.sh && sebtype_unpack "$1"' _ "$work/a-own"); }
+unpack_a() { (cd "$work/a" && timeout 18000 bash -c 'source linux/versions.sh && sebtype_unpack "$1"' _ "$work/a-own"); }
 before=$(sha256sum <"${rpms[0]}")
 if unpack_a >/dev/null 2>>"$TASK_OUT/parallel-build-a.log" && [[ $(sha256sum <"${rpms[0]}") == "$before" ]]; then
   echo "PASS unchanged: a reused its RPM"

@@ -138,8 +138,8 @@ build_lock() {
   local minutes=$1 name=$2
   shift 2
   [[ ${GITHUB_ACTIONS:-} != true ]] || { "$@"; return; }
-  # devq ranks a ticket by its MINUTES less the minutes it waited: a long job gets ahead of fresh short ones
-  # only after waiting the difference, so its wait grows with MINUTES (#538).
+  # Within a rank devq orders tickets by MINUTES less the minutes waited: a long job gets ahead of fresh
+  # short ones only after waiting the difference, so its wait grows with MINUTES (#538).
   devq -w $(( 3600 + minutes * 60 )) -m "$minutes" -P "${DEVQ_RANK:-2}" -n "$name" /tmp/agent-locks/sebtype/build.lock \
     systemd-run --user --scope --quiet -p CPUQuota="${BUILD_JOBS}00%" -p MemoryMax="${BUILD_MEMORY_GB}G" \
     -p MemorySwapMax=0 nice -n 19 ionice -c 3 "$@"
