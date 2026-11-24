@@ -150,6 +150,7 @@ $warned = $false
 function Remove-UserFolder {
   Stop-Transcript | Out-Null
   if (-not $warned) { Remove-Item $UserLog }
+  Remove-Item (Join-Path $StateDir 'rime-data') -Recurse -Force -ErrorAction SilentlyContinue  # a killed run's unpack
   foreach ($dir in (Join-Path $StateDir 'backup'), $StateDir) {
     Get-Item $dir -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item
   }
