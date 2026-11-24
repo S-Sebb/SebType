@@ -77,7 +77,8 @@ check live-dry-run live_dry
 
 # Fake fresh account.
 fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
-trap '[[ -n ${foreign-} ]] && kill "$foreign"; rm -rf "$fake"' EXIT
+trap '[[ -n ${foreign-} ]] && kill "$foreign" 2>/dev/null; rm -rf "$fake"' EXIT
+trap 'exit 143' TERM  # bash runs no EXIT trap when TERM kills it
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
 # sebtype (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release;
@@ -232,14 +233,15 @@ check rpm-has-tray-icons rpm_icons
 # on the fake account's bus, so setup must not restart Fcitx5 for it (#535), here and in the later reruns.
 mkdir -p "$fake/foreign"; cp /usr/bin/sleep "$fake/foreign/fcitx5"; cp /usr/lib64/libz.so.1 "$fake/foreign/librime.so.1"
 LD_PRELOAD=$fake/foreign/librime.so.1 "$fake/foreign/fcitx5" 1800 & foreign=$!
-sleep 0.3; rm "$fake/foreign/librime.so.1"
+for ((i = 0; i < 50; i++)); do grep -q librime "/proc/$foreign/maps" 2>/dev/null && break; sleep 0.1; done
+rm "$fake/foreign/librime.so.1"
 check fresh-apply fresh_apply
 # The Fcitx5 on the session bus holding a deleted librime is restarted, once.
 deleted_libs_restart() {
-  local o
+  local o s=0
   grep -q 'librime\.so.* (deleted)$' "/proc/$foreign/maps" || return 1
-  echo "$foreign" > "$fake/fcitx-pid"; o=$(fake_run < /dev/null); rm -f "$fake/fcitx-pid"; echo "$o"
-  [[ $(grep -c '^change: restart Fcitx5 under KWin so it loads SebType$' <<<"$o") == 1 ]] || return 1
+  echo "$foreign" > "$fake/fcitx-pid"; o=$(fake_run < /dev/null) || s=$?; rm -f "$fake/fcitx-pid"; echo "$o"
+  ((s == 0)) && [[ $(grep -c '^change: restart Fcitx5 under KWin so it loads SebType$' <<<"$o") == 1 ]] || return 1
   o=$(fake_run < /dev/null) || return 1; echo "$o"; ! grep -q '^change: restart Fcitx5' <<<"$o"
 }
 check deleted-libs-of-session-fcitx5-only deleted_libs_restart
