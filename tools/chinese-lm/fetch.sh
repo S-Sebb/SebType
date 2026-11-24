@@ -69,6 +69,8 @@ textgrids() { # NAME URL
 ali=https://speech-lab-share-data.oss-cn-shanghai.aliyuncs.com/AliMeeting/openlr
 textgrids alimeeting-train "$ali/Train_Ali_near.tar.gz"
 textgrids alimeeting-eval "$ali/Eval_Ali.tar.gz"
-for s in L M S; do textgrids aishell4-train-$s https://www.openslr.org/resources/111/train_$s.tar.gz; done
-textgrids aishell4-test https://www.openslr.org/resources/111/test.tar.gz
+# OpenSLR's ELDA mirror: openslr.org itself sends to yanglab16 at about 0.2 MB/s, the mirror at 11.
+slr=https://openslr.elda.org/resources/111
+for s in L M S; do textgrids aishell4-train-$s $slr/train_$s.tar.gz; done
+textgrids aishell4-test $slr/test.tar.gz
 du -shL "$run/data/src"/*
