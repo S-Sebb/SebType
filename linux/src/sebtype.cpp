@@ -220,10 +220,10 @@ void Service::setLanguage(const std::string &id) {
 namespace {
 
 // fcitx5-rime's add-on stays off in the Fcitx5 that loads SebType (#542). With its own librime inside (#527),
-// SebType would run a second librime beside fcitx5-rime's on the same Rime folder: both deploy into one build/,
-// and LevelDB lets only one of them open rime_ice.userdb, so the other stops learning. The override is this
-// process's only, as Fcitx5's --disable is, so removing sebtype brings fcitx5-rime back. fcitx5-rime loads on
-// demand, so not before this add-on, which Fcitx5 loads at its start.
+// SebType would run a second librime beside fcitx5-rime's on the same Rime folder: both deploy into one build/
+// and write one rime_ice.userdb, which LevelDB allows only one of them. The override is this process's only, as
+// Fcitx5's --disable is, so removing sebtype lets fcitx5-rime load again. fcitx5-rime loads on demand, so not
+// before this add-on, which Fcitx5 loads at its start, nor before a Refresh's find of it is turned off (below).
 void keepFcitx5RimeOff(fcitx::AddonManager &addons) {
   const auto *rime = addons.addonInfo("rime");
   if (!rime) return;
@@ -240,8 +240,22 @@ SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
   core_->setUiLanguage(systemLanguage());
   setPill("");
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
+    auto *bus = dbus->call<fcitx::IDBusModule::bus>();
     service_ = std::make_unique<Service>(this);
-    dbus->call<fcitx::IDBusModule::bus>()->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
+    bus->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
+    // Fcitx5 finds an add-on installed since it started at a Refresh, which it runs just after the call
+    // returns: a fcitx5-rime it finds is turned off before anyone can pick it.
+    refreshWatch_ = bus->addFilter([this](fcitx::dbus::Message &message) {
+      if (message.type() == fcitx::dbus::MessageType::MethodCall && message.member() == "Refresh" &&
+          message.interface() == "org.fcitx.Fcitx.Controller1") {
+        afterRefresh_ = instance_->eventLoop().addTimeEvent(
+            CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + 100000, 0, [this](fcitx::EventSourceTime *, uint64_t) {
+              keepFcitx5RimeOff(instance_->addonManager());
+              return true;
+            });
+      }
+      return false;
+    });
   }
 }
 

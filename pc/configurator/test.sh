@@ -123,11 +123,18 @@ unset LC_ALL LC_MESSAGES
 for lang in en_US zh_CN ja_JP; do
   for spec in "$@"; do
     name=${lang%_*}-${spec%%:*}; read -ra a <<<"${spec#*:}"
+    # The Ready page with Rime in a group of the person's (#542): a made-up Fcitx5 answers for that shot.
+    fake=; [[ ${spec%%:*} == setupready-rime ]] && {
+      # The Fcitx5 an earlier screen's call started on this bus goes first.
+      busctl --user --auto-start=no call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit 2>/dev/null; sleep 1
+      python3 "${0%/*}/fake-fcitx5.py" & fake=$!; sleep 1
+    }
     LANGUAGE=$lang LANG=$lang.UTF-8 "$bin" "${a[@]}" & pid=$!
     sleep 3
     kill -0 $pid 2>/dev/null || { echo "$name: the app exited"; exit 1; }
     spectacle -b -n -a -o "$d/$name.png" 2>/dev/null
     kill $pid; wait $pid 2>/dev/null
+    [[ -n $fake ]] && { kill $fake; wait $fake 2>/dev/null; }
     [[ -s $d/$name.png ]] || { echo "$name: no screenshot"; exit 1; }
     # SebType's own title bar on Wayland (#439): no KWin frame, the window edged in the Picnic outline, or
     # the System style's grey one (the setup wizard's, #471).
@@ -150,17 +157,34 @@ done
 echo all-screens-ok
 SH
   chmod +x "$sb/shots.sh"
+  cat > "$sb/fake-fcitx5.py" <<'PY'
+import dbus, dbus.service, dbus.mainloop.glib
+from gi.repository import GLib
+groups = {"Default": ("us", [("keyboard-us", ""), ("sebtype", "")]), "Rime": ("us", [("rime", "")])}
+class Controller(dbus.service.Object):
+    @dbus.service.method("org.fcitx.Fcitx.Controller1", out_signature="s")
+    def CurrentInputMethod(self): return "keyboard-us"
+    @dbus.service.method("org.fcitx.Fcitx.Controller1", out_signature="as")
+    def InputMethodGroups(self): return list(groups)
+    @dbus.service.method("org.fcitx.Fcitx.Controller1", in_signature="s", out_signature="sa(ss)")
+    def InputMethodGroupInfo(self, g): return groups[g]
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+name = dbus.service.BusName("org.fcitx.Fcitx5", dbus.SessionBus())
+Controller(dbus.SessionBus(), "/controller")
+GLib.MainLoop().run()
+PY
   # About shows a newer release (#422), as after a check that found one: no network in the shots. Its
   # notes are long enough to scroll in their own box (#440).
   mkdir -p "$sb/data/sebtype"
   notes="### New$(printf '\\n- **Change %s.** Something SebType does better now.' $(seq 12))"
   printf '{"auto": true, "checked": %s, "latest": "99.0.0", "notified": "", "notes": "%s"}\n' "$(date +%s)" "$notes" > "$sb/data/sebtype/update.json"
   # The wizard's last page (#445) with a global IM module to turn off, in the sandbox's own profile, and no
-  # Fcitx5 on the private bus: its two steps left, each with its button.
+  # Fcitx5 on the private bus: its two steps left, each with its button; setupready-rime with a made-up Fcitx5
+  # whose group "Rime" has fcitx5-rime's Rime, a third.
   echo 'export GTK_IM_MODULE=fcitx' > "$sb/.profile"
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --no-lockscreen --socket "wl$$" --width 1000 --height 700 --exit-with-session \
-    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer' 'setupcommon:--setup $sb/no-installer --step 2' 'setupcommon-system:--setup $sb/no-installer --step 2 --theme system' 'setupsync:--setup $sb/no-installer --step 3' 'setupsync-system:--setup $sb/no-installer --step 3 --theme system' 'setupready:--setup $sb/no-installer --step 4' 'setupready-system:--setup $sb/no-installer --step 4 --theme system'" > "$sb/kwin.log" 2>&1
+    "$sb/shots.sh $bin $d 'langs:--page 0' 'keyboard:--page 1' 'theme:--page 2' 'privacy:--page 3' 'sync:--page 4' 'synclogin:--page 4 --sub 1' 'about:--page 5' 'fuzzy:--page 0 --sub 1' 'zhwords:--page 0 --sub 2' 'jawords:--page 0 --sub 3' 'setup:--setup $sb/no-installer' 'setupcommon:--setup $sb/no-installer --step 2' 'setupcommon-system:--setup $sb/no-installer --step 2 --theme system' 'setupsync:--setup $sb/no-installer --step 3' 'setupsync-system:--setup $sb/no-installer --step 3 --theme system' 'setupready:--setup $sb/no-installer --step 4' 'setupready-system:--setup $sb/no-installer --step 4 --theme system' 'setupready-rime:--setup $sb/no-installer --step 4'" > "$sb/kwin.log" 2>&1
   cat "$d/status"; grep -qx all-screens-ok "$d/status"
 }
 export -f shots; export out sb

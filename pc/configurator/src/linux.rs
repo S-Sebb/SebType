@@ -856,6 +856,79 @@ pub(crate) fn sebtype_active() -> bool {
         .is_some_and(|im| im == "sebtype")
 }
 
+/// Parses `busctl --json=short call ... InputMethodGroups` (`{"type":"as","data":[["Default","Rime"]]}`).
+fn parse_groups(json: &str) -> Vec<String> {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    v["data"][0]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|g| g.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Parses `... InputMethodGroupInfo s <group>`
+/// (`{"type":"sa(ss)","data":["us",[["sebtype",""],["rime",""]]]}`): its layout and input methods.
+fn parse_group(json: &str) -> Option<(String, Vec<(String, String)>)> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let layout = v["data"][0].as_str()?.to_string();
+    let ims = v["data"][1]
+        .as_array()?
+        .iter()
+        .map(|im| Some((im[0].as_str()?.to_string(), im[1].as_str()?.to_string())))
+        .collect::<Option<_>>()?;
+    Some((layout, ims))
+}
+
+/// The running Fcitx5's groups with fcitx5-rime's Rime (#542), each with its layout and input methods.
+fn rime_groups() -> Vec<(String, String, Vec<(String, String)>)> {
+    let Ok(out) = controller("InputMethodGroups", &[]) else {
+        return Vec::new();
+    };
+    parse_groups(&out)
+        .into_iter()
+        .filter_map(|g| {
+            let (layout, ims) = parse_group(&controller("InputMethodGroupInfo", &["s", &g]).ok()?)?;
+            ims.iter()
+                .any(|(im, _)| im == "rime")
+                .then_some((g, layout, ims))
+        })
+        .collect()
+}
+
+/// The names of Fcitx5's groups where Rime (fcitx5-rime) won't type Chinese: SebType keeps it off (#542).
+pub fn rime_group_names() -> Vec<String> {
+    rime_groups().into_iter().map(|(g, ..)| g).collect()
+}
+
+/// A group's input methods with SebType's in Rime's place, once.
+fn sebtype_for_rime(ims: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (im, layout) in ims {
+        let im = if im == "rime" { "sebtype" } else { im };
+        if !out.iter().any(|(i, _)| i == im) {
+            out.push((im.to_string(), layout.clone()));
+        }
+    }
+    out
+}
+
+/// Puts SebType's input method in Rime's place in each group that has it, and saves Fcitx5's groups.
+fn use_sebtype_for_rime() -> io::Result<()> {
+    for (group, layout, ims) in rime_groups() {
+        let ims = sebtype_for_rime(&ims);
+        let count = ims.len().to_string();
+        let mut args = vec!["ssa(ss)", &group, &layout, &count];
+        for (im, l) in &ims {
+            args.extend([im.as_str(), l.as_str()]);
+        }
+        controller("SetInputMethodGroupInfo", &args)?;
+    }
+    controller("Save", &[]).map(|_| ())
+}
+
 // --- The setup wizard's ready check (#445) ---
 
 /// The files pc/linux/setup-ime.sh looks in for a global `*_IM_MODULE`.
@@ -997,6 +1070,10 @@ pub(crate) fn ready_checks() -> Vec<(crate::setup::Need, bool)> {
     if !session_ready(&session_env()) {
         checks.push((Need::LogIn, false));
     }
+    let groups = rime_group_names();
+    if !groups.is_empty() {
+        checks.push((Need::Rime { groups }, false));
+    }
     checks
 }
 
@@ -1037,6 +1114,7 @@ pub(crate) fn fix(need: &crate::setup::Need) -> io::Result<()> {
                 Command::new("xdg-open").arg(file).spawn().map(|_| ())
             }
         }
+        Need::Rime { .. } => use_sebtype_for_rime(),
         Need::Languages => Ok(()),
     }
 }
@@ -1227,6 +1305,27 @@ mod tests {
         assert!(!session_ready(
             "XMODIFIERS=@im=fcitx\nGTK_IM_MODULE=fcitx\n"
         ));
+    }
+
+    #[test]
+    fn finds_rime_in_fcitx5_groups_and_puts_sebtype_in_its_place() {
+        assert_eq!(
+            parse_groups(r#"{"type":"as","data":[["Default","My=Rime"]]}"#),
+            ["Default", "My=Rime"]
+        );
+        assert!(parse_groups("not json").is_empty());
+        let (layout, ims) =
+            parse_group(r#"{"type":"sa(ss)","data":["us",[["keyboard-us",""],["rime",""]]]}"#)
+                .unwrap();
+        assert_eq!(layout, "us");
+        let im = |n: &str| (n.to_string(), String::new());
+        assert_eq!(ims, [im("keyboard-us"), im("rime")]);
+        assert_eq!(sebtype_for_rime(&ims), [im("keyboard-us"), im("sebtype")]);
+        // A group that has SebType's already keeps one.
+        assert_eq!(
+            sebtype_for_rime(&[im("sebtype"), im("rime")]),
+            [im("sebtype")]
+        );
     }
 
     #[test]

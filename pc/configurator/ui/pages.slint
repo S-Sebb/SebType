@@ -701,6 +701,10 @@ component AboutPage inherits Page {
                 }
             }
         }
+        // Rime in a group of the person's, which SebType's input method keeps off (#542).
+        if st == UpdateStatus.installed && State.update-rime != "": Row {
+            title: @tr("Rime in {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", State.update-rime);
+        }
         if State.update-notes.length > 0: Divider { }
         if State.update-notes.length > 0: notes-scroll := ScrollView {
             height: min(notes-content.preferred-height, 240px);

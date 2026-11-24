@@ -199,6 +199,9 @@ pub enum Need {
     },
     /// Windows: each 中文 and 日本語 in the language list has SebType's text service. The button adds it.
     Languages,
+    /// Linux: Fcitx5 groups with fcitx5-rime's Rime, which won't type Chinese beside SebType's input method (#542).
+    /// The button puts SebType's input method in its place.
+    Rime { groups: Vec<String> },
 }
 
 /// This check's rows, with those an earlier one showed and this one doesn't find any more kept, done, in
@@ -221,6 +224,15 @@ fn home_short(path: &std::path::Path) -> String {
     }
 }
 
+/// Names as the page lists them: “Default”, “Rime”.
+pub fn quoted(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|n| format!("“{n}”"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The page's rows, as SetupState's ready-checks shows them.
 fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
     checks
@@ -233,6 +245,7 @@ fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
                     (2, home_short(file), *line as i32, text.clone())
                 }
                 Need::Languages => (3, String::new(), 0, String::new()),
+                Need::Rime { groups } => (4, String::new(), 0, quoted(groups)),
             };
             // A line in the person's own file is turned off by the button; a system file opens.
             let own = matches!(need, Need::ImModule { file, .. }

@@ -92,6 +92,7 @@ export global State {
     in property <string> update-installed;
     in property <string> update-checked;        // when the last check went through
     in property <string> update-error;          // why the check or the install failed
+    in property <string> update-rime;           // after an update, the Fcitx5 groups where Rime won't type Chinese (#542)
     in property <[UpdateNote]> update-notes;    // parsed release notes for update-version (#428)
 
     // What the last change did, shown for a moment (main.rs's toast); app.slint words it.

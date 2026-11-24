@@ -7,7 +7,8 @@ import { SyncCheck, SyncText } from "state.slint";
 
 // One of the last page's checks (#445). kind: 0 SebType's input method runs where apps reach it (Linux),
 // 1 the session started with what setup set (Linux), 2 a global IM module in `file` at `line` (Linux; `own`:
-// the person's file, which the button changes), 3 SebType's text service in Windows' language list.
+// the person's file, which the button changes), 3 SebType's text service in Windows' language list, 4 Fcitx5
+// groups (`text`) with Rime, which won't type Chinese beside SebType (Linux, #542).
 export struct ReadyCheck { kind: int, ok: bool, own: bool, file: string, line: int, text: string }
 
 export global SetupState {
@@ -71,7 +72,8 @@ component CheckRow inherits HorizontalLayout {
         text: root.check.kind == 0 ? (root.check.ok ? @tr("SebType's input method is on in every app") : @tr("SebType's input method isn't on in every app yet"))
             : root.check.kind == 1 ? (root.check.ok ? @tr("Apps start with SebType's settings") : @tr("Log out and back in once, so apps like Steam and WINE type with SebType too"))
             : root.check.kind == 2 ? (root.check.ok ? @tr("Turned off: {}", root.check.text) : @tr("“{0}” in {1} (line {2}) keeps apps from using SebType", root.check.text, root.check.file, root.check.line))
-            : (root.check.ok ? @tr("SebType is in Windows' input methods") : @tr("SebType is missing from Windows' input methods for 中文 or 日本語"));
+            : root.check.kind == 3 ? (root.check.ok ? @tr("SebType is in Windows' input methods") : @tr("SebType is missing from Windows' input methods for 中文 or 日本語"))
+            : (root.check.ok ? @tr("SebType types Chinese where Rime was") : @tr("Rime in {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", root.check.text));
         color: Theme.ink;
         font-size: Theme.body-size;
         vertical-alignment: center;
@@ -85,7 +87,8 @@ component CheckRow inherits HorizontalLayout {
                 : root.check.kind == 0 ? @tr("Turn on")
                 : root.check.kind == 1 ? @tr("Log out")
                 : root.check.kind == 2 ? (root.check.own ? @tr("Turn off") : @tr("Open file"))
-                : @tr("Add");
+                : root.check.kind == 3 ? @tr("Add")
+                : @tr("Use SebType");
             primary: true;
             enabled: !root.busy;
             min-width: 96px;

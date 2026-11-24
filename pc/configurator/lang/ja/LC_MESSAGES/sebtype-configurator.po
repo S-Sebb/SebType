@@ -615,3 +615,12 @@ msgstr "どれもあとから SebType 設定で変更できます。"
 
 msgid "Next"
 msgstr "次へ"
+
+msgid "Rime in {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文"
+msgstr "SebType をインストールしている間、{} の Rime では中国語を入力できません。中国語は SebType の中文で入力してください"
+
+msgid "SebType types Chinese where Rime was"
+msgstr "Rime があった場所で SebType が中国語を入力します"
+
+msgid "Use SebType"
+msgstr "SebType を使う"

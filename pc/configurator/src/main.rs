@@ -646,7 +646,14 @@ fn install_update(weak: slint::Weak<AppWindow>) {
             Ok(()) if cfg!(windows) => {
                 let _ = slint::quit_event_loop();
             }
-            Ok(()) => set_update_status(&weak, UpdateStatus::Installed, String::new()),
+            Ok(()) => {
+                // Rime in a group of the person's won't type Chinese beside SebType's input method (#542).
+                let rime = setup::quoted(&platform::rime_group_names());
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.global::<State>().set_update_rime(rime.into());
+                });
+                set_update_status(&weak, UpdateStatus::Installed, String::new())
+            }
         }
     });
 }
