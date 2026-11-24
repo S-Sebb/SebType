@@ -96,13 +96,26 @@ if [ "${ONLY:-}" = upgrade ]; then
 fi
 echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
 mark 'CI artifacts downloaded'
-timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
+# The VPN resets about one SSH handshake in ten (#570). A reset handshake ran nothing on TCSBackEnd, so it is
+# tried again; a connection that drops later isn't, as its command may have run.
+handshake_reset() { [ -n "$1" ] && ! grep -qvE '^(kex_exchange_identification: .*|Connection (reset|closed) by .*)$' <<<"$1"; }
+again() {  # COMMAND...: runs it, with its stderr in its stdout, again (up to 5 times) while all it said was a reset handshake
+  local res r i
+  for i in 1 2 3 4 5; do
+    res=$("$@" 2>&1); r=$?
+    [ "$r" -ne 0 ] && [ "$i" -lt 5 ] && handshake_reset "$res" && { sleep 5; continue; }
+    break
+  done
+  [ -n "$res" ] && printf '%s\n' "$res"
+  return "$r"
+}
+again timeout 30 ssh -o BatchMode=yes TCSBackEnd 'echo ok' >/dev/null 2>&1 || missing=${missing:-'ssh TCSBackEnd fails: connect the SoftEther VPN'}
 [ -n "$missing" ] && { echo "BLOCKED preflight: $missing"; exit 1; }
 
 tps() {  # Windows PowerShell 5.1 on TCSBackEnd, script on stdin; output as text (not CLIXML), UTF-8
   local enc
   enc=$( (echo '[Console]::OutputEncoding=[Text.Encoding]::UTF8; $ProgressPreference="SilentlyContinue"'; cat) | iconv -t UTF-16LE | base64 -w0)
-  timeout "${T:-120}" ssh TCSBackEnd "powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $enc" 2>&1 | grep -av '^#< CLIXML\|^<Objs' | tr -d '\r'
+  again timeout "${T:-120}" ssh TCSBackEnd "powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand $enc" | grep -av '^#< CLIXML\|^<Objs' | tr -d '\r'
 }
 state() {
   tps <<'EOF'
@@ -176,10 +189,10 @@ try {
 }
 EOF
 echo 'New-Item -ItemType Directory C:\sebtype-setup-test, C:\sebtype-setup-test\old | Out-Null' | tps
-if [ -n "$old" ] && ! scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
+if [ -n "$old" ] && ! again scp -q "$old" TCSBackEnd:C:/sebtype-setup-test/old/; then
   echo "FAIL prepare: copying the old setup to TCSBackEnd failed"; cleanup; exit 1
 fi
-if ! scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" "$here/test-update-user.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
+if ! again scp -q "$here/test.ps1" "$here/test-not-ready.ps1" "$here/test-forget.ps1" "$here/test-learned-sync.ps1" "$here/test-private.ps1" "$here/test-update.ps1" "$here/test-update-user.ps1" ${update_test:+"$update_test"} "$here/TsfHost.cs" "$here/../perf-rime.ps1" ${perf:+"$perf"} "$exe" "$out/run.ps1" \
   "$repo/sync-server/sebtype_sync.py" "$here/test-sync.py" TCSBackEnd:C:/sebtype-setup-test/; then
   echo "FAIL prepare: copying the inputs to TCSBackEnd failed"; cleanup; exit 1
 fi
@@ -231,7 +244,7 @@ mark 'test.ps1 done'
 mkdir -p "$out/logs"
 # One file: scp pays a round trip per file, which made 60 files take a minute.
 echo 'tar -cf C:\sebtype-setup-test\logs.tar -C C:\sebtype-setup-test\out . -C C:\sebtype-setup-test run.log' | tps >/dev/null
-scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" 2>/dev/null && tar -xf "$out/logs.tar" -C "$out/logs" && rm "$out/logs.tar"
+again scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" >/dev/null 2>&1 && tar -xf "$out/logs.tar" -C "$out/logs" && rm "$out/logs.tar"
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
 for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
