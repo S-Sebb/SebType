@@ -77,7 +77,7 @@ check live-dry-run live_dry
 
 # Fake fresh account.
 fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
-trap 'rm -rf "$fake"' EXIT
+trap '[[ -n ${foreign-} ]] && kill "$foreign"; rm -rf "$fake"' EXIT
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
 # sebtype (and kcm-fcitx5 and fcitx5-configtool) is installed only when $FAKE/<package> holds its version-release;
@@ -99,7 +99,7 @@ stub qdbus6 'echo "qdbus $*" >> "$FAKE/qdbus.log"'
 stub busctl 'case "$*" in
   *" emit "*) echo "$*" >> "$FAKE/emit.log" ;;
   *SetConfig*) echo "$*" >> "$FAKE/deploy.log" ;;
-  *status*) [[ ! -e $FAKE/no-fcitx ]] ;;
+  *status*) [[ ! -e $FAKE/no-fcitx ]] && { [[ $* != *Fcitx5* || ! -e $FAKE/fcitx-pid ]] || echo "PID=$(< "$FAKE/fcitx-pid")"; } ;;
   *setForeignShortcutKeys*) echo "$*" > "$FAKE/kga.log" ;;
   *shortcutKeys*) if [[ -e $FAKE/kga.log ]]; then echo "a(ai) 1 4 268435552 0 0 0"
     else echo "a(ai) 2 4 268435552 0 0 0 4 134217824 0 0 0"; fi ;;
@@ -228,7 +228,21 @@ rpm_icons() {
   done
 }
 check rpm-has-tray-icons rpm_icons
+# Another Fcitx5 of this user, such as the desktop session's, holding a deleted librime: it isn't the one
+# on the fake account's bus, so setup must not restart Fcitx5 for it (#535), here and in the later reruns.
+mkdir -p "$fake/foreign"; cp /usr/bin/sleep "$fake/foreign/fcitx5"; cp /usr/lib64/libz.so.1 "$fake/foreign/librime.so.1"
+LD_PRELOAD=$fake/foreign/librime.so.1 "$fake/foreign/fcitx5" 1800 & foreign=$!
+sleep 0.3; rm "$fake/foreign/librime.so.1"
 check fresh-apply fresh_apply
+# The Fcitx5 on the session bus holding a deleted librime is restarted, once.
+deleted_libs_restart() {
+  local o
+  grep -q 'librime\.so.* (deleted)$' "/proc/$foreign/maps" || return 1
+  echo "$foreign" > "$fake/fcitx-pid"; o=$(fake_run < /dev/null); rm -f "$fake/fcitx-pid"; echo "$o"
+  [[ $(grep -c '^change: restart Fcitx5 under KWin so it loads SebType$' <<<"$o") == 1 ]] || return 1
+  o=$(fake_run < /dev/null) || return 1; echo "$o"; ! grep -q '^change: restart Fcitx5' <<<"$o"
+}
+check deleted-libs-of-session-fcitx5-only deleted_libs_restart
 
 # A page size of the user's own (as the Configurator writes it) stays when setup runs again (#163).
 page_size_kept() {
