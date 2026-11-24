@@ -145,7 +145,7 @@ expected() {
     grep -q 'Redistribution and use in source and binary forms' "/usr/share/licenses/sebtype/$f-LICENSE" ||
       { echo "not BSD: $f"; return 1; }
   done
-  for f in llama.cpp glog yaml-cpp leveldb marisa-trie opencc protobuf lua rapidjson; do
+  for f in llama.cpp glog yaml-cpp snappy leveldb marisa-trie opencc protobuf abseil utf8-range lua rapidjson; do
     [[ -s /usr/share/licenses/sebtype/$f-LICENSE ]] || { echo "missing: $f's licence"; return 1; }
   done
   # What setup's user part copies is this checkout's.
