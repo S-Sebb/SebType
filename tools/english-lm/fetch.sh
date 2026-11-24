@@ -9,8 +9,9 @@ cache=$HOME/scratch/SebType/cache
 venv=$cache/english-lm-venv
 export HF_HOME=$cache/hf UV_CACHE_DIR=$cache/uv
 
-# Python packages: PyTorch and Hugging Face Transformers (training), sentencepiece (the tokenizer), pyarrow
-# (the parquet sources), mwparserfromhell (Wikinews's wikitext), and below, gguf from llama.cpp (the export).
+# Python packages, pinned to the versions r4's recipe was checked with: PyTorch and Hugging Face Transformers
+# (training), sentencepiece (the tokenizer), pyarrow (the parquet sources), mwparserfromhell (Wikinews's
+# wikitext), and below, gguf from llama.cpp (the export).
 if [[ ! -x $venv/bin/python ]]; then
   uv venv -q --python 3.12 "$venv"
 fi
@@ -47,6 +48,7 @@ hf bst ParlAI/blended_skill_talk d7b0093243439fa5f0cd9663125cc47575ced2ea 'data/
     done; }
 # Tatoeba replaces its export every week and keeps no old ones: the checked export is kept in the cache.
 tatoeba=$cache/english-lm/tatoeba-eng_sentences-20261114.tsv.bz2
+mkdir -p "${tatoeba%/*}"
 [[ -s $tatoeba ]] ||
   { curl --limit-rate 35M -sfo "$tatoeba.part" https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2 &&
     echo "3b5b3ecfcac5037b09f81ef048fa16fedc4d24838db5b6fbeedca1dfab374cbf  $tatoeba.part" | sha256sum -c --status && mv "$tatoeba.part" "$tatoeba" ||
@@ -54,5 +56,6 @@ tatoeba=$cache/english-lm/tatoeba-eng_sentences-20261114.tsv.bz2
 ln -sf "$tatoeba" tatoeba-eng_sentences.tsv.bz2
 [[ -s enwikinews-20261101.xml.bz2 ]] ||
   { curl --limit-rate 35M -sfo wikinews.part https://dumps.wikimedia.org/enwikinews/20261101/enwikinews-20261101-pages-articles.xml.bz2 &&
+    echo "2afeb4605bf9bafe7dc099c308980012dcaeab440ffa4145fba4305f8259f4fa  wikinews.part" | sha256sum -c --status &&
     mv wikinews.part enwikinews-20261101.xml.bz2; }
 du -sh "$run/data/src"/*

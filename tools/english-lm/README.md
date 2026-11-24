@@ -9,6 +9,7 @@ harness (`android/test/english/run.sh` with `SEBTYPE_MODEL`) measures it against
 The committed model is r2, trained by this folder as of commit `15671d98` (before #266's sources). The folder now
 holds r3's recipe, which adds everyday sources and texting style; r3 fixed fewer misspellings than r2 and wasn't
 committed ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md#results-the-retrained-model-r3-2026-11-16)).
+r4's recipe (#556) fixes what made r2 and r3 write contractions, capitals and texted words wrong, below.
 
 ## The model
 
@@ -17,13 +18,24 @@ committed ([the report](../../docs/experiments/2026-11-16-english-everyday-text.
 - SebType's own tokenizer: SentencePiece BPE with 16,384 pieces, trained on the corpus (`tokenizer.py`). r3
   kept r2's (`tokenizer.model` in r2's checkpoint, copied into the run's `data/` before `prepare.sh`).
 - **Correction examples in the text.** In front of 5 % of the words, the training text holds the letters
-  someone typed for it: `<T>`, the typed letters, `<S>`, then the word as written. The typed letters are the
-  word itself (40 %), a phone typo in #46's error mix (35 %), a spelling mistake (15 %) or only its first
-  letters (10 %) (`noise.py`, `pack.py`). The model learns to predict the meant word from the letters and the
+  someone typed for it: `<T>`, the typed letters, `<S>`, then the word as it should be written. The typed
+  letters are the word itself (40 %), a phone typo (35 %), a spelling mistake (15 %) or only its first letters
+  (10 %) (`noise.py`, `pack.py`). The model learns to predict the meant word from the letters and the
   sentence before them, so on the phone it both predicts and corrects.
+  - The phone typos come from taps scattered around the keys, as #46's error mix, by a generator of their own
+    (`noise.py`); the harness's phone-typos set uses another (`make_sets.py`).
+  - A contraction is typed without its apostrophe 85 % of the time, as people do on a phone, and a word the
+    typo bank lacks gets typos made for it.
+  - The word after `<S>` is the standard one even when the line is texted: "I'm" for typed "im", a capital
+    at a sentence start (`standard()` in `pack.py`). One in 20 examples covers two words typed as one.
+  - Training learns only the word after `<S>`, never the typed letters, also where a window starts inside
+    an example (`labels()` in `train.py`).
+- **The phone's context.** Each line is cut into pieces of at most 300 characters, each after its own `<s>`,
+  as `window()` in `engines/sebtype-lm/sebtype_lm.cpp` gives the model, and training windows start at `<s>`.
 - **Texting style** (#266). A fifth of the chat sources' lines (SODA, Blended Skill Talk, Topical-Chat) are
   written as people text: lowercase sentence starts, "i", dropped apostrophes and full stops, "u", "pls",
-  "gonna" (`pack.py`). The real text messages of the NUS SMS Corpus show the model the true mix. The share was
+  "gonna" only before a verb (`pack.py`). The real text messages of the NUS SMS Corpus, in 2 passes, show the
+  model the true mix. The share was
   chosen on the dev sets with short trials ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md)).
 - Exported to GGUF and quantised to Q8_0 (`export.sh`): Q6_K, FUTO's, ran 1.4 times as slow on a phone's little
   cores (#406).
@@ -40,10 +52,11 @@ On yanglab16, with the corpus, checkpoints and logs in `~/scratch/SebType/<issue
 
 ```sh
 tools/english-lm/fetch.sh RUN_DIR                 # venv, llama.cpp, the sources (~12 GB)
-tools/english-lm/prepare.sh RUN_DIR [SEEDS...]    # corpus, tokenizer, typo bank, dev sets, packed tokens
+tools/english-lm/prepare.sh RUN_DIR [SEEDS...]    # corpus, tokenizer, test.py, typo bank, dev sets, tokens
 python tools/english-lm/train.py RUN_DIR tools/english-lm/config.json   # one GPU
-tools/english-lm/export.sh RUN_DIR/ckpt/NAME RUN_DIR/sebtype-en.gguf
-tools/english-lm/dev.sh RUN_DIR RUN_DIR/sebtype-en.gguf                 # dev numbers and tuned weights
+tools/english-lm/select.sh RUN_DIR NAME           # each checkpoint's dev gain, the best last
+tools/english-lm/export.sh RUN_DIR/ckpt/NAME/step-N RUN_DIR/sebtype-en.gguf   # the best one
+tools/english-lm/dev.sh RUN_DIR RUN_DIR/sebtype-en.gguf [CKPT_DIR]      # dev numbers, tuned weights, parity
 python tools/english-lm/overlap.py RUN_DIR        # the corpus doesn't hold the harness's sentences
 SEBTYPE_MODEL=RUN_DIR/sebtype-en.gguf android/test/english/run.sh       # the harness, from nobara-pc
 ```
@@ -51,3 +64,19 @@ SEBTYPE_MODEL=RUN_DIR/sebtype-en.gguf android/test/english/run.sh       # the ha
 `python` is the venv's (`~/scratch/SebType/cache/english-lm-venv/bin/python`). The data steps use 8 to 16
 processes and the build 24 (yanglab16's build lock), leaving most of the shared machine free. Training needs one
 idle GPU (`nvidia-smi`), about 4 GB of its memory.
+
+`prepare.sh` keeps each step's output while its code and inputs are the same, and runs `test.py`, checks of
+the pipeline's own code, before the typo bank. `dev.sh` with a checkpoint also checks the GGUF's scores against
+the checkpoint's (`parity.py`). The harness's bar (`score.py --bar`) needs each new set (contractions,
+apostrophes, homographs, capitals) fixed at least as often as AOSP and the text-message sets near FUTO's.
+
+The full retrain (#556), with `RUN_DIR` holding the sources from `fetch.sh` and r2's tokenizer in `data/`:
+
+```sh
+tools/english-lm/prepare.sh RUN_DIR 0 1 2 &&
+python tools/english-lm/train.py RUN_DIR tools/english-lm/config.json &&
+tools/english-lm/select.sh RUN_DIR r4
+```
+
+A model trained on the sources r2 didn't have (NUS SMS, Blended Skill Talk, Topical-Chat, Tatoeba) adds them to
+NOTICE's credits in the PR that ships it.
