@@ -1,6 +1,8 @@
 # SebType's librime (#101): SebType's librime in engines/librime, packaged as Fedora 44 packages librime
 # 1.16.1-2 (this is Fedora's spec, MIT licence). build-librime.sh sets the version and release from
-# versions.sh and fetches the plugins, Fedora's own copies.
+# versions.sh and fetches the plugins, Fedora's own copies and octagram at the add-on's pin. The add-on links
+# its own librime statically (#527); these packages are only for the benches and perf tools, and were installed
+# over Fedora's by releases up to 0.2.0-2 (their *.sebtype* builds).
 
 Name:           librime
 Version:        %{sebtype_version}
@@ -78,7 +80,7 @@ pushd plugins
 tar xf %{SOURCE1}
 mv librime-lua-master lua
 tar xf %{SOURCE2}
-mv librime-octagram-master octagram
+mv librime-octagram-* octagram
 tar xf %{SOURCE3}
 mv librime-predict-master predict
 popd

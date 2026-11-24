@@ -33,7 +33,8 @@ Features
 Install
 ===
 SebType builds this librime itself (#219 removed upstream's other build scripts, tests and sample):
-  - Linux: `linux/build-librime.sh` (`linux/librime.spec`)
+  - Linux: into the Fcitx5 add-on, statically with librime-lua and librime-octagram (`linux/CMakeLists.txt`, built by
+    `linux/build.sh`); `linux/build-librime.sh` (`linux/librime.spec`) packages it for the benches and dev tools
   - Windows: `pc/windows/rime/build.ps1` (`build.bat`)
   - Android: `android/native` (CMake)
 

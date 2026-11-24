@@ -13,7 +13,8 @@ add_library(sebtype-logic STATIC src/core.cpp src/pager.cpp)
 target_include_directories(sebtype-logic PUBLIC include)
 
 if(SEBTYPE_CJK)
-# librime and protobuf: pkg-config and the system's on Linux; on Windows RIME_ROOT holds include/rime_api.h
+# librime and protobuf: the system's protobuf on Linux, with SebType's librime that linux/ sets as RIME_TARGET
+# (pkg-config's when it doesn't); on Windows RIME_ROOT holds include/rime_api.h
 # and lib/rime.lib (the rime.dll pc/windows/rime/build.ps1 makes, engines/librime). On Android the app's
 # android/native builds both (protobuf-lite) and sets RIME_TARGET, PROTOBUF_TARGET and PROTOC first.
 if(ANDROID)
@@ -24,7 +25,7 @@ else()
     set_target_properties(rime PROPERTIES IMPORTED_IMPLIB ${RIME_ROOT}/lib/rime.lib
       INTERFACE_INCLUDE_DIRECTORIES ${RIME_ROOT}/include)
     set(RIME_TARGET rime)
-  else()
+  elseif(NOT RIME_TARGET)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(Rime REQUIRED IMPORTED_TARGET rime)
     set(RIME_TARGET PkgConfig::Rime)

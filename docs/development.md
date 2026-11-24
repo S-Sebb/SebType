@@ -10,8 +10,8 @@ describe what each PC part does and list what each of its checks verifies.
 - The Chinese data: [`data/rime/build.sh`](../data/rime/build.sh) builds it from rime-ice's and
   rime-frost's pinned releases on the host's librime, the same version as `engines/librime`, and
   `data/rime/bench/bench.sh` and `slips.sh` measure its accuracy on SebType's own librime build with its
-  plugins (`linux/build-librime.sh`), whatever librime is installed (#522); bump `LIBRIME_SEBTYPE_RELEASE`
-  after changing `engines/librime`, or they reuse the cached build.
+  plugins (`linux/build-librime.sh`), whatever librime is installed (#522), rebuilt when `engines/librime` or
+  what builds it changes (`linux/versions.sh`'s `librime_key`).
 
 ## Layout
 
@@ -153,8 +153,8 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 
 | Command | Builds |
 |---|---|
-| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` and Mozc's library from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests. Bazel downloads nothing, as in the phone's Mozc builds (Android, above) |
-| `linux/build-librime.sh` | SebType's librime RPMs (with its plugins) from `engines/librime`, in the same container |
+| `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` with SebType's librime (`engines/librime`, static, with librime-lua and -octagram) inside and Mozc's library from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests. Bazel downloads nothing, as in the phone's Mozc builds (Android, above) |
+| `linux/build-librime.sh` | SebType's librime as Fedora's librime RPMs (with its plugins) from `engines/librime`, in the same container, for the benches and the dev tools' private Fcitx5s; releases don't ship them (#527) |
 | `pc/configurator/build.sh` (`cargo build --release` in `pc/configurator`) | the Configurator and its unit tests' executable; `tools/build.sh` runs it on yanglab16 |
 | `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's DLL, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 

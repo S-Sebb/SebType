@@ -25,16 +25,15 @@ asking. Files it replaces are backed up to `~/.local/share/sebtype/backup/<time>
 
 A release carries one self-extracting installer (`SebType-setup-<version>-linux-x86_64.sh`), built by CI
 (`.github/workflows/linux-rpm.yml`, #421, #427, #435) with `linux/build-installer.sh`: it packs the `sebtype`
-RPM, SebType's librime RPMs, and `sebtype-configurator` with their SHA-256 manifest. In a graphical session
+RPM (with SebType's librime inside) and `sebtype-configurator` with their SHA-256 manifest. In a graphical session
 (unless `--no-gui` is passed) it launches the Picnic-themed GUI setup wizard (`sebtype-configurator --setup`),
 falling back to terminal mode when headless or if the GUI cannot start. Besides the input method and Mozc,
 `sebtype` holds what the per-account steps copy from: the Configurator, the Chinese data, the Mozc keymap and
 setup itself, as `sebtype-setup` (in `/usr/libexec/sebtype`). Run that way, setup builds nothing and installs
 no packages; it does this account's steps with the release's files. Running the installer elevates once
-(`sudo` or `pkexec`) to run `--install-rpms-only` (which verifies the embedded RPMs and installs `sebtype`,
-`librime`,
-`librime-lua`, `librime-octagram`, plus `librime-predict`, `librime-tools` and `librime-devel` only where
-already installed), then runs `sebtype-setup` as your user.
+(`sudo` or `pkexec`) to run `--install-rpms-only` (which verifies the embedded RPM and installs `sebtype`, and
+puts Fedora's librime packages back where SebType 0.2.0 or older had replaced them with its build, #527), then
+runs `sebtype-setup` as your user.
 
 Nothing is left to do by hand in the usual case: setup restarts Fcitx5 under KWin itself whenever the running
 one has to load something new (SebType's input method, its tray, the input method names, a package), so
@@ -56,10 +55,10 @@ A step done stays on the page, ticked.
 
 | Step | Change | Fixes |
 |---|---|---|
-| Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules, `librime-lua`, `librime-octagram`; `librime-octagram` from SebType's librime build once librime is SebType's | Rime's plugins, and the modules XWayland and older apps load. `librime-octagram` reads the Chinese data's grammar file, so Chinese candidates come in the phone's and Windows' order: `beirendingwei` gives 被认定为, not 被人定位 (#127) |
+| Packages | `fcitx5`, its GTK 2/3/4 and Qt 5/6 modules | The modules XWayland and older apps load |
 | Fcitx5's own settings | Removes `kcm-fcitx5` (Fcitx5's page in System Settings) and `fcitx5-configtool` (the Fcitx 5 Configuration app), after asking, with sudo. `--undo-fcitx5` puts them back | SebType's settings are in the Configurator; Fcitx5's own were a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182) |
 | SebType's input method | Installs the `sebtype` RPM (`linux/build.sh`: the Fcitx5 add-on and Mozc), after asking, with sudo. Setup restarts a running Fcitx5 under KWin to load it (#442) | English, 中文 and 日本語 in one input method with SebType's own switching, popups, candidate pages and tray menu, in place of fcitx5-rime's and fcitx5-mozc's frontends (#190). See [SebType's input method](#sebtypes-input-method) |
-| SebType's librime | Replaces Fedora's `librime` and its installed plugins (`librime-lua`, …) with SebType's build of the same version (`linux/build-librime.sh`), after asking, with sudo | Chinese typo correction also fixes a slip onto the key above or below, which librime's own neighbour map lacks: `xkaoshi` gives 小时 (#101) |
+| SebType 0.2.0's librime | Where SebType 0.2.0 or older replaced Fedora's `librime` packages with its build, puts Fedora's back with `dnf distro-sync`, after asking, with sudo (run from the RPM it warns instead; the installer has done it). `--undo-librime` does the same | The add-on has SebType's librime inside now (#527): the old build only kept Fedora's from other apps |
 | KWin input method | `kwinrc` `[Wayland] InputMethod` = Fcitx 5 (System Settings → Keyboard → Virtual Keyboard) | Every native Wayland app (GTK, Qt, Electron) through text-input, with no environment variables. When an Fcitx5 is already running, setup restarts it under KWin by turning the setting off and back on |
 | XWayland | `XMODIFIERS=@im=fcitx` in `~/.config/environment.d/90-sebtype-im.conf`, only if the session doesn't already have it | XIM apps on XWayland: Steam, WINE/Proton, Java, Xlib/SDL games |
 | Global IM modules | Warns about any global `*_IM_MODULE` (`/etc/environment`, `environment.d`, Plasma env scripts, shell profiles) and doesn't edit it | A global `GTK_IM_MODULE`/`QT_IM_MODULE` overrides Wayland text-input and makes candidate windows flicker |
@@ -224,21 +223,26 @@ Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
 | Lua filter on SebType's librime | 16.2 / 22.2 % | 16.2 / 19.6 % | 51.2 / 62.0 % | 7.6 ms |
 
 The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
-sentences. `linux/build-librime.sh` builds it with `linux/librime.spec` (Fedora's spec) and Fedora's
-copies of its plugins, which must match it. Its release `2.sebtype4.fc44` sorts above Fedora's `2.fc44`. To undo:
-`pc/linux/setup-ime.sh --undo-librime`.
+sentences. The add-on has it inside (#527): `linux/CMakeLists.txt` builds `engines/librime` as a static
+library with Fedora's copy of librime-lua and librime-octagram at the phone's pin (the grammar file's plugin, #127: `beirendingwei`
+gives 被认定为, not 被人定位) merged in, and keeps its symbols in the add-on. Fedora's `librime` stays
+installed and untouched for other apps (fcitx5-rime, ibus-rime), so system updates, which sync Fedora's
+packages to the repositories' versions (Nobara's updater runs `dnf distro-sync`), Fedora's own librime
+updates and removing `sebtype` all leave both working. Up to 0.2.0, SebType's librime RPMs replaced Fedora's
+and a distro-sync swapped them back (#527). `linux/build-librime.sh` still builds those RPMs
+(`linux/librime.spec`, Fedora's spec) for the benches and the dev tools' private Fcitx5s.
 
 It never restarts Fcitx5 or KWin: KWin's input-method connection can't be reused after Fcitx5
 restarts. At the end it checks that Fcitx5 runs under KWin and that the session has `XMODIFIERS`, and
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the install of SebType's input method, the removal of an older setup's icon theme, SebType's librime and the Configurator,
+rerun run on a fake fresh account including the install of SebType's input method, the removal of an older setup's icon theme, Fedora's librime back in place of 0.2.0's (`old-librime-replaced`) and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, that a sensitive field, and learning off in the Configurator, learn no 中文 or 日本語 picks and keep what was learned (`private-field`), the Chinese popup
 text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为), 6 candidates per page (a page size of the user's own kept) and the wheel's paging of 中文 and 日本語 candidates (#443) in a private Fcitx5 running SebType's input method on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
-icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method and librime without installing them:
-Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`, and `bwrap` mounts librime over Fedora's for that Fcitx5 alone. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
+icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method, with its own librime, without installing it:
+Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
 
 ## App checklist
 

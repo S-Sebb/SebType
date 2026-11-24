@@ -3,7 +3,7 @@
 # Mozc, #190) in every app on a KDE Plasma Wayland session, XWayland apps included. Fedora-family systems (dnf/rpm).
 # Per-user config only; sudo is used only to install missing packages, after asking.
 # Safe to rerun. --dry-run prints what it would change and changes nothing. --undo-librime puts Fedora's
-# librime back in place of SebType's build. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
+# librime back where SebType 0.2.0 or older installed its own build in its place. --undo-fcitx5 puts back Fcitx5's own settings (kcm-fcitx5,
 # fcitx5-configtool).
 # --undo-configurator removes the SebType Configurator app
 # and its Picnic candidate window theme (settings made with it stay in Rime's and Mozc's files).
@@ -154,29 +154,29 @@ fi
 
 command -v rpm >/dev/null || { echo "This setup supports Fedora-family systems (rpm/dnf) only." >&2; exit 1; }
 
-# SebType's input method (#190): linux/, packaged by linux/build.sh. SebType's librime (#101): engines/librime,
-# packaged as Fedora's package by linux/build-librime.sh. Its undo goes back to the Fedora release in the repositories.
+# SebType's input method (#190): linux/, packaged by linux/build.sh, with SebType's librime (#101) inside (#527).
 versions=$here/../../linux/versions.sh; ((checkout)) || versions=$here/versions.sh
 # shellcheck source-path=SCRIPTDIR source=../../linux/versions.sh
 source "$versions"
-installed() { rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null || true; }
+# A package's version-release, empty when it isn't installed (rpm -q prints that it isn't on stdout)
+installed() { if rpm -q --quiet "$1" 2>/dev/null; then rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$1" | head -1; fi; }
 restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
-undo_build() { # package [packages built with it...]
-  local now; now=$(installed "$1")
-  if [[ $now == *.sebtype* ]]; then
-    echo "change: replace SebType's $* $now with Fedora's"
-    sudo dnf distro-sync -y "$@"
-    restart_note "$1"
-  fi
-  exit 0
-}
-# librime's packages here: librime and its plugins, which must come from the same build
-librime_installed() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ -z $(installed "$p") ]] || echo "$p"; done; }
+# The librime packages releases up to 0.2.0-2 installed in place of Fedora's (#101), all from one *.sebtype* build. The
+# add-on now has SebType's librime inside (#527); distro-sync brings back the repositories' Fedora release.
+old_librime() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ $(installed "$p") != *.sebtype* ]] || echo "$p"; done; }
 # Fcitx5's own settings, a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182):
 # its page in System Settings and its "Fcitx 5 Configuration" app. Setup removes them; --undo-fcitx5 puts them back.
 fcitx5_settings=(kcm-fcitx5 fcitx5-configtool)
 fcitx5_settings_installed() { local p; for p in "${fcitx5_settings[@]}"; do rpm -q "$p" >/dev/null 2>&1 && echo "$p"; done; true; }
-((undo_librime)) && { mapfile -t librime_pkgs < <(librime_installed); undo_build "${librime_pkgs[@]}"; }
+if ((undo_librime)); then
+  mapfile -t librime_pkgs < <(old_librime)
+  if ((${#librime_pkgs[@]})); then
+    echo "change: replace SebType's old ${librime_pkgs[*]} with Fedora's"
+    sudo dnf distro-sync -y "${librime_pkgs[@]}"
+    restart_note "librime (fcitx5-rime's; SebType's input method has its own)"
+  fi
+  exit 0
+fi
 if ((undo_fcitx5)); then
   missing=(); for p in "${fcitx5_settings[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
   if ((${#missing[@]})); then
@@ -186,25 +186,16 @@ if ((undo_fcitx5)); then
   exit 0
 fi
 
-# 1. Packages. The gtk2/qt5 modules serve XWayland and older apps; librime-lua runs rime-ice's Lua and
-# librime-octagram is the Rime plugin that reads the Chinese data's grammar file, as the phone and Windows
-# do (#127). SebType's input method itself is step 1b.
-pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
-  librime-lua librime-octagram)
+# 1. Packages. The gtk2/qt5 modules serve XWayland and older apps. SebType's input method itself, with
+# librime and its Lua and grammar plugins inside, is step 1b.
+pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4)
 missing=()
 for p in "${pkgs[@]}"; do rpm -q "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if ((${#missing[@]})); then
   if change "install packages ${missing[*]} (asks before using sudo)"; then
     read -rp "Install ${missing[*]} with 'sudo dnf install'? [y/N] " answer || answer=
     if [[ $answer == [yY]* ]]; then
-      # librime's plugins come from librime's own build: SebType's, once librime is (1b)
-      if ((checkout)) && [[ " ${missing[*]} " == *" librime-octagram "* && $(installed librime) == *.sebtype* ]]; then
-        octagram_rpm=$(librime_rpm librime-octagram)
-        [[ -f $octagram_rpm ]] || "$here/../../linux/build-librime.sh" >/dev/null
-        missing=("${missing[@]/#librime-octagram/$octagram_rpm}")
-      fi
       sudo dnf install -y "${missing[@]}"
-      [[ " ${missing[*]} " == *octagram* ]] && restart_later "grammar plugin"
     else warn "packages not installed: ${missing[*]}"; fi
   fi
 fi
@@ -216,11 +207,10 @@ if ((${#settings[@]})) && change "remove ${settings[*]}, Fcitx5's own settings (
   else warn "${settings[*]} stay installed"; fi
 fi
 
-# 1b. SebType's input method (#190) and SebType's librime in place of Fedora's, built from SebType's source by
-# linux/build.sh (about an hour the first time, in a container) and linux/build-librime.sh (a minute or five).
-# Built from this checkout, not taken from a release (#421): a tree under test must run its own code. Run from
-# the RPM, setup comes with the release's packages, which the release's install or update installed.
-# SebType's librime replaces one Fedora release; Fedora's update to another one warns until linux/versions.sh follows it.
+# 1b. SebType's input method (#190), with SebType's librime and its plugins inside (#101, #527), built from
+# SebType's source by linux/build.sh (about an hour the first time, in a container). Built from this checkout,
+# not taken from a release (#421): a tree under test must run its own code. Run from the RPM, setup comes
+# with the release's package, which the release's install or update installed.
 sebtype_now=$(installed sebtype) sebtype_want=$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE
 if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
   change "install SebType's input method $sebtype_want, which hosts Rime and Mozc (asks before using sudo)"; then
@@ -232,36 +222,16 @@ if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
     restart_later "SebType input method"
   else warn "SebType's input method isn't installed, so typing stays as it was"; fi
 fi
-# own_build <package> <Fedora's version-release> <SebType's version-release> <build command> <what it adds>
-#   <what is missing without it> <rpm...>: the package's RPM first, then any built with it
-own_build() {
-  local pkg=$1 fedora=$2 ours=$3 build=$4 adds=$5 without=$6 now answer
-  shift 6
-  now=$(installed "$pkg")
-  case $now in
-    "$ours" | '') ;;
-    "$fedora" | *.sebtype*)
-      if change "replace $pkg $now with SebType's build $ours, Fedora's plus $adds (asks before using sudo; undo: $0 --undo-$pkg)"; then
-        read -rp "Build SebType's $pkg if needed and install it with 'sudo dnf install'? [y/N] " answer || answer=
-        if [[ $answer == [yY]* ]]; then
-          # shellcheck disable=SC2086  # word-split: a script and its arguments
-          [[ -f $1 ]] || $build >/dev/null
-          sudo dnf install -y "$@"
-          restart_later "$pkg"
-        else warn "$pkg stays Fedora's: $without"; fi
-      fi ;;
-    *) warn "$pkg $now isn't the version SebType's build is for ($fedora): $without until linux/versions.sh follows it" ;;
-  esac
-}
-# librime's typo correction knows a PC keyboard's vertical neighbours too (engines/librime), so
-# a typo such as xkaoshi (k for the i above it) gives 小时; its plugins are rebuilt with it.
-librime_rpms=()
-while read -r p; do librime_rpms+=("$(librime_rpm "$p")"); done < <(librime_installed)
-if ((!checkout)); then
-  [[ $(installed librime) == "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" ]] ||
-    warn "librime isn't SebType's $LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE, the release's: Chinese typos onto the key above or below aren't corrected"
-else own_build librime "$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE" "$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE" "$here/../../linux/build-librime.sh" \
-  "a PC keyboard's layout in Chinese typo correction" "Chinese typos onto the key above or below aren't corrected" "${librime_rpms[@]}"
+# Releases up to 0.2.0-2 replaced Fedora's librime with SebType's *.sebtype* build; the release's install puts Fedora's
+# back (linux/build-installer.sh), and so does the next system update.
+mapfile -t librime_pkgs < <(old_librime)
+if ((${#librime_pkgs[@]})); then
+  if ((!checkout)); then warn "${librime_pkgs[*]} are SebType's old build, which the add-on no longer uses: $0 --undo-librime puts Fedora's back"
+  elif change "replace SebType's old ${librime_pkgs[*]} with Fedora's: the input method has its own librime now (asks before using sudo)"; then
+    read -rp "Replace them with 'sudo dnf distro-sync'? [y/N] " answer || answer=
+    if [[ $answer == [yY]* ]]; then sudo dnf distro-sync -y "${librime_pkgs[@]}"
+    else warn "${librime_pkgs[*]} stay SebType's old build"; fi
+  fi
 fi
 
 # KWin / Fcitx5 live-session helpers.

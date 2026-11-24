@@ -38,6 +38,11 @@ bazel=$(mozc_fetch "$downloads")
 stage=$(rpm_stage)
 trap 'rm -rf "$stage"' EXIT
 pack_source "$root/$SEBTYPE_MOZC" "$stage/sources/mozc.tar.gz"
+# The Rime plugins the add-on's librime builds in (#527, versions.sh)
+mkdir -p "$LIBRIME_CACHE/sources"
+fetch_lookaside librime "$LIBRIME_CACHE/sources" "${LIBRIME_PLUGIN_SOURCES[@]}"
+for ((i = 0; i < ${#LIBRIME_PLUGIN_SOURCES[@]}; i += 2)); do cp "$LIBRIME_CACHE/sources/${LIBRIME_PLUGIN_SOURCES[i]}" "$stage/sources/"; done
+fetch_octagram "$stage/sources"
 llama=$("$root/engines/sebtype-lm/fetch-llama.sh")
 tar -C "$llama" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=.git --transform 's,^\.,llama,' -c . |
   gzip -n > "$stage/sources/llama.tar.gz"

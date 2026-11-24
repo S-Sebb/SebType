@@ -45,7 +45,7 @@ sh SebType-setup-<version>-linux-x86_64.sh
 ```
 
 It opens a graphical setup wizard (use `--no-gui` or run headless for terminal mode), installs the `sebtype`
-package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's server), SebType's librime, SebType's
+package (SebType's Fcitx5 add-on over Fedora's Fcitx5, with Mozc's server and SebType's librime), SebType's
 Chinese data and the SebType Configurator, sets the session up so that SebType types in every app, XWayland
 ones included, lets you choose the common settings (languages, 简/繁, the theme, layout
 and page size) and optionally sign in to Account Sync. It asks once for administrator approval to

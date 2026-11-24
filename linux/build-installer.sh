@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Packs SebType's Linux RPMs (versions.sh: sebtype + the 6 librime packages) into one self-extracting
+# Packs SebType's Linux RPM (versions.sh's SEBTYPE_RPM, with SebType's librime inside, #527) into one self-extracting
 # POSIX sh installer, SebType-setup-<version>-linux-x86_64.sh (#427).
 #
 #   linux/build-installer.sh DIR [OUT]
 #
-# DIR holds the 7 RPMs; OUT defaults to SebType-setup-<version>-linux-x86_64.sh in the current directory.
+# DIR holds the RPM; OUT defaults to SebType-setup-<version>-linux-x86_64.sh in the current directory.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -15,19 +15,7 @@ dir=${1:?usage: linux/build-installer.sh DIR [OUT]}
 out=${2:-$SEBTYPE_LINUX_SETUP}
 [[ -d $dir ]] || { echo "build-installer: $dir is not a directory" >&2; exit 1; }
 
-ours=$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE
-required=(
-  "$SEBTYPE_RPM"
-  "librime-$ours.x86_64.rpm"
-  "librime-lua-$ours.x86_64.rpm"
-  "librime-octagram-$ours.x86_64.rpm"
-)
-optional=(
-  "librime-predict-$ours.x86_64.rpm"
-  "librime-tools-$ours.x86_64.rpm"
-  "librime-devel-$ours.x86_64.rpm"
-)
-all=("${required[@]}" "${optional[@]}")
+all=("$SEBTYPE_RPM")
 
 for f in "${all[@]}"; do
   [[ -f $dir/$f ]] || { echo "build-installer: missing $dir/$f" >&2; exit 1; }
@@ -68,12 +56,6 @@ set -eu
 SEBTYPE_VERSION='$SEBTYPE_VERSION'
 SEBTYPE_RPM='$SEBTYPE_RPM'
 SEBTYPE_GUI_SHA='$gui_sha'
-LIBRIME_RPM='librime-$ours.x86_64.rpm'
-LIBRIME_LUA_RPM='librime-lua-$ours.x86_64.rpm'
-LIBRIME_OCTAGRAM_RPM='librime-octagram-$ours.x86_64.rpm'
-LIBRIME_PREDICT_RPM='librime-predict-$ours.x86_64.rpm'
-LIBRIME_TOOLS_RPM='librime-tools-$ours.x86_64.rpm'
-LIBRIME_DEVEL_RPM='librime-devel-$ours.x86_64.rpm'
 
 usage() {
   cat <<'USAGE'
@@ -132,15 +114,16 @@ $manifest
 MANIFEST
   ) || { echo "SebType installer: payload checksum verification failed" >&2; exit 3; }
 
-  set -- "\$tmp/\$SEBTYPE_RPM" "\$tmp/\$LIBRIME_RPM" "\$tmp/\$LIBRIME_LUA_RPM" "\$tmp/\$LIBRIME_OCTAGRAM_RPM"
-  for pair in "librime-predict:\$LIBRIME_PREDICT_RPM" "librime-tools:\$LIBRIME_TOOLS_RPM" "librime-devel:\$LIBRIME_DEVEL_RPM"; do
-    pkg=\${pair%%:*}
-    rpm=\${pair#*:}
-    if rpm -q --quiet "\$pkg" 2>/dev/null; then
-      set -- "\$@" "\$tmp/\$rpm"
-    fi
-  done
-  dnf install -y "\$@"
+  dnf install -y "\$tmp/\$SEBTYPE_RPM"
+  # Releases up to 0.2.0-2 installed SebType's librime (*.sebtype*) in place of Fedora's (#527); this one has its own inside.
+  # Offline or on a mirror failure SebType still works, and sebtype-setup warns about the old build.
+  old=\$(rpm -qa --qf '%{NAME} %{RELEASE}\\n' 'librime*' | awk '\$2 ~ /\\.sebtype/ { print \$1 }')
+  if [ -n "\$old" ]; then
+    echo "SebType installer: putting Fedora's librime back in place of SebType's old build:" \$old
+    # shellcheck disable=SC2086  # one package name per word
+    dnf distro-sync -y \$old ||
+      echo "SebType installer: couldn't put Fedora's librime back; run sebtype-setup --undo-librime when online" >&2
+  fi
 }
 
 if [ "\$mode" = rpms ]; then
