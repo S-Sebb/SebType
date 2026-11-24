@@ -132,7 +132,8 @@ sccache_env() {
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy SebType build at a time),
 # waiting up to an hour plus MINUTES for it, under the CPU and memory caps, at the lowest CPU and I/O
 # priority. The queue rank is DEVQ_RANK (default 2; it orders the queue, the lock is still one build at a
-# time), so a script run by a ranked caller builds at the caller's rank. Don't nest it: builds started inside CMD are already in it.
+# time), so a script run by a ranked caller builds at the caller's rank. Don't nest it: builds started
+# inside CMD are already in it.
 build_lock() {
   local minutes=$1 name=$2
   shift 2
