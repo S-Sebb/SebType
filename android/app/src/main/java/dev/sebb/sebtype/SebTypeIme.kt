@@ -670,6 +670,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         switchTo(globeTarget(Engines.languages(), lang, Prefs[Prefs.QUICK_SWITCH], prefs.getInt("other_language", ENGLISH)))
 
     /** A language the list showed but the settings have turned off since (split screen) is no longer picked */
+    override fun languagesOn() = Engines.languages().let { on -> on.map { it to name(it) } to on.indexOf(lang) }
+
     override fun onPickLanguage(lang: Int) = waiting.run {
         if (lang in Engines.languages()) switchTo(lang)
     }
@@ -804,8 +806,6 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         keyboard.setPage(layout, numbers?.takeIf { page == Page.LETTERS }, if (lang == ENGLISH) "$" else "¥", fillRows)
         keyboard.spaceLabel = name(lang)
         keyboard.quickSwitch = Prefs[Prefs.QUICK_SWITCH]
-        keyboard.languages = Engines.languages().map { it to name(it) }
-        keyboard.language = Engines.languages().indexOf(lang)
         if (lang == JAPANESE) {
             val keys = if (page == Page.LETTERS) NativeCore.KEYS_KANA else NativeCore.KEYS_SYMBOLS
             val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE

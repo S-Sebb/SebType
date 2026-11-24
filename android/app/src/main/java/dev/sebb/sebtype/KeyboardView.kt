@@ -45,6 +45,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         fun onPickKeyboard()
         /** The held 🌐's list: language [lang] picked, by its id, as the list showed it */
         fun onPickLanguage(lang: Int)
+        /** The languages on now, id to name, and the current one's index: what the held 🌐's list shows when it opens */
+        fun languagesOn(): Pair<List<Pair<Int, String>>, Int>
         /** The letter keys moved: five ints a key (its letter, x, y, width, height), for English's corrections */
         fun onLayout(width: Int, height: Int, keys: IntArray)
         /** The space bar swiped sideways: the cursor moves [by] characters (#53 B11) */
@@ -96,13 +98,13 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         set(value) { field = value; invalidate() }
     /** $, or ¥ in 中文 and 日本語 */
     private var currency = "$"
-    /** The held 🌐's list (#526): the languages that are on, id to name, and the current one's index */
-    var languages = emptyList<Pair<Int, String>>()
-    var language = 0
-    /** The open list's languages and marked row, as it opened: a refresh while it is open doesn't move its rows */
+    /**
+     * The open 🌐 list's languages and marked row (#526), read when it opens: settings changed while the keyboard
+     * showed are in it, and a refresh while it is open doesn't move its rows
+     */
     private var listShown = emptyList<Pair<Int, String>>()
     private var listMarked = -1
-    /** 🌐 held shows [languages]; off, it opens the system's keyboard picker as before */
+    /** 🌐 held shows the languages on; off, it opens the system's keyboard picker as before */
     var quickSwitch = true
         set(value) {
             if (field == value) return
@@ -627,13 +629,14 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     /**
-     * The held 🌐's list: [languages], then Other keyboards…, a row each, over the globe from its left edge, in the
+     * The held 🌐's list: the languages on, then Other keyboards…, a row each, over the globe from its left edge, in the
      * popup layer's coordinates. It stays inside the keys' width (smaller, text and all, on a narrow floating or
      * one-handed keyboard) and inside the layer, over the keys when the keyboard floats near the top.
      */
     private fun listFor(cell: Cell): List<RectF> {
-        listShown = languages
-        listMarked = language
+        val (shown, marked) = listener.languagesOn()
+        listShown = shown
+        listMarked = marked
         var rowH = rowHeight * 0.82f
         listText.textSize = rowH * 0.45f
         var w = listIndent(rowH) + listLabels().maxOf { listText.measureText(it) } + 2 * listMark(rowH)
@@ -658,9 +661,9 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             descriptions = listShown.map { it.second } + context.getString(R.string.key_other_keyboards_description))
     }
 
-    /** The held 🌐's row [i], by the languages it opened with: a language still on, or the last row's Other keyboards… */
+    /** The held 🌐's row [i], by the languages it opened with; the IME skips one turned off since */
     private fun pick(i: Int) {
-        when (val target = globePick(listShown.map { it.first }, i, languages.map { it.first })) {
+        when (val target = globePick(listShown.map { it.first }, i)) {
             null -> {}
             OTHER_KEYBOARDS -> listener.onPickKeyboard()
             else -> listener.onPickLanguage(target)
@@ -791,7 +794,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                         cell.key.code == Code.GLOBE && quickSwitch -> {
                             val rows = listFor(cell)
                             showList(rows, -1)
-                            popups.focusChoice(language.coerceAtLeast(0))
+                            popups.focusChoice(listMarked.coerceAtLeast(0))
                         }
                         cell.key.code == Code.GLOBE -> listener.onPickKeyboard()
                         cell.key.code == Code.SHIFT -> {
@@ -974,12 +977,8 @@ internal fun listRow(rows: List<Box>, globe: Box, x: Float, y: Float, slop: Floa
 /** [globePick]'s last row: Other keyboards… */
 internal const val OTHER_KEYBOARDS = -1
 
-/**
- * What row [i] of the held 🌐's list picks, by the languages (ids) [shown] when it opened: its language while still
- * [on], [OTHER_KEYBOARDS] for the row after them, or null (a language turned off since, or no row).
- */
-internal fun globePick(shown: List<Int>, i: Int, on: List<Int>): Int? =
-    if (i == shown.size) OTHER_KEYBOARDS else shown.getOrNull(i)?.takeIf { it in on }
+/** What row [i] of the held 🌐's list picks, by the languages (ids) [shown] when it opened: [OTHER_KEYBOARDS] after them */
+internal fun globePick(shown: List<Int>, i: Int): Int? = if (i == shown.size) OTHER_KEYBOARDS else shown.getOrNull(i)
 
 /** What a new finger does to a key already held: Shift stays held, the 🌐's list closes without a choice, any other key types */
 internal enum class Roll { KEEP, CLOSE, TYPE }

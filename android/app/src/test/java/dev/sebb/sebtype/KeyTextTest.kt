@@ -273,15 +273,12 @@ class KeyTextTest {
 
     @Test
     fun theGlobeListPicksTheLanguagesItShowed() {
+        // By the rows it opened with, whatever changed since: the IME then skips a language turned off
         val shown = listOf(ENGLISH, CHINESE, JAPANESE)
-        assertEquals(CHINESE, globePick(shown, 1, shown))
-        assertEquals(OTHER_KEYBOARDS, globePick(shown, 3, shown))
-        // 中文 turned off while the list stays open: its row picks nothing, 日本語's row is still 日本語's
-        val on = listOf(ENGLISH, JAPANESE)
-        assertEquals(null, globePick(shown, 1, on))
-        assertEquals(JAPANESE, globePick(shown, 2, on))
-        assertEquals(CHINESE, globePick(shown, 1, listOf(CHINESE, ENGLISH, JAPANESE))) // reordered
-        assertEquals(null, globePick(shown, 4, shown))
+        assertEquals(CHINESE, globePick(shown, 1))
+        assertEquals(JAPANESE, globePick(shown, 2)) // never Other keyboards…, even with 中文 off since
+        assertEquals(OTHER_KEYBOARDS, globePick(shown, 3))
+        assertEquals(null, globePick(shown, 4))
     }
 
     @Test
