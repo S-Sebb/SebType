@@ -129,8 +129,9 @@ SHORT_RE = re.compile(
 OPENING = (
     "[\"'(\\[]"  # opening quotes and brackets (corpus.py makes curly quotes straight)
 )
-# A full stop that ends a sentence: not an ellipsis's, nor one after a single letter ("U.S.", "p.m.", "e.g.").
-SENTENCE_END = r"(?:[!?]|(?<!\b[A-Za-z])(?<!\.)\.(?!\.))"
+# A full stop that ends a sentence: not an ellipsis's, nor one after a single letter ("U.S.", "p.m.", "e.g.";
+# a contraction's "didn't." does end one).
+SENTENCE_END = r"(?:[!?]|(?<!\b(?<!')[A-Za-z])(?<!\.)\.(?!\.))"
 SENTENCE_START = re.compile(r"(^|[.!?] +)([A-Z])(?=[a-z' ])")
 SENTENCE_START_INSIDE = re.compile(r"([.!?] +)([A-Z])(?=[a-z' ])")
 # A word an example can go in front of: after the line's start, a space, a quote or a bracket.
@@ -161,7 +162,9 @@ def init(run, typos=True):
         bank[w] = (phone.split(",") if phone else [], spell.split(",") if spell else [])
     words = make_sets.dictionary()
     intended = make_sets.intended_of(words)
-    real_word = lambda w: w in words and not words[w][1]
+    # A word in any of its dictionary cases: "thomas" isn't "thoma's" (Thomas), nor "americans" "american's".
+    real = {w.lower() for w, v in words.items() if not v[1]}
+    real_word = lambda w: w in real
     # Each apostrophe word's commonest case in the dictionary: "o'clock" for "O'Clock" (a title's case).
     for w, (f, bad, *_) in sorted(words.items(), key=lambda x: x[1][0]):
         if "'" in w and not bad:
@@ -310,12 +313,13 @@ def encode_line(rng, line, texting, chat=False):
             # A sentence starts after a full stop or at a segment that starts one, an opening quote or bracket
             # between ('He stopped. "Don't'); after one mid-sentence a capital the source wrote stays
             # ('He said, "YOU'RE' is "You're" once standard() puts YOU'RE in the dictionary's case). Past the
-            # line's start, only where the source wrote a capital or doesn't write them (chat): after "Inc." or
-            # in code the source's lowercase stays.
+            # line's start, only where the source wrote a capital or doesn't write them (chat): after "Inc."
+            # the source's lowercase stays. A line's start is always capitalised, a line of code's too.
             opening_only = re.match(r"\s*" + OPENING + "*$", seg[:start])
             at_start = bool(
                 re.search(
-                    r"(?:" + SENTENCE_END + r"\s+|^\s*)" + OPENING + "*$", seg[:start]
+                    r"(?:" + SENTENCE_END + r"[\"')\]]*\s+|^\s*)" + OPENING + "*$",
+                    seg[:start],
                 )
             ) and (starts[si] or not opening_only)
             at_start &= (si == 0 and bool(opening_only)) or chat or seg[start].isupper()

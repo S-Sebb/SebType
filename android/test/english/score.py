@@ -14,7 +14,8 @@ how many keys the target was first in the top 3 (0: never).
   intended word is first / among the first three suggestions. homographs' kept fixed / restored fixed: fixed
   over the rows whose target is the typed word / its contraction. capitalised: how many commits are the
   intended word with a capital it doesn't have ("O'Clock" for "o'clock"); lowercased: without one it has
-  ("don't" for "Don't" at a sentence start); lowercased I: those of them that are "I" or its forms.
+  ("don't" for "Don't" at a sentence start); lowercased I: those of them that are "I" or its forms; gained
+  apostrophes: commits that are the intended word with an apostrophe it doesn't have ("Thoma's" for "Thomas").
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -259,6 +260,20 @@ def bar(path, today_path):
             -1,
         )
     )
+    # And one with an apostrophe its word lacks, "Thoma's" for "Thomas" (#556): main's r2 commits 1 (phone-typos'
+    # "we're" for "were"), one more is allowed for chance. homographs' "won't" for "wont" is its kept fixed row's.
+    checks.append(
+        (
+            "gained apostrophes, homographs aside",
+            sum(
+                v["gained apostrophes"]
+                for n, v in ours.items()
+                if n != "homographs" and "gained apostrophes" in v
+            ),
+            2,
+            -1,
+        )
+    )
     for set_name in ("clean", "phone-typos"):
         checks.append(
             (
@@ -318,6 +333,12 @@ def main(run_dir):
                         s["lowercased I"] = sum(
                             wrong_case(r, wrong) for r in rows if r[1] in I_FORMS
                         )
+                s["gained apostrophes"] = sum(
+                    "'" in r[2]
+                    and "'" not in r[1]
+                    and r[2].replace("'", "").lower() == r[1].lower()
+                    for r in rows
+                )
                 if set_name == "homographs":
                     # Keeping every typed word fixes most rows: the rows that keep it and those that restore
                     # the apostrophe are barred apart.

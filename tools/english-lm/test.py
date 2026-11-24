@@ -180,6 +180,24 @@ check(
     got == ["economy", "then", "what", "Then"],
     got,
 )
+got = [
+    written("I didn't. then", chat=True)[-1],
+    written("I met John's. then", chat=True)[-1],
+    written("I'm. then", chat=True)[-1],
+    written('He said "go." YOU\'RE late')[-2],
+]
+check(
+    "examples: a sentence ends after a contraction, a possessive, or before a closing quote",
+    got == ["Then", "Then", "Then", "You're"],
+    got,
+)
+names = ["Thomas", "Americans", "Jesus", "Olympics", "iOS", "Mrs", "dont"]
+got = [pack.standard(w, False) for w in names]
+check(
+    "examples: names and plurals get no apostrophe",
+    got == names[:-1] + ["don't"],
+    got,
+)
 check(
     "examples: cant elsewhere stays",
     written("they speak in cant")[-1] == "cant",
@@ -333,6 +351,21 @@ check(
     got == [1, 2, 1],
     got,
 )
+with (
+    tempfile.TemporaryDirectory() as d,
+    contextlib.redirect_stdout(io.StringIO()) as out,
+):
+    rows = [
+        ("thomas", "Thomas", "Thoma's"),
+        ("dont", "don't", "don't"),
+        ("its", "its", "it's"),
+    ]
+    (Path(d) / "core.capitals.tsv").write_text(
+        "".join("\t".join(r) + "\t\t1\n" for r in rows)
+    )
+    score.main(d)
+got = json.loads(out.getvalue())["core"]["capitals"]["gained apostrophes"]
+check("score: gained apostrophes", got == 2, got)
 
 
 def passes(change):
@@ -365,6 +398,10 @@ check(
 check(
     "bar: 30 sentence-start contractions lowercased fail, though AOSP loses 87",
     not passes(lambda c: c["contractions"].update(lowercased=30)),
+)
+check(
+    "bar: 3 gained apostrophes fail",
+    not passes(lambda c: c["capitals"].update({"gained apostrophes": 3})),
 )
 check(
     "bar: 6 capitals lost besides I fail",

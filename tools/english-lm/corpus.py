@@ -174,6 +174,10 @@ def dolly(path):
     return clean((f"{r['instruction']}\n{r['response']}" for r in rows), min_words=2)
 
 
+# A NUS message the export cut at its first apostrophe starts with the contraction's tail: "m going", "ll be".
+CUT_TAIL = re.compile(r"(?:m|ll|s|t|re|ve|d) ")
+
+
 def nus_sms(path, excluded_ids):
     """The NUS SMS Corpus's messages. Its <#> and <EMAIL> placeholders fail BAD. Left out:
     - messages with Singlish particles: two thirds of NUS is from Singapore, and they would rank for everyone;
@@ -210,6 +214,7 @@ def nus_sms(path, excluded_ids):
             and words(t) not in held_out
             and not SINGLISH & set(words(t))
             and all(w in lower or len(senders[w]) >= 5 for w in words(t))
+            and not CUT_TAIL.match(t)
         ),
         min_words=2,
     )
