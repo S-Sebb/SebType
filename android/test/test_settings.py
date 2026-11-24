@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAMES = {
     "Fail", "Skip", "SebTypeFault", "SEBTYPE_LIFE", "LOGCAT_TIME", "logcat_time",
-    "choose_sebtype", "restart_unstarted", "to_language", "check", "result",
+    "choose_sebtype", "restart_unstarted", "to_language", "offers", "PROBE_LANGUAGE", "check", "result",
 }  # fmt: skip
 IME = "dev.sebb.sebtype/org.futo.inputmethod.latin.LatinIME"
 OTHER = "com.android.inputmethod.latin/.LatinIME"

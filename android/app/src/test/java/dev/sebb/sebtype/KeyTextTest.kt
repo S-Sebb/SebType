@@ -1,5 +1,9 @@
 package dev.sebb.sebtype
 
+import dev.sebb.sebtype.Layout.Code
+import dev.sebb.sebtype.core.NativeCore.CHINESE
+import dev.sebb.sebtype.core.NativeCore.ENGLISH
+import dev.sebb.sebtype.core.NativeCore.JAPANESE
 import java.io.File
 import java.nio.ByteBuffer
 import kotlin.math.roundToInt
@@ -251,5 +255,37 @@ class KeyTextTest {
         assertTrue(!slides(shift.first, shift.second, z.first, z.second.left + far, z.second.top, 8 * density))
         // A letter slid onto Space doesn't type a space
         assertTrue(!slides(z.first, z.second, space.first, space.second.left + 1, space.second.top + 1, 0f))
+    }
+
+    /** #526: the held globe's list picks the row the finger is on; back on the globe or away from the list, none. */
+    @Test
+    fun heldGlobeListCancels() {
+        val rows = List(4) { Box(100f, 100f + it * 50f, 300f, 150f + it * 50f) } // 100..300 x 100..300
+        val globe = Box(100f, 320f, 160f, 400f)
+        assertEquals(0, listRow(rows, globe, 200f, 120f, 25f))
+        assertEquals(3, listRow(rows, globe, 200f, 299f, 25f))
+        assertEquals(3, listRow(rows, globe, 200f, 310f, 25f)) // just under it: slop
+        assertEquals(-1, listRow(rows, globe, 130f, 350f, 25f)) // back on the globe
+        assertEquals(-1, listRow(rows, globe, 200f, 40f, 25f)) // above the list
+        assertEquals(-1, listRow(rows, globe, 400f, 180f, 25f)) // beside it, over other keys
+        assertEquals(-1, listRow(rows, globe, 130f, 340f, 25f)) // the globe wins over the slop
+    }
+
+    @Test
+    fun theGlobeListPicksTheLanguagesItShowed() {
+        // By the rows it opened with, whatever changed since: the IME then skips a language turned off
+        val shown = listOf(ENGLISH, CHINESE, JAPANESE)
+        assertEquals(CHINESE, globePick(shown, 1))
+        assertEquals(JAPANESE, globePick(shown, 2)) // never Other keyboards…, even with 中文 off since
+        assertEquals(OTHER_KEYBOARDS, globePick(shown, 3))
+        assertEquals(null, globePick(shown, 4))
+    }
+
+    @Test
+    fun aSecondFingerClosesTheGlobeListUnchosen() {
+        assertEquals(Roll.CLOSE, roll(Code.GLOBE, list = true)) // over a row or not, it picks nothing
+        assertEquals(Roll.TYPE, roll(Code.GLOBE, list = false)) // a globe still held short taps as before
+        assertEquals(Roll.TYPE, roll(Code.TEXT, list = false))
+        assertEquals(Roll.KEEP, roll(Code.SHIFT, list = false))
     }
 }

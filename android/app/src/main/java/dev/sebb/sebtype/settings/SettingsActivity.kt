@@ -202,7 +202,8 @@ private fun App(changes: Int, opened: androidx.compose.runtime.MutableState<Stri
 
 class Nav(private val stack: SnapshotStateList<String>) {
     fun go(screen: String) = stack.add(screen)
-    fun back() = stack.removeAt(stack.lastIndex)
+    /** A second Back before the screen recomposes finds the stack already empty: it does nothing */
+    fun back() { stack.removeLastOrNull() }
 }
 
 @Composable

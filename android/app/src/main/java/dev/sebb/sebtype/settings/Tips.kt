@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -31,6 +33,7 @@ import dev.sebb.sebtype.Icons.Icon
 import dev.sebb.sebtype.Picnic
 import dev.sebb.sebtype.PixelFrame
 import dev.sebb.sebtype.R
+import dev.sebb.sebtype.data.Prefs
 
 /** The keys a tip is about, drawn as the keyboard draws them */
 private enum class TipKey { GLOBE, SPACE, DELETE, KANA }
@@ -41,8 +44,9 @@ private enum class TipKey { GLOBE, SPACE, DELETE, KANA }
  */
 @Composable
 fun TipsCard() = Card {
+    val quick by Prefs.flow(LocalContext.current, Prefs.QUICK_SWITCH).collectAsState(Prefs[Prefs.QUICK_SWITCH])
     for ((key, text) in listOf(
-        TipKey.GLOBE to R.string.tips_globe,
+        TipKey.GLOBE to if (quick) R.string.tips_globe else R.string.tips_globe_off,
         TipKey.SPACE to R.string.tips_space,
         TipKey.DELETE to R.string.tips_delete,
         TipKey.KANA to R.string.tips_kana,

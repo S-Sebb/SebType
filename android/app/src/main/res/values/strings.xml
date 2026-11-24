@@ -25,6 +25,10 @@
     <!-- TalkBack: what a double tap and hold on a key does (#283) -->
     <string name="key_alternates">show alternative characters</string>
     <string name="key_pick_keyboard">choose keyboard</string>
+    <string name="key_show_languages">show languages</string>
+    <!-- The held globe's last item, which opens Android's keyboard chooser (#526), and what TalkBack reads for it -->
+    <string name="key_other_keyboards">Other keyboards…</string>
+    <string name="key_other_keyboards_description">Other keyboards</string>
     <string name="key_lock_caps">turn on Caps lock</string>
     <string name="key_space">Space</string>
     <string name="key_enter">Enter</string>

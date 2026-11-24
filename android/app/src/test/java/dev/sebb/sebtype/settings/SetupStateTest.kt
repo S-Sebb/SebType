@@ -127,8 +127,8 @@ class SetupStateTest {
      */
     @Test
     fun commonSettingsStepSavesAChoice() = runBlocking {
-        assertEquals(listOf(Prefs.NUMBER_ROW, Prefs.VIBRATE, Prefs.SOUND), SETUP_SWITCHES.map { it.third })
-        assertEquals(listOf(false, true, false), SETUP_SWITCHES.map { it.third.default })
+        assertEquals(listOf(Prefs.QUICK_SWITCH, Prefs.NUMBER_ROW, Prefs.VIBRATE, Prefs.SOUND), SETUP_SWITCHES.map { it.third })
+        assertEquals(listOf(true, false, true, false), SETUP_SWITCHES.map { it.third.default })
         val phone = store()
         Prefs.set(phone, Prefs.NUMBER_ROW, true)
         assertEquals(preferencesOf(Prefs.NUMBER_ROW.key to true), phone.data.first())
