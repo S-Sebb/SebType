@@ -129,6 +129,8 @@ SHORT_RE = re.compile(
 OPENING = (
     "[\"'(\\[]"  # opening quotes and brackets (corpus.py makes curly quotes straight)
 )
+# A full stop that ends a sentence: not an ellipsis's, nor one after a single letter ("U.S.", "p.m.", "e.g.").
+SENTENCE_END = r"(?:[!?]|(?<!\b[A-Za-z])(?<!\.)\.(?!\.))"
 SENTENCE_START = re.compile(r"(^|[.!?] +)([A-Z])(?=[a-z' ])")
 SENTENCE_START_INSIDE = re.compile(r"([.!?] +)([A-Z])(?=[a-z' ])")
 # A word an example can go in front of: after the line's start, a space, a quote or a bracket.
@@ -297,7 +299,9 @@ def encode_line(rng, line, texting, chat=False):
     out = []
     segs = segments(line)
     # Whether each segment starts a sentence: the line's first, or one cut after a sentence's end.
-    starts = [True] + [bool(re.search(r"[.!?][\"')\]]*$", s)) for s in segs[:-1]]
+    starts = [True] + [
+        bool(re.search(SENTENCE_END + r"[\"')\]]*$", s)) for s in segs[:-1]
+    ]
     for si, seg in enumerate(segs):
         out.append(sp.bos_id())
         pos, first = 0, True
@@ -305,10 +309,16 @@ def encode_line(rng, line, texting, chat=False):
             before = seg[pos:start]
             # A sentence starts after a full stop or at a segment that starts one, an opening quote or bracket
             # between ('He stopped. "Don't'); after one mid-sentence a capital the source wrote stays
-            # ('He said, "YOU'RE' is "You're" once standard() puts YOU'RE in the dictionary's case).
+            # ('He said, "YOU'RE' is "You're" once standard() puts YOU'RE in the dictionary's case). Past the
+            # line's start, only where the source wrote a capital or doesn't write them (chat): after "Inc." or
+            # in code the source's lowercase stays.
+            opening_only = re.match(r"\s*" + OPENING + "*$", seg[:start])
             at_start = bool(
-                re.search(r"(?:[.!?]\s+|^\s*)" + OPENING + "*$", seg[:start])
-            ) and (starts[si] or not re.match(r"\s*" + OPENING + "*$", seg[:start]))
+                re.search(
+                    r"(?:" + SENTENCE_END + r"\s+|^\s*)" + OPENING + "*$", seg[:start]
+                )
+            ) and (starts[si] or not opening_only)
+            at_start &= (si == 0 and bool(opening_only)) or chat or seg[start].isupper()
             quoted = bool(re.search(OPENING + "$", seg[:start]))
             at_start |= quoted and seg[start].isupper()
             if before.endswith(

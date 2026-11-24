@@ -169,6 +169,17 @@ check(
     got == ["You're", "you're", "D'Estaing", "D'Estaing", "iPhone's", "eBay's"],
     got,
 )
+got = [
+    written("The U.S. economy grew")[2],
+    written("Shares fell. then they rose")[2],
+    written("wait... what", chat=True)[1],
+    written("He left. then", chat=True)[-1],
+]
+check(
+    "examples: lowercase after U.S., ..., or a full stop stays, but not in chat",
+    got == ["economy", "then", "what", "Then"],
+    got,
+)
 check(
     "examples: cant elsewhere stays",
     written("they speak in cant")[-1] == "cant",
