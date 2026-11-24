@@ -13,8 +13,8 @@ add_library(sebtype-logic STATIC src/core.cpp src/pager.cpp)
 target_include_directories(sebtype-logic PUBLIC include)
 
 if(SEBTYPE_CJK)
-# librime and protobuf: the system's protobuf on Linux, with SebType's librime that linux/ sets as RIME_TARGET
-# (pkg-config's when it doesn't); on Windows RIME_ROOT holds include/rime_api.h
+# librime and protobuf: on Linux FindProtobuf's, which linux/ points at its static build, with SebType's librime
+# that linux/ sets as RIME_TARGET (pkg-config's when it doesn't); on Windows RIME_ROOT holds include/rime_api.h
 # and lib/rime.lib (the rime.dll pc/windows/rime/build.ps1 makes, engines/librime). On Android the app's
 # android/native builds both (protobuf-lite) and sets RIME_TARGET, PROTOBUF_TARGET and PROTOC first.
 if(ANDROID)
@@ -97,8 +97,8 @@ if(SEBTYPE_ENGLISH)
   target_include_directories(sebtype-english PRIVATE $<TARGET_PROPERTY:llama,SOURCE_DIR>)
 endif()
 
-# 中文's model around Rime (src/chinese.cpp, #264), with OpenCC for 繁: the target libopencc on Android
-# (android/native builds it for librime), vcpkg's on Windows, the system's on Linux.
+# 中文's model around Rime (src/chinese.cpp, #264), with OpenCC for 繁: the target libopencc on Android and
+# Linux (android/native and linux/ build it for librime), vcpkg's on Windows, pkg-config's elsewhere.
 if(SEBTYPE_CHINESE_MODEL)
   add_library(sebtype-chinese STATIC src/chinese.cpp)
   if(TARGET libopencc)

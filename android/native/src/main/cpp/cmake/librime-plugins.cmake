@@ -3,10 +3,10 @@
 # Lua comes from the official GitHub mirror of lua.org.
 download_and_extract(
     "lua"
-    "5.4.7"
+    "5.4.9"
     ".tar.gz"
-    "https://github.com/lua/lua/archive/refs/tags/v5.4.7.tar.gz"
-    "5c39111b3fc4c1c9e56671008955a1730f54a15b95e1f1bd0752b868b929d8e3"
+    "https://github.com/lua/lua/archive/refs/tags/v5.4.9.tar.gz"
+    "76def9b3b100e029bfbe37c985d869d0ed993a0cf1a157df282d6dcd9d6a4e15"
 )
 
 download_and_extract(

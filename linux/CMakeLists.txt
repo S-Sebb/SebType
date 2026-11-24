@@ -17,7 +17,7 @@ set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # What librime links, and protobuf for core/, are static too (#540), from SEBTYPE_DEPS (sebtype.spec builds them
 # there): set before librime's and core/'s searches, which then keep them, so none is the system's shared
-# one. OpenCC's library takes marisa after it, as a static link needs.
+# one. LevelDB's and OpenCC's libraries take Snappy and marisa after them, as a static link needs.
 set(SEBTYPE_DEPS "" CACHE PATH "The static libraries sebtype.spec builds")
 set(deps ${SEBTYPE_DEPS}/lib)
 foreach(var Glog_INCLUDE_PATH YamlCpp_INCLUDE_PATH YamlCpp_NEW_API LevelDb_INCLUDE_PATH Marisa_INCLUDE_PATH
@@ -26,7 +26,7 @@ foreach(var Glog_INCLUDE_PATH YamlCpp_INCLUDE_PATH YamlCpp_NEW_API LevelDb_INCLU
 endforeach()
 set(Glog_LIBRARY ${deps}/libglog.a CACHE FILEPATH "" FORCE)
 set(YamlCpp_LIBRARY ${deps}/libyaml-cpp.a CACHE FILEPATH "" FORCE)
-set(LevelDb_LIBRARY ${deps}/libleveldb.a CACHE FILEPATH "" FORCE)
+set(LevelDb_LIBRARY "${deps}/libleveldb.a;${deps}/libsnappy.a" CACHE STRING "" FORCE)
 set(Marisa_LIBRARY ${deps}/libmarisa.a CACHE FILEPATH "" FORCE)
 set(Opencc_LIBRARY "${deps}/libopencc.a;${deps}/libmarisa.a" CACHE STRING "" FORCE)
 set(Protobuf_LIBRARY ${deps}/libprotobuf.a CACHE FILEPATH "" FORCE)

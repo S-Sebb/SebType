@@ -25,8 +25,9 @@ SebType: which licence covers which part (README.md, "Licences", has the details
 - AOSP LatinIME's decoder in engines/latinime/, unchanged: the Apache License 2.0 (engines/latinime/NOTICE).
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
   librime, librime-lua and librime-octagram BSD-3-Clause (built into the Linux add-on and the Android app,
-  with what they link: LevelDB, protobuf and glog BSD-3-Clause, yaml-cpp, Lua and RapidJSON MIT, marisa-trie
-  BSD-2-Clause, OpenCC Apache-2.0),
+  with what they link: LevelDB, protobuf, glog and Snappy BSD-3-Clause, yaml-cpp, Lua and RapidJSON MIT,
+  marisa-trie BSD-2-Clause or LGPL-2.1-or-later (taken as BSD-2-Clause), OpenCC Apache-2.0; Mozc's library with
+  Abseil Apache-2.0 and utf8_range MIT),
   RimeJni MIT, Mozc BSD-3-Clause, llama.cpp MIT. The Windows candidate window takes its layout numbers and
   aqua colours from Weasel (GPL-3.0) as settings, not its code (windows/README.md).
 

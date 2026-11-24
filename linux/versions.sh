@@ -46,16 +46,19 @@ LIBRIME_PLUGIN_SOURCES=("${LIBRIME_SOURCES[@]:0:2}")
 OCTAGRAM_COMMIT=57d18b9f58e5284bd891d559f6bdd16cf60341e9
 OCTAGRAM_SHA256=7b9c77bcf17566b64204791b72cdb1b4471e22efec5eef9b79ca764ab99a1576
 # What librime and core/ link, built into the add-on too (#540), at the phone's pins (android/native/src/main/
-# cpp/cmake/) and glog at Fedora 44's: as shared libraries they made the sebtype package need sonames a
-# Fedora release drops (F45 has libopencc.so.1.2 and liblua-5.5.so), which blocked dnf --releasever's
-# distro-sync. Name, URL, sha256; build.sh passes each as <name>.tar.gz.
+# cpp/cmake/), glog and Snappy at Fedora 44's: as shared libraries they made the sebtype package need sonames
+# a Fedora release drops (F45 has libopencc.so.1.2 and liblua-5.5.so), which blocked dnf --releasever's
+# distro-sync. OpenCC 1.2.0 and Lua 5.4.9 have the fixes Fedora 44 patches into 1.1.9 and 5.4.8. LevelDB
+# compresses with Snappy, as Fedora's does: Rime's user dictionaries written by Fedora's LevelDB (SebType
+# before 0.3.0) can't be read without it. Name, URL, sha256; build.sh passes each as <name>.tar.gz.
 SEBTYPE_DEPS=(
   glog https://github.com/google/glog/archive/refs/tags/v0.7.1.tar.gz 00e4a87e87b7e7612f519a41e491f16623b12423620006f59f5688bfd8d13b08
   yaml-cpp https://github.com/jbeder/yaml-cpp/archive/refs/tags/0.8.0.tar.gz fbe74bbdcee21d656715688706da3c8becfd946d92cd44705cc6098bb23b3a16
   leveldb https://github.com/google/leveldb/archive/refs/tags/1.23.tar.gz 9a37f8a6174f09bd622bc723b55881dc541cd50747cbd08831c2a82d620f6d76
   marisa https://github.com/s-yata/marisa-trie/archive/refs/tags/v0.3.1.tar.gz 986ed5e2967435e3a3932a8c95980993ae5a196111e377721f0849cad4e807f3
-  opencc https://github.com/BYVoid/OpenCC/archive/refs/tags/ver.1.1.9.tar.gz ad4bcd8d87219a240a236d4a55c9decd2132a9436697d2882ead85c8939b0a99
-  lua https://github.com/lua/lua/archive/refs/tags/v5.4.7.tar.gz 5c39111b3fc4c1c9e56671008955a1730f54a15b95e1f1bd0752b868b929d8e3
+  snappy https://github.com/google/snappy/archive/refs/tags/1.2.2.tar.gz 90f74bc1fbf78a6c56b3c4a082a05103b3a56bb17bca1a27e052ea11723292dc
+  opencc https://github.com/BYVoid/OpenCC/archive/refs/tags/ver.1.2.0.tar.gz f4f86eb25e239450d075081e08594801aa063c298d21d9f6c6aa85cd55241962
+  lua https://github.com/lua/lua/archive/refs/tags/v5.4.9.tar.gz 76def9b3b100e029bfbe37c985d869d0ed993a0cf1a157df282d6dcd9d6a4e15
   protobuf https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protobuf-cpp-3.21.12.tar.gz 4eab9b524aa5913c6fffb20b2a8abf5ef7f95a80bc0701f3a6dbb4c607f73460
 )
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)

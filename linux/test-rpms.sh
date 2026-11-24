@@ -98,8 +98,10 @@ check own-librime own_librime
 # The package needs no library a Fedora release may drop or rename (#540): the add-on has librime's
 # libraries and protobuf inside, and needs only glibc's, GCC's, Fcitx5's, libpng's and fontconfig's.
 stable_sonames() {
-  ! rpm -q --requires sebtype | grep '\.so' |
-    grep -vE '^(libc|libm|libstdc\+\+|libgcc_s)\.so\.[0-9]+\(|^libFcitx5(Core|Config|Utils)\.so|^libpng16\.so\.16\(|^libfontconfig\.so\.1\(|^rtld\('
+  local requires
+  requires=$(rpm -q --requires sebtype) || return 1
+  ! grep '\.so' <<<"$requires" |
+    grep -vE '^(libc|libm|libstdc\+\+|libgcc_s)\.so\.[0-9]+\(|^libFcitx5(Core|Config|Utils)\.so|^libpng16\.so\.16\(|^libfontconfig\.so\.1\('
 }
 check stable-sonames stable_sonames
 
@@ -175,6 +177,29 @@ user_setup() {
 }
 check user-setup user_setup
 
+# What Rime learned before keeps (#540): a user dictionary written by Fedora's LevelDB, as SebType 0.2.0 and
+# older wrote them, with Snappy-compressed tables, reads back whole in the add-on. Fedora's rime_dict_manager
+# restores 3000 entries into rime_ice.userdb and, opening it again for one more, moves them into a table; the
+# add-on's sync, when Fcitx5 exits, writes them all to its snapshot.
+learned_words() {
+  local home=/tmp/sebtype-tester rime=/tmp/sebtype-tester/.local/share/fcitx5/rime header i
+  as_tester() { chroot --userspec=1000:1000 / env HOME="$home" USER=tester "$@"; }
+  grep -q '^tester:' /etc/passwd || echo "tester:x:1000:1000::$home:/bin/bash" >> /etc/passwd  # for D-Bus
+  header=$'# Rime user dictionary\n#@/db_name\trime_ice\n#@/db_type\tuserdb\n#@/rime_version\t1.16.1'
+  { echo "$header"; for ((i = 1; i <= 3000; i++)); do printf 'ce shi %d \t测试词条%d\tc=3 d=3 t=1\n' "$i" "$i"; done; } > /tmp/learned.txt
+  printf '%s\nling \t另一条\tc=1 d=1 t=1\n' "$header" > /tmp/one-more.txt
+  rm -rf "$rime/rime_ice.userdb" "$rime/sync"
+  as_tester sh -c "cd $rime && rime_dict_manager --restore /tmp/learned.txt && rime_dict_manager --restore /tmp/one-more.txt" &&
+    ls "$rime"/rime_ice.userdb/*.ldb || return 1
+  as_tester dbus-run-session -- sh -c 'fcitx5 --disable=all --enable=dbus,keyboard,sebtype & sleep 5
+    busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ""
+    sleep 20; busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit; wait'
+  i=$(grep -c '测试词条' "$rime"/sync/*/rime_ice.userdb.txt) || true
+  echo "$i of 3000 entries in the add-on's snapshot"
+  ((i == 3000))
+}
+check learned-words-kept learned_words
+
 # A system update (Nobara's updater runs distro-sync, which moves every package to the repositories' version,
 # #527) and an upgrade change neither sebtype nor Fedora's Rime.
 system_update() {
@@ -199,13 +224,15 @@ remove() {
 check remove-leaves-fedora-rime remove
 
 # The next Fedora release's upgrade (dnf --releasever distro-sync, #540) goes through with sebtype installed,
-# keeps it, and the add-on still finds what it links and loads. Skipped while that release has no repositories.
+# keeps it, and every library still finds what it links and the add-on loads. Skipped only while Fedora's
+# mirrors say that release has no repository yet.
 release_upgrade() {
-  local next
+  local next meta
   next=$(($(rpm -E %fedora) + 1))
-  [[ -n $(dnf -q --releasever="$next" repoquery fedora-release-common 2>/dev/null) ]] || { echo "Fedora $next has no repositories yet"; return 77; }
+  meta=$(curl --limit-rate 35M -sSf --retry 3 "https://mirrors.fedoraproject.org/metalink?repo=fedora-$next&arch=$(uname -m)") || return 1
+  if grep -q 'invalid repo' <<<"$meta"; then echo "Fedora $next has no repository yet"; return 77; fi
   sh /installer.sh --install-rpms-only && dnf -y --releasever="$next" distro-sync &&
-    [[ $(rpm -E %fedora) == "$next" ]] && rpm -V sebtype && ! ldd /usr/lib64/fcitx5/sebtype.so | grep 'not found' && fcitx5_loads
+    [[ $(rpm -E %fedora) == "$next" ]] && rpm -V sebtype && libraries && fcitx5_loads
 }
 check release-upgrade release_upgrade
 
