@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds SebType's librime RPMs (#101): engines/librime with librime.spec (Fedora's spec), which also builds
 # the plugins (Fedora's own copies, octagram at versions.sh's OCTAGRAM_COMMIT), in the pinned Fedora
-# container. Prints the RPMs' paths, in a folder named by versions.sh's librime_key (LIBRIME_KEY when set).
+# container. Prints the RPMs' paths, in a folder named by versions.sh's librime_key.
 #
 #   linux/build-librime.sh    # -> ~/scratch/SebType/cache/librime/<key>/librime{,-lua,...}-<version>-<release>.x86_64.rpm
 #
