@@ -258,8 +258,9 @@ FROST_DICTS = [
 
 
 def make_readings(frost_zip, out):
-    """Writes OUT: each word of 白霜's dictionary (rime-frost-schemas.zip) that pypinyin reads otherwise than the
-    dictionary does, with the dictionary's likeliest reading (很长 hen chang)."""
+    """Writes OUT: each word and character of 白霜's dictionary (rime-frost-schemas.zip) that pypinyin reads
+    otherwise than the dictionary does, with the dictionary's likeliest reading (很长 hen chang; 嗯 en, where
+    pypinyin has n, which Rime doesn't take)."""
     import zipfile
 
     from pypinyin import Style, lazy_pinyin
@@ -270,12 +271,7 @@ def make_readings(frost_zip, out):
             body = z.read(f"cn_dicts/{name}.dict.yaml").decode().split("\n...\n", 1)[1]
             for line in body.splitlines():
                 p = line.split("\t")
-                if (
-                    len(p) < 2
-                    or line.startswith("#")
-                    or len(p[0]) < 2
-                    or not HAN_RUN.fullmatch(p[0])
-                ):
+                if len(p) < 2 or line.startswith("#") or not HAN_RUN.fullmatch(p[0]):
                     continue
                 weight = int(p[2]) if len(p) > 2 and p[2].isdigit() else 0
                 r = reads.setdefault(p[0], {})
@@ -287,23 +283,18 @@ def make_readings(frost_zip, out):
                 f.write(f"{w}\t{max(r, key=r.get)}\n")
                 n += 1
     print(
-        f"readings: {n} of {len(reads)} words read otherwise than pypinyin", flush=True
+        f"readings: {n} of {len(reads)} words and characters read otherwise than pypinyin",
+        flush=True,
     )
 
 
 def use_readings(path):
-    """pypinyin reads the words of make_readings()'s file as 白霜's dictionary does."""
-    from pypinyin import load_phrases_dict
+    """pypinyin reads the words and characters of make_readings()'s file as 白霜's dictionary does."""
+    from pypinyin import load_phrases_dict, load_single_dict
 
-    load_phrases_dict(
-        {
-            w: [[x] for x in r.split(" ")]
-            for w, r in (
-                l.split("\t")
-                for l in Path(path).read_text(encoding="utf-8").splitlines()
-            )
-        }
-    )
+    rows = [l.split("\t") for l in Path(path).read_text(encoding="utf-8").splitlines()]
+    load_phrases_dict({w: [[x] for x in r.split(" ")] for w, r in rows if len(w) > 1})
+    load_single_dict({ord(w): r for w, r in rows if len(w) == 1})
 
 
 def syllables(text):

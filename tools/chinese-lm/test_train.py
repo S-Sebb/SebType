@@ -72,18 +72,26 @@ print(
     f"PASS pack: 重 of 重庆 is chong in {len(typed)} examples, {len(cut_keys)} cut; {records} loader examples"
 )
 
-# 白霜's readings override pypinyin's (common.use_readings): 很长 is hen chang, not hen zhang.
+# 白霜's readings override pypinyin's (common.use_readings): 很长 is hen chang, not hen zhang, and 嗯 is en, not
+# n (Rime has no n for it).
 import tempfile
+import zipfile
 
 import common
 
-before = common.reading("这条路很长")
-with tempfile.NamedTemporaryFile("w", suffix=".tsv", encoding="utf-8") as f:
-    f.write("很长\then chang\n")
-    f.flush()
-    common.use_readings(f.name)
-after = common.reading("这条路很长")
-assert after[-2:] == ["hen", "chang"], after
+before = common.reading("嗯这条路很长")
+with tempfile.TemporaryDirectory() as d:
+    # A stand-in for rime-frost-schemas.zip: its word lists, with their header.
+    with zipfile.ZipFile(f"{d}/frost.zip", "w") as z:
+        for name in common.FROST_DICTS:
+            z.writestr(
+                f"cn_dicts/{name}.dict.yaml",
+                "---\nname: x\n...\n" + "嗯\ten\t10\n很长\then chang\t5\n",
+            )
+    common.make_readings(f"{d}/frost.zip", f"{d}/readings.tsv")
+    common.use_readings(f"{d}/readings.tsv")
+after = common.reading("嗯这条路很长")
+assert after[0] == "en" and after[-2:] == ["hen", "chang"], after
 print(
-    f"PASS readings: 这条路很长 read {' '.join(before)} by pypinyin, {' '.join(after)} with 白霜's"
+    f"PASS readings: 嗯这条路很长 read {' '.join(before)} by pypinyin, {' '.join(after)} with 白霜's"
 )
