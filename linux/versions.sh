@@ -92,7 +92,8 @@ librime_unpack() {
   for p in librime librime-lua librime-octagram; do
     rpm=$(librime_rpm "$p")
     [[ -f $rpm ]] || "$(dirname "${BASH_SOURCE[0]}")/build-librime.sh" >/dev/null || return 1
-    rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet) || return 1
+    # cpio stops at the archive trailer; the rest is drained so rpm2cpio doesn't die of SIGPIPE under pipefail.
+    rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet; s=$?; cat >/dev/null; exit $s) || return 1
   done
 }
 librime_mounts() {

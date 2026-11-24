@@ -3,10 +3,12 @@
 # phone runs (Lua and octagram loaded) and gives top-1 / top-3 for each, for rime-ice as #8 bundled it
 # and for SebType's data from data/rime/build.sh. The two typo sets (#46, make-typos.py) are
 # typed with the phone's and the PCs' keyboard model. Run it before changing the Chinese data and put
-# the table in the PR. Takes about 7 minutes.
+# the table in the PR. Takes about 7 minutes, plus librime's build the first time.
 #   data/rime/bench/bench.sh      table in ~/scratch/SebType/<issue>/rime-bench.md, ranks in rime-bench/ next to it
 # Runs SebType's librime and plugins (linux/build-librime.sh's, as setup installs them), not the ones
-# installed: a system update can put Fedora's back (#522). Needs gcc, rpm2cpio and Fedora's librime's libraries.
+# installed: a system update can put Fedora's back (#522). Needs gcc, unzip, rpm2cpio and Fedora's librime's
+# libraries; with no cached RPMs it builds them first (yanglab16 or podman). The cache is keyed by
+# LIBRIME_SEBTYPE_RELEASE: bump it after changing engines/librime, or the benches run the old build.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/../../.."
@@ -20,7 +22,7 @@ OLD_URL=https://github.com/iDvel/rime-ice/releases/download/2026.06.30/full_comp
 OLD_SHA256=ae810e0023f28d3eb45ff98a7c58830dd0b505c2272638a321fa6d5a6f5d5418
 SETS=(chat-sent chat-abbr chat-partial news-sent news-abbr news-partial typo-phone typo-pc)
 
-for x in gcc rpm2cpio cpio curl; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
+for x in gcc unzip rpm2cpio cpio curl; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 work=$(mktemp -d "$cache/rime-bench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
@@ -36,7 +38,7 @@ if ! echo "$OLD_SHA256  $old" | sha256sum -c --status 2>/dev/null; then
   curl --limit-rate 35M -fsSL -o "$old.part" "$OLD_URL" && echo "$OLD_SHA256  $old.part" | sha256sum -c --status && mv "$old.part" "$old" ||
     { echo "preflight: can't fetch rime-ice's full_compiled.zip"; exit 1; }
 fi
-gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -Wl,-rpath,"${librime%/*}" -ldl
+gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -Wl,--disable-new-dtags,-rpath,"${librime%/*}" -ldl
 
 mkdir -p "$work/rime-ice" "$work/sebtype"
 unzip -q "$old" -d "$work/rime-ice"

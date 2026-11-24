@@ -11,8 +11,8 @@
 # alone must keep getting right (the context column is the model harness's).
 #   data/rime/bench/slips.sh     one line per check; ranks in ~/scratch/SebType/<issue>/slips/
 # Runs SebType's librime and plugins (linux/build-librime.sh's, as setup installs them), not the ones
-# installed: a system update can put Fedora's back (#522). Needs gcc, rpm2cpio and Fedora's librime's
-# libraries. About a minute.
+# installed: a system update can put Fedora's back (#522). Needs gcc, unzip, rpm2cpio and Fedora's librime's
+# libraries. About a minute, plus librime's build the first time (see bench.sh).
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/../../.."
@@ -25,11 +25,12 @@ mkdir -p "$out" "$SCRATCH/cache"
 for x in gcc unzip rpm2cpio cpio; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 work=$(mktemp -d "$SCRATCH/cache/slips.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-mkdir "$work/librime" && librime_unpack "$work/librime" 2> "$out/librime.log" || { echo "preflight: linux/build-librime.sh failed, see $out/librime.log"; exit 1; }
+mkdir "$work/librime" && librime_unpack "$work/librime" 2> "$out/librime.log" ||
+  { echo "preflight: linux/build-librime.sh failed, see $out/librime.log"; exit 1; }
 librime=$work/librime/usr/lib64/librime.so.1 plugins=$work/librime/usr/lib64/rime-plugins
 data=$(timeout 600 data/rime/build.sh "$work/assets" 2> "$out/build.log") ||
   { echo "preflight: data/rime/build.sh failed, see $out/build.log"; exit 1; }
-gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -Wl,-rpath,"${librime%/*}" -ldl 2> "$out/gcc.log" ||
+gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -Wl,--disable-new-dtags,-rpath,"${librime%/*}" -ldl 2> "$out/gcc.log" ||
   { echo "preflight: rimebench doesn't build, see $out/gcc.log"; exit 1; }
 unzip -q "$data" -d "$work/data"
 mkdir "$work/user"
