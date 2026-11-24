@@ -44,16 +44,17 @@ private:
     // Brings sequence 0 to PREFIX, decoding only what the cache doesn't hold; returns the logits after it.
     const float *advance(const std::vector<int> &prefix);
     // Decodes each of FOLLOWERS on a sequence of its own, after sequence 0's tokens before its place in FROM
-    // (default: all of them), with logits at every token, and returns their indices for llama_get_logits_ith.
-    // The branches are gone at the next call.
+    // (empty: all of them), with logits only at the tokens READ marks, and returns their indices for
+    // llama_get_logits_ith. The branches are gone at the next call.
     std::vector<std::vector<int>> branch(const std::vector<std::vector<int>> &followers,
-                                         const std::vector<size_t> &from = {});
+                                         const std::vector<size_t> &from,
+                                         const std::vector<std::vector<bool>> &read);
     // What is read from a row of logits, in one pass over the vocabulary, which costs 0.5 ms on a phone's
     // little cores (#406): its normaliser, log P(the word before ends here), and the likeliest piece continuing
     // that word (-1 if none).
     struct Row {
         float top;
-        double log;
+        float log;
         float end;
         int next;
     };

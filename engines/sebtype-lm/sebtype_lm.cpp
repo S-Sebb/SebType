@@ -244,7 +244,8 @@ void Model::dropBranches() {
 }
 
 std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> &followers,
-                                           const std::vector<size_t> &from) {
+                                           const std::vector<size_t> &from,
+                                           const std::vector<std::vector<bool>> &read) {
     // A tree: followers that start alike at the same place share those tokens, decoded once on all their
     // sequences.
     llama_memory_t mem = llama_get_memory(mCtx);
@@ -253,6 +254,7 @@ std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> 
     std::vector<std::vector<int>> index(followers.size()), seqs;
     std::vector<int> tokens;
     std::vector<size_t> pos;
+    std::vector<bool> logits;
     for (size_t i = 0; i < followers.size(); i++) {
         if (followers[i].empty()) continue;
         const size_t start = from.empty() ? mCached.size() : from[i];
@@ -262,7 +264,10 @@ std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> 
         for (int t : followers[i]) {
             path.second.push_back(t);
             auto [it, added] = node.emplace(path, tokens.size());
-            if (added) tokens.push_back(t), pos.push_back(start + path.second.size() - 1), seqs.emplace_back();
+            if (added)
+                tokens.push_back(t), pos.push_back(start + path.second.size() - 1), seqs.emplace_back(),
+                    logits.push_back(false);
+            if (read[i][path.second.size() - 1]) logits[it->second] = true;
             seqs[it->second].push_back(seq);
             index[i].push_back(it->second);
         }
@@ -274,7 +279,7 @@ std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> 
         batch.pos[k] = pos[k];
         batch.n_seq_id[k] = seqs[k].size();
         for (size_t j = 0; j < seqs[k].size(); j++) batch.seq_id[k][j] = seqs[k][j];
-        batch.logits[k] = true;
+        batch.logits[k] = logits[k];
     }
     batch.n_tokens = tokens.size();
     const int status = llama_decode(mCtx, batch);
@@ -285,10 +290,10 @@ std::vector<std::vector<int>> Model::branch(const std::vector<std::vector<int>> 
 
 Model::Row Model::row(const float *logits) const {
     const float top = *std::max_element(logits, logits + mVocabSize);
-    double sum = 0, end = 0;
+    float sum = 0, end = 0;
     int next = -1;
     for (int t = 0; t < mVocabSize; t++) {
-        const double p = std::exp(logits[t] - top);
+        const float p = std::exp(logits[t] - top);
         sum += p;
         if (mEndsWord[t]) end += p;
         else if (next < 0 || logits[t] > logits[next]) next = t;
@@ -331,7 +336,9 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
         std::vector<std::vector<int>> followers;
         for (const Path &p : paths) followers.push_back(p.pieces);
         dropBranches();
-        const auto index = branch(followers);
+        std::vector<std::vector<bool>> read;
+        for (const auto &f : followers) read.emplace_back(f.size()), read.back().back() = true;
+        const auto index = branch(followers, {}, read);
         std::vector<Path> longer;
         for (size_t i = 0; i < paths.size(); i++) {
             const Row r = row(llama_get_logits_ith(mCtx, index[i].back()));
@@ -371,8 +378,8 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     const float *logits = advance(prefix);
 
     // Each word is read after a hint of its own, as in training: <T>, its letters, <S>, its pieces, and then
-    // whether it ends there. The pieces' probabilities are summed; the hints' aren't, nor the next word's
-    // start, which its own hint stands for.
+    // whether it ends there (but see below). The pieces' probabilities are summed; the hints' aren't, nor the
+    // next word's start, which its own hint stands for.
     // - A contraction typed without its apostrophe (could've for "couldve"): the keyboard's letters have no
     //   apostrophe to type, so its hint has it, as training's examples of the word nearly always did (#561).
     // - A candidate of several words ("could be" for "couldve"): each further word's hint holds the letters
@@ -387,6 +394,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     std::vector<std::vector<Term>> terms(words.size());
     std::vector<float> out(words.size(), 0);
     std::vector<size_t> contractions;
+    std::vector<std::vector<int>> spelt(words.size());  // each word's pieces, without hints
     for (size_t i = 0; i < words.size(); i++) {
         std::vector<int> &f = followers[i];
         size_t used = 0;  // the typed letters the words so far took
@@ -414,9 +422,19 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             const auto pieces = tokenize(w, false);
             if (pieces.empty()) out[i] = -INFINITY;
             for (int t : pieces) terms[i].push_back({int(f.size()) - 1, t}), f.push_back(t);
+            spelt[i].insert(spelt[i].end(), pieces.begin(), pieces.end());
             start = space + 1;
         }
-        terms[i].push_back({int(f.size()) - 1, -1});
+    }
+    // Where a word ends is read only for the typed word, which the others must beat, and for a word another
+    // continues (don, don't): elsewhere it changes little and would cost a decoded token per word, which
+    // doubled the time a key takes (#561).
+    for (size_t i = 0; i < words.size(); i++) {
+        const bool continued = std::any_of(spelt.begin(), spelt.end(), [&](const std::vector<int> &o) {
+            return o.size() > spelt[i].size() && std::equal(spelt[i].begin(), spelt[i].end(), o.begin());
+        });
+        if (i + 1 == words.size() || continued) terms[i].push_back({int(followers[i].size()) - 1, -1});
+        else if (!followers[i].empty()) followers[i].pop_back();  // its last piece: no term reads after it
     }
     // The keys typed are a contraction's letters as much as the typed word's, so they can't tell the two
     // apart, and the model, which copies a hint it knows, would score the contraction as typed in full in any
@@ -447,7 +465,13 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     for (size_t i = 0; i < terms.size(); i++)
         for (const Term &t : terms[i])
             if (t.after < 0) out[i] += t.token < 0 ? hint.end : logSoftmax(logits, t.token, hint);
-    const auto index = branch(followers, from);
+    std::vector<std::vector<bool>> read;  // the follower tokens whose logits a term reads
+    for (size_t i = 0; i < followers.size(); i++) {
+        read.emplace_back(followers[i].size());
+        for (const Term &t : terms[i])
+            if (t.after >= 0) read[i][t.after] = true;
+    }
+    const auto index = branch(followers, from, read);
     std::map<int, Row> rows;  // by batch index: words that start alike share their first pieces' rows
     for (size_t i = 0; i < terms.size(); i++)
         for (const Term &t : terms[i]) {
