@@ -201,9 +201,9 @@ def standard(word, sentence_start, chat=False):
     if "'" not in low and bare and intended(low) != low:
         w = intended(low)
         word = w[0].upper() + w[1:] if word[0].isupper() else w
-    # At a sentence start a capital first letter, the rest as spelt: "D'Estaing" (the dictionary's d'Estaing),
-    # but "iPhone" stays.
-    if sentence_start and word[0].islower() and (word.islower() or "'" in word):
+    # At a sentence start a capital first letter, the rest as spelt, if all before any apostrophe is lowercase:
+    # "D'Estaing" (the dictionary's d'Estaing), "Don't", but "iPhone" and "iPhone's" stay.
+    if sentence_start and word.split("'", 1)[0].islower():
         word = word[0].upper() + word[1:]
     return word
 

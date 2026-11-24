@@ -276,6 +276,15 @@ def bar(path, today_path):
     return ok
 
 
+def wrong_case(row, wrong):
+    """Whether ROW committed its target in another case, with a letter WRONG(committed, target)."""
+    return (
+        row[2] != row[1]
+        and row[2].lower() == row[1].lower()
+        and any(wrong(c, t) for c, t in zip(row[2], row[1]))
+    )
+
+
 def main(run_dir):
     summary = {}
     for f in sorted(Path(run_dir).glob("*.tsv")):
@@ -303,16 +312,12 @@ def main(run_dir):
                     ("capitalised", lambda c, t: c.isupper() and t.islower()),
                     ("lowercased", lambda c, t: c.islower() and t.isupper()),
                 ):
-                    s[k] = sum(
-                        r[2] != r[1]
-                        and r[2].lower() == r[1].lower()
-                        and any(wrong(c, t) for c, t in zip(r[2], r[1]))
-                        for r in rows
-                    )
-                s["lowercased I"] = sum(
-                    r[2] != r[1] and r[2].lower() == r[1].lower() and r[1] in I_FORMS
-                    for r in rows
-                )
+                    s[k] = sum(wrong_case(r, wrong) for r in rows)
+                    if k == "lowercased":
+                        # A part of lowercased: "I'M" for "I'm" gained a capital, it lost none.
+                        s["lowercased I"] = sum(
+                            wrong_case(r, wrong) for r in rows if r[1] in I_FORMS
+                        )
                 if set_name == "homographs":
                     # Keeping every typed word fixes most rows: the rows that keep it and those that restore
                     # the apostrophe are barred apart.

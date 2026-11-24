@@ -161,10 +161,12 @@ got = [
     written(("a " * 149) + "and YOU'RE late")[-2],  # the cut is mid-sentence
     written("It was 1898. D'Estaing replaced him.")[2].split()[0],
     pack.standard("D'Estaing", True),
+    pack.standard("iPhone's", True),
+    pack.standard("eBay's", True),
 ]
 check(
-    "examples: a sentence start at a cut, and D'Estaing's spelling",
-    got == ["You're", "you're", "D'Estaing", "D'Estaing"],
+    "examples: a sentence start at a cut, and D'Estaing's, iPhone's and eBay's spelling",
+    got == ["You're", "you're", "D'Estaing", "D'Estaing", "iPhone's", "eBay's"],
     got,
 )
 check(
@@ -301,6 +303,25 @@ good = json.loads(json.dumps(aosp))
 for k in ("contractions", "apostrophes", "homographs"):
     good[k]["lowercased"] = 0
 good["capitals"].update({"lowercased": 53, "lowercased I": 50})
+
+
+# A lost capital, "I'M" for "I'm" (a gained one, not lowercased I) and "i" for "I" (both).
+with (
+    tempfile.TemporaryDirectory() as d,
+    contextlib.redirect_stdout(io.StringIO()) as out,
+):
+    rows = [("bob", "Bob", "bob"), ("im", "I'm", "I'M"), ("i", "I", "i")]
+    (Path(d) / "core.capitals.tsv").write_text(
+        "".join("\t".join(r) + "\t\t1\n" for r in rows)
+    )
+    score.main(d)
+got = json.loads(out.getvalue())["core"]["capitals"]
+got = [got[k] for k in ("capitalised", "lowercased", "lowercased I")]
+check(
+    "score: lowercased I counts only I's forms that lost a capital",
+    got == [1, 2, 1],
+    got,
+)
 
 
 def passes(change):
