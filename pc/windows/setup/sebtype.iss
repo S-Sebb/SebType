@@ -184,6 +184,18 @@ Source: "{#In}\rime-data\rime-data.zip"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\sebtype-configurator\sebtype-configurator.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PythonDir}\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs
 Source: "{#Pictures}\sebtype.ico"; DestDir: "{app}"; Flags: ignoreversion
+; The licences of what SebType ships (#544): its own, those of the libraries in rime.dll and the server (their
+; builds collect them; Mozc's protobuf and Abseil are under the same), and Mozc's with its dictionary's sources, the
+; texts the phone ships. Python's is in python\.
+Source: "{#Repo}\LICENSE-SebType"; DestDir: "{app}\licenses"; DestName: "SebType-LICENSE.txt"; Flags: ignoreversion
+Source: "{#Repo}\NOTICE"; DestDir: "{app}\licenses"; DestName: "SebType-NOTICE.txt"; Flags: ignoreversion
+Source: "{#Repo}\LICENSE-LGPL-2.1"; DestDir: "{app}\licenses"; DestName: "LGPL-2.1.txt"; Flags: ignoreversion
+Source: "{#Rime}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "{#Service}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "{#Repo}\engines\mozc\LICENSE"; DestDir: "{app}\licenses"; DestName: "Mozc-LICENSE.txt"; Flags: ignoreversion
+Source: "{#Repo}\engines\mozc\src\data\dictionary_oss\README.txt"; DestDir: "{app}\licenses"; DestName: "Mozc-dictionary-LICENSE.txt"; Flags: ignoreversion
+Source: "{#Repo}\android\native\src\main\assets\licenses\Japanese-usage-dictionary-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "{#Repo}\android\native\src\main\assets\licenses\Japan-Post-zipcode-NOTICE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 ; The uninstaller's look: it runs from {app}, without Setup's own files.
 Source: "{#Pictures}\cloth.png"; DestDir: "{app}\look"; Flags: ignoreversion
 Source: "{#Pictures}\small-1.png"; DestDir: "{app}\look"; Flags: ignoreversion

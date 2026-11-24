@@ -3,8 +3,8 @@
 # -Rime holds SebType's librime as pc/windows/rime/build.ps1 leaves it (include\, lib\rime.lib,
 # rime.dll). Needs Visual Studio 2022 with C++, vcpkg ($env:VCPKG_INSTALLATION_ROOT), Python and curl
 # (GitHub's windows-2022 runner has them; .github/workflows/windows-setup.yml runs this). Writes
-# sebtype-server.exe and sebtype.dll (64-bit), x86\sebtype.dll (for 32-bit apps) and 中文's model chinese.gguf
-# to -Out.
+# sebtype-server.exe and sebtype.dll (64-bit), x86\sebtype.dll (for 32-bit apps), 中文's model chinese.gguf
+# and licenses\, the licences of what the server links in, to -Out.
 param(
   [Parameter(Mandatory = $true)][string]$Rime,
   [string]$Out = (Join-Path $PSScriptRoot '..\build\windows'),
@@ -55,3 +55,13 @@ Invoke-Checked 'build x86' { cmake --build "$Work\x86" --config Release --parall
 
 Copy-Item "$Work\x64\Release\sebtype-server.exe", "$Work\x64\Release\sebtype.dll", "$src\..\engines\sebtype-lm\chinese.gguf" $Out -Force
 Copy-Item "$Work\x86\Release\sebtype.dll" "$Out\x86" -Force
+
+# The licences of what the server links in (#544): llama.cpp's (ggml's too) with the notices of the code ggml
+# took from llamafile and YaRN, as the phone has them, and each vcpkg package's (protobuf with Abseil and
+# utf8_range, OpenCC with marisa-trie, darts-clone and RapidJSON).
+$licences = New-Item -ItemType Directory -Force "$Out\licenses"
+Copy-Item "$llama\LICENSE" "$licences\llama.cpp-LICENSE.txt"
+Copy-Item "$src\..\android\native\src\main\assets\licenses\Llamafile-sgemm-LICENSE.txt", "$src\..\android\native\src\main\assets\licenses\YaRN-LICENSE.txt" $licences
+foreach ($c in Get-ChildItem "$vcpkg\installed\x64-windows-static\share\*\copyright") {
+  Copy-Item $c "$licences\$($c.Directory.Name)-LICENSE.txt"
+}

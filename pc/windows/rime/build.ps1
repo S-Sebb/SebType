@@ -5,8 +5,9 @@
 # Needs Visual Studio 2022 with C++, git, 7z and Git's bash (GitHub's windows-2022 runner has them all;
 # .github/workflows/windows-setup.yml runs this). The third-party code SebType doesn't change is fetched at
 # pinned commits: librime's dependencies and plugins, and plum. Boost's headers are downloaded into
-# $env:BOOST_ROOT when they aren't there yet. Writes to -Out rime\ (rime.dll, lib\rime.lib, include\ and
-# data\, Rime's shared data with OpenCC's) for windows/build.ps1 and SebType's setup, and perf-rime.exe
+# $env:BOOST_ROOT when they aren't there yet. Writes to -Out rime\ (rime.dll, lib\rime.lib, include\,
+# data\, Rime's shared data with OpenCC's, and licenses\, the licences of what rime.dll carries) for
+# windows/build.ps1 and SebType's setup, and perf-rime.exe
 # (pc/linux/perf-rime.c) for pc/windows/perf-rime.ps1.
 param(
   [string]$Out = (Join-Path $PSScriptRoot '..\..\..\build\rime'),
@@ -17,7 +18,8 @@ Set-StrictMode -Version Latest
 
 $RimeVersion = '1.16.1'
 # What librime $RimeVersion's submodules pin, and the plugins its own Windows release merges into
-# rime.dll, at the commits its version-info.txt names (rime-ice's Lua needs librime-lua).
+# rime.dll, at the commits its version-info.txt names (rime-ice's Lua needs librime-lua); octagram at the
+# phone's commit, BSD-3-Clause since its relicence (#544).
 $RimeDeps = @(
   @{ Dir = 'deps\glog'; Repo = 'google/glog'; Commit = '7b134a5c82c0c0b5698bb6bf7a835b230c5638e4' }
   @{ Dir = 'deps\leveldb'; Repo = 'google/leveldb'; Commit = '99b3c03b3284f5886f9ef9a4ef703d57373e61be' }
@@ -25,7 +27,7 @@ $RimeDeps = @(
   @{ Dir = 'deps\opencc'; Repo = 'BYVoid/OpenCC'; Commit = '556ed22496d650bd0b13b6c163be9814637970ae' }
   @{ Dir = 'deps\yaml-cpp'; Repo = 'jbeder/yaml-cpp'; Commit = '2f86d13775d119edbb69af52e5f566fd65c6953b' }
   @{ Dir = 'plugins\lua'; Repo = 'hchunhui/librime-lua'; Commit = '68f9c364a2d25a04c7d4794981d7c796b05ab627' }
-  @{ Dir = 'plugins\octagram'; Repo = 'lotem/librime-octagram'; Commit = 'dfcc15115788c828d9dd7b4bff68067d3ce2ffb8' }
+  @{ Dir = 'plugins\octagram'; Repo = 'lotem/librime-octagram'; Commit = '57d18b9f58e5284bd891d559f6bdd16cf60341e9' }
 )
 # rime/plum at the commit Weasel 0.17.4 pinned, which fetches Rime's preset data, as SebType shipped it before #190.
 $PlumCommit = 'cab9ed35289f2022b6888503750d2dfb1851dbe0'
@@ -90,6 +92,26 @@ try {
   Copy-Item dist\lib\rime.lib "$rime\lib"
   Copy-Item dist\include\rime_*.h "$rime\include"
   Copy-Item share\opencc\* "$rime\data\opencc"
+
+  # The licences of what rime.dll carries (#544), from the sources it was built from; the phone's copies
+  # (android/native/src/main/assets/licenses) where the sources have none: OpenCC's bundled RapidJSON, and
+  # Boost's, whose headers are kept without it.
+  $assets = Join-Path $PSScriptRoot '..\..\..\android\native\src\main\assets\licenses'
+  $licences = @{
+    'librime' = 'LICENSE'; 'librime-lua' = 'plugins\lua\LICENSE'; 'librime-octagram' = 'plugins\octagram\LICENSE'
+    'glog' = 'deps\glog\COPYING'; 'LevelDB' = 'deps\leveldb\LICENSE'; 'marisa-trie' = 'deps\marisa-trie\COPYING.md'
+    'OpenCC' = 'deps\opencc\LICENSE'; 'yaml-cpp' = 'deps\yaml-cpp\LICENSE'
+    'darts-clone' = 'include\COPYING.darts-clone'  # librime's and OpenCC's
+    'RapidJSON' = "$assets\RapidJSON-LICENSE.txt"; 'Boost' = "$assets\Boost-LICENSE.txt"
+  }
+  New-Item -ItemType Directory "$rime\licenses" | Out-Null
+  foreach ($name in $licences.Keys) { Copy-Item $licences[$name] "$rime\licenses\$name-LICENSE.txt" }
+  # Lua's notice ends lua.h; the X11 keysym names' is lines 2-46 of keysymdef.h, as the phone takes it.
+  $lua = Get-Content plugins\lua\thirdparty\lua5.4\lua.h
+  $from = ($lua | Select-String -SimpleMatch '* Copyright (C)' | Select-Object -Last 1).LineNumber - 1
+  $lua[$from..($lua.Count - 1)] | Where-Object { $_ -match '^\* ?' -and $_ -notmatch '^\*{5}' } |
+    ForEach-Object { $_ -replace '^\* ?', '' } | Set-Content "$rime\licenses\Lua-LICENSE.txt"
+  (Get-Content include\X11\keysymdef.h)[1..45] | Set-Content "$rime\licenses\X11-keysym-LICENSE.txt"
 } finally {
   Pop-Location
 }

@@ -14,7 +14,9 @@ phone's icon at every Windows size. `setup/pictures.py` draws the pictures from 
 `pc/icons`. The run builds what the installer packs in parallel jobs: SebType's librime (`rime/build.ps1`), the text
 service and its server (`windows/build.ps1`), the Chinese data (`data/rime/build.sh`, on Fedora for librime
 1.16.1), Mozc (`mozc/build.ps1`, cached until its inputs change) and the Configurator
-(`configurator.yml`).
+(`configurator.yml`). The licences of what it installs go in `licenses\` in SebType's folder (#544): SebType's own,
+those `rime/build.ps1` and `windows/build.ps1` collect from what they build into `rime.dll` and the server, and
+Mozc's with its dictionary's sources; Python's stays in `python\`.
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
 first dialog lets the person pick. Its pages are the welcome, the languages (English, 中文 and 日本語, each
