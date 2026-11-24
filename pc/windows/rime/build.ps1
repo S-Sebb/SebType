@@ -4,12 +4,11 @@
 #   pc/windows/rime/build.ps1 [-Out <dir>] [-Work <dir>]
 # Needs Visual Studio 2022 with C++, git, 7z and Git's bash (GitHub's windows-2022 runner has them all;
 # .github/workflows/windows-setup.yml runs this). The third-party code SebType doesn't change is fetched at
-# pinned commits: librime's dependencies and plugins, and plum. Boost's headers are downloaded into
-# $env:BOOST_ROOT when they aren't there yet. Writes to -Out rime\ (rime.dll, lib\rime.lib, include\,
-# data\, Rime's shared data with OpenCC's, and licenses\, the licences of what rime.dll carries and of the
-# shared data) for
-# windows/build.ps1 and SebType's setup, and perf-rime.exe
-# (pc/linux/perf-rime.c) for pc/windows/perf-rime.ps1.
+# pinned commits: librime's dependencies and plugins, and plum with its preset packages. Boost's headers are
+# downloaded into $env:BOOST_ROOT when they aren't there yet. Writes to -Out rime\ (rime.dll, lib\rime.lib,
+# include\, data\, Rime's shared data with OpenCC's, and licenses\, the licences of what rime.dll carries and
+# of the shared data) for windows/build.ps1 and SebType's setup, and perf-rime.exe (pc/linux/perf-rime.c) for
+# pc/windows/perf-rime.ps1.
 param(
   [string]$Out = (Join-Path $PSScriptRoot '..\..\..\build\rime'),
   [string]$Work = (Join-Path $PSScriptRoot '..\..\..\build\rime-src')
@@ -32,6 +31,16 @@ $RimeDeps = @(
 )
 # rime/plum at the commit Weasel 0.17.4 pinned, which fetches Rime's preset data, as SebType shipped it before #190.
 $PlumCommit = 'cab9ed35289f2022b6888503750d2dfb1851dbe0'
+# Its preset packages (preset-packages.conf), which plum itself takes at their heads: at the heads of 2026-11-24 (#553).
+$PlumPackages = [ordered]@{
+  'bopomofo' = '6085c9a38a4a728047862b33d67eee18aa86f3b9'
+  'cangjie' = 'fcb3d7dd94ac1304663d575727d24d8107f6b082'
+  'essay' = 'd95eeae056df429ecf993038c325a216f0b28c5b'
+  'luna-pinyin' = '84685a7e7793e43278ca29368977b79d74d37a03'
+  'prelude' = '082425ea0684bca36474415d4a0e8db9b016487e'
+  'stroke' = '1e8fff9b9494ddec23b0cbc526bcfd8171a6fd48'
+  'terra-pinyin' = '723e51bc266cf9464530c1ddedb856aa18e3da34'
+}
 $LuaSourceCommit = '9e5bb71db1544913f8005dadc3df8439c00d08b7'  # librime-lua's thirdparty branch
 $BoostVersion = '1.84.0'
 
@@ -120,18 +129,21 @@ try {
 # Rime's shared data: plum's preset recipes (prelude, essay and the stock schemas), as Weasel's build
 # fetched them, with Git's bash and relative paths as Weasel's build.bat ran it.
 Get-Commit rime/plum $PlumCommit "$Work\plum"
+# Each package at its pin where plum looks for it; no_update below has plum install it as found.
+foreach ($name in $PlumPackages.Keys) { Get-Commit "rime/rime-$name" $PlumPackages[$name] "$Work\plum\package\rime\$name" }
 Push-Location $Work
 try {
   $env:plum_dir = 'plum'
   $env:rime_dir = 'data'
+  $env:no_update = '1'
   # Git's own bash (git.exe is in Git\cmd), not WSL's, which System32 may put first.
   $bash = Join-Path (Split-Path (Split-Path (Get-Command git).Source)) 'bin\bash.exe'
   Invoke-Checked 'fetch Rime data' { & $bash plum/rime-install }
   if (-not (Test-Path data\essay.txt)) { throw "plum didn't fetch Rime's data" }
   Copy-Item -Recurse -Force data\* "$Out\rime\data"
-  # Each preset package's licence (LGPL-3.0), next to rime.dll's.
+  # Each preset package's licence (LGPL-3.0), next to rime.dll's; a package plum added would have none.
   $packages = Get-ChildItem plum\package\rime -Directory
-  if (-not $packages) { throw "plum fetched no packages" }
+  if (Compare-Object $packages.Name @($PlumPackages.Keys)) { throw "plum's packages aren't the pinned ones: $($packages.Name)" }
   foreach ($p in $packages) { Copy-Item "$($p.FullName)\LICENSE" "$Out\rime\licenses\rime-$($p.Name)-LICENSE.txt" }
 } finally {
   Pop-Location
