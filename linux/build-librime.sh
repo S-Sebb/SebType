@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds SebType's librime RPMs (#101): engines/librime with librime.spec (Fedora's spec), which also builds
 # the plugins (Fedora's own copies, octagram at versions.sh's OCTAGRAM_COMMIT), in the pinned Fedora
-# container. Prints the RPMs' paths, in a folder named by versions.sh's librime_key (LIBRIME_KEY when set).
+# container. Prints the RPMs' paths, in a folder named by versions.sh's librime_key.
 #
 #   linux/build-librime.sh    # -> ~/scratch/SebType/cache/librime/<key>/librime{,-lua,...}-<version>-<release>.x86_64.rpm
 #
@@ -16,9 +16,8 @@ source "$here/versions.sh"
 source "$here/rpm-sources.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$here/../tools/lib.sh"
-# The build host's copy has no git, so the key goes with it.
-key=${LIBRIME_KEY:-$(librime_key)}
-if build_host_ready; then build_remotely "LIBRIME_KEY=$key" linux/build-librime.sh; exit; fi
+if build_host_ready; then build_remotely linux/build-librime.sh; exit; fi
+key=$(librime_key)
 spec=$here/librime.spec cache=$LIBRIME_CACHE
 # rpmbuild's work folder, where Bazel's are (BAZEL_CACHE): on yanglab16 the container's root can't chown
 # what it unpacks on the NAS.

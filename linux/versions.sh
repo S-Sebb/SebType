@@ -92,21 +92,38 @@ sebtype_env() { # <dir>: Fcitx5 finds the add-on there before its own
   echo "FCITX_ADDON_DIRS=$1/usr/lib64/fcitx5:/usr/lib64/fcitx5" "XDG_DATA_DIRS=$1/usr/share:/usr/share"
 }
 # librime_key: a hash of what decides build-librime.sh's RPMs, which it keeps in a folder of that name, so a
-# tree never takes RPMs another tree built from other code.
-librime_key() { sources_key engines/librime linux/librime.spec linux/build-librime.sh linux/rpm-sources.sh linux/versions.sh; }
+# tree never takes RPMs another tree built from other code. The build host's copy has no git: there it is
+# LIBRIME_KEY, which build_remotely brings along.
+librime_key() {
+  if [[ -e $(dirname "${BASH_SOURCE[0]}")/../.git ]]; then
+    sources_key engines/librime linux/librime.spec linux/build-librime.sh linux/rpm-sources.sh linux/versions.sh
+  else
+    [[ ${LIBRIME_KEY:-} ]] || { echo "librime_key: no git and no LIBRIME_KEY (build_remotely sets it)" >&2; return 1; }
+    echo "$LIBRIME_KEY"
+  fi
+}
+# librime_built: prints librime_key, after building the RPMs if they aren't cached.
+librime_built() {
+  local p key
+  key=$(librime_key) || return 1
+  # Marked in use before the check, so build-librime.sh's cleanup of folders no tree used for two weeks can't
+  # take it between the check and the use (unless it picked the folder in this same moment); -c never leaves
+  # an empty file in its place.
+  touch -c "$LIBRIME_CACHE/$key"
+  for p in "${LIBRIME_PACKAGES[@]}"; do
+    [[ -f $(librime_rpm "$key" "$p") ]] && continue
+    LIBRIME_KEY=$key "$(dirname "${BASH_SOURCE[0]}")/build-librime.sh" >&2 || return 1 # its errors go to stdout
+    break
+  done
+  echo "$key"
+}
 # librime_unpack <dir>: SebType's librime and the plugins as librime.spec packages them, from this tree's code
 # (built first if they aren't cached), unpacked into <dir>, for the benches and the dev tools that run
 # Fedora's Rime apps on it. librime_mounts <dir> prints the bwrap arguments that put them over Fedora's for
 # one process alone.
 librime_unpack() {
   local p rpm key
-  key=$(librime_key) || return 1
-  for p in librime librime-lua librime-octagram; do
-    [[ -f $(librime_rpm "$key" "$p") ]] && continue
-    LIBRIME_KEY=$key "$(dirname "${BASH_SOURCE[0]}")/build-librime.sh" >&2 || return 1 # its errors go to stdout
-    break
-  done
-  touch -c "$LIBRIME_CACHE/$key" # in use: build-librime.sh drops the folders no tree used for two weeks
+  key=$(librime_built) || return 1
   for p in librime librime-lua librime-octagram; do
     rpm=$(librime_rpm "$key" "$p")
     # cpio stops at the archive trailer; the rest is drained so rpm2cpio doesn't die of SIGPIPE under pipefail.

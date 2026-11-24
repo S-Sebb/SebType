@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds the Chinese harness and runs today's 中文 (and, given a model, today's 中文 with the model) on every
-# set, here (run.sh starts it on yanglab16). On yanglab16 it runs in the pinned Fedora container
-# (tools/lib.sh, fedora_container) with Fedora's librime and its Lua and octagram plugins, as SebType's Linux
-# build does, in the build lock and under its caps.
+# set, on yanglab16 alone (run.sh starts it there), in the pinned Fedora container (tools/lib.sh,
+# fedora_container) with SebType's librime and its Lua and octagram plugins, which the Linux add-on builds in
+# (linux/build-librime.sh's RPMs, #530), in the build lock and under its caps. Elsewhere it would measure the
+# system's librime, so it stops.
 #
 #   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh RUN_NAME [MODEL.gguf [NAME=VALUE...] [-- NAME=VALUE...]]
 #                                    NAME=VALUE: zhbench's options; after --, those a third stack ("gen", the
@@ -19,18 +20,29 @@ source tools/lib.sh
 here=android/test/chinese-lm
 
 if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
-  # The base build image plus librime's headers, its octagram plugin and the harness's build tools.
   fedora_container
-  if [[ ${#container[@]} -gt 0 ]]; then
-    extra="librime-devel librime-octagram opencc-devel cmake ninja-build"
-    base=${container[-1]}
-    image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$base $extra" | head -c 12)
-    podman image exists "$image" ||
-      podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $base
-RUN dnf -y --setopt=throttle=35M install $extra && dnf clean all" >/dev/null
-    container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
+  ((${#container[@]})) ||
+    { echo "preflight: the Chinese harness runs only on yanglab16 (run.sh starts it there), in its container with SebType's librime" >&2; exit 1; }
+  # The base build image with SebType's librime, its headers and plugins in place of Fedora's (removed first,
+  # so a newer Fedora release can't win), and the harness's build tools.
+  source linux/versions.sh
+  key=$(librime_built)
+  rpms=$(for p in librime librime-lua librime-octagram librime-devel; do basename "$(librime_rpm "$key" $p)"; done)
+  # The label puts the key in the tag's hash (the RPMs' names stay the same when librime changes).
+  dockerfile="FROM ${container[-1]}
+LABEL sebtype.librime=$key
+COPY $(echo $rpms) /rpms/
+RUN rpm -e --nodeps \$(rpm -qa 'librime*') && dnf -y --setopt=throttle=35M install /rpms/*.rpm opencc-devel cmake ninja-build && rm -r /rpms && dnf clean all"
+  image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$dockerfile" | head -c 12)
+  if ! podman image exists "$image"; then
+    podman build -q -t "$image" -f - "$LIBRIME_CACHE/$key" <<<"$dockerfile" >/dev/null
+    # The images of a librime no tree used for two weeks go: build-librime.sh has dropped its RPMs' folder.
+    # An image a bench queued in the build lock will run keeps its folder (librime_built marked it).
+    podman images --format '{{.Repository}}:{{.Tag}} {{index .Labels "sebtype.librime"}}' localhost/sebtype-fedora-zh |
+      while read -r i k; do [[ $k && -d $LIBRIME_CACHE/$k ]] || echo "$i"; done | xargs -r podman rmi >/dev/null 2>&1 || :
   fi
-  # llama.cpp (MIT) is fetched at its pinned commit out here: the container has no git.
+  container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
+  # llama.cpp (MIT) is fetched at its pinned commit out here, before the build lock.
   llama=$(engines/sebtype-lm/fetch-llama.sh)
   # Only the results' paths go to stdout (build_remotely copies what it names back): each set's, which
   # score.py --compare reads, and the summary's last.
@@ -58,7 +70,8 @@ build=$TASK_OUT/chinese/build-$(pwd -P | sha256sum | head -c 8)
 # The data the apps ship (data/rime/build.sh), unpacked as the Linux setup does.
 zip=$(data/rime/build.sh "$work/assets" | tail -1)
 mkdir -p "$work/shared" && unzip -q "$zip" -d "$work/shared"
-cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR="$LLAMA_DIR" > "$out/build.log"
+rpm -q librime librime-lua librime-octagram > "$out/build.log" || : # which librime it runs
+cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR="$LLAMA_DIR" >> "$out/build.log"
 ninja -C "$build" -j "$BUILD_JOBS" zhbench zh_lm_test >> "$out/build.log"
 [[ $model ]] && "$build/zh_lm_test" "$model" | tee -a "$out/test.log" >&2
 

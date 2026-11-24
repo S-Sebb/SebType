@@ -12,7 +12,7 @@
 # a fourth runs the keyboard's own code (core/src/chinese.cpp around Rime, #264). One line per
 # check in ~/scratch/SebType/<issue>/test-chinese-lm-results.txt, the table (docs/experiments/2026-11-16-chinese-lm.md's)
 # in chinese/table.md next to it, logs in chinese/run1/ and run2/. Exit 0 only if all pass. Both runs take about
-# 15 minutes with a model. It never runs on nobara-pc unless SEBTYPE_BUILD_HOST=local.
+# 15 minutes with a model. It runs only on yanglab16 (bench.sh).
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
 source tools/lib.sh
@@ -27,7 +27,7 @@ for s in sent-chat sent-news abbr-chat abbr-news partial-chat partial-news typo 
   [[ -s $here/sets/$s.tsv ]] || { echo "preflight: $here/sets/$s.tsv missing (make_sets.py makes it)"; exit 1; }
 done
 if [[ $BUILD_HOST != local ]] && ! build_host_ready; then
-  echo "preflight: $BUILD_HOST unreachable; the harness doesn't run on $(hostname -s) unless SEBTYPE_BUILD_HOST=local"
+  echo "preflight: $BUILD_HOST unreachable; the harness runs only there"
   exit 1
 fi
 
