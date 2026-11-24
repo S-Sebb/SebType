@@ -57,6 +57,10 @@ if [[ -z ${HOLDING-} ]]; then
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
 fi
 
+# The user's Documents portal stays mounted (user_doc_portal, tools/lib.sh), checked at the end. Gone
+# already, it was something before this run: said and put back, so the end's check is this run's.
+[[ -z ${XDG_RUNTIME_DIR-} ]] || user_doc_portal "before this run" || true
+
 own_env=$(sebtype_env "$own")  # word-split where it is used: Fcitx5 finds SebType's add-on there
 export own_env
 
@@ -523,4 +527,9 @@ check update-check 300 update_check
 
 check setup-ime 900 ../linux/test-setup-ime.sh
 
+cleanup; trap - EXIT  # the sandbox's leftover processes stopped first: one could still unmount it
+if [[ -z ${XDG_RUNTIME_DIR-} ]]; then result SKIP document-portal-kept "no user session (XDG_RUNTIME_DIR)"
+elif o=$(user_doc_portal "during this run"); then result PASS document-portal-kept
+else result FAIL document-portal-kept "$o"
+fi
 ! grep -q '^FAIL' "$results"

@@ -181,3 +181,16 @@ private_dbus() {
     "$rt/masked" > "$rt/bus.conf"
   env "${env[@]}" XDG_RUNTIME_DIR="$link" prlimit --core=1 -- dbus-run-session --config-file="$rt/bus.conf" -- "$@"
 }
+
+# user_doc_portal WHEN: the user's Documents portal is mounted on $XDG_RUNTIME_DIR/doc. A second portal on
+# the user's runtime dir (#176; another project's nested session, S-Sebb/SebChat#905) unmounts it when it
+# ends, and the user's Flatpak apps no longer start. When the mount is gone this says so, restarts the
+# user's portal (the one change to the user's session a test makes) and fails.
+user_doc_portal() {
+  local doc=$XDG_RUNTIME_DIR/doc
+  findmnt -n -t fuse.portal "$doc" > /dev/null && return
+  systemctl --user restart xdg-document-portal.service
+  echo "the user's Documents portal ($doc) was unmounted $1; restarted xdg-document-portal.service:" \
+    "$(findmnt -n -t fuse.portal "$doc" > /dev/null && echo "mounted again" || echo "STILL NOT MOUNTED")"
+  return 1
+}
