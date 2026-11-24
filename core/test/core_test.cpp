@@ -1260,6 +1260,22 @@ TEST_F(ChineseTest, AMisreadingKeepsItsPlaceBehindASentence) {
   EXPECT_LT(std::ranges::find(l, "当"), std::ranges::find(l, "淡")) << testing::PrintToString(l);
 }
 
+// A clause longer than the model's training spans (#563): its beam stops early (庞庞), and that text, which
+// would commit for all 61 letters, comes after Rime's sentence, which spells them all.
+TEST_F(ChineseTest, TheModelsCandidatesThatLeaveLettersOutComeAfterRimesSentence) {
+  const std::string in = "lanbailiangdangpipingzongtongmeiyoubanbulifayuantongguodefaan";
+  const std::string clause = "蓝白两党批评总统没有颁布立法院通过的法案";
+  start({}, [&](FakeRime &r) {
+    r.full[in] = clause;
+    r.spelled[in] = "lan bai liang dang pi ping zong tong mei you ban bu li fa yuan tong guo de fa an";
+  });
+  typeAndWait(in);
+  const auto l = list();
+  const auto rimes = std::ranges::find(l, clause);
+  ASSERT_NE(rimes, l.end()) << testing::PrintToString(l);
+  for (auto it = l.begin(); it != rimes; ++it) EXPECT_GE(it->size(), clause.size()) << testing::PrintToString(l);
+}
+
 // Paging and the arrow keys move the highlight within the model's list (#367): its order stays, and what
 // Space or a flush commits is the candidate highlighted there.
 TEST_F(ChineseTest, TheHighlightMovesWithinTheModelsList) {

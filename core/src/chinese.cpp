@@ -18,6 +18,14 @@
 // fuzzy pinyin off rules out ahead of a word typed as it is. Behind a sentence Rime pieced together (其则么早
 // for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
 // characters' readings in rime-data's sebtype_readings.txt (8105's).
+// The model's own candidates that leave letters out go there too, whatever Rime's first is (#563): its beam may
+// end early (it ends at <E> whenever that is likelier than going on, and trained on spans of at most 14
+// characters it often is on longer input), and plain() favours a short text, as each character costs log
+// probability. Picking one commits it for all the letters typed, so 庞庞 for a clause of 20 syllables loses the
+// rest of the clause. Those are the ones whose characters spell fewer letters than typed, by more than two
+// typos' extra letters, and past 14 syllables, where the model reads input longer than it trained on, those
+// without a character per Rime's syllable (并非常非常 for bingyiyizhongfeichang…). Rime's typo corrections
+// (below) that leave letters out so stay where Rime has them.
 // Picking one of Rime's candidates selects it in Rime by its own index. Picking one of the model's puts it
 // into Rime's user dictionary under the syllables typed when Rime reads them all as whole ones (#518), so it
 // is learned, synced and forgotten as Rime's own picks are, and comes first the next time as they do:
@@ -74,6 +82,7 @@ constexpr float kAloneRankWeight = 2, kAloneOwnPenalty = 3;
 constexpr size_t kPlain = 3;
 constexpr float kPlainWeight = 0.4f, kOwnPlainWeight = 0.5f;
 constexpr size_t kNextWords = 5;
+constexpr size_t kTrainedSpan = 14;  // the model's longest pinyin examples, in characters (tools/chinese-lm/pack.py)
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
 // How long the list shown waits for the model's after a change, so a key changes it once (#450): the phone's
@@ -169,6 +178,16 @@ struct Readings {
         return false;
     }
     return true;
+  }
+
+  // The most letters TEXT's characters spell, by their longest readings ("zhuang" for one they lack).
+  size_t letters(const std::string &text) const {
+    size_t n = 0;
+    for (char32_t c : codePoints(text)) {
+      const auto it = of.find(c);
+      n += it == of.end() ? 6 : std::ranges::max(it->second, {}, &std::string::size).size();
+    }
+    return n;
   }
 };
 
@@ -391,7 +410,7 @@ class Chinese final : public Engine {
     Candidate candidate;
     int rime = -1;           // Rime's index; -1: the model's own
     std::string simplified;  // the model's own: its text as the model wrote it
-    bool misread = false;    // the model's own, reading the letters otherwise than Rime (#503)
+    bool misread = false;    // the model's own, reading the letters otherwise than Rime (#503) or not all (#563)
     std::string code;        // the model's own: the input's syllables to learn it under ("mao gou ji ya", #518)
   };
   // What the worker is asked for: the model's list for Rime's input (empty: next words) after CONTEXT.
@@ -672,7 +691,7 @@ class Chinese final : public Engine {
         if (!job.fix.empty()) {
           TraceSection section("SebType zh fix");
           items = std::move(made);
-          changed = fix(*model, job, context, items, *first, s2t);
+          changed = fix(*model, readings, job, context, items, *first, s2t);
         } else if (job.input.empty()) {
           TraceSection section("SebType zh next");
           for (const auto &w : model->nextWords(context, kNextWords)) items.push_back(own(w.text, job.traditional, s2t));
@@ -739,7 +758,8 @@ class Chinese final : public Engine {
     for (const auto &g : generated) {
       if (std::ranges::any_of(items, [&](const Item &it) { return it.simplified == g.text; })) continue;
       items.push_back(own(g.text, job.traditional, s2t));
-      items.back().misread = job.word && !readings.spell(g.text, job.syllables);
+      items.back().misread =
+          (job.word && !readings.spell(g.text, job.syllables)) || leavesOut(readings, g.text, letters, job.syllables);
       score.push_back(g.logProb - ownPenalty);
     }
     std::vector<size_t> order(items.size());
@@ -761,14 +781,23 @@ class Chinese final : public Engine {
     return out;
   }
 
+  // Whether TEXT leaves some of LETTERS out (#563): its characters spell fewer than typed, by more than two typos
+  // add (a doubled letter each), or past the model's training spans it lacks a character per Rime's syllable.
+  static bool leavesOut(const Readings &readings, const std::string &text, const std::string &letters,
+                        const std::vector<std::string> &syllables) {
+    return readings.letters(text) + 2 < letters.size() ||
+           (syllables.size() > kTrainedSpan && codePoints(text).size() != syllables.size());
+  }
+
   // Puts Rime's correction into the model's list ITEMS, whose first scored FIRST: first when the model is
   // at most kFixLead less sure of it, last on the first page when at most kFixFloor less sure. False if it
   // stays where it is.
-  bool fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
-           Converter &s2t) {
+  bool fix(zh_lm::Model &model, const Readings &readings, const Job &job, const std::string &context,
+           std::vector<Item> &items, float first, Converter &s2t) {
     std::string letters;
     for (char c : job.input)
       if (c != '\'') letters += c;
+    if (leavesOut(readings, job.fix, letters, job.syllables)) return false;  // as the model's own (#563)
     const float lp = model.score(context, letters, {job.fix})[0] - kRankWeight * std::log1p(kOwnRank) +
                      kPlainWeight * model.plain(context, {job.fix})[0];
     size_t at;

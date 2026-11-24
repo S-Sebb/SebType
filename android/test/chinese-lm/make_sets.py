@@ -11,12 +11,14 @@ typed, the text meant, and the note: for typos their kind, for clauses their wor
 | Set | Items | What is typed |
 |---|---|---|
 | sent-chat, sent-news | 800 each | a clause of 2-12 Han characters in full pinyin |
+| long-chat, long-news | 200 each | a clause of 13-25 Han characters in full pinyin, about as many of each length (#563) |
 | abbr-chat, abbr-news | 400 each | a 2-4-character word as its syllables' first letters (zd → 知道) |
 | partial-chat, partial-news | 400 each | a 2-4-character word in full pinyin but its last syllable's first letter (ranh → 然后) |
 | typo | 800 (500 chat, 300 news) | a clause of 2-8 characters with one phone typo or pinyin confusion (10 % two) |
 | next-chat, next-news | 1,500 and 1,000 | nothing: the next word (jieba's) after the text before it |
 """
 
+import itertools
 import random
 import sys
 from pathlib import Path
@@ -51,6 +53,12 @@ def clause_items(rng, pool, lo, hi):
                     out.append((text[max(0, start - CONTEXT) : start], c, sy))
     rng.shuffle(out)
     return out
+
+
+def spread(items, lo, hi):
+    """ITEMS (shuffled), a clause of each length from LO to HI in turn, so long ones aren't drowned out."""
+    by = [[it for it in items if len(it[1]) == n] for n in range(lo, hi + 1)]
+    return [it for row in itertools.zip_longest(*by) for it in row if it]
 
 
 def word_items(rng, pool):
@@ -147,6 +155,19 @@ def main():
         )
         write(out / f"{prefix}next-{src}.tsv", [(c, "", w, "") for c, w in nxt])
     write(out / f"{prefix}typo.tsv", typos)
+    # Clauses longer than the sentence sets' (#563), with a generator of their own so the sets above stay
+    # as they were.
+    rng = random.Random(5630 if dev else 563)
+    for src in ("chat", "news"):
+        long = unique(
+            spread(clause_items(rng, pools[src], 13, 25), 13, 25),
+            int(200 * scale),
+            lambda x: x[1],
+        )
+        write(
+            out / f"{prefix}long-{src}.tsv",
+            [(c, "".join(sy), t, " ".join(jieba.cut(t))) for c, t, sy in long],
+        )
 
 
 if __name__ == "__main__":
