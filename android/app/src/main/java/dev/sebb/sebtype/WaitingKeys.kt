@@ -172,3 +172,21 @@ fun globeTarget(order: List<Int>, lang: Int, quick: Boolean, last: Int): Int {
     if (lang != ENGLISH) return ENGLISH
     return last.takeIf { it in order && it != ENGLISH } ?: order.firstOrNull { it != ENGLISH } ?: ENGLISH
 }
+
+/**
+ * The other language 🌐's tap returns to after a switch [from] one language [to] another: the one switched to, or
+ * else the one left, so a 日本語 kept from before the quick switch (no [last] saved yet) is the one after it, or
+ * else the [last] one.
+ */
+fun lastOther(from: Int, to: Int, last: Int) = when {
+    to != ENGLISH -> to
+    from != ENGLISH -> from
+    else -> last
+}
+
+/** [lang] if it is on in [order], else English, or with English off the first one on */
+fun onLanguage(lang: Int, order: List<Int>) = when {
+    lang in order -> lang
+    ENGLISH in order -> ENGLISH
+    else -> order.first()
+}

@@ -33,7 +33,8 @@ class PopupLayer(context: Context) : View(context) {
     private var preview: Triple<RectF, String, Float>? = null
     /** The long-press panel: its frame, each choice's cell and label, and the selected one */
     private var panel: Triple<RectF, List<Pair<RectF, String>>, Int>? = null
-    /** A list panel's marked row (the current language); -1: a row of alternates, labels centred */
+    /** A list panel: its rows left-aligned, [marked] (the current language; -1: none) marked */
+    private var list = false
     private var marked = -1
     /** What TalkBack reads for each choice, where it isn't the label */
     private var descriptions: List<String>? = null
@@ -56,11 +57,12 @@ class PopupLayer(context: Context) : View(context) {
 
     /**
      * [onChoose]: TalkBack's panel, read out choice by choice ([descriptions], or the labels); a double tap on one
-     * calls it. [marked]: a list, its rows left-aligned, that row marked.
+     * calls it. [list]: a list, its rows left-aligned, row [marked] marked.
      */
     fun showPanel(frame: RectF, cells: List<Pair<RectF, String>>, selected: Int, onChoose: ((Int) -> Unit)? = null,
-                  marked: Int = -1, descriptions: List<String>? = null) {
+                  list: Boolean = false, marked: Int = -1, descriptions: List<String>? = null) {
         panel = Triple(frame, cells, selected)
+        this.list = list
         this.marked = marked
         this.descriptions = descriptions
         preview = null
@@ -134,7 +136,7 @@ class PopupLayer(context: Context) : View(context) {
                 text.textSize = r.height() * 0.45f
                 text.color = if (i == chosen) Picnic.WHITE else Picnic.INK
                 val y = r.centerY() + text.textSize * 0.35f
-                if (marked < 0) return@forEachIndexed canvas.drawText(label, r.centerX(), y, text)
+                if (!list) return@forEachIndexed canvas.drawText(label, r.centerX(), y, text)
                 // A list's row: a pixel square marks the current one, the labels start after its column
                 if (i == marked) {
                     mark.color = if (i == chosen) Picnic.WHITE else Picnic.BERRY

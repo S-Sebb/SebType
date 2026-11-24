@@ -479,6 +479,9 @@ def hold_globe(then=None, shot=None):
     """Holds the globe (over the last nodes()) until its list shows, and returns the list's rows (globe_rows).
     The finger then slides to the row labelled then (one of a tuple of labels) and lets go there, which picks it,
     or lets go on the globe, which changes nothing. shot: a screenshot of the list while it is held."""
+    # Where the keys are now: just after a restart the window can still be settling (the frame then read 200 px low)
+    time.sleep(1)
+    nodes()
     left, top, right, bottom = keyboard_frame
     at = (int(left + 3 * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
     adb("shell", "input", "motionevent", "DOWN", *map(str, at))
@@ -504,6 +507,39 @@ def hold_globe(then=None, shot=None):
         adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
     time.sleep(1.5)
     return rows
+
+
+def held_and_cancelled(via, end):
+    """#526: holds the globe, slides through the point via to end (globe: back onto the globe; above: over the
+    app, above the keyboard; beside: on to ⌫ beside the list) and lets go there. Nothing may change: the list
+    then marks what it marked, and Android's chooser stays shut."""
+    before = marked(hold_globe())
+    left, top, right, bottom = keyboard_frame
+    at = (int(left + 3 * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
+    adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+    try:
+        time.sleep(1)
+        rows = globe_rows()
+        to = {
+            "globe": at,
+            "above": (at[0], max(top - 300, 10)),
+            "beside": (
+                int(left + 9.3 * (right - left) / 10),
+                int(top + 2.5 * (bottom - top) / 4),
+            ),
+        }[end]
+        adb("shell", "input", "motionevent", "MOVE", *map(str, rows[via][:2]))
+        time.sleep(0.5)
+    finally:
+        adb("shell", "input", "motionevent", "MOVE", *map(str, to), check=False)
+        adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
+    time.sleep(1.5)
+    if screen_has(CHOOSER):
+        adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+        raise Fail(f"slid to {via}, let go {end}: Android's chooser opened")
+    open_field()
+    if (after := marked(hold_globe())) != before:
+        raise Fail(f"slid to {via}, let go {end}: the list marks {after}, not {before}")
 
 
 def marked(rows):
@@ -547,12 +583,19 @@ def quick_switch():
         raise Fail("after the keyboard restarted it isn't in English")
     globe_shows("日本語")
     hold_globe("English")
+    # Let go away from its rows, the list changes nothing (round 1 review: these picked a row or the chooser)
+    held_and_cancelled("English", "globe")
+    held_and_cancelled("中文", "above")
+    held_and_cancelled("中文", "beside")
     hold_globe(OTHER_KEYBOARDS)
     try:
         wait_for("Android's keyboard chooser", lambda: screen_has(CHOOSER), 10)
     finally:
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
-    return "EN -> 中 -> EN -> 中 -> EN; 日 picked, EN -> 日 -> EN, after a restart EN -> 日; Other keyboards… opened the chooser"
+    return (
+        "EN -> 中 -> EN -> 中 -> EN; 日 picked, EN -> 日 -> EN, after a restart EN -> 日; let go on the globe, "
+        "above the keyboard or on ⌫, nothing changed; Other keyboards… opened the chooser"
+    )
 
 
 def language_switch(name):
@@ -573,24 +616,26 @@ def language_switch(name):
 
 
 def quick_switch_one_other():
-    """#526: with 日本語 turned off after it was the last one, a tap goes English ⇄ 中文, the only other one."""
+    """#526: 日本語 turned off while it is the keyboard's language (its process still running): the next field
+    opens in English, and a tap goes English ⇄ 中文, the only other one."""
     end_setup()
     open_field()
     hold_globe("日本語")
-    hold_globe("English")
     go(LANG)
     language_switch("日本語")
     try:
         open_field()
         rows = hold_globe()
-        if "日本語" in rows or "中文" not in rows:
-            raise Fail(f"日本語 off; the list shows {sorted(rows)}")
+        if "日本語" in rows or "中文" not in rows or marked(rows) != ["English"]:
+            raise Fail(
+                f"日本語 off while in it; the list shows {sorted(rows)}, marking {marked(rows)}"
+            )
         for expect in ("中文", "English", "中文", "English"):
             globe_shows(expect)
     finally:
         go(LANG)
         language_switch("日本語")
-    return "日本語 off after it was the last: EN -> 中 -> EN -> 中 -> EN, the list without 日本語"
+    return "日本語 off while in it: the next field in EN, EN -> 中 -> EN -> 中 -> EN, the list without 日本語"
 
 
 def quick_switch_off():

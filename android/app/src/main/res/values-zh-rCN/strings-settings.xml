@@ -132,6 +132,7 @@
     <string name="setup_tips_text">设置完成。以下几点容易错过：</string>
     <string name="setup_done">完成</string>
     <string name="tips_globe">点按 🌐 在英文和另一种语言之间切换；长按可选择语言或其他键盘。</string>
+    <string name="tips_globe_off">点按 🌐 切换到下一种语言；长按可切换到其他键盘。</string>
     <string name="tips_space">在空格键上左右滑动可移动光标。</string>
     <string name="tips_delete">从 ⌫ 向左滑动可删除整个词。</string>
     <string name="tips_kana">在日本語中，点按 あ 标签可切换片假名。</string>

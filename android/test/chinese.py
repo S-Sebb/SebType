@@ -2606,6 +2606,55 @@ def floating_short_window():
         set_mode("Standard")
 
 
+def globe_list_narrow():
+    """#526: the held globe's list stays within the keys' width and on the screen, on the narrowest floating
+    keyboard moved to the screen's top and on one-handed's (modes-globe-list-*.png)."""
+    to_english()
+    w, h = screen_size()
+    labels = ("English", "中文", "日本語", "Other keyboards")
+    got = []
+    try:
+        set_mode("Floating")
+        tap_reset()
+        resize_floating(("corner", (-w, 0)))
+        # Its handle to the screen's top, as in modes-floating-resized: the list has no room above the keys
+        open_field()
+        x, y = next(n[1:3] for n in nodes() if n[0] == MOVE_KEYBOARD)
+        adb("shell", "input", "swipe", str(x), str(y), str(x), "0", "800")
+        time.sleep(1)
+        for mode in ("floating", "one-handed"):
+            if mode == "one-handed":
+                set_mode("One-handed")
+            open_field()
+            nodes()
+            l, t, r, b = keyboard_frame
+            at = globe_spot()
+            adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+            try:
+                time.sleep(1)
+                bounds = node_bounds()
+                screenshot(f"modes-globe-list-{mode}.png")
+            finally:
+                adb("shell", "input", "motionevent", "UP", *map(str, at), check=False)
+            rows = [bounds.get(k) for k in labels]
+            heights = [row[3] - row[1] for row in rows if row]
+            if (
+                None in rows
+                or min(heights) < 0.9 * max(heights)
+                or any(row[0] < l - 2 or row[2] > r + 2 or row[1] < 0 for row in rows)
+            ):
+                raise Fail(
+                    f"{mode}: keys {l}..{r} px wide; the list's rows {dict(zip(labels, rows))}"
+                )
+            got.append(
+                f"{mode}: keys {l}..{r}, rows {rows[0][0]}..{rows[0][2]} from y {rows[0][1]}"
+            )
+            time.sleep(1)
+        return "; ".join(got)
+    finally:
+        set_mode("Standard")
+
+
 def floating_narrowest():
     """Floating resized as narrow as it goes: today's 144 dp, with Reset and Apply inside it and Apply still
     ending the resize (#283)."""
@@ -3043,6 +3092,7 @@ check("modes-floating-resize", floating_resize, needs=["first-install"])
 check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
 check("modes-floating-short-window", floating_short_window, needs=["first-install"])
 check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
+check("modes-globe-list", globe_list_narrow, needs=["first-install"])
 
 # --- An update from the FUTO-based app (its last release, MAIN_APK) to this one (#254, #262) ---
 # The old app, chosen as the keyboard, learns a made-up English word, picks lower candidates in 中文 and

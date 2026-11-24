@@ -252,4 +252,18 @@ class KeyTextTest {
         // A letter slid onto Space doesn't type a space
         assertTrue(!slides(z.first, z.second, space.first, space.second.left + 1, space.second.top + 1, 0f))
     }
+
+    /** #526: the held globe's list picks the row the finger is on; back on the globe or away from the list, none. */
+    @Test
+    fun heldGlobeListCancels() {
+        val rows = List(4) { Box(100f, 100f + it * 50f, 300f, 150f + it * 50f) } // 100..300 x 100..300
+        val globe = Box(100f, 320f, 160f, 400f)
+        assertEquals(0, listRow(rows, globe, 200f, 120f, 25f))
+        assertEquals(3, listRow(rows, globe, 200f, 299f, 25f))
+        assertEquals(3, listRow(rows, globe, 200f, 310f, 25f)) // just under it: slop
+        assertEquals(-1, listRow(rows, globe, 130f, 350f, 25f)) // back on the globe
+        assertEquals(-1, listRow(rows, globe, 200f, 40f, 25f)) // above the list
+        assertEquals(-1, listRow(rows, globe, 400f, 180f, 25f)) // beside it, over other keys
+        assertEquals(-1, listRow(rows, globe, 130f, 340f, 25f)) // the globe wins over the slop
+    }
 }

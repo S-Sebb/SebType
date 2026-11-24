@@ -184,7 +184,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             post({ chineseState() }) { if (it != null && views && lang == CHINESE) show(it, applyText = false) }
         }
         // A fresh install starts in English (#35).
-        lang = prefs.getInt("language", ENGLISH).takeIf { it in Engines.languages() } ?: ENGLISH
+        lang = onLanguage(prefs.getInt("language", ENGLISH), Engines.languages())
         texts.language = lang
         clipboard.onChange = { if (views) refresh() }
         clipboard.start()
@@ -313,13 +313,20 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             expanded = false
             keyboard.setShift(KeyboardView.Shift.OFF) // Caps Lock ends with its field, as today's does
         }
+        // Turned off in the settings while this process lived: the next field opens in one that is on (#526)
+        val on = onLanguage(lang, Engines.languages())
+        if (on != lang) {
+            Engines.inUse(lang, false)
+            lang = on
+            texts.language = lang
+            prefs.edit().putInt("language", lang).commit()
+        }
         enterLanguage()
         keyboard.enter = kind.enter
         keyboard.haptics = Prefs[Prefs.VIBRATE]
         keyboard.sounds = Prefs[Prefs.SOUND]
         keyboard.previews = Prefs[Prefs.KEY_POPUP]
         keyboard.longPressMs = Prefs[Prefs.LONG_PRESS_MS].toLong()
-        keyboard.quickSwitch = Prefs[Prefs.QUICK_SWITCH]
         keyboard.hints = Prefs[Prefs.SHOW_HINTS]
         keyboard.strength = Prefs[Prefs.VIBRATE_STRENGTH]
         englishOptions()
@@ -673,10 +680,11 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         }
         strip.preedit = ""
         Engines.inUse(lang, false)
+        val was = lang
         lang = next
         texts.language = lang
         // Written at once: the process may be stopped right after a switch, and the next start must be in it.
-        prefs.edit().putInt("language", lang).apply { if (lang != ENGLISH) putInt("other_language", lang) }.commit()
+        prefs.edit().putInt("language", lang).putInt("other_language", lastOther(was, lang, prefs.getInt("other_language", ENGLISH))).commit()
         page = Page.LETTERS
         shown = Panel.NONE
         expanded = false
@@ -788,6 +796,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val fillRows = if (numbers == null) 0f else rowsHeight(Layout.load(this, Page.LETTERS.file, code).rows + numbers.rows)
         keyboard.setPage(layout, numbers?.takeIf { page == Page.LETTERS }, if (lang == ENGLISH) "$" else "¥", fillRows)
         keyboard.spaceLabel = name(lang)
+        keyboard.quickSwitch = Prefs[Prefs.QUICK_SWITCH]
         keyboard.languages = Engines.languages().map { name(it) }
         keyboard.language = Engines.languages().indexOf(lang)
         if (lang == JAPANESE) {

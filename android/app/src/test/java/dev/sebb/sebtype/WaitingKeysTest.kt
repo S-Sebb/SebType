@@ -218,4 +218,28 @@ class WaitingKeysTest {
         // English off: the other two in turn
         assertEquals(zh, globeTarget(listOf(ja, zh), ja, quick = true, last = ja))
     }
+
+    /** #526: an install updated while in 日本語 (no last other saved) returns to 日本語 after a tap to English. */
+    @Test
+    fun theLanguageLeftForEnglishIsTheLastOther() {
+        val en = NativeCore.ENGLISH
+        val zh = NativeCore.CHINESE
+        val ja = NativeCore.JAPANESE
+        assertEquals(ja, lastOther(ja, en, last = en)) // 日 -> EN, nothing saved before
+        assertEquals(ja, globeTarget(listOf(en, zh, ja), en, quick = true, last = lastOther(ja, en, last = en)))
+        assertEquals(zh, lastOther(en, zh, last = ja))
+        assertEquals(zh, lastOther(ja, zh, last = ja))
+        assertEquals(ja, lastOther(en, en, last = ja))
+    }
+
+    /** #526: a language turned off while the keyboard runs gives way to English, or the first one on. */
+    @Test
+    fun aLanguageTurnedOffGivesWay() {
+        val en = NativeCore.ENGLISH
+        val zh = NativeCore.CHINESE
+        val ja = NativeCore.JAPANESE
+        assertEquals(ja, onLanguage(ja, listOf(en, zh, ja)))
+        assertEquals(en, onLanguage(ja, listOf(en, zh)))
+        assertEquals(zh, onLanguage(en, listOf(zh, ja)))
+    }
 }

@@ -133,6 +133,7 @@
     <string name="setup_tips_text">設定が完了しました。見落としやすい操作：</string>
     <string name="setup_done">完了</string>
     <string name="tips_globe">🌐 をタップすると英語ともう一つの言語を切り替え、長押しで言語やほかのキーボードを選べます。</string>
+    <string name="tips_globe_off">🌐 をタップすると次の言語に、長押しするとほかのキーボードに切り替えられます。</string>
     <string name="tips_space">スペースキーを左右にスライドすると、カーソルが動きます。</string>
     <string name="tips_delete">⌫ から左にスライドすると、単語ごと削除できます。</string>
     <string name="tips_kana">日本語では、あ のチップをタップするとカタカナになります。</string>
