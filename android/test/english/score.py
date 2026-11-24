@@ -11,7 +11,8 @@ Each row of a result is: typed, target, committed word, top 3 of the strip, micr
 how many keys the target was first in the top 3 (0: never).
 - Typo sets (phone-typos, text-typos, misspellings, and #556's contractions, apostrophes, homographs and
   capitals, where the intended word may be the typed one): fixed = a space commits the intended word; top1 / top3 = the
-  intended word is first / among the first three suggestions.
+  intended word is first / among the first three suggestions. homographs' kept fixed / restored fixed: fixed
+  over the rows whose target is the typed word / its contraction.
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -122,13 +123,20 @@ def table(s1, s2, today=None):
     for s, name in (
         ("contractions", "contractions typed without the apostrophe"),
         ("apostrophes", "contractions in sentences, typed without it"),
-        ("homographs", "bare forms that are words too"),
+        ("homographs", "bare forms that are words too; kept / restored in brackets"),
         ("capitals", "capitalised words"),
     ):
         row(
             f"Right word committed ({name}, {n(s)})",
             s,
-            lambda x, y: f"{x['fixed']} %",
+            lambda x, y: (
+                f"{x['fixed']} %"
+                + (
+                    f" ({x['kept fixed']} / {x['restored fixed']})"
+                    if "kept fixed" in x
+                    else ""
+                )
+            ),
         )
     row(
         f"Correct word wrongly changed (clean words, {n('clean')})",
@@ -203,14 +211,15 @@ def bar(path, today_path):
             )
         )
     # #556's sets: today.json has no numbers for them, so the bar is AOSP's decoder alone, in the same run.
-    for set_name in ("contractions", "apostrophes", "homographs", "capitals"):
+    for set_name, k in (
+        ("contractions", "fixed"),
+        ("apostrophes", "fixed"),
+        ("homographs", "kept fixed"),
+        ("homographs", "restored fixed"),
+        ("capitals", "fixed"),
+    ):
         checks.append(
-            (
-                f"{set_name} fixed >= AOSP's",
-                ours[set_name]["fixed"],
-                aosp[set_name]["fixed"],
-                1,
-            )
+            (f"{set_name} {k} >= AOSP's", ours[set_name][k], aosp[set_name][k], 1)
         )
     for set_name in ("clean", "phone-typos"):
         checks.append(
@@ -252,6 +261,14 @@ def main(run_dir):
                 s["saved"] = pct(full - spent, full)
             else:
                 s["fixed"] = pct(sum(r[2] == r[1] for r in rows), len(rows))
+                if set_name == "homographs":
+                    # Keeping every typed word fixes most rows: the rows that keep it and those that restore
+                    # the apostrophe are barred apart.
+                    for k, same in (("kept", True), ("restored", False)):
+                        part = [r for r in rows if (r[0] == r[1]) == same]
+                        s[f"{k} fixed"] = pct(
+                            sum(r[2] == r[1] for r in part), len(part)
+                        )
                 s["top1"] = pct(
                     sum(t[:1] == [r[1]] for r, t in zip(rows, top3)), len(rows)
                 )

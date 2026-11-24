@@ -6,13 +6,20 @@
 #
 # A step's output is kept only while its inputs are the same: each output has a .stamp next to it, the hash
 # of the code and data it was made from, and of the earlier outputs it read. The tokenizer is the exception:
-# a run copies r2's into data/ first (README.md), so one that is there is kept.
+# a run copies r2's into data/ first (README.md), so one that is there is kept; without one, prepare.sh stops
+# unless NEW_TOKENIZER=1 asks for a new one.
 set -euo pipefail
 run=$1; shift
 seeds=${*:-0 1 2}
 py="$HOME/scratch/SebType/cache/english-lm-venv/bin/python"
 cd "$(dirname "$0")"
 d=$run/data harness=../../android/test/english dict=../../data/en-dict/en_US.dict
+
+# A missed copy of r2's tokenizer would train a new one, and the run would no longer match the pilots.
+if [[ ! -s $d/tokenizer.model && ${NEW_TOKENIZER:-} != 1 ]]; then
+  echo "prepare.sh: no $d/tokenizer.model: copy r2's (README.md), or set NEW_TOKENIZER=1 to train one" >&2
+  exit 1
+fi
 
 # step OUT INPUT... -- COMMAND...: runs COMMAND unless OUT is there with the stamp of these INPUTs.
 step() {
@@ -22,6 +29,7 @@ step() {
     if [[ -d $f ]]; then find -L "$f" -type f -printf '%P %s %T@\n' | sort; else cat "$f"; fi
   done | sha256sum | cut -c1-16)
   [[ -s $out && $(cat "$out.stamp" 2>/dev/null) == "$hash" ]] && return
+  rm -f "$out.stamp"  # a rebuild that fails leaves no stamp on what it wrote
   "$@"
   echo "$hash" > "$out.stamp"
 }

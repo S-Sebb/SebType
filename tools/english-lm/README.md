@@ -27,11 +27,15 @@ r4's recipe (#556) fixes what made r2 and r3 write contractions, capitals and te
   - A contraction is typed without its apostrophe 85 % of the time, as people do on a phone, and a word the
     typo bank lacks gets typos made for it.
   - The word after `<S>` is the standard one even when the line is texted: "I'm" for typed "im", a capital
-    at a sentence start (`standard()` in `pack.py`). One in 20 examples covers two words typed as one.
+    at a sentence start (`standard()` in `pack.py`); in chat and text messages "can't", "what's" and
+    "won't" for typed "cant", "whats" and "wont". One in 20 examples covers two words typed as one.
   - Training learns only the word after `<S>`, never the typed letters, also where a window starts inside
     an example (`labels()` in `train.py`).
 - **The phone's context.** Each line is cut into pieces of at most 300 characters, each after its own `<s>`,
-  as `window()` in `engines/sebtype-lm/sebtype_lm.cpp` gives the model, and training windows start at `<s>`.
+  as `window()` in `engines/sebtype-lm/sebtype_lm.cpp` gives the model, and training windows start at `<s>`:
+  a window's first piece has the phone's context. The pieces after it in the window see the ones before
+  (ordinary packing). A window starts at the `<s>` before a uniformly drawn token, so the sources mix by
+  their tokens, as `MIX` says.
 - **Texting style** (#266). A fifth of the chat sources' lines (SODA, Blended Skill Talk, Topical-Chat) are
   written as people text: lowercase sentence starts, "i", dropped apostrophes and full stops, "u", "pls",
   "gonna" only before a verb (`pack.py`). The real text messages of the NUS SMS Corpus, in 2 passes, show the
@@ -54,7 +58,7 @@ On yanglab16, with the corpus, checkpoints and logs in `~/scratch/SebType/<issue
 tools/english-lm/fetch.sh RUN_DIR                 # venv, llama.cpp, the sources (~12 GB)
 tools/english-lm/prepare.sh RUN_DIR [SEEDS...]    # corpus, tokenizer, test.py, typo bank, dev sets, tokens
 python tools/english-lm/train.py RUN_DIR tools/english-lm/config.json   # one GPU
-tools/english-lm/select.sh RUN_DIR NAME           # each checkpoint's dev gain, the best last
+tools/english-lm/select.sh RUN_DIR NAME           # each checkpoint's dev gain and next-word top 3, the best last
 tools/english-lm/export.sh RUN_DIR/ckpt/NAME/step-N RUN_DIR/sebtype-en.gguf   # the best one
 tools/english-lm/dev.sh RUN_DIR RUN_DIR/sebtype-en.gguf [CKPT_DIR]      # dev numbers, tuned weights, parity
 python tools/english-lm/overlap.py RUN_DIR        # the corpus doesn't hold the harness's sentences
@@ -67,12 +71,18 @@ idle GPU (`nvidia-smi`), about 4 GB of its memory.
 
 `prepare.sh` keeps each step's output while its code and inputs are the same, and runs `test.py`, checks of
 the pipeline's own code, before the typo bank. `dev.sh` with a checkpoint also checks the GGUF's scores against
-the checkpoint's (`parity.py`). The harness's bar (`score.py --bar`) needs each new set (contractions,
-apostrophes, homographs, capitals) fixed at least as often as AOSP and the text-message sets near FUTO's.
+the checkpoint's (`parity.py`, on `dev_sets.py`'s `parity.tsv`). The dev sets leave out a query whose last 8
+words are in a training file. `select.sh` leaves out a checkpoint whose next-word top 3 falls more than a point
+below the best checkpoint's on a set. The harness's bar (`score.py --bar`) needs each new set (contractions,
+apostrophes, capitals, and homographs' kept and restored rows apart) fixed at least as often as AOSP and the
+text-message sets near FUTO's.
 
-The full retrain (#556), with `RUN_DIR` holding the sources from `fetch.sh` and r2's tokenizer in `data/`:
+The full retrain (#556), with `RUN_DIR` holding the sources from `fetch.sh`. First copy r2's tokenizer (on
+yanglab16 `~/scratch/SebType/cache/english-lm/r2-ckpt/tokenizer.model`, sha256 `7f0149eef056fadee614f17c63c3af5b013661ea2888972b99b4cbcfd1617d27`);
+without it `prepare.sh` stops rather than train a new one:
 
 ```sh
+cp ~/scratch/SebType/cache/english-lm/r2-ckpt/tokenizer.model RUN_DIR/data/ &&
 tools/english-lm/prepare.sh RUN_DIR 0 1 2 &&
 python tools/english-lm/train.py RUN_DIR tools/english-lm/config.json &&
 tools/english-lm/select.sh RUN_DIR r4

@@ -71,6 +71,9 @@ TWO_WORDS = 0.05
 APOSTROPHE_TYPED = 0.15
 CONTEXT_CHARS = 300
 CHAT = {"soda", "bst", "topical-chat"}
+# Bare forms that are words too but in chat and text messages almost always a contraction missing its
+# apostrophe (topical-chat: cant 641, can't 3,605): there an example writes the contraction (#556).
+CHAT_CONTRACTIONS = {"cant", "whats", "wont"}
 TEXTING = 0.2
 # Short forms. In a texting line, each replaces its words with a chance drawn for the line, up to 80 %.
 SHORT = {
@@ -159,13 +162,15 @@ def typed_for(rng, word, prefix=True, bare=False):
     return full[: rng.randrange(1, len(full))] if len(full) >= 2 else full
 
 
-def standard(word, sentence_start):
+def standard(word, sentence_start, chat=False):
     """WORD as the example's output: I and its forms capitalised, a bare contraction that is no word itself
-    with its apostrophe, and a lowercase word at a sentence start capitalised."""
+    (or, in CHAT text, one of CHAT_CONTRACTIONS) with its apostrophe, and a lowercase word at a sentence start
+    capitalised."""
     low = word.lower()
     if low in I_FORMS:
         return I_FORMS[low]
-    if "'" not in low and not real_word(low) and intended(low) != low:
+    bare = not real_word(low) or (chat and low in CHAT_CONTRACTIONS)
+    if "'" not in low and bare and intended(low) != low:
         w = intended(low)
         word = w[0].upper() + w[1:] if word[0].isupper() else w
     if sentence_start and word.islower():
@@ -256,8 +261,9 @@ def examples(rng, seg):
     return out
 
 
-def encode_line(rng, line, texting):
-    """LINE's token ids, its correction examples in it; TEXTING: a Texting or None."""
+def encode_line(rng, line, texting, chat=False):
+    """LINE's token ids, its correction examples in it; TEXTING: a Texting or None; CHAT: from a chat source
+    or text messages."""
     out = []
     segs = segments(line)
     for si, seg in enumerate(segs):
@@ -286,7 +292,7 @@ def encode_line(rng, line, texting):
             typed, written = [], []
             for i, w in enumerate(words):
                 short = texting.short_form(w) if texting and second is None else None
-                written.append(short or standard(w, at_start and i == 0))
+                written.append(short or standard(w, at_start and i == 0, chat))
                 typed.append(
                     typed_for(
                         rng,
@@ -313,6 +319,7 @@ def encode(part):
     with chance KEEP (a fraction of a pass)."""
     path, start, end, seed, text_share, keep = part
     rng = random.Random(f"{Path(path).name}:{start}:{seed}")
+    chat = Path(path).name.split(".")[0] in CHAT | {"nus-sms"}
     out = []
     with open(path, "rb") as f:
         f.seek(start)
@@ -326,7 +333,7 @@ def encode(part):
                 continue
             line = line.decode().rstrip("\n")
             texting = Texting(rng) if rng.random() < text_share else None
-            out += encode_line(rng, line, texting)
+            out += encode_line(rng, line, texting, chat)
     return np.array(out, dtype=np.uint16)
 
 

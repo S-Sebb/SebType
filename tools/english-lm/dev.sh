@@ -19,13 +19,15 @@ cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DAOSP_JNI="$aosp
 build_lock 30 english-lm-dev ninja -C "$build" -j "$BUILD_JOBS" english-sebtype >> "$run/dev/build.log"
 out=$run/dev/out
 mkdir -p "$out" && rm -f "$out"/* "$run"/dev/*.dump
+pids=()
 for set in "$run"/dev/*.tsv; do
   name=$(basename "$set" .tsv)
   SEBTYPE_LM_DUMP=$run/dev/$name.dump "$build/english-sebtype" "$set" "$out/sebtype.$name.tsv" \
     $here/layout.tsv data/en-dict/en_US.dict "$model" &
+  pids+=($!)
 done
-wait
+for pid in "${pids[@]}"; do wait "$pid"; done  # a bare wait returns 0 whatever the runs did
 python3 -I $here/score.py "$out" > "$out/summary.json"
-python3 -c "import json,sys; s=json.load(open(sys.argv[1]))['sebtype']; [print(k, {m: v for m, v in s[k].items() if 'ms' not in m}) for k in sorted(s)]" "$out/summary.json"
-[[ -z $ckpt ]] || $py -I tools/english-lm/parity.py "$ckpt" "$run/dev/clean.tsv" "$run/dev/clean.dump"
+python3 -c "import json,sys; s=json.load(open(sys.argv[1]))['sebtype']; [print(k, {m: v for m, v in s[k].items() if 'ms' not in m}) for k in sorted(s)]; print('NEXT', *(s[k]['top3'] for k in ('next-chat', 'next-news', 'next-texts')))" "$out/summary.json"
+[[ -z $ckpt ]] || $py -I tools/english-lm/parity.py "$ckpt" "$run/dev/parity.tsv" "$run/dev/parity.dump"
 $py -I tools/english-lm/tune.py "$run/dev"

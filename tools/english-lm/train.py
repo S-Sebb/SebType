@@ -8,7 +8,11 @@ save_every steps a checkpoint in ckpt/NAME/step-N/ too, for select.sh to choose 
 prints PROGRESS step/steps and the dev loss: over all tokens, and over the first piece of the word after <S>
 (the correction examples).
 
-A training window starts at a segment's <s>, as the phone's context does.
+A training window starts at a segment's <s>, as the phone's context does: the window's first segment is what
+the phone gives the model, at most 300 characters of a line. The window holds the segments after it too,
+which see the ones before them across their <s> (ordinary packing); their own context is longer than the
+phone's. A window starts at the <s> at or before a uniformly drawn token, so each source is trained in
+proportion to its tokens, as MIX says, however short its segments.
 """
 
 import json
@@ -23,8 +27,16 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
 
+def window_starts(starts, n, gen):
+    """N window offsets: the <s> at or before a uniform token, so a segment is drawn by its length."""
+    pos = torch.randint(
+        int(starts[0]), int(starts[-1]) + 1, (n,), generator=gen
+    ).numpy()
+    return starts[np.searchsorted(starts, pos, side="right") - 1]
+
+
 def windows(data, starts, n, length, gen):
-    i = starts[torch.randint(0, len(starts), (n,), generator=gen).numpy()]
+    i = window_starts(starts, n, gen)
     x = np.stack([data[j : j + length + 1] for j in i]).astype(np.int64)
     return torch.from_numpy(x).pin_memory().cuda(non_blocking=True)
 

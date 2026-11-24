@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parents[1] / "android/test/english")]
 import corpus
 import noise
+import numpy as np
 import pack
 import score
 import torch
@@ -58,6 +59,18 @@ _, y = train.labels(x, T, S, sp.bos_id())
 trained = [p for p, v in zip(piece(x[0, 1:]), y[0]) if v != -100]
 check("labels: a whole example", trained == piece(sp.encode("a word")), trained)
 
+# Windows: a source's share of windows is its share of tokens, short segments or long. Here two sources of
+# 50,000 tokens each, in segments of 10 and of 100 tokens; a draw by <s> took the first 91 % of the time.
+data = np.full(100_000, 7, dtype=np.uint16)
+data[0:50_000:10] = data[50_000::100] = sp.bos_id()
+w = train.window_starts(
+    train.segment_starts(data, sp.bos_id(), 256),
+    20_000,
+    torch.Generator().manual_seed(0),
+)
+share = (w < 50_000).mean()
+check("windows: a source's share follows its tokens", 0.47 < share < 0.53, share)
+
 # Typed letters: a contraction mostly without its apostrophe, and a word the bank lacks still gets typos.
 rng = random.Random(1)
 dont = Counter(pack.typed_for(rng, "don't") for _ in range(4000))
@@ -78,9 +91,9 @@ check(
 pack.HINT = 1.0
 
 
-def written(line, texting=None, seed=0):
+def written(line, texting=None, seed=0, chat=False):
     """The words after <S> in LINE's tokens, each up to the next example."""
-    ids = pack.encode_line(random.Random(seed), line, texting)
+    ids = pack.encode_line(random.Random(seed), line, texting, chat)
     s = [k for k, t in enumerate(ids) if t == S]
     t = [k for k, t in enumerate(ids) if t == T][1:] + [len(ids)]
     return [sp.decode(ids[i + 1 : j]) for i, j in zip(s, t)]
@@ -111,6 +124,17 @@ check(
     "examples: a homograph stays",
     written("she was ill")[-1] == "ill",
     written("she was ill"),
+)
+got = [w.split()[0] for w in written("i cant come, whats up, it wont", chat=True)]
+check(
+    "examples: cant, whats, wont in chat are contractions",
+    {"can't", "what's", "won't"} <= set(got),
+    got,
+)
+check(
+    "examples: cant elsewhere stays",
+    written("they speak in cant")[-1] == "cant",
+    written("they speak in cant"),
 )
 pack.TWO_WORDS = 1.0
 ids = pack.encode_line(random.Random(0), "could be fine", None)
@@ -172,21 +196,28 @@ check(
     got,
 )
 
-# The bar: a model that fixes nothing in text messages fails it.
-today = json.loads((HERE.parents[1] / "android/test/english/today.json").read_text())[
-    "today"
-]
-with tempfile.TemporaryDirectory() as d:
-    core = json.loads(json.dumps(today))
-    for k in ("contractions", "apostrophes", "homographs", "capitals"):
-        core[k] = {"fixed": 50.0}
-    core["text-typos"].update(fixed=0.0, top1=0.0, top3=0.0)
-    (Path(d) / "s.json").write_text(json.dumps({"core": core, "aosp": core}))
-    check(
-        "bar: texting accuracy zero fails",
-        not score.bar(
-            Path(d) / "s.json", HERE.parents[1] / "android/test/english/today.json"
-        ),
-    )
+# The bar: a model that fixes nothing in text messages fails it, and so does one that keeps every homograph
+# as typed (19 of the harness's 31 rows: 61.3 %, over AOSP's 58.1 %).
+today_path = HERE.parents[1] / "android/test/english/today.json"
+today = json.loads(today_path.read_text())["today"]
+aosp = json.loads(json.dumps(today))
+for k in ("contractions", "apostrophes", "homographs", "capitals"):
+    aosp[k] = {"fixed": 50.0, "kept fixed": 50.0, "restored fixed": 50.0}
+aosp["homographs"].update({"fixed": 58.1, "kept fixed": 63.2, "restored fixed": 50.0})
+
+
+def passes(core):
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "s.json").write_text(json.dumps({"core": core, "aosp": aosp}))
+        return score.bar(Path(d) / "s.json", today_path)
+
+
+check("bar: AOSP's own numbers pass", passes(aosp))
+core = json.loads(json.dumps(aosp))
+core["text-typos"].update(fixed=0.0, top1=0.0, top3=0.0)
+check("bar: texting accuracy zero fails", not passes(core))
+core = json.loads(json.dumps(aosp))
+core["homographs"].update({"fixed": 61.3, "kept fixed": 100.0, "restored fixed": 0.0})
+check("bar: keeping every homograph fails", not passes(core))
 
 sys.exit(1 if failures else 0)
