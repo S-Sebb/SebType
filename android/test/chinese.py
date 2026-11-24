@@ -2951,45 +2951,40 @@ def contractions():
     type_text("so ")
     # The next words after a space come from the model alone on a fresh install: it has loaded.
     wait_for("the model's next words", lambda: candidates(nodes()), 60)
-    # A contraction's space once the bar shows it first, as the model's ranking does on a phone: here,
-    # under ARM translation, a space typed at once doesn't wait for so slow a model and the decoder decides.
-    shown = {
-        "ive": "I've",
-        "youre": "you're",
-        "im": "I'm",
-        "i": "I",
-        "dont": "don't",
-        "shouldve": "should've",
-    }
-    for word in [
-        "ive",
-        "heard",
-        "youre",
-        "right",
-        "im",
-        "sure",
-        "i",
-        "dont",
-        "know",
-        "were",
-        "here",
-        "i",
-        "shouldve",
-    ]:
-        type_text(word)
-        if word in shown:
+    # Each contraction's space once the bar shows it as the correction: in English's three slots the
+    # middle one, with the typed word quoted on the right (CandidateBar). That is the model's ranking, as
+    # on a phone: here, under ARM translation, a space typed at once doesn't wait for so slow a model.
+    words = [
+        ("ive", "I've"),
+        ("heard", "heard"),
+        ("youre", "you're"),
+        ("right", "right"),
+        ("im", "I'm"),
+        ("sure", "sure"),
+        ("i", "I"),
+        ("dont", "don't"),
+        ("know", "know"),
+        ("were", "were"),
+        ("here", "here"),
+        ("i", "I"),
+        ("shouldve", "should've"),
+    ]
+    want = "So "
+    for typed, word in words:
+        type_text(typed)
+        if word != typed:
             try:
                 wait_for(
-                    f"{shown[word]} first for {word}",
-                    lambda: candidates(nodes())[:1] == [shown[word]],
+                    f"{word} as the correction for {typed}",
+                    lambda: candidates(nodes())[-2:] == [word, f'"{typed}"'],
                     30,
                 )
             except Fail as e:
                 raise Fail(f"{e}; the bar shows {candidates(nodes())[:6]}") from None
         type_text(" ")
-    want = "So I've heard you're right I'm sure I don't know were here I should've "
-    if (got := field_text()) != want:
-        raise Fail(f"the field shows {got!r}, not {want!r}")
+        want += word + " "
+        if (got := field_text()) != want:
+            raise Fail(f"a space after {typed} -> {got!r}, not {want!r}")
     return f"-> {got!r}"
 
 
