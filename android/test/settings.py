@@ -403,43 +403,307 @@ def tap_candidate(word):
     raise Fail(f"{word} not in the candidate bar")
 
 
-def to_language(probe, word):
-    """Cycles the globe until typing probe offers word (中: ni -> 你, 日: nihongo -> 日本語, English:
+def offers(probe, word):
+    """Whether typing probe in a new field offers word (中: ni -> 你, 日: nihongo -> 日本語, English:
     hello -> Hello, capitalised at the field's start, with no Chinese or Japanese among the candidates,
     as 中 and 日 offer hello among their own words)."""
+    open_field()
+    type_keys(probe)
+    # Chinese sets itself up the first time it comes up, showing its notice meanwhile.
+    end = time.time() + 300
+    # A language that has just come up can take a moment before its first candidates.
+    first = time.time() + 15
+    while True:
+        ns = nodes()
+        if probe == "hello":  # today's English words aren't TextViews: en_candidates
+            got = en_candidates(ns)
+            english = not any(
+                re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
+            )
+        else:
+            got, english = candidates(ns), True
+        if english and word in [c.lower() for c in got]:
+            return True
+        preparing = any(n[0].startswith(PREPARING) for n in ns)
+        waiting = preparing or (not got and time.time() < first)
+        if not waiting or time.time() > end:
+            return False
+        time.sleep(3)
+
+
+PROBE_LANGUAGE = {"ni": "中文", "nihongo": "日本語", "hello": "English"}
+
+
+def to_language(probe, word):
+    """Until typing probe offers word (offers), picks probe's language from the globe's list (#526)."""
     for _ in range(8):
         try:
+            if offers(probe, word):
+                return
             open_field()
-            type_keys(probe)
-            # Chinese sets itself up the first time it comes up, showing its notice meanwhile.
-            end = time.time() + 300
-            # A language that has just come up can take a moment before its first candidates.
-            first = time.time() + 15
-            while True:
-                ns = nodes()
-                if (
-                    probe == "hello"
-                ):  # today's English words aren't TextViews: en_candidates
-                    got = en_candidates(ns)
-                    english = not any(
-                        re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", c) for c in got
-                    )
-                else:
-                    got, english = candidates(ns), True
-                if english and word in [c.lower() for c in got]:
-                    return
-                preparing = any(n[0].startswith(PREPARING) for n in ns)
-                waiting = preparing or (not got and time.time() < first)
-                if not waiting or time.time() > end:
-                    break
-                time.sleep(3)
-            open_field()
-            bottom_key(3)
-            time.sleep(2)
+            hold_globe(PROBE_LANGUAGE[probe])
         except Fail:
             # Mozc can crash when Japanese starts on the emulator (#35); a restart brings it back.
             adb("shell", "am", "force-stop", PKG)
     raise Fail(f"no language offers {word} for {probe}")
+
+
+# --- The globe's language list (#526) ---
+
+LANGUAGE_NAMES = ("English", "中文", "日本語")
+# Its last row, as TalkBack reads it
+OTHER_KEYBOARDS = ("其他键盘", "Other keyboards", "他のキーボード")
+QUICK_SWITCH = ("快速切换", "Quick switch", "クイック切り替え")
+CHOOSER = ("Choose input method", "Select input method")
+
+
+def globe_rows():
+    """The globe's list as shown: {label: (x, y, marked)}"""
+    adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    out = {}
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        label = n.get("content-desc") or ""
+        m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n.get("bounds", ""))
+        if (
+            m
+            and label in LANGUAGE_NAMES + OTHER_KEYBOARDS
+            and n.get("class") == "android.widget.Button"
+        ):
+            x1, y1, x2, y2 = map(int, m.groups())
+            out[label] = ((x1 + x2) // 2, (y1 + y2) // 2, n.get("selected") == "true")
+    return out
+
+
+def hold_globe(then=None, shot=None):
+    """Holds the globe (over the last nodes()) until its list shows, and returns the list's rows (globe_rows).
+    The finger then slides to the row labelled then (one of a tuple of labels) and lets go there, which picks it,
+    or lets go on the globe, which changes nothing. shot: a screenshot of the list while it is held."""
+    left, top, right, bottom = keyboard_frame
+    at = (int(left + 3 * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
+    adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+    to = at
+    try:
+        time.sleep(1)
+        rows = globe_rows()
+        if shot:
+            screenshot(shot)
+        if then is not None:
+            to = next(
+                (
+                    rows[t][:2]
+                    for t in ((then,) if isinstance(then, str) else then)
+                    if t in rows
+                ),
+                None,
+            )
+            if not to:
+                raise Fail(f"no {then} in the globe's list {sorted(rows)}")
+    finally:
+        adb("shell", "input", "motionevent", "MOVE", *map(str, to), check=False)
+        adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
+    time.sleep(1.5)
+    return rows
+
+
+def marked(rows):
+    return [label for label, (x, y, m) in rows.items() if m]
+
+
+def globe_shows(expect):
+    """A tap on the globe, then the list marks expect (the language the tap went to)."""
+    bottom_key(3)
+    time.sleep(1.5)
+    rows = hold_globe()
+    if marked(rows) != [expect]:
+        raise Fail(
+            f"after a globe tap the list marks {marked(rows)}, not {expect} (rows {sorted(rows)})"
+        )
+
+
+def quick_switch():
+    """#526: a globe tap goes English ⇄ the last other language (中文 at first), picking 日本語 from the held
+    globe's list makes it the one, which a restart of the keyboard keeps; Other keyboards… opens Android's
+    chooser."""
+    open_field()
+    hold_globe("English")
+    rows = hold_globe(shot="globe-list")
+    if (
+        marked(rows) != ["English"]
+        or not set(LANGUAGE_NAMES) <= set(rows)
+        or not set(OTHER_KEYBOARDS) & set(rows)
+    ):
+        raise Fail(f"held globe's list {rows}")
+    for expect in ("中文", "English", "中文", "English"):
+        globe_shows(expect)
+    hold_globe("日本語")
+    if marked(hold_globe()) != ["日本語"]:
+        raise Fail("picked 日本語 from the list; it isn't marked")
+    for expect in ("English", "日本語", "English"):
+        globe_shows(expect)
+    adb("shell", "am", "force-stop", PKG)
+    open_field()
+    if marked(hold_globe()) != ["English"]:
+        raise Fail("after the keyboard restarted it isn't in English")
+    globe_shows("日本語")
+    hold_globe("English")
+    hold_globe(OTHER_KEYBOARDS)
+    try:
+        wait_for("Android's keyboard chooser", lambda: screen_has(CHOOSER), 10)
+    finally:
+        adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+    return "EN -> 中 -> EN -> 中 -> EN; 日 picked, EN -> 日 -> EN, after a restart EN -> 日; Other keyboards… opened the chooser"
+
+
+def language_switch(name):
+    """Taps the switch of language name's row on the languages screen (its row isn't a switch itself)."""
+    adb("shell", "uiautomator", "dump", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    # Its title, "日本語 Japanese" in English, the topmost (the 日本語 section below starts with it too)
+    row = min(y for label, x, y, top, cls in nodes() if label.startswith(name))
+    spots = []
+    for n in ET.fromstring(xml[xml.index("<") :]).iter("node"):
+        m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", n.get("bounds", ""))
+        if m and n.get("checkable") == "true":
+            x1, y1, x2, y2 = map(int, m.groups())
+            spots.append((abs((y1 + y2) // 2 - row), (x1 + x2) // 2, (y1 + y2) // 2))
+    _, x, y = min(spots)
+    tap(x, y)
+    time.sleep(1.5)
+
+
+def quick_switch_one_other():
+    """#526: with 日本語 turned off after it was the last one, a tap goes English ⇄ 中文, the only other one."""
+    end_setup()
+    open_field()
+    hold_globe("日本語")
+    hold_globe("English")
+    go(LANG)
+    language_switch("日本語")
+    try:
+        open_field()
+        rows = hold_globe()
+        if "日本語" in rows or "中文" not in rows:
+            raise Fail(f"日本語 off; the list shows {sorted(rows)}")
+        for expect in ("中文", "English", "中文", "English"):
+            globe_shows(expect)
+    finally:
+        go(LANG)
+        language_switch("日本語")
+    return "日本語 off after it was the last: EN -> 中 -> EN -> 中 -> EN, the list without 日本語"
+
+
+def quick_switch_off():
+    """#526: Quick switch off, the globe works as before: a tap goes through the languages in order (EN -> 中
+    -> 日 -> EN), holding it opens Android's keyboard chooser."""
+    end_setup()
+    open_field()
+    hold_globe("English")
+    toggle((LANG,), QUICK_SWITCH)
+    try:
+        if is_checked(QUICK_SWITCH):
+            raise Fail("Quick switch is still on after a tap")
+        screenshot("languages-quick-switch-off")
+        for probe, word in (("ni", "你"), ("nihongo", "日本語"), ("hello", "hello")):
+            open_field()
+            bottom_key(3)
+            time.sleep(2)
+            if not offers(probe, word):
+                raise Fail(
+                    f"Quick switch off: after a globe tap, {probe} doesn't offer {word}"
+                )
+        open_field()
+        left, top, right, bottom = keyboard_frame
+        at = (int(left + 3 * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
+        adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+        try:
+            wait_for("Android's keyboard chooser", lambda: screen_has(CHOOSER), 10)
+            screenshot("globe-held-off")
+        finally:
+            adb("shell", "input", "motionevent", "UP", *map(str, at), check=False)
+            adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
+    finally:
+        toggle((LANG,), QUICK_SWITCH)
+    if not is_checked(QUICK_SWITCH):
+        raise Fail("Quick switch didn't turn on again")
+    return "off: EN -> 中 -> 日 -> EN, held opened the chooser; on again"
+
+
+def end_setup():
+    """Ends setup as the user would, if the settings open on it (a run without settings-setup-tips): home_shown's
+    own pass through its steps can take over its 30 s."""
+    adb("shell", "ime", "set", IME)
+    start_settings()
+    step = wait_for(
+        "the settings",
+        lambda: setup_step_shown() or (screen_has(HOME["about"]) and 9),
+        30,
+    )
+    if step == 9:
+        return
+    if step == 3:
+        past_common()
+    if step <= 4:
+        tap_text(SKIP_SYNC if screen_has(SKIP_SYNC) else CONTINUE)
+        wait_step(5)
+    tap_text(DONE)
+    wait_for("home after Done", lambda: not setup_step_shown(), 15)
+
+
+def setup_quick_switch():
+    """#526: setup's common settings show Quick switch on, and turning it off there turns off the Languages
+    screen's (the same option)."""
+    forget_setup()
+    start_settings()
+    wait_for("setup's step 3 of 5", step3_again, 30)
+    if not is_checked(QUICK_SWITCH):
+        raise Fail("setup shows Quick switch off")
+    screenshot("setup-quick-switch")
+    system_locale("zh-CN")
+    try:
+        wait_for("setup in 中文", lambda: screen_has(("快速切换",)), 10)
+        screenshot("setup-quick-switch-zh")
+    finally:
+        system_locale("en-US")
+    tap_text(QUICK_SWITCH)
+    try:
+        if is_checked(QUICK_SWITCH):
+            raise Fail("setup's Quick switch didn't turn off")
+        end_setup()
+        go(LANG)
+        if is_checked(QUICK_SWITCH):
+            raise Fail("turned off in setup, the Languages screen's Quick switch is on")
+    finally:
+        tap_text(QUICK_SWITCH)
+    if not is_checked(QUICK_SWITCH):
+        raise Fail("Quick switch didn't turn on again")
+    screenshot("languages-quick-switch")
+    system_locale("zh-CN")
+    try:
+        wait_for("the languages screen in 中文", lambda: screen_has(("快速切换",)), 10)
+        screenshot("languages-quick-switch-zh")
+    finally:
+        system_locale("en-US")
+    return "on in setup; off there, off on the Languages screen; on again (settings-*quick-switch*.png)"
+
+
+def globe_list_screenshots():
+    """#526: the held globe's list in light and dark mode, in English and 中文 (settings-globe-list-*.png)."""
+    night = night_mode()
+    try:
+        for locale in ("en-US", "zh-CN"):
+            system_locale(locale)
+            for mode in ("no", "yes"):
+                adb("shell", "cmd", "uimode", "night", mode)
+                time.sleep(2)
+                open_field()
+                hold_globe(
+                    shot=f"globe-list-{locale}-{'dark' if mode == 'yes' else 'light'}"
+                )
+    finally:
+        adb("shell", "cmd", "uimode", "night", night)
+        system_locale("en-US")
+    return "settings-globe-list-*.png"
 
 
 # --- The settings app ---
@@ -2502,6 +2766,12 @@ check("settings-tips-screenshots", tips_screenshots)
 
 check("settings-screens", every_screen)
 check("settings-globe-order", globe_order)
+# Setup first: it ends setup, which the others' settings screens open past
+check("settings-quick-switch-setup", setup_quick_switch)
+check("settings-quick-switch", quick_switch)
+check("settings-quick-switch-one-other", quick_switch_one_other)
+check("settings-quick-switch-off", quick_switch_off)
+check("settings-quick-switch-screenshots", globe_list_screenshots)
 check("settings-zh-punctuation", full_width_punctuation)
 check("settings-zh-emoji", emoji_candidates)
 check("settings-zh-my-words", my_words)

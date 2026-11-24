@@ -192,7 +192,7 @@ dev.sebb.sebtype (Kotlin, MIT)                         libsebtype.so (C++, NDK)
 - **English in `core/`.** A new `Engine` for `Lang::English` on Android only. The PCs keep plain English
   (Decisions #2).
 - **What `core/` gains for touch:**
-  - `cycleLanguage()` for 🌐, which goes through every language in order (#1). Win+Space stays the PC toggle.
+  - `cycleLanguage()` for 🌐, which goes through every language in order (#1). Win+Space stays the PC toggle. Since #526 the phone's 🌐 tap toggles English ⇄ the last other language too, held it lists the languages; the cycle stays as Quick switch off.
   - A candidate list that is not paged (the phone scrolls up to 128). This reuses `Engine::candidateAt`.
   - Keys sent as characters: a tap of "a" is keysym `a`.
   - The phone's field kinds: password and private disable learning.

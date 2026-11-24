@@ -2,6 +2,7 @@ package dev.sebb.sebtype
 
 import dev.sebb.sebtype.Layout.Code
 import dev.sebb.sebtype.core.NativeCore.CHINESE
+import dev.sebb.sebtype.core.NativeCore.ENGLISH
 import dev.sebb.sebtype.core.NativeCore.JAPANESE
 
 /**
@@ -159,4 +160,15 @@ fun endTyping(lang: Int, composing: Boolean, undo: Boolean) = when {
     !composing -> EndTyping.NOTHING
     lang == CHINESE -> EndTyping.CLEAR
     else -> EndTyping.FLUSH
+}
+
+/**
+ * The language 🌐's tap goes to from [lang], of those on in globe [order]. [quick] (#526, as Win+Space on the PCs):
+ * English ⇄ the [last] other language used, the first other one on until one was used. Off, or with English off:
+ * the next one in the order.
+ */
+fun globeTarget(order: List<Int>, lang: Int, quick: Boolean, last: Int): Int {
+    if (!quick || ENGLISH !in order) return order[(order.indexOf(lang) + 1) % order.size]
+    if (lang != ENGLISH) return ENGLISH
+    return last.takeIf { it in order && it != ENGLISH } ?: order.firstOrNull { it != ENGLISH } ?: ENGLISH
 }

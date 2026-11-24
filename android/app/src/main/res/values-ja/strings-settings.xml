@@ -13,7 +13,9 @@
     <string name="sebtype_settings_backup_subtitle">設定のエクスポートとインポート</string>
     <string name="sebtype_settings_about">情報</string>
     <string name="sebtype_settings_globe_order">地球キーの順番</string>
-    <string name="sebtype_settings_globe_order_tip">地球キーで、オンの言語をこの順に切り替えます。≡ をドラッグして並べ替えます。</string>
+    <string name="sebtype_settings_globe_order_tip">地球キーを長押しすると、オンの言語がこの順に並びます。クイック切り替えがオフのときは、タップでこの順に切り替えます。≡ をドラッグして並べ替えます。</string>
+    <string name="sebtype_settings_quick_switch">クイック切り替え</string>
+    <string name="sebtype_settings_quick_switch_subtitle">地球キーのタップで英語と最後に使った他の言語を切り替え、長押しで一覧を表示します</string>
     <string name="sebtype_settings_drag">ドラッグして並べ替え</string>
     <string name="sebtype_settings_globe_zh">中文</string>
     <string name="sebtype_settings_globe_ja">日本語</string>
@@ -130,7 +132,7 @@
     <string name="setup_continue">次へ</string>
     <string name="setup_tips_text">設定が完了しました。見落としやすい操作：</string>
     <string name="setup_done">完了</string>
-    <string name="tips_globe">🌐 を長押しすると、ほかのキーボードに切り替えられます。</string>
+    <string name="tips_globe">🌐 をタップすると英語ともう一つの言語を切り替え、長押しで言語やほかのキーボードを選べます。</string>
     <string name="tips_space">スペースキーを左右にスライドすると、カーソルが動きます。</string>
     <string name="tips_delete">⌫ から左にスライドすると、単語ごと削除できます。</string>
     <string name="tips_kana">日本語では、あ のチップをタップするとカタカナになります。</string>

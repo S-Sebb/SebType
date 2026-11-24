@@ -41,8 +41,10 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     interface Listener {
         /** A key: its text (Shift applied) for a text key, and where it was tapped (-1, -1: not tapped) */
         fun onKey(code: Code, text: String, x: Int, y: Int)
-        /** A long press on 🌐: the system's keyboard picker */
+        /** A long press on 🌐 with quick switch off, or its list's Other keyboards…: the system's keyboard picker */
         fun onPickKeyboard()
+        /** The held 🌐's list: language [i] of [languages] picked */
+        fun onPickLanguage(i: Int)
         /** The letter keys moved: five ints a key (its letter, x, y, width, height), for English's corrections */
         fun onLayout(width: Int, height: Int, keys: IntArray)
         /** The space bar swiped sideways: the cursor moves [by] characters (#53 B11) */
@@ -94,6 +96,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         set(value) { field = value; invalidate() }
     /** $, or ¥ in 中文 and 日本語 */
     private var currency = "$"
+    /** The held 🌐's list (#526): the languages that are on, by name, and the current one's index */
+    var languages = emptyList<String>()
+    var language = 0
+    /** 🌐 held shows [languages]; off, it opens the system's keyboard picker as before */
+    var quickSwitch = true
     var enter = FieldKind.Enter.NEWLINE
         set(value) { field = value; invalidate(); a11y.invalidateRoot() }
 
@@ -112,6 +119,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
+    private val listText = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = fonts.second }
     private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.RIGHT; typeface = fonts.first; color = Picnic.MUTED; textSize = HINT_DP * density
     }
@@ -319,6 +327,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private class Pointer(var cell: Cell, val downAt: Long, val downX: Float, val downY: Float) {
         var panel: List<Pair<RectF, Layout.Key>>? = null
+        /** The held 🌐's list, its rows' cells */
+        var list: List<RectF>? = null
         var chosen = 0
         /** Shift, held while another key is typed: off again when it is let go */
         var chorded = false
@@ -380,9 +390,15 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 val p = pointers[e.getPointerId(i)] ?: continue
                 p.x = e.getX(i)
                 p.y = e.getY(i)
-                if (p.panel == null) {
+                if (p.panel == null && p.list == null) {
                     swipe(p)
                     slidTo(p, p.x, p.y)?.let { slide(p, it) }
+                }
+                p.list?.let { rows ->
+                    // The row the finger is level with; below the list, on the globe, the one chosen stays
+                    val y = e.getY(i) + layerOffset()[1]
+                    val row = rows.indexOfFirst { y < it.bottom }.takeIf { it >= 0 } ?: return@let
+                    if (row != p.chosen) { p.chosen = row; showList(rows, row) }
                 }
                 p.panel?.let { panel ->
                     val x = e.getX(i) + layerOffset()[0]
@@ -401,7 +417,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     // Where the finger lifts counts too: a last step past the edge types the letter it ends on
                     p.x = e.getX(i)
                     p.y = e.getY(i)
-                    if (p.panel == null) slidTo(p, p.x, p.y)?.let { p.cell = it }
+                    if (p.panel == null && p.list == null) slidTo(p, p.x, p.y)?.let { p.cell = it }
                     release(id, p)
                 }
             }
@@ -458,6 +474,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val panel = p.panel
         when {
             panel != null -> panel.getOrNull(p.chosen)?.let { type(it.second) }
+            p.list != null -> pick(p.chosen)
             key.code == Code.SHIFT -> if (p.chorded) setShift(Shift.OFF)
             key.code == Code.DELETE -> {
                 removeCallbacks(repeat)
@@ -541,7 +558,12 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val (_, p) = pointers.entries.maxByOrNull { it.value.downAt } ?: return
         val key = p.cell.key
         if (key.code == Code.GLOBE) {
-            listener.onPickKeyboard()
+            if (!quickSwitch) return listener.onPickKeyboard()
+            // The current language chosen: let go where it went down, the globe changes nothing
+            val rows = listFor(p.cell)
+            p.list = rows
+            p.chosen = language
+            showList(rows, language)
             return
         }
         p.panel = panelFor(p.cell)
@@ -583,6 +605,33 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             panel.maxOf { it.first.right } + 3 * px, panel.maxOf { it.first.bottom } + 3 * px)
         popups.showPanel(frame, panel.map { it.first to (if (shift != Shift.OFF) it.second.label.uppercase() else it.second.label) }, chosen, onChoose)
     }
+
+    /**
+     * The held 🌐's list: [languages], then Other keyboards…, a row each, over the globe from its left edge (kept
+     * inside the keys), in the popup layer's coordinates.
+     */
+    private fun listFor(cell: Cell): List<RectF> {
+        val rowH = rowHeight * 0.82f
+        listText.textSize = rowH * 0.45f
+        val w = listIndent(rowH) + listLabels().maxOf { listText.measureText(it) } + 2 * listMark(rowH)
+        val (dx, dy) = layerOffset()
+        val left = min(cell.rect.left, width - sidePadding - w).coerceAtLeast(sidePadding) + dx
+        val bottom = cell.rect.top + dy - 17 * density
+        val n = languages.size + 1
+        return List(n) { RectF(left, bottom - (n - it) * rowH, left + w, bottom - (n - it - 1) * rowH) }
+    }
+
+    private fun listLabels() = languages + context.getString(R.string.key_other_keyboards)
+
+    /** [onChoose]: TalkBack's list, a double tap on a row picks it; the touch's list takes it too, so its rows can be found */
+    private fun showList(rows: List<RectF>, chosen: Int, onChoose: (Int) -> Unit = { popups.clear(); pick(it) }) {
+        val frame = RectF(rows.first().left - 2 * px, rows.first().top - 2 * px, rows.last().right + 3 * px, rows.last().bottom + 3 * px)
+        popups.showPanel(frame, rows.zip(listLabels()), chosen, onChoose, marked = language,
+            descriptions = languages + context.getString(R.string.key_other_keyboards_description))
+    }
+
+    /** The held 🌐's row [i]: a language, or the last row's Other keyboards… */
+    private fun pick(i: Int) = if (i < languages.size) listener.onPickLanguage(i) else listener.onPickKeyboard()
 
     /** A key's face in its cell, the space between rows below it, its top a little above the cell's */
     private fun face(r: RectF) =
@@ -628,7 +677,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     private fun longPressLabel(key: Layout.Key) = when {
-        key.code == Code.GLOBE -> R.string.key_pick_keyboard
+        key.code == Code.GLOBE -> if (quickSwitch) R.string.key_show_languages else R.string.key_pick_keyboard
         key.code == Code.SHIFT -> R.string.key_lock_caps
         key.more.isNotEmpty() -> R.string.key_alternates
         else -> null
@@ -698,6 +747,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 AccessibilityNodeInfoCompat.ACTION_LONG_CLICK -> {
                     when {
+                        cell.key.code == Code.GLOBE && quickSwitch -> {
+                            val rows = listFor(cell)
+                            showList(rows, -1)
+                            popups.focusChoice(language)
+                        }
                         cell.key.code == Code.GLOBE -> listener.onPickKeyboard()
                         cell.key.code == Code.SHIFT -> {
                             setShift(Shift.LOCKED)

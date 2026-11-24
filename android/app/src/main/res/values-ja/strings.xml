@@ -22,6 +22,10 @@
     <!-- TalkBack: what a double tap and hold on a key does (#283) -->
     <string name="key_alternates">代替文字を表示</string>
     <string name="key_pick_keyboard">キーボードを選択</string>
+    <string name="key_show_languages">言語の一覧を表示</string>
+    <!-- The held globe's last item, which opens Android's keyboard chooser (#526), and what TalkBack reads for it -->
+    <string name="key_other_keyboards">他のキーボード…</string>
+    <string name="key_other_keyboards_description">他のキーボード</string>
     <string name="key_lock_caps">Caps Lock をオン</string>
     <string name="key_space">スペース</string>
     <string name="key_enter">改行</string>

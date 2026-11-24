@@ -12,7 +12,9 @@
     <string name="sebtype_settings_backup_subtitle">导出和导入设置</string>
     <string name="sebtype_settings_about">关于</string>
     <string name="sebtype_settings_globe_order">地球键顺序</string>
-    <string name="sebtype_settings_globe_order_tip">地球键按此顺序在已开启的语言之间切换。拖动 ≡ 可调整顺序。</string>
+    <string name="sebtype_settings_globe_order_tip">长按地球键时按此顺序列出已开启的语言；关闭快速切换时，点按地球键按此顺序切换。拖动 ≡ 可调整顺序。</string>
+    <string name="sebtype_settings_quick_switch">快速切换</string>
+    <string name="sebtype_settings_quick_switch_subtitle">点按地球键在英文和上次用的其他语言之间切换；长按显示语言列表</string>
     <string name="sebtype_settings_drag">拖动以排序</string>
     <string name="sebtype_settings_globe_zh">中文</string>
     <string name="sebtype_settings_globe_ja">日本語</string>
@@ -129,7 +131,7 @@
     <string name="setup_continue">继续</string>
     <string name="setup_tips_text">设置完成。以下几点容易错过：</string>
     <string name="setup_done">完成</string>
-    <string name="tips_globe">长按 🌐 可切换到其他键盘。</string>
+    <string name="tips_globe">点按 🌐 在英文和另一种语言之间切换；长按可选择语言或其他键盘。</string>
     <string name="tips_space">在空格键上左右滑动可移动光标。</string>
     <string name="tips_delete">从 ⌫ 向左滑动可删除整个词。</string>
     <string name="tips_kana">在日本語中，点按 あ 标签可切换片假名。</string>

@@ -71,7 +71,7 @@ pinyin, your own words, the candidate window, privacy and sync.
 
 | | Phone | PC |
 |---|---|---|
-| Switch language | 🌐 next to the space bar: EN → 中 → 日 | **Win+Space**: on Linux, English ⇄ the last other language (the third from the tray menu); on Windows, Windows' own switch, EN → 中 → 日 |
+| Switch language | 🌐 next to the space bar: English ⇄ the last other language; hold 🌐 for the list of languages and other keyboards (with Quick switch off in Languages, a tap goes EN → 中 → 日 and holding opens Android's keyboard chooser) | **Win+Space**: on Linux, English ⇄ the last other language (the third from the tray menu); on Windows, Windows' own switch, EN → 中 → 日 |
 | English letters inside 中文 or 日本語 | | **Shift** tap, and again to go back |
 | 简 ⇄ 繁 | in the keyboard's menu | **Ctrl+Shift+F** |
 | あ ⇄ ア | the mode chip | **Alt+`** |

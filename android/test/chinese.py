@@ -170,20 +170,38 @@ def keys(ns):
     }
 
 
-def tap_globe():
-    """The globe key beside the space bar: the bottom row's third column, over the last nodes().
-
-    A fresh install sets up EN, 中, 日 in that order (#35), so one tap turns the English from the
-    install into 中; the globe then cycles back to EN after 日.
-    """
+def globe_spot():
+    """The globe key beside the space bar: the bottom row's third column, over the last nodes()."""
     left, top, right, bottom = keyboard_frame
-    adb(
-        "shell",
-        "input",
-        "tap",
-        str(int(left + 3 * (right - left) / 10)),
-        str(row_y(top, bottom, 3)),
-    )
+    return int(left + 3 * (right - left) / 10), row_y(top, bottom, 3)
+
+
+def tap_globe():
+    """A tap on the globe: English ⇄ the last other language (#526), 中 on a fresh install (EN, 中, 日, #35)."""
+    adb("shell", "input", "tap", *map(str, globe_spot()))
+
+
+def pick_language(name):
+    """#526: holds the globe until its list shows, slides to name's row and lets go there, which picks it."""
+    at = to = globe_spot()
+    adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+    try:
+        time.sleep(1)
+        to = next(
+            (
+                (x, y)
+                for label, x, y, top, cls in nodes()
+                if label == name and cls == "android.widget.Button"
+            ),
+            None,
+        )
+        if not to:
+            to = at  # let go on the globe: nothing changes
+            raise Fail(f"no {name} in the globe's list")
+    finally:
+        adb("shell", "input", "motionevent", "MOVE", *map(str, to), check=False)
+        adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
+    time.sleep(2)
 
 
 def bar_row(ns):
@@ -952,10 +970,7 @@ def model_context_after_idle_stop():
         raise Fail(f"picked 中华人民共和; the field shows {text!r}")
     adb("logcat", "-c")
     nodes()
-    tap_globe()  # 中 -> 日
-    time.sleep(2)
-    nodes()
-    tap_globe()  # 日 -> EN
+    tap_globe()  # 中 -> EN
     wait_for("Rime to unload", lambda: "Rime unloaded" in logcat(), 240, interval=5)
     nodes()
     tap_globe()  # EN -> 中, in the same field
@@ -1147,12 +1162,11 @@ def to_japanese():
             continue
         if c := chip(nodes()):
             break
-        tap_globe()
-        time.sleep(2)
+        pick_language("日本語")
         if c := chip(nodes()):
             break
     else:
-        raise Fail("no あ|ア chip after cycling the globe")
+        raise Fail("no あ|ア chip after picking 日本語 from the globe's list")
     if c[0] != "あ":
         raise Fail(f"日 opened with the chip on {c[0]}")
     return f"日 shows the chip on あ ({restarts} restarts after the keyboard didn't come up)"
@@ -1528,7 +1542,7 @@ def type_text(text):
 
 
 def to_english():
-    """Cycles the globe until x types a plain x: no chip, no Chinese notice and no Chinese candidates
+    """Taps the globe until x types a plain x: no chip, no Chinese notice and no Chinese candidates
     (English may suggest words for it)."""
     for _ in range(4):
         open_field()
@@ -1544,7 +1558,7 @@ def to_english():
             return
         tap_globe()
         time.sleep(2)
-    raise Fail("no English after cycling the globe")
+    raise Fail("no English after tapping the globe")
 
 
 def to_chinese():
@@ -1561,13 +1575,16 @@ def to_chinese():
         if any(n[0].startswith(PREPARING) for n in ns):
             time.sleep(5)
             continue
-        tap_globe()
-        time.sleep(2)
-    raise Fail("no 中 after cycling the globe")
+        pick_language("中文")
+    raise Fail("no 中 after picking it from the globe's list")
 
 
 def fresh_in_english():
-    """A new keyboard process in EN, which must leave Rime stopped (it holds about 40 MB, #351)."""
+    """A new keyboard process in EN, which must leave Rime stopped (it holds about 40 MB, #351). 中 was the last
+    other language, so the globe's tap goes to it (#526)."""
+    open_field()
+    nodes()
+    pick_language("中文")
     to_english()
     stop_keyboard()
     adb("logcat", "-c")

@@ -17,7 +17,8 @@ import kotlin.math.roundToInt
  * Drawn over the whole keyboard window, the floating strip above the bar included, and never touched: a
  * key's preview while it is pressed and the long-press panel (#28: both in the pixel font). The keyboard
  * owns the touch and tells this layer what to show, in the layer's coordinates. TalkBack's long press shows
- * the panel with its alternates as virtual views here, each typed by a double tap (#283).
+ * the panel with its alternates as virtual views here, each typed by a double tap (#283). The held globe's
+ * language list (#526) is a panel too, its rows left-aligned and the current language marked.
  */
 class PopupLayer(context: Context) : View(context) {
     private val px = Picnic.pixel(context).toFloat()
@@ -26,11 +27,16 @@ class PopupLayer(context: Context) : View(context) {
         textAlign = Paint.Align.CENTER
         typeface = Picnic.fonts(context).second
     }
+    private val mark = Paint()
     private val selected = PixelFrame(Picnic.BERRY, Picnic.BERRY_HIGH, Picnic.BERRY_LOW, shadow = false)
 
     private var preview: Triple<RectF, String, Float>? = null
     /** The long-press panel: its frame, each choice's cell and label, and the selected one */
     private var panel: Triple<RectF, List<Pair<RectF, String>>, Int>? = null
+    /** A list panel's marked row (the current language); -1: a row of alternates, labels centred */
+    private var marked = -1
+    /** What TalkBack reads for each choice, where it isn't the label */
+    private var descriptions: List<String>? = null
 
     /** TalkBack's panel: a double tap on alternate i calls this */
     private var onChoose: ((Int) -> Unit)? = null
@@ -48,9 +54,15 @@ class PopupLayer(context: Context) : View(context) {
         invalidate()
     }
 
-    /** [onChoose]: TalkBack's panel, read out choice by choice; a double tap on one calls it */
-    fun showPanel(frame: RectF, cells: List<Pair<RectF, String>>, selected: Int, onChoose: ((Int) -> Unit)? = null) {
+    /**
+     * [onChoose]: TalkBack's panel, read out choice by choice ([descriptions], or the labels); a double tap on one
+     * calls it. [marked]: a list, its rows left-aligned, that row marked.
+     */
+    fun showPanel(frame: RectF, cells: List<Pair<RectF, String>>, selected: Int, onChoose: ((Int) -> Unit)? = null,
+                  marked: Int = -1, descriptions: List<String>? = null) {
         panel = Triple(frame, cells, selected)
+        this.marked = marked
+        this.descriptions = descriptions
         preview = null
         accessible(onChoose)
         invalidate()
@@ -94,8 +106,9 @@ class PopupLayer(context: Context) : View(context) {
                 node.setBoundsInParent(Rect())
                 return
             }
-            node.contentDescription = label
+            node.contentDescription = descriptions?.getOrNull(id) ?: label
             node.className = "android.widget.Button"
+            node.isSelected = id == marked
             node.setBoundsInParent(Rect(r.left.roundToInt(), r.top.roundToInt(), r.right.roundToInt(), r.bottom.roundToInt()))
             node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
         }
@@ -120,8 +133,24 @@ class PopupLayer(context: Context) : View(context) {
                 if (i == chosen) selected.draw(canvas, r.left, r.top, r.right, r.bottom, px)
                 text.textSize = r.height() * 0.45f
                 text.color = if (i == chosen) Picnic.WHITE else Picnic.INK
-                canvas.drawText(label, r.centerX(), r.centerY() + text.textSize * 0.35f, text)
+                val y = r.centerY() + text.textSize * 0.35f
+                if (marked < 0) return@forEachIndexed canvas.drawText(label, r.centerX(), y, text)
+                // A list's row: a pixel square marks the current one, the labels start after its column
+                if (i == marked) {
+                    mark.color = if (i == chosen) Picnic.WHITE else Picnic.BERRY
+                    val s = listMark(r.height())
+                    canvas.drawRect(r.left + s, r.centerY() - s / 2, r.left + 2 * s, r.centerY() + s / 2, mark)
+                }
+                text.textAlign = Paint.Align.LEFT
+                canvas.drawText(label, r.left + listIndent(r.height()), y, text)
+                text.textAlign = Paint.Align.CENTER
             }
         }
     }
 }
+
+/** A list row's mark, a square [listMark] wide one square in from the row's left */
+internal fun listMark(rowHeight: Float) = rowHeight * 0.2f
+
+/** Where a list row's label starts: after the mark, a square's space beyond it */
+internal fun listIndent(rowHeight: Float) = 3 * listMark(rowHeight)

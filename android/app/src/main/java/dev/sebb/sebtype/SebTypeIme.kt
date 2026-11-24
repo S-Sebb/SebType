@@ -319,6 +319,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         keyboard.sounds = Prefs[Prefs.SOUND]
         keyboard.previews = Prefs[Prefs.KEY_POPUP]
         keyboard.longPressMs = Prefs[Prefs.LONG_PRESS_MS].toLong()
+        keyboard.quickSwitch = Prefs[Prefs.QUICK_SWITCH]
         keyboard.hints = Prefs[Prefs.SHOW_HINTS]
         keyboard.strength = Prefs[Prefs.VIBRATE_STRENGTH]
         englishOptions()
@@ -538,7 +539,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             Code.SYMBOLS2 -> setPage(Page.SYMBOLS2)
             Code.DIGITS -> setPage(Page.DIGITS)
             Code.LETTERS -> setPage(Page.LETTERS)
-            Code.GLOBE -> nextLanguage()
+            Code.GLOBE -> globe()
             Code.KEYBOARDS -> onPickKeyboard()
             Code.SHIFT, Code.GAP -> {}
         }
@@ -651,10 +652,17 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         refresh()
     }
 
-    private fun nextLanguage() {
+    /** 🌐's tap: [globeTarget], the last other language kept by [switchTo] */
+    private fun globe() =
+        switchTo(globeTarget(Engines.languages(), lang, Prefs[Prefs.QUICK_SWITCH], prefs.getInt("other_language", ENGLISH)))
+
+    override fun onPickLanguage(i: Int) = waiting.run {
+        Engines.languages().getOrNull(i)?.let { switchTo(it) }
+    }
+
+    private fun switchTo(next: Int) {
+        if (next == lang) return
         NativeCore.drain() // what the keys before typed shows in this language
-        val order = Engines.languages()
-        val next = order[(order.indexOf(lang) + 1) % order.size]
         // English's word stays as it shows, and a word reopened was the field's text already (#280). 中文's and
         // 日本語's letters go in as typed (#492): phizz, not its pinyin or kana. Shown before the switch, as the
         // keys before it were.
@@ -668,7 +676,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         lang = next
         texts.language = lang
         // Written at once: the process may be stopped right after a switch, and the next start must be in it.
-        prefs.edit().putInt("language", lang).commit()
+        prefs.edit().putInt("language", lang).apply { if (lang != ENGLISH) putInt("other_language", lang) }.commit()
         page = Page.LETTERS
         shown = Panel.NONE
         expanded = false
@@ -769,6 +777,8 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     // --- What shows ---
 
+    private fun name(lang: Int) = when (lang) { CHINESE -> "中文"; JAPANESE -> "日本語"; else -> "English" }
+
     private fun refresh() {
         if (!views) return
         val code = when (lang) { CHINESE -> "zh"; JAPANESE -> "ja"; else -> "en" }
@@ -777,7 +787,9 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         val numbers = if ((kind.numberRow || Prefs[Prefs.NUMBER_ROW]) && kind.pad == null) Layout.load(this, "numbers", code) else null
         val fillRows = if (numbers == null) 0f else rowsHeight(Layout.load(this, Page.LETTERS.file, code).rows + numbers.rows)
         keyboard.setPage(layout, numbers?.takeIf { page == Page.LETTERS }, if (lang == ENGLISH) "$" else "¥", fillRows)
-        keyboard.spaceLabel = when (lang) { CHINESE -> "中文"; JAPANESE -> "日本語"; else -> "English" }
+        keyboard.spaceLabel = name(lang)
+        keyboard.languages = Engines.languages().map { name(it) }
+        keyboard.language = Engines.languages().indexOf(lang)
         if (lang == JAPANESE) {
             val keys = if (page == Page.LETTERS) NativeCore.KEYS_KANA else NativeCore.KEYS_SYMBOLS
             val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -1157,7 +1169,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             Action.CLIPBOARD -> return open(Panel.CLIPBOARD)
             Action.MODES -> return open(Panel.MODES)
             Action.INCOGNITO -> return onIncognito(!incognito)
-            Action.LANGUAGE -> waiting.run { nextLanguage() }
+            Action.LANGUAGE -> waiting.run { globe() }
             Action.SETTINGS -> finishTyping {
                 startActivity(Intent(this, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 requestHideSelf(0)

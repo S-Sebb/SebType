@@ -152,6 +152,9 @@ fun LanguagesScreen(nav: Nav) = Screen(stringResource(R.string.sebtype_settings_
     SectionTag(stringResource(R.string.sebtype_settings_globe_order))
     Tip(stringResource(R.string.sebtype_settings_globe_order_tip))
     GlobeOrder()
+    Card {
+        PrefSwitch(stringResource(R.string.sebtype_settings_quick_switch), stringResource(R.string.sebtype_settings_quick_switch_subtitle), Prefs.QUICK_SWITCH)
+    }
 
     SectionTag("English")
     Card {
