@@ -1,7 +1,11 @@
 // Times Rime the way a keyboard uses it: one key, then read the candidate menu, per keystroke.
 //   perf-rime SHARED_DIR USER_DIR SCHEMA RUNS < inputs.txt   (one key sequence per line)
 // Prints key=value lines: deploy_ms (maintenance at start-up; a full deploy when USER_DIR has no
-// build/), session_ms, first_key_us, key_p50_us, key_p95_us, key_max_us, keys, rss_kb, peak_rss_kb.
+// build/), session_ms, first_key_us, cold_p95_us, key_p50_us, key_p95_us, key_max_us, keys, rss_kb,
+// peak_rss_kb. The first pass over the inputs is cold (the dictionaries paged in from disk, Lua's first
+// calls): it is timed apart (first_key_us, cold_p95_us), and key_* are over the RUNS passes after it.
+// With it in, a quarter of its keys took over 10 ms on TCSBackEnd, and key_p95 depended on how many
+// of them landed among the slowest 5 %: 6.5 to 13.4 ms for the same build (#523).
 // Built by perf.sh against librime's public headers; nothing is committed, so nothing is learned.
 // On Windows (built 64-bit by pc/windows/rime/build.ps1) it loads SebType's rime.dll from PATH.
 #include <stdio.h>
@@ -84,9 +88,9 @@ int main(int argc, char **argv) {
   char inputs[64][128];
   int n = 0;
   while (n < 64 && scanf("%127s", inputs[n]) == 1) n++;
-  int runs = atoi(argv[4]), keys = 0;
-  double *us = malloc(sizeof(double) * runs * n * 128);
-  for (int r = 0; r < runs; r++)
+  int runs = atoi(argv[4]), keys = 0, cold = 0;
+  double *us = malloc(sizeof(double) * (runs + 1) * n * 128);
+  for (int r = 0; r <= runs; r++) {
     for (int i = 0; i < n; i++) {
       api->clear_composition(s);
       for (char *c = inputs[i]; *c; c++) {
@@ -97,11 +101,17 @@ int main(int argc, char **argv) {
         us[keys++] = now_us() - t;
       }
     }
+    if (r == 0) cold = keys;
+  }
   api->clear_composition(s);
   printf("first_key_us=%.0f\n", us[0]);
-  qsort(us, keys, sizeof(double), cmp);
+  qsort(us, cold, sizeof(double), cmp);
+  printf("cold_p95_us=%.0f\n", us[(int)(cold * 0.95)]);
+  double *warm = us + cold;
+  keys -= cold;
+  qsort(warm, keys, sizeof(double), cmp);
   printf("key_p50_us=%.0f\nkey_p95_us=%.0f\nkey_max_us=%.0f\nkeys=%d\n",
-         us[keys / 2], us[(int)(keys * 0.95)], us[keys - 1], keys);
+         warm[keys / 2], warm[(int)(keys * 0.95)], warm[keys - 1], keys);
   printf("rss_kb=%ld\npeak_rss_kb=%ld\n", status_kb("VmRSS:"), status_kb("VmHWM:"));
   api->destroy_session(s);
   api->finalize();

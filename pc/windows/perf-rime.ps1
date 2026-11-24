@@ -32,8 +32,8 @@ try {
   if ($p.ExitCode -or -not $v.ContainsKey('key_p95_us')) { throw "perf-rime.exe failed: $(Get-Content "$out.err" -Raw)" }
   $ms = { param($k) [double]$v[$k] / 1000 }
   $p95 = & $ms key_p95_us
-  $line = 'key p50 {0:n1} ms, p95 {1:n1} ms, max {2:n1} ms, first key {3:n1} ms, {4} keys; start (deploy check) {5} ms, session {6} ms; peak working set {7} MB' -f `
-  (& $ms key_p50_us), $p95, (& $ms key_max_us), (& $ms first_key_us), $v['keys'], $v['deploy_ms'], $v['session_ms'], [int]([double]$v['peak_rss_kb'] / 1024)
+  $line = 'key p50 {0:n1} ms, p95 {1:n1} ms, max {2:n1} ms, {4} keys after a cold pass (first key {3:n1} ms, p95 {8:n1} ms); start (deploy check) {5} ms, session {6} ms; peak working set {7} MB' -f `
+  (& $ms key_p50_us), $p95, (& $ms key_max_us), (& $ms first_key_us), $v['keys'], $v['deploy_ms'], $v['session_ms'], [int]([double]$v['peak_rss_kb'] / 1024), (& $ms cold_p95_us)
   Write-Output "$(if ($p95 -le 10) { 'PASS' } else { 'FAIL' }) rime-p95-under-10ms: $line"
   exit [int]($p95 -gt 10)
 } catch {
