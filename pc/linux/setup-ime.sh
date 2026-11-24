@@ -196,7 +196,7 @@ fi
 pkgs=(fcitx5 fcitx5-autostart fcitx5-qt fcitx5-qt5 fcitx5-qt6 fcitx5-gtk fcitx5-gtk2 fcitx5-gtk3 fcitx5-gtk4
   librime-lua librime-octagram)
 missing=()
-for p in "${pkgs[@]}"; do [[ -n $(installed "$p") ]] || missing+=("$p"); done
+for p in "${pkgs[@]}"; do rpm -q --whatprovides "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if ((${#missing[@]})); then
   if change "install packages ${missing[*]} (asks before using sudo)"; then
     read -rp "Install ${missing[*]} with 'sudo dnf install'? [y/N] " answer || answer=
