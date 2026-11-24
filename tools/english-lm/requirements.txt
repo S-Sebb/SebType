@@ -1,8 +1,8 @@
-torch
-transformers
-sentencepiece
-pyarrow
-numpy
-safetensors
-mwparserfromhell
-huggingface_hub
+torch==2.15.0
+transformers==5.23.0
+sentencepiece==0.2.3
+pyarrow==26.0.1
+numpy==2.5.4
+safetensors==0.8.0
+mwparserfromhell==0.7.2
+huggingface_hub==2.4.0

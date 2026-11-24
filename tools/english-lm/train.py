@@ -3,9 +3,16 @@
   train.py RUN_DIR CONFIG.json
 
 CONFIG (config.json) sets the model's shape and the schedule. Writes RUN_DIR/ckpt/NAME/: the model in
-Hugging Face's Llama format with the tokenizer (export.sh converts it to GGUF), and train.log. Each eval
+Hugging Face's Llama format with the tokenizer (export.sh converts it to GGUF), and train.log; every
+save_every steps a checkpoint in ckpt/NAME/step-N/ too, for select.sh to choose from on the dev sets. Each eval
 prints PROGRESS step/steps and the dev loss: over all tokens, and over the first piece of the word after <S>
 (the correction examples).
+
+A training window starts at a segment's <s>, as the phone's context does: the window's first segment is what
+the phone gives the model, at most 300 characters of a line. The window holds the segments after it too,
+which see the ones before them across their <s> (ordinary packing); their own context is longer than the
+phone's. A window starts at the <s> at or before a uniformly drawn token, so each source is trained in
+proportion to its tokens, as MIX says, however short its segments.
 """
 
 import json
@@ -20,18 +27,44 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
 
-def windows(data, n, length, gen):
-    i = torch.randint(0, len(data) - length - 1, (n,), generator=gen).numpy()
+def window_starts(starts, n, gen):
+    """N window offsets: the <s> at or before a uniform token, so a segment is drawn by its length."""
+    pos = torch.randint(
+        int(starts[0]), int(starts[-1]) + 1, (n,), generator=gen
+    ).numpy()
+    return starts[np.searchsorted(starts, pos, side="right") - 1]
+
+
+def windows(data, starts, n, length, gen):
+    i = window_starts(starts, n, gen)
     x = np.stack([data[j : j + length + 1] for j in i]).astype(np.int64)
     return torch.from_numpy(x).pin_memory().cuda(non_blocking=True)
 
 
-def labels(x, t, s):
-    """Next-token labels for X, with the correction examples' own tokens (<T>, the letters, <S>) left out."""
-    c = (x == t).cumsum(1) - (x == s).cumsum(1)
-    inside = (c > 0) | (x == s)
+def segment_starts(data, bos, length):
+    """The offsets of DATA's <s> tokens that a whole window fits after, read in chunks."""
+    step = 1 << 28
+    out = [
+        np.flatnonzero(data[k : k + step] == bos) + k for k in range(0, len(data), step)
+    ]
+    out = np.concatenate(out)
+    return out[out < len(data) - length - 1]
+
+
+def labels(x, t, s, bos):
+    """Next-token labels for X, with the correction examples' own tokens (<T>, the letters, <S>) and <s> left
+    out. A window that starts inside an example (dev loss's random windows can) has its letters up to the
+    first <S> left out too, and no example after it is taken for text."""
+    tc, sc = (x == t).cumsum(1), (x == s).cumsum(1)
+    c = tc - sc
+    # An unmatched <S> takes c below 0; measured from the lowest c so far, an example is still depth 1.
+    depth = c - torch.minimum(c.cummin(1).values, torch.zeros_like(c))
+    control = (x == t) | (x == s)
+    first = control.int().argmax(1)
+    starts_inside = control.any(1) & (x.gather(1, first[:, None])[:, 0] == s)
+    inside = (depth > 0) | (x == s) | (starts_inside[:, None] & (tc == 0) & (sc == 0))
     y = x[:, 1:].clone()
-    y[inside[:, 1:]] = -100
+    y[inside[:, 1:] | (y == bos)] = -100
     return x[:, :-1], y
 
 
@@ -77,6 +110,8 @@ def main(run, config_path):
     )
     dev = np.memmap(run / "data/dev.0.bin", dtype=np.uint16, mode="r")
     length, micro, accum = cfg["context"], cfg["micro_batch"], cfg["accum"]
+    train_starts = segment_starts(train, sp.bos_id(), length)
+    dev_starts = segment_starts(dev, sp.bos_id(), length)
     steps = int(cfg["tokens"] / (length * micro * accum))
     print(f"train tokens available {len(train) / 1e9:.2f}B, steps {steps}", flush=True)
 
@@ -94,7 +129,7 @@ def main(run, config_path):
 
     def lr_at(step):
         if step < cfg["warmup"]:
-            return cfg["lr"] * step / cfg["warmup"]
+            return cfg["lr"] * (step + 1) / cfg["warmup"]
         p = (step - cfg["warmup"]) / max(1, steps - cfg["warmup"])
         return cfg["lr"] * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * p)))
 
@@ -104,8 +139,8 @@ def main(run, config_path):
         g = torch.Generator().manual_seed(0)
         total = n = hint = nh = 0.0
         for _ in range(20):
-            x = windows(dev, micro, length, g)
-            inp, y = labels(x, t, s)
+            x = windows(dev, dev_starts, micro, length, g)
+            inp, y = labels(x, t, s, sp.bos_id())
             loss = losses(inp, y)
             mask = y != -100
             total += loss[mask].sum().item()
@@ -115,6 +150,12 @@ def main(run, config_path):
             nh += after.sum().item()
         model.train()
         return total / n, hint / max(1, nh)
+
+    def save(d):
+        d.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(d, safe_serialization=True)
+        shutil.copy(run / "data/tokenizer.model", d / "tokenizer.model")
+        (d / "config.train.json").write_text(json.dumps(cfg, indent=1))
 
     log = open(out / "train.log", "a")
     start = time.time()
@@ -130,19 +171,21 @@ def main(run, config_path):
             log.flush()
         if step == steps:
             break
+        if step and step % cfg["save_every"] == 0:
+            save(out / f"step-{step}")
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
         for _ in range(accum):
-            inp, y = labels(windows(train, micro, length, gen), t, s)
+            inp, y = labels(
+                windows(train, train_starts, micro, length, gen), t, s, sp.bos_id()
+            )
             loss = losses(inp, y)
             (loss.sum() / (y != -100).sum() / accum).backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
 
-    model.save_pretrained(out, safe_serialization=True)
-    shutil.copy(run / "data/tokenizer.model", out / "tokenizer.model")
-    (out / "config.train.json").write_text(json.dumps(cfg, indent=1))
+    save(out)
 
 
 if __name__ == "__main__":

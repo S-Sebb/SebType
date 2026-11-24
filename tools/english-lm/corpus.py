@@ -3,10 +3,12 @@
   corpus.py RUN_DIR
 
 Reads RUN_DIR/data/src (fetch.sh) and writes RUN_DIR/data/corpus/SOURCE.txt plus a held-out SOURCE.dev.txt
-(1 in 500 lines). A segment is a paragraph or a chat message line: the text one field of a keyboard holds.
+(1 in 500 documents: an article, a conversation, a message, so no dev line has its neighbours in training). A
+segment is a paragraph or a chat message line: the text one field of a keyboard holds.
 
-Text is folded to ASCII (accents dropped, typographic quotes and dashes made plain), and lines with code, URLs,
-markup or other scripts are dropped. The English harness's test sentences stay out (android/test/english):
+Text is folded to ASCII (accents dropped, typographic quotes and dashes made plain, runs of spaces made one),
+Markdown's emphasis and list markers are taken off (oasst2's answers have them), and lines with code, URLs,
+other markup or other scripts are dropped. The English harness's test sentences stay out (android/test/english):
 - oasst1's initial prompts, the harness's chat pool, are left out of oasst2 entirely;
 - the 200 Wikinews articles the harness's news sentences come from are left out of the Wikinews dump;
 - the NUS SMS messages the harness's texting sets come from are left out, with every message of the same words;
@@ -54,7 +56,10 @@ FOLD = str.maketrans(
         "ı": "i",
     }
 )
-BAD = re.compile(r"https?:|www\.|[`{}<>|@#\\^~_\[\]]|\.\w{2,4}/|\s{2,}|^\W")
+# Markup, code and URLs; a line may start with a quote (dialogue), not with other punctuation (headings).
+BAD = re.compile(r"https?:|www\.|[`{}<>|@#\\^~_*\[\]]|\.\w{2,4}/|\s{2,}|^[^\w\"']")
+LIST_MARKER = re.compile(r"^(?:\d{1,2}[.)]|[-*\u2022]) +")
+EMPHASIS = re.compile(r"\*\*?(?=\S)(.+?)(?<=\S)\*\*?")
 WORDS = re.compile(r"[a-z0-9']+")
 WORD = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
 SINGLISH = {"lah", "lor", "leh", "liao", "hor", "sia", "lei"}
@@ -68,6 +73,7 @@ WORKERS = 8
 def ascii_line(s):
     s = unicodedata.normalize("NFKD", s.translate(FOLD))
     s = "".join(c for c in s if not unicodedata.combining(c)).strip()
+    s = EMPHASIS.sub(r"\1", LIST_MARKER.sub("", re.sub(" {2,}", " ", s)))
     return s if s.isascii() and s.isprintable() else None
 
 
@@ -109,9 +115,11 @@ def init_worker():
 
 
 def clean(texts, min_words=3, prose=False):
-    """Segments from TEXTS: lines folded to ASCII and filtered. PROSE drops headings (no final punctuation)."""
+    """Each of TEXTS (a document: its lines one segment each) as its segments, folded to ASCII and filtered.
+    PROSE drops headings (no final punctuation)."""
     out = []
     for text in texts:
+        doc = []
         for line in text.split("\n"):
             s = ascii_line(line)
             if not keep(s, min_words) or (prose and s[-1] not in ".!?\"')"):
@@ -123,7 +131,9 @@ def clean(texts, min_words=3, prose=False):
                 for i in range(len(w) - k + 1)
             ):
                 continue
-            out.append(s)
+            doc.append(s)
+        if doc:
+            out.append(doc)
     return out
 
 
@@ -143,11 +153,11 @@ def soda(path):
         .column("dialogue")
         .to_pylist()
     )
-    return clean((turn for d in t for turn in d), min_words=2)
+    return clean(("\n".join(d) for d in t), min_words=2)
 
 
 def oasst(path, excluded_ids, excluded_texts):
-    texts = []
+    trees = {}
     for m in map(json.loads, gzip.open(path, "rt")):
         if (
             m.get("lang") == "en"
@@ -155,13 +165,18 @@ def oasst(path, excluded_ids, excluded_texts):
             and m["message_id"] not in excluded_ids
             and m["text"].strip() not in excluded_texts
         ):
-            texts.append(m["text"])
-    return clean(texts, min_words=2)
+            trees.setdefault(m["message_tree_id"], []).append(m["text"])
+    return clean(("\n".join(t) for t in trees.values()), min_words=2)
 
 
 def dolly(path):
     rows = [json.loads(l) for l in open(path)]
-    return clean((r[k] for r in rows for k in ("instruction", "response")), min_words=2)
+    return clean((f"{r['instruction']}\n{r['response']}" for r in rows), min_words=2)
+
+
+# A NUS message the export cut at its first apostrophe starts with the contraction's tail: "m going", "ll be",
+# "M in class", "T WORRY". A capital S is mostly "yes" ("S man"), and "T shirt" is one.
+CUT_TAIL = re.compile(r"(?:m|ll|s|t|re|ve|d|M) |T [A-Z]+\b")
 
 
 def nus_sms(path, excluded_ids):
@@ -200,28 +215,26 @@ def nus_sms(path, excluded_ids):
             and words(t) not in held_out
             and not SINGLISH & set(words(t))
             and all(w in lower or len(senders[w]) >= 5 for w in words(t))
+            and not CUT_TAIL.match(t)
         ),
         min_words=2,
     )
 
 
 def bst(path):
-    """Blended Skill Talk's crowd workers' own turns. Its seed turns and suggestions come from other datasets
-    (EmpatheticDialogues is non-commercial), so they stay out."""
-    t = pq.read_table(path, columns=["free_messages", "guided_messages"]).to_pylist()
-    return clean(
-        (m for r in t for k in ("free_messages", "guided_messages") for m in r[k]),
-        min_words=2,
-    )
+    """Blended Skill Talk's unguided crowd workers' turns. Its seed turns and suggestions come from other
+    datasets (EmpatheticDialogues is non-commercial), and its guided worker's turns are often a suggestion
+    taken as it was (1,929 of 38,151 an EmpatheticDialogues one, #556), so they stay out."""
+    t = pq.read_table(path, columns=["free_messages"]).to_pylist()
+    return clean(("\n".join(r["free_messages"]) for r in t), min_words=2)
 
 
 def topical_chat(paths):
     return clean(
         (
-            turn["message"]
+            "\n".join(turn["message"] for turn in conv["content"])
             for p in paths
             for conv in json.load(open(p)).values()
-            for turn in conv["content"]
         ),
         min_words=2,
     )
@@ -279,13 +292,13 @@ def write(out, name, parts):
         open(out / f"{name}.dev.txt", "w") as dev,
     ):
         for p in parts:
-            for s in p.get():
-                if hash(s) not in seen:
-                    seen.add(hash(s))
-                    (dev if rng.random() < DEV_SHARE.get(name, 0.002) else train).write(
-                        s + "\n"
-                    )
-                    n += 1
+            for doc in p.get():
+                f = dev if rng.random() < DEV_SHARE.get(name, 0.002) else train
+                for s in doc:
+                    if hash(s) not in seen:
+                        seen.add(hash(s))
+                        f.write(s + "\n")
+                        n += 1
     print(f"{name}: {n:,} lines", flush=True)
 
 
