@@ -42,14 +42,7 @@ pack_source "$root/$SEBTYPE_MOZC" "$stage/sources/mozc.tar.gz"
 mkdir -p "$LIBRIME_CACHE/sources"
 fetch_lookaside librime "$LIBRIME_CACHE/sources" "${LIBRIME_PLUGIN_SOURCES[@]}"
 for ((i = 0; i < ${#LIBRIME_PLUGIN_SOURCES[@]}; i += 2)); do cp "$LIBRIME_CACHE/sources/${LIBRIME_PLUGIN_SOURCES[i]}" "$stage/sources/"; done
-octagram=$LIBRIME_CACHE/sources/librime-octagram-$OCTAGRAM_COMMIT.tar.gz
-if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram" &>/dev/null; then # stdout is the RPM path alone
-  curl --limit-rate 35M -sfL --retry 3 -o "$octagram.part" \
-    "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz"
-  sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram.part" || { echo "checksum mismatch: librime-octagram" >&2; exit 1; }
-  mv "$octagram.part" "$octagram"
-fi
-cp "$octagram" "$stage/sources/librime-octagram.tar.gz"
+fetch_octagram "$stage/sources"
 llama=$("$root/engines/sebtype-lm/fetch-llama.sh")
 tar -C "$llama" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=.git --transform 's,^\.,llama,' -c . |
   gzip -n > "$stage/sources/llama.tar.gz"

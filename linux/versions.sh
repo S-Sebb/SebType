@@ -2,7 +2,7 @@
 # SebType's Linux package: the input method (#190), the Fcitx5 add-on over SebType's core with Mozc and
 # SebType's librime (#101, #527) in it, packaged by sebtype.spec (build.sh). Sourced by the build scripts,
 # pc/linux/setup-ime.sh and the tests. Bump SEBTYPE_RPM_RELEASE when what build.sh packs (SEBTYPE_SOURCES,
-# SEBTYPE_MOZC) changes, LIBRIME_SEBTYPE_RELEASE when engines/librime does (for the benches' librime RPMs).
+# SEBTYPE_MOZC) changes; the benches' librime RPMs rebuild by themselves (librime_unpack).
 # A release carries the sebtype RPM (#421) with the add-on, Mozc, the Configurator, the Chinese data and
 # setup's user part, so a PC updates without a checkout.
 # SebType's version, the phone's and Windows' too (VERSION, #420).
@@ -13,7 +13,7 @@ SEBTYPE_LINUX_SETUP=SebType-setup-$SEBTYPE_VERSION-linux-x86_64.sh
 SEBTYPE_CACHE=$HOME/scratch/SebType/cache/sebtype
 # What build.sh packs: SEBTYPE_SOURCES as sebtype.tar.gz, SEBTYPE_MOZC as mozc.tar.gz, and llama.cpp at
 # fetch-llama.sh's pin as llama.tar.gz. The Configurator takes the sync client and the phone's pig and font; the
-# add-on SebType's librime (engines/librime, with LIBRIME_PLUGIN_SOURCES); 中文's model (#495) its loader and chinese.gguf.
+# add-on SebType's librime (engines/librime, with LIBRIME_PLUGIN_SOURCES and OCTAGRAM_COMMIT's octagram); 中文's model (#495) its loader and chinese.gguf.
 SEBTYPE_SOURCES=(VERSION core linux pc/icons pc/linux/setup-ime.sh pc/linux/mozc-keymap.tsv pc/configurator
   sync-server/sebtype_sync.py android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   android/app/src/main/res/font/sebtype_nunito_extrabold.ttf data/rime engines/librime
@@ -26,27 +26,27 @@ BUILD_IMAGE=registry.fedoraproject.org/fedora@sha256:a90c26f38ee1fb33444bbec8b59
 
 # SebType's librime in the add-on (linux/CMakeLists.txt) leaves Fedora's librime installed and as it is (#527).
 # librime.spec builds it with its plugins as Fedora's librime packages for the benches and the private
-# Fcitx5s of the dev tools (librime_unpack); releases up to 0.2.0 installed them in Fedora's place (release
+# Fcitx5s of the dev tools (librime_unpack); releases up to 0.2.0-2 installed them in Fedora's place (release
 # LIBRIME_SEBTYPE_RELEASE and older ones, all *.sebtype*), and the installer and --undo-librime put Fedora's back.
 LIBRIME_VERSION=1.16.1
 LIBRIME_FEDORA_RELEASE=2.fc44
-# Fedora's copies of the plugins (file, sha512).
+# Fedora's copies of the plugins (file, sha512); octagram is OCTAGRAM_COMMIT's (below).
 LIBRIME_SOURCES=(
   librime-lua.tar.gz 855c2633b938b49d32e70c0b0a81be2072b7f1c087485b4b3304e0f72eb237a03b21435c85e26abeb760da0b3711b176f5810704af4362856419fb34558992c0
-  librime-octagram.tar.gz cf0ebfa6af1d80607e0ef477145b8fcdaabbd6fdc3877a2fe7834509d6a327728dcf5397b19897b31b8e4a19defeeb0daabaa0790db8a5d8c13e3c2129eba537
   librime-predict.tar.gz 18886685d38efe8384d1c3d3c7c178f79b9cb9e32d5063586c332f1b1c7b559e869fd2623ede2d088e855ebd82a0368fe83bbffa78a793d660d233a5c82c71c8
 )
 LIBRIME_SEBTYPE_RELEASE=2.sebtype4.fc44
 # The plugins the add-on's librime builds in: rime-ice's Lua, Fedora's copy (LIBRIME_PLUGIN_SOURCES), and the
-# grammar's octagram at the phone's pin (android/native/src/main/cpp/cmake/librime-plugins.cmake). That one is
-# BSD-3-Clause like librime since 2026-07; Fedora's copy is an older GPL-3.0 one. The kana encoding fix it
-# brings leaves 白霜's Chinese grammar byte for byte the same.
+# grammar's octagram at the phone's pin (android/native/src/main/cpp/cmake/librime-plugins.cmake), which
+# librime.spec builds too. That one is BSD-3-Clause like librime since 2026-07; Fedora's copy is an older
+# GPL-3.0 one. Its one code change since, a fix to the encoding of other characters than ASCII and U+4000-9FFF,
+# leaves 白霜's Chinese grammar byte for byte the same.
 LIBRIME_PLUGIN_SOURCES=("${LIBRIME_SOURCES[@]:0:2}")
 OCTAGRAM_COMMIT=57d18b9f58e5284bd891d559f6bdd16cf60341e9
 OCTAGRAM_SHA256=7b9c77bcf17566b64204791b72cdb1b4471e22efec5eef9b79ca764ab99a1576
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
 LIBRIME_CACHE=$HOME/scratch/SebType/cache/librime
-librime_rpm() { echo "$LIBRIME_CACHE/$1-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # package
+librime_rpm() { echo "$LIBRIME_CACHE/$1/$2-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # key package
 
 # sources_key <path>...: a hash of those paths of the tree as they are now, committed or not (new and deleted
 # files too), but not what git ignores. git hashes the files into a copy of the tree's index, so it reads again
@@ -91,19 +91,24 @@ sebtype_unpack() {
 sebtype_env() { # <dir>: Fcitx5 finds the add-on there before its own
   echo "FCITX_ADDON_DIRS=$1/usr/lib64/fcitx5:/usr/lib64/fcitx5" "XDG_DATA_DIRS=$1/usr/share:/usr/share"
 }
-# librime_unpack <dir>: SebType's librime and the plugins as librime.spec packages them, unpacked into <dir>, for
-# the benches and the dev tools that run Fedora's Rime apps on it. They are built first when the cached ones
-# weren't built from this tree's engines/librime and spec (librime.key), so a bench never measures older code.
-# librime_mounts <dir> prints the bwrap arguments that put them over Fedora's for one process alone.
+# librime_key: a hash of what decides build-librime.sh's RPMs, which it keeps in a folder of that name, so a
+# tree never takes RPMs another tree built from other code.
+librime_key() { sources_key engines/librime linux/librime.spec linux/build-librime.sh linux/rpm-sources.sh linux/versions.sh; }
+# librime_unpack <dir>: SebType's librime and the plugins as librime.spec packages them, from this tree's code
+# (built first if they aren't cached), unpacked into <dir>, for the benches and the dev tools that run
+# Fedora's Rime apps on it. librime_mounts <dir> prints the bwrap arguments that put them over Fedora's for
+# one process alone.
 librime_unpack() {
   local p rpm key
-  key=$(sources_key engines/librime linux/librime.spec) || return 1
-  if [[ $(cat "$LIBRIME_CACHE/librime.key" 2>/dev/null) != "$key" ]]; then
-    "$(dirname "${BASH_SOURCE[0]}")/build-librime.sh" >&2 || return 1 # its errors go to stdout
-    echo "$key" > "$LIBRIME_CACHE/librime.key"
-  fi
+  key=$(librime_key) || return 1
   for p in librime librime-lua librime-octagram; do
-    rpm=$(librime_rpm "$p")
+    [[ -f $(librime_rpm "$key" "$p") ]] && continue
+    LIBRIME_KEY=$key "$(dirname "${BASH_SOURCE[0]}")/build-librime.sh" >&2 || return 1 # its errors go to stdout
+    break
+  done
+  touch -c "$LIBRIME_CACHE/$key" # in use: build-librime.sh drops the folders no tree used for two weeks
+  for p in librime librime-lua librime-octagram; do
+    rpm=$(librime_rpm "$key" "$p")
     # cpio stops at the archive trailer; the rest is drained so rpm2cpio doesn't die of SIGPIPE under pipefail.
     rpm2cpio "$rpm" | (cd "$1" && cpio -idm --quiet; s=$?; cat >/dev/null; exit $s) || return 1
   done

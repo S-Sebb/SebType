@@ -11,7 +11,7 @@ describe what each PC part does and list what each of its checks verifies.
   rime-frost's pinned releases on the host's librime, the same version as `engines/librime`, and
   `data/rime/bench/bench.sh` and `slips.sh` measure its accuracy on SebType's own librime build with its
   plugins (`linux/build-librime.sh`), whatever librime is installed (#522), rebuilt when `engines/librime` or
-  `linux/librime.spec` changes.
+  what builds it changes (`linux/versions.sh`'s `librime_key`).
 
 ## Layout
 

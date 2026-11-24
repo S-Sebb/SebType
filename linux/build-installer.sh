@@ -115,7 +115,7 @@ MANIFEST
   ) || { echo "SebType installer: payload checksum verification failed" >&2; exit 3; }
 
   dnf install -y "\$tmp/\$SEBTYPE_RPM"
-  # SebType 0.2.0 and older installed its librime in place of Fedora's (#527); this one has its own inside.
+  # Releases up to 0.2.0-2 installed SebType's librime (*.sebtype*) in place of Fedora's (#527); this one has its own inside.
   # Offline or on a mirror failure SebType still works, and sebtype-setup warns about the old build.
   old=\$(rpm -qa --qf '%{NAME} %{RELEASE}\\n' 'librime*' | awk '\$2 ~ /\\.sebtype/ { print \$1 }')
   if [ -n "\$old" ]; then

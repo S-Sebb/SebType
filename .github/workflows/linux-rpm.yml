@@ -108,6 +108,7 @@ jobs:
           old=$RUNNER_TEMP/SebType-setup-0.2.0-linux-x86_64.sh
           curl --limit-rate 35M -fsSL --retry 3 -o "$old" \
             https://github.com/S-Sebb/SebType/releases/download/v0.2.0/SebType-setup-0.2.0-linux-x86_64.sh
+          sha256sum -c <<<"af0e7c964ec38974dd702cdd3e2ab315b2e73f5d8e64322e68a316b95e0f35a3  $old"
           linux/test-rpms.sh "out/${{ steps.inputs.outputs.setup }}" "$old"
       - uses: actions/upload-artifact@v4
         with:

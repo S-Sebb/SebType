@@ -17,6 +17,20 @@ fetch_lookaside() {
   done
 }
 
+# fetch_octagram <dir>: librime-octagram at versions.sh's OCTAGRAM_COMMIT, cached in LIBRIME_CACHE, into <dir>
+# as librime-octagram.tar.gz.
+fetch_octagram() {
+  local f=$LIBRIME_CACHE/sources/librime-octagram-$OCTAGRAM_COMMIT.tar.gz
+  mkdir -p "$LIBRIME_CACHE/sources"
+  if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f" &>/dev/null; then # a missing file says so on stdout
+    curl --limit-rate 35M -sSfL --retry 3 -o "$f.part" "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz" ||
+      return 1
+    sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f.part" &>/dev/null || { echo "checksum mismatch: librime-octagram" >&2; return 1; }
+    mv "$f.part" "$f"
+  fi
+  cp "$f" "$1/librime-octagram.tar.gz"
+}
+
 # rpm_stage: prints a new folder for one build, in its task folder (TASK_OUT, tools/lib.sh): sources/ for
 # the sources it packs, rpms/ for the RPMs it copies out of the shared work folder while it holds the build
 # lock. A build from another checkout that starts meanwhile can't swap them for its own (#305), as it could

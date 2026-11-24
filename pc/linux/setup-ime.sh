@@ -161,7 +161,7 @@ source "$versions"
 # A package's version-release, empty when it isn't installed (rpm -q prints that it isn't on stdout)
 installed() { if rpm -q --quiet "$1" 2>/dev/null; then rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$1" | head -1; fi; }
 restart_note() { echo "Fcitx5 loads the new $1 once it restarts: turn System Settings → Keyboard → Virtual Keyboard off and back on, or log in again"; }
-# The librime packages SebType 0.2.0 and older installed in place of Fedora's (#101), all from one build. The
+# The librime packages releases up to 0.2.0-2 installed in place of Fedora's (#101), all from one *.sebtype* build. The
 # add-on now has SebType's librime inside (#527); distro-sync brings back the repositories' Fedora release.
 old_librime() { local p; for p in "${LIBRIME_PACKAGES[@]}"; do [[ $(installed "$p") != *.sebtype* ]] || echo "$p"; done; }
 # Fcitx5's own settings, a second place to change Rime and Mozc behind SebType's back (Decisions #2, #182):
@@ -222,7 +222,7 @@ if ((checkout)) && [[ $sebtype_now != "$sebtype_want" ]] &&
     restart_later "SebType input method"
   else warn "SebType's input method isn't installed, so typing stays as it was"; fi
 fi
-# SebType 0.2.0 and older replaced Fedora's librime with its own build; the release's install puts Fedora's
+# Releases up to 0.2.0-2 replaced Fedora's librime with SebType's *.sebtype* build; the release's install puts Fedora's
 # back (linux/build-installer.sh), and so does the next system update.
 mapfile -t librime_pkgs < <(old_librime)
 if ((${#librime_pkgs[@]})); then

@@ -224,7 +224,7 @@ Measured on this PC (#101, SebType's data, per-key CPU time, median of 5):
 
 The Lua filter stays: the model alone in the main translator (no filter) loses 2–3 points of clean
 sentences. The add-on has it inside (#527): `linux/CMakeLists.txt` builds `engines/librime` as a static
-library with Fedora's copies of librime-lua and librime-octagram (the grammar file's plugin, #127: `beirendingwei`
+library with Fedora's copy of librime-lua and librime-octagram at the phone's pin (the grammar file's plugin, #127: `beirendingwei`
 gives 被认定为, not 被人定位) merged in, and keeps its symbols in the add-on. Fedora's `librime` stays
 installed and untouched for other apps (fcitx5-rime, ibus-rime), so system updates, which sync Fedora's
 packages to the repositories' versions (Nobara's updater runs `dnf distro-sync`), Fedora's own librime
