@@ -8,8 +8,10 @@ describe what each PC part does and list what each of its checks verifies.
 - Which licence covers which part: the README's [Licences](../README.md#credits-and-licences)
 - Build and publish a release: `android/release.sh` ([install.md](install.md#publishing-a-release))
 - The Chinese data: [`data/rime/build.sh`](../data/rime/build.sh) builds it from rime-ice's and
-  rime-frost's pinned releases, and `data/rime/bench/bench.sh` measures its accuracy, on the host's
-  librime with Lua, the same version as `engines/librime`.
+  rime-frost's pinned releases on the host's librime, the same version as `engines/librime`, and
+  `data/rime/bench/bench.sh` and `slips.sh` measure its accuracy on SebType's own librime build with its
+  plugins (`linux/build-librime.sh`), whatever librime is installed (#522); bump `LIBRIME_SEBTYPE_RELEASE`
+  after changing `engines/librime`, or they reuse the cached build.
 
 ## Layout
 
