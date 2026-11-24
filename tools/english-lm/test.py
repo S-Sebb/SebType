@@ -154,6 +154,19 @@ check(
     starts == ["You're", "Don't", "O'clock", "You're"],
     starts,
 )
+got = [
+    written(("a " * 149) + ". YOU'RE late")[
+        -2
+    ],  # the sentence starts at a segment's cut
+    written(("a " * 149) + "and YOU'RE late")[-2],  # the cut is mid-sentence
+    written("It was 1898. D'Estaing replaced him.")[2].split()[0],
+    pack.standard("D'Estaing", True),
+]
+check(
+    "examples: a sentence start at a cut, and D'Estaing's spelling",
+    got == ["You're", "you're", "D'Estaing", "D'Estaing"],
+    got,
+)
 check(
     "examples: cant elsewhere stays",
     written("they speak in cant")[-1] == "cant",
@@ -266,37 +279,64 @@ check(
 # as typed (19 of the harness's 31 rows: 61.3 %, over AOSP's 58.1 %).
 today_path = HERE.parents[1] / "android/test/english/today.json"
 today = json.loads(today_path.read_text())["today"]
+# AOSP's numbers as in the pilots' runs (it loses 250 capitals); a keyboard that passes, as pilot r4's core
+# would with the clean word fixed: no capital lost but 50 "i" for "I" and 3 names.
 aosp = json.loads(json.dumps(today))
-for k in ("contractions", "apostrophes", "homographs", "capitals"):
+for k, lowered in (
+    ("contractions", 55),
+    ("apostrophes", 32),
+    ("homographs", 0),
+    ("capitals", 163),
+):
     aosp[k] = {
         "fixed": 50.0,
         "kept fixed": 50.0,
         "restored fixed": 50.0,
         "capitalised": 0,
-        "lowercased": 0,
+        "lowercased": lowered,
+        "lowercased I": 0,
     }
 aosp["homographs"].update({"fixed": 58.1, "kept fixed": 63.2, "restored fixed": 50.0})
+good = json.loads(json.dumps(aosp))
+for k in ("contractions", "apostrophes", "homographs"):
+    good[k]["lowercased"] = 0
+good["capitals"].update({"lowercased": 53, "lowercased I": 50})
 
 
-def passes(core):
-    """Whether CORE passes the bar; the bar's own rows aren't printed, as the failures here are meant."""
+def passes(change):
+    """Whether the passing keyboard with CHANGE(core) applied passes the bar; the bar's rows aren't printed,
+    as the failures here are meant."""
+    core = json.loads(json.dumps(good))
+    change(core)
     with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
         (Path(d) / "s.json").write_text(json.dumps({"core": core, "aosp": aosp}))
         return score.bar(Path(d) / "s.json", today_path)
 
 
-check("bar: AOSP's own numbers pass", passes(aosp))
-core = json.loads(json.dumps(aosp))
-core["text-typos"].update(fixed=0.0, top1=0.0, top3=0.0)
-check("bar: texting accuracy zero fails", not passes(core))
-core = json.loads(json.dumps(aosp))
-core["homographs"].update({"fixed": 61.3, "kept fixed": 100.0, "restored fixed": 0.0})
-check("bar: keeping every homograph fails", not passes(core))
-core = json.loads(json.dumps(aosp))
-core["contractions"]["capitalised"] = 1
-check("bar: a contraction in a title's case fails", not passes(core))
-core = json.loads(json.dumps(aosp))
-core["capitals"]["lowercased"] = 1
-check("bar: a lost capital fails", not passes(core))
+check("bar: a keyboard that passes", passes(lambda c: None))
+check(
+    "bar: texting accuracy zero fails",
+    not passes(lambda c: c["text-typos"].update(fixed=0.0, top1=0.0, top3=0.0)),
+)
+check(
+    "bar: keeping every homograph fails",
+    not passes(
+        lambda c: c["homographs"].update(
+            {"fixed": 61.3, "kept fixed": 100.0, "restored fixed": 0.0}
+        )
+    ),
+)
+check(
+    "bar: a contraction in a title's case fails",
+    not passes(lambda c: c["contractions"].update(capitalised=1)),
+)
+check(
+    "bar: 30 sentence-start contractions lowercased fail, though AOSP loses 87",
+    not passes(lambda c: c["contractions"].update(lowercased=30)),
+)
+check(
+    "bar: 6 capitals lost besides I fail",
+    not passes(lambda c: c["capitals"].update(lowercased=56)),
+)
 
 sys.exit(1 if failures else 0)

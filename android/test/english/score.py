@@ -14,7 +14,7 @@ how many keys the target was first in the top 3 (0: never).
   intended word is first / among the first three suggestions. homographs' kept fixed / restored fixed: fixed
   over the rows whose target is the typed word / its contraction. capitalised: how many commits are the
   intended word with a capital it doesn't have ("O'Clock" for "o'clock"); lowercased: without one it has
-  ("don't" for "Don't" at a sentence start).
+  ("don't" for "Don't" at a sentence start); lowercased I: those of them that are "I" or its forms.
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -37,6 +37,7 @@ def quantile(v, q):
     return round(v[min(len(v) - 1, int(q * len(v)))] / 1000, 2) if v else None
 
 
+I_FORMS = {"I", "I'm", "I'll", "I'd", "I've"}
 QUALITY = ("changed", "fixed", "top1", "top3", "items")
 STACKS = (
     ("today", "Today (2026-11-17, frozen): FUTO's decoder + transformer"),
@@ -235,16 +236,26 @@ def bar(path, today_path):
             -1,
         )
     )
-    # And one that lost its capital: a sentence start, "I", a name (#556).
-    lowercased = lambda s: sum(
-        s[n]["lowercased"]
-        for n in ("contractions", "apostrophes", "homographs", "capitals")
-    )
+    # And one that lost its capital (#556). The keyboard's own numbers, not AOSP's: AOSP loses 250, the
+    # keyboard none in these three sets, so a bar at AOSP's would let 30 sentence-start contractions go.
     checks.append(
         (
-            "contractions, apostrophes, homographs, capitals lowercased wrongly <= AOSP's",
-            lowercased(ours),
-            lowercased(aosp),
+            "contractions, apostrophes, homographs lowercased wrongly",
+            sum(
+                ours[n]["lowercased"]
+                for n in ("contractions", "apostrophes", "homographs")
+            ),
+            0,
+            -1,
+        )
+    )
+    # Capitals: "i" for "I" mid-sentence is most of today's 50 (#568 fixes it; capitals fixed counts it); the
+    # rest, names and sentence starts, are 0 to 3 in the pilots.
+    checks.append(
+        (
+            "capitals lowercased wrongly, I's forms aside",
+            ours["capitals"]["lowercased"] - ours["capitals"]["lowercased I"],
+            5,
             -1,
         )
     )
@@ -298,6 +309,10 @@ def main(run_dir):
                         and any(wrong(c, t) for c, t in zip(r[2], r[1]))
                         for r in rows
                     )
+                s["lowercased I"] = sum(
+                    r[2] != r[1] and r[2].lower() == r[1].lower() and r[1] in I_FORMS
+                    for r in rows
+                )
                 if set_name == "homographs":
                     # Keeping every typed word fixes most rows: the rows that keep it and those that restore
                     # the apostrophe are barred apart.
