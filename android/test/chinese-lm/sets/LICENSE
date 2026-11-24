@@ -1,9 +1,16 @@
 The Chinese harness's test sets, made by ../make_sets.py from openly licensed text. None of it is the user's own
-words or userdb. Each file keeps its sources' licences:
+words or userdb. Each file keeps its sources' licences (tools/chinese-lm/SOURCES.md has the revisions):
 
-- The chat sets (*-chat.tsv, and the chat items in typo.tsv): the test split of LCCC base
-  (https://huggingface.co/datasets/silver/lccc, revision 5bd582fa), MIT License, Wang et al. 2020.
-- The news sets (*-news.tsv, and the news items in typo.tsv): Chinese Wikinews articles
+- The chat sets (*-chat.tsv, and the chat items in typo.tsv and variants.tsv): the test documents
+  (tools/chinese-lm/common.py's split()) of
+  - AliMeeting (OpenSLR 119) and AISHELL-4 (OpenSLR 111): their evaluation and test meetings' transcripts,
+    Creative Commons Attribution-ShareAlike 4.0, by Alibaba DAMO Academy and AISHELL. The files that hold
+    them are therefore CC BY-SA 4.0 as a whole;
+  - HundredCV-Chat (Jax-dan), Apache-2.0;
+  - Tatoeba's Mandarin sentences, Creative Commons Attribution 2.0 France, by Tatoeba's contributors;
+  - KdConv (thu-coai, Zhou et al. 2020), Apache-2.0;
+  - OpenAssistant oasst2, Apache-2.0, by the OpenAssistant contributors.
+- The news sets (*-news.tsv, and the news items in typo.tsv and variants.tsv): Chinese Wikinews articles
   (https://zh.wikinews.org, the 200 newest published in the dump of 2026-11-01; wikinews-articles.tsv lists
   each one's page id), Creative Commons Attribution 2.5, by Wikinews's contributors.
 - The pinyin, abbreviations and typos in every file are generated (MIT, ../../../../LICENSE-SebType).

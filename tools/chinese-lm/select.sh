@@ -6,6 +6,9 @@
 # checkpoint's. Then checks the best export against its checkpoint (parity.py). On yanglab16.
 #
 #   tools/chinese-lm/select.sh RUN_DIR NAME
+#
+# In a git checkout, or in a copy without git with LIBRIME_KEY set (linux/versions.sh's librime_key, as
+# build_remotely brings it).
 set -euo pipefail
 run=$(realpath "$1") name=$2
 here=$(realpath "$(dirname "$0")")
