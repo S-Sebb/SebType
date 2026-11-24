@@ -57,11 +57,11 @@ Copy-Item "$Work\x64\Release\sebtype-server.exe", "$Work\x64\Release\sebtype.dll
 Copy-Item "$Work\x86\Release\sebtype.dll" "$Out\x86" -Force
 
 # The licences of what the server links in (#544): llama.cpp's (ggml's too) with the notices of the code ggml
-# took from llamafile and YaRN, as the phone has them, and each vcpkg package's (protobuf with Abseil and
-# utf8_range, OpenCC with marisa-trie, darts-clone and RapidJSON).
+# took from llamafile and YaRN, as the phone has them, and those of the vcpkg packages linked: protobuf with
+# Abseil and utf8_range, OpenCC with marisa-trie, darts-clone and RapidJSON (not tclap: only OpenCC's tools).
 $licences = New-Item -ItemType Directory -Force "$Out\licenses"
 Copy-Item "$llama\LICENSE" "$licences\llama.cpp-LICENSE.txt"
 Copy-Item "$src\..\android\native\src\main\assets\licenses\Llamafile-sgemm-LICENSE.txt", "$src\..\android\native\src\main\assets\licenses\YaRN-LICENSE.txt" $licences
-foreach ($c in Get-ChildItem "$vcpkg\installed\x64-windows-static\share\*\copyright") {
-  Copy-Item $c "$licences\$($c.Directory.Name)-LICENSE.txt"
+foreach ($p in 'protobuf', 'abseil', 'utf8-range', 'opencc', 'marisa-trie', 'darts-clone', 'rapidjson') {
+  Copy-Item "$vcpkg\installed\x64-windows-static\share\$p\copyright" "$licences\$p-LICENSE.txt"
 }

@@ -6,7 +6,8 @@
 # .github/workflows/windows-setup.yml runs this). The third-party code SebType doesn't change is fetched at
 # pinned commits: librime's dependencies and plugins, and plum. Boost's headers are downloaded into
 # $env:BOOST_ROOT when they aren't there yet. Writes to -Out rime\ (rime.dll, lib\rime.lib, include\,
-# data\, Rime's shared data with OpenCC's, and licenses\, the licences of what rime.dll carries) for
+# data\, Rime's shared data with OpenCC's, and licenses\, the licences of what rime.dll carries and of the
+# shared data) for
 # windows/build.ps1 and SebType's setup, and perf-rime.exe
 # (pc/linux/perf-rime.c) for pc/windows/perf-rime.ps1.
 param(
@@ -128,6 +129,10 @@ try {
   Invoke-Checked 'fetch Rime data' { & $bash plum/rime-install }
   if (-not (Test-Path data\essay.txt)) { throw "plum didn't fetch Rime's data" }
   Copy-Item -Recurse -Force data\* "$Out\rime\data"
+  # Each preset package's licence (LGPL-3.0), next to rime.dll's.
+  $packages = Get-ChildItem plum\package\rime -Directory
+  if (-not $packages) { throw "plum fetched no packages" }
+  foreach ($p in $packages) { Copy-Item "$($p.FullName)\LICENSE" "$Out\rime\licenses\rime-$($p.Name)-LICENSE.txt" }
 } finally {
   Pop-Location
 }
