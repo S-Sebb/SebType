@@ -5,9 +5,7 @@
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35" />
     <application android:label="SebType perf field" android:allowBackup="false">
         <profileable android:shell="true" />
-        <!-- Portrait, as perf.sh's key grid is: a phone on its side with auto-rotate on would otherwise put the field
-             and keyboard in landscape, and the taps would land on other windows (#402) -->
-        <activity android:name=".PerfField" android:exported="true" android:screenOrientation="portrait">
+        <activity android:name=".PerfField" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

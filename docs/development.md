@@ -203,7 +203,8 @@ SEBTYPE_CHECKS=settings-japanese,incognito android/test/emulator.sh
 
 That runs those checks and what they need: always the build, the install beside FUTO Keyboard, the
 locale, SebType enabled and the test field app; and the earlier `android/test/chinese.py` checks a named one
-depends on (its `needs`, so `SEBTYPE_CHECKS=ranh` also runs `first-install`). The settings checks (`android/test/settings.py`) declare no such needs: a settings
+depends on (its `needs`, so `SEBTYPE_CHECKS=ranh` also runs `first-install`). `SEBTYPE_CHECKS=chinese-run` runs
+all of `chinese.py` and no settings check. The settings checks (`android/test/settings.py`) declare no such needs: a settings
 check that relies on Chinese being set up runs with `first-install` named too.
 
 Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in

@@ -28,6 +28,8 @@ import zlib
 
 serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
 main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
+times_path = os.path.join(logdir, "check-times.txt")
+open(times_path, "w").close()
 PKG = "dev.sebb.sebtype"
 # The keyboard keeps the FUTO-based app's service name, so an update from it stays selected (#262).
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
@@ -411,8 +413,9 @@ passed = {}
 
 def wanted():
     """With SEBTYPE_CHECKS (comma-separated name prefixes, as android/test/emulator.sh takes it), the
-    checks named there and those they need; None runs all."""
-    if not PREFIXES:
+    checks named there and those they need; None runs all, as does naming this script's step, chinese-run
+    (its checks share no prefix)."""
+    if not PREFIXES or "chinese-run" in PREFIXES:
         return None
     needs = {}
     with open(__file__, encoding="utf-8") as f:
@@ -451,6 +454,7 @@ def check(name, fn, needs=()):
     runs = REPEAT if any(name.startswith(c) for c in PREFIXES) else 1
     for run in range(1, runs + 1):
         of = f" (run {run}/{runs})" if runs > 1 else ""
+        start = time.time()
         try:
             detail = fn()
             passed[name] = True
@@ -470,6 +474,9 @@ def check(name, fn, needs=()):
             suffix = f"-{run}" if runs > 1 else ""
             with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
                 f.write(adb("logcat", "-d", check=False))
+        # How long each check took, for a run that nears chinese-run's limit (#524)
+        with open(times_path, "a", encoding="utf-8") as f:
+            f.write(f"{time.time() - start:6.0f} s {name}{of}\n")
 
 
 def fresh_install():
@@ -2419,7 +2426,6 @@ def floating_resize():
         adb("shell", "cmd", "uimode", "night").split(":")[-1].strip()
     )  # yes, no, auto or custom
     try:
-        set_mode("Floating")
         tap_reset()  # from its size and place before any change
         open_field()
         l, t, r, b = frame_now()
@@ -2497,7 +2503,9 @@ def floating_resize():
 
 
 def tap_reset():
-    open_field()
+    """Floating's Reset: the floating keyboard back to its first size and place. Only floating mode's resize
+    frame has Reset, so it sets floating mode first; a check's cleanup that has already left it still resets."""
+    set_mode("Floating")
     action(MODES_ACTION)
     tap_label(RESIZE)
     tap_label(("Reset", "重置", "初期化"))
@@ -2520,7 +2528,6 @@ def floating_short_window():
         return frame_now()
 
     try:
-        set_mode("Floating")
         tap_reset()
         l, t, r, b = resize_floating(("keys", (-w, -h)), ("corner", (w, h)))
         wide, tall = r - l, b - t
@@ -2670,7 +2677,6 @@ def floating_narrowest():
     w, h = screen_size()
     narrowest = round(144 * screen_density())
     try:
-        set_mode("Floating")
         tap_reset()
         open_field()
         action(MODES_ACTION)
@@ -2746,7 +2752,6 @@ def floating_resize_edge():
     to_english()
     w, h = screen_size()
     try:
-        set_mode("Floating")
         tap_reset()  # from its size and place before any change
         open_field()
         l, t, r, b = frame_now()

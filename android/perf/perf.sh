@@ -61,8 +61,8 @@ pss_kb() { # [label]: total PSS; the full breakdown stays in run/meminfo-<label>
 }
 open_field() {
   # FIELD_ARGS: --compare types into a private field (no personalized learning), so a keyboard the
-  # device's owner uses learns nothing from the test.
-  local o; o=$(sh am start -W -S -n "$field_act" ${FIELD_ARGS:-} "$@") || { echo "test field didn't open: $(tail -2 <<<"$o" | tr '\n' ' ')" >&2; return 1; }
+  # device's owner uses learns nothing from the test. Upright: the key grid is portrait's (#402).
+  local o; o=$(sh am start -W -S -n "$field_act" --ez upright true ${FIELD_ARGS:-} "$@") || { echo "test field didn't open: $(tail -2 <<<"$o" | tr '\n' ' ')" >&2; return 1; }
   sleep 3
 }
 geometry() { # keyboard grid from the screen width and the keyboard window's top, in px, into run/geometry
