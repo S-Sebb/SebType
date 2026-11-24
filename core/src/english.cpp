@@ -850,6 +850,7 @@ class English : public Engine {
     const std::string typed = utf8(typed_);
     correction_ = false, modelStrip_ = false;
     strip_.clear();
+    contraction_.clear();
     // Right after "@" (an address typed in a text field): domains, never a correction.
     domains_ = !context_.empty() && context_.back() == '@';
     if (domains_) {
@@ -863,6 +864,23 @@ class English : public Engine {
     for (Lexicon *lexicon : {history_.get(), personal_.get()})
       if (lexicon)
         for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
+
+    // A contraction typed without its apostrophe ("ive", "dont", "youre", #529) is what a space commits
+    // unless the letters are a word themselves ("were", "well", "its"); a capital I asks for the pronoun's
+    // ("Ill", "Id"). The model can't decide these: its texting-style training text drops apostrophes, so it
+    // keeps "dont" and reads "ive" as "give".
+    const std::string bare = lowerCaseWord(typed);
+    const auto unquoted = [](std::string w) {
+      std::erase(w, '\'');
+      return w;
+    };
+    const bool word = std::ranges::any_of(results, [&](const Word &w) { return lowerCaseWord(w.word) == bare; });
+    for (const Word &w : results)
+      if (w.word.find('\'') != std::string::npos && unquoted(lowerCaseWord(w.word)) == bare &&
+          (!word || (typed_[0] == 'I' && w.word.starts_with("I'")))) {
+        contraction_ = w.word;
+        break;
+      }
 
     // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
     std::string committed = typed;
@@ -917,6 +935,11 @@ class English : public Engine {
   // Shows STRIP (best first) and COMMITTED, what a space commits, for the letters typed.
   void show(std::vector<std::string> strip, std::string committed) {
     const std::string typed = utf8(typed_);
+    if (!contraction_.empty()) {
+      std::erase(strip, contraction_);
+      strip.insert(strip.begin(), contraction_);
+      committed = contraction_;
+    }
     // With autocorrect off, and for words typed right after a "." or a digit (".py", "3rd", #39), the
     // word stays as typed.
     const char before = context_.empty() ? ' ' : context_.back();
@@ -1242,6 +1265,7 @@ class English : public Engine {
   std::string context_;               // the text before them
   std::vector<std::string> strip_;
   std::vector<std::string> shortcuts_;  // the personal words the letters typed are a shortcut for
+  std::string contraction_;  // the contraction the letters typed are without their apostrophe (#529)
   bool correction_ = false;  // strip_[0] is what a space commits instead of the typed word
   bool modelStrip_ = false;  // strip_ is the model's ranking, not the decoder's rule
   bool domains_ = false;     // the list is e-mail domains

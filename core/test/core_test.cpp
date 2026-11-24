@@ -572,6 +572,34 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
   EXPECT_EQ(en->takeCommit(), "what ");
 }
 
+// A contraction typed without its apostrophe is offered first and a space corrects to it (#529), by the
+// decoder's rule and by the model's; letters that are a word themselves, as "were" or "well", stay.
+TEST_F(EnglishTest, ContractionsWithoutTheirApostropheAreCorrected) {
+  const std::vector<std::pair<std::string, std::string>> cases = {
+      {"Ive", "I've"},     {"ive", "I've"},       {"Im", "I'm"},         {"im", "I'm"},
+      {"Ill", "I'll"},     {"Id", "I'd"},         {"dont", "don't"},     {"Dont", "Don't"},
+      {"cant", "can't"},   {"wont", "won't"},     {"didnt", "didn't"},   {"doesnt", "doesn't"},
+      {"isnt", "isn't"},   {"wasnt", "wasn't"},   {"youre", "you're"},   {"theyre", "they're"},
+      {"thats", "that's"}, {"whats", "what's"},   {"youve", "you've"},   {"its", "its"},
+      {"were", "were"},    {"well", "well"},      {"hell", "hell"}};
+  for (const bool model : {false, true}) {
+    start(model ? EN_MODEL : "");
+    if (model) {
+      type("a");
+      en->key({0xff08, 0, false});
+      ASSERT_TRUE(ready(0));
+    }
+    for (const auto &[typed, word] : cases) {
+      en->setContext("so ");
+      type(typed);
+      for (int i = 0; i < 100 && model && indexOf(word) != 0; i++) std::this_thread::sleep_for(20ms);
+      EXPECT_EQ(indexOf(word), 0) << typed << (model ? " (model)" : "");
+      type(" ");
+      EXPECT_EQ(en->takeCommit(), word + " ") << typed << (model ? " (model)" : "");
+    }
+  }
+}
+
 // A key changes the list once (#450): its own result and the decoder's leave the list shown as it was, and
 // the model's ranking, expected within the hold, takes its place.
 TEST_F(EnglishTest, AKeyChangesTheListOnceToTheModelsRanking) {
