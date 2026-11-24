@@ -5,8 +5,10 @@
 # release installed over it first: --install-rpms-only installs sebtype and leaves Fedora's librime as it is,
 # or puts it back where an older release had replaced it (#527); SebType's version is VERSION's, every
 # installed file is the package's, the files setup's user part copies are this checkout's, every library finds
-# what it links, the add-on has its own librime, sebtype-setup runs cleanly as a normal user, a system update
-# and a later librime-predict install work, and removing sebtype leaves Fedora's Rime working.
+# what it links, the add-on has its own librime, the package needs only sonames Fedora keeps across releases,
+# Fcitx5 loads the add-on, sebtype-setup runs cleanly as a normal user, a system update and a later
+# librime-predict install work, removing sebtype leaves Fedora's Rime working, and with sebtype installed
+# again the upgrade to the next Fedora release goes through and Fcitx5 still loads it (#540).
 #
 #   linux/test-rpms.sh INSTALLER [OLD_INSTALLER]   # SebType-setup-<version>-linux-x86_64.sh (CI's artifact
 #                                                  # sebtype-linux-setup); OLD_INSTALLER: a release's, e.g. 0.2.0's
@@ -30,19 +32,20 @@ if [[ ${1-} != --inside ]]; then
 fi
 
 failed=0
-check() { # name function...: each within 15 minutes (timeout can't run a function)
+check() { # name function...: each within 15 minutes (timeout can't run a function); exit 77 skips it
   local name=$1 pid watch rc; shift
   "$@" > "/log/$name.log" 2>&1 & pid=$!
   { sleep 900; kill "$pid"; } 2>/dev/null & watch=$!
   wait "$pid"; rc=$?
   kill "$watch" 2>/dev/null
   if ((rc == 0)); then echo "PASS $name"
+  elif ((rc == 77)); then echo "SKIP $name: $(tail -n 1 "/log/$name.log")"
   else echo "FAIL $name: see test-rpms/$name.log"; tail -n 30 "/log/$name.log" || true; failed=1; fi
 }
 rime=(librime librime-lua librime-octagram librime-tools fcitx5-rime)
 
 echo 'throttle=35M' >> /etc/dnf/dnf.conf
-dnf -y -q install fcitx5 "${rime[@]}" binutils > /log/before.log 2>&1 ||
+dnf -y -q install fcitx5 "${rime[@]}" binutils dbus-daemon > /log/before.log 2>&1 ||
   { echo "preflight: Fedora's fcitx5 and Rime don't install (see test-rpms/before.log)"; exit 1; }
 if [[ -f /old.sh ]]; then
   sh /old.sh --install-rpms-only > /log/old.log 2>&1 || { echo "preflight: the old installer fails (see test-rpms/old.log)"; exit 1; }
@@ -92,6 +95,22 @@ own_librime() {
 }
 check own-librime own_librime
 
+# The package needs no library a Fedora release may drop or rename (#540): the add-on has librime's
+# libraries and protobuf inside, and needs only glibc's, GCC's, Fcitx5's, libpng's and fontconfig's.
+stable_sonames() {
+  ! rpm -q --requires sebtype | grep '\.so' |
+    grep -vE '^(libc|libm|libstdc\+\+|libgcc_s)\.so\.[0-9]+\(|^libFcitx5(Core|Config|Utils)\.so|^libpng16\.so\.16\(|^libfontconfig\.so\.1\(|^rtld\('
+}
+check stable-sonames stable_sonames
+
+# Fcitx5 loads the add-on and its input method, without a display, in its own D-Bus session.
+fcitx5_loads() {
+  local log
+  log=$(HOME=$(mktemp -d) timeout 20 dbus-run-session -- fcitx5 --verbose='*=5' --disable=all --enable=dbus,keyboard,sebtype 2>&1)
+  grep -q 'Loaded addon sebtype' <<<"$log" && grep -q 'input method(s) in addon sebtype' <<<"$log" || { echo "$log"; return 1; }
+}
+check fcitx5-loads fcitx5_loads
+
 expected() {
   local f
   for f in /usr/lib64/fcitx5/sebtype.so /usr/share/fcitx5/addon/sebtype.conf /usr/lib64/sebtype/libsebtype-mozc.so \
@@ -104,7 +123,9 @@ expected() {
     grep -q 'Redistribution and use in source and binary forms' "/usr/share/licenses/sebtype/$f-LICENSE" ||
       { echo "not BSD: $f"; return 1; }
   done
-  [[ -s /usr/share/licenses/sebtype/llama.cpp-LICENSE ]] || { echo "missing: llama.cpp's licence"; return 1; }
+  for f in llama.cpp glog yaml-cpp leveldb marisa-trie opencc protobuf lua rapidjson; do
+    [[ -s /usr/share/licenses/sebtype/$f-LICENSE ]] || { echo "missing: $f's licence"; return 1; }
+  done
   # What setup's user part copies is this checkout's.
   # rpmbuild makes setup's #!/usr/bin/env bash /usr/bin/bash.
   cmp <(tail -n +2 /src/pc/linux/setup-ime.sh) <(tail -n +2 /usr/libexec/sebtype/setup-ime.sh) &&
@@ -176,5 +197,16 @@ remove() {
   true
 }
 check remove-leaves-fedora-rime remove
+
+# The next Fedora release's upgrade (dnf --releasever distro-sync, #540) goes through with sebtype installed,
+# keeps it, and the add-on still finds what it links and loads. Skipped while that release has no repositories.
+release_upgrade() {
+  local next
+  next=$(($(rpm -E %fedora) + 1))
+  [[ -n $(dnf -q --releasever="$next" repoquery fedora-release-common 2>/dev/null) ]] || { echo "Fedora $next has no repositories yet"; return 77; }
+  sh /installer.sh --install-rpms-only && dnf -y --releasever="$next" distro-sync &&
+    [[ $(rpm -E %fedora) == "$next" ]] && rpm -V sebtype && ! ldd /usr/lib64/fcitx5/sebtype.so | grep 'not found' && fcitx5_loads
+}
+check release-upgrade release_upgrade
 
 exit $failed

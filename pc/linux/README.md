@@ -228,7 +228,12 @@ library with Fedora's copy of librime-lua and librime-octagram at the phone's pi
 gives 被认定为, not 被人定位) merged in, and keeps its symbols in the add-on. Fedora's `librime` stays
 installed and untouched for other apps (fcitx5-rime, ibus-rime), so system updates, which sync Fedora's
 packages to the repositories' versions (Nobara's updater runs `dnf distro-sync`), Fedora's own librime
-updates and removing `sebtype` all leave both working. Up to 0.2.0, SebType's librime RPMs replaced Fedora's
+updates and removing `sebtype` all leave both working. What librime and core/ link (glog, yaml-cpp, LevelDB,
+marisa-trie, OpenCC, Lua and protobuf, `linux/versions.sh`'s `SEBTYPE_DEPS`) is static in the add-on too
+(#540): as shared libraries they made `sebtype` need sonames a Fedora release drops (Fedora 45 has
+`libopencc.so.1.2` and Lua 5.5), and the upgrade (`dnf --releasever=45 distro-sync`) stopped on them.
+The package now needs only glibc's, GCC's, Fcitx5's, libpng's and fontconfig's, and `linux/test-rpms.sh`
+checks that and upgrades its container to the next release with SebType installed. Up to 0.2.0, SebType's librime RPMs replaced Fedora's
 and a distro-sync swapped them back (#527). `linux/build-librime.sh` still builds those RPMs
 (`linux/librime.spec`, Fedora's spec) for the benches and the dev tools' private Fcitx5s.
 

@@ -26,6 +26,7 @@ on:
       - data/rime/**
       - engines/mozc/**
       - engines/librime/**
+      - android/native/src/main/assets/licenses/**
       - engines/sebtype-lm/**
       - tools/lib.sh
       - tools/mozc-bazel.sh

@@ -137,6 +137,7 @@ came from:
 | Fedora's librime spec with SebType's changes (`linux/librime.spec`) | MIT, like Fedora's specs |
 | RimeJni's build scripts with SebType's changes (`android/native/src/main/cpp/cmake/`: how the phone builds librime; the bundled libraries' licences are in `android/native/src/main/assets/licenses/`) | MIT, like RimeJni |
 | librime, librime-lua and librime-octagram, built into the Linux add-on (`sebtype.so`, whose package carries their licences) and the phone's native library | BSD-3-Clause |
+| What librime and SebType's core link, built into the Linux add-on and the phone's native library (their licences in the package and in `android/native/src/main/assets/licenses/`): LevelDB, protobuf and (Linux) glog; yaml-cpp, Lua and RapidJSON (in OpenCC); marisa-trie; OpenCC | BSD-3-Clause; MIT; BSD-2-Clause; Apache-2.0 |
 | The rime-ice and 白霜 data in the APK and on the PCs (see below) | GPL-3.0 |
 
 **Chinese data.** rime-ice's schemas, Lua and settings with the core dictionary and zh-moqi grammar of

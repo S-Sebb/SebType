@@ -54,6 +54,12 @@ back in (or toggle Virtual Keyboard off and on in KDE System Settings) once it i
 installer upgrades SebType and keeps what it learned. Installing from a checkout (`pc/linux/setup-ime.sh`),
 each step, and how to undo it: [pc/linux/README.md](../pc/linux/README.md).
 
+Upgrading to a new Fedora or Nobara release works with SebType installed: its package carries the
+libraries a release may drop, and SebType keeps working after it. SebType 0.2.0 and older don't: the upgrade
+stops with `sebtype requires libopencc.so.1.1()(64bit)`. Run the latest installer first, then upgrade. If
+the upgrade already went through without SebType, run the latest installer again; what SebType learned
+stays in your account either way.
+
 ## Windows
 
 Download `SebType-setup-<version>.exe` from the [latest release](https://github.com/S-Sebb/SebType/releases/latest)
