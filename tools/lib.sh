@@ -150,15 +150,19 @@ build_lock() {
 # (-i, -u NAME, NAME=VALUE). DIR is a throwaway directory the caller removes; the session's files go in it.
 # - Its own XDG_RUNTIME_DIR (#176): in the user's, anything that touches the Documents portal starts a
 #   second xdg-document-portal on the user's $XDG_RUNTIME_DIR/doc, and the user's mount goes when it
-#   ends, so Flatpak apps no longer start.
+#   ends, so Flatpak apps no longer start. The session sees it by a short link in the user's (#525): a
+#   nested KWin puts its Xwayland's input socket there (kwin-xwayland-eis-socket.<pid>), which under a
+#   long DIR passes a Unix socket's 108 bytes, and then Xwayland never answers its first X client.
 # - No desktop portal (#203): a nested KWin starts plasma-keyboard, which asks for it, and the portal,
 #   started by this bus without a display, aborts and is started again, dozens of times a minute. Its
 #   services are masked by ones that fail at once; the Documents portal stays.
 # - RLIMIT_CORE=1, so the kernel hands no crash in the session to systemd-coredump, and none raises a
 #   DrKonqi notice on the user's desktop.
 private_dbus() {
-  local rt s env=()
+  local rt link s env=()
   rt=$(mktemp -d "$1/run.XXXX"); shift  # 0700
+  link=$rt
+  [[ -n ${XDG_RUNTIME_DIR-} ]] && link=$(mktemp -u "$XDG_RUNTIME_DIR/sebtype-bus.XXXX") && ln -s "$rt" "$link"
   while [[ $1 != -- ]]; do env+=("$1"); shift; done; shift
   mkdir "$rt/masked"
   for s in /usr/share/dbus-1/services/org.freedesktop.portal.Desktop.service \
@@ -168,5 +172,8 @@ private_dbus() {
   # The first service dir that has a name wins, so the masks go before the standard ones.
   printf '<busconfig>\n  <servicedir>%s</servicedir>\n  <include>/usr/share/dbus-1/session.conf</include>\n</busconfig>\n' \
     "$rt/masked" > "$rt/bus.conf"
-  env "${env[@]}" XDG_RUNTIME_DIR="$rt" prlimit --core=1 -- dbus-run-session --config-file="$rt/bus.conf" -- "$@"
+  env "${env[@]}" XDG_RUNTIME_DIR="$link" prlimit --core=1 -- dbus-run-session --config-file="$rt/bus.conf" -- "$@"
+  s=$?
+  [[ $link == "$rt" ]] || rm -f "$link"
+  return $s
 }

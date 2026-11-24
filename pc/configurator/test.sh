@@ -110,7 +110,6 @@ PY
 }
 sandbox
 
-# The nested KWins' socket names are short: their path in the sandbox must fit a Unix socket's 108 bytes.
 # Every screen opens and stays open in each language, set as the system's; the screenshots are kept for
 # the eye, and a 中文 or 日本語 screen that looks the same as the English one fails.
 shots() {
@@ -284,7 +283,7 @@ SH
   # shellcheck disable=SC2086  # own_env is split
   private_dbus "$sb" -u WAYLAND_DISPLAY -u DISPLAY $own_env HOME="$sb" XDG_CONFIG_HOME="$sb/config" XDG_DATA_HOME="$sb/data" -- \
     kwin_wayland --virtual --xwayland --no-lockscreen --socket "wp$$" --width 1000 --height 700 --exit-with-session \
-    "$sb/picnic.sh $PWD $sb $out" > "$sb/kwin-picnic.log" 2>&1
+    "$sb/picnic.sh $PWD $sb $out" > "$out/configurator-picnic-kwin.log" 2>&1
   cat "$out/configurator-picnic.status"; [[ $(grep -c ' ok: ' "$out/configurator-picnic.status") == 9 ]]
 }
 export -f picnic_window
