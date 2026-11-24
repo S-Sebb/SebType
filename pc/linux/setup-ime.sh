@@ -532,6 +532,14 @@ else
     warn "Fcitx5 doesn't know SebType's input method yet: $(restart_note "SebType input method")"
   fi
 fi
+# 7b. fcitx5-rime's Rime stays off while SebType's input method is installed (linux/src/sebtype.cpp, #542): both
+# would use Rime's folder, and one would stop learning. Another group of the user's that has it is told so.
+rime_groups=$(awk -F= '/^\[Groups\/[0-9]+\]$/ { g = $0; sub(/^\[Groups\//, "", g); sub(/\]$/, "", g); sec = "group"; next }
+  /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ { sec = "item"; next } /^\[/ { sec = ""; next }
+  sec == "group" && $1 == "Name" { name[g] = $2 } sec == "item" && $1 == "Name" && $2 == "rime" { rime[g] = 1 }
+  END { for (g in rime) printf "%s\"%s\"", (n++ ? ", " : ""), name[g] }' "$fcitx_profile" 2>/dev/null || true)
+[[ -n $rime_groups ]] &&
+  warn "fcitx5-rime's Rime in Fcitx5 input method group $rime_groups types nothing while SebType's input method is installed: both would use $rime_dir, and one would stop learning. SebType's 中文 is Rime on that folder, with its learned words; removing sebtype brings fcitx5-rime back"
 
 # 8. Super+Space is the only language switch, and it toggles English and the last other language (#93):
 # SebType's input method takes it (#190), so Fcitx5's own switchers are cleared: its trigger key (which

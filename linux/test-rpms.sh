@@ -129,7 +129,7 @@ check stable-sonames stable_sonames
 fcitx5_loads() {
   local log
   log=$(HOME=$(mktemp -d) timeout 20 dbus-run-session -- fcitx5 --verbose='*=5' --disable=all --enable=dbus,keyboard,sebtype 2>&1)
-  grep -q 'Loaded addon sebtype' <<<"$log" && grep -q 'input method(s) in addon sebtype' <<<"$log" || { echo "$log"; return 1; }
+  { grep -q 'Loaded addon sebtype' <<<"$log" && grep -q 'input method(s) in addon sebtype' <<<"$log"; } || { echo "$log"; return 1; }
 }
 check fcitx5-loads fcitx5_loads
 
@@ -157,7 +157,7 @@ expected() {
 }
 check files-expected expected
 
-links() { local out; out=$(ldd "$1") && ! grep 'not found' <<<"$out" || { echo "$1: $out"; return 1; }; }
+links() { local out; { out=$(ldd "$1") && ! grep 'not found' <<<"$out"; } || { echo "$1: $out"; return 1; }; }
 libraries() {
   local f bad=0
   while read -r f; do

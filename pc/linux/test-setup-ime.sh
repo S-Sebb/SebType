@@ -1159,6 +1159,104 @@ if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.reposito
 else result SKIP private-field "needs fcitx5, dbus-run-session and python3-gobject"
 fi
 
+# fcitx5-rime beside SebType (#542): an account set up by setup-ime.sh with fcitx5-rime's Rime in a group of
+# its own is told it stays off. A private Fcitx5 (as above) asked to load both, with Rime picked first, loads
+# no fcitx5-rime, so it runs no second librime on Rime's folder, and SebType's 中文 learns a pick. With both, the
+# librime second to open rime_ice.userdb found it locked (one LevelDB, #532) or, with a LevelDB of each (#554),
+# both opened it to write, which LevelDB never allows. Without SebType (removed), the same account's fcitx5-rime types.
+both_rimes() {
+  local h=$fake/both-rimes o
+  mkdir -p "$h/.config/fcitx5"
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=keyboard-us\n\n[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n[Groups/1]\nName=Rime\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n1=Rime\n' \
+    > "$h/.config/fcitx5/profile"
+  o=$(fake_run < /dev/null) || return 1; echo "$o"
+  grep -q "^warning: fcitx5-rime's Rime in Fcitx5 input method group \"Rime\" types nothing while SebType" <<<"$o" || return 1
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    > "$h/.config/fcitx5/profile"
+  private_bus "$h" 400 "${own_fcitx[@]}" python3 -u - "$out/fcitx5-both-rimes" <<'PY'
+import subprocess, sys, time
+from gi.repository import Gio, GLib
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(path, iface, method, sig=None, *args):  # never D-Bus-activates a second, default Fcitx5
+    return bus.call_sync('org.fcitx.Fcitx5', path, iface, method, GLib.Variant(sig, args) if sig else None,
+                         None, Gio.DBusCallFlags.NO_AUTO_START, 10000, None).unpack()
+CONTROLLER, IC, SEBTYPE = ('/controller', 'org.fcitx.Fcitx.Controller1'), 'org.fcitx.Fcitx.InputContext1', ('/sebtype', 'org.sebtype.Core1')
+def wait(cond, secs):
+    end = time.time() + secs
+    while time.time() < end and not cond():
+        GLib.MainContext.default().iteration(False); time.sleep(0.02)
+    return cond()
+def up():
+    try: call(*CONTROLLER, 'CurrentInputMethod'); return True
+    except GLib.Error: return False
+KEYS = {'space': (0x20, 65), 'Escape': (0xff1b, 9), '2': (0x32, 11), '3': (0x33, 12), '4': (0x34, 13),
+        **{c: (ord(c), code) for row, first in (('qwertyuiop', 24), ('asdfghjkl', 38), ('zxcvbnm', 52))
+           for code, c in enumerate(row, first)}}
+committed = []
+def start(addons, log):
+    fcitx = subprocess.Popen(['fcitx5', '-k', '--disable=all', '--enable=dbus,dbusfrontend,keyboard,' + addons],
+                             stdout=subprocess.DEVNULL, stderr=open(log, 'w'))
+    wait(up, 10)
+    ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
+                 '(a(ss))', [('program', 'sebtype-test')])
+    def on_signal(_c, _s, _p, _i, name, params):
+        if name == 'CommitString': committed.append(params.unpack()[0])
+    bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
+    call(ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
+    call(ic, IC, 'FocusIn')
+    return fcitx, ic
+def tap(ic, name):
+    for release in (False, True):
+        call(ic, IC, 'ProcessKeyEvent', '(uuubu)', *KEYS[name], 0, release, 0)
+        wait(lambda: False, 0.03)
+def commit(ic, keys):
+    committed.clear()
+    for k in keys: tap(ic, k)
+    wait(lambda: committed, 3)
+    return ''.join(committed)
+def ready(ic):  # Rime deploys on first use and takes no keys until then; SebType's pinyin shows in its panel
+    return not commit(ic, [*'ni', 'space']).isascii()
+
+ok = True
+def check(name, got, want):
+    global ok
+    ok &= got == want
+    print('PASS' if got == want else 'FAIL', name, '' if got == want else f'got {got!r}, want {want!r}')
+
+log = sys.argv[1] + '.log'
+fcitx, ic = start('sebtype,rime', log)
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+wait(lambda: ready(ic), 60)  # fcitx5-rime, if it loaded, has opened Rime's folder by now
+commit(ic, [*'shishi', 'space'])
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'sebtype')
+call(*SEBTYPE, 'SetLanguage', '(s)', 'zh')
+check("SebType's Rime deployed", wait(lambda: ready(ic), 90), True)
+top = commit(ic, [*'shishi', 'space'])
+picked = commit(ic, [*'shishi', '4'])
+check('a 4th candidate picked', bool(picked) and picked != top, True)
+check("SebType's 中文 learns it, with fcitx5-rime asked for too", commit(ic, [*'shishi', 'space']), picked)
+fcitx.terminate(); fcitx.wait(10)
+check('Fcitx5 loaded no fcitx5-rime beside SebType', 'Loaded addon rime' in open(log).read(), False)
+check('no librime found rime_ice.userdb locked by the other', 'LOCK: already held by process' in open(log).read(), False)
+
+log = sys.argv[1] + '-removed.log'
+fcitx, ic = start('rime', log)
+call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+check('without SebType, fcitx5-rime types', wait(lambda: ready(ic), 90), True)
+fcitx.terminate(); fcitx.wait(10)
+sys.exit(0 if ok else 1)
+PY
+  local rc=$? p
+  for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
+  return $rc
+}
+if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null &&
+  [[ -f /usr/lib64/fcitx5/librime.so ]]; then
+  check fcitx5-rime-beside-sebtype both_rimes
+else result SKIP fcitx5-rime-beside-sebtype "needs fcitx5, fcitx5-rime, dbus-run-session and python3-gobject"
+fi
+
 # Win+Space and the tray menu (#92, #93, #117): a private Fcitx5 (as above) with SebType's input method
 # (#190; SebType's Chinese data) on a fourth fake account set up by setup-ime.sh, which also puts SebType's
 # tray in place of Fcitx5's, and a stand-in for Plasma's tray (a StatusNotifierWatcher on that bus) that

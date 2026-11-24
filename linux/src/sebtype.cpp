@@ -7,6 +7,8 @@
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/standardpaths.h>
 #include <fcitx-utils/utf8.h>
+#include <fcitx/addoninfo.h>
+#include <fcitx/addonmanager.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputmethodmanager.h>
@@ -215,8 +217,26 @@ void Service::setLanguage(const std::string &id) {
   engine_->update(engine_->instance()->mostRecentInputContext());
 }
 
+namespace {
+
+// fcitx5-rime's add-on stays off in the Fcitx5 that loads SebType (#542). With its own librime inside (#527),
+// SebType would run a second librime beside fcitx5-rime's on the same Rime folder: both deploy into one build/,
+// and LevelDB lets only one of them open rime_ice.userdb, so the other stops learning. The override is this
+// process's only, as Fcitx5's --disable is, so removing sebtype brings fcitx5-rime back. fcitx5-rime loads on
+// demand, so not before this add-on, which Fcitx5 loads at its start.
+void keepFcitx5RimeOff(fcitx::AddonManager &addons) {
+  const auto *rime = addons.addonInfo("rime");
+  if (!rime) return;
+  const_cast<fcitx::AddonInfo *>(rime)->setOverrideEnabled(fcitx::OverrideEnabled::Disabled);
+  if (addons.addon("rime")) FCITX_WARN() << "fcitx5-rime was loaded before SebType: both learn into one Rime folder";
+  else FCITX_INFO() << "fcitx5-rime stays off beside SebType, which types 中文 with the same Rime folder";
+}
+
+}  // namespace
+
 SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
     : instance_(instance), core_(std::make_unique<Core>([this](Lang l) { return makeEngine(l); }, readSettings())) {
+  keepFcitx5RimeOff(instance_->addonManager());
   core_->setUiLanguage(systemLanguage());
   setPill("");
   if (auto *dbus = instance_->addonManager().addon("dbus")) {
