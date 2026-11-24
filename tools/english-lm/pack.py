@@ -52,9 +52,14 @@ sys.path[:0] = [
 import make_sets
 import noise
 
-# Passes over each corpus file per training set: the chat sources count most, as the keyboard's text is
-# closest to them; Wikipedia gives breadth. NUS SMS's real people's messages only twice (#556).
-MIX = {
+# Passes over each corpus file per training set. The chat sources count most, as the keyboard's text is
+# closest to them; Wikipedia gives breadth. The recipe pilot r4 validated (#556) was PILOT_MIX with train.py's
+# windows drawn by <s>, which gave a source of short segments more than its tokens' share. train.py now draws
+# windows by token, so MIX is PILOT_MIX times each source's segments per token, measured on the pilot's corpus
+# (wikipedia 51.0 tokens per segment, NUS 14.4), scaled to keep a pack's size: each source keeps the share of
+# training pilot r4 had (wikipedia 60.3 %, SODA 30.9 %, NUS 0.10 %). test.py checks it on the run's corpus.
+# NUS's 5.9 passes are as many reads of each message as the pilot's 2 passes drawn by <s>.
+PILOT_MIX = {
     "wikipedia": 0.35,
     "simplewiki": 1.0,
     "wikinews": 3.0,
@@ -65,6 +70,18 @@ MIX = {
     "bst": 3.0,
     "topical-chat": 1.5,
     "tatoeba": 0.5,
+}
+MIX = {
+    "wikipedia": 0.289,
+    "simplewiki": 0.946,
+    "wikinews": 2.674,
+    "soda": 2.342,
+    "oasst2": 4.936,
+    "dolly": 4.212,
+    "nus-sms": 5.871,
+    "bst": 6.448,
+    "topical-chat": 2.221,
+    "tatoeba": 1.752,
 }
 HINT = 0.05
 TWO_WORDS = 0.05
@@ -122,6 +139,7 @@ ABOVE_SPACE = "xcvbnm"
 sp = bank = letter = None
 T = S = NEWLINE = None
 intended = real_word = None
+commonest = {}
 
 
 def init(run, typos=True):
@@ -139,6 +157,10 @@ def init(run, typos=True):
     words = make_sets.dictionary()
     intended = make_sets.intended_of(words)
     real_word = lambda w: w in words and not words[w][1]
+    # Each apostrophe word's commonest case in the dictionary: "o'clock" for "O'Clock" (a title's case).
+    for w, (f, bad, *_) in sorted(words.items(), key=lambda x: x[1][0]):
+        if "'" in w and not bad:
+            commonest[w.lower()] = w
 
 
 def typed_for(rng, word, prefix=True, bare=False):
@@ -163,12 +185,15 @@ def typed_for(rng, word, prefix=True, bare=False):
 
 
 def standard(word, sentence_start, chat=False):
-    """WORD as the example's output: I and its forms capitalised, a bare contraction that is no word itself
+    """WORD as the example's output: I and its forms capitalised, an apostrophe word with a capital after its
+    apostrophe in the dictionary's commonest case, a bare contraction that is no word itself
     (or, in CHAT text, one of CHAT_CONTRACTIONS) with its apostrophe, and a lowercase word at a sentence start
     capitalised."""
     low = word.lower()
     if low in I_FORMS:
         return I_FORMS[low]
+    if "'" in word and any(c.isupper() for c in word.split("'", 1)[1]):
+        word = commonest.get(low, word)  # "O'Clock", "YOU'RE": the dictionary's case
     bare = not real_word(low) or (chat and low in CHAT_CONTRACTIONS)
     if "'" not in low and bare and intended(low) != low:
         w = intended(low)

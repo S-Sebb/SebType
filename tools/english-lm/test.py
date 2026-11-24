@@ -1,8 +1,10 @@
 """Checks of the pipeline's own code, each for a fault #556 found in it; prepare.sh runs them first.
 
-test.py RUN_DIR      (RUN_DIR/data/tokenizer.model is all it reads)
+test.py RUN_DIR      (it reads RUN_DIR/data/tokenizer.model, and samples RUN_DIR/data/corpus for MIX's check)
 """
 
+import contextlib
+import io
 import json
 import random
 import sys
@@ -131,6 +133,12 @@ check(
     {"can't", "what's", "won't"} <= set(got),
     got,
 )
+got = written("we met at Ten O'Clock and YOU'RE late")
+check(
+    "examples: O'Clock and YOU'RE in the dictionary's case",
+    "o'clock" in got and "you're" in got and "O'Clock" not in got,
+    got,
+)
 check(
     "examples: cant elsewhere stays",
     written("they speak in cant")[-1] == "cant",
@@ -196,18 +204,56 @@ check(
     got,
 )
 
+# MIX: windows drawn by token give each source the share pilot r4 trained on, with PILOT_MIX's windows drawn
+# by <s> (segments). Estimated from 100 runs of 50 lines of each corpus file: runs, as the line after a random
+# byte follows a long line more often (in oasst2 a short question follows a long answer).
+rng = random.Random(0)
+segs, toks = {}, {}
+for name in pack.MIX:
+    path = Path(run) / f"data/corpus/{name}.txt"
+    size = path.stat().st_size
+    with open(path, "rb") as f:
+        lines = []
+        for _ in range(100):
+            f.seek(rng.randrange(size))
+            f.readline()
+            lines += [f.readline().decode().rstrip("\n") for _ in range(50)]
+    pieces = [p for l in lines if l for p in pack.segments(l)]
+    nbytes = sum(len(l) + 1 for l in lines)
+    segs[name] = size * len(pieces) / nbytes
+    toks[name] = (
+        size * (sum(map(len, sp.encode(pieces))) + len(pieces) + len(lines)) / nbytes
+    )
+pilot = {n: pack.PILOT_MIX[n] * segs[n] for n in pack.MIX}
+now = {n: pack.MIX[n] * toks[n] for n in pack.MIX}
+ratio = {
+    n: round(now[n] / sum(now.values()) / (pilot[n] / sum(pilot.values())), 2)
+    for n in pack.MIX
+}
+check(
+    "MIX: each source's share is pilot r4's, within 10 %",
+    all(0.9 < r < 1.1 for r in ratio.values()),
+    ratio,
+)
+
 # The bar: a model that fixes nothing in text messages fails it, and so does one that keeps every homograph
 # as typed (19 of the harness's 31 rows: 61.3 %, over AOSP's 58.1 %).
 today_path = HERE.parents[1] / "android/test/english/today.json"
 today = json.loads(today_path.read_text())["today"]
 aosp = json.loads(json.dumps(today))
 for k in ("contractions", "apostrophes", "homographs", "capitals"):
-    aosp[k] = {"fixed": 50.0, "kept fixed": 50.0, "restored fixed": 50.0}
+    aosp[k] = {
+        "fixed": 50.0,
+        "kept fixed": 50.0,
+        "restored fixed": 50.0,
+        "capitalised": 0,
+    }
 aosp["homographs"].update({"fixed": 58.1, "kept fixed": 63.2, "restored fixed": 50.0})
 
 
 def passes(core):
-    with tempfile.TemporaryDirectory() as d:
+    """Whether CORE passes the bar; the bar's own rows aren't printed, as the failures here are meant."""
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
         (Path(d) / "s.json").write_text(json.dumps({"core": core, "aosp": aosp}))
         return score.bar(Path(d) / "s.json", today_path)
 
@@ -219,5 +265,8 @@ check("bar: texting accuracy zero fails", not passes(core))
 core = json.loads(json.dumps(aosp))
 core["homographs"].update({"fixed": 61.3, "kept fixed": 100.0, "restored fixed": 0.0})
 check("bar: keeping every homograph fails", not passes(core))
+core = json.loads(json.dumps(aosp))
+core["contractions"]["capitalised"] = 1
+check("bar: a contraction in a title's case fails", not passes(core))
 
 sys.exit(1 if failures else 0)

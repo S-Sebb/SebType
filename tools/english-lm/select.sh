@@ -15,16 +15,23 @@ results=$run/select/results.txt
 for ckpt in "$run"/ckpt/"$name"/step-* "$run/ckpt/$name"; do
   [[ -s $ckpt/model.safetensors ]] || continue
   gguf=$run/select/$(basename "$ckpt").gguf
-  "$here/export.sh" "$ckpt" "$gguf" > /dev/null
+  rm -f "$gguf.log"
+  # A checkpoint that fails (a save cut short, an export off its checkpoint) is skipped; the others still run.
+  if ! "$here/export.sh" "$ckpt" "$gguf" > "$gguf.export.txt" 2>&1; then
+    echo "select.sh: export failed on $ckpt, skipped; the end of its output and of $gguf.log:" >&2
+    tail -n 5 "$gguf.export.txt" "$gguf.log" >&2 2> /dev/null || true
+    continue
+  fi
   if ! "$here/dev.sh" "$run" "$gguf" "$ckpt" > "$gguf.dev.txt" 2>&1; then
-    echo "select.sh: dev.sh failed on $ckpt; the end of $gguf.dev.txt:" >&2
-    tail -n 20 "$gguf.dev.txt" >&2
-    exit 1
+    echo "select.sh: dev.sh failed on $ckpt, skipped; the end of $gguf.dev.txt:" >&2
+    tail -n 20 "$gguf.dev.txt" >&2 || true
+    continue
   fi
   line="$(basename "$ckpt") $(sed -n 's/^GAIN //p' "$gguf.dev.txt") $(sed -n 's/^NEXT //p' "$gguf.dev.txt")"
   echo "$line" | tee -a "$results"
 done
-# Each line: checkpoint, gain, next-chat, next-news, next-texts top 3.
+# Each line: checkpoint, gain, next-chat, next-news, next-texts top 3. The bests of the three sets may be
+# different checkpoints', so none may be within the margin of all three: then there is no choice to make here.
 awk -v m=$NEXT_MARGIN '
   { name[NR] = $1; for (k = 2; k <= 5; k++) v[NR, k] = $k
     for (k = 3; k <= 5; k++) if (NR == 1 || $k > top[k]) top[k] = $k }
@@ -34,5 +41,10 @@ awk -v m=$NEXT_MARGIN '
       for (k = 3; k <= 5; k++) if (v[i, k] < top[k] - m) ok = 0
       if (!ok) print name[i] ": next-word top 3 more than " m " point(s) below the best, left out"
       else if (!best || v[i, 2] > v[best, 2]) best = i
+    }
+    if (!NR) { print "select.sh: no checkpoint was evaluated" > "/dev/stderr"; exit 1 }
+    if (!best) {
+      print "select.sh: no checkpoint is within " m " point(s) of the best next-word top 3 on every set" > "/dev/stderr"
+      exit 1
     }
     print "best: " name[best] " (gain " v[best, 2] ")" }' "$results"

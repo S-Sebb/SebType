@@ -35,10 +35,12 @@ r4's recipe (#556) fixes what made r2 and r3 write contractions, capitals and te
   as `window()` in `engines/sebtype-lm/sebtype_lm.cpp` gives the model, and training windows start at `<s>`:
   a window's first piece has the phone's context. The pieces after it in the window see the ones before
   (ordinary packing). A window starts at the `<s>` before a uniformly drawn token, so the sources mix by
-  their tokens, as `MIX` says.
+  their tokens, as `MIX` says. Pilot r4 (#556) drew windows by `<s>`, which favoured sources of short
+  segments; `MIX` is its passes scaled by each source's segments per token, so the retrain keeps the mix the
+  pilot was measured on (Wikipedia 60 %, SODA 31 %; `pack.py`, checked by `test.py`).
 - **Texting style** (#266). A fifth of the chat sources' lines (SODA, Blended Skill Talk, Topical-Chat) are
   written as people text: lowercase sentence starts, "i", dropped apostrophes and full stops, "u", "pls",
-  "gonna" only before a verb (`pack.py`). The real text messages of the NUS SMS Corpus, in 2 passes, show the
+  "gonna" only before a verb (`pack.py`). The real text messages of the NUS SMS Corpus (2 passes in the pilot's sampling, 5.9 now) show the
   model the true mix. The share was
   chosen on the dev sets with short trials ([the report](../../docs/experiments/2026-11-16-english-everyday-text.md)).
 - Exported to GGUF and quantised to Q8_0 (`export.sh`): Q6_K, FUTO's, ran 1.4 times as slow on a phone's little

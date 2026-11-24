@@ -12,7 +12,8 @@ how many keys the target was first in the top 3 (0: never).
 - Typo sets (phone-typos, text-typos, misspellings, and #556's contractions, apostrophes, homographs and
   capitals, where the intended word may be the typed one): fixed = a space commits the intended word; top1 / top3 = the
   intended word is first / among the first three suggestions. homographs' kept fixed / restored fixed: fixed
-  over the rows whose target is the typed word / its contraction.
+  over the rows whose target is the typed word / its contraction. capitalised: how many commits are the
+  intended word with a capital it doesn't have ("O'Clock" for "o'clock").
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -221,6 +222,18 @@ def bar(path, today_path):
         checks.append(
             (f"{set_name} {k} >= AOSP's", ours[set_name][k], aosp[set_name][k], 1)
         )
+    # A contraction committed in a title's case, "O'Clock" for "o'clock" (#556).
+    capitalised = lambda s: sum(
+        s[n]["capitalised"] for n in ("contractions", "apostrophes", "homographs")
+    )
+    checks.append(
+        (
+            "contractions, apostrophes, homographs capitalised wrongly <= AOSP's",
+            capitalised(ours),
+            capitalised(aosp),
+            -1,
+        )
+    )
     for set_name in ("clean", "phone-typos"):
         checks.append(
             (
@@ -261,6 +274,12 @@ def main(run_dir):
                 s["saved"] = pct(full - spent, full)
             else:
                 s["fixed"] = pct(sum(r[2] == r[1] for r in rows), len(rows))
+                s["capitalised"] = sum(
+                    r[2] != r[1]
+                    and r[2].lower() == r[1].lower()
+                    and any(c.isupper() and t.islower() for c, t in zip(r[2], r[1]))
+                    for r in rows
+                )
                 if set_name == "homographs":
                     # Keeping every typed word fixes most rows: the rows that keep it and those that restore
                     # the apostrophe are barred apart.
