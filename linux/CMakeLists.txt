@@ -32,6 +32,8 @@ set(Opencc_LIBRARY "${deps}/libopencc.a;${deps}/libmarisa.a" CACHE STRING "" FOR
 set(Protobuf_LIBRARY ${deps}/libprotobuf.a CACHE FILEPATH "" FORCE)
 set(Protobuf_PROTOC_EXECUTABLE ${SEBTYPE_DEPS}/bin/protoc CACHE FILEPATH "" FORCE)
 set(CMAKE_DISABLE_FIND_PACKAGE_Gflags ON)
+# core-test's OpenCC tables: the bundled OpenCC's, which the add-on loads them with
+set(ZH_OPENCC ${SEBTYPE_DEPS}/share/opencc CACHE PATH "" FORCE)
 # core/ takes this target for 中文's model (core/CMakeLists.txt)
 add_library(libopencc INTERFACE)
 target_link_libraries(libopencc INTERFACE ${Opencc_LIBRARY})

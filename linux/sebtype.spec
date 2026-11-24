@@ -122,19 +122,19 @@ popd
 # own policies predate CMake 4, and LevelDB and OpenCC take Snappy's and marisa's headers and libraries from
 # there. LevelDB with Snappy, as Fedora's: Rime's user dictionaries are compressed with it. No crc32c or
 # tcmalloc for LevelDB, no gflags or libunwind for glog, no DartsDict for OpenCC (the data's dictionaries are
-# ocd2): each would be another shared library.
+# ocd2): each would be another shared library. cxxflags: a library's own extra compiler flags.
 root=$PWD/deps/root
 dep() {
   local d=$1; shift
   cmake -S deps/$d -B deps/build/$d -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$root \
     -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_TESTING=OFF -DCMAKE_CXX_FLAGS="$CXXFLAGS -I$root/include" \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_TESTING=OFF -DCMAKE_CXX_FLAGS="$CXXFLAGS -I$root/include ${cxxflags-}" \
     -DCMAKE_EXE_LINKER_FLAGS=-L$root/lib "$@" >/dev/null &&
     ninja -C deps/build/$d -j %{_smp_build_ncpus} install
 }
 dep glog -DWITH_GFLAGS=OFF -DWITH_GTEST=OFF -DWITH_UNWIND=none
 # yaml-cpp 0.8.0 uses uint16_t without <cstdint>, which GCC 16's headers no longer bring in (fixed after 0.8.0).
-dep yaml-cpp -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF -DCMAKE_CXX_FLAGS="$CXXFLAGS -include cstdint"
+cxxflags="-include cstdint" dep yaml-cpp -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF
 dep snappy -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF
 dep leveldb -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF -DHAVE_SNAPPY=ON -DHAVE_CRC32C=OFF -DHAVE_TCMALLOC=OFF
 dep marisa -DENABLE_TOOLS=OFF

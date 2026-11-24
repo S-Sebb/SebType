@@ -129,7 +129,8 @@ if(SEBTYPE_TESTS)
       EN_LEGACY_HISTORY="${CMAKE_CURRENT_SOURCE_DIR}/test/data/UserHistoryDictionary.en_US.dict")
   endif()
   if(SEBTYPE_CHINESE_MODEL)
-    # The model around a stand-in Rime: the committed model, and OpenCC's tables (ZH_OPENCC, the system's).
+    # The model around a stand-in Rime: the committed model, and OpenCC's tables (ZH_OPENCC: the system's,
+    # or linux/'s bundled OpenCC's).
     set(ZH_OPENCC /usr/share/opencc CACHE PATH "The folder with OpenCC's s2t.json and t2s.json")
     target_link_libraries(core-test sebtype-chinese)
     target_compile_definitions(core-test PRIVATE SEBTYPE_CHINESE_MODEL

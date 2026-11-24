@@ -10,6 +10,9 @@ download_and_extract(
 )
 
 set(USE_SYSTEM_MARISA ON CACHE BOOL "" FORCE)
+# No DartsDict (.ocd), as on Linux: the Chinese data's OpenCC dictionaries are ocd2 (marisa) and text, so
+# darts-clone would only add code, and a licence to credit.
+set(ENABLE_DARTS OFF CACHE BOOL "" FORCE)
 set(LIBMARISA marisa CACHE STRING "" FORCE)
 
 add_subdirectory(${OPENCC_SOURCE_DIR} ${RIME_JNI_BUILD_DIR}/opencc_build EXCLUDE_FROM_ALL)
@@ -18,3 +21,4 @@ add_to_include(OpenCC "${OPENCC_SOURCE_DIR}/src")
 
 unset(USE_SYSTEM_MARISA CACHE)
 unset(LIBMARISA CACHE)
+unset(ENABLE_DARTS CACHE)

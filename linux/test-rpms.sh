@@ -6,7 +6,8 @@
 # or puts it back where an older release had replaced it (#527); SebType's version is VERSION's, every
 # installed file is the package's, the files setup's user part copies are this checkout's, every library finds
 # what it links, the add-on has its own librime, the package needs only sonames Fedora keeps across releases,
-# Fcitx5 loads the add-on, sebtype-setup runs cleanly as a normal user, a system update and a later
+# Fcitx5 loads the add-on, sebtype-setup runs cleanly as a normal user, a Rime profile from before the update
+# keeps its learned words, My words and settings, a system update and a later
 # librime-predict install work, removing sebtype leaves Fedora's Rime working, and with sebtype installed
 # again the upgrade to the next Fedora release goes through and Fcitx5 still loads it (#540).
 #
@@ -51,6 +52,25 @@ if [[ -f /old.sh ]]; then
   sh /old.sh --install-rpms-only > /log/old.log 2>&1 || { echo "preflight: the old installer fails (see test-rpms/old.log)"; exit 1; }
 fi
 rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}\n' 'sebtype*' 'librime*' 'fcitx5-rime*' | sort > /log/packages-before.txt
+
+# A user's Rime profile from before the update, which it must keep (#540): 3000 learned words in a user
+# dictionary written by Fedora's LevelDB, as SebType 0.2.0 and older wrote them, with Snappy-compressed
+# tables (Fedora's rime_dict_manager restores them and, opening it again for one more, moves them into a
+# table), a word under My words and a setting (Traditional Chinese on).
+home=/tmp/sebtype-tester rime=/tmp/sebtype-tester/.local/share/fcitx5/rime
+as_tester() { chroot --userspec=1000:1000 / env HOME="$home" USER=tester "$@"; }
+seed_profile() {
+  local header i
+  echo "tester:x:1000:1000::$home:/bin/bash" >> /etc/passwd  # for D-Bus
+  mkdir -p "$rime" && chown -R 1000:1000 "$home" || return 1
+  header=$'# Rime user dictionary\n#@/db_name\trime_ice\n#@/db_type\tuserdb\n#@/rime_version\t1.16.1'
+  { echo "$header"; for ((i = 1; i <= 3000; i++)); do printf 'ce shi %d \t测试词条%d\tc=3 d=3 t=1\n' "$i" "$i"; done; } > /tmp/learned.txt
+  printf '%s\nling \t另一条\tc=1 d=1 t=1\n' "$header" > /tmp/one-more.txt
+  as_tester sh -c "cd $rime && rime_dict_manager --restore /tmp/learned.txt && rime_dict_manager --restore /tmp/one-more.txt &&
+    printf '# SebType: My words\n测词\tceci\n' > custom_phrase.txt && printf 'patch:\n  switches/@2/reset: 1\n' > rime_ice.custom.yaml" &&
+    ls "$rime"/rime_ice.userdb/*.ldb
+}
+seed_profile > /log/seed-profile.log 2>&1 || { echo "preflight: the Rime profile doesn't seed (see test-rpms/seed-profile.log)"; exit 1; }
 
 # Fedora's Rime packages are Fedora's and as Fedora packed them, and those not installed before still aren't.
 fedora_rime() {
@@ -137,12 +157,13 @@ expected() {
 }
 check files-expected expected
 
+links() { local out; out=$(ldd "$1") && ! grep 'not found' <<<"$out" || { echo "$1: $out"; return 1; }; }
 libraries() {
   local f bad=0
   while read -r f; do
     [[ -f $f && $(head -c 4 "$f") == $'\x7fELF' ]] || continue
     echo "$f"
-    ldd "$f" | grep 'not found' && bad=1
+    links "$f" || bad=1
   done < <(rpm -ql sebtype)
   return "$bad"
 }
@@ -163,12 +184,11 @@ configurator() {
 check configurator-runs configurator
 
 # The user part of the installer: sebtype-setup runs cleanly as a non-root user (without needing useradd/su),
-# and writes ~/.config/fcitx5/profile with sebtype even when Fcitx5 isn't running (#442).
+# on the profile seeded before the update, and writes ~/.config/fcitx5/profile with sebtype even when Fcitx5
+# isn't running (#442).
 user_setup() {
-  local home=/tmp/sebtype-tester profile
-  profile=$home/.config/fcitx5/profile
-  rm -rf "$home"; mkdir -p "$home"; chown 1000:1000 "$home"
-  chroot --userspec=1000:1000 / env HOME="$home" USER=tester /usr/bin/sebtype-setup </dev/null &&
+  local profile=$home/.config/fcitx5/profile
+  as_tester /usr/bin/sebtype-setup </dev/null &&
     [[ -x "$home/.local/share/sebtype/configurator/sebtype-configurator" ]] &&
     [[ -f "$home/.local/share/fcitx5/rime/sebtype-data.txt" ]] &&
     [[ -f "$profile" ]] &&
@@ -177,26 +197,19 @@ user_setup() {
 }
 check user-setup user_setup
 
-# What Rime learned before keeps (#540): a user dictionary written by Fedora's LevelDB, as SebType 0.2.0 and
-# older wrote them, with Snappy-compressed tables, reads back whole in the add-on. Fedora's rime_dict_manager
-# restores 3000 entries into rime_ice.userdb and, opening it again for one more, moves them into a table; the
-# add-on's sync, when Fcitx5 exits, writes them all to its snapshot.
+# The profile seeded before the update keeps (#540): with SebType's Chinese data in place, the add-on reads
+# every learned word back (its sync, when Fcitx5 exits, writes them all to its snapshot), and My words and the
+# setting stay.
 learned_words() {
-  local home=/tmp/sebtype-tester rime=/tmp/sebtype-tester/.local/share/fcitx5/rime header i
-  as_tester() { chroot --userspec=1000:1000 / env HOME="$home" USER=tester "$@"; }
-  grep -q '^tester:' /etc/passwd || echo "tester:x:1000:1000::$home:/bin/bash" >> /etc/passwd  # for D-Bus
-  header=$'# Rime user dictionary\n#@/db_name\trime_ice\n#@/db_type\tuserdb\n#@/rime_version\t1.16.1'
-  { echo "$header"; for ((i = 1; i <= 3000; i++)); do printf 'ce shi %d \t测试词条%d\tc=3 d=3 t=1\n' "$i" "$i"; done; } > /tmp/learned.txt
-  printf '%s\nling \t另一条\tc=1 d=1 t=1\n' "$header" > /tmp/one-more.txt
-  rm -rf "$rime/rime_ice.userdb" "$rime/sync"
-  as_tester sh -c "cd $rime && rime_dict_manager --restore /tmp/learned.txt && rime_dict_manager --restore /tmp/one-more.txt" &&
-    ls "$rime"/rime_ice.userdb/*.ldb || return 1
+  local n
   as_tester dbus-run-session -- sh -c 'fcitx5 --disable=all --enable=dbus,keyboard,sebtype & sleep 5
     busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ""
     sleep 20; busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit; wait'
-  i=$(grep -c '测试词条' "$rime"/sync/*/rime_ice.userdb.txt) || true
-  echo "$i of 3000 entries in the add-on's snapshot"
-  ((i == 3000))
+  n=$(grep -c '测试词条' "$rime"/sync/*/rime_ice.userdb.txt) || true
+  echo "$n of 3000 entries in the add-on's snapshot"
+  ((n == 3000)) || return 1
+  grep -qx $'测词\tceci' "$rime/custom_phrase.txt" || { echo "My words were lost"; return 1; }
+  grep -qx '  switches/@2/reset: 1' "$rime/rime_ice.custom.yaml" || { echo "the setting was lost"; return 1; }
 }
 check learned-words-kept learned_words
 
@@ -217,9 +230,8 @@ remove() {
   local f
   dnf -y remove sebtype && ! rpm -q sebtype && rpm -V "${rime[@]}" librime-predict || return 1
   for f in /usr/lib64/fcitx5/rime.so /usr/lib64/librime.so.1 /usr/lib64/rime-plugins/*.so; do
-    ldd "$f" | grep 'not found' && return 1
+    links "$f" || return 1
   done
-  true
 }
 check remove-leaves-fedora-rime remove
 
