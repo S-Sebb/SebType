@@ -1,6 +1,9 @@
 package dev.sebb.sebtype
 
 import dev.sebb.sebtype.Layout.Code
+import dev.sebb.sebtype.core.NativeCore.CHINESE
+import dev.sebb.sebtype.core.NativeCore.ENGLISH
+import dev.sebb.sebtype.core.NativeCore.JAPANESE
 import java.io.File
 import java.nio.ByteBuffer
 import kotlin.math.roundToInt
@@ -266,6 +269,19 @@ class KeyTextTest {
         assertEquals(-1, listRow(rows, globe, 200f, 40f, 25f)) // above the list
         assertEquals(-1, listRow(rows, globe, 400f, 180f, 25f)) // beside it, over other keys
         assertEquals(-1, listRow(rows, globe, 130f, 340f, 25f)) // the globe wins over the slop
+    }
+
+    @Test
+    fun theGlobeListPicksTheLanguagesItShowed() {
+        val shown = listOf(ENGLISH, CHINESE, JAPANESE)
+        assertEquals(CHINESE, globePick(shown, 1, shown))
+        assertEquals(OTHER_KEYBOARDS, globePick(shown, 3, shown))
+        // 中文 turned off while the list stays open: its row picks nothing, 日本語's row is still 日本語's
+        val on = listOf(ENGLISH, JAPANESE)
+        assertEquals(null, globePick(shown, 1, on))
+        assertEquals(JAPANESE, globePick(shown, 2, on))
+        assertEquals(CHINESE, globePick(shown, 1, listOf(CHINESE, ENGLISH, JAPANESE))) // reordered
+        assertEquals(null, globePick(shown, 4, shown))
     }
 
     @Test
