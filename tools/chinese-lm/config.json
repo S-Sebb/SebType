@@ -1,5 +1,5 @@
 {
- "name": "r2",
+ "name": "r3",
  "seed": 259,
  "context": 256,
  "model": {"hidden_size": 384, "intermediate_size": 1024, "num_hidden_layers": 8, "num_attention_heads": 6,
@@ -11,5 +11,6 @@
  "lr": 2e-3,
  "warmup": 300,
  "weight_decay": 0.1,
- "eval_every": 500
+ "eval_every": 500,
+ "save_every": 1500
 }

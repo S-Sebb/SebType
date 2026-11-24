@@ -2,23 +2,26 @@
 
   corpus.py RUN_DIR
 
-Reads RUN_DIR/data/src (fetch.sh) and writes RUN_DIR/data/corpus/SOURCE.txt plus a held-out SOURCE.dev.txt
-(1 in 500 lines). A segment is a paragraph or a chat turn, in simplified characters (common.clean).
+Reads RUN_DIR/data/src (fetch.sh) and writes RUN_DIR/data/corpus/SOURCE.txt and SOURCE.dev.txt: the segments
+of the documents common.split() puts in train and in dev (an article, a dialogue, a meeting, a message tree;
+the dev loss reads them). The test documents aren't read. A segment is a paragraph or a chat turn, in
+simplified characters (common.clean), each once: a segment seen before in any source, or in a dev or test
+document, isn't written again (#557: through duplicates, dev text was training text).
 
 The harness's text stays out (android/test/chinese-lm):
-- LCCC's test and validation dialogues aren't read: only its train split is;
-- the 600 newest Wikinews articles (the test and dev sets' 200 and 400) are left out by page id;
-- any line, from any source, that shares 10 characters in a row with a test or dev item (its context and
-  target), or holds a whole item of 6 to 9 characters, is dropped. overlap.py checks the corpus again.
+- its sets come from the test and dev documents, and from the 600 newest Wikinews articles (the test and dev
+  sets' 200 and 400), which are dev or not read;
+- any training line, from any source, that shares 10 characters in a row with a test or dev item (its context
+  and target), or holds a whole item of 6 to 9 characters, is dropped. overlap.py checks the corpus again.
 """
 
-import gzip
-import json
 import multiprocessing as mp
-import random
 import sys
 from pathlib import Path
 
+sys.path.insert(
+    0, str(Path(__file__).resolve().parent)
+)  # python -I leaves the script's folder out
 import common
 import pyarrow.parquet as pq
 
@@ -58,118 +61,85 @@ def leaks(s):
     )
 
 
-def keep(s):
-    return s if s and len(s) >= 4 and not leaks(s) else None
+def segments(doc):
+    """A document's (split, its texts) as its kept segments: train's without the harness's items."""
+    split, texts, min_len = doc
+    out = []
+    for t in texts:
+        t = common.clean(t)
+        if t and len(t) >= min_len and (split != "train" or not leaks(t)):
+            out.append(t)
+    return split, out
 
 
 def wiki_part(part):
     path, group = part
-    out = []
-    for text in (
-        pq.ParquetFile(path)
-        .read_row_group(group, columns=["text"])
-        .column(0)
-        .to_pylist()
-    ):
-        for p in text.split("\n"):
-            p = common.clean(p)
-            if p and len(p) >= 10 and keep(p):
-                out.append(p)
-    return out
+    t = pq.ParquetFile(path).read_row_group(group, columns=["id", "text"])
+    return [
+        segments((common.split("wikipedia", i), text.split("\n"), 10))
+        for i, text in zip(t.column(0).to_pylist(), t.column(1).to_pylist())
+    ]
 
 
-def lccc_part(lines):
-    out = []
-    for line in lines:
-        for t in json.loads(line):
-            t = keep(common.clean(t))
-            if t:
-                out.append(t)
-    return out
+class Writer:
+    """Writes each source's train and dev segments, each segment once over all of them, none that a dev or
+    test document holds (HELD) in training."""
 
+    def __init__(self, corpus, held):
+        self.corpus, self.held, self.seen = corpus, held, set()
 
-def chunks(it, n):
-    buf = []
-    for x in it:
-        buf.append(x)
-        if len(buf) == n:
-            yield buf
-            buf = []
-    if buf:
-        yield buf
-
-
-def write(corpus, name, lines, rng):
-    with (
-        open(corpus / f"{name}.txt", "w", encoding="utf-8") as t,
-        open(corpus / f"{name}.dev.txt", "w", encoding="utf-8") as d,
-    ):
-        n = 0
-        for line in lines:
-            (d if rng.random() < 1 / 500 else t).write(line + "\n")
-            n += 1
-    print(f"{name}: {n} lines", flush=True)
+    def write(self, name, docs):
+        with (
+            open(self.corpus / f"{name}.txt", "w", encoding="utf-8") as t,
+            open(self.corpus / f"{name}.dev.txt", "w", encoding="utf-8") as d,
+        ):
+            n = {"train": 0, "dev": 0, "dup": 0}
+            for split, segs in docs:
+                if split == "test":
+                    continue
+                for s in segs:
+                    h = hash(s)
+                    if h in self.seen or (split == "train" and h in self.held):
+                        n["dup"] += 1
+                        continue
+                    self.seen.add(h)
+                    (t if split == "train" else d).write(s + "\n")
+                    n[split] += 1
+        print(
+            f"{name}: {n['train']} train lines, {n['dev']} dev lines, {n['dup']} repeated",
+            flush=True,
+        )
 
 
 def main(run):
     run = Path(run)
     src, corpus = run / "data/src", run / "data/corpus"
     corpus.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(259)
-    held = {
-        int(l.split("\t")[0])
-        for d in (SETS, run / "dev")
-        for f in d.glob("*wikinews-articles.tsv")
-        for l in f.read_text(encoding="utf-8").splitlines()
-    }
-    assert len(held) == 600, len(held)
+    news = common.news_split(src)
+    assert len(news["test"]) == 200 and len(news["dev"]) == 400
     with mp.Pool(WORKERS, init, (run,)) as pool:
-        news = []
-        for pid, _, ps in common.wikinews(src / "zhwikinews-20261101.xml.bz2"):
-            if pid not in held:
-                news += [p for p in map(common.clean, ps) if p]
-        write(
-            corpus,
-            "wikinews",
-            [p for p in pool.map(keep, news, chunksize=500) if p],
-            rng,
-        )
-
-        with gzip.open(
-            src / "oasst2/2023-11-05_oasst2_all.messages.jsonl.gz",
-            "rt",
-            encoding="utf-8",
-        ) as f:
-            msgs = [m["text"] for m in map(json.loads, f) if m.get("lang") == "zh"]
-        paras = [p for m in msgs for p in map(common.clean, m.split("\n")) if p]
-        write(
-            corpus,
-            "oasst2",
-            [p for p in pool.map(keep, paras, chunksize=500) if p],
-            rng,
-        )
-
-        with gzip.open(
-            src / "lccc/lccc_base_train.jsonl.gz", "rt", encoding="utf-8"
-        ) as f:
-            write(
-                corpus,
-                "lccc",
-                (t for part in pool.imap(lccc_part, chunks(f, 20000)) for t in part),
-                rng,
-            )
-
+        docs = {
+            "wikinews": [(s, ps, 4) for s, arts in news.items() for _, _, ps in arts]
+        }
+        for source, s, _, turns in common.chat(src):
+            docs.setdefault(source, []).append((s, turns, 4))
+        docs = {name: pool.map(segments, d, chunksize=64) for name, d in docs.items()}
+        held = {
+            hash(t)
+            for d in docs.values()
+            for s, segs in d
+            if s != "train"
+            for t in segs
+        }
+        w = Writer(corpus, held)
+        for name in ["wikinews", *common.CHAT]:
+            w.write(name, docs[name])
         parts = [
             (f, g)
             for f in sorted((src / "wikipedia/20231101.zh").glob("*.parquet"))
             for g in range(pq.ParquetFile(f).num_row_groups)
         ]
-        write(
-            corpus,
-            "wikipedia",
-            (p for part in pool.imap(wiki_part, parts) for p in part),
-            rng,
-        )
+        w.write("wikipedia", (d for part in pool.imap(wiki_part, parts) for d in part))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Chooses a run's checkpoint on the dev sets (#557): exports each of train.py's (every save_every steps, and
+# the last), runs the keyboard's own code with it on the dev sets (bench.sh --dev, core stack) and prints, per
+# checkpoint, the mean top-1 over the typed sets and the next-word top 3 of chat and news; then the best: the
+# highest mean top-1 among the checkpoints whose next-word top 3 are each within NEXT_MARGIN points of the best
+# checkpoint's. Then checks the best export against its checkpoint (parity.py). On yanglab16.
+#
+#   tools/chinese-lm/select.sh RUN_DIR NAME
+set -euo pipefail
+run=$(realpath "$1") name=$2
+here=$(realpath "$(dirname "$0")")
+bench=$here/../../android/test/chinese-lm/bench.sh
+py="$HOME/scratch/SebType/cache/chinese-lm-venv/bin/python -I -W ignore"
+NEXT_MARGIN=1
+mkdir -p "$run/select"
+results=$run/select/results.txt
+: > "$results"
+for ckpt in "$run"/ckpt/"$name"/step-* "$run/ckpt/$name"; do
+  [[ -s $ckpt/model.safetensors ]] || continue
+  c=$(basename "$ckpt")
+  gguf=$run/select/$c.gguf
+  "$here/export.sh" "$ckpt" "$gguf" > /dev/null
+  # dump=1: the model stack's scores, for parity.py.
+  CHINESE_CORE=1 "$bench" --dev "$run/dev" "$run/select/$c" "$gguf" dump=1 > "$run/select/$c.log" 2>&1 ||
+    { echo "select.sh: bench.sh failed on $ckpt; the end of $run/select/$c.log:" >&2; tail -n 20 "$run/select/$c.log" >&2; exit 1; }
+  python3 -I -c '
+import json, sys
+core = json.load(open(sys.argv[1]))["core"]
+typed = [m["top1"] for n, m in core.items() if isinstance(m, dict) and not n.startswith("dev-next")]
+print(sys.argv[2], round(sum(typed) / len(typed), 2), core["dev-next-chat"]["top3"], core["dev-next-news"]["top3"])
+' "$run/select/$c/summary.json" "$c" | tee -a "$results"
+done
+# Each line: checkpoint, mean top-1, next-chat and next-news top 3.
+best=$(awk -v m=$NEXT_MARGIN '
+  { name[NR] = $1; for (k = 2; k <= 4; k++) v[NR, k] = $k
+    for (k = 3; k <= 4; k++) if (NR == 1 || $k > top[k]) top[k] = $k }
+  END { best = 0
+    for (i = 1; i <= NR; i++) {
+      ok = 1
+      for (k = 3; k <= 4; k++) if (v[i, k] < top[k] - m) ok = 0
+      if (!ok) print name[i] ": next-word top 3 more than " m " point(s) below the best, left out" > "/dev/stderr"
+      else if (!best || v[i, 2] > v[best, 2]) best = i
+    }
+    print name[best] }' "$results")
+echo "best: $best"
+ckpt=$run/ckpt/$name/$best
+[[ $best == "$name" ]] && ckpt=$run/ckpt/$name
+$py "$here/parity.py" "$ckpt" "$run/dev/dev-sent-chat.tsv" "$run/select/$best/model.dev-sent-chat.tsv.dump"

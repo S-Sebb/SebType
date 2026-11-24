@@ -10,7 +10,8 @@
 #                                    model with its own candidates) adds to them. CHINESE_CORE=1 adds the
 #                                    keyboard's own code ("core", zhbench's core=1), with the model.
 #   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh --dev DEV_DIR OUT_DIR MODEL.gguf [NAME=VALUE...]  only
-#                                    the model (and the keyboard's own code), on the dev sets in DEV_DIR (tune.py)
+#                                    the model (and the keyboard's own code), on the dev sets in DEV_DIR (tune.py,
+#                                    tools/chinese-lm/select.sh), with score.py's OUT_DIR/summary.json
 #
 # Writes each stack's results per set and score.py's summary to ~/scratch/SebType/<issue>/chinese/RUN_NAME/
 # and prints the results' paths, the summary's last.
@@ -100,4 +101,4 @@ done
 # Each job runs on one thread (threads=N: N); 16 at a time (CHINESE_JOBS) leave most of the machine to others
 # and the latencies steady.
 printf '%s\n' "${jobs[@]}" | xargs -P "${CHINESE_JOBS:-16}" -I{} sh -c '{} 2>>"$0/run.log"' "$out"
-[[ $dev ]] || python3 -I $here/score.py "$out" > "$out/summary.json"
+python3 -I $here/score.py "$out" ${dev:+"$dev"} > "$out/summary.json"

@@ -1,9 +1,12 @@
 """Scores the Chinese harness's results (#259).
 
-score.py OUT_DIR                 summary.json of one run (bench.sh's STACK.SET.tsv and .keys files)
+score.py OUT_DIR [SETS_DIR]      summary.json of one run (bench.sh's STACK.SET.tsv and .keys files; the sets
+                                 in SETS_DIR, default sets/: a dev run's are in its dev folder)
 score.py --compare RUN1 RUN2     exit 1 unless every item's results are equal and per-key p50 and p95 within 25 %
 score.py --table RUN1 RUN2       the report's table: run 1, with run 2's latency in brackets
 score.py --profile OUT_DIR       where a key's time goes, per stack (zhbench's profile=1 .prof files)
+score.py --bar SUMMARY BASELINE  exit 1 unless the keyboard's 中文 (the core stack) passes the quality bar against
+                                 BASELINE (baseline.json: the shipped model's core stack on these sets, #557)
 """
 
 import difflib
@@ -45,8 +48,8 @@ def percentile(xs, p):
     )
 
 
-def summarise(out):
-    out = Path(out)
+def summarise(out, sets=SETS):
+    out, sets = Path(out), Path(sets)
     summary = {}
     for stack in STACKS:
         files = sorted(out.glob(f"{stack}.*.tsv"))
@@ -56,9 +59,10 @@ def summarise(out):
         keys, nxt, rss = [], [], 0
         for f in files:
             name = f.stem.split(".", 1)[1]
+            kind = name.removeprefix("dev-")
             items = [
                 l.split("\t")
-                for l in (SETS / f"{name}.tsv").read_text(encoding="utf-8").splitlines()
+                for l in (sets / f"{name}.tsv").read_text(encoding="utf-8").splitlines()
             ]
             rows = [l.split("\t") for l in f.read_text(encoding="utf-8").splitlines()]
             assert len(rows) == len(items), f"{f}: {len(rows)} of {len(items)} items"
@@ -70,7 +74,7 @@ def summarise(out):
                 "top3": pct(sum(0 <= r < 3 for r in ranks), n),
                 "page1": pct(sum(0 <= r < 5 for r in ranks), n),  # rime-ice's page of 5
             }
-            if name.startswith(("sent-", "long-")):
+            if kind.startswith(("sent-", "long-")):
                 total = right = short = 0
                 for it, r in zip(items, rows):
                     top1 = r[3].split("|")[0] if r[3] else ""
@@ -83,7 +87,7 @@ def summarise(out):
                     m["words"] = pct(right, total)
                 # A first candidate that leaves out part of what was typed (#563).
                 m["short"] = pct(short, n)
-            if name == "typo":
+            if kind in ("typo", "variants"):
                 kinds = {}
                 for it, r in zip(items, ranks):
                     k = it[3].split("+")[0] if "+" not in it[3] else "two"
@@ -94,7 +98,7 @@ def summarise(out):
             s[name] = m
             times = [l for l in (out / f"{f.name}.keys").read_text().splitlines()]
             rss = max(rss, int(times[-1].split()[1]))
-            (nxt if name.startswith("next-") else keys).extend(
+            (nxt if kind.startswith("next-") else keys).extend(
                 float(t) for t in times[:-1]
             )
         s["key_ms"] = [percentile(keys, 0.5), percentile(keys, 0.95)]
@@ -243,6 +247,13 @@ def table(a, b):
         f"Slip fixed: intended phrase first / on the first page (one slip in a common phrase, {n})",
         lambda s: f"{a[s]['slips']['top1']} / {a[s]['slips']['page1']} %",
     )
+    n = a[stacks[0]]["variants"]["items"]
+    row(
+        f"Other spellings Rime takes: intended text first / in the top 3 ({n})",
+        lambda s: f"{a[s]['variants']['top1']} / {a[s]['variants']['top3']} %",
+    )
+    for k in a[stacks[0]]["variants"]["top1_by_kind"]:
+        row(f"… first, {k}", lambda s: f"{a[s]['variants']['top1_by_kind'][k]} %")
     for src in ("chat", "news"):
         n = a[stacks[0]][f"next-{src}"]["items"]
         row(
@@ -262,6 +273,65 @@ def table(a, b):
     row("Peak RSS of the process", lambda s: f"{a[s]['rss_mb']} MB")
     head = "| Measure (set, items) | " + " | ".join(STACKS[s] for s in stacks) + " |"
     print("\n".join([head, "|---|" + "---|" * len(stacks)] + rows))
+
+
+# The bar (#557): the keyboard's 中文 against the shipped model's on the same sets (baseline.json), so a worse
+# model fails. A set's first and top 3 may be at most BAR_POINTS lower (a few items: a retrain moves some either
+# way), and the latency's p95 at most BAR_TIME above, as load varies it between runs (compare()'s 25 %).
+BAR_POINTS, BAR_TIME = 2.0, 1.25
+BAR_SETS = [
+    "sent-chat",
+    "sent-news",
+    "long-chat",
+    "long-news",
+    "abbr-chat",
+    "abbr-news",
+    "partial-chat",
+    "partial-news",
+    "typo",
+    "slips",
+    "variants",
+]
+
+
+def bar(path, baseline_path):
+    ours = json.loads(Path(path).read_text())["core"]
+    base = json.loads(Path(baseline_path).read_text())["core"]
+    checks = []
+    for name in BAR_SETS:
+        for k in ("top1", "top3"):
+            checks.append(
+                (
+                    f"{name} {k} >= baseline - {BAR_POINTS}",
+                    ours[name][k],
+                    base[name][k] - BAR_POINTS,
+                    1,
+                )
+            )
+    for name in ("next-chat", "next-news"):
+        checks.append(
+            (
+                f"{name} top3 >= baseline - {BAR_POINTS}",
+                ours[name]["top3"],
+                base[name]["top3"] - BAR_POINTS,
+                1,
+            )
+        )
+    for k in ("key_ms", "next_ms"):
+        checks.append(
+            (
+                f"{k} p95 <= baseline x {BAR_TIME}",
+                ours[k][1],
+                round(base[k][1] * BAR_TIME, 2),
+                -1,
+            )
+        )
+    ok = True
+    for name, value, limit, sign in checks:
+        passed = (value - limit) * sign >= 0
+        ok &= passed
+        print(f"{'PASS' if passed else 'FAIL'} {name}: {value} (bar {round(limit, 2)})")
+    return ok
 
 
 def profile(out):
@@ -295,5 +365,7 @@ if __name__ == "__main__":
         table(*sys.argv[2:4])
     elif sys.argv[1] == "--profile":
         profile(sys.argv[2])
+    elif sys.argv[1] == "--bar":
+        sys.exit(0 if bar(*sys.argv[2:4]) else 1)
     else:
-        print(json.dumps(summarise(sys.argv[1]), ensure_ascii=False, indent=1))
+        print(json.dumps(summarise(*sys.argv[1:3]), ensure_ascii=False, indent=1))

@@ -85,7 +85,7 @@ revisions):
 - Topical-Chat, by Amazon: CDLA-Sharing 1.0.
 - Tatoeba (English sentences, export of 2026-11-14), by Tatoeba's contributors: CC BY 2.0 FR.
 
-SebType's Chinese model (engines/sebtype-lm/chinese.gguf, trained by tools/chinese-lm, release r1) is licensed
+SebType's Chinese model (engines/sebtype-lm/chinese.gguf, trained by tools/chinese-lm, release r2) is licensed
 under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/).
 It was trained on, and is adapted from, these openly licensed texts (tools/chinese-lm/SOURCES.md has the
 revisions):

@@ -79,7 +79,7 @@ build (`%check` in `linux/sebtype.spec`), with 中文's model. Built with Englis
 dictionary and model: `test/english.sh` builds and runs that. The English harness
 (`android/test/english/run.sh`) measures its quality against today's keyboard. Built with 中文's model, it tests
 the model around a stand-in Rime: `test/chinese.sh` builds and runs that (on yanglab16 in the pinned Fedora, for its OpenCC), and the Chinese harness
-(`android/test/chinese-lm/run.sh`, `SEBTYPE_ZH_CORE=1`) measures this code on the real Rime.
+(`android/test/chinese-lm/run.sh`) measures this code on the real Rime.
 
 ## Licences and credits
 

@@ -1,11 +1,12 @@
-"""Checks that the training corpus doesn't hold the Chinese harness's test items.
+"""Checks that the training corpus doesn't hold the Chinese harness's test and dev items (#557: the dev sets
+choose the checkpoint, so they must be held out too).
 
   overlap.py RUN_DIR
 
-Counts, over every corpus file (train and dev lines):
-- lines that share 10 characters in a row with a test item (its context and target), or hold a whole item of 6
-  to 9 characters: corpus.py drops these, so it should be 0;
-- the test items that share 10 characters in a row (or all of theirs) with a corpus line, by set;
+Counts, over the corpus's training files (the dev lines come from the dev sets' own documents):
+- lines that share 10 characters in a row with a test or dev item (its context and target), or hold a whole
+  item of 6 to 9 characters: corpus.py drops these, so it must be 0, else overlap.py exits 1;
+- the items that share 10 characters in a row (or all of theirs) with a corpus line, by set;
 - the next-word items whose last 4 context characters and the word appear in the corpus: ordinary Chinese
   overlaps here, so this is reported, not a leak.
 """
@@ -18,21 +19,22 @@ SETS = Path(__file__).resolve().parents[2] / "android/test/chinese-lm/sets"
 N = 10
 
 
-def harness():
+def harness(dirs):
     items, tails = [], set()
-    for f in sorted(SETS.glob("*.tsv")):
-        if f.name == "wikinews-articles.tsv":
+    for f in sorted(f for d in dirs for f in d.glob("*.tsv")):
+        if "wikinews-articles" in f.name:
             continue
         for line in f.read_text(encoding="utf-8").splitlines():
             ctx, _, target = line.split("\t")[:3]
             if len(ctx + target) >= 6:
                 items.append((f.stem, ctx + target))
-            if f.stem.startswith("next-") and len(ctx) >= 4:
+            if f.stem.removeprefix("dev-").startswith("next-") and len(ctx) >= 4:
                 tails.add(ctx[-4:] + target)
     return items, tails
 
 
-ITEMS, TAILS = harness()
+# The pool's workers inherit these (fork).
+ITEMS, TAILS = harness([SETS, Path(sys.argv[1]) / "dev"])
 GRAMS = {}
 for k, (_, t) in enumerate(ITEMS):
     n = min(N, len(t))
@@ -69,7 +71,11 @@ def scan(part):
 
 
 def main(run):
-    files = sorted((Path(run) / "data/corpus").glob("*.txt"))
+    files = sorted(
+        f
+        for f in (Path(run) / "data/corpus").glob("*.txt")
+        if not f.name.endswith(".dev.txt")
+    )
     size = 64 << 20
     parts = [
         (f, s, min(s + size, f.stat().st_size))
@@ -82,19 +88,20 @@ def main(run):
         for n, i, t in pool.imap_unordered(scan, parts):
             lines, items, tails = lines + n, items | i, tails | t
     print(
-        f"corpus lines sharing 10 characters in a row (or a whole short item) with a test item: {lines}"
+        f"corpus lines sharing 10 characters in a row (or a whole short item) with an item: {lines}"
     )
     by_set = {}
     for k in items:
         by_set[ITEMS[k][0]] = by_set.get(ITEMS[k][0], 0) + 1
     print(
-        f"test items sharing 10 characters in a row with the corpus: {len(items)} of {len(ITEMS)} {by_set}"
+        f"items sharing 10 characters in a row with the corpus: {len(items)} of {len(ITEMS)} {by_set}"
     )
     print(
         f"next-word items whose last 4 context characters and the word occur in the corpus: "
         f"{len(tails)} of {len(TAILS)} distinct (ordinary Chinese, not a leak)"
     )
+    return lines
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    sys.exit(1 if main(sys.argv[1]) else 0)

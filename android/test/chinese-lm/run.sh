@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# The Chinese harness (#259): runs today's 中文 (core/'s Rime engine, rime-ice with 白霜's dictionary and
-# octagram grammar, the data the apps ship) and, with SEBTYPE_ZH_MODEL, today's 中文 with SebType's Chinese
-# model (tools/chinese-lm) on the sets in sets/, twice, and checks that the two runs agree.
+# The Chinese harness (#259): runs Rime alone (core/'s Rime engine, rime-ice with 白霜's dictionary and
+# octagram grammar, the data the apps ship), Rime re-ranked by SebType's Chinese model (tools/chinese-lm) and
+# the keyboard's own code (core/src/chinese.cpp around Rime, #264) on the sets in sets/, twice, checks that the
+# two runs agree and that the keyboard's 中文 passes the quality bar against baseline.json, the shipped model's
+# numbers on these sets (score.py --bar, #557).
 #
-#   SEBTYPE_ZH_MODEL=PATH [SEBTYPE_ZH_OPTIONS="rerank=4 rankWeight=1.5"] \
-#     [SEBTYPE_ZH_GEN_OPTIONS="generate=2 generatedRank=2"] [SEBTYPE_ZH_CORE=1] android/test/chinese-lm/run.sh
+#   [SEBTYPE_ZH_MODEL=PATH] [SEBTYPE_ZH_OPTIONS="rerank=4 rankWeight=1.5"] \
+#     [SEBTYPE_ZH_GEN_OPTIONS="generate=2 generatedRank=2"] android/test/chinese-lm/run.sh
 #
-# PATH is a GGUF file; the options are zhbench's, from tools/chinese-lm/tune.py. With
-# SEBTYPE_ZH_GEN_OPTIONS, a third stack runs the model with both sets of options; with SEBTYPE_ZH_CORE=1,
-# a fourth runs the keyboard's own code (core/src/chinese.cpp around Rime, #264). One line per
+# PATH is a GGUF file, by default the shipped engines/sebtype-lm/chinese.gguf; the options are zhbench's model
+# stack's. With SEBTYPE_ZH_GEN_OPTIONS, a third stack runs the model with both sets of options. One line per
 # check in ~/scratch/SebType/<issue>/test-chinese-lm-results.txt, the table (docs/experiments/2026-11-16-chinese-lm.md's)
 # in chinese/table.md next to it, logs in chinese/run1/ and run2/. Exit 0 only if all pass. Both runs take about
 # 15 minutes with a model. It runs only on yanglab16 (bench.sh).
@@ -22,16 +23,16 @@ results=$out/test-chinese-lm-results.txt
 mkdir -p "$out/chinese"; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 
-for s in sent-chat sent-news long-chat long-news long-typo-chat long-typo-news fuzzy-chat fuzzy-news abbr-chat abbr-news partial-chat partial-news typo next-chat next-news; do
+for s in sent-chat sent-news long-chat long-news long-typo-chat long-typo-news fuzzy-chat fuzzy-news abbr-chat abbr-news partial-chat partial-news typo slips variants next-chat next-news; do
   [[ -s $here/sets/$s.tsv ]] || { echo "preflight: $here/sets/$s.tsv missing (make_sets.py makes it)"; exit 1; }
 done
 
-model=${SEBTYPE_ZH_MODEL:-}
+model=${SEBTYPE_ZH_MODEL:-engines/sebtype-lm/chinese.gguf}
 read -ra options <<< "${SEBTYPE_ZH_OPTIONS:-}"
 read -ra gen <<< "${SEBTYPE_ZH_GEN_OPTIONS:-}"
 ((${#gen[@]})) && options+=(-- "${gen[@]}")
 bench() { # timeout: the build lock's wait (3 h for its 120 minutes) and the run
-  CHINESE_CORE=${SEBTYPE_ZH_CORE:-} timeout 18000 $here/bench.sh "$1" $model "${options[@]}"
+  CHINESE_CORE=1 timeout 18000 $here/bench.sh "$1" $model "${options[@]}"
 }
 for run in run1 run2; do
   if bench $run > "$out/chinese/$run.log" 2>&1 && [[ -s $out/chinese/$run/summary.json ]]; then
@@ -50,6 +51,9 @@ if [[ -s $s1 && -s $s2 ]]; then
   fi
   python3 -I $here/score.py --table "$s1" "$s2" > "$out/chinese/table.md" &&
     result PASS table "$out/chinese/table.md" || result FAIL table
+  python3 -I $here/score.py --bar "$s1" $here/baseline.json > "$out/chinese/bar.txt" &&
+    result PASS bar "$out/chinese/bar.txt" ||
+    result FAIL bar "$(grep -c ^FAIL "$out/chinese/bar.txt") rows miss, $out/chinese/bar.txt"
 else
   result FAIL reproducible "a run has no summary"
 fi

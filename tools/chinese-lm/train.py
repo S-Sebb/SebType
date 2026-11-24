@@ -3,13 +3,16 @@
   train.py RUN_DIR CONFIG.json
 
 CONFIG (config.json) sets the model's shape and the schedule. Writes RUN_DIR/ckpt/NAME/: the model in
-Hugging Face's Llama format with the tokenizer (export.sh converts it to GGUF), and train.log. Each eval
+Hugging Face's Llama format with the tokenizer (export.sh converts it to GGUF), and train.log; every
+save_every steps a checkpoint in ckpt/NAME/step-N/ too, for select.sh to choose from on the dev sets. Each eval
 prints PROGRESS step/steps and the dev losses: over the text, over the spans after <S> (the pinyin examples,
 with their <E>), and the word boundaries' (the <B> logit's binary cross entropy).
 
 The model is a plain Llama, so llama.cpp runs it as it is. Its <B> row is never an input: the softmax over the
 next token leaves it out, and its logit alone, through a sigmoid, is the chance that a word ends at the token
 just read.
+
+A window starts at a segment's <s>, as the loader's context does (#557), and <s> is never a target.
 """
 
 import json
@@ -24,14 +27,26 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
 
-def windows(data, wb, n, length, gen):
-    i = torch.randint(0, len(data) - length - 1, (n,), generator=gen).numpy()
+def windows(data, wb, starts, n, length, gen):
+    i = starts[torch.randint(0, len(starts), (n,), generator=gen).numpy()]
     x = np.stack([data[j : j + length + 1] for j in i]).astype(np.int64)
     b = np.stack([wb[j : j + length] for j in i]).astype(np.int64)
     return (
         torch.from_numpy(x).pin_memory().cuda(non_blocking=True),
         torch.from_numpy(b).pin_memory().cuda(non_blocking=True),
     )
+
+
+def segment_starts(data, bos, length):
+    """The offsets of DATA's <s> tokens that a whole window fits after, read in chunks."""
+    step = 1 << 28
+    out = np.concatenate(
+        [
+            np.flatnonzero(data[k : k + step] == bos) + k
+            for k in range(0, len(data), step)
+        ]
+    )
+    return out[out < len(data) - length - 1]
 
 
 def between(x, start, stop):
@@ -41,11 +56,11 @@ def between(x, start, stop):
     return c - c.min(1, keepdim=True).values > 0
 
 
-def labels(x, t, s):
-    """Next-token labels for X, with the examples' typed part (<T>, the letters, <S>) left out."""
+def labels(x, t, s, bos):
+    """Next-token labels for X, with the examples' typed part (<T>, the letters, <S>) and <s> left out."""
     inside = between(x, t, s) | (x == s)
     y = x[:, 1:].clone()
-    y[inside[:, 1:]] = -100
+    y[inside[:, 1:] | (y == bos)] = -100
     return x[:, :-1], y
 
 
@@ -105,6 +120,8 @@ def main(run, config_path):
     dev = np.memmap(data / "dev.0.bin", dtype=np.uint16, mode="r")
     dev_wb = np.memmap(data / "dev.0.wb", dtype=np.uint8, mode="r")
     length, micro, accum = cfg["context"], cfg["micro_batch"], cfg["accum"]
+    train_starts = segment_starts(train, sp.bos_id(), length)
+    dev_starts = segment_starts(dev, sp.bos_id(), length)
     steps = int(cfg["tokens"] / (length * micro * accum))
     print(f"train tokens available {len(train) / 1e9:.2f}B, steps {steps}", flush=True)
 
@@ -122,7 +139,7 @@ def main(run, config_path):
 
     def lr_at(step):
         if step < cfg["warmup"]:
-            return cfg["lr"] * step / cfg["warmup"]
+            return cfg["lr"] * (step + 1) / cfg["warmup"]
         p = (step - cfg["warmup"]) / max(1, steps - cfg["warmup"])
         return cfg["lr"] * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * p)))
 
@@ -132,8 +149,8 @@ def main(run, config_path):
         g = torch.Generator().manual_seed(0)
         total = n = span = ns = bnd = nb = 0.0
         for _ in range(20):
-            x, b = windows(dev, dev_wb, micro, length, g)
-            inp, y = labels(x, t, s)
+            x, b = windows(dev, dev_wb, dev_starts, micro, length, g)
+            inp, y = labels(x, t, s, sp.bos_id())
             loss, bl = losses(inp, y, b)
             # The spans: from <S> up to the <E> after it.
             in_span = between(inp, s, e) & (y != -100)
@@ -146,6 +163,12 @@ def main(run, config_path):
             nb += (b < 2).sum().item()
         model.train()
         return total / n, span / max(1, ns), bnd / max(1, nb)
+
+    def save(d):
+        d.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(d, safe_serialization=True)
+        shutil.copy(run / "data/tokenizer.model", d / "tokenizer.model")
+        (d / "config.train.json").write_text(json.dumps(cfg, indent=1))
 
     log = open(out / "train.log", "a")
     start = time.time()
@@ -162,11 +185,13 @@ def main(run, config_path):
             log.flush()
         if step == steps:
             break
+        if step and step % cfg["save_every"] == 0:
+            save(out / f"step-{step}")
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
         for _ in range(accum):
-            x, b = windows(train, train_wb, micro, length, gen)
-            inp, y = labels(x, t, s)
+            x, b = windows(train, train_wb, train_starts, micro, length, gen)
+            inp, y = labels(x, t, s, sp.bos_id())
             loss, bl = losses(inp, y, b)
             (
                 (loss.sum() / (y != -100).sum() + bl.sum() / (b < 2).sum().clamp(min=1))
@@ -176,9 +201,7 @@ def main(run, config_path):
         opt.step()
         opt.zero_grad(set_to_none=True)
 
-    model.save_pretrained(out, safe_serialization=True)
-    shutil.copy(run / "data/tokenizer.model", out / "tokenizer.model")
-    (out / "config.train.json").write_text(json.dumps(cfg, indent=1))
+    save(out)
 
 
 if __name__ == "__main__":
