@@ -98,7 +98,8 @@ librime_key() {
   if [[ -e $(dirname "${BASH_SOURCE[0]}")/../.git ]]; then
     sources_key engines/librime linux/librime.spec linux/build-librime.sh linux/rpm-sources.sh linux/versions.sh
   else
-    [[ ${LIBRIME_KEY:-} ]] && echo "$LIBRIME_KEY"
+    [[ ${LIBRIME_KEY:-} ]] || { echo "librime_key: no git and no LIBRIME_KEY (build_remotely sets it)" >&2; return 1; }
+    echo "$LIBRIME_KEY"
   fi
 }
 # librime_built: prints librime_key, after building the RPMs if they aren't cached.
@@ -106,7 +107,8 @@ librime_built() {
   local p key
   key=$(librime_key) || return 1
   # Marked in use before the check, so build-librime.sh's cleanup of folders no tree used for two weeks can't
-  # take it between the check and the use; -c never leaves an empty file in its place.
+  # take it between the check and the use (unless it picked the folder in this same moment); -c never leaves
+  # an empty file in its place.
   touch -c "$LIBRIME_CACHE/$key"
   for p in "${LIBRIME_PACKAGES[@]}"; do
     [[ -f $(librime_rpm "$key" "$p") ]] && continue

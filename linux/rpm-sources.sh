@@ -12,7 +12,8 @@ fetch_lookaside() {
     shift 2
     sha512sum -c --status <<<"$sum  $dir/$f" &>/dev/null && continue # a missing file says so on stdout
     # Its own .part: two builds that start on a cold cache don't write into one file.
-    curl --limit-rate 35M -sfL --retry 3 -o "$dir/$f.part.$$" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f"
+    curl --limit-rate 35M -sfL --retry 3 -o "$dir/$f.part.$$" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f" ||
+      { rm -f "$dir/$f.part.$$"; return 1; }
     sha512sum -c --status <<<"$sum  $dir/$f.part.$$" || { rm -f "$dir/$f.part.$$"; echo "checksum mismatch: $pkg/$f" >&2; return 1; }
     mv "$dir/$f.part.$$" "$dir/$f"
   done

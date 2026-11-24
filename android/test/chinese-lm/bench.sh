@@ -21,21 +21,25 @@ here=android/test/chinese-lm
 
 if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
   fedora_container
-  ((${#container[@]})) || { echo "preflight: the Chinese harness runs only on yanglab16, in its container with SebType's librime" >&2; exit 1; }
+  ((${#container[@]})) ||
+    { echo "preflight: the Chinese harness runs only on yanglab16 (run.sh starts it there), in its container with SebType's librime" >&2; exit 1; }
   # The base build image with SebType's librime, its headers and plugins in place of Fedora's (removed first,
   # so a newer Fedora release can't win), and the harness's build tools.
   source linux/versions.sh
   key=$(librime_built)
   rpms=$(for p in librime librime-lua librime-octagram librime-devel; do basename "$(librime_rpm "$key" $p)"; done)
+  # The label puts the key in the tag's hash (the RPMs' names stay the same when librime changes).
   dockerfile="FROM ${container[-1]}
+LABEL sebtype.librime=$key
 COPY $(echo $rpms) /rpms/
 RUN rpm -e --nodeps \$(rpm -qa 'librime*') && dnf -y --setopt=throttle=35M install /rpms/*.rpm opencc-devel cmake ninja-build && rm -r /rpms && dnf clean all"
   image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$dockerfile" | head -c 12)
   if ! podman image exists "$image"; then
     podman build -q -t "$image" -f - "$LIBRIME_CACHE/$key" <<<"$dockerfile" >/dev/null
-    # One image per librime: the older ones go (one a running bench uses stays).
-    podman images --format '{{.Repository}}:{{.Tag}}' localhost/sebtype-fedora-zh | grep -vxF "$image" |
-      xargs -r podman rmi >/dev/null 2>&1 || :
+    # The images of a librime no tree used for two weeks go: build-librime.sh has dropped its RPMs' folder.
+    # An image a bench queued in the build lock will run keeps its folder (librime_built marked it).
+    podman images --format '{{.Repository}}:{{.Tag}} {{index .Labels "sebtype.librime"}}' localhost/sebtype-fedora-zh |
+      while read -r i k; do [[ $k && -d $LIBRIME_CACHE/$k ]] || echo "$i"; done | xargs -r podman rmi >/dev/null 2>&1 || :
   fi
   container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
   # llama.cpp (MIT) is fetched at its pinned commit out here, before the build lock.
