@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds the Chinese harness and runs today's 中文 (and, given a model, today's 中文 with the model) on every
-# set, here (run.sh starts it on yanglab16). On yanglab16 it runs in the pinned Fedora container
-# (tools/lib.sh, fedora_container) with SebType's librime and its Lua and octagram plugins, which the Linux
-# add-on builds in (linux/build-librime.sh's RPMs, #530), in the build lock and under its caps.
+# set, on yanglab16 alone (run.sh starts it there), in the pinned Fedora container (tools/lib.sh,
+# fedora_container) with SebType's librime and its Lua and octagram plugins, which the Linux add-on builds in
+# (linux/build-librime.sh's RPMs, #530), in the build lock and under its caps. Elsewhere it would measure the
+# system's librime, so it stops.
 #
 #   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh RUN_NAME [MODEL.gguf [NAME=VALUE...] [-- NAME=VALUE...]]
 #                                    NAME=VALUE: zhbench's options; after --, those a third stack ("gen", the
@@ -19,23 +20,25 @@ source tools/lib.sh
 here=android/test/chinese-lm
 
 if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
-  # The base build image with SebType's librime, its headers and plugins in place of Fedora's, and the
-  # harness's build tools.
   fedora_container
-  if [[ ${#container[@]} -gt 0 ]]; then
-    source linux/versions.sh
-    key=$(librime_built)
-    rpms=$(for p in librime librime-lua librime-octagram librime-devel; do basename "$(librime_rpm "$key" $p)"; done)
-    extra="opencc-devel cmake ninja-build"
-    base=${container[-1]}
-    image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$base $extra $key" | head -c 12)
-    podman image exists "$image" ||
-      podman build -q -t "$image" -f - "$LIBRIME_CACHE/$key" <<<"FROM $base
+  ((${#container[@]})) || { echo "preflight: the Chinese harness runs only on yanglab16, in its container with SebType's librime" >&2; exit 1; }
+  # The base build image with SebType's librime, its headers and plugins in place of Fedora's (removed first,
+  # so a newer Fedora release can't win), and the harness's build tools.
+  source linux/versions.sh
+  key=$(librime_built)
+  rpms=$(for p in librime librime-lua librime-octagram librime-devel; do basename "$(librime_rpm "$key" $p)"; done)
+  dockerfile="FROM ${container[-1]}
 COPY $(echo $rpms) /rpms/
-RUN dnf -y --setopt=throttle=35M install /rpms/*.rpm $extra && rm -r /rpms && dnf clean all" >/dev/null
-    container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
+RUN rpm -e --nodeps \$(rpm -qa 'librime*') && dnf -y --setopt=throttle=35M install /rpms/*.rpm opencc-devel cmake ninja-build && rm -r /rpms && dnf clean all"
+  image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$dockerfile" | head -c 12)
+  if ! podman image exists "$image"; then
+    podman build -q -t "$image" -f - "$LIBRIME_CACHE/$key" <<<"$dockerfile" >/dev/null
+    # One image per librime: the older ones go (one a running bench uses stays).
+    podman images --format '{{.Repository}}:{{.Tag}}' localhost/sebtype-fedora-zh | grep -vxF "$image" |
+      xargs -r podman rmi >/dev/null 2>&1 || :
   fi
-  # llama.cpp (MIT) is fetched at its pinned commit out here: the container has no git.
+  container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
+  # llama.cpp (MIT) is fetched at its pinned commit out here, before the build lock.
   llama=$(engines/sebtype-lm/fetch-llama.sh)
   # Only the results' paths go to stdout (build_remotely copies what it names back): each set's, which
   # score.py --compare reads, and the summary's last.
