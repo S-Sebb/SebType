@@ -1541,20 +1541,25 @@ def type_text(text):
     settle()
 
 
+def in_english():
+    """Whether x typed in a fresh field is a plain x: English."""
+    open_field()
+    type_keys("x")
+    ns = nodes()
+    notice = any(n[0].startswith(PREPARING) for n in ns)
+    return (
+        not chip(ns)
+        and all(c.isascii() for c in candidates(ns))
+        and not notice
+        and field_text().lower() == "x"
+    )
+
+
 def to_english():
     """Taps the globe until x types a plain x: no chip, no Chinese notice and no Chinese candidates
     (English may suggest words for it)."""
     for _ in range(4):
-        open_field()
-        type_keys("x")
-        ns = nodes()
-        notice = any(n[0].startswith(PREPARING) for n in ns)
-        if (
-            not chip(ns)
-            and all(c.isascii() for c in candidates(ns))
-            and not notice
-            and field_text().lower() == "x"
-        ):
+        if in_english():
             return
         tap_globe()
         time.sleep(2)
@@ -2617,9 +2622,10 @@ def globe_list_narrow():
         set_mode("Floating")
         tap_reset()
         resize_floating(("corner", (-w, 0)))
-        # Its handle to the screen's top, as in modes-floating-resized: the list has no room above the keys
+        # Its handle to the screen's top, as in modes-floating-resized. The list rises over the keys themselves
+        # (its top clamp never runs with three languages), so this checks it stays on screen where it is highest.
         open_field()
-        x, y = next(n[1:3] for n in nodes() if n[0] == MOVE_KEYBOARD)
+        x, y = wait_for("the move handle", lambda: node(MOVE_KEYBOARD), 10)
         adb("shell", "input", "swipe", str(x), str(y), str(x), "0", "800")
         time.sleep(1)
         for mode in ("floating", "one-handed"):
@@ -2636,6 +2642,8 @@ def globe_list_narrow():
                 screenshot(f"modes-globe-list-{mode}.png")
             finally:
                 adb("shell", "input", "motionevent", "UP", *map(str, at), check=False)
+            if not in_english():
+                raise Fail(f"{mode}: letting go on the globe changed the language")
             rows = [bounds.get(k) for k in labels]
             heights = [row[3] - row[1] for row in rows if row]
             if (

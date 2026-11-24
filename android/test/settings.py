@@ -452,7 +452,7 @@ def to_language(probe, word):
 
 LANGUAGE_NAMES = ("English", "中文", "日本語")
 # Its last row, as TalkBack reads it
-OTHER_KEYBOARDS = ("其他键盘", "Other keyboards", "他のキーボード")
+OTHER_KEYBOARDS = ("其他键盘", "Other keyboards", "ほかのキーボード")
 QUICK_SWITCH = ("快速切换", "Quick switch", "クイック切り替え")
 CHOOSER = ("Choose input method", "Select input method")
 
@@ -492,7 +492,7 @@ def hold_globe(then=None, shot=None):
         if shot:
             screenshot(shot)
         if then is not None:
-            to = next(
+            found = next(
                 (
                     rows[t][:2]
                     for t in ((then,) if isinstance(then, str) else then)
@@ -500,8 +500,11 @@ def hold_globe(then=None, shot=None):
                 ),
                 None,
             )
-            if not to:
-                raise Fail(f"no {then} in the globe's list {sorted(rows)}")
+            if not found:
+                raise Fail(
+                    f"no {then} in the globe's list {sorted(rows)}"
+                )  # let go on the globe
+            to = found
     finally:
         adb("shell", "input", "motionevent", "MOVE", *map(str, to), check=False)
         adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
@@ -516,18 +519,18 @@ def held_and_cancelled(via, end):
     before = marked(hold_globe())
     left, top, right, bottom = keyboard_frame
     at = (int(left + 3 * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
+    to = {
+        "globe": at,
+        "above": (at[0], max(top - 300, 10)),
+        "beside": (
+            int(left + 9.3 * (right - left) / 10),
+            int(top + 2.5 * (bottom - top) / 4),
+        ),
+    }[end]
     adb("shell", "input", "motionevent", "DOWN", *map(str, at))
     try:
         time.sleep(1)
         rows = globe_rows()
-        to = {
-            "globe": at,
-            "above": (at[0], max(top - 300, 10)),
-            "beside": (
-                int(left + 9.3 * (right - left) / 10),
-                int(top + 2.5 * (bottom - top) / 4),
-            ),
-        }[end]
         adb("shell", "input", "motionevent", "MOVE", *map(str, rows[via][:2]))
         time.sleep(0.5)
     finally:

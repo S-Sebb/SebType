@@ -343,7 +343,10 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        if (views) autofill.clear()
+        if (views) {
+            autofill.clear()
+            keyboard.cancelTouches() // a held key or TalkBack's 🌐 list doesn't outlive the keyboard
+        }
         waiting.cancel()
         Engines.inUse(lang, false)
         Engines.saveJapanese()

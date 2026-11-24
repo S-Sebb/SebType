@@ -1,5 +1,6 @@
 package dev.sebb.sebtype
 
+import dev.sebb.sebtype.Layout.Code
 import java.io.File
 import java.nio.ByteBuffer
 import kotlin.math.roundToInt
@@ -265,5 +266,13 @@ class KeyTextTest {
         assertEquals(-1, listRow(rows, globe, 200f, 40f, 25f)) // above the list
         assertEquals(-1, listRow(rows, globe, 400f, 180f, 25f)) // beside it, over other keys
         assertEquals(-1, listRow(rows, globe, 130f, 340f, 25f)) // the globe wins over the slop
+    }
+
+    @Test
+    fun aSecondFingerClosesTheGlobeListUnchosen() {
+        assertEquals(Roll.CLOSE, roll(Code.GLOBE, list = true)) // over a row or not, it picks nothing
+        assertEquals(Roll.TYPE, roll(Code.GLOBE, list = false)) // a globe still held short taps as before
+        assertEquals(Roll.TYPE, roll(Code.TEXT, list = false))
+        assertEquals(Roll.KEEP, roll(Code.SHIFT, list = false))
     }
 }

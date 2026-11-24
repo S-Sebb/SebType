@@ -386,7 +386,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 // A new finger types what the others hold, as fast typing rolls from key to key.
-                for ((id, p) in pointers.toMap()) if (p.cell.key.code != Code.SHIFT) release(id, p)
+                for ((id, p) in pointers.toMap()) when (roll(p.cell.key.code, p.list != null)) {
+                    Roll.KEEP -> {}
+                    Roll.CLOSE -> { p.chosen = -1; release(id, p) }
+                    Roll.TYPE -> release(id, p)
+                }
                 val i = e.actionIndex
                 val cell = cellAt(e.getX(i), e.getY(i)) ?: return true
                 press(e.getPointerId(i), cell, e.getX(i), e.getY(i))
@@ -400,10 +404,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     slidTo(p, p.x, p.y)?.let { slide(p, it) }
                 }
                 p.list?.let { rows ->
-                    val (dx, dy) = layerOffset()
-                    val g = p.cell.rect
-                    val row = listRow(rows.map { Box(it.left, it.top, it.right, it.bottom) }, Box(g.left + dx, g.top + dy, g.right + dx, g.bottom + dy),
-                        e.getX(i) + dx, e.getY(i) + dy, rows[0].height() / 2)
+                    val row = listRow(p, rows)
                     if (row != p.chosen) { p.chosen = row; showList(rows, row) }
                 }
                 p.panel?.let { panel ->
@@ -424,12 +425,21 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     p.x = e.getX(i)
                     p.y = e.getY(i)
                     if (p.panel == null && p.list == null) slidTo(p, p.x, p.y)?.let { p.cell = it }
+                    p.list?.let { p.chosen = listRow(p, it) }
                     release(id, p)
                 }
             }
             MotionEvent.ACTION_CANCEL -> cancelTouches()
         }
         return true
+    }
+
+    /** The row of the 🌐's list [rows] that [p]'s finger is on, or -1 */
+    private fun listRow(p: Pointer, rows: List<RectF>): Int {
+        val (dx, dy) = layerOffset()
+        val g = p.cell.rect
+        return listRow(rows.map { Box(it.left, it.top, it.right, it.bottom) }, Box(g.left + dx, g.top + dy, g.right + dx, g.bottom + dy),
+            p.x + dx, p.y + dy, rows[0].height() / 2)
     }
 
     private fun press(id: Int, cell: Cell, x: Float, y: Float) {
@@ -551,7 +561,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         }, -1f)
     }
 
-    private fun cancelTouches() {
+    fun cancelTouches() {
         // A cancelled swipe of Delete deletes nothing
         if (pointers.values.any { it.cell.key.code == Code.DELETE && it.swiping }) listener.onDeleteWords(0, true)
         pointers.clear()
@@ -625,7 +635,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val room = width - 2 * sidePadding - 5 * px // its frame's sides too
         if (w > room) { rowH *= room / w; w = room }
         val (dx, dy) = layerOffset()
-        val left = min(cell.rect.left, width - sidePadding - w).coerceAtLeast(sidePadding) + dx
+        val left = min(cell.rect.left, width - sidePadding - 3 * px - w).coerceAtLeast(sidePadding + 2 * px) + dx
         val n = languages.size + 1
         val top = (cell.rect.top + dy - 17 * density - n * rowH).coerceAtLeast(2 * px)
         return List(n) { RectF(left, top + it * rowH, left + w, top + (it + 1) * rowH) }
@@ -938,4 +948,13 @@ internal fun listRow(rows: List<Box>, globe: Box, x: Float, y: Float, slop: Floa
     val bottom = rows.last().bottom
     if (x < rows.first().left - slop || x > rows.first().right + slop || y < top - slop || y > bottom + slop) return -1
     return rows.indexOfFirst { y < it.bottom }.takeIf { it >= 0 } ?: rows.lastIndex
+}
+
+/** What a new finger does to a key already held: Shift stays held, the 🌐's list closes without a choice, any other key types */
+internal enum class Roll { KEEP, CLOSE, TYPE }
+
+internal fun roll(code: Code, list: Boolean) = when {
+    code == Code.SHIFT -> Roll.KEEP
+    list -> Roll.CLOSE
+    else -> Roll.TYPE
 }
