@@ -17,7 +17,9 @@ param(
   [ValidateRange(2, 100)][int]$Runs = 5  # 2 or more: the warm p95 needs a pass after the first
 )
 $ErrorActionPreference = 'Stop'
-$work = Join-Path ([IO.Path]::GetTempPath()) "sebtype-perf-$PID"
+# Not in %TEMP%: the zip's files keep their fixed 2025 times, and Windows' Storage Service deletes such
+# old-looking files there, prebuilt tables included, which Rime would then rebuild (#537).
+$work = Join-Path $env:LOCALAPPDATA "SebType\perf-$PID"
 try {
   if ($Rime -like '*.zip') { Expand-Archive $Rime $work } else { Copy-Item $Rime $work -Recurse }
   $inputs = Join-Path $work 'perf-inputs.txt'
