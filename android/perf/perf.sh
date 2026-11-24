@@ -217,7 +217,12 @@ phase_install() {
   "$adb" install -r "$work/perf-field.apk" > /dev/null || { echo "field install failed" >&2; return 1; }
   # zh-deploy reads the Chinese setup that the keyboard's first process starts, as soon as it is selected.
   "$adb" logcat -c
-  sh ime enable "$ime_id" > /dev/null && sh ime set "$ime_id" > /dev/null
+  # The input method service can learn of a new package seconds after the install returns (HyperOS):
+  # enabling it before then fails, and the first open would measure the previous keyboard.
+  local i
+  for i in {1..30}; do sh ime list -a -s | grep -qxF "$ime_id" && break; sleep 1; done
+  sh ime enable "$ime_id" > /dev/null; sh ime set "$ime_id" > /dev/null
+  [[ $(sh settings get secure default_input_method) == "$ime_id" ]] || { echo "$ime_id couldn't be selected" >&2; return 1; }
   echo "version=$(sh dumpsys package "$pkg" | sed -n 's/.*versionName=//p' | head -1)"
 }
 phase_first-open() { # the first keyboard open after install

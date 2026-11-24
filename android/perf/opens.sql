@@ -20,9 +20,15 @@ req as (
   select 'first' as kind, min(a.ts) as ts from actual_frame_timeline_slice a
   where a.upid in (select upid from field) group by a.upid
   union all
-  select 'warm', s.ts
-  from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid) join field using (upid)
-  where t.tid = field.pid and s.depth = 0 and s.name like 'dispatchInputEvent MotionEvent ACTION_UP%'
+  select 'warm', ts from (
+    -- Android 14's slice names only the event time: a tap's UP follows its DOWN within 50 ms (keys.sql)
+    select s.ts, s.name like 'dispatchInputEvent MotionEvent ACTION_UP%' or (s.name like 'deliverInputEvent src=0x1002 %'
+        and cast(substr(s.name, instr(s.name, 'eventTimeNano=') + 14) as int)
+          - lag(cast(substr(s.name, instr(s.name, 'eventTimeNano=') + 14) as int)) over (order by s.ts) <= 50000000) as up
+    from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid) join field using (upid)
+    where t.tid = field.pid and s.depth = 0
+      and (s.name like 'dispatchInputEvent MotionEvent ACTION_UP%' or s.name like 'deliverInputEvent src=0x1002 %'))
+  where up
   union all
   select 'cold', min(ss.ts) from sched_slice ss join thread t using (utid)
   where t.upid in (select p.upid from ime p join thread m on m.upid = p.upid
