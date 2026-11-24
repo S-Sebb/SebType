@@ -10,7 +10,7 @@ fetch_lookaside() {
   while (($#)); do
     f=$1 sum=$2
     shift 2
-    sha512sum -c --status <<<"$sum  $dir/$f" 2>/dev/null && continue
+    sha512sum -c --status <<<"$sum  $dir/$f" &>/dev/null && continue # a missing file says so on stdout
     curl --limit-rate 35M -sfL --retry 3 -o "$dir/$f.part" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f"
     sha512sum -c --status <<<"$sum  $dir/$f.part" || { echo "checksum mismatch: $pkg/$f" >&2; return 1; }
     mv "$dir/$f.part" "$dir/$f"

@@ -43,7 +43,7 @@ mkdir -p "$LIBRIME_CACHE/sources"
 fetch_lookaside librime "$LIBRIME_CACHE/sources" "${LIBRIME_PLUGIN_SOURCES[@]}"
 for ((i = 0; i < ${#LIBRIME_PLUGIN_SOURCES[@]}; i += 2)); do cp "$LIBRIME_CACHE/sources/${LIBRIME_PLUGIN_SOURCES[i]}" "$stage/sources/"; done
 octagram=$LIBRIME_CACHE/sources/librime-octagram-$OCTAGRAM_COMMIT.tar.gz
-if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram" 2>/dev/null; then
+if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram" &>/dev/null; then # stdout is the RPM path alone
   curl --limit-rate 35M -sfL --retry 3 -o "$octagram.part" \
     "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz"
   sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram.part" || { echo "checksum mismatch: librime-octagram" >&2; exit 1; }
