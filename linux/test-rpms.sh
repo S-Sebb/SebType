@@ -57,18 +57,18 @@ rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}\n' 'sebtype*' 'librime*' 'fcitx5-rim
 # dictionary written by Fedora's LevelDB, as SebType 0.2.0 and older wrote them, with Snappy-compressed
 # tables (Fedora's rime_dict_manager restores them and, opening it again for one more, moves them into a
 # table), a word under My words and a setting (Traditional Chinese on).
-home=/tmp/sebtype-tester rime=/tmp/sebtype-tester/.local/share/fcitx5/rime
+home=/tmp/sebtype-tester user_rime=/tmp/sebtype-tester/.local/share/fcitx5/rime
 as_tester() { chroot --userspec=1000:1000 / env HOME="$home" USER=tester "$@"; }
 seed_profile() {
   local header i
   echo "tester:x:1000:1000::$home:/bin/bash" >> /etc/passwd  # for D-Bus
-  mkdir -p "$rime" && chown -R 1000:1000 "$home" || return 1
+  mkdir -p "$user_rime" && chown -R 1000:1000 "$home" || return 1
   header=$'# Rime user dictionary\n#@/db_name\trime_ice\n#@/db_type\tuserdb\n#@/rime_version\t1.16.1'
   { echo "$header"; for ((i = 1; i <= 3000; i++)); do printf 'ce shi %d \t测试词条%d\tc=3 d=3 t=1\n' "$i" "$i"; done; } > /tmp/learned.txt
   printf '%s\nling \t另一条\tc=1 d=1 t=1\n' "$header" > /tmp/one-more.txt
-  as_tester sh -c "cd $rime && rime_dict_manager --restore /tmp/learned.txt && rime_dict_manager --restore /tmp/one-more.txt &&
+  as_tester sh -c "cd $user_rime && rime_dict_manager --restore /tmp/learned.txt && rime_dict_manager --restore /tmp/one-more.txt &&
     printf '# SebType: My words\n测词\tceci\n' > custom_phrase.txt && printf 'patch:\n  switches/@2/reset: 1\n' > rime_ice.custom.yaml" &&
-    ls "$rime"/rime_ice.userdb/*.ldb
+    ls "$user_rime"/rime_ice.userdb/*.ldb
 }
 seed_profile > /log/seed-profile.log 2>&1 || { echo "preflight: the Rime profile doesn't seed (see test-rpms/seed-profile.log)"; exit 1; }
 
@@ -205,11 +205,11 @@ learned_words() {
   as_tester dbus-run-session -- sh -c 'fcitx5 --disable=all --enable=dbus,keyboard,sebtype & sleep 5
     busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/sebtype/deploy s ""
     sleep 20; busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Exit; wait'
-  n=$(grep -c '测试词条' "$rime"/sync/*/rime_ice.userdb.txt) || true
+  n=$(grep -c '测试词条' "$user_rime"/sync/*/rime_ice.userdb.txt) || true
   echo "$n of 3000 entries in the add-on's snapshot"
   ((n == 3000)) || return 1
-  grep -qx $'测词\tceci' "$rime/custom_phrase.txt" || { echo "My words were lost"; return 1; }
-  grep -qx '  switches/@2/reset: 1' "$rime/rime_ice.custom.yaml" || { echo "the setting was lost"; return 1; }
+  grep -qx $'测词\tceci' "$user_rime/custom_phrase.txt" || { echo "My words were lost"; return 1; }
+  grep -qx '  switches/@2/reset: 1' "$user_rime/rime_ice.custom.yaml" || { echo "the setting was lost"; return 1; }
 }
 check learned-words-kept learned_words
 
