@@ -29,7 +29,7 @@ command -v python3 >/dev/null || { echo "preflight: python3 missing"; exit 1; }
 build_host_ready || { echo "preflight: build host $BUILD_HOST unreachable"; exit 1; }
 status=0
 result() { echo "$1 $2${3:+: $3}"; [[ $1 == PASS ]] || status=1; }
-# The build waits in the build lock (up to an hour) and times out there.
+# The build waits in the build lock (up to 90 minutes) and times out there.
 if files=$(build_remotely android/test/mozc-dictionary.sh build 2> "$out/build.log"); then result PASS build
 else result FAIL build "$(tail -1 "$out/build.log")"; exit 1; fi
 read -rd "" dict lib <<<"$files"

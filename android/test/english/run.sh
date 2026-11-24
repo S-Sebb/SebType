@@ -31,11 +31,12 @@ if [[ $BUILD_HOST != local ]] && ! build_host_ready; then
   exit 1
 fi
 
-bench() { # run name: builds and runs on the build host (or here), copying its summary back
+bench() { # run name: builds and runs on the build host (or here), copying its summary back. The timeout
+  # covers the build lock's wait (2.5 h for its 90 minutes) and the run.
   if [[ $BUILD_HOST == local ]]; then
-    timeout 5400 $here/bench.sh "$1"
+    timeout 14400 $here/bench.sh "$1"
   else
-    timeout 5400 bash -c "source tools/lib.sh; build_remotely ${SEBTYPE_MODEL:+SEBTYPE_MODEL=$SEBTYPE_MODEL} $here/bench.sh $1"
+    timeout 14400 bash -c "source tools/lib.sh; build_remotely ${SEBTYPE_MODEL:+SEBTYPE_MODEL=$SEBTYPE_MODEL} $here/bench.sh $1"
   fi
 }
 for run in run1 run2; do

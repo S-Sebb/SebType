@@ -35,11 +35,11 @@ model=${SEBTYPE_ZH_MODEL:-}
 read -ra options <<< "${SEBTYPE_ZH_OPTIONS:-}"
 read -ra gen <<< "${SEBTYPE_ZH_GEN_OPTIONS:-}"
 ((${#gen[@]})) && options+=(-- "${gen[@]}")
-bench() {
+bench() { # timeout: the build lock's wait (3 h for its 120 minutes) and the run
   if [[ $BUILD_HOST == local ]]; then
-    CHINESE_CORE=${SEBTYPE_ZH_CORE:-} timeout 5400 $here/bench.sh "$1" $model "${options[@]}"
+    CHINESE_CORE=${SEBTYPE_ZH_CORE:-} timeout 18000 $here/bench.sh "$1" $model "${options[@]}"
   else
-    timeout 5400 bash -c 'source tools/lib.sh; build_remotely "$@"' _ CHINESE_CORE="${SEBTYPE_ZH_CORE:-}" \
+    timeout 18000 bash -c 'source tools/lib.sh; build_remotely "$@"' _ CHINESE_CORE="${SEBTYPE_ZH_CORE:-}" \
       $here/bench.sh "$1" $model "${options[@]}"
   fi
 }

@@ -94,10 +94,10 @@ GB once per venv) and llama.cpp's pinned commit (`git fetch --depth 1`).
 
 Every heavy build runs through `build_lock` in `tools/lib.sh`: one SebType build at a time per machine,
 in the queue `/tmp/agent-locks/sebtype/build.lock` (`devq status <lock>` shows it), waiting up to an
-hour. The queue rank is `DEVQ_RANK` (default 2, lower goes first; it orders the queue, the lock still
-lets one build in at a time): set it once and every build the script starts, however nested, queues at
-that rank. A build that starts other builds runs them inside its own lock, not through `build_lock`
-again.
+hour plus the job's expected minutes. The queue rank is `DEVQ_RANK` (default 2, lower goes first; it
+orders the queue, the lock still lets one build in at a time): set it once and every build the script
+starts, however nested, queues at that rank. A build that starts other builds runs them inside its own
+lock, not through `build_lock` again.
 
 Inside the lock a build runs at the lowest CPU and I/O priority (`nice -n 19 ionice -c 3`), capped in CPU
 time and memory:

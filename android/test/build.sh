@@ -24,9 +24,9 @@ remote_wt=scratch/SebType/$ISSUE/test-build-wt remote_main=scratch/SebType/$ISSU
 export out wt remote_wt remote_main build_here
 
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
-check() { # name, function...; run it under timeout T seconds (default 3600: builds may wait for the build lock)
+check() { # name, function...; run it under timeout T seconds (default 7200: a 30-minute build may wait 90 in the build lock)
   local name=$1; shift
-  if timeout "${T:-3600}" bash -c "$*" > "$out/test-build-$name.log" 2>&1; then result PASS "$name"
+  if timeout "${T:-7200}" bash -c "$*" > "$out/test-build-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-build-$name.log"; fi
 }
 on_host() { ssh -o ConnectTimeout=10 -o BatchMode=yes yanglab16 "$@"; }
