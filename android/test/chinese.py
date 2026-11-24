@@ -2625,7 +2625,7 @@ def globe_list_narrow():
         # Its handle to the screen's top, as in modes-floating-resized. The list rises over the keys themselves
         # (its top clamp never runs with three languages), so this checks it stays on screen where it is highest.
         open_field()
-        x, y = wait_for("the move handle", lambda: node(MOVE_KEYBOARD), 10)
+        x, y = wait_for("the move handle", lambda: node(MOVE_KEYBOARD), 10)[1:3]
         adb("shell", "input", "swipe", str(x), str(y), str(x), "0", "800")
         time.sleep(1)
         for mode in ("floating", "one-handed"):
