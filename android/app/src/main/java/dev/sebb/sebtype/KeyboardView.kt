@@ -43,8 +43,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         fun onKey(code: Code, text: String, x: Int, y: Int)
         /** A long press on 🌐 with quick switch off, or its list's Other keyboards…: the system's keyboard picker */
         fun onPickKeyboard()
-        /** The held 🌐's list: language [i] of [languages] picked */
-        fun onPickLanguage(i: Int)
+        /** The held 🌐's list: language [lang] picked, by its id, as the list showed it */
+        fun onPickLanguage(lang: Int)
         /** The letter keys moved: five ints a key (its letter, x, y, width, height), for English's corrections */
         fun onLayout(width: Int, height: Int, keys: IntArray)
         /** The space bar swiped sideways: the cursor moves [by] characters (#53 B11) */
@@ -96,8 +96,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         set(value) { field = value; invalidate() }
     /** $, or ¥ in 中文 and 日本語 */
     private var currency = "$"
-    /** The held 🌐's list (#526): the languages that are on, by name, and the current one's index */
-    var languages = emptyList<String>()
+    /** The held 🌐's list (#526): the languages that are on, id to name, and the current one's index */
+    var languages = emptyList<Pair<Int, String>>()
     var language = 0
     /** 🌐 held shows [languages]; off, it opens the system's keyboard picker as before */
     var quickSwitch = true
@@ -641,17 +641,30 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         return List(n) { RectF(left, top + it * rowH, left + w, top + (it + 1) * rowH) }
     }
 
-    private fun listLabels() = languages + context.getString(R.string.key_other_keyboards)
+    private fun listLabels() = languages.map { it.second } + context.getString(R.string.key_other_keyboards)
 
-    /** [onChoose]: TalkBack's list, a double tap on a row picks it; the touch's list takes it too, so its rows can be found */
-    private fun showList(rows: List<RectF>, chosen: Int, onChoose: (Int) -> Unit = { popups.clear(); pick(it) }) {
+    /**
+     * [onChoose]: a row clicked through accessibility (TalkBack's double tap, Voice Access, a test) picks it. The touch's
+     * list takes it too, so its rows can be found; such a pick ends the hold, so the finger's lift doesn't pick again.
+     */
+    private fun showList(rows: List<RectF>, chosen: Int, onChoose: (Int) -> Unit = { endHolds(); pick(it) }) {
         val frame = RectF(rows.first().left - 2 * px, rows.first().top - 2 * px, rows.last().right + 3 * px, rows.last().bottom + 3 * px)
         popups.showPanel(frame, rows.zip(listLabels()), chosen, onChoose, list = true, marked = language,
-            descriptions = languages + context.getString(R.string.key_other_keyboards_description))
+            descriptions = languages.map { it.second } + context.getString(R.string.key_other_keyboards_description))
     }
 
     /** The held 🌐's row [i]: a language, or the last row's Other keyboards… */
-    private fun pick(i: Int) = if (i < languages.size) listener.onPickLanguage(i) else listener.onPickKeyboard()
+    private fun pick(i: Int) {
+        val lang = languages.getOrNull(i)
+        if (lang != null) listener.onPickLanguage(lang.first) else listener.onPickKeyboard()
+    }
+
+    /** The list's fingers let go of: their moves and lift are ignored */
+    private fun endHolds() {
+        pointers.values.removeAll { it.list != null }
+        popups.clear()
+        invalidate()
+    }
 
     /** A key's face in its cell, the space between rows below it, its top a little above the cell's */
     private fun face(r: RectF) =

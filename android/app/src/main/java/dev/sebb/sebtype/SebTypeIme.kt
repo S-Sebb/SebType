@@ -312,6 +312,9 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
             shown = Panel.NONE
             expanded = false
             keyboard.setShift(KeyboardView.Shift.OFF) // Caps Lock ends with its field, as today's does
+            // A held key or 🌐 list ends with its field, also when the page stays (setPage then keeps them). The same
+            // field restarted keeps them: a spurious restartInput mustn't end the finger's gesture.
+            keyboard.cancelTouches()
         }
         // Turned off in the settings while this process lived: the next field opens in one that is on (#526)
         val on = onLanguage(lang, Engines.languages())
@@ -666,8 +669,9 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
     private fun globe() =
         switchTo(globeTarget(Engines.languages(), lang, Prefs[Prefs.QUICK_SWITCH], prefs.getInt("other_language", ENGLISH)))
 
-    override fun onPickLanguage(i: Int) = waiting.run {
-        Engines.languages().getOrNull(i)?.let { switchTo(it) }
+    /** A language the list showed but the settings have turned off since (split screen) is no longer picked */
+    override fun onPickLanguage(lang: Int) = waiting.run {
+        if (lang in Engines.languages()) switchTo(lang)
     }
 
     private fun switchTo(next: Int) {
@@ -800,7 +804,7 @@ open class SebTypeIme : InputMethodService(), KeyboardView.Listener, CandidateBa
         keyboard.setPage(layout, numbers?.takeIf { page == Page.LETTERS }, if (lang == ENGLISH) "$" else "¥", fillRows)
         keyboard.spaceLabel = name(lang)
         keyboard.quickSwitch = Prefs[Prefs.QUICK_SWITCH]
-        keyboard.languages = Engines.languages().map { name(it) }
+        keyboard.languages = Engines.languages().map { it to name(it) }
         keyboard.language = Engines.languages().indexOf(lang)
         if (lang == JAPANESE) {
             val keys = if (page == Page.LETTERS) NativeCore.KEYS_KANA else NativeCore.KEYS_SYMBOLS
