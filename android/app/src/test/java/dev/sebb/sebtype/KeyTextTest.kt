@@ -91,6 +91,24 @@ class KeyTextTest {
         }
     }
 
+    /** #531: with the number row over the letters, every other page keeps the keyboard's height, its last key's bottom too. */
+    @Test
+    fun pagesKeepTheNumberRowsHeight() {
+        val rowHeight = 59.3f * density
+        val tall = layout("numbers").rows + layout("letters").rows
+        val fill = rowsHeight(tall)
+        val height = keysHeight(tall, rowHeight, density)
+        for (name in listOf("symbols", "symbols2", "digits")) {
+            val rows = layout(name).rows
+            val stretched = pageRowHeight(rows, fill, rowHeight)
+            assertEquals(name, height, keysHeight(rows, stretched, density), 1e-3f)
+            assertEquals(name, height, keyCells(rows, 1080f, stretched, density, false).maxOf { it.second.bottom }, 1e-3f)
+        }
+        // Without a number row the pages are as tall as the letters, at their own row height.
+        assertEquals(rowHeight, pageRowHeight(layout("symbols").rows, 0f, rowHeight))
+        assertEquals(rowHeight, pageRowHeight(tall, fill, rowHeight))
+    }
+
     // --- #329: the owner's constraints: keys' places, touch areas and the keyboard's size as main's; keycaps grow ---
 
     private fun layout(name: String) = Layout.parse(name, File("src/main/assets/layouts/$name.json").readText(), "en")
