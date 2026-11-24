@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2329  # the checks run through check()
 # Tests a release's Linux installer (#421, #427) as the Configurator's update installs it (#422), in a fresh
-# pinned Fedora (versions.sh) whose librime is Fedora's, with librime-tools: --install-rpms-only replaces
-# every installed librime package without pulling in uninstalled optional ones, SebType's version is
-# VERSION's, every installed file is the package's, the files setup's user part copies are this checkout's,
-# every library finds what it links, sebtype-setup runs cleanly as a normal user, a system update (dnf
-# distro-sync, as Nobara's updater runs it) keeps SebType's librime (#527), and --undo-librime brings back Fedora's.
+# pinned Fedora (versions.sh) with Fedora's Rime (fcitx5-rime, librime and its plugins), or with an older
+# release installed over it first: --install-rpms-only installs sebtype and leaves Fedora's librime as it is,
+# or puts it back where an older release had replaced it (#527); SebType's version is VERSION's, every
+# installed file is the package's, the files setup's user part copies are this checkout's, every library finds
+# what it links, the add-on has its own librime, sebtype-setup runs cleanly as a normal user, a system update
+# and a later librime-predict install work, and removing sebtype leaves Fedora's Rime working.
 #
-#   linux/test-rpms.sh INSTALLER   # SebType-setup-<version>-linux-x86_64.sh (CI's artifact sebtype-linux-setup)
+#   linux/test-rpms.sh INSTALLER [OLD_INSTALLER]   # SebType-setup-<version>-linux-x86_64.sh (CI's artifact
+#                                                  # sebtype-linux-setup); OLD_INSTALLER: a release's, e.g. 0.2.0's
 #
 # One line per check; logs in ~/scratch/SebType/<task>/test-rpms/. Exits 0 only when all pass.
 set -uo pipefail
@@ -18,12 +20,13 @@ source "$here/versions.sh"
 if [[ ${1-} != --inside ]]; then
   # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
   source "$here/../tools/lib.sh"
-  installer=$(readlink -f "${1:?usage: linux/test-rpms.sh INSTALLER}")
+  installer=$(readlink -f "${1:?usage: linux/test-rpms.sh INSTALLER [OLD_INSTALLER]}")
+  old=${2:+$(readlink -f "$2")}
   command -v podman >/dev/null || { echo "preflight: podman missing"; exit 1; }
-  [[ -f $installer ]] || { echo "preflight: $installer missing"; exit 1; }
+  for f in "$installer" ${old:+"$old"}; do [[ -f $f ]] || { echo "preflight: $f missing"; exit 1; }; done
   log=$TASK_OUT/test-rpms; rm -rf "$log"; mkdir -p "$log"
-  exec podman run --rm -v "$installer:/installer.sh:ro,z" -v "$here/..:/src:ro,z" -v "$log:/log:z" "$BUILD_IMAGE" \
-    bash /src/linux/test-rpms.sh --inside
+  exec podman run --rm -v "$installer:/installer.sh:ro,z" ${old:+-v "$old:/old.sh:ro,z"} -v "$here/..:/src:ro,z" \
+    -v "$log:/log:z" "$BUILD_IMAGE" bash /src/linux/test-rpms.sh --inside
 fi
 
 failed=0
@@ -36,53 +39,63 @@ check() { # name function...: each within 15 minutes (timeout can't run a functi
   if ((rc == 0)); then echo "PASS $name"
   else echo "FAIL $name: see test-rpms/$name.log"; tail -n 30 "/log/$name.log" || true; failed=1; fi
 }
-ours=$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE
+rime=(librime librime-lua librime-octagram librime-tools fcitx5-rime)
 
 echo 'throttle=35M' >> /etc/dnf/dnf.conf
-dnf -y -q install fcitx5 librime librime-lua librime-octagram librime-tools > /log/before.log 2>&1 ||
-  { echo "preflight: Fedora's fcitx5 and librime don't install (see test-rpms/before.log)"; exit 1; }
+dnf -y -q install fcitx5 "${rime[@]}" binutils > /log/before.log 2>&1 ||
+  { echo "preflight: Fedora's fcitx5 and Rime don't install (see test-rpms/before.log)"; exit 1; }
+if [[ -f /old.sh ]]; then
+  sh /old.sh --install-rpms-only > /log/old.log 2>&1 || { echo "preflight: the old installer fails (see test-rpms/old.log)"; exit 1; }
+fi
+rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}\n' 'sebtype*' 'librime*' 'fcitx5-rime*' | sort > /log/packages-before.txt
 
-# The update's admin step (#427): extracts and verifies the embedded RPMs, installs sebtype, librime,
-# librime-lua, librime-octagram, and only the optional librime packages already installed (librime-tools).
+# Fedora's Rime packages are Fedora's and as Fedora packed them, and those not installed before still aren't.
+fedora_rime() {
+  local p
+  for p in "${rime[@]}"; do
+    [[ $(rpm -q --qf '%{RELEASE}' "$p") == *.fc44 && $(rpm -q --qf '%{RELEASE}' "$p") != *sebtype* ]] || { echo "$p: $(rpm -q "$p")"; return 1; }
+  done
+  rpm -V "${rime[@]}" || return 1
+  for p in librime-predict librime-devel; do
+    ! rpm -q "$p" || { echo "$p was installed"; return 1; }
+  done
+}
+
+# The update's admin step (#427): extracts and verifies the embedded RPM and installs sebtype; Fedora's librime
+# stays, or comes back where an older release had put SebType's in its place.
 update() {
   sh /installer.sh --help &&
     sh /installer.sh --install-rpms-only
 }
 check update-installs update
 
-# Every installed librime package is SebType's (sebtype-<name>, in Fedora's place) and no Fedora one is left.
-librime_ours() {
-  local p now
-  for p in librime librime-lua librime-octagram librime-tools; do
-    now=$(rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}' "sebtype-$p"); [[ $now == "sebtype-$p-$ours" ]] || { echo "$now, not sebtype-$p-$ours"; return 1; }
-    ! rpm -q "$p" || { echo "Fedora's $p is still installed"; return 1; }
-  done
-}
-# sebtype is VERSION's; every installed librime package is SebType's; uninstalled optional librime
-# packages weren't pulled in; setup's versions.sh knows VERSION.
+# sebtype is VERSION's; Fedora's Rime is Fedora's; setup's versions.sh knows VERSION.
 versions() {
-  local want p
+  local want
   want=$(< /src/VERSION)
   [[ $(rpm -q --qf '%{VERSION}-%{RELEASE}' sebtype) == "$want-$SEBTYPE_RPM_RELEASE" ]] || { echo "sebtype: $(rpm -q sebtype), not $want"; return 1; }
-  librime_ours || return 1
-  for p in librime-predict librime-devel; do
-    ! rpm -q --whatprovides "$p" >/dev/null 2>&1 || { echo "optional $p was unexpectedly installed"; return 1; }
-  done
-  [[ $(bash -c 'source /usr/libexec/sebtype/versions.sh; echo "$SEBTYPE_VERSION"') == "$want" ]]
+  fedora_rime &&
+    [[ $(bash -c 'source /usr/libexec/sebtype/versions.sh; echo "$SEBTYPE_VERSION"') == "$want" ]]
 }
 check versions versions
 
-ours_installed() { rpm -qa --qf '%{NAME}\n' | grep -xE 'sebtype(-librime(-.*)?)?'; }
-# Every file of the installed packages is as packed (size, digest, mode, links).
-# shellcheck disable=SC2046  # one package name per word
-verify() { rpm -V $(ours_installed) && rpm -ql $(ours_installed); }
+# Every file of the package is as packed (size, digest, mode, links).
+verify() { rpm -V sebtype && rpm -ql sebtype; }
 check files-as-packed verify
+
+# The add-on has SebType's librime with its plugins inside (#527): it needs no librime library and exports
+# none of Rime's symbols, which would meet Fedora's librime in Fcitx5's process (fcitx5-rime's).
+own_librime() {
+  local so=/usr/lib64/fcitx5/sebtype.so
+  ! ldd "$so" | grep -i rime && ! nm -D --defined-only "$so" | grep -E 'rime_get_api|Rime[A-Z]|4rime' &&
+    nm -D --defined-only "$so" | grep -q fcitx_addon_factory_instance
+}
+check own-librime own_librime
 
 expected() {
   local f
   for f in /usr/lib64/fcitx5/sebtype.so /usr/share/fcitx5/addon/sebtype.conf /usr/lib64/sebtype/libsebtype-mozc.so \
-    /usr/share/sebtype/fcitx5/addon/notificationitem.conf /usr/libexec/sebtype/{sebtype-configurator,rime-data.zip} \
-    "/usr/lib64/librime.so.$LIBRIME_VERSION" /usr/lib64/rime-plugins/librime-{lua,octagram}.so; do
+    /usr/share/sebtype/fcitx5/addon/notificationitem.conf /usr/libexec/sebtype/{sebtype-configurator,rime-data.zip}; do
     [[ -s $f ]] || { echo "missing: $f"; return 1; }
   done
   [[ $(readlink -f /usr/bin/sebtype-setup) == /usr/libexec/sebtype/setup-ime.sh ]] || { echo "sebtype-setup isn't setup"; return 1; }
@@ -95,14 +108,13 @@ expected() {
 }
 check files-expected expected
 
-# shellcheck disable=SC2046  # one package name per word
 libraries() {
   local f bad=0
   while read -r f; do
     [[ -f $f && $(head -c 4 "$f") == $'\x7fELF' ]] || continue
     echo "$f"
     ldd "$f" | grep 'not found' && bad=1
-  done < <(rpm -ql $(ours_installed))
+  done < <(rpm -ql sebtype)
   return "$bad"
 }
 check libraries-found libraries
@@ -136,22 +148,27 @@ user_setup() {
 }
 check user-setup user_setup
 
-# A system update keeps SebType's librime (#527): Nobara's updater distro-syncs every package to the
-# repositories' version, which put Fedora's librime back while SebType's was named librime.
-system_update() { dnf -y --best distro-sync && dnf -y upgrade && librime_ours; }
-check system-update-keeps-librime system_update
-
-# --undo-librime swaps every SebType librime package for Fedora's in one transaction, sebtype staying
-# installed, and a later update keeps Fedora's. setup asks for sudo; the container runs as root.
-undo_librime() {
-  local p
-  printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/sudo; chmod +x /usr/local/bin/sudo
-  /usr/bin/sebtype-setup --undo-librime </dev/null && dnf -y --best distro-sync || return 1
-  for p in librime librime-lua librime-octagram librime-tools; do
-    [[ $(rpm -q --qf '%{RELEASE}' "$p") == "$LIBRIME_FEDORA_RELEASE" ]] || { echo "$p: $(rpm -q "$p"), not Fedora's"; return 1; }
-  done
-  ! rpm -qa | grep '^sebtype-librime' && rpm -q sebtype
+# A system update (Nobara's updater runs distro-sync, which moves every package to the repositories' version,
+# #527) and an upgrade change neither sebtype nor Fedora's Rime.
+system_update() {
+  dnf -y --best distro-sync && dnf -y upgrade &&
+    [[ $(rpm -q --qf '%{VERSION}-%{RELEASE}' sebtype) == "$(< /src/VERSION)-$SEBTYPE_RPM_RELEASE" ]] && fedora_rime
 }
-check undo-librime undo_librime
+check system-update system_update
+
+# Fedora's librime-predict installs later, beside Fedora's librime.
+predict() { dnf -y install librime-predict && rpm -V librime-predict; }
+check librime-predict-later predict
+
+# Removing sebtype leaves Fedora's Rime installed, as packed and finding what it links.
+remove() {
+  local f
+  dnf -y remove sebtype && ! rpm -q sebtype && rpm -V "${rime[@]}" librime-predict || return 1
+  for f in /usr/lib64/fcitx5/rime.so /usr/lib64/librime.so.1 /usr/lib64/rime-plugins/*.so; do
+    ldd "$f" | grep 'not found' && return 1
+  done
+  true
+}
+check remove-leaves-fedora-rime remove
 
 exit $failed

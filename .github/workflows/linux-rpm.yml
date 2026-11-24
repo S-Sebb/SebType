@@ -1,7 +1,7 @@
 # SebType's Linux installer for each release (#421, #427): SebType-setup-<version>-linux-x86_64.sh, a
-# self-extracting installer packing sebtype-<version>-<release>.x86_64.rpm (the input method, Mozc, the
-# Configurator, the Chinese data and setup's user part) and SebType's librime with its plugins, built by
-# linux/build.sh, linux/build-librime.sh and linux/build-installer.sh in the pinned Fedora container
+# self-extracting installer packing sebtype-<version>-<release>.x86_64.rpm (the input method with SebType's
+# librime inside, Mozc, the Configurator, the Chinese data and setup's user part), built by
+# linux/build.sh and linux/build-installer.sh in the pinned Fedora container
 # nobara-pc runs (linux/versions.sh), here with the runner to itself (tools/lib.sh). linux/test-rpms.sh
 # installs it as an update does. The run's artifact "sebtype-linux-setup" holds the installer;
 # android/release.sh attaches it.
@@ -88,7 +88,6 @@ jobs:
           rpm=$(linux/build.sh) || { tail -50 "$WORK/sebtype-build.log"; exit 1; }
           mkdir -p out
           cp "$rpm" "out/${{ steps.inputs.outputs.rpm }}"
-          linux/build-librime.sh | xargs cp -t out
           linux/build-installer.sh out "out/${{ steps.inputs.outputs.setup }}"
           # Bazel marks the disk cache entries it reads or writes; the rest are from older sources and would
           # only grow the saved cache.

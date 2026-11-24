@@ -1,16 +1,10 @@
-# SebType's librime (#101): SebType's librime in engines/librime, packaged as Fedora 44's librime 1.16.1-2
-# (this is Fedora's spec, MIT licence). build-librime.sh sets the version and release from versions.sh and
-# fetches the plugins, Fedora's own copies.
-# Each package is named sebtype-<Fedora's name> and provides and obsoletes Fedora's (#527): dnf installs it
-# in place of Fedora's, and a distro-sync (Nobara's updater) leaves it, as no repository has its name. A
-# package named librime would be synced back to the repositories' librime, whatever its version.
+# SebType's librime (#101): SebType's librime in engines/librime, packaged as Fedora 44 packages librime
+# 1.16.1-2 (this is Fedora's spec, MIT licence). build-librime.sh sets the version and release from
+# versions.sh and fetches the plugins, Fedora's own copies. SebType's add-on links its own librime
+# statically since 0.3.0 (#527); these packages are only for the benches and perf tools, and were installed
+# over Fedora's by releases up to 0.2.0.
 
-# Unversioned, so Fedora's librime doesn't come back with a later release either.
-%define fedora_name() Provides: %1 = %{version}-%{release}\
-Provides: %1%{?_isa} = %{version}-%{release}\
-Obsoletes: %1
-
-Name:           sebtype-librime
+Name:           librime
 Version:        %{sebtype_version}
 Release:        %{sebtype_release}
 Summary:        Rime Input Method Engine Library
@@ -37,8 +31,6 @@ BuildRequires:  marisa-devel
 BuildRequires:  leveldb-devel
 BuildRequires:  lua-devel
 
-%{fedora_name librime}
-
 %description
 Rime Input Method Engine Library
 Support for shape-based and phonetic-based input methods,
@@ -47,7 +39,6 @@ A selected dictionary in Traditional Chinese,
 powered by opencc for Simplified Chinese output.
 
 %package        devel
-%{fedora_name librime-devel}
 Summary:        Development files for %{name}
 Requires:       %{name}%{?_isa} = %{version}-%{release}
 
@@ -56,7 +47,6 @@ The %{name}-devel package contains libraries and header files for
 developing applications that use %{name}.
 
 %package        tools
-%{fedora_name librime-tools}
 Summary:        Tools for %{name}
 Requires:       %{name}%{?_isa} = %{version}-%{release}
 
@@ -64,7 +54,6 @@ Requires:       %{name}%{?_isa} = %{version}-%{release}
 The %{name}-tools package contains tools for %{name}.
 
 %package        lua
-%{fedora_name librime-lua}
 Summary:        Lua plugin for %{name}
 Requires:       %{name}%{?_isa} = %{version}-%{release}
 
@@ -72,7 +61,6 @@ Requires:       %{name}%{?_isa} = %{version}-%{release}
 The %{name}-lua package contains the lua plugin from the community.
 
 %package        octagram
-%{fedora_name librime-octagram}
 Summary:        Octagram plugin for %{name}
 Requires:       %{name}%{?_isa} = %{version}-%{release}
 
@@ -80,7 +68,6 @@ Requires:       %{name}%{?_isa} = %{version}-%{release}
 The %{name}-octagram package contains the octagram plugin from the community.
 
 %package        predict
-%{fedora_name librime-predict}
 Summary:        Predict plugin for %{name}
 Requires:       %{name}%{?_isa} = %{version}-%{release}
 

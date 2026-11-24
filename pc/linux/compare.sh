@@ -2,8 +2,8 @@
 # SebType's input method on Linux next to Fedora's fcitx5-rime and fcitx5-mozc, measured the same way (#54, #190):
 #   pc/linux/compare.sh            # RUNS (default 5) repeats each typing set; SOAK_MIN (default 12) mixed typing
 # Each setup runs in a private Fcitx5 with a throwaway profile, in its own D-Bus session and runtime dir
-# (#176), never the live one; compare-keys.py types into it over D-Bus. SebType's input method and librime
-# come from their RPMs (linux/build.sh, build-librime.sh), unpacked and mounted for that Fcitx5 alone with
+# (#176), never the live one; compare-keys.py types into it over D-Bus. SebType's input method, with its own
+# librime linked in (#527), comes from its RPM (linux/build.sh), unpacked and mounted for that Fcitx5 alone with
 # bwrap (linux/versions.sh's sebtype_run), as test-setup-ime.sh does. Data: stock
 # Rime gets rime-ice's release (what users of fcitx5-rime install), SebType its own Chinese data
 # (data/rime/build.sh) with setup-ime.sh's patches. Mozc starts with an empty profile in both. Nothing is
@@ -25,7 +25,6 @@ data=$("$here/../../tools/build.sh" 10 "rime data for compare" data/rime/build.s
   { echo "preflight: data/rime/build.sh failed"; exit 1; }
 own=$work/own
 sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
-librime_unpack "$own" || { echo "preflight: linux/build-librime.sh failed"; exit 1; }
 read -ra sebtype <<<"$(sebtype_run "$own")"
 
 printf '%s\n' nihao ranhou ranh lh zhongguo women xiexie zaijian shurufa dianhua kaihui wozhidaole \
