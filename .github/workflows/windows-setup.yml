@@ -216,6 +216,8 @@ jobs:
           key: python-embed-${{ hashFiles('pc/windows/setup/python.ps1') }}
       - name: Python
         run: pc/windows/setup/python.ps1 -Dir in/python
+      # The Chinese data's licence and sources, which Setup installs in licenses\ (#544).
+      - run: tar -xf in/rime-data/rime-data.zip -C in/rime-data LICENSE SOURCE.txt
       - name: Inno Setup
         run: |
           $exe = "$env:RUNNER_TEMP\innosetup.exe"
