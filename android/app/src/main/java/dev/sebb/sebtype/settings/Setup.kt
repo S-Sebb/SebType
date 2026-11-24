@@ -63,8 +63,9 @@ internal fun setupStep(enabled: Boolean, chosen: Boolean, commonPassed: Boolean,
     else -> SETUP_TIPS
 }
 
-/** The common settings step's phone-only switches (#444), as the Keyboard screen shows them, at their defaults until changed. */
+/** The common settings step's phone-only switches (#444), as the Languages and Keyboard screens show them, at their defaults until changed. */
 internal val SETUP_SWITCHES = listOf(
+    Triple(R.string.sebtype_settings_quick_switch, R.string.sebtype_settings_quick_switch_subtitle, Prefs.QUICK_SWITCH),
     Triple(R.string.settings_number_row, R.string.settings_number_row_subtitle, Prefs.NUMBER_ROW),
     Triple(R.string.settings_vibrate, null, Prefs.VIBRATE),
     Triple(R.string.settings_sound, null, Prefs.SOUND),

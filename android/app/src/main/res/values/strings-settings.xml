@@ -15,7 +15,9 @@
     <string name="sebtype_settings_backup_subtitle">Export and import settings</string>
     <string name="sebtype_settings_about">About</string>
     <string name="sebtype_settings_globe_order">Globe order</string>
-    <string name="sebtype_settings_globe_order_tip">The globe key switches between the languages that are on, in this order. Drag ≡ to reorder.</string>
+    <string name="sebtype_settings_globe_order_tip">The globe key\'s list shows the languages that are on in this order; with Quick switch off, a tap goes through them in this order. Drag ≡ to reorder.</string>
+    <string name="sebtype_settings_quick_switch">Quick switch</string>
+    <string name="sebtype_settings_quick_switch_subtitle">A globe tap switches between English and the last other language; hold it for the list</string>
     <string name="sebtype_settings_drag">Drag to reorder</string>
     <!-- The language rows in the globe order: the English UI adds the English name. -->
     <string name="sebtype_settings_globe_zh">中文 Chinese</string>
@@ -133,7 +135,8 @@
     <string name="setup_continue">Continue</string>
     <string name="setup_tips_text">You\'re all set. A few things that are easy to miss:</string>
     <string name="setup_done">Done</string>
-    <string name="tips_globe">Hold 🌐 to switch to another keyboard.</string>
+    <string name="tips_globe">Tap 🌐 to switch between English and your other language; hold it to pick a language or another keyboard.</string>
+    <string name="tips_globe_off">Tap 🌐 for the next language; hold it to switch to another keyboard.</string>
     <string name="tips_space">Slide the space bar to move the cursor.</string>
     <string name="tips_delete">Slide left from ⌫ to delete whole words.</string>
     <string name="tips_kana">In 日本語, tap the あ chip for katakana.</string>

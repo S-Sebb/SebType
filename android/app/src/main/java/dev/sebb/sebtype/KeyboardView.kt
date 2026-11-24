@@ -41,8 +41,12 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     interface Listener {
         /** A key: its text (Shift applied) for a text key, and where it was tapped (-1, -1: not tapped) */
         fun onKey(code: Code, text: String, x: Int, y: Int)
-        /** A long press on 🌐: the system's keyboard picker */
+        /** A long press on 🌐 with quick switch off, or its list's Other keyboards…: the system's keyboard picker */
         fun onPickKeyboard()
+        /** The held 🌐's list: language [lang] picked, by its id, as the list showed it */
+        fun onPickLanguage(lang: Int)
+        /** The languages on now, id to name, and the current one's index: what the held 🌐's list shows when it opens */
+        fun languagesOn(): Pair<List<Pair<Int, String>>, Int>
         /** The letter keys moved: five ints a key (its letter, x, y, width, height), for English's corrections */
         fun onLayout(width: Int, height: Int, keys: IntArray)
         /** The space bar swiped sideways: the cursor moves [by] characters (#53 B11) */
@@ -94,6 +98,19 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         set(value) { field = value; invalidate() }
     /** $, or ¥ in 中文 and 日本語 */
     private var currency = "$"
+    /**
+     * The open 🌐 list's languages and marked row (#526), read when it opens: settings changed while the keyboard
+     * showed are in it, and a refresh while it is open doesn't move its rows
+     */
+    private var listShown = emptyList<Pair<Int, String>>()
+    private var listMarked = -1
+    /** 🌐 held shows the languages on; off, it opens the system's keyboard picker as before */
+    var quickSwitch = true
+        set(value) {
+            if (field == value) return
+            field = value
+            a11y.invalidateRoot() // the globe's long-press label
+        }
     var enter = FieldKind.Enter.NEWLINE
         set(value) { field = value; invalidate(); a11y.invalidateRoot() }
 
@@ -112,6 +129,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private val fonts = Picnic.fonts(context)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = fonts.first }
+    private val listText = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = fonts.second }
     private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.RIGHT; typeface = fonts.first; color = Picnic.MUTED; textSize = HINT_DP * density
     }
@@ -319,6 +337,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
 
     private class Pointer(var cell: Cell, val downAt: Long, val downX: Float, val downY: Float) {
         var panel: List<Pair<RectF, Layout.Key>>? = null
+        /** The held 🌐's list, its rows' cells */
+        var list: List<RectF>? = null
         var chosen = 0
         /** Shift, held while another key is typed: off again when it is let go */
         var chorded = false
@@ -371,7 +391,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 // A new finger types what the others hold, as fast typing rolls from key to key.
-                for ((id, p) in pointers.toMap()) if (p.cell.key.code != Code.SHIFT) release(id, p)
+                for ((id, p) in pointers.toMap()) when (roll(p.cell.key.code, p.list != null)) {
+                    Roll.KEEP -> {}
+                    Roll.CLOSE -> { p.chosen = -1; release(id, p) }
+                    Roll.TYPE -> release(id, p)
+                }
                 val i = e.actionIndex
                 val cell = cellAt(e.getX(i), e.getY(i)) ?: return true
                 press(e.getPointerId(i), cell, e.getX(i), e.getY(i))
@@ -380,9 +404,13 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 val p = pointers[e.getPointerId(i)] ?: continue
                 p.x = e.getX(i)
                 p.y = e.getY(i)
-                if (p.panel == null) {
+                if (p.panel == null && p.list == null) {
                     swipe(p)
                     slidTo(p, p.x, p.y)?.let { slide(p, it) }
+                }
+                p.list?.let { rows ->
+                    val row = listRow(p, rows)
+                    if (row != p.chosen) { p.chosen = row; showList(rows, row) }
                 }
                 p.panel?.let { panel ->
                     val x = e.getX(i) + layerOffset()[0]
@@ -401,13 +429,22 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                     // Where the finger lifts counts too: a last step past the edge types the letter it ends on
                     p.x = e.getX(i)
                     p.y = e.getY(i)
-                    if (p.panel == null) slidTo(p, p.x, p.y)?.let { p.cell = it }
+                    if (p.panel == null && p.list == null) slidTo(p, p.x, p.y)?.let { p.cell = it }
+                    p.list?.let { p.chosen = listRow(p, it) }
                     release(id, p)
                 }
             }
             MotionEvent.ACTION_CANCEL -> cancelTouches()
         }
         return true
+    }
+
+    /** The row of the 🌐's list [rows] that [p]'s finger is on, or -1 */
+    private fun listRow(p: Pointer, rows: List<RectF>): Int {
+        val (dx, dy) = layerOffset()
+        val g = p.cell.rect
+        return listRow(rows.map { Box(it.left, it.top, it.right, it.bottom) }, Box(g.left + dx, g.top + dy, g.right + dx, g.bottom + dy),
+            p.x + dx, p.y + dy, rows[0].height() / 2)
     }
 
     private fun press(id: Int, cell: Cell, x: Float, y: Float) {
@@ -458,6 +495,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val panel = p.panel
         when {
             panel != null -> panel.getOrNull(p.chosen)?.let { type(it.second) }
+            p.list != null -> if (p.chosen >= 0) pick(p.chosen)
             key.code == Code.SHIFT -> if (p.chorded) setShift(Shift.OFF)
             key.code == Code.DELETE -> {
                 removeCallbacks(repeat)
@@ -467,7 +505,8 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
             key.code == Code.GLOBE && SystemClock.uptimeMillis() - p.downAt >= longPressMs -> {}
             else -> type(key, p.x.roundToInt(), p.y.roundToInt())
         }
-        if (pointers.isEmpty()) popups.clear()
+        // The list goes with its finger, even while another one (Shift) is held
+        if (pointers.isEmpty() || p.list != null) popups.clear()
         invalidate()
     }
 
@@ -527,7 +566,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         }, -1f)
     }
 
-    private fun cancelTouches() {
+    fun cancelTouches() {
         // A cancelled swipe of Delete deletes nothing
         if (pointers.values.any { it.cell.key.code == Code.DELETE && it.swiping }) listener.onDeleteWords(0, true)
         pointers.clear()
@@ -541,7 +580,12 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val (_, p) = pointers.entries.maxByOrNull { it.value.downAt } ?: return
         val key = p.cell.key
         if (key.code == Code.GLOBE) {
-            listener.onPickKeyboard()
+            if (!quickSwitch) return listener.onPickKeyboard()
+            // Nothing chosen until the finger is on a row: let go on the globe or away from the list, nothing changes
+            val rows = listFor(p.cell)
+            p.list = rows
+            p.chosen = -1
+            showList(rows, -1)
             return
         }
         p.panel = panelFor(p.cell)
@@ -582,6 +626,55 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
         val frame = RectF(panel.minOf { it.first.left } - 2 * px, panel.minOf { it.first.top } - 2 * px,
             panel.maxOf { it.first.right } + 3 * px, panel.maxOf { it.first.bottom } + 3 * px)
         popups.showPanel(frame, panel.map { it.first to (if (shift != Shift.OFF) it.second.label.uppercase() else it.second.label) }, chosen, onChoose)
+    }
+
+    /**
+     * The held 🌐's list: the languages on, then Other keyboards…, a row each, over the globe from its left edge, in the
+     * popup layer's coordinates. It stays inside the keys' width (smaller, text and all, on a narrow floating or
+     * one-handed keyboard) and inside the layer, over the keys when the keyboard floats near the top.
+     */
+    private fun listFor(cell: Cell): List<RectF> {
+        val (shown, marked) = listener.languagesOn()
+        listShown = shown
+        listMarked = marked
+        var rowH = rowHeight * 0.82f
+        listText.textSize = rowH * 0.45f
+        var w = listIndent(rowH) + listLabels().maxOf { listText.measureText(it) } + 2 * listMark(rowH)
+        val room = width - 2 * sidePadding - 5 * px // its frame's sides too
+        if (w > room) { rowH *= room / w; w = room }
+        val (dx, dy) = layerOffset()
+        val left = min(cell.rect.left, width - sidePadding - 3 * px - w).coerceAtLeast(sidePadding + 2 * px) + dx
+        val n = listShown.size + 1
+        val top = (cell.rect.top + dy - 17 * density - n * rowH).coerceAtLeast(2 * px)
+        return List(n) { RectF(left, top + it * rowH, left + w, top + (it + 1) * rowH) }
+    }
+
+    private fun listLabels() = listShown.map { it.second } + context.getString(R.string.key_other_keyboards)
+
+    /**
+     * [onChoose]: a row clicked through accessibility (TalkBack's double tap, Voice Access, a test) picks it. The touch's
+     * list takes it too, so its rows can be found; such a pick ends the hold, so the finger's lift doesn't pick again.
+     */
+    private fun showList(rows: List<RectF>, chosen: Int, onChoose: (Int) -> Unit = { endHolds(); pick(it) }) {
+        val frame = RectF(rows.first().left - 2 * px, rows.first().top - 2 * px, rows.last().right + 3 * px, rows.last().bottom + 3 * px)
+        popups.showPanel(frame, rows.zip(listLabels()), chosen, onChoose, list = true, marked = listMarked,
+            descriptions = listShown.map { it.second } + context.getString(R.string.key_other_keyboards_description))
+    }
+
+    /** The held 🌐's row [i], by the languages it opened with; the IME skips one turned off since */
+    private fun pick(i: Int) {
+        when (val target = globePick(listShown.map { it.first }, i)) {
+            null -> {}
+            OTHER_KEYBOARDS -> listener.onPickKeyboard()
+            else -> listener.onPickLanguage(target)
+        }
+    }
+
+    /** The list's fingers let go of: their moves and lift are ignored */
+    private fun endHolds() {
+        pointers.values.removeAll { it.list != null }
+        popups.clear()
+        invalidate()
     }
 
     /** A key's face in its cell, the space between rows below it, its top a little above the cell's */
@@ -628,7 +721,7 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
     }
 
     private fun longPressLabel(key: Layout.Key) = when {
-        key.code == Code.GLOBE -> R.string.key_pick_keyboard
+        key.code == Code.GLOBE -> if (quickSwitch) R.string.key_show_languages else R.string.key_pick_keyboard
         key.code == Code.SHIFT -> R.string.key_lock_caps
         key.more.isNotEmpty() -> R.string.key_alternates
         else -> null
@@ -698,6 +791,11 @@ class KeyboardView(context: Context, private val popups: PopupLayer, private val
                 }
                 AccessibilityNodeInfoCompat.ACTION_LONG_CLICK -> {
                     when {
+                        cell.key.code == Code.GLOBE && quickSwitch -> {
+                            val rows = listFor(cell)
+                            showList(rows, -1)
+                            popups.focusChoice(listMarked.coerceAtLeast(0))
+                        }
                         cell.key.code == Code.GLOBE -> listener.onPickKeyboard()
                         cell.key.code == Code.SHIFT -> {
                             setShift(Shift.LOCKED)
@@ -862,4 +960,31 @@ internal fun letterSizes(labels: Collection<String>, size: Float, room: Float, w
     val widest = labels.maxOf { maxOf(widthAt(it), widthAt(it.uppercase())) }
     val fitted = if (widest > room + 1) size * room / widest else size
     return labels.associateWith { fitted }
+}
+
+/**
+ * The held 🌐's list's row the finger at [x], [y] is on, or -1: none while it is on the [globe] (where it went
+ * down) or more than [slop] px outside the [rows]' frame, so letting go there changes nothing.
+ */
+internal fun listRow(rows: List<Box>, globe: Box, x: Float, y: Float, slop: Float): Int {
+    if (x >= globe.left && x < globe.right && y >= globe.top && y < globe.bottom) return -1
+    val top = rows.first().top
+    val bottom = rows.last().bottom
+    if (x < rows.first().left - slop || x > rows.first().right + slop || y < top - slop || y > bottom + slop) return -1
+    return rows.indexOfFirst { y < it.bottom }.takeIf { it >= 0 } ?: rows.lastIndex
+}
+
+/** [globePick]'s last row: Other keyboards… */
+internal const val OTHER_KEYBOARDS = -1
+
+/** What row [i] of the held 🌐's list picks, by the languages (ids) [shown] when it opened: [OTHER_KEYBOARDS] after them */
+internal fun globePick(shown: List<Int>, i: Int): Int? = if (i == shown.size) OTHER_KEYBOARDS else shown.getOrNull(i)
+
+/** What a new finger does to a key already held: Shift stays held, the 🌐's list closes without a choice, any other key types */
+internal enum class Roll { KEEP, CLOSE, TYPE }
+
+internal fun roll(code: Code, list: Boolean) = when {
+    code == Code.SHIFT -> Roll.KEEP
+    list -> Roll.CLOSE
+    else -> Roll.TYPE
 }

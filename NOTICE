@@ -33,6 +33,9 @@ of FUTO Keyboard's code or data, only the keyboard service's class name (org.fut
 SebType's own class), kept so an update from that app keeps SebType chosen. Git history keeps the earlier app
 under its licence, the FUTO Source First License 1.1.
 
+The Windows setup installs this notice with the licences of the libraries it ships (librime with its plugins
+and dependencies, Mozc, llama.cpp, protobuf, OpenCC and the rest) in licenses\ in SebType's folder.
+
 The credits for SebType's English dictionary and model follow.
 
 

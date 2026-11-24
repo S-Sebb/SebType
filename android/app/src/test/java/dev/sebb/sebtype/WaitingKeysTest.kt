@@ -196,4 +196,50 @@ class WaitingKeysTest {
         assertEquals(EndTyping.CLEAR, endTyping(NativeCore.CHINESE, composing = true, undo = true))
         assertEquals(EndTyping.NOTHING, endTyping(NativeCore.ENGLISH, composing = false, undo = true))
     }
+
+    /** #526: quick switch toggles English ⇄ the last other language; off, or without English, the globe cycles. */
+    @Test
+    fun globeTapTogglesEnglishAndTheLastOther() {
+        val en = NativeCore.ENGLISH
+        val zh = NativeCore.CHINESE
+        val ja = NativeCore.JAPANESE
+        val all = listOf(en, zh, ja)
+        assertEquals(zh, globeTarget(all, en, quick = true, last = en)) // none used yet: the first other one
+        assertEquals(en, globeTarget(all, zh, quick = true, last = zh))
+        assertEquals(ja, globeTarget(all, en, quick = true, last = ja))
+        assertEquals(en, globeTarget(all, ja, quick = true, last = ja))
+        // The last one turned off since, or the only other one on
+        assertEquals(zh, globeTarget(listOf(en, zh), en, quick = true, last = ja))
+        assertEquals(en, globeTarget(listOf(en), en, quick = true, last = zh))
+        // Off: the order, as before
+        assertEquals(ja, globeTarget(all, zh, quick = false, last = zh))
+        assertEquals(en, globeTarget(all, ja, quick = false, last = ja))
+        assertEquals(zh, globeTarget(all, en, quick = false, last = ja))
+        // English off: the other two in turn
+        assertEquals(zh, globeTarget(listOf(ja, zh), ja, quick = true, last = ja))
+    }
+
+    /** #526: an install updated while in 日本語 (no last other saved) returns to 日本語 after a tap to English. */
+    @Test
+    fun theLanguageLeftForEnglishIsTheLastOther() {
+        val en = NativeCore.ENGLISH
+        val zh = NativeCore.CHINESE
+        val ja = NativeCore.JAPANESE
+        assertEquals(ja, lastOther(ja, en, last = en)) // 日 -> EN, nothing saved before
+        assertEquals(ja, globeTarget(listOf(en, zh, ja), en, quick = true, last = lastOther(ja, en, last = en)))
+        assertEquals(zh, lastOther(en, zh, last = ja))
+        assertEquals(zh, lastOther(ja, zh, last = ja))
+        assertEquals(ja, lastOther(en, en, last = ja))
+    }
+
+    /** #526: a language turned off while the keyboard runs gives way to English, or the first one on. */
+    @Test
+    fun aLanguageTurnedOffGivesWay() {
+        val en = NativeCore.ENGLISH
+        val zh = NativeCore.CHINESE
+        val ja = NativeCore.JAPANESE
+        assertEquals(ja, onLanguage(ja, listOf(en, zh, ja)))
+        assertEquals(en, onLanguage(ja, listOf(en, zh)))
+        assertEquals(zh, onLanguage(en, listOf(zh, ja)))
+    }
 }

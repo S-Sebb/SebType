@@ -170,20 +170,38 @@ def keys(ns):
     }
 
 
-def tap_globe():
-    """The globe key beside the space bar: the bottom row's third column, over the last nodes().
-
-    A fresh install sets up EN, 中, 日 in that order (#35), so one tap turns the English from the
-    install into 中; the globe then cycles back to EN after 日.
-    """
+def globe_spot():
+    """The globe key beside the space bar: the bottom row's third column, over the last nodes()."""
     left, top, right, bottom = keyboard_frame
-    adb(
-        "shell",
-        "input",
-        "tap",
-        str(int(left + 3 * (right - left) / 10)),
-        str(row_y(top, bottom, 3)),
-    )
+    return int(left + 3 * (right - left) / 10), row_y(top, bottom, 3)
+
+
+def tap_globe():
+    """A tap on the globe: English ⇄ the last other language (#526), 中 on a fresh install (EN, 中, 日, #35)."""
+    adb("shell", "input", "tap", *map(str, globe_spot()))
+
+
+def pick_language(name):
+    """#526: holds the globe until its list shows, slides to name's row and lets go there, which picks it."""
+    at = to = globe_spot()
+    adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+    try:
+        time.sleep(1)
+        to = next(
+            (
+                (x, y)
+                for label, x, y, top, cls in nodes()
+                if label == name and cls == "android.widget.Button"
+            ),
+            None,
+        )
+        if not to:
+            to = at  # let go on the globe: nothing changes
+            raise Fail(f"no {name} in the globe's list")
+    finally:
+        adb("shell", "input", "motionevent", "MOVE", *map(str, to), check=False)
+        adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
+    time.sleep(2)
 
 
 def bar_row(ns):
@@ -952,10 +970,7 @@ def model_context_after_idle_stop():
         raise Fail(f"picked 中华人民共和; the field shows {text!r}")
     adb("logcat", "-c")
     nodes()
-    tap_globe()  # 中 -> 日
-    time.sleep(2)
-    nodes()
-    tap_globe()  # 日 -> EN
+    tap_globe()  # 中 -> EN
     wait_for("Rime to unload", lambda: "Rime unloaded" in logcat(), 240, interval=5)
     nodes()
     tap_globe()  # EN -> 中, in the same field
@@ -1147,12 +1162,11 @@ def to_japanese():
             continue
         if c := chip(nodes()):
             break
-        tap_globe()
-        time.sleep(2)
+        pick_language("日本語")
         if c := chip(nodes()):
             break
     else:
-        raise Fail("no あ|ア chip after cycling the globe")
+        raise Fail("no あ|ア chip after picking 日本語 from the globe's list")
     if c[0] != "あ":
         raise Fail(f"日 opened with the chip on {c[0]}")
     return f"日 shows the chip on あ ({restarts} restarts after the keyboard didn't come up)"
@@ -1527,24 +1541,29 @@ def type_text(text):
     settle()
 
 
+def in_english():
+    """Whether x typed in a fresh field is a plain x: English."""
+    open_field()
+    type_keys("x")
+    ns = nodes()
+    notice = any(n[0].startswith(PREPARING) for n in ns)
+    return (
+        not chip(ns)
+        and all(c.isascii() for c in candidates(ns))
+        and not notice
+        and field_text().lower() == "x"
+    )
+
+
 def to_english():
-    """Cycles the globe until x types a plain x: no chip, no Chinese notice and no Chinese candidates
+    """Taps the globe until x types a plain x: no chip, no Chinese notice and no Chinese candidates
     (English may suggest words for it)."""
     for _ in range(4):
-        open_field()
-        type_keys("x")
-        ns = nodes()
-        notice = any(n[0].startswith(PREPARING) for n in ns)
-        if (
-            not chip(ns)
-            and all(c.isascii() for c in candidates(ns))
-            and not notice
-            and field_text().lower() == "x"
-        ):
+        if in_english():
             return
         tap_globe()
         time.sleep(2)
-    raise Fail("no English after cycling the globe")
+    raise Fail("no English after tapping the globe")
 
 
 def to_chinese():
@@ -1561,13 +1580,16 @@ def to_chinese():
         if any(n[0].startswith(PREPARING) for n in ns):
             time.sleep(5)
             continue
-        tap_globe()
-        time.sleep(2)
-    raise Fail("no 中 after cycling the globe")
+        pick_language("中文")
+    raise Fail("no 中 after picking it from the globe's list")
 
 
 def fresh_in_english():
-    """A new keyboard process in EN, which must leave Rime stopped (it holds about 40 MB, #351)."""
+    """A new keyboard process in EN, which must leave Rime stopped (it holds about 40 MB, #351). 中 was the last
+    other language, so the globe's tap goes to it (#526)."""
+    open_field()
+    nodes()
+    pick_language("中文")
     to_english()
     stop_keyboard()
     adb("logcat", "-c")
@@ -2589,6 +2611,58 @@ def floating_short_window():
         set_mode("Standard")
 
 
+def globe_list_narrow():
+    """#526: the held globe's list stays within the keys' width and on the screen, on the narrowest floating
+    keyboard moved to the screen's top and on one-handed's (modes-globe-list-*.png)."""
+    to_english()
+    w, h = screen_size()
+    labels = ("English", "中文", "日本語", "Other keyboards")
+    got = []
+    try:
+        set_mode("Floating")
+        tap_reset()
+        resize_floating(("corner", (-w, 0)))
+        # Its handle to the screen's top, as in modes-floating-resized. The list rises over the keys themselves
+        # (its top clamp never runs with three languages), so this checks it stays on screen where it is highest.
+        open_field()
+        x, y = wait_for("the move handle", lambda: node(MOVE_KEYBOARD), 10)[1:3]
+        adb("shell", "input", "swipe", str(x), str(y), str(x), "0", "800")
+        time.sleep(1)
+        for mode in ("floating", "one-handed"):
+            if mode == "one-handed":
+                set_mode("One-handed")
+            open_field()
+            nodes()
+            l, t, r, b = keyboard_frame
+            at = globe_spot()
+            adb("shell", "input", "motionevent", "DOWN", *map(str, at))
+            try:
+                time.sleep(1)
+                bounds = node_bounds()
+                screenshot(f"modes-globe-list-{mode}.png")
+            finally:
+                adb("shell", "input", "motionevent", "UP", *map(str, at), check=False)
+            if not in_english():
+                raise Fail(f"{mode}: letting go on the globe changed the language")
+            rows = [bounds.get(k) for k in labels]
+            heights = [row[3] - row[1] for row in rows if row]
+            if (
+                None in rows
+                or min(heights) < 0.9 * max(heights)
+                or any(row[0] < l - 2 or row[2] > r + 2 or row[1] < 0 for row in rows)
+            ):
+                raise Fail(
+                    f"{mode}: keys {l}..{r} px wide; the list's rows {dict(zip(labels, rows))}"
+                )
+            got.append(
+                f"{mode}: keys {l}..{r}, rows {rows[0][0]}..{rows[0][2]} from y {rows[0][1]}"
+            )
+            time.sleep(1)
+        return "; ".join(got)
+    finally:
+        set_mode("Standard")
+
+
 def floating_narrowest():
     """Floating resized as narrow as it goes: today's 144 dp, with Reset and Apply inside it and Apply still
     ending the resize (#283)."""
@@ -3026,6 +3100,7 @@ check("modes-floating-resize", floating_resize, needs=["first-install"])
 check("modes-floating-resize-edge", floating_resize_edge, needs=["first-install"])
 check("modes-floating-short-window", floating_short_window, needs=["first-install"])
 check("modes-floating-narrowest", floating_narrowest, needs=["first-install"])
+check("modes-globe-list", globe_list_narrow, needs=["first-install"])
 
 # --- An update from the FUTO-based app (its last release, MAIN_APK) to this one (#254, #262) ---
 # The old app, chosen as the keyboard, learns a made-up English word, picks lower candidates in 中文 and

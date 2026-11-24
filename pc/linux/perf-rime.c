@@ -62,22 +62,24 @@ int main(int argc, char **argv) {
   int n = 0;
   while (n < 64 && scanf("%127s", inputs[n]) == 1) n++;
   if (!n) { fprintf(stderr, "no inputs on stdin\n"); return 2; }
-  // rime-ice needs librime-lua, which Fcitx5's Rime also loads; SebType's Windows rime.dll has it built in.
-  const char *modules[] = {"default", "plugins", "lua", NULL};
+  RIME_STRUCT(RimeTraits, traits);
 #ifdef _WIN32
   HMODULE rime = LoadLibraryA("rime.dll");
   RimeApi *(*get_api)(void) = rime ? (RimeApi * (*)(void)) GetProcAddress(rime, "rime_get_api") : NULL;
   if (!get_api) { fprintf(stderr, "rime.dll not found on PATH\n"); return 1; }
   RimeApi *api = get_api();
+  // SebType's rime.dll has librime-lua and -octagram (白霜's grammar) built in, among librime's default
+  // modules, which SebType's server loads: traits.modules stays unset, as there.
 #else
+  // rime-ice needs librime-lua, which Fcitx5's Rime also loads.
+  const char *modules[] = {"default", "plugins", "lua", NULL};
   if (!dlopen("/usr/lib64/rime-plugins/librime-lua.so", RTLD_NOW | RTLD_GLOBAL)) modules[2] = NULL;
   RimeApi *api = rime_get_api();
+  traits.modules = modules;
 #endif
-  RIME_STRUCT(RimeTraits, traits);
   traits.shared_data_dir = argv[1];
   traits.user_data_dir = argv[2];
   traits.app_name = "rime.sebtype-perf";
-  traits.modules = modules;
   traits.min_log_level = 3;
   traits.log_dir = ""; // stderr only, no log files in /tmp (#211)
   api->setup(&traits);

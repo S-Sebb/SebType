@@ -22,6 +22,10 @@
     <!-- TalkBack: what a double tap and hold on a key does (#283) -->
     <string name="key_alternates">显示替代字符</string>
     <string name="key_pick_keyboard">选择键盘</string>
+    <string name="key_show_languages">显示语言列表</string>
+    <!-- The held globe's last item, which opens Android's keyboard chooser (#526), and what TalkBack reads for it -->
+    <string name="key_other_keyboards">其他键盘…</string>
+    <string name="key_other_keyboards_description">其他键盘</string>
     <string name="key_lock_caps">开启大写锁定</string>
     <string name="key_space">空格</string>
     <string name="key_enter">换行</string>

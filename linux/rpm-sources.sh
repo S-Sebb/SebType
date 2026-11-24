@@ -11,9 +11,11 @@ fetch_lookaside() {
     f=$1 sum=$2
     shift 2
     sha512sum -c --status <<<"$sum  $dir/$f" &>/dev/null && continue # a missing file says so on stdout
-    curl --limit-rate 35M -sfL --retry 3 -o "$dir/$f.part" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f"
-    sha512sum -c --status <<<"$sum  $dir/$f.part" || { echo "checksum mismatch: $pkg/$f" >&2; return 1; }
-    mv "$dir/$f.part" "$dir/$f"
+    # Its own .part: two builds that start on a cold cache don't write into one file.
+    curl --limit-rate 35M -sSfL --retry 3 -o "$dir/$f.part.$$" "https://src.fedoraproject.org/repo/pkgs/rpms/$pkg/$f/sha512/$sum/$f" ||
+      { rm -f "$dir/$f.part.$$"; return 1; }
+    sha512sum -c --status <<<"$sum  $dir/$f.part.$$" || { rm -f "$dir/$f.part.$$"; echo "checksum mismatch: $pkg/$f" >&2; return 1; }
+    mv "$dir/$f.part.$$" "$dir/$f"
   done
 }
 
@@ -23,10 +25,11 @@ fetch_octagram() {
   local f=$LIBRIME_CACHE/sources/librime-octagram-$OCTAGRAM_COMMIT.tar.gz
   mkdir -p "$LIBRIME_CACHE/sources"
   if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f" &>/dev/null; then # a missing file says so on stdout
-    curl --limit-rate 35M -sSfL --retry 3 -o "$f.part" "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz" ||
-      return 1
-    sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f.part" &>/dev/null || { echo "checksum mismatch: librime-octagram" >&2; return 1; }
-    mv "$f.part" "$f"
+    curl --limit-rate 35M -sSfL --retry 3 -o "$f.part.$$" "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz" ||
+      { rm -f "$f.part.$$"; return 1; }
+    sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f.part.$$" &>/dev/null ||
+      { rm -f "$f.part.$$"; echo "checksum mismatch: librime-octagram" >&2; return 1; }
+    mv "$f.part.$$" "$f"
   fi
   cp "$f" "$1/librime-octagram.tar.gz"
 }

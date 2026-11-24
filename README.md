@@ -71,7 +71,7 @@ pinyin, your own words, the candidate window, privacy and sync.
 
 | | Phone | PC |
 |---|---|---|
-| Switch language | 🌐 next to the space bar: EN → 中 → 日 | **Win+Space**: on Linux, English ⇄ the last other language (the third from the tray menu); on Windows, Windows' own switch, EN → 中 → 日 |
+| Switch language | 🌐 next to the space bar: English ⇄ the last other language; hold 🌐 for the list of languages and other keyboards (with Quick switch off in Languages, a tap goes EN → 中 → 日 and holding opens Android's keyboard chooser) | **Win+Space**: on Linux, English ⇄ the last other language (the third from the tray menu); on Windows, Windows' own switch, EN → 中 → 日 |
 | English letters inside 中文 or 日本語 | | **Shift** tap, and again to go back |
 | 简 ⇄ 繁 | in the keyboard's menu | **Ctrl+Shift+F** |
 | あ ⇄ ア | the mode chip | **Alt+`** |
@@ -135,6 +135,7 @@ came from:
 | `core/src/mozc.cpp` (follows fcitx5-mozc, Mozc's Fcitx 5 frontend) | BSD-3-Clause, like Mozc |
 | SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
 | Fedora's librime spec with SebType's changes (`linux/librime.spec`) | MIT, like Fedora's specs |
+| The libraries in SebType's Windows `rime.dll`, `sebtype-server.exe` and `sebtype-mozc.dll` (librime, librime-lua, librime-octagram and their dependencies, llama.cpp, protobuf, Abseil, OpenCC, Mozc), and the Python that runs sync | Their own licences, which Setup installs in `licenses\` in SebType's folder |
 | RimeJni's build scripts with SebType's changes (`android/native/src/main/cpp/cmake/`: how the phone builds librime; the bundled libraries' licences are in `android/native/src/main/assets/licenses/`) | MIT, like RimeJni |
 | librime, librime-lua and librime-octagram, built into the Linux add-on (`sebtype.so`, whose package carries their licences) and the phone's native library | BSD-3-Clause |
 | The rime-ice and 白霜 data in the APK and on the PCs (see below) | GPL-3.0 |
