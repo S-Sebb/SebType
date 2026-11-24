@@ -229,7 +229,7 @@ check librime-predict-later predict
 remove() {
   local f
   dnf -y remove sebtype && ! rpm -q sebtype && rpm -V "${rime[@]}" librime-predict || return 1
-  for f in /usr/lib64/fcitx5/rime.so /usr/lib64/librime.so.1 /usr/lib64/rime-plugins/*.so; do
+  for f in /usr/lib64/fcitx5/librime.so /usr/lib64/librime.so.1 /usr/lib64/rime-plugins/*.so; do
     links "$f" || return 1
   done
 }
