@@ -182,12 +182,12 @@ Source: "{#In}\mozc\sebtype-mozc.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Repo}\pc\linux\mozc-keymap.tsv"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\rime-data\rime-data.zip"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#In}\sebtype-configurator\sebtype-configurator.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PythonDir}\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs
+Source: "{#PythonDir}\*"; Excludes: "\licenses"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs
 Source: "{#Pictures}\sebtype.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; The licences of what SebType ships (#544), one folder per part so that no library's text replaces another's:
 ; SebType's own and the Chinese data's, then rime\ (rime.dll and Rime's shared data) and server\ (what
 ; sebtype-server.exe links), which their builds collect, and mozc\ (sebtype-mozc.dll: Mozc with its dictionary's
-; sources, the texts the phone ships, its protobuf with utf8_range, Abseil and WIL). Python's is in python\.
+; sources, the texts the phone ships, its protobuf with utf8_range, Abseil and WIL) and python\ (python.ps1's).
 Source: "{#Repo}\LICENSE-SebType"; DestDir: "{app}\licenses"; DestName: "SebType-LICENSE.txt"; Flags: ignoreversion
 Source: "{#Repo}\NOTICE"; DestDir: "{app}\licenses"; DestName: "SebType-NOTICE.txt"; Flags: ignoreversion
 Source: "{#Repo}\LICENSE-LGPL-2.1"; DestDir: "{app}\licenses"; DestName: "LGPL-2.1.txt"; Flags: ignoreversion
@@ -203,6 +203,7 @@ Source: "{#Repo}\android\native\src\main\assets\licenses\Protobuf-LICENSE.txt"; 
 Source: "{#Repo}\android\native\src\main\assets\licenses\Utf8-range-LICENSE.txt"; DestDir: "{app}\licenses\mozc"; Flags: ignoreversion
 Source: "{#Service}\licenses\abseil-LICENSE.txt"; DestDir: "{app}\licenses\mozc"; Flags: ignoreversion
 Source: "WIL-LICENSE.txt"; DestDir: "{app}\licenses\mozc"; Flags: ignoreversion
+Source: "{#PythonDir}\licenses\*"; DestDir: "{app}\licenses\python"; Flags: ignoreversion
 ; The uninstaller's look: it runs from {app}, without Setup's own files.
 Source: "{#Pictures}\cloth.png"; DestDir: "{app}\look"; Flags: ignoreversion
 Source: "{#Pictures}\small-1.png"; DestDir: "{app}\look"; Flags: ignoreversion
@@ -240,6 +241,8 @@ Filename: "{app}\sebtype-configurator.exe"; Parameters: "--common-settings set{c
 [InstallDelete]
 ; the licences as the last version had them: this one installs its own (#544)
 Type: filesandordirs; Name: "{app}\licenses"
+; Python as the last version had it, with the native modules this one leaves out (#544)
+Type: filesandordirs; Name: "{app}\python"
 Type: files; Name: "{app}\mozc_server.exe*"
 Type: files; Name: "{app}\msvcp140*.dll*"
 Type: files; Name: "{app}\vcruntime140*.dll*"

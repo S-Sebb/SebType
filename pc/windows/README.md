@@ -16,8 +16,8 @@ service and its server (`windows/build.ps1`), the Chinese data (`data/rime/build
 1.16.1), Mozc (`mozc/build.ps1`, cached until its inputs change) and the Configurator
 (`configurator.yml`). The licences of what it installs go in `licenses\` in SebType's folder (#544), a folder per
 part: SebType's own and the Chinese data's, then `rime\` and `server\`, which `rime/build.ps1` and `windows/build.ps1`
-collect from what they build into `rime.dll`, Rime's shared data and the server, and `mozc\`; Python's stays in
-`python\`. The Configurator's Rust crates have none there yet (#548).
+collect from what they build into `rime.dll`, Rime's shared data and the server, `mozc\` and `python\`
+(`python.ps1`'s). The Configurator's Rust crates have none there yet (#548).
 
 Setup speaks English, 中文 and 日本語: it follows Windows' display language, English otherwise, and its
 first dialog lets the person pick. Its pages are the welcome, the languages (English, 中文 and 日本語, each
@@ -71,7 +71,8 @@ restores those and deletes what SebType learned on this PC (Decisions #2): Setup
 
 **Sync (#180)** is the Configurator's (Sync & backup, [sync-server/README.md](../../sync-server/README.md)).
 Setup packs Python's embeddable package into `{app}\python` for it, since Windows has no Python: the
-setup CI fetches it with `python.ps1`, which checks its SHA-256, and caches it. Just before a language's learned words are deleted
+setup CI fetches it with `python.ps1`, which checks its SHA-256, keeps only the native modules sync needs
+(sockets, ssl with OpenSSL, hashlib, unicodedata) and caches it; CI runs sync's tests on the installed one. Just before a language's learned words are deleted
 (uninstall or a language left out), `setup.ps1` runs `sebtype-configurator.exe --sync-before-removal`:
 if sync was ever on since the last delete on the server, the account's words go to the server first.
 It never deletes anything on the server. If that sync fails (offline, a wrong password), the
