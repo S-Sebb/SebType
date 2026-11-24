@@ -89,8 +89,10 @@ live_check fcitx5-memory fcitx5 /fcitx5/sebtype.so
   echo
   echo "| Metric | Value |"
   echo "|---|---|"
-  echo "| Rime (rime-ice) key → candidates, median / p95 / max | $(ms "$(val rime-keys key_p50_us)") / $(ms "$(val rime-keys key_p95_us)") / $(ms "$(val rime-keys key_max_us)") |"
-  echo "| Rime first key after start, p95 of the first (cold) pass | $(ms "$(val rime-keys first_key_us)") / $(ms "$(val rime-keys cold_p95_us)") |"
+  echo "| Rime (rime-ice) key → candidates, all keys (the budget), median / p95 / max | $(ms "$(val rime-keys key_p50_us)") / $(ms "$(val rime-keys key_p95_us)") / $(ms "$(val rime-keys key_max_us)") |"
+  echo "| Rime p95, warm (passes after the first) / cold (first pass) | $(ms "$(val rime-keys warm_p95_us)") / $(ms "$(val rime-keys cold_p95_us)") |"
+  echo "| Rime keys over 10 ms, per pass | $(val rime-keys slow_keys_per_pass) |"
+  echo "| Rime first key after start | $(ms "$(val rime-keys first_key_us)") |"
   echo "| Rime start (deploy check, built) / session | $(val rime-keys deploy_ms) ms / $(val rime-keys session_ms) ms |"
   echo "| Rime full deploy of rime-ice (no build/) | $(val rime-deploy deploy_ms) ms, peak RSS $(mb "$(val rime-deploy peak_rss_kb)"), RSS after $(mb "$(val rime-deploy rss_kb)") |"
   echo "| Rime RSS after typing (built) | $(mb "$(val rime-keys rss_kb)") |"

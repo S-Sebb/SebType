@@ -1,11 +1,13 @@
 // Times Rime the way a keyboard uses it: one key, then read the candidate menu, per keystroke.
 //   perf-rime SHARED_DIR USER_DIR SCHEMA RUNS < inputs.txt   (one key sequence per line)
 // Prints key=value lines: deploy_ms (maintenance at start-up; a full deploy when USER_DIR has no
-// build/), session_ms, first_key_us, cold_p95_us, key_p50_us, key_p95_us, key_max_us, keys, rss_kb,
-// peak_rss_kb. The first pass over the inputs is cold (the dictionaries paged in from disk, Lua's first
-// calls): it is timed apart (first_key_us, cold_p95_us), and key_* are over the RUNS passes after it.
-// With it in, a quarter of its keys took over 10 ms on TCSBackEnd, and key_p95 depended on how many
-// of them landed among the slowest 5 %: 6.5 to 13.4 ms for the same build (#523).
+// build/), session_ms, first_key_us, key_p50_us, key_p95_us, key_max_us and keys over every key of the
+// RUNS passes, cold_p95_us over the first pass, warm_p95_us over the passes after it (RUNS >= 2),
+// slow_keys_per_pass (keys over 10 ms in each pass), rss_kb, peak_rss_kb. On Windows the first pass is
+// cold (Rime's dictionaries paged in from disk): on TCSBackEnd a quarter of its keys took over 10 ms,
+// so key_p95 moved with how many of them were among the slowest 5 % (#523). On Linux it is slower only
+// while the page cache is cold (cold p95 12.3 ms right after copying the user folder; 2.0 against warm 2.5
+// ms with the cache warm).
 // Built by perf.sh against librime's public headers; nothing is committed, so nothing is learned.
 // On Windows (built 64-bit by pc/windows/rime/build.ps1) it loads SebType's rime.dll from PATH.
 #include <stdio.h>
@@ -89,8 +91,11 @@ int main(int argc, char **argv) {
   int n = 0;
   while (n < 64 && scanf("%127s", inputs[n]) == 1) n++;
   int runs = atoi(argv[4]), keys = 0, cold = 0;
-  double *us = malloc(sizeof(double) * (runs + 1) * n * 128);
-  for (int r = 0; r <= runs; r++) {
+  if (runs < 1) { fprintf(stderr, "RUNS must be 1 or more\n"); return 2; }
+  double *us = malloc(sizeof(double) * runs * n * 128), *all = malloc(sizeof(double) * runs * n * 128);
+  printf("slow_keys_per_pass=");
+  for (int r = 0; r < runs; r++) {
+    int slow = 0;
     for (int i = 0; i < n; i++) {
       api->clear_composition(s);
       for (char *c = inputs[i]; *c; c++) {
@@ -98,20 +103,26 @@ int main(int argc, char **argv) {
         api->process_key(s, *c, 0);
         RIME_STRUCT(RimeContext, ctx);
         if (api->get_context(s, &ctx)) api->free_context(&ctx);
-        us[keys++] = now_us() - t;
+        us[keys] = now_us() - t;
+        slow += us[keys++] > 10000;
       }
     }
+    printf(r ? ",%d" : "%d", slow);
     if (r == 0) cold = keys;
   }
+  printf("\n");
   api->clear_composition(s);
   printf("first_key_us=%.0f\n", us[0]);
+  memcpy(all, us, sizeof(double) * keys);
+  qsort(all, keys, sizeof(double), cmp);
+  printf("key_p50_us=%.0f\nkey_p95_us=%.0f\nkey_max_us=%.0f\nkeys=%d\n",
+         all[keys / 2], all[(int)(keys * 0.95)], all[keys - 1], keys);
   qsort(us, cold, sizeof(double), cmp);
   printf("cold_p95_us=%.0f\n", us[(int)(cold * 0.95)]);
-  double *warm = us + cold;
-  keys -= cold;
-  qsort(warm, keys, sizeof(double), cmp);
-  printf("key_p50_us=%.0f\nkey_p95_us=%.0f\nkey_max_us=%.0f\nkeys=%d\n",
-         warm[keys / 2], warm[(int)(keys * 0.95)], warm[keys - 1], keys);
+  if (keys > cold) {
+    qsort(us + cold, keys - cold, sizeof(double), cmp);
+    printf("warm_p95_us=%.0f\n", us[cold + (int)((keys - cold) * 0.95)]);
+  }
   printf("rss_kb=%ld\npeak_rss_kb=%ld\n", status_kb("VmRSS:"), status_kb("VmHWM:"));
   api->destroy_session(s);
   api->finalize();
