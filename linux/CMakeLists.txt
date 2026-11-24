@@ -15,6 +15,29 @@ set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 # static initializers nothing references; --exclude-libs (below) keeps its symbols from Fedora's librime,
 # which fcitx5-rime may load into the same process. Its options are cache entries (its CMake predates CMP0077).
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# What librime links, and protobuf for core/, are static too (#540), from SEBTYPE_DEPS (sebtype.spec builds them
+# there): set before librime's and core/'s searches, which then keep them, so none is the system's shared
+# one. LevelDB's and OpenCC's libraries take Snappy and marisa after them, as a static link needs.
+set(SEBTYPE_DEPS "" CACHE PATH "The static libraries sebtype.spec builds")
+set(deps ${SEBTYPE_DEPS}/lib)
+foreach(var Glog_INCLUDE_PATH YamlCpp_INCLUDE_PATH YamlCpp_NEW_API LevelDb_INCLUDE_PATH Marisa_INCLUDE_PATH
+    Opencc_INCLUDE_PATH Protobuf_INCLUDE_DIR)
+  set(${var} ${SEBTYPE_DEPS}/include CACHE PATH "" FORCE)
+endforeach()
+set(Glog_LIBRARY ${deps}/libglog.a CACHE FILEPATH "" FORCE)
+set(YamlCpp_LIBRARY ${deps}/libyaml-cpp.a CACHE FILEPATH "" FORCE)
+set(LevelDb_LIBRARY "${deps}/libleveldb.a;${deps}/libsnappy.a" CACHE STRING "" FORCE)
+set(Marisa_LIBRARY ${deps}/libmarisa.a CACHE FILEPATH "" FORCE)
+set(Opencc_LIBRARY "${deps}/libopencc.a;${deps}/libmarisa.a" CACHE STRING "" FORCE)
+set(Protobuf_LIBRARY ${deps}/libprotobuf.a CACHE FILEPATH "" FORCE)
+set(Protobuf_PROTOC_EXECUTABLE ${SEBTYPE_DEPS}/bin/protoc CACHE FILEPATH "" FORCE)
+set(CMAKE_DISABLE_FIND_PACKAGE_Gflags ON)
+# core-test's OpenCC tables: the bundled OpenCC's, which the add-on loads them with
+set(ZH_OPENCC ${SEBTYPE_DEPS}/share/opencc CACHE PATH "" FORCE)
+# core/ takes this target for 中文's model (core/CMakeLists.txt)
+add_library(libopencc INTERFACE)
+target_link_libraries(libopencc INTERFACE ${Opencc_LIBRARY})
+target_include_directories(libopencc INTERFACE ${SEBTYPE_DEPS}/include/opencc)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_MERGED_PLUGINS ON CACHE BOOL "" FORCE)
 set(ENABLE_EXTERNAL_PLUGINS OFF CACHE BOOL "" FORCE)

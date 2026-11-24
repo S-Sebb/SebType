@@ -19,19 +19,22 @@ fetch_lookaside() {
   done
 }
 
-# fetch_octagram <dir>: librime-octagram at versions.sh's OCTAGRAM_COMMIT, cached in LIBRIME_CACHE, into <dir>
-# as librime-octagram.tar.gz.
-fetch_octagram() {
-  local f=$LIBRIME_CACHE/sources/librime-octagram-$OCTAGRAM_COMMIT.tar.gz
+# fetch_pinned <name> <url> <sha256> <dir>: a source pinned by checksum, cached in LIBRIME_CACHE, into <dir>
+# as <name>.tar.gz.
+fetch_pinned() {
+  local f=$LIBRIME_CACHE/sources/$1-${3:0:12}.tar.gz
   mkdir -p "$LIBRIME_CACHE/sources"
-  if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f" &>/dev/null; then # a missing file says so on stdout
-    curl --limit-rate 35M -sSfL --retry 3 -o "$f.part.$$" "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz" ||
-      { rm -f "$f.part.$$"; return 1; }
-    sha256sum -c --status <<<"$OCTAGRAM_SHA256  $f.part.$$" &>/dev/null ||
-      { rm -f "$f.part.$$"; echo "checksum mismatch: librime-octagram" >&2; return 1; }
+  if ! sha256sum -c --status <<<"$3  $f" &>/dev/null; then # a missing file says so on stdout
+    curl --limit-rate 35M -sSfL --retry 3 -o "$f.part.$$" "$2" || { rm -f "$f.part.$$"; return 1; }
+    sha256sum -c --status <<<"$3  $f.part.$$" &>/dev/null || { rm -f "$f.part.$$"; echo "checksum mismatch: $1" >&2; return 1; }
     mv "$f.part.$$" "$f"
   fi
-  cp "$f" "$1/librime-octagram.tar.gz"
+  cp "$f" "$4/$1.tar.gz"
+}
+
+# fetch_octagram <dir>: librime-octagram at versions.sh's OCTAGRAM_COMMIT.
+fetch_octagram() {
+  fetch_pinned librime-octagram "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz" "$OCTAGRAM_SHA256" "$1"
 }
 
 # rpm_stage: prints a new folder for one build, in its task folder (TASK_OUT, tools/lib.sh): sources/ for

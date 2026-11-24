@@ -43,6 +43,7 @@ mkdir -p "$LIBRIME_CACHE/sources"
 fetch_lookaside librime "$LIBRIME_CACHE/sources" "${LIBRIME_PLUGIN_SOURCES[@]}"
 for ((i = 0; i < ${#LIBRIME_PLUGIN_SOURCES[@]}; i += 2)); do cp "$LIBRIME_CACHE/sources/${LIBRIME_PLUGIN_SOURCES[i]}" "$stage/sources/"; done
 fetch_octagram "$stage/sources"
+for ((i = 0; i < ${#SEBTYPE_DEPS[@]}; i += 3)); do fetch_pinned "${SEBTYPE_DEPS[@]:i:3}" "$stage/sources"; done
 llama=$("$root/engines/sebtype-lm/fetch-llama.sh")
 tar -C "$llama" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=.git --transform 's,^\.,llama,' -c . |
   gzip -n > "$stage/sources/llama.tar.gz"
