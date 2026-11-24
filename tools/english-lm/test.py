@@ -192,6 +192,17 @@ check(
     got,
 )
 names = ["Thomas", "Americans", "Jesus", "Olympics", "iOS", "Mrs", "dont"]
+got = [
+    written('"What is it?" she asked', chat=True)[-2],
+    written('"Go," he said', chat=True)[-2],
+    written(("a " * 147) + '"Why?" she asked', chat=True)[-2],  # cut after the quote
+    written('He said "go." YOU\'RE late')[-2],
+]
+check(
+    "examples: a quote's lowercase attribution stays lowercase",
+    got == ["she", "he", "she", "You're"],
+    got,
+)
 got = [pack.standard(w, False) for w in names]
 check(
     "examples: names and plurals get no apostrophe",
@@ -360,12 +371,25 @@ with (
         ("dont", "don't", "don't"),
         ("its", "its", "it's"),
     ]
-    (Path(d) / "core.capitals.tsv").write_text(
-        "".join("\t".join(r) + "\t\t1\n" for r in rows)
-    )
+    sets = {
+        "capitals": rows,
+        "clean": [("methods", "methods", "method's")],
+        "text-typos": [
+            ("its", "its", "it's")
+        ],  # "Aw its": text-typos keeps the bare form
+    }
+    for name, rows in sets.items():
+        (Path(d) / f"core.{name}.tsv").write_text(
+            "".join("\t".join(r) + "\t\t1\t0\n" for r in rows)
+        )
     score.main(d)
-got = json.loads(out.getvalue())["core"]["capitals"]["gained apostrophes"]
-check("score: gained apostrophes", got == 2, got)
+got = json.loads(out.getvalue())["core"]
+got = [got[n]["gained apostrophes"] for n in sets]
+check(
+    "score: gained apostrophes, on clean too, not text-typos' its",
+    got == [2, 1, 0],
+    got,
+)
 
 
 def passes(change):

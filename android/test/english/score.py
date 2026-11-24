@@ -15,7 +15,8 @@ how many keys the target was first in the top 3 (0: never).
   over the rows whose target is the typed word / its contraction. capitalised: how many commits are the
   intended word with a capital it doesn't have ("O'Clock" for "o'clock"); lowercased: without one it has
   ("don't" for "Don't" at a sentence start); lowercased I: those of them that are "I" or its forms; gained
-  apostrophes: commits that are the intended word with an apostrophe it doesn't have ("Thoma's" for "Thomas").
+  apostrophes: commits that are the intended word with an apostrophe it doesn't have ("Thoma's" for "Thomas"),
+  on clean too, but not text-typos' homographs (HOMOGRAPH_BARE).
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -28,6 +29,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))  # run with python3 -I, which drops it
+from make_sets import HOMOGRAPHS
+
 
 def pct(n, d):
     return round(100 * n / d, 1) if d else None
@@ -39,6 +43,9 @@ def quantile(v, q):
 
 
 I_FORMS = {"I", "I'm", "I'll", "I'd", "I've"}
+# text-typos' targets keep a homograph's bare form whatever the message meant: its 4 "its" are all "it's" ("Aw
+# its"), so an apostrophe there isn't counted as gained.
+HOMOGRAPH_BARE = {typed for _, typed, _ in HOMOGRAPHS}
 QUALITY = ("changed", "fixed", "top1", "top3", "items")
 STACKS = (
     ("today", "Today (2026-11-17, frozen): FUTO's decoder + transformer"),
@@ -316,6 +323,14 @@ def main(run_dir):
             )
             s["ms_p50"], s["ms_p95"] = quantile(keys, 0.5), quantile(keys, 0.95)
         else:
+            bare_ok = HOMOGRAPH_BARE if set_name == "text-typos" else set()
+            s["gained apostrophes"] = sum(
+                "'" in r[2]
+                and "'" not in r[1]
+                and r[2].replace("'", "").lower() == r[1].lower()
+                and r[1].lower() not in bare_ok
+                for r in rows
+            )
             if set_name == "clean":
                 s["changed"] = pct(sum(r[2] != r[1] for r in rows), len(rows))
                 full = sum(len(r[1]) + 1 for r in rows)
@@ -333,12 +348,6 @@ def main(run_dir):
                         s["lowercased I"] = sum(
                             wrong_case(r, wrong) for r in rows if r[1] in I_FORMS
                         )
-                s["gained apostrophes"] = sum(
-                    "'" in r[2]
-                    and "'" not in r[1]
-                    and r[2].replace("'", "").lower() == r[1].lower()
-                    for r in rows
-                )
                 if set_name == "homographs":
                     # Keeping every typed word fixes most rows: the rows that keep it and those that restore
                     # the apostrophe are barred apart.

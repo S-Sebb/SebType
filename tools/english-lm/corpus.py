@@ -174,8 +174,9 @@ def dolly(path):
     return clean((f"{r['instruction']}\n{r['response']}" for r in rows), min_words=2)
 
 
-# A NUS message the export cut at its first apostrophe starts with the contraction's tail: "m going", "ll be".
-CUT_TAIL = re.compile(r"(?:m|ll|s|t|re|ve|d) ")
+# A NUS message the export cut at its first apostrophe starts with the contraction's tail: "m going", "ll be",
+# "M in class", "T WORRY". A capital S is mostly "yes" ("S man"), and "T shirt" is one.
+CUT_TAIL = re.compile(r"(?:m|ll|s|t|re|ve|d|M) |T [A-Z]+\b")
 
 
 def nus_sms(path, excluded_ids):

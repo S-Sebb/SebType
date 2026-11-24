@@ -132,6 +132,8 @@ OPENING = (
 # A full stop that ends a sentence: not an ellipsis's, nor one after a single letter ("U.S.", "p.m.", "e.g.";
 # a contraction's "didn't." does end one).
 SENTENCE_END = r"(?:[!?]|(?<!\b(?<!')[A-Za-z])(?<!\.)\.(?!\.))"
+# A quote's end with the lowercase word after it: '"What is it?" she asked' goes on the sentence, chat's too.
+ATTRIBUTION = r"[.?!,][\"')\]]+\s*$"
 SENTENCE_START = re.compile(r"(^|[.!?] +)([A-Z])(?=[a-z' ])")
 SENTENCE_START_INSIDE = re.compile(r"([.!?] +)([A-Z])(?=[a-z' ])")
 # A word an example can go in front of: after the line's start, a space, a quote or a bracket.
@@ -303,7 +305,9 @@ def encode_line(rng, line, texting, chat=False):
     segs = segments(line)
     # Whether each segment starts a sentence: the line's first, or one cut after a sentence's end.
     starts = [True] + [
-        bool(re.search(SENTENCE_END + r"[\"')\]]*$", s)) for s in segs[:-1]
+        bool(re.search(SENTENCE_END + r"[\"')\]]*$", s))
+        and not (re.search(ATTRIBUTION, s) and segs[i + 1].lstrip()[:1].islower())
+        for i, s in enumerate(segs[:-1])
     ]
     for si, seg in enumerate(segs):
         out.append(sp.bos_id())
@@ -323,6 +327,9 @@ def encode_line(rng, line, texting, chat=False):
                 )
             ) and (starts[si] or not opening_only)
             at_start &= (si == 0 and bool(opening_only)) or chat or seg[start].isupper()
+            at_start &= not (
+                re.search(ATTRIBUTION, seg[:start]) and seg[start].islower()
+            )
             quoted = bool(re.search(OPENING + "$", seg[:start]))
             at_start |= quoted and seg[start].isupper()
             if before.endswith(
