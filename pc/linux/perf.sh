@@ -34,7 +34,7 @@ check() { # name timeout command...: PASS with the command's key=value output, o
   else result FAIL "$name" "see $out/pc-perf-$name.log"; fi
 }
 val() { sed -n "s/^$2=//p" "$work/$1.out" 2>/dev/null; } # check key -> value
-ms() { [[ -n $1 ]] && awk -v u="$1" 'BEGIN { printf "%.1f ms", u / 1000 }'; }
+ms() { if [[ -n $1 ]]; then awk -v u="$1" 'BEGIN { printf "%.1f ms", u / 1000 }'; else echo –; fi; }
 mb() { [[ -n $1 ]] && echo "$(( $1 / 1024 )) MB"; }
 
 # Preflight

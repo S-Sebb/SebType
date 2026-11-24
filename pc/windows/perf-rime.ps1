@@ -14,7 +14,7 @@ Without SebType installed, -Root can be CI's sebtype-rime artifact.
 param(
   [Parameter(Mandatory = $true)][string]$Root,
   [Parameter(Mandatory = $true)][string]$Rime,
-  [int]$Runs = 5
+  [ValidateRange(2, 100)][int]$Runs = 5  # 2 or more: the warm p95 needs a pass after the first
 )
 $ErrorActionPreference = 'Stop'
 $work = Join-Path ([IO.Path]::GetTempPath()) "sebtype-perf-$PID"
@@ -32,9 +32,9 @@ try {
   if (-not $p.WaitForExit(600000)) { $p.Kill(); throw 'perf-rime.exe: timeout after 600 s' }
   $v = @{}; Get-Content $out | ForEach-Object { $k, $x = $_ -split '=', 2; $v[$k] = $x }
   if ($p.ExitCode) { throw "perf-rime.exe failed: $(Get-Content "$out.err" -Raw)" }
-  # A perf-rime.exe older than this script lacks the newer keys: say so, not 0.0 ms.
+  # A perf-rime.exe older than this script lacks the newer keys: say so, not 0.0 ms. An empty value counts as missing.
   $missing = 'key_p50_us', 'key_p95_us', 'key_max_us', 'keys', 'first_key_us', 'cold_p95_us', 'warm_p95_us', 'slow_keys_per_pass',
-    'deploy_ms', 'session_ms', 'peak_rss_kb' | Where-Object { -not $v.ContainsKey($_) }
+    'deploy_ms', 'session_ms', 'peak_rss_kb' | Where-Object { -not $v[$_] }
   if ($missing) { throw "perf-rime.exe printed no $($missing -join ', '): an older build?" }
   $ms = { param($k) [double]$v[$k] / 1000 }
   $gated = 'key_p95_us'  # all keys (Decisions #2); 'warm_p95_us' would leave the cold first pass out (#523)

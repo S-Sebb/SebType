@@ -4,10 +4,7 @@
 // build/), session_ms, first_key_us, key_p50_us, key_p95_us, key_max_us and keys over every key of the
 // RUNS passes, cold_p95_us over the first pass, warm_p95_us over the passes after it (RUNS >= 2),
 // slow_keys_per_pass (keys over 10 ms in each pass), rss_kb, peak_rss_kb. On Windows the first pass is
-// cold (Rime's dictionaries paged in from disk): on TCSBackEnd a quarter of its keys took over 10 ms,
-// so key_p95 moved with how many of them were among the slowest 5 % (#523). On Linux it is slower only
-// while the page cache is cold (cold p95 12.3 ms right after copying the user folder; 2.0 against warm 2.5
-// ms with the cache warm).
+// cold: Rime's dictionaries are paged in from disk (#523).
 // Built by perf.sh against librime's public headers; nothing is committed, so nothing is learned.
 // On Windows (built 64-bit by pc/windows/rime/build.ps1) it loads SebType's rime.dll from PATH.
 #include <stdio.h>
@@ -58,6 +55,13 @@ static int cmp(const void *a, const void *b) {
 
 int main(int argc, char **argv) {
   if (argc != 5) { fprintf(stderr, "usage: perf-rime SHARED USER SCHEMA RUNS < inputs\n"); return 2; }
+  // Checked before Rime starts: returning with it running crashes librime on exit.
+  int runs = atoi(argv[4]);
+  if (runs < 1) { fprintf(stderr, "RUNS must be 1 or more\n"); return 2; }
+  char inputs[64][128];
+  int n = 0;
+  while (n < 64 && scanf("%127s", inputs[n]) == 1) n++;
+  if (!n) { fprintf(stderr, "no inputs on stdin\n"); return 2; }
   // rime-ice needs librime-lua, which Fcitx5's Rime also loads; SebType's Windows rime.dll has it built in.
   const char *modules[] = {"default", "plugins", "lua", NULL};
 #ifdef _WIN32
@@ -87,11 +91,7 @@ int main(int argc, char **argv) {
   if (!api->select_schema(s, argv[3])) { fprintf(stderr, "schema %s not found\n", argv[3]); return 1; }
   printf("session_ms=%.1f\n", (now_us() - t) / 1e3);
 
-  char inputs[64][128];
-  int n = 0;
-  while (n < 64 && scanf("%127s", inputs[n]) == 1) n++;
-  int runs = atoi(argv[4]), keys = 0, cold = 0;
-  if (runs < 1) { fprintf(stderr, "RUNS must be 1 or more\n"); return 2; }
+  int keys = 0, cold = 0;
   double *us = malloc(sizeof(double) * runs * n * 128), *all = malloc(sizeof(double) * runs * n * 128);
   printf("slow_keys_per_pass=");
   for (int r = 0; r < runs; r++) {
