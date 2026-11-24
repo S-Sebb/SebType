@@ -56,6 +56,12 @@ printf '%s\n' nihongo konnichiha arigatou toukyou shinkansen watashihagakuseides
 
 cp -a "$rime_dir" "$work/rime"
 check rime-keys 300 "${own_rime[@]}" "$work/perf-rime" /usr/share/rime-data "$work/rime" rime_ice "$runs" < "$work/pinyin.txt"
+# The budget (Decisions #2, 2026-11-24): p95 ≤ 16 ms over every key, the cold first pass included, as perf-rime.ps1.
+p95=$(val rime-keys key_p95_us)
+if [[ -z $p95 ]]; then result FAIL rime-p95-under-16ms "perf-rime printed no key_p95_us"
+else
+  result "$( ((p95 <= 16000)) && echo PASS || echo FAIL)" rime-p95-under-16ms "$(awk -v u="$p95" 'BEGIN { printf "p95 %.3f ms", u / 1000 }') over all keys; p95 warm $(ms "$(val rime-keys warm_p95_us)"), cold $(ms "$(val rime-keys cold_p95_us)"); keys over 10 ms per pass $(val rime-keys slow_keys_per_pass)"
+fi
 rm -rf "$work/rime/build"
 # A full deploy peaks near 1 GB; the cap keeps it from pushing the desktop into swap.
 check rime-deploy 600 systemd-run --user --scope -q -p MemoryMax=3G \

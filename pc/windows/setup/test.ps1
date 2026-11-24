@@ -1432,9 +1432,11 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       # The child's stderr says why when it says nothing else; 'Stop' here would drop it.
       $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
       $said = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $App -Rime "$App\rime-data.zip" 2>&1
+      $code = $LASTEXITCODE
       $ErrorActionPreference = $eap
-      $line = @($said) | Where-Object { "$_" -like '*rime-p95-under-16ms*' } | Select-Object -Last 1
-      if ($line -notlike 'PASS *') { throw "perf-rime.ps1 (librime in '$App') exit $LASTEXITCODE said: $($said -join ' | ')" }
+      $line = "$(@($said) | Where-Object { "$_" -like '*rime-p95-under-16ms*' } | Select-Object -Last 1)"
+      # Fails on a nonzero exit, and on no such line: an empty result's -notlike 'PASS *' isn't true.
+      if ($code -or $line -notlike 'PASS *') { throw "perf-rime.ps1 (librime in '$App') exit $code said: $($said -join ' | ')" }
       $line -replace '^PASS rime-p95-under-16ms: '
     }
     }

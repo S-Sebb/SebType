@@ -20,8 +20,10 @@ $ErrorActionPreference = 'Stop'
 # Not in %TEMP%: the zip's files keep their fixed 2025 times, and Windows' Storage Service deletes such
 # old-looking files there, prebuilt tables included, which Rime would then rebuild (#537).
 $work = Join-Path $env:LOCALAPPDATA "SebType\perf-$PID"
+$parent = Split-Path $work
+$madeParent = -not (Test-Path $parent)  # on an account without SebType: removed again after
 try {
-  New-Item -ItemType Directory -Force (Split-Path $work) | Out-Null  # Copy-Item makes no parent folders
+  New-Item -ItemType Directory -Force $parent | Out-Null  # Copy-Item makes no parent folders
   if ($Rime -like '*.zip') { Expand-Archive $Rime $work } else { Copy-Item $Rime $work -Recurse }
   $inputs = Join-Path $work 'perf-inputs.txt'
   # The same generic phrases as pc/linux/perf.sh: abbreviations, words and a long sentence.
@@ -32,7 +34,7 @@ try {
   $p = Start-Process (Join-Path $PSScriptRoot 'perf-rime.exe') -PassThru -NoNewWindow -RedirectStandardInput $inputs `
     -RedirectStandardOutput $out -RedirectStandardError "$out.err" -ArgumentList "`"$Root\data`"", "`"$work`"", 'rime_ice', $Runs
   $null = $p.Handle  # Windows PowerShell keeps the exit code only once the handle is read
-  if (-not $p.WaitForExit(600000)) { $p.Kill(); throw 'perf-rime.exe: timeout after 600 s' }
+  if (-not $p.WaitForExit(600000)) { $p.Kill(); $null = $p.WaitForExit(10000); throw 'perf-rime.exe: timeout after 600 s' }
   $v = @{}; Get-Content $out | ForEach-Object { $k, $x = $_ -split '=', 2; $v[$k] = $x }
   if ($p.ExitCode) { throw "perf-rime.exe failed: $(Get-Content "$out.err" -Raw)" }
   # A perf-rime.exe older than this script lacks the newer keys: say so, not 0.0 ms. An empty value counts as missing.
@@ -42,7 +44,8 @@ try {
   $ms = { param($k) [double]$v[$k] / 1000 }
   $gated = 'key_p95_us'  # all keys (Decisions #2); 'warm_p95_us' would leave the cold first pass out (#523)
   $p95 = & $ms $gated
-  $line = 'key p50 {0:n1} ms, p95 {1:n1} ms, max {2:n1} ms over {4} keys; p95 warm (passes 2-{9}) {8:n1} ms, cold (pass 1) {10:n1} ms; keys over 10 ms per pass {11}; first key {3:n1} ms; start (deploy check) {5} ms, session {6} ms; peak working set {7} MB' -f `
+  # The gated p95 to the µs, so a FAIL never reads as 16.0 ms.
+  $line = 'key p50 {0:n1} ms, p95 {1:n3} ms, max {2:n1} ms over {4} keys; p95 warm (passes 2-{9}) {8:n1} ms, cold (pass 1) {10:n1} ms; keys over 10 ms per pass {11}; first key {3:n1} ms; start (deploy check) {5} ms, session {6} ms; peak working set {7} MB' -f `
   (& $ms key_p50_us), (& $ms key_p95_us), (& $ms key_max_us), (& $ms first_key_us), $v['keys'], $v['deploy_ms'], $v['session_ms'],
   [int]([double]$v['peak_rss_kb'] / 1024), (& $ms warm_p95_us), $Runs, (& $ms cold_p95_us), $v['slow_keys_per_pass']
   Write-Output "$(if ($p95 -le 16) { 'PASS' } else { 'FAIL' }) rime-p95-under-16ms: $line"
@@ -52,4 +55,5 @@ try {
   exit 1
 } finally {
   Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+  if ($madeParent -and -not (Get-ChildItem $parent -Force -ErrorAction SilentlyContinue)) { Remove-Item $parent -ErrorAction SilentlyContinue }
 }
