@@ -204,20 +204,22 @@ bool insideQuoteOrAfterDigit(const std::string &text) {
   return quotes % 2 == 1;
 }
 
-// Whether WORD (in lower case) is a contraction typed without its apostrophe as often as with it: a "n't"
-// or a pronoun's ("i've", "you're", "that's"), not "who're" ("whore") or a possessive ("pc's" for "pcs").
+// Whether WORD (in lower case) is a contraction typed without its apostrophe as often as with it: a "n't",
+// a pronoun's or a modal's ("i've", "you're", "that's", "could've") and "y'all", "ma'am" and "o'clock"; not
+// "who're" ("whore") or a possessive ("pc's" for "pcs").
 bool isContraction(const std::string &word) {
   const size_t at = word.find('\'');
   if (at == std::string::npos || word.find('\'', at + 1) != std::string::npos) return false;
-  if (word.ends_with("n't")) return at > 0;
-  static const std::vector<std::string> persons = {"i", "you", "we", "they", "he", "she", "it", "that", "there", "who"};
+  if (word == "y'all" || word == "ma'am" || word == "o'clock") return true;
+  if (word.ends_with("n't")) return at > 1;
+  static const std::vector<std::string> persons = {"i", "you", "we", "they", "he", "she", "it", "that", "there", "who", "what"};
   static const std::map<std::string, std::vector<std::string>> stems = {
       {"'m", {"i"}},
-      {"'ve", {"i", "you", "we", "they", "who"}},
-      {"'re", {"you", "we", "they"}},
+      {"'ve", {"i", "you", "we", "they", "who", "could", "would", "should", "might", "must"}},
+      {"'re", {"you", "we", "they", "there", "what"}},
       {"'ll", persons},
       {"'d", persons},
-      {"'s", {"he", "she", "it", "that", "there", "here", "what", "where", "who", "let"}},
+      {"'s", {"he", "she", "it", "that", "there", "here", "what", "where", "who", "how", "when", "why", "let"}},
   };
   const auto it = stems.find(word.substr(at));
   return it != stems.end() && std::ranges::find(it->second, word.substr(0, at)) != it->second.end();
@@ -1167,7 +1169,7 @@ class English : public Engine {
   }
 
   void resetWord() {
-    typed_.clear(), xs_.clear(), ys_.clear(), strip_.clear();
+    typed_.clear(), xs_.clear(), ys_.clear(), strip_.clear(), contraction_.clear();
     correction_ = false, decodePending_ = false, resumed_ = false, phantomSpace_ = false;
     tail_ = 0;
     lastCorrection_.reset();

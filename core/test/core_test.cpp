@@ -580,7 +580,9 @@ TEST_F(EnglishTest, ContractionsWithoutTheirApostropheAreCorrected) {
       {"i", "I"}, {"Ive", "I've"}, {"ive", "I've"}, {"Im", "I'm"}, {"im", "I'm"}, {"dont", "don't"},
       {"Dont", "Don't"}, {"cant", "can't"}, {"wont", "won't"}, {"didnt", "didn't"}, {"doesnt", "doesn't"},
       {"isnt", "isn't"}, {"wasnt", "wasn't"}, {"youre", "you're"}, {"theyre", "they're"}, {"thats", "that's"},
-      {"whats", "what's"}, {"youve", "you've"}};
+      {"whats", "what's"}, {"youve", "you've"}, {"couldve", "could've"}, {"wouldve", "would've"},
+      {"shouldve", "should've"}, {"mightve", "might've"}, {"mustve", "must've"}, {"therere", "there're"},
+      {"whatll", "what'll"}, {"oclock", "o'clock"}, {"yall", "y'all"}};
   // Not to their contraction or possessive, whatever else a space makes of them
   const std::vector<std::pair<std::string, std::string>> notTo = {
       {"its", "it's"}, {"were", "we're"}, {"well", "we'll"}, {"hell", "he'll"}, {"shell", "she'll"},
@@ -620,6 +622,7 @@ TEST_F(EnglishTest, PersonalAndLearnedWordsKeepTheirLettersFromContractions) {
   Settings s;
   s.englishWords = {{"Ill", 250, ""}, {"plimbo vexter", 250, "dont"}};
   for (const std::string model : {"", EN_MODEL}) {
+    en.reset();  // saves its learned words first
     std::filesystem::remove_all(EN_USER_DIR);
     std::filesystem::create_directories(EN_USER_DIR);
     const int readies = readyCount();
