@@ -43,6 +43,6 @@ $hacl = Join-Path $env:TEMP 'Hacl_Hash_SHA2.c'
 Get-Checked "$raw/Modules/_hacl/Hacl_Hash_SHA2.c" $hacl $Sources['Modules/_hacl/Hacl_Hash_SHA2.c']
 # Its notice is the comment that opens each HACL* file.
 $c = Get-Content $hacl
-$end = [array]::IndexOf($c, ($c | Where-Object { $_ -match '^ \*/' } | Select-Object -First 1))
+$end = ($c | Select-String '^ \*/' | Select-Object -First 1).LineNumber - 1
 $c[0..($end - 1)] -replace '^(/\*| \*) ?', '' | Set-Content "$licences\HACL-LICENSE.txt"
 Remove-Item $hacl

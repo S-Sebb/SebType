@@ -135,7 +135,7 @@ came from:
 | `core/src/mozc.cpp` (follows fcitx5-mozc, Mozc's Fcitx 5 frontend) | BSD-3-Clause, like Mozc |
 | SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
 | Fedora's librime spec with SebType's changes (`linux/librime.spec`) | MIT, like Fedora's specs |
-| The libraries in SebType's Windows `rime.dll`, `sebtype-server.exe` and `sebtype-mozc.dll` (librime, librime-lua, librime-octagram and their dependencies, llama.cpp, protobuf, Abseil, OpenCC, Mozc) | Their own licences, which Setup installs in `licenses\` in SebType's folder |
+| The libraries in SebType's Windows `rime.dll`, `sebtype-server.exe` and `sebtype-mozc.dll` (librime, librime-lua, librime-octagram and their dependencies, llama.cpp, protobuf, Abseil, OpenCC, Mozc), and the Python that runs sync | Their own licences, which Setup installs in `licenses\` in SebType's folder |
 | RimeJni's build scripts with SebType's changes (`android/native/src/main/cpp/cmake/`: how the phone builds librime; the bundled libraries' licences are in `android/native/src/main/assets/licenses/`) | MIT, like RimeJni |
 | librime | BSD-3-Clause |
 | The rime-ice and 白霜 data in the APK and on the PCs (see below) | GPL-3.0 |
