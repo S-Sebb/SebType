@@ -45,7 +45,10 @@ from pathlib import Path
 import numpy as np
 import sentencepiece as spm
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "android/test/english"))
+sys.path[:0] = [
+    str(Path(__file__).resolve().parent),
+    str(Path(__file__).resolve().parents[2] / "android/test/english"),
+]
 import make_sets
 import noise
 
