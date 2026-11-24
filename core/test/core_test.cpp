@@ -10,6 +10,8 @@
 #include <sebtype_lm.h>
 #endif
 
+#include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
@@ -563,19 +565,53 @@ TEST_F(EnglishTest, ALearnedWordTypedAgainStaysWithTheModel) {
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
-  const auto word = [&](const std::string &typed) {  // TYPED's list, the model's ranking once it has come
-    en->setContext("so ");
+  // TYPED's list after CONTEXT, the model's ranking once it has come
+  const auto word = [&](const std::string &typed, const std::string &context = "so ") {
+    en->setContext(context);
     for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
     const int ranked = readyCount();
     en->settle();
     ASSERT_TRUE(ready(ranked));
   };
-  word("theyre");
-  en->selectAt(indexOf("theyre"));
-  EXPECT_EQ(en->takeCommit(), "theyre ");
-  word("theyre");
-  type(" ");
-  EXPECT_EQ(en->takeCommit(), "theyre ");
+  const auto again = [&](const std::string &typed, const std::string &context = "so ") {
+    word(typed, context);
+    type(" ");
+    return en->takeCommit();
+  };
+  // dont and wontt, typed again right after they were learned: the 18 words the decoder's merge keeps were all
+  // their neighbours (don't, done, ...), not them, and they became don't and won't (#568).
+  for (const std::string learned : {"theyre", "dont", "wontt"}) {
+    word(learned);
+    en->selectAt(indexOf(learned));
+    EXPECT_EQ(en->takeCommit(), learned + " ");
+    EXPECT_EQ(again(learned), learned + " ");
+  }
+  // Learned in lower case, typed with a capital where a sentence starts, or in capitals (#568).
+  EXPECT_EQ(again("Theyre", ""), "Theyre ");
+  EXPECT_EQ(again("THEYRE"), "THEYRE ");
+}
+
+// A contraction typed without its apostrophe after the words it follows, and a word of the same letters where
+// the text wants the word (#568). The bound that keeps "I feel ill" from I'll held could've to "couldve"'s
+// score, typed letters that aren't a word, and "could be" won; the dictionary's shortcut made "cant" can't
+// whatever came before.
+TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
+  type("a");
+  en->key({0xff08, 0, false});
+  ASSERT_TRUE(ready(0));
+  for (const auto &[context, typed, committed] : std::vector<std::array<std::string, 3>>{
+           {"I ", "couldve", "could've "}, {"I hope ", "thatll", "that'll "}, {"I think ", "thatd", "that'd "},
+           {"I think ", "lets", "let's "}, {"So ", "whens", "when's "}, {"I ", "cant", "can't "},
+           {"I despise such ", "cant", "cant "}, {"Full of pious ", "cant", "cant "},
+           {"as is his ", "wont", "wont "}}) {
+    en->setContext(context);
+    for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
+    const int ranked = readyCount();
+    en->settle();
+    ASSERT_TRUE(ready(ranked));
+    type(" ");
+    EXPECT_EQ(en->takeCommit(), committed) << context << typed;
+  }
 }
 
 // A letter shows the decoder's strip at once and the model ranks it on the worker (#310); a space typed
@@ -687,7 +723,7 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
 // pieces it starts, whatever was typed.
 TEST(EnglishModel, AWordsScoreEndsItSoItLosesToTheLongerWordItStarts) {
   sebtype_lm::Model model(EN_MODEL);
-  const auto lp = model.score("I", "dont", {"don", "don't"});
+  const auto lp = model.score("I", "dont", {"don", "don't"}, false);
   EXPECT_LT(lp[0], lp[1]);
 }
 
@@ -700,6 +736,10 @@ TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
     contraction |= w.word.find('\'') != std::string::npos;
   }
   EXPECT_TRUE(contraction);
+  // The pronoun is a capital, though chats taught the model a small one (#568).
+  const auto words = model.nextWords("Both :) i", 3);
+  EXPECT_TRUE(std::ranges::any_of(words, [](const auto &w) { return w.word == "I"; }));
+  EXPECT_FALSE(std::ranges::any_of(words, [](const auto &w) { return w.word == "i"; }));
 }
 
 // decide() corrects one letter only to its capital (i to I, #561), and never a word only learned (#555).

@@ -903,7 +903,16 @@ class English : public Engine {
       if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
     if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
       add(results.front().word);
-    Rank rank{context_, typed, {}, typedFound, typedFound && !main_->has(typed), 0};
+    // A word only the user's words have is asked of them, not of the merged list, whose 18 words may have left
+    // it out ("dont" among don't's neighbours); and in lower case too, as learned at a sentence start, so
+    // "Theyre" and "THEYRE" are the learned theyre (#555).
+    const std::string lowerTyped = lowerCaseWord(typed);
+    const auto userHas = [&](const std::string &w) {
+      return (history_ && history_->has(w)) || (personal_ && personal_->has(w));
+    };
+    const bool typedIsLearned =
+        !main_->has(typed) && !main_->has(lowerTyped) && (userHas(typed) || userHas(lowerTyped));
+    Rank rank{context_, typed, {}, typedFound, typedIsLearned, 0};
     for (const Word &w : results)
       if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) == shortcuts_.end())
         rank.candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});

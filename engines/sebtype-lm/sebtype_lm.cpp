@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 
 #include "llama.h"
@@ -33,6 +34,7 @@ constexpr float MAX_DECODER_SCORE = 10.0f;
 constexpr float MARGIN_WORD = 4.0f;     // how much likelier a correction must be than a typed dictionary word
 constexpr float MARGIN_NON_WORD = 10.0f;  // ... than typed letters that aren't a word
 const std::string SPACE = "\xe2\x96\x81";  // "▁"
+const std::set<std::string> CONTRACTION_ENDS = {"t", "s", "d", "m", "ll", "re", "ve"};
 
 bool sentenceStart(const std::string &context) {
     const auto end = context.find_last_not_of(" \n");
@@ -81,6 +83,10 @@ std::string fold(const std::string &text) {
         const auto c = static_cast<unsigned char>(text[i]);
         if (c < 0x80) {
             out += text[i++];
+            continue;
+        }
+        if (c < 0xc0) {  // a character's continuation without its start: the context was cut inside it
+            i++;
             continue;
         }
         const int n = c >= 0xf0 ? 4 : c >= 0xe0 ? 3 : 2;
@@ -313,17 +319,27 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
                       [&](int a, int b) { return logits[a] > logits[b]; });
     first.resize(k);
     struct Path {
-        std::vector<int> pieces;
+        int piece;  // its last
+        int seq;    // the sequence that holds its pieces
+        int at;     // the batch index of its last piece's logits
         std::string word;
         float logProb;
     };
     std::vector<Path> paths;
     const Row start = row(logits);
-    for (int t : first) paths.push_back({{t}, mText[t].substr(1), logSoftmax(logits, t, start)});
+    std::vector<std::vector<int>> followers;
+    for (size_t i = 0; i < first.size(); i++) {  // branch() numbers its sequences from 1, in order
+        paths.push_back({first[i], int(i) + 1, 0, mText[first[i]].substr(1), logSoftmax(logits, first[i], start)});
+        followers.push_back({first[i]});
+    }
+    dropBranches();
+    const auto index = branch(followers, {}, std::vector<std::vector<bool>>(first.size(), {true}));
+    for (size_t i = 0; i < paths.size(); i++) paths[i].at = index[i][0];
 
     // Each path is a word that either ends after its last piece or goes on with its likeliest continuation,
     // up to NEXT_WORD_MAX_PIECES: a contraction is 3 pieces (▁don ' t). A path goes on only while it can still
-    // beat the Nth word found, as its probability only falls with each piece.
+    // beat the Nth word found, as its probability only falls with each piece. A path's next piece is decoded
+    // on its own sequence, after the pieces it holds.
     std::vector<Word> words;
     auto nth = [&] {
         if (words.size() < n) return -INFINITY;
@@ -333,34 +349,42 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
         return lp[n - 1];
     };
     for (int depth = 1; !paths.empty(); depth++) {
-        std::vector<std::vector<int>> followers;
-        for (const Path &p : paths) followers.push_back(p.pieces);
-        dropBranches();
-        std::vector<std::vector<bool>> read;
-        for (const auto &f : followers) read.emplace_back(f.size()), read.back().back() = true;
-        const auto index = branch(followers, {}, read);
         std::vector<Path> longer;
-        for (size_t i = 0; i < paths.size(); i++) {
-            const Row r = row(llama_get_logits_ith(mCtx, index[i].back()));
-            const Path &p = paths[i];
+        for (const Path &p : paths) {
+            const float *after = llama_get_logits_ith(mCtx, p.at);
+            const Row r = row(after);
             // A word can't end in an apostrophe: "don'" is half of "don't".
             if (p.word.back() != '\'') words.push_back({p.word, p.logProb + r.end});
-            if (r.next >= 0 && depth < NEXT_WORD_MAX_PIECES) {
-                Path q = p;
-                q.pieces.push_back(r.next);
-                q.word += mText[r.next];
-                q.logProb += logSoftmax(llama_get_logits_ith(mCtx, index[i].back()), r.next, r);
-                longer.push_back(std::move(q));
-            }
+            if (r.next < 0 || depth >= NEXT_WORD_MAX_PIECES) continue;
+            Path q{r.next, p.seq, 0, p.word + mText[r.next], p.logProb + logSoftmax(after, r.next, r)};
+            // A contraction's ending (n't's t, 's, 'll) ends its word: taken as it is, it saves a decode.
+            if (p.word.back() == '\'' && CONTRACTION_ENDS.count(mText[r.next])) words.push_back({q.word, q.logProb});
+            else longer.push_back(std::move(q));
         }
         const float bar = nth();
         longer.erase(std::remove_if(longer.begin(), longer.end(), [&](const Path &p) { return p.logProb <= bar; }),
                      longer.end());
         paths = std::move(longer);
+        if (paths.empty()) break;
+        llama_batch batch = llama_batch_init(paths.size(), 0, 1);
+        for (size_t k = 0; k < paths.size(); k++) {
+            batch.token[k] = paths[k].piece;
+            batch.pos[k] = mCached.size() + depth;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = paths[k].seq;
+            batch.logits[k] = true;
+            paths[k].at = k;
+        }
+        batch.n_tokens = paths.size();
+        const int status = llama_decode(mCtx, batch);
+        llama_batch_free(batch);
+        if (status != 0) throw std::runtime_error("sebtype-lm: decoding failed");
     }
     std::stable_sort(words.begin(), words.end(), [](const Word &a, const Word &b) { return a.logProb > b.logProb; });
     std::vector<Word> out;
-    for (const Word &w : words) {
+    for (Word &w : words) {
+        // The pronoun I and its contractions are capitals, however often chats type them small.
+        if (w.word == "i" || w.word.rfind("i'", 0) == 0) w.word[0] = 'I';
         const bool seen = std::any_of(out.begin(), out.end(), [&](const Word &o) { return lower(o.word) == lower(w.word); });
         if (!seen && out.size() < n) out.push_back(w);
     }
@@ -368,7 +392,8 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
 }
 
 std::vector<float> Model::score(const std::string &context, const std::string &typed,
-                                const std::vector<std::string> &words) {
+                                const std::vector<std::string> &words, bool typedIsWord,
+                                std::vector<float> *asTyped) {
     std::vector<int> prefix = contextTokens(context);
     prefix.push_back(mTypo);
     const size_t hintStart = prefix.size();
@@ -384,7 +409,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     //   apostrophe to type, so its hint has it, as training's examples of the word nearly always did (#561).
     // - A candidate of several words ("could be" for "couldve"): each further word's hint holds the letters
     //   typed after the word before it ("ve"), so they count against it as they do against a single word.
-    const bool capital = sentenceStart(context);
+    const bool capital = sentenceStart(fold(context));
     struct Term {
         int after;  // the follower token whose logits give it, -1 for the hint's <S> in sequence 0
         int token;  // the piece, -1 for the word ending
@@ -431,16 +456,19 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     // doubled the time a key takes (#561).
     for (size_t i = 0; i < words.size(); i++) {
         const bool continued = std::any_of(spelt.begin(), spelt.end(), [&](const std::vector<int> &o) {
-            return o.size() > spelt[i].size() && std::equal(spelt[i].begin(), spelt[i].end(), o.begin());
+            return !spelt[i].empty() && o.size() > spelt[i].size() && std::equal(spelt[i].begin(), spelt[i].end(), o.begin());
         });
         if (i + 1 == words.size() || continued) terms[i].push_back({int(followers[i].size()) - 1, -1});
         else if (!followers[i].empty()) followers[i].pop_back();  // its last piece: no term reads after it
     }
     // The keys typed are a contraction's letters as much as the typed word's, so they can't tell the two
     // apart, and the model, which copies a hint it knows, would score the contraction as typed in full in any
-    // text. So a contraction scores no more than any word of the typed letters in any case does times the odds
-    // the text before gives it against that word: "I feel ill" isn't I'll, "Show your id" is ID, not I'd.
-    // Those odds are read without a hint, after the context's last token again.
+    // text. So the two share what their hints together score by the odds the text before gives them: the
+    // contraction scores no more than its share, and the typed word no less, so "I feel ill" isn't I'll and
+    // "Show your id" is ID, not I'd. Those odds are read without a hint, after the context's last token again.
+    // A share and not the typed word's score times the odds: the model scores a rare spelling low after its
+    // own hint (whens, hows), and "when" beat both when's and whens (#568). Typed letters that aren't a word
+    // share nothing: "I couldve" became "could be".
     auto inText = [&](std::string w) {
         if (capital && !w.empty()) w[0] = std::toupper(static_cast<unsigned char>(w[0]));
         std::vector<int> f{prefix[hintStart - 2]};
@@ -455,11 +483,24 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     std::vector<std::pair<size_t, size_t>> typedWords, inTexts;  // (its index in WORDS, its text score's)
     if (!contractions.empty()) {
         for (size_t i = 0; i < words.size(); i++)
-            if (words[i].find(' ') == std::string::npos && hintLetters(fold(words[i])) == letters)
+            if (words[i].find(' ') == std::string::npos && hintLetters(fold(words[i])) == letters &&
+                (typedIsWord || words[i] != typed))
                 typedWords.emplace_back(i, inText(words[i]));
         if (!typedWords.empty())
             for (size_t i : contractions) inTexts.emplace_back(i, inText(words[i]));
     }
+    // ASTYPED: a contraction read after the typed letters' hint too, as every other word is.
+    std::vector<std::pair<size_t, size_t>> plain;  // (its index in WORDS, that reading's)
+    if (asTyped && typedIsWord)
+        for (size_t i : contractions) {
+            terms.emplace_back();
+            for (size_t k = 0; k < spelt[i].size(); k++) terms.back().push_back({int(k) - 1, spelt[i][k]});
+            terms.back().push_back({int(spelt[i].size()) - 1, -1});
+            followers.push_back(spelt[i]);
+            from.push_back(prefix.size());
+            out.push_back(0);
+            plain.emplace_back(i, out.size() - 1);
+        }
     // Sequence 0's logits first: branch() decodes over them.
     const Row hint = row(logits);
     for (size_t i = 0; i < terms.size(); i++)
@@ -482,9 +523,18 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             if (it == rows.end()) it = rows.emplace(at, row(after)).first;
             out[i] += t.token < 0 ? it->second.end : logSoftmax(after, t.token, it->second);
         }
-    for (const auto &[c, text] : inTexts) {
-        for (const auto &[t, typedText] : typedWords) out[c] = std::min(out[c], out[t] + out[text] - out[typedText]);
+    const std::vector<float> hinted = out;
+    if (asTyped) {
+        asTyped->assign(hinted.begin(), hinted.begin() + words.size());
+        for (const auto &[c, p] : plain) (*asTyped)[c] = hinted[p];
     }
+    for (const auto &[c, text] : inTexts)
+        for (const auto &[t, typedText] : typedWords) {
+            const float both = std::max(hinted[c], hinted[t]) + std::log1p(std::exp(-std::abs(hinted[c] - hinted[t])));
+            const float odds = out[text] - out[typedText];
+            out[c] = std::min(out[c], both - std::log1p(std::exp(-odds)));
+            out[t] = std::max(out[t], both - std::log1p(std::exp(odds)));
+        }
     out.resize(words.size());
     return out;
 }
@@ -500,15 +550,32 @@ std::vector<std::string> rankedWords(const std::string &typed, const std::vector
 }
 
 Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates, bool typedIsWord,
-              const std::vector<float> &logProbs, bool typedIsLearned) {
+              const std::vector<float> &logProbs, bool typedIsLearned, const std::vector<float> &asTyped) {
     const auto words = rankedWords(typed, candidates);
-    std::vector<float> score(words.size());
-    for (size_t i = 0; i < words.size(); i++) {
-        float decoder = 0;
+    auto decoder = [&](const std::string &word) {
+        float d = 0;
         for (const Candidate &c : candidates)
-            if (c.word == words[i]) decoder = std::max(decoder, c.decoderScore);
-        decoder = std::clamp(decoder, MIN_DECODER_SCORE, MAX_DECODER_SCORE);
-        score[i] = logProbs[i] + DECODER_WEIGHT * std::log(decoder);
+            if (c.word == word) d = std::max(d, c.decoderScore);
+        return std::max(d, MIN_DECODER_SCORE);
+    };
+    const float typedDecoder = std::min(decoder(typed), MAX_DECODER_SCORE);
+    std::vector<float> score(words.size());
+    score.back() = logProbs.back() + DECODER_WEIGHT * std::log(typedDecoder);
+    const std::string letters = hintLetters(fold(typed));
+    for (size_t i = 0; i + 1 < words.size(); i++) {
+        score[i] = logProbs[i] + DECODER_WEIGHT * std::log(std::min(decoder(words[i]), MAX_DECODER_SCORE));
+        // A contraction of a typed dictionary word's letters (cant: can't). The keys score the two alike, and
+        // the decoder's far higher score for it is the dictionary's shortcut, which outweighed what the text
+        // says ("I despise such cant", #568). So it takes the typed word's decoder score. It is still corrected
+        // to as before #561, read after the typed letters' hint with the shortcut's score ("I cant"), but only
+        // if read after its own hint it is the likelier of the two: "as is his wont" stays.
+        const std::string own = hintLetters(fold(words[i]));
+        if (!typedIsWord || own == letters || own.find('\'') == std::string::npos || stripped(own) != letters)
+            continue;
+        score[i] = logProbs[i] + DECODER_WEIGHT * std::log(typedDecoder);
+        if (!asTyped.empty() && logProbs[i] > logProbs.back())
+            score[i] = std::max(score[i], score.back() + asTyped[i] - asTyped.back() +
+                                              DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder));
     }
     std::vector<size_t> order(words.size() - 1);  // the typed word is last
     for (size_t i = 0; i < order.size(); i++) order[i] = i;

@@ -66,7 +66,7 @@ int time(sebtype_lm::Model &model) {
             if (c != ' ') {
                 word += c;
                 const auto t = std::chrono::steady_clock::now();
-                model.score(context, word, {word, word + "s", word + "e", word.substr(1)});
+                model.score(context, word, {word, word + "s", word + "e", word.substr(1)}, true);
                 rank.push_back(ms(std::chrono::steady_clock::now() - t));
                 continue;
             }
