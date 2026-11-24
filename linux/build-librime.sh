@@ -16,9 +16,8 @@ source "$here/versions.sh"
 source "$here/rpm-sources.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$here/../tools/lib.sh"
-# The build host's copy has no git, so the key goes with it.
-key=${LIBRIME_KEY:-$(librime_key)}
-if build_host_ready; then build_remotely "LIBRIME_KEY=$key" linux/build-librime.sh; exit; fi
+key=$(librime_key)
+if build_host_ready; then build_remotely linux/build-librime.sh; exit; fi
 spec=$here/librime.spec cache=$LIBRIME_CACHE
 # rpmbuild's work folder, where Bazel's are (BAZEL_CACHE): on yanglab16 the container's root can't chown
 # what it unpacks on the NAS.

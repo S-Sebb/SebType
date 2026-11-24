@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the Chinese harness and runs today's 中文 (and, given a model, today's 中文 with the model) on every
 # set, here (run.sh starts it on yanglab16). On yanglab16 it runs in the pinned Fedora container
-# (tools/lib.sh, fedora_container) with Fedora's librime and its Lua and octagram plugins, as SebType's Linux
-# build does, in the build lock and under its caps.
+# (tools/lib.sh, fedora_container) with SebType's librime and its Lua and octagram plugins, which the Linux
+# add-on builds in (linux/build-librime.sh's RPMs, #530), in the build lock and under its caps.
 #
 #   [CHINESE_CORE=1] android/test/chinese-lm/bench.sh RUN_NAME [MODEL.gguf [NAME=VALUE...] [-- NAME=VALUE...]]
 #                                    NAME=VALUE: zhbench's options; after --, those a third stack ("gen", the
@@ -19,15 +19,20 @@ source tools/lib.sh
 here=android/test/chinese-lm
 
 if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
-  # The base build image plus librime's headers, its octagram plugin and the harness's build tools.
+  # The base build image with SebType's librime, its headers and plugins in place of Fedora's, and the
+  # harness's build tools.
   fedora_container
   if [[ ${#container[@]} -gt 0 ]]; then
-    extra="librime-devel librime-octagram opencc-devel cmake ninja-build"
+    source linux/versions.sh
+    key=$(librime_built)
+    rpms=$(for p in librime librime-lua librime-octagram librime-devel; do basename "$(librime_rpm "$key" $p)"; done)
+    extra="opencc-devel cmake ninja-build"
     base=${container[-1]}
-    image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$base $extra" | head -c 12)
+    image=localhost/sebtype-fedora-zh:$(sha256sum <<<"$base $extra $key" | head -c 12)
     podman image exists "$image" ||
-      podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $base
-RUN dnf -y --setopt=throttle=35M install $extra && dnf clean all" >/dev/null
+      podman build -q -t "$image" -f - "$LIBRIME_CACHE/$key" <<<"FROM $base
+COPY $(echo $rpms) /rpms/
+RUN dnf -y --setopt=throttle=35M install /rpms/*.rpm $extra && rm -r /rpms && dnf clean all" >/dev/null
     container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
   fi
   # llama.cpp (MIT) is fetched at its pinned commit out here: the container has no git.
@@ -58,7 +63,8 @@ build=$TASK_OUT/chinese/build-$(pwd -P | sha256sum | head -c 8)
 # The data the apps ship (data/rime/build.sh), unpacked as the Linux setup does.
 zip=$(data/rime/build.sh "$work/assets" | tail -1)
 mkdir -p "$work/shared" && unzip -q "$zip" -d "$work/shared"
-cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR="$LLAMA_DIR" > "$out/build.log"
+rpm -q librime librime-lua librime-octagram > "$out/build.log" || : # which librime it runs
+cmake -S $here -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLAMA_DIR="$LLAMA_DIR" >> "$out/build.log"
 ninja -C "$build" -j "$BUILD_JOBS" zhbench zh_lm_test >> "$out/build.log"
 [[ $model ]] && "$build/zh_lm_test" "$model" | tee -a "$out/test.log" >&2
 

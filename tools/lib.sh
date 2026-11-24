@@ -68,14 +68,15 @@ build_host_ready() {
 # build_remotely [NAME=VALUE...] SCRIPT [ARG...]: runs SCRIPT (a path in the checkout) with ARGs on the
 # build host, in a copy of this checkout there, ~/scratch/SebType/<task>/<checkout>: rsynced with its
 # uncommitted changes but not what git ignores.
-# DEVQ_RANK, ISSUE and the NAME=VALUEs go with it. The files SCRIPT prints, in the copy or in the host's
+# DEVQ_RANK, ISSUE, LIBRIME_KEY (linux/versions.sh: the copy has no git) and the NAME=VALUEs go with it. The files SCRIPT prints, in the copy or in the host's
 # ~/scratch/SebType, are copied back to the same place here, and their paths printed. If SCRIPT fails, what it
 # printed goes to stderr instead (linux/build.sh prints the reason there).
 build_remotely() {
   local root dir out f rel here
   root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
   dir=$(basename "$TASK_OUT")/$(basename "$root")
-  local env=(SEBTYPE_BUILD_HOST=local ${DEVQ_RANK:+DEVQ_RANK=$DEVQ_RANK} ${ISSUE:+ISSUE=$ISSUE})
+  local env=(SEBTYPE_BUILD_HOST=local ${DEVQ_RANK:+DEVQ_RANK=$DEVQ_RANK} ${ISSUE:+ISSUE=$ISSUE}
+    "LIBRIME_KEY=$(source "$root/linux/versions.sh" && librime_key)")
   while [[ $1 == *=* ]]; do env+=("$1"); shift; done
   # rsync's .gitignore rules would also leave out the files git tracks despite them (librime's include/):
   # those, and their folders, are taken first. Ignored files on the host stay: its build outputs.

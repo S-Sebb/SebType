@@ -1,6 +1,6 @@
-# The Chinese harness (#259): zhbench, core/'s Rime engine (src/rime.cpp) on the system's librime with its
-# Lua and octagram plugins, as SebType's Linux build runs it, and SebType's Chinese model on llama.cpp
-# (LLAMA_DIR, engines/sebtype-lm/fetch-llama.sh). bench.sh configures it.
+# The Chinese harness (#259): zhbench, core/'s Rime engine (src/rime.cpp) on SebType's librime with its
+# Lua and octagram plugins (bench.sh installs them), as SebType's Linux build runs it, and SebType's Chinese
+# model on llama.cpp (LLAMA_DIR, engines/sebtype-lm/fetch-llama.sh). bench.sh configures it.
 cmake_minimum_required(VERSION 3.22)
 project(chinese_harness C CXX)
 set(CMAKE_CXX_STANDARD 20)
