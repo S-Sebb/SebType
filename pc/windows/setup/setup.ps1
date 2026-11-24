@@ -150,6 +150,7 @@ $warned = $false
 function Remove-UserFolder {
   Stop-Transcript | Out-Null
   if (-not $warned) { Remove-Item $UserLog }
+  Remove-Item (Join-Path $StateDir 'rime-data') -Recurse -Force -ErrorAction SilentlyContinue  # a killed run's unpack
   foreach ($dir in (Join-Path $StateDir 'backup'), $StateDir) {
     Get-Item $dir -ErrorAction SilentlyContinue | Where-Object { -not (Get-ChildItem $_.FullName -Force) } | Remove-Item
   }
@@ -321,17 +322,21 @@ if ('zh' -in $want) {
   if ((Get-Content $marker -ErrorAction SilentlyContinue) -ne $dataId) {
     Write-Output "user: Chinese data into $RimeUser"
     Stop-Server
-    $tmp = Join-Path ([IO.Path]::GetTempPath()) "sebtype-rime-$PID"
-    Expand-Archive $RimeData $tmp -Force
-    if (Test-Path (Join-Path $RimeUser 'custom_phrase.txt')) { Remove-Item (Join-Path $tmp 'custom_phrase.txt') -ErrorAction SilentlyContinue }
-    New-Item -ItemType Directory -Force $RimeUser | Out-Null
-    # An app's text service may start a server again meanwhile, which maps the tables (#190): once more.
-    try { Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
-    catch { Write-Output "user: copy again after: $_"; Stop-Server; Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
-    # An older dictionary source (the user's own rime-ice) would be compiled instead of the prebuilt table.
-    Get-ChildItem (Join-Path $tmp 'build\*.table.bin') | ForEach-Object {
-      Remove-Item (Join-Path $RimeUser "$($_.BaseName -replace '\.table$').dict.yaml") -ErrorAction SilentlyContinue }
-    Remove-Item $tmp -Recurse -Force
+    # Not in %TEMP%: the files keep the zip's fixed 2025 times (data/rime/build.sh), and Windows' Storage
+    # Service deletes such old-looking files there, even while they are unpacked (#537).
+    $tmp = Join-Path $StateDir 'rime-data'
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue  # what a killed run left
+    try {
+      Expand-Archive $RimeData $tmp -Force
+      if (Test-Path (Join-Path $RimeUser 'custom_phrase.txt')) { Remove-Item (Join-Path $tmp 'custom_phrase.txt') -ErrorAction SilentlyContinue }
+      New-Item -ItemType Directory -Force $RimeUser | Out-Null
+      # An app's text service may start a server again meanwhile, which maps the tables (#190): once more.
+      try { Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
+      catch { Write-Output "user: copy again after: $_"; Stop-Server; Copy-Item (Join-Path $tmp '*') $RimeUser -Recurse -Force }
+      # An older dictionary source (the user's own rime-ice) would be compiled instead of the prebuilt table.
+      Get-ChildItem (Join-Path $tmp 'build\*.table.bin') | ForEach-Object {
+        Remove-Item (Join-Path $RimeUser "$($_.BaseName -replace '\.table$').dict.yaml") -ErrorAction SilentlyContinue }
+    } finally { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
     Set-Content $marker $dataId
     $redeploy = $true
   }
