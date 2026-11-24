@@ -45,6 +45,10 @@ public class PerfField extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // "upright": portrait, as perf.sh's key grid is: a phone on its side with auto-rotate on would otherwise put
+        // the field and keyboard in landscape, and the taps would land on other windows (#402). Only on request:
+        // chinese.py's and settings.py's turns and landscape-shaped windows need the field to follow the screen (#524).
+        if (getIntent().getBooleanExtra("upright", false)) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         String kind = getIntent().getStringExtra("kind");
         Integer pad = padType(kind);
         EditText field = "image".equals(kind) ? new ImageField(this) : pad != null ? new PadField(this, pad) : new EditText(this);
@@ -101,10 +105,6 @@ public class PerfField extends Activity {
             field.postDelayed(() -> ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(
                     ClipData.newUri(getContentResolver(), "image", Uri.parse("content://" + ImageProvider.AUTHORITY + "/clip.png"))), 1500);
         }
-        // "upright": portrait, as perf.sh's key grid is: a phone on its side with auto-rotate on would otherwise put
-        // the field and keyboard in landscape, and the taps would land on other windows (#402). Only on request:
-        // chinese.py's and settings.py's turns and landscape-shaped windows need the field to follow the screen (#524).
-        if (getIntent().getBooleanExtra("upright", false)) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         // Hidden: the keyboard starts on the field but never shows in it (#139).
         int keyboard = getIntent().getBooleanExtra("hidden", false)
                 ? WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN

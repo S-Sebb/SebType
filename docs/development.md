@@ -192,7 +192,8 @@ Each writes one line per check to a results file under `~/scratch/SebType/<issue
 ### Which checks a run takes
 
 A PR runs the checks for what it changed; the full suite (about 2¼ hours on an emulator:
-`chinese.py` about 75 minutes, `settings.py` an hour or more) runs for a release. For a release, the scripts that load nobara-pc (`android/test/emulator.sh`, `android/perf/perf.sh`,
+`chinese.py` about 75 minutes, `settings.py` an hour or more) runs for a release. For a release, the
+scripts that load nobara-pc (`android/test/emulator.sh`, `android/perf/perf.sh`,
 `pc/linux/test-setup-ime.sh`, `pc/configurator/test.sh`) run one after another, not side by side: they take
 different locks, and together they ran the PC to a load of 9.7 for 0.3.0 (the emulator suite took 2 hours,
 the GUI checks timed out). Checks that run on yanglab16 or TCSBackEnd can run beside them. `SEBTYPE_CHECKS` picks them by name prefix, comma-separated, from the names in the results:
@@ -204,7 +205,7 @@ SEBTYPE_CHECKS=settings-japanese,incognito android/test/emulator.sh
 That runs those checks and what they need: always the build, the install beside FUTO Keyboard, the
 locale, SebType enabled and the test field app; and the earlier `android/test/chinese.py` checks a named one
 depends on (its `needs`, so `SEBTYPE_CHECKS=ranh` also runs `first-install`). `SEBTYPE_CHECKS=chinese-run` runs
-all of `chinese.py` and no settings check. The settings checks (`android/test/settings.py`) declare no such needs: a settings
+all of `chinese.py`, and of `settings.py` only `settings-locale-back`, which every run ends with. The settings checks (`android/test/settings.py`) declare no such needs: a settings
 check that relies on Chinese being set up runs with `first-install` named too.
 
 Timing checks (`settings-smooth-scrolling` here; `round1-rime-p95` in

@@ -11,8 +11,9 @@
 # history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
-# install, the locale and settings.py's offline tests (settings-helpers) always, and chinese.py's earlier checks they depend on. A PR runs the checks
-# for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
+# install, the locale and settings.py's offline tests (settings-helpers) always, and chinese.py's earlier checks
+# they depend on; SEBTYPE_CHECKS=chinese-run runs all of chinese.py. A PR runs the checks for what it changed; a
+# release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
 # which only the final performance run uses (#54, Decisions #2 2026-11-11).
 # One line per check in ~/scratch/SebType/<issue>/test-emulator/results.txt; logs next to it (one directory
 # per task, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
@@ -160,7 +161,8 @@ device_suite() {
   # the built tables (SEBTYPE_ROOT).
   export SEBTYPE_ROOT=1
   if [[ $("$adb" -s "$serial" shell su 0 id -u 2>/dev/null | tr -d '\r') != 0 ]]; then
-    [[ -n $SEBTYPE_CHECKS && $serial != emulator-* ]] ||
+    # chinese-run names all of chinese.py: a full run, not a named check
+    [[ -n $SEBTYPE_CHECKS && ",$SEBTYPE_CHECKS," != *,chinese-run,* && $serial != emulator-* ]] ||
       { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
     SEBTYPE_ROOT=0
     echo "$serial has no root shell: checks that read the app's private data skip or fail"
@@ -189,7 +191,11 @@ device_suite() {
 }
 export -f result check set_locale device_checks device_suite
 export adb apk futo_apk field_apk locale_dex results pkg ime
-android/emulator.sh -P 1 -w 1800 -m "$([[ -n $SEBTYPE_CHECKS ]] && echo 50 || echo 135)" -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
+# The lock's queue goes by expected minutes: a full run about 135, chinese-run alone 80, MAIN_APK 15 more.
+minutes=50
+if [[ -z $SEBTYPE_CHECKS ]]; then minutes=135; elif [[ ",$SEBTYPE_CHECKS," == *,chinese-run,* ]]; then minutes=80; fi
+(( minutes > 50 )) && [[ -n ${MAIN_APK:-} ]] && minutes=$(( minutes + 15 ))
+android/emulator.sh -P 1 -w 1800 -m "$minutes" -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log"
 # The device suite always records install-beside-futo; without it the device steps never ran, whatever the
 # lock's exit status says (#241: a run passed on the host checks alone).

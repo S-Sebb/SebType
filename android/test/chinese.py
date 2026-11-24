@@ -454,6 +454,10 @@ def check(name, fn, needs=()):
     runs = REPEAT if any(name.startswith(c) for c in PREFIXES) else 1
     for run in range(1, runs + 1):
         of = f" (run {run}/{runs})" if runs > 1 else ""
+        # How long each check took, for a run that nears chinese-run's limit (#524): its name first, so the
+        # check the limit stops shows without a time.
+        with open(times_path, "a", encoding="utf-8") as f:
+            f.write(f"{name}{of}: ")
         start = time.time()
         try:
             detail = fn()
@@ -469,14 +473,19 @@ def check(name, fn, needs=()):
             ValueError,
             StopIteration,
         ) as e:
+            took(start)
             result("FAIL", name, str(e) + of)
             # The system log since the last restart, for what the app was doing (a hang shows its threads here).
             suffix = f"-{run}" if runs > 1 else ""
             with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
                 f.write(adb("logcat", "-d", check=False))
-        # How long each check took, for a run that nears chinese-run's limit (#524)
-        with open(times_path, "a", encoding="utf-8") as f:
-            f.write(f"{time.time() - start:6.0f} s {name}{of}\n")
+        else:
+            took(start)
+
+
+def took(start):
+    with open(times_path, "a", encoding="utf-8") as f:
+        f.write(f"{time.time() - start:.0f} s\n")
 
 
 def fresh_install():
@@ -2412,8 +2421,16 @@ def screen_size():
 
 
 def rotate(quarter):
+    """The screen turned to quarter (0 upright, 1 landscape), the field with it: a field that stays upright
+    would leave a check's landscape steps on portrait's settings (#524)."""
     adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
     adb("shell", "settings", "put", "system", "user_rotation", str(quarter))
+    want = f"mRotation=ROTATION_{quarter * 90}"
+    wait_for(
+        f"the screen to turn to {want}",
+        lambda: want in adb("shell", "dumpsys", "window", "displays"),
+        10,
+    )
     time.sleep(3)
 
 
