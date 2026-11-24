@@ -58,7 +58,8 @@ BUNDLE_REVISION=13
 out=${1:-build/sebtype-assets}/rime
 cache=$HOME/scratch/SebType/cache
 librime=/usr/lib64/librime.so.1
-libopencc=/usr/lib64/libopencc.so.1.1
+# OPENCC_LIBS: the OpenCC libraries to link instead, e.g. sebtype.spec's static ones (#540).
+read -ra libopencc <<<"${OPENCC_LIBS:-/usr/lib64/libopencc.so.1.1}"
 mkdir -p "$cache" "$out"
 
 key=$(cat "$here/build.sh" "$here/deploy.c" "$here/sebtype_typo.lua" "$here/sebtype_learned.lua" "$here/sebtype_split.lua" "$here/sebtype_ge.lua" "$here/usage_words.py" engines/librime/CMakeLists.txt "$headers"/rime_api{,_deprecated,_stdbool}.h | sha256sum | cut -c1-16)
@@ -76,8 +77,8 @@ fetch() { # url sha256 -> prints cached path
 }
 
 if [[ ! -f $zip ]]; then
-  [[ -f $librime && -f $libopencc ]] && command -v gcc g++ >/dev/null ||
-    { echo "rime-data: needs gcc, g++, librime $LIBRIME_VERSION ($librime) and OpenCC ($libopencc) to compile the tables" >&2; exit 1; }
+  [[ -f $librime ]] && ls "${libopencc[@]}" >/dev/null 2>&1 && command -v gcc g++ >/dev/null ||
+    { echo "rime-data: needs gcc, g++, librime $LIBRIME_VERSION ($librime) and OpenCC (${libopencc[*]}) to compile the tables" >&2; exit 1; }
   work=$(mktemp -d "$cache/rime-data.XXXXXX")
   trap 'rm -rf "$work"' EXIT
   gcc -O2 -I"$headers" -o "$work/deploy" "$here/deploy.c" "$librime"
@@ -99,7 +100,7 @@ if [[ ! -f $zip ]]; then
   printf '%s\n' '#include <string>' \
     'namespace opencc { void ConvertDictionary(const std::string &, const std::string &, const std::string &, const std::string &); }' \
     'int main(int, char **argv) { opencc::ConvertDictionary(argv[1], argv[2], "text", "ocd2"); }' > "$work/opencc-dict.cc"
-  g++ -O2 -o "$work/opencc-dict" "$work/opencc-dict.cc" "$libopencc"
+  g++ -O2 -o "$work/opencc-dict" "$work/opencc-dict.cc" "${libopencc[@]}"
   cp "$(fetch "$OPENCC_URL/config/s2t.json" "$OPENCC_S2T_SHA256")" "$s/opencc/s2t.json"
   "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STPhrases.txt" "$OPENCC_PHRASES_SHA256")" "$s/opencc/STPhrases.ocd2"
   "$work/opencc-dict" "$(fetch "$OPENCC_URL/dictionary/STCharacters.txt" "$OPENCC_CHARACTERS_SHA256")" "$s/opencc/STCharacters.ocd2"
