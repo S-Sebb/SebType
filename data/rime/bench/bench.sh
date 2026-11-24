@@ -5,29 +5,30 @@
 # typed with the phone's and the PCs' keyboard model. Run it before changing the Chinese data and put
 # the table in the PR. Takes about 7 minutes.
 #   data/rime/bench/bench.sh      table in ~/scratch/SebType/<issue>/rime-bench.md, ranks in rime-bench/ next to it
-# Needs gcc, librime and librime-lua 1.16.1 (Fedora) and dnf (for librime-octagram, unpacked, not installed).
+# Runs SebType's librime and plugins (linux/build-librime.sh's, as setup installs them), not the ones
+# installed: a system update can put Fedora's back (#522). Needs gcc, rpm2cpio and Fedora's librime's libraries.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/../../.."
-LIBRIME_VERSION=$(sed -n 's/^set(rime_version \(.*\))$/\1/p' engines/librime/CMakeLists.txt)
 headers=$PWD/engines/librime/src
 
 source tools/lib.sh
+source linux/versions.sh
 out=$TASK_OUT/rime-bench
 cache=$SCRATCH/cache; mkdir -p "$out" "$cache"
-librime=/usr/lib64/librime.so.1 lua=/usr/lib64/rime-plugins/librime-lua.so
 OLD_URL=https://github.com/iDvel/rime-ice/releases/download/2026.06.30/full_compiled.zip
 OLD_SHA256=ae810e0023f28d3eb45ff98a7c58830dd0b505c2272638a321fa6d5a6f5d5418
-OCTAGRAM_RPM=librime-octagram-$LIBRIME_VERSION-2.fc44.x86_64.rpm
-OCTAGRAM_SHA256=cf11634cf4ecb1b3bfa41e22fecac644c6493ab1c14291893345ecd12ff09f13
 SETS=(chat-sent chat-abbr chat-partial news-sent news-abbr news-partial typo-phone typo-pc)
 
-for x in gcc dnf rpm2cpio cpio curl; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
-[[ -f $librime && -f $lua ]] || { echo "preflight: needs librime and librime-lua $LIBRIME_VERSION installed"; exit 1; }
+for x in gcc rpm2cpio cpio curl; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
 work=$(mktemp -d "$cache/rime-bench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
-# SebType's data, rime-ice as bundled before, and the octagram plugin.
+mkdir "$work/librime" && librime_unpack "$work/librime" 2> "$work/librime.log" ||
+  { echo "preflight: linux/build-librime.sh failed, see below"; tail -3 "$work/librime.log"; exit 1; }
+librime=$work/librime/usr/lib64/librime.so.1 lua=$work/librime/usr/lib64/rime-plugins/librime-lua.so
+octagram=$work/librime/usr/lib64/rime-plugins/librime-octagram.so
+# SebType's data and rime-ice as bundled before.
 data=$(tools/build.sh 10 "rime data for bench" data/rime/build.sh 2> "$work/build.log") ||
   { echo "preflight: data/rime/build.sh failed, see below"; tail -3 "$work/build.log"; exit 1; }
 old=$cache/rime-ice-2026.06.30-full_compiled.zip
@@ -35,15 +36,7 @@ if ! echo "$OLD_SHA256  $old" | sha256sum -c --status 2>/dev/null; then
   curl --limit-rate 35M -fsSL -o "$old.part" "$OLD_URL" && echo "$OLD_SHA256  $old.part" | sha256sum -c --status && mv "$old.part" "$old" ||
     { echo "preflight: can't fetch rime-ice's full_compiled.zip"; exit 1; }
 fi
-rpm=$cache/$OCTAGRAM_RPM
-if ! echo "$OCTAGRAM_SHA256  $rpm" | sha256sum -c --status 2>/dev/null; then
-  (cd "$work" && dnf download -q "${OCTAGRAM_RPM%.rpm}" > /dev/null) && mv "$work/$OCTAGRAM_RPM" "$rpm" &&
-    echo "$OCTAGRAM_SHA256  $rpm" | sha256sum -c --status || { echo "preflight: can't fetch $OCTAGRAM_RPM"; exit 1; }
-fi
-# Through a file: cpio stops reading at the archive trailer, which would SIGPIPE rpm2cpio under pipefail.
-rpm2cpio "$rpm" > "$work/octagram.cpio" && (cd "$work" && cpio -id --quiet < octagram.cpio)
-octagram=$(find "$work/usr" -name librime-octagram.so)
-gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -ldl
+gcc -O2 -I"$headers" -o "$work/rimebench" "$here/rimebench.c" "$librime" -Wl,-rpath,"${librime%/*}" -ldl
 
 mkdir -p "$work/rime-ice" "$work/sebtype"
 unzip -q "$old" -d "$work/rime-ice"
