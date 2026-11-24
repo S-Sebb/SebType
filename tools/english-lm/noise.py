@@ -2,13 +2,17 @@
 
   noise.py RUN_DIR
 
-Writes RUN_DIR/data/typos.tsv: word, then phone typos, then spelling mistakes, each list comma-separated.
-pack.py draws the typed letters of its correction examples from it.
+Writes RUN_DIR/data/typos.tsv: word, then phone typos, then spelling mistakes, each list comma-separated, with
+repeats: pack.py draws from them as they were drawn here, so a likelier typo comes up more often.
 
-- Phone typos: #46's error mix (Palin et al. 2019), with the harness's keyboard and touch model (make_sets.py's
-  typo()): taps that slip onto another key, letters left out or typed twice, neighbours swapped.
+- Phone typos: phone_typo(), this file's own touch model on the harness's keyboard (layout.tsv). Its taps are
+  not the harness's (make_sets.py's typo(), which makes the test sets): each draw is a person with their own
+  spread and offset, whose taps slip onto another key by themselves, plus letters left out, typed twice or
+  swapped. A model trained on the harness's own typos would be rewarded for learning that generator (#556).
 - Spelling mistakes: the kind people make knowing the sound but not the spelling, as in Wikipedia's list of
   common misspellings, made by rule here (the list itself is the harness's set, so it isn't used).
+A contraction is in the bank too, typed without its apostrophe: on the phone the apostrophe isn't on the
+letter layer, so "don't" is typed "dont", and its typos are those of "dont".
 """
 
 import multiprocessing as mp
@@ -19,23 +23,29 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "android/test/english"))
-from make_sets import typo
+from make_sets import LETTERS, key_at
 
 WORD = re.compile(r"[A-Za-z]+(?:'[a-z]+)?")
+BANKED = re.compile(r"[a-z]+(?:'[a-z]+)?")
 VOWELS = "aeiou"
+# Suffixes spelt like their twins, both ways ("responsable" and "visable").
 SUFFIXES = [
-    ("able", "ible"),
-    ("ance", "ence"),
-    ("ant", "ent"),
-    ("ary", "ery"),
-    ("ise", "ize"),
-    ("tion", "sion"),
-    ("ous", "us"),
-    ("ful", "full"),
-    ("ly", "ley"),
-    ("er", "or"),
-    ("ar", "er"),
-    ("ence", "ense"),
+    (a, b)
+    for x, y in [
+        ("able", "ible"),
+        ("ance", "ence"),
+        ("ant", "ent"),
+        ("ary", "ery"),
+        ("ise", "ize"),
+        ("tion", "sion"),
+        ("ous", "us"),
+        ("ful", "full"),
+        ("ly", "ley"),
+        ("er", "or"),
+        ("ar", "er"),
+        ("ence", "ense"),
+    ]
+    for a, b in ((x, y), (y, x))
 ]
 SOUNDS = [
     ("ie", "ei"),
@@ -109,12 +119,45 @@ def spelling(rng, w):
     return None
 
 
+def phone_typo(rng, word):
+    """WORD's letters as one person taps them, with at least one error (None if none came)."""
+    sigma, dx, dy = rng.uniform(20, 40), rng.gauss(0, 10), rng.gauss(12, 10)
+    for _ in range(50):
+        out = []
+        for c in word:
+            if len(word) > 1 and rng.random() < 0.03:  # left out
+                continue
+            x, y, w, h = LETTERS[c]
+            k = key_at(
+                round(rng.gauss(x + w / 2 + dx, sigma)),
+                round(rng.gauss(y + h / 2 + dy, 1.2 * sigma)),
+            )
+            out.append(
+                k if k in LETTERS else c
+            )  # off the letters (space, shift): taken as the key aimed at
+            if rng.random() < 0.015:  # tapped twice
+                out.append(out[-1])
+        if len(out) > 1 and rng.random() < 0.03:  # two taps the wrong way round
+            i = rng.randrange(len(out) - 1)
+            out[i], out[i + 1] = out[i + 1], out[i]
+        typed = "".join(out)
+        if typed and typed != word:
+            return typed
+    return None
+
+
 def variants(word):
+    """WORD, its phone typos and its spelling mistakes, all without apostrophes."""
     rng = random.Random(word)
-    phone = sorted({typo(rng, word)[0] for _ in range(PHONE)}) if len(word) >= 2 else []
+    bare = word.replace("'", "")
+    phone = (
+        [t for t in (phone_typo(rng, bare) for _ in range(PHONE)) if t]
+        if len(bare) >= 2
+        else []
+    )
     spell = (
-        sorted({s for s in (spelling(rng, word) for _ in range(SPELLING)) if s})
-        if len(word) >= 3
+        [s for s in (spelling(rng, bare) for _ in range(SPELLING)) if s]
+        if len(bare) >= 3
         else []
     )
     return word, phone, spell
@@ -151,10 +194,14 @@ def main(run):
             f for f in sorted(corpus.glob("*.txt")) if not f.name.endswith(".dev.txt")
         ]
         counts = Counter()
-        for c in pool.imap_unordered(count, parts(files)):
+        for c in pool.imap(
+            count, parts(files)
+        ):  # in order: most_common() breaks ties by it
             counts.update(c)
-        # The 200,000 most frequent words, each seen at least 20 times.
-        words = [w for w, n in counts.most_common(200_000) if n >= 20 and w.isalpha()]
+        # The 200,000 most frequent words, each seen at least 20 times, contractions too.
+        words = [
+            w for w, n in counts.most_common(200_000) if n >= 20 and BANKED.fullmatch(w)
+        ]
         with open(Path(run) / "data/typos.tsv", "w") as out:
             out.writelines(
                 f"{word}\t{','.join(phone)}\t{','.join(spell)}\n"

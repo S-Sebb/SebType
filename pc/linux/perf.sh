@@ -34,7 +34,7 @@ check() { # name timeout command...: PASS with the command's key=value output, o
   else result FAIL "$name" "see $out/pc-perf-$name.log"; fi
 }
 val() { sed -n "s/^$2=//p" "$work/$1.out" 2>/dev/null; } # check key -> value
-ms() { [[ -n $1 ]] && awk -v u="$1" 'BEGIN { printf "%.1f ms", u / 1000 }'; }
+ms() { if [[ -n $1 ]]; then awk -v u="$1" 'BEGIN { printf "%.1f ms", u / 1000 }'; else echo –; fi; }
 mb() { [[ -n $1 ]] && echo "$(( $1 / 1024 )) MB"; }
 
 # Preflight
@@ -56,6 +56,12 @@ printf '%s\n' nihongo konnichiha arigatou toukyou shinkansen watashihagakuseides
 
 cp -a "$rime_dir" "$work/rime"
 check rime-keys 300 "${own_rime[@]}" "$work/perf-rime" /usr/share/rime-data "$work/rime" rime_ice "$runs" < "$work/pinyin.txt"
+# The budget (Decisions #2, 2026-11-24): p95 ≤ 16 ms over every key, the cold first pass included, as perf-rime.ps1.
+p95=$(val rime-keys key_p95_us)
+if [[ -z $p95 ]]; then result FAIL rime-p95-under-16ms "perf-rime printed no key_p95_us"
+else
+  result "$( ((p95 <= 16000)) && echo PASS || echo FAIL)" rime-p95-under-16ms "$(awk -v u="$p95" 'BEGIN { printf "p95 %.3f ms", u / 1000 }') over all keys; p95 warm $(ms "$(val rime-keys warm_p95_us)"), cold $(ms "$(val rime-keys cold_p95_us)"); keys over 10 ms per pass $(val rime-keys slow_keys_per_pass)"
+fi
 rm -rf "$work/rime/build"
 # A full deploy peaks near 1 GB; the cap keeps it from pushing the desktop into swap.
 check rime-deploy 600 systemd-run --user --scope -q -p MemoryMax=3G \
@@ -89,7 +95,9 @@ live_check fcitx5-memory fcitx5 /fcitx5/sebtype.so
   echo
   echo "| Metric | Value |"
   echo "|---|---|"
-  echo "| Rime (rime-ice) key → candidates, median / p95 / max | $(ms "$(val rime-keys key_p50_us)") / $(ms "$(val rime-keys key_p95_us)") / $(ms "$(val rime-keys key_max_us)") |"
+  echo "| Rime (rime-ice) key → candidates, all keys (the budget), median / p95 / max | $(ms "$(val rime-keys key_p50_us)") / $(ms "$(val rime-keys key_p95_us)") / $(ms "$(val rime-keys key_max_us)") |"
+  echo "| Rime p95, warm (passes after the first) / cold (first pass) | $(ms "$(val rime-keys warm_p95_us)") / $(ms "$(val rime-keys cold_p95_us)") |"
+  echo "| Rime keys over 10 ms, per pass | $(val rime-keys slow_keys_per_pass) |"
   echo "| Rime first key after start | $(ms "$(val rime-keys first_key_us)") |"
   echo "| Rime start (deploy check, built) / session | $(val rime-keys deploy_ms) ms / $(val rime-keys session_ms) ms |"
   echo "| Rime full deploy of rime-ice (no build/) | $(val rime-deploy deploy_ms) ms, peak RSS $(mb "$(val rime-deploy peak_rss_kb)"), RSS after $(mb "$(val rime-deploy rss_kb)") |"

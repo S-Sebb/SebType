@@ -23,7 +23,7 @@ mkdir -p "$out/english"; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 
 # Preflight
-for f in $here/sets/{clean,phone-typos,misspellings,next-chat,next-news,next-texts,text-typos}.tsv; do
+for f in $here/sets/{clean,phone-typos,misspellings,next-chat,next-news,next-texts,text-typos,contractions,apostrophes,homographs,capitals}.tsv; do
   [[ -s $f ]] || { echo "preflight: $f missing (make_sets.py makes it)"; exit 1; }
 done
 if [[ $BUILD_HOST != local ]] && ! build_host_ready; then
