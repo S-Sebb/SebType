@@ -237,12 +237,12 @@ restarts. At the end it checks that Fcitx5 runs under KWin and that the session 
 says to log in again if not.
 
 `test-setup-ime.sh` checks the script (ShellCheck, a read-only dry run on this PC, and a full,
-rerun run on a fake fresh account including the install of SebType's input method, the removal of an older setup's icon theme, SebType's librime and the Configurator,
+rerun run on a fake fresh account including the install of SebType's input method, the removal of an older setup's icon theme, Fedora's librime back in place of 0.2.0's (`old-librime-replaced`) and the Configurator,
 the Japanese keys and tray icons in a private Fcitx5 with its own D-Bus session, that a sensitive field, and learning off in the Configurator, learn no 中文 or 日本語 picks and keep what was learned (`private-field`), the Chinese popup
 text, the 简/繁 key and typo correction (`xoaoshi` → 小时, and `xkaoshi` → 小时 and `nihap` → 你好 with SebType's librime), the grammar plugin (`beirendingwei` → 被认定为), 6 candidates per page (a page size of the user's own kept) and the wheel's paging of 中文 and 日本語 candidates (#443) in a private Fcitx5 running SebType's input method on SebType's
 Chinese data, the install and undo of that data over an account's own rime-ice, and Super+Space, Rime's Shift tap and the tray menu's names,
-icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method and librime without installing them:
-Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`, and `bwrap` mounts librime over Fedora's for that Fcitx5 alone. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
+icons, switches and picks in a private Fcitx5 with a stand-in for Plasma's tray). The private Fcitx5s run SebType's input method, with its own librime, without installing it:
+Fcitx5 finds the add-on through `FCITX_ADDON_DIRS`. It doesn't touch the session. Check names as arguments run only those checks, after `fresh-apply` (`./test-setup-ime.sh page-size-kept`).
 
 ## App checklist
 

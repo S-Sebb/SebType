@@ -38,10 +38,18 @@ bazel=$(mozc_fetch "$downloads")
 stage=$(rpm_stage)
 trap 'rm -rf "$stage"' EXIT
 pack_source "$root/$SEBTYPE_MOZC" "$stage/sources/mozc.tar.gz"
-# The Rime plugins the add-on's librime builds in (#527), Fedora's copies
+# The Rime plugins the add-on's librime builds in (#527, versions.sh)
 mkdir -p "$LIBRIME_CACHE/sources"
 fetch_lookaside librime "$LIBRIME_CACHE/sources" "${LIBRIME_PLUGIN_SOURCES[@]}"
 for ((i = 0; i < ${#LIBRIME_PLUGIN_SOURCES[@]}; i += 2)); do cp "$LIBRIME_CACHE/sources/${LIBRIME_PLUGIN_SOURCES[i]}" "$stage/sources/"; done
+octagram=$LIBRIME_CACHE/sources/librime-octagram-$OCTAGRAM_COMMIT.tar.gz
+if ! sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram" 2>/dev/null; then
+  curl --limit-rate 35M -sfL --retry 3 -o "$octagram.part" \
+    "https://github.com/lotem/librime-octagram/archive/$OCTAGRAM_COMMIT.tar.gz"
+  sha256sum -c --status <<<"$OCTAGRAM_SHA256  $octagram.part" || { echo "checksum mismatch: librime-octagram" >&2; exit 1; }
+  mv "$octagram.part" "$octagram"
+fi
+cp "$octagram" "$stage/sources/librime-octagram.tar.gz"
 llama=$("$root/engines/sebtype-lm/fetch-llama.sh")
 tar -C "$llama" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=.git --transform 's,^\.,llama,' -c . |
   gzip -n > "$stage/sources/llama.tar.gz"

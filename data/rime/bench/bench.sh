@@ -5,10 +5,10 @@
 # typed with the phone's and the PCs' keyboard model. Run it before changing the Chinese data and put
 # the table in the PR. Takes about 7 minutes, plus librime's build the first time.
 #   data/rime/bench/bench.sh      table in ~/scratch/SebType/<issue>/rime-bench.md, ranks in rime-bench/ next to it
-# Runs SebType's librime and plugins (linux/build-librime.sh's, as setup installs them), not the ones
+# Runs SebType's librime and plugins (linux/build-librime.sh's, from the engines/librime the add-on builds in), not the ones
 # installed: a system update can put Fedora's back (#522). Needs gcc, unzip, rpm2cpio and Fedora's librime's
-# libraries; with no cached RPMs it builds them first (yanglab16 or podman). The cache is keyed by
-# LIBRIME_SEBTYPE_RELEASE: bump it after changing engines/librime, or the benches run the old build.
+# libraries; it builds the RPMs first (yanglab16 or podman) when the cached ones are from another
+# engines/librime or librime.spec (linux/versions.sh's librime_unpack).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/../../.."

@@ -3,7 +3,7 @@
 # librime inside, Mozc, the Configurator, the Chinese data and setup's user part), built by
 # linux/build.sh and linux/build-installer.sh in the pinned Fedora container
 # nobara-pc runs (linux/versions.sh), here with the runner to itself (tools/lib.sh). linux/test-rpms.sh
-# installs it as an update does. The run's artifact "sebtype-linux-setup" holds the installer;
+# installs it as an update does, also over 0.2.0. The run's artifact "sebtype-linux-setup" holds the installer;
 # android/release.sh attaches it.
 # Kept 14 days from main, 3 from PRs, like the Windows setup (#418).
 name: Linux RPM
@@ -102,6 +102,13 @@ jobs:
           key: mozc-linux-bazel-${{ steps.inputs.outputs.hash }}
       - name: Install
         run: linux/test-rpms.sh "out/${{ steps.inputs.outputs.setup }}"
+      # As an update over 0.2.0, whose librime replaced Fedora's (#527): Fedora's comes back.
+      - name: Update from 0.2.0
+        run: |
+          old=$RUNNER_TEMP/SebType-setup-0.2.0-linux-x86_64.sh
+          curl --limit-rate 35M -fsSL --retry 3 -o "$old" \
+            https://github.com/S-Sebb/SebType/releases/download/v0.2.0/SebType-setup-0.2.0-linux-x86_64.sh
+          linux/test-rpms.sh "out/${{ steps.inputs.outputs.setup }}" "$old"
       - uses: actions/upload-artifact@v4
         with:
           name: sebtype-linux-setup

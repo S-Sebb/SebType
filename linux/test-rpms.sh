@@ -99,6 +99,12 @@ expected() {
     [[ -s $f ]] || { echo "missing: $f"; return 1; }
   done
   [[ $(readlink -f /usr/bin/sebtype-setup) == /usr/libexec/sebtype/setup-ime.sh ]] || { echo "sebtype-setup isn't setup"; return 1; }
+  # The licences of the libraries the add-on carries; its librime is all BSD-3-Clause (#527).
+  for f in librime librime-lua librime-octagram; do
+    grep -q 'Redistribution and use in source and binary forms' "/usr/share/licenses/sebtype/$f-LICENSE" ||
+      { echo "not BSD: $f"; return 1; }
+  done
+  [[ -s /usr/share/licenses/sebtype/llama.cpp-LICENSE ]] || { echo "missing: llama.cpp's licence"; return 1; }
   # What setup's user part copies is this checkout's.
   # rpmbuild makes setup's #!/usr/bin/env bash /usr/bin/bash.
   cmp <(tail -n +2 /src/pc/linux/setup-ime.sh) <(tail -n +2 /usr/libexec/sebtype/setup-ime.sh) &&

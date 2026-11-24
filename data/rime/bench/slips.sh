@@ -10,7 +10,7 @@
 # and sets/spoken.tsv (#484): everyday spoken phrases, among them words split by 个 (健个身), which librime
 # alone must keep getting right (the context column is the model harness's).
 #   data/rime/bench/slips.sh     one line per check; ranks in ~/scratch/SebType/<issue>/slips/
-# Runs SebType's librime and plugins (linux/build-librime.sh's, as setup installs them), not the ones
+# Runs SebType's librime and plugins (linux/build-librime.sh's, from the engines/librime the add-on builds in), not the ones
 # installed: a system update can put Fedora's back (#522). Needs gcc, unzip, rpm2cpio and Fedora's librime's
 # libraries. About a minute, plus librime's build the first time (see bench.sh).
 set -uo pipefail

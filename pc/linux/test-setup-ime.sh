@@ -63,11 +63,11 @@ live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
-  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e "with SebType's build" -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
+  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e "^would: replace SebType's old librime" \
     -e 'English ⇄ the last other language' -e 'remove the old SebType icon theme' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
     -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" -e "^would: install SebType's input method" \
-    -e "^would: show SebType's tray menu" -e '^would: install packages librime-lua' \
+    -e "^would: show SebType's tray menu" \
     -e "^would: schedule SebType's daily update check" && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
@@ -91,7 +91,7 @@ case \"\$*\" in
   'dnf install -y '*/sebtype-$SEBTYPE_VERSION-*) echo -n '$SEBTYPE_VERSION-$SEBTYPE_RPM_RELEASE' > \"\$FAKE/sebtype\" ;;
   'dnf remove -y '*) for p in \"\${@:4}\"; do : > \"\$FAKE/\$p\"; done ;;
   'dnf install -y kcm-fcitx5'*|'dnf install -y fcitx5-configtool'*) for p in \"\${@:4}\"; do echo -n 5.1.16-1.fc44 > \"\$FAKE/\$p\"; done ;;
-  'dnf distro-sync -y librime '*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
+  'dnf distro-sync -y librime'*) for p in \"\${@:4}\"; do echo -n '$LIBRIME_VERSION-$LIBRIME_FEDORA_RELEASE' > \"\$FAKE/\$p\"; done ;;
 esac"
 stub systemctl 'echo "systemctl $*" >> "$FAKE/systemctl.log"; cat "$FAKE/session-env" 2>/dev/null; true'
 stub flatpak 'exit 1'

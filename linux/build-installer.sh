@@ -116,11 +116,13 @@ MANIFEST
 
   dnf install -y "\$tmp/\$SEBTYPE_RPM"
   # SebType 0.2.0 and older installed its librime in place of Fedora's (#527); this one has its own inside.
+  # Offline or on a mirror failure SebType still works, and sebtype-setup warns about the old build.
   old=\$(rpm -qa --qf '%{NAME} %{RELEASE}\\n' 'librime*' | awk '\$2 ~ /\\.sebtype/ { print \$1 }')
   if [ -n "\$old" ]; then
     echo "SebType installer: putting Fedora's librime back in place of SebType's old build:" \$old
     # shellcheck disable=SC2086  # one package name per word
-    dnf distro-sync -y \$old
+    dnf distro-sync -y \$old ||
+      echo "SebType installer: couldn't put Fedora's librime back; run sebtype-setup --undo-librime when online" >&2
   fi
 }
 

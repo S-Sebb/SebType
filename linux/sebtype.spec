@@ -20,7 +20,8 @@ Summary:        SebType: English, 中文 and 日本語 in one Fcitx5 input metho
 # SebType's code MIT; core/src/rime.cpp and the tray LGPL-2.1-or-later (fcitx5-rime's, Fcitx5's); core/src/mozc.cpp
 # and Mozc BSD-3-Clause, with the licences of Mozc's data and third-party code (core/README.md); the Chinese data GPL-3.0-only
 # (rime-ice, 白霜) with OpenCC's Apache-2.0 (data/rime/build.sh's SOURCE.txt), the Configurator's crates their own;
-# llama.cpp MIT, the Chinese model CC-BY-SA-4.0 (engines/sebtype-lm/README.md).
+# llama.cpp MIT, the Chinese model CC-BY-SA-4.0 (engines/sebtype-lm/README.md); SebType's librime, librime-lua and
+# librime-octagram in the add-on BSD-3-Clause.
 License:        MIT and GPL-3.0-only and LGPL-2.1-or-later and BSD-3-Clause and UCD and Public Domain and mecab-ipadic and MS-PL and Apache-2.0 and CC-BY-SA-4.0
 URL:            https://github.com/S-Sebb/SebType
 
@@ -29,7 +30,7 @@ Source0:        sebtype.tar.gz
 Source1:        mozc.tar.gz
 # llama.cpp at engines/sebtype-lm/fetch-llama.sh's pin, packed by build.sh
 Source2:        llama.tar.gz
-# The Rime plugins SebType's librime builds in, Fedora's copies (versions.sh's LIBRIME_PLUGIN_SOURCES)
+# The Rime plugins SebType's librime builds in: Fedora's librime-lua, octagram at versions.sh's OCTAGRAM_COMMIT
 Source3:        librime-lua.tar.gz
 Source4:        librime-octagram.tar.gz
 
@@ -88,7 +89,12 @@ SebType's tray menu.
 %setup -q -c -n sebtype -a 1 -a 2
 mkdir -p engines && mv mozc engines/
 tar -C engines/librime/plugins -xf %{SOURCE3} && mv engines/librime/plugins/{librime-lua-master,lua}
-tar -C engines/librime/plugins -xf %{SOURCE4} && mv engines/librime/plugins/{librime-octagram-master,octagram}
+tar -C engines/librime/plugins -xf %{SOURCE4} && mv engines/librime/plugins/librime-octagram-* engines/librime/plugins/octagram
+# The licences of what the add-on carries, by name in one folder
+cp engines/librime/LICENSE librime-LICENSE
+cp engines/librime/plugins/lua/LICENSE librime-lua-LICENSE
+cp engines/librime/plugins/octagram/LICENSE librime-octagram-LICENSE
+cp llama/LICENSE llama.cpp-LICENSE
 
 %build
 # Mozc as a library, with Bazel (its caches are kept between builds), before the add-on that links it.
@@ -129,7 +135,7 @@ mkdir -p %{buildroot}%{_bindir}
 ln -s ../libexec/sebtype/setup-ime.sh %{buildroot}%{_bindir}/sebtype-setup
 
 %files
-%license engines/mozc/LICENSE
+%license engines/mozc/LICENSE librime-LICENSE librime-lua-LICENSE librime-octagram-LICENSE llama.cpp-LICENSE
 %{_libdir}/fcitx5/sebtype.so
 %{_datadir}/fcitx5/addon/sebtype.conf
 %{_datadir}/sebtype/fcitx5/addon/notificationitem.conf

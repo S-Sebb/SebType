@@ -24,8 +24,9 @@ SebType: which licence covers which part (README.md, "Licences", has the details
   - android/gradlew, android/gradlew.bat and android/gradle/wrapper/: Gradle's wrapper, Apache-2.0.
 - AOSP LatinIME's decoder in engines/latinime/, unchanged: the Apache License 2.0 (engines/latinime/NOTICE).
 - Projects SebType builds or bundles keep their own licences: rime-ice and 白霜 (rime-frost) data GPL-3.0,
-  librime BSD-3-Clause, RimeJni MIT, Mozc BSD-3-Clause, llama.cpp MIT. The Windows candidate window takes its
-  layout numbers and aqua colours from Weasel (GPL-3.0) as settings, not its code (windows/README.md).
+  librime, librime-lua and librime-octagram BSD-3-Clause (built into the Linux add-on and the Android app),
+  RimeJni MIT, Mozc BSD-3-Clause, llama.cpp MIT. The Windows candidate window takes its layout numbers and
+  aqua colours from Weasel (GPL-3.0) as settings, not its code (windows/README.md).
 
 Until #262 (2026-11) the Android app was a modified FUTO Keyboard. The app SebType ships now contains none
 of FUTO Keyboard's code or data, only the keyboard service's class name (org.futo.inputmethod.latin.LatinIME,

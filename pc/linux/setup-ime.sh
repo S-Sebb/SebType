@@ -173,7 +173,7 @@ if ((undo_librime)); then
   if ((${#librime_pkgs[@]})); then
     echo "change: replace SebType's old ${librime_pkgs[*]} with Fedora's"
     sudo dnf distro-sync -y "${librime_pkgs[@]}"
-    restart_note librime
+    restart_note "librime (fcitx5-rime's; SebType's input method has its own)"
   fi
   exit 0
 fi
