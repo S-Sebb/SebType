@@ -2439,9 +2439,11 @@ def floating_resize():
     the size stays after the keyboard restarts and after a turn to landscape and back (#283)."""
     to_english()
     auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    turned = adb("shell", "settings", "get", "system", "user_rotation").strip()
     uimode = (
         adb("shell", "cmd", "uimode", "night").split(":")[-1].strip()
     )  # yes, no, auto or custom
+    failed = False
     try:
         tap_reset()  # from its size and place before any change
         open_field()
@@ -2502,21 +2504,35 @@ def floating_resize():
             )
             + ", TalkBack reaching the frame alone while it shows and the keys after; typing works"
         )
+    except BaseException:
+        failed = True
+        raise
     finally:
         adb("shell", "cmd", "uimode", "night", uimode)
-        rotate(1)
-        set_mode("Standard")
-        rotate(0)
-        adb(
-            "shell",
-            "settings",
-            "put",
-            "system",
-            "accelerometer_rotation",
-            auto if auto in ("0", "1") else "0",
-        )
-        tap_reset()
-        set_mode("Standard")
+        try:
+            rotate(1)
+            set_mode("Standard")
+            rotate(0)
+            tap_reset()
+            set_mode("Standard")
+        except Exception:
+            # A screen that never turned fails the cleanup's turns too: the check's own failure is the one to report
+            if not failed:
+                raise
+        finally:
+            # The rotation settings as found, whether the turns worked or not
+            for name, value, kept in (
+                ("user_rotation", turned, ("0", "1", "2", "3")),
+                ("accelerometer_rotation", auto, ("0", "1")),
+            ):
+                adb(
+                    "shell",
+                    "settings",
+                    "put",
+                    "system",
+                    name,
+                    value if value in kept else "0",
+                )
 
 
 def tap_reset():
@@ -2643,7 +2659,6 @@ def globe_list_narrow():
     labels = ("English", "中文", "日本語", "Other keyboards")
     got = []
     try:
-        set_mode("Floating")
         tap_reset()
         resize_floating(("corner", (-w, 0)))
         # Its handle to the screen's top, as in modes-floating-resized. The list rises over the keys themselves

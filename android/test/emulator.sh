@@ -202,4 +202,6 @@ android/emulator.sh -P 1 -w 1800 -m "$minutes" -n "sebtype test-emulator ($(base
 grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "the device steps didn't run: $(head -1 "$out/emulator.log")"
 
-! grep -qv '^PASS' "$results"
+# Without MAIN_APK, update-from-futo-app's SKIP is expected.
+allowed='^PASS'; [[ -n ${MAIN_APK:-} ]] || allowed+='\|^SKIP update-from-futo-app:'
+! grep -qv "$allowed" "$results"
