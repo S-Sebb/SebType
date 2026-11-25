@@ -191,7 +191,7 @@ private_dbus() {
 # none is expected, and a private runtime dir (with the user's bus) would restart the user's healthy portal.
 doc_expected() {
   local s
-  [[ -n ${XDG_RUNTIME_DIR-} && $(realpath -e "$XDG_RUNTIME_DIR") == "/run/user/$UID" ]] && s=$(loginctl show-user "$USER" -p Display --value 2>/dev/null) && [[ -n $s ]] &&
+  [[ -n ${XDG_RUNTIME_DIR-} && $(realpath -e "$XDG_RUNTIME_DIR" 2> /dev/null) == "/run/user/$UID" ]] && s=$(loginctl show-user "$USER" -p Display --value 2>/dev/null) && [[ -n $s ]] &&
     [[ $(loginctl show-session "$s" -p Type --value) == @(wayland|x11) ]] &&
     systemctl --user cat xdg-document-portal.service &> /dev/null
 }
@@ -209,15 +209,26 @@ doc_portal() {
   fi
 }
 
+# in_sandbox PID DIR: the process's own XDG_DATA_HOME is in DIR (not another variable that holds the path).
+in_sandbox() {
+  local e
+  while IFS= read -rd '' e; do [[ $e == "XDG_DATA_HOME=$2/"* ]] && return 0; done 2> /dev/null < "/proc/$1/environ"
+  return 1
+}
+
 # stop_sandbox DIR: stops the processes that run with XDG_DATA_HOME in DIR, and waits until they have exited.
 # What a private session started (ksecretd, a Documents portal) outlives its D-Bus, and a portal unmounts as
 # it ends: they go before a check of the user's portal. TERM, and after 15 s KILL; fails, naming them, if any
 # still runs after that.
 stop_sandbox() {
-  local p left=()
-  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$1/" "/proc/$p/environ" 2>/dev/null && kill "$p" && left+=("$p"); done
+  local p left=() still=()
+  for p in $(pgrep -u "$USER"); do in_sandbox "$p" "$1" && kill "$p" && left+=("$p"); done
   ((${#left[@]})) || return 0
   for _ in {1..75}; do ps -p "${left[*]}" > /dev/null || return 0; sleep 0.2; done
+  # Only those still in the sandbox: an exited one's PID may be another process's by now.
+  for p in "${left[@]}"; do in_sandbox "$p" "$1" && still+=("$p"); done
+  ((${#still[@]})) || return 0
+  left=("${still[@]}")
   kill -9 "${left[@]}" 2>/dev/null
   for _ in {1..10}; do ps -p "${left[*]}" > /dev/null || return 0; sleep 0.2; done
   echo "still running after KILL: $(ps -o pid=,comm= -p "${left[*]}" | xargs)"

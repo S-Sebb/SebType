@@ -81,7 +81,8 @@ check live-dry-run live_dry
 
 # Fake fresh account.
 fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
-trap '[[ -n ${foreign-} ]] && kill "$foreign" 2>/dev/null; rm -rf "$fake"' EXIT
+# A run cut short (timeout, error) stops what it started too: a Documents portal outlives it.
+trap '[[ -n ${foreign-} ]] && kill "$foreign" 2>/dev/null; stop_sandbox "$fake" >&2; rm -rf "$fake"' EXIT
 trap 'exit 143' TERM  # bash runs no EXIT trap when TERM kills it
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
