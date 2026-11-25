@@ -617,10 +617,13 @@ msgid "Next"
 msgstr "次へ"
 
 msgid "Rime in input method group {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文"
-msgstr "SebType がインストールされている間、入力メソッドグループ {} の Rime では中国語を入力できません。中国語は SebType の中文で入力してください"
+msgstr "SebType がインストールされている間、入力メソッドグループ{}の Rime では中国語を入力できません。中国語は SebType の中文で入力してください"
 
 msgid "Rime in input method groups {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文"
-msgstr "SebType がインストールされている間、入力メソッドグループ {} の Rime では中国語を入力できません。中国語は SebType の中文で入力してください"
+msgstr "SebType がインストールされている間、入力メソッドグループ{}の Rime では中国語を入力できません。中国語は SebType の中文で入力してください"
+
+msgid "SebType couldn't read Fcitx5's input method groups to check them for Rime: {}"
+msgstr "SebType は Fcitx5 の入力メソッドグループを読み取れず、Rime があるか確認できません：{}"
 
 msgid "SebType types Chinese where Rime was"
 msgstr "Rime の代わりに SebType で中国語を入力します"

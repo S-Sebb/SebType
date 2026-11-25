@@ -74,6 +74,7 @@ component CheckRow inherits HorizontalLayout {
             : root.check.kind == 2 ? (root.check.ok ? @tr("Turned off: {}", root.check.text) : @tr("“{0}” in {1} (line {2}) keeps apps from using SebType", root.check.text, root.check.file, root.check.line))
             : root.check.kind == 3 ? (root.check.ok ? @tr("SebType is in Windows' input methods") : @tr("SebType is missing from Windows' input methods for 中文 or 日本語"))
             : root.check.ok ? @tr("SebType types Chinese where Rime was")
+            : root.check.line == 0 ? @tr("SebType couldn't read Fcitx5's input method groups to check them for Rime: {}", root.check.text)
             : root.check.line == 1 ? @tr("Rime in input method group {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", root.check.text)
             : @tr("Rime in input method groups {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", root.check.text);
         color: Theme.ink;

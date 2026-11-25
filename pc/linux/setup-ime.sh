@@ -524,9 +524,11 @@ rime_groups() {
 fcitx_profile=$config/fcitx5/profile
 # Rime in the first group, which SebType takes the place of: said with the change. fcitx5-rime's Rime stays off
 # while SebType's input method is installed (linux/src/sebtype.cpp, #542), and stays out of the group after.
+# The way back after removing SebType: pc/linux/README.md, Removing SebType (not installed with the RPM).
+removing=https://github.com/S-Sebb/SebType/blob/main/pc/linux/README.md#removing-sebtype
 first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
   first_rime="; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
-restore=" or restore profile from $backup"  # after first_rime, where a backup is made
+restore=" or restore profile from $backup, with Fcitx5 stopped"  # after first_rime, where a backup is made
 if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
   group=$(call InputMethodGroups | awk '{print $3}' | tr -d '"')
   # Quoted strings of the reply: <layout> then <im> <im layout> pairs.
@@ -537,7 +539,7 @@ if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'
     [[ " sebtype keyboard-us rime mozc " == *" ${q[i]} "* ]] || ims+=("${q[i]}")
   done
   if [[ "${now[*]}" != "${ims[*]}" ]]; then
-    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore}"; then
+    if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore as $removing says}"; then
       call Save  # the running groups, on disk for the backup
       [[ -f $fcitx_profile ]] && save "$fcitx_profile"
       args=()
@@ -553,6 +555,7 @@ else
   src=$fcitx_profile; [[ -f $src ]] || src=/dev/null
   want=$(fcitx_profile_update "$src")
   backed=; [[ -f $fcitx_profile ]] && backed=" (backup in $backup)" && first_rime+=${first_rime:+$restore}
+  first_rime+=${first_rime:+ as $removing says}
   if [[ $(canon < "$src") != "$(canon <<<"$want")" ]] &&
     change "set SebType as the input method in $fcitx_profile$backed$first_rime"; then
     [[ -f $fcitx_profile ]] && save "$fcitx_profile"
@@ -576,7 +579,7 @@ if ((sebtype_coming)) || [[ -n $(installed sebtype) || -f /usr/lib64/fcitx5/sebt
   if ((${#rime_names[@]})); then
     s=; ((${#rime_names[@]} > 1)) && s=s
     names=$(printf ', %s' "${rime_names[@]}") cmds=$(printf '; %s' "${removes[@]}")
-    warn "Rime in input method group$s ${names:2} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文, or remove the group$s: ${cmds:2}"
+    warn "Rime in input method group$s ${names:2} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文: Use SebType on SebType Configurator's About page puts it in Rime's place and keeps the other input methods. Or remove the group$s: ${cmds:2}"
   fi
 fi
 

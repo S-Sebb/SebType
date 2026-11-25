@@ -1197,13 +1197,13 @@ both_rimes() {
   rm -f "$fake/groups" "$fake/group-My=Rime" "$fake/sebtype" "$fake/group"
   mv "$fake/group.kept" "$fake/group" 2>/dev/null; mv "$fake/sebtype.kept" "$fake/sebtype" 2>/dev/null
   ((rc == 0)) &&
-    grep -q "^change: make SebType's input method the one in Fcitx5 input method group Default, .*; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore profile from $fake/.*$" <<<"$o" &&
+    grep -q "^change: make SebType's input method the one in Fcitx5 input method group Default, .*; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore profile from $fake/.*, with Fcitx5 stopped as https://.*#removing-sebtype says$" <<<"$o" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o") == 1 ]] &&
-    grep -qF "warning: Rime in input method group \"My=Rime\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文, or remove the group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s My=Rime" <<<"$o" &&
+    grep -qF "warning: Rime in input method group \"My=Rime\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文: Use SebType on SebType Configurator's About page puts it in Rime's place and keeps the other input methods. Or remove the group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s My=Rime" <<<"$o" &&
     grep -q '^change: give Rime (fcitx5-rime) its own name back' <<<"$o" &&
     [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
     grep -q "^change: set SebType as the input method in .*; Rime (fcitx5-rime) won't type Chinese" <<<"$o2" &&
-    q=\' && two="^warning: Rime in input method groups \"My=Rime\", \"Bob${q}s\" won${q}t type Chinese .*, or remove the groups: busctl .* s My=Rime; busctl .* s Bob\\\\${q}s\$" &&
+    q=\' && two="^warning: Rime in input method groups \"My=Rime\", \"Bob${q}s\" won${q}t type Chinese .*\\. Or remove the groups: busctl .* s My=Rime; busctl .* s Bob\\\\${q}s\$" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o2") == 1 ]] && grep -q "$two" <<<"$o2" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o3") == 1 ]] && grep -q "$two" <<<"$o3" &&
     grep -q "^would: install SebType's input method" <<<"$o4" && grep -q "$two" <<<"$o4" ||

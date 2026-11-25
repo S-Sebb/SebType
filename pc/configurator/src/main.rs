@@ -651,16 +651,24 @@ fn install_update(weak: slint::Weak<AppWindow>) {
     });
 }
 
-/// After an update installed: Rime in a group of the person's won't type Chinese beside SebType's input
-/// method (#542), which About says too.
+/// After an update installed, and Rime's row (#542) as it is now.
 fn show_installed(weak: &slint::Weak<AppWindow>) {
-    let groups = platform::rime_group_names();
-    let (rime, count) = (setup::quoted(&groups, language()), groups.len() as i32);
+    set_update_status(weak, UpdateStatus::Installed, String::new());
+    show_rime(weak);
+}
+
+/// About's row for Rime in groups of the person's, which won't type Chinese beside SebType's input method
+/// (#542): their names, or (count 0) why Fcitx5's groups couldn't be read. Off the window's thread.
+fn show_rime(weak: &slint::Weak<AppWindow>) {
+    let (rime, count) = match platform::rime_group_names() {
+        Ok(g) => (setup::quoted(&g, language()), g.len() as i32),
+        Err(e) => (e, 0),
+    };
     let _ = weak.upgrade_in_event_loop(move |app| {
-        app.global::<State>().set_update_rime(rime.into());
-        app.global::<State>().set_update_rime_count(count);
+        let st = app.global::<State>();
+        st.set_rime_groups(rime.into());
+        st.set_rime_count(count);
     });
-    set_update_status(weak, UpdateStatus::Installed, String::new())
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -1308,11 +1316,9 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_open_help(|| platform::open_url("https://github.com/S-Sebb/SebType/issues"));
 
     show_update(&app, &update::load());
-    // The tests' screenshot of About after an update (test.sh): no update is installed for it.
-    #[cfg(feature = "update-test")]
-    if std::env::var_os("SEBTYPE_SHOW_INSTALLED").is_some() {
+    {
         let weak = app.as_weak();
-        std::thread::spawn(move || show_installed(&weak));
+        std::thread::spawn(move || show_rime(&weak));
     }
     s.on_update_auto_changed({
         let weak = app.as_weak();
@@ -1333,14 +1339,25 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = app.as_weak();
         move || install_update(weak.clone())
     });
-    // About's Use SebType (#542), off the window's thread; the row goes once no group has Rime.
+    // About's Use SebType (#542), off the window's thread, one at a time; the row goes once no group has
+    // Rime, and says what failed.
     s.on_use_sebtype_for_rime({
         let weak = app.as_weak();
         move || {
+            let app = weak.unwrap();
+            app.global::<State>().set_rime_busy(true);
+            app.global::<State>().set_rime_error("".into());
             let weak = weak.clone();
             std::thread::spawn(move || {
-                let _ = platform::use_sebtype_for_rime();
-                show_installed(&weak);
+                let error = platform::use_sebtype_for_rime()
+                    .err()
+                    .map(|e| e.to_string());
+                show_rime(&weak);
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    let st = app.global::<State>();
+                    st.set_rime_busy(false);
+                    st.set_rime_error(error.unwrap_or_default().into());
+                });
             });
         }
     });

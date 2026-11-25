@@ -115,9 +115,12 @@ fn busctl(args: &[&str]) -> io::Result<String> {
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
+/// Calls the running Fcitx5's controller. Never starts one: D-Bus would start it outside KWin, where
+/// Wayland apps don't reach it.
 fn controller(method: &str, args: &[&str]) -> io::Result<String> {
     let mut a = vec![
         "--json=short",
+        "--auto-start=no",
         "call",
         "org.fcitx.Fcitx5",
         "/controller",
@@ -857,16 +860,13 @@ pub(crate) fn sebtype_active() -> bool {
 }
 
 /// Parses `busctl --json=short call ... InputMethodGroups` (`{"type":"as","data":[["Default","Rime"]]}`).
-fn parse_groups(json: &str) -> Vec<String> {
-    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+fn parse_groups(json: &str) -> Option<Vec<String>> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
     v["data"][0]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|g| g.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+        .as_array()?
+        .iter()
+        .map(|g| g.as_str().map(str::to_string))
+        .collect()
 }
 
 /// Parses `... InputMethodGroupInfo s <group>`
@@ -896,52 +896,37 @@ fn parse_im_names(json: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Asks the running Fcitx5's controller, without starting one.
-fn ask(method: &str, args: &[&str]) -> io::Result<String> {
-    let mut a = vec![
-        "--json=short",
-        "--auto-start=no",
-        "call",
-        "org.fcitx.Fcitx5",
-        "/controller",
-    ];
-    a.extend_from_slice(&["org.fcitx.Fcitx.Controller1", method]);
-    a.extend_from_slice(args);
-    busctl(&a)
-}
+/// A group's name, layout and input methods (each with its layout).
+type Group = (String, String, Vec<(String, String)>);
 
-/// A group's name, then its layout and input methods (each with its layout), or why it couldn't be read.
-type Group = (String, io::Result<(String, Vec<(String, String)>)>);
-
-/// The running Fcitx5's groups with fcitx5-rime's Rime (#542), and those it couldn't read, which may have it.
-/// None until it knows SebType's input method: it drops one it doesn't know from a group (setup-ime.sh's
-/// step 7 waits the same way).
-fn rime_groups() -> Vec<Group> {
-    let knows_sebtype = ask("AvailableInputMethods", &[])
+/// The running Fcitx5's groups with fcitx5-rime's Rime (#542), or why they couldn't all be read: a group
+/// unread may have it. None until it knows SebType's input method, or with no Fcitx5: it drops one it
+/// doesn't know from a group (setup-ime.sh's step 7 waits the same way).
+fn rime_groups() -> io::Result<Vec<Group>> {
+    let knows_sebtype = controller("AvailableInputMethods", &[])
         .is_ok_and(|out| parse_im_names(&out).iter().any(|im| im == "sebtype"));
-    let groups = match ask("InputMethodGroups", &[]) {
-        Ok(out) if knows_sebtype => parse_groups(&out),
-        _ => return Vec::new(),
-    };
-    groups
-        .into_iter()
-        .map(|g| {
-            let info = ask("InputMethodGroupInfo", &["s", &g]).and_then(|out| {
-                parse_group(&out)
-                    .ok_or_else(|| io::Error::other(format!("Fcitx5's group {g}: {out}")))
-            });
-            (g, info)
-        })
-        .filter(|(_, info)| {
-            info.as_ref()
-                .map_or(true, |(_, ims)| ims.iter().any(|(im, _)| im == "rime"))
-        })
-        .collect()
+    if !knows_sebtype {
+        return Ok(Vec::new());
+    }
+    let unread = |what: &str, out: &str| io::Error::other(format!("{what}: {out}"));
+    let out = controller("InputMethodGroups", &[])?;
+    let names = parse_groups(&out).ok_or_else(|| unread("InputMethodGroups", &out))?;
+    let mut groups = Vec::new();
+    for g in names {
+        let out = controller("InputMethodGroupInfo", &["s", &g])?;
+        let (layout, ims) = parse_group(&out).ok_or_else(|| unread(&g, &out))?;
+        if ims.iter().any(|(im, _)| im == "rime") {
+            groups.push((g, layout, ims));
+        }
+    }
+    Ok(groups)
 }
 
 /// The names of Fcitx5's groups where Rime (fcitx5-rime) won't type Chinese: SebType keeps it off (#542).
-pub fn rime_group_names() -> Vec<String> {
-    rime_groups().into_iter().map(|(g, _)| g).collect()
+pub fn rime_group_names() -> Result<Vec<String>, String> {
+    rime_groups()
+        .map(|gs| gs.into_iter().map(|(g, ..)| g).collect())
+        .map_err(|e| e.to_string())
 }
 
 /// A group's input methods as setup-ime.sh's step 7 lays out the first group's: SebType's first (its own entry,
@@ -961,18 +946,28 @@ fn sebtype_first(ims: &[(String, String)]) -> Vec<(String, String)> {
 /// profile as it is now in ~/.local/share/sebtype/backup/<time>, which gives Rime back after SebType is
 /// removed. Nothing changes when a group can't be read.
 pub fn use_sebtype_for_rime() -> io::Result<()> {
-    let groups = rime_groups()
-        .into_iter()
-        .map(|(g, info)| info.map(|(layout, ims)| (g, layout, ims)))
-        .collect::<io::Result<Vec<_>>>()?;
+    let groups = rime_groups()?;
     if groups.is_empty() {
         return Ok(());
     }
-    controller("Save", &[])?; // the running groups, on disk for the copy
-    let backup = data()
-        .join("sebtype/backup")
-        .join(chrono::Local::now().format("%Y%m%d-%H%M%S").to_string());
-    fs::create_dir_all(&backup)?;
+    // The running groups, on disk for the copy.
+    controller("Save", &[])?;
+    // A folder of its own, never one with an earlier copy in it: a retry in the same second gets <time>-2.
+    let dir = data().join("sebtype/backup");
+    fs::create_dir_all(&dir)?;
+    let time = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let mut backup = dir.join(&time);
+    for n in 2.. {
+        match fs::create_dir(&backup) {
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                backup = dir.join(format!("{time}-{n}"))
+            }
+            made => {
+                made?;
+                break;
+            }
+        }
+    }
     fs::copy(config().join("fcitx5/profile"), backup.join("profile"))?;
     for (group, layout, ims) in groups {
         let ims = sebtype_first(&ims);
@@ -1127,9 +1122,9 @@ pub(crate) fn ready_checks() -> Vec<(crate::setup::Need, bool)> {
     if !session_ready(&session_env()) {
         checks.push((Need::LogIn, false));
     }
-    let groups = rime_group_names();
-    if !groups.is_empty() {
-        checks.push((Need::Rime { groups }, false));
+    match rime_group_names() {
+        Ok(g) if g.is_empty() => {}
+        groups => checks.push((Need::Rime { groups }, false)),
     }
     checks
 }
@@ -1367,10 +1362,10 @@ mod tests {
     #[test]
     fn finds_rime_in_fcitx5_groups_and_puts_sebtype_first() {
         assert_eq!(
-            parse_groups(r#"{"type":"as","data":[["Default","My=Rime"]]}"#),
+            parse_groups(r#"{"type":"as","data":[["Default","My=Rime"]]}"#).unwrap(),
             ["Default", "My=Rime"]
         );
-        assert!(parse_groups("not json").is_empty());
+        assert!(parse_groups("not json").is_none());
         assert_eq!(
             parse_im_names(
                 r#"{"type":"a(ssssssb)","data":[[["keyboard-us","English","","","","en",false],["sebtype","SebType","","","","",true]]]}"#
@@ -1627,32 +1622,53 @@ mod tests {
         rime::save(&dir, &Chinese::default()).unwrap();
     }
 
-    /// Use SebType on the Rime row (#542), against test.sh's made-up Fcitx5 (rime-button): its group
-    /// "Rime" of English and Rime becomes SebType's alone, "Default" stays, and the profile is backed up.
+    /// Use SebType on the Rime row (#542), against test.sh's made-up Fcitx5 (rime-button): its groups
+    /// "Rime" (English and Rime) and "Work" (Rime) become SebType's alone, and "Default" stays. Work's first
+    /// write fails after Rime's went through; the retry, often in the same second, keeps the first copy of
+    /// the profile, from before either change.
     #[test]
     #[ignore]
     fn private_fake_fcitx5_puts_sebtype_first_in_rime_groups() {
-        assert_eq!(rime_group_names(), ["Rime"]);
+        let profile = || fs::read_to_string(config().join("fcitx5/profile")).unwrap();
+        let before = profile();
+        assert_eq!(rime_group_names(), Ok(vec!["Rime".into(), "Work".into()]));
+        assert!(use_sebtype_for_rime().is_err());
         use_sebtype_for_rime().unwrap();
         let group =
-            |g: &str| parse_group(&ask("InputMethodGroupInfo", &["s", g]).unwrap()).unwrap();
-        assert_eq!(
-            group("Rime"),
-            (
-                "us".to_string(),
-                vec![("sebtype".to_string(), String::new())]
-            )
-        );
+            |g: &str| parse_group(&controller("InputMethodGroupInfo", &["s", g]).unwrap()).unwrap();
+        let sebtype = vec![("sebtype".to_string(), String::new())];
+        assert_eq!(group("Rime"), ("us".to_string(), sebtype.clone()));
+        assert_eq!(group("Work"), ("us".to_string(), sebtype));
         assert_eq!(group("Default").1.len(), 2);
-        assert!(rime_group_names().is_empty());
-        let backups: Vec<_> = fs::read_dir(data().join("sebtype/backup"))
+        assert_eq!(rime_group_names(), Ok(vec![]));
+        let mut backups: Vec<_> = fs::read_dir(data().join("sebtype/backup"))
             .unwrap()
+            .map(|b| b.unwrap().path().join("profile"))
             .collect();
-        let backup = backups[0].as_ref().unwrap().path().join("profile");
-        assert_eq!(
-            fs::read(backup).unwrap(),
-            fs::read(config().join("fcitx5/profile")).unwrap()
-        );
+        backups.sort();
+        assert_eq!(backups.len(), 2, "{backups:?}");
+        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), before);
+        assert_ne!(fs::read_to_string(&backups[1]).unwrap(), before);
+        assert_ne!(profile(), before);
+    }
+
+    /// The Rime row and Use SebType against test.sh's made-up Fcitx5 that doesn't know SebType's input
+    /// method yet (no row), or can't list its groups or read one (FAKE_FCITX5_MODE): an error, not a row
+    /// done, and nothing changed.
+    #[test]
+    #[ignore]
+    fn private_fake_fcitx5_unread_groups_change_nothing() {
+        let profile = || fs::read_to_string(config().join("fcitx5/profile")).unwrap();
+        let before = profile();
+        if std::env::var("FAKE_FCITX5_MODE").unwrap() == "no-sebtype" {
+            assert_eq!(rime_group_names(), Ok(vec![]));
+            use_sebtype_for_rime().unwrap();
+        } else {
+            assert!(rime_group_names().is_err());
+            assert!(use_sebtype_for_rime().is_err());
+        }
+        assert_eq!(profile(), before);
+        assert!(!data().join("sebtype/backup").exists());
     }
 
     /// The Configurator's forget while SebType's input method has Rime and Mozc open: run by

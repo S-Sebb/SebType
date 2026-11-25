@@ -200,8 +200,9 @@ pub enum Need {
     /// Windows: each 中文 and 日本語 in the language list has SebType's text service. The button adds it.
     Languages,
     /// Linux: Fcitx5 groups with fcitx5-rime's Rime, which won't type Chinese beside SebType's input method (#542).
-    /// The button puts SebType's input method in its place.
-    Rime { groups: Vec<String> },
+    /// The button puts SebType's input method in its place. An error, when Fcitx5's groups couldn't be read,
+    /// keeps the row open rather than done.
+    Rime { groups: Result<Vec<String>, String> },
 }
 
 /// This check's rows, with those an earlier one showed and this one doesn't find any more kept, done, in
@@ -227,12 +228,13 @@ fn home_short(path: &std::path::Path) -> String {
     }
 }
 
-/// Names as the page lists them in the page's language: “Default”, “Rime”, or 「Default」、「Rime」 in 日本語.
+/// Names as the page lists them in the page's language: “Default”, “Rime”; “Default”、“Rime” in 中文;
+/// 「Default」、「Rime」 in 日本語. The translations put no spaces around them.
 pub fn quoted(names: &[String], lang: &str) -> String {
-    let (open, close, sep) = if lang == "ja" {
-        ("「", "」", "、")
-    } else {
-        ("“", "”", ", ")
+    let (open, close, sep) = match lang {
+        "ja" => ("「", "」", "、"),
+        "zh" => ("“", "”", "、"),
+        _ => ("“", "”", ", "),
     };
     names
         .iter()
@@ -253,9 +255,9 @@ fn ready_rows(checks: &[(Need, bool)], lang: &str) -> Vec<crate::ReadyCheck> {
                     (2, home_short(file), *line as i32, text.clone())
                 }
                 Need::Languages => (3, String::new(), 0, String::new()),
-                Need::Rime { groups } => {
-                    (4, String::new(), groups.len() as i32, quoted(groups, lang))
-                }
+                // line: how many groups, or 0 with the reason they couldn't be read
+                Need::Rime { groups: Ok(g) } => (4, String::new(), g.len() as i32, quoted(g, lang)),
+                Need::Rime { groups: Err(e) } => (4, String::new(), 0, e.clone()),
             };
             // A line in the person's own file is turned off by the button; a system file opens.
             let own = matches!(need, Need::ImModule { file, .. }
@@ -819,7 +821,7 @@ mod tests {
     fn group_names_are_quoted_as_the_language_quotes() {
         let names = ["Default".to_string(), "My=Rime".to_string()];
         assert_eq!(quoted(&names, "en"), "“Default”, “My=Rime”");
-        assert_eq!(quoted(&names, "zh"), "“Default”, “My=Rime”");
+        assert_eq!(quoted(&names, "zh"), "“Default”、“My=Rime”");
         assert_eq!(quoted(&names, "ja"), "「Default」、「My=Rime」");
     }
 
@@ -827,12 +829,20 @@ mod tests {
     #[test]
     fn rime_row_stays_one_row() {
         let rime = |g: &[&str]| Need::Rime {
-            groups: g.iter().map(|g| g.to_string()).collect(),
+            groups: Ok(g.iter().map(|g| g.to_string()).collect()),
         };
         let first = keep_done(&[], vec![(rime(&["Default", "Work"]), false)]);
         assert_eq!(
             keep_done(&first, vec![(rime(&["Work"]), false)]),
             [(rime(&["Work"]), false)]
+        );
+        // Groups Fcitx5 couldn't list (a restarting Fcitx5) aren't done.
+        let unread = Need::Rime {
+            groups: Err("no reply".into()),
+        };
+        assert_eq!(
+            keep_done(&first, vec![(unread.clone(), false)]),
+            [(unread, false)]
         );
         assert_eq!(
             keep_done(&first, vec![]),

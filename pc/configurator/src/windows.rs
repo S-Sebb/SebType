@@ -577,8 +577,8 @@ pub fn update_error() -> Option<String> {
 }
 
 /// Linux's Fcitx5 groups with fcitx5-rime's Rime (#542): none on Windows.
-pub fn rime_group_names() -> Vec<String> {
-    Vec::new()
+pub fn rime_group_names() -> Result<Vec<String>, String> {
+    Ok(Vec::new())
 }
 pub fn use_sebtype_for_rime() -> io::Result<()> {
     Ok(())
