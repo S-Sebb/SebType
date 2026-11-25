@@ -1013,10 +1013,11 @@ def up():
 wait(up, 10)
 ic, _ = call('/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-committed, preedit = [], ['']
+committed, preedit = [], ['', '']  # in the app's text, in the pinyin row (#464)
 def on_signal(_c, _s, _p, _i, name, params):
     if name == 'CommitString': committed.append(params.unpack()[0])
     elif name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+    elif name == 'UpdateClientSideUI': preedit[1] = ''.join(s for s, _ in params.unpack()[0])
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_signal)
 SENSITIVE = 1 << 36
 def field(sensitive):  # preedit, formatted, client-side panel; the core reads the flags at the next key
@@ -1035,14 +1036,16 @@ def commit(keys):
     wait(lambda: committed, 3)
     return ''.join(committed)
 def rime_ready():  # Rime deploys on first use and takes no keys until then
-    tap('n'); ready = wait(lambda: preedit[0] == 'n', 0.5); tap('Escape'); return ready
+    tap('n'); ready = wait(lambda: 'n' in preedit, 0.5); tap('Escape'); return ready
 SETTINGS = os.path.expanduser('~/.config/sebtype/sebtype.conf')
 RIME_PATCH = os.path.expanduser('~/.local/share/fcitx5/rime/rime_ice.custom.yaml')
 PENDING = os.path.expanduser('~/.local/share/sebtype/learning-migration-pending')
 learned = {}
+def fresh(keys):  # 中文's model ranks by the text committed before it (#495): Escape, typed to the app, clears that
+    tap('Escape'); return commit(keys)
 LANGS = {  # the first candidate, and the nth picked
-    'zh': (lambda: commit([*'shishi', 'space']), lambda n: commit([*'shishi', str(n)])),
-    'ja': (lambda: commit([*'kisha', 'space', 'Return']), lambda n: commit([*'kisha', *['space'] * n, 'Return'])),
+    'zh': (lambda: fresh([*'shishi', 'space']), lambda n: fresh([*'shishi', str(n)])),
+    'ja': (lambda: fresh([*'kisha', 'space', 'Return']), lambda n: fresh([*'kisha', *['space'] * n, 'Return'])),
 }
 def learning(on):  # the Configurator's switch (#374), as its window sets it
     r = subprocess.run([sys.argv[3], '--learning', 'on' if on else 'off'], capture_output=True, text=True, timeout=60)
@@ -1432,9 +1435,10 @@ def up():
 wait(up, 10)
 ic, _ = call(FCITX, '/org/freedesktop/portal/inputmethod', 'org.fcitx.Fcitx.InputMethod1', 'CreateInputContext',
              '(a(ss))', [('program', 'sebtype-test')])
-preedit = ['']
+preedit = ['', '']  # in the app's text, in the pinyin row (#464)
 def on_preedit(_c, _s, _p, _i, name, params):
     if name == 'UpdateFormattedPreedit': preedit[0] = ''.join(s for s, _ in params.unpack()[0])
+    elif name == 'UpdateClientSideUI': preedit[1] = ''.join(s for s, _ in params.unpack()[0])
 bus.signal_subscribe(None, IC, None, ic, None, 0, on_preedit)
 call(FCITX, ic, IC, 'SetCapability', '(t)', 1 << 1 | 1 << 4 | 1 << 39)
 call(FCITX, ic, IC, 'FocusIn')
@@ -1533,7 +1537,7 @@ check('clicking again is あ', click(HIRA), [KANA, '-'])
 pick('rime')
 def rime_ready():  # Rime deploys on first use and takes no keys until then: n shows a preedit once it does
     key(0x6e, 57); key(0x6e, 57, 0, True)
-    return wait(lambda: preedit[0] == 'n', 0.5)
+    return wait(lambda: 'n' in preedit, 0.5)
 check('Rime deployed', wait(rime_ready, 60), True)
 key(0xff1b, 9); key(0xff1b, 9, 0, True)
 HANT, HANS = '简 → 繁\tCtrl+Shift+F', '繁 → 简\tCtrl+Shift+F'
