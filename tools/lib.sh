@@ -95,6 +95,25 @@ sccache_env() {
     SCCACHE_DIRECT=false SCCACHE_SERVER_UDS
 }
 
+# test_key: for the test scripts that build a release. Where SebType's key isn't (it stays on nobara-pc,
+# Decisions #2), SEBTYPE_KEY_DIR points at this machine's test key, CN=SebType test key, in the tests'
+# cache: made once, renamed into place whole so runs at the same time keep whichever got there first, and
+# never deleted, since parallel runs sign with it (#603). android/release.sh doesn't call it and refuses
+# that key.
+test_key() {
+  [[ -f ${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}/sebtype-release.jks ]] && return
+  export SEBTYPE_KEY_DIR=$SCRATCH/cache/test-key
+  [[ -f $SEBTYPE_KEY_DIR/sebtype-release.jks ]] && return
+  [[ -x $JDK21/bin/keytool || $SEBTYPE_HOST != yanglab16* ]] || "$(dirname "${BASH_SOURCE[0]}")/android-tools.sh"
+  local tmp; mkdir -p "$SCRATCH/cache" && tmp=$(mktemp -d "$SCRATCH/cache/test-key.XXXXXX") || return
+  head -c 24 /dev/urandom | base64 > "$tmp/keystore.password"
+  "$JDK21/bin/keytool" -genkeypair -keystore "$tmp/sebtype-release.jks" -storetype PKCS12 -alias sebtype \
+    -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=SebType test key" \
+    -storepass:file "$tmp/keystore.password" > "$tmp/keytool.log" 2>&1 ||
+    { echo "test_key: keytool failed, see $tmp/keytool.log" >&2; return 1; }
+  mv -T "$tmp" "$SEBTYPE_KEY_DIR" 2>/dev/null || rm -rf "$tmp"
+}
+
 # build_lock MINUTES NAME CMD...: runs CMD in the shared build lock (one heavy SebType build at a time),
 # waiting up to an hour plus MINUTES for it, under the CPU and memory caps, at the lowest CPU and I/O
 # priority. The queue rank is DEVQ_RANK (default 2; it orders the queue, the lock is still one build at a

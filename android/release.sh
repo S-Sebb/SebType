@@ -61,9 +61,12 @@ apk=$(android/build.sh release)
 asset=$TASK_OUT/SebType-$version-arm64-v8a.apk
 cp "$apk" "$asset"
 
-# Refuse an APK that isn't signed with the SebType key: Android would refuse it as an update anyway.
+# Refuse an APK that isn't signed with the SebType key, or is signed with a test key (tools/lib.sh's
+# test_key, #603): Android would refuse it as an update anyway.
 apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
-"$apksigner" verify --print-certs "$asset" | grep -q 'CN=SebType' || { echo "release: APK not signed with the SebType key" >&2; exit 1; }
+certs=$("$apksigner" verify --print-certs "$asset")
+grep -q 'CN=SebType' <<<"$certs" && ! grep -q 'CN=SebType test key' <<<"$certs" ||
+  { echo "release: APK not signed with the SebType key" >&2; exit 1; }
 
 gh release create "$tag" "$asset" "$setup" "$linux_setup" --target "$head" --title "SebType $version" \
   --notes "SebType $version: the Android app (arm64-v8a, $(du -h "$asset" | cut -f1)), the Windows setup ($(du -h "$setup" | cut -f1)), and the Linux installer for Fedora and Nobara ($SEBTYPE_LINUX_SETUP, $(du -h "$linux_setup" | cut -f1); run \`sh $SEBTYPE_LINUX_SETUP\`, see pc/linux/README.md). It installs as an update over the earlier releases, 0.1.30-sebtype.<n>, from when the Android app was based on FUTO Keyboard 0.1.30 (until #262); it now contains none of FUTO's code. SebType's own code (MIT) with the components README.md lists under their licences."
