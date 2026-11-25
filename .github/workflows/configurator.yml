@@ -44,7 +44,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             pc/configurator/target
-          key: configurator-windows-${{ hashFiles('pc/configurator/Cargo.lock') }}
+          key: configurator-windows-${{ hashFiles('pc/configurator/Cargo.lock', 'pc/configurator/about.toml') }}
           restore-keys: configurator-windows-
       - name: Icon
         run: |
@@ -58,8 +58,8 @@ jobs:
           cargo build --release --locked --features update-test
           Copy-Item target/release/sebtype-configurator.exe ../../out/sebtype-configurator-update-test.exe
       - run: cargo build --release --locked
-      # cargo-about, pinned (linux/versions.sh pins its Linux binary), writes the crates' licences from those Cargo
-      # just used (about.toml): every crate the exe links has its licence's text there, the proc-macros' crates only
+      # cargo-about, pinned (linux/versions.sh pins its Linux binary), writes the crates' licences offline from
+      # Cargo's cache (about.toml): every crate the exe links has its licence's text there, the proc-macros' crates only
       # run in the build.
       - uses: actions/cache@v4
         id: cargo-about
@@ -75,6 +75,9 @@ jobs:
           tar -xzf $tgz -C ~/cargo-about --strip-components=1
       - name: Licences
         run: |
+          # cargo-about reads every platform's crates (cargo metadata), not only those the build needed.
+          cargo fetch --locked
+          if ($LASTEXITCODE) { throw "cargo fetch failed ($LASTEXITCODE)" }
           $out = 'target/release/crates-LICENSE.txt'
           & ~/cargo-about/cargo-about.exe generate --frozen --fail --target x86_64-pc-windows-msvc -o $out about.hbs
           if ($LASTEXITCODE) { throw "cargo-about failed ($LASTEXITCODE)" }

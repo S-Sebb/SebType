@@ -151,7 +151,9 @@ ninja -C build -j %{_smp_build_ncpus}
 # No debug info: build.sh packs none (debug_package is nil), and with it the fat-LTO link runs out of memory (#496).
 RUSTFLAGS="${RUSTFLAGS:-} -Cdebuginfo=0" SEBTYPE_SOURCES=$(source linux/versions.sh && configurator_sources .) CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
   --manifest-path pc/configurator/Cargo.toml --target-dir %{cache_root}/configurator-target
-# The licences of the crates built into it (#548), from the crates Cargo just used (pc/configurator/about.toml).
+# The licences of the crates built into it (#548, pc/configurator/about.toml). cargo-about reads every platform's
+# crates (cargo metadata), so those the build didn't need are fetched into the cache too.
+CARGO_HOME=%{cache_root}/cargo cargo fetch --locked --manifest-path pc/configurator/Cargo.toml
 CARGO_HOME=%{cache_root}/cargo cargo-about/cargo-about generate --frozen --fail --target x86_64-unknown-linux-gnu \
   --manifest-path pc/configurator/Cargo.toml -o configurator-crates-LICENSE pc/configurator/about.hbs
 HOME=%{cache_root}/home OPENCC_LIBS="$root/lib/libopencc.a $root/lib/libmarisa.a" data/rime/build.sh chinese-data >/dev/null

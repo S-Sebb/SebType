@@ -66,14 +66,14 @@ jobs:
         with:
           path: ${{ env.DOWNLOADS }}
           key: mozc-downloads-${{ hashFiles('tools/mozc-downloads.tsv') }}
-      # The Configurator's crates, and the Chinese data's sources (data/rime/build.sh), which the spec keeps there.
+      # The Configurator's crates (every platform's, for cargo-about), and the Chinese data's sources (data/rime/build.sh), which the spec keeps there.
       - uses: actions/cache@v4
         if: steps.built.outputs.cache-hit != 'true'
         with:
           path: |
             ${{ env.WORK }}/cargo/registry
             ${{ env.WORK }}/home/scratch/SebType/cache
-          key: sebtype-rpm-sources-${{ hashFiles('pc/configurator/Cargo.lock', 'data/rime/build.sh') }}
+          key: sebtype-rpm-sources-${{ hashFiles('pc/configurator/Cargo.lock', 'pc/configurator/about.toml', 'data/rime/build.sh') }}
           restore-keys: sebtype-rpm-sources-
       # Bazel's disk cache from main's last build, so a change recompiles only what it touches.
       - uses: actions/cache/restore@v4
