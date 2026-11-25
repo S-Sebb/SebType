@@ -16,9 +16,10 @@ share is of the training characters (`pack.py`'s SHARE; Wikipedia and Wikinews m
 
 LCCC (r2's chat source) is gone since #557: its authors' terms are research-only (CDial-GPT's README:
 仅限科研用途), whatever the MIT tag on its Hugging Face copy says, and it is scraped social-media text with no
-personal-data filtering. CrossWOZ (templates), Common Voice's sentences (too few),
-Johnson8187's dialogues (film subtitles under an MIT tag) and NaturalConv (no clear licence) were looked at and
-left out (#557).
+personal-data filtering. The shipped model is still r2, trained on it, until a retrain passes the harness's
+bar: #557's didn't (docs/experiments/2026-11-16-chinese-lm.md). CrossWOZ (templates), Common Voice's
+sentences (too few), Johnson8187's dialogues (film subtitles under an MIT tag) and NaturalConv (no clear
+licence) were looked at and left out (#557).
 
 Each chat source was kept for what it adds to the chat dev sets: a pilot (1B tokens) without it against one
 with every source, two seeds of which differ by up to 4 points on a set. Without the meetings the chat sets
