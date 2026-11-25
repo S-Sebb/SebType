@@ -30,13 +30,16 @@ public:
     std::vector<Word> nextWords(const std::string &context, size_t n);
 
     // For each of WORDS, the log probability that it is the word meant by TYPED (the letters typed, any
-    // case) after CONTEXT. Words are scored capitalised where a sentence starts. TYPED_IS_WORD: TYPED is a
-    // dictionary word, which a contraction of its letters may not outscore by more than the context allows.
+    // case) after CONTEXT. Words are scored as they would show: in capitals if TYPED is, else capitalised where
+    // a sentence starts or TYPED is. TYPED_IS_WORD: TYPED is a dictionary word, which a contraction of its
+    // letters may not outscore by more than the context allows.
     // AS_TYPED, if given and TYPED is a word: each word's log probability read after TYPED's letters as its
     // hint, as all but a contraction of them are read, before that contraction and TYPED share their odds.
+    // TYPED_KEPT: TYPED stays whatever it scores (a learned word), so where it ends isn't read unless a
+    // contraction shares with it.
     std::vector<float> score(const std::string &context, const std::string &typed,
                              const std::vector<std::string> &words, bool typedIsWord,
-                             std::vector<float> *asTyped = nullptr);
+                             std::vector<float> *asTyped = nullptr, bool typedKept = false);
 
     // The part of CONTEXT both read: its last line, the last 150 to 300 characters of it from a word's start,
     // starting where the last call's window started while that leaves 150 to 300 characters (#359).
@@ -101,7 +104,8 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
 inline Ranked rank(Model &model, const std::string &context, const std::string &typed,
                    const std::vector<Candidate> &candidates, bool typedIsWord, bool typedIsLearned = false) {
     std::vector<float> asTyped;
-    const auto logProbs = model.score(context, typed, rankedWords(typed, candidates), typedIsWord, &asTyped);
+    const auto logProbs =
+        model.score(context, typed, rankedWords(typed, candidates), typedIsWord, &asTyped, typedIsLearned);
     return decide(typed, candidates, typedIsWord, logProbs, typedIsLearned, asTyped);
 }
 

@@ -28,8 +28,8 @@ constexpr size_t SCORED_CANDIDATES = 6;
 constexpr float DECODER_WEIGHT = 1.5f;  // of the log of the decoder's normalised score
 constexpr float MIN_DECODER_SCORE = 1e-3f;
 // The dictionary's shortcuts (ill -> I'll, cant -> can't) score about 1,600 where a word typed exactly scores
-// under 2: uncapped, they outweighed whatever the text before says ("I feel ill", "Show your id"). Chosen on
-// #561's contraction and homograph probe: 10 keeps every homograph in its context and the shortcuts elsewhere.
+// under 2: uncapped, they outweighed whatever the text before says ("I feel ill", "Show your id"). Applied where
+// the typed letters are a word; chosen on #561's contraction and homograph probe.
 constexpr float MAX_DECODER_SCORE = 10.0f;
 constexpr float MARGIN_WORD = 4.0f;     // how much likelier a correction must be than a typed dictionary word
 constexpr float MARGIN_NON_WORD = 10.0f;  // ... than typed letters that aren't a word
@@ -208,8 +208,8 @@ std::string Model::window(const std::string &context) const {
 }
 
 std::vector<int> Model::contextTokens(const std::string &context) {
-    mWindow = window(context);
-    return tokenize(fold(mWindow), true);
+    mWindow = window(fold(context));  // folded first: a no-break space at the end is a space window() drops
+    return tokenize(mWindow, true);
 }
 
 const float *Model::advance(const std::vector<int> &prefix) {
@@ -393,11 +393,32 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
 
 std::vector<float> Model::score(const std::string &context, const std::string &typed,
                                 const std::vector<std::string> &words, bool typedIsWord,
-                                std::vector<float> *asTyped) {
-    std::vector<int> prefix = contextTokens(context);
+                                std::vector<float> *asTyped, bool typedKept) {
+    // Letters typed in capitals are read in small letters, as the model knows words best, and so is the text
+    // before when its last word is in capitals too: "I FEEL ILL" as "i feel ill", "I SAID WHATS" as "i said
+    // whats". Read in capitals the model hardly knows a contraction (WHAT'S), and with ill in small letters
+    // after "I FEEL" it read I'll (#568). Other words are capitalised where a sentence starts or as typed.
+    const auto capitals = [](const std::string &w) {
+        bool upper = false, small = false;
+        for (unsigned char c : w) upper |= std::isupper(c) != 0, small |= std::islower(c) != 0;
+        return w.size() > 1 && upper && !small;
+    };
+    const std::string typedText = fold(typed), folded = fold(context);
+    std::string lastWord = folded.substr(0, folded.find_last_not_of(' ') + 1);  // npos + 1: none
+    lastWord = lastWord.substr(lastWord.rfind(' ') + 1);
+    const bool shouted = capitals(typedText), textShouted = shouted && capitals(lastWord);
+    const bool typedCapital = !typedText.empty() && std::isupper(static_cast<unsigned char>(typedText[0]));
+    const bool capital = !textShouted && (sentenceStart(folded) || (typedCapital && !shouted));
+    auto shown = [&](std::string w, bool first) {
+        if (shouted && w == typedText) w = lower(w);
+        if (first && capital && !w.empty()) w[0] = std::toupper(static_cast<unsigned char>(w[0]));
+        return w;
+    };
+
+    std::vector<int> prefix = contextTokens(textShouted ? lower(context) : context);
     prefix.push_back(mTypo);
     const size_t hintStart = prefix.size();
-    const std::string letters = hintLetters(fold(typed));
+    const std::string letters = hintLetters(typedText);
     for (char c : letters) prefix.push_back(mLetter[ALPHABET.find(c)]);
     prefix.push_back(mSep);
     const float *logits = advance(prefix);
@@ -407,9 +428,6 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     // next word's start, which its own hint stands for.
     // - A contraction typed without its apostrophe (could've for "couldve"): the keyboard's letters have no
     //   apostrophe to type, so its hint has it, as training's examples of the word nearly always did (#561).
-    // - A candidate of several words ("could be" for "couldve"): each further word's hint holds the letters
-    //   typed after the word before it ("ve"), so they count against it as they do against a single word.
-    const bool capital = sentenceStart(fold(context));
     struct Term {
         int after;  // the follower token whose logits give it, -1 for the hint's <S> in sequence 0
         int token;  // the piece, -1 for the word ending
@@ -422,11 +440,9 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     std::vector<std::vector<int>> spelt(words.size());  // each word's pieces, without hints
     for (size_t i = 0; i < words.size(); i++) {
         std::vector<int> &f = followers[i];
-        size_t used = 0;  // the typed letters the words so far took
         for (size_t start = 0; start <= words[i].size();) {
             const size_t space = std::min(words[i].find(' ', start), words[i].size());
-            std::string w = fold(words[i].substr(start, space - start));
-            if (start == 0 && capital && !w.empty()) w[0] = std::toupper(static_cast<unsigned char>(w[0]));
+            const std::string w = shown(fold(words[i].substr(start, space - start)), start == 0);
             const std::string own = hintLetters(w);
             if (start == 0 && space == words[i].size() && own != letters && own.find('\'') != std::string::npos &&
                 stripped(own) == stripped(letters)) {
@@ -437,13 +453,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
                 contractions.push_back(i);
                 for (char c : own.substr(k)) f.push_back(mLetter[ALPHABET.find(c)]);
                 f.push_back(mSep);
-            } else if (start > 0 && used < letters.size()) {
-                terms[i].push_back({int(f.size()) - 1, -1});
-                f.push_back(mTypo);
-                for (char c : letters.substr(used)) f.push_back(mLetter[ALPHABET.find(c)]);
-                f.push_back(mSep);
             }
-            used += own.size();
             const auto pieces = tokenize(w, false);
             if (pieces.empty()) out[i] = -INFINITY;
             for (int t : pieces) terms[i].push_back({int(f.size()) - 1, t}), f.push_back(t);
@@ -453,12 +463,15 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     }
     // Where a word ends is read only for the typed word, which the others must beat, and for a word another
     // continues (don, don't): elsewhere it changes little and would cost a decoded token per word, which
-    // doubled the time a key takes (#561).
+    // doubled the time a key takes (#561). A typed word kept whatever it scores needs it only where a
+    // contraction shares with it.
+    const bool typedEnds = !typedKept || !contractions.empty();
     for (size_t i = 0; i < words.size(); i++) {
         const bool continued = std::any_of(spelt.begin(), spelt.end(), [&](const std::vector<int> &o) {
             return !spelt[i].empty() && o.size() > spelt[i].size() && std::equal(spelt[i].begin(), spelt[i].end(), o.begin());
         });
-        if (i + 1 == words.size() || continued) terms[i].push_back({int(followers[i].size()) - 1, -1});
+        if ((i + 1 == words.size() && typedEnds) || continued)
+            terms[i].push_back({int(followers[i].size()) - 1, -1});
         else if (!followers[i].empty()) followers[i].pop_back();  // its last piece: no term reads after it
     }
     // The keys typed are a contraction's letters as much as the typed word's, so they can't tell the two
@@ -469,11 +482,11 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     // A share and not the typed word's score times the odds: the model scores a rare spelling low after its
     // own hint (whens, hows), and "when" beat both when's and whens (#568). Typed letters that aren't a word
     // share nothing: "I couldve" became "could be".
-    auto inText = [&](std::string w) {
-        if (capital && !w.empty()) w[0] = std::toupper(static_cast<unsigned char>(w[0]));
+    auto inText = [&](const std::string &w) {
         std::vector<int> f{prefix[hintStart - 2]};
         terms.emplace_back();
-        for (int t : tokenize(fold(w), false)) terms.back().push_back({int(f.size()) - 1, t}), f.push_back(t);
+        for (int t : tokenize(shown(fold(w), true), false))
+            terms.back().push_back({int(f.size()) - 1, t}), f.push_back(t);
         terms.back().push_back({int(f.size()) - 1, -1});
         followers.push_back(std::move(f));
         from.push_back(hintStart - 2);
@@ -558,36 +571,54 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
             if (c.word == word) d = std::max(d, c.decoderScore);
         return std::max(d, MIN_DECODER_SCORE);
     };
-    const float typedDecoder = std::min(decoder(typed), MAX_DECODER_SCORE);
+    // The decoder's score is capped where the typed letters are a word: else the dictionary's shortcuts (I'll,
+    // can't: about 1,600) outweigh the context for them. For letters that aren't a word a shortcut is the
+    // correction meant ("alot": a lot), as before #561.
+    const float cap = typedIsWord ? MAX_DECODER_SCORE : INFINITY;
+    const float typedDecoder = std::min(decoder(typed), cap);
     std::vector<float> score(words.size());
     score.back() = logProbs.back() + DECODER_WEIGHT * std::log(typedDecoder);
     const std::string letters = hintLetters(fold(typed));
+    auto contraction = [&](size_t i) {  // of the typed letters: they and an apostrophe
+        const std::string own = hintLetters(fold(words[i]));
+        return own != letters && own.find('\'') != std::string::npos && stripped(own) == letters;
+    };
+    std::vector<float> commit(words.size(), -INFINITY);  // what a space may correct to, by its score
+    bool contractions = false;
+    for (size_t i = 0; i + 1 < words.size(); i++) contractions |= contraction(i);
     for (size_t i = 0; i + 1 < words.size(); i++) {
-        score[i] = logProbs[i] + DECODER_WEIGHT * std::log(std::min(decoder(words[i]), MAX_DECODER_SCORE));
+        score[i] = logProbs[i] + DECODER_WEIGHT * std::log(std::min(decoder(words[i]), cap));
+        if (!typedIsWord || !contraction(i)) {
+            // Typed letters that aren't a word but are a contraction's are that contraction or as typed:
+            // "shant" read as a word's start became shanty, though the model scores shan't well above it (#568).
+            if (typedIsWord || !contractions || contraction(i)) commit[i] = score[i];
+            continue;
+        }
         // A contraction of a typed dictionary word's letters (cant: can't). The keys score the two alike, and
         // the decoder's far higher score for it is the dictionary's shortcut, which outweighed what the text
-        // says ("I despise such cant", #568). So it takes the typed word's decoder score. It is still corrected
-        // to as before #561, read after the typed letters' hint with the shortcut's score ("I cant"), but only
-        // if read after its own hint it is the likelier of the two: "as is his wont" stays.
-        const std::string own = hintLetters(fold(words[i]));
-        if (!typedIsWord || own == letters || own.find('\'') == std::string::npos || stripped(own) != letters)
-            continue;
+        // says ("I despise such cant", #568). So it takes the typed word's decoder score, which places it in
+        // the strip. A space corrects to it only as before #561, read after the typed letters' hint with the
+        // shortcut's score ("I cant"), and only if read after its own hint it is the likelier of the two:
+        // "as is his wont" stays, and so does "Were" where a sentence starts.
         score[i] = logProbs[i] + DECODER_WEIGHT * std::log(typedDecoder);
-        if (!asTyped.empty() && logProbs[i] > logProbs.back())
-            score[i] = std::max(score[i], score.back() + asTyped[i] - asTyped.back() +
-                                              DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder));
+        if (!asTyped.empty() && logProbs[i] > logProbs.back()) {
+            commit[i] = score.back() + asTyped[i] - asTyped.back() +
+                        DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder);
+            score[i] = std::max(score[i], commit[i]);
+        }
     }
     std::vector<size_t> order(words.size() - 1);  // the typed word is last
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return score[a] > score[b]; });
     Ranked out{{}, typed};
     for (size_t i : order) out.strip.push_back(words[i]);
+    const auto best = std::max_element(commit.begin(), commit.end() - 1) - commit.begin();
     const float margin = typedIsWord ? MARGIN_WORD : MARGIN_NON_WORD;
     // One letter is corrected only to its capital (i to I), and a word only learned never: the model hasn't
     // seen it, so it would lose to any likely word (#555).
-    if (!order.empty() && !typedIsLearned && (typed.size() > 1 || lower(words[order[0]]) == lower(typed)) &&
-        score[order[0]] - score.back() > margin)
-        out.committed = words[order[0]];
+    if (!order.empty() && !typedIsLearned && (typed.size() > 1 || lower(words[best]) == lower(typed)) &&
+        commit[best] - score.back() > margin)
+        out.committed = words[best];
     return out;
 }
 

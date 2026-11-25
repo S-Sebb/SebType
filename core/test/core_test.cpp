@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
@@ -589,6 +590,16 @@ TEST_F(EnglishTest, ALearnedWordTypedAgainStaysWithTheModel) {
   // Learned in lower case, typed with a capital where a sentence starts, or in capitals (#568).
   EXPECT_EQ(again("Theyre", ""), "Theyre ");
   EXPECT_EQ(again("THEYRE"), "THEYRE ");
+  // Learned with capitals mid-sentence, as picked, and typed again in another case; and a capitalised word
+  // whose lower case is a dictionary word, typed again as learned (#568).
+  for (const std::string learned : {"SebType", "Cant", "Lets"}) {
+    word(learned, "I met ");
+    en->selectAt(indexOf(learned));
+    EXPECT_EQ(en->takeCommit(), learned + " ");
+    EXPECT_EQ(again(learned, "I met "), learned + " ");
+  }
+  EXPECT_EQ(again("sebtype", "using "), "sebtype ");
+  EXPECT_EQ(again("SEBTYPE", "using "), "SEBTYPE ");
 }
 
 // A contraction typed without its apostrophe after the words it follows, and a word of the same letters where
@@ -603,14 +614,22 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            {"I ", "couldve", "could've "}, {"I hope ", "thatll", "that'll "}, {"I think ", "thatd", "that'd "},
            {"I think ", "lets", "let's "}, {"So ", "whens", "when's "}, {"I ", "cant", "can't "},
            {"I despise such ", "cant", "cant "}, {"Full of pious ", "cant", "cant "},
-           {"as is his ", "wont", "wont "}}) {
+           {"as is his ", "wont", "wont "},
+           // Typed letters that aren't a word share nothing with a word of theirs (there is none): daren't.
+           {"", "darent", "daren't "}, {"I said ", "shant", "shan't "}, {"I think ", "neednt", "needn't "},
+           {"I said ", "oclock", "o'clock "}, {"Thanks ", "alot", "a lot "},
+           // A capitalised word or one in capitals reads as its dictionary word does in lower case (#568).
+           {"", "Were", "Were "}, {"Hello. ", "Were", "Were "}, {"I FEEL ", "ILL", "ILL "},
+           {"I DESPISE SUCH ", "CANT", "CANT "}, {"AS IS HIS ", "WONT", "WONT "}, {"I ", "CANT", "CAN'T "},
+           {"", "Couldve", "Could've "}}) {
     en->setContext(context);
     for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
     const int ranked = readyCount();
     en->settle();
     ASSERT_TRUE(ready(ranked));
+    const auto shown = list();
     type(" ");
-    EXPECT_EQ(en->takeCommit(), committed) << context << typed;
+    EXPECT_EQ(en->takeCommit(), committed) << context << typed << " " << testing::PrintToString(shown);
   }
 }
 
@@ -725,6 +744,28 @@ TEST(EnglishModel, AWordsScoreEndsItSoItLosesToTheLongerWordItStarts) {
   sebtype_lm::Model model(EN_MODEL);
   const auto lp = model.score("I", "dont", {"don", "don't"}, false);
   EXPECT_LT(lp[0], lp[1]);
+}
+
+// The text before the cursor reads as training's text was folded (#568): a no-break space, an ellipsis or a
+// character cut at the window's start as their plain forms, also where a sentence starts.
+TEST(EnglishModel, TextReadsAsItsFoldedForm) {
+  sebtype_lm::Model model(EN_MODEL);
+  const auto same = [&](const std::string &context, const std::string &plain) {
+    const auto a = model.score(context, "dont", {"don't", "dont"}, false);
+    const auto b = model.score(plain, "dont", {"don't", "dont"}, false);
+    for (size_t i = 0; i < a.size(); i++) EXPECT_NEAR(a[i], b[i], 0.02) << context;
+    const auto x = model.nextWords(context, 3), y = model.nextWords(plain, 3);
+    ASSERT_EQ(x.size(), y.size()) << context;
+    for (size_t i = 0; i < x.size(); i++) EXPECT_EQ(x[i].word, y[i].word) << context;
+  };
+  same("Hello.\u00a0", "Hello.");
+  same("Hello.\u202f", "Hello. ");
+  same("Wait\u2026 ", "Wait... ");
+  same("\x80Hello.", "Hello.");
+  // A word with no pieces (an emoji folds to nothing) scores nothing, and leaves the others as they were.
+  const auto lp = model.score("I", "dont", {"\U0001F600", "don't", "dont"}, false);
+  EXPECT_EQ(lp[0], -INFINITY);
+  EXPECT_NEAR(lp[1], model.score("I", "dont", {"don't", "dont"}, false)[0], 0.02);
 }
 
 // Next words are whole words (#561): a contraction is three pieces (▁didn ' t), and none ends in "'".

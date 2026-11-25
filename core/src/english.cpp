@@ -859,10 +859,14 @@ class English : public Engine {
     if (!main_) return;
     const auto context = ngramContext(context_);
     std::vector<Word> results;
+    std::vector<std::string> userWords;  // the user's words' own, before the merge cuts them
     for (const Word &w : main_->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
     for (Lexicon *lexicon : {history_.get(), personal_.get()})
       if (lexicon)
-        for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
+        for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) {
+          addResult(results, w, kMaxResults);
+          userWords.push_back(w.word);
+        }
 
     // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
     std::string committed = typed;
@@ -903,19 +907,46 @@ class English : public Engine {
       if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
     if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
       add(results.front().word);
-    // A word only the user's words have is asked of them, not of the merged list, whose 18 words may have left
-    // it out ("dont" among don't's neighbours); and in lower case too, as learned at a sentence start, so
-    // "Theyre" and "THEYRE" are the learned theyre (#555).
+    // A word the dictionary lacks and the user's words have is learned: as typed ("Cant" learned mid-sentence,
+    // though the dictionary has cant), or in any case if the dictionary lacks its lower case too (theyre,
+    // learned at a sentence start, typed "Theyre"; SebType typed "sebtype"). The user's words are asked
+    // themselves, not the merged list, whose 18 words may leave it out ("dont" among don't's neighbours) (#555).
     const std::string lowerTyped = lowerCaseWord(typed);
     const auto userHas = [&](const std::string &w) {
       return (history_ && history_->has(w)) || (personal_ && personal_->has(w));
     };
-    const bool typedIsLearned =
-        !main_->has(typed) && !main_->has(lowerTyped) && (userHas(typed) || userHas(lowerTyped));
-    Rank rank{context_, typed, {}, typedFound, typedIsLearned, 0};
-    for (const Word &w : results)
-      if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) == shortcuts_.end())
-        rank.candidates.push_back({w.word, normalizedScore(typed_, w.word, w.score)});
+    const bool anyCase = std::any_of(userWords.begin(), userWords.end(),
+                                     [&](const std::string &w) { return lowerCaseWord(w) == lowerTyped; });
+    const bool typedIsLearned = !main_->has(typed) && (userHas(typed) || (!main_->has(lowerTyped) && anyCase));
+    // The model ranks a word typed with capitals (Were where a sentence starts, ILL) from the decoder's words
+    // for it in lower case, as the dictionary has them and as its shortcuts are found (cant: can't), and the
+    // dictionary's word of those letters is the typed word; a space commits a word in the capitals typed.
+    // Ranked from the words for the capitals, "Were" wasn't a word and We're took its place (#568).
+    std::vector<Word> lowered;
+    const auto lowerCps = lower(typed_);
+    if (typed != lowerTyped) {
+      for (const Word &w : main_->suggest(keys_.get(), lowerCps, xs_, ys_, context)) addResult(lowered, w, kMaxResults);
+      for (Lexicon *lexicon : {history_.get(), personal_.get()})
+        if (lexicon)
+          for (const Word &w : lexicon->suggest(keys_.get(), lowerCps, xs_, ys_, context))
+            addResult(lowered, w, kMaxResults);
+    }
+    const std::vector<Word> &ranked = typed != lowerTyped ? lowered : results;
+    const auto has = [&](const std::string &word) {
+      return std::any_of(ranked.begin(), ranked.end(), [&](const Word &w) { return w.word == word; });
+    };
+    Rank rank{context_, typed, {}, false, typedIsLearned, 0};
+    for (const Word &w : ranked) {
+      const bool same = w.word == typed || withCase(w.word, typed_) == typed;
+      rank.typedIsWord |= same;
+      if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) != shortcuts_.end()) continue;
+      // A word's capitalised form (O'Clock, ID) beside its own isn't offered for it: shown in the capitals
+      // typed, it is the same word or one the text doesn't call for ("I said oclock": O'Clock).
+      const std::string small = lowerCaseWord(w.word);
+      if (!same && small != w.word && codePoints(w.word).size() > 1 && has(small)) continue;
+      rank.candidates.push_back({same ? typed : w.word,
+                                 normalizedScore(typed != lowerTyped ? lowerCps : typed_, w.word, w.score)});
+    }
     std::lock_guard g(mutex_);
     rank.gen = gen_;
     rankWanted_ = std::move(rank);
