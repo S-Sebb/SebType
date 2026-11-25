@@ -11,7 +11,7 @@ share is of the training characters (`pack.py`'s SHARE; Wikipedia and Wikinews m
 | [AliMeeting](https://www.openslr.org/119/) (OpenSLR 119, Yu et al. 2022) and [AISHELL-4](https://www.openslr.org/111/) (OpenSLR 111, Fu et al. 2021) | the transcripts (TextGrids) of real, unscripted meetings, a turn per line, without AISHELL-4's `<sil>`, `<%>` and `&` marks; no audio is kept | 8 % | CC BY-SA 4.0, by Alibaba DAMO Academy and AISHELL | `Train_Ali_near`, `Eval_Ali`; `train_L`, `train_M`, `train_S`, `test` |
 | [HundredCV-Chat](https://huggingface.co/datasets/Jax-dan/HundredCV-Chat) | generated (DeepSeek-V3) chats, without the speaker labels and the turns that open with a persona's name | 4 % | Apache-2.0 | `cece0fa1` |
 | [Tatoeba](https://tatoeba.org/) (Mandarin sentences, export of 2026-11-24) | short everyday sentences, in simplified characters | 1.5 % | CC BY 2.0 FR, by Tatoeba's contributors | `cmn_sentences_detailed.tsv.bz2`, kept in the cache (Tatoeba keeps no old exports) |
-| [KdConv](https://github.com/thu-coai/KdConv) (Zhou et al. 2020) | the short turns of its film, music and travel dialogues: no knowledge-card text, digits, addresses or phone numbers, at most 40 characters | 1 % | Apache-2.0 | `653db764` |
+| [KdConv](https://github.com/thu-coai/KdConv) (Zhou et al. 2020) | the short turns of its film, music and travel dialogues: no knowledge-card text, digits, addresses or phone numbers, at most 40 characters; for the harness's chat sets only (its pilot gained nothing, see below) | 0 % | Apache-2.0 | `653db764` |
 | [OpenAssistant oasst2](https://huggingface.co/datasets/OpenAssistant/oasst2) (2023-11-05, all messages) | Chinese messages: the users', and the assistant's paragraphs that aren't list items or AI-isms (作为AI, 以下是) | 0.5 % | Apache-2.0 | `179dd21f` |
 
 LCCC (r1's chat source) is gone since #557: its authors' terms are research-only (CDial-GPT's README:
@@ -19,6 +19,11 @@ LCCC (r1's chat source) is gone since #557: its authors' terms are research-only
 personal-data filtering. CrossWOZ (templates), Common Voice's sentences (too few),
 Johnson8187's dialogues (film subtitles under an MIT tag) and NaturalConv (no clear licence) were looked at and
 left out (#557).
+
+Each chat source was kept for what it adds to the chat dev sets: a pilot (1B tokens) without it against one
+with every source, two seeds of which differ by up to 4 points on a set. Without the meetings the chat sets
+lose 4.6 points on average, without HundredCV 4.5, Tatoeba 1.3, oasst2 1.6 (most on typos and slips), and
+without KdConv nothing (0.2, as often up as down), so KdConv trains no more (#557).
 
 Tools whose data shapes the training text, not part of it: [OpenCC](https://github.com/BYVoid/OpenCC)'s
 traditional-to-simplified tables (Apache-2.0, through opencc-python-reimplemented), [pypinyin](https://github.com/mozillazg/python-pinyin)

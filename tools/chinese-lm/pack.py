@@ -49,7 +49,6 @@ SHARE = {
     "meetings": 0.08,
     "hundredcv": 0.04,
     "tatoeba": 0.015,
-    "kdconv": 0.01,
     "oasst2": 0.005,
 }
 EVERY = 30
@@ -202,8 +201,8 @@ def work(job):
 
 def passes(corpus, split, without):
     """Passes over each corpus file: BASE's, and for each chat source its SHARE of all the characters."""
-    if split == "dev":
-        return {n: 1 for n in [*BASE, *SHARE]}
+    if split == "dev":  # every chat source, those SHARE leaves out of training too
+        return {n: 1 for n in [*BASE, *common.CHAT]}
     chars = {
         n: sum(len(l) - 1 for l in open(corpus / f"{n}.txt", encoding="utf-8"))
         for n in [*BASE, *SHARE]
