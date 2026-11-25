@@ -68,12 +68,34 @@ std::string chineseModel() {
   return fcitx::StandardPaths::global().locate(fcitx::StandardPathsType::Data, "sebtype/chinese.gguf").string();
 }
 
+// 中文 with no librime: Core says 中文 isn't available, in the tray and the popup, and keys go in as typed (#275).
+struct Unavailable final : Engine {
+  bool key(const Key &) override { return false; }
+  std::string takeCommit() override { return {}; }
+  Preedit preedit() override { return {}; }
+  bool composing() override { return false; }
+  void flush() override {}
+  void clear() override {}
+  bool latin() override { return false; }
+  void setLatin(bool) override {}
+  bool alternate() override { return false; }
+  void setAlternate(bool) override {}
+  bool available() override { return false; }
+};
+
 }  // namespace
 
 std::unique_ptr<Engine> SebTypeEngine::makeEngine(Lang lang) {
   if (lang == Lang::English) return nullptr;  // keys go to the app as typed
   const auto rimeUser = fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgData) / "rime";
   if (lang == Lang::Chinese) {
+    // fcitx5-rime loaded before SebType (in use when SebType was installed and found at a Refresh, which turns it
+    // off only from then on) has Rime's folder open: a second librime would deploy into its build/ and learn into
+    // its userdb (#542). None opens until Fcitx5 restarts, when SebType loads first and keeps fcitx5-rime off.
+    if (instance_->addonManager().addon("rime")) {
+      FCITX_WARN() << "fcitx5-rime has Rime's folder open: SebType's 中文 types once Fcitx5 restarts";
+      return std::make_unique<Unavailable>();
+    }
     fs::create_directories(rimeUser);
     auto rime = makeRime({RIME_DATA_DIR, rimeUser.string()});
     static const std::string model = chineseModel();
@@ -228,7 +250,7 @@ void keepFcitx5RimeOff(fcitx::AddonManager &addons) {
   const auto *rime = addons.addonInfo("rime");
   if (!rime) return;
   const_cast<fcitx::AddonInfo *>(rime)->setOverrideEnabled(fcitx::OverrideEnabled::Disabled);
-  if (addons.addon("rime")) FCITX_WARN() << "fcitx5-rime was loaded before SebType: both learn into one Rime folder";
+  if (addons.addon("rime")) FCITX_WARN() << "fcitx5-rime was loaded before SebType: 中文 waits for Fcitx5's restart";
   else FCITX_INFO() << "fcitx5-rime stays off beside SebType, which types 中文 with the same Rime folder";
 }
 

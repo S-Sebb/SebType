@@ -531,12 +531,12 @@ rime_groups() {
 # running and knows sebtype, update it live over D-Bus and activate sebtype immediately; otherwise update
 # ~/.config/fcitx5/profile directly so Fcitx5 loads sebtype the next time it starts (#442).
 fcitx_profile=$config/fcitx5/profile
-# Rime in the first group, which SebType takes the place of: said with the change. fcitx5-rime's Rime stays off
-# while SebType's input method is installed (linux/src/sebtype.cpp, #542), and stays out of the group after.
+# Rime in the first group, which SebType takes the place of: said on a line of its own after the change.
+# fcitx5-rime's Rime stays off while SebType's input method is installed (linux/src/sebtype.cpp, #542), and stays out of the group after.
 # The way back after removing SebType: pc/linux/README.md, Removing SebType (not installed with the RPM).
 removing=https://github.com/S-Sebb/SebType/blob/main/pc/linux/README.md#removing-sebtype
 first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
-  first_rime="; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
+  first_rime=$'\n'"  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
 restore=" or restore profile from $backup, with Fcitx5 stopped"  # after first_rime, where a backup is made
 if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
   IFS=$'\x1f' read -r -a q < <(running_groups | head -1)

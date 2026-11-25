@@ -932,15 +932,14 @@ pub fn rime_group_names() -> Result<Option<Vec<String>>, String> {
 
 /// A group's input methods with SebType's for Rime. When the group starts on the keyboard, Rime, Mozc or
 /// SebType's, as setup-ime.sh's step 7 lays out the first group: SebType's first (its own entry, with its
-/// layout, if the group had one), without the keyboard, Rime and Mozc, which it types; others stay. Fcitx5
+/// layout, if the group had one), without keyboard-us, Rime and Mozc, which it types; others stay, a keyboard of
+/// the group's own layout too. Fcitx5
 /// starts a group on its first input method, and no key switches to another (step 8), so a group that starts
 /// on another (pinyin, a keyboard of another layout than the group's) keeps it first: SebType's takes Rime's
 /// place only.
 fn sebtype_for_rime(layout: &str, ims: &[(String, String)]) -> Vec<(String, String)> {
-    let types = |im: &str| {
-        ["sebtype", "keyboard-us", "rime", "mozc"].contains(&im)
-            || im == format!("keyboard-{layout}")
-    };
+    const TYPED: [&str; 4] = ["sebtype", "keyboard-us", "rime", "mozc"];
+    let types = |im: &str| TYPED.contains(&im) || im == format!("keyboard-{layout}");
     let sebtype = ims.iter().find(|(im, _)| im == "sebtype").cloned();
     if ims.first().is_some_and(|(im, _)| !types(im)) {
         return ims
@@ -952,9 +951,7 @@ fn sebtype_for_rime(layout: &str, ims: &[(String, String)]) -> Vec<(String, Stri
             })
             .collect();
     }
-    let others = ims
-        .iter()
-        .filter(|(im, _)| !["sebtype", "keyboard-us", "rime", "mozc"].contains(&im.as_str()));
+    let others = ims.iter().filter(|(im, _)| !TYPED.contains(&im.as_str()));
     std::iter::once(sebtype.unwrap_or(("sebtype".into(), String::new())))
         .chain(others.cloned())
         .collect()
@@ -1415,8 +1412,7 @@ mod tests {
         assert_eq!(ims, [im("keyboard-us", ""), im("rime", "")]);
         // Fcitx5's usual group with Rime starts on SebType's, which no key would reach second.
         assert_eq!(sebtype_for_rime("us", &ims), [im("sebtype", "")]);
-        // Others stay, after it; SebType's own entry keeps its layout, wherever it was; the group's own
-        // keyboard goes too.
+        // Others stay, after it; SebType's own entry keeps its layout, wherever it was; keyboard-us goes too.
         assert_eq!(
             sebtype_for_rime(
                 "us",
@@ -1462,8 +1458,6 @@ mod tests {
         assert_eq!(second, dir.join("20261125-100000_2"));
         assert_eq!(fs::read_to_string(first.join("profile")).unwrap(), "before");
         assert!(fs::read_dir(&second).unwrap().next().is_none());
-        // C order: '/' (after the first folder's name) sorts before '_'.
-        assert!("20261125-100000/profile" < "20261125-100000_2/profile");
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -53,59 +53,21 @@ A step done stays on the page, ticked.
 
 ## Removing SebType
 
-What setup changed in this account stays after `sudo dnf remove sebtype`. Fcitx5 then drops SebType's input
-method from its groups, deletes the groups left empty and saves that, and has no tray, no key to switch input
-methods or groups and no settings app. To get your Fcitx5 back as it was before SebType, in this order:
+What setup changed in this account stays after `sudo dnf remove sebtype` (#582). For Rime (#542): Fcitx5 then
+drops SebType's input method from its groups and deletes a group left empty. Setup and the Configurator's Use
+SebType keep a copy of `~/.config/fcitx5/profile`, Fcitx5's groups, in a folder of
+`~/.local/share/sebtype/backup/` named by its time before they change it (setups up to 0.2.0 kept none). To
+get Rime back:
 
-1. While SebType is still installed, put back what setup's own undos cover:
-   ```sh
-   sebtype-setup --undo-fcitx5        # Fcitx5's settings apps (sudo dnf install: asks for your password)
-   sebtype-setup --undo-configurator  # the Configurator, its update check and theme
-   sebtype-setup --undo-names         # Fcitx5's own input method names
-   ```
-   (`--undo-chinese-data` too, if Rime should go back to your own rime-ice files.) If you already removed
-   SebType, `sebtype-setup` went with it: install Fcitx5's settings apps with
-   `sudo dnf install kcm-fcitx5 fcitx5-configtool` and go on with step 3. The Configurator and the names
-   stay; nothing runs them without SebType.
-2. `sudo dnf remove sebtype`
-3. Stop Fcitx5: System Settings → Keyboard → Virtual Keyboard → None. Fcitx5 writes its groups over
-   `~/.config/fcitx5/profile` when it quits, so it must not run while you copy.
-4. Copy Fcitx5's and Mozc's files back from `~/.local/share/sebtype/backup/`. Each folder there is one setup
-   run or one Use SebType click, named by its time, and holds the files it changed as they were before. Take
-   each file from the **oldest** folder that has it: later ones hold files SebType had already changed. For
-   example, `LC_ALL=C ls ~/.local/share/sebtype/backup/*/config | head -1` names the oldest `config`. If you removed
-   SebType before and its folders are still there, take the oldest folder made since you last installed it.
-
-   | Backup file | Copy to | What it holds |
-   |---|---|---|
-   | `config` | `~/.config/fcitx5/config` | The keys that switch input methods and groups |
-   | `clipboard.conf`, `unicode.conf`, `quickphrase.conf` | `~/.config/fcitx5/conf/` | Those add-ons' keys |
-   | `config1.db` | `~/.config/mozc/` (or `~/.mozc/`, if you have that folder) | Mozc's keymap |
-   | `profile` | `~/.config/fcitx5/profile` | The input method groups |
-
-   Setup saves a file only when it changes it, as it has since 0.1.0. A file no folder has was either new
-   with setup or already as setup wanted it, which a folder can't tell apart: keep it, and set the keys you
-   want again after step 5, in Fcitx 5 Configuration (Global Options for `config`, the add-on's own page for
-   the others) or, for `config1.db`, in Mozc's settings (Keymap).
-
-   `profile` is different: setup up to 0.2.0 kept no copy of it, and a copy Use SebType made has your first
-   group already changed to SebType's. **Never remove `profile`.** Copy the oldest one if a folder has it, then
-   look at the groups after step 5: Fcitx5 drops SebType from them and deletes a group left empty, so add
-   Rime back where you want it in Fcitx 5 Configuration (back since step 1).
-
-   Also remove `~/.local/share/fcitx5/addon/notificationitem.conf`, SebType's tray, so Fcitx5's own comes back.
-   Changes you made to these files after setup are lost.
-5. Turn Virtual Keyboard back on (Fcitx 5).
-6. Move `~/.local/share/sebtype/backup` away, for example to `~/sebtype-backup-<date>`: if you install SebType
-   again, its oldest folders must be the ones the new install makes, not this install's.
-7. Plasma's Alt+\` ("Walk Through Windows of Current Application"), which setup left to Mozc: set it again
-   in System Settings → Shortcuts → KWin if you want it.
-
-These stay, and fcitx5-rime works with them: in `~/.local/share/fcitx5/rime`, `default.custom.yaml` keeps
-Ctrl+Shift+F for 简/繁 and 6 candidates per page, and `rime_ice.custom.yaml` keeps `sebtype_typo/keyboard: pc`,
-which only SebType's typo correction reads. To undo them, copy `default.custom.yaml` back from the oldest
-backup folder that has it (or remove its `menu/page_size` line marked `# SebType:` and the two
-`Control+Shift+F` bindings), and remove that `sebtype_typo/keyboard` line.
+1. Stop Fcitx5: System Settings → Keyboard → Virtual Keyboard → None. Fcitx5 writes its groups over `profile`
+   when it quits, so it must not run while you copy.
+2. If a folder has `profile`, copy the oldest one to `~/.config/fcitx5/profile`: later ones hold groups SebType
+   had already changed. `LC_ALL=C ls ~/.local/share/sebtype/backup/*/profile | head -1` names it; if you
+   removed SebType before and its folders are still there, take the oldest made since you last installed it.
+   **Never remove `profile`**: with no copy, keep it as it is.
+3. Turn Virtual Keyboard back on (Fcitx 5), and add Rime back where you want it in Fcitx 5 Configuration.
+   Setup took Fcitx5's settings apps away: `sebtype-setup --undo-fcitx5` puts them back while SebType is
+   installed, and `sudo dnf install kcm-fcitx5 fcitx5-configtool` after.
 
 ## What it does, and why
 
@@ -122,7 +84,7 @@ backup folder that has it (or remove its `menu/page_size` line marked `# SebType
 | WeChat | `env QT_IM_MODULE=fcitx` in the user's WeChat launcher | WeChat bundles its own Qt on X11 and only finds Fcitx when named |
 | Chromium/Electron | `--enable-wayland-ime` in the user's launcher, only for apps the checklist below shows need it. None do today | Apps on native Wayland that don't turn on text-input by themselves |
 | Input methods | Makes `sebtype` the first Fcitx5 group's input method in place of `keyboard-us`, `rime` and `mozc`, keeping any others, once the running Fcitx5 knows it | English, Chinese and Japanese in one input method; their order (EN → 中 → 日) is SebType's setting, which the Configurator writes to `~/.config/sebtype/sebtype.conf` |
-| fcitx5-rime | Nothing on disk: SebType's input method keeps fcitx5-rime's add-on off in the Fcitx5 that loads it, for that run only, as Fcitx5's `--disable=rime` does, also when fcitx5-rime is installed while Fcitx5 runs (at Fcitx5's Refresh). The Input methods step above already took Rime (`rime`) out of the first group; setup warns when another group still has it, since it won't type Chinese there, with the command that removes such a group, and the Configurator says the same on the setup wizard's Ready page and on About, once the running Fcitx5 knows SebType's input method, with a Use SebType button that lays out those groups as this step does the first (a group that starts on another input method, such as pinyin, keeps it first, and SebType's takes Rime's place), after a copy of the profile in `~/.local/share/sebtype/backup`. Once `sebtype` is removed, fcitx5-rime loads again: [Removing SebType](#removing-sebtype) brings back the groups setup and Use SebType changed, and the keys and tray to reach Rime | SebType's input method has its own librime (#527): beside fcitx5-rime's, two librimes would share `~/.local/share/fcitx5/rime`, deploy into one `build/` and write one `rime_ice.userdb`, which LevelDB allows only one of them to do (#542). SebType's 中文 is Rime on that folder, with its settings and My words, and rime-ice's learned words |
+| fcitx5-rime | Nothing on disk: SebType's input method keeps fcitx5-rime's add-on off in the Fcitx5 that loads it, for that run only, as Fcitx5's `--disable=rime` does, also when fcitx5-rime is installed while Fcitx5 runs (at Fcitx5's Refresh). The Input methods step above already took Rime (`rime`) out of the first group; setup warns when another group still has it, since it won't type Chinese there, with the command that removes such a group, and the Configurator says the same on the setup wizard's Ready page and on About, once the running Fcitx5 knows SebType's input method, with a Use SebType button that lays out those groups as this step does the first (a group that starts on another input method, such as pinyin, keeps it first, and SebType's takes Rime's place), after a copy of the profile in `~/.local/share/sebtype/backup`. Once `sebtype` is removed, fcitx5-rime loads again: [Removing SebType](#removing-sebtype) says how to get Rime back in the groups | SebType's input method has its own librime (#527): beside fcitx5-rime's, two librimes would share `~/.local/share/fcitx5/rime`, deploy into one `build/` and write one `rime_ice.userdb`, which LevelDB allows only one of them to do (#542). SebType's 中文 is Rime on that folder, with its settings and My words, and rime-ice's learned words |
 | Language switch | In `~/.config/fcitx5/config`: `ShareInputState=All`, so every window shares one language, as on Windows. Fcitx5's trigger key (Super+Space after an older setup), Shift_L (`AltTriggerKeys`), Ctrl+Shift+Shift_L (enumerate) and the group-switch keys are cleared. Fcitx5 reloads its config | Super+Space reaches SebType's input method, the only language switch: it toggles English ⇄ the last other language (中文 or 日本語), also while Super stays held; the other one is picked from the tray menu, and then it is the one Super+Space returns to (#93). A Shift tap switches English letters inside Chinese and Japanese |
 | Japanese keymap | `~/.config/mozc/config1.db` gets a custom keymap, `mozc-keymap.tsv`: Mozc's MS-IME keymap plus a Shift tap (あ ⇄ direct English) and Alt+\` (あ ⇄ ア, before typing). Other Mozc settings are kept. A running `mozc_server` is stopped; SebType's input method starts it again on the next key | Mozc's MS-IME keys: Shift+letter, F6–F10 and Space work as in Mozc's default keymap. SebType's input method now takes the Shift tap and Alt+\` itself (#190), so the keymap's Shift and Alt+\` lines are no longer used |
 | Fcitx5's add-on hotkeys | Empties the keys of Fcitx5's clipboard history (Ctrl+;), Unicode input (Ctrl+Alt+Shift+U, Ctrl+Shift+U) and quick phrase (Super+\`, Super+;) in `~/.config/fcitx5/conf/clipboard.conf`, `unicode.conf` and `quickphrase.conf`, keeping their other settings, and Fcitx5 reloads them. The add-ons stay loaded | These keys reach the app instead of opening Fcitx5 popups SebType doesn't offer (Decisions #2, #182) |

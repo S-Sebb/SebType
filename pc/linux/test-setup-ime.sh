@@ -1202,13 +1202,15 @@ both_rimes() {
   rm -f "$fake/groups" "$fake/group-My \"Rime\" =1" "$fake/sebtype" "$fake/group"
   mv "$fake/group.kept" "$fake/group" 2>/dev/null; mv "$fake/sebtype.kept" "$fake/sebtype" 2>/dev/null
   ((rc == 0)) &&
-    grep -q "^change: make SebType's input method the one in Fcitx5 input method group 默认, .*; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore profile from $fake/.*, with Fcitx5 stopped as https://.*#removing-sebtype says$" <<<"$o" &&
+    grep -q "^change: make SebType's input method the one in Fcitx5 input method group 默认, .*)$" <<<"$o" &&
+    grep -q "^  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore profile from $fake/.*, with Fcitx5 stopped as https://.*#removing-sebtype says$" <<<"$o" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o") == 1 ]] &&
     grep -qF "warning: Rime in input method group \"My \"Rime\" =1\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文: Use SebType on SebType Configurator's About page puts it in Rime's place and keeps the other input methods. Or remove the group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s My\\ \\\"Rime\\\"\\ =1" <<<"$o" &&
     grep -q 'SetInputMethodGroupInfo ssa(ss) 默认 us 1 sebtype $' "$fake/set.log" &&
     grep -q '^change: give Rime (fcitx5-rime) its own name back' <<<"$o" &&
     [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
-    grep -q "^change: set SebType as the input method in .*; Rime (fcitx5-rime) won't type Chinese" <<<"$o2" &&
+    grep -q "^change: set SebType as the input method in .*)$" <<<"$o2" &&
+    grep -q "^  Rime (fcitx5-rime) won't type Chinese" <<<"$o2" &&
     q=\' && two="^warning: Rime in input method groups \"My=Rime\", \"Bob${q}s\" won${q}t type Chinese .*\\. Or remove the groups: busctl .* s My=Rime; busctl .* s Bob\\\\${q}s\$" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o2") == 1 ]] && grep -q "$two" <<<"$o2" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o3") == 1 ]] && grep -q "$two" <<<"$o3" &&
@@ -1324,14 +1326,16 @@ check('no librime found rime_ice.userdb locked by the other', 'LOCK: already hel
 # fcitx5-rime in use before SebType is installed without setup (whose restart would load SebType first), which
 # Fcitx5 then finds at a Refresh: fcitx5-rime has Rime's folder open, so SebType's 中文 opens no second librime
 # on it (its typing Chinese means it did). A lock error can't tell: each librime has a LevelDB of its own.
-sebtype_conf = os.path.join(os.environ['XDG_DATA_DIRS'].split(':')[0], 'fcitx5/addon/sebtype.conf')
-os.rename(sebtype_conf, sebtype_conf + '.off')
+# Its entry in SebType's folder, and in the system's when this PC has SebType installed.
+confs = [c for c in (os.path.join(os.environ['XDG_DATA_DIRS'].split(':')[0], 'fcitx5/addon/sebtype.conf'),
+                     '/usr/share/fcitx5/addon/sebtype.conf') if os.path.exists(c)]
+for c in confs: os.rename(c, c + '.off')
 log = sys.argv[1] + '-rime-first.log'
 fcitx, ic = start('sebtype,rime', log)
 call(*CONTROLLER, 'SetInputMethodGroupInfo', '(ssa(ss))', 'Default', 'us', [('rime', '')])
 call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
 check('fcitx5-rime types before SebType is installed', wait(lambda: ready(ic), 90), True)
-os.rename(sebtype_conf + '.off', sebtype_conf)
+for c in confs: os.rename(c + '.off', c)
 call(*CONTROLLER, 'Refresh')
 def sebtype_listed(): return any(im[0] == 'sebtype' for im in call(*CONTROLLER, 'AvailableInputMethods')[0])
 check('SebType found at the Refresh', wait(sebtype_listed, 10), True)
