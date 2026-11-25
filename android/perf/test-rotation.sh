@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Offline checks of perf.sh's screen-rotation guards (#402), against a fake adb: no device needed.
+# Offline checks of perf.sh's screen-rotation guards (#402) and its test field closed at the end (#587),
+# against a fake adb: no device needed.
 #   android/perf/test-rotation.sh    one PASS/FAIL line per check, exit 0 when all pass
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -46,6 +47,7 @@ mkdir -p "$tmp/settings"; echo 0 > "$tmp/settings/accelerometer_rotation"; : > "
 cat > "$tmp/monkey-ish" <<'SET'
 echo 1 > "$FAKE/settings/accelerometer_rotation"; echo 0 > "$FAKE/settings/user_rotation"
 SET
+: > "$tmp/log"
 FAKE_SIZE=1080x2400 FAKE_ROT=ROTATION_1 timeout 60 bash -c '
   # monkey changes both settings while the run holds the device
   ( sleep 2; . "$FAKE/monkey-ish" ) & android/perf/perf.sh --soak-device' > "$tmp/soak.out" 2>&1
@@ -54,4 +56,7 @@ else ok "failed grid: the soak doesn't run"; fi
 [[ $(cat "$tmp/settings/accelerometer_rotation") == 0 && ! -e $tmp/settings/user_rotation ]] &&
   ok "rotation settings back as found (absent one deleted)" ||
   no "rotation settings" "accelerometer_rotation=$(cat "$tmp/settings/accelerometer_rotation") user_rotation=$(cat "$tmp/settings/user_rotation" 2>/dev/null || echo absent)"
+# However the device steps end, the test field is closed and the phone is back on its home screen (#587).
+grep -qx 'am force-stop dev.sebb.sebtype.perffield' "$tmp/log" && ok "test field closed at the end" ||
+  no "test field" "still open after the run"
 exit $(( fails > 0 ))

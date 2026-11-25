@@ -427,14 +427,19 @@ phase_soak() { # SOAK_MIN (default 12) minutes of EN, 中 and 日 in turn, words
   [[ $(probe_len) == 3 ]] || echo "note=not back in EN after the last cycle"
 }
 
+on_exit() { # [command]: when the device steps end, however they end, the phone is left as the run found it:
+  # rotation, the keyboard (the command), no files of the run, and the test field closed (#587)
+  trap "rotation_back; ${1:+$1; }"'sh am force-stop "$field"; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
+    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt /data/local/tmp/sebtype-ui.xml' EXIT
+  trap 'exit 143' TERM; trap 'exit 130' INT
+}
+
 compare_steps() { # under the device lock: another keyboard (IME_PKG, IME_ID, KEY_ROWS), English only
   export FIELD_ARGS='--es kind private'
   export compare=1
   { sh ime list -s | grep -v "^$pkg/" | grep -m1 -e '^com.google.android.inputmethod.latin/' -e '^org.futo.inputmethod.latin/' -e '^dev.sebb.sebtype/'; } > "$work/other-ime"
   rotation_keep
-  trap 'rotation_back; sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
-    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
-    /data/local/tmp/sebtype-ui.xml' EXIT
+  on_exit 'sh ime set "$(cat "$work/prev-ime")" > /dev/null'
   check compare-setup 300 || return 1
   check idle 120; passed idle || return 1 # its grid aims every tap after it
   # COMPARE_ZH=1: the keyboard is in its Chinese (pinyin) layout now, as its owner left it; 中 first,
@@ -467,9 +472,7 @@ device_steps() { # under the device lock
   { sh ime list -s | grep -m1 '^com.google.android.inputmethod.latin/' ||
     sh ime list -s | grep -m1 '^org.futo.inputmethod.latin/'; } > "$work/other-ime"
   rotation_keep
-  trap 'rotation_back; sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
-    /data/misc/perfetto-configs/sebtype-perf.pbtxt /data/local/tmp/sebtype-perf-taps.txt \
-    /data/local/tmp/sebtype-ui.xml' EXIT
+  on_exit 'sh ime set "$(cat "$work/prev-ime")" > /dev/null'
   check install 600; passed install || return 1
   check first-open 120; passed first-open || return 1 # its grid aims every tap after it
   check zh-deploy 660
@@ -498,7 +501,7 @@ if [[ ${1:-} == --device ]]; then device_steps; exit; fi
 if [[ ${1:-} == --compare-device ]]; then compare_steps; exit; fi
 if [[ ${1:-} == --soak-device ]]; then
   rotation_keep
-  trap 'rotation_back; sh rm -f /data/local/tmp/sebtype-perf-taps.txt /data/local/tmp/sebtype-ui.xml' EXIT
+  on_exit
   check idle 120; passed idle && check soak $(( 60 * ${SOAK_MIN:-12} + 300 )); exit
 fi
 
