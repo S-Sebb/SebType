@@ -15,26 +15,27 @@ here=$(realpath "$(dirname "$0")")
 bench=$here/../../android/test/chinese-lm/bench.sh
 py="$HOME/scratch/SebType/cache/chinese-lm-venv/bin/python -I -W ignore"
 NEXT_MARGIN=1
-mkdir -p "$run/select"
-results=$run/select/results.txt
+sel=$run/select/$name  # a folder per run: its exports, their results and results.txt
+mkdir -p "$sel"
+results=$sel/results.txt
 : > "$results"
 for ckpt in "$run"/ckpt/"$name"/step-* "$run/ckpt/$name"; do
   [[ -s $ckpt/model.safetensors ]] || continue
   c=$(basename "$ckpt")
-  gguf=$run/select/$c.gguf
+  gguf=$sel/$c.gguf
   # A rerun (after a failed bench) keeps the results it already has for this checkpoint.
-  if [[ ! $run/select/$c/summary.json -nt $ckpt/model.safetensors ]]; then
+  if [[ ! $sel/$c/summary.json -nt $ckpt/model.safetensors ]]; then
     "$here/export.sh" "$ckpt" "$gguf" > /dev/null
     # dump=1: the model stack's scores, for parity.py.
-    CHINESE_CORE=1 "$bench" --dev "$run/dev" "$run/select/$c" "$gguf" dump=1 > "$run/select/$c.log" 2>&1 ||
-      { echo "select.sh: bench.sh failed on $ckpt; the end of $run/select/$c.log:" >&2; tail -n 20 "$run/select/$c.log" >&2; exit 1; }
+    CHINESE_CORE=1 "$bench" --dev "$run/dev" "$sel/$c" "$gguf" dump=1 > "$sel/$c.log" 2>&1 ||
+      { echo "select.sh: bench.sh failed on $ckpt; the end of $sel/$c.log:" >&2; tail -n 20 "$sel/$c.log" >&2; exit 1; }
   fi
   python3 -I -c '
 import json, sys
 core = json.load(open(sys.argv[1]))["core"]
 typed = [m["top1"] for n, m in core.items() if isinstance(m, dict) and not n.startswith("dev-next")]
 print(sys.argv[2], round(sum(typed) / len(typed), 2), core["dev-next-chat"]["top3"], core["dev-next-news"]["top3"])
-' "$run/select/$c/summary.json" "$c" | tee -a "$results"
+' "$sel/$c/summary.json" "$c" | tee -a "$results"
 done
 # Each line: checkpoint, mean top-1, next-chat and next-news top 3.
 best=$(awk -v m=$NEXT_MARGIN '
@@ -51,4 +52,4 @@ best=$(awk -v m=$NEXT_MARGIN '
 echo "best: $best"
 ckpt=$run/ckpt/$name/$best
 [[ $best == "$name" ]] && ckpt=$run/ckpt/$name
-$py "$here/parity.py" "$ckpt" "$run/dev/dev-sent-chat.tsv" "$run/select/$best/model.dev-sent-chat.tsv.dump"
+$py "$here/parity.py" "$ckpt" "$run/dev/dev-sent-chat.tsv" "$sel/$best/model.dev-sent-chat.tsv.dump"
