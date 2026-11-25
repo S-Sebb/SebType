@@ -340,8 +340,8 @@ phase_warm-open() { # hide the keyboard and tap the field again, 5 times
   done
   trace_stop warm-open
   opens warm-open warm
-  # One open per tap: a lost or extra request would change the sample without failing opens.py.
-  local n; n=$(grep -c '^"warm"' "$work/warm-open.opens.csv" || true)
+  # One timed open per tap: a lost, extra or never-drawn open would change the sample without failing opens.py.
+  local n; n=$(grep -c '^"warm",[0-9]' "$work/warm-open.opens.csv" || true)
   (( n == 5 )) || { echo "warm-open: $n opens for 5 taps on the field" >&2; return 1; }
 }
 phase_cold-open() { # switch to another keyboard and back with SebType's process stopped, 3 times
