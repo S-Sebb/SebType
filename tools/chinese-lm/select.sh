@@ -2,8 +2,8 @@
 # Chooses a run's checkpoint on the dev sets (#557): exports each of train.py's (every save_every steps, and
 # the last), runs the keyboard's own code with it on the dev sets (bench.sh --dev, core stack) and prints, per
 # checkpoint, the mean top-1 over the typed sets and the next-word top 3 of chat and news; then the best: the
-# highest mean top-1 among the checkpoints whose next-word top 3 are each within NEXT_MARGIN points of the best
-# checkpoint's. Then checks the best export against its checkpoint (parity.py). On yanglab16.
+# highest mean top-1 among the checkpoints whose next-word top 3 (chat's and news's mean) is within NEXT_MARGIN
+# points of the best checkpoint's. Then checks the best export against its checkpoint (parity.py). On yanglab16.
 #
 #   tools/chinese-lm/select.sh RUN_DIR NAME
 #
@@ -38,16 +38,13 @@ print(sys.argv[2], round(sum(typed) / len(typed), 2), core["dev-next-chat"]["top
 ' "$sel/$c/summary.json" "$c" | tee -a "$results"
 done
 # Each line: checkpoint, mean top-1, next-chat and next-news top 3.
+# (Chat's and news's best can be different checkpoints', so the margin applies to their mean.)
 best=$(awk -v m=$NEXT_MARGIN '
-  { name[NR] = $1; for (k = 2; k <= 4; k++) v[NR, k] = $k
-    for (k = 3; k <= 4; k++) if (NR == 1 || $k > top[k]) top[k] = $k }
+  { name[NR] = $1; typed[NR] = $2; next3[NR] = ($3 + $4) / 2; if (NR == 1 || next3[NR] > top) top = next3[NR] }
   END { best = 0
-    for (i = 1; i <= NR; i++) {
-      ok = 1
-      for (k = 3; k <= 4; k++) if (v[i, k] < top[k] - m) ok = 0
-      if (!ok) print name[i] ": next-word top 3 more than " m " point(s) below the best, left out" > "/dev/stderr"
-      else if (!best || v[i, 2] > v[best, 2]) best = i
-    }
+    for (i = 1; i <= NR; i++)
+      if (next3[i] < top - m) print name[i] ": next-word top 3 more than " m " point(s) below the best, left out" > "/dev/stderr"
+      else if (!best || typed[i] > typed[best]) best = i
     print name[best] }' "$results")
 echo "best: $best"
 ckpt=$run/ckpt/$name/$best
