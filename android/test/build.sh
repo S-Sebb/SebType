@@ -18,7 +18,7 @@ results=$out/test-build-results.txt; : > "$results"
 wt=$out/test-build-wt
 # build_remotely puts a checkout at ~/scratch/SebType/<task>/<checkout> on yanglab16; the worktree's task is
 # the same as this checkout's.
-export ISSUE; ISSUE=$(basename "$TASK_OUT")
+export ISSUE; ISSUE=${TASK_OUT#"$SCRATCH"/}
 remote_wt=scratch/SebType/$ISSUE/test-build-wt remote_main=scratch/SebType/$ISSUE/$(basename "$PWD")
 # Checks run under `timeout` in a subshell: the functions and what they read must be exported.
 export out wt remote_wt remote_main build_here

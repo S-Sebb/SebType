@@ -179,6 +179,10 @@ typing() { # trace gap text: under one trace, types the text RUNS times, each in
   for (( r = 0; r < runs; r++ )); do open_field; taps "$2" "$3"; sleep 5; done
   trace_stop "$1"
   per_key "$1"
+  # Android 14 tells a tap's DOWN from its UP only by timing (keys.sql), so a miscount must fail here
+  # rather than shift each key's window.
+  local keys; keys=$(per_key_count "$1")
+  (( keys == runs * ${#3} )) || { echo "$1: the keyboard got $keys touches for $(( runs * ${#3} )) taps" >&2; return 1; }
 }
 landed() { # phase taps min% max%: each field's length shows that the taps hit the keys and in which
   # language (pinyin and romaji turn into fewer characters than were typed)
@@ -217,7 +221,12 @@ phase_install() {
   "$adb" install -r "$work/perf-field.apk" > /dev/null || { echo "field install failed" >&2; return 1; }
   # zh-deploy reads the Chinese setup that the keyboard's first process starts, as soon as it is selected.
   "$adb" logcat -c
-  sh ime enable "$ime_id" > /dev/null && sh ime set "$ime_id" > /dev/null
+  # The input method service can learn of a new package seconds after the install returns (HyperOS):
+  # enabling it before then fails, and the first open would measure the previous keyboard.
+  local i
+  for i in {1..30}; do sh ime list -a -s | grep -qxF "$ime_id" && break; sleep 1; done
+  sh ime enable "$ime_id" > /dev/null; sh ime set "$ime_id" > /dev/null
+  [[ $(sh settings get secure default_input_method) == "$ime_id" ]] || { echo "$ime_id couldn't be selected" >&2; return 1; }
   echo "version=$(sh dumpsys package "$pkg" | sed -n 's/.*versionName=//p' | head -1)"
 }
 phase_first-open() { # the first keyboard open after install
@@ -331,6 +340,9 @@ phase_warm-open() { # hide the keyboard and tap the field again, 5 times
   done
   trace_stop warm-open
   opens warm-open warm
+  # One timed open per tap: a lost, extra or never-drawn open would change the sample without failing opens.py.
+  local n; n=$(grep -c '^"warm",[0-9]' "$work/warm-open.opens.csv" || true)
+  (( n == 5 )) || { echo "warm-open: $n opens for 5 taps on the field" >&2; return 1; }
 }
 phase_cold-open() { # switch to another keyboard and back with SebType's process stopped, 3 times
   [[ -s $work/other-ime ]] || { echo "skip=no other keyboard enabled to switch from"; return; }
