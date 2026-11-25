@@ -34,8 +34,9 @@ if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
   # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user: its
   # caches are in a podman volume, in podman's storage (in the project's capped folder when
   # CONTAINERS_STORAGE_CONF points there). A BAZEL_CACHE set beforehand stays: inside the build container it
-  # comes from the host, and a test may name a cache of its own (a cold-cache build, #361).
-  if [[ -z ${BAZEL_CACHE:-} ]]; then
+  # comes from the host, and a test may name a cache of its own (a cold-cache build, #361). A kde-emu
+  # session has no podman, and builds nothing (#596).
+  if [[ -z ${BAZEL_CACHE:-} ]] && command -v podman >/dev/null; then
     podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
     BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
     export BAZEL_CACHE
