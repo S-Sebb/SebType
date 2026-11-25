@@ -4,8 +4,10 @@ checkpoint's own for the same examples, on the CPU.
 
   parity.py CKPT_DIR SET.tsv SET.dump [ITEMS]     (default 200 items)
 
-Exits 1 if the median difference is over MEDIAN or the largest over WORST nats: quantising to Q6_K costs a
-little, a wrong export (or a scorer that reads the model differently from training) far more.
+Exits 1 if the median difference is over MEDIAN nats, or if the two put another candidate first in more than
+TOP_MISS of the items: quantising to Q6_K costs a little, a wrong export (or a scorer that reads the model
+differently from training) far more. The largest difference is only printed: it falls on candidates scored
+tens of nats below the first (#557's checkpoints: 1.6 nats on one at -65), which no ranking turns on.
 """
 
 import statistics
@@ -15,7 +17,7 @@ import sentencepiece as spm
 import torch
 from transformers import LlamaForCausalLM
 
-MEDIAN, WORST = 0.15, 1.5
+MEDIAN, TOP_MISS = 0.15, 0.01
 CONTEXT_CHARS, MAX_LETTERS = 64, 64  # zh_lm.cpp's
 
 
@@ -45,13 +47,14 @@ def main(ckpt, set_path, dump_path, items=200):
             int(item) < len(rows) and int(rank) >= 0
         ):  # Rime's candidates, which score() scored
             scored.setdefault(int(item), []).append((text, float(lp)))
-    diffs = []
+    diffs, firsts = [], []
     for i, (ctx, typed, *_) in enumerate(r.split("\t") for r in rows):
         line = ctx.rsplit("\n", 1)[-1]
         prefix = [sp.bos_id()] + tokens(line[-CONTEXT_CHARS:])[-CONTEXT_CHARS:] + [T]
         prefix += [
             sp.piece_to_id(c) for c in typed[:MAX_LETTERS] if "a" <= c <= "z"
         ] + [S]
+        pairs = []
         for text, lp in scored.get(i, []):
             ids = tokens(text) + [E]
             with torch.no_grad():
@@ -62,13 +65,18 @@ def main(ckpt, set_path, dump_path, items=200):
             norm = torch.cat([logits[:, :B], logits[:, B + 1 :]], 1).logsumexp(-1)
             ours = sum(logits[j, t].item() - norm[j].item() for j, t in enumerate(ids))
             ours += torch.nn.functional.logsigmoid(logits[len(ids) - 1, B]).item()
+            pairs.append((ours, lp))
             if lp != float("-inf"):
                 diffs.append(abs(ours - lp))
+        if len(pairs) > 1:  # does the checkpoint put first what the phone does?
+            firsts.append(max(pairs)[1] == max(lp for _, lp in pairs))
     median, worst = statistics.median(diffs), max(diffs)
+    miss = firsts.count(False)
     print(
-        f"parity: {len(diffs)} scores of {len(scored)} items, median difference {median:.3f}, largest {worst:.3f} nats"
+        f"parity: {len(diffs)} scores of {len(scored)} items, median difference {median:.3f}, largest {worst:.3f} nats;"
+        f" another first in {miss} of {len(firsts)} items"
     )
-    return median <= MEDIAN and worst <= WORST
+    return median <= MEDIAN and miss <= TOP_MISS * len(firsts)
 
 
 if __name__ == "__main__":
