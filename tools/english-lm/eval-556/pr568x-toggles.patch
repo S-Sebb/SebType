@@ -1,0 +1,38 @@
+diff --git a/engines/sebtype-lm/sebtype_lm.cpp b/engines/sebtype-lm/sebtype_lm.cpp
+index 78cdb695c1..877651b675 100644
+--- a/engines/sebtype-lm/sebtype_lm.cpp
++++ b/engines/sebtype-lm/sebtype_lm.cpp
+@@ -5,6 +5,7 @@
+ #include <algorithm>
+ #include <cctype>
+ #include <cmath>
++#include <cstdlib>
+ #include <functional>
+ #include <map>
+ #include <mutex>
+@@ -31,7 +32,8 @@ constexpr float MIN_DECODER_SCORE = 1e-3f;
+ // The dictionary's shortcuts (ill -> I'll, cant -> can't) score about 1,600 where a word typed exactly scores
+ // under 2: uncapped, they outweighed whatever the text before says ("I feel ill", "Show your id"). Applied where
+ // the typed letters are a word; chosen on #561's contraction and homograph probe.
+-constexpr float MAX_DECODER_SCORE = 10.0f;
++const float MAX_DECODER_SCORE = getenv("SEBTYPE_CAP") ? float(atof(getenv("SEBTYPE_CAP"))) : 10.0f;  // #556 experiment
++const bool BARE_HINT = getenv("SEBTYPE_BARE_HINT") != nullptr;  // #556 experiment
+ constexpr float MARGIN_WORD = 4.0f;     // how much likelier a correction must be than a typed dictionary word
+ constexpr float MARGIN_NON_WORD = 10.0f;  // ... than typed letters that aren't a word
+ const std::string SPACE = "\xe2\x96\x81";  // "▁"
+@@ -507,12 +509,14 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
+             const std::string own = hintLetters(w);
+             if (start == 0 && contractionOf(words[i], letters)) {
+                 // The contraction's hint branches off sequence 0's where its letters part.
++                contractions.push_back(i);
++                if (!BARE_HINT) {
+                 size_t k = 0;
+                 while (k < own.size() && k < letters.size() && own[k] == letters[k]) k++;
+                 from[i] = hintStart + k;
+-                contractions.push_back(i);
+                 for (char c : own.substr(k)) f.push_back(mLetter[ALPHABET.find(c)]);
+                 f.push_back(mSep);
++                }
+             }
+             const auto pieces = tokenize(w, false);
+             if (pieces.empty()) out[i] = -INFINITY;
