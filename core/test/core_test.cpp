@@ -1489,6 +1489,26 @@ TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   EXPECT_EQ(rime->taught, (std::vector<std::string>{"xin bu za yan\t心不在焉"}));
 }
 
+// Both of fuzzy pinyin's confusions in one syllable cost nothing (#563): zang for 站, seng for 深. The model
+// doesn't read them itself, but Rime's correction stays. Every character has its reading: one without
+// would match any letters.
+TEST_F(ChineseFixTest, ACorrectionWithBothConfusionsInOneSyllableStays) {
+  const std::string in = "wozaisengzenghuocezang";
+  start({}, [&](FakeRime &r) {
+    r.words.insert({{"wo", {"我"}}, {"zai", {"在"}}, {"shen", {"深"}}, {"zhen", {"圳"}}, {"huo", {"火"}},
+                    {"che", {"车"}}, {"zhan", {"站"}}});
+    r.fixes[in] = {"我在深圳火车站"};
+  });
+  const int before = readyCount();
+  type(in);
+  ASSERT_TRUE(ready(before + 1));
+  list();
+  const int asked = readyCount();
+  list();  // the turn: the corrections looked up
+  ASSERT_TRUE(ready(asked));
+  EXPECT_EQ(list().at(0), "我在深圳火车站");
+}
+
 // A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).
 TEST_F(ChineseFixTest, ALearnedFirstStaysAheadOfACorrection) {
   rime->userWords = {"新不咋盐"};
