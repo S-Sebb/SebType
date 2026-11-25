@@ -33,6 +33,9 @@ constexpr float MIN_DECODER_SCORE = 1e-3f;
 constexpr float MAX_DECODER_SCORE = 10.0f;
 constexpr float MARGIN_WORD = 4.0f;     // how much likelier a correction must be than a typed dictionary word
 constexpr float MARGIN_NON_WORD = 10.0f;  // ... than typed letters that aren't a word
+// ... than the typed word in small letters, for the same letters in other capitals (ID for id): the model
+// scores the two alike where either may be meant ("Freud wrote about the ego and the id": ID by 0.06).
+constexpr float MARGIN_RECASED = 1.0f;
 const std::string SPACE = "\xe2\x96\x81";  // "▁"
 const std::set<std::string> CONTRACTION_ENDS = {"t", "s", "d", "m", "ll", "re", "ve"};
 
@@ -644,11 +647,14 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
     const auto best = std::max_element(commit.begin(), commit.end() - 1) - commit.begin();
     // Typed letters that aren't a word but are a contraction's are that contraction ("Please dont", "so Dont"):
     // the model reads them as likely as it after their own hint, and they fell short of the margin (#568).
-    // The typed word in other capitals ("Show your id": ID) needs no margin: it is the word typed, as a name
-    // typed in small letters is (#568).
+    // The typed word in other capitals ("Show your id": ID) is the word typed, as a name typed in small letters
+    // is, and needs only MARGIN_RECASED, or none if a capital was typed ("The Id") (#568).
     const bool oneLetter = std::count_if(typed.begin(), typed.end(), [](char c) { return (c & 0xc0) != 0x80; }) == 1;
     const bool recased = !oneLetter && lower(words[best]) == lower(typed);
-    const float margin = recased || (!typedIsWord && contractions) ? 0 : typedIsWord ? MARGIN_WORD : MARGIN_NON_WORD;
+    const float margin = recased ? (std::isupper(static_cast<unsigned char>(typed[0])) ? 0 : MARGIN_RECASED)
+                         : !typedIsWord && contractions ? 0
+                         : typedIsWord                 ? MARGIN_WORD
+                                                       : MARGIN_NON_WORD;
     // One letter is corrected only to its capital (i to I), and a word only learned never: the model hasn't
     // seen it, so it would lose to any likely word (#555).
     if (!order.empty() && !typedIsLearned && (!oneLetter || lower(words[best]) == lower(typed)) &&

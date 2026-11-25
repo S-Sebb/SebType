@@ -632,7 +632,7 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            // capitals; a stray capital inside a word reads as its small letters; a typed word isn't lost to
            // the longer word it starts (#568).
            {"What ", "eas", "was "}, {"", "towords", "towards "}, {"on ", "ios", "iOS "}, {"with ", "john", "John "},
-           {"Show your ", "id", "ID "}, {"I feel ", "iLl", "ill "}, {"I feel ", "IlL", "Ill "},
+           {"Show your ", "id", "ID "}, {"The ", "Id", "ID "}, {"I feel ", "iLl", "ill "}, {"I feel ", "IlL", "Ill "},
            {"Sure, ", "hell", "hell "}}) {
     en->setContext(context);
     for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
