@@ -674,14 +674,15 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
     for (size_t i = 0; i + 1 < words.size(); i++) {
         score[i] = logProbs[i] + DECODER_WEIGHT * std::log(std::min(decoder(words[i]), cap));
         if (!typedIsWord || !contraction(i)) {
-            // Typed letters that aren't a word but are a contraction's are that contraction or as typed:
-            // "shant" read as a word's start became shanty, though the model scores shan't well above it (#568).
+            // Typed letters that aren't a word but are a contraction's are that contraction or as typed: read
+            // as a word's start, "shant" became shanty, which the model, as yet, finds the likelier (#568).
             if (typedIsWord || !contractions || contraction(i)) commit[i] = score[i];
             // A word is weighed against the typed word without its ending: the space says the typed word ends
             // there, and the model, which can't know that, put the odds of the words it starts in that ending
             // ("Sure, hell": hello; "my fiance": finance; impl: imply), where main kept them (#568). The same word
-            // in other capitals ends where the typed word does ("The Id", "Enter your id": ID).
-            if (lower(words[i]) != lower(typed)) commit[i] += typedEnd;
+            // in other capitals ends where the typed word does ("The Id", "Enter your id": ID), if the typed
+            // letters are a word: else, unpaid, it won where another word was meant ("Pretend you ste": Ste).
+            if (!typedIsWord || lower(words[i]) != lower(typed)) commit[i] += typedEnd;
             continue;
         }
         // A contraction of a typed dictionary word's letters (cant: can't). The keys score the two alike, and
