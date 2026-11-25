@@ -78,6 +78,11 @@ trained on, and is adapted from, these openly licensed texts (tools/english-lm/S
 - SODA, by the Allen Institute for AI: CC BY 4.0.
 - databricks-dolly-15k, by Databricks: CC BY-SA 3.0.
 - English Wikinews (dump of 2026-11-01), by Wikinews's contributors: CC BY 2.5.
+- NUS SMS Corpus (2015-03-09 release), by the National University of Singapore (Tao Chen, Min-Yen Kan):
+  CC BY 4.0.
+- Blended Skill Talk, by Meta (Facebook AI Research): CC BY 4.0.
+- Topical-Chat, by Amazon: CDLA-Sharing 1.0.
+- Tatoeba (English sentences, export of 2026-11-14), by Tatoeba's contributors: CC BY 2.0 FR.
 
 SebType's Chinese model (engines/sebtype-lm/chinese.gguf, trained by tools/chinese-lm, release r1) is licensed
 under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/).
