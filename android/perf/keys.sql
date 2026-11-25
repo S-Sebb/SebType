@@ -21,7 +21,8 @@ field as (select p.upid from process p left join thread t on t.upid = p.upid and
   where p.name = 'dev.sebb.sebtype.perffield' or t.name = 'btype.perffield'),
 -- Android 14 names a touch's slice only by its event time ("deliverInputEvent src=0x1002
 -- eventTimeNano=…"): there a DOWN is the event more than 50 ms after the one before, since monkey's
--- taps put their UP a few ms after the DOWN and taps 100 ms or more apart.
+-- taps put their UP a few ms after the DOWN and taps 100 ms or more apart. That holds only for
+-- single-finger taps (no swipe, long press or second finger); perf.sh checks the count against its taps.
 ev as (
   select ts, dur, case when a14 then coalesce(event_ns - lag(event_ns) over (order by ts) > 50000000, 1)
     else name like '%ACTION_DOWN%' end as down
