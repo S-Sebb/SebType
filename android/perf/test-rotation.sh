@@ -23,7 +23,8 @@ case "$*" in
 esac
 ADB
 chmod +x "$tmp/sdk/platform-tools/adb"
-export ANDROID_HOME=$tmp/sdk PERF_OUT=$tmp/out FAKE=$tmp SETTLE_S=0 ANDROID_SERIAL=fake
+# SEBTYPE_HOST: on yanglab16, tools/lib.sh would point ANDROID_HOME at its own SDK, past the fake adb
+export ANDROID_HOME=$tmp/sdk PERF_OUT=$tmp/out FAKE=$tmp SETTLE_S=0 ANDROID_SERIAL=fake SEBTYPE_HOST=fake
 fails=0
 ok() { echo "PASS $1"; }
 no() { echo "FAIL $1: $2"; fails=$(( fails + 1 )); }
