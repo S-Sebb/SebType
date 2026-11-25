@@ -21,6 +21,7 @@ constexpr size_t CONTEXT_STEP = 150;   // how much the window grows before its s
 constexpr int MAX_BRANCHES = 32;
 constexpr int NEXT_WORD_PIECES = 5;  // first pieces nextWords() follows to the end of their word
 constexpr int NEXT_WORD_MAX_PIECES = 4;  // a next word's pieces, at most: o'clock is 4
+constexpr size_t NEXT_WORDS_SHOWN = 3;   // the words the strip shows, which a path must be able to beat
 constexpr size_t SCORED_CANDIDATES = 6;
 // decide()'s weights, tuned on tools/english-lm's own dev sets (tune.py), never on the harness's test sets.
 // MARGIN_NON_WORD: 10 changes no more dev words than 12 did; the harness's clean words changed 0.2 -> 0.3 %, accepted
@@ -33,9 +34,6 @@ constexpr float MIN_DECODER_SCORE = 1e-3f;
 constexpr float MAX_DECODER_SCORE = 10.0f;
 constexpr float MARGIN_WORD = 4.0f;     // how much likelier a correction must be than a typed dictionary word
 constexpr float MARGIN_NON_WORD = 10.0f;  // ... than typed letters that aren't a word
-// ... than the typed word in small letters, for the same letters in other capitals (ID for id): the model
-// scores the two alike where either may be meant ("Freud wrote about the ego and the id": ID by 0.06).
-constexpr float MARGIN_RECASED = 1.0f;
 const std::string SPACE = "\xe2\x96\x81";  // "▁"
 const std::set<std::string> CONTRACTION_ENDS = {"t", "s", "d", "m", "ll", "re", "ve"};
 
@@ -118,26 +116,53 @@ std::string stripped(std::string s) {
     return s;
 }
 
-// Whether WORD, a candidate as the decoder gives it, is a contraction of the hint's LETTERS: one word, they
-// and an apostrophe. Not a name's possessive ("What eas": Ea's), nor words apart ("towords": to word's).
+// Whether OWN, a word's hint letters with an apostrophe, is a common contraction: n't, 're, 've, 'll or 'd, I'm,
+// 's after a pronoun or a question word, o'clock, y'all or ma'am. Not a possessive (goo's) nor a rare form (h'm,
+// ne'er): read after a hint with its apostrophe and as the only correction of letters that aren't a word, they
+// took hm, goos and neer, which main kept or corrected (#568).
+bool common(const std::string &own) {
+    static const std::set<std::string> ends = {"re", "ve", "ll", "d"};
+    static const std::set<std::string> is = {"it", "he", "she", "that", "there", "here", "what", "where", "when",
+                                             "why", "how", "who", "let", "this", "everyone", "everybody",
+                                             "someone", "somebody", "nobody", "one"};
+    const auto at = own.rfind('\'');
+    const std::string stem = own.substr(0, at), end = own.substr(at + 1);
+    return (end == "t" && !stem.empty() && stem.back() == 'n') || ends.count(end) || (end == "m" && stem == "i") ||
+           (end == "s" && is.count(stem)) || own == "o'clock" || own == "y'all" || own == "ma'am";
+}
+
+// Whether WORD, a candidate as the decoder gives it, is a common contraction of the hint's LETTERS: one word,
+// they and an apostrophe. Not a name's possessive ("What eas": Ea's), nor words apart ("towords": to word's).
 bool contractionOf(const std::string &word, const std::string &letters) {
     const std::string own = hintLetters(fold(word));
     return word.find(' ') == std::string::npos && (!std::isupper(static_cast<unsigned char>(word[0])) ||
                                                     word.rfind("I'", 0) == 0) &&
-           own != letters && own.find('\'') != std::string::npos && stripped(own) == stripped(letters);
+           own != letters && own.find('\'') != std::string::npos && stripped(own) == stripped(letters) &&
+           common(own);
 }
 
-// Whether WORD is in capitals: more than one letter, none small.
+// Whether WORD is in capitals: more than one letter, none small. A quote or an apostrophe isn't a letter ("I).
 bool capitals(const std::string &w) {
-    bool upper = false, small = false;
-    for (unsigned char c : w) upper |= std::isupper(c) != 0, small |= std::islower(c) != 0;
-    return w.size() > 1 && upper && !small;
+    const auto upper = std::count_if(w.begin(), w.end(), [](unsigned char c) { return std::isupper(c); });
+    return upper > 1 && std::none_of(w.begin(), w.end(), [](unsigned char c) { return std::islower(c); });
 }
 
-// The last word of folded TEXT.
+// The last word of folded TEXT's last line, the line the model reads.
 std::string lastWord(const std::string &text) {
-    const std::string s = text.substr(0, text.find_last_not_of(' ') + 1);  // npos + 1: none
+    std::string s = text.substr(0, text.find_last_not_of(' ') + 1);  // npos + 1: none
+    s = s.substr(s.rfind('\n') + 1);
     return s.substr(s.rfind(' ') + 1);
+}
+
+// Whether folded TEXT ends in text in capitals, which the model reads in small letters: its last line's last
+// word in capitals after I or another word in capitals ("I THINK", "I FEEL ILL"), or holding an apostrophe
+// (DON'T). A lone acronym (OK, LOL, USA) or a quoted I (“I) isn't such text: read small, OK's next words were
+// BECAUSE, BUT (#568).
+bool shoutedText(const std::string &text) {
+    const std::string last = lastWord(text);
+    const std::string before = lastWord(text.substr(0, text.find_last_not_of(' ') + 1 - last.size()));
+    return capitals(last) &&
+           (hintLetters(before) == "i" || capitals(before) || last.find('\'') != std::string::npos);
 }
 
 }  // namespace
@@ -336,11 +361,9 @@ float Model::logSoftmax(const float *logits, int token, const Row &r) { return l
 
 std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
     // Text in capitals ("I THINK", "DON'T") is read in small letters, as score() reads it, and its next words
-    // are shown in capitals: read as it is, they were pieces of words (OF, E, T). An acronym after small
-    // letters ("in the USA") isn't such text.
-    const std::string folded = fold(context), last = lastWord(folded);
-    const std::string before = lastWord(folded.substr(0, folded.find_last_not_of(' ') + 1 - last.size()));
-    const bool shouted = capitals(last) && (before.empty() || before == "I" || capitals(before));
+    // are shown in capitals: read as it is, they were pieces of words (OF, E, T).
+    const std::string folded = fold(context);
+    const bool shouted = shoutedText(folded);
     const float *logits = advance(contextTokens(shouted ? lower(folded) : context));
     std::vector<int> first;
     for (int t = 0; t < mVocabSize; t++)
@@ -355,6 +378,7 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
         int at;     // the batch index of its last piece's logits
         std::string word;
         float logProb;
+        int stem = -1;  // the word in WORDS it goes on from, if it is likelier than that word
     };
     std::vector<Path> paths;
     const Row start = row(logits);
@@ -369,15 +393,19 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
 
     // Each path is a word that either ends after its last piece or goes on with its likeliest continuation,
     // up to NEXT_WORD_MAX_PIECES: a contraction is 3 pieces (▁don ' t). A path goes on only while it can still
-    // beat the Nth word found, as its probability only falls with each piece. A path's next piece is decoded
-    // on its own sequence, after the pieces it holds.
+    // beat the words the strip shows, as its probability only falls with each piece; the others are a reserve
+    // for the keyboard's filters, found without decoding further (5th: 82 of 500 chat rows decoded more rounds,
+    // and next-word p95 was 6 ms above main's, #568). A path's next piece is decoded on its own sequence, after
+    // the pieces it holds. A word whose likelier reading is a longer word left unfinished isn't offered: "don"
+    // where don't was meant.
     std::vector<Word> words;
+    const size_t shown = std::min(n, NEXT_WORDS_SHOWN);
     auto nth = [&] {
-        if (words.size() < n) return -INFINITY;
+        if (words.size() < shown) return -INFINITY;
         std::vector<float> lp;
         for (const Word &w : words) lp.push_back(w.logProb);
-        std::nth_element(lp.begin(), lp.begin() + (n - 1), lp.end(), std::greater<>());
-        return lp[n - 1];
+        std::nth_element(lp.begin(), lp.begin() + (shown - 1), lp.end(), std::greater<>());
+        return lp[shown - 1];
     };
     for (int depth = 1; !paths.empty(); depth++) {
         std::vector<Path> longer;
@@ -387,13 +415,18 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
             // A word can't end in an apostrophe: "don'" is half of "don't".
             if (p.word.back() != '\'') words.push_back({p.word, p.logProb + r.end});
             if (r.next < 0 || depth >= NEXT_WORD_MAX_PIECES) continue;
-            Path q{r.next, p.seq, 0, p.word + mText[r.next], p.logProb + logSoftmax(after, r.next, r)};
+            Path q{r.next, p.seq, 0, p.word + mText[r.next], p.logProb + logSoftmax(after, r.next, r), p.stem};
+            if (p.word.back() != '\'') q.stem = q.logProb > words.back().logProb ? int(words.size()) - 1 : -1;
             // A contraction's ending (n't's t, 's, 'll) ends its word: taken as it is, it saves a decode.
             if (p.word.back() == '\'' && CONTRACTION_ENDS.count(mText[r.next])) words.push_back({q.word, q.logProb});
             else longer.push_back(std::move(q));
         }
         const float bar = nth();
-        longer.erase(std::remove_if(longer.begin(), longer.end(), [&](const Path &p) { return p.logProb <= bar; }),
+        longer.erase(std::remove_if(longer.begin(), longer.end(), [&](const Path &p) {
+                         if (p.logProb > bar) return false;
+                         if (p.stem >= 0) words[p.stem].logProb = -INFINITY;
+                         return true;
+                     }),
                      longer.end());
         paths = std::move(longer);
         if (paths.empty()) break;
@@ -419,7 +452,7 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
         if (shouted)
             for (char &c : w.word) c = std::toupper(static_cast<unsigned char>(c));
         const bool seen = std::any_of(out.begin(), out.end(), [&](const Word &o) { return lower(o.word) == lower(w.word); });
-        if (!seen && out.size() < n) out.push_back(w);
+        if (!seen && out.size() < n && w.logProb > -INFINITY) out.push_back(w);
     }
     return out;
 }
@@ -432,7 +465,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     // whats". Read in capitals the model hardly knows a contraction (WHAT'S), and with ill in small letters
     // after "I FEEL" it read I'll (#568). Other words are capitalised where a sentence starts or as typed.
     const std::string typedText = fold(typed), folded = fold(context);
-    const bool shouted = capitals(typedText), textShouted = shouted && capitals(lastWord(folded));
+    const bool shouted = capitals(typedText), textShouted = shouted && shoutedText(folded + " " + typedText);
     const bool typedCapital = !typedText.empty() && std::isupper(static_cast<unsigned char>(typedText[0]));
     const bool capital = !textShouted && (sentenceStart(folded) || (typedCapital && !shouted));
     auto shown = [&](std::string w, bool first) {
@@ -489,12 +522,25 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     // Where a word ends is read only for the typed word, which the others must beat, and for a word another
     // continues (don, don't): elsewhere it changes little and would cost a decoded token per word, which
     // doubled the time a key takes (#561). A typed word kept whatever it scores needs it only where a
-    // contraction shares with it.
+    // contraction shares with it. A word another continues pays only for the pieces that continue it to those
+    // words, not for any longer word: profession paid for professional's odds, which professional itself, read
+    // whole, didn't, and "proffession" became professional where main kept profession (#568).
     const bool typedEnds = !typedKept || !contractions.empty();
+    auto starts = [](const std::vector<int> &a, const std::vector<int> &b) {
+        return !a.empty() && b.size() > a.size() && std::equal(a.begin(), a.end(), b.begin());
+    };
+    std::vector<std::set<int>> goesOn(words.size());  // the pieces that continue each word to another
+    for (size_t i = 0; i < words.size(); i++)
+        for (const std::vector<int> &o : spelt)
+            if (starts(spelt[i], o)) goesOn[i].insert(o[spelt[i].size()]);
+    auto ending = [&](size_t i, const float *logits, const Row &r) {
+        if (i + 1 >= words.size()) return r.end;  // the typed word, and the readings below
+        float p = 0;
+        for (int t : goesOn[i]) p += std::exp(logSoftmax(logits, t, r));
+        return std::log1p(-std::min(p, 0.999f));
+    };
     for (size_t i = 0; i < words.size(); i++) {
-        const bool continued = std::any_of(spelt.begin(), spelt.end(), [&](const std::vector<int> &o) {
-            return !spelt[i].empty() && o.size() > spelt[i].size() && std::equal(spelt[i].begin(), spelt[i].end(), o.begin());
-        });
+        const bool continued = !goesOn[i].empty();
         if ((i + 1 == words.size() && typedEnds) || continued)
             terms[i].push_back({int(followers[i].size()) - 1, -1});
         else if (!followers[i].empty()) followers[i].pop_back();  // its last piece: no term reads after it
@@ -543,7 +589,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     const Row hint = row(logits);
     for (size_t i = 0; i < terms.size(); i++)
         for (const Term &t : terms[i])
-            if (t.after < 0) out[i] += t.token < 0 ? hint.end : logSoftmax(logits, t.token, hint);
+            if (t.after < 0) out[i] += t.token < 0 ? ending(i, logits, hint) : logSoftmax(logits, t.token, hint);
     float end = 0;  // the typed word's ending term
     std::vector<std::vector<bool>> read;  // the follower tokens whose logits a term reads
     for (size_t i = 0; i < followers.size(); i++) {
@@ -560,7 +606,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             const float *after = llama_get_logits_ith(mCtx, at);
             auto it = rows.find(at);
             if (it == rows.end()) it = rows.emplace(at, row(after)).first;
-            out[i] += t.token < 0 ? it->second.end : logSoftmax(after, t.token, it->second);
+            out[i] += t.token < 0 ? ending(i, after, it->second) : logSoftmax(after, t.token, it->second);
             if (t.token < 0 && i + 1 == words.size()) end = it->second.end;
         }
     if (typedEnd) *typedEnd = end;
@@ -609,6 +655,8 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
     score.back() = logProbs.back() + DECODER_WEIGHT * std::log(typedDecoder);
     const std::string letters = hintLetters(fold(typed));
     auto contraction = [&](size_t i) { return contractionOf(words[i], letters); };
+    const auto upper = [](char c) { return std::isupper(static_cast<unsigned char>(c)) != 0; };
+    const bool titled = upper(typed[0]) && std::none_of(typed.begin() + 1, typed.end(), upper);  // "Id", not "ID"
     std::vector<float> commit(words.size(), -INFINITY);  // what a space may correct to, by its score
     bool contractions = false;
     for (size_t i = 0; i + 1 < words.size(); i++) contractions |= contraction(i);
@@ -618,12 +666,11 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
             // Typed letters that aren't a word but are a contraction's are that contraction or as typed:
             // "shant" read as a word's start became shanty, though the model scores shan't well above it (#568).
             if (typedIsWord || !contractions || contraction(i)) commit[i] = score[i];
-            // A word that goes on from a typed dictionary word ("Sure, hell": hello) is weighed against it
-            // without its ending: the space says the typed word ends there, and the model, which can't know
-            // that, put the longer word's odds in that ending, so hell became hello where main kept it (#568).
-            const std::string own = hintLetters(fold(words[i]));
-            if (typedIsWord && own.size() > letters.size() && own.compare(0, letters.size(), letters) == 0)
-                commit[i] += typedEnd;
+            // A word is weighed against the typed word without its ending: the space says the typed word ends
+            // there, and the model, which can't know that, put the odds of the words it starts in that ending
+            // ("Sure, hell": hello; "my fiance": finance; impl: imply), where main kept them (#568). After a typed
+            // first capital the same word in other capitals ends where the typed word does ("The Id": ID).
+            if (!titled || lower(words[i]) != lower(typed)) commit[i] += typedEnd;
             continue;
         }
         // A contraction of a typed dictionary word's letters (cant: can't). The keys score the two alike, and
@@ -647,17 +694,18 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
     const auto best = std::max_element(commit.begin(), commit.end() - 1) - commit.begin();
     // Typed letters that aren't a word but are a contraction's are that contraction ("Please dont", "so Dont"):
     // the model reads them as likely as it after their own hint, and they fell short of the margin (#568).
-    // The typed word in other capitals ("Show your id": ID) is the word typed, as a name typed in small letters
-    // is, and needs only MARGIN_RECASED, or none if a capital was typed ("The Id") (#568).
+    // The typed word in other capitals after a typed first capital alone ("The Id": ID) needs no margin: that
+    // capital says a name or an acronym may be meant. Typed in small letters ("the turkey", "ok"), or with
+    // capitals inside (DeShawn), it needs the margin any other word does (#568).
     const bool oneLetter = std::count_if(typed.begin(), typed.end(), [](char c) { return (c & 0xc0) != 0x80; }) == 1;
-    const bool recased = !oneLetter && lower(words[best]) == lower(typed);
-    const float margin = recased ? (std::isupper(static_cast<unsigned char>(typed[0])) ? 0 : MARGIN_RECASED)
+    const bool sameWord = lower(words[best]) == lower(typed), recased = !oneLetter && sameWord;
+    const float margin = recased && titled              ? 0
                          : !typedIsWord && contractions ? 0
                          : typedIsWord                 ? MARGIN_WORD
                                                        : MARGIN_NON_WORD;
     // One letter is corrected only to its capital (i to I), and a word only learned never: the model hasn't
     // seen it, so it would lose to any likely word (#555).
-    if (!order.empty() && !typedIsLearned && (!oneLetter || lower(words[best]) == lower(typed)) &&
+    if (!order.empty() && !typedIsLearned && (!oneLetter || sameWord) &&
         commit[best] - score.back() > margin)
         out.committed = words[best];
     return out;

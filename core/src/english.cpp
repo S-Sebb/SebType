@@ -210,6 +210,11 @@ std::string withCase(const std::string &word, const std::vector<int> &typed) {
                          return char32_t(c) == upperCase(c);
                        });
   auto cps = codePoints(word);
+  // A word with capitals after its first letter keeps them unless typed in capitals: iPhone typed "Iphone"
+  // where a sentence starts was IPhone (#568).
+  if (!allCaps && std::any_of(cps.begin() + std::min<size_t>(1, cps.size()), cps.end(),
+                              [](int c) { return char32_t(c) != lowerCase(c); }))
+    return word;
   for (size_t i = 0; i < cps.size() && (allCaps || i == 0); i++) cps[i] = upperCase(cps[i]);
   return utf8(cps);
 }
@@ -803,6 +808,17 @@ class English : public Engine {
     return nextGen_ != gen_ && field_ == Field::Text && main_ && !atEmail() &&
            expectedIn(nextTime_) <= kHold;
   }
+  // Whether a dictionary has WORD, the model's next word, as it is, in small letters, or with only its first
+  // letter a capital: shown in capitals, I'M is the dictionary's I'm (#568).
+  bool known(const std::string &word) const {
+    const std::string small = lowerCaseWord(word);
+    auto cps = codePoints(small);
+    if (!cps.empty()) cps[0] = int(upperCase(cps[0]));
+    for (const std::string &w : {word, small, utf8(cps)})
+      if (main_->has(w) || (history_ && history_->has(w)) || (personal_ && personal_->has(w))) return true;
+    return false;
+  }
+
   std::vector<std::string> currentList() {
     if (!typed_.empty()) {
       takeRanking();
@@ -818,8 +834,7 @@ class English : public Engine {
       // thank": youin) isn't offered (#568).
       if (nextGen_ == gen_)
         for (const auto &w : next_)
-          if (main_->has(w.word) || main_->has(lowerCaseWord(w.word)) || (history_ && history_->has(w.word)))
-            words.push_back(w.word);
+          if (known(w.word)) words.push_back(w.word);
     }
     if (words.empty() && history_) {
       const auto context = ngramContext(context_);
@@ -862,7 +877,7 @@ class English : public Engine {
     }
     if (!main_) return;
     const auto context = ngramContext(context_);
-    std::vector<std::string> userWords;  // the user's words' own, before the merge cuts them
+    std::vector<std::string> userWords;  // the user's words for the letters in either case, before the merge
     const auto suggest = [&](const std::vector<int> &letters) {
       std::vector<Word> out;
       for (const Word &w : main_->suggest(keys_.get(), letters, xs_, ys_, context)) addResult(out, w, kMaxResults);
@@ -870,7 +885,7 @@ class English : public Engine {
         if (lexicon)
           for (const Word &w : lexicon->suggest(keys_.get(), letters, xs_, ys_, context)) {
             addResult(out, w, kMaxResults);
-            userWords.push_back(w.word);
+            if (std::find(userWords.begin(), userWords.end(), w.word) == userWords.end()) userWords.push_back(w.word);
           }
       return out;
     };
@@ -894,7 +909,9 @@ class English : public Engine {
       if (allowed && kind != Dictionary::KIND_SHORTCUT && strong) committed = strip.front();
     }
     show(strip, committed);
-    if (!model_ready_ || typed_.empty()) return;
+    // A word longer than the dictionary's words isn't ranked: as long as a pasted line, it overran the model's
+    // batch and its decoding failed (#568).
+    if (!model_ready_ || typed_.empty() || typed_.size() >= size_t(kMaxWordLength)) return;
     // The model's ranking comes from the worker; a key never waits for it.
     // A personal word's shortcut offers it first, as the FUTO-based app did (#380): the model would rank a
     // phrase it doesn't know last. That app put first the words of the shortcut typed, in any case, and a
@@ -946,11 +963,13 @@ class English : public Engine {
             break;
           }
     }
-    // A word with a stray capital inside it (iLl, ImPossible) that neither dictionary has is ranked in small
-    // letters, and a space gives it its first letter's case: as typed, no word, it became a contraction ("I
-    // feel iLl": I'll), and read capitalised, "I feel Ill" was I'll too.
+    // A word with a stray capital inside it (iLl, ImPossible) that neither dictionary has, and whose small
+    // letters are a word, is ranked in small letters, and a space gives it its first letter's case: as typed, no
+    // word, it became a contraction ("I feel iLl": I'll), and read capitalised, "I feel Ill" was I'll too. Inner
+    // capitals whose small letters aren't a word are meant (DeShawn, iCloud, camelCase) and stay (#568).
     const bool stray = std::any_of(typed_.begin() + 1, typed_.end(), [](int c) { return char32_t(c) != lowerCase(c); });
-    const std::vector<int> cased = learned.empty() && !main_->has(typed) && stray && !allCaps(typed) ? typedLower : typed_;
+    const bool readSmall = learned.empty() && !main_->has(typed) && stray && !allCaps(typed) && main_->has(lowerTyped);
+    const std::vector<int> cased = readSmall ? typedLower : typed_;
     const std::string word = learned.empty() ? utf8(cased) : learned;
     const auto has = [&](const std::string &w) {
       return std::any_of(ranked.begin(), ranked.end(), [&](const Word &r) { return r.word == w; });

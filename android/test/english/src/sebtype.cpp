@@ -50,7 +50,8 @@ public:
         }
         const auto words = sebtype_lm::rankedWords(item.typed, candidates);
         std::vector<float> asTyped;
-        const auto logProbs = mModel.score(item.context, item.typed, words, typedIsWord, &asTyped);
+        float typedEnd = 0;
+        const auto logProbs = mModel.score(item.context, item.typed, words, typedIsWord, &asTyped, false, &typedEnd);
         if (mDump.is_open()) {
             mDump << item.context << '\t' << item.typed << '\t' << typedIsWord;
             for (size_t i = 0; i < words.size(); i++) {
@@ -61,7 +62,7 @@ public:
             }
             mDump << '\n';
         }
-        const auto ranked = sebtype_lm::decide(item.typed, candidates, typedIsWord, logProbs, false, asTyped);
+        const auto ranked = sebtype_lm::decide(item.typed, candidates, typedIsWord, logProbs, false, asTyped, typedEnd);
         return {ranked.strip, ranked.committed};
     }
 
