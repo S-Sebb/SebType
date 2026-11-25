@@ -142,6 +142,7 @@ if ($Typing) {
     }
     Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
     $tsf = [SebType.TsfHost]
+    $tsf::StopToastHost = $true  # the throwaway test user's session: a toast left in front may be closed (#562)
     # Keys come from the Remote Desktop client (rdp-keys.py through test-tcsbackend.sh's tunnel), as a person's.
     $keys = Wait-Until 30 { try { New-Object Net.Sockets.TcpClient '127.0.0.1', 47812 } catch { $null } }
     if (-not $keys) { throw 'no key server at 127.0.0.1:47812 (rdp-keys.py, through the SSH tunnel)' }
@@ -226,6 +227,7 @@ if ($Typing) {
       $tsf::Start(); $tsf::StartTiming()
       try {
         if (-not $tsf::Focus()) { throw "the text field did not get the keyboard focus ($(Front-Note 'the text field'))" }
+        if ($tsf::LastFront) { $null = Front-Note 'the text field' }
         if ($ime -eq 'soak') {
           # 10+ minutes of mixed SebType typing, words committed, with memory every 30 s and any server restart.
           $minutes = [double](Get-Content "$out\soak-minutes.txt"); $end = (Get-Date).AddMinutes($minutes); $start = Get-Date
