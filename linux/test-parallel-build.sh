@@ -7,34 +7,26 @@
 #
 #   ISSUE=326 linux/test-parallel-build.sh   # two RPM builds, one after the other in the build lock
 #
-# The test RPMs are removed afterwards, here and on the build host.
+# The test RPMs are removed afterwards.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source-path=SCRIPTDIR source=../tools/lib.sh
 source "$root/tools/lib.sh"
 # shellcheck source-path=SCRIPTDIR source=versions.sh
 source "$root/linux/versions.sh"
-# The copies' builds go in this task's folder, on the build host too.
-export ISSUE=${ISSUE:-${TASK_OUT#"$SCRATCH"/}}
+export ISSUE=${ISSUE:-${TASK_OUT#"$SCRATCH"/}}  # the copies' outputs go in this task's folder
 work=$TASK_OUT/parallel-build
 command -v rpm2cpio >/dev/null || { echo "BLOCKED: rpm2cpio missing"; exit 1; }
 rm -rf "$work"
 mkdir -p "$work"
 rpms=()
-cleanup() {
-  rm -rf "$work" "${rpms[@]}"
-  if build_host_ready 2>/dev/null; then
-    ssh "$BUILD_HOST" "rm -rf scratch/SebType/$ISSUE/a scratch/SebType/$ISSUE/b \
-      $(printf 'scratch/SebType/cache/sebtype/%q ' "${rpms[@]##*/}")" || true
-  fi
-}
-trap cleanup EXIT
+trap 'rm -rf "$work" "${rpms[@]}"' EXIT
 
 pids=()
 for c in a b; do
   git -C "$root" ls-files -co --exclude-standard | rsync -a --files-from=- "$root/" "$work/$c/"
   echo "# parallel-build-$c" >>"$work/$c/linux/data/sebtype.conf"
-  # build_remotely takes the files to copy from git.
+  # sebtype_key hashes the files git sees.
   git -C "$work/$c" init -q && git -C "$work/$c" add -A
   rpms+=("$(cd "$work/$c" && source linux/versions.sh && sebtype_rpm "$(sebtype_key)")")
   # The timeout covers the build lock's wait (3 h for linux/build.sh's 120 minutes) and the build.

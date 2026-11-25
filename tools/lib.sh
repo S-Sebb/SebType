@@ -1,10 +1,15 @@
-# Shared by SebType's build and test scripts (source it): the Android toolchain, where heavy builds run,
-# and the one way every heavy build runs, in the shared build lock with the same cores and memory cap.
-# docs/development.md explains the lock, the rank and the caps.
+# Shared by SebType's build and test scripts (source it): the Android toolchain, the caches, and the one way
+# every heavy build runs, in the shared build lock with the same cores and memory cap. Every build runs on the
+# machine the script runs on (#592). docs/development.md explains the lock, the rank and the caps.
 
-# Files made outside the checkout; in cache/ the caches every worktree shares (the Linux setup's too).
-SCRATCH=$HOME/scratch/SebType
-# The running task's test, perf and release outputs: ~/scratch/SebType/<ISSUE>/ (ISSUE=211 <script>),
+# shellcheck source=../linux/versions.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../linux/versions.sh"
+# Files made outside the checkout: ~/scratch/SebType, or the project's scratch/ (SEBTYPE_PROJECT,
+# linux/versions.sh); in cache/ the tests' fixtures, which every worktree shares. The builds' caches are in
+# CACHE.
+SCRATCH=${SEBTYPE_PROJECT:+$SEBTYPE_PROJECT/scratch}
+SCRATCH=${SCRATCH:-$HOME/scratch/SebType}
+# The running task's test, perf and release outputs: $SCRATCH/<ISSUE>/ (ISSUE=211 <script>),
 # or without ISSUE the checkout's folder name.
 TASK_OUT=$SCRATCH/${ISSUE:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")}
 
@@ -13,24 +18,23 @@ TASK_OUT=$SCRATCH/${ISSUE:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 
 BUILD_JOBS=6 GRADLE_WORKERS=4
 BUILD_MEMORY_GB=8
 
-# Where the heavy builds run (#225): on yanglab16, the lab's machine, unless SEBTYPE_BUILD_HOST=local
-# (build_host_ready, build_remotely). There, a shared machine, a build gets half its 96 threads and 32 GB,
-# and the Android build's tools are in the scratch cache (tools/android-tools.sh).
-BUILD_HOST=${SEBTYPE_BUILD_HOST:-yanglab16}
-# The build container sees SEBTYPE_HOST through --env-host (fedora_container): its own host name is the
-# container's, and it has no hostname command.
+# yanglab16, the lab's shared machine: a build gets half its 96 threads and 32 GB, runs in the pinned Fedora
+# (fedora_container: its Ubuntu has neither Rust nor librime), and the Android build's tools are pinned in
+# CACHE (tools/android-tools.sh). The build container sees SEBTYPE_HOST through --env-host: its own host
+# name is the container's, and it has no hostname command.
 if [[ ${SEBTYPE_HOST:=$(uname -n)} == yanglab16* ]]; then
   export SEBTYPE_HOST
-  BUILD_HOST=local BUILD_JOBS=$(( $(nproc) / 2 )) BUILD_MEMORY_GB=32
+  BUILD_JOBS=$(( $(nproc) / 2 )) BUILD_MEMORY_GB=32
   # The build container is already capped to that half, and nproc there counts only it.
   [[ -f /run/.containerenv ]] && BUILD_JOBS=$(nproc)
   GRADLE_WORKERS=$BUILD_JOBS
-  export ANDROID_HOME=$SCRATCH/cache/android-sdk JAVA_HOME_21=$SCRATCH/cache/jdks/jdk-21.0.13+9 \
-    GRADLE_USER_HOME=$SCRATCH/cache/gradle ANDROID_USER_HOME=$SCRATCH/cache/android-user \
-    SCCACHE_DIR=$SCRATCH/cache/sccache CARGO_HOME=$SCRATCH/cache/cargo PATH=$SCRATCH/cache/bin:$PATH
-  # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user. A
-  # BAZEL_CACHE set beforehand stays: inside the build container it comes from the host, and a test may name
-  # a cache of its own (a cold-cache build, #361).
+  export ANDROID_HOME=$CACHE/android-sdk JAVA_HOME_21=$CACHE/jdks/jdk-21.0.13+9 \
+    GRADLE_USER_HOME=$CACHE/gradle ANDROID_USER_HOME=$CACHE/android-user \
+    SCCACHE_DIR=$CACHE/sccache CARGO_HOME=$CACHE/cargo PATH=$CACHE/bin:$PATH
+  # Bazel refuses an output root it doesn't own, and on the NAS every file belongs to the NAS's user: its
+  # caches are in a podman volume, in podman's storage (in the project's capped folder when
+  # CONTAINERS_STORAGE_CONF points there). A BAZEL_CACHE set beforehand stays: inside the build container it
+  # comes from the host, and a test may name a cache of its own (a cold-cache build, #361).
   if [[ -z ${BAZEL_CACHE:-} ]]; then
     podman volume exists sebtype-bazel || podman volume create sebtype-bazel >/dev/null
     BAZEL_CACHE=$(podman volume inspect -f '{{.Mountpoint}}' sebtype-bazel)
@@ -40,83 +44,42 @@ fi
 # On a GitHub-hosted runner (.github/workflows/linux-rpm.yml) the build has the machine to itself: all its
 # cores and most of its memory, and no lock (build_lock).
 if [[ ${GITHUB_ACTIONS:-} == true ]]; then
-  BUILD_HOST=local BUILD_JOBS=$(nproc) BUILD_MEMORY_GB=$(( $(awk '/^MemTotal/ { print int($2 / 1048576) }' /proc/meminfo) - 2 ))
+  BUILD_JOBS=$(nproc) BUILD_MEMORY_GB=$(( $(awk '/^MemTotal/ { print int($2 / 1048576) }' /proc/meminfo) - 2 ))
 fi
 # Bazel's output roots and caches (Mozc's builds).
-BAZEL_CACHE=${BAZEL_CACHE:-$SCRATCH/cache}
+BAZEL_CACHE=${BAZEL_CACHE:-$CACHE}
 
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
 JDK21=${JAVA_HOME_21:-$(ls -d "$HOME"/.local/share/jdks/jdk-21* 2>/dev/null | tail -1 || true)}  # none: no Android build here
-
-# build_host_ready: whether this build runs on the build host. If the host doesn't answer, it tries again
-# with a longer timeout (a slow moment on the lab network), then, only if Zscaler's tray isn't running,
-# starts Zscaler and tries once more: each start brings Zscaler's window up on the person's desktop (#520).
-# If the host still doesn't answer, it says so and the build runs here.
-build_host_ready() {
-  [[ $BUILD_HOST != local ]] || return 1
-  local try=(ssh -o BatchMode=yes)
-  "${try[@]}" -o ConnectTimeout=10 "$BUILD_HOST" true 2>/dev/null && return
-  "${try[@]}" -o ConnectTimeout=30 "$BUILD_HOST" true 2>/dev/null && return
-  if ! pgrep -x ZSTray >/dev/null; then
-    gtk-launch ZSTray >/dev/null 2>&1 && sleep 20 && "${try[@]}" -o ConnectTimeout=30 "$BUILD_HOST" true 2>/dev/null && return
-  fi
-  echo "build: $BUILD_HOST unreachable; building on $(uname -n) (SEBTYPE_BUILD_HOST=local skips the try)" >&2
-  BUILD_HOST=local
-  return 1
-}
-
-# build_remotely [NAME=VALUE...] SCRIPT [ARG...]: runs SCRIPT (a path in the checkout) with ARGs on the
-# build host, in a copy of this checkout there, ~/scratch/SebType/<task>/<checkout>: rsynced with its
-# uncommitted changes but not what git ignores.
-# DEVQ_RANK, ISSUE, LIBRIME_KEY (linux/versions.sh: the copy has no git) and the NAME=VALUEs go with it.
-# The files SCRIPT prints, in the copy or in the host's ~/scratch/SebType, are copied back to the same place
-# here, and their paths printed. If SCRIPT fails, what it
-# printed goes to stderr instead (linux/build.sh prints the reason there).
-build_remotely() {
-  local root dir out f rel here key
-  root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-  dir=${TASK_OUT#"$SCRATCH"/}/$(basename "$root") # 567/x and 568/x must not share a copy
-  key=$(source "$root/linux/versions.sh" && librime_key) || return 1
-  local env=(SEBTYPE_BUILD_HOST=local ${DEVQ_RANK:+DEVQ_RANK=$DEVQ_RANK} ${ISSUE:+ISSUE=$ISSUE} "LIBRIME_KEY=$key")
-  while [[ $1 == *=* ]]; do env+=("$1"); shift; done
-  # rsync's .gitignore rules would also leave out the files git tracks despite them (librime's include/):
-  # those, and their folders, are taken first. Ignored files on the host stay: its build outputs.
-  git -C "$root" ls-files -ci --exclude-standard |
-    awk -F/ '{ p = ""; for (i = 1; i < NF; i++) { p = p "/" $i; print "+ " p "/" } print "+ /" $0 }' | sort -u |
-    rsync -a --delete --exclude=/.git --filter='. -' --filter=':- .gitignore' \
-      --rsync-path="mkdir -p scratch/SebType/$dir && rsync" "$root/" "$BUILD_HOST:scratch/SebType/$dir/" || return 1
-  out=$(ssh "$BUILD_HOST" "cd scratch/SebType/$dir && $(printf '%q ' env "${env[@]}" "$@")") ||
-    { [[ -z $out ]] || echo "$out" >&2; echo "build: failed on $BUILD_HOST" >&2; return 1; }
-  for f in $out; do
-    rel=${f#*/scratch/SebType/}
-    if [[ $rel == "$dir"/* ]]; then here=$root/${rel#"$dir"/}; else here=$SCRATCH/$rel; fi
-    mkdir -p "$(dirname "$here")" && rsync -a "$BUILD_HOST:$f" "$here" || return 1
-    echo "$here"
-  done
-}
 
 # fedora_container [PODMAN_OPTION...]: on yanglab16, sets container to the command that runs a build there
 # in the pinned Fedora nobara-pc runs (linux/versions.sh), with what builds take from the system: Fedora's
 # librime and OpenCC for the Chinese data, gcc for Bazel's host tools, Rust and fontconfig for the
 # Configurator, python, git for llama.cpp's pinned checkout (engines/sebtype-lm/fetch-llama.sh). It runs as
-# tony with an empty home (Java takes it from the user, not HOME), its CPUs and memory capped, and the scratch
-# folder where it is (under both its paths: Gradle takes the NAS's).
+# tony with an empty home (Java takes it from the user, not HOME), its CPUs and memory capped, the scratch
+# folders where they are (under both their paths), CACHE, and the checkout at its own (physical) path.
 # Elsewhere, to nothing: the build runs on the host.
 fedora_container() {
   container=()
   [[ $SEBTYPE_HOST == yanglab16* && ! -f /run/.containerenv ]] || return 0
   local rpms='librime librime-lua opencc gcc gcc-c++ cargo rust fontconfig-devel python3 python-unversioned-command unzip zip diffutils findutils which git'
-  local image nas
-  # shellcheck source=../linux/versions.sh
-  source "$(dirname "${BASH_SOURCE[0]}")/../linux/versions.sh"
+  local image nas root d mounts=()
+  root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
   image=localhost/sebtype-fedora:$(sha256sum <<<"$BUILD_IMAGE $rpms" | head -c 12)
+  mkdir -p "$CACHE" "$SCRATCH"
   podman image exists "$image" ||
-    podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $BUILD_IMAGE
+    podman build -q -t "$image" -f - "$CACHE" <<<"FROM $BUILD_IMAGE
 RUN dnf -y --setopt=throttle=35M install $rpms && dnf clean all" >/dev/null
-  nas=$(readlink -f "$SCRATCH")
+  # The scratch folders under both their paths, and ~/scratch/SebType's language models too when the
+  # project has its own.
+  for d in "$SCRATCH" "$HOME/scratch/SebType"; do
+    [[ -d $d ]] || continue
+    nas=$(readlink -f "$d")
+    for d in "$d" "$nas"; do [[ " ${mounts[*]} " == *":$d "* ]] || mounts+=(-v "$nas:$d"); done
+  done
   container=(podman run --rm --env-host --userns=keep-id --tmpfs "$HOME:rw,U"
     --cpus "$BUILD_JOBS" --memory "${BUILD_MEMORY_GB}g" --memory-swap "${BUILD_MEMORY_GB}g"
-    -v "$nas:$SCRATCH" -v "$nas:$nas" "$@" "$image")
+    "${mounts[@]}" -v "$CACHE:$CACHE" -v "$root:$root" "$@" "$image")
 }
 
 # sccache_env ROOT: C and C++ compiles go through sccache, with a private server (sccache --start-server
@@ -125,8 +88,8 @@ RUN dnf -y --setopt=throttle=35M install $rpms && dnf clean all" >/dev/null
 # the absolute paths of the checkout that stored them: a checkout whose headers differ got that one's
 # objects and depfiles (#318). Objects are then found by the preprocessed source, as before sccache 0.7.
 sccache_env() {
-  mkdir -p "$SCRATCH/cache"
-  SCCACHE_SERVER_UDS=$(mktemp -u "$SCRATCH/cache/sccache.XXXXXX")  # well under a socket path's 108 bytes
+  mkdir -p "$CACHE"
+  SCCACHE_SERVER_UDS=$(mktemp -u "$CACHE/sccache.XXXXXX")  # well under a socket path's 108 bytes
   export CMAKE_C_COMPILER_LAUNCHER=sccache CMAKE_CXX_COMPILER_LAUNCHER=sccache SCCACHE_BASEDIRS=$1 \
     SCCACHE_DIRECT=false SCCACHE_SERVER_UDS
 }

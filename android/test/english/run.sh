@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The English quality harness (#231, stage 0 of docs/plans/android-own-keyboard.md): runs pristine AOSP's
 # decoder, SebType's model on it, and the keyboard's English (core/src/english.cpp, #244) on the test sets in
-# sets/, twice, on the build host (yanglab16), checks that the two runs agree and that the keyboard's English
+# sets/, twice, checks that the two runs agree and that the keyboard's English
 # passes the plan's quality bar (§2) against today.json, the FUTO-based app's English (FUTO's decoder and
 # transformer) as this harness measured it on 2026-11-17, before that app was removed (#262).
 #
@@ -9,8 +9,8 @@
 #
 # One line per check in ~/scratch/SebType/<issue>/test-english-results.txt, and the baseline table (the
 # docs/perf/ format) in english/table.md next to it; logs in english/run1/ and run2/. Exit 0 only if all pass.
-# A run takes about 15 minutes on yanglab16. It never runs on nobara-pc unless SEBTYPE_BUILD_HOST=local.
-# SEBTYPE_MODEL=PATH (a GGUF file on the build host, tools/english-lm) tries another model in place of the
+# A run takes about 15 minutes on yanglab16.
+# SEBTYPE_MODEL=PATH (a GGUF file, tools/english-lm) tries another model in place of the
 # committed engines/sebtype-lm/english.gguf.
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
@@ -26,18 +26,9 @@ result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 for f in $here/sets/{clean,phone-typos,misspellings,next-chat,next-news,next-texts,text-typos,contractions,apostrophes,homographs,capitals}.tsv; do
   [[ -s $f ]] || { echo "preflight: $f missing (make_sets.py makes it)"; exit 1; }
 done
-if [[ $BUILD_HOST != local ]] && ! build_host_ready; then
-  echo "preflight: $BUILD_HOST unreachable; the harness doesn't run on $(hostname -s) unless SEBTYPE_BUILD_HOST=local"
-  exit 1
-fi
 
-bench() { # run name: builds and runs on the build host (or here), copying its summary back. The timeout
-  # covers the build lock's wait (2.5 h for its 90 minutes) and the run.
-  if [[ $BUILD_HOST == local ]]; then
-    timeout 14400 $here/bench.sh "$1"
-  else
-    timeout 14400 bash -c "source tools/lib.sh; build_remotely ${SEBTYPE_MODEL:+SEBTYPE_MODEL=$SEBTYPE_MODEL} $here/bench.sh $1"
-  fi
+bench() { # run name: the timeout covers the build lock's wait (2.5 h for its 90 minutes) and the run.
+  timeout 14400 $here/bench.sh "$1"
 }
 for run in run1 run2; do
   if bench $run > "$out/english/$run.log" 2>&1 && [[ -s $out/english/$run/summary.json ]]; then

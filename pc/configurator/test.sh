@@ -47,7 +47,7 @@ own=$out/configurator-own
 command -v devq >/dev/null || { echo "preflight: devq missing"; exit 1; }
 
 # The nested sessions and setup-ime's test run under this PC's lock (devq), after the app and its unit
-# tests are built on yanglab16 (tools/build.sh, #248) and copied back: this PC compiles nothing.
+# tests are built in the build lock (tools/build.sh, #248).
 if [[ -z ${HOLDING-} ]]; then
   sebtype_unpack "$own" || { echo "preflight: linux/build.sh failed"; exit 1; }
   ../../tools/build.sh 30 "sebtype configurator test build ($(git branch --show-current))" pc/configurator/build.sh \
@@ -71,7 +71,7 @@ export own_env
 bin=$PWD/target/release/sebtype-configurator tests=$PWD/target/release/sebtype-configurator-test
 check unit-tests 900 "$tests"
 check every-string-translated 300 "$tests" every_string_is_translated
-# The release build, made in yanglab16's Fedora, finds every library it links here.
+# The release build finds every library it links here (on yanglab16 it is built in the pinned Fedora).
 release_build() { ldd "$bin" && ! ldd "$bin" | grep -q 'not found'; }
 export -f release_build; export bin
 check release-build 60 release_build

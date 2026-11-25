@@ -2,7 +2,6 @@
 # The Chinese model's jobs on a phone (#264), without the keyboard: sebtype-zh-keys (zh_keys.cpp) built for
 # arm64 with the app's llama.cpp (its CPU code in variants, the best loaded at run time), then run on the
 # phone ANDROID_SERIAL names, under its lock, on its big cores (f0), its little ones (0f) and all of them (ff).
-# Builds on the build host (yanglab16) unless SEBTYPE_BUILD_HOST=local.
 #
 #   ANDROID_SERIAL=<serial> engines/sebtype-lm/bench/zh-keys.sh [THREADS...]   default: 2 4
 #
@@ -13,7 +12,7 @@ cd "$(dirname "$0")/../../.."
 source tools/lib.sh
 
 out=$TASK_OUT/zh-keys
-if [[ ${1:-} == --build ]]; then  # on the build host: the binary and its libraries, into $out/bin
+if [[ ${1:-} == --build ]]; then  # in the build lock: the binary and its libraries, into $out/bin
   ndk=$(ls -d "$ANDROID_HOME"/ndk/* | tail -1)
   build=engines/sebtype-lm/bench/build-android
   cmake -S engines/sebtype-lm/bench -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -45,10 +44,6 @@ fi
 
 [[ -n ${ANDROID_SERIAL:-} ]] || { echo "zh-keys: ANDROID_SERIAL names the phone"; exit 1; }
 mkdir -p "$out"
-if [[ $BUILD_HOST != local ]] && build_host_ready; then
-  build_remotely engines/sebtype-lm/bench/zh-keys.sh --build > /dev/null
-else
-  build_lock 20 sebtype-zh-keys engines/sebtype-lm/bench/zh-keys.sh --build > /dev/null
-fi
+build_lock 20 sebtype-zh-keys engines/sebtype-lm/bench/zh-keys.sh --build > /dev/null
 (( $# )) || set -- 2 4
 android/emulator.sh -w 1800 -m 15 -n "sebtype zh-keys.sh" -- "$PWD/engines/sebtype-lm/bench/zh-keys.sh" --run "$@"

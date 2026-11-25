@@ -76,9 +76,9 @@ model's list from Fcitx5's loop when `ready` comes; Windows' text service, acros
 `test/core_test.cpp` checks the riskiest paths with stand-in engines: language switching, the Shift tap,
 简/繁, あ ⇄ ア, the popups and paging 6 to a page, the touch paths and both `commitOnSwitch` values. `linux/build.sh` runs them in its container on every
 build (`%check` in `linux/sebtype.spec`), with 中文's model. Built with English, it also tests the English engine on the real
-dictionary and model: `test/english.sh` builds and runs that on yanglab16. The English harness
+dictionary and model: `test/english.sh` builds and runs that. The English harness
 (`android/test/english/run.sh`) measures its quality against today's keyboard. Built with 中文's model, it tests
-the model around a stand-in Rime: `test/chinese.sh` builds and runs that on yanglab16, and the Chinese harness
+the model around a stand-in Rime: `test/chinese.sh` builds and runs that (on yanglab16 in the pinned Fedora, for its OpenCC), and the Chinese harness
 (`android/test/chinese-lm/run.sh`, `SEBTYPE_ZH_CORE=1`) measures this code on the real Rime.
 
 ## Licences and credits

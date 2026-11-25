@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Chinese harness and runs today's 中文 (and, given a model, today's 中文 with the model) on every
-# set, on yanglab16 alone (run.sh starts it there), in the pinned Fedora container (tools/lib.sh,
+# set, on yanglab16 alone, in the pinned Fedora container (tools/lib.sh,
 # fedora_container) with SebType's librime and its Lua and octagram plugins, which the Linux add-on builds in
 # (linux/build-librime.sh's RPMs, #530), in the build lock and under its caps. Elsewhere it would measure the
 # system's librime, so it stops.
@@ -22,7 +22,7 @@ here=android/test/chinese-lm
 if [[ ! ${CHINESE_IN_CONTAINER:-} ]]; then
   fedora_container
   ((${#container[@]})) ||
-    { echo "preflight: the Chinese harness runs only on yanglab16 (run.sh starts it there), in its container with SebType's librime" >&2; exit 1; }
+    { echo "preflight: the Chinese harness runs only on yanglab16, in its container with SebType's librime" >&2; exit 1; }
   # The base build image with SebType's librime, its headers and plugins in place of Fedora's (removed first,
   # so a newer Fedora release can't win), and the harness's build tools.
   source linux/versions.sh
@@ -44,8 +44,7 @@ RUN rpm -e --nodeps \$(rpm -qa 'librime*') && dnf -y --setopt=throttle=35M insta
   container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
   # llama.cpp (MIT) is fetched at its pinned commit out here, before the build lock.
   llama=$(engines/sebtype-lm/fetch-llama.sh)
-  # Only the results' paths go to stdout (build_remotely copies what it names back): each set's, which
-  # score.py --compare reads, and the summary's last.
+  # Only the results' paths go to stdout: each set's, which score.py --compare reads, and the summary's last.
   build_lock 120 chinese-harness "${container[@]}" env CHINESE_IN_CONTAINER=1 ISSUE="${ISSUE:-}" LLAMA_DIR="$llama" CHINESE_CORE="${CHINESE_CORE:-}" \
     $here/bench.sh "$@" >&2
   [[ $1 == --dev ]] && exit

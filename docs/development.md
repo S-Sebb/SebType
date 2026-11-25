@@ -30,46 +30,31 @@ describe what each PC part does and list what each of its checks verifies.
 
 ### Where builds run
 
-Every SebType build runs on yanglab16, the lab's machine (96 threads), not on nobara-pc (#225, #248):
-`android/build.sh`, `linux/build.sh`, `linux/build-librime.sh`, and the builds test scripts need. Each
-copies what it built back to the same path on nobara-pc, so the device tests and setup use it as before.
-Only the tests themselves run on nobara-pc: the private Fcitx5 sessions, the emulator, the Configurator's
-screens. One command, run on nobara-pc as always:
+Every build runs on the machine its script runs on (#592): an agent on yanglab16, the lab's machine (96
+threads), builds there, and one on nobara-pc builds on nobara-pc. Tests that need nobara-pc's desktop or
+emulator (the private Fcitx5 sessions, the emulator suite, the Configurator's screens) run there, with what
+nobara-pc built.
 
-1. `build_host_ready` (`tools/lib.sh`) checks that `ssh yanglab16` answers. If it doesn't, it tries
-   once more with a longer timeout; then, only if Zscaler's tray (`ZSTray`) isn't running, it starts
-   Zscaler (`gtk-launch ZSTray`, which brings up its window) and tries a last time. If the host still
-   doesn't answer, it says so on stderr and the build runs on nobara-pc.
-2. `build_remotely` rsyncs the checkout, uncommitted changes included and what git ignores left out,
-   to `~/scratch/SebType/<task>/<checkout>/` on yanglab16 (`<task>`: `ISSUE`, or the checkout's folder),
-   runs the same script there, and copies back each file it prints. What git ignores stays on yanglab16,
-   so its next build of the checkout is incremental.
-3. On yanglab16 the script runs as on nobara-pc, in yanglab16's own build lock, with its tools from
-   `~/scratch/SebType/cache/` on the NAS: the Android SDK and NDK, JDK 21 and sccache, pinned and installed
-   on first use by `tools/android-tools.sh`, and Gradle's cache. The Android build runs in the pinned
-   Fedora 44 (`linux/versions.sh`) with Fedora's librime and OpenCC, as on nobara-pc (`fedora_container`
-   in `tools/lib.sh`); the Linux builds use their own Fedora container as before. Bazel's output roots (Mozc's builds) are in the podman volume
-   `sebtype-bazel` on yanglab16's local disk: Bazel refuses a folder it doesn't own, and on the NAS every
-   file belongs to the NAS's user. `BAZEL_CACHE=<folder on yanglab16's own disk>` names another, for a
-   cold-cache build.
+On yanglab16 the builds run in the pinned Fedora 44 (`linux/versions.sh`), as on nobara-pc: yanglab16's
+Ubuntu has neither Rust nor librime. The Android build and `tools/build.sh` run in a container with
+Fedora's librime and OpenCC (`fedora_container` in `tools/lib.sh`); the Linux builds use their own Fedora
+container. The Android build's tools, the Android SDK and NDK, JDK 21 and sccache, are pinned and installed
+on first use by `tools/android-tools.sh`. Bazel's output roots (Mozc's builds) are in the podman volume
+`sebtype-bazel`: Bazel refuses a folder it doesn't own, and on the NAS every file belongs to the NAS's
+user. `BAZEL_CACHE=<folder on a local disk>` names another, for a cold-cache build.
 
-A release APK is built unsigned, on yanglab16 (`SEBTYPE_UNSIGNED=1`) or on nobara-pc, and signed on
-nobara-pc with `apksigner` (scheme v2 alone, RSA), so the signing key never leaves nobara-pc and a release
-is the same file from either.
+A release APK is built unsigned and signed with `apksigner` (scheme v2 alone, RSA), so two builds of a
+commit are the same file. The key is only on nobara-pc, so a release is built there; elsewhere
+`SEBTYPE_UNSIGNED=1` builds one unsigned.
 
-Test scripts build through `tools/build.sh MINUTES NAME SCRIPT`, which runs SCRIPT on yanglab16 in that
-same Fedora container (yanglab16's Ubuntu has neither Rust nor librime) and copies back the files it
-prints: the Configurator and its unit tests' executable (`pc/configurator/build.sh`, for
-`pc/configurator/test.sh` and `pc/linux/test-setup-ime.sh`, which run that executable instead of
-`cargo test`), and the Chinese data (`data/rime/build.sh`, for `test-setup-ime.sh`, `pc/linux/compare.sh`
-and `data/rime/bench/bench.sh`). In the container the checkout is at its nobara-pc path, so the paths Rust
-compiles into the tests hold on nobara-pc. Rust's cache there is `~/scratch/SebType/cache/cargo`.
+Test scripts build through `tools/build.sh MINUTES NAME SCRIPT`, which runs SCRIPT in the build lock (on
+yanglab16 in that Fedora container) and prints the files it made: the Configurator and its unit tests'
+executable (`pc/configurator/build.sh`, for `pc/configurator/test.sh` and `pc/linux/test-setup-ime.sh`,
+which run that executable instead of `cargo test`), and the Chinese data (`data/rime/build.sh`, for
+`test-setup-ime.sh`, `pc/linux/compare.sh` and `data/rime/bench/bench.sh`).
 
-`SEBTYPE_BUILD_HOST=local <script>` builds on nobara-pc. Otherwise a build runs on nobara-pc only when
-yanglab16 can't be reached. `android/test/build.sh` is the exception: it checks yanglab16's caches and
-builds, so it needs yanglab16 and stops without it, and `SEBTYPE_BUILD_HOST=local` adds one release built
-on nobara-pc, to compare with yanglab16's (#250). CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the
-lab's machine. The Windows build runs only in CI (MSVC on GitHub's Windows runners).
+CI stays on GitHub's runners: SebType is public, and a fork's PR must not run on the lab's machine. The
+Windows build runs only in CI (MSVC on GitHub's Windows runners).
 
 ### Downloads
 
@@ -126,11 +111,11 @@ What it builds from source, and the caches that make a rebuild quick:
 
 | Part | Built by | Cache |
 |---|---|---|
-| Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle` (on yanglab16 `~/scratch/SebType/cache/gradle`), shared by every worktree |
-| `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `~/scratch/SebType/cache/rime-android` |
-| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` (on yanglab16 in the `sebtype-bazel` volume) |
-| The Chinese data | `data/rime/build.sh` | `~/scratch/SebType/cache/rime-data-*.zip` |
-| Mozc's dictionary (its OSS data set, from `engines/mozc`) | Bazel (`android/app/mozc-dictionary.sh`) | As `libmozc.so`: Gradle's build cache and Bazel's disk cache in `~/scratch/SebType/cache/mozc-android` |
+| Kotlin, Java, resources | Gradle | Gradle's build cache in `~/.gradle` (on yanglab16 in the cache folder, below), shared by every worktree |
+| `libsebtype.so` (`core/` with librime, from `engines/librime` with librime-lua and octagram) | CMake | sccache; `-ffile-prefix-map` keeps the checkout's path out of the objects, so worktrees share them. Rime's third-party sources (pinned, checksum-checked) are downloaded once into `rime-android` in the cache folder |
+| Mozc (`libmozc.so`, from `engines/mozc`) | Bazel (`android/native/build-mozc.sh`) | Gradle's build cache, and Bazel's disk cache in `mozc-android` in the cache folder (on yanglab16 in the `sebtype-bazel` volume) |
+| The Chinese data | `data/rime/build.sh` | `rime-data-*.zip` in the cache folder |
+| Mozc's dictionary (its OSS data set, from `engines/mozc`) | Bazel (`android/app/mozc-dictionary.sh`) | As `libmozc.so`: Gradle's build cache and Bazel's disk cache in `mozc-android` |
 
 Mozc's two Bazel builds (`tools/mozc-bazel.sh`), and the Linux RPM's (`linux/build.sh`, #361), download
 nothing themselves: Bazel would at full speed, and yanglab16's network port is shared.
@@ -138,13 +123,22 @@ nothing themselves: Bazel would at full speed, and yanglab16's network port is s
 files and every archive. Each build fetches what its cache lacks first, capped at 35 MB/s, into
 `mozc-android` in Bazel's cache folder (shared by all three), and runs Bazel with downloads disabled. The
 Linux RPM's container image gets its packages from dnf, capped too. After `engines/mozc`'s dependencies change, a
-build fails for the files it lacks; `tools/mozc-downloads.sh`, run in the build container on yanglab16,
-adds them to the list.
+build fails for the files it lacks; `tools/mozc-downloads.sh`, run in the build container (on yanglab16,
+`fedora_container`), adds them to the list.
 
 Scripts write their test, perf and release outputs to the running task's folder,
 `~/scratch/SebType/<issue>/` (`TASK_OUT` in `tools/lib.sh`): run them as `ISSUE=211 <script>`. Without
-`ISSUE` the folder is named after the checkout's folder. Caches, the Linux setup's RPMs and Chinese data
-zip included, go to `~/scratch/SebType/cache/` (`SCRATCH` in `tools/lib.sh`), shared by every worktree.
+`ISSUE` the folder is named after the checkout's folder. The builds' caches and pinned tools, the Linux
+setup's RPMs and Chinese data zip included, go to the cache folder (`CACHE` in `linux/versions.sh`), shared
+by every worktree on the machine: `~/scratch/SebType/cache/`.
+
+On yanglab16 a checkout in the T3 Code project (`~/t3-apps/SebType/`, a 200 GB capped disk image on the
+local SSD) keeps all of it in the project, since nothing of SebType's may go to yanglab16's system disk:
+the caches in `cache/sebtype/`, the task folders in `scratch/<issue>/` (`SCRATCH`), and podman's storage,
+the `sebtype-bazel` volume included, in `cache/containers/`. `linux/versions.sh` sets
+`CONTAINERS_STORAGE_CONF` and `XDG_CACHE_HOME` itself (writing the storage config if it's missing), so a
+tmux job or a non-interactive shell builds there too. The language models' data (`tools/*-lm/`, trained on
+the lab's GPU servers) stays in `~/scratch/SebType/cache/` on the NAS, which the build container mounts.
 Nothing goes to `/tmp` or `~/.cache`, on either machine.
 
 `android/release.sh` builds the release from main and publishes it ([install.md](install.md)).
@@ -155,7 +149,7 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 |---|---|
 | `linux/build.sh` | SebType's Linux input method RPM: the Fcitx5 add-on over `core/` with SebType's librime (`engines/librime`, static, with librime-lua and -octagram) inside and Mozc's library from `engines/mozc`, in a pinned Fedora container; it runs the core's unit tests. Bazel downloads nothing, as in the phone's Mozc builds (Android, above) |
 | `linux/build-librime.sh` | SebType's librime as Fedora's librime RPMs (with its plugins) from `engines/librime`, in the same container, for the benches and the dev tools' private Fcitx5s; releases don't ship them (#527) |
-| `pc/configurator/build.sh` (`cargo build --release` in `pc/configurator`) | the Configurator and its unit tests' executable; `tools/build.sh` runs it on yanglab16 |
+| `pc/configurator/build.sh` (`cargo build --release` in `pc/configurator`) | the Configurator and its unit tests' executable; test scripts run it through `tools/build.sh` |
 | `pwsh pc/windows/mozc/build.ps1`, `pc/windows/rime/build.ps1`, `windows/build.ps1` | Mozc's DLL, SebType's librime and the text service, on Windows; CI (`.github/workflows/windows-setup.yml`) builds them with SebType's installer |
 
 `pc/linux/setup-ime.sh` builds what it installs itself ([pc/linux/README.md](../pc/linux/README.md)).
@@ -168,17 +162,16 @@ Nothing goes to `/tmp` or `~/.cache`, on either machine.
 | `android/test/privacy.sh` | The release APK's manifest and dex, and its install on the emulator |
 | `android/test/update.sh` | The update check and install (#422) on the emulator, with a debug build and a made-up release served from this PC: About asks to notify, Check for updates finds it, the home screen's card, the request's headers, the daily job's notification, which, tapped after SebType's process died, leads to Install unknown apps, then Android's install prompt |
 | `android/test/build.sh` | The build's caches and that release builds are reproducible |
-| `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` on yanglab16 and loaded into Mozc here: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
+| `android/test/mozc-dictionary.sh` | The phone's Japanese dictionary, built from `engines/mozc` and loaded into the PCs' Mozc: the candidates for the words in `android/test/mozc-words.tsv` (#335) |
 | `tools/test-hf-fetch.sh` | `tools/hf-fetch.sh` offline: a made-up token stays out of a `bash -x` trace and goes to the Hugging Face endpoint, not to the host it redirects to (#365) |
-| `tools/test-build-host.sh` | `build_host_ready` offline, with stub `ssh`, `pgrep` and `gtk-launch`: a slow first answer is retried before Zscaler, and Zscaler starts only when its tray isn't running; otherwise the build runs here (#520) |
 | `tools/check-downloads.py` (`--self-test`: its own cases) | Every `curl` and `wget` download is capped at 300 Mbit/s, and no script uses `Invoke-WebRequest` (#365); CI runs it on every PR |
 | `tools/test-mozc-downloads.sh` | Mozc's capped prefetch, offline: a changed pinned digest, or a cached file that is corrupt, replaced or deleted, is fetched again, two builds can prefetch at once, and the list's generator takes the module version Bazel selected (#335) |
 | `android/test/incognito-phone.sh` | Incognito on a phone |
 | `android/test/emulator-pick.sh` | `android/emulator.sh`'s queue, with stub locks |
 | `MAIN_APK=<the FUTO-based app's last release> android/test/emulator.sh` | Adds `update-from-futo-app`: an update from that app keeps SebType picked and its words, Rime and Mozc data and settings (#262), and a personal word's shortcut offers the word as the old app did (#380). On a phone without root it compares the settings screens instead of the app's files (#353) |
 | `android/emulator.sh -- android/test/compare-screens.py OLD_APK NEW_APK FIELD_APK OUTDIR` | Screenshots of two builds' keyboards side by side, light and dark, for judging the look |
-| `android/build.sh unit-tests` | The app's unit tests (on yanglab16) |
-| `android/test/english/run.sh` | English quality next to pristine AOSP and the FUTO-based app's frozen numbers (`today.json`), on yanglab16, twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
+| `android/build.sh unit-tests` | The app's unit tests |
+| `android/test/english/run.sh` | English quality next to pristine AOSP and the FUTO-based app's frozen numbers (`today.json`), twice ([2026-11-15-english](perf/2026-11-15-english.md)) |
 | `data/en-dict/test.sh`, `data/rime/bench/bench.sh` | The English list's rebuild and benchmark; the Chinese data's accuracy |
 | `linux/build.sh` | The core's unit tests (`core/test/`: switching, Shift tap, 简/繁, あ ⇄ ア, popups, paging), in the RPM build |
 | `linux/test-parallel-build.sh` | Two RPM builds from different checkouts at once each package their own code (#305); the cache keeps an RPM per sources, so a checkout reuses its own and a changed one builds another (#326) |
@@ -392,44 +385,14 @@ It needs gcc, python3, bwrap, and librime with librime-lua; it unpacks SebType's
 `engines/librime`'s headers. Results: `~/scratch/SebType/<issue>/pc-perf.md` and
 `pc-perf-results.txt`.
 
-### Build times on yanglab16 and nobara-pc (#225)
-
-Measured on 2026-11-15 from nobara-pc. "yanglab16" includes the rsync there and copying the result back
-("build" is the script's own time on yanglab16); nobara-pc's builds ran under the caps above, at nice 19,
-beside other agents' builds.
-
-| Build | yanglab16: build / in all | nobara-pc |
-|---|---|---|
-| `android/build.sh debug`, first build there (empty caches, the SDK just installed) | 62 s / 74 s | |
-| debug, a new checkout copy (shared caches warm) | 81 s / 101 s; 65–106 s build with the lab's load at 55–60 (#250) | 14–15 s with warm caches (#58), 196 s measured in #223, 41 s in #250 |
-| debug, nothing changed | 19 s in all | 7–8 s (#58) |
-| debug, one Kotlin file changed | 27 s / 32 s | 17–31 s (#58, at 8 threads) |
-| `android/build.sh release`, first build there | 128 s / 135 s | 298 s from the caches |
-| release, nothing changed | 15 s / 23 s | 8–17 s (#58) |
-| `linux/build.sh`, first build (Mozc from scratch, the builder image too) | 87 s / 120 s | 490 s (#58, at 8 threads) |
-| `linux/build.sh`, nothing changed | 30 s in all | 11 s (#58) |
-
-On nobara-pc a build also waits for the lock behind other agents' builds: 2 and 9 minutes for the two
-measured here.
-
-`android/test/build.sh` checks these caches on yanglab16 (#250): a new checkout copy's debug build stays
-within 120 s and doesn't run Bazel (Mozc comes from Gradle's cache), and a changed Kotlin file compiles
-incrementally. Most of a new copy's time is CMake configuring and building the native code, its compiles
-from sccache, on the NAS (14–21 s per task under the lab's load). Until #250 a new copy also ran Bazel,
-because `MODULE.bazel.lock`, which Bazel writes and git ignores, was an input of the Mozc task: copies
-where Bazel had run never matched the cache.
-
-Built both ways from the same commit, the RPMs have the same files, byte for byte; their headers differ in
-build host and time, as two local builds do. The release APKs have the same entries except four:
-`libjni_latinime.so` and `librime-jni.so` (#223), and `rime-data.zip` and `baseline.prof` (#229).
-
 ### Build and test times (#58)
 
 Measured on nobara-pc (16 threads, 15 GB) on 2026-11-10, before Mozc and Rime were built from source (#186), with other agents' work running beside, so
 numbers vary by about ±30 %. "Build" is `android/build.sh`'s own time, which it now prints apart from
 the wait for the build lock; "peak" is the summed memory of the build's processes (Gradle, the Kotlin
-daemon, clang, aapt2, R8). Since #250 `android/test/build.sh` checks the cache and reproducibility parts
-on yanglab16, not here.
+daemon, clang, aapt2, R8). `android/test/build.sh` checks the cache and reproducibility parts on the
+machine it runs on: a new checkout's debug build stays within 120 s and doesn't run Bazel (Mozc comes from
+Gradle's cache), and a changed Kotlin file compiles incrementally.
 
 | `android/build.sh …` | Before | After |
 |---|---|---|
@@ -483,10 +446,9 @@ What made the difference, each measured on its own:
 - **Configuration cache**: Gradle reuses the configured build (nothing changed 11 → 6 s, one Kotlin file
   24 → 17 s). `build.gradle`'s git calls go through `providers.exec`, which it allows.
 
-Release builds stay reproducible: on yanglab16, a release built with no build cache and with sccache
-compiling everything again in one checkout and one built from the caches in another are the same file, and
-so are two signed on nobara-pc (`android/test/build.sh`; with `SEBTYPE_BUILD_HOST=local` also one built on
-nobara-pc). Before, they differed
+Release builds stay reproducible: a release built with no build cache and with sccache compiling
+everything again in one checkout and one built from the caches in another are the same file, and so are
+two signed on nobara-pc (`android/test/build.sh`). Before, they differed
 between checkouts (folder name in the dex, checkout path in `libjni_latinime.so`; #223: AGP's per-checkout
 `.cxx/<hash>/` folder, and Rime's third-party builds in it, in the libraries' debug info and so their
 build IDs) and between machines (#229: the NDK's path; Rime's recorded file times and the zip's local

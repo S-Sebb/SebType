@@ -7,7 +7,7 @@
 #   data/rime/bench/bench.sh      table in ~/scratch/SebType/<issue>/rime-bench.md, ranks in rime-bench/ next to it
 # Runs SebType's librime and plugins (linux/build-librime.sh's, from the engines/librime the add-on builds in), not the ones
 # installed: a system update can put Fedora's back (#522). Needs gcc, unzip, rpm2cpio and Fedora's librime's
-# libraries; it builds the RPMs first (yanglab16 or podman) when the cached ones are from another
+# libraries; it builds the RPMs first (in podman) when the cached ones are from another
 # engines/librime or librime.spec (linux/versions.sh's librime_unpack).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)

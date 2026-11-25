@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the English harness and runs every stack on every test set, here (run.sh starts it on yanglab16).
+# Builds the English harness and runs every stack on every test set.
 #
 #   android/test/english/bench.sh RUN_NAME
 #
@@ -12,8 +12,8 @@ source tools/lib.sh
 run=$1
 here=android/test/english
 out=$TASK_OUT/english/$run
-# The whole run holds this machine's build lock, under its CPU and memory caps. Only the paths to copy back
-# go to stdout (build_remotely reads them from it): the lock's own messages go to stderr.
+# The whole run holds this machine's build lock, under its CPU and memory caps. Only the results' paths
+# go to stdout: the lock's own messages go to stderr.
 if [[ ! ${ENGLISH_IN_LOCK:-} ]]; then
   build_lock 90 english-harness env ENGLISH_IN_LOCK=1 $here/bench.sh "$@" >&2
   ls "$out"/*.tsv "$out"/*.log
