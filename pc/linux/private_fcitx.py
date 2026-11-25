@@ -93,8 +93,12 @@ class Fcitx:
         """Switches to it and waits until its engine takes keys (Rime deploys at its first start)."""
         self.core.SetLanguage(lang)
         for _ in range(600):
-            if self.key("n" if lang == "zh" else "a"):
-                self.key("\x1b")
+            taken = self.key("n" if lang == "zh" else "a")
+            # Escape cancels a taken key's composition. After one the engine didn't take, which an app would
+            # type, it isn't taken either and clears 中文's model context of it (#515): letters there for the
+            # whole first start's deploy put 试试 before 事实 for shishi, for the rest of the process.
+            self.key("\x1b")
+            if taken:
                 return True
             time.sleep(0.5)
         return False
