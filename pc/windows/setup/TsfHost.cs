@@ -563,6 +563,23 @@ namespace SebType {
     // the Remote Desktop client's keys go. Windows lets a process take the foreground right after it sent
     // input: an Alt tap first.
     public static bool Foreground(IntPtr h) {
+      LastFront = "";
+      if (TryFront(h)) return true;
+      LastFront = "Alt taps lost to " + Front();
+      // #562: Windows' toast for a new account (a CoreWindow of ShellExperienceHost; test.ps1's driver turns
+      // toasts off, which can come too late) keeps the front from every window until someone clicks it, which
+      // no one does here. Its process stopped, the shell starts it again without the toast.
+      uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+      try {
+        var p = System.Diagnostics.Process.GetProcessById((int)pid);
+        if (p.ProcessName != "ShellExperienceHost") return false;
+        p.Kill(); p.WaitForExit(5000);
+      } catch (Exception e) { LastFront += "; stopping it failed: " + e.Message; return false; }
+      if (TryFront(h)) { LastFront += "; won once ShellExperienceHost was stopped"; return true; }
+      LastFront += "; ShellExperienceHost stopped, then lost to " + Front();
+      return false;
+    }
+    static bool TryFront(IntPtr h) {
       // Up to 6 s: right after another window closes, Windows can refuse for a while (seen on TCSBackEnd).
       for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) {
         if (!NoInput) { keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero); }
@@ -573,37 +590,13 @@ namespace SebType {
         if (joined) { BringWindowToTop(h); AttachThreadInput(self, front, false); }
         Thread.Sleep(300);
       }
-      if (GetForegroundWindow() == h) { LastFront = ""; return true; }
-      // #562: on TCSBackEnd the Alt taps sometimes stop working for minutes. What held the front, then each
-      // other way in turn, and which one won (LastFront, for the failure message and test.ps1's 562-front.txt).
-      LastFront = "Alt taps lost to " + Front();
-      foreach (var way in new KeyValuePair<string, Action>[] {
-        new KeyValuePair<string, Action>("joined to its input", () => {
-          uint pid, front = GetWindowThreadProcessId(GetForegroundWindow(), out pid), self = GetCurrentThreadId();
-          bool joined = front != 0 && front != self && AttachThreadInput(self, front, true);
-          SetForegroundWindow(h); BringWindowToTop(h);
-          if (joined) AttachThreadInput(self, front, false);
-        }),
-        new KeyValuePair<string, Action>("minimized and restored", () => { ShowWindow(h, 6 /* SW_MINIMIZE */); ShowWindow(h, 9 /* SW_RESTORE */); }),
-        new KeyValuePair<string, Action>("SwitchToThisWindow", () => SwitchToThisWindow(h, true)),
-      }) {
-        way.Value(); Thread.Sleep(500);
-        if (GetForegroundWindow() == h) { LastFront += "; won by " + way.Key; return true; }
-        LastFront += "; " + way.Key + " lost";
-      }
-      return false;
+      return GetForegroundWindow() == h;
     }
+    // What the last Foreground lost to and what won it back, when the Alt taps weren't enough (#562).
     public static string LastFront = "";
-    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
-    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int InternalGetWindowText(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
-    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
-    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-    [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr p, uint access, out IntPtr t);
-    [DllImport("advapi32.dll")] static extern bool GetTokenInformation(IntPtr t, int cls, out int v, int n, out int got);
-    // The window in front: its process, title, class and whether it runs elevated (input from this
-    // unelevated process can't reach an elevated window, so its Alt tap gives no right to the front).
+    // The window in front: its process, title and class.
     public static string Front() {
       IntPtr f = GetForegroundWindow();
       if (f == IntPtr.Zero) return "no window";
@@ -612,17 +605,7 @@ namespace SebType {
       string name; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { name = "?"; }
       var title = new StringBuilder(256); InternalGetWindowText(f, title, title.Capacity);
       var cls = new StringBuilder(256); GetClassNameW(f, cls, cls.Capacity);
-      string elevated = "elevation unreadable";
-      IntPtr p = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid), t;
-      if (p != IntPtr.Zero) {
-        int v, got;
-        if (OpenProcessToken(p, 8 /* TOKEN_QUERY */, out t)) {
-          if (GetTokenInformation(t, 20 /* TokenElevation */, out v, 4, out got)) elevated = v != 0 ? "elevated" : "not elevated";
-          CloseHandle(t);
-        }
-        CloseHandle(p);
-      }
-      return string.Format("{0} (pid {1}, {2}) '{3}' [{4}]", name, pid, elevated, title, cls);
+      return string.Format("{0} (pid {1}) '{2}' [{3}]", name, pid, title, cls);
     }
     // A picture of the whole session's screen, for what held the front.
     public static void Screen(string path) {

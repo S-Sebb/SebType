@@ -159,7 +159,7 @@ if ($Typing) {
     # of the screen; each time only a fallback won, that goes in 562-front.txt too.
     function Front-Note($what) {
       $line = "$what`: $($tsf::LastFront)"
-      if ($tsf::LastFront -notmatch 'won by') {
+      if ($tsf::LastFront -notmatch '; won') {
         $shot = "$out\562-front-$(Get-Date -f HHmmss-fff).png"
         try { $tsf::Screen($shot); $line += "; picture $shot" } catch { $line += "; no picture: $($_.Exception.Message)" }
       }
@@ -591,6 +591,11 @@ if ($Typing) {
 # ==================================================== the driver, as the test user, elevated as Setup
 if ($Driver) {
   Mark 'driver started: the test user is logged on'
+  # Windows' toasts off for this new account (#562): its first logon brings one ("SoftEther VPN is now set
+  # to run when you sign in") that keeps the front from the test's windows until someone clicks it.
+  $toasts = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'
+  if (-not (Test-Path $toasts)) { New-Item -Force $toasts | Out-Null }
+  Set-ItemProperty $toasts ToastEnabled 0 -Type DWord
   Add-Type -ReferencedAssemblies System.Drawing @'
 using System; using System.Text; using System.Collections.Generic; using System.Drawing; using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
