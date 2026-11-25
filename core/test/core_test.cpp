@@ -1260,6 +1260,64 @@ TEST_F(ChineseTest, AMisreadingKeepsItsPlaceBehindASentence) {
   EXPECT_LT(std::ranges::find(l, "当"), std::ranges::find(l, "淡")) << testing::PrintToString(l);
 }
 
+// A clause longer than the model's training spans (#563): its beam stops early (庞庞 for …faan) or loops
+// (胖胖胖… for …faa). Each would commit for all 60 letters, losing the clause, so it isn't listed at all.
+// A character is 3 bytes.
+TEST_F(ChineseTest, TheModelsCandidatesThatLeaveLettersOutArentListed) {
+  const std::string syllables = "lan bai liang dang pi ping zong tong mei you ban bu li fa yuan tong guo de fa ";
+  for (const auto &[end, clause] : {std::pair{"an", "蓝白两党批评总统没有颁布立法院通过的法案"},
+                                    std::pair{"a", "蓝白两档批评总统没有颁布立法院通过的发啊"}}) {
+    std::string in = syllables + end;
+    std::erase(in, ' ');
+    start({}, [&](FakeRime &r) { r.full[in] = clause, r.spelled[in] = syllables + end; });
+    typeAndWait(in);
+    const auto l = list();
+    ASSERT_NE(std::ranges::find(l, clause), l.end()) << testing::PrintToString(l);
+    for (const auto &c : l) EXPECT_NEAR(c.size() / 3.0, 20, 1) << in << ' ' << testing::PrintToString(l);
+  }
+}
+
+// A misspelled syllable in a long clause (#563): Rime splits xiagn into xia g n and reads 17 syllables, so a
+// rule by Rime's syllable count held back the model's 还想, which spells the letters but for a swap.
+TEST_F(ChineseTest, TheModelsFixOfATypoInALongClauseComesFirst) {
+  const std::string in = "ganggangcanjiagongzuojiuyouchederenhaixiagnzenyang";
+  start({}, [&](FakeRime &r) {
+    r.words["hai"] = {"还"}, r.words["xiang"] = {"想"};  // their readings, so the swap is counted
+    r.full[in] = "刚刚参加工作就有车的人海峡功能怎样";
+    r.spelled[in] = "gang gang can jia gong zuo jiu you che de ren hai xia g n zen yang";
+  });
+  typeAndWait(in);
+  const auto l = list();
+  ASSERT_FALSE(l.empty());
+  EXPECT_EQ(l[0], "刚刚参加工作就有车的人还想怎样") << testing::PrintToString(l);
+}
+
+// Fuzzy pinyin typed throughout (#563): zesinisengri, 3 syllables short of their h, is 这是你生日 to the model.
+// Rime, without fuzzy pinyin, reads it as written (僧 for seng).
+TEST_F(ChineseTest, TheModelsReadingOfFuzzyPinyinComesFirst) {
+  const std::string in = "zesinisengri";
+  start({}, [&](FakeRime &r) {
+    r.words["zhe"] = {"这"}, r.words["shi"] = {"是"}, r.words["sheng"] = {"生"}, r.words["ri"] = {"日"};
+    r.full[in] = "泽斯尼僧日", r.spelled[in] = "ze si ni seng ri";
+  });
+  typeAndWait(in);
+  const auto l = list();
+  ASSERT_FALSE(l.empty());
+  EXPECT_EQ(l[0], "这是你生日") << testing::PrintToString(l);
+}
+
+// A short clause the model reads without a syllable (#563): 我的圣诞快乐 leaves bu out, and Rime's 不 stays.
+TEST_F(ChineseTest, TheModelsCandidateThatLeavesASyllableOutIsntListed) {
+  const std::string in = "wodeshengdanbukuaile", clause = "我的圣诞不快乐";
+  start({}, [&](FakeRime &r) { r.full[in] = clause, r.spelled[in] = "wo de sheng dan bu kuai le"; });
+  zh->setContext("好幸福啊，我也想要卡婶的小餐点哭唧唧，");
+  typeAndWait(in);
+  const auto l = list();
+  ASSERT_FALSE(l.empty());
+  EXPECT_EQ(std::ranges::find(l, "我的圣诞快乐"), l.end()) << testing::PrintToString(l);
+  EXPECT_EQ(l[0], clause) << testing::PrintToString(l);
+}
+
 // Paging and the arrow keys move the highlight within the model's list (#367): its order stays, and what
 // Space or a flush commits is the candidate highlighted there.
 TEST_F(ChineseTest, TheHighlightMovesWithinTheModelsList) {
@@ -1429,6 +1487,26 @@ TEST_F(ChineseFixTest, ACorrectionTheModelFavoursComesFirst) {
   EXPECT_EQ(zh->takeCommit(), "心不在焉");
   // Rime has no pieces that spell it: stored under the syllables typed, as the model's own are (#518)
   EXPECT_EQ(rime->taught, (std::vector<std::string>{"xin bu za yan\t心不在焉"}));
+}
+
+// Both of fuzzy pinyin's confusions in one syllable cost nothing (#563): zang for 站, seng for 深. The model
+// doesn't read them itself, but Rime's correction stays. Every character has its reading: one without
+// would match any letters.
+TEST_F(ChineseFixTest, ACorrectionWithBothConfusionsInOneSyllableStays) {
+  const std::string in = "wozaisengzenghuocezang";
+  start({}, [&](FakeRime &r) {
+    r.words.insert({{"wo", {"我"}}, {"zai", {"在"}}, {"shen", {"深"}}, {"zhen", {"圳"}}, {"huo", {"火"}},
+                    {"che", {"车"}}, {"zhan", {"站"}}});
+    r.fixes[in] = {"我在深圳火车站"};
+  });
+  const int before = readyCount();
+  type(in);
+  ASSERT_TRUE(ready(before + 1));
+  list();
+  const int asked = readyCount();
+  list();  // the turn: the corrections looked up
+  ASSERT_TRUE(ready(asked));
+  EXPECT_EQ(list().at(0), "我在深圳火车站");
 }
 
 // A learned first stays ahead of a correction the model is surer of (#510: 我们 for wm over 我没, picked before).
