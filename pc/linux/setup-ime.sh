@@ -406,7 +406,7 @@ def parse_kv(lines):
 group_names = {name: dict(parse_kv(lines)).get('Name') for name, lines in sections
                if re.fullmatch(r'Groups/\d+', name)}
 order = [v for name, lines in sections if name == 'GroupOrder'
-         for k, v in sorted(parse_kv(lines), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 1 << 30)]
+         for k, v in sorted(parse_kv(lines), key=lambda kv: int(kv[0]))]
 first = next((sec for v in order for sec, n in group_names.items() if n == v), 'Groups/0')
 
 g0_lines = None
@@ -525,7 +525,8 @@ print(*(f + "\x1f" for f in [layout, *(im for im, _ in ims)]), sep="")') || exit
 }
 # Prints the number and name ("<n><TAB><name>") of each Fcitx5 group with fcitx5-rime's rime, 0 for the first:
 # the running Fcitx5's groups when it knows SebType's input method (step 7 changes those), else the profile's,
-# numbered by [GroupOrder] (#579), as fcitx_profile_update picks the first.
+# numbered by [GroupOrder] (#579), as fcitx_profile_update picks the first. Both assume what Fcitx5 writes:
+# [GroupOrder] keys 0=, 1=, … with no gap, and a Name= in each [Groups/N].
 rime_groups() {
   if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
     local groups
