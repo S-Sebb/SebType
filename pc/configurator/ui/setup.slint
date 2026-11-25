@@ -83,7 +83,8 @@ component CheckRow inherits HorizontalLayout {
         horizontal-stretch: 1;
         wrap: word-wrap;
     }
-    if !root.check.ok: VerticalLayout {
+    // Groups Fcitx5 couldn't read have no button: the page reads them again every two seconds.
+    if !root.check.ok && !(root.check.kind == 4 && root.check.line == 0): VerticalLayout {
         alignment: center;
         Button {
             text: root.busy ? "…"

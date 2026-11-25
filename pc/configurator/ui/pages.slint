@@ -724,14 +724,14 @@ component AboutPage inherits Page {
                     font-size: Theme.body-size;
                     wrap: word-wrap;
                 }
-                if State.rime-error != "": Text {
+                if State.rime-error != "" && State.rime-count > 0: Text {
                     text: State.rime-error;
                     color: Theme.danger;
                     font-size: Theme.detail-size;
                     wrap: word-wrap;
                 }
             }
-            VerticalLayout { alignment: center;
+            if State.rime-count > 0: VerticalLayout { alignment: center;
                 Button {
                     text: State.rime-busy ? "…" : @tr("Use SebType");
                     enabled: !State.rime-busy;

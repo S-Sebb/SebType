@@ -884,31 +884,31 @@ fn parse_group(json: &str) -> Option<(String, Vec<(String, String)>)> {
 
 /// Parses `... AvailableInputMethods` (`{"type":"a(ssssssb)","data":[[["sebtype","SebType",...],...]]}`): the
 /// input methods' names.
-fn parse_im_names(json: &str) -> Vec<String> {
-    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+fn parse_im_names(json: &str) -> Option<Vec<String>> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
     v["data"][0]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|im| im[0].as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+        .as_array()?
+        .iter()
+        .map(|im| im[0].as_str().map(str::to_string))
+        .collect()
 }
 
 /// A group's name, layout and input methods (each with its layout).
 type Group = (String, String, Vec<(String, String)>);
 
 /// The running Fcitx5's groups with fcitx5-rime's Rime (#542), or why they couldn't all be read: a group
-/// unread may have it. None until it knows SebType's input method, or with no Fcitx5: it drops one it
-/// doesn't know from a group (setup-ime.sh's step 7 waits the same way).
-fn rime_groups() -> io::Result<Vec<Group>> {
-    let knows_sebtype = controller("AvailableInputMethods", &[])
-        .is_ok_and(|out| parse_im_names(&out).iter().any(|im| im == "sebtype"));
-    if !knows_sebtype {
-        return Ok(Vec::new());
+/// unread may have it. None while it can't tell: no Fcitx5 runs, or it doesn't know SebType's input method yet
+/// (just restarted), which it would drop from a group (setup-ime.sh's step 7 waits the same way).
+fn rime_groups() -> io::Result<Option<Vec<Group>>> {
+    if !fcitx_running() {
+        return Ok(None);
     }
     let unread = |what: &str, out: &str| io::Error::other(format!("{what}: {out}"));
+    let out = controller("AvailableInputMethods", &[])?;
+    let ims = parse_im_names(&out).ok_or_else(|| unread("AvailableInputMethods", &out))?;
+    if !ims.iter().any(|im| im == "sebtype") {
+        return Ok(None);
+    }
     let out = controller("InputMethodGroups", &[])?;
     let names = parse_groups(&out).ok_or_else(|| unread("InputMethodGroups", &out))?;
     let mut groups = Vec::new();
@@ -919,21 +919,39 @@ fn rime_groups() -> io::Result<Vec<Group>> {
             groups.push((g, layout, ims));
         }
     }
-    Ok(groups)
+    Ok(Some(groups))
 }
 
 /// The names of Fcitx5's groups where Rime (fcitx5-rime) won't type Chinese: SebType keeps it off (#542).
-pub fn rime_group_names() -> Result<Vec<String>, String> {
+/// None while Fcitx5 can't tell (rime_groups).
+pub fn rime_group_names() -> Result<Option<Vec<String>>, String> {
     rime_groups()
-        .map(|gs| gs.into_iter().map(|(g, ..)| g).collect())
+        .map(|gs| gs.map(|gs| gs.into_iter().map(|(g, ..)| g).collect()))
         .map_err(|e| e.to_string())
 }
 
-/// A group's input methods as setup-ime.sh's step 7 lays out the first group's: SebType's first (its own entry,
-/// with its layout, if the group had one), without the keyboard, Rime and Mozc, which it types; others stay.
-/// Fcitx5 starts a group on its first input method, and no key switches to another (step 8).
-fn sebtype_first(ims: &[(String, String)]) -> Vec<(String, String)> {
+/// A group's input methods with SebType's for Rime. When the group starts on the keyboard, Rime, Mozc or
+/// SebType's, as setup-ime.sh's step 7 lays out the first group: SebType's first (its own entry, with its
+/// layout, if the group had one), without the keyboard, Rime and Mozc, which it types; others stay. Fcitx5
+/// starts a group on its first input method, and no key switches to another (step 8), so a group that starts
+/// on another (pinyin, a keyboard of another layout than the group's) keeps it first: SebType's takes Rime's
+/// place only.
+fn sebtype_for_rime(layout: &str, ims: &[(String, String)]) -> Vec<(String, String)> {
+    let types = |im: &str| {
+        ["sebtype", "keyboard-us", "rime", "mozc"].contains(&im)
+            || im == format!("keyboard-{layout}")
+    };
     let sebtype = ims.iter().find(|(im, _)| im == "sebtype").cloned();
+    if ims.first().is_some_and(|(im, _)| !types(im)) {
+        return ims
+            .iter()
+            .filter_map(|(im, l)| match im.as_str() {
+                "rime" if sebtype.is_some() => None,
+                "rime" => Some(("sebtype".into(), l.clone())),
+                _ => Some((im.clone(), l.clone())),
+            })
+            .collect();
+    }
     let others = ims
         .iter()
         .filter(|(im, _)| !["sebtype", "keyboard-us", "rime", "mozc"].contains(&im.as_str()));
@@ -942,25 +960,14 @@ fn sebtype_first(ims: &[(String, String)]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Lays out each group with Rime as setup lays out the first (sebtype_first), after a copy of Fcitx5's
-/// profile as it is now in ~/.local/share/sebtype/backup/<time>, which gives Rime back after SebType is
-/// removed. Nothing changes when a group can't be read.
-pub fn use_sebtype_for_rime() -> io::Result<()> {
-    let groups = rime_groups()?;
-    if groups.is_empty() {
-        return Ok(());
-    }
-    // The running groups, on disk for the copy.
-    controller("Save", &[])?;
-    // A folder of its own, never one with an earlier copy in it: a retry in the same second gets <time>-2.
-    let dir = data().join("sebtype/backup");
-    fs::create_dir_all(&dir)?;
-    let time = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let mut backup = dir.join(&time);
+/// A backup folder of its own in `dir`, named `time`, never one with an earlier copy in it: a retry in the same
+/// second gets `<time>_2`, which a C-sorted `ls` lists after `<time>/…` (README, Removing SebType).
+fn new_backup(dir: &Path, time: &str) -> io::Result<PathBuf> {
+    let mut backup = dir.join(time);
     for n in 2.. {
         match fs::create_dir(&backup) {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                backup = dir.join(format!("{time}-{n}"))
+                backup = dir.join(format!("{time}_{n}"))
             }
             made => {
                 made?;
@@ -968,9 +975,29 @@ pub fn use_sebtype_for_rime() -> io::Result<()> {
             }
         }
     }
+    Ok(backup)
+}
+
+/// Puts SebType's input method in Rime's place in each group with it (sebtype_for_rime), after a copy of Fcitx5's
+/// profile as it is now in ~/.local/share/sebtype/backup/<time>, which gives Rime back after SebType is
+/// removed. Nothing changes when a group can't be read.
+pub fn use_sebtype_for_rime() -> io::Result<()> {
+    let groups = rime_groups()?
+        .ok_or_else(|| io::Error::other("Fcitx5 isn't running with SebType's input method"))?;
+    if groups.is_empty() {
+        return Ok(());
+    }
+    // The running groups, on disk for the copy.
+    controller("Save", &[])?;
+    let dir = data().join("sebtype/backup");
+    fs::create_dir_all(&dir)?;
+    let backup = new_backup(
+        &dir,
+        &chrono::Local::now().format("%Y%m%d-%H%M%S").to_string(),
+    )?;
     fs::copy(config().join("fcitx5/profile"), backup.join("profile"))?;
     for (group, layout, ims) in groups {
-        let ims = sebtype_first(&ims);
+        let ims = sebtype_for_rime(&layout, &ims);
         let count = ims.len().to_string();
         let mut args = vec!["ssa(ss)", &group, &layout, &count];
         for (im, l) in &ims {
@@ -1122,9 +1149,15 @@ pub(crate) fn ready_checks() -> Vec<(crate::setup::Need, bool)> {
     if !session_ready(&session_env()) {
         checks.push((Need::LogIn, false));
     }
+    // No group with Rime left: done, if the page had a Rime row (keep_done). Fcitx5 can't tell (it restarts):
+    // no row, so an earlier one stays as it was.
     match rime_group_names() {
-        Ok(g) if g.is_empty() => {}
-        groups => checks.push((Need::Rime { groups }, false)),
+        Ok(None) => {}
+        Ok(Some(g)) => {
+            let done = g.is_empty();
+            checks.push((Need::Rime { groups: Ok(g) }, done))
+        }
+        Err(e) => checks.push((Need::Rime { groups: Err(e) }, false)),
     }
     checks
 }
@@ -1360,7 +1393,7 @@ mod tests {
     }
 
     #[test]
-    fn finds_rime_in_fcitx5_groups_and_puts_sebtype_first() {
+    fn finds_rime_in_fcitx5_groups_and_puts_sebtype_in_its_place() {
         assert_eq!(
             parse_groups(r#"{"type":"as","data":[["Default","My=Rime"]]}"#).unwrap(),
             ["Default", "My=Rime"]
@@ -1369,9 +1402,11 @@ mod tests {
         assert_eq!(
             parse_im_names(
                 r#"{"type":"a(ssssssb)","data":[[["keyboard-us","English","","","","en",false],["sebtype","SebType","","","","",true]]]}"#
-            ),
+            )
+            .unwrap(),
             ["keyboard-us", "sebtype"]
         );
+        assert!(parse_im_names("not json").is_none());
         let (layout, ims) =
             parse_group(r#"{"type":"sa(ss)","data":["us",[["keyboard-us",""],["rime",""]]]}"#)
                 .unwrap();
@@ -1379,17 +1414,57 @@ mod tests {
         let im = |n: &str, l: &str| (n.to_string(), l.to_string());
         assert_eq!(ims, [im("keyboard-us", ""), im("rime", "")]);
         // Fcitx5's usual group with Rime starts on SebType's, which no key would reach second.
-        assert_eq!(sebtype_first(&ims), [im("sebtype", "")]);
-        // Others stay, after it; SebType's own entry keeps its layout, wherever it was.
+        assert_eq!(sebtype_for_rime("us", &ims), [im("sebtype", "")]);
+        // Others stay, after it; SebType's own entry keeps its layout, wherever it was; the group's own
+        // keyboard goes too.
         assert_eq!(
-            sebtype_first(&[
-                im("keyboard-us", ""),
-                im("rime", "ru"),
-                im("hangul", ""),
-                im("sebtype", "jp")
-            ]),
+            sebtype_for_rime(
+                "us",
+                &[
+                    im("keyboard-us", ""),
+                    im("rime", "ru"),
+                    im("hangul", ""),
+                    im("sebtype", "jp")
+                ]
+            ),
             [im("sebtype", "jp"), im("hangul", "")]
         );
+        assert_eq!(
+            sebtype_for_rime("de", &[im("keyboard-de", ""), im("rime", "")]),
+            [im("sebtype", ""), im("keyboard-de", "")]
+        );
+        // A group that starts on another input method keeps it first: SebType's takes Rime's place only.
+        assert_eq!(
+            sebtype_for_rime(
+                "us",
+                &[im("pinyin", ""), im("keyboard-us", ""), im("rime", "")]
+            ),
+            [im("pinyin", ""), im("keyboard-us", ""), im("sebtype", "")]
+        );
+        assert_eq!(
+            sebtype_for_rime(
+                "us",
+                &[im("keyboard-de", ""), im("rime", ""), im("sebtype", "")]
+            ),
+            [im("keyboard-de", ""), im("sebtype", "")]
+        );
+    }
+
+    /// #542: Use SebType's retry in the same second gets a backup folder of its own, after the first in the
+    /// order README's `LC_ALL=C ls` gives.
+    #[test]
+    fn a_backup_in_the_same_second_gets_its_own_folder() {
+        let dir = std::env::temp_dir().join(format!("sebtype-backup-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let first = new_backup(&dir, "20261125-100000").unwrap();
+        fs::write(first.join("profile"), "before").unwrap();
+        let second = new_backup(&dir, "20261125-100000").unwrap();
+        assert_eq!(second, dir.join("20261125-100000_2"));
+        assert_eq!(fs::read_to_string(first.join("profile")).unwrap(), "before");
+        assert!(fs::read_dir(&second).unwrap().next().is_none());
+        // C order: '/' (after the first folder's name) sorts before '_'.
+        assert!("20261125-100000/profile" < "20261125-100000_2/profile");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -1631,7 +1706,10 @@ mod tests {
     fn private_fake_fcitx5_puts_sebtype_first_in_rime_groups() {
         let profile = || fs::read_to_string(config().join("fcitx5/profile")).unwrap();
         let before = profile();
-        assert_eq!(rime_group_names(), Ok(vec!["Rime".into(), "Work".into()]));
+        assert_eq!(
+            rime_group_names(),
+            Ok(Some(vec!["Rime".into(), "Work".into()]))
+        );
         assert!(use_sebtype_for_rime().is_err());
         use_sebtype_for_rime().unwrap();
         let group =
@@ -1640,7 +1718,7 @@ mod tests {
         assert_eq!(group("Rime"), ("us".to_string(), sebtype.clone()));
         assert_eq!(group("Work"), ("us".to_string(), sebtype));
         assert_eq!(group("Default").1.len(), 2);
-        assert_eq!(rime_group_names(), Ok(vec![]));
+        assert_eq!(rime_group_names(), Ok(Some(vec![])));
         let mut backups: Vec<_> = fs::read_dir(data().join("sebtype/backup"))
             .unwrap()
             .map(|b| b.unwrap().path().join("profile"))
@@ -1661,12 +1739,26 @@ mod tests {
         let profile = || fs::read_to_string(config().join("fcitx5/profile")).unwrap();
         let before = profile();
         if std::env::var("FAKE_FCITX5_MODE").unwrap() == "no-sebtype" {
-            assert_eq!(rime_group_names(), Ok(vec![]));
-            use_sebtype_for_rime().unwrap();
+            assert_eq!(rime_group_names(), Ok(None));
         } else {
             assert!(rime_group_names().is_err());
-            assert!(use_sebtype_for_rime().is_err());
         }
+        assert!(use_sebtype_for_rime().is_err());
+        // The Ready page's Rime row from before stays open: the recheck couldn't tell.
+        use crate::setup::{keep_done, Need};
+        let shown = [(
+            Need::Rime {
+                groups: Ok(vec!["Rime".into()]),
+            },
+            false,
+        )];
+        let now = keep_done(&shown, ready_checks());
+        let rime: Vec<_> = now
+            .iter()
+            .filter(|(n, _)| matches!(n, Need::Rime { .. }))
+            .collect();
+        assert_eq!(rime.len(), 1);
+        assert!(!rime[0].1, "an unread recheck ticked Rime's row: {now:?}");
         assert_eq!(profile(), before);
         assert!(!data().join("sebtype/backup").exists());
     }

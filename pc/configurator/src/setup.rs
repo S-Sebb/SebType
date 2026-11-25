@@ -207,13 +207,18 @@ pub enum Need {
 
 /// This check's rows, with those an earlier one showed and this one doesn't find any more kept, done, in
 /// their place: a step stays on the page, ticked, once the person has done it.
-/// The Rime row is one row whichever groups it lists, so a group done of several isn't a second row.
+/// The Rime row is one row whichever groups it lists, so a group done of several isn't a second row. The
+/// check gives it done, with no groups, only when Fcitx5 said so: shown only in place of an earlier Rime row.
+/// When the check couldn't ask (no Fcitx5 while it restarts), an earlier Rime row stays as it was.
 pub fn keep_done(before: &[(Need, bool)], mut now: Vec<(Need, bool)>) -> Vec<(Need, bool)> {
-    let same =
-        |a: &Need, b: &Need| a == b || matches!((a, b), (Need::Rime { .. }, Need::Rime { .. }));
-    for (i, (need, _)) in before.iter().enumerate() {
+    let rime = |n: &Need| matches!(n, Need::Rime { .. });
+    let same = |a: &Need, b: &Need| a == b || (rime(a) && rime(b));
+    if !before.iter().any(|(n, _)| rime(n)) {
+        now.retain(|(n, ok)| !(rime(n) && *ok));
+    }
+    for (i, (need, ok)) in before.iter().enumerate() {
         if !now.iter().any(|(n, _)| same(n, need)) {
-            now.insert(i.min(now.len()), (need.clone(), true));
+            now.insert(i.min(now.len()), (need.clone(), *ok || !rime(need)));
         }
     }
     now
@@ -836,18 +841,14 @@ mod tests {
             keep_done(&first, vec![(rime(&["Work"]), false)]),
             [(rime(&["Work"]), false)]
         );
-        // Groups Fcitx5 couldn't list (a restarting Fcitx5) aren't done.
-        let unread = Need::Rime {
-            groups: Err("no reply".into()),
-        };
+        // Fcitx5 said none is left: ticked.
         assert_eq!(
-            keep_done(&first, vec![(unread.clone(), false)]),
-            [(unread, false)]
+            keep_done(&first, vec![(rime(&[]), true)]),
+            [(rime(&[]), true)]
         );
-        assert_eq!(
-            keep_done(&first, vec![]),
-            [(rime(&["Default", "Work"]), true)]
-        );
+        assert_eq!(keep_done(&first, vec![]), first);
+        // No Rime row before, none now: no row.
+        assert_eq!(keep_done(&[], vec![(rime(&[]), true)]), []);
     }
 
     /// #445: a step the person did stays on the last page, ticked, in its place; the page is ready once

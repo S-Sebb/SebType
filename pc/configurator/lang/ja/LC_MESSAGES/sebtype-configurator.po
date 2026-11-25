@@ -626,7 +626,7 @@ msgid "SebType couldn't read Fcitx5's input method groups to check them for Rime
 msgstr "SebType は Fcitx5 の入力メソッドグループを読み取れず、Rime があるか確認できません：{}"
 
 msgid "SebType types Chinese where Rime was"
-msgstr "Rime の代わりに SebType で中国語を入力します"
+msgstr "Rime の代わりに SebType で中国語を入力するようになりました"
 
 msgid "Use SebType"
 msgstr "SebType を使う"

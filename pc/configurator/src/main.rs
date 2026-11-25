@@ -658,10 +658,12 @@ fn show_installed(weak: &slint::Weak<AppWindow>) {
 }
 
 /// About's row for Rime in groups of the person's, which won't type Chinese beside SebType's input method
-/// (#542): their names, or (count 0) why Fcitx5's groups couldn't be read. Off the window's thread.
+/// (#542): their names, or (count 0) why Fcitx5's groups couldn't be read. As it was while no Fcitx5 runs to
+/// ask. Off the window's thread.
 fn show_rime(weak: &slint::Weak<AppWindow>) {
     let (rime, count) = match platform::rime_group_names() {
-        Ok(g) => (setup::quoted(&g, language()), g.len() as i32),
+        Ok(None) => return,
+        Ok(Some(g)) => (setup::quoted(&g, language()), g.len() as i32),
         Err(e) => (e, 0),
     };
     let _ = weak.upgrade_in_event_loop(move |app| {
