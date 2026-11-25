@@ -183,6 +183,11 @@ typing() { # trace gap text: under one trace, types the text RUNS times, each in
   # rather than shift each key's window.
   local keys; keys=$(per_key_count "$1")
   (( keys == runs * ${#3} )) || { echo "$1: the keyboard got $keys touches for $(( runs * ${#3} )) taps" >&2; return 1; }
+  # SebType's candidate bar traces each new list it draws (#559): with none found, key → candidates went unmeasured.
+  # A --compare run may measure another keyboard, or an older SebType APK (compare-apks.sh), without that section.
+  [[ -n ${compare:-} ]] || awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i ~ /cand_ms/) c = i; next }
+      c && $c ~ /^[0-9.]+$/ { found = 1; exit } END { exit !found }' "$work/$1.csv" ||
+    { echo "$1: no key → candidates time: no \"SebType candidates\" section in the trace" >&2; return 1; }
 }
 landed() { # phase taps min% max%: each field's length shows that the taps hit the keys and in which
   # language (pinyin and romaji turn into fewer characters than were typed)
@@ -424,6 +429,7 @@ phase_soak() { # SOAK_MIN (default 12) minutes of EN, 中 and 日 in turn, words
 
 compare_steps() { # under the device lock: another keyboard (IME_PKG, IME_ID, KEY_ROWS), English only
   export FIELD_ARGS='--es kind private'
+  export compare=1
   { sh ime list -s | grep -v "^$pkg/" | grep -m1 -e '^com.google.android.inputmethod.latin/' -e '^org.futo.inputmethod.latin/' -e '^dev.sebb.sebtype/'; } > "$work/other-ime"
   rotation_keep
   trap 'rotation_back; sh ime set "$(cat "$work/prev-ime")" > /dev/null; sh rm -f /data/misc/perfetto-traces/sebtype-*.pftrace \
