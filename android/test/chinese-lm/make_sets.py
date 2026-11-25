@@ -13,6 +13,7 @@ typed, the text meant, and the note: for typos their kind, for clauses their wor
 | sent-chat, sent-news | 800 each | a clause of 2-12 Han characters in full pinyin |
 | long-chat, long-news | 200 each | a clause of 13-25 Han characters in full pinyin, about as many of each length (#563) |
 | long-typo-chat, long-typo-news | 199-200 | long-chat's and long-news's clauses with typos as typo's (an item a typo leaves as it was is left out) |
+| fuzzy-chat, fuzzy-news | 300 each at most | sent's and long's clauses with 2 or more of zh, ch, sh, each typed as z, c, s, as fuzzy pinyin's users type them |
 | abbr-chat, abbr-news | 400 each | a 2-4-character word as its syllables' first letters (zd → 知道) |
 | partial-chat, partial-news | 400 each | a 2-4-character word in full pinyin but its last syllable's first letter (ranh → 然后) |
 | typo | 800 (500 chat, 300 news) | a clause of 2-8 characters with one phone typo or pinyin confusion (10 % two) |
@@ -102,6 +103,12 @@ def with_typo(rng, sy):
     return keys, kind
 
 
+def fuzzy(sy):
+    """The keys for the syllables SY with each zh, ch and sh typed as z, c and s, and how many were."""
+    out = [x[0] + x[2:] if x[:2] in ("zh", "ch", "sh") else x for x in sy]
+    return "".join(out), sum(x != y for x, y in zip(sy, out))
+
+
 def unique(items, n, key):
     seen, out = set(), []
     for it in items:
@@ -128,7 +135,7 @@ def main():
     prefix = "dev-" if dev else ""
     scale = 0.5 if dev else 1
     write(out / f"{prefix}wikinews-articles.tsv", [(str(i), t) for i, t in arts])
-    typos = []
+    typos, sents = [], {}
     # News has fewer, longer texts: more next words come from each paragraph.
     for src, n_typo, n_next, per_text in (
         ("chat", 500, 1500, 2),
@@ -136,6 +143,7 @@ def main():
     ):
         clauses = clause_items(rng, pools[src], 2, 12)
         sent = unique(clauses, int(800 * scale), lambda x: x[1])
+        sents[src] = sent
         # The note: the clause's words (jieba), for the word accuracy.
         write(
             out / f"{prefix}sent-{src}.tsv",
@@ -181,6 +189,14 @@ def main():
         write(
             out / f"{prefix}long-typo-{src}.tsv",
             [(c, keys, t, kind) for c, keys, kind, t, full in typed if keys != full],
+        )
+        # Fuzzy pinyin typed throughout (#563): the clauses above with two zh/ch/sh or more, long ones first.
+        typed = [(c, *fuzzy(sy), t) for c, t, sy in long + sents[src]]
+        write(
+            out / f"{prefix}fuzzy-{src}.tsv",
+            [(c, keys, t, f"{n} z/c/s") for c, keys, n, t in typed if n >= 2][
+                : int(300 * scale)
+            ],
         )
 
 

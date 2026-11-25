@@ -1282,6 +1282,7 @@ TEST_F(ChineseTest, TheModelsCandidatesThatLeaveLettersOutArentListed) {
 TEST_F(ChineseTest, TheModelsFixOfATypoInALongClauseComesFirst) {
   const std::string in = "ganggangcanjiagongzuojiuyouchederenhaixiagnzenyang";
   start({}, [&](FakeRime &r) {
+    r.words["hai"] = {"还"}, r.words["xiang"] = {"想"};  // their readings, so the swap is counted
     r.full[in] = "刚刚参加工作就有车的人海峡功能怎样";
     r.spelled[in] = "gang gang can jia gong zuo jiu you che de ren hai xia g n zen yang";
   });
@@ -1289,6 +1290,20 @@ TEST_F(ChineseTest, TheModelsFixOfATypoInALongClauseComesFirst) {
   const auto l = list();
   ASSERT_FALSE(l.empty());
   EXPECT_EQ(l[0], "刚刚参加工作就有车的人还想怎样") << testing::PrintToString(l);
+}
+
+// Fuzzy pinyin typed throughout (#563): zesinisengri, 3 syllables short of their h, is 这是你生日 to the model.
+// Rime, without fuzzy pinyin, reads it as written (僧 for seng).
+TEST_F(ChineseTest, TheModelsReadingOfFuzzyPinyinComesFirst) {
+  const std::string in = "zesinisengri";
+  start({}, [&](FakeRime &r) {
+    r.words["zhe"] = {"这"}, r.words["shi"] = {"是"}, r.words["sheng"] = {"生"}, r.words["ri"] = {"日"};
+    r.full[in] = "泽斯尼僧日", r.spelled[in] = "ze si ni seng ri";
+  });
+  typeAndWait(in);
+  const auto l = list();
+  ASSERT_FALSE(l.empty());
+  EXPECT_EQ(l[0], "这是你生日") << testing::PrintToString(l);
 }
 
 // A short clause the model reads without a syllable (#563): 我的圣诞快乐 leaves bu out, and Rime's 不 stays.

@@ -209,6 +209,14 @@ def table(a, b):
                 f" / {a[s][f'long-typo-{src}']['short']} %"
             ),
         )
+    for src in ("chat", "news"):
+        n = a[stacks[0]][f"fuzzy-{src}"]["items"]
+        row(
+            f"Clause right at rank 1 / in the top 3, every zh, ch, sh typed as z, c, s ({src}, {n})",
+            lambda s: (
+                f"{a[s][f'fuzzy-{src}']['top1']} / {a[s][f'fuzzy-{src}']['top3']} %"
+            ),
+        )
     for kind, what in (
         ("abbr", "abbreviated, zd → 知道"),
         ("partial", "last syllable abbreviated, ranh → 然后"),

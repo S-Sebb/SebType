@@ -23,7 +23,7 @@ results=$out/test-chinese-lm-results.txt
 mkdir -p "$out/chinese"; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
 
-for s in sent-chat sent-news long-chat long-news long-typo-chat long-typo-news abbr-chat abbr-news partial-chat partial-news typo next-chat next-news; do
+for s in sent-chat sent-news long-chat long-news long-typo-chat long-typo-news fuzzy-chat fuzzy-news abbr-chat abbr-news partial-chat partial-news typo next-chat next-news; do
   [[ -s $here/sets/$s.tsv ]] || { echo "preflight: $here/sets/$s.tsv missing (make_sets.py makes it)"; exit 1; }
 done
 if [[ $BUILD_HOST != local ]] && ! build_host_ready; then

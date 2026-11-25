@@ -24,7 +24,8 @@
 // (胖胖胖… for a clause), and plain() favours a short text, as each character costs log probability. Picking
 // one commits it for all the letters typed, so 庞庞 for a clause of 20 syllables loses the rest of the clause.
 // Edits are counted against the characters' readings, not Rime's syllables: Rime splits a misspelled syllable
-// (xiagn as xia g n), and the model's 想 for it is right. Rime's typo corrections (below) that don't spell the
+// (xiagn as xia g n), and the model's 想 for it is right. Fuzzy pinyin (z for zh, n for ng) costs none: its
+// users type it in every syllable, and the model reads it. Rime's typo corrections (below) that don't spell the
 // letters so stay where Rime has them.
 // Picking one of Rime's candidates selects it in Rime by its own index. Picking one of the model's puts it
 // into Rime's user dictionary under the syllables typed when Rime reads them all as whole ones (#518), so it
@@ -84,7 +85,7 @@ constexpr size_t kPlain = 3;
 constexpr float kPlainWeight = 0.4f, kOwnPlainWeight = 0.5f;
 constexpr size_t kNextWords = 5;
 // The edits (Readings::edits) a candidate may be from the letters typed: two typos, the most a test item has
-// (#563). A left-out syllable of two letters or more costs 3.
+// (#563). A left-out syllable of two letters or more costs 3, or 2 where a letter typed as spelled parts its own.
 constexpr int kTypos = 2;
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
@@ -183,12 +184,13 @@ struct Readings {
     return true;
   }
 
-  // The fewest edits from the letters TYPED to what TEXT's characters spell, each by one of its readings or
-  // that reading's first letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess, one
-  // missing, two swapped in a syllable, or a reading confused (zh as z, ng as n, either way) cost 1, but a
-  // letter typed otherwise or in excess right after another costs 2, so a syllable left out (bu) costs 3, also
-  // where a reading takes one of its letters (dai for 大 in dadafa). A character without readings spells any
-  // 1-6 letters.
+  // The fewest edits from the letters TYPED to what TEXT's characters spell, each by one of its readings, that
+  // reading confused as fuzzy pinyin's users type it throughout (zh as z, ng as n, either way), or its first
+  // letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess, one missing, or two swapped in
+  // a syllable cost 1, but a letter typed otherwise or in excess right after another costs 2. So a syllable
+  // left out (bu) costs 3 where its letters are together, also where a reading takes one of its letters (dai
+  // for 大 in dadafa), but 2 where a good letter parts them (gnfeng for 能: g and f), and two typos side by side
+  // cost 3. A character without readings spells any 1-6 letters. Above kTypos it stops, at kTypos + 1.
   int edits(const std::string &text, const std::string &typed) const {
     const size_t n = typed.size();
     // For each prefix of TYPED, the fewest edits to it from the letters spelled so far, its last letter typed
@@ -213,9 +215,8 @@ struct Readings {
           for (size_t k = j + 1; k <= std::min(n, j + 6); k++) next.in[k] = std::min(next.in[k], least(at, j));
         excess(next);
       } else {
-        for (const auto &[r, cost] : confusions(it->second)) {
+        for (const std::string &r : confusions(it->second)) {
           std::vector<Row> rows{at};  // rows[m]: after the reading's first m letters
-          for (size_t j = 0; j <= n; j++) rows[0].in[j] += cost, rows[0].off[j] += cost;
           for (size_t m = 0; m < r.size(); m++) {
             Row row = blank();
             const Row &prev = rows[m];
@@ -234,22 +235,23 @@ struct Readings {
         }
       }
       at = std::move(next);
+      // No edit is taken back: once every prefix costs more, so does the whole.
+      if (std::ranges::min(at.in) > kTypos && std::ranges::min(at.off) > kTypos) return kTypos + 1;
     }
     return least(at, n);
   }
 
-  // READINGS, costing 0, and their confusions, costing 1: zh, ch, sh as z, c, s and ng as n, and the other way
-  // (as tools/chinese-lm/common.py's typos make them).
-  static std::vector<std::pair<std::string, int>> confusions(const std::vector<std::string> &readings) {
-    std::vector<std::pair<std::string, int>> out;
+  // READINGS and their confusions: zh, ch, sh as z, c, s and n as ng, and the other way (as
+  // tools/chinese-lm/common.py's typos make them; ng as n is a reading cut short).
+  static std::vector<std::string> confusions(const std::vector<std::string> &readings) {
+    std::vector<std::string> out;
     for (const std::string &r : readings) {
-      out.push_back({r, 0});
+      out.push_back(r);
       if (r.size() > 2 && r[1] == 'h' && std::string_view("zcs").find(r[0]) != std::string_view::npos)
-        out.push_back({r.substr(0, 1) + r.substr(2), 1});
+        out.push_back(r.substr(0, 1) + r.substr(2));
       else if (r.size() > 1 && std::string_view("zcs").find(r[0]) != std::string_view::npos)
-        out.push_back({r.substr(0, 1) + 'h' + r.substr(1), 1});
-      if (r.ends_with("ng")) out.push_back({r.substr(0, r.size() - 1), 1});
-      else if (r.ends_with("an") || r.ends_with("en") || r.ends_with("in")) out.push_back({r + 'g', 1});
+        out.push_back(r.substr(0, 1) + 'h' + r.substr(1));
+      if (r.ends_with("an") || r.ends_with("en") || r.ends_with("in")) out.push_back(r + 'g');
     }
     return out;
   }
