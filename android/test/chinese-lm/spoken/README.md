@@ -10,8 +10,8 @@ plain-text term):
     android/test/chinese-lm/bench.sh --dev android/test/chinese-lm/spoken OUT_DIR engines/sebtype-lm/chinese.gguf \
       rerank=4 generate=2 rankWeight=0.5 generatedRank=4 plain=0.4 ownPlain=0.5 dump=1
 
-OUT_DIR is on the build host when run through `build_remotely` (tools/lib.sh): put it under the host's
-~/scratch/SebType, not in the checkout, whose copy each run's rsync replaces.
+The harness runs only on yanglab16 (`bench.sh`), so OUT_DIR is a folder there, such as one under
+~/scratch/SebType/<issue>/.
 
 | Top-1 with the model (yanglab16, 2026-11-22) | with context | without |
 |---|---|---|

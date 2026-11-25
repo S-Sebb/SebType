@@ -79,8 +79,8 @@ Android only accepts updates signed with the same key: losing it means uninstall
 reinstalling it, which wipes its learned words and settings.
 
 Gradle builds a release unsigned, never with Android's public test key (`android/app/shared.keystore`).
-`android/build.sh release` then signs it with `apksigner` on this PC, the same way whether it was built
-here or on the build host, so a release is the same file from either.
+`android/build.sh release` then signs it with `apksigner` on nobara-pc, where the key is, so two builds
+of a commit are the same file.
 
 ## Publishing a release
 

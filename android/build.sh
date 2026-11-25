@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Builds a SebType APK under the shared build lock (one heavy Gradle/NDK build at a time). Memory stays
-# capped and no Gradle daemon is left running: the PC has 15 GB shared with the emulator and other builds.
+# Builds a SebType APK under the shared build lock (one heavy Gradle/NDK build at a time), on the machine
+# it runs on. Memory stays capped and no Gradle daemon is left running: nobara-pc has 15 GB shared with the
+# emulator and other builds.
 #   android/build.sh release       signed arm64-v8a release APK (keystore in ~/.config/sebtype), the one the
 #                                  emulator tests run (through the emulator's ARM translation), as the phone does
 #   android/build.sh debug         debug arm64-v8a APK
 #   android/build.sh debug-x86_64  debug APK for an x86_64 emulator
 #   android/build.sh unit-tests    the app's unit tests (JVM, no device); no APK
-# Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here), and copies
-# the APKs back. A release comes back unsigned and is signed here: the key never leaves this PC.
-# Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, half the cores, 8 GB).
+# A release is signed with the key in ~/.config/sebtype, which only nobara-pc has: elsewhere
+# SEBTYPE_UNSIGNED=1 builds it unsigned.
+# Runs in the shared build lock (tools/lib.sh's build_lock: the caller's DEVQ_RANK, under the machine's caps).
 # Each run copies its APKs, inside the lock, to a folder of its own in app/build/runs/, so builds run at the
 # same time in one checkout can't swap each other's APK (#182). Prints the APK path last.
 # Version: a release is named ../VERSION (SebType's one version, the Windows setup's too, #420), its code the
@@ -22,8 +23,8 @@ source ../tools/lib.sh
 kind=${1:?usage: android/build.sh release|debug|debug-x86_64|unit-tests}
 keydir=${SEBTYPE_KEY_DIR:-$HOME/.config/sebtype}
 apksigner() { "$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)"/apksigner "$@"; }
-# A release is built unsigned, here or on the build host, and signed the same way in both cases, as Gradle
-# would: APK Signature Scheme v2 alone (minSdk 24), with an RSA key, so the same bytes from either (#229).
+# A release is built unsigned and then signed, as Gradle would: APK Signature Scheme v2 alone (minSdk 24),
+# with an RSA key, so two builds of one commit are the same bytes (#229).
 sign_release() {
   local apk=${1%-unsigned.apk}.apk
   apksigner sign --ks "$keydir/sebtype-release.jks" --ks-key-alias sebtype --ks-pass "file:$keydir/keystore.password" \
@@ -34,7 +35,7 @@ sign_release() {
     { echo "build: $apk is not signed with SebType's key" >&2; exit 1; }
   echo "$apk"
 }
-# SEBTYPE_UNSIGNED=1: a release left unsigned (on the build host, for the PC to sign).
+# SEBTYPE_UNSIGNED=1: a release left unsigned (where the key isn't, or to compare builds' bytes).
 unsigned=${SEBTYPE_UNSIGNED:-}
 signed=; [[ $kind == release ]] && signed=1
 if [[ -n $signed ]]; then
@@ -47,17 +48,10 @@ else VERSION_CODE=1 VERSION_NAME=$(cat ../VERSION)-dev; fi
 mkdir -p app/build/runs
 find app/build/runs -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} +
 
-if build_host_ready; then
-  apks=$(build_remotely VERSION_CODE="$VERSION_CODE" SEBTYPE_UNSIGNED=1 android/build.sh "$kind")
-  [[ -z $signed || -n $unsigned ]] || apks=$(sign_release "$apks")
-  echo "$apks"
-  exit
-fi
-
-# On yanglab16 the tools come pinned into the scratch cache, and the build runs in Fedora, as here
+# On yanglab16 the tools come pinned into the cache, and the build runs in Fedora, as on nobara-pc
 # (fedora_container), with Bazel's cache mounted where it is.
 [[ $(hostname -s) != yanglab16 ]] || ../tools/android-tools.sh
-fedora_container -v "$BAZEL_CACHE:$BAZEL_CACHE" -w "$PWD"
+fedora_container -v "$BAZEL_CACHE:$BAZEL_CACHE" -w "$(pwd -P)"
 export JAVA_HOME=$JDK21
 [[ -x $JAVA_HOME/bin/javac ]] || { echo "build: JDK 21 not found (set JAVA_HOME_21)" >&2; exit 1; }
 [[ -d $ANDROID_HOME/ndk/28.2.13676358 ]] || { echo "build: NDK 28.2.13676358 missing in $ANDROID_HOME" >&2; exit 1; }
@@ -89,7 +83,7 @@ command -v sccache >/dev/null && sccache_env "$(cd .. && pwd -P)"
 start=$(date +%s)
 # The Kotlin compiler runs in its own daemon: in-process it recompiles every file on each build. That
 # daemon ends with the build, like Gradle's.
-export KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS ROOT=$(cd .. && pwd) ROOT_REAL=$(cd .. && pwd -P)
+export KIND=$kind OUT=$out RUN=$run BUILD_JOBS GRADLE_WORKERS SEBTYPE_CACHE_DIR=$CACHE ROOT=$(cd .. && pwd) ROOT_REAL=$(cd .. && pwd -P)
 # shellcheck disable=SC2154  # container: set by fedora_container
 build_lock 30 "sebtype build ($kind, $(basename "$(cd .. && pwd)"))" "${container[@]}" bash -c '
   set -e

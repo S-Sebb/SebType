@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The model's context window in long text (#359): how long the next words and rankings take after an empty
 # field and after 20,000 characters, and how often the next word is predicted with each window rule, on 60
-# Wikinews articles (fetched once into the cache, as android/test/english/make_sets.py fetches them). Runs on
-# the build host (yanglab16) unless SEBTYPE_BUILD_HOST=local, in its build lock, on one thread as the phone.
+# Wikinews articles (fetched once into the cache, as android/test/english/make_sets.py fetches them). Runs in
+# the build lock, on one thread as the phone.
 #
 #   engines/sebtype-lm/bench/bench.sh [time]     time only: no articles, a minute
 #
@@ -11,16 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 source tools/lib.sh
 
-if [[ $BUILD_HOST != local ]] && build_host_ready; then
-  build_remotely engines/sebtype-lm/bench/bench.sh "$@" > /dev/null
-  cat "$TASK_OUT/sebtype-lm-window.txt"
-  exit
-fi
 out=$TASK_OUT/sebtype-lm-window.txt
 mkdir -p "$TASK_OUT"
 if [[ ! ${BENCH_IN_LOCK:-} ]]; then
   build_lock 60 sebtype-lm-window env BENCH_IN_LOCK=1 engines/sebtype-lm/bench/bench.sh "$@" >&2
-  echo "$out"  # the path build_remotely copies back
+  cat "$out"
   exit
 fi
 

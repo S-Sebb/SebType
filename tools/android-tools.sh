@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Installs the Android build's tools, pinned, into ~/scratch/SebType/cache/ on a build host without them
+# Installs the Android build's tools, pinned, into the cache (linux/versions.sh) on a machine without them
 # (yanglab16, #225): the JDK nobara-pc builds with, the Android SDK packages the build uses, and sccache.
 # tools/lib.sh points the build at them there. Does nothing for a tool already installed.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-mkdir -p "$SCRATCH/cache" && cd "$SCRATCH/cache"
+mkdir -p "$CACHE" && cd "$CACHE"
 
 fetch() { # url sha256 file
   [[ -f $3 ]] && return

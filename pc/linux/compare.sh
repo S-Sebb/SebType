@@ -19,8 +19,8 @@ runs=${RUNS:-5} soak=${SOAK_MIN:-12} failed=0
 work=$(mktemp -d "$TASK_OUT/linux-compare.XXXXXX"); trap 'rm -rf "$work"' EXIT
 
 for x in fcitx5 bwrap dbus-run-session rpm2cpio unzip; do command -v $x >/dev/null || { echo "preflight: $x missing"; exit 1; }; done
-ices=("$SCRATCH"/cache/*-full.zip); ice=${ices[0]} # rime-ice's release, fetched by data/rime/build.sh
-[[ -f $ice ]] || { echo "preflight: no rime-ice full.zip in ~/scratch/SebType/cache (run data/rime/build.sh)"; exit 1; }
+ices=("$CACHE"/*-full.zip); ice=${ices[0]} # rime-ice's release, fetched by data/rime/build.sh
+[[ -f $ice ]] || { echo "preflight: no rime-ice full.zip in $CACHE (run data/rime/build.sh)"; exit 1; }
 data=$("$here/../../tools/build.sh" 10 "rime data for compare" data/rime/build.sh 2> "$out/data-build.log") ||
   { echo "preflight: data/rime/build.sh failed"; exit 1; }
 own=$work/own

@@ -34,8 +34,8 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
 # The fake account has no Rust: setup-ime.sh copies the Configurator built for it. Nor does it build
-# SebType's Chinese data: each fake account's cache links the zip built for it. Both build on yanglab16
-# (tools/build.sh), in the shared build lock.
+# SebType's Chinese data: each fake account's cache links the zip built for it. Both build in the shared
+# build lock (tools/build.sh).
 ../../tools/build.sh 30 "configurator build for test-setup-ime" pc/configurator/build.sh > /dev/null 2> "$out/test-setup-ime-configurator-build.log" ||
   { echo "preflight: the SebType Configurator does not build (see $out/test-setup-ime-configurator-build.log)"; exit 1; }
 rime_data=$(../../tools/build.sh 10 "rime data for test-setup-ime" data/rime/build.sh 2> "$out/test-setup-ime-rime-data.log") &&

@@ -4,7 +4,7 @@
 #   android/native/build-mozc.sh OUT_DIR ABI...   # ABI: arm64-v8a or x86_64 -> OUT_DIR/<ABI>/libmozc.so
 #
 # Gradle runs it (build.gradle) inside android/build.sh's build lock, with the lock's share of the cores.
-# Bazel's output stays in ~/scratch/SebType/cache/mozc-android (tools/mozc-bazel.sh's mozc_bazel), its disk
+# Bazel's output stays in $BAZEL_CACHE/mozc-android (tools/mozc-bazel.sh's mozc_bazel), its disk
 # cache shared by every worktree.
 set -euo pipefail
 out=$1; shift

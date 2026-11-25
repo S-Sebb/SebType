@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds core_test with SebType's Chinese model around a stand-in Rime (no librime or Mozc) and runs it, on the
-# build host (yanglab16) in the pinned Fedora container, for its OpenCC. llama.cpp and GoogleTest are fetched at
-# pinned commits into the scratch cache.
+# Builds core_test with SebType's Chinese model around a stand-in Rime (no librime or Mozc) and runs it, on
+# yanglab16 in the pinned Fedora container, for its OpenCC. llama.cpp and GoogleTest are fetched at pinned
+# commits into the cache (linux/versions.sh).
 #
 #   core/test/chinese.sh [GTEST_FILTER]
 #
@@ -10,10 +10,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
 
-if [[ $BUILD_HOST != local ]] && build_host_ready; then
-  build_remotely core/test/chinese.sh "$@"
-  exit
-fi
 if [[ ! ${CORE_IN_LOCK:-} ]]; then
   log=$TASK_OUT/core-chinese.log
   mkdir -p "$TASK_OUT"
@@ -23,7 +19,7 @@ if [[ ! ${CORE_IN_LOCK:-} ]]; then
     base=${container[-1]}
     image=localhost/sebtype-fedora-core:$(sha256sum <<<"$base $extra" | head -c 12)
     podman image exists "$image" ||
-      podman build -q -t "$image" -f - "$SCRATCH/cache" <<<"FROM $base
+      podman build -q -t "$image" -f - "$CACHE" <<<"FROM $base
 RUN dnf -y install $extra && dnf clean all" >/dev/null
     container=("${container[@]:0:${#container[@]}-1}" -w "$(pwd -P)" "$image")
   fi

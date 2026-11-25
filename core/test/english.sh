@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Builds core_test with the English engine (no 中文 or 日本語: those need librime and Mozc) and runs it, on
-# the build host (yanglab16) unless SEBTYPE_BUILD_HOST=local. GoogleTest and llama.cpp are fetched at pinned
-# commits into the scratch cache.
+# Builds core_test with the English engine (no 中文 or 日本語: those need librime and Mozc) and runs it.
+# GoogleTest and llama.cpp are fetched at pinned commits into the cache (linux/versions.sh).
 #
 #   core/test/english.sh
 #
@@ -10,10 +9,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source tools/lib.sh
 
-if [[ $BUILD_HOST != local ]] && build_host_ready; then
-  build_remotely core/test/english.sh
-  exit
-fi
 if [[ ! ${CORE_IN_LOCK:-} ]]; then
   log=$TASK_OUT/core-english.log
   mkdir -p "$TASK_OUT"
@@ -24,7 +19,7 @@ if [[ ! ${CORE_IN_LOCK:-} ]]; then
 fi
 
 GTEST_COMMIT=52eb8108c5bdec04579160ae17225d66034bd723  # v1.17.0
-gtest=$SCRATCH/cache/googletest-${GTEST_COMMIT:0:12}
+gtest=$CACHE/googletest-${GTEST_COMMIT:0:12}
 if [[ ! -f $gtest/install/lib/cmake/GTest/GTestConfig.cmake ]]; then
   rm -rf "$gtest" && git init -q "$gtest/src"
   git -C "$gtest/src" fetch -q --depth 1 https://github.com/google/googletest "$GTEST_COMMIT"

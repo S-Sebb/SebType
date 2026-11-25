@@ -22,7 +22,8 @@ declare -A SHA256=(
 )
 
 out=${1:-android/app/src/main/assets/emoji/emoji.txt}
-cache=$HOME/scratch/SebType/cache/emoji-16.0
+source linux/versions.sh
+cache=$CACHE/emoji-16.0
 mkdir -p "$cache" "$(dirname "$out")"
 
 fetch() { # url sha256 name -> prints cached path

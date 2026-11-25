@@ -4,8 +4,8 @@
 # compiles anything (Decisions #2: no Rime deploy on the phone). Gradle runs this before every build;
 # the result is cached by its inputs, so only the first build after a change compiles (about 10 s).
 #   data/rime/build.sh [ASSETS_DIR]   # default build/sebtype-assets; writes ASSETS_DIR/rime/
-# Prints the zip's path in the cache (~/scratch/SebType/cache/rime-data-<key>.zip). Tests build it on
-# yanglab16 with tools/build.sh.
+# Prints the zip's path in the cache ($CACHE/rime-data-<key>.zip, linux/versions.sh). Tests build it with
+# tools/build.sh.
 #
 # The zip is the Rime shared dir: rime-ice's files (minus the schemas other than full pinyin), 白霜's
 # zh-moqi.gram, SebType's sebtype.dict.yaml (the pack that reads the user's own word list, #11),
@@ -56,7 +56,8 @@ headers=$PWD/engines/librime/src
 BUNDLE_REVISION=13
 
 out=${1:-build/sebtype-assets}/rime
-cache=$HOME/scratch/SebType/cache
+source linux/versions.sh
+cache=$CACHE
 librime=/usr/lib64/librime.so.1
 # OPENCC_LIBS: the OpenCC libraries to link instead, e.g. sebtype.spec's static ones (#540).
 read -ra libopencc <<<"${OPENCC_LIBS:-/usr/lib64/libopencc.so.1.1}"

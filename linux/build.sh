@@ -3,15 +3,13 @@
 # sebtype.spec in the pinned Fedora container (versions.sh). Prints the RPM's path, named by a hash of the
 # sources it packs (versions.sh's sebtype_key, #326), so each tree's tests find their own code's RPM.
 #
-#   linux/build.sh    # -> ~/scratch/SebType/cache/sebtype/sebtype-<version>-<release>.<key>.x86_64.rpm
+#   linux/build.sh    # -> $CACHE/sebtype/sebtype-<version>-<release>.<key>.x86_64.rpm
 #
-# Mozc's Bazel caches stay in ~/scratch/SebType/cache/mozc/work, so a rebuild compiles only what changed. Runs in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
+# Mozc's Bazel caches stay in $BAZEL_CACHE/mozc/work (tools/lib.sh), so a rebuild compiles only what changed. Runs in the shared build lock (tools/lib.sh), the container on the lock's cores and memory.
 # The Configurator's crates and the Chinese data's sources (data/rime/build.sh) are cached there too.
 # Bazel downloads nothing (#361), as in the phone's Mozc builds (tools/mozc-bazel.sh): mozc_fetch fetches Bazel,
 # the registry's files and the archives tools/mozc-downloads.tsv lists, capped, into the phone's builds' cache,
 # and the spec runs that Bazel from there with downloads disabled.
-# Runs on yanglab16 when it answers (tools/lib.sh, #225; SEBTYPE_BUILD_HOST=local builds here) and copies
-# the RPM back to the same path here.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -24,12 +22,11 @@ source "$here/rpm-sources.sh"
 source "$root/tools/lib.sh"
 # shellcheck source-path=SCRIPTDIR source=../tools/mozc-bazel.sh
 source "$root/tools/mozc-bazel.sh"
-# The build host's copy has no git, so the key goes with it.
+# A caller that has the key already passes it.
 key=${SEBTYPE_SOURCES_KEY:-$(sebtype_key)}
 # The keyed RPMs no tree used for two weeks (sebtype_unpack touches them); those named by version alone stay.
 mkdir -p "$SEBTYPE_CACHE"
 find "$SEBTYPE_CACHE" -maxdepth 1 -regextype posix-extended -regex '.*\.[0-9a-f]{12}\.x86_64\.rpm' -mtime +14 -delete
-if build_host_ready; then build_remotely "SEBTYPE_SOURCES_KEY=$key" linux/build.sh; exit; fi
 # Bazel's caches for Mozc, so a rebuild compiles only what changed.
 MOZC_CACHE=$BAZEL_CACHE/mozc
 mkdir -p "$MOZC_CACHE/work"
