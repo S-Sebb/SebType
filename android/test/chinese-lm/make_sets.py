@@ -11,12 +11,16 @@ typed, the text meant, and the note: for typos their kind, for clauses their wor
 | Set | Items | What is typed |
 |---|---|---|
 | sent-chat, sent-news | 800 each | a clause of 2-12 Han characters in full pinyin |
+| long-chat, long-news | 200 each | a clause of 13-25 Han characters in full pinyin, about as many of each length (#563) |
+| long-typo-chat, long-typo-news | 199-200 | long-chat's and long-news's clauses with typos as typo's (an item a typo leaves as it was is left out) |
+| fuzzy-chat, fuzzy-news | 300 each at most | sent's and long's clauses with 2 or more of zh, ch, sh, each typed as z, c, s, as fuzzy pinyin's users type them |
 | abbr-chat, abbr-news | 400 each | a 2-4-character word as its syllables' first letters (zd → 知道) |
 | partial-chat, partial-news | 400 each | a 2-4-character word in full pinyin but its last syllable's first letter (ranh → 然后) |
 | typo | 800 (500 chat, 300 news) | a clause of 2-8 characters with one phone typo or pinyin confusion (10 % two) |
 | next-chat, next-news | 1,500 and 1,000 | nothing: the next word (jieba's) after the text before it |
 """
 
+import itertools
 import random
 import sys
 from pathlib import Path
@@ -53,6 +57,12 @@ def clause_items(rng, pool, lo, hi):
     return out
 
 
+def spread(items, lo, hi):
+    """ITEMS (shuffled), a clause of each length from LO to HI in turn, so long ones aren't drowned out."""
+    by = [[it for it in items if len(it[1]) == n] for n in range(lo, hi + 1)]
+    return [it for row in itertools.zip_longest(*by) for it in row if it]
+
+
 def word_items(rng, pool):
     out = []
     for text in pool:
@@ -82,6 +92,23 @@ def next_items(rng, pool, per_text):
     return out
 
 
+def with_typo(rng, sy):
+    """The keys for the syllables SY with one phone typo or pinyin confusion (10 % two), and their kinds."""
+    keys, kind = common.typo(rng, sy)
+    if rng.random() < 0.1:
+        keys, kind2 = common.typo(
+            rng, [keys], rng.choice(["slip", "omit", "double", "swap"])
+        )
+        kind += "+" + kind2
+    return keys, kind
+
+
+def fuzzy(sy):
+    """The keys for the syllables SY with each zh, ch and sh typed as z, c and s, and how many were."""
+    out = [x[0] + x[2:] if x[:2] in ("zh", "ch", "sh") else x for x in sy]
+    return "".join(out), sum(x != y for x, y in zip(sy, out))
+
+
 def unique(items, n, key):
     seen, out = set(), []
     for it in items:
@@ -108,7 +135,7 @@ def main():
     prefix = "dev-" if dev else ""
     scale = 0.5 if dev else 1
     write(out / f"{prefix}wikinews-articles.tsv", [(str(i), t) for i, t in arts])
-    typos = []
+    typos, sents = [], {}
     # News has fewer, longer texts: more next words come from each paragraph.
     for src, n_typo, n_next, per_text in (
         ("chat", 500, 1500, 2),
@@ -116,6 +143,7 @@ def main():
     ):
         clauses = clause_items(rng, pools[src], 2, 12)
         sent = unique(clauses, int(800 * scale), lambda x: x[1])
+        sents[src] = sent
         # The note: the clause's words (jieba), for the word accuracy.
         write(
             out / f"{prefix}sent-{src}.tsv",
@@ -134,12 +162,7 @@ def main():
         )
         short = [x for x in clauses if len(x[1]) <= 8]
         for c, t, sy in unique(short[::-1], int(n_typo * scale), lambda x: x[1]):
-            keys, kind = common.typo(rng, sy)
-            if rng.random() < 0.1:
-                keys, kind2 = common.typo(
-                    rng, [keys], rng.choice(["slip", "omit", "double", "swap"])
-                )
-                kind += "+" + kind2
+            keys, kind = with_typo(rng, sy)
             if keys != "".join(sy):
                 typos.append((c, keys, t, kind))
         nxt = unique(
@@ -147,6 +170,34 @@ def main():
         )
         write(out / f"{prefix}next-{src}.tsv", [(c, "", w, "") for c, w in nxt])
     write(out / f"{prefix}typo.tsv", typos)
+    # Clauses longer than the sentence sets' (#563), with a generator of their own so the sets above stay
+    # as they were.
+    rng = random.Random(5630 if dev else 563)
+    # Their typos too (Rime splits a misspelled syllable: xiagn as xia g n), with another.
+    slips = random.Random(5631 if dev else 5632)
+    for src in ("chat", "news"):
+        long = unique(
+            spread(clause_items(rng, pools[src], 13, 25), 13, 25),
+            int(200 * scale),
+            lambda x: x[1],
+        )
+        write(
+            out / f"{prefix}long-{src}.tsv",
+            [(c, "".join(sy), t, " ".join(jieba.cut(t))) for c, t, sy in long],
+        )
+        typed = [(c, *with_typo(slips, sy), t, "".join(sy)) for c, t, sy in long]
+        write(
+            out / f"{prefix}long-typo-{src}.tsv",
+            [(c, keys, t, kind) for c, keys, kind, t, full in typed if keys != full],
+        )
+        # Fuzzy pinyin typed throughout (#563): the clauses above with two zh/ch/sh or more, long ones first.
+        typed = [(c, *fuzzy(sy), t) for c, t, sy in long + sents[src]]
+        write(
+            out / f"{prefix}fuzzy-{src}.tsv",
+            [(c, keys, t, f"{n} z/c/s") for c, keys, n, t in typed if n >= 2][
+                : int(300 * scale)
+            ],
+        )
 
 
 if __name__ == "__main__":

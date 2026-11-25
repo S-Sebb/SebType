@@ -70,15 +70,19 @@ def summarise(out):
                 "top3": pct(sum(0 <= r < 3 for r in ranks), n),
                 "page1": pct(sum(0 <= r < 5 for r in ranks), n),  # rime-ice's page of 5
             }
-            if name.startswith("sent-"):
-                total = right = 0
+            if name.startswith(("sent-", "long-")):
+                total = right = short = 0
                 for it, r in zip(items, rows):
-                    words = it[3].split(" ")
-                    total += len(words)
-                    right += words_right(
-                        it[2], words, r[3].split("|")[0] if r[3] else ""
-                    )
-                m["words"] = pct(right, total)
+                    top1 = r[3].split("|")[0] if r[3] else ""
+                    short += len(top1) < len(it[2])
+                    if "typo" not in name:  # the note: the clause's words
+                        words = it[3].split(" ")
+                        total += len(words)
+                        right += words_right(it[2], words, top1)
+                if total:
+                    m["words"] = pct(right, total)
+                # A first candidate that leaves out part of what was typed (#563).
+                m["short"] = pct(short, n)
             if name == "typo":
                 kinds = {}
                 for it, r in zip(items, ranks):
@@ -187,6 +191,31 @@ def table(a, b):
         row(
             f"Words right in the first candidate ({src})",
             lambda s: f"{a[s][f'sent-{src}']['words']} %",
+        )
+    for src in ("chat", "news"):
+        n = a[stacks[0]][f"long-{src}"]["items"]
+        row(
+            f"Long clause right at rank 1 / first shorter than typed (13-25 characters, {src}, {n})",
+            lambda s: (
+                f"{a[s][f'long-{src}']['top1']} / {a[s][f'long-{src}']['short']} %"
+            ),
+        )
+    for src in ("chat", "news"):
+        n = a[stacks[0]][f"long-typo-{src}"]["items"]
+        row(
+            f"… with typos: right at rank 1 / in the top 3 / first shorter than typed ({src}, {n})",
+            lambda s: (
+                f"{a[s][f'long-typo-{src}']['top1']} / {a[s][f'long-typo-{src}']['top3']}"
+                f" / {a[s][f'long-typo-{src}']['short']} %"
+            ),
+        )
+    for src in ("chat", "news"):
+        n = a[stacks[0]][f"fuzzy-{src}"]["items"]
+        row(
+            f"Clause right at rank 1 / in the top 3, every zh, ch, sh typed as z, c, s ({src}, {n})",
+            lambda s: (
+                f"{a[s][f'fuzzy-{src}']['top1']} / {a[s][f'fuzzy-{src}']['top3']} %"
+            ),
         )
     for kind, what in (
         ("abbr", "abbreviated, zd → 知道"),

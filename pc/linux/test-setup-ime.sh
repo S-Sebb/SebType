@@ -25,6 +25,10 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
   if "$@" > "$out/test-setup-ime-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-setup-ime-$name.log"; fi
 }
+# The user's Documents portal stays mounted (doc_portal, tools/lib.sh). Under the Configurator's test
+# (DOC_PORTAL_CHECKED), which checks it before this run, the start check is skipped so that it can't put
+# back a mount the Configurator lost.
+[[ -n ${DOC_PORTAL_CHECKED-} ]] || doc_portal document-portal-before before
 
 # Preflight
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
@@ -77,7 +81,8 @@ check live-dry-run live_dry
 
 # Fake fresh account.
 fake=$(mktemp -d "$out/setup-ime-fake.XXXX")
-trap '[[ -n ${foreign-} ]] && kill "$foreign" 2>/dev/null; rm -rf "$fake"' EXIT
+# A run cut short (timeout, error) stops what it started too: a Documents portal outlives it.
+trap '[[ -n ${foreign-} ]] && kill "$foreign" 2>/dev/null; stop_sandbox "$fake" >&2; rm -rf "$fake"' EXIT
 trap 'exit 143' TERM  # bash runs no EXIT trap when TERM kills it
 mkdir -p "$fake"/{bin,home/.config,home/.local/share/applications,home/.local/share/flatpak/overrides}
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$2" > "$fake/bin/$1"; chmod +x "$fake/bin/$1"; }
@@ -325,9 +330,8 @@ portal_mount() {
     --method org.freedesktop.portal.Documents.GetMountPoint || return 1
   mount | grep " on $XDG_RUNTIME_DIR/doc type fuse.portal "
 }
-if [[ -n ${XDG_RUNTIME_DIR-} ]] && mount | grep -q " on $XDG_RUNTIME_DIR/doc type fuse.portal "; then
-  check private-bus-keeps-document-portal portal_mount
-else result SKIP private-bus-keeps-document-portal "the user's xdg-document-portal isn't mounted"
+if doc_expected; then check private-bus-keeps-document-portal portal_mount
+else result SKIP private-bus-keeps-document-portal "no desktop session with a Documents portal"
 fi
 
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
@@ -1722,4 +1726,7 @@ EOF
 }
 check offline-profile-update offline_profile
 
+# The fake accounts' leftover processes (portal_mount's Documents portal) stopped first: one could still unmount it.
+o=$(stop_sandbox "$fake") || result FAIL sandbox-stopped "$o"
+doc_portal document-portal-kept after
 ! grep -q '^FAIL' "$results"

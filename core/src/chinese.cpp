@@ -18,6 +18,15 @@
 // fuzzy pinyin off rules out ahead of a word typed as it is. Behind a sentence Rime pieced together (其则么早
 // for qizemezao) they keep their place, where they are mostly typo fixes. Rime's syllables decide, by the
 // characters' readings in rime-data's sebtype_readings.txt (8105's).
+// The model's own candidates that don't spell the letters typed, but for two typos, are dropped (#563): its
+// beam may end early (it ends at <E> whenever that is likelier than going on, and trained on spans of at most
+// 14 characters it often is on longer input), drop a syllable (我的圣诞快乐 for wodeshengdanbukuaile) or loop
+// (胖胖胖… for a clause), and plain() favours a short text, as each character costs log probability. Picking
+// one commits it for all the letters typed, so 庞庞 for a clause of 20 syllables loses the rest of the clause.
+// Edits are counted against the characters' readings, not Rime's syllables: Rime splits a misspelled syllable
+// (xiagn as xia g n), and the model's 想 for it is right. Fuzzy pinyin (z for zh, n for ng) costs none: its
+// users type it in every syllable, and the model reads it. Rime's typo corrections (below) that don't spell the
+// letters so stay where Rime has them.
 // Picking one of Rime's candidates selects it in Rime by its own index. Picking one of the model's puts it
 // into Rime's user dictionary under the syllables typed when Rime reads them all as whole ones (#518), so it
 // is learned, synced and forgotten as Rime's own picks are, and comes first the next time as they do:
@@ -48,6 +57,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -74,6 +84,9 @@ constexpr float kAloneRankWeight = 2, kAloneOwnPenalty = 3;
 constexpr size_t kPlain = 3;
 constexpr float kPlainWeight = 0.4f, kOwnPlainWeight = 0.5f;
 constexpr size_t kNextWords = 5;
+// The edits (Readings::edits) a candidate may be from the letters typed: two typos, the most a test item has
+// (#563). A left-out syllable of two letters or more costs 3, or 2 where a letter typed as spelled parts its own.
+constexpr int kTypos = 2;
 constexpr size_t kContextBytes = 1000;  // the field's text before the cursor kept; the model reads 64 characters
 constexpr int kTeachCandidates = 60;    // Rime's candidates searched for each piece of a model's candidate
 // How long the list shown waits for the model's after a change, so a key changes it once (#450): the phone's
@@ -169,6 +182,83 @@ struct Readings {
         return false;
     }
     return true;
+  }
+
+  // The fewest edits from the letters TYPED to what TEXT's characters spell, each by one of its readings, that
+  // reading confused as fuzzy pinyin's users type it throughout (zh as z, ng as n, either way, and both in one
+  // syllable), or its first letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess, one
+  // missing, or two swapped in a syllable cost 1, but a letter typed otherwise or in excess right after another
+  // costs 2. So a syllable left out (bu) costs 3 where its letters are together, also where a reading takes one
+  // of its letters (dai for 大 in dadafa), but 2 where a good letter parts them (gnfeng for 能: g and f), and
+  // two typos side by side cost 3. A character without readings spells any 1-6 letters. Above kTypos it stops,
+  // at kTypos + 1.
+  int edits(const std::string &text, const std::string &typed) const {
+    const size_t n = typed.size();
+    // For each prefix of TYPED, the fewest edits to it from the letters spelled so far, its last letter typed
+    // as spelled (in) or otherwise or in excess (off).
+    struct Row {
+      std::vector<int> in, off;
+    };
+    const auto blank = [&] { return Row{std::vector<int>(n + 1, 1 << 20), std::vector<int>(n + 1, 1 << 20)}; };
+    const auto least = [](const Row &r, size_t j) { return std::min(r.in[j], r.off[j]); };
+    const auto off = [](const Row &r, size_t j) { return std::min(r.in[j] + 1, r.off[j] + 2); };  // one more off
+    const auto excess = [&](Row &r) {
+      for (size_t j = 1; j <= n; j++) r.off[j] = std::min(r.off[j], off(r, j - 1));
+    };
+    Row at = blank();
+    at.in[0] = 0;
+    excess(at);
+    for (char32_t c : codePoints(text)) {
+      Row next = blank();
+      const auto it = of.find(c);
+      if (it == of.end()) {
+        for (size_t j = 0; j < n; j++)
+          for (size_t k = j + 1; k <= std::min(n, j + 6); k++) next.in[k] = std::min(next.in[k], least(at, j));
+        excess(next);
+      } else {
+        for (const std::string &r : confusions(it->second)) {
+          std::vector<Row> rows{at};  // rows[m]: after the reading's first m letters
+          for (size_t m = 0; m < r.size(); m++) {
+            Row row = blank();
+            const Row &prev = rows[m];
+            for (size_t j = 0; j <= n; j++) {
+              row.in[j] = prev.in[j] + 1, row.off[j] = prev.off[j] + 1;  // r[m] missing
+              if (j && r[m] == typed[j - 1]) row.in[j] = std::min(row.in[j], least(prev, j - 1));
+              if (j && r[m] != typed[j - 1]) row.off[j] = std::min(row.off[j], off(prev, j - 1));
+              if (m && j >= 2 && r[m] == typed[j - 2] && r[m - 1] == typed[j - 1])
+                row.in[j] = std::min(row.in[j], least(rows[m - 1], j - 2) + 1);
+            }
+            excess(row);
+            for (size_t j = 0; j <= n; j++)  // the reading may end here, cut short
+              next.in[j] = std::min(next.in[j], row.in[j]), next.off[j] = std::min(next.off[j], row.off[j]);
+            rows.push_back(std::move(row));
+          }
+        }
+      }
+      at = std::move(next);
+      // No edit is taken back: once every prefix costs more, so does the whole.
+      if (std::ranges::min(at.in) > kTypos && std::ranges::min(at.off) > kTypos) return kTypos + 1;
+    }
+    return least(at, n);
+  }
+
+  // READINGS and their confusions, alone and together (zang for zhan): zh, ch, sh as z, c, s and n as ng, and
+  // the other way (as tools/chinese-lm/common.py's typos make them; ng as n is a reading cut short).
+  static std::vector<std::string> confusions(const std::vector<std::string> &readings) {
+    std::vector<std::string> out;
+    for (const std::string &r : readings) {
+      std::string other;  // r with its initial confused
+      if (r.size() > 2 && r[1] == 'h' && std::string_view("zcs").find(r[0]) != std::string_view::npos)
+        other = r.substr(0, 1) + r.substr(2);
+      else if (r.size() > 1 && std::string_view("zcs").find(r[0]) != std::string_view::npos)
+        other = r.substr(0, 1) + 'h' + r.substr(1);
+      for (const std::string &v : {r, other}) {
+        if (v.empty()) continue;
+        out.push_back(v);
+        if (v.ends_with("an") || v.ends_with("en") || v.ends_with("in")) out.push_back(v + 'g');
+      }
+    }
+    return out;
   }
 };
 
@@ -672,7 +762,7 @@ class Chinese final : public Engine {
         if (!job.fix.empty()) {
           TraceSection section("SebType zh fix");
           items = std::move(made);
-          changed = fix(*model, job, context, items, *first, s2t);
+          changed = fix(*model, readings, job, context, items, *first, s2t);
         } else if (job.input.empty()) {
           TraceSection section("SebType zh next");
           for (const auto &w : model->nextWords(context, kNextWords)) items.push_back(own(w.text, job.traditional, s2t));
@@ -737,7 +827,9 @@ class Chinese final : public Engine {
     const auto generated = model.generate(context, letters, kBeam, static_cast<int>(letters.size()));
     if (revNow_ != job.rev) return {};
     for (const auto &g : generated) {
-      if (std::ranges::any_of(items, [&](const Item &it) { return it.simplified == g.text; })) continue;
+      if (std::ranges::any_of(items, [&](const Item &it) { return it.simplified == g.text; }) ||
+          readings.edits(g.text, letters) > kTypos)
+        continue;
       items.push_back(own(g.text, job.traditional, s2t));
       items.back().misread = job.word && !readings.spell(g.text, job.syllables);
       score.push_back(g.logProb - ownPenalty);
@@ -764,11 +856,12 @@ class Chinese final : public Engine {
   // Puts Rime's correction into the model's list ITEMS, whose first scored FIRST: first when the model is
   // at most kFixLead less sure of it, last on the first page when at most kFixFloor less sure. False if it
   // stays where it is.
-  bool fix(zh_lm::Model &model, const Job &job, const std::string &context, std::vector<Item> &items, float first,
-           Converter &s2t) {
+  bool fix(zh_lm::Model &model, const Readings &readings, const Job &job, const std::string &context,
+           std::vector<Item> &items, float first, Converter &s2t) {
     std::string letters;
     for (char c : job.input)
       if (c != '\'') letters += c;
+    if (readings.edits(job.fix, letters) > kTypos) return false;  // as the model's own (#563)
     const float lp = model.score(context, letters, {job.fix})[0] - kRankWeight * std::log1p(kOwnRank) +
                      kPlainWeight * model.plain(context, {job.fix})[0];
     size_t at;

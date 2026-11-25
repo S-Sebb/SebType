@@ -1,0 +1,10 @@
+{{!-- The licences of the crates built into the SebType Configurator (#548): pc/configurator/about.toml. --}}
+{{#each licenses}}
+================================================================================
+{{#if (eq name id)}}{{{id}}}{{else}}{{{name}}} ({{{id}}}){{/if}}, used by:
+{{#each used_by}}
+  {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

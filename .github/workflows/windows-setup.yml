@@ -254,7 +254,8 @@ jobs:
           $missing = 'SebType-LICENSE.txt', 'Rime-data-GPL-3.0.txt', 'rime\librime-octagram-LICENSE.txt', 'rime\rime-prelude-LICENSE.txt',
             'rime\Lua-LICENSE.txt', 'rime\X11-keysym-LICENSE.txt',
             'server\llama.cpp-LICENSE.txt', 'server\protobuf-LICENSE.txt', 'mozc\Mozc-LICENSE.txt', 'mozc\WIL-LICENSE.txt',
-            'python\Python-LICENSE.txt', 'python\Python-incorporated-software.txt', 'python\HACL-LICENSE.txt' |
+            'python\Python-LICENSE.txt', 'python\Python-incorporated-software.txt', 'python\HACL-LICENSE.txt',
+            'configurator\crates-LICENSE.txt' |
             Where-Object { -not (Test-Path "$l\$_") }
           if ($missing) { throw "missing: $missing" }
           $empty = Get-ChildItem -Recurse -File $l | Where-Object Length -eq 0
@@ -267,6 +268,11 @@ jobs:
           }
           if (Get-ChildItem -Recurse $l -Filter '*tclap*') { throw "tclap's licence: it isn't linked" }
           if (-not (Select-String -Quiet 'Permission is hereby granted' "$l\python\HACL-LICENSE.txt")) { throw "python\HACL-LICENSE.txt has no MIT notice" }
+          # The Configurator's crates (#548; configurator.yml checks that each has its text): Slint's Royalty-free
+          # licence, whose text only Slint's crates carry.
+          if (-not (Select-String -Quiet 'Slint Royalty-free Desktop, Mobile, and Web Applications License' "$l\configurator\crates-LICENSE.txt")) {
+            throw "configurator\crates-LICENSE.txt has no Slint licence"
+          }
       # The installed Python, with only the native modules python.ps1 keeps, runs sync's tests (#544).
       - name: Sync on the installed Python
         run: |

@@ -181,3 +181,56 @@ private_dbus() {
     "$rt/masked" > "$rt/bus.conf"
   env "${env[@]}" XDG_RUNTIME_DIR="$link" prlimit --core=1 -- dbus-run-session --config-file="$rt/bus.conf" -- "$@"
 }
+
+# doc_portal NAME before|after: the user's Documents portal is still mounted (#550). A second portal on the
+# user's runtime dir (#176; another project's nested session, S-Sebb/SebChat#905) unmounts it when it ends,
+# and the user's Flatpak apps no longer start. Gone, it is said and put back (restarting the user's portal
+# is the one change to the user's session a test makes): before the run a NOTE, as something before it
+# took it, or a FAIL if it doesn't come back; after it a FAIL. Calls the script's result. Only for a
+# desktop session (a Wayland or X11 one) with the portal's unit, on that session's own runtime dir: elsewhere
+# none is expected, and a private runtime dir (with the user's bus) would restart the user's healthy portal.
+doc_expected() {
+  local s
+  [[ -n ${XDG_RUNTIME_DIR-} && $(realpath -e "$XDG_RUNTIME_DIR" 2> /dev/null) == "/run/user/$UID" ]] && s=$(loginctl show-user "$USER" -p Display --value 2>/dev/null) && [[ -n $s ]] &&
+    [[ $(loginctl show-session "$s" -p Type --value) == @(wayland|x11) ]] &&
+    systemctl --user cat xdg-document-portal.service &> /dev/null
+}
+doc_portal() {
+  local doc=${XDG_RUNTIME_DIR-}/doc back
+  if ! doc_expected; then [[ $2 == before ]] || result SKIP "$1" "no desktop session with a Documents portal"; return 0; fi
+  # by-app/ isn't there when it's unmounted, nor on a mount whose portal died ("not connected")
+  if [[ -d $doc/by-app ]]; then [[ $2 == before ]] || result PASS "$1"; return 0; fi
+  systemctl --user restart xdg-document-portal.service
+  [[ -d $doc/by-app ]] && back="restarted xdg-document-portal.service, mounted again" ||
+    back="restarted xdg-document-portal.service, STILL NOT MOUNTED"
+  if [[ $2 == after ]]; then result FAIL "$1" "the user's Documents portal ($doc) was unmounted during this run; $back"
+  elif [[ -d $doc/by-app ]]; then result NOTE "$1" "the user's Documents portal ($doc) was unmounted before this run; $back"
+  else result FAIL "$1" "the user's Documents portal ($doc) was unmounted before this run; $back"
+  fi
+}
+
+# in_sandbox PID DIR: the process's own XDG_DATA_HOME is in DIR (not another variable that holds the path).
+in_sandbox() {
+  local e
+  while IFS= read -rd '' e; do [[ $e == "XDG_DATA_HOME=$2/"* ]] && return 0; done 2> /dev/null < "/proc/$1/environ"
+  return 1
+}
+
+# stop_sandbox DIR: stops the processes that run with XDG_DATA_HOME in DIR, and waits until they have exited.
+# What a private session started (ksecretd, a Documents portal) outlives its D-Bus, and a portal unmounts as
+# it ends: they go before a check of the user's portal. TERM, and after 15 s KILL; fails, naming them, if any
+# still runs after that.
+stop_sandbox() {
+  local p left=() still=()
+  for p in $(pgrep -u "$USER"); do in_sandbox "$p" "$1" && kill "$p" && left+=("$p"); done
+  ((${#left[@]})) || return 0
+  for _ in {1..75}; do ps -p "${left[*]}" > /dev/null || return 0; sleep 0.2; done
+  # Only those still in the sandbox: an exited one's PID may be another process's by now.
+  for p in "${left[@]}"; do in_sandbox "$p" "$1" && still+=("$p"); done
+  ((${#still[@]})) || return 0
+  left=("${still[@]}")
+  kill -9 "${left[@]}" 2>/dev/null
+  for _ in {1..10}; do ps -p "${left[*]}" > /dev/null || return 0; sleep 0.2; done
+  echo "still running after KILL: $(ps -o pid=,comm= -p "${left[*]}" | xargs)"
+  return 1
+}
