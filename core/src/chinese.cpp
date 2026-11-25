@@ -185,12 +185,13 @@ struct Readings {
   }
 
   // The fewest edits from the letters TYPED to what TEXT's characters spell, each by one of its readings, that
-  // reading confused as fuzzy pinyin's users type it throughout (zh as z, ng as n, either way), or its first
-  // letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess, one missing, or two swapped in
-  // a syllable cost 1, but a letter typed otherwise or in excess right after another costs 2. So a syllable
-  // left out (bu) costs 3 where its letters are together, also where a reading takes one of its letters (dai
-  // for 大 in dadafa), but 2 where a good letter parts them (gnfeng for 能: g and f), and two typos side by side
-  // cost 3. A character without readings spells any 1-6 letters. Above kTypos it stops, at kTypos + 1.
+  // reading confused as fuzzy pinyin's users type it throughout (zh as z, ng as n, either way, and both in one
+  // syllable), or its first letters (zd for 知道, ranh for 然后): a letter typed otherwise or in excess, one
+  // missing, or two swapped in a syllable cost 1, but a letter typed otherwise or in excess right after another
+  // costs 2. So a syllable left out (bu) costs 3 where its letters are together, also where a reading takes one
+  // of its letters (dai for 大 in dadafa), but 2 where a good letter parts them (gnfeng for 能: g and f), and
+  // two typos side by side cost 3. A character without readings spells any 1-6 letters. Above kTypos it stops,
+  // at kTypos + 1.
   int edits(const std::string &text, const std::string &typed) const {
     const size_t n = typed.size();
     // For each prefix of TYPED, the fewest edits to it from the letters spelled so far, its last letter typed
@@ -241,17 +242,21 @@ struct Readings {
     return least(at, n);
   }
 
-  // READINGS and their confusions: zh, ch, sh as z, c, s and n as ng, and the other way (as
-  // tools/chinese-lm/common.py's typos make them; ng as n is a reading cut short).
+  // READINGS and their confusions, alone and together (zang for zhan): zh, ch, sh as z, c, s and n as ng, and
+  // the other way (as tools/chinese-lm/common.py's typos make them; ng as n is a reading cut short).
   static std::vector<std::string> confusions(const std::vector<std::string> &readings) {
     std::vector<std::string> out;
     for (const std::string &r : readings) {
-      out.push_back(r);
+      std::string other;  // r with its initial confused
       if (r.size() > 2 && r[1] == 'h' && std::string_view("zcs").find(r[0]) != std::string_view::npos)
-        out.push_back(r.substr(0, 1) + r.substr(2));
+        other = r.substr(0, 1) + r.substr(2);
       else if (r.size() > 1 && std::string_view("zcs").find(r[0]) != std::string_view::npos)
-        out.push_back(r.substr(0, 1) + 'h' + r.substr(1));
-      if (r.ends_with("an") || r.ends_with("en") || r.ends_with("in")) out.push_back(r + 'g');
+        other = r.substr(0, 1) + 'h' + r.substr(1);
+      for (const std::string &v : {r, other}) {
+        if (v.empty()) continue;
+        out.push_back(v);
+        if (v.ends_with("an") || v.ends_with("en") || v.ends_with("in")) out.push_back(v + 'g');
+      }
     }
     return out;
   }
