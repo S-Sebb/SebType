@@ -459,6 +459,18 @@ QUICK_SWITCH = ("快速切换", "Quick switch", "クイック切り替え")
 CHOOSER = ("Choose input method", "Select input method")
 
 
+def chooser_shown():
+    """Android's keyboard chooser: up to Android 15 a dialog with one of the CHOOSER titles; Android 16's menu
+    has no title, only the keyboards by name in a window of the system's own (#600)."""
+    adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
+    xml = adb("shell", "cat", "/sdcard/sebtype-ui.xml")
+    return any(
+        n.get("text") in CHOOSER
+        or (n.get("package") == "android" and n.get("text") == "SebType")
+        for n in ET.fromstring(xml[xml.index("<") :]).iter("node")
+    )
+
+
 def globe_rows():
     """The globe's list as shown: {label: (x, y, marked)}"""
     adb("shell", "uiautomator", "dump", "--windows", "/sdcard/sebtype-ui.xml")
@@ -539,7 +551,7 @@ def held_and_cancelled(via, end):
         adb("shell", "input", "motionevent", "MOVE", *map(str, to), check=False)
         adb("shell", "input", "motionevent", "UP", *map(str, to), check=False)
     time.sleep(1.5)
-    if screen_has(CHOOSER):
+    if chooser_shown():
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
         raise Fail(f"slid to {via}, let go {end}: Android's chooser opened")
     open_field()
@@ -594,7 +606,7 @@ def quick_switch():
     held_and_cancelled("中文", "beside")
     hold_globe(OTHER_KEYBOARDS)
     try:
-        wait_for("Android's keyboard chooser", lambda: screen_has(CHOOSER), 10)
+        wait_for("Android's keyboard chooser", chooser_shown, 10)
     finally:
         adb("shell", "input", "keyevent", "KEYCODE_BACK", check=False)
     return (
@@ -667,7 +679,7 @@ def quick_switch_off():
         at = (int(left + 3 * (right - left) / 10), int(top + 3.5 * (bottom - top) / 4))
         adb("shell", "input", "motionevent", "DOWN", *map(str, at))
         try:
-            wait_for("Android's keyboard chooser", lambda: screen_has(CHOOSER), 10)
+            wait_for("Android's keyboard chooser", chooser_shown, 10)
             screenshot("globe-held-off")
         finally:
             adb("shell", "input", "motionevent", "UP", *map(str, at), check=False)
@@ -820,6 +832,9 @@ def open_settings():
     # A new task each time, so it opens on the home screen. Without SebType chosen as the keyboard
     # the app opens on its setup screen instead.
     adb("shell", "ime", "set", IME)
+    # Else the first About after a fresh install (or cleared data) asks to notify over its rows (#514);
+    # update.py checks that question.
+    adb("shell", "pm", "grant", PKG, "android.permission.POST_NOTIFICATIONS")
     adb("shell", "am", "start", "-W", "-f", "0x10008000", "-n", SETTINGS)
     wait_for("the settings home screen", home_shown, 30)
 
@@ -2799,6 +2814,7 @@ def setup_existing_user():
 
 
 def tips_screenshots():
+    end_setup()
     shots = []
     before = night_mode()
     for night in ("no", "yes"):
