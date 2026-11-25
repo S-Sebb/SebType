@@ -1,6 +1,6 @@
 # SebType Configurator for Windows (#72): pc/configurator built on a Windows runner with the phone's icon
-# (art/make-icon.py) at every size, after its unit tests. The exe is the run's artifact "sebtype-configurator"; the installer (#73)
-# ships it.
+# (art/make-icon.py) at every size, after its unit tests. The exe is the run's artifact "sebtype-configurator",
+# with crates-LICENSE.txt, the licences of the crates built into it (#548); the installer (#73) ships both.
 name: Configurator
 
 on:
@@ -44,7 +44,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             pc/configurator/target
-          key: configurator-windows-${{ hashFiles('pc/configurator/Cargo.lock') }}
+          key: configurator-windows-${{ hashFiles('pc/configurator/Cargo.lock', 'pc/configurator/about.toml') }}
           restore-keys: configurator-windows-
       - name: Icon
         run: |
@@ -58,10 +58,43 @@ jobs:
           cargo build --release --locked --features update-test
           Copy-Item target/release/sebtype-configurator.exe ../../out/sebtype-configurator-update-test.exe
       - run: cargo build --release --locked
+      # cargo-about, pinned (linux/versions.sh pins its Linux binary), writes the crates' licences offline from
+      # Cargo's cache (about.toml): every crate the exe links has its licence's text there, the proc-macros' crates only
+      # run in the build.
+      - uses: actions/cache@v4
+        id: cargo-about
+        with:
+          path: ~/cargo-about
+          key: cargo-about-0.9.3-x86_64-pc-windows-msvc
+      - if: steps.cargo-about.outputs.cache-hit != 'true'
+        run: |
+          $tgz = "$env:RUNNER_TEMP\cargo-about.tar.gz"
+          curl.exe --limit-rate 35M -sSfL --retry 3 -o $tgz https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/cargo-about-0.9.3-x86_64-pc-windows-msvc.tar.gz
+          if ((Get-FileHash $tgz).Hash -ne '9e2942533ef1c592c4a70bdb384cae1550a3f5fc9ae40379b6662e3d2f16fe02') { throw 'cargo-about: checksum mismatch' }
+          New-Item -ItemType Directory -Force ~/cargo-about | Out-Null
+          tar -xzf $tgz -C ~/cargo-about --strip-components=1
+      - name: Licences
+        run: |
+          # cargo-about reads every platform's crates (cargo metadata), not only those the build needed.
+          cargo fetch --locked
+          if ($LASTEXITCODE) { throw "cargo fetch failed ($LASTEXITCODE)" }
+          $out = 'target/release/crates-LICENSE.txt'
+          & ~/cargo-about/cargo-about.exe generate --frozen --fail --target x86_64-pc-windows-msvc -o $out about.hbs
+          if ($LASTEXITCODE) { throw "cargo-about failed ($LASTEXITCODE)" }
+          $listed = Get-Content $out
+          $crates = cargo tree --locked --offline -e normal,no-proc-macro --target x86_64-pc-windows-msvc --prefix none -f '{p}'
+          if ($LASTEXITCODE) { throw "cargo tree failed ($LASTEXITCODE)" }
+          $crates = $crates | ForEach-Object { $_ -replace '^(\S+) v(\S+).*', '  $1 $2' } | Sort-Object -Unique |
+            Where-Object { $_ -notlike '  sebtype-configurator *' }
+          if (-not $crates) { throw "cargo tree listed none of the Configurator's crates" }
+          $missing = $crates | Where-Object { $_ -cnotin $listed }
+          if ($missing) { throw "crates without a licence text: $missing" }
       - uses: actions/upload-artifact@v4
         with:
           name: sebtype-configurator
-          path: pc/configurator/target/release/sebtype-configurator.exe
+          path: |
+            pc/configurator/target/release/sebtype-configurator.exe
+            pc/configurator/target/release/crates-LICENSE.txt
           if-no-files-found: error
           retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 3 }}
       - uses: actions/upload-artifact@v4

@@ -148,6 +148,11 @@ expected() {
   for f in llama.cpp glog yaml-cpp snappy leveldb marisa-trie opencc protobuf abseil utf8-range lua rapidjson; do
     [[ -s /usr/share/licenses/sebtype/$f-LICENSE ]] || { echo "missing: $f's licence"; return 1; }
   done
+  # The Configurator's crates (#548; the spec's %check checks that each has its text): Slint's Royalty-free
+  # licence, and dbus's (in keyring's libdbus-sys).
+  f=/usr/share/licenses/sebtype/configurator-crates-LICENSE
+  grep -q 'Slint Royalty-free Desktop, Mobile, and Web Applications License' "$f" && grep -q 'Academic Free License' "$f" &&
+    grep -qx '  libdbus-sys [0-9.]*' "$f" || { echo "not the Configurator's crates' licences: $f"; return 1; }
   # What setup's user part copies is this checkout's.
   # rpmbuild makes setup's #!/usr/bin/env bash /usr/bin/bash.
   cmp <(tail -n +2 /src/pc/linux/setup-ime.sh) <(tail -n +2 /usr/libexec/sebtype/setup-ime.sh) &&

@@ -46,6 +46,8 @@ Source9:        opencc.tar.gz
 Source10:       lua.tar.gz
 Source11:       protobuf.tar.gz
 Source12:       snappy.tar.gz
+# versions.sh's CARGO_ABOUT
+Source13:       cargo-about.tar.gz
 
 BuildRequires:  gcc-c++
 BuildRequires:  cmake
@@ -88,6 +90,7 @@ SebType's tray menu.
 
 %prep
 %setup -q -c -n sebtype -a 1 -a 2
+mkdir cargo-about && tar -C cargo-about --no-same-owner --strip-components=1 -xf %{SOURCE13}
 mkdir -p engines && mv mozc engines/
 tar -C engines/librime/plugins -xf %{SOURCE3} && mv engines/librime/plugins/{librime-lua-master,lua}
 tar -C engines/librime/plugins -xf %{SOURCE4} && mv engines/librime/plugins/librime-octagram-* engines/librime/plugins/octagram
@@ -148,10 +151,24 @@ ninja -C build -j %{_smp_build_ncpus}
 # No debug info: build.sh packs none (debug_package is nil), and with it the fat-LTO link runs out of memory (#496).
 RUSTFLAGS="${RUSTFLAGS:-} -Cdebuginfo=0" SEBTYPE_SOURCES=$(source linux/versions.sh && configurator_sources .) CARGO_HOME=%{cache_root}/cargo cargo build --release --locked --jobs %{_smp_build_ncpus} \
   --manifest-path pc/configurator/Cargo.toml --target-dir %{cache_root}/configurator-target
+# The licences of the crates built into it (#548, pc/configurator/about.toml). cargo-about reads every platform's
+# crates (cargo metadata), so those the build didn't need are fetched into the cache too.
+CARGO_HOME=%{cache_root}/cargo cargo fetch --locked --manifest-path pc/configurator/Cargo.toml
+CARGO_HOME=%{cache_root}/cargo cargo-about/cargo-about generate --frozen --fail --target x86_64-unknown-linux-gnu \
+  --manifest-path pc/configurator/Cargo.toml -o configurator-crates-LICENSE pc/configurator/about.hbs
 HOME=%{cache_root}/home OPENCC_LIBS="$root/lib/libopencc.a $root/lib/libmarisa.a" data/rime/build.sh chinese-data >/dev/null
 
 %check
 ctest --test-dir build/core --output-on-failure
+# Every crate the Configurator links has its licence's text there (#548): the proc-macros' crates only run in
+# the build.
+tree=$(CARGO_HOME=%{cache_root}/cargo cargo tree --locked --offline --manifest-path pc/configurator/Cargo.toml \
+  -e normal,no-proc-macro --target x86_64-unknown-linux-gnu --prefix none -f '{p}') || exit 1
+crates=$(sed -E 's/^([^ ]+) v([^ ]+).*/  \1 \2/' <<<"$tree" | sort -u | grep -v '^  sebtype-configurator ')
+[[ -n $crates ]] || { echo "cargo tree listed none of the Configurator's crates"; exit 1; }
+# grep's status 1: no crate is missing.
+missing=$(grep -vxFf configurator-crates-LICENSE <<<"$crates") || (($? == 1)) || exit 1
+[[ -z $missing ]] || { echo "the Configurator's crates without a licence text:"; echo "$missing"; exit 1; }
 
 %install
 # Not librime's component (linux/CMakeLists.txt)
@@ -171,7 +188,7 @@ ln -s ../libexec/sebtype/setup-ime.sh %{buildroot}%{_bindir}/sebtype-setup
 %files
 %license engines/mozc/LICENSE librime-LICENSE librime-lua-LICENSE librime-octagram-LICENSE llama.cpp-LICENSE
 %license glog-LICENSE yaml-cpp-LICENSE snappy-LICENSE leveldb-LICENSE marisa-trie-LICENSE opencc-LICENSE protobuf-LICENSE lua-LICENSE
-%license rapidjson-LICENSE abseil-LICENSE utf8-range-LICENSE
+%license rapidjson-LICENSE abseil-LICENSE utf8-range-LICENSE configurator-crates-LICENSE
 %{_libdir}/fcitx5/sebtype.so
 %{_datadir}/fcitx5/addon/sebtype.conf
 %{_datadir}/sebtype/fcitx5/addon/notificationitem.conf
