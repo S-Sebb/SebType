@@ -75,7 +75,7 @@ build_host_ready() {
 build_remotely() {
   local root dir out f rel here key
   root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-  dir=$(basename "$TASK_OUT")/$(basename "$root")
+  dir=${TASK_OUT#"$SCRATCH"/}/$(basename "$root") # 567/x and 568/x must not share a copy
   key=$(source "$root/linux/versions.sh" && librime_key) || return 1
   local env=(SEBTYPE_BUILD_HOST=local ${DEVQ_RANK:+DEVQ_RANK=$DEVQ_RANK} ${ISSUE:+ISSUE=$ISSUE} "LIBRIME_KEY=$key")
   while [[ $1 == *=* ]]; do env+=("$1"); shift; done
