@@ -31,9 +31,9 @@ int main(int argc, char **argv) {
     int failed = 0;
     for (size_t t = 0; t < texts.size(); t++) {
         const float alone = model.score(context, typed, {texts[t]})[0];
-        // Batch shapes move a score by about 0.01 nats a token (0.4 for one of these 41 tokens); a node read
-        // with another's logits moves it by several.
-        if (!(std::fabs(together[t] - alone) < 1.0f)) {
+        // Batch shapes move a score by up to about 0.03 nats a token (1.1 for one of these 41 tokens with #557's
+        // checkpoints, 0.07 with r2's); a node read with another's logits moves it by several.
+        if (!(std::fabs(together[t] - alone) < 2.0f)) {
             fprintf(stderr, "text %zu: %.3f in the tree, %.3f alone\n", t, together[t], alone);
             failed++;
         }
