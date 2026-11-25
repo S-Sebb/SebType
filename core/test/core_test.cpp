@@ -667,7 +667,12 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            {"what's ", "ur", "ur "}, {"", "txt", "txt "}, {"I saw ", "hm", "him "}, {"I ", "hm", "hm "},
            {"", "Hm", "Hm "}, {"that's ", "goos", "good "}, {"You are ", "goos", "good "}, {"", "neer", "neer "},
            // A word another continues and the word continuing it are read alike, both to their ends (#568).
-           {"", "proffession", "profession "}}) {
+           {"", "proffession", "profession "},
+           // A typo's words that differ only by an apostrophe share as the typed word and its contraction do,
+           // and a shortcut a typo reaches is capped (were -> we're); a word in capitals alone is no contraction
+           // (#556).
+           {"Why ", "wer", "were "}, {"", "yeras", "years "}, {"", "steriods", "steroids "}, {"", "ID", "ID "},
+           {"", "ILL", "ILL "}}) {
     en->setContext(context);
     for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
     const int ranked = readyCount();
@@ -686,6 +691,7 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
   type("waht ");
   EXPECT_EQ(en->takeCommit(), "want ");  // the decoder's rule
   start();
+  en->setContext("so ");  // with no text before it, r4 keeps "waht" (#556)
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
@@ -697,6 +703,7 @@ TEST_F(EnglishTest, ASpaceBeforeTheModelsRankingWaitsForIt) {
 // the model's ranking, expected within the hold, takes its place.
 TEST_F(EnglishTest, AKeyChangesTheListOnceToTheModelsRanking) {
   start(EN_MODEL, std::chrono::milliseconds(50));
+  en->setContext("so ");  // with no text before it, r4 keeps "waht" (#556)
   type("a");
   en->key({0xff08, 0, false});
   ASSERT_TRUE(ready(0));
@@ -789,7 +796,7 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   EXPECT_FALSE(lists("youin")) << testing::PrintToString(list());
   // A word in capitals is the dictionary's in any case: I'M is I'm (#568).
   const int shouted = readyCount();
-  en->setContext("I SAID HELLO. ");
+  en->setContext("I KNOW. ");
   ASSERT_TRUE(ready(shouted));
   EXPECT_TRUE(lists("I'M")) << testing::PrintToString(list());
 }
@@ -850,7 +857,7 @@ TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
   EXPECT_TRUE(contraction);
   EXPECT_TRUE(model.nextWords("Sorry I", 0).empty());  // its 3rd best was read before the 0th (#568)
   // The pronoun is a capital, though chats taught the model a small one (#568).
-  const auto words = model.nextWords("Both :) i", 3);
+  const auto words = model.nextWords("lol :) ", 3);
   EXPECT_TRUE(std::ranges::any_of(words, [](const auto &w) { return w.word == "I"; }));
   EXPECT_FALSE(std::ranges::any_of(words, [](const auto &w) { return w.word == "i"; }));
   // Text in capitals reads as small letters, and its next words are whole words in capitals: read as it
