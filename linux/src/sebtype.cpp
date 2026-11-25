@@ -92,10 +92,7 @@ std::unique_ptr<Engine> SebTypeEngine::makeEngine(Lang lang) {
     // fcitx5-rime loaded before SebType (in use when SebType was installed and found at a Refresh, which turns it
     // off only from then on) has Rime's folder open: a second librime would deploy into its build/ and learn into
     // its userdb (#542). None opens until Fcitx5 restarts, when SebType loads first and keeps fcitx5-rime off.
-    if (instance_->addonManager().addon("rime")) {
-      FCITX_WARN() << "fcitx5-rime has Rime's folder open: SebType's 中文 types once Fcitx5 restarts";
-      return std::make_unique<Unavailable>();
-    }
+    if (instance_->addonManager().addon("rime")) return std::make_unique<Unavailable>();  // keepFcitx5RimeOff warned
     fs::create_directories(rimeUser);
     auto rime = makeRime({RIME_DATA_DIR, rimeUser.string()});
     static const std::string model = chineseModel();

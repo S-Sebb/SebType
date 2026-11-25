@@ -1356,6 +1356,23 @@ PY
   for p in $(pgrep -x fcitx5); do grep -qzx "HOME=$h" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
   return $rc
 }
+# A group Fcitx5 can't read (gone since the list, or a failed call) fails the whole read of the running groups:
+# never a line with two groups' fields, which named the wrong group in the warning's remove command.
+group_read_fails() {
+  local fns
+  fns=$(sed -n '/^call() {/p; /^running_groups() {/,/^}/p; /^rime_groups() {/,/^}/p' setup-ime.sh)
+  # shellcheck disable=SC2016  # the fake's own script
+  bash -c 'set -euo pipefail; eval "$1"
+    fcitx_on_dbus() { true; }
+    call() { case "$*" in
+      *AvailableInputMethods*) echo "\"sebtype\"" ;;
+      *InputMethodGroups*) echo "{\"type\":\"as\",\"data\":[[\"Work\",\"Other\"]]}" ;;
+      *"s Work") return 1 ;;
+      *) echo "{\"type\":\"sa(ss)\",\"data\":[\"us\",[[\"rime\",\"\"]]]}" ;;
+    esac; }
+    ! out=$(rime_groups 2>/dev/null) && [[ -z $out ]] && [[ $(running_groups 1 2>/dev/null; echo "$?") == 1 ]]' _ "$fns"
+}
+check group-read-fails group_read_fails
 if command -v fcitx5 dbus-run-session >/dev/null && python3 -c 'from gi.repository import Gio' 2>/dev/null &&
   [[ -f /usr/lib64/fcitx5/librime.so ]]; then
   check fcitx5-rime-beside-sebtype both_rimes

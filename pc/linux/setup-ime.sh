@@ -503,22 +503,26 @@ fi
 call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
 # The running Fcitx5's groups in order, one a line: name, layout, then its input methods, each field ended by
 # \x1f (a layout may be empty). Read as JSON: busctl's plain output escapes non-ASCII (a zh Fcitx5's 默认) and
-# keeps a name's spaces and quotes, which no split survives.
+# keeps a name's spaces and quotes, which no split survives. $1: only the first $1 groups. Fails, printing no
+# more, when a group can't be read (gone since the list, or a failed call), never a line of two groups.
 running_groups() {
-  local g
-  call --json=short InputMethodGroups | python3 -c 'import json, sys; print(*json.load(sys.stdin)["data"][0], sep="\n")' |
+  local g info
+  call --json=short InputMethodGroups |
+    python3 -c 'import json, sys; print(*json.load(sys.stdin)["data"][0][:int(sys.argv[1] or 0) or None], sep="\n")' "${1-}" |
     while IFS= read -r g; do
-      printf '%s\x1f' "$g"
-      call --json=short InputMethodGroupInfo s "$g" | python3 -c 'import json, sys
+      info=$(call --json=short InputMethodGroupInfo s "$g" | python3 -c 'import json, sys
 layout, ims = json.load(sys.stdin)["data"]
-print(*(f + "\x1f" for f in [layout, *(im for im, _ in ims)]), sep="")'
+print(*(f + "\x1f" for f in [layout, *(im for im, _ in ims)]), sep="")') || exit 1
+      printf '%s\x1f%s\n' "$g" "$info"
     done
 }
 # Prints the number and name ("<n><TAB><name>") of each Fcitx5 group with fcitx5-rime's rime: the running
 # Fcitx5's groups when it knows SebType's input method (step 7 changes those), else the profile's.
 rime_groups() {
   if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
-    running_groups | awk -F '\x1f' '{ for (i = 3; i < NF; i++) if ($i == "rime") { print NR - 1 "\t" $1; next } }'
+    local groups
+    groups=$(running_groups) || return 1  # none rather than a part
+    awk -F '\x1f' '{ for (i = 3; i < NF; i++) if ($i == "rime") { print NR - 1 "\t" $1; next } }' <<<"$groups"
   else
     awk '/^\[Groups\/[0-9]+\]$/ { g = $0; gsub(/[^0-9]/, "", g); sec = "group"; next }
       /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ { sec = "item"; next } /^\[/ { sec = ""; next }
@@ -539,7 +543,8 @@ first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
   first_rime=$'\n'"  Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
 restore=" or restore profile from $backup, with Fcitx5 stopped"  # after first_rime, where a backup is made
 if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
-  IFS=$'\x1f' read -r -a q < <(running_groups | head -1)
+  first_group=$(running_groups 1)  # a failed read stops setup, as a failed call does
+  IFS=$'\x1f' read -r -a q <<<"$first_group"
   group=${q[0]} layout=${q[1]} now=("${q[@]:2}") ims=(sebtype)
   for im in "${now[@]}"; do
     [[ " sebtype keyboard-us rime mozc " == *" $im "* ]] || ims+=("$im")
