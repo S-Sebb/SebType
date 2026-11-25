@@ -17,6 +17,19 @@ context, typed letters, intended word, then the touch points' x and y (comma-sep
   A substitution or a neighbour insertion is a tap that lands on another key.
 - misspellings: 1,500 of Wikipedia's common misspellings, typed on their own keys with no context.
 
+The sets #556 added, for what those can't see: every target above is a lowercase word without an apostrophe.
+On the phone the apostrophe isn't on the letter layer, so a contraction is typed without it.
+- contractions: the 77 contractions of #539's sweep, each typed without its apostrophe after four contexts:
+  none (a sentence start, typed with the shift on), "So", and the texting "lol ok" and "yeah but". The 7 whose
+  bare form is a word of its own (its, were, well, hell, shell, shed, wed) are in homographs instead.
+- homographs: bare forms that are words of their own, after contexts that mean the word ("She was very ill")
+  or the contraction ("I think its"): HOMOGRAPHS below.
+- apostrophes: 400 of those contractions in chat and news sentences after the word sets', whose bare form
+  means them (intended() below), typed without the apostrophe; half with a typo as phone-typos.
+- capitals: 400 capitalised words of those sentences: half their first word, typed with the shift on, and half
+  a capitalised word in mid-sentence that the dictionary only has so ("I", "Paris", "Monday"), typed in lowercase;
+  half of each with a typo.
+
 `texts` makes the texting sets (#266) from real text messages, the NUS SMS Corpus (CC BY 4.0), as their senders
 wrote them: lowercase, "u", "lol", "dont". Only senders from the US, Canada, the UK, Australia and New Zealand,
 as the rest is mostly Singaporean and Indian English. No sender gives more than 15 % of the messages.
@@ -73,6 +86,42 @@ def key_at(x, y):
         if kx <= x < kx + w and ky <= y < ky + h:
             return k
     return None
+
+
+def dictionary():
+    """data/en-dict/en_US.dict's words: word -> (frequency, not a word, offensive, shortcuts)."""
+    sys.path.insert(
+        0, str(HERE.parents[2] / "data/en-dict")
+    )  # run with python3 -I, which drops it
+    import v202
+
+    return v202.decode((HERE.parents[2] / "data/en-dict/en_US.dict").read_bytes())[1]
+
+
+def intended_of(words):
+    """intended(w): the word meant by W typed without its apostrophe ("dont": "don't", "im": "I'm"), when the
+    dictionary has only one such word (case aside, preferring its lowercase form) and W is no word itself or has
+    it as its shortcut ("ill": "I'll"); otherwise W."""
+    freq = lambda w: words[w][0] if w in words and not words[w][1] else -1
+    forms = defaultdict(dict)
+    for a, (_, not_a_word, _, _) in words.items():
+        if "'" in a and not not_a_word:
+            forms[a.replace("'", "").lower()].setdefault(a.lower(), a)
+    for d in forms.values():
+        for k in d:
+            if k in words and not words[k][1]:
+                d[k] = k
+
+    def intended(w):
+        found = list(forms.get(w, {}).values())
+        shortcuts = [t for t, _ in words[w][3]] if w in words else []
+        return (
+            found[0]
+            if len(found) == 1 and (freq(w) < 0 or found[0] in shortcuts)
+            else w
+        )
+
+    return intended
 
 
 def tap(rng, letter, on_key):
@@ -286,8 +335,222 @@ def main(oasst, misspellings, wikinews, out):
     (out / "wikinews-articles.tsv").write_text(
         "".join(f"{a['revid']}\t{a['title']}\n" for a in news)
     )
+    # #556's sets, from the sentences after the word sets' and with their own seed, so the sets above stay
+    # as they were measured.
+    contraction_sets(out, [pools[k][cursor[k] :] for k in ("chat", "news")])
     for f in sorted(out.glob("*.tsv")):
         print(f"{f.name}: {len(f.read_text().splitlines())} rows")
+
+
+# #539's sweep: the dictionary's contractions (isContraction in core/src/english.cpp).
+CONTRACTIONS = [
+    "ain't",
+    "aren't",
+    "can't",
+    "couldn't",
+    "could've",
+    "daren't",
+    "didn't",
+    "doesn't",
+    "don't",
+    "hadn't",
+    "hasn't",
+    "haven't",
+    "he'd",
+    "he'll",
+    "here's",
+    "he's",
+    "how's",
+    "I'd",
+    "I'll",
+    "I'm",
+    "isn't",
+    "it'd",
+    "it'll",
+    "it's",
+    "I've",
+    "let's",
+    "ma'am",
+    "mayn't",
+    "mightn't",
+    "might've",
+    "mustn't",
+    "must've",
+    "needn't",
+    "o'clock",
+    "oughtn't",
+    "shan't",
+    "she'd",
+    "she'll",
+    "she's",
+    "shouldn't",
+    "should've",
+    "that'd",
+    "that'll",
+    "that's",
+    "there'd",
+    "there'll",
+    "there're",
+    "there's",
+    "they'd",
+    "they'll",
+    "they're",
+    "they've",
+    "wasn't",
+    "we'd",
+    "we'll",
+    "we're",
+    "weren't",
+    "we've",
+    "what'd",
+    "what'll",
+    "what're",
+    "what's",
+    "when's",
+    "where's",
+    "who'd",
+    "who'll",
+    "who's",
+    "who've",
+    "why's",
+    "won't",
+    "wouldn't",
+    "would've",
+    "y'all",
+    "you'd",
+    "you'll",
+    "you're",
+    "you've",
+]
+CONTRACTED = {w.lower() for w in CONTRACTIONS}
+CONTRACTION_CONTEXTS = ("", "So", "lol ok", "yeah but")
+# Bare forms that are words too: context, typed, the word meant. The context alone tells which.
+HOMOGRAPHS = [
+    ("The company raised", "its", "its"),
+    ("The dog wagged", "its", "its"),
+    ("I think", "its", "it's"),
+    ("They", "were", "were"),
+    ("Where", "were", "were"),
+    ("I hope", "were", "we're"),
+    ("She sings very", "well", "well"),
+    ("Oh", "well", "well"),
+    ("I promise", "well", "we'll"),
+    ("What the", "hell", "hell"),
+    ("It was a living", "hell", "hell"),
+    ("I'm sure", "hell", "he'll"),
+    ("The turtle hid in its", "shell", "shell"),
+    ("I found a sea", "shell", "shell"),
+    ("I hope", "shell", "she'll"),
+    ("The tools are in the garden", "shed", "shed"),
+    ("Snakes", "shed", "shed"),
+    ("I think", "shed", "she'd"),
+    ("The couple will be", "wed", "wed"),
+    ("If we left now", "wed", "we'd"),
+    ("She was very", "ill", "ill"),
+    ("He fell", "ill", "ill"),
+    ("ok", "ill", "I'll"),
+    ("Freud wrote about the ego and the", "id", "id"),
+    ("If I were you", "id", "I'd"),
+    ("She never", "lets", "lets"),
+    ("He", "lets", "lets"),
+    ("ok", "lets", "let's"),
+    ("As is his", "wont", "wont"),
+    ("I", "wont", "won't"),
+    ("I", "cant", "can't"),
+]
+
+
+def typed_as(rng, word, typo_too):
+    """WORD's letters without apostrophes, in its case, on their keys or with a typo if TYPO_TOO."""
+    bare = word.replace("'", "")
+    if not typo_too or len(bare) < 2:
+        return bare, [tap(rng, ch, True) for ch in bare.lower()]
+    t, taps = typo(rng, bare.lower())
+    return (t[0].upper() + t[1:] if bare[0].isupper() else t), taps
+
+
+def sentence_rows(rng, sents, words, n_apostrophes, n_capitals):
+    """From SENTS (shuffled here): N_APOSTROPHES rows of a contraction typed without its apostrophe, and
+    N_CAPITALS / 2 each of a first word typed with the shift on and of a mid-sentence word the dictionary only
+    has capitalised, typed in lowercase; every other one of each kind with a typo."""
+    intended = intended_of(words)
+    sents = list(sents)
+    rng.shuffle(sents)
+    apostrophes, starts, middles = [], [], []
+    for s in sents:
+        ms = [
+            m for m in WORD.finditer(s) if s[m.end() : m.end() + 1] in ("", *" .,!?;:")
+        ]
+        found = [
+            m
+            for m in ms
+            if m.group().lower() in CONTRACTED
+            and intended(m.group().replace("'", "").lower())
+            in (m.group(), m.group().lower())
+        ]
+        if found and len(apostrophes) < n_apostrophes:
+            m = rng.choice(found)
+            t, taps = typed_as(rng, m.group(), len(apostrophes) % 2)
+            apostrophes.append(row(s[: m.start()].rstrip(), t, m.group(), taps))
+            continue
+        first = ms[0] if ms and ms[0].start() == 0 else None
+        # "I" is in most sentences: a quarter of the mid-sentence capitals at most.
+        only_capitalised = lambda w: (
+            w[0].isupper()
+            and (
+                w[1:].islower()
+                or (w == "I" and sum("\tI\t" in r for r in middles) < n_capitals // 8)
+            )
+            and w in words
+            and not words[w][1]
+            and (w.lower() not in words or words[w.lower()][1])
+        )
+        mid = [
+            m
+            for m in ms[1:]
+            if only_capitalised(m.group()) and s[: m.start()].rstrip()[-1:] not in ".!?"
+        ]
+        if mid and len(middles) < n_capitals // 2:
+            m = rng.choice(mid)
+            t, taps = typed_as(rng, m.group().lower(), len(middles) % 2)
+            middles.append(row(s[: m.start()].rstrip(), t, m.group(), taps))
+        elif (
+            first
+            and first.group().isalpha()
+            and len(first.group()) >= 2
+            and len(starts) < n_capitals // 2
+        ):
+            t, taps = typed_as(rng, first.group(), len(starts) % 2)
+            starts.append(row("", t, first.group(), taps))
+    return apostrophes, starts + middles
+
+
+def contraction_sets(out, pools):
+    """contractions, homographs, apostrophes and capitals (the docstring); POOLS: chat's and news's unused
+    sentences."""
+    rng = random.Random(556)
+    words = dictionary()
+    intended = intended_of(words)
+    rows = []
+    for w in CONTRACTIONS:
+        if intended(w.replace("'", "").lower()) != w:
+            continue
+        for c in CONTRACTION_CONTEXTS:
+            target = w[0].upper() + w[1:] if not c else w
+            t, taps = typed_as(rng, target, False)
+            rows.append(row(c, t, target, taps))
+    (out / "contractions.tsv").write_text("".join(r + "\n" for r in rows))
+    (out / "homographs.tsv").write_text(
+        "".join(
+            row(c, t, w, typed_as(rng, t, False)[1]) + "\n" for c, t, w in HOMOGRAPHS
+        )
+    )
+    apostrophes, capitals = sentence_rows(
+        rng, [s for p in pools for s in p], words, 400, 400
+    )
+    assert len(apostrophes) == len(capitals) == 400, (len(apostrophes), len(capitals))
+    (out / "apostrophes.tsv").write_text("".join(r + "\n" for r in apostrophes))
+    (out / "capitals.tsv").write_text("".join(r + "\n" for r in capitals))
 
 
 NUS_COUNTRIES = {
@@ -304,30 +567,13 @@ I_FORMS = {"I", "I'm", "I'll", "I'd", "I've"}
 
 def texts(nus, out):
     out = Path(out)
-    sys.path.insert(
-        0, str(HERE.parents[2] / "data/en-dict")
-    )  # run with python3 -I, which drops it
-    import v202
-
-    words = v202.decode((HERE.parents[2] / "data/en-dict/en_US.dict").read_bytes())[1]
+    words = dictionary()
     freq = lambda w: words[w][0] if w in words and not words[w][1] else -1
-    with_apostrophe = defaultdict(list)
-    for a, (_, not_a_word, _, _) in words.items():
-        if "'" in a and not not_a_word:
-            with_apostrophe[a.replace("'", "").lower()].append(a)
+    intended = intended_of(words)
 
     def name_like(w):
         cap = w.capitalize()
         return cap not in I_FORMS and cap in words and freq(w) < words[cap][0]
-
-    def intended(w):
-        forms = with_apostrophe.get(w, [])
-        shortcuts = [t for t, _ in words[w][3]] if w in words else []
-        return (
-            forms[0]
-            if len(forms) == 1 and (freq(w) < 0 or forms[0] in shortcuts)
-            else w
-        )
 
     msgs = []
     for m in ET.parse(nus).getroot().iter("message"):

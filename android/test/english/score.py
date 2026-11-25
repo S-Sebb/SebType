@@ -9,8 +9,14 @@
 
 Each row of a result is: typed, target, committed word, top 3 of the strip, microseconds per key, and after
 how many keys the target was first in the top 3 (0: never).
-- Typo sets (phone-typos, text-typos, misspellings): fixed = a space commits the intended word; top1 / top3 = the
-  intended word is first / among the first three suggestions.
+- Typo sets (phone-typos, text-typos, misspellings, and #556's contractions, apostrophes, homographs and
+  capitals, where the intended word may be the typed one): fixed = a space commits the intended word; top1 / top3 = the
+  intended word is first / among the first three suggestions. homographs' kept fixed / restored fixed: fixed
+  over the rows whose target is the typed word / its contraction. capitalised: how many commits are the
+  intended word with a capital it doesn't have ("O'Clock" for "o'clock"); lowercased: without one it has
+  ("don't" for "Don't" at a sentence start); lowercased I: those of them that are "I" or its forms; gained
+  apostrophes: commits that are the intended word with an apostrophe it doesn't have ("Thoma's" for "Thomas"),
+  on clean too, but not text-typos' homographs (HOMOGRAPH_BARE).
 - clean: changed = a space commits something other than the correct word that was typed; saved = keystrokes
   saved by tapping the word once it is in the top 3 (its letters so far and the tap, against all its letters
   and the space; the tap adds the space).
@@ -23,6 +29,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))  # run with python3 -I, which drops it
+from make_sets import HOMOGRAPHS
+
 
 def pct(n, d):
     return round(100 * n / d, 1) if d else None
@@ -33,6 +42,10 @@ def quantile(v, q):
     return round(v[min(len(v) - 1, int(q * len(v)))] / 1000, 2) if v else None
 
 
+I_FORMS = {"I", "I'm", "I'll", "I'd", "I've"}
+# text-typos' targets keep a homograph's bare form whatever the message meant: its 4 "its" are all "it's" ("Aw
+# its"), so an apostrophe there isn't counted as gained.
+HOMOGRAPH_BARE = {typed for _, typed, _ in HOMOGRAPHS}
 QUALITY = ("changed", "fixed", "top1", "top3", "items")
 STACKS = (
     ("today", "Today (2026-11-17, frozen): FUTO's decoder + transformer"),
@@ -98,7 +111,7 @@ def table(s1, s2, today=None):
             cells.append(fmt(x, y) if x else "–")
         print(f"| {label} | " + " | ".join(cells) + " |")
 
-    n = lambda s: f"{a[cols[0]][s]['items']:,}"
+    n = lambda s: f"{next(a[k][s] for k in cols if s in a[k])['items']:,}"
     print(
         "| Measure (set, items) | " + " | ".join(dict(STACKS)[k] for k in cols) + " |"
     )
@@ -117,6 +130,24 @@ def table(s1, s2, today=None):
             f"Intended word first / in the top 3 ({name})",
             s,
             lambda x, y: f"{x['top1']} / {x['top3']} %",
+        )
+    for s, name in (
+        ("contractions", "contractions typed without the apostrophe"),
+        ("apostrophes", "contractions in sentences, typed without it"),
+        ("homographs", "bare forms that are words too; kept / restored in brackets"),
+        ("capitals", "capitalised words"),
+    ):
+        row(
+            f"Right word committed ({name}, {n(s)})",
+            s,
+            lambda x, y: (
+                f"{x['fixed']} %"
+                + (
+                    f" ({x['kept fixed']} / {x['restored fixed']})"
+                    if "kept fixed" in x
+                    else ""
+                )
+            ),
         )
     row(
         f"Correct word wrongly changed (clean words, {n('clean')})",
@@ -160,9 +191,10 @@ def table(s1, s2, today=None):
 def bar(path, today_path):
     """The plan's quality bar (§2): the keyboard's English against today's, one line per gated row."""
     today = json.loads(Path(today_path).read_text())["today"]
-    ours = json.loads(Path(path).read_text())["core"]
+    summary = json.loads(Path(path).read_text())
+    ours, aosp = summary["core"], summary["aosp"]
     checks = []
-    for set_name in ("phone-typos", "misspellings"):
+    for set_name in ("phone-typos", "misspellings", "text-typos"):
         for k in ("fixed", "top1", "top3"):
             checks.append(
                 (
@@ -180,7 +212,7 @@ def bar(path, today_path):
             -1,
         )
     )
-    for set_name in ("next-chat", "next-news"):
+    for set_name in ("next-chat", "next-news", "next-texts"):
         checks.append(
             (
                 f"{set_name} top3 >= 90 % of today",
@@ -189,6 +221,66 @@ def bar(path, today_path):
                 1,
             )
         )
+    # #556's sets: today.json has no numbers for them, so the bar is AOSP's decoder alone, in the same run.
+    for set_name, k in (
+        ("contractions", "fixed"),
+        ("apostrophes", "fixed"),
+        ("homographs", "kept fixed"),
+        ("homographs", "restored fixed"),
+        ("capitals", "fixed"),
+    ):
+        checks.append(
+            (f"{set_name} {k} >= AOSP's", ours[set_name][k], aosp[set_name][k], 1)
+        )
+    # A contraction committed in a title's case, "O'Clock" for "o'clock" (#556).
+    capitalised = lambda s: sum(
+        s[n]["capitalised"] for n in ("contractions", "apostrophes", "homographs")
+    )
+    checks.append(
+        (
+            "contractions, apostrophes, homographs capitalised wrongly <= AOSP's",
+            capitalised(ours),
+            capitalised(aosp),
+            -1,
+        )
+    )
+    # And one that lost its capital (#556). The keyboard's own numbers, not AOSP's: AOSP loses 250, the
+    # keyboard none in these three sets, so a bar at AOSP's would let 30 sentence-start contractions go.
+    checks.append(
+        (
+            "contractions, apostrophes, homographs lowercased wrongly",
+            sum(
+                ours[n]["lowercased"]
+                for n in ("contractions", "apostrophes", "homographs")
+            ),
+            0,
+            -1,
+        )
+    )
+    # Capitals: "i" for "I" mid-sentence is most of today's 50 (#568 fixes it; capitals fixed counts it); the
+    # rest, names and sentence starts, are 0 to 3 in the pilots.
+    checks.append(
+        (
+            "capitals lowercased wrongly, I's forms aside",
+            ours["capitals"]["lowercased"] - ours["capitals"]["lowercased I"],
+            5,
+            -1,
+        )
+    )
+    # And one with an apostrophe its word lacks, "Thoma's" for "Thomas" (#556): main's r2 commits 1 (phone-typos'
+    # "we're" for "were"), one more is allowed for chance. homographs' "won't" for "wont" is its kept fixed row's.
+    checks.append(
+        (
+            "gained apostrophes, homographs aside",
+            sum(
+                v["gained apostrophes"]
+                for n, v in ours.items()
+                if n != "homographs" and "gained apostrophes" in v
+            ),
+            2,
+            -1,
+        )
+    )
     for set_name in ("clean", "phone-typos"):
         checks.append(
             (
@@ -204,6 +296,15 @@ def bar(path, today_path):
         ok &= passed
         print(f"{'PASS' if passed else 'FAIL'} {name}: {value} (bar {limit})")
     return ok
+
+
+def wrong_case(row, wrong):
+    """Whether ROW committed its target in another case, with a letter WRONG(committed, target)."""
+    return (
+        row[2] != row[1]
+        and row[2].lower() == row[1].lower()
+        and any(wrong(c, t) for c, t in zip(row[2], row[1]))
+    )
 
 
 def main(run_dir):
@@ -222,6 +323,14 @@ def main(run_dir):
             )
             s["ms_p50"], s["ms_p95"] = quantile(keys, 0.5), quantile(keys, 0.95)
         else:
+            bare_ok = HOMOGRAPH_BARE if set_name == "text-typos" else set()
+            s["gained apostrophes"] = sum(
+                "'" in r[2]
+                and "'" not in r[1]
+                and r[2].replace("'", "").lower() == r[1].lower()
+                and r[1].lower() not in bare_ok
+                for r in rows
+            )
             if set_name == "clean":
                 s["changed"] = pct(sum(r[2] != r[1] for r in rows), len(rows))
                 full = sum(len(r[1]) + 1 for r in rows)
@@ -229,6 +338,24 @@ def main(run_dir):
                 s["saved"] = pct(full - spent, full)
             else:
                 s["fixed"] = pct(sum(r[2] == r[1] for r in rows), len(rows))
+                for k, wrong in (
+                    ("capitalised", lambda c, t: c.isupper() and t.islower()),
+                    ("lowercased", lambda c, t: c.islower() and t.isupper()),
+                ):
+                    s[k] = sum(wrong_case(r, wrong) for r in rows)
+                    if k == "lowercased":
+                        # A part of lowercased: "I'M" for "I'm" gained a capital, it lost none.
+                        s["lowercased I"] = sum(
+                            wrong_case(r, wrong) for r in rows if r[1] in I_FORMS
+                        )
+                if set_name == "homographs":
+                    # Keeping every typed word fixes most rows: the rows that keep it and those that restore
+                    # the apostrophe are barred apart.
+                    for k, same in (("kept", True), ("restored", False)):
+                        part = [r for r in rows if (r[0] == r[1]) == same]
+                        s[f"{k} fixed"] = pct(
+                            sum(r[2] == r[1] for r in part), len(part)
+                        )
                 s["top1"] = pct(
                     sum(t[:1] == [r[1]] for r, t in zip(rows, top3)), len(rows)
                 )

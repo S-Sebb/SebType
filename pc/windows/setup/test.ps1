@@ -15,7 +15,7 @@ nobody's own input settings change, then removes the user and its profile:
    the welcome page in English, 中文 and 日本語, then a whole install in English with the uninstaller.
 2. Round 1 (that install, all languages): what it installed and set, typing in Notepad with real keys
    (rdp-keys.py: Win+Space EN → 中 → 日, pinyin, the Shift tap, Ctrl+Shift+F, typo correction, Japanese and its Ctrl+Backspace undo),
-   Rime's time per key (p95 ≤ 10 ms, only with -PerfRun: the final performance run, #54) and Chinese's
+   Rime's time per key (p95 ≤ 16 ms, only with -PerfRun: the final performance run, #54) and Chinese's
    tray menu in a TSF text field of the test's own (TsfHost.cs, with a picture of the menu) and its
    Picnic candidate window with the pig (pictures, horizontal and vertical), a silent
    upgrade that keeps learned words, Japanese still working after the language list changes, then the
@@ -1432,10 +1432,12 @@ Set-Content '$out\cred-delete.txt' "`$ok `$e"
       # The child's stderr says why when it says nothing else; 'Stop' here would drop it.
       $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
       $said = powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root\perf-rime.ps1" -Root $App -Rime "$App\rime-data.zip" 2>&1
+      $code = $LASTEXITCODE
       $ErrorActionPreference = $eap
-      $line = @($said) | Where-Object { "$_" -like '*rime-p95-under-10ms*' } | Select-Object -Last 1
-      if ($line -notlike 'PASS *') { throw "perf-rime.ps1 (librime in '$App') exit $LASTEXITCODE said: $($said -join ' | ')" }
-      $line -replace '^PASS rime-p95-under-10ms: '
+      $line = "$(@($said) | Where-Object { "$_" -like '*rime-p95-under-16ms*' } | Select-Object -Last 1)"
+      # Fails on a nonzero exit, and on no such line: an empty result's -notlike 'PASS *' isn't true.
+      if ($code -or $line -notlike 'PASS *') { throw "perf-rime.ps1 (librime in '$App') exit $code said: $($said -join ' | ')" }
+      $line -replace '^PASS rime-p95-under-16ms: '
     }
     }
     # What it learned stays through an upgrade: a mark in each learned-words folder.

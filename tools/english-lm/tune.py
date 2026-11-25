@@ -4,7 +4,9 @@
 
 DEV_DIR holds dev_sets.py's sets and dev.sh's SET.dump files: what english-sebtype's model said for each
 key. The weights that fix the most typos while changing no more correct words than MAX_CHANGED are printed,
-with their dev numbers; they go into sebtype_lm.cpp by hand.
+with their dev numbers; they go into sebtype_lm.cpp by hand. The typos: phone typos and misspellings, in text
+messages too, contractions typed without their apostrophe, capitals, and bare forms that are words too, which
+are fixed by keeping them (#556). select.sh compares checkpoints by the same gain.
 """
 
 import itertools
@@ -64,9 +66,23 @@ def evaluate(sets, params):
     return r
 
 
+TYPOS = (
+    "phone-typos",
+    "misspellings",
+    "text-typos",
+    "apostrophes",
+    "capitals",
+    "homographs",
+)
+
+
+def gain(r):
+    return sum(r[f"{n} fixed"] + 0.5 * r[f"{n} top3"] for n in TYPOS) / len(TYPOS)
+
+
 def main(dev):
     dev = Path(dev)
-    sets = {n: items(dev, n) for n in ("clean", "phone-typos", "misspellings")}
+    sets = {n: items(dev, n) for n in ("clean",) + TYPOS}
     best = None
     for params in itertools.product(
         (0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4),
@@ -75,16 +91,12 @@ def main(dev):
     ):
         r = evaluate(sets, params)
         if r["changed"] <= MAX_CHANGED:
-            gain = (
-                r["phone-typos fixed"]
-                + r["misspellings fixed"]
-                + 0.5 * (r["phone-typos top3"] + r["misspellings top3"])
-            )
-            if not best or gain > best[0]:
-                best = (gain, params, r)
+            if not best or gain(r) > best[0]:
+                best = (gain(r), params, r)
     if not best:
         sys.exit("no weights keep the changed correct words within the limit")
     print("DECODER_WEIGHT, MARGIN_WORD, MARGIN_NON_WORD =", best[1])
+    print(f"GAIN {best[0]:.2f}")
     for k, v in best[2].items():
         print(f"  {k}: {v:.1f} %")
 
