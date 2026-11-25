@@ -25,8 +25,9 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
   if "$@" > "$out/test-setup-ime-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-setup-ime-$name.log"; fi
 }
-# The user's Documents portal stays mounted (doc_portal, tools/lib.sh). Run by the Configurator's test,
-# which checks it before and after, this run's start leaves a mount it lost alone.
+# The user's Documents portal stays mounted (doc_portal, tools/lib.sh). Under the Configurator's test
+# (DOC_PORTAL_CHECKED), which checks it before this run, the start check is skipped so that it can't put
+# back a mount the Configurator lost.
 [[ -n ${DOC_PORTAL_CHECKED-} ]] || doc_portal document-portal-before before
 
 # Preflight
@@ -1554,5 +1555,7 @@ EOF
 }
 check offline-profile-update offline_profile
 
+# The fake accounts' leftover processes (portal_mount's Documents portal) stopped first: one could still unmount it.
+o=$(stop_sandbox "$fake") || result FAIL sandbox-stopped "$o"
 doc_portal document-portal-kept after
 ! grep -q '^FAIL' "$results"

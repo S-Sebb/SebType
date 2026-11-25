@@ -18,12 +18,15 @@ source ../../tools/lib.sh
 out=$TASK_OUT; mkdir -p "$out"
 results=$out/configurator-test-results.txt; : > "$results"
 result() { echo "$1 $2${3:+: $3}" | tee -a "$results"; }
+selected() { # name: SEBTYPE_CHECKS, when set, has a prefix of it
+  local c
+  [[ -z ${SEBTYPE_CHECKS-} ]] && return
+  for c in ${SEBTYPE_CHECKS//,/ }; do [[ $1 == "$c"* ]] && return; done
+  return 1
+}
 check() { # name, timeout seconds, command or exported function...
-  local name=$1 secs=$2 c; shift 2
-  if [[ -n ${SEBTYPE_CHECKS-} ]]; then
-    for c in ${SEBTYPE_CHECKS//,/ }; do [[ $name == "$c"* ]] && break; done
-    [[ $name == "$c"* ]] || return 0
-  fi
+  local name=$1 secs=$2; shift 2
+  selected "$name" || return 0
   if timeout "$secs" bash -c '"$@"' _ "$@" > "$out/configurator-test-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/configurator-test-$name.log"; fi
 }
@@ -58,7 +61,7 @@ if [[ -z ${HOLDING-} ]]; then
 fi
 
 # The user's Documents portal stays mounted (doc_portal, tools/lib.sh): checked before and after the run,
-# and before setup-ime's test, whose own start then leaves it alone (DOC_PORTAL_CHECKED).
+# and before setup-ime's test, which then skips its own start check (DOC_PORTAL_CHECKED).
 doc_portal document-portal-before before
 export DOC_PORTAL_CHECKED=1
 
@@ -77,15 +80,8 @@ check release-build 60 release_build
 # Nothing of this account's comes in: no dictionary, learned words, snapshot, backup or settings file,
 # which could hold its own text (Mozc's romaji table, Fcitx5's phrases) or its sync folder.
 sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
-# What the nested sessions start (ksecretd, the Documents portal) outlives their D-Bus: stop whatever
-# still runs in the sandbox.
-cleanup() {
-  local p left=()
-  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/" "/proc/$p/environ" 2>/dev/null && kill "$p" && left+=("$p"); done
-  # Until they have exited (at most 15 s): a portal among them unmounts as it ends.
-  for _ in {1..75}; do ((${#left[@]})) && ps -p "${left[*]}" > /dev/null || break; sleep 0.2; done
-  rm -rf "$sb"
-}
+# What the nested sessions start outlives their D-Bus: stopped with the sandbox (stop_sandbox, tools/lib.sh).
+cleanup() { stop_sandbox "$sb"; local rc=$?; rm -rf "$sb"; return $rc; }
 trap cleanup EXIT
 # Each private D-Bus session runs through private_dbus (tools/lib.sh), its files removed with the sandbox.
 export -f private_dbus
@@ -528,9 +524,11 @@ update_check() {
 export -f update_check
 check update-check 300 update_check
 
-doc_portal document-portal-kept-before-setup-ime after
+! selected setup-ime || doc_portal document-portal-kept-before-setup-ime after
 check setup-ime 900 ../linux/test-setup-ime.sh
 
-cleanup; trap - EXIT  # the sandbox's leftover processes stopped first: one could still unmount it
+# The sandbox's leftover processes stopped first: one could still unmount it.
+o=$(cleanup) || result FAIL sandbox-stopped "$o"
+trap - EXIT
 doc_portal document-portal-kept after
 ! grep -q '^FAIL' "$results"
