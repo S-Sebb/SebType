@@ -125,9 +125,10 @@ printf '\x0a\x02\x08\x01\xc8\x02\x02\xda\x02\x01x' > "$h/.config/mozc/config1.db
 printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 # The fake account has no Rust either: the Configurator built above is newer than its sources, so
 # setup-ime.sh doesn't rebuild it.
+hide=()  # a wrapper for fake_run: SebType's add-on hidden, as before its install
 fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
   touch "$h/scratch/SebType/cache/sebtype/${sebtype_rpm##*/}"  # a placeholder: the fake sudo installs nothing
-  env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
+  "${hide[@]}" env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
@@ -279,14 +280,18 @@ old_icon_theme() {
 # --undo-names removes the two renamed input method entries and the 中文 schema name, keeping the
 # typo keyboard line; a second undo changes nothing, and setup names them again.
 undo_names() {
-  local d=$h/.local/share/fcitx5 o
+  local d=$h/.local/share/fcitx5 o r
+  # An rime.conf of the person's own, not the one setup up to 0.2.0 wrote, stays (#542).
+  r=$d/inputmethod/rime.conf
+  printf '[InputMethod]\nName=我的中文\nIcon=fcitx-rime\nLabel=中文\nLangCode=zh\nAddon=rime\nConfigurable=True\n' > "$r"
   o=$(fake_run --undo-names < /dev/null) || return 1; echo "$o"
   [[ $(grep -c '^change:' <<<"$o") == 3 && ! -e $d/inputmethod/mozc.conf &&
     ! -e $d/inputmethod/keyboard-us.conf ]] && ! grep -q 'schema/name' "$d/rime/rime_ice.custom.yaml" &&
     grep -q '^  sebtype_typo/keyboard: pc' "$d/rime/rime_ice.custom.yaml" &&
     o=$(fake_run --undo-names < /dev/null) && [[ -z $o ]] &&
     o=$(fake_run < /dev/null) && [[ $(grep -c '^change: \(label Chinese\|name mozc 日本語\|name keyboard-us English\)' <<<"$o") == 3 ]] &&
-    grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml"
+    grep -qx 'Name=日本語' "$d/inputmethod/mozc.conf" && grep -q '^  schema/name: ".中文"' "$d/rime/rime_ice.custom.yaml" &&
+    grep -qx 'Name=我的中文' "$r" && rm "$r"
 }
 
 # --undo-configurator removes the app and its daily update check (#422), stopping a check that waits on its
@@ -1179,25 +1184,29 @@ both_rimes() {
   echo 'sa(ss) "us" 1 "rime" ""' > "$fake/group-My=Rime"
   o=$(fake_run < /dev/null); rc=$?; echo "$o"
   # The same from the profile when Fcitx5 doesn't run, in a second account.
-  local h2=$fake/both-rimes-profile o2 o3 two
+  local h2=$fake/both-rimes-profile o2 o3 two q
   mkdir -p "$h2/.config/fcitx5"
-  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=rime\nLayout=\n\n[Groups/1]\nName=My=Rime\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n\n[Groups/2]\nName=Work\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/2/Items/0]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n1=My=Rime\n2=Work\n' \
+  printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/0/Items/0]\nName=rime\nLayout=\n\n[Groups/1]\nName=My=Rime\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/1/Items/0]\nName=rime\nLayout=\n\n[Groups/2]\nName=Bob'"'"'s\nDefault Layout=us\nDefaultIM=rime\n\n[Groups/2/Items/0]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n1=My=Rime\n2=Bob'"'"'s\n' \
     > "$h2/.config/fcitx5/profile"
   touch "$fake/no-fcitx"
   o3=$(h=$h2 fake_run --dry-run < /dev/null) || rc=1; echo "$o3"
-  o2=$(h=$h2 fake_run < /dev/null) || rc=1; rm "$fake/no-fcitx"; echo "$o2"
+  o2=$(h=$h2 fake_run < /dev/null) || rc=1; echo "$o2"
+  # A dry run before setup installs SebType says it as the run would.
+  local o4 hide=(bwrap --dev-bind / / --ro-bind /dev/null /usr/lib64/fcitx5/sebtype.so)
+  rm "$fake/sebtype"; o4=$(h=$h2 fake_run --dry-run < /dev/null) || rc=1; rm "$fake/no-fcitx"; echo "$o4"
   rm -f "$fake/groups" "$fake/group-My=Rime" "$fake/sebtype" "$fake/group"
   mv "$fake/group.kept" "$fake/group" 2>/dev/null; mv "$fake/sebtype.kept" "$fake/sebtype" 2>/dev/null
   ((rc == 0)) &&
-    grep -q "^change: make SebType's input method the one in Fcitx5 input method group Default, .*; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore this backup$" <<<"$o" &&
+    grep -q "^change: make SebType's input method the one in Fcitx5 input method group Default, .*; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back or restore profile from $fake/.*$" <<<"$o" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o") == 1 ]] &&
-    grep -qF "warning: Rime in input method group \"My=Rime\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文, or remove a group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s 'My=Rime'" <<<"$o" &&
+    grep -qF "warning: Rime in input method group \"My=Rime\" won't type Chinese while SebType is installed. Type Chinese with SebType's 中文, or remove the group: busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 RemoveInputMethodGroup s My=Rime" <<<"$o" &&
     grep -q '^change: give Rime (fcitx5-rime) its own name back' <<<"$o" &&
     [[ ! -e $h/.local/share/fcitx5/inputmethod/rime.conf ]] &&
     grep -q "^change: set SebType as the input method in .*; Rime (fcitx5-rime) won't type Chinese" <<<"$o2" &&
-    two='^warning: Rime in input method groups "My=Rime", "Work" won'"'"'t type Chinese .* s '"'"'Work'"'"'$' &&
+    q=\' && two="^warning: Rime in input method groups \"My=Rime\", \"Bob${q}s\" won${q}t type Chinese .*, or remove the groups: busctl .* s My=Rime; busctl .* s Bob\\\\${q}s\$" &&
     [[ $(grep -c '^warning: Rime in' <<<"$o2") == 1 ]] && grep -q "$two" <<<"$o2" &&
-    [[ $(grep -c '^warning: Rime in' <<<"$o3") == 1 ]] && grep -q "$two" <<<"$o3" ||
+    [[ $(grep -c '^warning: Rime in' <<<"$o3") == 1 ]] && grep -q "$two" <<<"$o3" &&
+    grep -q "^would: install SebType's input method" <<<"$o4" && grep -q "$two" <<<"$o4" ||
     return 1
   mkdir -p "$h/.config/fcitx5"
   printf '[Groups/0]\nName=Default\nDefault Layout=us\nDefaultIM=sebtype\n\n[Groups/0/Items/0]\nName=sebtype\nLayout=\n\n[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n' \
@@ -1206,7 +1215,7 @@ both_rimes() {
   mkdir -p "$h/addon"; cp /usr/share/fcitx5/addon/*.conf "$h/addon/"; mv "$h/addon/rime.conf" "$h/rime-addon.conf"
   private_bus "$h" 500 "${own_fcitx[@]}" --bind "$h/addon" /usr/share/fcitx5/addon \
     python3 -u - "$out/fcitx5-both-rimes" "$h/rime-addon.conf" <<'PY'
-import shutil, subprocess, sys, time
+import os, shutil, subprocess, sys, time
 from gi.repository import Gio, GLib
 
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
@@ -1271,6 +1280,21 @@ call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
 wait(lambda: ready(ic), 20)
 fcitx.terminate(); fcitx.wait(10)
 check('Fcitx5 loaded no fcitx5-rime installed beside SebType', 'Loaded addon rime' in open(log).read(), False)
+
+# The same with Rime picked as soon as the Refresh returns, with no wait for SebType to turn it off.
+os.remove('/usr/share/fcitx5/addon/rime.conf')
+log = sys.argv[1] + '-at-once.log'
+fcitx, ic = start('sebtype,rime', log)
+shutil.copy(sys.argv[2], '/usr/share/fcitx5/addon/rime.conf')
+call(*CONTROLLER, 'Refresh')
+def pick():
+    call(*CONTROLLER, 'SetInputMethodGroupInfo', '(ssa(ss))', 'Default', 'us', [('sebtype', ''), ('rime', '')])
+    call(*CONTROLLER, 'SetCurrentIM', '(s)', 'rime')
+    return listed()
+check('Rime picked right after the Refresh', wait(pick, 5), True)
+wait(lambda: ready(ic), 20)
+fcitx.terminate(); fcitx.wait(10)
+check('Fcitx5 loaded no fcitx5-rime picked right after the Refresh', 'Loaded addon rime' in open(log).read(), False)
 
 log = sys.argv[1] + '.log'
 fcitx, ic = start('sebtype,rime', log)

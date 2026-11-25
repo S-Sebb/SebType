@@ -616,8 +616,11 @@ msgstr "这些都可以稍后在 SebType 设置里更改。"
 msgid "Next"
 msgstr "下一步"
 
-msgid "Rime in {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文"
-msgstr "安装 SebType 期间，{} 中的 Rime 不能输入中文。请用 SebType 的中文输入"
+msgid "Rime in input method group {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文"
+msgstr "已安装 SebType 时，输入法分组 {} 中的 Rime 不能输入中文。请用 SebType 的中文输入"
+
+msgid "Rime in input method groups {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文"
+msgstr "已安装 SebType 时，输入法分组 {} 中的 Rime 不能输入中文。请用 SebType 的中文输入"
 
 msgid "SebType types Chinese where Rime was"
 msgstr "原来的 Rime 已换成 SebType 输入中文"

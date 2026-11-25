@@ -580,6 +580,9 @@ pub fn update_error() -> Option<String> {
 pub fn rime_group_names() -> Vec<String> {
     Vec::new()
 }
+pub fn use_sebtype_for_rime() -> io::Result<()> {
+    Ok(())
+}
 
 pub fn open_url(url: &str) {
     let _ = Command::new("rundll32")

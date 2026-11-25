@@ -243,18 +243,22 @@ SebTypeEngine::SebTypeEngine(fcitx::Instance *instance)
     auto *bus = dbus->call<fcitx::IDBusModule::bus>();
     service_ = std::make_unique<Service>(this);
     bus->addObjectVTable("/sebtype", "org.sebtype.Core1", *service_);
-    // Fcitx5 finds an add-on installed since it started at a Refresh, which it runs just after the call
-    // returns: a fcitx5-rime it finds is turned off before anyone can pick it.
+    // Fcitx5 finds an add-on installed since it started at the controller's Refresh, which it runs from the
+    // event loop after replying. SebType answers the call itself and runs the same refresh, with fcitx5-rime
+    // turned off in the same step, so no client's call can pick it in between (#542).
     refreshWatch_ = bus->addFilter([this](fcitx::dbus::Message &message) {
-      if (message.type() == fcitx::dbus::MessageType::MethodCall && message.member() == "Refresh" &&
-          message.interface() == "org.fcitx.Fcitx.Controller1") {
-        afterRefresh_ = instance_->eventLoop().addTimeEvent(
-            CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + 100000, 0, [this](fcitx::EventSourceTime *, uint64_t) {
-              keepFcitx5RimeOff(instance_->addonManager());
-              return true;
-            });
+      if (message.type() != fcitx::dbus::MessageType::MethodCall || message.member() != "Refresh" ||
+          message.interface() != "org.fcitx.Fcitx.Controller1" || message.path() != "/controller") {
+        return false;
       }
-      return false;
+      message.createReply().send();
+      refresh_ = instance_->eventLoop().addDeferEvent([this](fcitx::EventSource *) {
+        instance_->refresh();
+        keepFcitx5RimeOff(instance_->addonManager());
+        refresh_.reset();
+        return false;
+      });
+      return true;
     });
   }
 }

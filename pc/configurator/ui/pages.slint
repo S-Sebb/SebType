@@ -701,9 +701,31 @@ component AboutPage inherits Page {
                 }
             }
         }
-        // Rime in a group of the person's, which SebType's input method keeps off (#542).
-        if st == UpdateStatus.installed && State.update-rime != "": Row {
-            title: @tr("Rime in {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", State.update-rime);
+        // Rime in a group of the person's, which SebType's input method keeps off (#542). A layout, not a Row:
+        // a Row's height doesn't follow its wrapped text past two lines.
+        if st == UpdateStatus.installed && State.update-rime != "": Divider { }
+        if st == UpdateStatus.installed && State.update-rime != "": HorizontalLayout {
+            padding-left: Theme.row-padding-x;
+            padding-right: Theme.row-padding-x;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 12px;
+            Text {
+                text: State.update-rime-count == 1
+                    ? @tr("Rime in input method group {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", State.update-rime)
+                    : @tr("Rime in input method groups {} won't type Chinese while SebType is installed. Type Chinese with SebType's 中文", State.update-rime);
+                color: Theme.ink;
+                font-size: Theme.body-size;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                wrap: word-wrap;
+            }
+            VerticalLayout { alignment: center;
+                Button {
+                    text: @tr("Use SebType");
+                    clicked => { State.use-sebtype-for-rime(); }
+                }
+            }
         }
         if State.update-notes.length > 0: Divider { }
         if State.update-notes.length > 0: notes-scroll := ScrollView {

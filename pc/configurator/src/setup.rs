@@ -206,9 +206,12 @@ pub enum Need {
 
 /// This check's rows, with those an earlier one showed and this one doesn't find any more kept, done, in
 /// their place: a step stays on the page, ticked, once the person has done it.
+/// The Rime row is one row whichever groups it lists, so a group done of several isn't a second row.
 pub fn keep_done(before: &[(Need, bool)], mut now: Vec<(Need, bool)>) -> Vec<(Need, bool)> {
+    let same =
+        |a: &Need, b: &Need| a == b || matches!((a, b), (Need::Rime { .. }, Need::Rime { .. }));
     for (i, (need, _)) in before.iter().enumerate() {
-        if !now.iter().any(|(n, _)| n == need) {
+        if !now.iter().any(|(n, _)| same(n, need)) {
             now.insert(i.min(now.len()), (need.clone(), true));
         }
     }
@@ -224,17 +227,22 @@ fn home_short(path: &std::path::Path) -> String {
     }
 }
 
-/// Names as the page lists them: “Default”, “Rime”.
-pub fn quoted(names: &[String]) -> String {
+/// Names as the page lists them in the page's language: “Default”, “Rime”, or 「Default」、「Rime」 in 日本語.
+pub fn quoted(names: &[String], lang: &str) -> String {
+    let (open, close, sep) = if lang == "ja" {
+        ("「", "」", "、")
+    } else {
+        ("“", "”", ", ")
+    };
     names
         .iter()
-        .map(|n| format!("“{n}”"))
+        .map(|n| format!("{open}{n}{close}"))
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(sep)
 }
 
 /// The page's rows, as SetupState's ready-checks shows them.
-fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
+fn ready_rows(checks: &[(Need, bool)], lang: &str) -> Vec<crate::ReadyCheck> {
     checks
         .iter()
         .map(|(need, ok)| {
@@ -245,7 +253,9 @@ fn ready_rows(checks: &[(Need, bool)]) -> Vec<crate::ReadyCheck> {
                     (2, home_short(file), *line as i32, text.clone())
                 }
                 Need::Languages => (3, String::new(), 0, String::new()),
-                Need::Rime { groups } => (4, String::new(), 0, quoted(groups)),
+                Need::Rime { groups } => {
+                    (4, String::new(), groups.len() as i32, quoted(groups, lang))
+                }
             };
             // A line in the person's own file is turned off by the button; a system file opens.
             let own = matches!(need, Need::ImModule { file, .. }
@@ -579,17 +589,19 @@ pub fn run(start: Start, lang: &str) -> Result<(), slint::PlatformError> {
     let recheck = {
         let weak = win.as_weak();
         let (checks, checking) = (checks.clone(), checking.clone());
+        let lang = lang.to_string();
         move || {
             use std::sync::atomic::Ordering;
             if checking.swap(true, Ordering::SeqCst) {
                 return;
             }
-            let (weak, checks, checking) = (weak.clone(), checks.clone(), checking.clone());
+            let (weak, checks, checking, lang) =
+                (weak.clone(), checks.clone(), checking.clone(), lang.clone());
             std::thread::spawn(move || {
                 let rows = {
                     let mut c = checks.lock().unwrap();
                     *c = keep_done(&c, platform::ready_checks());
-                    ready_rows(&c)
+                    ready_rows(&c, &lang)
                 };
                 checking.store(false, Ordering::SeqCst);
                 let _ = weak.upgrade_in_event_loop(move |win| {
@@ -802,6 +814,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #542: group names in the quotes of the page's language, as its other strings quote.
+    #[test]
+    fn group_names_are_quoted_as_the_language_quotes() {
+        let names = ["Default".to_string(), "My=Rime".to_string()];
+        assert_eq!(quoted(&names, "en"), "“Default”, “My=Rime”");
+        assert_eq!(quoted(&names, "zh"), "“Default”, “My=Rime”");
+        assert_eq!(quoted(&names, "ja"), "「Default」、「My=Rime」");
+    }
+
+    /// #542: Rime's row stays one row as its groups get done, and ticks once none is left.
+    #[test]
+    fn rime_row_stays_one_row() {
+        let rime = |g: &[&str]| Need::Rime {
+            groups: g.iter().map(|g| g.to_string()).collect(),
+        };
+        let first = keep_done(&[], vec![(rime(&["Default", "Work"]), false)]);
+        assert_eq!(
+            keep_done(&first, vec![(rime(&["Work"]), false)]),
+            [(rime(&["Work"]), false)]
+        );
+        assert_eq!(
+            keep_done(&first, vec![]),
+            [(rime(&["Default", "Work"]), true)]
+        );
+    }
+
     /// #445: a step the person did stays on the last page, ticked, in its place; the page is ready once
     /// every row is.
     #[test]
@@ -830,7 +868,7 @@ mod tests {
         );
         assert_eq!(now[1], (module(3), true));
         assert_eq!(now.len(), 4);
-        let rows = ready_rows(&now);
+        let rows = ready_rows(&now, "en");
         assert_eq!(
             rows.iter().map(|r| (r.kind, r.ok)).collect::<Vec<_>>(),
             [(0, true), (2, true), (2, false), (1, false)]

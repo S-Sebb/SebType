@@ -646,16 +646,21 @@ fn install_update(weak: slint::Weak<AppWindow>) {
             Ok(()) if cfg!(windows) => {
                 let _ = slint::quit_event_loop();
             }
-            Ok(()) => {
-                // Rime in a group of the person's won't type Chinese beside SebType's input method (#542).
-                let rime = setup::quoted(&platform::rime_group_names());
-                let _ = weak.upgrade_in_event_loop(move |app| {
-                    app.global::<State>().set_update_rime(rime.into());
-                });
-                set_update_status(&weak, UpdateStatus::Installed, String::new())
-            }
+            Ok(()) => show_installed(&weak),
         }
     });
+}
+
+/// After an update installed: Rime in a group of the person's won't type Chinese beside SebType's input
+/// method (#542), which About says too.
+fn show_installed(weak: &slint::Weak<AppWindow>) {
+    let groups = platform::rime_group_names();
+    let (rime, count) = (setup::quoted(&groups, language()), groups.len() as i32);
+    let _ = weak.upgrade_in_event_loop(move |app| {
+        app.global::<State>().set_update_rime(rime.into());
+        app.global::<State>().set_update_rime_count(count);
+    });
+    set_update_status(weak, UpdateStatus::Installed, String::new())
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -1303,6 +1308,12 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_open_help(|| platform::open_url("https://github.com/S-Sebb/SebType/issues"));
 
     show_update(&app, &update::load());
+    // The tests' screenshot of About after an update (test.sh): no update is installed for it.
+    #[cfg(feature = "update-test")]
+    if std::env::var_os("SEBTYPE_SHOW_INSTALLED").is_some() {
+        let weak = app.as_weak();
+        std::thread::spawn(move || show_installed(&weak));
+    }
     s.on_update_auto_changed({
         let weak = app.as_weak();
         move || {
@@ -1321,6 +1332,17 @@ fn main() -> Result<(), slint::PlatformError> {
     s.on_install_update({
         let weak = app.as_weak();
         move || install_update(weak.clone())
+    });
+    // About's Use SebType (#542), off the window's thread; the row goes once no group has Rime.
+    s.on_use_sebtype_for_rime({
+        let weak = app.as_weak();
+        move || {
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let _ = platform::use_sebtype_for_rime();
+                show_installed(&weak);
+            });
+        }
     });
     if from_notification {
         // after an update, what of it didn't work (Windows: its own side runs on after this window closed)

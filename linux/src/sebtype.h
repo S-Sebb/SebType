@@ -101,7 +101,7 @@ class SebTypeEngine final : public fcitx::InputMethodEngineV2 {
   std::unique_ptr<fcitx::EventSourceTime> hide_;
   std::unique_ptr<fcitx::EventSourceTime> chores_;
   std::unique_ptr<fcitx::dbus::Slot> refreshWatch_;  // fcitx5-rime installed since Fcitx5 started stays off (#542)
-  std::unique_ptr<fcitx::EventSourceTime> afterRefresh_;
+  std::unique_ptr<fcitx::EventSource> refresh_;
 };
 
 }  // namespace sebtype
