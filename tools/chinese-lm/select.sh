@@ -22,10 +22,13 @@ for ckpt in "$run"/ckpt/"$name"/step-* "$run/ckpt/$name"; do
   [[ -s $ckpt/model.safetensors ]] || continue
   c=$(basename "$ckpt")
   gguf=$run/select/$c.gguf
-  "$here/export.sh" "$ckpt" "$gguf" > /dev/null
-  # dump=1: the model stack's scores, for parity.py.
-  CHINESE_CORE=1 "$bench" --dev "$run/dev" "$run/select/$c" "$gguf" dump=1 > "$run/select/$c.log" 2>&1 ||
-    { echo "select.sh: bench.sh failed on $ckpt; the end of $run/select/$c.log:" >&2; tail -n 20 "$run/select/$c.log" >&2; exit 1; }
+  # A rerun (after a failed bench) keeps the results it already has for this checkpoint.
+  if [[ ! $run/select/$c/summary.json -nt $ckpt/model.safetensors ]]; then
+    "$here/export.sh" "$ckpt" "$gguf" > /dev/null
+    # dump=1: the model stack's scores, for parity.py.
+    CHINESE_CORE=1 "$bench" --dev "$run/dev" "$run/select/$c" "$gguf" dump=1 > "$run/select/$c.log" 2>&1 ||
+      { echo "select.sh: bench.sh failed on $ckpt; the end of $run/select/$c.log:" >&2; tail -n 20 "$run/select/$c.log" >&2; exit 1; }
+  fi
   python3 -I -c '
 import json, sys
 core = json.load(open(sys.argv[1]))["core"]
