@@ -1685,7 +1685,8 @@ check setup-from-rpm from_rpm
 
 # Offline Fcitx5 profile update (#442): when Fcitx5 isn't running, setup writes ~/.config/fcitx5/profile
 # directly — fresh profile, existing keyboard-us/rime/mozc profile, and an existing profile with an extra IM
-# (hangul) and custom layout/group preserved — and a rerun makes no profile change.
+# (hangul) and custom layout/group preserved, and one whose first group isn't [Groups/0] — and a rerun
+# makes no profile change.
 offline_profile() {
   local f=$fake/offline o p
   local h=$f/home
@@ -1769,6 +1770,40 @@ EOF
     grep -qx 'Name=sebtype' "$p" && grep -qx 'Name=hangul' "$p" && grep -qx 'Layout=kr' "$p" &&
     grep -qx '\[Groups/1\]' "$p" && grep -qx 'Name=keyboard-de' "$p" && grep -qx '1=Other' "$p" &&
     ! grep -qxE 'Name=(keyboard-us|rime|mozc)' "$p" || return 1
+  # 4. The first group is the one [GroupOrder] names first, not [Groups/0] (#579): SebType goes in Default,
+  # Rime stays in the group Rime, and setup warns about the Rime of each.
+  cat > "$p" <<'EOF'
+[Groups/0]
+Name=Rime
+Default Layout=us
+DefaultIM=rime
+
+[Groups/0/Items/0]
+Name=rime
+Layout=
+
+[Groups/1]
+Name=Default
+Default Layout=us
+DefaultIM=keyboard-us
+
+[Groups/1/Items/0]
+Name=keyboard-us
+Layout=
+
+[Groups/1/Items/1]
+Name=rime
+Layout=
+
+[GroupOrder]
+0=Default
+1=Rime
+EOF
+  o=$(run) || return 1; echo "$o"
+  [[ $(awk '/^\[/ { sec = $0 } sec ~ /^\[Groups\/1[]\/]/ && /^Name=/' "$p") == $'Name=Default\nName=sebtype' &&
+    $(awk '/^\[/ { sec = $0 } sec ~ /^\[Groups\/0[]\/]/ && /^Name=/' "$p") == $'Name=Rime\nName=rime' ]] &&
+    grep -q "won't type Chinese beside SebType" <<<"$o" &&
+    grep -q "Rime in input method group \"Rime\" won't type Chinese" <<<"$o"
 }
 check offline-profile-update offline_profile
 

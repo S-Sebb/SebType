@@ -367,8 +367,9 @@ done
 
 canon() { awk '/^\[/ { sec = $0; next } NF && !/^#/ { print sec "\t" $0 }' | sort; }
 
-# Prints $1 (an Fcitx5 profile file, or /dev/null) updated so Groups/0 has sebtype first in place of
-# keyboard-us, rime and mozc, keeping any other IMs, Default Layout, and other groups.
+# Prints $1 (an Fcitx5 profile file, or /dev/null) updated so the first group has sebtype first in place of
+# keyboard-us, rime and mozc, keeping any other IMs, Default Layout, and other groups. The first group is
+# the one [GroupOrder] names first, not always [Groups/0]: Fcitx5 doesn't write its groups in order (#579).
 fcitx_profile_update() {
   python3 - "$1" <<'PY'
 import re, sys
@@ -402,14 +403,20 @@ def parse_kv(lines):
             out.append((k, v))
     return out
 
+group_names = {name: dict(parse_kv(lines)).get('Name') for name, lines in sections
+               if re.fullmatch(r'Groups/\d+', name)}
+order = [v for name, lines in sections if name == 'GroupOrder'
+         for k, v in sorted(parse_kv(lines), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 1 << 30)]
+first = next((sec for v in order for sec, n in group_names.items() if n == v), 'Groups/0')
+
 g0_lines = None
 g0_items = {}
 other_sections = []
 has_group_order = False
 for name, lines in sections:
-    if name == 'Groups/0':
+    if name == first:
         g0_lines = lines
-    elif m := re.fullmatch(r'Groups/0/Items/(\d+)', name):
+    elif m := re.fullmatch(re.escape(first) + r'/Items/(\d+)', name):
         g0_items[int(m.group(1))] = dict(parse_kv(lines))
     else:
         if name == 'GroupOrder':
@@ -455,12 +462,12 @@ for idx in sorted(g0_items):
         kept.append((im, layout))
 items = [('sebtype', sebtype_layout)] + kept
 
-out = ['[Groups/0]']
+out = [f'[{first}]']
 for k, v in g0_kv:
     out.append(f'{k}={v}')
 for idx, (im, layout) in enumerate(items):
     out.append('')
-    out.append(f'[Groups/0/Items/{idx}]')
+    out.append(f'[{first}/Items/{idx}]')
     out.append(f'Name={im}')
     out.append(f'Layout={layout}')
 for name, lines in other_sections:
@@ -516,8 +523,9 @@ print(*(f + "\x1f" for f in [layout, *(im for im, _ in ims)]), sep="")') || exit
       printf '%s\x1f%s\n' "$g" "$info"
     done
 }
-# Prints the number and name ("<n><TAB><name>") of each Fcitx5 group with fcitx5-rime's rime: the running
-# Fcitx5's groups when it knows SebType's input method (step 7 changes those), else the profile's.
+# Prints the number and name ("<n><TAB><name>") of each Fcitx5 group with fcitx5-rime's rime, 0 for the first:
+# the running Fcitx5's groups when it knows SebType's input method (step 7 changes those), else the profile's,
+# numbered by [GroupOrder] (#579), as fcitx_profile_update picks the first.
 rime_groups() {
   if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
     local groups
@@ -525,9 +533,13 @@ rime_groups() {
     awk -F '\x1f' '{ for (i = 3; i < NF; i++) if ($i == "rime") { print NR - 1 "\t" $1; next } }' <<<"$groups"
   else
     awk '/^\[Groups\/[0-9]+\]$/ { g = $0; gsub(/[^0-9]/, "", g); sec = "group"; next }
-      /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ { sec = "item"; next } /^\[/ { sec = ""; next }
+      /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ { sec = "item"; next } /^\[GroupOrder\]$/ { sec = "order"; next }
+      /^\[/ { sec = ""; next }
       sec == "group" && sub(/^Name=/, "") { name[g] = $0 } sec == "item" && $0 == "Name=rime" { rime[g] = 1 }
-      END { for (g in rime) print g "\t" name[g] }' "$fcitx_profile" 2>/dev/null | sort -n
+      sec == "order" && match($0, /^[0-9]+=/) { order[substr($0, 1, RLENGTH - 1) + 0] = substr($0, RLENGTH + 1) }
+      END { n = 0; for (k = 0; k in order; k++) for (g in name) if (name[g] == order[k] && !(g in at)) at[g] = n++
+        if (!n) for (g in name) at[g] = g + 0  # no order: [Groups/0] first, as fcitx_profile_update takes it
+        for (g in rime) print (g in at ? at[g] : 1000 + g) "\t" name[g] }' "$fcitx_profile" 2>/dev/null | sort -n
   fi
 }
 # 7. Input methods: SebType's one input method, which switches English, Chinese and Japanese itself (#190),
