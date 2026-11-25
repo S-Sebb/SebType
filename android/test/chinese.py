@@ -28,6 +28,8 @@ import zlib
 
 serial, apk, bumped_apk, field_apk, results_path, logdir = sys.argv[1:7]
 main_apk = sys.argv[7] if len(sys.argv) > 7 else ""
+times_path = os.path.join(logdir, "check-times.txt")
+open(times_path, "w").close()
 PKG = "dev.sebb.sebtype"
 # The keyboard keeps the FUTO-based app's service name, so an update from it stays selected (#262).
 IME = f"{PKG}/org.futo.inputmethod.latin.LatinIME"
@@ -411,8 +413,9 @@ passed = {}
 
 def wanted():
     """With SEBTYPE_CHECKS (comma-separated name prefixes, as android/test/emulator.sh takes it), the
-    checks named there and those they need; None runs all."""
-    if not PREFIXES:
+    checks named there and those they need; None runs all, as does naming this script's step, chinese-run
+    (its checks share no prefix)."""
+    if not PREFIXES or "chinese-run" in PREFIXES:
         return None
     needs = {}
     with open(__file__, encoding="utf-8") as f:
@@ -451,6 +454,11 @@ def check(name, fn, needs=()):
     runs = REPEAT if any(name.startswith(c) for c in PREFIXES) else 1
     for run in range(1, runs + 1):
         of = f" (run {run}/{runs})" if runs > 1 else ""
+        # How long each check took, for a run that nears chinese-run's limit (#524): its name first, so the
+        # check the limit stops shows without a time.
+        with open(times_path, "a", encoding="utf-8") as f:
+            f.write(f"{name}{of}: ")
+        start = time.time()
         try:
             detail = fn()
             passed[name] = True
@@ -465,11 +473,19 @@ def check(name, fn, needs=()):
             ValueError,
             StopIteration,
         ) as e:
+            took(start)
             result("FAIL", name, str(e) + of)
             # The system log since the last restart, for what the app was doing (a hang shows its threads here).
             suffix = f"-{run}" if runs > 1 else ""
             with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
                 f.write(adb("logcat", "-d", check=False))
+        else:
+            took(start)
+
+
+def took(start):
+    with open(times_path, "a", encoding="utf-8") as f:
+        f.write(f"{time.time() - start:.0f} s\n")
 
 
 def fresh_install():
@@ -2405,8 +2421,16 @@ def screen_size():
 
 
 def rotate(quarter):
+    """The screen turned to quarter (0 upright, 1 landscape), the field with it: a field that stays upright
+    would leave a check's landscape steps on portrait's settings (#524)."""
     adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
     adb("shell", "settings", "put", "system", "user_rotation", str(quarter))
+    want = f"mRotation=ROTATION_{quarter * 90}"
+    wait_for(
+        f"the screen to turn to {want}",
+        lambda: want in adb("shell", "dumpsys", "window", "displays"),
+        10,
+    )
     time.sleep(3)
 
 
@@ -2415,11 +2439,12 @@ def floating_resize():
     the size stays after the keyboard restarts and after a turn to landscape and back (#283)."""
     to_english()
     auto = adb("shell", "settings", "get", "system", "accelerometer_rotation").strip()
+    turned = adb("shell", "settings", "get", "system", "user_rotation").strip()
     uimode = (
         adb("shell", "cmd", "uimode", "night").split(":")[-1].strip()
     )  # yes, no, auto or custom
+    failed = False
     try:
-        set_mode("Floating")
         tap_reset()  # from its size and place before any change
         open_field()
         l, t, r, b = frame_now()
@@ -2479,25 +2504,41 @@ def floating_resize():
             )
             + ", TalkBack reaching the frame alone while it shows and the keys after; typing works"
         )
+    except BaseException:
+        failed = True
+        raise
     finally:
         adb("shell", "cmd", "uimode", "night", uimode)
-        rotate(1)
-        set_mode("Standard")
-        rotate(0)
-        adb(
-            "shell",
-            "settings",
-            "put",
-            "system",
-            "accelerometer_rotation",
-            auto if auto in ("0", "1") else "0",
-        )
-        tap_reset()
-        set_mode("Standard")
+        try:
+            rotate(1)
+            set_mode("Standard")
+            rotate(0)
+            tap_reset()
+            set_mode("Standard")
+        except Exception:
+            # A screen that never turned fails the cleanup's turns too: the check's own failure is the one to report
+            if not failed:
+                raise
+        finally:
+            # The rotation settings as found, whether the turns worked or not
+            for name, value, kept in (
+                ("user_rotation", turned, ("0", "1", "2", "3")),
+                ("accelerometer_rotation", auto, ("0", "1")),
+            ):
+                adb(
+                    "shell",
+                    "settings",
+                    "put",
+                    "system",
+                    name,
+                    value if value in kept else "0",
+                )
 
 
 def tap_reset():
-    open_field()
+    """Floating's Reset: the floating keyboard back to its first size and place. Only floating mode's resize
+    frame has Reset, so it sets floating mode first; a check's cleanup that has already left it still resets."""
+    set_mode("Floating")
     action(MODES_ACTION)
     tap_label(RESIZE)
     tap_label(("Reset", "重置", "初期化"))
@@ -2520,7 +2561,6 @@ def floating_short_window():
         return frame_now()
 
     try:
-        set_mode("Floating")
         tap_reset()
         l, t, r, b = resize_floating(("keys", (-w, -h)), ("corner", (w, h)))
         wide, tall = r - l, b - t
@@ -2619,7 +2659,6 @@ def globe_list_narrow():
     labels = ("English", "中文", "日本語", "Other keyboards")
     got = []
     try:
-        set_mode("Floating")
         tap_reset()
         resize_floating(("corner", (-w, 0)))
         # Its handle to the screen's top, as in modes-floating-resized. The list rises over the keys themselves
@@ -2670,7 +2709,6 @@ def floating_narrowest():
     w, h = screen_size()
     narrowest = round(144 * screen_density())
     try:
-        set_mode("Floating")
         tap_reset()
         open_field()
         action(MODES_ACTION)
@@ -2746,7 +2784,6 @@ def floating_resize_edge():
     to_english()
     w, h = screen_size()
     try:
-        set_mode("Floating")
         tap_reset()  # from its size and place before any change
         open_field()
         l, t, r, b = frame_now()

@@ -11,8 +11,9 @@
 # history in a settings backup only when ticked (#34).
 # It uninstalls SebType first, so its data is lost.
 # SEBTYPE_CHECKS=a,b runs only the checks whose names start with a or b, plus what they need: the build, the
-# install, the locale and settings.py's offline tests (settings-helpers) always, and chinese.py's earlier checks they depend on. A PR runs the checks
-# for what it changed; a release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
+# install, the locale and settings.py's offline tests (settings-helpers) always, and chinese.py's earlier checks
+# they depend on; SEBTYPE_CHECKS=chinese-run runs all of chinese.py. A PR runs the checks for what it changed; a
+# release runs them all. PERF_RUN=1 adds the timing checks (settings-smooth-scrolling),
 # which only the final performance run uses (#54, Decisions #2 2026-11-11).
 # One line per check in ~/scratch/SebType/<issue>/test-emulator/results.txt; logs next to it (one directory
 # per task, so runs from parallel worktrees don't overwrite each other). Exit 0 only if all pass.
@@ -160,7 +161,8 @@ device_suite() {
   # the built tables (SEBTYPE_ROOT).
   export SEBTYPE_ROOT=1
   if [[ $("$adb" -s "$serial" shell su 0 id -u 2>/dev/null | tr -d '\r') != 0 ]]; then
-    [[ -n $SEBTYPE_CHECKS && $serial != emulator-* ]] ||
+    # chinese-run names all of chinese.py: a full run, not a named check
+    [[ -n $SEBTYPE_CHECKS && ",$SEBTYPE_CHECKS," != *,chinese-run,* && $serial != emulator-* ]] ||
       { result FAIL emulator "$serial has no root shell (su), needed to read the app's Rime data"; return 1; }
     SEBTYPE_ROOT=0
     echo "$serial has no root shell: checks that read the app's private data skip or fail"
@@ -176,9 +178,10 @@ device_suite() {
       "$adb" -s "$serial" shell ime enable "$ime" >/dev/null
       "$adb" -s "$serial" install -r "$field_apk" >/dev/null
     fi
-    # chinese.py appends its own result lines; this line only records whether it ran to the end. The update
-    # from MAIN_APK (the FUTO-based app learning first) adds about a quarter of an hour.
-    PATH=$(dirname "$adb"):$PATH T=$([[ -n ${MAIN_APK:-} ]] && echo 5400 || echo 3600) check chinese-run \
+    # chinese.py appends its own result lines; this line only records whether it ran to the end. Its ~100
+    # checks take about 75 minutes (check-times.txt, #524); the update from MAIN_APK (the FUTO-based app
+    # learning first) adds about a quarter of an hour.
+    PATH=$(dirname "$adb"):$PATH T=$([[ -n ${MAIN_APK:-} ]] && echo 7200 || echo 5400) check chinese-run \
       python3 -I android/test/chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
     # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
     PATH=$(dirname "$adb"):$PATH T=3600 check settings-run python3 -I android/test/settings.py "$serial" "$results" "$out"
@@ -188,11 +191,17 @@ device_suite() {
 }
 export -f result check set_locale device_checks device_suite
 export adb apk futo_apk field_apk locale_dex results pkg ime
-android/emulator.sh -P 1 -w 1800 -m 50 -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
+# The lock's queue goes by expected minutes: a full run about 135, chinese-run alone 80, MAIN_APK 15 more.
+minutes=50
+if [[ -z $SEBTYPE_CHECKS ]]; then minutes=135; elif [[ ",$SEBTYPE_CHECKS," == *,chinese-run,* ]]; then minutes=80; fi
+(( minutes > 50 )) && [[ -n ${MAIN_APK:-} ]] && minutes=$(( minutes + 15 ))
+android/emulator.sh -P 1 -w 1800 -m "$minutes" -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log"
 # The device suite always records install-beside-futo; without it the device steps never ran, whatever the
 # lock's exit status says (#241: a run passed on the host checks alone).
 grep -q '^[A-Z]* emulator\|install-beside-futo' "$results" ||
   result FAIL emulator "the device steps didn't run: $(head -1 "$out/emulator.log")"
 
-! grep -qv '^PASS' "$results"
+# Without MAIN_APK, update-from-futo-app's SKIP is expected.
+allowed='^PASS'; [[ -n ${MAIN_APK:-} ]] || allowed+='\|^SKIP update-from-futo-app:'
+! grep -qv "$allowed" "$results"

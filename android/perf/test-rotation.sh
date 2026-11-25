@@ -23,7 +23,8 @@ case "$*" in
 esac
 ADB
 chmod +x "$tmp/sdk/platform-tools/adb"
-export ANDROID_HOME=$tmp/sdk PERF_OUT=$tmp/out FAKE=$tmp SETTLE_S=0 ANDROID_SERIAL=fake
+# SEBTYPE_HOST: on yanglab16, tools/lib.sh would point ANDROID_HOME at its own SDK, past the fake adb
+export ANDROID_HOME=$tmp/sdk PERF_OUT=$tmp/out FAKE=$tmp SETTLE_S=0 ANDROID_SERIAL=fake SEBTYPE_HOST=fake
 fails=0
 ok() { echo "PASS $1"; }
 no() { echo "FAIL $1: $2"; fails=$(( fails + 1 )); }
@@ -34,6 +35,10 @@ idle() { # size rotation: perf.sh's idle phase (open, measure the grid) on that 
 
 idle 1080x2400 ROTATION_0 && grep -q 'top="1535"' "$tmp/out/run/geometry" &&
   ok "upright phone: the grid is measured" || no "upright phone" "$(tail -1 "$tmp/idle.log")"
+# The field opens locked upright: only perf.sh asks for that (#524)
+grep '^am start' "$FAKE/log" | grep -vq -- '--ez upright true' &&
+  no "field upright" "$(grep '^am start' "$FAKE/log" | grep -v -- '--ez upright true' | head -1)" ||
+  { grep -q '^am start.*--ez upright true' "$FAKE/log" && ok "field opened upright" || no "field upright" "no am start logged"; }
 if idle 1080x2400 ROTATION_1; then no "turned phone" "the phase passed"
 elif [[ -e $tmp/out/run/geometry ]]; then no "turned phone" "an old grid is left to type from"
 else ok "turned phone: stops, no grid left"; fi
