@@ -204,11 +204,15 @@ bool insideQuoteOrAfterDigit(const std::string &text) {
   return quotes % 2 == 1;
 }
 
+// Whether CPS, two letters or more, are all capitals (DONT, I'LL; not I, 42 or a word in small letters).
+bool inCapitals(const std::vector<int> &cps) {
+  return cps.size() > 1 && std::all_of(cps.begin(), cps.end(), [](int c) { return char32_t(c) == upperCase(c); }) &&
+         std::any_of(cps.begin(), cps.end(), [](int c) { return char32_t(c) != lowerCase(c); });
+}
+
 std::string withCase(const std::string &word, const std::vector<int> &typed) {
   if (typed.empty() || char32_t(typed[0]) == lowerCase(typed[0])) return word;
-  const bool allCaps = typed.size() > 1 && std::all_of(typed.begin(), typed.end(), [](int c) {
-                         return char32_t(c) == upperCase(c);
-                       });
+  const bool allCaps = inCapitals(typed);
   auto cps = codePoints(word);
   // A word with capitals after its first letter keeps them unless typed in capitals: iPhone typed "Iphone"
   // where a sentence starts was IPhone (#568).
@@ -935,9 +939,9 @@ class English : public Engine {
     // The model ranks a word typed with capitals (Were where a sentence starts, ILL) from the decoder's words
     // for it in lower case, as the dictionary has them and as its shortcuts are found (cant: can't), and the
     // dictionary's word of those letters is the typed word; a space commits a word in the capitals typed (#568).
-    const std::string lowerTyped = lowerCaseWord(typed);
-    const std::vector<Word> lowered = typed != lowerTyped ? suggest(typedLower) : std::vector<Word>{};
-    const std::vector<Word> &ranked = typed != lowerTyped ? lowered : results;
+    const std::string typedLowerText = lowerCaseWord(typed);
+    const std::vector<Word> lowered = typed != typedLowerText ? suggest(typedLower) : std::vector<Word>{};
+    const std::vector<Word> &ranked = typed != typedLowerText ? lowered : results;
     // A word the dictionary lacks and the user's words have is learned, and a space keeps it: as typed ("Cant"
     // learned mid-sentence, though the dictionary has cant), or, if the dictionary lacks its lower case too, in
     // the capitals it was learned with, typed in any case: theyre learned at a sentence start and typed
@@ -948,17 +952,13 @@ class English : public Engine {
     const auto userHas = [&](const std::string &w) {
       return (history_ && history_->has(w)) || (personal_ && personal_->has(w));
     };
-    const auto allCaps = [](const std::string &w) {
-      const auto cps = codePoints(w);
-      return cps.size() > 1 && lowerCaseWord(w) != w &&
-             std::all_of(cps.begin(), cps.end(), [](int c) { return char32_t(c) == upperCase(c); });
-    };
+    const auto allCaps = [](const std::string &w) { return inCapitals(codePoints(w)); };
     std::string learned;
     if (!main_->has(typed)) {
       if (userHas(typed)) learned = typed;
-      else if (!main_->has(lowerTyped))
+      else if (!main_->has(typedLowerText))
         for (const std::string &w : userWords)
-          if (lowerCaseWord(w) == lowerTyped && !allCaps(w) && userHas(w)) {
+          if (lowerCaseWord(w) == typedLowerText && !allCaps(w) && userHas(w)) {
             learned = withCase(w, typed_);
             break;
           }
@@ -968,7 +968,7 @@ class English : public Engine {
     // word, it became a contraction ("I feel iLl": I'll), and read capitalised, "I feel Ill" was I'll too. Inner
     // capitals whose small letters aren't a word are meant (DeShawn, iCloud, camelCase) and stay (#568).
     const bool stray = std::any_of(typed_.begin() + 1, typed_.end(), [](int c) { return char32_t(c) != lowerCase(c); });
-    const bool readSmall = learned.empty() && !main_->has(typed) && stray && !allCaps(typed) && main_->has(lowerTyped);
+    const bool readSmall = learned.empty() && !main_->has(typed) && stray && !allCaps(typed) && main_->has(typedLowerText);
     const std::vector<int> cased = readSmall ? typedLower : typed_;
     const std::string word = learned.empty() ? utf8(cased) : learned;
     const auto has = [&](const std::string &w) {
@@ -985,7 +985,7 @@ class English : public Engine {
       if (!same && small != w.word && !allCaps(w.word) && small.find('\'') != std::string::npos && has(small))
         continue;
       rank.candidates.push_back({same ? word : w.word,
-                                 normalizedScore(typed != lowerTyped ? typedLower : typed_, w.word, w.score)});
+                                 normalizedScore(typed != typedLowerText ? typedLower : typed_, w.word, w.score)});
     }
     std::lock_guard g(mutex_);
     rank.gen = gen_;

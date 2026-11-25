@@ -652,6 +652,10 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            // where a sentence starts (#568).
            {"", "DeShawn", "DeShawn "}, {"with ", "LeBron", "LeBron "}, {"on ", "iCloud", "iCloud "},
            {"I use ", "ChatGPT", "ChatGPT "}, {"Freud wrote about the ego and the ", "id", "id "},
+           // The contraction's share goes to the typed letters' words together, and the same word in other
+           // capitals is weighed without the typed word's ending, as the contraction is: main's ID (#568).
+           {"Show your ", "id", "ID "}, {"Enter your ", "id", "ID "}, {"Enter your user ", "id", "ID "},
+           {"Bring your photo ", "id", "ID "}, {"", "id", "id "},
            {"", "camelCase", "camelCase "}, {"", "userId", "userId "}, {"the ", "turkey", "turkey "},
            {"it's ", "ok", "ok "}, {"with ", "mom", "mom "}, {"the ", "march", "march "}, {"lol ", "btw", "btw "},
            {"", "btw", "btw "}, {"", "fyi", "fyi "},
@@ -842,6 +846,7 @@ TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
     contraction |= w.word.find('\'') != std::string::npos;
   }
   EXPECT_TRUE(contraction);
+  EXPECT_TRUE(model.nextWords("Sorry I", 0).empty());  // its 3rd best was read before the 0th (#568)
   // The pronoun is a capital, though chats taught the model a small one (#568).
   const auto words = model.nextWords("Both :) i", 3);
   EXPECT_TRUE(std::ranges::any_of(words, [](const auto &w) { return w.word == "I"; }));

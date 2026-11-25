@@ -360,6 +360,7 @@ Model::Row Model::row(const float *logits) const {
 float Model::logSoftmax(const float *logits, int token, const Row &r) { return logits[token] - r.top - r.log; }
 
 std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
+    if (n == 0) return {};
     // Text in capitals ("I THINK", "DON'T") is read in small letters, as score() reads it, and its next words
     // are shown in capitals: read as it is, they were pieces of words (OF, E, T).
     const std::string folded = fold(context);
@@ -387,7 +388,6 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
         paths.push_back({first[i], int(i) + 1, 0, mText[first[i]].substr(1), logSoftmax(logits, first[i], start)});
         followers.push_back({first[i]});
     }
-    dropBranches();
     const auto index = branch(followers, {}, std::vector<std::vector<bool>>(first.size(), {true}));
     for (size_t i = 0; i < paths.size(); i++) paths[i].at = index[i][0];
 
@@ -417,7 +417,9 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
             if (r.next < 0 || depth >= NEXT_WORD_MAX_PIECES) continue;
             Path q{r.next, p.seq, 0, p.word + mText[r.next], p.logProb + logSoftmax(after, r.next, r), p.stem};
             if (p.word.back() != '\'') q.stem = q.logProb > words.back().logProb ? int(words.size()) - 1 : -1;
-            // A contraction's ending (n't's t, 's, 'll) ends its word: taken as it is, it saves a decode.
+            // A contraction's ending (n't's t, 's, 'll) ends its word: taken as it is, it saves a decode. It
+            // then skips the end-of-word term the other words pay, which, read, changed 2 of 7,246 next-word
+            // rows and no target in the top 3 (#568).
             if (p.word.back() == '\'' && CONTRACTION_ENDS.count(mText[r.next])) words.push_back({q.word, q.logProb});
             else longer.push_back(std::move(q));
         }
@@ -615,13 +617,22 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
         asTyped->assign(hinted.begin(), hinted.begin() + words.size());
         for (const auto &[c, p] : plain) (*asTyped)[c] = hinted[p];
     }
-    for (const auto &[c, text] : inTexts)
-        for (const auto &[t, typedText] : typedWords) {
-            const float both = std::max(hinted[c], hinted[t]) + std::log1p(std::exp(-std::abs(hinted[c] - hinted[t])));
-            const float odds = out[text] - out[typedText];
-            out[c] = std::min(out[c], both - std::log1p(std::exp(-odds)));
-            out[t] = std::max(out[t], both - std::log1p(std::exp(odds)));
-        }
+    // One share for all of them: shared pair by pair, the typed word and the same word in other capitals
+    // ("Show your id": ID) each took nearly all of I'd's score, and so tied (#568).
+    if (!inTexts.empty()) {
+        const auto logSum = [](const std::vector<float> &v) {
+            const float top = *std::max_element(v.begin(), v.end());
+            float sum = 0;
+            for (float x : v) sum += std::exp(x - top);
+            return top + std::log(sum);
+        };
+        std::vector<float> hints, texts;
+        for (const auto &group : {inTexts, typedWords})
+            for (const auto &[i, text] : group) hints.push_back(hinted[i]), texts.push_back(out[text]);
+        const float both = logSum(hints), all = logSum(texts);
+        for (const auto &[c, text] : inTexts) out[c] = std::min(out[c], both + out[text] - all);
+        for (const auto &[t, text] : typedWords) out[t] = std::max(out[t], both + out[text] - all);
+    }
     out.resize(words.size());
     return out;
 }
@@ -668,21 +679,22 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
             if (typedIsWord || !contractions || contraction(i)) commit[i] = score[i];
             // A word is weighed against the typed word without its ending: the space says the typed word ends
             // there, and the model, which can't know that, put the odds of the words it starts in that ending
-            // ("Sure, hell": hello; "my fiance": finance; impl: imply), where main kept them (#568). After a typed
-            // first capital the same word in other capitals ends where the typed word does ("The Id": ID).
-            if (!titled || lower(words[i]) != lower(typed)) commit[i] += typedEnd;
+            // ("Sure, hell": hello; "my fiance": finance; impl: imply), where main kept them (#568). The same word
+            // in other capitals ends where the typed word does ("The Id", "Enter your id": ID).
+            if (lower(words[i]) != lower(typed)) commit[i] += typedEnd;
             continue;
         }
         // A contraction of a typed dictionary word's letters (cant: can't). The keys score the two alike, and
         // the decoder's far higher score for it is the dictionary's shortcut, which outweighed what the text
         // says ("I despise such cant", #568). So it takes the typed word's decoder score, which places it in
         // the strip. A space corrects to it only as before #561, read after the typed letters' hint with the
-        // shortcut's score ("I cant"), and only if read after its own hint it is the likelier of the two:
-        // "as is his wont" stays, and so does "Were" where a sentence starts.
+        // shortcut's score ("I cant"), against the typed word without its ending as every word is (main had no
+        // ending: id alone was I'd), and only if read after its own hint it is the likelier of the two: "as is
+        // his wont" stays, and so does "Were" where a sentence starts.
         score[i] = logProbs[i] + DECODER_WEIGHT * std::log(typedDecoder);
         if (!asTyped.empty() && logProbs[i] > logProbs.back()) {
             commit[i] = score.back() + asTyped[i] - asTyped.back() +
-                        DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder);
+                        DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder) + typedEnd;
             score[i] = std::max(score[i], commit[i]);
         }
     }
