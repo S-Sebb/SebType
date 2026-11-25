@@ -184,16 +184,17 @@ device_suite() {
     PATH=$(dirname "$adb"):$PATH T=$([[ -n ${MAIN_APK:-} ]] && echo 7200 || echo 5400) check chinese-run \
       python3 -I android/test/chinese.py "$serial" "$apk" "$bumped" "$field_apk" "$results" "$out" ${MAIN_APK:+"$MAIN_APK"}
     # Every settings screen opens and SebType's own options take effect (#41); appends its own lines.
-    PATH=$(dirname "$adb"):$PATH T=3600 check settings-run python3 -I android/test/settings.py "$serial" "$results" "$out"
+    # Its checks take about 90 minutes on a busy yanglab16 emulator (settings-check-times.txt, #546).
+    PATH=$(dirname "$adb"):$PATH T=7200 check settings-run python3 -I android/test/settings.py "$serial" "$results" "$out"
   else
     result SKIP chinese "needs install-beside-futo and bumped-apk"
   fi
 }
 export -f result check set_locale device_checks device_suite
 export adb apk futo_apk field_apk locale_dex results pkg ime
-# The lock's queue goes by expected minutes: a full run about 135, chinese-run alone 80, MAIN_APK 15 more.
+# The lock's queue goes by expected minutes: a full run about 165, chinese-run alone 80, MAIN_APK 15 more.
 minutes=50
-if [[ -z $SEBTYPE_CHECKS ]]; then minutes=135; elif [[ ",$SEBTYPE_CHECKS," == *,chinese-run,* ]]; then minutes=80; fi
+if [[ -z $SEBTYPE_CHECKS ]]; then minutes=165; elif [[ ",$SEBTYPE_CHECKS," == *,chinese-run,* ]]; then minutes=80; fi
 (( minutes > 50 )) && [[ -n ${MAIN_APK:-} ]] && minutes=$(( minutes + 15 ))
 android/emulator.sh -P 1 -w 1800 -m "$minutes" -n "sebtype test-emulator ($(basename "$PWD"))" -- bash -c device_suite \
   2> "$out/emulator.log"

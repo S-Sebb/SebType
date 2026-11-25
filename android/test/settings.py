@@ -45,6 +45,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 serial, results_path, logdir = sys.argv[1:4]
+times_path = os.path.join(logdir, "settings-check-times.txt")
+open(times_path, "w").close()
 # Only the checks whose names start with one of SEBTYPE_CHECKS (comma-separated, as emulator.sh takes it).
 CHECKS = [c for c in os.environ.get("SEBTYPE_CHECKS", "").split(",") if c]
 # Timing checks run only in the final performance run (#54, Decisions #2 2026-11-11): PERF_RUN=1.
@@ -925,11 +927,18 @@ def check(name, fn, needs=()):
             )
 
         of = f" (run {run}/{runs})" if runs > 1 else ""
+        # How long each check took, for emulator.sh's limit on the whole run (#546): its name first, so
+        # the check the limit stops shows without a time.
+        with open(times_path, "a", encoding="utf-8") as f:
+            f.write(f"{name}{of}: ")
+        start = time.time()
         try:
             detail = fn()
+            took(start)
             passed.add(name)
             result("PASS", name, warned((detail or "") + of))
         except Skip as e:
+            took(start)
             result("SKIP", name, warned(str(e) + of))
         except (
             Fail,
@@ -940,11 +949,17 @@ def check(name, fn, needs=()):
             LookupError,
             ValueError,
         ) as e:
+            took(start)
             result("FAIL", name, warned(str(e) + of))
             # The system log, for what the keyboard was doing (a keyboard that never came up shows why here).
             suffix = f"-{run}" if runs > 1 else ""
             with open(os.path.join(logdir, f"{name}{suffix}.logcat"), "w") as f:
                 f.write(adb("logcat", "-d", check=False))
+
+
+def took(start):
+    with open(times_path, "a", encoding="utf-8") as f:
+        f.write(f"{time.time() - start:.0f} s\n")
 
 
 # Every screen: how to get there from home, and a text only it shows.
@@ -1508,9 +1523,13 @@ def nav_bar():
 
 def keys_clear_of_nav_bar(step):
     """The keys, their bottom row included, don't reach into the navigation bar; '' or what overlaps."""
-    wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
-    time.sleep(1)  # the window's show animation and any later inset change settle
-    nodes()
+    # The window's show animation and any later inset change settle before the frame is read; a
+    # keyboard already up then needs no second dump.
+    time.sleep(1)
+    if not keys(nodes()):
+        wait_for("the keyboard", lambda: keys(nodes()), KEYBOARD_WAIT)
+        time.sleep(1)
+        nodes()
     l, t, r, b = keyboard_frame
     bar = nav_bar()
     if bar and l < bar[2] and bar[0] < r and t < bar[3] and bar[1] < b:
@@ -3564,10 +3583,11 @@ def english_strings():
     ]
 
 
-def english_on_screen(patterns):
-    """The visible labels, or parts of one joined with " · ", ", " or a line break, that are SebType English."""
+def english_on_screen(patterns, shown):
+    """The labels in shown (a dump of the screen), or parts of one joined with " · ", ", " or a line
+    break, that are SebType English."""
     found = set()
-    for label, *_ in nodes():
+    for label, *_ in shown:
         for part in {label, *re.split(r"\n| · |, ", label)}:
             if any(p.fullmatch(part) for p in patterns):
                 found.add(part)
@@ -3588,16 +3608,18 @@ def japanese_ui():
         except Fail as e:
             failed.append(f"{name}: {e}")
         screenshot(f"ja-{name}")
-        seen = english_on_screen(patterns)
+        shown = nodes()
+        seen = english_on_screen(patterns, shown)
         # Down the screen too, a page at a time; resizing's page is the keyboard's handles.
         for page in range(2, 6 if name != "resize" else 2):
-            before = {label for label, *_ in nodes()}
+            before = {label for label, *_ in shown}
             adb("shell", "input", "swipe", "540", "1900", "540", "900", "400")
             time.sleep(1)
-            if {label for label, *_ in nodes()} == before:
+            shown = nodes()
+            if {label for label, *_ in shown} == before:
                 break
             screenshot(f"ja-{name}-{page}")
-            seen |= english_on_screen(patterns)
+            seen |= english_on_screen(patterns, shown)
         if seen:
             english[name] = sorted(seen)
     if english:
