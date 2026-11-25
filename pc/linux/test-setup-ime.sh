@@ -35,9 +35,14 @@ command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCh
 command -v kreadconfig6 >/dev/null || { echo "preflight: kreadconfig6 missing (KDE Plasma 6 needed)"; exit 1; }
 # The fake account has no Rust: setup-ime.sh copies the Configurator built for it. Nor does it build
 # SebType's Chinese data: each fake account's cache links the zip built for it. Both build in the shared
-# build lock (tools/build.sh).
-../../tools/build.sh 30 "configurator build for test-setup-ime" pc/configurator/build.sh > /dev/null 2> "$out/test-setup-ime-configurator-build.log" ||
-  { echo "preflight: the SebType Configurator does not build (see $out/test-setup-ime-configurator-build.log)"; exit 1; }
+# build lock (tools/build.sh). A Configurator newer than its sources isn't rebuilt (setup-ime.sh's rule):
+# a yanglab16 kde-emu session has no Rust, so there it is built on the host first (#596). The cached
+# Chinese data needs no compiler.
+app=../configurator/target/release/sebtype-configurator
+if [[ -x $app && -z $(find ../configurator -path ../configurator/target -prune -o -type f -newer "$app" -print -quit) ]]; then :
+elif ! ../../tools/build.sh 30 "configurator build for test-setup-ime" pc/configurator/build.sh > /dev/null 2> "$out/test-setup-ime-configurator-build.log"; then
+  echo "preflight: the SebType Configurator does not build (see $out/test-setup-ime-configurator-build.log; in a kde-emu session, build it on the host: tools/build.sh 30 configurator pc/configurator/build.sh)"; exit 1
+fi
 rime_data=$(../../tools/build.sh 10 "rime data for test-setup-ime" data/rime/build.sh 2> "$out/test-setup-ime-rime-data.log") &&
   [[ -f $rime_data ]] ||
   { echo "preflight: SebType's Chinese data does not build (see $out/test-setup-ime-rime-data.log)"; exit 1; }
@@ -67,12 +72,13 @@ live_dry() {
   local before after
   before=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
-  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | grep -v -e 'unused Flatpak override' -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
+  # An account never set up (a kde-emu session's empty HOME) has every change still to make.
+  timeout 60 ./setup-ime.sh --dry-run | tee /dev/stderr | grep '^would:' | { [[ -d ~/.local/share/sebtype ]] || { cat >/dev/null; exit 1; }; grep -v -e 'unused Flatpak override' -e 'install SebType Configurator' -e 'typo correction to a PC keyboard' \
     -e "install SebType's Chinese data" -e "set Mozc's keymap" -e "^would: replace SebType's old librime" \
     -e 'English ⇄ the last other language' -e 'remove the old SebType icon theme' -e '^would: name \(mozc 日本語\|keyboard-us English\) ' \
     -e "turn off Fcitx5's .* hotkeys" -e "^would: remove .*, Fcitx5's own settings" -e "^would: install SebType's input method" \
     -e "^would: show SebType's tray menu" -e '^would: give Rime (fcitx5-rime) its own name back' \
-    -e "^would: schedule SebType's daily update check" && return 1
+    -e "^would: schedule SebType's daily update check"; } && return 1
   after=$(find ~/.config/kwinrc ~/.config/kdeglobals ~/.config/environment.d ~/.config/fcitx5/config ~/.config/mozc/config1.db ~/.local/share/applications ~/.local/share/flatpak/overrides \
     ~/.local/share/icons/SebType ~/.local/share/sebtype ~/.local/share/fcitx5/inputmethod ~/.local/share/fcitx5/addon ~/.local/share/fcitx5/rime/rime_ice.custom.yaml -type f -exec md5sum {} + 2>/dev/null | sort)
   [[ $before == "$after" ]]
@@ -131,9 +137,12 @@ printf '[Icons]\nTheme=Fluent-dark\n' > "$h/.config/kdeglobals"
 # The fake account has no Rust either: the Configurator built above is newer than its sources, so
 # setup-ime.sh doesn't rebuild it.
 hide=()  # a wrapper for fake_run: SebType's add-on hidden, as before its install
+# Its config dirs are empty too: an image whose /etc/xdg/kwinrc already picks Fcitx5 (yanglab16's kde-emu)
+# would leave setup no virtual keyboard to set (#597).
+mkdir -p "$fake/xdg"
 fake_run() { mkdir -p "$h/scratch/SebType/cache/sebtype"; ln -sf "$rime_data" "$h/scratch/SebType/cache/"
   touch "$h/scratch/SebType/cache/sebtype/${sebtype_rpm##*/}"  # a placeholder: the fake sudo installs nothing
-  "${hide[@]}" env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" \
+  "${hide[@]}" env -i PATH="$fake/bin:$PATH" HOME="$h" FAKE="$fake" XDG_CONFIG_HOME="$h/.config" XDG_CONFIG_DIRS="$fake/xdg" \
   XDG_DATA_HOME="$h/.local/share" timeout 60 ./setup-ime.sh "$@"; }
 
 fresh_dry() {
@@ -1200,7 +1209,9 @@ both_rimes() {
   o3=$(h=$h2 fake_run --dry-run < /dev/null) || rc=1; echo "$o3"
   o2=$(h=$h2 fake_run < /dev/null) || rc=1; echo "$o2"
   # A dry run before setup installs SebType says it as the run would.
-  local o4 hide=(bwrap --dev-bind / / --ro-bind /dev/null /usr/lib64/fcitx5/sebtype.so)
+  # (Where SebType isn't installed, as in a kde-emu session, there is nothing to hide.)
+  local o4 hide=()
+  [[ -e /usr/lib64/fcitx5/sebtype.so ]] && hide=(bwrap --dev-bind / / --ro-bind /dev/null /usr/lib64/fcitx5/sebtype.so)
   rm "$fake/sebtype"; o4=$(h=$h2 fake_run --dry-run < /dev/null) || rc=1; rm "$fake/no-fcitx"; echo "$o4"
   rm -f "$fake/groups" "$fake/group-My \"Rime\" =1" "$fake/sebtype" "$fake/group"
   mv "$fake/group.kept" "$fake/group" 2>/dev/null; mv "$fake/sebtype.kept" "$fake/sebtype" 2>/dev/null
