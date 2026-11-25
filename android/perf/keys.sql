@@ -19,12 +19,20 @@ ime as (select p.upid, p.pid from process p left join thread t on t.upid = p.upi
   where p.name = 'dev.sebb.sebtype' or t.name = 'ev.sebb.sebtype'),
 field as (select p.upid from process p left join thread t on t.upid = p.upid and t.tid = p.pid
   where p.name = 'dev.sebb.sebtype.perffield' or t.name = 'btype.perffield'),
+-- Android 14 names a touch's slice only by its event time ("deliverInputEvent src=0x1002
+-- eventTimeNano=…"): there a DOWN is the event more than 50 ms after the one before, since monkey's
+-- taps put their UP a few ms after the DOWN and taps 100 ms or more apart. That holds only for
+-- single-finger taps (no swipe, long press or second finger); perf.sh checks the count against its taps.
 ev as (
-  select s.ts, s.dur, s.name like '%ACTION_DOWN%' as down
-  from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid) join ime using (upid)
-  where t.tid = ime.pid and s.depth = 0
-    and (s.name like 'dispatchInputEvent MotionEvent ACTION_DOWN%'
-      or s.name like 'dispatchInputEvent MotionEvent ACTION_UP%')
+  select ts, dur, case when a14 then coalesce(event_ns - lag(event_ns) over (order by ts) > 50000000, 1)
+    else name like '%ACTION_DOWN%' end as down
+  from (select s.ts, s.dur, s.name, s.name like 'deliverInputEvent src=0x1002 %' as a14,
+      cast(substr(s.name, instr(s.name, 'eventTimeNano=') + 14) as int) as event_ns
+    from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid) join ime using (upid)
+    where t.tid = ime.pid and s.depth = 0
+      and (s.name like 'dispatchInputEvent MotionEvent ACTION_DOWN%'
+        or s.name like 'dispatchInputEvent MotionEvent ACTION_UP%'
+        or s.name like 'deliverInputEvent src=0x1002 %'))
 ),
 taps as (
   -- until the next tap, at most 1 s: the last tap of a run must not take in the next field's start
