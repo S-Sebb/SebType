@@ -183,6 +183,10 @@ typing() { # trace gap text: under one trace, types the text RUNS times, each in
   # rather than shift each key's window.
   local keys; keys=$(per_key_count "$1")
   (( keys == runs * ${#3} )) || { echo "$1: the keyboard got $keys touches for $(( runs * ${#3} )) taps" >&2; return 1; }
+  # SebType's candidate bar traces each new list it draws (#559): with none found, key → candidates went unmeasured.
+  [[ $pkg != dev.sebb.sebtype ]] || awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i ~ /cand_ms/) c = i; next }
+      c && $c ~ /^[0-9.]+$/ { found = 1; exit } END { exit !found }' "$work/$1.csv" ||
+    { echo "$1: no key → candidates time: no \"SebType candidates\" section in the trace" >&2; return 1; }
 }
 landed() { # phase taps min% max%: each field's length shows that the taps hit the keys and in which
   # language (pinyin and romaji turn into fewer characters than were typed)

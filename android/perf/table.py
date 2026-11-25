@@ -163,7 +163,7 @@ for lang, d, name in (("en", en, "EN"), ("zh", zh, "中"), ("ja", ja, "日")):
         f"{name} key → candidates drawn, median / p95",
         p(column(lang, "cand_ms")),
         lang,
-        "frame that last redrew the candidate bar before the next key",
+        "frame that drew the last new list before the next key",
     )
     row(
         f"{name} key → keyboard idle, median / p95",

@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Trace
 import dev.sebb.sebtype.Icons.Icon
 
 /**
@@ -86,6 +87,8 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
     private var start = 0f
     /** Whether the expand/collapse button is shown at the right end of the bar (#429) */
     private var showExpand = false
+    /** A new list waits for its first draw, which android/perf/keys.sql times as key → candidates (#559) */
+    private var newList = false
 
     private object Role {
         const val CANDIDATE = "android.widget.TextView"
@@ -120,7 +123,20 @@ class CandidateBar(context: Context, private val texts: Texts, private val liste
         this.header = header
         this.expanded = expanded
         this.clip = clip
+        if (!same) newList = true
         rebuild(keepScroll = same)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        if (!newList) return super.onDraw(canvas)
+        newList = false
+        // An explicit section: the release build's minifier renames the views the framework's own slices name.
+        Trace.beginSection("SebType candidates")
+        try {
+            super.onDraw(canvas)
+        } finally {
+            Trace.endSection()
+        }
     }
 
     private fun rebuild(keepScroll: Boolean) {
