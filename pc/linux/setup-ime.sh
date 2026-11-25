@@ -501,15 +501,24 @@ fi
 
 # The running Fcitx5's controller.
 call() { busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "$@"; }
+# The running Fcitx5's groups in order, one a line: name, layout, then its input methods, each field ended by
+# \x1f (a layout may be empty). Read as JSON: busctl's plain output escapes non-ASCII (a zh Fcitx5's 默认) and
+# keeps a name's spaces and quotes, which no split survives.
+running_groups() {
+  local g
+  call --json=short InputMethodGroups | python3 -c 'import json, sys; print(*json.load(sys.stdin)["data"][0], sep="\n")' |
+    while IFS= read -r g; do
+      printf '%s\x1f' "$g"
+      call --json=short InputMethodGroupInfo s "$g" | python3 -c 'import json, sys
+layout, ims = json.load(sys.stdin)["data"]
+print(*(f + "\x1f" for f in [layout, *(im for im, _ in ims)]), sep="")'
+    done
+}
 # Prints the number and name ("<n><TAB><name>") of each Fcitx5 group with fcitx5-rime's rime: the running
 # Fcitx5's groups when it knows SebType's input method (step 7 changes those), else the profile's.
 rime_groups() {
-  local i=0 g
   if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
-    while IFS= read -r g; do
-      call InputMethodGroupInfo s "$g" | grep -o '"[^"]*"' | sed -n '2~2p' | grep -qx '"rime"' && printf '%s\t%s\n' "$i" "$g"
-      i=$((i + 1))
-    done < <(call InputMethodGroups | grep -o '"[^"]*"' | tr -d '"')
+    running_groups | awk -F '\x1f' '{ for (i = 3; i < NF; i++) if ($i == "rime") { print NR - 1 "\t" $1; next } }'
   else
     awk '/^\[Groups\/[0-9]+\]$/ { g = $0; gsub(/[^0-9]/, "", g); sec = "group"; next }
       /^\[Groups\/[0-9]+\/Items\/[0-9]+\]$/ { sec = "item"; next } /^\[/ { sec = ""; next }
@@ -530,13 +539,10 @@ first_rime=; [[ $(rime_groups | cut -f1) == 0* ]] &&
   first_rime="; Rime (fcitx5-rime) won't type Chinese beside SebType: to use it again after removing SebType, add it back"
 restore=" or restore profile from $backup, with Fcitx5 stopped"  # after first_rime, where a backup is made
 if fcitx_on_dbus && call AvailableInputMethods 2>/dev/null | grep -q '"sebtype"'; then
-  group=$(call InputMethodGroups | awk '{print $3}' | tr -d '"')
-  # Quoted strings of the reply: <layout> then <im> <im layout> pairs.
-  mapfile -t q < <(call InputMethodGroupInfo s "$group" | grep -o '"[^"]*"' | tr -d '"')
-  layout=${q[0]} now=() ims=(sebtype)
-  for ((i = 1; i < ${#q[@]}; i += 2)); do
-    now+=("${q[i]}")
-    [[ " sebtype keyboard-us rime mozc " == *" ${q[i]} "* ]] || ims+=("${q[i]}")
+  IFS=$'\x1f' read -r -a q < <(running_groups | head -1)
+  group=${q[0]} layout=${q[1]} now=("${q[@]:2}") ims=(sebtype)
+  for im in "${now[@]}"; do
+    [[ " sebtype keyboard-us rime mozc " == *" $im "* ]] || ims+=("$im")
   done
   if [[ "${now[*]}" != "${ims[*]}" ]]; then
     if change "make SebType's input method the one in Fcitx5 input method group $group, in place of keyboard-us, rime and mozc (backup of $fcitx_profile in $backup)$first_rime${first_rime:+$restore as $removing says}"; then
