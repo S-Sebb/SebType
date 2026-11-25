@@ -160,9 +160,12 @@ HOME=%{cache_root}/home OPENCC_LIBS="$root/lib/libopencc.a $root/lib/libmarisa.a
 ctest --test-dir build/core --output-on-failure
 # Every crate the Configurator links has its licence's text there (#548): the proc-macros' crates only run in
 # the build.
-missing=$(CARGO_HOME=%{cache_root}/cargo cargo tree --locked --offline --manifest-path pc/configurator/Cargo.toml \
-  -e normal,no-proc-macro --target x86_64-unknown-linux-gnu --prefix none -f '{p}' |
-  sed -E 's/^([^ ]+) v([^ ]+).*/  \1 \2/' | sort -u | grep -v '^  sebtype-configurator ' | grep -vxFf configurator-crates-LICENSE || true)
+tree=$(CARGO_HOME=%{cache_root}/cargo cargo tree --locked --offline --manifest-path pc/configurator/Cargo.toml \
+  -e normal,no-proc-macro --target x86_64-unknown-linux-gnu --prefix none -f '{p}') || exit 1
+crates=$(sed -E 's/^([^ ]+) v([^ ]+).*/  \1 \2/' <<<"$tree" | sort -u | grep -v '^  sebtype-configurator ')
+[[ -n $crates ]] || { echo "cargo tree listed none of the Configurator's crates"; exit 1; }
+# grep's status 1: no crate is missing.
+missing=$(grep -vxFf configurator-crates-LICENSE <<<"$crates") || (($? == 1)) || exit 1
 [[ -z $missing ]] || { echo "the Configurator's crates without a licence text:"; echo "$missing"; exit 1; }
 
 %install

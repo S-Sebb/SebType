@@ -79,10 +79,12 @@ jobs:
           & ~/cargo-about/cargo-about.exe generate --frozen --fail --target x86_64-pc-windows-msvc -o $out about.hbs
           if ($LASTEXITCODE) { throw "cargo-about failed ($LASTEXITCODE)" }
           $listed = Get-Content $out
-          $missing = cargo tree --locked --offline -e normal,no-proc-macro --target x86_64-pc-windows-msvc --prefix none -f '{p}' |
-            ForEach-Object { $_ -replace '^(\S+) v(\S+).*', '  $1 $2' } | Sort-Object -Unique |
-            Where-Object { $_ -notlike '  sebtype-configurator *' -and $_ -cnotin $listed }
+          $crates = cargo tree --locked --offline -e normal,no-proc-macro --target x86_64-pc-windows-msvc --prefix none -f '{p}'
           if ($LASTEXITCODE) { throw "cargo tree failed ($LASTEXITCODE)" }
+          $crates = $crates | ForEach-Object { $_ -replace '^(\S+) v(\S+).*', '  $1 $2' } | Sort-Object -Unique |
+            Where-Object { $_ -notlike '  sebtype-configurator *' }
+          if (-not $crates) { throw "cargo tree listed none of the Configurator's crates" }
+          $missing = $crates | Where-Object { $_ -cnotin $listed }
           if ($missing) { throw "crates without a licence text: $missing" }
       - uses: actions/upload-artifact@v4
         with:
