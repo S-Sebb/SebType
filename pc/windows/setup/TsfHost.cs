@@ -573,8 +573,69 @@ namespace SebType {
         if (joined) { BringWindowToTop(h); AttachThreadInput(self, front, false); }
         Thread.Sleep(300);
       }
-      return GetForegroundWindow() == h;
+      if (GetForegroundWindow() == h) { LastFront = ""; return true; }
+      // #562: on TCSBackEnd the Alt taps sometimes stop working for minutes. What held the front, then each
+      // other way in turn, and which one won (LastFront, for the failure message and test.ps1's 562-front.txt).
+      LastFront = "Alt taps lost to " + Front();
+      foreach (var way in new KeyValuePair<string, Action>[] {
+        new KeyValuePair<string, Action>("joined to its input", () => {
+          uint pid, front = GetWindowThreadProcessId(GetForegroundWindow(), out pid), self = GetCurrentThreadId();
+          bool joined = front != 0 && front != self && AttachThreadInput(self, front, true);
+          SetForegroundWindow(h); BringWindowToTop(h);
+          if (joined) AttachThreadInput(self, front, false);
+        }),
+        new KeyValuePair<string, Action>("minimized and restored", () => { ShowWindow(h, 6 /* SW_MINIMIZE */); ShowWindow(h, 9 /* SW_RESTORE */); }),
+        new KeyValuePair<string, Action>("SwitchToThisWindow", () => SwitchToThisWindow(h, true)),
+      }) {
+        way.Value(); Thread.Sleep(500);
+        if (GetForegroundWindow() == h) { LastFront += "; won by " + way.Key; return true; }
+        LastFront += "; " + way.Key + " lost";
+      }
+      return false;
     }
+    public static string LastFront = "";
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int InternalGetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr p, uint access, out IntPtr t);
+    [DllImport("advapi32.dll")] static extern bool GetTokenInformation(IntPtr t, int cls, out int v, int n, out int got);
+    // The window in front: its process, title, class and whether it runs elevated (input from this
+    // unelevated process can't reach an elevated window, so its Alt tap gives no right to the front).
+    public static string Front() {
+      IntPtr f = GetForegroundWindow();
+      if (f == IntPtr.Zero) return "no window";
+      if (store != null && f == store.Hwnd) return "the test field";
+      uint pid; GetWindowThreadProcessId(f, out pid);
+      string name; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { name = "?"; }
+      var title = new StringBuilder(256); InternalGetWindowText(f, title, title.Capacity);
+      var cls = new StringBuilder(256); GetClassNameW(f, cls, cls.Capacity);
+      string elevated = "elevation unreadable";
+      IntPtr p = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid), t;
+      if (p != IntPtr.Zero) {
+        int v, got;
+        if (OpenProcessToken(p, 8 /* TOKEN_QUERY */, out t)) {
+          if (GetTokenInformation(t, 20 /* TokenElevation */, out v, 4, out got)) elevated = v != 0 ? "elevated" : "not elevated";
+          CloseHandle(t);
+        }
+        CloseHandle(p);
+      }
+      return string.Format("{0} (pid {1}, {2}) '{3}' [{4}]", name, pid, elevated, title, cls);
+    }
+    // A picture of the whole session's screen, for what held the front.
+    public static void Screen(string path) {
+      Physical(() => {
+        int x = GetSystemMetrics(76), y = GetSystemMetrics(77), w = GetSystemMetrics(78), hh = GetSystemMetrics(79);  // SM_*VIRTUALSCREEN
+        using (var bmp = new System.Drawing.Bitmap(w, hh)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(x, y, 0, 0, bmp.Size);
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        return 0;
+      });
+    }
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     // No input of the test's own (#277: a PC whose screen must stay off, which any input in the session
     // lights): Foreground takes no Alt tap but joins the input of the window in front for a moment, and keys
     // go through Key, to TSF's keystroke manager, not into the session's input.
@@ -640,16 +701,16 @@ namespace SebType {
         return 0;
       });
     }
-    // Which window is in front (its process) and whether TSF's thread has the focus: why Focus failed.
+    // Which window is in front and whether TSF's thread has the focus: why Focus failed.
     public static string FocusState() {
-      uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
-      string name; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { name = "pid " + pid; }
-      return "in front: " + (GetForegroundWindow() == store.Hwnd ? "the test field" : name) +
-             ", TSF thread focus: " + OnUi(() => { bool f; threadMgr.IsThreadFocus(out f); return f; });
+      return "in front: " + Front() + ", TSF thread focus: " + OnUi(() => { bool f; threadMgr.IsThreadFocus(out f); return f; });
     }
     // The text field's window in front, with the keyboard focus, and TSF's focus on its document.
     public static bool Focus() {
-      return Foreground(store.Hwnd) && OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; });
+      if (!Foreground(store.Hwnd)) return false;
+      if (OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; })) return true;
+      LastFront = "in front, but TSF's thread has no focus";
+      return false;
     }
     // The language of the keyboard input method active in a window's thread, e.g. 0x0411 for Japanese.
     public static int Language(IntPtr h) { return (int)GetKeyboardLayout(GetWindowThreadProcessId(h, IntPtr.Zero)) & 0xFFFF; }
