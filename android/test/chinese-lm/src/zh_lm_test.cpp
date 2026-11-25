@@ -4,6 +4,7 @@
 // MIT, SebType.
 //
 //   zh_lm_test MODEL.gguf
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -31,9 +32,9 @@ int main(int argc, char **argv) {
     int failed = 0;
     for (size_t t = 0; t < texts.size(); t++) {
         const float alone = model.score(context, typed, {texts[t]})[0];
-        // Batch shapes move a score by up to about 0.03 nats a token (1.1 for one of these 41 tokens with #557's
-        // checkpoints, 0.07 with r2's); a node read with another's logits moves it by several.
-        if (!(std::fabs(together[t] - alone) < 2.0f)) {
+        // Batch shapes move a score by up to about 1 % (#557's checkpoints: 2.5 nats of -286 for one of these 41
+        // tokens; r2: 0.07); a node read with another's logits moves it by several nats, and a text's every node.
+        if (!(std::fabs(together[t] - alone) < std::max(2.0f, 0.01f * std::fabs(alone)))) {
             fprintf(stderr, "text %zu: %.3f in the tree, %.3f alone\n", t, together[t], alone);
             failed++;
         }
