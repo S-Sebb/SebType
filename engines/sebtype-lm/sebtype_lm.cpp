@@ -688,13 +688,13 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
         // the decoder's far higher score for it is the dictionary's shortcut, which outweighed what the text
         // says ("I despise such cant", #568). So it takes the typed word's decoder score, which places it in
         // the strip. A space corrects to it only as before #561, read after the typed letters' hint with the
-        // shortcut's score ("I cant"), against the typed word without its ending as every word is (main had no
-        // ending: id alone was I'd), and only if read after its own hint it is the likelier of the two: "as is
-        // his wont" stays, and so does "Were" where a sentence starts.
+        // shortcut's score ("I cant"), and only if read after its own hint it is the likelier of the two:
+        // "as is his wont" stays, and so does "Were" where a sentence starts. It is weighed against the typed
+        // word with its ending: without, "If I were you id" stayed id (#568).
         score[i] = logProbs[i] + DECODER_WEIGHT * std::log(typedDecoder);
         if (!asTyped.empty() && logProbs[i] > logProbs.back()) {
             commit[i] = score.back() + asTyped[i] - asTyped.back() +
-                        DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder) + typedEnd;
+                        DECODER_WEIGHT * std::log(decoder(words[i]) / typedDecoder);
             score[i] = std::max(score[i], commit[i]);
         }
     }

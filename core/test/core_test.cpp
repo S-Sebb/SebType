@@ -653,9 +653,9 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            {"", "DeShawn", "DeShawn "}, {"with ", "LeBron", "LeBron "}, {"on ", "iCloud", "iCloud "},
            {"I use ", "ChatGPT", "ChatGPT "}, {"Freud wrote about the ego and the ", "id", "id "},
            // The contraction's share goes to the typed letters' words together, and the same word in other
-           // capitals is weighed without the typed word's ending, as the contraction is: main's ID (#568).
+           // capitals is weighed without the typed word's ending: main's ID (#568).
            {"Show your ", "id", "ID "}, {"Enter your ", "id", "ID "}, {"Enter your user ", "id", "ID "},
-           {"Bring your photo ", "id", "ID "}, {"", "id", "id "},
+           {"Bring your photo ", "id", "ID "}, {"If I were you ", "id", "I'd "},
            {"", "camelCase", "camelCase "}, {"", "userId", "userId "}, {"the ", "turkey", "turkey "},
            {"it's ", "ok", "ok "}, {"with ", "mom", "mom "}, {"the ", "march", "march "}, {"lol ", "btw", "btw "},
            {"", "btw", "btw "}, {"", "fyi", "fyi "},
