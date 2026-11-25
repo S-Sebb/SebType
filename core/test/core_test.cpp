@@ -598,8 +598,12 @@ TEST_F(EnglishTest, ALearnedWordTypedAgainStaysWithTheModel) {
     EXPECT_EQ(en->takeCommit(), learned + " ");
     EXPECT_EQ(again(learned, "I met "), learned + " ");
   }
-  EXPECT_EQ(again("sebtype", "using "), "sebtype ");
+  // Typed in lower case, a word learned with capitals gets them, as a dictionary's name does (#568).
+  EXPECT_EQ(again("sebtype", "using "), "SebType ");
   EXPECT_EQ(again("SEBTYPE", "using "), "SEBTYPE ");
+  // A word committed once as typed (right after a ".") isn't learned yet, so it is still corrected (#568).
+  EXPECT_EQ(again("tge", "see x."), "tge ");
+  EXPECT_EQ(again("tge", "I saw "), "the ");
 }
 
 // A contraction typed without its apostrophe after the words it follows, and a word of the same letters where
@@ -621,7 +625,15 @@ TEST_F(EnglishTest, AContractionTypedWithoutItsApostropheInContext) {
            // A capitalised word or one in capitals reads as its dictionary word does in lower case (#568).
            {"", "Were", "Were "}, {"Hello. ", "Were", "Were "}, {"I FEEL ", "ILL", "ILL "},
            {"I DESPISE SUCH ", "CANT", "CANT "}, {"AS IS HIS ", "WONT", "WONT "}, {"I ", "CANT", "CAN'T "},
-           {"", "Couldve", "Could've "}}) {
+           {"", "Couldve", "Could've "},
+           // Letters that aren't a word go to their contraction, wherever it is (#568).
+           {"Please ", "dont", "don't "}, {"so ", "Dont", "Don't "},
+           // A name's possessive and words apart aren't contractions, and a name in small letters gets its
+           // capitals; a stray capital inside a word reads as its small letters; a typed word isn't lost to
+           // the longer word it starts (#568).
+           {"What ", "eas", "was "}, {"", "towords", "towards "}, {"on ", "ios", "iOS "}, {"with ", "john", "John "},
+           {"Show your ", "id", "ID "}, {"I feel ", "iLl", "ill "}, {"I feel ", "IlL", "Ill "},
+           {"Sure, ", "hell", "hell "}}) {
     en->setContext(context);
     for (char c : typed) en->key({static_cast<uint32_t>(c), 0, false});
     const int ranked = readyCount();
@@ -736,6 +748,11 @@ TEST_F(EnglishTest, NextWordsComeFromTheWorkerOnceALetterLoadsTheModel) {
   en->setContext("Thank you very much. See you ");
   ASSERT_TRUE(ready(readies));
   EXPECT_FALSE(lists("much"));
+  // A word the model ran on to that no dictionary has isn't offered (#568).
+  const int before = readyCount();
+  en->setContext("Thank you thank ");
+  ASSERT_TRUE(ready(before));
+  EXPECT_FALSE(lists("youin")) << testing::PrintToString(list());
 }
 
 // A word's score ends it (#561): without that, "don" scored at least as well as "don't" (▁don ' t), whose
@@ -781,6 +798,12 @@ TEST(EnglishModel, NextWordsAreWholeWordsContractionsToo) {
   const auto words = model.nextWords("Both :) i", 3);
   EXPECT_TRUE(std::ranges::any_of(words, [](const auto &w) { return w.word == "I"; }));
   EXPECT_FALSE(std::ranges::any_of(words, [](const auto &w) { return w.word == "i"; }));
+  // Text in capitals reads as small letters, and its next words are whole words in capitals: read as it
+  // was, they were pieces (OF|THE|BY|E|EN, #568).
+  for (const auto &w : model.nextWords("I THINK ", 5)) {
+    EXPECT_TRUE(std::ranges::none_of(w.word, [](unsigned char c) { return std::islower(c); })) << w.word;
+    EXPECT_TRUE(w.word.size() > 1 || w.word == "I" || w.word == "A") << w.word;
+  }
 }
 
 // decide() corrects one letter only to its capital (i to I, #561), and never a word only learned (#555).
@@ -791,6 +814,11 @@ TEST(EnglishDecide, ALoneLetterGetsOnlyItsCapitalAndALearnedWordStays) {
   const std::vector<sebtype_lm::Candidate> theyre{{"there", 0.3f}, {"theyre", 1}};
   EXPECT_EQ(sebtype_lm::decide("theyre", theyre, true, {-0.1f, -13}).committed, "there");
   EXPECT_EQ(sebtype_lm::decide("theyre", theyre, true, {-0.1f, -13}, true).committed, "theyre");
+  // One letter is one however many bytes it takes ("so é" became "we", #568).
+  EXPECT_EQ(sebtype_lm::decide("é", {{"we", 1}}, false, {-1, -30}).committed, "é");
+  // A name's possessive and words apart aren't a contraction of the letters typed: "What eas" was Ea's (#568).
+  const std::vector<sebtype_lm::Candidate> eas{{"was", 1}, {"Ea's", 1}};
+  EXPECT_EQ(sebtype_lm::decide("eas", eas, false, {-1, -2, -30}).committed, "was");
 }
 
 // The model reads a window of the text before the cursor whose start stays put while the text grows, so a

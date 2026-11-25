@@ -36,10 +36,11 @@ public:
     // AS_TYPED, if given and TYPED is a word: each word's log probability read after TYPED's letters as its
     // hint, as all but a contraction of them are read, before that contraction and TYPED share their odds.
     // TYPED_KEPT: TYPED stays whatever it scores (a learned word), so where it ends isn't read unless a
-    // contraction shares with it.
+    // contraction shares with it. TYPED_END, if given: the part of TYPED's score that is its ending there.
     std::vector<float> score(const std::string &context, const std::string &typed,
                              const std::vector<std::string> &words, bool typedIsWord,
-                             std::vector<float> *asTyped = nullptr, bool typedKept = false);
+                             std::vector<float> *asTyped = nullptr, bool typedKept = false,
+                             float *typedEnd = nullptr);
 
     // The part of CONTEXT both read: its last line, the last 150 to 300 characters of it from a word's start,
     // starting where the last call's window started while that leaves 150 to 300 characters (#359).
@@ -97,16 +98,18 @@ struct Ranked {
 std::vector<std::string> rankedWords(const std::string &typed, const std::vector<Candidate> &candidates);
 // CANDIDATES: the decoder's, best first, the typed word among them if the dictionary has it (TYPED_IS_WORD).
 // LOG_PROBS and AS_TYPED: Model::score for rankedWords(). TYPED_IS_LEARNED: the typed word is one the user's
-// learned or personal words have and the dictionary doesn't, which a space keeps as typed.
+// learned or personal words have and the dictionary doesn't, which a space keeps as typed. TYPED_END: Model::
+// score's.
 Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates, bool typedIsWord,
               const std::vector<float> &logProbs, bool typedIsLearned = false,
-              const std::vector<float> &asTyped = {});
+              const std::vector<float> &asTyped = {}, float typedEnd = 0);
 inline Ranked rank(Model &model, const std::string &context, const std::string &typed,
                    const std::vector<Candidate> &candidates, bool typedIsWord, bool typedIsLearned = false) {
     std::vector<float> asTyped;
-    const auto logProbs =
-        model.score(context, typed, rankedWords(typed, candidates), typedIsWord, &asTyped, typedIsLearned);
-    return decide(typed, candidates, typedIsWord, logProbs, typedIsLearned, asTyped);
+    float typedEnd = 0;
+    const auto logProbs = model.score(context, typed, rankedWords(typed, candidates), typedIsWord, &asTyped,
+                                      typedIsLearned, &typedEnd);
+    return decide(typed, candidates, typedIsWord, logProbs, typedIsLearned, asTyped, typedEnd);
 }
 
 }  // namespace sebtype_lm

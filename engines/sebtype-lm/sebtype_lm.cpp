@@ -115,6 +115,28 @@ std::string stripped(std::string s) {
     return s;
 }
 
+// Whether WORD, a candidate as the decoder gives it, is a contraction of the hint's LETTERS: one word, they
+// and an apostrophe. Not a name's possessive ("What eas": Ea's), nor words apart ("towords": to word's).
+bool contractionOf(const std::string &word, const std::string &letters) {
+    const std::string own = hintLetters(fold(word));
+    return word.find(' ') == std::string::npos && (!std::isupper(static_cast<unsigned char>(word[0])) ||
+                                                    word.rfind("I'", 0) == 0) &&
+           own != letters && own.find('\'') != std::string::npos && stripped(own) == stripped(letters);
+}
+
+// Whether WORD is in capitals: more than one letter, none small.
+bool capitals(const std::string &w) {
+    bool upper = false, small = false;
+    for (unsigned char c : w) upper |= std::isupper(c) != 0, small |= std::islower(c) != 0;
+    return w.size() > 1 && upper && !small;
+}
+
+// The last word of folded TEXT.
+std::string lastWord(const std::string &text) {
+    const std::string s = text.substr(0, text.find_last_not_of(' ') + 1);  // npos + 1: none
+    return s.substr(s.rfind(' ') + 1);
+}
+
 }  // namespace
 
 Model::Model(const std::string &path, int threads) {
@@ -310,7 +332,13 @@ Model::Row Model::row(const float *logits) const {
 float Model::logSoftmax(const float *logits, int token, const Row &r) { return logits[token] - r.top - r.log; }
 
 std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
-    const float *logits = advance(contextTokens(context));
+    // Text in capitals ("I THINK", "DON'T") is read in small letters, as score() reads it, and its next words
+    // are shown in capitals: read as it is, they were pieces of words (OF, E, T). An acronym after small
+    // letters ("in the USA") isn't such text.
+    const std::string folded = fold(context), last = lastWord(folded);
+    const std::string before = lastWord(folded.substr(0, folded.find_last_not_of(' ') + 1 - last.size()));
+    const bool shouted = capitals(last) && (before.empty() || before == "I" || capitals(before));
+    const float *logits = advance(contextTokens(shouted ? lower(folded) : context));
     std::vector<int> first;
     for (int t = 0; t < mVocabSize; t++)
         if (mWordStart[t]) first.push_back(t);
@@ -385,6 +413,8 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
     for (Word &w : words) {
         // The pronoun I and its contractions are capitals, however often chats type them small.
         if (w.word == "i" || w.word.rfind("i'", 0) == 0) w.word[0] = 'I';
+        if (shouted)
+            for (char &c : w.word) c = std::toupper(static_cast<unsigned char>(c));
         const bool seen = std::any_of(out.begin(), out.end(), [&](const Word &o) { return lower(o.word) == lower(w.word); });
         if (!seen && out.size() < n) out.push_back(w);
     }
@@ -393,20 +423,13 @@ std::vector<Word> Model::nextWords(const std::string &context, size_t n) {
 
 std::vector<float> Model::score(const std::string &context, const std::string &typed,
                                 const std::vector<std::string> &words, bool typedIsWord,
-                                std::vector<float> *asTyped, bool typedKept) {
+                                std::vector<float> *asTyped, bool typedKept, float *typedEnd) {
     // Letters typed in capitals are read in small letters, as the model knows words best, and so is the text
     // before when its last word is in capitals too: "I FEEL ILL" as "i feel ill", "I SAID WHATS" as "i said
     // whats". Read in capitals the model hardly knows a contraction (WHAT'S), and with ill in small letters
     // after "I FEEL" it read I'll (#568). Other words are capitalised where a sentence starts or as typed.
-    const auto capitals = [](const std::string &w) {
-        bool upper = false, small = false;
-        for (unsigned char c : w) upper |= std::isupper(c) != 0, small |= std::islower(c) != 0;
-        return w.size() > 1 && upper && !small;
-    };
     const std::string typedText = fold(typed), folded = fold(context);
-    std::string lastWord = folded.substr(0, folded.find_last_not_of(' ') + 1);  // npos + 1: none
-    lastWord = lastWord.substr(lastWord.rfind(' ') + 1);
-    const bool shouted = capitals(typedText), textShouted = shouted && capitals(lastWord);
+    const bool shouted = capitals(typedText), textShouted = shouted && capitals(lastWord(folded));
     const bool typedCapital = !typedText.empty() && std::isupper(static_cast<unsigned char>(typedText[0]));
     const bool capital = !textShouted && (sentenceStart(folded) || (typedCapital && !shouted));
     auto shown = [&](std::string w, bool first) {
@@ -415,7 +438,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
         return w;
     };
 
-    std::vector<int> prefix = contextTokens(textShouted ? lower(context) : context);
+    std::vector<int> prefix = contextTokens(textShouted ? lower(folded) : context);
     prefix.push_back(mTypo);
     const size_t hintStart = prefix.size();
     const std::string letters = hintLetters(typedText);
@@ -444,8 +467,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             const size_t space = std::min(words[i].find(' ', start), words[i].size());
             const std::string w = shown(fold(words[i].substr(start, space - start)), start == 0);
             const std::string own = hintLetters(w);
-            if (start == 0 && space == words[i].size() && own != letters && own.find('\'') != std::string::npos &&
-                stripped(own) == stripped(letters)) {
+            if (start == 0 && contractionOf(words[i], letters)) {
                 // The contraction's hint branches off sequence 0's where its letters part.
                 size_t k = 0;
                 while (k < own.size() && k < letters.size() && own[k] == letters[k]) k++;
@@ -519,6 +541,7 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
     for (size_t i = 0; i < terms.size(); i++)
         for (const Term &t : terms[i])
             if (t.after < 0) out[i] += t.token < 0 ? hint.end : logSoftmax(logits, t.token, hint);
+    float end = 0;  // the typed word's ending term
     std::vector<std::vector<bool>> read;  // the follower tokens whose logits a term reads
     for (size_t i = 0; i < followers.size(); i++) {
         read.emplace_back(followers[i].size());
@@ -535,7 +558,9 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             auto it = rows.find(at);
             if (it == rows.end()) it = rows.emplace(at, row(after)).first;
             out[i] += t.token < 0 ? it->second.end : logSoftmax(after, t.token, it->second);
+            if (t.token < 0 && i + 1 == words.size()) end = it->second.end;
         }
+    if (typedEnd) *typedEnd = end;
     const std::vector<float> hinted = out;
     if (asTyped) {
         asTyped->assign(hinted.begin(), hinted.begin() + words.size());
@@ -563,7 +588,8 @@ std::vector<std::string> rankedWords(const std::string &typed, const std::vector
 }
 
 Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates, bool typedIsWord,
-              const std::vector<float> &logProbs, bool typedIsLearned, const std::vector<float> &asTyped) {
+              const std::vector<float> &logProbs, bool typedIsLearned, const std::vector<float> &asTyped,
+              float typedEnd) {
     const auto words = rankedWords(typed, candidates);
     auto decoder = [&](const std::string &word) {
         float d = 0;
@@ -579,10 +605,7 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
     std::vector<float> score(words.size());
     score.back() = logProbs.back() + DECODER_WEIGHT * std::log(typedDecoder);
     const std::string letters = hintLetters(fold(typed));
-    auto contraction = [&](size_t i) {  // of the typed letters: they and an apostrophe
-        const std::string own = hintLetters(fold(words[i]));
-        return own != letters && own.find('\'') != std::string::npos && stripped(own) == letters;
-    };
+    auto contraction = [&](size_t i) { return contractionOf(words[i], letters); };
     std::vector<float> commit(words.size(), -INFINITY);  // what a space may correct to, by its score
     bool contractions = false;
     for (size_t i = 0; i + 1 < words.size(); i++) contractions |= contraction(i);
@@ -592,6 +615,12 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
             // Typed letters that aren't a word but are a contraction's are that contraction or as typed:
             // "shant" read as a word's start became shanty, though the model scores shan't well above it (#568).
             if (typedIsWord || !contractions || contraction(i)) commit[i] = score[i];
+            // A word that goes on from a typed dictionary word ("Sure, hell": hello) is weighed against it
+            // without its ending: the space says the typed word ends there, and the model, which can't know
+            // that, put the longer word's odds in that ending, so hell became hello where main kept it (#568).
+            const std::string own = hintLetters(fold(words[i]));
+            if (typedIsWord && own.size() > letters.size() && own.compare(0, letters.size(), letters) == 0)
+                commit[i] += typedEnd;
             continue;
         }
         // A contraction of a typed dictionary word's letters (cant: can't). The keys score the two alike, and
@@ -613,10 +642,16 @@ Ranked decide(const std::string &typed, const std::vector<Candidate> &candidates
     Ranked out{{}, typed};
     for (size_t i : order) out.strip.push_back(words[i]);
     const auto best = std::max_element(commit.begin(), commit.end() - 1) - commit.begin();
-    const float margin = typedIsWord ? MARGIN_WORD : MARGIN_NON_WORD;
+    // Typed letters that aren't a word but are a contraction's are that contraction ("Please dont", "so Dont"):
+    // the model reads them as likely as it after their own hint, and they fell short of the margin (#568).
+    // The typed word in other capitals ("Show your id": ID) needs no margin: it is the word typed, as a name
+    // typed in small letters is (#568).
+    const bool oneLetter = std::count_if(typed.begin(), typed.end(), [](char c) { return (c & 0xc0) != 0x80; }) == 1;
+    const bool recased = !oneLetter && lower(words[best]) == lower(typed);
+    const float margin = recased || (!typedIsWord && contractions) ? 0 : typedIsWord ? MARGIN_WORD : MARGIN_NON_WORD;
     // One letter is corrected only to its capital (i to I), and a word only learned never: the model hasn't
     // seen it, so it would lose to any likely word (#555).
-    if (!order.empty() && !typedIsLearned && (typed.size() > 1 || lower(words[best]) == lower(typed)) &&
+    if (!order.empty() && !typedIsLearned && (!oneLetter || lower(words[best]) == lower(typed)) &&
         commit[best] - score.back() > margin)
         out.committed = words[best];
     return out;

@@ -814,8 +814,12 @@ class English : public Engine {
     std::vector<std::string> words;
     {
       std::lock_guard g(mutex_);
+      // The model's next words are pieces it ran on to a word's end: one that no dictionary has ("Thank you
+      // thank": youin) isn't offered (#568).
       if (nextGen_ == gen_)
-        for (const auto &w : next_) words.push_back(w.word);
+        for (const auto &w : next_)
+          if (main_->has(w.word) || main_->has(lowerCaseWord(w.word)) || (history_ && history_->has(w.word)))
+            words.push_back(w.word);
     }
     if (words.empty() && history_) {
       const auto context = ngramContext(context_);
@@ -858,15 +862,19 @@ class English : public Engine {
     }
     if (!main_) return;
     const auto context = ngramContext(context_);
-    std::vector<Word> results;
     std::vector<std::string> userWords;  // the user's words' own, before the merge cuts them
-    for (const Word &w : main_->suggest(keys_.get(), typed_, xs_, ys_, context)) addResult(results, w, kMaxResults);
-    for (Lexicon *lexicon : {history_.get(), personal_.get()})
-      if (lexicon)
-        for (const Word &w : lexicon->suggest(keys_.get(), typed_, xs_, ys_, context)) {
-          addResult(results, w, kMaxResults);
-          userWords.push_back(w.word);
-        }
+    const auto suggest = [&](const std::vector<int> &letters) {
+      std::vector<Word> out;
+      for (const Word &w : main_->suggest(keys_.get(), letters, xs_, ys_, context)) addResult(out, w, kMaxResults);
+      for (Lexicon *lexicon : {history_.get(), personal_.get()})
+        if (lexicon)
+          for (const Word &w : lexicon->suggest(keys_.get(), letters, xs_, ys_, context)) {
+            addResult(out, w, kMaxResults);
+            userWords.push_back(w.word);
+          }
+      return out;
+    };
+    const std::vector<Word> results = suggest(typed_);
 
     // AOSP's rule: the typed word leaves the list, and whether it was there decides if it may be corrected.
     std::string committed = typed;
@@ -907,45 +915,58 @@ class English : public Engine {
       if (lower(codePoints(w.shortcut)) == typedLower) add(w.word);
     if (!results.empty() && (results.front().kind & Dictionary::KIND_MASK_KIND) == Dictionary::KIND_SHORTCUT)
       add(results.front().word);
-    // A word the dictionary lacks and the user's words have is learned: as typed ("Cant" learned mid-sentence,
-    // though the dictionary has cant), or in any case if the dictionary lacks its lower case too (theyre,
-    // learned at a sentence start, typed "Theyre"; SebType typed "sebtype"). The user's words are asked
-    // themselves, not the merged list, whose 18 words may leave it out ("dont" among don't's neighbours) (#555).
+    // The model ranks a word typed with capitals (Were where a sentence starts, ILL) from the decoder's words
+    // for it in lower case, as the dictionary has them and as its shortcuts are found (cant: can't), and the
+    // dictionary's word of those letters is the typed word; a space commits a word in the capitals typed (#568).
     const std::string lowerTyped = lowerCaseWord(typed);
+    const std::vector<Word> lowered = typed != lowerTyped ? suggest(typedLower) : std::vector<Word>{};
+    const std::vector<Word> &ranked = typed != lowerTyped ? lowered : results;
+    // A word the dictionary lacks and the user's words have is learned, and a space keeps it: as typed ("Cant"
+    // learned mid-sentence, though the dictionary has cant), or, if the dictionary lacks its lower case too, in
+    // the capitals it was learned with, typed in any case: theyre learned at a sentence start and typed
+    // "Theyre", or SebType typed "sebtype", as london is London. The user's words are asked themselves, not
+    // the merged list, whose 18 words may leave it out ("dont" among don't's neighbours). A word typed once
+    // isn't learned yet ("see x.tge"), and one learned only in capitals (PLEASE DONT) says little of how it is
+    // spelt (#555, #568).
     const auto userHas = [&](const std::string &w) {
       return (history_ && history_->has(w)) || (personal_ && personal_->has(w));
     };
-    const bool anyCase = std::any_of(userWords.begin(), userWords.end(),
-                                     [&](const std::string &w) { return lowerCaseWord(w) == lowerTyped; });
-    const bool typedIsLearned = !main_->has(typed) && (userHas(typed) || (!main_->has(lowerTyped) && anyCase));
-    // The model ranks a word typed with capitals (Were where a sentence starts, ILL) from the decoder's words
-    // for it in lower case, as the dictionary has them and as its shortcuts are found (cant: can't), and the
-    // dictionary's word of those letters is the typed word; a space commits a word in the capitals typed.
-    // Ranked from the words for the capitals, "Were" wasn't a word and We're took its place (#568).
-    std::vector<Word> lowered;
-    const auto lowerCps = lower(typed_);
-    if (typed != lowerTyped) {
-      for (const Word &w : main_->suggest(keys_.get(), lowerCps, xs_, ys_, context)) addResult(lowered, w, kMaxResults);
-      for (Lexicon *lexicon : {history_.get(), personal_.get()})
-        if (lexicon)
-          for (const Word &w : lexicon->suggest(keys_.get(), lowerCps, xs_, ys_, context))
-            addResult(lowered, w, kMaxResults);
-    }
-    const std::vector<Word> &ranked = typed != lowerTyped ? lowered : results;
-    const auto has = [&](const std::string &word) {
-      return std::any_of(ranked.begin(), ranked.end(), [&](const Word &w) { return w.word == word; });
+    const auto allCaps = [](const std::string &w) {
+      const auto cps = codePoints(w);
+      return cps.size() > 1 && lowerCaseWord(w) != w &&
+             std::all_of(cps.begin(), cps.end(), [](int c) { return char32_t(c) == upperCase(c); });
     };
-    Rank rank{context_, typed, {}, false, typedIsLearned, 0};
+    std::string learned;
+    if (!main_->has(typed)) {
+      if (userHas(typed)) learned = typed;
+      else if (!main_->has(lowerTyped))
+        for (const std::string &w : userWords)
+          if (lowerCaseWord(w) == lowerTyped && !allCaps(w) && userHas(w)) {
+            learned = withCase(w, typed_);
+            break;
+          }
+    }
+    // A word with a stray capital inside it (iLl, ImPossible) that neither dictionary has is ranked in small
+    // letters, and a space gives it its first letter's case: as typed, no word, it became a contraction ("I
+    // feel iLl": I'll), and read capitalised, "I feel Ill" was I'll too.
+    const bool stray = std::any_of(typed_.begin() + 1, typed_.end(), [](int c) { return char32_t(c) != lowerCase(c); });
+    const std::vector<int> cased = learned.empty() && !main_->has(typed) && stray && !allCaps(typed) ? typedLower : typed_;
+    const std::string word = learned.empty() ? utf8(cased) : learned;
+    const auto has = [&](const std::string &w) {
+      return std::any_of(ranked.begin(), ranked.end(), [&](const Word &r) { return r.word == w; });
+    };
+    Rank rank{context_, word, {}, false, !learned.empty(), 0};
     for (const Word &w : ranked) {
-      const bool same = w.word == typed || withCase(w.word, typed_) == typed;
+      const bool same = w.word == word || withCase(w.word, cased) == word;
       rank.typedIsWord |= same;
       if (std::find(shortcuts_.begin(), shortcuts_.end(), w.word) != shortcuts_.end()) continue;
-      // A word's capitalised form (O'Clock, ID) beside its own isn't offered for it: shown in the capitals
-      // typed, it is the same word or one the text doesn't call for ("I said oclock": O'Clock).
+      // A contraction's capitalised form beside its own isn't offered for it: shown in the case typed, it is
+      // the same word, or one the text doesn't call for ("I said oclock": O'Clock).
       const std::string small = lowerCaseWord(w.word);
-      if (!same && small != w.word && codePoints(w.word).size() > 1 && has(small)) continue;
-      rank.candidates.push_back({same ? typed : w.word,
-                                 normalizedScore(typed != lowerTyped ? lowerCps : typed_, w.word, w.score)});
+      if (!same && small != w.word && !allCaps(w.word) && small.find('\'') != std::string::npos && has(small))
+        continue;
+      rank.candidates.push_back({same ? word : w.word,
+                                 normalizedScore(typed != lowerTyped ? typedLower : typed_, w.word, w.score)});
     }
     std::lock_guard g(mutex_);
     rank.gen = gen_;
