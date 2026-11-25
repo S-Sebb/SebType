@@ -182,15 +182,28 @@ private_dbus() {
   env "${env[@]}" XDG_RUNTIME_DIR="$link" prlimit --core=1 -- dbus-run-session --config-file="$rt/bus.conf" -- "$@"
 }
 
-# user_doc_portal WHEN: the user's Documents portal is mounted on $XDG_RUNTIME_DIR/doc. A second portal on
-# the user's runtime dir (#176; another project's nested session, S-Sebb/SebChat#905) unmounts it when it
-# ends, and the user's Flatpak apps no longer start. When the mount is gone this says so, restarts the
-# user's portal (the one change to the user's session a test makes) and fails.
-user_doc_portal() {
-  local doc=$XDG_RUNTIME_DIR/doc
-  findmnt -n -t fuse.portal "$doc" > /dev/null && return
+# doc_portal NAME before|after: the user's Documents portal is still mounted (#550). A second portal on the
+# user's runtime dir (#176; another project's nested session, S-Sebb/SebChat#905) unmounts it when it ends,
+# and the user's Flatpak apps no longer start. Gone, it is said and put back (restarting the user's portal
+# is the one change to the user's session a test makes): before the run a NOTE, as something before it
+# took it, or a FAIL if it doesn't come back; after it a FAIL. Calls the script's result. Only for a
+# desktop session (a Wayland or X11 one) with the portal's unit: elsewhere none is expected.
+doc_expected() {
+  local s
+  [[ -n ${XDG_RUNTIME_DIR-} ]] && s=$(loginctl show-user "$USER" -p Display --value 2>/dev/null) && [[ -n $s ]] &&
+    [[ $(loginctl show-session "$s" -p Type --value) == @(wayland|x11) ]] &&
+    systemctl --user cat xdg-document-portal.service &> /dev/null
+}
+doc_portal() {
+  local doc=${XDG_RUNTIME_DIR-}/doc back
+  if ! doc_expected; then [[ $2 == before ]] || result SKIP "$1" "no desktop session with a Documents portal"; return 0; fi
+  # by-app/ isn't there when it's unmounted, nor on a mount whose portal died ("not connected")
+  if [[ -d $doc/by-app ]]; then [[ $2 == before ]] || result PASS "$1"; return 0; fi
   systemctl --user restart xdg-document-portal.service
-  echo "the user's Documents portal ($doc) was unmounted $1; restarted xdg-document-portal.service:" \
-    "$(findmnt -n -t fuse.portal "$doc" > /dev/null && echo "mounted again" || echo "STILL NOT MOUNTED")"
-  return 1
+  [[ -d $doc/by-app ]] && back="restarted xdg-document-portal.service, mounted again" ||
+    back="restarted xdg-document-portal.service, STILL NOT MOUNTED"
+  if [[ $2 == after ]]; then result FAIL "$1" "the user's Documents portal ($doc) was unmounted during this run; $back"
+  elif [[ -d $doc/by-app ]]; then result NOTE "$1" "the user's Documents portal ($doc) was unmounted before this run; $back"
+  else result FAIL "$1" "the user's Documents portal ($doc) was unmounted before this run; $back"
+  fi
 }

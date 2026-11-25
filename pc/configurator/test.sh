@@ -57,9 +57,10 @@ if [[ -z ${HOLDING-} ]]; then
     /tmp/agent-locks/devices/nobara-pc.lock bash "$self"
 fi
 
-# The user's Documents portal stays mounted (user_doc_portal, tools/lib.sh), checked at the end. Gone
-# already, it was something before this run: said and put back, so the end's check is this run's.
-[[ -z ${XDG_RUNTIME_DIR-} ]] || user_doc_portal "before this run" || true
+# The user's Documents portal stays mounted (doc_portal, tools/lib.sh): checked before and after the run,
+# and before setup-ime's test, whose own start then leaves it alone (DOC_PORTAL_CHECKED).
+doc_portal document-portal-before before
+export DOC_PORTAL_CHECKED=1
 
 own_env=$(sebtype_env "$own")  # word-split where it is used: Fcitx5 finds SebType's add-on there
 export own_env
@@ -79,9 +80,11 @@ sb=$(mktemp -d "$out/configurator-sandbox.XXXX")
 # What the nested sessions start (ksecretd, the Documents portal) outlives their D-Bus: stop whatever
 # still runs in the sandbox.
 cleanup() {
-  local p
-  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/" "/proc/$p/environ" 2>/dev/null && kill "$p"; done
-  sleep 1; rm -rf "$sb"
+  local p left=()
+  for p in $(pgrep -u "$USER"); do grep -qzF "XDG_DATA_HOME=$sb/" "/proc/$p/environ" 2>/dev/null && kill "$p" && left+=("$p"); done
+  # Until they have exited (at most 15 s): a portal among them unmounts as it ends.
+  for _ in {1..75}; do ((${#left[@]})) && ps -p "${left[*]}" > /dev/null || break; sleep 0.2; done
+  rm -rf "$sb"
 }
 trap cleanup EXIT
 # Each private D-Bus session runs through private_dbus (tools/lib.sh), its files removed with the sandbox.
@@ -525,11 +528,9 @@ update_check() {
 export -f update_check
 check update-check 300 update_check
 
+doc_portal document-portal-kept-before-setup-ime after
 check setup-ime 900 ../linux/test-setup-ime.sh
 
 cleanup; trap - EXIT  # the sandbox's leftover processes stopped first: one could still unmount it
-if [[ -z ${XDG_RUNTIME_DIR-} ]]; then result SKIP document-portal-kept "no user session (XDG_RUNTIME_DIR)"
-elif o=$(user_doc_portal "during this run"); then result PASS document-portal-kept
-else result FAIL document-portal-kept "$o"
-fi
+doc_portal document-portal-kept after
 ! grep -q '^FAIL' "$results"

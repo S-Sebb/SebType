@@ -25,9 +25,9 @@ check() { # name, command... (each run of setup-ime.sh has its own timeout)
   if "$@" > "$out/test-setup-ime-$name.log" 2>&1; then result PASS "$name"
   else result FAIL "$name" "see $out/test-setup-ime-$name.log"; fi
 }
-# The user's Documents portal stays mounted (user_doc_portal, tools/lib.sh), checked at the end. Gone
-# already, it was something before this run: said and put back, so the end's check is this run's.
-[[ -z ${XDG_RUNTIME_DIR-} ]] || user_doc_portal "before this run" || true
+# The user's Documents portal stays mounted (doc_portal, tools/lib.sh). Run by the Configurator's test,
+# which checks it before and after, this run's start leaves a mount it lost alone.
+[[ -n ${DOC_PORTAL_CHECKED-} ]] || doc_portal document-portal-before before
 
 # Preflight
 command -v uvx >/dev/null || { echo "preflight: uvx missing (used to run ShellCheck)"; exit 1; }
@@ -322,8 +322,8 @@ portal_mount() {
     --method org.freedesktop.portal.Documents.GetMountPoint || return 1
   mount | grep " on $XDG_RUNTIME_DIR/doc type fuse.portal "
 }
-if [[ -n ${XDG_RUNTIME_DIR-} ]]; then check private-bus-keeps-document-portal portal_mount
-else result SKIP private-bus-keeps-document-portal "no user session (XDG_RUNTIME_DIR)"
+if doc_expected; then check private-bus-keeps-document-portal portal_mount
+else result SKIP private-bus-keeps-document-portal "no desktop session with a Documents portal"
 fi
 
 # Japanese keys, typed into a private Fcitx5 (its own D-Bus session, no display, so the live session
@@ -1554,8 +1554,5 @@ EOF
 }
 check offline-profile-update offline_profile
 
-if [[ -z ${XDG_RUNTIME_DIR-} ]]; then result SKIP document-portal-kept "no user session (XDG_RUNTIME_DIR)"
-elif o=$(user_doc_portal "during this run"); then result PASS document-portal-kept
-else result FAIL document-portal-kept "$o"
-fi
+doc_portal document-portal-kept after
 ! grep -q '^FAIL' "$results"
