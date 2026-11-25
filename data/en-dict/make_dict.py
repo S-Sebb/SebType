@@ -37,7 +37,8 @@ CANDIDATES = 200_000  # wordfreq ranks considered for new words
 SHORT_WORDS = {"ai"}
 FRAGMENTS = {"n't"}  # what wordfreq's tokenizer leaves of contractions
 # Checked one by one: no frequent word is one neighbouring key away (so not "ty" or "jk"), except "i" from "u",
-# and a space never corrects a single letter. "ok" and "btw" are only in the base as "OK" and "BTW".
+# and a space never corrects a single letter. "ok", "btw" and "fyi" are only in the base as "OK", "BTW" and
+# "FYI": typed in small letters, "fyi" became FYI (#561).
 TEXTING_WORDS = [
     "u",
     "ur",
@@ -45,6 +46,7 @@ TEXTING_WORDS = [
     "lol",
     "omg",
     "btw",
+    "fyi",
     "idk",
     "thx",
     "tmrw",

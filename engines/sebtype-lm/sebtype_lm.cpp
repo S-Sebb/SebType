@@ -633,7 +633,14 @@ std::vector<float> Model::score(const std::string &context, const std::string &t
             for (const auto &[i, text] : group) hints.push_back(hinted[i]), texts.push_back(out[text]);
         const float both = logSum(hints), all = logSum(texts);
         for (const auto &[c, text] : capped) out[c] = std::min(out[c], both + out[text] - all);
-        for (const auto &[t, text] : raised) out[t] = std::max(out[t], both + out[text] - all);
+        // The words without an apostrophe are one word in other capitals (id, ID): raised together to their
+        // share, they keep the split their hint gives them. Raised each to its own, they took the text's
+        // odds, which tell case apart less: "Enter your id" gave ID 6.4 nats after the hint but 2.6 in the
+        // text, under the margin, and stayed id (#561).
+        std::vector<float> rh, rt;
+        for (const auto &[t, text] : raised) rh.push_back(hinted[t]), rt.push_back(out[text]);
+        const float lift = std::max(0.0f, both + logSum(rt) - all - logSum(rh));
+        for (const auto &[t, text] : raised) out[t] = hinted[t] + lift;
     }
     out.resize(words.size());
     // A word typed in capitals alone, not in text in capitals, whose letters are a word, is that word: an
