@@ -2,8 +2,8 @@
 -- keyboard receiving the touch (ACTION_DOWN on its main thread):
 --   handle_ms  main-thread time handling the touch (DOWN + UP dispatch, incl. the engine's sync work)
 --   text_ms    until the test field's frame showing the changed text is presented (null: no change)
---   cand_ms    until the frame that last redrew the candidate bar (FUTO's Compose view) before the
---              next tap is presented
+--   cand_ms    until the frame that drew the candidate bar's last new list before the next tap is
+--              presented (its "SebType candidates" section; null: the key left the list as it was)
 --   settle_ms  until the keyboard's last frame before the next tap is presented (incl. the key
 --              preview's animation)
 --   space      what a space or Enter found (its "SebType space" section): the model's ranking "ready" or
@@ -45,7 +45,7 @@ len as (
 ),
 cand as (
   select s.ts from slice s join thread_track tt on s.track_id = tt.id join thread t using (utid)
-  where t.upid in (select upid from ime) and s.name = 'HWUI:androidx.compose.ui.platform.AndroidComposeView'
+  where t.upid in (select upid from ime) and s.name = 'SebType candidates'
 ),
 sections as (
   select s.ts, s.dur, s.name, (select c.name from slice c where c.parent_id = s.id) as outcome
