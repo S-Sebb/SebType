@@ -11,10 +11,9 @@
 # PATH is a GGUF file, by default the shipped engines/sebtype-lm/chinese.gguf; the options are zhbench's model
 # stack's. The reference is engines/sebtype-lm/chinese.gguf at REV, by default origin/main: the model the
 # default branch ships. With SEBTYPE_ZH_GEN_OPTIONS, a third stack runs the model with both sets of options.
-# One line per
-# check in ~/scratch/SebType/<issue>/test-chinese-lm-results.txt, the table (docs/experiments/2026-11-16-chinese-lm.md's)
-# in chinese/table.md next to it, logs in chinese/run1/ and run2/. Exit 0 only if all pass. Both runs take about
-# 15 minutes with a model. It runs only on yanglab16 (bench.sh).
+# One line per check in ~/scratch/SebType/<issue>/test-chinese-lm-results.txt, the table
+# (docs/experiments/2026-11-16-chinese-lm.md's) in chinese/table.md next to it, logs in chinese/run1/ and run2/.
+# Exit 0 only if all pass. It runs only on yanglab16 (bench.sh).
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
 source tools/lib.sh
