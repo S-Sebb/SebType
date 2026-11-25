@@ -24,6 +24,8 @@ Each chat source was kept for what it adds to the chat dev sets: a pilot (1B tok
 with every source, two seeds of which differ by up to 4 points on a set. Without the meetings the chat sets
 lose 4.6 points on average, without HundredCV 4.5, Tatoeba 1.3, oasst2 1.6 (most on typos and slips), and
 without KdConv nothing (0.2, as often up as down), so KdConv trains no more (#557).
+Wikinews is read 10 times per pack (2.6 % of the characters) rather than 3: in its pilot the news sets gained
+2.5 to 3 points (sent-news, partial-news) and the chat sets didn't move.
 
 Tools whose data shapes the training text, not part of it: [OpenCC](https://github.com/BYVoid/OpenCC)'s
 traditional-to-simplified tables (Apache-2.0, through opencc-python-reimplemented), [pypinyin](https://github.com/mozillazg/python-pinyin)

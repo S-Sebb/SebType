@@ -44,7 +44,7 @@ import numpy as np
 import sentencepiece as spm
 
 jieba.setLogLevel(60)
-BASE = {"wikipedia": 0.6, "wikinews": 3.0}
+BASE = {"wikipedia": 0.6, "wikinews": 10.0}
 SHARE = {
     "meetings": 0.08,
     "hundredcv": 0.04,
