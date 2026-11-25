@@ -559,10 +559,26 @@ namespace SebType {
       if (!ready.WaitOne(20000)) throw new TimeoutException("the TSF thread didn't start");
       if (err != null) throw err;
     }
-    // Brings a window to the front of this session (the test user's own, which no screen shows), where
-    // the Remote Desktop client's keys go. Windows lets a process take the foreground right after it sent
-    // input: an Alt tap first.
+    // Brings a window to the front of this session, where the keys go. Windows lets a process take the
+    // foreground right after it sent input: an Alt tap first.
     public static bool Foreground(IntPtr h) {
+      LastFront = "";
+      if (TryFront(h)) return true;
+      LastFront = "Alt taps lost to " + Front();
+      // #562: Windows' toast for a new account (a CoreWindow of ShellExperienceHost; test.ps1's driver turns
+      // toasts off, which can come too late) keeps the front from every window until someone clicks it, which
+      // no one does in the throwaway test user's session. Its process stopped, the shell starts it again
+      // without the toast. Only where StopToastHost says so: in a person's own session it would clear theirs.
+      if (!StopToastHost) return false;
+      var p = FrontProcess();
+      if (p == null || p.ProcessName != "ShellExperienceHost") return false;
+      try { p.Kill(); p.WaitForExit(5000); } catch (Exception e) { LastFront += "; stopping ShellExperienceHost failed: " + e.Message; return false; }
+      if (TryFront(h)) { LastFront += "; won once ShellExperienceHost was stopped"; return true; }
+      LastFront += "; ShellExperienceHost stopped, then lost to " + Front();
+      return false;
+    }
+    public static bool StopToastHost;
+    static bool TryFront(IntPtr h) {
       // Up to 6 s: right after another window closes, Windows can refuse for a while (seen on TCSBackEnd).
       for (int i = 0; i < 20 && GetForegroundWindow() != h; i++) {
         if (!NoInput) { keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2 /* KEYEVENTF_KEYUP */, UIntPtr.Zero); }
@@ -575,6 +591,37 @@ namespace SebType {
       }
       return GetForegroundWindow() == h;
     }
+    // What the last Foreground lost to and what won it back, when the Alt taps weren't enough (#562).
+    public static string LastFront = "";
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int InternalGetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
+    // The window in front: its process, title and class.
+    public static string Front() {
+      IntPtr f = GetForegroundWindow();
+      if (f == IntPtr.Zero) return "no window";
+      if (store != null && f == store.Hwnd) return "the test field";
+      uint pid; GetWindowThreadProcessId(f, out pid);
+      var p = FrontProcess(); string name = p != null ? p.ProcessName : "?";
+      var title = new StringBuilder(256); InternalGetWindowText(f, title, title.Capacity);
+      var cls = new StringBuilder(256); GetClassNameW(f, cls, cls.Capacity);
+      return string.Format("{0} (pid {1}) '{2}' [{3}]", name, pid, title, cls);
+    }
+    static System.Diagnostics.Process FrontProcess() {
+      uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+      try { return System.Diagnostics.Process.GetProcessById((int)pid); } catch { return null; }
+    }
+    // A picture of the whole session's screen, for what held the front.
+    public static void Screen(string path) {
+      Physical(() => {
+        int x = GetSystemMetrics(76), y = GetSystemMetrics(77), w = GetSystemMetrics(78), hh = GetSystemMetrics(79);  // SM_*VIRTUALSCREEN
+        using (var bmp = new System.Drawing.Bitmap(w, hh)) {
+          using (var g = System.Drawing.Graphics.FromImage(bmp)) g.CopyFromScreen(x, y, 0, 0, bmp.Size);
+          bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        }
+        return 0;
+      });
+    }
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     // No input of the test's own (#277: a PC whose screen must stay off, which any input in the session
     // lights): Foreground takes no Alt tap but joins the input of the window in front for a moment, and keys
     // go through Key, to TSF's keystroke manager, not into the session's input.
@@ -640,16 +687,16 @@ namespace SebType {
         return 0;
       });
     }
-    // Which window is in front (its process) and whether TSF's thread has the focus: why Focus failed.
+    // Which window is in front and whether TSF's thread has the focus: why Focus failed.
     public static string FocusState() {
-      uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
-      string name; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { name = "pid " + pid; }
-      return "in front: " + (GetForegroundWindow() == store.Hwnd ? "the test field" : name) +
-             ", TSF thread focus: " + OnUi(() => { bool f; threadMgr.IsThreadFocus(out f); return f; });
+      return "in front: " + Front() + ", TSF thread focus: " + OnUi(() => { bool f; threadMgr.IsThreadFocus(out f); return f; });
     }
     // The text field's window in front, with the keyboard focus, and TSF's focus on its document.
     public static bool Focus() {
-      return Foreground(store.Hwnd) && OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; });
+      if (!Foreground(store.Hwnd)) return false;
+      if (OnUi(() => { SetWindowFocus(store.Hwnd); bool f; threadMgr.IsThreadFocus(out f); return f; })) return true;
+      LastFront += (LastFront == "" ? "" : "; ") + "in front, but TSF's thread has no focus";
+      return false;
     }
     // The language of the keyboard input method active in a window's thread, e.g. 0x0411 for Japanese.
     public static int Language(IntPtr h) { return (int)GetKeyboardLayout(GetWindowThreadProcessId(h, IntPtr.Zero)) & 0xFFFF; }

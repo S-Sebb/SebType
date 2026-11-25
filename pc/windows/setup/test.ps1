@@ -142,6 +142,7 @@ if ($Typing) {
     }
     Add-Type -Path "$root\TsfHost.cs" -ReferencedAssemblies System.Drawing
     $tsf = [SebType.TsfHost]
+    $tsf::StopToastHost = $true  # the throwaway test user's session: a toast left in front may be closed (#562)
     # Keys come from the Remote Desktop client (rdp-keys.py through test-tcsbackend.sh's tunnel), as a person's.
     $keys = Wait-Until 30 { try { New-Object Net.Sockets.TcpClient '127.0.0.1', 47812 } catch { $null } }
     if (-not $keys) { throw 'no key server at 127.0.0.1:47812 (rdp-keys.py, through the SSH tunnel)' }
@@ -155,6 +156,22 @@ if ($Typing) {
       Start-Sleep -Milliseconds 500
     }
     function TypeText($s) { Keys ($s.ToCharArray() | ForEach-Object { if ($_ -eq ' ') { 'space' } else { "$_" } }) }
+    # #562: a window that didn't come to the front says what held it (TsfHost's LastFront) and leaves a picture
+    # of the screen; each time only a fallback won, that goes in 562-front.txt too.
+    function Front-Note($what) {
+      $line = "$what`: $($tsf::LastFront)"
+      if ($tsf::LastFront -notmatch '; won') {
+        $shot = "$out\562-front-$(Get-Date -f HHmmss-fff).png"
+        try { $tsf::Screen($shot); $line += "; picture $shot" } catch { $line += "; no picture: $($_.Exception.Message)" }
+      }
+      Add-Content -Encoding utf8 "$out\562-front.txt" "$(Get-Date -f HH:mm:ss) $line"
+      $line
+    }
+    function To-Front($h, $what) {
+      $ok = $tsf::Foreground($h)
+      if ($tsf::LastFront) { $why = Front-Note $what }
+      if (-not $ok) { throw "$what did not come to the front ($why)" }
+    }
     # -Only compare (#54): SebType's Chinese and Japanese next to Microsoft's, typed the same way into
     # the test's own TSF text field, one fresh process per input method so each one's in-process share of
     # memory is its own. Per key: from the key entering the session (a low-level hook) to the input
@@ -209,7 +226,8 @@ if ($Typing) {
       $tail = if ($zh) { @('Escape') } else { @('space', 'Escape', 'Escape') }
       $tsf::Start(); $tsf::StartTiming()
       try {
-        if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
+        if (-not $tsf::Focus()) { throw "the text field did not get the keyboard focus ($(Front-Note 'the text field'))" }
+        if ($tsf::LastFront) { $null = Front-Note 'the text field' }
         if ($ime -eq 'soak') {
           # 10+ minutes of mixed SebType typing, words committed, with memory every 30 s and any server restart.
           $minutes = [double](Get-Content "$out\soak-minutes.txt"); $end = (Get-Date).AddMinutes($minutes); $start = Get-Date
@@ -261,7 +279,12 @@ if ($Typing) {
     }
     # A language of SebType's in the test's own TSF text field (TsfHost.cs, started).
     function Field($lang) {
-      if (-not $tsf::Focus()) { throw 'the text field did not get the keyboard focus' }
+      if (-not $tsf::Focus()) {
+        $why = Front-Note 'the text field'
+        # A new field window, so one lost race doesn't fail every check after it (#562).
+        $tsf::Stop(); $tsf::Start()
+        if (-not $tsf::Focus()) { throw "the text field did not get the keyboard focus ($why), nor a new one ($(Front-Note 'a new text field'))" }
+      } elseif ($tsf::LastFront) { $null = Front-Note 'the text field' }
       if ($lang -eq 'zh') { $tsf::Activate(0x804, [Guid]$Clsid, [Guid]$ZhProfile) } else { $tsf::Activate(0x411, [Guid]$Clsid, [Guid]$JaProfile) }
       $tsf::Settle(500); $tsf::Clear()
     }
@@ -341,7 +364,7 @@ if ($Typing) {
     try {
       $null = $np.WaitForInputIdle(10000)
       $h = $np.MainWindowHandle
-      if (-not $tsf::Foreground($h)) { throw 'Notepad did not come to the front' }
+      To-Front $h Notepad
       # Notepad's IME open status, conversion mode (its low bit: 中 1, English 0) and language at each change, in
       # ime-*.txt next to the keys sent, keys-*.txt: says when a flaky Chinese check found English (#129).
       $null = Start-Job -ArgumentList $h.ToInt64(), "$out\ime-$Typing.txt" {
@@ -445,9 +468,9 @@ if ($Typing) {
           try {
             $null = $other.WaitForInputIdle(10000)
             Keys 'Control_L+a' BackSpace; TypeText 'nihao'; Start-Sleep 1
-            if (-not $tsf::Foreground($other.MainWindowHandle)) { throw 'the second Notepad did not come to the front' }
+            To-Front $other.MainWindowHandle 'the second Notepad'
             Start-Sleep 1
-            if (-not $tsf::Foreground($h)) { throw 'Notepad did not come back to the front' }
+            To-Front $h 'Notepad, back,'
             Start-Sleep 1; TypeText 'ni '; Start-Sleep 1; $t = $tsf::EditText($h).Trim()
             if ($t -ne 'nihao你') { throw "nihao, focus away and back, ni + Space gave '$t' (want nihao你)" }
             $t
@@ -570,6 +593,11 @@ if ($Typing) {
 # ==================================================== the driver, as the test user, elevated as Setup
 if ($Driver) {
   Mark 'driver started: the test user is logged on'
+  # Windows' toasts off for this new account (#562): its first logon brings one ("SoftEther VPN is now set
+  # to run when you sign in") that keeps the front from the test's windows until someone clicks it.
+  $toasts = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'
+  if (-not (Test-Path $toasts)) { New-Item -Force $toasts | Out-Null }
+  Set-ItemProperty $toasts ToastEnabled 0 -Type DWord
   Add-Type -ReferencedAssemblies System.Drawing @'
 using System; using System.Text; using System.Collections.Generic; using System.Drawing; using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
