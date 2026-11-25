@@ -15,7 +15,7 @@ source "$root/tools/lib.sh"
 # shellcheck source-path=SCRIPTDIR source=versions.sh
 source "$root/linux/versions.sh"
 # The copies' builds go in this task's folder, on the build host too.
-export ISSUE=${ISSUE:-$(basename "$TASK_OUT")}
+export ISSUE=${ISSUE:-${TASK_OUT#"$SCRATCH"/}}
 work=$TASK_OUT/parallel-build
 command -v rpm2cpio >/dev/null || { echo "BLOCKED: rpm2cpio missing"; exit 1; }
 rm -rf "$work"
