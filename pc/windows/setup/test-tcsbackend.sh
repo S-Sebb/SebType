@@ -97,8 +97,9 @@ fi
 echo "setup: ${exe:-none}${run:+ (CI run $run)}" > "$out/input.txt"
 mark 'CI artifacts downloaded'
 # The VPN resets about one SSH handshake in ten (#570). A reset handshake ran nothing on TCSBackEnd, so it is
-# tried again; a connection that drops later isn't, as its command may have run.
-handshake_reset() { [ -n "$1" ] && ! grep -qvE '^(kex_exchange_identification: .*|Connection (reset|closed) by .*)$' <<<"$1"; }
+# tried again; a connection that drops later isn't, as its command may have run. sshd refusing a connection over
+# its MaxStartups is a reset handshake too, which scp -q reports only as "scp: Connection closed" (#573).
+handshake_reset() { [ -n "$1" ] && ! grep -qvE '^(kex_exchange_identification: .*|Connection (reset|closed) by .*|scp: Connection closed)$' <<<"$1"; }
 again() {  # COMMAND...: runs it, with its stderr in its stdout, again (up to 5 times) while all it said was a reset handshake
   local res r i
   for i in 1 2 3 4 5; do
@@ -137,7 +138,8 @@ EOF
 }
 cleanup() {  # what a run that died may leave: its session, user, profile, SebType, Weasel, Mozc, tasks and files
   # Uninstalling a text service late can change the Administrator's language list: it goes back as found.
-  { echo "\$adminLanguages = '$(sed -n 's/^languages: //p' "$out/before.txt")'"; cat; } <<'EOF' | T=900 tps
+  # $kept keeps the run folder: it holds the only copy of logs that couldn't be fetched.
+  { echo "\$adminLanguages = '$(sed -n 's/^languages: //p' "$out/before.txt")'; \$kept = '$kept'"; cat; } <<'EOF' | T=900 tps
 Get-ScheduledTask -TaskName SebType-setup*, 'SebType sync', 'SebType update check' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'sebtype-setup-test' -or $_.ExecutablePath -match '\\(is-[^\\]+\.tmp|_iu[^\\]+)\\' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -155,7 +157,8 @@ if ($u = Get-LocalUser sebtype-test -ErrorAction SilentlyContinue) {
     Remove-LocalUser sebtype-test
 }
 if (-not (Test-Path $app)) { Remove-Item -Recurse -Force "$env:ProgramFiles\SebType" -ErrorAction SilentlyContinue }
-Remove-Item -Recurse -Force C:\sebtype-setup-test, "$env:LOCALAPPDATA\SebType-setup-test" -ErrorAction SilentlyContinue
+if (-not $kept) { Remove-Item -Recurse -Force C:\sebtype-setup-test -ErrorAction SilentlyContinue }
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\SebType-setup-test" -ErrorAction SilentlyContinue
 if ((((Get-WinUserLanguageList) | ForEach-Object { "$($_.LanguageTag)=$($_.InputMethodTips -join ',')" }) -join '; ') -ne $adminLanguages) {
     $list = $null
     foreach ($e in $adminLanguages -split '; ') {
@@ -244,7 +247,11 @@ mark 'test.ps1 done'
 mkdir -p "$out/logs"
 # One file: scp pays a round trip per file, which made 60 files take a minute.
 echo 'tar -cf C:\sebtype-setup-test\logs.tar -C C:\sebtype-setup-test\out . -C C:\sebtype-setup-test run.log' | tps >/dev/null
-again scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" >/dev/null 2>&1 && tar -xf "$out/logs.tar" -C "$out/logs" && rm "$out/logs.tar"
+if again scp -q TCSBackEnd:C:/sebtype-setup-test/logs.tar "$out/" >/dev/null 2>&1 && tar -xf "$out/logs.tar" -C "$out/logs"; then
+  rm "$out/logs.tar"
+else
+  kept=1; echo 'FAIL logs: fetching logs.tar failed, so the run folder stays on TCSBackEnd: C:\sebtype-setup-test (the next run is blocked until it is removed)'
+fi
 [ -z "$finished" ] && echo "FAIL test-run: test.ps1 didn't finish in 60 minutes (logs: $out/logs)"
 for png in "$out"/logs/73-*.png "$out"/logs/117-*.png "$out"/logs/162-*.png "$out"/logs/205-*.png; do
   [ -e "$png" ] && magick "$png" -resize '1000x1000>' "$TASK_OUT/$(basename "$png")"
