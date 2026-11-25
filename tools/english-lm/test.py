@@ -118,6 +118,27 @@ check(
     == ["I'm", "sure.", "You're", "right,", "I've", "said", "so."],
     got,
 )
+# Texting leaves out apostrophes only in the letters typed: the text the model predicts keeps them (#561).
+texting = pack.Texting(random.Random(0))
+texting.drop_apostrophes, texting.short, texting.tail = True, 0, ""
+check(
+    "texting: the text keeps its apostrophes",
+    texting.text("so what's up, I can't", True, False) == "so what's up, I can't",
+    texting.text("so what's up, I can't", True, False),
+)
+check(
+    "homographs: a contraction's letters, not a possessive's",
+    {"cant", "wont", "ill", "id", "were", "whats"} <= pack.homograph
+    and not {"states", "girls"} & pack.homograph,
+)
+pack.HINT = 0
+got = written("I despise such cant and pious cant", seed=2)
+pack.HINT = 1.0
+check("examples: a homograph gets one more often", 1 <= len(got) <= 2, got)
+short = (
+    sum(pack.typed_for(rng, "work", prefix=True) == "wor" for _ in range(20000)) / 20000
+)
+check("typed_for: one letter short a third of prefixes or more", short > 0.02, short)
 check(
     "examples: a word after a quote",
     "Hello" in " ".join(written('He said "Hello there"')),
