@@ -135,6 +135,7 @@ came from:
 | `core/src/mozc.cpp` (follows fcitx5-mozc, Mozc's Fcitx 5 frontend) | BSD-3-Clause, like Mozc |
 | SebType's librime (`engines/librime/`: librime with SebType's changes) | BSD-3-Clause, like librime |
 | Fedora's librime spec with SebType's changes (`linux/librime.spec`) | MIT, like Fedora's specs |
+| The Rust crates built into the SebType Configurator on Windows and Linux (Slint, winit, keyring with dbus on Linux, and what they link) | Their own licences (MIT, Apache-2.0, BSD, BSL-1.0, ISC, Zlib, Unicode-3.0, Slint's Royalty-free 2.0 and dbus's AFL-2.1), which Setup installs in `licenses\configurator\` and the Linux package in `/usr/share/licenses/sebtype/configurator-crates-LICENSE` |
 | The libraries in SebType's Windows `rime.dll`, `sebtype-server.exe` and `sebtype-mozc.dll` (librime, librime-lua, librime-octagram and their dependencies, llama.cpp, protobuf, Abseil, OpenCC, Mozc), and the Python that runs sync | Their own licences, which Setup installs in `licenses\` in SebType's folder |
 | RimeJni's build scripts with SebType's changes (`android/native/src/main/cpp/cmake/`: how the phone builds librime; the bundled libraries' licences are in `android/native/src/main/assets/licenses/`) | MIT, like RimeJni |
 | librime, librime-lua and librime-octagram, built into the Linux add-on (`sebtype.so`, whose package carries their licences) and the phone's native library | BSD-3-Clause |

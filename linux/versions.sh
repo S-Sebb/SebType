@@ -61,6 +61,10 @@ SEBTYPE_DEPS=(
   lua https://github.com/lua/lua/archive/refs/tags/v5.4.9.tar.gz 76def9b3b100e029bfbe37c985d869d0ed993a0cf1a157df282d6dcd9d6a4e15
   protobuf https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protobuf-cpp-3.21.12.tar.gz 4eab9b524aa5913c6fffb20b2a8abf5ef7f95a80bc0701f3a6dbb4c607f73460
 )
+# cargo-about, which writes the licences of the Configurator's crates (#548): the release's Linux binary. Name,
+# URL, sha256, as SEBTYPE_DEPS; configurator.yml pins its Windows binary.
+CARGO_ABOUT=(cargo-about https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/cargo-about-0.9.3-x86_64-unknown-linux-musl.tar.gz
+  3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4)
 LIBRIME_PACKAGES=(librime librime-lua librime-octagram librime-predict librime-tools librime-devel)
 LIBRIME_CACHE=$HOME/scratch/SebType/cache/librime
 librime_rpm() { echo "$LIBRIME_CACHE/$1/$2-$LIBRIME_VERSION-$LIBRIME_SEBTYPE_RELEASE.x86_64.rpm"; } # key package
