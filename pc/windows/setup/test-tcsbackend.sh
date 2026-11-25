@@ -58,7 +58,7 @@ t0=$(date +%s)
 mark() { echo "$(date +%T) +$(( $(date +%s) - t0 ))s $*" >> "$out/times.txt"; }
 mark start
 
-missing=
+missing= kept=
 command -v gamescope >/dev/null && command -v xfreerdp >/dev/null && command -v magick >/dev/null && python3 -c 'import Xlib' 2>/dev/null ||
   missing='needs gamescope, xfreerdp, ImageMagick and python3-xlib'
 # The setup CI built from this commit, else one built here into build/ (ISCC under Wine, from CI's other
